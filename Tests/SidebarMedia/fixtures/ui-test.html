@@ -12,6 +12,7 @@
 <body>
   <h1>Sidebar media UI fixture</h1>
   <button id="start">Start playback</button>
+  <button id="pause">Pause playback</button>
   <button id="replace">Replace source</button>
   <button id="metadata">Replace metadata</button>
   <output id="position">Position: 0 seconds</output>
@@ -26,6 +27,7 @@
       title: fixtureTitle, artist: 'Local Test Artist', album: 'Phi media fixture'
     });
     document.getElementById('start').onclick = () => track.play();
+    document.getElementById('pause').onclick = () => track.pause();
     document.getElementById('replace').onclick = () => {
       track.src = 'long-tone.wav?replacement=1';
       track.play();

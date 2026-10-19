@@ -354,6 +354,82 @@ final class SidebarMediaUITests: XCTestCase {
     }
 
     @MainActor
+    func testDismissedAndPausedMediaStayHiddenAcrossNavigation() throws {
+        guard let fixtureURL = ProcessInfo.processInfo.environment["PHI_MEDIA_UI_FIXTURE_URL"],
+              fixtureURL.hasPrefix("http://127.0.0.1:8766/") else {
+            throw XCTSkip("Set PHI_MEDIA_UI_FIXTURE_URL to the local Range fixture")
+        }
+        let app = XCUIApplication()
+        app.launchArguments += ["-uitest", "1", "-skip-onboarding", "-layoutMode", "balanced",
+                                "-spacesFeatureEnabled", "YES", "-sidebarMediaPlayerEnabled", "YES",
+                                "-sidebarMediaPresentationMode", "alwaysExpanded",
+                                "--force-renderer-accessibility",
+                                "--user-data-dir=\(NSTemporaryDirectory())PhiMediaNavigation-\(UUID().uuidString)"]
+        app.launch()
+        self.app = app
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 120))
+        app.activate()
+        try ensureSidebarExpanded(in: app)
+        func spaceMenu(_ label: String) {
+            app.menuBars.menuBarItems["Spaces"].click()
+            let entry = app.menuItems[label].firstMatch
+            XCTAssertTrue(entry.waitForExistence(timeout: 5))
+            entry.click()
+        }
+        func createSpace(_ name: String) {
+            spaceMenu("New Space…")
+            let confirm = app.buttons["Create Space"]
+            XCTAssertTrue(confirm.waitForExistence(timeout: 15))
+            let field = app.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Space name")).firstMatch
+            XCTAssertTrue(field.waitForExistence(timeout: 5))
+            field.click(); field.typeText(name); confirm.click()
+            XCTAssertTrue(waitUntil(timeout: 15) { !confirm.exists })
+        }
+        let suffix = String(UUID().uuidString.prefix(6))
+        let spaceA = "Media A \(suffix)", spaceB = "Media B \(suffix)"
+        createSpace(spaceA)
+        try navigateToFixture(fixtureURL + "?title=Dismissed%20source", in: app)
+        let start = app.buttons["Start playback"]
+        XCTAssertTrue(start.waitForExistence(timeout: 30))
+        start.click()
+        app.typeKey("t", modifierFlags: .command)
+        let play = app.buttons["sidebarMedia.playPause"].firstMatch
+        XCTAssertTrue(play.waitForExistence(timeout: 20))
+        createSpace(spaceB)
+        XCTAssertTrue(play.waitForExistence(timeout: 20))
+        app.buttons["sidebarMedia.dismiss"].firstMatch.click()
+        XCTAssertTrue(waitUntil(timeout: 5) { !play.exists })
+        for name in [spaceA, spaceB] {
+            spaceMenu(name)
+            Thread.sleep(forTimeInterval: 1.2)
+            XCTAssertFalse(play.exists, "A Space switch must not reopen dismissed media")
+        }
+        try navigateToFixture(fixtureURL + "?title=Paused%20source", in: app)
+        XCTAssertTrue(start.waitForExistence(timeout: 30))
+        start.click()
+        let pause = app.buttons["Pause playback"]
+        XCTAssertTrue(pause.waitForExistence(timeout: 5))
+        pause.click()
+        spaceMenu(spaceA)
+        Thread.sleep(forTimeInterval: 1.2)
+        XCTAssertFalse(play.exists, "Leaving a paused source's Space must not open a card")
+        spaceMenu(spaceB)
+        XCTAssertTrue(start.waitForExistence(timeout: 20))
+        app.typeKey("t", modifierFlags: .command)
+        Thread.sleep(forTimeInterval: 1.2)
+        XCTAssertFalse(play.exists, "Leaving a paused source's tab must not open a card")
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(start.waitForExistence(timeout: 20))
+        start.click()
+        app.typeKey("t", modifierFlags: .command)
+        XCTAssertTrue(play.waitForExistence(timeout: 20), "Resumed playback should show a card")
+        play.click()
+        XCTAssertTrue(waitUntil(timeout: 5) { play.exists && play.label == "Play" },
+                      "An already displayed paused card must retain its resume control")
+        attachDiagnostics(app, reason: "dismissed and paused media navigation completed")
+    }
+
+    @MainActor
     func testWindowWideMediaAcrossSpaces() throws {
         guard let fixtureURL = ProcessInfo.processInfo.environment["PHI_MEDIA_UI_FIXTURE_URL"],
               fixtureURL.hasPrefix("http://127.0.0.1:8766/") else {

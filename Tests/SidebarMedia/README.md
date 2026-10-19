@@ -22,6 +22,8 @@ Focused scopes remain available:
 ./build-scripts/test-sidebar-media.sh --multi-source
 ./build-scripts/test-sidebar-media.sh --physical-swipe
 ./build-scripts/test-sidebar-media.sh --silent-source-retention
+./build-scripts/test-sidebar-media.sh --dismissed-space-switch
+./build-scripts/test-sidebar-media.sh --paused-navigation
 ```
 
 Cards silenced while displayed retain their source identity across card cycling
@@ -63,7 +65,9 @@ codesign --force --sign - --timestamp=none "$media_products/Phi.app"
 
 The UI test skips when the fixture URL is not explicitly supplied, so ordinary test runs do not depend on a local server. It exercises source-tab visibility, floating-sidebar hover reveal after the docked sidebar closes, repeated player hover, stable pinned-item, ordinary-row and footer frames while the tab list shrinks above the expanding bottom container, an eight-point visible footer gap, playback, Range-backed seeking at the 193-point minimum sidebar width, notification-card ordering and released space after hiding, volume-row layout reservation, the Advanced Mini Player Off / Auto / Always expanded / Always compact menu, compact presentation while hovered and full presentation without hover, continued playback while the player is disabled, persistence after relaunch, dismissal surviving polling, same-session return after viewing the source, return for metadata-only track replacement on the same playing element, and return for a new media source. It captures and restores the original visible Mini Player choice; `--user-data-dir` does not isolate UserDefaults.
 
-Dismissal hides the current presentation while snapshots continue to update. Viewing the source page (including a visible split pane or PiP) or changing the active sidebar surface clears that dismissal, so the same media session can appear again when eligible. A new source identity also restores eligibility.
+Dismissal hides the current presentation while snapshots continue to update. Viewing the source page (including a visible split pane or PiP) or reopening/changing the sidebar surface within the same Space clears that dismissal, so the same media session can appear again when eligible. A new source identity also restores eligibility. Space handoffs preserve dismissal, including when the outgoing surface deactivates before the incoming one appears.
+
+A paused foreground source does not automatically open a card when leaving its tab or Space. Only a source already admitted as a background card retains paused controls; PiP and muted-card retention keep their existing behavior. Space exit reads the visible native snapshots (including split panes) before changing visibility so a pending pause notification cannot promote a stale playing snapshot.
 
 Dynamic expands after 120 ms of continuous pointer entry, with a 0.2-second height transition and 120 ms exit debounce. Its keyboard focus and VoiceOver Show media details action can expand immediately. Always compact keeps its keyboard/VoiceOver transport and track controls without revealing details. The production-controller harness covers short entry/exit timing; XCTest pointer actions may wait for app quiescence between calls, so a tightly timed native pointer sequence is a separate manual acceptance check.
 
@@ -89,3 +93,15 @@ volume writes the selected media element and publishes the applied value without
 another read. Reopening refreshes page-side changes. Source replacement closes
 the old row, and older Frameworks without the read selector expose no volume
 control. The native harness covers this request lifecycle and capability guard.
+
+The dismissal and paused-navigation UI regression can be run separately:
+
+```sh
+PHI_MEDIA_UI_TEST_METHOD=testDismissedAndPausedMediaStayHiddenAcrossNavigation ./build-scripts/test-sidebar-media-ui.sh
+```
+
+It uses disposable Spaces and local media to check dismissal across a round trip,
+paused foreground media across tab/Space changes, resumed playback, and retaining
+controls when an already visible card is paused. Launch preferences use command
+line overrides; a dedicated test application identity is recommended to isolate
+all other application defaults as well as the disposable browser data.

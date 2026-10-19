@@ -6,7 +6,7 @@ derived_data="${PHI_MEDIA_DERIVED_DATA:-$repo/build/DerivedData-OpenSource}"
 fixture_url="${PHI_MEDIA_UI_FIXTURE_URL:-http://127.0.0.1:8766/ui-test.html}"
 test_method="${PHI_MEDIA_UI_TEST_METHOD:-testRepeatedHoverAndSeekAtMinimumSidebarWidth}"
 case "$test_method" in
-  testRepeatedHoverAndSeekAtMinimumSidebarWidth|testVisitOrderedMediaCycling|testMutingKeepsPlayerVisible) ;;
+  testRepeatedHoverAndSeekAtMinimumSidebarWidth|testVisitOrderedMediaCycling|testMutingKeepsPlayerVisible|testDismissedAndPausedMediaStayHiddenAcrossNavigation) ;;
   *) echo "Unknown sidebar media UI test method: $test_method" >&2; exit 1 ;;
 esac
 if [[ "$fixture_url" != http://127.0.0.1:8766/* ]]; then

@@ -100,6 +100,26 @@ struct FakeSplitGroup {
 struct SidebarMediaHarness {
     @MainActor
     static func main() async {
+        if CommandLine.arguments.contains("--dismissed-space-switch") {
+            await dismissedSourceSurvivesSpaceSwitch()
+            print("Dismissed source Space-switch checks passed")
+            return
+        }
+        if CommandLine.arguments.contains("--paused-split-space") {
+            await pausedSplitSourceDoesNotAppearAfterSpaceSwitch()
+            print("Paused split-pane Space checks passed")
+            return
+        }
+        if CommandLine.arguments.contains("--paused-track-change") {
+            await explicitTrackChangeRetainsPausedCard()
+            print("Paused track-change checks passed")
+            return
+        }
+        if CommandLine.arguments.contains("--paused-navigation") {
+            await pausedSourceDoesNotAppearAfterNavigation()
+            print("Paused source navigation checks passed")
+            return
+        }
         if CommandLine.arguments.contains("--silent-source-retention") {
             await silentCardsSurviveCyclingAcrossSpaces()
             await mutedCardSurvivesNewPlayer()
@@ -124,6 +144,9 @@ struct SidebarMediaHarness {
             return
         }
         if !CommandLine.arguments.contains("--multi-source") {
+            await dismissedSourceSurvivesSpaceSwitch()
+            await pausedSourceDoesNotAppearAfterNavigation()
+            await pausedSplitSourceDoesNotAppearAfterSpaceSwitch()
             await observationSurvivesPresentationExit()
             await windowSourcesAndPresentation()
             await spaceSwitchKeepsMediaPresentation()
@@ -144,6 +167,7 @@ struct SidebarMediaHarness {
             await muteValidationAndNativeState()
             await mutedSourceStillInvalidatesWithItsTab()
             nativeObservationLifecycle()
+            await explicitTrackChangeRetainsPausedCard()
             await trackChangeKeepsCardStable()
             await missingTrackExpiresAndRejectedTrackDoesNotHold()
             await pictureInPictureHidesAndRestoresSource()
@@ -279,6 +303,147 @@ struct SidebarMediaHarness {
             await tick()
             precondition(outgoing.heights.last == 0 && incoming.heights.last == 0,
                          "Dismissal must still hide the card in every resident sidebar")
+        }
+    }
+
+    @MainActor
+    static func dismissedSourceSurvivesSpaceSwitch() async {
+        for kind in [SidebarMediaController.Surface.Kind.docked, .floating] {
+            for hideBeforeSwitch in [false, true] {
+                let f = Fixture([250, 251]); defer { f.stop() }
+                let b = BrowserState(), blank = Tab(252)
+                b.tabs = [blank]; b.focusingTab = blank
+                let c = f.controller
+                let aSurface = SidebarMediaController.Surface(session: f.state, kind: kind)
+                let bSurface = SidebarMediaController.Surface(session: b, kind: kind)
+                c.setSessions([f.state, b], presented: f.state)
+                c.setActive(true, on: aSurface)
+                let probe = MediaPresentationProbe(controller: c, surface: bSurface)
+                await tick()
+                precondition(probe.heights.last == 38)
+                c.dismissCurrent(for: require(c.item), from: aSurface)
+                await tick()
+                precondition(probe.heights.last == 0)
+                for (state, outgoing, incoming) in [(b, aSurface, bSurface), (f.state, bSurface, aSurface)] {
+                    if hideBeforeSwitch { c.setActive(false, on: outgoing) }
+                    c.setSessions([f.state, b], presented: state)
+                    c.setActive(true, on: incoming)
+                    c.setActive(false, on: outgoing)
+                    await tick()
+                    precondition(c.isDismissed && probe.heights.last == 0,
+                                 "Switching Spaces must preserve dismissal on both sidebars")
+                    f.tabs[0].controls.emit(snapshot("Updated title", token: "fresh", source: "source-250"))
+                    await tick()
+                    precondition(c.isDismissed && probe.heights.last == 0,
+                                 "A native update after a Space switch must not restore a dismissed source")
+                }
+                c.setSessions([f.state, b], presented: b)
+                // A collapsed sidebar can leave the intervening Space without
+                // any active media surface at all.
+                c.setSessions([f.state, b], presented: f.state)
+                c.setActive(true, on: aSurface)
+                await tick()
+                precondition(c.isDismissed && probe.heights.last == 0,
+                             "A round trip through a hidden sidebar must preserve dismissal")
+                f.tabs[0].controls.emit(snapshot("New track", token: "new", source: "replacement"))
+                await tick()
+                precondition(!c.isDismissed && probe.heights.last == 38,
+                             "Replacing the media source must still restore eligibility")
+            }
+        }
+    }
+
+    @MainActor
+    static func pausedSourceDoesNotAppearAfterNavigation() async {
+        for acrossSpaces in [false, true] {
+            for delayedPause in [false, true] {
+                let f = Fixture([260, 261]); defer { f.stop() }
+                let c = f.controller, source = f.tabs[0]
+                let b = BrowserState(), blank = Tab(262)
+                b.tabs = [blank]; b.focusingTab = blank
+                let aSurface = SidebarMediaController.Surface(session: f.state, kind: .docked)
+                let bSurface = SidebarMediaController.Surface(session: b, kind: .docked)
+                c.setSessions([f.state, b], presented: f.state)
+                c.setActive(true, on: aSurface)
+                let probe = MediaPresentationProbe(controller: c, surface: aSurface)
+                f.state.focusingTab = source
+                await tick()
+                precondition(probe.heights.last == 0)
+                let paused = snapshot("Paused source", token: "paused", source: "source-260", playing: false)
+                if delayedPause { source.controls.snapshotValue = paused }
+                else { source.controls.emit(paused) }
+                // Audible state may lag the authoritative native playback snapshot.
+                if acrossSpaces {
+                    c.setSessions([f.state, b], presented: b)
+                    c.setActive(true, on: bSurface)
+                } else {
+                    f.state.focusingTab = f.tabs[1]
+                }
+                await tick(300)
+                precondition(probe.heights.last == 0 && c.backgroundSourceCount == 0,
+                             "Leaving a paused source must not automatically show its Mini Player")
+                source.controls.emit(paused)
+                await tick()
+                precondition(probe.heights.last == 0,
+                             "A delayed paused snapshot must not open a previously hidden card")
+                source.controls.emit(snapshot("Resumed", token: "resumed", source: "source-260"))
+                await tick()
+                precondition(probe.heights.last == 38 && c.backgroundSourceCount == 1,
+                             "Resuming actual playback must allow automatic presentation")
+                source.controls.emit(paused)
+                await tick()
+                precondition(probe.heights.last == 38,
+                             "Pausing an already presented card must retain its controls")
+                let surface = acrossSpaces ? bSurface : aSurface
+                c.perform(.playPause, for: require(c.item), from: surface)
+                precondition((source.controls.actions.last?["action"] as? NSNumber)?.intValue
+                             == PhiMediaControlAction.play.rawValue,
+                             "A retained paused card must still let the user resume playback")
+                c.dismissCurrent(for: require(c.item), from: surface)
+                await tick()
+                precondition(probe.heights.last == 0)
+                c.setActive(false, on: surface)
+                c.setActive(true, on: surface)
+                source.controls.emit(paused)
+                await tick()
+                precondition(probe.heights.last == 38,
+                             "Reopening the sidebar must restore a previously presented paused card")
+                source.controls.emit(nil)
+                await tick()
+                precondition(probe.heights.last == 0 && c.item == nil,
+                             "An ended native media session must remove the card")
+            }
+        }
+    }
+
+    @MainActor
+    static func pausedSplitSourceDoesNotAppearAfterSpaceSwitch() async {
+        for video in [false, true] {
+            let f = Fixture([280, 281]); defer { f.stop() }
+            let c = f.controller, source = f.tabs[0]
+            let b = BrowserState(), blank = Tab(282)
+            b.tabs = [blank]; b.focusingTab = blank
+            let aSurface = SidebarMediaController.Surface(session: f.state, kind: .docked)
+            let bSurface = SidebarMediaController.Surface(session: b, kind: .docked)
+            c.setSessions([f.state, b], presented: f.state)
+            c.setActive(true, on: aSurface)
+            f.state.splits = [FakeSplitGroup(first: 280, second: 281)]
+            var playback = snapshot("Split source", source: "source-280")
+            playback["canEnterPictureInPicture"] = video
+            source.controls.emit(playback)
+            await tick()
+            let probe = MediaPresentationProbe(controller: c, surface: bSurface)
+            await tick()
+            precondition(probe.heights.last == 0)
+            playback["playing"] = false
+            source.controls.snapshotValue = playback
+            c.setSessions([f.state, b], presented: b)
+            c.setActive(true, on: bSurface)
+            await tick(300)
+            source.controls.emit(playback)
+            await tick()
+            precondition(probe.heights.last == 0 && c.backgroundSourceCount == 0,
+                         "A delayed pause in the non-focused split pane must not open a card on Space exit")
         }
     }
 
@@ -902,6 +1067,32 @@ struct SidebarMediaHarness {
         precondition(!subscription.readVolume(expected: playback))
         precondition(!subscription.setVolume(0.5, expected: playback) && legacy.fakeControls.actions.isEmpty)
         subscription.close()
+    }
+
+    @MainActor
+    static func explicitTrackChangeRetainsPausedCard() async {
+        for action in [NativeMediaAdapter.Action.nextTrack, .previousTrack] {
+            let f = Fixture([270, 271]); defer { f.stop() }
+            await tick()
+            let c = f.controller, source = f.tabs[0]
+            var paused = snapshot("Paused", token: "paused", source: "source-270", playing: false)
+            paused["canNextTrack"] = true
+            paused["canPreviousTrack"] = true
+            source.controls.emit(paused)
+            let probe = MediaPresentationProbe(controller: c, surface: .docked)
+            await tick()
+            precondition(probe.heights.last == 38)
+            c.perform(action, for: require(c.item), from: .docked)
+            source.controls.emit(nil)
+            source.controls.emit(snapshot("Chosen track", token: "chosen", source: "chosen", playing: false))
+            await tick(300)
+            precondition(c.item?.playback.title == "Chosen track" && probe.heights.last == 38,
+                         "An explicit track change must retain controls for its paused replacement")
+            source.controls.emit(snapshot("Unrequested track", token: "other", source: "other", playing: false))
+            await tick(300)
+            precondition(c.item == nil && probe.heights.last == 0,
+                         "An unrelated paused replacement must not inherit the previous card's retention")
+        }
     }
 
     @MainActor

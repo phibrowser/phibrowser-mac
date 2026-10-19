@@ -110652,6 +110652,18 @@
         }
       }
     },
+    "sidebar.urlRulesEditor.appPicker.tooltip" : {
+      "comment" : "Tooltip for the button beside an App URL rule's value field that lists running Mac apps to pick a bundle ID from",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose a running app"
+          }
+        }
+      }
+    },
     "sidebar.urlRulesEditor.cancelButton" : {
       "comment" : "Cancel button",
       "extractionState" : "extracted_with_value",
@@ -110828,6 +110840,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未建立任何規則。"
+          }
+        }
+      }
+    },
+    "sidebar.urlRulesEditor.matchType.app" : {
+      "comment" : "URL rule match type: links opened from another Mac app, identified by its bundle ID",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "App"
           }
         }
       }
@@ -111068,6 +111092,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "網址"
+          }
+        }
+      }
+    },
+    "sidebar.urlRulesEditor.matchValue.appPlaceholder" : {
+      "comment" : "URL rule value placeholder for App match: an example Mac app bundle ID",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "com.tinyspeck.slackmacgap"
           }
         }
       }

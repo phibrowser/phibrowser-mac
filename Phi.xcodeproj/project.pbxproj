@@ -186,6 +186,7 @@
 		4A0B34B89EDDDD8EF26394E7 /* ContentBlockingListInfoPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2641EED1C4477FEDD13FA92 /* ContentBlockingListInfoPopover.swift */; };
 		4A1F8A4E3847DE0E10062837 /* sync_enums.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = F381BC900D7B1C92A256C6D4 /* sync_enums.pb.swift */; };
 		4B4B00000000000000000001 /* KioskGlobalShortcutRegistrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */; };
+		4B4C00000000000000000001 /* ExternalOpenSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B4C00000000000000000002 /* ExternalOpenSender.swift */; };
 		4D454D4F5259000000000001 /* MemoryUsageModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D454D4F5259000000000002 /* MemoryUsageModels.swift */; };
 		4D454D4F5259000000000004 /* MemoryUsageMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D454D4F5259000000000005 /* MemoryUsageMonitor.swift */; };
 		4D454D4F5259000000000006 /* ProcessMemorySampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D454D4F5259000000000007 /* ProcessMemorySampler.swift */; };
@@ -1018,6 +1019,7 @@
 		4AAB7BA138E072B24EABDF00 /* PhiSyncEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiSyncEngine.swift; sourceTree = "<group>"; };
 		4AFBF4E016A9AE2F4AD2AC8D /* ContentBlockingAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentBlockingAnalytics.swift; sourceTree = "<group>"; };
 		4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskGlobalShortcutRegistrar.swift; sourceTree = "<group>"; };
+		4B4C00000000000000000002 /* ExternalOpenSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalOpenSender.swift; sourceTree = "<group>"; };
 		4D454D4F5259000000000002 /* MemoryUsageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryUsageModels.swift; sourceTree = "<group>"; };
 		4D454D4F5259000000000005 /* MemoryUsageMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryUsageMonitor.swift; sourceTree = "<group>"; };
 		4D454D4F5259000000000007 /* ProcessMemorySampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessMemorySampler.swift; sourceTree = "<group>"; };
@@ -2684,6 +2686,7 @@
 				B02586F22E42FD97001B08FC /* PhiApplication.h */,
 				B02586F32E42FD97001B08FC /* PhiApplication.m */,
 				B02586F02E42FD97001B08FC /* AppController.swift */,
+				4B4C00000000000000000002 /* ExternalOpenSender.swift */,
 				CC288A8B2E534230004A6C1C /* AppController+Menu.swift */,
 				37DD11012F9D111100000001 /* BookmarkMenuContentBuilder.swift */,
 				37DD11032F9D111100000001 /* BookmarkHTMLExporter.swift */,
@@ -3824,6 +3827,7 @@
 				A7E1C0020000000000000002 /* PageOverlayView.swift in Sources */,
 				CCBF8FA22E698A7400B9A99E /* SpaceSessionControllersManager.swift in Sources */,
 				B02586F62E42FD97001B08FC /* AppController.swift in Sources */,
+				4B4C00000000000000000001 /* ExternalOpenSender.swift in Sources */,
 				4B4B00000000000000000001 /* KioskGlobalShortcutRegistrar.swift in Sources */,
 				8E6145BE2F753469001919BA /* ImportDataTypeViewController.swift in Sources */,
 				37C1B2882EE0418700DD4496 /* DownloadsManager+Test.swift in Sources */,

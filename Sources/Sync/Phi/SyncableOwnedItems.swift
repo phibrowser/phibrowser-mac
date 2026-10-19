@@ -277,7 +277,8 @@ enum OwnedItemRefusal: Equatable {
     case emptyHost
     /// §5.4: normalized host is * or *.; both matchers explicitly reject these.
     case degenerateHost
-    /// §5.4: host contains slash, or colon without being a bracketed IPv6 literal.
+    /// §5.4: host contains slash, or colon without being a bracketed IPv6 literal or an
+    /// `app:<bundle id>` App rule host.
     case malformedHost
 }
 

@@ -30,6 +30,7 @@ contracts, failure modes and verification entry points. Start with the repositor
 - [Reader integration and extraction](reader-view.md)
 - [Folio capture](folio-capture.md) and [native Folio library](folio-native-library.md)
 - [Content blocking](content-blocking.md)
+- [URL rules](url-rules.md): routing ownership and App rules for external links
 - [Site memory management](site-memory-management.md)
 - [Profile-scoped connectors](profile-scoped-connectors.md)
 - [Service broker extension boundary](service-broker-extension-boundary.md)

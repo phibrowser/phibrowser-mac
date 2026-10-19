@@ -368,6 +368,25 @@ final class URLRuleKindTests: XCTestCase {
 
     // MARK: - CASE U-8 (three structural refusals; valid IPv6 accepted)
 
+    /// App rules (`app:<bundle id>`) travel as ordinary hosts; their prefix colon is the only one
+    /// accepted outside a bracketed IPv6 literal.
+    func testAppRuleHostsAreNotRefused() {
+        let cases: [(host: String, expected: OwnedItemRefusal?)] = [
+            ("app:com.tinyspeck.slackmacgap", nil),
+            ("APP:com.example.app", nil),
+            ("app:", .malformedHost),
+            ("app:a:b", .malformedHost),
+            ("app:a/b", .malformedHost),
+            ("apps:com.example.app", .malformedHost),
+        ]
+        for item in cases {
+            XCTAssertEqual(URLRuleKind.refuses(urlRulePayload(uuid: "r8a", host: item.host), baseline: nil),
+                           item.expected, "host \(item.host)")
+        }
+        XCTAssertTrue(URLRuleKind.isSourceAppHost(
+            SpaceRoutingRule.sourceAppHost(bundleId: "com.example.app")))
+    }
+
     func testStructuralHostRefusalsAcceptBracketedIPv6Literals() {
         let cases: [(host: String, expected: OwnedItemRefusal?)] = [
             ("", .emptyHost),

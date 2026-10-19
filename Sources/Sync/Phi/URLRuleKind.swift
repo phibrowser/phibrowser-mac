@@ -323,7 +323,8 @@ enum URLRuleKind: OwnedItemKind {
     /// Rank validation protects `rankBetween`, whose release precondition traps on invalid peer
     /// input (CASE U-9). Host colon validation must accept bracketed IPv6: GURL returns `[::1]`,
     /// and editor port stripping preserves it. Otherwise a valid locally matching rule would be
-    /// refused on every peer every round, since this predicate has no refusal timestamp.
+    /// refused on every peer every round, since this predicate has no refusal timestamp. The same
+    /// holds for the App rule form `app:<bundle id>` (`isSourceAppHost`).
     /// Do not reject noncanonical paths or unresolved targets here. Planning normalizes paths
     /// through `normalizeArrivals`; owner classification parks unresolved targets.
     static func refuses(_ entity: Phi_PhiURLRuleEntity,
@@ -334,10 +335,23 @@ enum URLRuleKind: OwnedItemKind {
         if host.isEmpty { return .emptyHost }
         if host == "*" || host == "*." { return .degenerateHost }
         if host.contains("/") { return .malformedHost }
+        if isSourceAppHost(host) { return nil }
         if host.contains(":"), !(host.hasPrefix("[") && host.hasSuffix("]")) {
             return .malformedHost
         }
         return nil
+    }
+
+    /// An App rule host, `app:<bundle id>` (`SpaceRoutingRule.sourceAppHostPrefix`, spelled out here
+    /// because this file also compiles into the SyncConvergence package without `Space.swift`). The
+    /// prefix's colon is the only one accepted: the bundle id must be non-empty and colon-free. Mac
+    /// clients that predate App rules refuse the host as malformed and skip it each round.
+    static func isSourceAppHost(_ host: String) -> Bool {
+        let prefix = "app:"
+        guard host.count > prefix.count, host.prefix(prefix.count).lowercased() == prefix else {
+            return false
+        }
+        return !host.dropFirst(prefix.count).contains(":")
     }
 
     // MARK: - Landing projection (§8.3)

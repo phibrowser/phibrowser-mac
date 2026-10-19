@@ -94,4 +94,33 @@ struct SpaceRoutingRule: Equatable, Identifiable {
         self.syncId = syncId
         self.deletedDate = deletedDate
     }
+
+    /// Host prefix that marks an App rule: the rule matches external opens
+    /// sent by the macOS application whose bundle id follows the prefix
+    /// (`app:com.tinyspeck.slackmacgap`), never a URL. App rules are
+    /// evaluated only by the Mac client for `application(_:open:)` and are
+    /// never pushed to Chromium. See docs/url-rules.md.
+    static let sourceAppHostPrefix = "app:"
+
+    /// The sender bundle id an App rule matches, lowercased as stored; nil
+    /// for every host/URL rule.
+    var sourceAppBundleId: String? { Self.sourceAppBundleId(fromHost: host) }
+
+    /// Parses an App rule host; nil when `host` lacks the prefix or names no
+    /// bundle id.
+    static func sourceAppBundleId(fromHost host: String) -> String? {
+        let prefix = sourceAppHostPrefix
+        guard host.count > prefix.count,
+              host.prefix(prefix.count).lowercased() == prefix else { return nil }
+        return String(host.dropFirst(prefix.count)).lowercased()
+    }
+
+    /// Encodes `bundleId` as an App rule host. Bundle ids are
+    /// case-insensitive and `LocalStore.normalizedHost` lowercases anyway, so
+    /// the result is a normalization fixed point. Empty input yields an empty
+    /// host, which every write path discards.
+    static func sourceAppHost(bundleId: String) -> String {
+        let bare = bundleId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return bare.isEmpty ? "" : sourceAppHostPrefix + bare
+    }
 }

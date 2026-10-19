@@ -673,4 +673,99 @@ final class URLRouterTests: XCTestCase {
         XCTAssertEqual(type, .url)
         XCTAssertEqual(value, "github.com/anthropics")
     }
+
+    // MARK: - App rules (Swift-only, external opens)
+
+    private func appRule(id: String = UUID().uuidString, space: String, bundleId: String,
+                         sortOrder: Int = 0, deletedDate: Date? = nil) -> SpaceRoutingRule {
+        rule(id: id, space: space, host: SpaceRoutingRule.sourceAppHost(bundleId: bundleId),
+             sortOrder: sortOrder, deletedDate: deletedDate)
+    }
+
+    private func matchApp(_ bundleId: String, _ rules: [SpaceRoutingRule]) -> SpaceRoutingRule? {
+        URLRouter.matchingSourceAppRule(bundleId: bundleId, rules: rules,
+                                        tieBreakKey: { $0.spaceId }, ruleId: { $0.id })
+    }
+
+    func testAppRuleNeverMatchesAnyURL() {
+        let rules = [appRule(space: "work", bundleId: "com.tinyspeck.slackmacgap")]
+        for url in ["https://com.tinyspeck.slackmacgap/",
+                    "https://app/",
+                    "https://slack.com/",
+                    "http://app:80/path"] {
+            XCTAssertNil(resolve(url, rules), url)
+        }
+        // A host that literally equals the stored form is still skipped.
+        let literal = [rule(space: "work", host: "app:x")]
+        XCTAssertEqual(literal.first?.sourceAppBundleId, "x")
+        XCTAssertNil(resolve("https://x/", literal))
+    }
+
+    func testAppRuleDoesNotShadowHostRules() {
+        let rules = [appRule(space: "work", bundleId: "com.example.app"),
+                     rule(space: "home", host: "*.example.com"),
+                     rule(space: "news", host: "*news*")]
+        XCTAssertEqual(resolve("https://a.example.com/", rules), "home")
+        XCTAssertEqual(resolve("https://bignews.org/", rules), "news")
+        XCTAssertEqual(ExternalKioskURLRuleResolver.decision(
+            for: URL(string: "https://unrelated.org/")!,
+            rules: [appRule(space: "work", bundleId: "com.example.app")]), .useKiosk)
+    }
+
+    func testMatchingSourceAppRuleIsCaseInsensitive() {
+        let rules = [appRule(id: "r1", space: "work", bundleId: "com.TinySpeck.SlackMacGap")]
+        XCTAssertEqual(matchApp("COM.tinyspeck.slackmacgap", rules)?.id, "r1")
+        XCTAssertEqual(matchApp(" com.tinyspeck.slackmacgap ", rules)?.id, "r1")
+        XCTAssertNil(matchApp("com.tinyspeck.slack", rules))
+        XCTAssertNil(matchApp("", rules))
+    }
+
+    func testMatchingSourceAppRuleIgnoresNonAppAndDeletedRules() {
+        let rules = [rule(id: "host", space: "a", host: "com.example.app"),
+                     rule(id: "contains", space: "a", host: "*com.example.app*"),
+                     appRule(id: "gone", space: "b", bundleId: "com.example.app",
+                             deletedDate: Date())]
+        XCTAssertNil(matchApp("com.example.app", rules))
+    }
+
+    func testMatchingSourceAppRuleTieBreaksBySortOrderThenKeys() {
+        let late = appRule(id: "late", space: "a", bundleId: "com.example.app", sortOrder: 3)
+        let early = appRule(id: "early", space: "z", bundleId: "com.example.app", sortOrder: 1)
+        XCTAssertEqual(matchApp("com.example.app", [late, early])?.id, "early")
+        XCTAssertEqual(matchApp("com.example.app", [early, late])?.id, "early")
+        // Equal sortOrder falls back to the shared tieBreakKey (here: spaceId).
+        let first = appRule(id: "r-z", space: "alpha", bundleId: "com.example.app")
+        let second = appRule(id: "r-a", space: "beta", bundleId: "com.example.app")
+        XCTAssertEqual(matchApp("com.example.app", [second, first])?.id, "r-z")
+        XCTAssertEqual(matchApp("com.example.app", [first, second])?.id, "r-z")
+    }
+
+    func testSourceAppHostRoundTripsThroughNormalization() {
+        let host = SpaceRoutingRule.sourceAppHost(bundleId: "  Com.TinySpeck.SlackMacGap\n")
+        XCTAssertEqual(host, "app:com.tinyspeck.slackmacgap")
+        XCTAssertEqual(LocalStore.normalizedHost(host), host)
+        XCTAssertEqual(rule(space: "a", host: host).sourceAppBundleId, "com.tinyspeck.slackmacgap")
+        XCTAssertEqual(SpaceRoutingRule.sourceAppHost(bundleId: "   "), "")
+        XCTAssertNil(rule(space: "a", host: "app:").sourceAppBundleId)
+        XCTAssertNil(rule(space: "a", host: "github.com").sourceAppBundleId)
+        XCTAssertNil(rule(space: "a", host: "*app:x*").sourceAppBundleId)
+        XCTAssertEqual(SpaceRoutingRule.sourceAppHostPrefix, "app:")
+    }
+
+    func testEditorAppMatchTypeEncodesAndDecodes() {
+        let type = URLRulesEditor.MatchType.sourceApp
+        XCTAssertEqual(type.encode(value: "com.tinyspeck.slackmacgap").host,
+                       "app:com.tinyspeck.slackmacgap")
+        XCTAssertNil(type.encode(value: "com.tinyspeck.slackmacgap").pathPrefix)
+        XCTAssertEqual(type.encode(value: "app:Com.Example.App").host, "app:com.example.app")
+        XCTAssertEqual(type.encode(value: "com.example. app").host, "app:com.example.app")
+        XCTAssertEqual(type.encode(value: "  ").host, "")
+        let (decoded, value) = URLRulesEditor.MatchType.decode(
+            host: "app:com.tinyspeck.slackmacgap", pathPrefix: nil)
+        XCTAssertEqual(decoded, .sourceApp)
+        XCTAssertEqual(value, "com.tinyspeck.slackmacgap")
+        // Host rules keep their existing decoding.
+        XCTAssertEqual(URLRulesEditor.MatchType.decode(host: "*.app.com", pathPrefix: nil).0,
+                       .domainSuffix)
+    }
 }

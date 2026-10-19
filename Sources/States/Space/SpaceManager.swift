@@ -6998,6 +6998,22 @@ final class SpaceManager: ObservableObject {
     }
 
 
+    /// Whether a rule targeting `spaceId` may route now: the generic
+    /// Incognito and Kiosk targets always can, a user Space only while it is
+    /// live (not deleted or hidden). The routing push and the App rule path
+    /// share this predicate.
+    func isLiveURLRuleTarget(_ spaceId: String) -> Bool {
+        Self.isLiveURLRuleTarget(spaceId, liveTargets: Set(spaces.map(\.spaceId)))
+    }
+
+    private static func isLiveURLRuleTarget(_ spaceId: String,
+                                            liveTargets: Set<String>) -> Bool {
+        isRoutableRuleTarget(spaceId)
+            && (spaceId == incognitoRuleTargetId
+                || spaceId == kioskRuleTargetId
+                || liveTargets.contains(spaceId))
+    }
+
     /// Flattens the rules and the live spaceId→windowId
     /// map and hands both to the Chromium bridge via the new
     /// `setSpaceRoutingTable:spaceWindowMap:` method. Idempotent — Chromium
@@ -7025,12 +7041,13 @@ final class SpaceManager: ObservableObject {
         // is the whole predicate; do NOT consult any sync mapping state here
         // (RR-R9). Excluded rules stay in the store and in the editor: the
         // target coming back re-arms them.
+        // App rules match the sender of an external open, which only Swift
+        // sees (`AppController.application(_:open:)`); Chromium would read
+        // their `app:` host as an exact host. Never push them.
         let liveTargets = Set(spaces.map(\.spaceId))
         let effectiveRules = cachedURLRules.filter {
-            Self.isRoutableRuleTarget($0.spaceId)
-                && ($0.spaceId == Self.incognitoRuleTargetId
-                    || $0.spaceId == Self.kioskRuleTargetId
-                    || liveTargets.contains($0.spaceId))
+            $0.sourceAppBundleId == nil
+                && Self.isLiveURLRuleTarget($0.spaceId, liveTargets: liveTargets)
         }
         var rulesPayload: [[String: Any]] = effectiveRules.map { rule in
             var entry: [String: Any] = [

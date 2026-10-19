@@ -17,8 +17,10 @@ import SwiftUI
 /// routing table is refreshed once, after the write commits. No direct
 /// LocalStore writes from the view, no manual bridge calls.
 ///
-/// Stays intentionally small: one host per row matched as either a domain
-/// suffix (host + all subdomains) or an exact domain, enable toggle,
+/// Stays intentionally small: one host per row matched as a domain suffix
+/// (host + all subdomains), an exact domain, a substring or a URL prefix, or
+/// one sending app's bundle id for an App rule (external opens only; see
+/// docs/url-rules.md), enable toggle,
 /// drag-to-reorder. Rules load grouped by target Space in Space strip order
 /// (`SpaceManager.rulesInDisplayOrder`); order is persisted only within one
 /// target Space, so a drop must land next to a rule with the same target
@@ -504,6 +506,7 @@ struct URLRulesEditor: View {
         case domain          // exact host only
         case domainContains  // host contains a substring ("*needle*")
         case url             // exact host + path prefix ("github.com" + "/anthropics")
+        case sourceApp       // external opens sent by an app ("app:" + bundle id)
 
         var id: String { rawValue }
 
@@ -521,6 +524,9 @@ struct URLRulesEditor: View {
             case .url:
                 return NSLocalizedString("sidebar.urlRulesEditor.matchType.url", value: "URL",
                     comment: "URL rule match type: exact host plus a path prefix")
+            case .sourceApp:
+                return NSLocalizedString("sidebar.urlRulesEditor.matchType.app", value: "App",
+                    comment: "URL rule match type: links opened from another Mac app, identified by its bundle ID")
             }
         }
 
@@ -538,6 +544,9 @@ struct URLRulesEditor: View {
             case .url:
                 return NSLocalizedString("sidebar.urlRulesEditor.matchValue.urlPlaceholder", value: "https://example.com/path",
                     comment: "URL rule value placeholder for URL (host + path) match")
+            case .sourceApp:
+                return NSLocalizedString("sidebar.urlRulesEditor.matchValue.appPlaceholder", value: "com.tinyspeck.slackmacgap",
+                    comment: "URL rule value placeholder for App match: an example Mac app bundle ID")
             }
         }
 
@@ -555,6 +564,16 @@ struct URLRulesEditor: View {
         /// its own mode requires. An input that reduces to nothing (e.g. a
         /// bare "*.") yields an empty host, which `save()` drops.
         func encode(value: String) -> (host: String, pathPrefix: String?) {
+            // An App rule stores a bundle id, not a host: drop a pasted
+            // "app:" prefix and any character a bundle id cannot contain.
+            if self == .sourceApp {
+                var bundleId = value
+                if let parsed = SpaceRoutingRule.sourceAppBundleId(fromHost: bundleId) {
+                    bundleId = parsed
+                }
+                bundleId.removeAll { $0.isWhitespace || $0 == "/" || $0 == ":" }
+                return (SpaceRoutingRule.sourceAppHost(bundleId: bundleId), nil)
+            }
             var work = value
             if let scheme = work.range(of: "://") {
                 work = String(work[scheme.upperBound...])
@@ -588,7 +607,7 @@ struct URLRulesEditor: View {
             case .domainContains:
                 let needle = work.trimmingCharacters(in: CharacterSet(charactersIn: "*"))
                 return (needle.isEmpty ? "" : "*\(needle)*", nil)
-            case .url:
+            case .url, .sourceApp:
                 return (work, nil)  // unreachable — handled above
             }
         }
@@ -611,6 +630,10 @@ struct URLRulesEditor: View {
         /// reason the matchers do: a needle starting with "." (e.g.
         /// "*.git.*") also carries the "*." prefix.
         static func decode(host: String, pathPrefix: String?) -> (MatchType, String) {
+            if (pathPrefix ?? "").isEmpty,
+               let bundleId = SpaceRoutingRule.sourceAppBundleId(fromHost: host) {
+                return (.sourceApp, bundleId)
+            }
             if let path = pathPrefix, !path.isEmpty {
                 return (.url, host + path)
             }
@@ -1023,6 +1046,8 @@ private final class RuleCellView: NSTableCellView, NSTextFieldDelegate {
 
     private let matchTypePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let valueField = NSTextField()
+    /// Shown only for App rules: lists running apps to fill the bundle id.
+    private let appPickerButton = NSButton()
     private let deleteButton = NSButton()
     private let openInLabel = NSTextField(labelWithString:
         NSLocalizedString("sidebar.urlRulesEditor.targetSpaceLabel", value: "Open in", comment: "Leading label for a URL rule's destination picker"))
@@ -1046,6 +1071,18 @@ private final class RuleCellView: NSTableCellView, NSTextFieldDelegate {
         valueField.cell?.isScrollable = true
         valueField.delegate = self
 
+        let appPickerTitle = NSLocalizedString("sidebar.urlRulesEditor.appPicker.tooltip",
+            value: "Choose a running app",
+            comment: "Tooltip for the button beside an App URL rule's value field that lists running Mac apps to pick a bundle ID from")
+        appPickerButton.image = NSImage(systemSymbolName: "app.badge",
+                                        accessibilityDescription: appPickerTitle)
+        appPickerButton.isBordered = false
+        appPickerButton.contentTintColor = .secondaryLabelColor
+        appPickerButton.target = self
+        appPickerButton.action = #selector(appPickerClicked)
+        appPickerButton.toolTip = appPickerTitle
+        appPickerButton.isHidden = true
+
         deleteButton.image = NSImage(systemSymbolName: "trash", accessibilityDescription:
             NSLocalizedString("sidebar.urlRulesEditor.removeRuleButton.accessibilityLabel", value: "Remove rule", comment: "Tooltip for remove-rule button"))
         deleteButton.isBordered = false
@@ -1060,7 +1097,7 @@ private final class RuleCellView: NSTableCellView, NSTextFieldDelegate {
         targetPopup.target = self
         targetPopup.action = #selector(targetChanged)
 
-        let line1 = NSStackView(views: [matchTypePopup, valueField, deleteButton])
+        let line1 = NSStackView(views: [matchTypePopup, valueField, appPickerButton, deleteButton])
         line1.orientation = .horizontal
         line1.spacing = 10
         line1.alignment = .centerY
@@ -1086,6 +1123,7 @@ private final class RuleCellView: NSTableCellView, NSTextFieldDelegate {
         NSLayoutConstraint.activate([
             matchTypePopup.widthAnchor.constraint(equalToConstant: 150),
             deleteButton.widthAnchor.constraint(equalToConstant: 22),
+            appPickerButton.widthAnchor.constraint(equalToConstant: 22),
             vstack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             vstack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             vstack.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -1103,6 +1141,7 @@ private final class RuleCellView: NSTableCellView, NSTextFieldDelegate {
         }
         valueField.stringValue = row.value
         valueField.placeholderString = row.matchType.placeholder
+        appPickerButton.isHidden = row.matchType != .sourceApp
 
         let menu = NSMenu()
         for space in spaces {
@@ -1150,7 +1189,45 @@ private final class RuleCellView: NSTableCellView, NSTextFieldDelegate {
     @objc private func matchTypeChanged() {
         let type = Self.matchTypes[matchTypePopup.indexOfSelectedItem]
         valueField.placeholderString = type.placeholder
+        appPickerButton.isHidden = type != .sourceApp
         onMatchTypeChange?(type)
+    }
+
+    /// Pops up the regular (Dock) apps running now, excluding Phi, sorted by
+    /// name; choosing one fills the value field with its bundle id.
+    @objc private func appPickerClicked() {
+        let ownBundleId = Bundle.main.bundleIdentifier
+        let apps = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != nil
+                && $0.bundleIdentifier != ownBundleId }
+            .sorted {
+                ($0.localizedName ?? "").localizedStandardCompare($1.localizedName ?? "")
+                    == .orderedAscending
+            }
+        let menu = NSMenu()
+        for app in apps {
+            guard let bundleId = app.bundleIdentifier else { continue }
+            let name = app.localizedName ?? bundleId
+            let item = NSMenuItem(title: "\(name) \u{2014} \(bundleId)",
+                                  action: #selector(appPicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = bundleId
+            if let icon = app.icon?.copy() as? NSImage {
+                icon.size = NSSize(width: 16, height: 16)
+                item.image = icon
+            }
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil,
+                   at: NSPoint(x: 0, y: appPickerButton.isFlipped
+                                ? appPickerButton.bounds.height + 4 : -4),
+                   in: appPickerButton)
+    }
+
+    @objc private func appPicked(_ sender: NSMenuItem) {
+        guard let bundleId = sender.representedObject as? String else { return }
+        valueField.stringValue = bundleId
+        onValueChange?(bundleId)
     }
 
     @objc private func targetChanged() {

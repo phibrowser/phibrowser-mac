@@ -2221,6 +2221,12 @@ written" restart window falls on them.
   `urlRuleChangesPublisher()` (debounced in the store, deduplicated on value
   snapshots), never through the UI publisher. The coordinator subscribes with a
   bare sink and tears the subscription down with the engine.
+- An App rule ([URL rules](url-rules.md)) is an ordinary rule whose `host` is
+  `app:<bundle id>`; the wire format and schema are unchanged. Only the Mac
+  client evaluates it, for external opens, and it is never pushed to Chromium.
+  The inbound host refusal accepts that one colon (`URLRuleKind.isSourceAppHost`).
+  Clients that predate App rules refuse the host as `malformedHost` and skip
+  the entity every round, so they neither show nor route it.
 
 ## Source and verification
 

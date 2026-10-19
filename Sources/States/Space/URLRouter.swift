@@ -17,6 +17,11 @@ import Foundation
 /// The matching itself lives in `URLPatternMatcher`, shared with Reader
 /// View's site-rule table. This type owns only the Space-specific part:
 /// which rules to consider and what to return.
+///
+/// App rules (`SpaceRoutingRule.sourceAppBundleId != nil`, host
+/// `app:<bundle id>`) are Swift-only: the URL matcher skips them explicitly,
+/// they are never pushed to Chromium, and only `matchingSourceAppRule`
+/// evaluates them, for external opens. See docs/url-rules.md.
 enum URLRouter {
 
     /// One rule's comparison inputs — the three things the C++
@@ -81,6 +86,8 @@ enum URLRouter {
 
         var best: (rule: SpaceRoutingRule, candidate: Candidate)?
         for rule in rules {
+            // App rules match a sender application, never a URL.
+            guard rule.sourceAppBundleId == nil else { continue }
             guard URLPatternMatcher.hostMatches(pattern: rule.host,
                                                 host: target.host) else { continue }
             guard URLPatternMatcher.pathMatches(prefix: rule.pathPrefix,
@@ -91,6 +98,33 @@ enum URLRouter {
             // comparison.
             let score = (base.0, base.1, -rule.sortOrder)
             let candidate = Candidate(specificity: score, tieBreakKey: tieBreakKey(rule), ruleId: ruleId(rule))
+            if best == nil || isMoreSpecific(candidate, best!.candidate) {
+                best = (rule, candidate)
+            }
+        }
+        return best?.rule
+    }
+
+    /// Returns the App rule for an external open sent by `bundleId`, or nil.
+    /// Bundle ids compare case-insensitively. Soft-deleted rules never match.
+    /// Several matching rules are ordered by lower `sortOrder`, then by the
+    /// same account-level tie-break `isMoreSpecific` applies to URL rules.
+    static func matchingSourceAppRule(
+        bundleId: String,
+        rules: [SpaceRoutingRule],
+        tieBreakKey: (SpaceRoutingRule) -> String = {
+            SpaceManager.shared.ruleTieBreakKey(forTargetSpaceId: $0.spaceId)
+        },
+        ruleId: (SpaceRoutingRule) -> String = { $0.syncId ?? $0.id }
+    ) -> SpaceRoutingRule? {
+        let wanted = bundleId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !wanted.isEmpty else { return nil }
+        var best: (rule: SpaceRoutingRule, candidate: Candidate)?
+        for rule in rules where rule.deletedDate == nil && rule.sourceAppBundleId == wanted {
+            // Host and path components are equal for every App rule, so only
+            // the negated sortOrder and the final keys decide.
+            let candidate = Candidate(specificity: (0, 0, -rule.sortOrder),
+                                      tieBreakKey: tieBreakKey(rule), ruleId: ruleId(rule))
             if best == nil || isMoreSpecific(candidate, best!.candidate) {
                 best = (rule, candidate)
             }

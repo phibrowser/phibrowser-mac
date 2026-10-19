@@ -115430,6 +115430,28 @@
         }
       }
     },
+    "sync.pairing.stepBar.confirm" : {
+      "comment" : "Sync setup step bar - label of the step that confirms replacing this Mac's data with the account's",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm"
+          }
+        }
+      }
+    },
+    "sync.pairing.stepBar.method" : {
+      "comment" : "Sync setup step bar - label of the step that chooses how this Mac joins the account's data",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync method"
+          }
+        }
+      }
+    },
     "sync.pairing.stepBar.position" : {
       "comment" : "Sync setup step bar - VoiceOver label; %1$d is the current step, %2$d the step count, %3$@ the step name",
       "localizations" : {

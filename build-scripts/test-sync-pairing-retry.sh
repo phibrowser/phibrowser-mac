@@ -23,6 +23,7 @@ rows = section('Sources/Sync/Keys/UI/KeyLayerViewModel.swift', '    func allRows
 PY
 xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/modules" \
   "$task_root/Sources/Sync/Keys/UI/PairingWizardViewModel.swift" \
+  "$task_root/Sources/Sync/Keys/UI/PairingFlowPlan.swift" \
   "$task_root/Sources/Sync/Keys/UI/SpacePairingModel.swift" \
   "$task_root/Sources/Sync/Keys/UI/SpaceOverwriteDiff.swift" \
   "$task_root/Sources/Sync/Keys/ProfileKeyManager.swift" \

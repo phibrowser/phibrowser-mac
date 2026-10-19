@@ -324,6 +324,43 @@ existing row from being created again, and a deletion of such a Space arriving
 from the account is applied); Chromium keeps syncing the mapped Profiles for the
 first 15 seconds; the reason is per pass, not per Profile.
 
+### Pairing page plan
+
+After both loads succeed, the wizard decides once which pages to show
+(`PairingFlowPlan`, a pure function of the loaded candidates and the preview).
+A page shows only when it asks the user something:
+
+| Page | Shown when |
+| --- | --- |
+| Profiles | A non-default local Profile is unmapped; or the local Default is unmapped, has no readable account default to be fixed to, and any unclaimed account Profile exists (readable or not: an unreadable one may be the account default, so the Default is never registered without the page); or a readable unclaimed account Profile cannot be created on this Mac. With an incomplete preview, also whenever the page would list anything |
+| Spaces | A non-default pairable local Space exists. With an incomplete preview, also when the Profiles page would list nothing |
+
+- A brand-new account (created by this flow, a complete preview, no account
+  Profiles and no account Spaces) shows no page: every local Profile registers
+  and every local Space is added as new.
+- When no page shows, the wizard completes on its own. It shows the submitting
+  status page from the start, and the submission preflight still re-reads the
+  account; there is no exception to "every submission preflight fetches new
+  candidates". An incomplete preview never completes on its own and never
+  decides Profiles automatically.
+- When the Profiles page is hidden, its decisions are automatic: the local
+  Default takes its fixed account default or registers, and every readable
+  unclaimed account Profile is created on this Mac (never the authoritative
+  account default). A Mac with only default data that joins an account with
+  data therefore sees no page, and the account's Profiles and Spaces appear.
+- When the Spaces page is hidden, the Profiles page's primary button is Finish,
+  and Retry after a failed Space step submits again behind the status page.
+- Back from the Spaces page appears only when the Profiles page is shown. A
+  preflight that finds changed candidates, or a failed Profile step, always
+  returns to the Profiles page and adds it to the plan. So does a submission
+  behind the status page that is refused without starting (a superseded or busy
+  session): the status page never stays up with nothing running behind it.
+- The step bar lists only the pages the plan shows, numbered in order. It keeps
+  its height while loading and when no page shows.
+- A "sync method" step (keep and merge, or use the account's data) is planned
+  but disabled; while disabled the plan never shows it and the wizard enters no
+  method page.
+
 ### Profile pairing and the default profile
 
 Each account Profile's key travels in an envelope sealed with the ARK:

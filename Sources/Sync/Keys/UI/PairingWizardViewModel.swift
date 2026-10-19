@@ -6,7 +6,9 @@
 import Combine
 import Foundation
 
-enum PairingWizardStep: Equatable { case profiles, spaces }
+/// The wizard's pages as the step bar names them. `.method` and `.confirm` belong to the "sync method" step,
+/// which no phase enters while `PairingFlowPlan.methodStepEnabled` is false.
+enum PairingWizardStep: Equatable { case method, profiles, spaces, confirm }
 
 /// Two Retry destinations from error. No backToConfirm: resume describes a recomputable destination, either
 /// reload or retained step-2 selections, rather than remembering the source page.
@@ -98,6 +100,14 @@ private final class PreviewRace: @unchecked Sendable {
 final class PairingWizardViewModel: ObservableObject {
     @Published private(set) var phase: PairingWizardPhase = .loading
     @Published private(set) var step: PairingWizardStep = .profiles
+    /// Which pages this load shows; nil until both loads succeed. See PairingFlowPlan.
+    @Published private(set) var plan: PairingFlowPlan?
+
+    /// The pages the step bar lists, in order. Empty while loading and when the wizard completes on its own.
+    var visibleSteps: [PairingWizardStep] { plan?.steps(for: .merge) ?? [] }
+
+    /// Back from the Spaces page exists only when the Profiles page is shown.
+    var canGoBackToProfiles: Bool { plan?.showsProfiles ?? true }
 
     /// Lift step-1 mutable state from ProfilePairingView into bindings (§5.3), allowing the footer to read
     /// allRowsDecided inputs and decisions after moving the primary button.
@@ -161,6 +171,7 @@ final class PairingWizardViewModel: ObservableObject {
         loadedLocals = []
         loadedRemotes = []
         profileDecisions = []
+        plan = nil
         spacesInput = SpacePairingModel.Input(locals: [], accountSpaces: [], localProfileNames: [:], accountProfileNames: [:])
         return true
     }
@@ -234,6 +245,7 @@ final class PairingWizardViewModel: ObservableObject {
         previewSkippedEntityCount = 0
         previewDeletedProfileTagHashes = []
         previewProfileNames = [:]
+        plan = nil
         loadGeneration += 1
         let generation = loadGeneration
         phase = .loading
@@ -284,15 +296,26 @@ final class PairingWizardViewModel: ObservableObject {
                                           controller: controller)
             seedSpaceSelections(controller: controller)
             step = .profiles
-            phase = .profiles(locals: locals, remotes: remotes)
-            if shouldCompleteNewAccount, previewSkippedEntityCount == 0, remotes.isEmpty, accountSpaces.isEmpty {
-                continueToSpaces()
-                addAllAsNew()
-                await finish(controller: controller)
-            } else if locals.isEmpty, remotes.allSatisfy({ $0.name == nil }) {
-                continueToSpaces()
+            let plan = makePlan(locals: locals, remotes: remotes, accountSpaces: accountSpaces,
+                                controller: controller)
+            self.plan = plan
+            // PR-3: once PairingFlowPlan.methodStepEnabled is true, a plan that shows the method step must
+            // enter `.method` here first, including a method-only plan (which does not auto-complete).
+            if plan.showsProfiles {
+                phase = .profiles(locals: locals, remotes: remotes)
+                logStep()
+            } else {
+                // The hidden Profiles page stands for its automatic decisions: every readable account Profile
+                // nobody claimed is created on this Mac (docs/sync.md, "Pairing page plan").
+                profileRemoteChoices = PairingFlowPlan.autoRemoteChoices(
+                    locals: locals, remotes: remotes, selections: profileSelections)
+                if plan.autoCompletes {
+                    await submitWithoutSpacesPage(controller: controller)
+                } else {
+                    continueToSpaces()      // Logs the step.
+                    if step != .spaces { revealProfilesPage() }
+                }
             }
-            logStep()
         }
     }
 
@@ -301,7 +324,20 @@ final class PairingWizardViewModel: ObservableObject {
     /// Continue only validates, freezes decisions and moves to spaces. No network, mapping writes or
     /// enrollment changes.
     func continueToSpaces() {
-        guard sessionActive, !isPreparing, !isApplying, profileRowsDecided else { return }
+        guard canLeaveProfiles else { return }
+        freezeProfileDecisions()
+        step = .spaces
+        phase = .spaces(spacesInput)
+        logStep()
+    }
+
+    /// Continue's preconditions: decided rows, no submission in progress.
+    private var canLeaveProfiles: Bool {
+        sessionActive && !isPreparing && !isApplying && profileRowsDecided
+    }
+
+    /// Freezes the Profile decisions and recomputes Space suggestions from them, without changing the page.
+    private func freezeProfileDecisions() {
         profileDecisions = profileModel.decisions()
         var profileMappings = mappedProfileUuids
         for decision in profileDecisions {
@@ -311,13 +347,18 @@ final class PairingWizardViewModel: ObservableObject {
         for id in explicitSpaceChoices { base[id] = spaceSelections[id] }
         spaceSelections = SpacePairingModel(input: spacesInput, selections: base)
             .suggestingSameNames(profileMappings: profileMappings, excluding: explicitSpaceChoices)
-        step = .spaces
-        phase = .spaces(spacesInput)
-        logStep()
+    }
+
+    /// The Profiles page's primary action: Continue to the Spaces page, or Finish when that page is hidden.
+    func continueFromProfiles(controller: SyncKeyController) async {
+        guard plan?.showsSpaces == false else { continueToSpaces(); return }
+        guard canLeaveProfiles else { return }
+        await submitWithoutSpacesPage(controller: controller)
     }
 
     func backToProfiles() {
-        guard !isPreparing, !isApplying else { return }
+        // A hidden Profiles page is never navigated to; Back is not offered then (canGoBackToProfiles).
+        guard !isPreparing, !isApplying, canGoBackToProfiles else { return }
         step = .profiles
         phase = .profiles(locals: loadedLocals, remotes: loadedRemotes)
         logStep()
@@ -361,6 +402,8 @@ final class PairingWizardViewModel: ObservableObject {
 
     /// Confirmation exits. Back restores nothing because spaceSelections was never changed.
     func backFromConfirmation() {
+        // PR-3: once PairingFlowPlan.methodStepEnabled is true, Back from a plan without a Spaces page must
+        // return to `.method` (or the first shown page), never to a hidden Spaces page.
         guard !isPreparing, !isApplying else { return }
         phase = .spaces(spacesInput)
     }
@@ -378,6 +421,11 @@ final class PairingWizardViewModel: ObservableObject {
         case .backToSpaces:
             // Do not rerun start here: it clears spacesInput and step-2 assignments. Idempotent mapping writes
             // do not preserve user selections.
+            guard plan?.showsSpaces != false else {
+                // No Spaces page to return to: submit the same decisions again behind the status page.
+                await submitWithoutSpacesPage(controller: controller)
+                return
+            }
             phase = .spaces(spacesInput)
         }
     }
@@ -411,6 +459,7 @@ final class PairingWizardViewModel: ObservableObject {
                 loadedLocals = locals
                 loadedRemotes = remotes
                 reseedProfileSelections(locals: locals, remotes: remotes)
+                plan = plan?.revealingProfiles()
                 phase = .profiles(locals: locals, remotes: remotes)
             } else {
                 // Candidate reload also failed; Retry must rerun both loads.
@@ -550,6 +599,9 @@ final class PairingWizardViewModel: ObservableObject {
             spacesInput = fresh
             seedSpaceSelections(controller: controller)
             profileDecisions = []
+            // Changed data is reviewed from the Profiles page, even when the fresh plan would hide it.
+            plan = makePlan(locals: locals, remotes: remotes, accountSpaces: spaces.spaces,
+                            controller: controller).revealingProfiles()
             step = .profiles
             phase = .profiles(locals: locals, remotes: remotes)
             return false
@@ -682,11 +734,72 @@ final class PairingWizardViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Page plan
+
+    private func makePlan(locals: [PairingLocal], remotes: [RemoteProfile],
+                          accountSpaces: [PhiAccountSpaceSummary],
+                          controller: SyncKeyController) -> PairingFlowPlan {
+        let previewComplete = previewSkippedEntityCount == 0
+        let facts = PairingFlowFacts(
+            isBrandNewAccount: PairingFlowPlan.isBrandNewAccount(
+                createdByThisFlow: shouldCompleteNewAccount, previewComplete: previewComplete,
+                remotes: remotes, accountSpaces: accountSpaces),
+            previewComplete: previewComplete,
+            // No bookmark / pinned tab / URL rule inventory exists yet, so that part is unknown.
+            localHasReplaceableData: PairingFlowPlan.localHasReplaceableData(
+                localProfileIds: controller.localProfiles().map(\.profileId),
+                localSpaces: spacesInput.locals, ownedItemsPresent: nil),
+            profilesNeedDecision: PairingFlowPlan.profilesNeedDecision(locals: locals, remotes: remotes),
+            profilesHaveRows: PairingFlowPlan.profilesHaveRows(locals: locals, remotes: remotes),
+            spacesNeedDecision: PairingFlowPlan.spacesNeedDecision(spacesInput))
+        let plan = PairingFlowPlan.make(facts)
+        // §9.1: booleans only.
+        AppLogInfo("[phi-sync] pairing wizard plan: profiles=\(plan.showsProfiles) spaces=\(plan.showsSpaces) "
+                   + "auto=\(plan.autoCompletes) new_account=\(facts.isBrandNewAccount) "
+                   + "complete=\(previewComplete)")
+        return plan
+    }
+
+    /// Submits with the Spaces page hidden: the plan auto-completes, or the Profiles page was the last page.
+    /// The status page shows from the start, including during the preflight in applyDecisions, which runs
+    /// unchanged: every submission re-reads the account before writing anything.
+    private func submitWithoutSpacesPage(controller: SyncKeyController) async {
+        if step != .spaces {
+            // Freezes the Profile decisions (auto or chosen) the same way Continue does, without publishing a
+            // Spaces page that is not part of the plan.
+            guard canLeaveProfiles else { revealProfilesPage(); return }
+            freezeProfileDecisions()
+            step = .spaces
+        }
+        // Brand-new account only: its hidden Space rows are added as new. Otherwise there are no rows.
+        addAllAsNew()
+        phase = .submitting
+        logStep()
+        await finish(controller: controller)
+        // finish and its preflight return without changing the page only when they refuse: a superseded or
+        // busy session. Never leave a status page up with nothing running behind it.
+        guard phase == .submitting, !isApplying, !isPreparing else { return }
+        // §9.1: booleans only.
+        AppLogInfo("[phi-sync] pairing wizard: finish refused, revealing profiles "
+                   + "current=\(sessionIsCurrent(controller))")
+        revealProfilesPage()
+    }
+
+    /// Fallback to the Profiles page when a hidden page's automatic decisions could not be used.
+    private func revealProfilesPage() {
+        plan = plan?.revealingProfiles()
+        step = .profiles
+        phase = .profiles(locals: loadedLocals, remotes: loadedRemotes)
+        logStep()
+    }
+
     // MARK: - §9.1 logs (counts and booleans only)
 
     private func logStep() {
         let undecided: Int
         switch step {
+        case .method, .confirm:
+            undecided = 0
         case .profiles:
             let live = profileModel
             undecided = loadedRemotes.filter {
@@ -696,9 +809,18 @@ final class PairingWizardViewModel: ObservableObject {
         case .spaces:
             undecided = spaceModel.rows.count - spaceModel.decisions().count
         }
-        AppLogInfo("[phi-sync] pairing wizard: step=\(step == .profiles ? "profiles" : "spaces") "
+        AppLogInfo("[phi-sync] pairing wizard: step=\(Self.logName(for: step)) "
                    + "locals=\(spacesInput.locals.count) "
                    + "account_spaces=\(spacesInput.accountSpaces.count) undecided=\(undecided)")
+    }
+
+    private static func logName(for step: PairingWizardStep) -> String {
+        switch step {
+        case .method: return "method"
+        case .profiles: return "profiles"
+        case .spaces: return "spaces"
+        case .confirm: return "confirm"
+        }
     }
 
     private func logApplied(spaceMaps: Int, spaceMints: Int, ok: Bool) {

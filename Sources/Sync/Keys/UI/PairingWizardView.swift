@@ -35,7 +35,7 @@ struct PairingWizardView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PairingStepBar(step: viewModel.step)
+            PairingStepBar(steps: viewModel.visibleSteps, current: viewModel.step)
             Divider()
             content
                 .disabled(viewModel.isPreparing || viewModel.isApplying)
@@ -355,8 +355,11 @@ struct PairingWizardView: View {
     private var actions: some View {
         switch viewModel.phase {
         case .profiles:
-            Button(NSLocalizedString("sync.pairing.continue", value: "Continue", comment: "Sync setup - button that moves from profile matching to Space matching")) {
-                viewModel.continueToSpaces()
+            // Finish when the Spaces page is hidden: Continue would lead nowhere.
+            Button(viewModel.plan?.showsSpaces == false
+                   ? NSLocalizedString("sync.pairing.finish", value: "Finish", comment: "Sync setup - button that applies the chosen matches")
+                   : NSLocalizedString("sync.pairing.continue", value: "Continue", comment: "Sync setup - button that moves from profile matching to Space matching")) {
+                Task { await viewModel.continueFromProfiles(controller: controller) }
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
@@ -366,12 +369,14 @@ struct PairingWizardView: View {
             .disabled(!viewModel.profileRowsDecided
                       || viewModel.phase == .loading || viewModel.phase == .submitting)
         case .spaces:
-            Button(NSLocalizedString("sync.pairing.back",
-                                     value: "Back",
-                                     comment: "Sync setup - button that returns to the previous step")) {
-                viewModel.backToProfiles()
+            if viewModel.canGoBackToProfiles {
+                Button(NSLocalizedString("sync.pairing.back",
+                                         value: "Back",
+                                         comment: "Sync setup - button that returns to the previous step")) {
+                    viewModel.backToProfiles()
+                }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.bordered)
             Button(NSLocalizedString("sync.pairing.finish", value: "Finish", comment: "Sync setup - button that applies the chosen matches")) {
                 Task { await viewModel.finish(controller: controller) }
             }

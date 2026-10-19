@@ -10,6 +10,7 @@ final class PairingWizardViewModelTests: XCTestCase {
     typealias FakeAPI = AccountKeyManagerTests.FakeAPI
     typealias FakeDeviceKeyProvider = AccountKeyManagerTests.FakeDeviceKeyProvider
     typealias MemoryMappingStore = ProfileKeyManagerTests.MemoryMappingStore
+    typealias FakeProfileCreator = ProfileAutoCreateTests.FakeProfileCreator
 
     /// Ordering fake: record joinPairingPending during each mapping write. This directly
     /// asserts that the gate stays closed until every mapping is written, rather than
@@ -114,15 +115,20 @@ final class PairingWizardViewModelTests: XCTestCase {
         let hold = PreviewHold()
         var previews = 0
         let remote = account("acct-1", name: "Remote")
+        // A second local Profile keeps the Profiles page in the plan, so Back below is refused by the
+        // preflight, not by a hidden page.
         let (wizard, controller, store, _) = try await makeWizard(
-            locals: [local("LOCAL-1", name: "Local")], accountSpaces: [remote], preview: {
+            locals: [local("LOCAL-1", name: "Local")], accountSpaces: [remote],
+            profiles: Self.profilesWithExtra, preview: {
                 previews += 1
                 if previews > 1 { await hold.enter() }
                 return .success(.init(spaces: [remote], skippedEntityCount: 0))
             })
         await wizard.start(controller: controller)
+        guard case .profiles = wizard.phase else { return XCTFail("expected .profiles") }
         wizard.continueToSpaces()
         wizard.addAllAsNew()
+        XCTAssertTrue(wizard.canGoBackToProfiles)
         let before = wizard.spaceSelections
         let phase = wizard.phase
         let submit = Task { await wizard.finish(controller: controller) }
@@ -139,9 +145,20 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertTrue(store.map.isEmpty)
     }
 
+    /// The only local Profile unless a case passes more. With just the Default and nothing to choose for it,
+    /// the page plan hides the Profiles page.
+    nonisolated private static let defaultOnlyProfiles: [(profileId: String, displayName: String)] =
+        [(profileId: "Default", displayName: "Personal")]
+    /// A second local Profile always needs a decision, so the Profiles page shows.
+    nonisolated private static let profilesWithExtra: [(profileId: String, displayName: String)] =
+        defaultOnlyProfiles + [(profileId: "Profile 2", displayName: "Reading")]
+
     private func makeWizard(
         locals: [PhiLocalSpace],
         accountSpaces: [PhiAccountSpaceSummary],
+        profiles: [(profileId: String, displayName: String)] = PairingWizardViewModelTests.defaultOnlyProfiles,
+        profileCreator: FakeProfileCreator? = nil,
+        liveLocals: (() -> [PhiLocalSpace])? = nil,
         preview: (() async -> Result<PhiAccountSpacePreview, PhiSpacePreviewError>)? = nil,
         loadDeadline: Duration = PairingWizardViewModel.defaultLoadDeadline
     ) async throws -> (PairingWizardViewModel, SyncKeyController, LedgerSpaceMappingStore, FakeAPI) {
@@ -158,13 +175,15 @@ final class PairingWizardViewModelTests: XCTestCase {
                                              deviceKeyProvider: FakeDeviceKeyProvider()),
             profileKeys: profileKeys,
             spaceKeys: SpaceSyncMappingManager(store: spaceStore),
-            localProfilesProvider: { [(profileId: "Default", displayName: "Personal")] },
+            localProfilesProvider: { profiles },
             notifyChromium: {},
+            // Never the real ProfileManager: an automatic createLocal must not touch Chromium.
+            profileCreator: profileCreator ?? FakeProfileCreator(),
             isPairingComplete: { gate.isPaired })
         let wizard = PairingWizardViewModel(
             keyLayer: KeyLayerViewModel(manager: manager),
             previewAccountSpaces: preview ?? { .success(.init(spaces: accountSpaces, skippedEntityCount: 0)) },
-            pairableLocalSpaces: { locals },
+            pairableLocalSpaces: liveLocals ?? { locals },
             themeDisplayName: { _ in nil },
             loadDeadline: loadDeadline,
             gate: gate)
@@ -176,11 +195,13 @@ final class PairingWizardViewModelTests: XCTestCase {
     func testTheHappyPathWalksLoadingProfilesSpacesSubmittingDone() async throws {
         let (wizard, controller, store, _) = try await makeWizard(
             locals: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Work")],
-            accountSpaces: [account("acct-1", name: "Work")])
+            accountSpaces: [account("acct-1", name: "Work")],
+            profiles: Self.profilesWithExtra)
 
         await wizard.start(controller: controller)
         guard case .profiles = wizard.phase else { return XCTFail("expected .profiles") }
         XCTAssertEqual(wizard.step, .profiles)
+        XCTAssertEqual(wizard.visibleSteps, [.profiles, .spaces])
 
         wizard.continueToSpaces()
         guard case .spaces = wizard.phase else { return XCTFail("expected .spaces") }
@@ -409,12 +430,9 @@ final class PairingWizardViewModelTests: XCTestCase {
         let (wizard, controller, store, api) = try await makeWizard(
             locals: [local("LOCAL-1", name: "Work")], accountSpaces: [account("acct-1", name: "Work")])
         await wizard.start(controller: controller)
-        guard case .profiles(let firstLocals, let firstRemotes) = wizard.phase else {
-            return XCTFail("expected .profiles")
-        }
-        XCTAssertEqual(firstLocals.map(\.profileId), ["Default"])
-        XCTAssertTrue(firstRemotes.isEmpty)
-        wizard.continueToSpaces()
+        // Only the Default against an empty account: nothing to choose, so the Profiles page is hidden.
+        guard case .spaces = wizard.phase else { return XCTFail("expected .spaces") }
+        XCTAssertEqual(wizard.visibleSteps, [.spaces])
         wizard.assign(.existing(syncUuid: "acct-1"), to: "LOCAL-1")
 
         let remoteEnvelope = try ProfileKeyManager.sealProfilePayload(
@@ -433,6 +451,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         }
         XCTAssertEqual(reloaded.map(\.uuid), ["uuid-remote"], "Render the reloaded candidate table")
         XCTAssertEqual(wizard.step, .profiles)
+        XCTAssertEqual(wizard.visibleSteps, [.profiles, .spaces], "The step bar lists the page now shown")
         XCTAssertTrue(!gate.isPaired, "The gate must stay closed")
         XCTAssertTrue(store.map.isEmpty, "No Space mapping writes")
     }
@@ -600,9 +619,10 @@ final class PairingWizardViewModelTests: XCTestCase {
         let calls = await hold.calls
         XCTAssertEqual(calls, 1, "The first load is blocked in preview")
 
-        // Second load, as used by gate re-drive: preview passes and the load completes.
+        // Second load, as used by gate re-drive: preview passes and the load completes. Only the Default
+        // exists, so the plan hides the Profiles page and the load lands on Spaces.
         await wizard.start(controller: controller)
-        guard case .profiles = wizard.phase else { return XCTFail("expected .profiles") }
+        guard case .spaces = wizard.phase else { return XCTFail("expected .spaces") }
         wizard.continueToSpaces()
         wizard.assign(.existing(syncUuid: "acct-1"), to: "LOCAL-1")
 
@@ -625,8 +645,28 @@ final class PairingWizardViewModelTests: XCTestCase {
         let afterLoad = wizard.keyLayer.phase
         wizard.continueToSpaces()
         wizard.assign(.existing(syncUuid: "acct-1"), to: "LOCAL-1")
+        // The page plan's navigation: Back to a hidden Profiles page is a no-op, not a reload.
+        XCTAssertFalse(wizard.canGoBackToProfiles)
+        wizard.backToProfiles()
+        guard case .spaces = wizard.phase else { return XCTFail("Back never opens a hidden Profiles page") }
+        XCTAssertEqual(wizard.visibleSteps, [.spaces])
         XCTAssertEqual(wizard.keyLayer.phase, afterLoad,
                        "The wizard only reads keyLayer.phase throughout the interaction")
+    }
+
+    /// The Profiles page's Continue reaches the same frozen decisions without touching keyLayer.phase.
+    func testContinuingFromTheProfilesPageNeverWritesKeyLayerPhase() async throws {
+        let (wizard, controller, _, _) = try await makeWizard(
+            locals: [local("LOCAL-1", name: "Work")], accountSpaces: [account("acct-1", name: "Work")],
+            profiles: Self.profilesWithExtra)
+        await wizard.start(controller: controller)
+        guard case .profiles = wizard.phase else { return XCTFail("expected .profiles") }
+        let afterLoad = wizard.keyLayer.phase
+        await wizard.continueFromProfiles(controller: controller)
+        guard case .spaces = wizard.phase else { return XCTFail("expected .spaces") }
+        wizard.backToProfiles()
+        guard case .profiles = wizard.phase else { return XCTFail("Back returns to a shown Profiles page") }
+        XCTAssertEqual(wizard.keyLayer.phase, afterLoad)
     }
 
     // MARK: - 8. Step 2 Profile labels (§5.2 three-level resolution)
@@ -812,8 +852,10 @@ final class PairingWizardViewModelTests: XCTestCase {
     /// with the renamed Profile, so the local Default still preselects it (two
     /// Macs in different languages, 2026-10-14).
     func testAnEntityNamedAccountProfileKeepsItsDefaultFlag() async throws {
+        // A second local Profile keeps the Profiles page in view; with only the Default this account would
+        // auto-complete.
         let (wizard, controller, _, api) = try await makeWizard(
-            locals: [], accountSpaces: [], preview: {
+            locals: [], accountSpaces: [], profiles: Self.profilesWithExtra, preview: {
                 .success(.init(spaces: [], skippedEntityCount: 0,
                                profileNames: ["uuid-default": "Mein Phi", "uuid-plain": "Work"]))
             })
@@ -828,6 +870,238 @@ final class PairingWizardViewModelTests: XCTestCase {
         guard case .profiles(_, let remotes) = wizard.phase else { return XCTFail("expected .profiles, got \(wizard.phase)") }
         XCTAssertEqual(Dictionary(uniqueKeysWithValues: remotes.map { ($0.uuid, $0.isDefault) }),
                        ["uuid-default": true, "uuid-plain": false])
-        XCTAssertEqual(remotes.first(where: { $0.uuid == "uuid-default" })?.name, "您的 Phi")
+        XCTAssertEqual(remotes.first(where: { $0.uuid == "uuid-default" })?.name, "Mein Phi")
+    }
+
+    // MARK: - Page plan (docs/sync.md, "Pairing page plan")
+
+    /// Seals the account's default Profile and one ordinary Profile into the fake registry.
+    private func seedAccountWithDefaultAndWork(_ api: FakeAPI, controller: SyncKeyController) throws {
+        let ark = try XCTUnwrap(controller.manager.currentARK)
+        api.profileEnvelopes["uuid-default"] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(repeating: 1, count: 32), name: "Your Phi", isDefault: true, ark: ark)
+        api.profileEnvelopes["uuid-work"] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(repeating: 2, count: 32), name: "Work", isDefault: false, ark: ark)
+    }
+
+    /// A Mac with only default data joins an account with data: no page is shown, the unclaimed account
+    /// Profile is created on this Mac, and the wizard completes.
+    func testADefaultOnlyMacAutoCompletesAndCreatesTheUnclaimedAccountProfiles() async throws {
+        let creator = FakeProfileCreator()
+        let (wizard, controller, store, api) = try await makeWizard(
+            locals: [local(LocalStore.defaultSpaceId, name: "Default")],
+            accountSpaces: [account("acct-1", name: "Work", profileUuid: "uuid-work")],
+            profileCreator: creator)
+        try seedAccountWithDefaultAndWork(api, controller: controller)
+
+        var seen: [PairingWizardPhase] = []
+        let cancellable = wizard.$phase.sink { seen.append($0) }
+        await wizard.start(controller: controller)
+        cancellable.cancel()
+
+        XCTAssertEqual(wizard.phase, .done)
+        XCTAssertEqual(wizard.plan?.autoCompletes, true)
+        XCTAssertEqual(wizard.visibleSteps, [], "The step bar lists no page")
+        XCTAssertFalse(seen.contains { phase in
+            switch phase {
+            case .profiles, .spaces, .confirmOverwrite: return true
+            default: return false
+            }
+        }, "No decision page is shown")
+        XCTAssertEqual(creator.createCalls, ["Work"], "The unclaimed account Profile is created on this Mac")
+        XCTAssertEqual(controller.localProfileId(forGlobalUuid: "uuid-work"), "P1")
+        XCTAssertEqual(controller.localProfileId(forGlobalUuid: "uuid-default"), "Default",
+                       "The Default takes the account default")
+        XCTAssertTrue(store.map.isEmpty, "The default Space needs no mapping")
+        XCTAssertTrue(gate.isPaired)
+    }
+
+    /// The status page shows from the start of an automatic completion, including the preflight that
+    /// re-reads the account before anything is written.
+    func testAutoCompletionShowsTheStatusPageDuringItsPreflight() async throws {
+        let hold = PreviewHold()
+        var previews = 0
+        let (wizard, controller, _, api) = try await makeWizard(
+            locals: [local(LocalStore.defaultSpaceId, name: "Default")], accountSpaces: [],
+            preview: {
+                previews += 1
+                if previews > 1 { await hold.enter() }
+                return .success(.init(spaces: [], skippedEntityCount: 0))
+            })
+        try seedAccountWithDefaultAndWork(api, controller: controller)
+
+        let run = Task { await wizard.start(controller: controller) }
+        var spins = 0
+        while await hold.calls == 0, spins < 10_000 { spins += 1; await Task.yield() }
+        let calls = await hold.calls
+        XCTAssertEqual(calls, 1, "The preflight preview is parked")
+        XCTAssertEqual(wizard.phase, .submitting, "The preflight runs behind the status page")
+        XCTAssertTrue(wizard.isPreparing, "The preflight is kept, not skipped")
+        XCTAssertFalse(gate.isPaired, "Nothing is committed before the preflight passes")
+
+        await hold.release()
+        await run.value
+        XCTAssertEqual(wizard.phase, .done)
+    }
+
+    /// Only the Default here, nothing to choose for it, and a Space to decide: the Profiles page is skipped
+    /// and Back is not offered.
+    func testTheProfilesPageIsSkippedWhenOnlyTheDefaultProfileExists() async throws {
+        let (wizard, controller, _, _) = try await makeWizard(
+            locals: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Work")],
+            accountSpaces: [account("acct-1", name: "Work")])
+        await wizard.start(controller: controller)
+
+        guard case .spaces = wizard.phase else { return XCTFail("expected .spaces, got \(wizard.phase)") }
+        XCTAssertEqual(wizard.step, .spaces)
+        XCTAssertEqual(wizard.visibleSteps, [.spaces])
+        XCTAssertFalse(wizard.canGoBackToProfiles)
+        wizard.backToProfiles()
+        guard case .spaces = wizard.phase else { return XCTFail("Back never opens a hidden Profiles page") }
+    }
+
+    /// With the Spaces page hidden, the Profiles page's primary action submits directly.
+    func testTheProfilesPageFinishesWhenTheSpacesPageIsHidden() async throws {
+        let (wizard, controller, _, _) = try await makeWizard(
+            locals: [local(LocalStore.defaultSpaceId, name: "Default")], accountSpaces: [],
+            profiles: Self.profilesWithExtra)
+        await wizard.start(controller: controller)
+        guard case .profiles = wizard.phase else { return XCTFail("expected .profiles") }
+        XCTAssertEqual(wizard.visibleSteps, [.profiles])
+
+        await wizard.continueFromProfiles(controller: controller)
+
+        XCTAssertEqual(wizard.phase, .done)
+        XCTAssertTrue(gate.isPaired)
+    }
+
+    /// An incomplete preview never completes on its own, even when nothing else needs a decision.
+    func testAnIncompletePreviewNeverAutoCompletes() async throws {
+        let (wizard, controller, _, api) = try await makeWizard(
+            locals: [local(LocalStore.defaultSpaceId, name: "Default")], accountSpaces: [],
+            preview: { .success(.init(spaces: [], skippedEntityCount: 1)) })
+        try seedAccountWithDefaultAndWork(api, controller: controller)
+
+        await wizard.start(controller: controller)
+
+        guard case .profiles = wizard.phase else { return XCTFail("expected .profiles, got \(wizard.phase)") }
+        XCTAssertEqual(wizard.plan?.autoCompletes, false)
+        XCTAssertTrue(wizard.profileRemoteChoices.isEmpty, "Nothing is decided automatically")
+        XCTAssertFalse(gate.isPaired)
+    }
+
+    /// A brand-new account (created by this flow, nothing in it yet) shows no page: the status page, then
+    /// done, with the Default registered and every local Space added as new.
+    func testABrandNewAccountAutoCompletesEndToEnd() async throws {
+        let (wizard, controller, store, api) = try await makeWizard(
+            locals: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Work")],
+            accountSpaces: [])
+        wizard.shouldCompleteNewAccount = true
+
+        var seen: [PairingWizardPhase] = []
+        let cancellable = wizard.$phase.sink { seen.append($0) }
+        await wizard.start(controller: controller)
+        cancellable.cancel()
+
+        XCTAssertEqual(wizard.phase, .done)
+        XCTAssertEqual(wizard.visibleSteps, [])
+        XCTAssertTrue(seen.contains(.submitting), "The status page shows")
+        XCTAssertFalse(seen.contains { phase in
+            switch phase {
+            case .profiles, .spaces, .confirmOverwrite: return true
+            default: return false
+            }
+        }, "No decision page is shown")
+        XCTAssertEqual(api.profileEnvelopes.count, 1, "The Default is registered as a new account Profile")
+        XCTAssertNotNil(store.map["LOCAL-1"], "The local Space is added as new")
+        XCTAssertNil(store.map[LocalStore.defaultSpaceId], "The default Space keeps its constant identity")
+        XCTAssertTrue(gate.isPaired)
+    }
+
+    /// A Space-step failure with the Spaces page hidden: Retry submits the same decisions again behind the
+    /// status page and completes, instead of opening a Spaces page that is not in the plan.
+    func testRetryWithTheSpacesPageHiddenSubmitsAgainAndCompletes() async throws {
+        var locals = [local(LocalStore.defaultSpaceId, name: "Default")]
+        let (wizard, controller, _, api) = try await makeWizard(
+            locals: [], accountSpaces: [account("acct-1", name: "Work")], liveLocals: { locals })
+        // The Default registers (a PUT); a local Space edit during it fails the Space step.
+        api.beforePutProfileKey = { [api] in
+            api.beforePutProfileKey = nil
+            locals[0] = self.local(LocalStore.defaultSpaceId, name: "Renamed during apply")
+        }
+
+        await wizard.start(controller: controller)
+        guard case .error(_, .backToSpaces) = wizard.phase else {
+            return XCTFail("expected a Space-step failure, got \(wizard.phase)")
+        }
+        XCTAssertEqual(wizard.plan?.showsSpaces, false)
+        XCTAssertFalse(gate.isPaired)
+
+        locals[0] = local(LocalStore.defaultSpaceId, name: "Default")
+        var seen: [PairingWizardPhase] = []
+        let cancellable = wizard.$phase.sink { seen.append($0) }
+        await wizard.retry(controller: controller)
+        cancellable.cancel()
+
+        XCTAssertEqual(wizard.phase, .done)
+        XCTAssertFalse(seen.contains { if case .spaces = $0 { return true }; return false },
+                       "Retry never opens the hidden Spaces page")
+        XCTAssertEqual(api.profileEnvelopes.count, 1, "The registration is reused, not minted again")
+        XCTAssertTrue(gate.isPaired)
+    }
+
+    /// The account changes while an automatic completion re-reads it: the wizard lands on the Profiles page
+    /// (added to the plan), whose primary action then finishes because the Spaces page stays hidden.
+    func testAPreflightMismatchDuringAutoCompletionLandsOnTheProfilesPage() async throws {
+        var previews = 0
+        let (wizard, controller, _, _) = try await makeWizard(
+            locals: [local(LocalStore.defaultSpaceId, name: "Default")], accountSpaces: [],
+            preview: {
+                previews += 1
+                // A Space appears on another device after the first load.
+                let spaces = previews > 1 ? [self.account("acct-1", name: "Work")] : []
+                return .success(.init(spaces: spaces, skippedEntityCount: 0))
+            })
+
+        await wizard.start(controller: controller)
+
+        guard case .profiles = wizard.phase else { return XCTFail("expected .profiles, got \(wizard.phase)") }
+        XCTAssertEqual(wizard.plan?.showsProfiles, true)
+        XCTAssertEqual(wizard.plan?.showsSpaces, false, "Primary action is Finish")
+        XCTAssertEqual(wizard.visibleSteps, [.profiles])
+        XCTAssertFalse(gate.isPaired)
+
+        await wizard.continueFromProfiles(controller: controller)
+        XCTAssertEqual(wizard.phase, .done)
+        XCTAssertTrue(gate.isPaired)
+    }
+
+    /// A submission behind the status page that is refused without starting (here the enrollment changed
+    /// during the preflight) falls back to the Profiles page instead of a status page with nothing behind it.
+    func testARefusedAutomaticSubmissionFallsBackToTheProfilesPage() async throws {
+        let hold = PreviewHold()
+        var previews = 0
+        let (wizard, controller, _, _) = try await makeWizard(
+            locals: [local(LocalStore.defaultSpaceId, name: "Default")], accountSpaces: [],
+            preview: {
+                previews += 1
+                if previews > 1 { await hold.enter() }
+                return .success(.init(spaces: [self.account("acct-1", name: "Work")], skippedEntityCount: 0))
+            })
+
+        let run = Task { await wizard.start(controller: controller) }
+        var spins = 0
+        while await hold.calls == 0, spins < 10_000 { spins += 1; await Task.yield() }
+        XCTAssertEqual(wizard.phase, .submitting)
+        try gate.beginEnrollment()      // Supersedes this session's enrollment generation.
+        await hold.release()
+        await run.value
+
+        guard case .profiles = wizard.phase else {
+            return XCTFail("expected .profiles, not a hanging status page; got \(wizard.phase)")
+        }
+        XCTAssertEqual(wizard.plan?.showsProfiles, true)
+        XCTAssertFalse(wizard.isPreparing)
+        XCTAssertFalse(gate.isPaired)
     }
 }

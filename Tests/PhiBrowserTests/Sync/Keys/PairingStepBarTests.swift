@@ -29,6 +29,13 @@ final class PairingStepBarTests: XCTestCase {
             Segment(id: 1, step: .method, isComplete: true, isCurrent: false),
             Segment(id: 2, step: .confirm, isComplete: false, isCurrent: true),
         ])
+        XCTAssertEqual(PairingStepBar.segments(steps: [.method, .confirm], current: .method), [
+            Segment(id: 1, step: .method, isComplete: false, isCurrent: true),
+            Segment(id: 2, step: .confirm, isComplete: false, isCurrent: false),
+        ])
+        XCTAssertEqual(PairingStepBar.segments(steps: [.method], current: .method), [
+            Segment(id: 1, step: .method, isComplete: false, isCurrent: true),
+        ], "Merge with no page after the method step")
         XCTAssertEqual(PairingStepBar.segments(steps: [.method, .profiles, .spaces], current: .method)
             .map(\.isCurrent), [true, false, false])
     }

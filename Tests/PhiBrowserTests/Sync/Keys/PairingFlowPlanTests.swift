@@ -68,10 +68,34 @@ final class PairingFlowPlanTests: XCTestCase {
         }
     }
 
-    func testTheMethodStepIsDisabledInThisRelease() {
-        XCTAssertFalse(PairingFlowPlan.methodStepEnabled)
-        let plan = PairingFlowPlan.make(facts(replaceable: true, profiles: true))
-        XCTAssertFalse(plan.showsMethod, "The default planner never shows the method step while it is disabled")
+    func testTheMethodStepIsEnabled() {
+        XCTAssertTrue(PairingFlowPlan.methodStepEnabled)
+        XCTAssertTrue(PairingFlowPlan.make(facts(replaceable: true, profiles: true)).showsMethod,
+                      "The default planner shows the method step when this Mac has replaceable data")
+        XCTAssertFalse(PairingFlowPlan.make(facts()).showsMethod, "Nothing to replace: no method step")
+        XCTAssertFalse(PairingFlowPlan.make(facts(brandNew: true, replaceable: true)).showsMethod,
+                       "A brand-new account has nothing to choose between")
+    }
+
+    /// The method step alone does not complete on its own: it still asks merge or replace.
+    func testAMethodOnlyPlanAsksBeforeFinishing() {
+        let plan = PairingFlowPlan.make(facts(replaceable: true))
+        XCTAssertEqual(plan, PairingFlowPlan(showsMethod: true, showsProfiles: false, showsSpaces: false))
+        XCTAssertFalse(plan.autoCompletes)
+        XCTAssertEqual(plan.steps(for: .merge), [.method])
+        XCTAssertEqual(plan.steps(for: .useAccount), [.method, .confirm])
+    }
+
+    /// The method step's primary button: Finish only when merging leads to no further page.
+    func testFinishOrContinueAtTheMethodStep() {
+        let methodOnly = PairingFlowPlan(showsMethod: true, showsProfiles: false, showsSpaces: false)
+        XCTAssertTrue(methodOnly.finishesAtMethodStep(for: .merge))
+        XCTAssertFalse(methodOnly.finishesAtMethodStep(for: .useAccount), "The confirmation always follows")
+        for plan in [PairingFlowPlan(showsMethod: true, showsProfiles: true, showsSpaces: false),
+                     PairingFlowPlan(showsMethod: true, showsProfiles: false, showsSpaces: true)] {
+            XCTAssertFalse(plan.finishesAtMethodStep(for: .merge))
+            XCTAssertFalse(plan.finishesAtMethodStep(for: .useAccount))
+        }
     }
 
     func testAnIncompletePreviewNeverAutoCompletes() {
@@ -190,6 +214,68 @@ final class PairingFlowPlanTests: XCTestCase {
         XCTAssertTrue(PairingFlowPlan.localHasReplaceableData(
             localProfileIds: [LocalStore.defaultProfileId], localSpaces: defaultOnly + [space("LOCAL-1")],
             ownedItemsPresent: false))
+    }
+
+    func testOwnedItemsFromTheInventory() {
+        XCTAssertNil(PairingFlowPlan.ownedItemsPresent(nil), "An unreadable inventory is unknown")
+        XCTAssertEqual(PairingFlowPlan.ownedItemsPresent(LocalPhiInventory()), false)
+        XCTAssertEqual(PairingFlowPlan.ownedItemsPresent(LocalPhiInventory(nonDefaultSpaceIds: ["LOCAL-1"],
+                                                                           profileIdsToDelete: ["P"])),
+                       false, "Spaces and Profiles are judged separately")
+        for inventory in [LocalPhiInventory(bookmarks: 1), LocalPhiInventory(bookmarkFolders: 1),
+                          LocalPhiInventory(pinnedTabs: 1), LocalPhiInventory(urlRules: 1)] {
+            XCTAssertEqual(PairingFlowPlan.ownedItemsPresent(inventory), true, "\(inventory)")
+        }
+        let defaultOnly = [space(LocalStore.defaultSpaceId)]
+        XCTAssertTrue(PairingFlowPlan.localHasReplaceableData(
+            localProfileIds: [LocalStore.defaultProfileId], localSpaces: defaultOnly,
+            ownedItemsPresent: PairingFlowPlan.ownedItemsPresent(nil)),
+            "An inventory read failure shows the method step")
+    }
+
+    // MARK: - Replacing this Mac's data
+
+    func testExtraLocalsAreTheUnmatchedNonDefaultProfiles() {
+        let sameName = PairingLocal(profileId: "Profile 3", displayName: "Work", isDefault: false)
+        XCTAssertEqual(PairingFlowPlan.extraLocals(locals: [localDefault, localExtra, sameName],
+                                                   remotes: [accountDefault, accountWork]),
+                       [localExtra], "The Default and a same-name Profile adopt without asking")
+        XCTAssertEqual(PairingFlowPlan.extraLocals(locals: [localDefault], remotes: [accountDefault]), [])
+    }
+
+    func testReplaceDecisionsRouteKeepAndDelete() {
+        let locals = [localDefault, localExtra]
+        let remotes = [accountDefault, accountWork, unreadable]
+        XCTAssertEqual(PairingFlowPlan.replaceDecisions(locals: locals, remotes: remotes, deleting: []), [
+            .adopt(localProfileId: "Default", remoteUuid: "uuid-default"),
+            .registerNew(localProfileId: "Profile 2", displayName: "Reading"),
+            .createLocal(remoteUuid: "uuid-work", displayName: "Work"),
+        ], "Kept extras register; the unclaimed readable Profile is created; the unreadable one waits")
+        XCTAssertEqual(PairingFlowPlan.replaceDecisions(locals: locals, remotes: remotes,
+                                                        deleting: ["Profile 2"]), [
+            .adopt(localProfileId: "Default", remoteUuid: "uuid-default"),
+            .createLocal(remoteUuid: "uuid-work", displayName: "Work"),
+        ], "A Profile chosen for deletion gets no decision")
+        XCTAssertEqual(PairingFlowPlan.replaceDecisions(locals: [], remotes: [unreadable], deleting: []), [],
+                       "A replay after the decisions applied has nothing left to do")
+    }
+
+    func testDefaultNeedsChoice() {
+        XCTAssertFalse(PairingFlowPlan.defaultNeedsChoice(locals: [localDefault], remotes: [accountDefault]))
+        XCTAssertFalse(PairingFlowPlan.defaultNeedsChoice(locals: [localDefault], remotes: []))
+        XCTAssertFalse(PairingFlowPlan.defaultNeedsChoice(locals: [localExtra], remotes: [unreadable]),
+                       "A mapped Default needs nothing")
+        XCTAssertTrue(PairingFlowPlan.defaultNeedsChoice(locals: [localDefault], remotes: [unreadable]))
+        XCTAssertTrue(PairingFlowPlan.defaultNeedsChoice(locals: [localDefault], remotes: [accountLegacy]))
+    }
+
+    func testDefaultRegistersAsAccountDefault() {
+        XCTAssertTrue(PairingFlowPlan.defaultRegistersAsAccountDefault(locals: [localDefault], remotes: []))
+        XCTAssertTrue(PairingFlowPlan.defaultRegistersAsAccountDefault(locals: [localDefault], remotes: [unreadable]))
+        XCTAssertFalse(PairingFlowPlan.defaultRegistersAsAccountDefault(locals: [localDefault],
+                                                                         remotes: [accountDefault]))
+        XCTAssertFalse(PairingFlowPlan.defaultRegistersAsAccountDefault(locals: [localExtra], remotes: []),
+                       "A mapped Default is matched already")
     }
 
     func testIsBrandNewAccount() {

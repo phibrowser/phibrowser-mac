@@ -332,6 +332,7 @@ A page shows only when it asks the user something:
 
 | Page | Shown when |
 | --- | --- |
+| Sync method | The account is not brand new and this Mac has replaceable data (see "Sync method and replacing this Mac's data") |
 | Profiles | A non-default local Profile is unmapped; or the local Default is unmapped, has no readable account default to be fixed to, and any unclaimed account Profile exists (readable or not: an unreadable one may be the account default, so the Default is never registered without the page); or a readable unclaimed account Profile cannot be created on this Mac. With an incomplete preview, also whenever the page would list anything |
 | Spaces | A non-default pairable local Space exists. With an incomplete preview, also when the Profiles page would list nothing |
 
@@ -355,18 +356,110 @@ A page shows only when it asks the user something:
   returns to the Profiles page and adds it to the plan. So does a submission
   behind the status page that is refused without starting (a superseded or busy
   session): the status page never stays up with nothing running behind it.
-- The step bar lists only the pages the plan shows, numbered in order. It keeps
-  its height while loading and when no page shows.
-- A "sync method" step (keep and merge, or use the account's data) is planned
-  but disabled; while disabled the plan never shows it and the wizard enters no
-  method page.
+- The step bar lists only the pages the plan shows for the selected method,
+  numbered in order. It keeps its height while loading and when no page shows.
+- The Profiles and Spaces rules above are the merge path. When the sync method
+  step shows, it comes first, and the wizard does not complete on its own even if
+  merging would ask nothing more.
 
-### Replacing this Mac's data at pairing (groundwork)
+### Sync method and replacing this Mac's data
 
-"Use the account's data" empties this Mac's Phi data before enrollment completes,
-so the first replay lands the account without merging. The data side exists
-(`PhiLocalDataReset`, reached through `SyncKeyController.localDataReset()`); no
-setup page calls it yet.
+The sync method step asks how this Mac joins an account that already holds data:
+**Merge this Mac with your account** (the default, marked Recommended), or **Use
+your account's data**, which replaces this Mac's Spaces, bookmarks, pinned tabs,
+URL rules and synced settings with the account's. There is no option that
+overwrites the account with this Mac's data.
+
+**When it shows.** The local data reset is available (without it the option is
+never offered, so a Retry can never loop on a reset that cannot run), the account
+is not brand new, and this Mac has replaceable data: a non-default user-assignable Profile, a non-default pairable Space, or any
+bookmark (other than the empty per-Space roots), bookmark folder, pinned tab or
+URL rule. The counts come from the reset's own inventory
+(`PhiLocalDataReset.inventory()`, reached through the setup window's host), so
+they match exactly what "use your account's data" removes. When the inventory
+cannot be read, emptiness cannot be proven and the step shows. The agent fallback
+Profile, agent Spaces and Incognito Spaces never count. A Mac with only default
+data never sees the step; the merge path then decides everything automatically.
+
+**The page.** A comparison card shows one line per side, for example "This Mac ·
+2 profiles · 4 Spaces · 130 bookmarks · 8 pinned tabs · 3 URL rules" and "Your
+account · 1 profile · 6 Spaces · Bookmarks · Pinned tabs · URL rules". This Mac's
+Spaces include the default Space; the account's Profiles are its unclaimed
+Profiles plus this Mac's Profiles already mapped to it, and its Spaces include
+the default Space the preview leaves out. The account's bookmarks, pinned tabs and
+URL rules are not counted yet, so they are listed by name. Below are the two
+radio cards; the arrow keys move the selection, and Return is the footer's
+primary button.
+
+- With **Merge**, the primary button is Continue to the Profiles or Spaces page
+  the plan shows, or Finish when neither shows (the automatic merge decisions
+  are then applied behind the status page). Back from the first merge page
+  returns to the method step.
+- With **Use your account's data**, the step bar reads "1 Sync method · 2
+  Confirm" and Continue opens the confirmation page. Nothing is written by the
+  method step or by Continue.
+
+**The confirmation page** lists what is removed from this Mac (non-default
+Spaces, whose open tabs close; bookmarks; pinned tabs; URL rules; synced
+settings; rows with nothing to remove are hidden), what is downloaded from the
+account, and, when this Mac has Profiles the account has none for (non-default
+and not matched by name), a "Profiles on this Mac" card. That card shows the
+Default read-only ("Matched with your account's default profile", or "Registered
+as your account's default profile" when the account has no readable default for
+it to adopt) and one picker
+per extra Profile: **Keep and add to your account** (the default) or **Delete
+from this Mac**, which also deletes that Profile's passwords, history and
+extensions. A name-matched Profile adopts its account Profile without a row. The
+footer has "Replace this Mac's data" (bordered, no keyboard shortcut) left of
+Back, which takes Return and is disabled while the preflight runs. If the local
+Default is unmapped and the account has Profiles but no readable default one,
+Replace is disabled with a note pointing to Merge or Finish later: the Default
+could otherwise register a second account default.
+
+**Replace sequence** (`PairingWizardViewModel.replaceLocal`), inside the same
+single submission as a merge:
+
+| # | Step | On failure |
+| --- | --- | --- |
+| 1 | Preflight: reload the account's Profiles and Spaces and compare only the account side (account Profiles, account Spaces, the preview's skipped count) and the set of extra local Profiles, minus those being deleted. Local Spaces are not compared: they are what the replace removes, and a Retry after a partial reset would otherwise never match. The footer shows a progress indicator | A change returns to the confirmation page with fresh data and the same choices; nothing is written. A failed load shows an error whose Retry runs the sequence again |
+| 2 | The status page "Replacing this Mac's data…" shows; closing, Escape, Finish later and Remove are refused while it runs | — |
+| 3 | Profile decisions: the Default and name-matched Profiles adopt, kept Profiles register, every readable unclaimed account Profile is created on this Mac; deleted Profiles get no decision. Nothing local has been removed yet. After the decisions succeed, the reviewed snapshot is advanced by reloading the candidates (a failed reload falls back to predicting them), so a Retry preflight does not read this progress as an account change | Error "Couldn't finish setting up sync. Nothing was lost…", Retry |
+| 4 | The resume marker `sync.pairingLocalReset` is written with the Profiles to delete | Same error, Retry |
+| 5 | The local reset (`PhiLocalDataReset.clear`, see the next section) | Error "Couldn't finish replacing this Mac's data. Retry picks up where it stopped…", Retry |
+| 6 | The default Space must be the only pairable Space left; no Space mapping is written (the default Space keeps its constant identity) | Treated as an unfinished reset: the same error, Retry |
+| 7 | Enrollment completes once every remaining local Profile is mapped (a Profile whose deletion failed blocks it), which clears the marker; then the mappings resolve and the window closes | "Couldn't finish replacing this Mac's data…" (local data is already gone, so "Nothing was lost" no longer applies); the marker stays; Retry |
+
+Every step is idempotent, so Retry reruns the whole sequence and picks up where
+it stopped. The account's data lands with the first replay after the gate opens
+(see "Pairing and initial catch-up"); the Sync pane shows the initial sync in
+progress, which can take a few minutes for a large account.
+
+**Leaving and resuming.** Finish later (or Escape, or closing the window) on the
+method step or the confirmation discards the method and the Profile choices; the
+next setup starts at the method step with Merge selected. Leaving from an error
+page after step 4 is allowed (an offline Mac must not be trapped) and keeps the
+marker. While a marker exists for this device key, every later setup opens
+directly on the confirmation page, locked to "use your account's data" with the
+saved Profile deletions fixed and no Back; Replace resumes the sequence. A
+Profile created on this Mac after the marker was written appears on the locked
+page as "Keep and add to your account" with its picker disabled: it is
+registered with the account, never deleted, because only the Profiles named in
+the marker are deleted. Without
+the marker, a restart after a partial reset would offer a merge that unions the
+leftovers into the account. **Remove this device from sync** stays available on
+the error page; after a partial reset it leaves a partly emptied, unpaired Mac,
+which is the user's explicit choice, and the confirmed cleanup clears the marker.
+
+The re-drive that rescues a stuck load never restarts the method step, the
+confirmation, the replace status page or its error page.
+
+### Replacing this Mac's data at pairing
+
+"Use your account's data" empties this Mac's Phi data before enrollment completes,
+so the first replay lands the account without merging. The reset is
+`PhiLocalDataReset`, reached through `SyncKeyController.localDataReset()`; the
+setup wizard calls it in step 5 of the replace sequence above and reads its
+inventory to decide whether the sync method step shows.
 
 The reset runs only while the device is unpaired, which is what makes it safe:
 no data round runs before enrollment completes, so none of its deletions is

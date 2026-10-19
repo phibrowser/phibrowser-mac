@@ -36,9 +36,9 @@ struct PairingFlowFacts: Equatable {
 /// `PairingWizardViewModel.start`. A page shows only when it asks the user something; when no page shows,
 /// the wizard completes on its own behind the status page (see docs/sync.md, "Pairing page plan").
 struct PairingFlowPlan: Equatable {
-    /// The "sync method" step (merge or use the account's data) is not built yet: while false, the plan never
+    /// Whether the "sync method" step (merge or use the account's data) can show. While false, the plan never
     /// shows it, whatever the facts say.
-    static let methodStepEnabled = false
+    static let methodStepEnabled = true
 
     let showsMethod: Bool
     let showsProfiles: Bool
@@ -78,6 +78,12 @@ struct PairingFlowPlan: Equatable {
         }
     }
 
+    /// Whether the method step's primary button finishes setup instead of continuing: merging, with no
+    /// Profiles or Spaces page after it. "Use your account's data" always continues to its confirmation.
+    func finishesAtMethodStep(for method: SyncMethod) -> Bool {
+        method == .merge && steps(for: .merge) == [.method]
+    }
+
     /// The same plan with the Profiles page shown. Used when the wizard has to put the Profiles page in front
     /// of the user after all: a submission found changed or failed Profile candidates.
     func revealingProfiles() -> PairingFlowPlan {
@@ -104,11 +110,25 @@ struct PairingFlowPlan: Equatable {
         // real picker over legacy Profiles, or the account default may be one whose envelope does not open
         // yet. Registering automatically could mint a second account default, so the user sees the page
         // (Finish later stays available while the unreadable envelope is retried).
-        if locals.contains(where: \.isDefault), model.fixedDefaultRemote == nil, !remotes.isEmpty {
-            return true
-        }
+        if defaultNeedsChoice(locals: locals, remotes: remotes) { return true }
         // Defensive: a readable unclaimed Profile that cannot be created here needs an explicit assignment.
         return model.unclaimedRemotes.contains { $0.name != nil && !model.offersCreateLocal(for: $0) }
+    }
+
+    /// The local Default is unmapped, has no readable account default to be fixed to, and some account
+    /// Profile exists (readable or not). Registering it automatically could mint a second account default.
+    static func defaultNeedsChoice(locals: [PairingLocal], remotes: [RemoteProfile]) -> Bool {
+        guard locals.contains(where: \.isDefault), !remotes.isEmpty else { return false }
+        let model = ProfilePairingModel(locals: locals, remotes: remotes, selections: [:], remoteChoices: [:])
+        return model.fixedDefaultRemote == nil
+    }
+
+    /// The local Default is unmapped and the account has no readable default Profile for it to adopt, so
+    /// it registers as the account default (or, beside other account Profiles, needs a choice first).
+    static func defaultRegistersAsAccountDefault(locals: [PairingLocal], remotes: [RemoteProfile]) -> Bool {
+        guard locals.contains(where: \.isDefault) else { return false }
+        let model = ProfilePairingModel(locals: locals, remotes: remotes, selections: [:], remoteChoices: [:])
+        return model.fixedDefaultRemote == nil
     }
 
     static func profilesHaveRows(locals: [PairingLocal], remotes: [RemoteProfile]) -> Bool {
@@ -143,11 +163,65 @@ struct PairingFlowPlan: Equatable {
     ///   - localSpaces: the pairable local Spaces (agent and Incognito Spaces are never in this list).
     ///   - ownedItemsPresent: whether any bookmark, pinned tab or URL rule exists. nil means unknown: the
     ///     inventory is not available or could not be read. Unknown counts as data, because emptiness cannot
-    ///     be proven; this only matters once the method step is enabled.
+    ///     be proven.
     static func localHasReplaceableData(localProfileIds: [String], localSpaces: [PhiLocalSpace],
                                         ownedItemsPresent: Bool?) -> Bool {
         localProfileIds.contains { $0 != LocalStore.defaultProfileId }
             || localSpaces.contains { $0.spaceId != LocalStore.defaultSpaceId }
             || (ownedItemsPresent ?? true)
     }
+
+    /// Whether the local reset's inventory holds any bookmark, folder, pinned tab or URL rule; nil when the
+    /// inventory could not be read.
+    static func ownedItemsPresent(_ inventory: LocalPhiInventory?) -> Bool? {
+        inventory.map { $0.bookmarks + $0.bookmarkFolders + $0.pinnedTabs + $0.urlRules > 0 }
+    }
+
+    // MARK: - Replacing this Mac's data
+
+    /// The unmapped local Profiles the account has no Profile for: non-default and not matched by name.
+    /// "Use your account's data" asks for each whether to keep it (and add it to the account) or delete it.
+    static func extraLocals(locals: [PairingLocal], remotes: [RemoteProfile]) -> [PairingLocal] {
+        let initial = ProfilePairingModel.initialSelections(locals: locals, remotes: remotes)
+        return locals.filter { !$0.isDefault && initial[$0.profileId] == .registerNew }
+    }
+
+    /// The Profile decisions of "use your account's data": the Default and same-name Profiles adopt their
+    /// account match, kept extra Profiles register, every readable unclaimed account Profile is created on
+    /// this Mac, and the Profiles chosen for deletion get no decision (the local reset deletes them).
+    static func replaceDecisions(locals: [PairingLocal], remotes: [RemoteProfile],
+                                 deleting deleteProfileIds: Set<String>) -> [PairingDecision] {
+        let kept = locals.filter { !deleteProfileIds.contains($0.profileId) }
+        let selections = ProfilePairingModel.initialSelections(locals: kept, remotes: remotes)
+        let remoteChoices = autoRemoteChoices(locals: kept, remotes: remotes, selections: selections)
+        return ProfilePairingModel(locals: kept, remotes: remotes, selections: selections,
+                                   remoteChoices: remoteChoices).decisions()
+    }
+}
+
+/// What "use your account's data" does with one extra local Profile (see `PairingFlowPlan.extraLocals`).
+enum ExtraProfileDecision: Hashable {
+    /// The default: the Profile stays on this Mac and is added to the account.
+    case keepAndRegister
+    /// The Profile and its Chromium data (passwords, history, extensions) are deleted from this Mac.
+    case deleteLocal
+}
+
+/// The confirmation page of "use your account's data": what leaves this Mac, what the account brings,
+/// and the extra local Profiles to keep or delete.
+struct ReplaceLocalReview: Equatable {
+    /// What the local reset removes. `profiles` is always 0: deleted Profiles are chosen in the Profiles card.
+    var removed: PairingDataSummary.Counts
+    /// What the first sync downloads from the account.
+    var downloaded: PairingDataSummary.Counts
+    /// The local Default's name, shown read-only in the Profiles card.
+    var defaultProfileName: String
+    /// The Profiles card's rows; the card is hidden when this is empty.
+    var extraLocals: [PairingLocal]
+    /// The Default row reads "Registered as your account's default profile" instead of "Matched with your
+    /// account's default profile": the account has no readable default for it to adopt.
+    var defaultRegistersAsAccountDefault: Bool
+    /// The local Default has no readable account default to adopt (see `PairingFlowPlan.defaultNeedsChoice`),
+    /// so replacing cannot start: registering the Default could mint a second account default.
+    var defaultUnavailable: Bool
 }

@@ -272,7 +272,17 @@ final class ProfilePairingGateTests: XCTestCase {
                                                                   account: .text("Work"))])]),
             .submitting,
             .done,
-            .error(message: "boom", resume: .backToSpaces)
+            .error(message: "boom", resume: .backToSpaces),
+            .method(PairingDataSummary(
+                local: .init(profiles: 1, spaces: 2, bookmarks: 3, pinnedTabs: 0, urlRules: 0),
+                account: .init(profiles: 1, spaces: 1, bookmarks: nil, pinnedTabs: nil, urlRules: nil))),
+            .confirmReplaceLocal(ReplaceLocalReview(
+                removed: .init(profiles: 0, spaces: 1, bookmarks: 3, pinnedTabs: 0, urlRules: 0),
+                downloaded: .init(profiles: 1, spaces: 1, bookmarks: nil, pinnedTabs: nil, urlRules: nil),
+                defaultProfileName: "Personal", extraLocals: [], defaultRegistersAsAccountDefault: false,
+                defaultUnavailable: false)),
+            .replacingLocal,
+            .error(message: "boom", resume: .resumeReplace)
         ]
         for phase in interactive {
             XCTAssertFalse(AppModalPairingHost.reloadAllowed(for: phase),

@@ -644,6 +644,9 @@
 		D1F600082FD6000000000008 /* SidebarDiffableSnapshotBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F600072FD6000000000007 /* SidebarDiffableSnapshotBuilder.swift */; };
 		D37B98E344D6E556D8905064 /* SpaceOverwriteDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1C7683ECEB27E49DFDEFC3C /* SpaceOverwriteDiff.swift */; };
 		B8E4D3C2A1F09E8D7C6B5A42 /* PairingFlowPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F3C2D19E4B5A6C7D8E9F01 /* PairingFlowPlan.swift */; };
+		53EA4DDED0CD2345CF097080 /* ReplaceLocalConfirmView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E2C55EF8660E96E0FDDC90 /* ReplaceLocalConfirmView.swift */; };
+		807E1A614066151E975E5A7E /* SyncMethodStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F5D3AEE3CCCAADF1174BB62 /* SyncMethodStepView.swift */; };
+		A8441AB3AB219A8FEA6F1F9A /* PairingDataSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DBF40D64EB16F125973C878 /* PairingDataSummary.swift */; };
 		D5E902235143FB0E14F29182 /* WaitingForApprovalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23216985BAC98CA63F9CB2AC /* WaitingForApprovalView.swift */; };
 		D9576F3DD269A40D56202F9B /* BrowserState+AIChatPanelRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 302B57687539046049CE6E3D /* BrowserState+AIChatPanelRecord.swift */; };
 		D996649CAC474B1EB5FBF515 /* CrashFeedbackCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68A1E1BFA1F745FFB849186B /* CrashFeedbackCoordinator.swift */; };
@@ -1538,6 +1541,9 @@
 		F10920260921000000000002 /* FloatingSidebarHostViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingSidebarHostViewController.swift; sourceTree = "<group>"; };
 		F1C7683ECEB27E49DFDEFC3C /* SpaceOverwriteDiff.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SpaceOverwriteDiff.swift; path = UI/SpaceOverwriteDiff.swift; sourceTree = "<group>"; };
 		A7F3C2D19E4B5A6C7D8E9F01 /* PairingFlowPlan.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingFlowPlan.swift; path = UI/PairingFlowPlan.swift; sourceTree = "<group>"; };
+		37E2C55EF8660E96E0FDDC90 /* ReplaceLocalConfirmView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ReplaceLocalConfirmView.swift; path = UI/ReplaceLocalConfirmView.swift; sourceTree = "<group>"; };
+		8F5D3AEE3CCCAADF1174BB62 /* SyncMethodStepView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SyncMethodStepView.swift; path = UI/SyncMethodStepView.swift; sourceTree = "<group>"; };
+		3DBF40D64EB16F125973C878 /* PairingDataSummary.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingDataSummary.swift; path = UI/PairingDataSummary.swift; sourceTree = "<group>"; };
 		F1F44B5AD0F29A6489A7E04E /* PhiBookmarkLocalAccess.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiBookmarkLocalAccess.swift; sourceTree = "<group>"; };
 		F381BC900D7B1C92A256C6D4 /* sync_enums.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = sync_enums.pb.swift; sourceTree = "<group>"; };
 		F523BB13976A45DDA7FD12F1 /* ShortcutDetailSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutDetailSection.swift; sourceTree = "<group>"; };
@@ -1636,6 +1642,9 @@
 				6FFFE1C0B7A7B38B0B896CF4 /* PairingWizardView.swift */,
 				3D65DDDE1F39C8D1E868E132 /* PairingStepBar.swift */,
 				A7F3C2D19E4B5A6C7D8E9F01 /* PairingFlowPlan.swift */,
+				37E2C55EF8660E96E0FDDC90 /* ReplaceLocalConfirmView.swift */,
+				8F5D3AEE3CCCAADF1174BB62 /* SyncMethodStepView.swift */,
+				3DBF40D64EB16F125973C878 /* PairingDataSummary.swift */,
 				F76D53B8FBA539CA65167C9F /* SpacePairingStepView.swift */,
 			);
 			name = UI;
@@ -4191,6 +4200,9 @@
 				72458E59165A0E8FA89654B5 /* PairingWizardView.swift in Sources */,
 				2C44AE9342A096D69C2770E6 /* PairingStepBar.swift in Sources */,
 				B8E4D3C2A1F09E8D7C6B5A42 /* PairingFlowPlan.swift in Sources */,
+				53EA4DDED0CD2345CF097080 /* ReplaceLocalConfirmView.swift in Sources */,
+				807E1A614066151E975E5A7E /* SyncMethodStepView.swift in Sources */,
+				A8441AB3AB219A8FEA6F1F9A /* PairingDataSummary.swift in Sources */,
 				89BE563BBDEAE08AC824F2B8 /* SpacePairingStepView.swift in Sources */,
 				3C86DD3C9BAE1F787AE0386A /* PhiBookmarkLocalAccess.swift in Sources */,
 				8B99944F2625AD1C6C443405 /* PhiPinnedTabLocalAccess.swift in Sources */,

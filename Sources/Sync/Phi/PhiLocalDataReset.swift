@@ -33,6 +33,15 @@ struct LocalResetRequest: Equatable {
     var deleteProfileIds: Set<String> = []
 }
 
+/// The part of the reset the pairing wizard uses: what would be removed, and the removal itself.
+/// `PhiLocalDataReset` is the production conformer; the wizard reaches it through a host seam
+/// (`AppModalPairingHost`), so wizard tests substitute a recording fake.
+@MainActor
+protocol LocalPhiResetting: AnyObject {
+    func inventory(deleting profileIds: Set<String>) throws -> LocalPhiInventory
+    func clear(_ request: LocalResetRequest) async throws
+}
+
 /// Why the reset refused or stopped. Every precondition fails closed with its own case; nothing is
 /// cleaned silently when the reset cannot prove it is safe.
 enum PhiLocalDataResetError: Error, Equatable {
@@ -313,3 +322,5 @@ final class PhiLocalDataReset {
         local.userSpaces().map(\.spaceId).filter { $0 != Self.defaultSpaceId }.sorted()
     }
 }
+
+extension PhiLocalDataReset: LocalPhiResetting {}

@@ -15,6 +15,7 @@ types += section('Sources/Sync/Phi/PhiSpaceLocalAccess.swift', 'struct PhiLocalS
 types += section('Sources/Sync/Phi/PhiSyncEngine.swift', 'struct PhiAccountSpaceSummary:', '// MARK: - Owned-item')
 types += section('Sources/Sync/Keys/SyncKeyController.swift', 'enum PairingDecision:', '/// The bits of')
 types += section('Sources/Sync/Keys/UI/ProfilePairingView.swift', 'struct ProfilePairingModel {', '/// Minimal Devices-pane')
+types += section('Sources/Sync/Phi/PhiLocalDataReset.swift', 'struct LocalPhiInventory:', '/// Why the reset refused or stopped.')
 (build / 'Types.swift').write_text(types)
 fixture = (root / 'Tests/SyncPairing/RetryFixture.swift').read_text()
 methods = section('Sources/Sync/Keys/UI/KeyLayerViewModel.swift', '    func cancelPairingLoad()', '    /// Legacy Profile-only')
@@ -24,6 +25,8 @@ PY
 xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/modules" \
   "$task_root/Sources/Sync/Keys/UI/PairingWizardViewModel.swift" \
   "$task_root/Sources/Sync/Keys/UI/PairingFlowPlan.swift" \
+  "$task_root/Sources/Sync/Keys/UI/PairingDataSummary.swift" \
+  "$task_root/Sources/Sync/Keys/SyncPairingLocalResetMarker.swift" \
   "$task_root/Sources/Sync/Keys/UI/SpacePairingModel.swift" \
   "$task_root/Sources/Sync/Keys/UI/SpaceOverwriteDiff.swift" \
   "$task_root/Sources/Sync/Keys/ProfileKeyManager.swift" \

@@ -153,6 +153,9 @@ final class PairingWizardViewModelTests: XCTestCase {
     nonisolated private static let profilesWithExtra: [(profileId: String, displayName: String)] =
         defaultOnlyProfiles + [(profileId: "Profile 2", displayName: "Reading")]
 
+    /// The merge-path cases predate the sync method step and pin it off, so they keep entering the Profiles
+    /// and Spaces pages directly; the method step and "use your account's data" have their own fixture
+    /// (`makeReplaceWizard`) with the step enabled.
     private func makeWizard(
         locals: [PhiLocalSpace],
         accountSpaces: [PhiAccountSpaceSummary],
@@ -186,7 +189,8 @@ final class PairingWizardViewModelTests: XCTestCase {
             pairableLocalSpaces: liveLocals ?? { locals },
             themeDisplayName: { _ in nil },
             loadDeadline: loadDeadline,
-            gate: gate)
+            gate: gate,
+            methodStepEnabled: false)
         return (wizard, controller, spaceStore, api)
     }
 
@@ -1103,5 +1107,698 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertEqual(wizard.plan?.showsProfiles, true)
         XCTAssertFalse(wizard.isPreparing)
         XCTAssertFalse(gate.isPaired)
+    }
+
+    // MARK: - Sync method step and "use your account's data" (docs/sync.md, "Sync method and replacing this
+    // Mac's data")
+
+    /// Records the local reset the way `LedgerSpaceMappingStore` records mapping writes: what was requested,
+    /// and the gate and marker state at each call. `clearFailures` makes that many calls throw.
+    @MainActor final class FakeLocalReset: LocalPhiResetting {
+        struct ClearCall: Equatable {
+            let request: LocalResetRequest
+            let pairedWhenCalled: Bool
+            let markerSavedWhenCalled: Bool
+        }
+        var inventoryResult: Result<LocalPhiInventory, Error>
+        var clearFailures = 0
+        private(set) var clearCalls: [ClearCall] = []
+        var markerSaved: () -> Bool = { false }
+        var isPaired: () -> Bool = { false }
+        var onCleared: (LocalResetRequest) -> Void = { _ in }
+        /// Awaited at the start of each clear, to hold the replace on its status page.
+        var onClearEntered: (() async -> Void)?
+
+        init(inventory: LocalPhiInventory?) {
+            inventoryResult = inventory.map { .success($0) } ?? .failure(PhiLocalDataResetError.inventoryUnavailable)
+        }
+
+        func inventory(deleting profileIds: Set<String>) throws -> LocalPhiInventory { try inventoryResult.get() }
+
+        func clear(_ request: LocalResetRequest) async throws {
+            clearCalls.append(ClearCall(request: request, pairedWhenCalled: isPaired(),
+                                        markerSavedWhenCalled: markerSaved()))
+            if let onClearEntered { await onClearEntered() }
+            if clearFailures > 0 {
+                clearFailures -= 1
+                throw PhiLocalDataResetError.postconditionFailed("test")
+            }
+            onCleared(request)
+            inventoryResult = .success(LocalPhiInventory())
+        }
+    }
+
+    /// The account-scoped marker key's backing data, and the state at each marker write.
+    final class MarkerBox {
+        struct Write: Equatable {
+            let pairedWhenWritten: Bool
+            let clearsBefore: Int
+            let accountProfilesBefore: Int
+        }
+        var data: Data?
+        var writes: [Write] = []
+        /// That many marker saves report failure and store nothing.
+        var failSaves = 0
+    }
+
+    /// Whether the enrollment record can be persisted (completion fails while false).
+    final class EnrollmentBox { var saves = true }
+
+    /// This Mac's Profiles and pairable Spaces; the fake reset removes what a real one would.
+    final class LocalBox {
+        var profiles: [(profileId: String, displayName: String)]
+        var spaces: [PhiLocalSpace]
+        init(profiles: [(profileId: String, displayName: String)], spaces: [PhiLocalSpace]) {
+            self.profiles = profiles
+            self.spaces = spaces
+        }
+    }
+
+    private struct ReplaceFixture {
+        let wizard: PairingWizardViewModel
+        let controller: SyncKeyController
+        let store: LedgerSpaceMappingStore
+        let api: FakeAPI
+        let reset: FakeLocalReset
+        let marker: MarkerBox
+        let local: LocalBox
+        let enrollment: EnrollmentBox
+    }
+
+    /// Default, a junk Profile and one to keep.
+    nonisolated private static let profilesWithJunkAndKeep: [(profileId: String, displayName: String)] =
+        defaultOnlyProfiles + [(profileId: "Profile 2", displayName: "Junk"),
+                               (profileId: "Profile 3", displayName: "Keep")]
+
+    /// A wizard with the method step enabled, a fake local reset and a marker store, bound to this test's
+    /// gate, which clears the marker on completion as the coordinator wires it.
+    private func makeReplaceWizard(
+        spaces: [PhiLocalSpace],
+        accountSpaces: [PhiAccountSpaceSummary],
+        profiles: [(profileId: String, displayName: String)] = PairingWizardViewModelTests.defaultOnlyProfiles,
+        inventory: LocalPhiInventory? = LocalPhiInventory(),
+        resetAvailable: Bool = true,
+        preview: (() async -> Result<PhiAccountSpacePreview, PhiSpacePreviewError>)? = nil
+    ) async throws -> ReplaceFixture {
+        let api = FakeAPI()
+        let manager = AccountKeyManager(api: api, deviceKeyProvider: FakeDeviceKeyProvider())
+        _ = try await manager.bootstrap()
+        let profileKeys = ProfileKeyManager(api: api, keyManager: manager,
+                                            mappingStore: MemoryMappingStore())
+        let gate: ProfilePairingGate = self.gate
+        let spaceStore = LedgerSpaceMappingStore(gate: gate)
+        let local = LocalBox(profiles: profiles, spaces: spaces)
+        let marker = MarkerBox()
+        let reset = FakeLocalReset(inventory: inventory)
+        let markerStore = SyncPairingLocalResetMarkerStore(
+            readData: { marker.data },
+            writeData: { data in
+                if data != nil, marker.failSaves > 0 {
+                    marker.failSaves -= 1
+                    return false
+                }
+                if data != nil {
+                    MainActor.assumeIsolated {
+                        marker.writes.append(MarkerBox.Write(pairedWhenWritten: gate.isPaired,
+                                                             clearsBefore: reset.clearCalls.count,
+                                                             accountProfilesBefore: api.profileEnvelopes.count))
+                    }
+                }
+                marker.data = data
+                return true
+            })
+        let enrollment = EnrollmentBox()
+        try gate.configureEnrollment(deviceKeyID: "test-device", recordData: nil,
+                                     saveRecord: { _ in enrollment.saves },
+                                     clearLocalResetMarker: { markerStore.clear() })
+        reset.isPaired = { gate.isPaired }
+        reset.markerSaved = { marker.data != nil }
+        reset.onCleared = { request in
+            local.profiles.removeAll { request.deleteProfileIds.contains($0.profileId) }
+            local.spaces.removeAll { $0.spaceId != LocalStore.defaultSpaceId }
+        }
+        let controller = SyncKeyController(
+            manager: manager,
+            approvals: DeviceApprovalService(api: api, keyManager: manager,
+                                             deviceKeyProvider: FakeDeviceKeyProvider()),
+            profileKeys: profileKeys,
+            spaceKeys: SpaceSyncMappingManager(store: spaceStore),
+            localProfilesProvider: { local.profiles },
+            notifyChromium: {},
+            profileCreator: FakeProfileCreator(),
+            isPairingComplete: { gate.isPaired },
+            localResetMarker: markerStore)
+        let wizard = PairingWizardViewModel(
+            keyLayer: KeyLayerViewModel(manager: manager),
+            previewAccountSpaces: preview ?? { .success(.init(spaces: accountSpaces, skippedEntityCount: 0)) },
+            pairableLocalSpaces: { local.spaces },
+            themeDisplayName: { _ in nil },
+            gate: gate,
+            localReset: { _ in resetAvailable ? reset : nil },
+            methodStepEnabled: true)
+        return ReplaceFixture(wizard: wizard, controller: controller, store: spaceStore, api: api,
+                              reset: reset, marker: marker, local: local, enrollment: enrollment)
+    }
+
+    /// Starts the wizard on a Mac with a junk and a kept Profile, chooses "use your account's data", and
+    /// marks the junk Profile for deletion.
+    private func startReplacing(_ fixture: ReplaceFixture) async throws -> ReplaceLocalReview {
+        try seedAccountWithDefaultAndWork(fixture.api, controller: fixture.controller)
+        await fixture.wizard.start(controller: fixture.controller)
+        guard case .method = fixture.wizard.phase else {
+            XCTFail("expected .method, got \(fixture.wizard.phase)")
+            throw CancellationError()
+        }
+        fixture.wizard.selectedMethod = .useAccount
+        await fixture.wizard.continueFromMethod(controller: fixture.controller)
+        guard case .confirmReplaceLocal(let review) = fixture.wizard.phase else {
+            XCTFail("expected .confirmReplaceLocal, got \(fixture.wizard.phase)")
+            throw CancellationError()
+        }
+        fixture.wizard.extraProfileDecisions["Profile 2"] = .deleteLocal
+        return review
+    }
+
+    /// This Mac has a Space beyond the default: the method step shows first, merge continues to the
+    /// Spaces page (the Profiles page is hidden), and Back from there returns to the method step.
+    func testTheMethodStepComesFirstAndMergeContinuesToItsPages() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Work")],
+            accountSpaces: [account("acct-1", name: "Work")])
+        let wizard = fixture.wizard
+        await wizard.start(controller: fixture.controller)
+
+        guard case .method(let summary) = wizard.phase else { return XCTFail("expected .method, got \(wizard.phase)") }
+        XCTAssertEqual(wizard.step, .method)
+        XCTAssertEqual(summary.local, PairingDataSummary.Counts(profiles: 1, spaces: 2, bookmarks: 0,
+                                                                pinnedTabs: 0, urlRules: 0))
+        XCTAssertEqual(summary.account.spaces, 2, "The account's Spaces plus its default Space")
+        XCTAssertNil(summary.account.bookmarks, "The account's bookmarks are named, not counted")
+        XCTAssertEqual(wizard.visibleSteps, [.method, .spaces])
+        XCTAssertFalse(wizard.methodStepFinishes)
+        wizard.selectedMethod = .useAccount
+        XCTAssertEqual(wizard.visibleSteps, [.method, .confirm], "The step bar follows the selected method")
+        wizard.selectedMethod = .merge
+
+        await wizard.continueFromMethod(controller: fixture.controller)
+        guard case .spaces = wizard.phase else { return XCTFail("expected .spaces, got \(wizard.phase)") }
+        XCTAssertTrue(wizard.canGoBackFromSpaces)
+        XCTAssertFalse(wizard.canGoBackToProfiles)
+        wizard.backToProfiles()
+        guard case .method = wizard.phase else { return XCTFail("Back from Spaces returns to the method step") }
+        XCTAssertFalse(gate.isPaired)
+    }
+
+    /// The inventory cannot be read: emptiness cannot be proven, so a default-only Mac still sees the step.
+    func testAnUnreadableInventoryShowsTheMethodStep() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default")], accountSpaces: [], inventory: nil)
+        try seedAccountWithDefaultAndWork(fixture.api, controller: fixture.controller)
+        await fixture.wizard.start(controller: fixture.controller)
+        guard case .method(let summary) = fixture.wizard.phase else {
+            return XCTFail("expected .method, got \(fixture.wizard.phase)")
+        }
+        XCTAssertNil(summary.local.bookmarks, "An unreadable count is named, never zero")
+        XCTAssertFalse(gate.isPaired)
+    }
+
+    /// Bookmarks alone make a default-only Mac show the step; with nothing after it, merge's primary
+    /// action is Finish and completes from the method step.
+    func testMergeFinishesFromTheMethodStepWhenNoPageFollows() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default")], accountSpaces: [],
+            inventory: LocalPhiInventory(bookmarks: 5))
+        try seedAccountWithDefaultAndWork(fixture.api, controller: fixture.controller)
+        let wizard = fixture.wizard
+        await wizard.start(controller: fixture.controller)
+        guard case .method = wizard.phase else { return XCTFail("expected .method, got \(wizard.phase)") }
+        XCTAssertEqual(wizard.visibleSteps, [.method])
+        XCTAssertTrue(wizard.methodStepFinishes, "Merge has no page after the method step")
+        wizard.selectedMethod = .useAccount
+        XCTAssertFalse(wizard.methodStepFinishes, "Use your account's data continues to its confirmation")
+        wizard.selectedMethod = .merge
+
+        await wizard.continueFromMethod(controller: fixture.controller)
+
+        XCTAssertEqual(wizard.phase, .done)
+        XCTAssertTrue(gate.isPaired)
+        XCTAssertNotNil(fixture.controller.localProfileId(forGlobalUuid: "uuid-work"),
+                        "The unclaimed account Profile is created on this Mac")
+        XCTAssertTrue(fixture.reset.clearCalls.isEmpty, "Merging never removes local data")
+        XCTAssertNil(fixture.marker.data)
+    }
+
+    /// The replace sequence: Profile decisions, then the marker, then the local reset, then enrollment,
+    /// then resolve. The kept Profile registers; the deleted one gets no decision and goes to the reset.
+    func testReplaceRunsProfilesThenMarkerThenClearThenEnrollmentThenResolve() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
+            accountSpaces: [account("acct-1", name: "Work", profileUuid: "uuid-work")],
+            profiles: Self.profilesWithJunkAndKeep,
+            inventory: LocalPhiInventory(nonDefaultSpaceIds: ["LOCAL-1"], bookmarks: 3, pinnedTabs: 2))
+        let review = try await startReplacing(fixture)
+        XCTAssertEqual(review.extraLocals.map(\.profileId), ["Profile 2", "Profile 3"])
+        XCTAssertEqual(review.removed, PairingDataSummary.Counts(profiles: 0, spaces: 1, bookmarks: 3,
+                                                                 pinnedTabs: 2, urlRules: 0))
+        XCTAssertFalse(review.defaultUnavailable)
+        XCTAssertEqual(fixture.wizard.step, .confirm)
+        let accountProfilesBefore = fixture.api.profileEnvelopes.count
+        resolveCount = 0
+
+        await fixture.wizard.replaceLocal(controller: fixture.controller)
+
+        XCTAssertEqual(fixture.wizard.phase, .done)
+        XCTAssertEqual(fixture.marker.writes, [MarkerBox.Write(pairedWhenWritten: false, clearsBefore: 0,
+                                                               accountProfilesBefore: accountProfilesBefore + 1)],
+                       "The marker follows the Profile decisions (the kept Profile registered) and precedes the reset")
+        XCTAssertEqual(fixture.reset.clearCalls, [FakeLocalReset.ClearCall(
+            request: LocalResetRequest(deleteProfileIds: ["Profile 2"]),
+            pairedWhenCalled: false, markerSavedWhenCalled: true)])
+        XCTAssertTrue(gate.isPaired, "Enrollment completes after the reset")
+        XCTAssertNil(fixture.marker.data, "Completion clears the marker")
+        XCTAssertGreaterThan(resolveCount, 0, "resolveMappings() runs last")
+        XCTAssertNotNil(fixture.controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 3"),
+                        "Keep registers the Profile with the account")
+        XCTAssertNil(fixture.controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 2"),
+                     "Delete never registers the Profile")
+        XCTAssertEqual(fixture.controller.localProfileId(forGlobalUuid: "uuid-default"), "Default")
+        XCTAssertNotNil(fixture.controller.localProfileId(forGlobalUuid: "uuid-work"),
+                        "The unclaimed account Profile is created on this Mac")
+        XCTAssertTrue(fixture.store.map.isEmpty, "Replacing maps no Space")
+    }
+
+    /// The reset stops part-way: the gate stays unpaired with the marker set, the method locks, and Retry
+    /// runs the sequence again and converges.
+    func testAClearFailureKeepsTheGateUnpairedWithTheMarkerAndRetryConverges() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
+            accountSpaces: [account("acct-1", name: "Work", profileUuid: "uuid-work")],
+            profiles: Self.profilesWithJunkAndKeep)
+        _ = try await startReplacing(fixture)
+        fixture.reset.clearFailures = 1
+
+        await fixture.wizard.replaceLocal(controller: fixture.controller)
+
+        guard case .error(let message, .resumeReplace) = fixture.wizard.phase else {
+            return XCTFail("expected .error(.resumeReplace), got \(fixture.wizard.phase)")
+        }
+        XCTAssertEqual(message, PairingWizardStrings.replaceLocalFailed)
+        XCTAssertFalse(gate.isPaired)
+        XCTAssertNotNil(fixture.marker.data, "The marker stays for the resume")
+        XCTAssertTrue(fixture.wizard.methodLocked)
+        XCTAssertFalse(AppModalPairingHost.reloadAllowed(for: fixture.wizard.phase))
+
+        await fixture.wizard.retry(controller: fixture.controller)
+
+        XCTAssertEqual(fixture.wizard.phase, .done)
+        XCTAssertEqual(fixture.reset.clearCalls.count, 2, "Retry runs the reset again")
+        XCTAssertTrue(fixture.reset.clearCalls.allSatisfy { !$0.pairedWhenCalled && $0.markerSavedWhenCalled })
+        XCTAssertEqual(fixture.reset.clearCalls.map(\.request),
+                       Array(repeating: LocalResetRequest(deleteProfileIds: ["Profile 2"]), count: 2))
+        XCTAssertTrue(gate.isPaired)
+        XCTAssertNil(fixture.marker.data)
+    }
+
+    /// The replace preflight compares only the account side: a new account Space returns to the
+    /// confirmation with fresh data and writes nothing, while a new local Space does not stop it.
+    func testAnAccountChangeReturnsToTheConfirmationButALocalSpaceChangeDoesNot() async throws {
+        var previews = 0
+        var accountSpaces = [account("acct-1", name: "Work", profileUuid: "uuid-work")]
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
+            accountSpaces: [], profiles: Self.profilesWithJunkAndKeep,
+            preview: {
+                previews += 1
+                return .success(.init(spaces: accountSpaces, skippedEntityCount: 0))
+            })
+        _ = try await startReplacing(fixture)
+        accountSpaces.append(account("acct-2", name: "Reading", profileUuid: "uuid-work"))
+
+        await fixture.wizard.replaceLocal(controller: fixture.controller)
+
+        guard case .confirmReplaceLocal(let review) = fixture.wizard.phase else {
+            return XCTFail("expected .confirmReplaceLocal, got \(fixture.wizard.phase)")
+        }
+        XCTAssertEqual(review.downloaded.spaces, 3, "The fresh account data is shown")
+        XCTAssertEqual(fixture.wizard.extraProfileDecisions["Profile 2"], .deleteLocal, "Choices survive")
+        XCTAssertTrue(fixture.reset.clearCalls.isEmpty)
+        XCTAssertNil(fixture.marker.data)
+        XCTAssertFalse(gate.isPaired)
+
+        // A Space added on this Mac is not compared: it is removed like the rest.
+        fixture.local.spaces.append(local("LOCAL-2", name: "Added meanwhile"))
+        await fixture.wizard.replaceLocal(controller: fixture.controller)
+        XCTAssertEqual(fixture.wizard.phase, .done)
+        XCTAssertEqual(fixture.reset.clearCalls.count, 1)
+    }
+
+    /// Finish later on the confirmation, before anything was written: no marker, no reset, and the next
+    /// load starts from merge.
+    func testFinishLaterBeforeTheMarkerWritesNothingAndClearsTheSelection() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
+            accountSpaces: [], profiles: Self.profilesWithJunkAndKeep)
+        _ = try await startReplacing(fixture)
+        let accountProfiles = fixture.api.profileEnvelopes.count
+
+        XCTAssertTrue(fixture.wizard.leaveWithoutApplying())
+
+        XCTAssertNil(fixture.marker.data)
+        XCTAssertTrue(fixture.marker.writes.isEmpty)
+        XCTAssertTrue(fixture.reset.clearCalls.isEmpty)
+        XCTAssertEqual(fixture.api.profileEnvelopes.count, accountProfiles, "No Profile was registered")
+        XCTAssertEqual(fixture.wizard.selectedMethod, .merge)
+        XCTAssertTrue(fixture.wizard.extraProfileDecisions.isEmpty)
+        XCTAssertNil(fixture.wizard.replaceReview)
+        XCTAssertNil(fixture.wizard.plan)
+        XCTAssertEqual(fixture.wizard.visibleSteps, [])
+
+        await fixture.wizard.start(controller: fixture.controller)
+        guard case .method = fixture.wizard.phase else { return XCTFail("A fresh load starts at the method step") }
+        XCTAssertEqual(fixture.wizard.selectedMethod, .merge)
+    }
+
+    /// A marker from an earlier session (a replace that stopped, then Finish later): the next load lands on
+    /// the confirmation, locked to "use your account's data" with Back unavailable, and Replace finishes
+    /// with the saved deletions.
+    func testARestartWithAMarkerLandsOnALockedConfirmation() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
+            accountSpaces: [account("acct-1", name: "Work", profileUuid: "uuid-work")],
+            profiles: Self.profilesWithJunkAndKeep)
+        try seedAccountWithDefaultAndWork(fixture.api, controller: fixture.controller)
+        try fixture.controller.savePairingLocalResetMarker(deleteProfileIds: ["Profile 2"])
+        let wizard = fixture.wizard
+
+        await wizard.start(controller: fixture.controller)
+
+        guard case .confirmReplaceLocal = wizard.phase else {
+            return XCTFail("expected .confirmReplaceLocal, got \(wizard.phase)")
+        }
+        XCTAssertTrue(wizard.methodLocked)
+        XCTAssertFalse(wizard.canGoBackToMethod, "Back is not offered")
+        XCTAssertEqual(wizard.selectedMethod, .useAccount)
+        XCTAssertEqual(wizard.step, .confirm)
+        XCTAssertEqual(wizard.visibleSteps, [.method, .confirm])
+        XCTAssertEqual(wizard.extraProfileDecisions["Profile 2"], .deleteLocal)
+        wizard.backToMethod()
+        guard case .confirmReplaceLocal = wizard.phase else { return XCTFail("Back is refused while locked") }
+        XCTAssertFalse(AppModalPairingHost.reloadAllowed(for: wizard.phase))
+
+        await wizard.replaceLocal(controller: fixture.controller)
+
+        XCTAssertEqual(wizard.phase, .done)
+        XCTAssertEqual(fixture.reset.clearCalls.map(\.request), [LocalResetRequest(deleteProfileIds: ["Profile 2"])])
+        XCTAssertTrue(gate.isPaired)
+        XCTAssertNil(fixture.marker.data)
+    }
+
+    /// Navigating the method step and the confirmation reads keyLayer.phase only.
+    func testTheMethodStepAndConfirmationNeverWriteKeyLayerPhase() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
+            accountSpaces: [], profiles: Self.profilesWithJunkAndKeep)
+        try seedAccountWithDefaultAndWork(fixture.api, controller: fixture.controller)
+        let wizard = fixture.wizard
+        await wizard.start(controller: fixture.controller)
+        let afterLoad = wizard.keyLayer.phase
+        wizard.selectedMethod = .useAccount
+        await wizard.continueFromMethod(controller: fixture.controller)
+        wizard.extraProfileDecisions["Profile 3"] = .deleteLocal
+        wizard.backToMethod()
+        guard case .method = wizard.phase else { return XCTFail("Back returns to the method step") }
+        wizard.selectedMethod = .merge
+        await wizard.continueFromMethod(controller: fixture.controller)
+        guard case .profiles = wizard.phase else { return XCTFail("Merge continues to the Profiles page") }
+        wizard.backToMethod()
+        XCTAssertEqual(wizard.keyLayer.phase, afterLoad,
+                       "The wizard only reads keyLayer.phase throughout the interaction")
+    }
+
+    // MARK: - Review follow-ups, at the real default (method step enabled)
+
+    private static func isDecisionPage(_ phase: PairingWizardPhase) -> Bool {
+        switch phase {
+        case .method, .profiles, .spaces, .confirmOverwrite, .confirmReplaceLocal: return true
+        default: return false
+        }
+    }
+
+    /// (a) A default-only Mac with a readable, empty inventory has nothing to replace: no method step, and
+    /// the wizard completes on its own.
+    func testADefaultOnlyMacWithAnEmptyInventoryAutoCompletesWithoutTheMethodStep() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default")],
+            accountSpaces: [account("acct-1", name: "Work", profileUuid: "uuid-work")])
+        try seedAccountWithDefaultAndWork(fixture.api, controller: fixture.controller)
+        var seen: [PairingWizardPhase] = []
+        let cancellable = fixture.wizard.$phase.sink { seen.append($0) }
+        await fixture.wizard.start(controller: fixture.controller)
+        cancellable.cancel()
+
+        XCTAssertEqual(fixture.wizard.phase, .done)
+        XCTAssertEqual(fixture.wizard.plan?.showsMethod, false)
+        XCTAssertFalse(seen.contains(where: Self.isDecisionPage), "No page is shown")
+        XCTAssertTrue(fixture.reset.clearCalls.isEmpty)
+        XCTAssertTrue(gate.isPaired)
+    }
+
+    /// (b) Merge through the method step; the account changes before Finish, so the preflight reveals the
+    /// Profiles page, and Back from there returns to the method step with the refreshed counts.
+    func testAMergePreflightMismatchRevealsProfilesAndBackShowsRefreshedCounts() async throws {
+        var accountSpaces = [account("acct-1", name: "Work", profileUuid: "uuid-work")]
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Mine")],
+            accountSpaces: [],
+            preview: { .success(.init(spaces: accountSpaces, skippedEntityCount: 0)) })
+        try seedAccountWithDefaultAndWork(fixture.api, controller: fixture.controller)
+        let wizard = fixture.wizard
+        await wizard.start(controller: fixture.controller)
+        guard case .method(let before) = wizard.phase else { return XCTFail("expected .method, got \(wizard.phase)") }
+        XCTAssertEqual(before.account.spaces, 2)
+        await wizard.continueFromMethod(controller: fixture.controller)
+        guard case .spaces = wizard.phase else { return XCTFail("expected .spaces, got \(wizard.phase)") }
+        wizard.addAllAsNew()
+        accountSpaces.append(account("acct-2", name: "Reading", profileUuid: "uuid-work"))
+
+        await wizard.finish(controller: fixture.controller)
+
+        guard case .profiles = wizard.phase else { return XCTFail("expected .profiles, got \(wizard.phase)") }
+        XCTAssertEqual(wizard.visibleSteps, [.method, .profiles, .spaces])
+        XCTAssertFalse(gate.isPaired)
+        XCTAssertTrue(fixture.store.map.isEmpty, "Nothing is written on a mismatch")
+        XCTAssertTrue(wizard.canGoBackToMethod)
+        wizard.backToMethod()
+        guard case .method(let after) = wizard.phase else { return XCTFail("expected .method, got \(wizard.phase)") }
+        XCTAssertEqual(after.account.spaces, 3, "The method step shows the refreshed account")
+    }
+
+    /// (c) A Profile decision fails during the replace: nothing local was touched, no marker, the flow
+    /// stays unlocked, and Retry reaches completion (through the confirmation again if the partial progress
+    /// changed the candidates).
+    func testAFailedProfileDecisionDuringReplaceWritesNoMarkerAndRetryWorks() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
+            accountSpaces: [], profiles: Self.profilesWithJunkAndKeep)
+        _ = try await startReplacing(fixture)
+        // Armed by the registration's own PUT, so the preflight's reads are unaffected.
+        fixture.api.beforePutProfileKey = { [api = fixture.api] in
+            api.beforePutProfileKey = nil
+            api.profileEndpointErrorOnce = URLError(.notConnectedToInternet)
+        }
+
+        await fixture.wizard.replaceLocal(controller: fixture.controller)
+
+        guard case .error(let message, .resumeReplace) = fixture.wizard.phase else {
+            return XCTFail("expected .error(.resumeReplace), got \(fixture.wizard.phase)")
+        }
+        XCTAssertEqual(message, PairingWizardStrings.applyFailed, "Nothing was lost yet")
+        XCTAssertNil(fixture.marker.data)
+        XCTAssertTrue(fixture.marker.writes.isEmpty)
+        XCTAssertTrue(fixture.reset.clearCalls.isEmpty)
+        XCTAssertFalse(fixture.wizard.methodLocked)
+        XCTAssertFalse(gate.isPaired)
+
+        await fixture.wizard.retry(controller: fixture.controller)
+        if case .confirmReplaceLocal = fixture.wizard.phase {
+            XCTAssertTrue(fixture.wizard.canGoBackToMethod, "Still unlocked")
+            await fixture.wizard.replaceLocal(controller: fixture.controller)
+        }
+        XCTAssertEqual(fixture.wizard.phase, .done)
+        XCTAssertEqual(fixture.reset.clearCalls.map(\.request), [LocalResetRequest(deleteProfileIds: ["Profile 2"])])
+        XCTAssertNil(fixture.controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 2"))
+        XCTAssertTrue(gate.isPaired)
+    }
+
+    /// (d) The marker cannot be saved: the reset never starts, and Retry completes.
+    func testAFailedMarkerSaveStopsBeforeTheResetAndRetryWorks() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
+            accountSpaces: [], profiles: Self.profilesWithJunkAndKeep)
+        _ = try await startReplacing(fixture)
+        fixture.marker.failSaves = 1
+
+        await fixture.wizard.replaceLocal(controller: fixture.controller)
+
+        guard case .error(let message, .resumeReplace) = fixture.wizard.phase else {
+            return XCTFail("expected .error(.resumeReplace), got \(fixture.wizard.phase)")
+        }
+        XCTAssertEqual(message, PairingWizardStrings.applyFailed)
+        XCTAssertNil(fixture.marker.data)
+        XCTAssertTrue(fixture.reset.clearCalls.isEmpty, "No reset without the marker")
+        XCTAssertFalse(fixture.wizard.methodLocked)
+
+        await fixture.wizard.retry(controller: fixture.controller)
+
+        XCTAssertEqual(fixture.wizard.phase, .done)
+        XCTAssertEqual(fixture.reset.clearCalls.count, 1)
+        XCTAssertTrue(fixture.reset.clearCalls.allSatisfy(\.markerSavedWhenCalled))
+        XCTAssertTrue(gate.isPaired)
+        XCTAssertNil(fixture.marker.data)
+    }
+
+    /// (e) Enrollment fails after a successful reset: the error says the replace is unfinished, the marker
+    /// stays, and after Finish later the next load lands on the locked confirmation and completes.
+    func testAnEnrollmentFailureAfterTheResetKeepsTheMarkerAndResumesLocked() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
+            accountSpaces: [account("acct-1", name: "Work", profileUuid: "uuid-work")],
+            profiles: Self.profilesWithJunkAndKeep)
+        _ = try await startReplacing(fixture)
+        fixture.enrollment.saves = false
+
+        await fixture.wizard.replaceLocal(controller: fixture.controller)
+
+        guard case .error(let message, .resumeReplace) = fixture.wizard.phase else {
+            return XCTFail("expected .error(.resumeReplace), got \(fixture.wizard.phase)")
+        }
+        XCTAssertEqual(message, PairingWizardStrings.replaceLocalFailed,
+                       "After the reset ran, the error must not claim nothing was lost")
+        XCTAssertEqual(fixture.reset.clearCalls.count, 1)
+        XCTAssertNotNil(fixture.marker.data, "The marker stays for the resume")
+        XCTAssertFalse(gate.isPaired)
+
+        XCTAssertTrue(fixture.wizard.leaveWithoutApplying(), "Finish later is allowed on the error page")
+        fixture.enrollment.saves = true
+        await fixture.wizard.start(controller: fixture.controller)
+        guard case .confirmReplaceLocal = fixture.wizard.phase else {
+            return XCTFail("expected the locked confirmation, got \(fixture.wizard.phase)")
+        }
+        XCTAssertTrue(fixture.wizard.methodLocked)
+        XCTAssertFalse(fixture.wizard.canGoBackToMethod)
+
+        await fixture.wizard.replaceLocal(controller: fixture.controller)
+
+        XCTAssertEqual(fixture.wizard.phase, .done)
+        XCTAssertTrue(gate.isPaired)
+        XCTAssertNil(fixture.marker.data)
+    }
+
+    /// (f) The account has Profiles but no readable default: Replace is unavailable and does nothing.
+    func testAnUnavailableAccountDefaultDisablesReplace() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
+            accountSpaces: [])
+        let ark = try XCTUnwrap(fixture.controller.manager.currentARK)
+        fixture.api.profileEnvelopes["uuid-work"] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(repeating: 2, count: 32), name: "Work", isDefault: false, ark: ark)
+        let wizard = fixture.wizard
+        await wizard.start(controller: fixture.controller)
+        guard case .method = wizard.phase else { return XCTFail("expected .method, got \(wizard.phase)") }
+        wizard.selectedMethod = .useAccount
+        await wizard.continueFromMethod(controller: fixture.controller)
+        guard case .confirmReplaceLocal(let review) = wizard.phase else {
+            return XCTFail("expected .confirmReplaceLocal, got \(wizard.phase)")
+        }
+        XCTAssertTrue(review.defaultUnavailable)
+        XCTAssertTrue(review.defaultRegistersAsAccountDefault)
+        XCTAssertFalse(wizard.canReplace)
+        let accountProfiles = fixture.api.profileEnvelopes.count
+
+        await wizard.replaceLocal(controller: fixture.controller)
+
+        guard case .confirmReplaceLocal = wizard.phase else { return XCTFail("Replace is a no-op") }
+        XCTAssertTrue(fixture.reset.clearCalls.isEmpty)
+        XCTAssertNil(fixture.marker.data)
+        XCTAssertEqual(fixture.api.profileEnvelopes.count, accountProfiles)
+        XCTAssertTrue(wizard.canGoBackToMethod, "Merge stays reachable")
+    }
+
+    /// (g) While the replace runs, leaving is refused and a re-drive is not allowed.
+    func testLeavingIsRefusedWhileReplacing() async throws {
+        let hold = PreviewHold()
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
+            accountSpaces: [], profiles: Self.profilesWithJunkAndKeep)
+        _ = try await startReplacing(fixture)
+        fixture.reset.onClearEntered = { await hold.enter() }
+
+        let run = Task { await fixture.wizard.replaceLocal(controller: fixture.controller) }
+        var spins = 0
+        while await hold.calls == 0, spins < 10_000 { spins += 1; await Task.yield() }
+        XCTAssertEqual(fixture.wizard.phase, .replacingLocal)
+        XCTAssertTrue(fixture.wizard.isApplying)
+        XCTAssertFalse(fixture.wizard.leaveWithoutApplying(), "Finish later is refused while replacing")
+        XCTAssertFalse(AppModalPairingHost.reloadAllowed(for: fixture.wizard.phase))
+
+        await hold.release()
+        await run.value
+        XCTAssertEqual(fixture.wizard.phase, .done)
+    }
+
+    /// (h) Merge through the method step; a local Space edit during the Profile write fails the Space
+    /// step; Retry returns to the Spaces page with the choices and Finish completes.
+    func testMergeThroughTheMethodStepRecoversFromASpaceStepFailure() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Mine")],
+            accountSpaces: [])
+        let wizard = fixture.wizard
+        await wizard.start(controller: fixture.controller)
+        guard case .method = wizard.phase else { return XCTFail("expected .method, got \(wizard.phase)") }
+        await wizard.continueFromMethod(controller: fixture.controller)
+        guard case .spaces = wizard.phase else { return XCTFail("expected .spaces, got \(wizard.phase)") }
+        wizard.addAllAsNew()
+        let local = fixture.local
+        let original = local.spaces[1]
+        // The Default registers (a PUT); a local Space edit during it fails the Space step.
+        fixture.api.beforePutProfileKey = { [api = fixture.api] in
+            api.beforePutProfileKey = nil
+            local.spaces[1] = self.local("LOCAL-1", name: "Renamed during apply")
+        }
+
+        await wizard.finish(controller: fixture.controller)
+
+        guard case .error(_, .backToSpaces) = wizard.phase else {
+            return XCTFail("expected .error(.backToSpaces), got \(wizard.phase)")
+        }
+        XCTAssertFalse(gate.isPaired)
+        local.spaces[1] = original
+
+        await wizard.retry(controller: fixture.controller)
+        guard case .spaces = wizard.phase else { return XCTFail("expected .spaces, got \(wizard.phase)") }
+        XCTAssertEqual(wizard.visibleSteps, [.method, .spaces])
+        await wizard.finish(controller: fixture.controller)
+
+        XCTAssertEqual(wizard.phase, .done)
+        XCTAssertNotNil(fixture.store.map["LOCAL-1"])
+        XCTAssertTrue(fixture.reset.clearCalls.isEmpty, "Merging never removes local data")
+        XCTAssertTrue(gate.isPaired)
+    }
+
+    /// Without the local data reset, "use your account's data" is never offered: the method step is not
+    /// shown and the merge path runs as before.
+    func testNoMethodStepWhenTheResetIsUnavailable() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Mine")],
+            accountSpaces: [account("acct-1", name: "Work")], resetAvailable: false)
+        await fixture.wizard.start(controller: fixture.controller)
+
+        guard case .spaces = fixture.wizard.phase else {
+            return XCTFail("expected .spaces, got \(fixture.wizard.phase)")
+        }
+        XCTAssertEqual(fixture.wizard.plan?.showsMethod, false)
+        XCTAssertFalse(fixture.wizard.replaceAvailable)
+        XCTAssertFalse(fixture.wizard.canGoBackToMethod)
+        XCTAssertEqual(fixture.wizard.visibleSteps, [.spaces])
     }
 }

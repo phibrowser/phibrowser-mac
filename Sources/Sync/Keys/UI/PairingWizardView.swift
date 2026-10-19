@@ -6,8 +6,8 @@
 import AppKit
 import SwiftUI
 
-/// Modal root for the pairing wizard (§6): step bar, content, fixed footer, status pages, D7 overwrite
-/// confirmation and self-revoke exit.
+/// Modal root for the pairing wizard (§6): step bar, content, fixed footer, status pages, the sync method
+/// step, D7 overwrite confirmation, the replace confirmation and self-revoke exit.
 ///
 /// Keep confirmation as a container page like loading/error/submitting, sharing footer, exit and chrome
 /// instead of duplicating footer state. All rendered differences come from SpaceOverwriteDiff; this view owns
@@ -89,8 +89,28 @@ struct PairingWizardView: View {
                     model: SpacePairingModel(input: input, selections: viewModel.spaceSelections))
                     .padding(24)
             }
+        case .method(let summary):
+            ScrollView(.vertical) {
+                SyncMethodStepView(summary: summary, selection: $viewModel.selectedMethod,
+                                   offersUseAccount: viewModel.replaceAvailable)
+                    .padding(24)
+            }
         case .confirmOverwrite(let items):
             confirmationPage(items)
+        case .confirmReplaceLocal(let review):
+            ScrollView(.vertical) {
+                ReplaceLocalConfirmView(review: review, decisions: $viewModel.extraProfileDecisions,
+                                        locked: viewModel.methodLocked)
+                    .padding(24)
+            }
+        case .replacingLocal:
+            statusPage(message: NSLocalizedString("sync.pairing.replacing.local",
+                                                  value: "Replacing this Mac’s data…",
+                                                  comment: "Sync setup - progress title while this Mac's data is removed and replaced with the account's"),
+                       detail: NSLocalizedString("sync.pairing.replacing.detail",
+                                                 value: "Keep Phi open. This can take a few minutes.",
+                                                 comment: "Sync setup - detail shown while this Mac's data is being replaced with the account's"),
+                       showsProgress: true)
         case .submitting:
             statusPage(message: NSLocalizedString("sync.pairing.submitting",
                                                   value: "Applying your choices…",
@@ -354,7 +374,26 @@ struct PairingWizardView: View {
     @ViewBuilder
     private var actions: some View {
         switch viewModel.phase {
+        case .method:
+            // Finish when merging leads to no further page; "use your account's data" always continues to its
+            // confirmation.
+            Button(viewModel.methodStepFinishes
+                   ? NSLocalizedString("sync.pairing.finish", value: "Finish", comment: "Sync setup - button that applies the chosen matches")
+                   : NSLocalizedString("sync.pairing.method.continue", value: "Continue", comment: "Sync setup method step - button that moves on from choosing how this Mac syncs")) {
+                Task { await viewModel.continueFromMethod(controller: controller) }
+            }
+            .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.defaultAction)
+            .disabled(viewModel.isPreparing || viewModel.isApplying)
         case .profiles:
+            if viewModel.canGoBackToMethod {
+                Button(NSLocalizedString("sync.pairing.back",
+                                         value: "Back",
+                                         comment: "Sync setup - button that returns to the previous step")) {
+                    viewModel.backToMethod()
+                }
+                .buttonStyle(.bordered)
+            }
             // Finish when the Spaces page is hidden: Continue would lead nowhere.
             Button(viewModel.plan?.showsSpaces == false
                    ? NSLocalizedString("sync.pairing.finish", value: "Finish", comment: "Sync setup - button that applies the chosen matches")
@@ -369,7 +408,8 @@ struct PairingWizardView: View {
             .disabled(!viewModel.profileRowsDecided
                       || viewModel.phase == .loading || viewModel.phase == .submitting)
         case .spaces:
-            if viewModel.canGoBackToProfiles {
+            // Back goes to the Profiles page, or to the method step when the Profiles page is hidden.
+            if viewModel.canGoBackFromSpaces {
                 Button(NSLocalizedString("sync.pairing.back",
                                          value: "Back",
                                          comment: "Sync setup - button that returns to the previous step")) {
@@ -402,6 +442,30 @@ struct PairingWizardView: View {
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
+        case .confirmReplaceLocal:
+            if viewModel.isPreparing {
+                // The account-side preflight before anything is written.
+                ProgressView().controlSize(.small)
+            }
+            // The destructive action has no key equivalent and sits left of Back, which takes Return (as on
+            // the D7 page). Back is hidden once a replace has started: it can only be resumed.
+            Button(NSLocalizedString("sync.pairing.replaceLocal.apply",
+                                     value: "Replace this Mac’s data",
+                                     comment: "Sync setup replace confirmation - button that deletes this Mac's data and downloads the account's")) {
+                Task { await viewModel.replaceLocal(controller: controller) }
+            }
+            .buttonStyle(.bordered)
+            .disabled(!viewModel.canReplace)
+            if viewModel.canGoBackToMethod {
+                Button(NSLocalizedString("sync.pairing.back",
+                                         value: "Back",
+                                         comment: "Sync setup - button that returns to the previous step")) {
+                    viewModel.backToMethod()
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(viewModel.isPreparing)
+            }
         case .error:
             Button(NSLocalizedString("sync.pairing.retry", value: "Retry", comment: "Sync setup - button that retries after an error")) {
                 Task { await viewModel.retry(controller: controller) }
@@ -410,7 +474,7 @@ struct PairingWizardView: View {
             .keyboardShortcut(.defaultAction)
             .disabled(!Self.retryEnabled(for: viewModel.phase,
                                          isSubmitting: viewModel.isApplying))
-        case .loading, .submitting, .done:
+        case .loading, .submitting, .replacingLocal, .done:
             EmptyView()
         }
     }

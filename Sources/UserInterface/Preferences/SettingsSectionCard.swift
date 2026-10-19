@@ -94,7 +94,19 @@ struct SettingsDefaultBadge: View {
     var onAccent: Bool = false
 
     var body: some View {
-        Text(NSLocalizedString("settings.defaultBadge", value: "Default", comment: "Settings - badge marking the default Space or Profile"))
+        SettingsBadge(text: NSLocalizedString("settings.defaultBadge", value: "Default", comment: "Settings - badge marking the default Space or Profile"),
+                      onAccent: onAccent)
+    }
+}
+
+/// The small capsule pill behind `SettingsDefaultBadge`, for other short labels
+/// in the same style (the sync setup's "Recommended").
+struct SettingsBadge: View {
+    let text: String
+    var onAccent: Bool = false
+
+    var body: some View {
+        Text(text)
             .font(.system(size: 10, weight: .medium))
             .themedForeground(onAccent ? ThemedColor(.white) : .textSecondary)
             // Never wrap or compress: under tight row width (e.g. the Spaces list

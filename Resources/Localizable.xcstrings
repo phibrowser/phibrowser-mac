@@ -112327,6 +112327,121 @@
         }
       }
     },
+    "sync.pairing.count.bookmarks" : {
+      "comment" : "Sync setup - number of bookmarks on this Mac or in the account; %lld is the number",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld bookmark"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld bookmarks"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sync.pairing.count.pinnedTabs" : {
+      "comment" : "Sync setup - number of pinned tabs on this Mac or in the account; %lld is the number",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pinned tab"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pinned tabs"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sync.pairing.count.profiles" : {
+      "comment" : "Sync setup - number of browser profiles on this Mac or in the account; %lld is the number",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld profile"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld profiles"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sync.pairing.count.spaces" : {
+      "comment" : "Sync setup - number of Spaces on this Mac or in the account; %lld is the number",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Space"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Spaces"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sync.pairing.count.urlRules" : {
+      "comment" : "Sync setup - number of URL rules on this Mac or in the account; %lld is the number",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld URL rule"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld URL rules"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "sync.pairing.error.applyFailed" : {
       "comment" : "Sync setup - error shown when the chosen matches could not be applied",
       "localizations" : {
@@ -112681,6 +112796,17 @@
         }
       }
     },
+    "sync.pairing.error.replaceLocalFailed" : {
+      "comment" : "Sync setup - error shown when removing this Mac's data before downloading the account's data stopped part-way",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t finish replacing this Mac’s data. Retry picks up where it stopped — nothing else changes until it’s done."
+          }
+        }
+      }
+    },
     "sync.pairing.error.spaceLoadFailed" : {
       "comment" : "Sync setup - error shown when the account's Spaces could not be loaded",
       "localizations" : {
@@ -112976,6 +113102,50 @@
         }
       }
     },
+    "sync.pairing.kind.bookmarks" : {
+      "comment" : "Sync setup - names bookmarks when their number in the account is not known",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bookmarks"
+          }
+        }
+      }
+    },
+    "sync.pairing.kind.pinnedTabs" : {
+      "comment" : "Sync setup - names pinned tabs when their number in the account is not known",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pinned tabs"
+          }
+        }
+      }
+    },
+    "sync.pairing.kind.syncedSettings" : {
+      "comment" : "Sync setup - row naming the synced browser settings that are replaced or downloaded when this Mac uses the account's data",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Synced settings"
+          }
+        }
+      }
+    },
+    "sync.pairing.kind.urlRules" : {
+      "comment" : "Sync setup - names URL rules when their number in the account is not known",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL rules"
+          }
+        }
+      }
+    },
     "sync.pairing.loading.detail" : {
       "comment" : "Sync setup - detail shown while the account's Spaces are loading",
       "localizations" : {
@@ -113090,6 +113260,127 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在載入你的帳號…"
+          }
+        }
+      }
+    },
+    "sync.pairing.method.compare.account" : {
+      "comment" : "Sync setup method step - label starting the line that counts the data in the sync account",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your account"
+          }
+        }
+      }
+    },
+    "sync.pairing.method.compare.join" : {
+      "comment" : "Sync setup method step - joins two parts of a comparison line, such as \"This Mac\" and \"2 profiles\"; %1$@ is the text so far, %2$@ the next part",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "sync.pairing.method.compare.thisMac" : {
+      "comment" : "Sync setup method step - label starting the line that counts the data on this Mac",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac"
+          }
+        }
+      }
+    },
+    "sync.pairing.method.continue" : {
+      "comment" : "Sync setup method step - button that moves on from choosing how this Mac syncs",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
+          }
+        }
+      }
+    },
+    "sync.pairing.method.explanation" : {
+      "comment" : "Sync setup method step - one-line explanation under the title",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose how to combine your account’s data with what’s on this Mac."
+          }
+        }
+      }
+    },
+    "sync.pairing.method.merge.detail" : {
+      "comment" : "Sync setup method step - explanation under the merge option",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Match profiles and Spaces one by one. Bookmarks, pinned tabs and URL rules from both sides are kept."
+          }
+        }
+      }
+    },
+    "sync.pairing.method.merge.title" : {
+      "comment" : "Sync setup method step - title of the option that keeps this Mac's data and combines it with the account's",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge this Mac with your account"
+          }
+        }
+      }
+    },
+    "sync.pairing.method.recommended" : {
+      "comment" : "Sync setup method step - pill on the merge option marking it as the recommended choice",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommended"
+          }
+        }
+      }
+    },
+    "sync.pairing.method.title" : {
+      "comment" : "Sync setup method step - title of the page that chooses between merging this Mac with the account and using the account's data",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How should this Mac sync?"
+          }
+        }
+      }
+    },
+    "sync.pairing.method.useAccount.detail" : {
+      "comment" : "Sync setup method step - explanation under the option that replaces this Mac's data with the account's",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace this Mac’s Spaces, bookmarks, pinned tabs, URL rules and synced settings with your account’s. Only this Mac changes."
+          }
+        }
+      }
+    },
+    "sync.pairing.method.useAccount.title" : {
+      "comment" : "Sync setup method step - title of the option that replaces this Mac's data with the account's",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use your account’s data"
           }
         }
       }
@@ -114517,6 +114808,193 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "從同步中移除此裝置…"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.apply" : {
+      "comment" : "Sync setup replace confirmation - button that deletes this Mac's data and downloads the account's",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace this Mac’s data"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.backupHint" : {
+      "comment" : "Sync setup replace confirmation - hint on exporting this Mac's data before replacing it; names the Finish later button and the Help menu path",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Want a copy first? Choose Finish later, then use Help › Manage User Data › Export User Data…"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.defaultUnavailable" : {
+      "comment" : "Sync setup replace confirmation - shown instead of allowing the replacement when the account's default profile cannot be read on this Mac",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your account’s default profile can’t be read on this Mac, so this Mac’s data can’t be replaced right now. Choose Merge to match profiles yourself, or choose Finish later and try again."
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.downloadedHeader" : {
+      "comment" : "Sync setup replace confirmation - header of the card listing the data downloaded from the account",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloaded from your account"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.explanation" : {
+      "comment" : "Sync setup - explanation on the page confirming that this Mac's data is replaced with the account's",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi deletes this Mac’s Spaces, bookmarks, pinned tabs, URL rules and synced settings, then downloads your account’s. This can’t be undone. Your other devices aren’t affected."
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.profileDelete" : {
+      "comment" : "Sync setup replace confirmation - option that deletes a profile and its data from this Mac",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete from this Mac"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.profileDeleteNote" : {
+      "comment" : "Sync setup replace confirmation - caption under the profiles card explaining what deleting a profile removes",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleting a profile also removes its passwords, history and extensions on this Mac."
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.profileKeep" : {
+      "comment" : "Sync setup replace confirmation - option that keeps a profile on this Mac and adds it to the account",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep and add to your account"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.profileMatchedDefault" : {
+      "comment" : "Sync setup replace confirmation - shown beside this Mac's default profile, which always pairs with the account's default profile",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Matched with your account’s default profile"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.profileRegisteredDefault" : {
+      "comment" : "Sync setup replace confirmation - shown beside this Mac's default profile when the account has no default profile to match, so this one becomes the account's default",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registered as your account’s default profile"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.profilesHeader" : {
+      "comment" : "Sync setup replace confirmation - header of the card listing this Mac's profiles",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profiles on this Mac"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.removedHeader" : {
+      "comment" : "Sync setup replace confirmation - header of the card listing the data deleted from this Mac",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removed from this Mac"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.spacesCloseTabs" : {
+      "comment" : "Sync setup replace confirmation - caption under the number of Spaces deleted from this Mac",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open tabs in them will close"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.title" : {
+      "comment" : "Sync setup - title of the page confirming that this Mac's data is replaced with the account's",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace what’s on this Mac?"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.untouched" : {
+      "comment" : "Sync setup replace confirmation - note on what the replacement does not change",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabs, history, passwords and extensions in profiles you keep stay as they are."
+          }
+        }
+      }
+    },
+    "sync.pairing.replacing.detail" : {
+      "comment" : "Sync setup - detail shown while this Mac's data is being replaced with the account's",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Phi open. This can take a few minutes."
+          }
+        }
+      }
+    },
+    "sync.pairing.replacing.local" : {
+      "comment" : "Sync setup - progress title while this Mac's data is removed and replaced with the account's",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replacing this Mac’s data…"
           }
         }
       }

@@ -228,6 +228,9 @@ final class AppModalPairingHost: NSObject, ProfilePairingModalHost, NSWindowDele
     private let previewAccountSpaces: () async -> Result<PhiAccountSpacePreview, PhiSpacePreviewError>
     private let pairableLocalSpaces: () -> [PhiLocalSpace]
     private let themeDisplayName: (String) -> String?
+    /// The local data reset for the wizard's inventory and "use your account's data" (docs/sync.md,
+    /// "Sync method and replacing this Mac's data").
+    private let localReset: @MainActor (SyncKeyController) -> (any LocalPhiResetting)?
 
     /// True for exactly as long as THIS host's `runModal` call is on the stack.
     ///
@@ -275,13 +278,16 @@ final class AppModalPairingHost: NSObject, ProfilePairingModalHost, NSWindowDele
          pairableLocalSpaces: @escaping () -> [PhiLocalSpace]
              = { MainActor.assumeIsolated { PhiChromiumCoordinator.shared.pairableLocalSpaces() } },
          themeDisplayName: @escaping (String) -> String?
-             = { id in MainActor.assumeIsolated { ThemeManager.shared.registeredThemes[id]?.name } }) {
+             = { id in MainActor.assumeIsolated { ThemeManager.shared.registeredThemes[id]?.name } },
+         localReset: @escaping @MainActor (SyncKeyController) -> (any LocalPhiResetting)?
+             = { $0.localDataReset() }) {
         self.scheduler = scheduler
         self.runModal = runModal
         self.stopModal = stopModal
         self.previewAccountSpaces = previewAccountSpaces
         self.pairableLocalSpaces = pairableLocalSpaces
         self.themeDisplayName = themeDisplayName
+        self.localReset = localReset
         super.init()
     }
 
@@ -300,7 +306,8 @@ final class AppModalPairingHost: NSObject, ProfilePairingModalHost, NSWindowDele
             keyLayer: KeyLayerViewModel(manager: controller.manager),
             previewAccountSpaces: previewAccountSpaces,
             pairableLocalSpaces: pairableLocalSpaces,
-            themeDisplayName: themeDisplayName)
+            themeDisplayName: themeDisplayName,
+            localReset: localReset)
         let setup = KeyLayerViewModel(manager: controller.manager)
         self.setupModel = setup
         let root = SyncSetupView(keyModel: setup, wizard: viewModel, controller: controller,
@@ -362,15 +369,17 @@ final class AppModalPairingHost: NSObject, ProfilePairingModalHost, NSWindowDele
     }
 
     /// Re-drive rescues stuck loading, not refreshes user input (R-D6-11). Allow only loading and
-    /// error/reload; reject profiles, spaces, confirmOverwrite, submitting and done.
-    /// Confirmation is interactive and must retain
-    /// differences/selections; error/backToSpaces also holds completed step-2 choices. Reusing KeyLayerPhase's
-    /// broad error rule would call start each minute and erase that state.
+    /// error/reload; reject the method step, profiles, spaces, both confirmations, submitting, replacing and
+    /// done. Confirmation is interactive and must retain differences/selections; error/backToSpaces also
+    /// holds completed step-2 choices, and error/resumeReplace the replace in progress. Reusing
+    /// KeyLayerPhase's broad error rule would call start each minute and erase that state.
     static func reloadAllowed(for phase: PairingWizardPhase) -> Bool {
         switch phase {
         case .loading: return true
         case .error(_, let resume): return resume == .reload
-        case .profiles, .spaces, .confirmOverwrite, .submitting, .done: return false
+        case .method, .profiles, .spaces, .confirmOverwrite, .confirmReplaceLocal, .submitting, .replacingLocal,
+             .done:
+            return false
         }
     }
 

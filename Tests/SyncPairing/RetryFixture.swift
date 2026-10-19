@@ -87,7 +87,9 @@ func AppLogError(_ message: String) {}
     static let shared = ProfilePairingGate()
     var enrollmentGeneration = UUID()
     var isPaired = false
-    func completeEnrollment(verifiedDeviceKeyID: String?) throws { isPaired = true }
+    /// Mirrors the production gate's marker clearing after a persisted completion.
+    var onComplete: (() -> Void)?
+    func completeEnrollment(verifiedDeviceKeyID: String?) throws { isPaired = true; onComplete?() }
 }
 @MainActor final class SyncKeyController {
     let manager = AccountKeyManager()
@@ -115,7 +117,16 @@ func AppLogError(_ message: String) {}
     }
     func removeSpaceMapping(forSpaceId id: String) { spaceKeys.removeMapping(forSpaceId: id) }
     func ensureSpaceMapped(spaceId: String) throws -> String { try spaceKeys.ensureMapped(spaceId: spaceId) }
-    func resolveMappings() async {}
+    var onResolve: (() -> Void)?
+    func resolveMappings() async { onResolve?() }
+    var localResetMarker: SyncPairingLocalResetMarker?
+    var onMarkerSaved: (() -> Void)?
+    func pairingLocalResetMarker() -> SyncPairingLocalResetMarker? { localResetMarker }
+    func savePairingLocalResetMarker(deleteProfileIds: Set<String>, startedAt: Date = Date()) throws {
+        onMarkerSaved?()
+        localResetMarker = SyncPairingLocalResetMarker(deviceKeyID: "device", deleteProfileIds: deleteProfileIds,
+                                                       startedAtMs: Int64(startedAt.timeIntervalSince1970 * 1000))
+    }
 }
 struct PairingLocal: Equatable { let profileId: String; let displayName: String; let isDefault: Bool }
 enum KeyLayerPhase { case working, pairingProfiles(locals: [PairingLocal], remotes: [RemoteProfile]), error(String) }
@@ -155,7 +166,8 @@ struct PairingLoadTimedOut: Error {}
         var skipped = initialSkipped
         let wizard = PairingWizardViewModel(keyLayer: KeyLayerViewModel(manager: controller.manager),
             previewAccountSpaces: { .success(.init(spaces: [remote("acct-1", "Work")], skippedEntityCount: skipped)) },
-            pairableLocalSpaces: { [local("LOCAL-1", "Work")] }, themeDisplayName: { _ in nil }, gate: gate)
+            pairableLocalSpaces: { [local("LOCAL-1", "Work")] }, themeDisplayName: { _ in nil }, gate: gate,
+            methodStepEnabled: false)
         await wizard.start(controller: controller)
         skipped = 1
         if initialSkipped == 0 {
@@ -208,7 +220,8 @@ struct PairingLoadTimedOut: Error {}
                 key: Data(count: 32), name: "Remote name", ark: controller.manager.currentARK!)
         }
         let wizard = PairingWizardViewModel(keyLayer: KeyLayerViewModel(manager: controller.manager),
-            previewAccountSpaces: { .success(.init(spaces: account, skippedEntityCount: 0)) }, pairableLocalSpaces: { locals }, themeDisplayName: { _ in nil }, gate: gate)
+            previewAccountSpaces: { .success(.init(spaces: account, skippedEntityCount: 0)) }, pairableLocalSpaces: { locals }, themeDisplayName: { _ in nil }, gate: gate,
+            methodStepEnabled: false)
         await wizard.start(controller: controller)
         if mode == .adopt { wizard.profileSelections["Default"] = .remote("remote-profile") }
         if mode == .create { wizard.profileRemoteChoices["remote-profile"] = .createLocal }
@@ -251,7 +264,8 @@ struct PairingLoadTimedOut: Error {}
         let locals = [local("LOCAL-1", "Work"), local("LOCAL-2", "Reading")]
         let account = [remote("acct-1", "Work"), remote("acct-2", "Reading")]
         let wizard = PairingWizardViewModel(keyLayer: KeyLayerViewModel(manager: controller.manager),
-            previewAccountSpaces: { .success(.init(spaces: account, skippedEntityCount: 0)) }, pairableLocalSpaces: { locals }, themeDisplayName: { _ in nil })
+            previewAccountSpaces: { .success(.init(spaces: account, skippedEntityCount: 0)) }, pairableLocalSpaces: { locals }, themeDisplayName: { _ in nil },
+            methodStepEnabled: false)
         await wizard.start(controller: controller)
         wizard.continueToSpaces()
         try require(wizard.spaceSelections == ["LOCAL-1": .existing(syncUuid: "acct-1"), "LOCAL-2": .existing(syncUuid: "acct-2")],
@@ -311,6 +325,138 @@ struct PairingLoadTimedOut: Error {}
         try require(suggested([work], [remote("a", "Work")], selections: ["work": .addAsNew])
                     == ["work": .existing(syncUuid: "a")], "Stale identity fallback may receive a same-name suggestion")
     }
+    // MARK: - Use your account's data (the merge cases above pin the method step off)
+
+    /// Records the replace sequence; `failures` makes that many clear() calls throw.
+    final class EventLog { var events: [String] = [] }
+    @MainActor final class FakeReset: LocalPhiResetting {
+        let log: EventLog
+        var failures = 0
+        var pairedAtClear: [Bool] = []
+        var clearRequests: [LocalResetRequest] = []
+        var inventory = LocalPhiInventory(nonDefaultSpaceIds: ["LOCAL-1"], bookmarks: 3, pinnedTabs: 1)
+        let gate: ProfilePairingGate
+        let controller: SyncKeyController
+        let onCleared: () -> Void
+        init(gate: ProfilePairingGate, controller: SyncKeyController, log: EventLog = EventLog(),
+             onCleared: @escaping () -> Void) {
+            self.gate = gate; self.controller = controller; self.log = log; self.onCleared = onCleared
+        }
+        func inventory(deleting profileIds: Set<String>) throws -> LocalPhiInventory { inventory }
+        func clear(_ request: LocalResetRequest) async throws {
+            log.events.append("clear")
+            pairedAtClear.append(gate.isPaired)
+            clearRequests.append(request)
+            if failures > 0 { failures -= 1; throw NSError(domain: "clear stopped", code: 1) }
+            controller.profiles.removeAll { request.deleteProfileIds.contains($0.profileId) }
+            inventory = LocalPhiInventory()
+            onCleared()
+        }
+    }
+
+    /// Default + one junk Profile (deleted) + one kept Profile; the account has a default Profile and a
+    /// Work Profile nobody here claims. Clear fails once: Retry converges.
+    @MainActor static func replaceRunsInOrderAndRetryConverges() async throws {
+        let api = RetryAPI(), store = RetrySpaceStore(), gate = ProfilePairingGate()
+        store.failingID = nil
+        let controller = SyncKeyController(api: api, spaceStore: store)
+        controller.profiles = [("Default", "Personal"), ("Profile 2", "Junk"), ("Profile 3", "Keep")]
+        let ark = controller.manager.currentARK!
+        api.envelopes["acct-default"] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(count: 32), name: "Your Phi", isDefault: true, ark: ark)
+        api.envelopes["acct-work"] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(count: 32), name: "Work", isDefault: false, ark: ark)
+        var locals = [local(LocalStore.defaultSpaceId, "Default"), local("LOCAL-1", "Junk Space")]
+        let log = EventLog()
+        api.onPut = { log.events.append("profiles") }
+        controller.onMarkerSaved = { log.events.append("marker") }
+        controller.onResolve = { log.events.append("resolve") }
+        let reset = FakeReset(gate: gate, controller: controller, log: log, onCleared: { locals = [locals[0]] })
+        reset.failures = 1
+        gate.onComplete = { log.events.append("enrollment"); controller.localResetMarker = nil }
+        let wizard = PairingWizardViewModel(keyLayer: KeyLayerViewModel(manager: controller.manager),
+            previewAccountSpaces: { .success(.init(spaces: [remote("acct-1", "Work")], skippedEntityCount: 0)) },
+            pairableLocalSpaces: { locals }, themeDisplayName: { _ in nil }, gate: gate,
+            localReset: { _ in reset })
+        await wizard.start(controller: controller)
+        guard case .method(let summary) = wizard.phase else { throw NSError(domain: "Expected the method step", code: 1) }
+        try require(summary.local.bookmarks == 3 && summary.local.profiles == 3 && summary.account.spaces == 2,
+                    "The method step counts both sides")
+        try require(wizard.visibleSteps.first == .method && !wizard.methodStepFinishes, "Merge continues to its pages")
+        wizard.selectedMethod = .useAccount
+        try require(wizard.visibleSteps == [.method, .confirm], "The step bar follows the selected method")
+        await wizard.continueFromMethod(controller: controller)
+        guard case .confirmReplaceLocal(let review) = wizard.phase else {
+            throw NSError(domain: "Expected the replace confirmation", code: 1)
+        }
+        try require(review.extraLocals.map(\.profileId) == ["Profile 2", "Profile 3"] && !review.defaultUnavailable,
+                    "Both unmatched local Profiles are listed")
+        try require(review.removed.spaces == 1 && review.removed.bookmarks == 3, "Removed counts come from the inventory")
+        wizard.extraProfileDecisions["Profile 2"] = .deleteLocal
+
+        // Clear fails once: the gate stays unpaired with the marker written, and nothing else completes.
+        await wizard.replaceLocal(controller: controller)
+        guard case .error(_, .resumeReplace) = wizard.phase else {
+            throw NSError(domain: "Expected the replace error, got \(wizard.phase)", code: 1)
+        }
+        try require(!gate.isPaired && controller.localResetMarker?.deleteProfileIds == ["Profile 2"],
+                    "A stopped clear keeps the gate shut and the marker set")
+        try require(wizard.methodLocked, "Once the marker is written the method is locked")
+
+        await wizard.retry(controller: controller)
+        try require(wizard.phase == .done && gate.isPaired, "Retry converges")
+        try require(reset.clearRequests == [LocalResetRequest(deleteProfileIds: ["Profile 2"]),
+                                            LocalResetRequest(deleteProfileIds: ["Profile 2"])],
+                    "Clear runs twice with the chosen deletion")
+        try require(reset.pairedAtClear == [false, false], "Clear always runs before enrollment")
+        try require(controller.localResetMarker == nil, "Completion clears the marker")
+        try require(controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 3") != nil
+                    && controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 2") == nil,
+                    "The kept Profile is registered and the deleted one never is")
+        try require(controller.localProfileId(forGlobalUuid: "acct-default") == "Default",
+                    "The Default adopts the account default")
+        try require(controller.localProfileId(forGlobalUuid: "acct-work") != nil,
+                    "The unclaimed account Profile is created on this Mac")
+        try require(store.map.isEmpty, "Replacing maps no Space")
+        try require(api.envelopes.count == 3, "Exactly one new registration (the kept Profile)")
+        try require(log.events == ["profiles", "marker", "clear", "marker", "clear", "enrollment", "resolve"],
+                    "Order: Profiles, marker, clear, then enrollment and resolve; got \(log.events)")
+    }
+
+    /// A marker from an earlier session lands on a locked confirmation with its saved deletions.
+    @MainActor static func aMarkerResumesTheLockedConfirmation() async throws {
+        let api = RetryAPI(), store = RetrySpaceStore(), gate = ProfilePairingGate()
+        store.failingID = nil
+        let controller = SyncKeyController(api: api, spaceStore: store)
+        controller.profiles = [("Default", "Personal"), ("Profile 2", "Junk")]
+        try controller.savePairingLocalResetMarker(deleteProfileIds: ["Profile 2"])
+        var locals = [local(LocalStore.defaultSpaceId, "Default")]
+        let reset = FakeReset(gate: gate, controller: controller, onCleared: { locals = [locals[0]] })
+        reset.inventory = LocalPhiInventory()
+        let wizard = PairingWizardViewModel(keyLayer: KeyLayerViewModel(manager: controller.manager),
+            previewAccountSpaces: { .success(.init(spaces: [remote("acct-1", "Work")], skippedEntityCount: 0)) },
+            pairableLocalSpaces: { locals }, themeDisplayName: { _ in nil }, gate: gate,
+            localReset: { _ in reset })
+        await wizard.start(controller: controller)
+        guard case .confirmReplaceLocal = wizard.phase else {
+            throw NSError(domain: "Expected the locked confirmation, got \(wizard.phase)", code: 1)
+        }
+        try require(wizard.methodLocked && !wizard.canGoBackToMethod && wizard.selectedMethod == .useAccount,
+                    "The resumed confirmation is locked without Back")
+        wizard.backToMethod()
+        guard case .confirmReplaceLocal = wizard.phase else { throw NSError(domain: "Back is refused", code: 1) }
+        try require(wizard.extraProfileDecisions["Profile 2"] == .deleteLocal, "The saved deletion is shown")
+        // Finish later keeps the marker.
+        try require(wizard.leaveWithoutApplying() && controller.localResetMarker != nil
+                    && wizard.selectedMethod == .merge && !wizard.methodLocked,
+                    "Leaving discards the page state but keeps the marker")
+        await wizard.start(controller: controller)
+        await wizard.replaceLocal(controller: controller)
+        try require(wizard.phase == .done && gate.isPaired, "The resumed replace completes")
+        try require(reset.clearRequests == [LocalResetRequest(deleteProfileIds: ["Profile 2"])],
+                    "The marker's deletions are used")
+    }
+
     @MainActor static func main() async throws {
         try ambiguousSpaceSuggestions()
         try await replacementNeedsCompletePreview()
@@ -324,6 +470,8 @@ struct PairingLoadTimedOut: Error {}
         try await run(change: .newProfile)
         try await run(change: .missingProfile)
         try await run(change: .localDuringApply)
-        print("PASS same-name Space suggestions, ambiguity, Profile changes, explicit choices; pairing retry: register/adopt/create progress, retained choices, idempotence, changed server Spaces/Profiles, local edits during apply")
+        try await replaceRunsInOrderAndRetryConverges()
+        try await aMarkerResumesTheLockedConfirmation()
+        print("PASS replace: order, clear failure then Retry, locked resume, Finish later keeps the marker;  same-name Space suggestions, ambiguity, Profile changes, explicit choices; pairing retry: register/adopt/create progress, retained choices, idempotence, changed server Spaces/Profiles, local edits during apply")
     }
 }

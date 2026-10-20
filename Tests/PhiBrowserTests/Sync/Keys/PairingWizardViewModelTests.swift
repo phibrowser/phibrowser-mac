@@ -1604,9 +1604,9 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertEqual(ReplaceLocalConfirmView.deletedProfilesText([scratch]), "1 profile: Scratch")
         XCTAssertEqual(ReplaceLocalConfirmView.deletedProfilesText([scratch, work2]), "2 profiles: Scratch, Work2")
         XCTAssertEqual(ReplaceLocalConfirmView.deletedProfilesCaption(count: 1),
-                       "Its passwords, history and extensions on this Mac are deleted too.")
+                       "Its history, extensions and site data on this Mac are deleted too.")
         XCTAssertEqual(ReplaceLocalConfirmView.deletedProfilesCaption(count: 2),
-                       "Their passwords, history and extensions on this Mac are deleted too.")
+                       "Their history, extensions and site data on this Mac are deleted too.")
     }
 
     /// Navigating the method step and the confirmation reads keyLayer.phase only.

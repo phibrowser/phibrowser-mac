@@ -426,7 +426,7 @@ primary button.
 downloaded from the account. The "Removed from this Mac" card names the
 Profiles the account has none for (non-default and not matched by name) in one
 row, "1 profile: Scratch" or "2 profiles: Scratch, Work2", captioned "Its (Their)
-passwords, history and extensions on this Mac are deleted too.", then non-default
+history, extensions and site data on this Mac are deleted too.", then non-default
 Spaces (whose open tabs close), bookmarks, pinned tabs, URL rules and synced
 settings; rows with nothing to remove are hidden. There is no per-Profile
 choice: "use your account's data" always deletes every such extra Profile with

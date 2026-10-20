@@ -114895,7 +114895,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Its passwords, history and extensions on this Mac are deleted too."
+            "value" : "Its history, extensions and site data on this Mac are deleted too."
           }
         }
       }
@@ -114917,7 +114917,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Their passwords, history and extensions on this Mac are deleted too."
+            "value" : "Their history, extensions and site data on this Mac are deleted too."
           }
         }
       }
@@ -114950,7 +114950,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Profiles that match one in your account stay as they are, with their tabs, history, passwords and extensions."
+            "value" : "Profiles that match one in your account stay as they are, with their tabs, history, extensions and site data."
           }
         }
       }

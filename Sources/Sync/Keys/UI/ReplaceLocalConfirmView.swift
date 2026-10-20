@@ -45,7 +45,7 @@ struct ReplaceLocalConfirmView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             secondaryLine(NSLocalizedString("sync.pairing.replaceLocal.untouched",
-                                            value: "Profiles that match one in your account stay as they are, with their tabs, history, passwords and extensions.",
+                                            value: "Profiles that match one in your account stay as they are, with their tabs, history, extensions and site data.",
                                             comment: "Sync setup replace confirmation - note on what the replacement does not change"))
             secondaryLine(NSLocalizedString("sync.pairing.replaceLocal.backupHint",
                                             value: "Want a copy first? Choose Finish later, then use Help › Manage User Data › Export User Data…",
@@ -126,10 +126,10 @@ struct ReplaceLocalConfirmView: View {
     static func deletedProfilesCaption(count: Int) -> String {
         count == 1
             ? NSLocalizedString("sync.pairing.replaceLocal.removedProfileData",
-                                value: "Its passwords, history and extensions on this Mac are deleted too.",
+                                value: "Its history, extensions and site data on this Mac are deleted too.",
                                 comment: "Sync setup replace confirmation - caption under the row naming the one profile deleted from this Mac")
             : NSLocalizedString("sync.pairing.replaceLocal.removedProfilesData",
-                                value: "Their passwords, history and extensions on this Mac are deleted too.",
+                                value: "Their history, extensions and site data on this Mac are deleted too.",
                                 comment: "Sync setup replace confirmation - caption under the row naming the profiles deleted from this Mac")
     }
 }

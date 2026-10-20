@@ -183,8 +183,12 @@ class ShortcutsViewModel: ObservableObject {
         }
         let owners = Dictionary(grouping: bindings, by: \.owner)
         return owners.keys.sorted { $0.precedes($1) }.map { owner in
-            let target = owner.commandID.flatMap(CommandWrapper.init(rawValue:))
-                .flatMap { visibleCommands.contains($0) ? $0 : nil }
+            let target: CommandWrapper?
+            if let id = owner.commandID, let command = CommandWrapper(rawValue: id), visibleCommands.contains(command) {
+                target = command
+            } else {
+                target = nil
+            }
             return ShortcutConflictItem(
                 id: owner, name: displayName(for: owner), command: target,
                 keys: Array(Set(owners[owner, default: []].map { $0.key.displayString })).sorted()
@@ -234,9 +238,16 @@ class ShortcutsViewModel: ObservableObject {
     
     func rebuildSections() {
         let snapshot = Shortcuts.bindingInventory(additionalBindings: additionalBindings())
-        inventory = ShortcutInventory(bindings: snapshot.bindings.filter { binding in
-            binding.commandID.flatMap(CommandWrapper.init(rawValue:)).map(shouldShow) ?? true
-        })
+        // Keep owner inspection out of nested optional closures: Swift 6.3
+        // can fail SIL ownership verification when optimizing that chain.
+        var visible: [ShortcutBinding] = []
+        for binding in snapshot.bindings {
+            if let id = binding.commandID, let command = CommandWrapper(rawValue: id), !shouldShow(command) {
+                continue
+            }
+            visible.append(binding)
+        }
+        inventory = ShortcutInventory(bindings: visible)
         var newSections: [(category: String, subtitle: String?, items: [ShortcutItem])] = []
         
         // Discover available actions even before they have a binding. Keep saved

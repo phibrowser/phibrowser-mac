@@ -78,6 +78,53 @@ final class ShortcutInventoryIntegrationTests: XCTestCase {
         }
     }
 
+    func testRebuiltInventoryPreservesNonCommandOwnersAndFiltersUnavailableSpaces() {
+        let key = ShortcutsKey(characters: "d", modifiers: [.control, .option])
+        let enabled = ShortcutBinding(commandID: CommandWrapper.IDC_DUPLICATE_TAB.rawValue,
+                                      key: key, scope: .browser, source: .hidden)
+        let unknown = ShortcutBinding(commandID: 999999, key: key, scope: .all, source: .menu)
+        let native = ShortcutBinding(owner: .nativeAction("copy:"), key: key,
+                                     scope: .all, source: .menu, title: "Copy")
+        let system = ShortcutBinding(owner: .system, key: key,
+                                     scope: .all, source: .system, title: "System")
+        let spaceBindings = CommandWrapper.spaceSelectionCommands.map {
+            ShortcutBinding(commandID: $0.rawValue, key: key, scope: .browser, source: .hidden)
+        }
+        var records = [enabled, unknown, native, system, native] + spaceBindings
+        let model = ShortcutsViewModel(additionalBindings: { records }, availableCommands: { [] })
+        for binding in [enabled, unknown, native, system] {
+            XCTAssertTrue(model.inventory.bindings.contains(binding))
+        }
+        for (index, binding) in spaceBindings.enumerated() {
+            XCTAssertEqual(model.inventory.bindings.contains(binding), index < SpaceManager.shared.spaces.count)
+        }
+        let expected = model.inventory.bindings
+        XCTAssertEqual(expected.count, Set(expected).count)
+        records = Array(records.reversed()) + records
+        model.rebuildSections()
+        XCTAssertEqual(model.inventory.bindings, expected)
+    }
+
+    func testConflictTargetsOnlyLinkVisibleCommandsAndPreserveReservedOwners() throws {
+        let key = ShortcutsKey(characters: "d", modifiers: [.control, .option])
+        install([.IDC_DUPLICATE_TAB: .custom(key), .IDC_WINDOW_MUTE_SITE: .custom(key)])
+        let reserved: [ShortcutBinding.Owner] = [.command(CommandWrapper.IDC_EXIT.rawValue),
+            .command(999999), .nativeAction("copy:"), .system]
+        let records = reserved.map {
+            ShortcutBinding(owner: $0, key: key, scope: .all, source: .menu, title: "Reserved")
+        }
+        let model = ShortcutsViewModel(additionalBindings: { records + records }, availableCommands: { [] })
+        let conflicts = model.conflicts(for: .IDC_DUPLICATE_TAB)
+        let visible = try XCTUnwrap(conflicts.first { $0.id == .command(CommandWrapper.IDC_WINDOW_MUTE_SITE.rawValue) })
+        XCTAssertEqual(visible.command, .IDC_WINDOW_MUTE_SITE)
+        for owner in reserved {
+            let conflict = try XCTUnwrap(conflicts.first { $0.id == owner })
+            XCTAssertNil(conflict.command)
+            XCTAssertEqual(conflict.keys, [key.displayString])
+            XCTAssertEqual(conflicts.filter { $0.id == owner }.count, 1)
+        }
+    }
+
     func testTwoCustomOnlyCommandsReportEachOther() throws {
         let key = ShortcutsKey(characters: "d", modifiers: [.control, .option])
         install([.IDC_DUPLICATE_TAB: .custom(key), .IDC_WINDOW_MUTE_SITE: .custom(key)])

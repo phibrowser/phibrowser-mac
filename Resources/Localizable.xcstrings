@@ -116144,6 +116144,17 @@
         }
       }
     },
+    "sync.pairing.submitting.auto" : {
+      "comment" : "Sync setup - progress title while a pairing that needed no choices is completed",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setting up sync…"
+          }
+        }
+      }
+    },
     "sync.pairing.unnamedProfileName" : {
       "comment" : "Sync setup - name given to a local profile created for an account profile that has no name",
       "localizations" : {

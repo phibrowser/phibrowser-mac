@@ -111,9 +111,13 @@ struct PairingWizardView: View {
                                                  comment: "Sync setup - detail shown while this Mac's data is being replaced with the account's"),
                        showsProgress: true)
         case .submitting:
-            statusPage(message: NSLocalizedString("sync.pairing.submitting",
-                                                  value: "Applying your choices…",
-                                                  comment: "Sync setup - progress title while the chosen matches are applied"),
+            statusPage(message: viewModel.submitsWithoutChoices
+                           ? NSLocalizedString("sync.pairing.submitting.auto",
+                                               value: "Setting up sync…",
+                                               comment: "Sync setup - progress title while a pairing that needed no choices is completed")
+                           : NSLocalizedString("sync.pairing.submitting",
+                                               value: "Applying your choices…",
+                                               comment: "Sync setup - progress title while the chosen matches are applied"),
                        showsProgress: true)
         case .done:
             statusPage(message: nil, showsProgress: true).onAppear {

@@ -163,6 +163,12 @@ final class PairingWizardViewModel: ObservableObject {
     /// property, never restore cross-object reads (§6.5; PairingWizardView.actions).
     @Published private(set) var isApplying = false
 
+    /// True while the wizard submits a pairing that showed no page at all, so the status page must not say
+    /// "Applying your choices". The title follows the plan: no page shown means "Setting up sync…". Every
+    /// fallback to a page goes through `revealingProfiles()`, so the title cannot drift from what the user
+    /// saw. A Merge chosen on the method step counts as a choice, because that step is part of the plan.
+    var submitsWithoutChoices: Bool { plan?.autoCompletes == true }
+
     /// Created by the wizard (moved from AppModalPairingHost.present); this reference is read-only.
     let keyLayer: KeyLayerViewModel
 

@@ -361,8 +361,10 @@ A page shows only when it asks the user something:
   Profiles and no account Spaces) shows no page: every local Profile registers
   and every local Space is added as new.
 - When no page shows, the wizard completes on its own. It shows the submitting
-  status page from the start, and the submission preflight still re-reads the
-  account; there is no exception to "every submission preflight fetches new
+  status page from the start, titled "Setting up sync…" because the user made no
+  choices (the view model derives this from the plan: `autoCompletes`, so any
+  fallback that reveals a page switches back to "Applying your choices…"), and
+  the submission preflight still re-reads the account; there is no exception to "every submission preflight fetches new
   candidates". An incomplete preview never completes on its own and never
   decides Profiles automatically.
 - When the Profiles page is hidden, its decisions are automatic: the local

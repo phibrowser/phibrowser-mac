@@ -906,6 +906,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertEqual(wizard.phase, .done)
         XCTAssertEqual(wizard.plan?.autoCompletes, true)
         XCTAssertEqual(wizard.visibleSteps, [], "The step bar lists no page")
+        XCTAssertTrue(wizard.submitsWithoutChoices, "The status page says Setting up sync, not Applying your choices")
         XCTAssertFalse(seen.contains { phase in
             switch phase {
             case .profiles, .spaces, .confirmOverwrite: return true
@@ -991,6 +992,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         guard case .profiles = wizard.phase else { return XCTFail("expected .profiles, got \(wizard.phase)") }
         XCTAssertEqual(wizard.plan?.autoCompletes, false)
         XCTAssertTrue(wizard.profileRemoteChoices.isEmpty, "Nothing is decided automatically")
+        XCTAssertFalse(wizard.submitsWithoutChoices, "A page was shown, so a later submission follows choices")
         XCTAssertFalse(gate.isPaired)
     }
 
@@ -1073,11 +1075,39 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertEqual(wizard.plan?.showsProfiles, true)
         XCTAssertEqual(wizard.plan?.showsSpaces, false, "Primary action is Finish")
         XCTAssertEqual(wizard.visibleSteps, [.profiles])
+        XCTAssertFalse(wizard.submitsWithoutChoices, "A page was revealed, so the status page follows choices")
         XCTAssertFalse(gate.isPaired)
 
         await wizard.continueFromProfiles(controller: controller)
         XCTAssertEqual(wizard.phase, .done)
         XCTAssertTrue(gate.isPaired)
+    }
+
+    /// An automatic submission whose Profile step fails reloads the candidates and lands on the Profiles page.
+    /// The status page title follows the plan, so a later submission from that page says "Applying your choices".
+    func testAFailedAutomaticProfileStepSubmitsWithChoicesAfterwards() async throws {
+        let (wizard, controller, _, api) = try await makeWizard(
+            locals: [local(LocalStore.defaultSpaceId, name: "Default")], accountSpaces: [])
+        wizard.shouldCompleteNewAccount = true
+        let remoteEnvelope = try ProfileKeyManager.sealProfilePayload(
+            key: Data(count: 32), name: "Home",
+            ark: try XCTUnwrap(controller.manager.currentARK))
+        api.beforePutProfileKey = { [api] in
+            api.beforePutProfileKey = nil
+            api.profileEnvelopes["uuid-remote"] = remoteEnvelope
+            api.profileEndpointErrorOnce = KeyAPIError.http(500, "boom")
+        }
+
+        await wizard.start(controller: controller)
+
+        guard case .profiles = wizard.phase else { return XCTFail("expected .profiles, got \(wizard.phase)") }
+        XCTAssertEqual(wizard.step, .profiles)
+        XCTAssertEqual(wizard.plan?.autoCompletes, false)
+        XCTAssertFalse(wizard.submitsWithoutChoices, "The user now sees a page, so the title follows choices")
+        XCTAssertFalse(gate.isPaired)
+
+        await wizard.continueFromProfiles(controller: controller)
+        XCTAssertFalse(wizard.submitsWithoutChoices, "Submitting from the revealed page keeps following choices")
     }
 
     /// A submission behind the status page that is refused without starting (here the enrollment changed

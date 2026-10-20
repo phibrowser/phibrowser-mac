@@ -114862,73 +114862,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Phi deletes this Mac’s Spaces, bookmarks, pinned tabs, URL rules and synced settings, then downloads your account’s. This can’t be undone. Your other devices aren’t affected."
-          }
-        }
-      }
-    },
-    "sync.pairing.replaceLocal.profileDelete" : {
-      "comment" : "Sync setup replace confirmation - option that deletes a profile and its data from this Mac",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete from this Mac"
-          }
-        }
-      }
-    },
-    "sync.pairing.replaceLocal.profileDeleteNote" : {
-      "comment" : "Sync setup replace confirmation - caption under the profiles card explaining what deleting a profile removes",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deleting a profile also removes its passwords, history and extensions on this Mac."
-          }
-        }
-      }
-    },
-    "sync.pairing.replaceLocal.profileKeep" : {
-      "comment" : "Sync setup replace confirmation - option that keeps a profile on this Mac and adds it to the account",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keep and add to your account"
-          }
-        }
-      }
-    },
-    "sync.pairing.replaceLocal.profileMatchedDefault" : {
-      "comment" : "Sync setup replace confirmation - shown beside this Mac's default profile, which always pairs with the account's default profile",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Matched with your account’s default profile"
-          }
-        }
-      }
-    },
-    "sync.pairing.replaceLocal.profileRegisteredDefault" : {
-      "comment" : "Sync setup replace confirmation - shown beside this Mac's default profile when the account has no default profile to match, so this one becomes the account's default",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Registered as your account’s default profile"
-          }
-        }
-      }
-    },
-    "sync.pairing.replaceLocal.profilesHeader" : {
-      "comment" : "Sync setup replace confirmation - header of the card listing this Mac's profiles",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Profiles on this Mac"
+            "value" : "Phi deletes this Mac’s Spaces, bookmarks, pinned tabs, URL rules, synced settings and the Profiles your account doesn’t have, then downloads your account’s. This can’t be undone. Your other devices aren’t affected."
           }
         }
       }
@@ -114940,6 +114874,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Removed from this Mac"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.removedProfile" : {
+      "comment" : "Sync setup replace confirmation - row naming the one profile deleted from this Mac because the account has no profile for it; %@ is the profile's name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 profile: %@"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.removedProfileData" : {
+      "comment" : "Sync setup replace confirmation - caption under the row naming the one profile deleted from this Mac",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its passwords, history and extensions on this Mac are deleted too."
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.removedProfiles" : {
+      "comment" : "Sync setup replace confirmation - row naming the profiles deleted from this Mac because the account has no profile for them; %1$d is their number (2 or more), %2$@ their names separated by commas",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$d profiles: %2$@"
+          }
+        }
+      }
+    },
+    "sync.pairing.replaceLocal.removedProfilesData" : {
+      "comment" : "Sync setup replace confirmation - caption under the row naming the profiles deleted from this Mac",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Their passwords, history and extensions on this Mac are deleted too."
           }
         }
       }
@@ -114972,7 +114950,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tabs, history, passwords and extensions in profiles you keep stay as they are."
+            "value" : "Profiles that match one in your account stay as they are, with their tabs, history, passwords and extensions."
           }
         }
       }

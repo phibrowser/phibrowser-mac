@@ -99,8 +99,7 @@ struct PairingWizardView: View {
             confirmationPage(items)
         case .confirmReplaceLocal(let review):
             ScrollView(.vertical) {
-                ReplaceLocalConfirmView(review: review, decisions: $viewModel.extraProfileDecisions,
-                                        locked: viewModel.methodLocked)
+                ReplaceLocalConfirmView(review: review)
                     .padding(24)
             }
         case .replacingLocal:

@@ -279,8 +279,7 @@ final class ProfilePairingGateTests: XCTestCase {
             .confirmReplaceLocal(ReplaceLocalReview(
                 removed: .init(profiles: 0, spaces: 1, bookmarks: 3, pinnedTabs: 0, urlRules: 0),
                 downloaded: .init(profiles: 1, spaces: 1, bookmarks: nil, pinnedTabs: nil, urlRules: nil),
-                defaultProfileName: "Personal", extraLocals: [], defaultRegistersAsAccountDefault: false,
-                defaultUnavailable: false)),
+                extraLocals: [], defaultUnavailable: false)),
             .replacingLocal,
             .error(message: "boom", resume: .resumeReplace)
         ]

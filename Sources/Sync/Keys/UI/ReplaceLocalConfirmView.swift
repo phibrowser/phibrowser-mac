@@ -6,13 +6,10 @@
 import SwiftUI
 
 /// The confirmation page of "use your account's data" (docs/sync.md, "Sync method and replacing this Mac's
-/// data"): what leaves this Mac, what the account brings, and a keep-or-delete choice for each local Profile
-/// the account has no Profile for. The wizard footer owns Replace and Back.
+/// data"): what leaves this Mac, including the local Profiles the account has no Profile for, and what the
+/// account brings. The wizard footer owns Replace and Back.
 struct ReplaceLocalConfirmView: View {
     let review: ReplaceLocalReview
-    @Binding var decisions: [String: ExtraProfileDecision]
-    /// A replace that already started: the Profile choices are fixed.
-    let locked: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -22,7 +19,7 @@ struct ReplaceLocalConfirmView: View {
                 .font(.title2.bold())
                 .themedForeground(.textPrimaryStrong)
             Text(NSLocalizedString("sync.pairing.replaceLocal.explanation",
-                                   value: "Phi deletes this Mac’s Spaces, bookmarks, pinned tabs, URL rules and synced settings, then downloads your account’s. This can’t be undone. Your other devices aren’t affected.",
+                                   value: "Phi deletes this Mac’s Spaces, bookmarks, pinned tabs, URL rules, synced settings and the Profiles your account doesn’t have, then downloads your account’s. This can’t be undone. Your other devices aren’t affected.",
                                    comment: "Sync setup - explanation on the page confirming that this Mac's data is replaced with the account's"))
                 .font(.body)
                 .themedForeground(.textPrimary)
@@ -31,6 +28,7 @@ struct ReplaceLocalConfirmView: View {
                                                value: "Removed from this Mac",
                                                comment: "Sync setup replace confirmation - header of the card listing the data deleted from this Mac"),
                      counts: review.removed, kinds: [.spaces, .bookmarks, .pinnedTabs, .urlRules],
+                     deletedProfiles: review.extraLocals,
                      spacesCaption: NSLocalizedString("sync.pairing.replaceLocal.spacesCloseTabs",
                                                       value: "Open tabs in them will close",
                                                       comment: "Sync setup replace confirmation - caption under the number of Spaces deleted from this Mac"))
@@ -38,7 +36,6 @@ struct ReplaceLocalConfirmView: View {
                                                value: "Downloaded from your account",
                                                comment: "Sync setup replace confirmation - header of the card listing the data downloaded from the account"),
                      counts: review.downloaded, kinds: PairingDataSummary.Kind.allCases, spacesCaption: nil)
-            if !review.extraLocals.isEmpty { profilesCard }
             if review.defaultUnavailable {
                 Text(NSLocalizedString("sync.pairing.replaceLocal.defaultUnavailable",
                                        value: "Your account’s default profile can’t be read on this Mac, so this Mac’s data can’t be replaced right now. Choose Merge to match profiles yourself, or choose Finish later and try again.",
@@ -48,7 +45,7 @@ struct ReplaceLocalConfirmView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             secondaryLine(NSLocalizedString("sync.pairing.replaceLocal.untouched",
-                                            value: "Tabs, history, passwords and extensions in profiles you keep stay as they are.",
+                                            value: "Profiles that match one in your account stay as they are, with their tabs, history, passwords and extensions.",
                                             comment: "Sync setup replace confirmation - note on what the replacement does not change"))
             secondaryLine(NSLocalizedString("sync.pairing.replaceLocal.backupHint",
                                             value: "Want a copy first? Choose Finish later, then use Help › Manage User Data › Export User Data…",
@@ -65,9 +62,11 @@ struct ReplaceLocalConfirmView: View {
 
     // MARK: - Data cards
 
-    /// A header and one row per kind: counted kinds above zero, uncounted kinds by name, then synced settings.
+    /// A header, then one row per kind: counted kinds above zero, uncounted kinds by name, then synced
+    /// settings, then the deleted local Profiles by name (when any), matching the explanation's order.
     private func kindCard(header: String, counts: PairingDataSummary.Counts,
-                          kinds: [PairingDataSummary.Kind], spacesCaption: String?) -> some View {
+                          kinds: [PairingDataSummary.Kind], deletedProfiles: [PairingLocal] = [],
+                          spacesCaption: String?) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             cardHeader(header)
             ForEach(counts.listedKinds(kinds), id: \.self) { kind in
@@ -77,6 +76,11 @@ struct ReplaceLocalConfirmView: View {
             }
             SettingsRowDivider()
             kindRow(PairingDataSummary.syncedSettings, caption: nil)
+            if !deletedProfiles.isEmpty {
+                SettingsRowDivider()
+                kindRow(Self.deletedProfilesText(deletedProfiles),
+                        caption: Self.deletedProfilesCaption(count: deletedProfiles.count))
+            }
         }
         .padding(.horizontal, 12)
         .settingsCardChrome()
@@ -102,76 +106,30 @@ struct ReplaceLocalConfirmView: View {
         .accessibilityElement(children: .combine)
     }
 
-    // MARK: - Profiles card
+    // MARK: - Deleted Profiles
 
-    private var profilesCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            cardHeader(NSLocalizedString("sync.pairing.replaceLocal.profilesHeader",
-                                         value: "Profiles on this Mac",
-                                         comment: "Sync setup replace confirmation - header of the card listing this Mac's profiles"))
-            SettingsRowDivider()
-            defaultProfileRow
-            ForEach(review.extraLocals) { local in
-                SettingsRowDivider()
-                extraProfileRow(local)
-            }
-            SettingsRowDivider()
-            Text(NSLocalizedString("sync.pairing.replaceLocal.profileDeleteNote",
-                                   value: "Deleting a profile also removes its passwords, history and extensions on this Mac.",
-                                   comment: "Sync setup replace confirmation - caption under the profiles card explaining what deleting a profile removes"))
-                .font(.caption)
-                .themedForeground(.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, 8)
+    /// "1 profile: Scratch" or "2 profiles: Scratch, Work2", names in the review's order.
+    static func deletedProfilesText(_ profiles: [PairingLocal]) -> String {
+        let names = profiles.map(\.displayName).joined(separator: ", ")
+        if profiles.count == 1 {
+            return String(format: NSLocalizedString("sync.pairing.replaceLocal.removedProfile",
+                                                    value: "1 profile: %@",
+                                                    comment: "Sync setup replace confirmation - row naming the one profile deleted from this Mac because the account has no profile for it; %@ is the profile's name"),
+                          names)
         }
-        .padding(.horizontal, 12)
-        .settingsCardChrome()
+        return String(format: NSLocalizedString("sync.pairing.replaceLocal.removedProfiles",
+                                                value: "%1$d profiles: %2$@",
+                                                comment: "Sync setup replace confirmation - row naming the profiles deleted from this Mac because the account has no profile for them; %1$d is their number (2 or more), %2$@ their names separated by commas"),
+                      profiles.count, names)
     }
 
-    private var defaultProfileRow: some View {
-        HStack(spacing: 16) {
-            Text(review.defaultProfileName).font(.body.bold()).themedForeground(.textPrimaryStrong)
-            SettingsDefaultBadge()
-            Spacer(minLength: 0)
-            Text(review.defaultRegistersAsAccountDefault
-                 ? NSLocalizedString("sync.pairing.replaceLocal.profileRegisteredDefault",
-                                     value: "Registered as your account’s default profile",
-                                     comment: "Sync setup replace confirmation - shown beside this Mac's default profile when the account has no default profile to match, so this one becomes the account's default")
-                 : NSLocalizedString("sync.pairing.replaceLocal.profileMatchedDefault",
-                                     value: "Matched with your account’s default profile",
-                                     comment: "Sync setup replace confirmation - shown beside this Mac's default profile, which always pairs with the account's default profile"))
-                .font(.body)
-                .themedForeground(.textSecondary)
-                .multilineTextAlignment(.trailing)
-        }
-        .padding(.vertical, 12)
-        .accessibilityElement(children: .combine)
-    }
-
-    private func extraProfileRow(_ local: PairingLocal) -> some View {
-        HStack(spacing: 16) {
-            Text(local.displayName).font(.body.bold()).themedForeground(.textPrimaryStrong)
-            Spacer(minLength: 0)
-            Picker("", selection: binding(for: local.profileId)) {
-                Text(NSLocalizedString("sync.pairing.replaceLocal.profileKeep",
-                                       value: "Keep and add to your account",
-                                       comment: "Sync setup replace confirmation - option that keeps a profile on this Mac and adds it to the account"))
-                    .tag(ExtraProfileDecision.keepAndRegister)
-                Text(NSLocalizedString("sync.pairing.replaceLocal.profileDelete",
-                                       value: "Delete from this Mac",
-                                       comment: "Sync setup replace confirmation - option that deletes a profile and its data from this Mac"))
-                    .tag(ExtraProfileDecision.deleteLocal)
-            }
-            .labelsHidden()
-            .frame(maxWidth: 220)
-            .disabled(locked)
-            .accessibilityLabel(local.displayName)
-        }
-        .padding(.vertical, 12)
-    }
-
-    private func binding(for profileId: String) -> Binding<ExtraProfileDecision> {
-        Binding(get: { decisions[profileId] ?? .keepAndRegister },
-                set: { decisions[profileId] = $0 })
+    static func deletedProfilesCaption(count: Int) -> String {
+        count == 1
+            ? NSLocalizedString("sync.pairing.replaceLocal.removedProfileData",
+                                value: "Its passwords, history and extensions on this Mac are deleted too.",
+                                comment: "Sync setup replace confirmation - caption under the row naming the one profile deleted from this Mac")
+            : NSLocalizedString("sync.pairing.replaceLocal.removedProfilesData",
+                                value: "Their passwords, history and extensions on this Mac are deleted too.",
+                                comment: "Sync setup replace confirmation - caption under the row naming the profiles deleted from this Mac")
     }
 }

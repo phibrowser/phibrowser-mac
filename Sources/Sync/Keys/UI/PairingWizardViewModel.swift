@@ -33,7 +33,7 @@ enum PairingWizardPhase: Equatable {
     case confirmOverwrite([SpaceOverwriteDiff])
     /// The sync method step: merge, or replace this Mac's data with the account's.
     case method(PairingDataSummary)
-    /// Confirmation of "use your account's data", with the extra local Profiles to keep or delete.
+    /// Confirmation of "use your account's data", naming the extra local Profiles it deletes.
     case confirmReplaceLocal(ReplaceLocalReview)
     /// The replace sequence is running (its own status page, so switches over phases stay exhaustive).
     case replacingLocal
@@ -118,8 +118,6 @@ final class PairingWizardViewModel: ObservableObject {
     /// The method the user picked on the sync method step. `.merge` unless the step shows and the user
     /// picks otherwise, or a replace that already started is resumed (`methodLocked`).
     @Published var selectedMethod: SyncMethod = .merge
-    /// The confirmation page's choice for each extra local Profile, by Profile id. Absent means keep.
-    @Published var extraProfileDecisions: [String: ExtraProfileDecision] = [:]
     /// A replace already started (its resume marker exists): the method cannot change and the confirmation
     /// page offers no Back.
     @Published private(set) var methodLocked = false
@@ -230,7 +228,6 @@ final class PairingWizardViewModel: ObservableObject {
     /// touched: a replace that already started resumes on the next load.
     private func resetMethodState() {
         selectedMethod = .merge
-        extraProfileDecisions = [:]
         methodLocked = false
         replaceReview = nil
         methodSummary = nil
@@ -684,8 +681,8 @@ final class PairingWizardViewModel: ObservableObject {
         isApplying = true
         defer { isApplying = false }
 
-        // 3. Profile decisions (network), before anything local is removed. Profiles chosen for deletion get
-        // none; a failure here has lost nothing.
+        // 3. Profile decisions (network), before anything local is removed. Profiles being deleted get none;
+        // a failure here has lost nothing.
         let decisions = PairingFlowPlan.replaceDecisions(locals: loadedLocals, remotes: loadedRemotes,
                                                          deleting: deleting)
         guard await keyLayer.applyPairingDecisions(decisions, controller: controller) else {
@@ -778,13 +775,11 @@ final class PairingWizardViewModel: ObservableObject {
         AppLogInfo("[phi-sync] pairing wizard replace: snapshot reload ok=\(reloaded)")
     }
 
-    /// The local Profiles the replace deletes: those the confirmation page marks Delete, or the started
-    /// replace's own list while locked.
+    /// The local Profiles the replace deletes: every extra local Profile the confirmation page lists, or the
+    /// started replace's own list (its resume marker) while locked.
     private var replaceDeleteProfileIds: Set<String> {
         if methodLocked { return lockedDeleteProfileIds }
-        let extras = Set(replaceReview?.extraLocals.map(\.profileId) ?? [])
-        return Set(extraProfileDecisions.compactMap { $0.value == .deleteLocal ? $0.key : nil })
-            .intersection(extras)
+        return Set(replaceReview?.extraLocals.map(\.profileId) ?? [])
     }
 
     /// Lands on the confirmation page of a replace that already started: the method is locked, and the
@@ -793,7 +788,6 @@ final class PairingWizardViewModel: ObservableObject {
         selectedMethod = .useAccount
         methodLocked = true
         lockedDeleteProfileIds = deleteProfileIds
-        extraProfileDecisions = Dictionary(uniqueKeysWithValues: deleteProfileIds.map { ($0, .deleteLocal) })
         AppLogInfo("[phi-sync] pairing wizard: resuming a started replace "
                    + "deleting=\(deleteProfileIds.count)")
         showReplaceReview(controller: controller)
@@ -802,7 +796,9 @@ final class PairingWizardViewModel: ObservableObject {
     private func showReplaceReview(controller: SyncKeyController) {
         let review = makeReplaceReview(controller: controller)
         replaceReview = review
-        replaceExpectedExtraIds = Set(review.extraLocals.map(\.profileId))
+        // Every extra local Profile, not only the listed ones: on a locked page the list is the marker's.
+        replaceExpectedExtraIds = Set(PairingFlowPlan.extraLocals(locals: loadedLocals, remotes: loadedRemotes)
+            .map(\.profileId))
         step = .confirm
         phase = .confirmReplaceLocal(review)
         logStep()
@@ -812,18 +808,18 @@ final class PairingWizardViewModel: ObservableObject {
         let inventory = localInventory
         let removedSpaces = inventory?.nonDefaultSpaceIds.count
             ?? spacesInput.locals.filter { $0.spaceId != LocalStore.defaultSpaceId }.count
-        let defaultName = controller.localProfiles()
-            .first { $0.profileId == LocalStore.defaultProfileId }?.displayName ?? ""
+        // A started replace deletes exactly its marker's Profiles; a Profile created after the marker was
+        // written is kept and registered, so it is not listed.
+        let deleting = methodLocked
+            ? loadedLocals.filter { !$0.isDefault && lockedDeleteProfileIds.contains($0.profileId) }
+            : PairingFlowPlan.extraLocals(locals: loadedLocals, remotes: loadedRemotes)
         return ReplaceLocalReview(
-            removed: PairingDataSummary.Counts(profiles: 0, spaces: removedSpaces,
+            removed: PairingDataSummary.Counts(profiles: deleting.count, spaces: removedSpaces,
                                                bookmarks: inventory?.bookmarks,
                                                pinnedTabs: inventory?.pinnedTabs,
                                                urlRules: inventory?.urlRules),
             downloaded: makeSummary(controller: controller).account,
-            defaultProfileName: defaultName,
-            extraLocals: PairingFlowPlan.extraLocals(locals: loadedLocals, remotes: loadedRemotes),
-            defaultRegistersAsAccountDefault: PairingFlowPlan.defaultRegistersAsAccountDefault(
-                locals: loadedLocals, remotes: loadedRemotes),
+            extraLocals: deleting,
             defaultUnavailable: PairingFlowPlan.defaultNeedsChoice(locals: loadedLocals, remotes: loadedRemotes))
     }
 

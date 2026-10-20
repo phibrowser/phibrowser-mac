@@ -354,13 +354,13 @@ struct PairingLoadTimedOut: Error {}
         }
     }
 
-    /// Default + one junk Profile (deleted) + one kept Profile; the account has a default Profile and a
-    /// Work Profile nobody here claims. Clear fails once: Retry converges.
+    /// Default + one junk Profile (deleted without any choice) + a "Work" Profile that matches the account's
+    /// "Work" Profile by name (adopted, never deleted). Clear fails once: Retry converges.
     @MainActor static func replaceRunsInOrderAndRetryConverges() async throws {
         let api = RetryAPI(), store = RetrySpaceStore(), gate = ProfilePairingGate()
         store.failingID = nil
         let controller = SyncKeyController(api: api, spaceStore: store)
-        controller.profiles = [("Default", "Personal"), ("Profile 2", "Junk"), ("Profile 3", "Keep")]
+        controller.profiles = [("Default", "Personal"), ("Profile 2", "Junk"), ("Profile 3", "Work")]
         let ark = controller.manager.currentARK!
         api.envelopes["acct-default"] = try ProfileKeyManager.sealProfilePayload(
             key: Data(count: 32), name: "Your Phi", isDefault: true, ark: ark)
@@ -368,8 +368,12 @@ struct PairingLoadTimedOut: Error {}
             key: Data(count: 32), name: "Work", isDefault: false, ark: ark)
         var locals = [local(LocalStore.defaultSpaceId, "Default"), local("LOCAL-1", "Junk Space")]
         let log = EventLog()
-        api.onPut = { log.events.append("profiles") }
-        controller.onMarkerSaved = { log.events.append("marker") }
+        api.onPut = { log.events.append("registered") }
+        controller.onMarkerSaved = {
+            // Adopting writes nothing to the account: the Profile decisions show as mappings at marker time.
+            if controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 3") != nil { log.events.append("profiles") }
+            log.events.append("marker")
+        }
         controller.onResolve = { log.events.append("resolve") }
         let reset = FakeReset(gate: gate, controller: controller, log: log, onCleared: { locals = [locals[0]] })
         reset.failures = 1
@@ -389,10 +393,10 @@ struct PairingLoadTimedOut: Error {}
         guard case .confirmReplaceLocal(let review) = wizard.phase else {
             throw NSError(domain: "Expected the replace confirmation", code: 1)
         }
-        try require(review.extraLocals.map(\.profileId) == ["Profile 2", "Profile 3"] && !review.defaultUnavailable,
-                    "Both unmatched local Profiles are listed")
-        try require(review.removed.spaces == 1 && review.removed.bookmarks == 3, "Removed counts come from the inventory")
-        wizard.extraProfileDecisions["Profile 2"] = .deleteLocal
+        try require(review.extraLocals.map(\.profileId) == ["Profile 2"] && !review.defaultUnavailable,
+                    "Only the unmatched local Profile is listed; the same-name one is matched")
+        try require(review.removed.profiles == 1 && review.removed.spaces == 1 && review.removed.bookmarks == 3,
+                    "Removed counts come from the inventory and the deleted Profiles")
 
         // Clear fails once: the gate stays unpaired with the marker written, and nothing else completes.
         await wizard.replaceLocal(controller: controller)
@@ -407,23 +411,21 @@ struct PairingLoadTimedOut: Error {}
         try require(wizard.phase == .done && gate.isPaired, "Retry converges")
         try require(reset.clearRequests == [LocalResetRequest(deleteProfileIds: ["Profile 2"]),
                                             LocalResetRequest(deleteProfileIds: ["Profile 2"])],
-                    "Clear runs twice with the chosen deletion")
+                    "Clear runs twice, deleting the extra Profile")
         try require(reset.pairedAtClear == [false, false], "Clear always runs before enrollment")
         try require(controller.localResetMarker == nil, "Completion clears the marker")
-        try require(controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 3") != nil
+        try require(controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 3") == "acct-work"
                     && controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 2") == nil,
-                    "The kept Profile is registered and the deleted one never is")
+                    "The same-name Profile adopts its account Profile and the deleted one is never registered")
         try require(controller.localProfileId(forGlobalUuid: "acct-default") == "Default",
                     "The Default adopts the account default")
-        try require(controller.localProfileId(forGlobalUuid: "acct-work") != nil,
-                    "The unclaimed account Profile is created on this Mac")
         try require(store.map.isEmpty, "Replacing maps no Space")
-        try require(api.envelopes.count == 3, "Exactly one new registration (the kept Profile)")
-        try require(log.events == ["profiles", "marker", "clear", "marker", "clear", "enrollment", "resolve"],
+        try require(api.envelopes.count == 2, "No Profile is registered with the account")
+        try require(log.events == ["profiles", "marker", "clear", "profiles", "marker", "clear", "enrollment", "resolve"],
                     "Order: Profiles, marker, clear, then enrollment and resolve; got \(log.events)")
     }
 
-    /// A marker from an earlier session lands on a locked confirmation with its saved deletions.
+    /// A marker from an earlier session lands on a locked confirmation that lists its saved deletions.
     @MainActor static func aMarkerResumesTheLockedConfirmation() async throws {
         let api = RetryAPI(), store = RetrySpaceStore(), gate = ProfilePairingGate()
         store.failingID = nil
@@ -438,14 +440,15 @@ struct PairingLoadTimedOut: Error {}
             pairableLocalSpaces: { locals }, themeDisplayName: { _ in nil }, gate: gate,
             localReset: { _ in reset })
         await wizard.start(controller: controller)
-        guard case .confirmReplaceLocal = wizard.phase else {
+        guard case .confirmReplaceLocal(let review) = wizard.phase else {
             throw NSError(domain: "Expected the locked confirmation, got \(wizard.phase)", code: 1)
         }
+        try require(review.extraLocals.map(\.profileId) == ["Profile 2"] && review.removed.profiles == 1,
+                    "The saved deletion is shown")
         try require(wizard.methodLocked && !wizard.canGoBackToMethod && wizard.selectedMethod == .useAccount,
                     "The resumed confirmation is locked without Back")
         wizard.backToMethod()
         guard case .confirmReplaceLocal = wizard.phase else { throw NSError(domain: "Back is refused", code: 1) }
-        try require(wizard.extraProfileDecisions["Profile 2"] == .deleteLocal, "The saved deletion is shown")
         // Finish later keeps the marker.
         try require(wizard.leaveWithoutApplying() && controller.localResetMarker != nil
                     && wizard.selectedMethod == .merge && !wizard.methodLocked,

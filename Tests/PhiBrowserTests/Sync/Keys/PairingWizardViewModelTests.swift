@@ -1185,10 +1185,11 @@ final class PairingWizardViewModelTests: XCTestCase {
         let enrollment: EnrollmentBox
     }
 
-    /// Default, a junk Profile and one to keep.
-    nonisolated private static let profilesWithJunkAndKeep: [(profileId: String, displayName: String)] =
+    /// Default, a junk Profile the account has no Profile for, and a "Work" Profile that matches the
+    /// account's "Work" Profile by name.
+    nonisolated private static let profilesWithJunkAndWork: [(profileId: String, displayName: String)] =
         defaultOnlyProfiles + [(profileId: "Profile 2", displayName: "Junk"),
-                               (profileId: "Profile 3", displayName: "Keep")]
+                               (profileId: "Profile 3", displayName: "Work")]
 
     /// A wizard with the method step enabled, a fake local reset and a marker store, bound to this test's
     /// gate, which clears the marker on completion as the coordinator wires it.
@@ -1198,6 +1199,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         profiles: [(profileId: String, displayName: String)] = PairingWizardViewModelTests.defaultOnlyProfiles,
         inventory: LocalPhiInventory? = LocalPhiInventory(),
         resetAvailable: Bool = true,
+        creator: FakeProfileCreator? = nil,
         preview: (() async -> Result<PhiAccountSpacePreview, PhiSpacePreviewError>)? = nil
     ) async throws -> ReplaceFixture {
         let api = FakeAPI()
@@ -1245,7 +1247,7 @@ final class PairingWizardViewModelTests: XCTestCase {
             spaceKeys: SpaceSyncMappingManager(store: spaceStore),
             localProfilesProvider: { local.profiles },
             notifyChromium: {},
-            profileCreator: FakeProfileCreator(),
+            profileCreator: creator ?? FakeProfileCreator(),
             isPairingComplete: { gate.isPaired },
             localResetMarker: markerStore)
         let wizard = PairingWizardViewModel(
@@ -1260,8 +1262,8 @@ final class PairingWizardViewModelTests: XCTestCase {
                               reset: reset, marker: marker, local: local, enrollment: enrollment)
     }
 
-    /// Starts the wizard on a Mac with a junk and a kept Profile, chooses "use your account's data", and
-    /// marks the junk Profile for deletion.
+    /// Starts the wizard, chooses "use your account's data" and lands on its confirmation page. Nothing is
+    /// chosen there: every extra local Profile is deleted.
     private func startReplacing(_ fixture: ReplaceFixture) async throws -> ReplaceLocalReview {
         try seedAccountWithDefaultAndWork(fixture.api, controller: fixture.controller)
         await fixture.wizard.start(controller: fixture.controller)
@@ -1275,7 +1277,6 @@ final class PairingWizardViewModelTests: XCTestCase {
             XCTFail("expected .confirmReplaceLocal, got \(fixture.wizard.phase)")
             throw CancellationError()
         }
-        fixture.wizard.extraProfileDecisions["Profile 2"] = .deleteLocal
         return review
     }
 
@@ -1386,16 +1387,18 @@ final class PairingWizardViewModelTests: XCTestCase {
     }
 
     /// The replace sequence: Profile decisions, then the marker, then the local reset, then enrollment,
-    /// then resolve. The kept Profile registers; the deleted one gets no decision and goes to the reset.
+    /// then resolve. The extra Profile is deleted without any choice (no decision, straight to the reset);
+    /// the same-name Profile adopts its account Profile and is never deleted.
     func testReplaceRunsProfilesThenMarkerThenClearThenEnrollmentThenResolve() async throws {
         let fixture = try await makeReplaceWizard(
             spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
             accountSpaces: [account("acct-1", name: "Work", profileUuid: "uuid-work")],
-            profiles: Self.profilesWithJunkAndKeep,
+            profiles: Self.profilesWithJunkAndWork,
             inventory: LocalPhiInventory(nonDefaultSpaceIds: ["LOCAL-1"], bookmarks: 3, pinnedTabs: 2))
         let review = try await startReplacing(fixture)
-        XCTAssertEqual(review.extraLocals.map(\.profileId), ["Profile 2", "Profile 3"])
-        XCTAssertEqual(review.removed, PairingDataSummary.Counts(profiles: 0, spaces: 1, bookmarks: 3,
+        XCTAssertEqual(review.extraLocals.map(\.profileId), ["Profile 2"],
+                       "Only the extra Profile is listed; the same-name one is matched")
+        XCTAssertEqual(review.removed, PairingDataSummary.Counts(profiles: 1, spaces: 1, bookmarks: 3,
                                                                  pinnedTabs: 2, urlRules: 0))
         XCTAssertFalse(review.defaultUnavailable)
         XCTAssertEqual(fixture.wizard.step, .confirm)
@@ -1406,21 +1409,20 @@ final class PairingWizardViewModelTests: XCTestCase {
 
         XCTAssertEqual(fixture.wizard.phase, .done)
         XCTAssertEqual(fixture.marker.writes, [MarkerBox.Write(pairedWhenWritten: false, clearsBefore: 0,
-                                                               accountProfilesBefore: accountProfilesBefore + 1)],
-                       "The marker follows the Profile decisions (the kept Profile registered) and precedes the reset")
+                                                               accountProfilesBefore: accountProfilesBefore)],
+                       "The marker precedes the reset, and no Profile was registered with the account")
         XCTAssertEqual(fixture.reset.clearCalls, [FakeLocalReset.ClearCall(
             request: LocalResetRequest(deleteProfileIds: ["Profile 2"]),
             pairedWhenCalled: false, markerSavedWhenCalled: true)])
         XCTAssertTrue(gate.isPaired, "Enrollment completes after the reset")
         XCTAssertNil(fixture.marker.data, "Completion clears the marker")
         XCTAssertGreaterThan(resolveCount, 0, "resolveMappings() runs last")
-        XCTAssertNotNil(fixture.controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 3"),
-                        "Keep registers the Profile with the account")
+        XCTAssertEqual(fixture.controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 3"), "uuid-work",
+                       "The same-name Profile adopts its account Profile")
         XCTAssertNil(fixture.controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 2"),
-                     "Delete never registers the Profile")
+                     "The deleted Profile is never registered")
         XCTAssertEqual(fixture.controller.localProfileId(forGlobalUuid: "uuid-default"), "Default")
-        XCTAssertNotNil(fixture.controller.localProfileId(forGlobalUuid: "uuid-work"),
-                        "The unclaimed account Profile is created on this Mac")
+        XCTAssertEqual(fixture.api.profileEnvelopes.count, accountProfilesBefore, "The account gains no Profile")
         XCTAssertTrue(fixture.store.map.isEmpty, "Replacing maps no Space")
     }
 
@@ -1430,7 +1432,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         let fixture = try await makeReplaceWizard(
             spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
             accountSpaces: [account("acct-1", name: "Work", profileUuid: "uuid-work")],
-            profiles: Self.profilesWithJunkAndKeep)
+            profiles: Self.profilesWithJunkAndWork)
         _ = try await startReplacing(fixture)
         fixture.reset.clearFailures = 1
 
@@ -1463,7 +1465,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         var accountSpaces = [account("acct-1", name: "Work", profileUuid: "uuid-work")]
         let fixture = try await makeReplaceWizard(
             spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
-            accountSpaces: [], profiles: Self.profilesWithJunkAndKeep,
+            accountSpaces: [], profiles: Self.profilesWithJunkAndWork,
             preview: {
                 previews += 1
                 return .success(.init(spaces: accountSpaces, skippedEntityCount: 0))
@@ -1477,7 +1479,7 @@ final class PairingWizardViewModelTests: XCTestCase {
             return XCTFail("expected .confirmReplaceLocal, got \(fixture.wizard.phase)")
         }
         XCTAssertEqual(review.downloaded.spaces, 3, "The fresh account data is shown")
-        XCTAssertEqual(fixture.wizard.extraProfileDecisions["Profile 2"], .deleteLocal, "Choices survive")
+        XCTAssertEqual(review.extraLocals.map(\.profileId), ["Profile 2"], "The deleted Profiles are listed again")
         XCTAssertTrue(fixture.reset.clearCalls.isEmpty)
         XCTAssertNil(fixture.marker.data)
         XCTAssertFalse(gate.isPaired)
@@ -1494,7 +1496,7 @@ final class PairingWizardViewModelTests: XCTestCase {
     func testFinishLaterBeforeTheMarkerWritesNothingAndClearsTheSelection() async throws {
         let fixture = try await makeReplaceWizard(
             spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
-            accountSpaces: [], profiles: Self.profilesWithJunkAndKeep)
+            accountSpaces: [], profiles: Self.profilesWithJunkAndWork)
         _ = try await startReplacing(fixture)
         let accountProfiles = fixture.api.profileEnvelopes.count
 
@@ -1505,7 +1507,6 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertTrue(fixture.reset.clearCalls.isEmpty)
         XCTAssertEqual(fixture.api.profileEnvelopes.count, accountProfiles, "No Profile was registered")
         XCTAssertEqual(fixture.wizard.selectedMethod, .merge)
-        XCTAssertTrue(fixture.wizard.extraProfileDecisions.isEmpty)
         XCTAssertNil(fixture.wizard.replaceReview)
         XCTAssertNil(fixture.wizard.plan)
         XCTAssertEqual(fixture.wizard.visibleSteps, [])
@@ -1522,22 +1523,23 @@ final class PairingWizardViewModelTests: XCTestCase {
         let fixture = try await makeReplaceWizard(
             spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
             accountSpaces: [account("acct-1", name: "Work", profileUuid: "uuid-work")],
-            profiles: Self.profilesWithJunkAndKeep)
+            profiles: Self.profilesWithJunkAndWork)
         try seedAccountWithDefaultAndWork(fixture.api, controller: fixture.controller)
         try fixture.controller.savePairingLocalResetMarker(deleteProfileIds: ["Profile 2"])
         let wizard = fixture.wizard
 
         await wizard.start(controller: fixture.controller)
 
-        guard case .confirmReplaceLocal = wizard.phase else {
+        guard case .confirmReplaceLocal(let review) = wizard.phase else {
             return XCTFail("expected .confirmReplaceLocal, got \(wizard.phase)")
         }
+        XCTAssertEqual(review.extraLocals.map(\.profileId), ["Profile 2"], "The marker's Profiles are listed")
+        XCTAssertEqual(review.removed.profiles, 1)
         XCTAssertTrue(wizard.methodLocked)
         XCTAssertFalse(wizard.canGoBackToMethod, "Back is not offered")
         XCTAssertEqual(wizard.selectedMethod, .useAccount)
         XCTAssertEqual(wizard.step, .confirm)
         XCTAssertEqual(wizard.visibleSteps, [.method, .confirm])
-        XCTAssertEqual(wizard.extraProfileDecisions["Profile 2"], .deleteLocal)
         wizard.backToMethod()
         guard case .confirmReplaceLocal = wizard.phase else { return XCTFail("Back is refused while locked") }
         XCTAssertFalse(AppModalPairingHost.reloadAllowed(for: wizard.phase))
@@ -1550,18 +1552,74 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertNil(fixture.marker.data)
     }
 
+    /// Replace deletes every extra local Profile without asking: the marker saves the full set, and after a
+    /// stopped reset the locked page lists exactly the marker's Profiles. A Profile created after the
+    /// marker was written is not listed and not deleted; it registers with the account.
+    func testReplaceSavesEveryExtraInTheMarkerAndTheLockedPageListsOnlyTheMarkersProfiles() async throws {
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
+            accountSpaces: [account("acct-1", name: "Work", profileUuid: "uuid-work")],
+            profiles: Self.profilesWithJunkAndWork + [(profileId: "Profile 4", displayName: "Scratch")])
+        let review = try await startReplacing(fixture)
+        XCTAssertEqual(review.extraLocals.map(\.profileId), ["Profile 2", "Profile 4"])
+        XCTAssertEqual(review.removed.profiles, 2)
+        fixture.reset.clearFailures = 1
+
+        await fixture.wizard.replaceLocal(controller: fixture.controller)
+
+        guard case .error(_, .resumeReplace) = fixture.wizard.phase else {
+            return XCTFail("expected .error(.resumeReplace), got \(fixture.wizard.phase)")
+        }
+        XCTAssertEqual(fixture.controller.pairingLocalResetMarker()?.deleteProfileIds, ["Profile 2", "Profile 4"],
+                       "The marker holds every extra local Profile")
+        XCTAssertTrue(fixture.wizard.leaveWithoutApplying())
+        fixture.local.profiles.append((profileId: "Profile 5", displayName: "Later"))
+
+        await fixture.wizard.start(controller: fixture.controller)
+
+        guard case .confirmReplaceLocal(let locked) = fixture.wizard.phase else {
+            return XCTFail("expected the locked confirmation, got \(fixture.wizard.phase)")
+        }
+        XCTAssertTrue(fixture.wizard.methodLocked)
+        XCTAssertEqual(locked.extraLocals.map(\.profileId), ["Profile 2", "Profile 4"],
+                       "The locked page lists exactly the marker's Profiles")
+        XCTAssertEqual(locked.removed.profiles, 2)
+
+        await fixture.wizard.replaceLocal(controller: fixture.controller)
+
+        XCTAssertEqual(fixture.wizard.phase, .done)
+        XCTAssertEqual(fixture.reset.clearCalls.map(\.request),
+                       Array(repeating: LocalResetRequest(deleteProfileIds: ["Profile 2", "Profile 4"]), count: 2))
+        XCTAssertNotNil(fixture.controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 5"),
+                        "A Profile created after the marker registers instead of being deleted")
+        XCTAssertEqual(fixture.controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 3"), "uuid-work")
+        XCTAssertTrue(gate.isPaired)
+        XCTAssertNil(fixture.marker.data)
+    }
+
+    /// The "Removed from this Mac" card names the deleted Profiles in one row with a caption.
+    func testTheRemovedProfilesRowNamesEveryDeletedProfile() {
+        let scratch = PairingLocal(profileId: "Profile 2", displayName: "Scratch", isDefault: false)
+        let work2 = PairingLocal(profileId: "Profile 3", displayName: "Work2", isDefault: false)
+        XCTAssertEqual(ReplaceLocalConfirmView.deletedProfilesText([scratch]), "1 profile: Scratch")
+        XCTAssertEqual(ReplaceLocalConfirmView.deletedProfilesText([scratch, work2]), "2 profiles: Scratch, Work2")
+        XCTAssertEqual(ReplaceLocalConfirmView.deletedProfilesCaption(count: 1),
+                       "Its passwords, history and extensions on this Mac are deleted too.")
+        XCTAssertEqual(ReplaceLocalConfirmView.deletedProfilesCaption(count: 2),
+                       "Their passwords, history and extensions on this Mac are deleted too.")
+    }
+
     /// Navigating the method step and the confirmation reads keyLayer.phase only.
     func testTheMethodStepAndConfirmationNeverWriteKeyLayerPhase() async throws {
         let fixture = try await makeReplaceWizard(
             spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
-            accountSpaces: [], profiles: Self.profilesWithJunkAndKeep)
+            accountSpaces: [], profiles: Self.profilesWithJunkAndWork)
         try seedAccountWithDefaultAndWork(fixture.api, controller: fixture.controller)
         let wizard = fixture.wizard
         await wizard.start(controller: fixture.controller)
         let afterLoad = wizard.keyLayer.phase
         wizard.selectedMethod = .useAccount
         await wizard.continueFromMethod(controller: fixture.controller)
-        wizard.extraProfileDecisions["Profile 3"] = .deleteLocal
         wizard.backToMethod()
         guard case .method = wizard.phase else { return XCTFail("Back returns to the method step") }
         wizard.selectedMethod = .merge
@@ -1634,15 +1692,15 @@ final class PairingWizardViewModelTests: XCTestCase {
     /// stays unlocked, and Retry reaches completion (through the confirmation again if the partial progress
     /// changed the candidates).
     func testAFailedProfileDecisionDuringReplaceWritesNoMarkerAndRetryWorks() async throws {
+        // Creating the account's unclaimed "Work" Profile on this Mac fails once.
+        let creator = FakeProfileCreator()
+        creator.createResults = [nil]
         let fixture = try await makeReplaceWizard(
             spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
-            accountSpaces: [], profiles: Self.profilesWithJunkAndKeep)
+            accountSpaces: [],
+            profiles: Self.defaultOnlyProfiles + [(profileId: "Profile 2", displayName: "Junk")],
+            creator: creator)
         _ = try await startReplacing(fixture)
-        // Armed by the registration's own PUT, so the preflight's reads are unaffected.
-        fixture.api.beforePutProfileKey = { [api = fixture.api] in
-            api.beforePutProfileKey = nil
-            api.profileEndpointErrorOnce = URLError(.notConnectedToInternet)
-        }
 
         await fixture.wizard.replaceLocal(controller: fixture.controller)
 
@@ -1671,7 +1729,7 @@ final class PairingWizardViewModelTests: XCTestCase {
     func testAFailedMarkerSaveStopsBeforeTheResetAndRetryWorks() async throws {
         let fixture = try await makeReplaceWizard(
             spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
-            accountSpaces: [], profiles: Self.profilesWithJunkAndKeep)
+            accountSpaces: [], profiles: Self.profilesWithJunkAndWork)
         _ = try await startReplacing(fixture)
         fixture.marker.failSaves = 1
 
@@ -1700,7 +1758,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         let fixture = try await makeReplaceWizard(
             spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
             accountSpaces: [account("acct-1", name: "Work", profileUuid: "uuid-work")],
-            profiles: Self.profilesWithJunkAndKeep)
+            profiles: Self.profilesWithJunkAndWork)
         _ = try await startReplacing(fixture)
         fixture.enrollment.saves = false
 
@@ -1748,7 +1806,6 @@ final class PairingWizardViewModelTests: XCTestCase {
             return XCTFail("expected .confirmReplaceLocal, got \(wizard.phase)")
         }
         XCTAssertTrue(review.defaultUnavailable)
-        XCTAssertTrue(review.defaultRegistersAsAccountDefault)
         XCTAssertFalse(wizard.canReplace)
         let accountProfiles = fixture.api.profileEnvelopes.count
 
@@ -1766,7 +1823,7 @@ final class PairingWizardViewModelTests: XCTestCase {
         let hold = PreviewHold()
         let fixture = try await makeReplaceWizard(
             spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
-            accountSpaces: [], profiles: Self.profilesWithJunkAndKeep)
+            accountSpaces: [], profiles: Self.profilesWithJunkAndWork)
         _ = try await startReplacing(fixture)
         fixture.reset.onClearEntered = { await hold.enter() }
 

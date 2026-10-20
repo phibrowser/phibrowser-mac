@@ -123,14 +123,6 @@ struct PairingFlowPlan: Equatable {
         return model.fixedDefaultRemote == nil
     }
 
-    /// The local Default is unmapped and the account has no readable default Profile for it to adopt, so
-    /// it registers as the account default (or, beside other account Profiles, needs a choice first).
-    static func defaultRegistersAsAccountDefault(locals: [PairingLocal], remotes: [RemoteProfile]) -> Bool {
-        guard locals.contains(where: \.isDefault) else { return false }
-        let model = ProfilePairingModel(locals: locals, remotes: remotes, selections: [:], remoteChoices: [:])
-        return model.fixedDefaultRemote == nil
-    }
-
     static func profilesHaveRows(locals: [PairingLocal], remotes: [RemoteProfile]) -> Bool {
         !locals.isEmpty || remotes.contains { $0.name != nil }
     }
@@ -180,15 +172,17 @@ struct PairingFlowPlan: Equatable {
     // MARK: - Replacing this Mac's data
 
     /// The unmapped local Profiles the account has no Profile for: non-default and not matched by name.
-    /// "Use your account's data" asks for each whether to keep it (and add it to the account) or delete it.
+    /// "Use your account's data" deletes every one of them from this Mac; whoever wants to keep one merges.
     static func extraLocals(locals: [PairingLocal], remotes: [RemoteProfile]) -> [PairingLocal] {
         let initial = ProfilePairingModel.initialSelections(locals: locals, remotes: remotes)
         return locals.filter { !$0.isDefault && initial[$0.profileId] == .registerNew }
     }
 
     /// The Profile decisions of "use your account's data": the Default and same-name Profiles adopt their
-    /// account match, kept extra Profiles register, every readable unclaimed account Profile is created on
-    /// this Mac, and the Profiles chosen for deletion get no decision (the local reset deletes them).
+    /// account match, every readable unclaimed account Profile is created on this Mac, and the Profiles
+    /// being deleted get no decision (the local reset deletes them). A new replace deletes every extra
+    /// Profile; a resumed one deletes only its marker's Profiles, so an extra Profile created after the
+    /// marker was written registers instead.
     static func replaceDecisions(locals: [PairingLocal], remotes: [RemoteProfile],
                                  deleting deleteProfileIds: Set<String>) -> [PairingDecision] {
         let kept = locals.filter { !deleteProfileIds.contains($0.profileId) }
@@ -199,28 +193,17 @@ struct PairingFlowPlan: Equatable {
     }
 }
 
-/// What "use your account's data" does with one extra local Profile (see `PairingFlowPlan.extraLocals`).
-enum ExtraProfileDecision: Hashable {
-    /// The default: the Profile stays on this Mac and is added to the account.
-    case keepAndRegister
-    /// The Profile and its Chromium data (passwords, history, extensions) are deleted from this Mac.
-    case deleteLocal
-}
-
-/// The confirmation page of "use your account's data": what leaves this Mac, what the account brings,
-/// and the extra local Profiles to keep or delete.
+/// The confirmation page of "use your account's data": what leaves this Mac, including the local
+/// Profiles it deletes, and what the account brings.
 struct ReplaceLocalReview: Equatable {
-    /// What the local reset removes. `profiles` is always 0: deleted Profiles are chosen in the Profiles card.
+    /// What the local reset removes. `profiles` is the number of `extraLocals`.
     var removed: PairingDataSummary.Counts
     /// What the first sync downloads from the account.
     var downloaded: PairingDataSummary.Counts
-    /// The local Default's name, shown read-only in the Profiles card.
-    var defaultProfileName: String
-    /// The Profiles card's rows; the card is hidden when this is empty.
+    /// The local Profiles the replace deletes, named in the "Removed from this Mac" card: every extra local
+    /// Profile (see `PairingFlowPlan.extraLocals`), or, for a resumed replace, the marker's Profiles still
+    /// on this Mac.
     var extraLocals: [PairingLocal]
-    /// The Default row reads "Registered as your account's default profile" instead of "Matched with your
-    /// account's default profile": the account has no readable default for it to adopt.
-    var defaultRegistersAsAccountDefault: Bool
     /// The local Default has no readable account default to adopt (see `PairingFlowPlan.defaultNeedsChoice`),
     /// so replacing cannot start: registering the Default could mint a second account default.
     var defaultUnavailable: Bool

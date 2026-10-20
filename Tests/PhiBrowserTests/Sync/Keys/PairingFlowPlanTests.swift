@@ -243,19 +243,32 @@ final class PairingFlowPlanTests: XCTestCase {
         XCTAssertEqual(PairingFlowPlan.extraLocals(locals: [localDefault], remotes: [accountDefault]), [])
     }
 
-    func testReplaceDecisionsRouteKeepAndDelete() {
+    func testReplacingAdoptsASameNameProfileAndDeletesOnlyTheExtras() {
+        let sameName = PairingLocal(profileId: "Profile 3", displayName: "Work", isDefault: false)
+        let locals = [localDefault, localExtra, sameName]
+        let remotes = [accountDefault, accountWork]
+        let deleting = Set(PairingFlowPlan.extraLocals(locals: locals, remotes: remotes).map(\.profileId))
+        XCTAssertEqual(deleting, ["Profile 2"], "The same-name Profile is not deleted")
+        XCTAssertEqual(PairingFlowPlan.replaceDecisions(locals: locals, remotes: remotes, deleting: deleting), [
+            .adopt(localProfileId: "Default", remoteUuid: "uuid-default"),
+            .adopt(localProfileId: "Profile 3", remoteUuid: "uuid-work"),
+        ], "The same-name Profile adopts its account Profile, so nothing is created for it")
+    }
+
+    func testReplaceDecisionsGiveDeletedExtrasNoDecisionAndRegisterOnlyUndeletedOnes() {
         let locals = [localDefault, localExtra]
         let remotes = [accountDefault, accountWork, unreadable]
+        let extras = Set(PairingFlowPlan.extraLocals(locals: locals, remotes: remotes).map(\.profileId))
+        XCTAssertEqual(extras, ["Profile 2"])
+        XCTAssertEqual(PairingFlowPlan.replaceDecisions(locals: locals, remotes: remotes, deleting: extras), [
+            .adopt(localProfileId: "Default", remoteUuid: "uuid-default"),
+            .createLocal(remoteUuid: "uuid-work", displayName: "Work"),
+        ], "Every extra is deleted without a decision; the unclaimed readable Profile is created; the unreadable one waits")
         XCTAssertEqual(PairingFlowPlan.replaceDecisions(locals: locals, remotes: remotes, deleting: []), [
             .adopt(localProfileId: "Default", remoteUuid: "uuid-default"),
             .registerNew(localProfileId: "Profile 2", displayName: "Reading"),
             .createLocal(remoteUuid: "uuid-work", displayName: "Work"),
-        ], "Kept extras register; the unclaimed readable Profile is created; the unreadable one waits")
-        XCTAssertEqual(PairingFlowPlan.replaceDecisions(locals: locals, remotes: remotes,
-                                                        deleting: ["Profile 2"]), [
-            .adopt(localProfileId: "Default", remoteUuid: "uuid-default"),
-            .createLocal(remoteUuid: "uuid-work", displayName: "Work"),
-        ], "A Profile chosen for deletion gets no decision")
+        ], "An extra outside the marker's set (created after a replace started) registers")
         XCTAssertEqual(PairingFlowPlan.replaceDecisions(locals: [], remotes: [unreadable], deleting: []), [],
                        "A replay after the decisions applied has nothing left to do")
     }
@@ -267,15 +280,6 @@ final class PairingFlowPlanTests: XCTestCase {
                        "A mapped Default needs nothing")
         XCTAssertTrue(PairingFlowPlan.defaultNeedsChoice(locals: [localDefault], remotes: [unreadable]))
         XCTAssertTrue(PairingFlowPlan.defaultNeedsChoice(locals: [localDefault], remotes: [accountLegacy]))
-    }
-
-    func testDefaultRegistersAsAccountDefault() {
-        XCTAssertTrue(PairingFlowPlan.defaultRegistersAsAccountDefault(locals: [localDefault], remotes: []))
-        XCTAssertTrue(PairingFlowPlan.defaultRegistersAsAccountDefault(locals: [localDefault], remotes: [unreadable]))
-        XCTAssertFalse(PairingFlowPlan.defaultRegistersAsAccountDefault(locals: [localDefault],
-                                                                         remotes: [accountDefault]))
-        XCTAssertFalse(PairingFlowPlan.defaultRegistersAsAccountDefault(locals: [localExtra], remotes: []),
-                       "A mapped Default is matched already")
     }
 
     func testIsBrandNewAccount() {

@@ -422,17 +422,18 @@ primary button.
   Confirm" and Continue opens the confirmation page. Nothing is written by the
   method step or by Continue.
 
-**The confirmation page** lists what is removed from this Mac (non-default
-Spaces, whose open tabs close; bookmarks; pinned tabs; URL rules; synced
-settings; rows with nothing to remove are hidden), what is downloaded from the
-account, and, when this Mac has Profiles the account has none for (non-default
-and not matched by name), a "Profiles on this Mac" card. That card shows the
-Default read-only ("Matched with your account's default profile", or "Registered
-as your account's default profile" when the account has no readable default for
-it to adopt) and one picker
-per extra Profile: **Keep and add to your account** (the default) or **Delete
-from this Mac**, which also deletes that Profile's passwords, history and
-extensions. A name-matched Profile adopts its account Profile without a row. The
+**The confirmation page** lists what is removed from this Mac and what is
+downloaded from the account. The "Removed from this Mac" card names the
+Profiles the account has none for (non-default and not matched by name) in one
+row, "1 profile: Scratch" or "2 profiles: Scratch, Work2", captioned "Its (Their)
+passwords, history and extensions on this Mac are deleted too.", then non-default
+Spaces (whose open tabs close), bookmarks, pinned tabs, URL rules and synced
+settings; rows with nothing to remove are hidden. There is no per-Profile
+choice: "use your account's data" always deletes every such extra Profile with
+its Chromium data, and whoever wants to keep a local Profile chooses Merge
+(decided 2026-10-20, superseding the earlier keep-or-delete picker). A
+name-matched Profile adopts its account Profile and is never deleted; the
+Default is never deleted. The
 footer has "Replace this Mac's data" (bordered, no keyboard shortcut) left of
 Back, which takes Return and is disabled while the preflight runs. If the local
 Default is unmapped and the account has Profiles but no readable default one,
@@ -444,9 +445,9 @@ single submission as a merge:
 
 | # | Step | On failure |
 | --- | --- | --- |
-| 1 | Preflight: reload the account's Profiles and Spaces and compare only the account side (account Profiles, account Spaces, the preview's skipped count) and the set of extra local Profiles, minus those being deleted. Local Spaces are not compared: they are what the replace removes, and a Retry after a partial reset would otherwise never match. The footer shows a progress indicator | A change returns to the confirmation page with fresh data and the same choices; nothing is written. A failed load shows an error whose Retry runs the sequence again |
+| 1 | Preflight: reload the account's Profiles and Spaces and compare only the account side (account Profiles, account Spaces, the preview's skipped count) and the set of extra local Profiles, minus those being deleted. Local Spaces are not compared: they are what the replace removes, and a Retry after a partial reset would otherwise never match. The footer shows a progress indicator | A change returns to the confirmation page with fresh data, including a fresh list of the Profiles to delete; nothing is written. A failed load shows an error whose Retry runs the sequence again |
 | 2 | The status page "Replacing this Mac's data…" shows; closing, Escape, Finish later and Remove are refused while it runs | — |
-| 3 | Profile decisions: the Default and name-matched Profiles adopt, kept Profiles register, every readable unclaimed account Profile is created on this Mac; deleted Profiles get no decision. Nothing local has been removed yet. After the decisions succeed, the reviewed snapshot is advanced by reloading the candidates (a failed reload falls back to predicting them), so a Retry preflight does not read this progress as an account change | Error "Couldn't finish setting up sync. Nothing was lost…", Retry |
+| 3 | Profile decisions: the Default and name-matched Profiles adopt, every readable unclaimed account Profile is created on this Mac; the extra Profiles being deleted get no decision (on a resumed replace, an extra Profile created after the marker was written registers instead, see below). Nothing local has been removed yet. After the decisions succeed, the reviewed snapshot is advanced by reloading the candidates (a failed reload falls back to predicting them), so a Retry preflight does not read this progress as an account change | Error "Couldn't finish setting up sync. Nothing was lost…", Retry |
 | 4 | The resume marker `sync.pairingLocalReset` is written with the Profiles to delete | Same error, Retry |
 | 5 | The local reset (`PhiLocalDataReset.clear`, see the next section) | Error "Couldn't finish replacing this Mac's data. Retry picks up where it stopped…", Retry |
 | 6 | The default Space must be the only pairable Space left; no Space mapping is written (the default Space keeps its constant identity) | Treated as an unfinished reset: the same error, Retry |
@@ -458,16 +459,15 @@ it stopped. The account's data lands with the first replay after the gate opens
 progress, which can take a few minutes for a large account.
 
 **Leaving and resuming.** Finish later (or Escape, or closing the window) on the
-method step or the confirmation discards the method and the Profile choices; the
+method step or the confirmation discards the selected method; the
 next setup starts at the method step with Merge selected. Leaving from an error
 page after step 4 is allowed (an offline Mac must not be trapped) and keeps the
 marker. While a marker exists for this device key, every later setup opens
-directly on the confirmation page, locked to "use your account's data" with the
-saved Profile deletions fixed and no Back; Replace resumes the sequence. A
-Profile created on this Mac after the marker was written appears on the locked
-page as "Keep and add to your account" with its picker disabled: it is
-registered with the account, never deleted, because only the Profiles named in
-the marker are deleted. Without
+directly on the confirmation page, locked to "use your account's data" with no
+Back; Replace resumes the sequence. The marker's Profile list is authoritative:
+the locked page names exactly the marker's Profiles still on this Mac, and only
+they are deleted. A Profile created on this Mac after the marker was written is
+not listed and not deleted; it is registered with the account. Without
 the marker, a restart after a partial reset would offer a merge that unions the
 leftovers into the account. **Remove this device from sync** stays available on
 the error page; after a partial reset it leaves a partly emptied, unpaired Mac,
@@ -494,7 +494,7 @@ all of these hold:
 | Unpaired, usable session | The enrollment is not paired; the controller is unlocked, not retired, on the current account, and no reconfiguration is pending |
 | No sync history | No Space or Profile cursor with an account entity, no progress marker or store birthday, no bookmark, pin or rule cursor with an entity or baseline, a readable and empty Profile deletion journal |
 | Nothing running | No import into any Space; no agent task in a Space the reset deletes or in any Space of a Profile it deletes |
-| Profiles | The Profile list is readable; the Default Profile and non-assignable Profiles (the agent fallback) are never deletable; every Profile chosen for deletion is unmapped |
+| Profiles | The Profile list is readable; the Default Profile and non-assignable Profiles (the agent fallback) are never deletable; every Profile being deleted is unmapped |
 
 The unpaired/session and import checks are repeated before every destructive step.
 
@@ -505,14 +505,14 @@ The steps, in order:
 2. If the `default-space` row is missing, it is recreated on the Default Profile
    with its bookmark root. The store must keep one user Space, and the ordinary
    first-launch bootstrap refuses to resurrect the row while other Spaces exist.
-3. If `default-space` is bound to a Profile chosen for deletion, it is re-bound to
+3. If `default-space` is bound to a Profile being deleted, it is re-bound to
    the Default Profile and its windows are settled before anything else happens:
    a parked ghost of it is dropped, a slot showing it replaces its window in place
    on the Default Profile without animation, a background window of it is closed,
    and the reset waits (bounded) until no window of it remains on the old Profile.
    The row is committed before the windows, so a rebind whose windows did not
    settle leaves the row on the Default Profile; this step also runs when any live
-   window of `default-space` is still on a Profile chosen for deletion, so a rerun
+   window of `default-space` is still on a Profile being deleted, so a rerun
    settles those windows again.
 4. In one transaction: every pinned-tab row in every scope (dormant copies
    included), every bookmark and folder except the canonical per-Space roots, and
@@ -526,7 +526,7 @@ The steps, in order:
    seconds with a typed failure. A timeout before the window close reached the
    cascade abandons the deletion: the late close callback deletes nothing (so
    no sync deletion intent can come from it), and the Space is no longer pending,
-   so a rerun retries it. A Profile chosen for deletion loses its agent
+   so a rerun retries it. A Profile being deleted loses its agent
    Spaces with it (they are device-local and its Chromium data goes anyway); the
    agent Spaces of kept Profiles and Incognito Spaces are untouched. The default
    Space is emptied, never removed; its open tabs stay.

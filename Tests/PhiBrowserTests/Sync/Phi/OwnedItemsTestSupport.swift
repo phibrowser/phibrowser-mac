@@ -251,6 +251,9 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
     private(set) var snapshotIsLoaded = false
     /// The next apply throws storeUnavailable, resets the flag, and changes no rows.
     var failApplyOnce = false
+    /// The next apply throws this error, resets it, and changes no rows. Use a non-transient
+    /// LocalStoreWriteError (for example rowNotFound) to drive the landing refusal branch.
+    var failApplyOnceWith: Error?
     private(set) var calls: [Call] = []
     private(set) var lastAppliedOps: [PinApplyOp] = []
 
@@ -345,6 +348,10 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
         if failApplyOnce {
             failApplyOnce = false
             throw LocalStoreWriteError.storeUnavailable
+        }
+        if let error = failApplyOnceWith {
+            failApplyOnceWith = nil
+            throw error
         }
         // Production rereads after successful application for same-round §4.5 verification.
         // Thrown writes skip the reread and preserve the old snapshot.

@@ -5623,6 +5623,14 @@ actor PhiSyncEngine {
             if tombstoned.contains(identity) { cursor.pendingTombstone = true }
             table.cursors[identity] = cursor
         }
+        // Every identity this round attempted to land was decided under the current scope. Unless
+        // this round parked it for another pinned-tab scope again, it is no longer a dormant copy:
+        // a refused attempt keeps its earlier pendingApply and must count as held.
+        for step in output.plan.steps where !outcome.parkedForScope.contains(step.identity) {
+            guard var cursor = table.cursors[step.identity], cursor.parkedForScope != nil else { continue }
+            cursor.parkedForScope = nil
+            table.cursors[step.identity] = cursor
+        }
         // Refusal neither lands nor parks nor creates cursors (CASE 6.6b / 6.11b).
         counters.refused += outcome.refused.count
         // A9 cancelled the pending local deletion.

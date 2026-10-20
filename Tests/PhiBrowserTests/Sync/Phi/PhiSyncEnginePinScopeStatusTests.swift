@@ -167,6 +167,44 @@ final class PhiSyncEnginePinScopeStatusTests: XCTestCase {
         XCTAssertEqual(pinAccess.rows.first { PinKind.lineageKey($0.lineageId) == "ls" }?.spaceId, "space-a")
     }
 
+    /// A dormant copy that becomes current-scope work is no longer dormant even when its landing is
+    /// refused: the cursor keeps pendingApply, drops parkedForScope and holds the round until a later
+    /// round lands it.
+    func testARefusedLandingAfterTheScopeChangeIsHeld() async throws {
+        let pinAccess = FakePinAccess(scope: .app, account: .app)
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([remotePin("ls", owner: "su-1", version: 4)])]
+
+        let engine = makeEngine(client: client, access: makeSpaceAccess(),
+                                ownedKinds: [.pins(access: pinAccess, store: pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        var table = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(table.cursors["ls:su-1"]?.parkedForScope, true, "Precondition: dormant in app scope")
+        XCTAssertEqual(engine.statusSnapshot.phase, .upToDate)
+
+        pinAccess.scope = .space
+        pinAccess.account = .space
+        pinAccess.failApplyOnceWith = LocalStoreWriteError.rowNotFound
+        await engine.pullOnce()
+
+        table = await engine.ownedTableForTesting("pins")
+        XCTAssertNotNil(table.cursors["ls:su-1"]?.pendingApply, "A refused landing keeps the parked payload")
+        XCTAssertNil(table.cursors["ls:su-1"]?.parkedForScope, "Current-scope work is no longer dormant")
+        XCTAssertNil(pinAccess.rows.first { PinKind.lineageKey($0.lineageId) == "ls" })
+        XCTAssertEqual(engine.statusSnapshot.phase, .needsAttention)
+        XCTAssertEqual(pinnedTabsHeld(engine), 1)
+
+        await engine.pullOnce()
+
+        table = await engine.ownedTableForTesting("pins")
+        XCTAssertNil(table.cursors["ls:su-1"]?.pendingApply, "With the fault gone the next round lands it")
+        XCTAssertNil(table.cursors["ls:su-1"]?.parkedForScope)
+        XCTAssertEqual(pinAccess.rows.first { PinKind.lineageKey($0.lineageId) == "ls" }?.spaceId, "space-a")
+    }
+
     /// Cursor files written before parkedForScope existed decode unchanged, and the flag round-trips.
     func testACursorWithoutTheNewKeyStillDecodes() throws {
         var cursor = PhiOwnedItemCursor()

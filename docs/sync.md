@@ -447,11 +447,21 @@ single submission as a merge:
 | --- | --- | --- |
 | 1 | Preflight: reload the account's Profiles and Spaces and compare only the account side (account Profiles, account Spaces, the preview's skipped count) and the set of extra local Profiles, minus those being deleted. Local Spaces are not compared: they are what the replace removes, and a Retry after a partial reset would otherwise never match. The footer shows a progress indicator | A change returns to the confirmation page with fresh data, including a fresh list of the Profiles to delete; nothing is written. A failed load shows an error whose Retry runs the sequence again |
 | 2 | The status page "Replacing this Mac's data…" shows; closing, Escape, Finish later and Remove are refused while it runs | — |
-| 3 | Profile decisions: the Default and name-matched Profiles adopt, every readable unclaimed account Profile is created on this Mac; the extra Profiles being deleted get no decision (on a resumed replace, an extra Profile created after the marker was written registers instead, see below). Nothing local has been removed yet. After the decisions succeed, the reviewed snapshot is advanced by reloading the candidates (a failed reload falls back to predicting them), so a Retry preflight does not read this progress as an account change | Error "Couldn't finish setting up sync. Nothing was lost…", Retry |
-| 4 | The resume marker `sync.pairingLocalReset` is written with the Profiles to delete | Same error, Retry |
-| 5 | The local reset (`PhiLocalDataReset.clear`, see the next section) | Error "Couldn't finish replacing this Mac's data. Retry picks up where it stopped…", Retry |
-| 6 | The default Space must be the only pairable Space left; no Space mapping is written (the default Space keeps its constant identity) | Treated as an unfinished reset: the same error, Retry |
-| 7 | Enrollment completes once every remaining local Profile is mapped (a Profile whose deletion failed blocks it), which clears the marker; then the mappings resolve and the window closes | "Couldn't finish replacing this Mac's data…" (local data is already gone, so "Nothing was lost" no longer applies); the marker stays; Retry |
+| 3 | The resume marker `sync.pairingLocalReset` is written with the Profiles to delete. Nothing local has been removed or created yet | Error "Couldn't finish setting up sync. Nothing was lost…", Retry |
+| 4 | The local reset (`PhiLocalDataReset.clear`, see the next section) | Error "Couldn't finish replacing this Mac's data. Retry picks up where it stopped…", Retry |
+| 5 | The default Space must be the only pairable Space left; no Space mapping is written (the default Space keeps its constant identity) | Treated as an unfinished reset: the same error, Retry |
+| 6 | Profile decisions: the Default and name-matched Profiles adopt, every readable unclaimed account Profile is created on this Mac; the extra Profiles being deleted get no decision (on a resumed replace, an extra Profile created after the marker was written registers instead, see below). A rerun skips what an earlier attempt applied: an adopted or created Profile is mapped, so the candidate load no longer offers it, and a decision already applied is treated as done. After the decisions succeed, the reviewed snapshot is advanced by reloading the candidates (a failed reload falls back to predicting them), so a Retry preflight does not read this progress as an account change | "Couldn't finish replacing this Mac's data…"; the marker stays; Retry |
+| 7 | Enrollment completes once every remaining local Profile is mapped (a Profile whose deletion failed blocks it), which clears the marker; then the mappings resolve and the window closes | "Couldn't finish replacing this Mac's data…"; the marker stays; Retry |
+
+"Nothing was lost" applies only to the preflight and a failed marker save. From
+step 4 on, local data may already be gone, so every failure reports the replace as
+unfinished. The Profile decisions run after the reset, never before it (decided
+2026-10-20 after acceptance SYNC-P22): a Profile created just before a force-quit
+can be left half-persisted by Chromium (its directory without `Preferences`, absent
+from `Local State`) while its Phi row and mapping are durable, and the reset is the
+long, interruptible part of the replace. The extra Profiles are deleted before the
+account's Profiles are created, so a created Profile never collides with one being
+deleted.
 
 Every step is idempotent, so Retry reruns the whole sequence and picks up where
 it stopped. The account's data lands with the first replay after the gate opens
@@ -461,10 +471,13 @@ progress, which can take a few minutes for a large account.
 **Leaving and resuming.** Finish later (or Escape, or closing the window) on the
 method step or the confirmation discards the selected method; the
 next setup starts at the method step with Merge selected. Leaving from an error
-page after step 4 is allowed (an offline Mac must not be trapped) and keeps the
+page after step 3 is allowed (an offline Mac must not be trapped) and keeps the
 marker. While a marker exists for this device key, every later setup opens
 directly on the confirmation page, locked to "use your account's data" with no
-Back; Replace resumes the sequence. The marker's Profile list is authoritative:
+Back; Replace resumes the sequence. A resume after a crash between the reset and
+enrollment finds no extra Space left and the account's Profiles possibly partly
+adopted or created; its preflight compares against a fresh load taken by that
+setup, and its Profile decisions cover only what is still unmapped. The marker's Profile list is authoritative:
 the locked page names exactly the marker's Profiles still on this Mac, and only
 they are deleted. A Profile created on this Mac after the marker was written is
 not listed and not deleted; it is registered with the account. Without
@@ -481,7 +494,7 @@ confirmation, the replace status page or its error page.
 "Use your account's data" empties this Mac's Phi data before enrollment completes,
 so the first replay lands the account without merging. The reset is
 `PhiLocalDataReset`, reached through `SyncKeyController.localDataReset()`; the
-setup wizard calls it in step 5 of the replace sequence above and reads its
+setup wizard calls it in step 4 of the replace sequence above and reads its
 inventory to decide whether the sync method step shows.
 
 The reset runs only while the device is unpaired, which is what makes it safe:

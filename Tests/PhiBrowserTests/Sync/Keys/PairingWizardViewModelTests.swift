@@ -1154,6 +1154,8 @@ final class PairingWizardViewModelTests: XCTestCase {
             let pairedWhenWritten: Bool
             let clearsBefore: Int
             let accountProfilesBefore: Int
+            /// Local Profile mappings at the write: zero means no Profile decision has run yet.
+            let mappingsBefore: Int
         }
         var data: Data?
         var writes: [Write] = []
@@ -1223,7 +1225,8 @@ final class PairingWizardViewModelTests: XCTestCase {
                     MainActor.assumeIsolated {
                         marker.writes.append(MarkerBox.Write(pairedWhenWritten: gate.isPaired,
                                                              clearsBefore: reset.clearCalls.count,
-                                                             accountProfilesBefore: api.profileEnvelopes.count))
+                                                             accountProfilesBefore: api.profileEnvelopes.count,
+                                                             mappingsBefore: profileKeys.allMappings().count))
                     }
                 }
                 marker.data = data
@@ -1386,10 +1389,12 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertNil(fixture.marker.data)
     }
 
-    /// The replace sequence: Profile decisions, then the marker, then the local reset, then enrollment,
-    /// then resolve. The extra Profile is deleted without any choice (no decision, straight to the reset);
-    /// the same-name Profile adopts its account Profile and is never deleted.
-    func testReplaceRunsProfilesThenMarkerThenClearThenEnrollmentThenResolve() async throws {
+    /// The replace sequence: the marker, then the local reset, then the Profile decisions, then enrollment,
+    /// then resolve. Nothing is created or adopted before the reset (acceptance SYNC-P22: a force-quit
+    /// during the reset must not leave just-created Profiles half-persisted). The extra Profile is deleted
+    /// without any choice (no decision, straight to the reset); the same-name Profile adopts its account
+    /// Profile and is never deleted.
+    func testReplaceRunsMarkerThenClearThenProfilesThenEnrollmentThenResolve() async throws {
         let fixture = try await makeReplaceWizard(
             spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
             accountSpaces: [account("acct-1", name: "Work", profileUuid: "uuid-work")],
@@ -1404,13 +1409,17 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertEqual(fixture.wizard.step, .confirm)
         let accountProfilesBefore = fixture.api.profileEnvelopes.count
         resolveCount = 0
+        var mappingsAtClear: [String: String]?
+        fixture.reset.onClearEntered = { mappingsAtClear = fixture.controller.profileKeys.allMappings() }
 
         await fixture.wizard.replaceLocal(controller: fixture.controller)
 
         XCTAssertEqual(fixture.wizard.phase, .done)
         XCTAssertEqual(fixture.marker.writes, [MarkerBox.Write(pairedWhenWritten: false, clearsBefore: 0,
-                                                               accountProfilesBefore: accountProfilesBefore)],
-                       "The marker precedes the reset, and no Profile was registered with the account")
+                                                               accountProfilesBefore: accountProfilesBefore,
+                                                               mappingsBefore: 0)],
+                       "The marker precedes the reset and every Profile decision")
+        XCTAssertEqual(mappingsAtClear, [:], "No Profile is adopted or created before the reset")
         XCTAssertEqual(fixture.reset.clearCalls, [FakeLocalReset.ClearCall(
             request: LocalResetRequest(deleteProfileIds: ["Profile 2"]),
             pairedWhenCalled: false, markerSavedWhenCalled: true)])
@@ -1688,10 +1697,11 @@ final class PairingWizardViewModelTests: XCTestCase {
         XCTAssertEqual(after.account.spaces, 3, "The method step shows the refreshed account")
     }
 
-    /// (c) A Profile decision fails during the replace: nothing local was touched, no marker, the flow
-    /// stays unlocked, and Retry reaches completion (through the confirmation again if the partial progress
-    /// changed the candidates).
-    func testAFailedProfileDecisionDuringReplaceWritesNoMarkerAndRetryWorks() async throws {
+    /// (c) A Profile decision fails during the replace. It runs after the reset, so the error says the
+    /// replace is unfinished (not "Nothing was lost"), the marker stays, the method locks, and Retry
+    /// resumes the locked replace (through the locked confirmation when the partial progress changed the
+    /// candidates) and completes without deleting anything else.
+    func testAFailedProfileDecisionAfterTheResetKeepsTheMarkerAndRetryResumesLocked() async throws {
         // Creating the account's unclaimed "Work" Profile on this Mac fails once.
         let creator = FakeProfileCreator()
         creator.createResults = [nil]
@@ -1707,25 +1717,89 @@ final class PairingWizardViewModelTests: XCTestCase {
         guard case .error(let message, .resumeReplace) = fixture.wizard.phase else {
             return XCTFail("expected .error(.resumeReplace), got \(fixture.wizard.phase)")
         }
-        XCTAssertEqual(message, PairingWizardStrings.applyFailed, "Nothing was lost yet")
-        XCTAssertNil(fixture.marker.data)
-        XCTAssertTrue(fixture.marker.writes.isEmpty)
-        XCTAssertTrue(fixture.reset.clearCalls.isEmpty)
-        XCTAssertFalse(fixture.wizard.methodLocked)
+        XCTAssertEqual(message, PairingWizardStrings.replaceLocalFailed,
+                       "The reset already ran, so the error must not claim nothing was lost")
+        XCTAssertEqual(fixture.controller.pairingLocalResetMarker()?.deleteProfileIds, ["Profile 2"],
+                       "The marker stays for the resume")
+        XCTAssertEqual(fixture.reset.clearCalls.map(\.request), [LocalResetRequest(deleteProfileIds: ["Profile 2"])])
+        XCTAssertTrue(fixture.wizard.methodLocked)
+        XCTAssertFalse(fixture.wizard.canGoBackToMethod)
+        XCTAssertFalse(AppModalPairingHost.reloadAllowed(for: fixture.wizard.phase))
         XCTAssertFalse(gate.isPaired)
 
         await fixture.wizard.retry(controller: fixture.controller)
         if case .confirmReplaceLocal = fixture.wizard.phase {
-            XCTAssertTrue(fixture.wizard.canGoBackToMethod, "Still unlocked")
+            XCTAssertTrue(fixture.wizard.methodLocked, "Retry resumes the locked replace")
+            XCTAssertFalse(fixture.wizard.canGoBackToMethod)
             await fixture.wizard.replaceLocal(controller: fixture.controller)
         }
         XCTAssertEqual(fixture.wizard.phase, .done)
-        XCTAssertEqual(fixture.reset.clearCalls.map(\.request), [LocalResetRequest(deleteProfileIds: ["Profile 2"])])
+        XCTAssertEqual(fixture.reset.clearCalls.map(\.request),
+                       Array(repeating: LocalResetRequest(deleteProfileIds: ["Profile 2"]), count: 2),
+                       "The resumed replace runs the (already finished) reset again")
+        XCTAssertEqual(creator.createCalls, ["Work", "Work"])
+        XCTAssertNotNil(fixture.controller.localProfileId(forGlobalUuid: "uuid-work"))
         XCTAssertNil(fixture.controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 2"))
         XCTAssertTrue(gate.isPaired)
+        XCTAssertNil(fixture.marker.data)
     }
 
-    /// (d) The marker cannot be saved: the reset never starts, and Retry completes.
+    /// The Profile decisions stop after the reset (as a force-quit would leave them): the Default adopted
+    /// and one account Profile was created. The next launch lands on the locked confirmation; its
+    /// preflight accepts the state the first attempt left, the reset runs again as a no-op, and the second
+    /// decision run plans only what is still missing: nothing is created twice and nothing is registered.
+    func testAReplaceInterruptedDuringTheProfileDecisionsResumesWithoutDuplicates() async throws {
+        let creator = FakeProfileCreator()
+        creator.createResults = ["Profile 7", nil]
+        let fixture = try await makeReplaceWizard(
+            spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
+            accountSpaces: [],
+            profiles: Self.defaultOnlyProfiles + [(profileId: "Profile 2", displayName: "Junk")],
+            creator: creator)
+        try seedAccountWithDefaultAndWork(fixture.api, controller: fixture.controller)
+        let ark = try XCTUnwrap(fixture.controller.manager.currentARK)
+        fixture.api.profileEnvelopes["uuid-reading"] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(repeating: 3, count: 32), name: "Reading", isDefault: false, ark: ark)
+        let review = try await startReplacing(fixture)
+        XCTAssertEqual(review.extraLocals.map(\.profileId), ["Profile 2"])
+        let accountProfiles = fixture.api.profileEnvelopes.count
+
+        // "Reading" is created and adopted (the account lists by uuid), then creating "Work" stops the run.
+        await fixture.wizard.replaceLocal(controller: fixture.controller)
+        guard case .error(_, .resumeReplace) = fixture.wizard.phase else {
+            return XCTFail("expected .error(.resumeReplace), got \(fixture.wizard.phase)")
+        }
+        XCTAssertEqual(fixture.controller.localProfileId(forGlobalUuid: "uuid-default"), "Default")
+        XCTAssertEqual(fixture.controller.localProfileId(forGlobalUuid: "uuid-reading"), "Profile 7")
+        XCTAssertNil(fixture.controller.localProfileId(forGlobalUuid: "uuid-work"))
+
+        // The relaunch: Chromium lists the created Profile, the marker is still there.
+        XCTAssertTrue(fixture.wizard.leaveWithoutApplying())
+        fixture.local.profiles.append((profileId: "Profile 7", displayName: "Reading"))
+        await fixture.wizard.start(controller: fixture.controller)
+        guard case .confirmReplaceLocal(let locked) = fixture.wizard.phase else {
+            return XCTFail("expected the locked confirmation, got \(fixture.wizard.phase)")
+        }
+        XCTAssertTrue(fixture.wizard.methodLocked)
+        XCTAssertTrue(locked.extraLocals.isEmpty, "The marker's Profile is already gone")
+        XCTAssertFalse(locked.defaultUnavailable, "The adopted Default does not block Replace")
+        XCTAssertTrue(fixture.wizard.canReplace)
+
+        await fixture.wizard.replaceLocal(controller: fixture.controller)
+
+        XCTAssertEqual(fixture.wizard.phase, .done)
+        XCTAssertEqual(creator.createCalls, ["Reading", "Work", "Work"], "Reading is not created twice")
+        XCTAssertEqual(fixture.controller.localProfileId(forGlobalUuid: "uuid-reading"), "Profile 7")
+        XCTAssertNotNil(fixture.controller.localProfileId(forGlobalUuid: "uuid-work"))
+        XCTAssertEqual(fixture.controller.profileKeys.mappedGlobalUuid(forProfileId: "Default"), "uuid-default")
+        XCTAssertEqual(fixture.api.profileEnvelopes.count, accountProfiles, "The account gains no Profile")
+        XCTAssertEqual(fixture.reset.clearCalls.map(\.request),
+                       Array(repeating: LocalResetRequest(deleteProfileIds: ["Profile 2"]), count: 2))
+        XCTAssertTrue(gate.isPaired)
+        XCTAssertNil(fixture.marker.data)
+    }
+
+    /// (d) The marker cannot be saved: nothing was lost (no reset, no Profile decision), and Retry completes.
     func testAFailedMarkerSaveStopsBeforeTheResetAndRetryWorks() async throws {
         let fixture = try await makeReplaceWizard(
             spaces: [local(LocalStore.defaultSpaceId, name: "Default"), local("LOCAL-1", name: "Junk")],
@@ -1738,9 +1812,10 @@ final class PairingWizardViewModelTests: XCTestCase {
         guard case .error(let message, .resumeReplace) = fixture.wizard.phase else {
             return XCTFail("expected .error(.resumeReplace), got \(fixture.wizard.phase)")
         }
-        XCTAssertEqual(message, PairingWizardStrings.applyFailed)
+        XCTAssertEqual(message, PairingWizardStrings.applyFailed, "Nothing was lost")
         XCTAssertNil(fixture.marker.data)
         XCTAssertTrue(fixture.reset.clearCalls.isEmpty, "No reset without the marker")
+        XCTAssertTrue(fixture.controller.profileKeys.allMappings().isEmpty, "No Profile decision ran")
         XCTAssertFalse(fixture.wizard.methodLocked)
 
         await fixture.wizard.retry(controller: fixture.controller)

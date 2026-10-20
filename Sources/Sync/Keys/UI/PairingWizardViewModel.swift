@@ -653,8 +653,10 @@ final class PairingWizardViewModel: ObservableObject {
     // MARK: - Replacing this Mac's data
 
     /// "Use your account's data" (docs/sync.md, "Sync method and replacing this Mac's data"), inside the
-    /// same single submission as a merge (R-D6-3): Profile decisions, then the durable resume marker, then
-    /// the local reset, then enrollment. Every step is idempotent, so Retry reruns the whole sequence and
+    /// same single submission as a merge (R-D6-3): the durable resume marker, then the local reset, then the
+    /// Profile decisions, then enrollment. Nothing is created before the reset: a Profile created while a
+    /// force-quit interrupts the reset could be left half-persisted by Chromium beside its durable mapping
+    /// (acceptance SYNC-P22, 2026-10-20). Every step is idempotent, so Retry reruns the whole sequence and
     /// picks up where it stopped. Never writes keyLayer.phase (R-D6-11).
     func replaceLocal(controller: SyncKeyController) async {
         // 0. Reject reentrant submission (a double-click) the same way applyDecisions does.
@@ -680,24 +682,12 @@ final class PairingWizardViewModel: ObservableObject {
         phase = .replacingLocal
         isApplying = true
         defer { isApplying = false }
-
-        // 3. Profile decisions (network), before anything local is removed. Profiles being deleted get none;
-        // a failure here has lost nothing.
+        // Profiles being deleted get no decision; the reset deletes them.
         let decisions = PairingFlowPlan.replaceDecisions(locals: loadedLocals, remotes: loadedRemotes,
                                                          deleting: deleting)
-        guard await keyLayer.applyPairingDecisions(decisions, controller: controller) else {
-            guard sessionIsCurrent(controller) else { return }
-            phase = .error(message: PairingWizardStrings.applyFailed, resume: .resumeReplace)
-            logReplaced(decisions: decisions.count, deleting: deleting.count, stage: "profiles", ok: false)
-            return
-        }
-        guard sessionIsCurrent(controller) else { return }
-        // Successful decisions change the next candidate load. Advance the snapshot after the profile
-        // decisions so the Retry preflight does not mistake this progress for an account change.
-        await advanceReplaceSnapshot(deleting: deleting, controller: controller)
-        guard sessionIsCurrent(controller) else { return }
 
-        // 4. The durable intent, before anything local is removed: from here on, setup resumes this replace.
+        // 3. The durable intent, before anything local is removed or created: from here on, setup resumes
+        // this replace. A failure here has lost nothing.
         do {
             try controller.savePairingLocalResetMarker(deleteProfileIds: deleting)
         } catch {
@@ -709,7 +699,9 @@ final class PairingWizardViewModel: ObservableObject {
         methodLocked = true
         lockedDeleteProfileIds = deleting
 
-        // 5. The local reset.
+        // From here on the reset may have run, so "Nothing was lost" no longer holds: every failure below
+        // reports the replace as unfinished, the marker stays, and Retry resumes it.
+        // 4. The local reset.
         do {
             try await reset.clear(LocalResetRequest(deleteProfileIds: deleting))
         } catch {
@@ -721,9 +713,7 @@ final class PairingWizardViewModel: ObservableObject {
         }
         guard sessionIsCurrent(controller) else { return }
 
-        // From here on the reset has run, so "Nothing was lost" no longer holds: every failure below reports
-        // the replace as unfinished, and Retry resumes it.
-        // 6. No Space mappings: the default Space keeps its constant identity, and it must be the only
+        // 5. No Space mappings: the default Space keeps its constant identity, and it must be the only
         // pairable Space left. Anything else means the reset did not finish.
         guard pairableLocalSpaces().allSatisfy({ $0.spaceId == LocalStore.defaultSpaceId }) else {
             AppLogWarn("[phi-sync] pairing wizard replace: Spaces other than the default remain")
@@ -731,6 +721,20 @@ final class PairingWizardViewModel: ObservableObject {
             logReplaced(decisions: decisions.count, deleting: deleting.count, stage: "verify", ok: false)
             return
         }
+
+        // 6. Profile decisions (network): the Default and name-matched Profiles adopt, every readable
+        // unclaimed account Profile is created on this Mac. A rerun skips what an earlier attempt applied.
+        guard await keyLayer.applyPairingDecisions(decisions, controller: controller) else {
+            guard sessionIsCurrent(controller) else { return }
+            phase = .error(message: PairingWizardStrings.replaceLocalFailed, resume: .resumeReplace)
+            logReplaced(decisions: decisions.count, deleting: deleting.count, stage: "profiles", ok: false)
+            return
+        }
+        guard sessionIsCurrent(controller) else { return }
+        // Successful decisions change the next candidate load. Advance the snapshot after the profile
+        // decisions so a Retry preflight does not mistake this progress for an account change.
+        await advanceReplaceSnapshot(deleting: deleting, controller: controller)
+        guard sessionIsCurrent(controller) else { return }
 
         // 7. Open the gate only once every remaining local Profile is mapped. Completion clears the marker.
         do {

@@ -369,15 +369,19 @@ struct PairingLoadTimedOut: Error {}
         var locals = [local(LocalStore.defaultSpaceId, "Default"), local("LOCAL-1", "Junk Space")]
         let log = EventLog()
         api.onPut = { log.events.append("registered") }
-        controller.onMarkerSaved = {
-            // Adopting writes nothing to the account: the Profile decisions show as mappings at marker time.
+        // Adopting writes nothing to the account: the Profile decisions show as mappings, which must not
+        // exist when the marker is written and do exist when enrollment completes.
+        let logProfiles = {
             if controller.profileKeys.mappedGlobalUuid(forProfileId: "Profile 3") != nil { log.events.append("profiles") }
+        }
+        controller.onMarkerSaved = {
+            logProfiles()
             log.events.append("marker")
         }
         controller.onResolve = { log.events.append("resolve") }
         let reset = FakeReset(gate: gate, controller: controller, log: log, onCleared: { locals = [locals[0]] })
         reset.failures = 1
-        gate.onComplete = { log.events.append("enrollment"); controller.localResetMarker = nil }
+        gate.onComplete = { logProfiles(); log.events.append("enrollment"); controller.localResetMarker = nil }
         let wizard = PairingWizardViewModel(keyLayer: KeyLayerViewModel(manager: controller.manager),
             previewAccountSpaces: { .success(.init(spaces: [remote("acct-1", "Work")], skippedEntityCount: 0)) },
             pairableLocalSpaces: { locals }, themeDisplayName: { _ in nil }, gate: gate,
@@ -421,8 +425,8 @@ struct PairingLoadTimedOut: Error {}
                     "The Default adopts the account default")
         try require(store.map.isEmpty, "Replacing maps no Space")
         try require(api.envelopes.count == 2, "No Profile is registered with the account")
-        try require(log.events == ["profiles", "marker", "clear", "profiles", "marker", "clear", "enrollment", "resolve"],
-                    "Order: Profiles, marker, clear, then enrollment and resolve; got \(log.events)")
+        try require(log.events == ["marker", "clear", "marker", "clear", "profiles", "enrollment", "resolve"],
+                    "Order: marker, clear, then Profiles, enrollment and resolve; got \(log.events)")
     }
 
     /// A marker from an earlier session lands on a locked confirmation that lists its saved deletions.

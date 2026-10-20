@@ -6280,8 +6280,10 @@ final class SpaceManager: ObservableObject {
         case refusedAgentTaskRunning
         /// A retreat or the cascade failed; the Space is still there.
         case failed
-        /// Nothing settled within the timeout. The deletion may still finish later; a rerun sees
-        /// `refusedAlreadyPending` until it does, then `notFound`.
+        /// Nothing settled within the timeout, and the window close had not yet reached the cascade:
+        /// the operation is abandoned and its pending mark released. A close callback that arrives
+        /// later deletes nothing (so no sync deletion intent can come from an abandoned reset), and a
+        /// rerun may retry the Space. When the cascade had already started, it finishes on its own.
         case timedOut
     }
 
@@ -6311,7 +6313,8 @@ final class SpaceManager: ObservableObject {
     /// completion or default-mode fallback timer is involved and no other doomed Space is built as
     /// a retreat target; and it gives up after `timeout`. It also deletes agent Spaces (those of a
     /// Profile the reset deletes), which never count toward the last-Space guard. Every other caller
-    /// keeps using `deleteSpace`.
+    /// keeps using `deleteSpace`. After `timedOut` the late close callback deletes nothing and the
+    /// Space is no longer pending, so a rerun may retry it.
     @MainActor
     func deleteSpaceForPairingReset(spaceId: String,
                                     timeout: Duration = SpaceManager.pairingResetWindowTimeout) async -> PairingResetSpaceDeletion {
@@ -6335,11 +6338,19 @@ final class SpaceManager: ObservableObject {
         pendingDeletionSpaceIds.insert(spaceId)
         let once = PairingResetResumeOnce<PairingResetSpaceDeletion>()
         return await withCheckedContinuation { continuation in
-            once.arm(continuation, timeout: timeout, timeoutValue: .timedOut)
+            once.arm(continuation, timeout: timeout, timeoutValue: .timedOut, onAbandon: { [weak self] in
+                self?.pendingDeletionSpaceIds.remove(spaceId)
+            })
             closeSpaceWindows(spaceId: spaceId, animated: false,
                               retreatTargetSpaceId: LocalStore.defaultSpaceId) { [weak self] succeeded in
                 guard let self, self.storeIdentifier == deletionStoreIdentifier else {
                     once.resume(.refusedStoreMismatch)
+                    return
+                }
+                // The timeout abandoned the operation and released the pending mark (a rerun may
+                // have claimed it since): touch nothing, and never start the cascade.
+                guard once.beginCommit() else {
+                    AppLogWarn("[SpaceManager] pairing reset: late window close for \(spaceId) after the timeout; not deleting")
                     return
                 }
                 guard succeeded, self.acceptsStoreAction(from: deletionStoreIdentifier) else {
@@ -6425,6 +6436,15 @@ final class SpaceManager: ObservableObject {
             return !stale && replaced
         }
         return settled ? .rebound : .windowsNotSettled
+    }
+
+    /// The Profiles of the live windows showing `default-space`. The pairing reset re-runs the rebind
+    /// when one of them is a Profile it deletes (an earlier rebind committed but its windows did not
+    /// settle).
+    @MainActor
+    func defaultSpaceWindowProfileIdsForPairingReset() -> Set<String> {
+        Set(SpaceSessionControllersManager.shared.getAllWindows()
+            .filter { $0.spaceId == LocalStore.defaultSpaceId }.map(\.profileId))
     }
 
     /// Waits until no live window is bound to any of `profileIds` (window teardown after a Space
@@ -14252,21 +14272,38 @@ private func scheduleCommonModesFallbackTimer(after interval: TimeInterval,
 }
 
 /// Resumes a pairing-reset continuation exactly once: with the operation's result, or with
-/// `timeoutValue` when `timeout` passes first. Main-actor only.
+/// `timeoutValue` when `timeout` passes first. When the timeout fires before the operation's
+/// callback claimed the commit (`beginCommit()`), the operation is abandoned: `onAbandon` runs and
+/// every later `beginCommit()` answers false. Main-actor only.
 @MainActor
-private final class PairingResetResumeOnce<Value> {
+final class PairingResetResumeOnce<Value> {
     private var continuation: CheckedContinuation<Value, Never>?
     private var timer: Task<Void, Never>?
+    private(set) var isAbandoned = false
+    private var isCommitting = false
 
-    func arm(_ continuation: CheckedContinuation<Value, Never>, timeout: Duration, timeoutValue: Value) {
+    func arm(_ continuation: CheckedContinuation<Value, Never>, timeout: Duration, timeoutValue: Value,
+             onAbandon: @escaping @MainActor () -> Void = {}) {
         self.continuation = continuation
         // Strong on purpose: the operation's own callback may never run, and the timeout must
         // still resume the caller.
         timer = Task { @MainActor in
             try? await Task.sleep(for: timeout)
             guard !Task.isCancelled else { return }
+            if !self.isCommitting {
+                self.isAbandoned = true
+                onAbandon()
+            }
             self.resume(timeoutValue)
         }
+    }
+
+    /// The operation's callback claims the commit before changing anything. False once the timeout
+    /// abandoned the operation; a later timeout then only resumes `timeoutValue`.
+    func beginCommit() -> Bool {
+        guard !isAbandoned else { return false }
+        isCommitting = true
+        return true
     }
 
     func resume(_ value: Value) {

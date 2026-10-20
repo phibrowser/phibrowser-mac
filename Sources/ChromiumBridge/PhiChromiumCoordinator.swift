@@ -619,6 +619,7 @@ import SwiftUI
             setDefaultSpaceRole: { SpaceManager.shared.setDefaultSpaceRoleForPairingReset(LocalStore.defaultSpaceId) },
             recreateDefaultSpace: { try await account.localStorage.recreateDefaultSpaceForPairingResetThrowing(profileId: $0) },
             rebindDefaultSpace: { await SpaceManager.shared.rebindDefaultSpaceForPairingReset(toProfileId: $0) },
+            defaultSpaceWindowProfileIds: { SpaceManager.shared.defaultSpaceWindowProfileIdsForPairingReset() },
             wipeOwnedItems: {
                 try await account.localStorage.wipePhiOwnedItemsForPairingReset()
                 // Hard-deleted rules must leave Chromium's routing table too.

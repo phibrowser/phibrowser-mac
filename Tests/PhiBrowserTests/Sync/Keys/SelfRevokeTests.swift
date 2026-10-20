@@ -275,6 +275,7 @@ final class SelfRevokeTests: XCTestCase {
                 setDefaultSpaceRole: { self.touched = true; return true },
                 recreateDefaultSpace: { _ in self.touched = true },
                 rebindDefaultSpace: { _ in self.touched = true; return .rebound },
+                defaultSpaceWindowProfileIds: { [] },
                 wipeOwnedItems: { self.touched = true },
                 deleteSpace: { _ in self.touched = true; return .deleted },
                 profilesWithLiveWindows: { _ in [] },

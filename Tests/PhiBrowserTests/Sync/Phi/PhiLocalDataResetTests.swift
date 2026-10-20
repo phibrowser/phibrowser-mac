@@ -39,6 +39,8 @@ final class PhiLocalDataResetTests: XCTestCase {
         var agentTaskSpaces: Set<String> = []
         /// Profiles whose windows never close.
         var stuckWindows: Set<String> = []
+        /// Profiles of the live windows showing `default-space`; a settled rebind clears them.
+        var defaultSpaceWindowProfiles: Set<String> = []
         var steps: [String] = []
         /// Space deletions answer this outcome once, then behave normally.
         var refuseSpaceDeletion: [String: SpaceManager.PairingResetSpaceDeletion] = [:]
@@ -95,13 +97,16 @@ final class PhiLocalDataResetTests: XCTestCase {
                 },
                 rebindDefaultSpace: { profileId in
                     self.steps.append("rebind")
-                    guard self.rebindOutcome == .rebound,
+                    // The store commit happens before the windows are settled.
+                    guard self.rebindOutcome == .rebound || self.rebindOutcome == .windowsNotSettled,
                           let index = self.spaces.firstIndex(where: { $0.spaceId == PhiLocalDataResetTests.defaultSpace }) else {
                         return self.rebindOutcome
                     }
                     self.spaces[index] = SpaceRow(spaceId: PhiLocalDataResetTests.defaultSpace, profileId: profileId)
-                    return .rebound
+                    if self.rebindOutcome == .rebound { self.defaultSpaceWindowProfiles.removeAll() }
+                    return self.rebindOutcome
                 },
+                defaultSpaceWindowProfileIds: { self.defaultSpaceWindowProfiles },
                 wipeOwnedItems: {
                     self.steps.append("wipe")
                     guard !self.brokenWipe else { return }
@@ -115,7 +120,9 @@ final class PhiLocalDataResetTests: XCTestCase {
                     self.agentSpaces.removeAll { $0.spaceId == spaceId }
                     return before == self.spaces.count + self.agentSpaces.count ? .notFound : .deleted
                 },
-                profilesWithLiveWindows: { profileIds in profileIds.intersection(self.stuckWindows) },
+                profilesWithLiveWindows: { profileIds in
+                    profileIds.intersection(self.stuckWindows.union(self.defaultSpaceWindowProfiles))
+                },
                 isProfileInUse: { profileId in
                     (self.spaces + self.agentSpaces).contains { $0.profileId == profileId }
                 },
@@ -292,17 +299,37 @@ final class PhiLocalDataResetTests: XCTestCase {
     }
 
     /// A rebind whose windows did not settle stops the reset with its own error, before anything
-    /// else is deleted; a rerun converges.
+    /// else is deleted. The row is already re-bound then, so the rerun finds it on the Default
+    /// Profile, but the windows left on the doomed Profile make it run the rebind again to settle
+    /// them; it converges.
     func testARebindThatDidNotSettleIsATypedFailure() async throws {
         let world = populatedWorld()
         world.spaces[0] = SpaceRow(spaceId: Self.defaultSpace, profileId: "Profile 2")
+        world.defaultSpaceWindowProfiles = ["Profile 2"]
         world.rebindOutcome = .windowsNotSettled
 
         await assertFailure(.defaultSpaceRebindRefused(.windowsNotSettled), world, Self.deleteProfile2)
         XCTAssertEqual(world.steps, ["role", "rebind"])
+        XCTAssertEqual(world.spaces[0], SpaceRow(spaceId: Self.defaultSpace, profileId: Self.defaultProfile),
+                       "the store commit happened before the windows")
+        XCTAssertEqual(world.defaultSpaceWindowProfiles, ["Profile 2"])
 
+        world.steps.removeAll()
         world.rebindOutcome = .rebound
         try await world.reset().clear(Self.deleteProfile2)
+        XCTAssertEqual(Array(world.steps.prefix(3)), ["role", "rebind", "wipe"])
+        XCTAssertTrue(world.defaultSpaceWindowProfiles.isEmpty)
+        XCTAssertEqual(world.chromiumProfiles, [Self.defaultProfile])
+    }
+
+    /// The rebind runs only when the row or a window of the default Space is on a doomed Profile.
+    func testNoRebindWhenTheDefaultSpaceAndItsWindowsAreOnTheDefaultProfile() async throws {
+        let world = populatedWorld()
+        world.defaultSpaceWindowProfiles = [Self.defaultProfile]
+
+        try await world.reset().clear(Self.deleteProfile2)
+
+        XCTAssertFalse(world.steps.contains("rebind"))
         XCTAssertEqual(world.chromiumProfiles, [Self.defaultProfile])
     }
 
@@ -329,23 +356,30 @@ final class PhiLocalDataResetTests: XCTestCase {
     }
 
     /// A Space deletion that does not settle in time is a typed failure, and nothing after it runs.
-    /// The deletion may still finish behind it: a rerun meanwhile is refused as pending, and once it
-    /// finished, a rerun converges.
+    /// The timed-out operation is abandoned (its late callback deletes nothing) and the Space is no
+    /// longer pending, so the rerun deletes it and converges.
     func testASpaceDeletionTimeoutIsTypedAndARerunConverges() async throws {
         let world = populatedWorld()
         world.refuseSpaceDeletion = ["side": .timedOut]
 
         await assertFailure(.spaceDeletionRefused(spaceId: "side", outcome: .timedOut), world, Self.deleteProfile2)
         XCTAssertTrue(world.chromiumProfiles.contains("Profile 2"))
+        XCTAssertTrue(world.spaces.contains { $0.spaceId == "side" })
 
+        world.steps.removeAll()
+        try await world.reset().clear(Self.deleteProfile2)
+        XCTAssertTrue(world.steps.contains("space side"), "the rerun retries the Space, not refused as pending")
+        XCTAssertEqual(world.spaces.map(\.spaceId), [Self.defaultSpace])
+        XCTAssertEqual(world.chromiumProfiles, [Self.defaultProfile])
+    }
+
+    /// A deletion still pending (its cascade had started before the timeout) remains a typed failure.
+    func testAPendingSpaceDeletionIsATypedFailure() async {
+        let world = populatedWorld()
         world.refuseSpaceDeletion = ["side": .refusedAlreadyPending]
         await assertFailure(.spaceDeletionRefused(spaceId: "side", outcome: .refusedAlreadyPending), world,
                             Self.deleteProfile2)
-
-        world.spaces.removeAll { $0.spaceId == "side" }   // the late deletion finished
-        try await world.reset().clear(Self.deleteProfile2)
-        XCTAssertEqual(world.spaces.map(\.spaceId), [Self.defaultSpace])
-        XCTAssertEqual(world.chromiumProfiles, [Self.defaultProfile])
+        XCTAssertTrue(world.chromiumProfiles.contains("Profile 2"))
     }
 
     func testEverySpaceDeletionRefusalStopsTheReset() async {

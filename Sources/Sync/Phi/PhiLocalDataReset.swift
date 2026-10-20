@@ -82,7 +82,9 @@ enum PhiLocalDataResetError: Error, Equatable {
 /// bookmarks, pinned tabs and URL rules in one transaction, the other user Spaces, the agent Spaces
 /// of the chosen Profiles, the chosen Profiles and their local rows, stale Space mappings, the
 /// settings adoption state; then the postconditions are verified. Every step re-reads state and
-/// skips work already done, so a run after a crash or a failed step converges.
+/// skips work already done, so a run after a crash or a failed step converges. The rebind also runs
+/// again when the row is already re-bound but an earlier attempt left windows of the default Space
+/// on a Profile the reset deletes, so those windows are settled again.
 ///
 /// This type deletes data rows; `SyncKeyController.clearLocalSyncState` clears sync metadata. All
 /// access goes through injected closures (production wiring: `SyncKeyController.localDataReset()`).
@@ -131,6 +133,8 @@ final class PhiLocalDataReset {
         var setDefaultSpaceRole: @MainActor () -> Bool
         var recreateDefaultSpace: @MainActor (_ profileId: String) async throws -> Void
         var rebindDefaultSpace: @MainActor (_ profileId: String) async -> SpaceManager.PairingResetRebind
+        /// The Profiles of the live windows currently showing `default-space`.
+        var defaultSpaceWindowProfileIds: @MainActor () -> Set<String>
         var wipeOwnedItems: @MainActor () async throws -> Void
         var deleteSpace: @MainActor (_ spaceId: String) async -> SpaceManager.PairingResetSpaceDeletion
         /// Waits (bounded) for window teardown; answers the Profiles that still have a live window.
@@ -179,8 +183,11 @@ final class PhiLocalDataReset {
             throw PhiLocalDataResetError.defaultSpaceUnavailable
         }
 
-        // 3. Never strand the default Space, or its windows, on a Profile this reset deletes.
-        if doomed.contains(defaultSpace.profileId) {
+        // 3. Never strand the default Space, or its windows, on a Profile this reset deletes. The row
+        // may already be re-bound by an earlier attempt whose windows did not settle; the rebind then
+        // runs again to settle them.
+        if doomed.contains(defaultSpace.profileId)
+            || !doomed.isDisjoint(with: local.defaultSpaceWindowProfileIds()) {
             try ensureStillSafe()
             let outcome = await local.rebindDefaultSpace(local.defaultProfileId)
             guard outcome == .rebound else { throw PhiLocalDataResetError.defaultSpaceRebindRefused(outcome) }

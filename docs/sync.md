@@ -510,6 +510,10 @@ The steps, in order:
    a parked ghost of it is dropped, a slot showing it replaces its window in place
    on the Default Profile without animation, a background window of it is closed,
    and the reset waits (bounded) until no window of it remains on the old Profile.
+   The row is committed before the windows, so a rebind whose windows did not
+   settle leaves the row on the Default Profile; this step also runs when any live
+   window of `default-space` is still on a Profile chosen for deletion, so a rerun
+   settles those windows again.
 4. In one transaction: every pinned-tab row in every scope (dormant copies
    included), every bookmark and folder except the canonical per-Space roots, and
    every URL rule row are deleted. Rules are hard-deleted, soft-deleted ones
@@ -519,7 +523,10 @@ The steps, in order:
    `SpaceManager.deleteSpaceForPairingReset`. It reports a result instead of
    refusing silently, never shows an alert (an import is a refusal), retreats
    without animation and always to `default-space`, and gives up after 30
-   seconds with a typed failure. A Profile chosen for deletion loses its agent
+   seconds with a typed failure. A timeout before the window close reached the
+   cascade abandons the deletion: the late close callback deletes nothing (so
+   no sync deletion intent can come from it), and the Space is no longer pending,
+   so a rerun retries it. A Profile chosen for deletion loses its agent
    Spaces with it (they are device-local and its Chromium data goes anyway); the
    agent Spaces of kept Profiles and Incognito Spaces are untouched. The default
    Space is emptied, never removed; its open tabs stay.

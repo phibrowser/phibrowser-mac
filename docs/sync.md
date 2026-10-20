@@ -600,7 +600,9 @@ the slice budget, or sent and not applied, a conflict counted once after its sco
 the pending-delete cursors, each counted once; a round whose publication pass did not run keeps
 the last known count. Held uses the same conditions that make the round's inbound work pending:
 Spaces parked, held for a Profile or tombstone-parked; owned items parked, tombstone-parked or
-waiting for a split partner; settings unreadable. Kinds a round does not read keep their values:
+waiting for a split partner; settings unreadable. Owned items parked only because their owner
+shape belongs to another pinned-tab scope (cursor `parkedForScope`) are dormant copies, excluded
+from held and from Needs attention until the scope changes. Kinds a round does not read keep their values:
 owned kinds while the Space gate is shut or whose table the round did not load. The Space table
 is read every round, so Space pending and held follow it even with the gate shut (with no
 activity counts). Every detail change is a status update, so it bumps the revision. The last
@@ -1989,6 +1991,16 @@ The engine must preserve these persistence, retry and account-isolation rules.
   - Blocked: no snapshot, no diff, and no tombstone queued by an earlier round
     (`pendingDelete`, including dead-owner deletions); these are recomputed
     from cursor state, so they are delayed, not lost. Arrivals park as before.
+  - Dormant copies for another scope: the account keeps app-, Profile- and
+    Space-shaped copies of a pin. `landPins` parks a copy whose owner
+    resolves locally but in another scope (`localOwner` nil while the owner
+    is `app`, a mapped Space or a mapped Profile) and marks its cursor
+    `parkedForScope`. It is replanned every round and lands once the scope
+    changes, but it is a dormant copy, excluded from held and from Needs
+    attention until the scope changes. It still counts in the pins log
+    line's `parked`; a separate `parked for another scope=` line reports it.
+    Parking on an unmapped owner, an import lock or any other reason clears
+    the flag and stays held.
   - Commit fence: right before each pin commit, after the last suspension,
     the block is re-probed; a blocked commit is dropped unsent and retried by
     a later round. Other kinds have no fence.

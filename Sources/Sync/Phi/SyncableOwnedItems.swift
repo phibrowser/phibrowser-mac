@@ -745,6 +745,7 @@ enum SyncableOwnedItems {
             var updated = cursor
             updated.pendingApply = nil
             updated.pendingOwnerUuid = nil
+            updated.parkedForScope = nil
             updated.pendingDelete = true
             // Write deletion-decision time once. A pending-delete cursor may also hold
             // a blocked pending arrival, since planning parks before reaching deletion

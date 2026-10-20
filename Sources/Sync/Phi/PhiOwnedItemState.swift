@@ -88,6 +88,13 @@ struct PhiOwnedItemCursor: Codable, Equatable {
     var pendingApply: Data?
     /// Unresolved owner UUID for §11 parked diagnostics and §4.4 unpark checks.
     var pendingOwnerUuid: String?
+    /// True when pin landing parked pendingApply only because its owner resolves locally but in another
+    /// pinned-tab scope (a dormant copy of an app, Profile or Space shape the current scope does not use).
+    /// Such a payload is still replanned every round so it lands if the scope changes, but the status
+    /// model counts it neither as pending inbound nor as held. Set only by pin landing; cleared whenever
+    /// the cursor lands, is deleted, or is parked for any other reason. Optional so existing cursor files
+    /// decode unchanged; nil means false.
+    var parkedForScope: Bool?
     /// Remote tombstone recognized by hash but not landed due to import lock. It has no ciphertext for
     /// pendingApply, and the shared marker already passed its page, so retain it explicitly like
     /// PhiSpaceCursor.pendingTombstone.

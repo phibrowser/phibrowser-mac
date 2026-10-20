@@ -300,6 +300,9 @@ struct OwnedLandingOutcome {
     var landed: Set<String> = []
     /// An import lock or another landing error deferred these identities for retry next round.
     var parked: Set<String> = []
+    /// Subset of parked: pins whose owner resolves locally but belongs to another pinned-tab scope.
+    /// They are dormant copies, replanned every round but excluded from status held/pending counts.
+    var parkedForScope: Set<String> = []
     /// Invalid batch plans, such as folderNotEmpty, rowAlreadyMapped or incompatible physical row
     /// types. Refuse without parking or creating cursors.
     var refused: Set<String> = []
@@ -1728,7 +1731,8 @@ actor PhiSyncEngine {
             || !spaces.unreadableTagHashes.isEmpty
             || ownedTables.values.contains { table in
                 table.cursors.values.contains {
-                    $0.pendingApply != nil || $0.pendingTombstone || $0.pendingPartnerLineage != nil
+                    ($0.pendingApply != nil && $0.parkedForScope != true) || $0.pendingTombstone
+                        || $0.pendingPartnerLineage != nil
                 }
             }
         // `excludedUnmappedOwner` and `refused` are not pending work: rows in hidden, purged
@@ -1797,8 +1801,11 @@ actor PhiSyncEngine {
                     : max(statusState.snapshot.detail?.kinds[kind]?.pending ?? 0, deletes)
                 detail.kinds[kind] = SyncKindStatus(received: counters.applied,
                     sent: counters.pushed + counters.tombstones, pending: pending,
+                    // A pin parked only because its owner shape belongs to another pinned-tab
+                    // scope is a dormant copy, not held work.
                     held: table.cursors.values.filter {
-                        $0.pendingApply != nil || $0.pendingTombstone || $0.pendingPartnerLineage != nil
+                        ($0.pendingApply != nil && $0.parkedForScope != true) || $0.pendingTombstone
+                            || $0.pendingPartnerLineage != nil
                     }.count)
                 if counters.unreadable > 0 { detail.note(.unreadableRemoteData, kind: kind) }
             }
@@ -5237,6 +5244,7 @@ actor PhiSyncEngine {
                 if cursor.deletedAtMs == nil || item.version > known {
                     cursor.pendingApply = item.payload
                     cursor.pendingOwnerUuid = registration.owners(item.payload).first
+                    cursor.parkedForScope = nil
                 }
                 table.cursors[item.identity] = cursor
             }
@@ -5279,6 +5287,7 @@ actor PhiSyncEngine {
             guard cursor.reconciled == cursor.pendingApply else { continue }
             cursor.pendingApply = nil
             cursor.pendingOwnerUuid = nil
+            cursor.parkedForScope = nil
             table.cursors[identity] = cursor
             changed = true
         }
@@ -5508,6 +5517,7 @@ actor PhiSyncEngine {
             }
             cursor.pendingApply = nil
             cursor.pendingOwnerUuid = nil
+            cursor.parkedForScope = nil
             cursor.pendingTombstone = false
             // Only landing can tell whether a split partner resolved (section 7.4). Empty clears
             // the wait, allowing future local unlink publication; nonempty preserves the baseline
@@ -5560,6 +5570,7 @@ actor PhiSyncEngine {
             harvestServerTriple(into: &cursor, identity)
             cursor.pendingApply = item.payload
             cursor.pendingOwnerUuid = item.pendingOwnerUuid
+            cursor.parkedForScope = nil
             table.cursors[identity] = cursor
         }
         // Persist payload-free tombstones parked by scope mismatch (section 7.3). They produce no
@@ -5585,6 +5596,7 @@ actor PhiSyncEngine {
             cursor.pendingTombstone = false
             cursor.pendingApply = nil
             cursor.pendingOwnerUuid = nil
+            cursor.parkedForScope = nil
             cursor.pendingDelete = false
             table.cursors[identity] = cursor
         }
@@ -5606,6 +5618,8 @@ actor PhiSyncEngine {
             if let payload = output.plan.steps.first(where: { $0.identity == identity })?.payload {
                 cursor.pendingApply = payload
             }
+            // Scope-mismatch parking is a dormant copy; any other parking reason is held work.
+            cursor.parkedForScope = outcome.parkedForScope.contains(identity) ? true : nil
             if tombstoned.contains(identity) { cursor.pendingTombstone = true }
             table.cursors[identity] = cursor
         }
@@ -6137,6 +6151,7 @@ actor PhiSyncEngine {
             for identity in appliedMinted.keys where !persisted.contains(identity) {
                 guard var cursor = table.cursors[identity] else { continue }
                 cursor.pendingApply = cursor.reconciled
+                cursor.parkedForScope = nil
                 if cursor.ownerUuid == nil { cursor.ownerUuid = snapshot.ownerUuids[identity] }
                 table.cursors[identity] = cursor
             }
@@ -6482,6 +6497,12 @@ actor PhiSyncEngine {
             counters.parked = parked
             ownedCounters[registration.label] = counters
             AppLogInfo(Self.ownedRoundLogLine(registration, counters: counters))
+            // Dormant copies parked for another pinned-tab scope are included in parked above but
+            // excluded from status; a separate line keeps the round line format unchanged.
+            let dormant = table.cursors.values.filter { $0.pendingApply != nil && $0.parkedForScope == true }.count
+            if dormant > 0 {
+                AppLogInfo("[phi-sync] \(registration.label) parked for another scope=\(dormant)")
+            }
         }
     }
 
@@ -8330,6 +8351,13 @@ private func landPins(_ input: OwnedLandingInput,
         return nil
     }
 
+    /// Whether ownerKey resolves locally at all, ignoring the current scope. True with a nil
+    /// localOwner means the owner shape belongs to another pinned-tab scope (a dormant copy).
+    func ownerResolvesInAnyScope(_ ownerKey: String) -> Bool {
+        ownerKey == OwnedOwnerMaps.appOwnerKey || resolve.localSpaceId(ownerKey) != nil
+            || resolve.localProfileId(ownerKey) != nil
+    }
+
     struct Planned {
         var step: OwnedItemApplyStep
         var entity: Phi_PhiPinTabEntity?
@@ -8392,6 +8420,7 @@ private func landPins(_ input: OwnedLandingInput,
             // Park unresolved local owner shapes until Space/Profile mappings become available.
             guard let owner = localOwner(item.ownerKey) else {
                 outcome.parked.insert(identity)
+                if ownerResolvesInAnyScope(item.ownerKey) { outcome.parkedForScope.insert(identity) }
                 continue
             }
             // Enforce one row per lineage/owner at the actual local landing boundary (section 7).

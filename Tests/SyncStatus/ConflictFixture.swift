@@ -45,6 +45,7 @@ struct PhiOwnedItemCursor {
     var reconciled: Data?, server: Data?, pendingApply: Data?
     var deletedAtMs: Int64?
     var pendingPartnerLineage: String?, ownerUuid: String?
+    var parkedForScope: Bool?
 }
 struct PhiOwnedItemTable { var cursors: [String: PhiOwnedItemCursor] = [:] }
 struct OwnedRoundCounters {

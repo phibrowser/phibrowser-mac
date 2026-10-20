@@ -37,6 +37,7 @@ import Foundation
         testRoundDetail()
         testRoundProblems()
         testNeedsAttentionIsExplained()
+        testScopeParkedPinsAreDormant()
         await testConflictStatus()
         await testDomainKeyStatus()
     }
@@ -314,4 +315,21 @@ func testRoundProblems() {
         precondition(snapshot.phase != .upToDate)
     }
     print("PASS round problems: HTTP 5xx/401/403, offline, unreadable settings/Spaces/owned, save failure, reset, precedence")
+}
+
+/// A pin parked only because its owner shape belongs to another pinned-tab scope is a dormant copy:
+/// neither pending inbound nor held. Any other parked pin still holds the round at Needs attention.
+func testScopeParkedPinsAreDormant() {
+    let f = ConflictFixture(kind: .space, retryResult: .accepted)
+    f.canPublishThisRound = true
+    var dormant = PhiOwnedItemCursor(); dormant.pendingApply = Data([1]); dormant.parkedForScope = true
+    f.ownedTables["pins"] = PhiOwnedItemTable(cursors: ["a": dormant, "b": dormant])
+    let quiet = f.finish()
+    precondition(quiet.phase == .upToDate, "dormant scope copies: expected Up to date, got \(quiet.phase)")
+    precondition(quiet.detail?.kinds[.pinnedTabs]?.held == 0)
+    var parked = PhiOwnedItemCursor(); parked.pendingApply = Data([1])
+    f.ownedTables["pins"] = PhiOwnedItemTable(cursors: ["a": dormant, "c": parked])
+    let held = f.finish()
+    precondition(held.phase == .needsAttention && held.detail?.kinds[.pinnedTabs]?.held == 1)
+    print("PASS scope-parked pins: dormant copies are not held; other parking still is")
 }

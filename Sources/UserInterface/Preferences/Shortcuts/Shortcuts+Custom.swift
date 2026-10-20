@@ -313,8 +313,14 @@ extension Shortcuts {
         }
         // Retain native/system owners, but never reserve keys for a product-
         // disabled command, including stale menu or Framework snapshots.
-        let activeAdditional = additionalBindings.filter {
-            !($0.commandID.map { isShortcutDisabled(for: $0) } ?? false)
+        // Avoid nested filter/map closures here: Swift 6.3's optimized
+        // compilation can fail SIL ownership verification for the owner enum.
+        var activeAdditional: [ShortcutBinding] = []
+        for binding in additionalBindings {
+            if let commandID = binding.commandID, isShortcutDisabled(for: commandID) {
+                continue
+            }
+            activeAdditional.append(binding)
         }
         return ShortcutInventory(bindings: configured + activeAdditional)
     }

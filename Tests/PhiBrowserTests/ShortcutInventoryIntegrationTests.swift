@@ -55,6 +55,29 @@ final class ShortcutInventoryIntegrationTests: XCTestCase {
         try XCTUnwrap(model.sections.flatMap(\.items).first { $0.command == command })
     }
 
+    func testAdditionalBindingFilterPreservesOwnersAndExcludesDisabledCommands() {
+        let key = ShortcutsKey(characters: "d", modifiers: [.control, .option])
+        let disabled = ShortcutBinding(commandID: CommandWrapper.IDC_FOCUS_NEXT_PANE.rawValue,
+                                       key: key, scope: .all, source: .hidden)
+        let enabled = ShortcutBinding(commandID: CommandWrapper.IDC_DUPLICATE_TAB.rawValue,
+                                      key: key, scope: .browser, source: .webContents)
+        let unknown = ShortcutBinding(commandID: 999999, key: key, scope: .all, source: .menu)
+        let native = ShortcutBinding(owner: .nativeAction("copy:"), key: key,
+                                     scope: .all, source: .menu, title: "Copy")
+        let system = ShortcutBinding(owner: .system, key: key,
+                                     scope: .all, source: .system, title: "System")
+        let baseline = Shortcuts.bindingInventory(additionalBindings: []).bindings
+        let expected = Set(baseline + [enabled, unknown, native, system])
+        let additional = [disabled, enabled, native, system, unknown, disabled, native]
+
+        for bindings in [additional, Array(additional.reversed())] {
+            let inventory = Shortcuts.bindingInventory(additionalBindings: bindings)
+            XCTAssertEqual(Set(inventory.bindings), expected)
+            XCTAssertEqual(inventory.bindings.count, expected.count)
+            XCTAssertFalse(inventory.bindings.contains(disabled))
+        }
+    }
+
     func testTwoCustomOnlyCommandsReportEachOther() throws {
         let key = ShortcutsKey(characters: "d", modifiers: [.control, .option])
         install([.IDC_DUPLICATE_TAB: .custom(key), .IDC_WINDOW_MUTE_SITE: .custom(key)])

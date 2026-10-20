@@ -111,6 +111,9 @@ final class PhiLocalDataReset {
         var removeSpaceMapping: @MainActor (String) -> Void
         /// Clears the settings `hasAdopted` flag and the per-key sidecars; values stay.
         var clearSettingsAdoption: @MainActor () -> Void
+        /// Keeps a Profile the reset deletes from ever being registered to the account
+        /// (`SyncKeyController.excludeFromRegistration`), however late a Profile list still names it.
+        var excludeFromRegistration: @MainActor (_ profileId: String) -> Void = { _ in }
     }
 
     /// Local data, wired by `PhiChromiumCoordinator`.
@@ -216,6 +219,9 @@ final class PhiLocalDataReset {
         // from Chromium was deleted by an earlier attempt; its leftover rows are swept either way.
         let chromium = try readProfiles(local.chromiumProfileIds)
         let present = doomed.intersection(chromium)
+        // Before any deletion: a mapping pass that read the Profile list earlier must not register
+        // a Profile deleted here once enrollment opens the gate.
+        for profileId in present.sorted() { sync.excludeFromRegistration(profileId) }
         if let live = await local.profilesWithLiveWindows(present).sorted().first {
             throw PhiLocalDataResetError.liveWindowsOnDeletedProfile(live)
         }

@@ -192,7 +192,42 @@ struct MappingPassTests {
         try await retiredRepairPassDoesNothing()
         try await failureCategory()
         try await unenumeratedListKeepsEvidence()
-        print("PASS mapping pass: no count-based adopt, twin adopt, transient held, definitive class, undecryptable and deleted-local remotes do not block, repair order, key withdrawal, creation tracking, single-flight auto-create, attempt cap, gone-envelope evidence, retirement fences auto-create and create-and-adopt, status-only failure category, no evidence pruning before the list is enumerated")
+        try await resetDeletedProfileIsNeverRegistered()
+        print("PASS mapping pass: no count-based adopt, twin adopt, transient held, definitive class, undecryptable and deleted-local remotes do not block, repair order, key withdrawal, creation tracking, single-flight auto-create, attempt cap, gone-envelope evidence, retirement fences auto-create and create-and-adopt, status-only failure category, no evidence pruning before the list is enumerated, a Profile the pairing reset deleted is never registered")
+    }
+
+    /// SYNC-P22 (2026-10-20): a pass read the list, the pairing reset deleted "Profile 1" and
+    /// enrollment opened the gate while the pass waited on the network. The pass must not register
+    /// the deleted Profile, nor may a later pass while a republished list still names it; the
+    /// exclusion ends once a list drops it.
+    @MainActor static func resetDeletedProfileIsNeverRegistered() async throws {
+        let s = Stack(); defer { s.close() }
+        try s.seedMappedLocal("Default", uuid: "uuid-default")
+        s.creator.profiles.append((profileId: "Profile 1", displayName: "Scratch2"))
+        var paired = false
+        let c = SyncKeyController(manager: s.manager,
+                                  profileKeys: ProfileKeyManager(api: s.api, keyManager: s.manager, mappingStore: s.store),
+                                  creator: s.creator, paired: { paired })
+        s.api.onGet = { _ in
+            s.api.onGet = nil
+            await MainActor.run {
+                c.excludeFromRegistration(profileId: "Profile 1")
+                s.creator.profiles.removeAll { $0.profileId == "Profile 1" }
+                paired = true
+            }
+        }
+        await c.resolveMappings()
+        precondition(s.api.puts.isEmpty && s.store.map["Profile 1"] == nil, "the deleted Profile was registered")
+        precondition(!c.needsPairing && !c.knownUnmappedProfileIds.contains("Profile 1"))
+
+        s.creator.profiles.append((profileId: "Profile 1", displayName: "Scratch2"))
+        await c.resolveMappings()
+        precondition(s.api.puts.isEmpty, "a republished list registered the deleted Profile")
+        precondition(c.registrationExcludedProfileIds == ["Profile 1"])
+
+        s.creator.profiles.removeAll { $0.profileId == "Profile 1" }
+        await c.resolveMappings()
+        precondition(c.registrationExcludedProfileIds.isEmpty && s.api.puts.isEmpty)
     }
 
     /// One mapping pass, then the best-effort backfill it started.

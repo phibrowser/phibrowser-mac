@@ -537,7 +537,10 @@ The steps, in order:
    close and fails closed if a window is still bound to the Profile; a mapped
    Profile, or one a Space row still binds, is refused. A Profile Chromium no
    longer lists was deleted by an earlier attempt: only its leftover store rows
-   are swept, so a crash between the two converges on the next run.
+   are swept, so a crash between the two converges on the next run. Before the
+   first deletion, every Profile still listed is excluded from registration (see
+   "Chromium account and key lifecycle"), so no mapping pass registers it once
+   enrollment completes.
    Kept Profiles end with zero Spaces, which is a valid state; no placeholder
    Space is created, because one would be published as a new account Space.
 7. Space mappings for rows that no longer exist are removed, and the settings
@@ -1036,6 +1039,22 @@ suspended across the whole deletion cannot merge the key back. The record outliv
 the deletion until a later pass finds it older than the previous pass and no local
 Profile with that basename; a new Profile reusing the basename then resolves
 normally.
+
+A Profile the pairing reset deletes (see "Replacing this Mac's data at pairing")
+is unmapped, so it has no key to withdraw, but it must never be registered or
+twinned: a mapping pass reads the Profile list once, before its network calls,
+and checks the pairing gate only after them, so a pass that read the list before
+the deletion can resume after enrollment opened the gate and register the deleted
+Profile as a new account Profile (acceptance SYNC-P22, 2026-10-20). The reset
+therefore names every Profile it is about to delete to
+`SyncKeyController.excludeFromRegistration` before deleting any. An excluded
+Profile is left out of the pass like a withdrawn one (not registered, not
+twinned, not counted as unmapped for `needsPairing` or the pause evidence), and
+the registration loop re-checks the exclusion after its awaits. The exclusion
+records the mapping pass sequence and ends only when a pass that started after
+it reads an enumerated Profile list without the Profile; passes run one at a
+time, so no pass that read the older list is still running then. It is held in
+memory only: after a relaunch the deleted Profile is gone from every list.
 
 ## Profile loading
 

@@ -50,6 +50,8 @@ final class PhiLocalDataResetTests: XCTestCase {
         var crashAfterChromiumDeletion: Set<String> = []
         var profileDeletionFailure: ProfileDeletionFailure?
         var rowCleanupFails = false
+        /// `excludeFromRegistration` calls, each with whether Chromium still listed the Profile.
+        var excludedFromRegistration: [(profileId: String, stillListed: Bool)] = []
 
         func reset() -> PhiLocalDataReset {
             PhiLocalDataReset(sync: syncAccess(), local: localAccess())
@@ -63,7 +65,10 @@ final class PhiLocalDataResetTests: XCTestCase {
                 isProfileMapped: { self.mappedProfiles.contains($0) },
                 spaceMappings: { self.spaceMappings },
                 removeSpaceMapping: { self.steps.append("unmap \($0)"); self.spaceMappings[$0] = nil },
-                clearSettingsAdoption: { self.steps.append("settings"); self.settingsAdoptionCleared = true })
+                clearSettingsAdoption: { self.steps.append("settings"); self.settingsAdoptionCleared = true },
+                excludeFromRegistration: {
+                    self.excludedFromRegistration.append((profileId: $0, stillListed: self.chromiumProfiles.contains($0)))
+                })
         }
 
         private func readProfiles() throws -> Set<String> {
@@ -254,6 +259,21 @@ final class PhiLocalDataResetTests: XCTestCase {
         XCTAssertTrue(world.spaceMappings.isEmpty)
         XCTAssertTrue(world.settingsAdoptionCleared)
         XCTAssertTrue(try world.reset().inventory().isEmpty)
+    }
+
+    /// A Profile the reset deletes is excluded from registration before Chromium deletes it, so a
+    /// mapping pass that read the Profile list earlier cannot register it once enrollment completes
+    /// (acceptance SYNC-P22, 2026-10-20). A kept Profile is never excluded.
+    func testEveryDeletedProfileIsExcludedFromRegistrationBeforeItsDeletion() async throws {
+        let world = populatedWorld()
+        world.chromiumProfiles.insert("Profile 3")
+        world.storedProfiles.insert("Profile 3")
+
+        try await world.reset().clear(Self.deleteProfile2)
+
+        XCTAssertEqual(world.excludedFromRegistration.map(\.profileId), ["Profile 2"])
+        XCTAssertEqual(world.excludedFromRegistration.map(\.stillListed), [true])
+        XCTAssertEqual(world.chromiumProfiles, [Self.defaultProfile, "Profile 3"])
     }
 
     /// A kept extra Profile ends with zero Spaces; no placeholder is created for it.

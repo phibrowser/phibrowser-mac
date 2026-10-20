@@ -732,4 +732,59 @@ final class SyncKeyControllerTests: XCTestCase {
         await c.resolveMappings()
         XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Profile 1"))
     }
+
+    // MARK: - Profiles the pairing reset deletes
+
+    /// Acceptance SYNC-P22 (2026-10-20): a pass read the Profile list while the pairing reset was
+    /// about to delete "Profile 1", stayed suspended in its network calls while the reset deleted it
+    /// and enrollment opened the gate, then registered the deleted Profile as a new account Profile.
+    /// An excluded Profile is never registered, also when a later list still names it, and the
+    /// exclusion ends once a pass reads a list without it.
+    func testAProfileThePairingResetDeletedIsNeverRegistered() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        _ = try await mgr.bootstrap()
+        let store = MemoryMappingStore()
+        let pkm = ProfileKeyManager(api: api, keyManager: mgr, mappingStore: store)
+        // The replace adopted the local Default to the account default before the reset.
+        _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Default", isDefault: true)
+        var paired = false
+        var locals = [(profileId: "Default", displayName: "Default"), (profileId: "Profile 1", displayName: "Scratch2")]
+        let c = SyncKeyController(
+            manager: mgr, approvals: DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider),
+            profileKeys: pkm, localProfilesProvider: { locals },
+            notifyChromium: {}, isPairingComplete: { paired })
+
+        // The pass has read both Profiles and is suspended on the account listing when the reset
+        // deletes "Profile 1" and enrollment completes.
+        api.beforeListProfilesOnce = {
+            await MainActor.run {
+                c.excludeFromRegistration(profileId: "Profile 1")
+                locals.removeAll { $0.profileId == "Profile 1" }
+                paired = true
+            }
+        }
+        await c.resolveMappings()
+        XCTAssertEqual(api.profileEnvelopes.count, 1, "the deleted Profile was registered")
+        XCTAssertNil(store.globalUuid(forProfileId: "Profile 1"))
+        XCTAssertNil(c.profileSyncInfo(forProfileId: "Profile 1"))
+        XCTAssertNotNil(c.profileSyncInfo(forProfileId: "Default"))
+        XCTAssertFalse(c.needsPairing, "a deleted Profile is not an unmapped local")
+        XCTAssertFalse(c.knownUnmappedProfileIds.contains("Profile 1"))
+
+        // Chromium republishes the list with the deleted Profile still in it.
+        locals.append((profileId: "Profile 1", displayName: "Scratch2"))
+        await c.resolveMappings()
+        XCTAssertEqual(api.profileEnvelopes.count, 1, "a republished list registered the deleted Profile")
+        XCTAssertNil(store.globalUuid(forProfileId: "Profile 1"))
+        XCTAssertFalse(c.needsPairing)
+        XCTAssertEqual(c.registrationExcludedProfileIds, ["Profile 1"])
+
+        // A list without it ends the exclusion.
+        locals.removeAll { $0.profileId == "Profile 1" }
+        await c.resolveMappings()
+        XCTAssertTrue(c.registrationExcludedProfileIds.isEmpty)
+        XCTAssertEqual(api.profileEnvelopes.count, 1)
+    }
 }

@@ -339,6 +339,28 @@ final class SyncKeyController {
         profileIdsBeingDeleted.remove(profileId)
     }
 
+    /// Local Profiles the pairing reset deletes (docs/sync.md, "Replacing this Mac's data at
+    /// pairing"), keyed by the pass sequence when the reset named them. Such a Profile is unmapped,
+    /// so `withdrawProfileKey` never sees it, yet a pass must neither register nor twin it: a pass
+    /// reads the Profile list once, before its network calls, and checks the pairing gate after
+    /// them, so a pass that read the list before the deletion resumes after enrollment opened the
+    /// gate and still names the deleted Profile (acceptance SYNC-P22, 2026-10-20). An entry leaves
+    /// only when a pass that started after the reset named it reads an enumerated list without the
+    /// Profile; passes run one at a time, so no pass that could still name it is running then.
+    private var registrationExcludedAtPass: [String: UInt64] = [:]
+
+    /// The Profiles `excludeFromRegistration` named that no pass has seen gone yet.
+    var registrationExcludedProfileIds: Set<String> { Set(registrationExcludedAtPass.keys) }
+
+    /// Called by the pairing reset before it deletes `profileId`.
+    func excludeFromRegistration(profileId: String) {
+        registrationExcludedAtPass[profileId] = passSequence
+    }
+
+    private func isExcludedFromRegistration(_ profileId: String) -> Bool {
+        registrationExcludedAtPass[profileId] != nil
+    }
+
     /// Hot path: the bridge delegate calls this on every Chromium pull.
     /// Dictionary read only — no I/O, no crypto.
     func profileSyncInfo(forProfileId profileId: String) -> (uuid: String, passphrase: String)? {
@@ -461,7 +483,9 @@ final class SyncKeyController {
             clearSettingsAdoption: { [weak self] in
                 guard let self, self.isCurrentAccount() else { return }
                 Self.clearSettingsAdoptionState(self.engineDefaults)
-            }), local: localResetAccess)
+            },
+            excludeFromRegistration: { [weak self] in self?.excludeFromRegistration(profileId: $0) }),
+            local: localResetAccess)
     }
 
     /// User-confirmed removal revokes remotely before touching local sync metadata.
@@ -857,7 +881,16 @@ final class SyncKeyController {
         withdrawnAtPass = withdrawnAtPass.filter { id, seq in
             seq >= previousStart || localIds.contains(id) || profileIdsBeingDeleted.contains(id)
         }
-        let locals = allLocals.filter { !profileIdsBeingDeleted.contains($0.profileId) }
+        // Every exclusion was recorded before this pass started (passes are single-flight), so a
+        // Profile it names that this list no longer holds is gone. An unread list proves nothing.
+        if isProfileListEnumerated() {
+            registrationExcludedAtPass = registrationExcludedAtPass.filter { id, seq in
+                seq >= startedAt || localIds.contains(id)
+            }
+        }
+        let locals = allLocals.filter {
+            !profileIdsBeingDeleted.contains($0.profileId) && !isExcludedFromRegistration($0.profileId)
+        }
         var unmappedLocals: [(profileId: String, displayName: String)] = []
         var hasUnknownLocal = false
         // Every failure this pass met, by class (BH-15). Any transient one holds
@@ -965,6 +998,9 @@ final class SyncKeyController {
                     // Review A11: every registration is a network write sealed with this
                     // controller's ARK; none may start once the account is gone.
                     guard !isRetired else { return }
+                    // Checked now, not only when the list was read: the pairing reset may have
+                    // deleted this Profile while the pass was suspended.
+                    guard !isExcludedFromRegistration(local.profileId) else { continue }
                     do {
                         let rec = try await profileKeys.registerLocalProfile(
                             profileId: local.profileId, displayName: local.displayName,
@@ -1003,7 +1039,9 @@ final class SyncKeyController {
             // hold both predicates and the unmapped set.
         } else {
             let claimedAfter = Set(next.values.map { $0.uuid })
-            let stillUnmapped = locals.filter { next[$0.profileId] == nil }
+            let stillUnmapped = locals.filter {
+                next[$0.profileId] == nil && !isExcludedFromRegistration($0.profileId)
+            }
             // The account Profile of a Profile being deleted here is neither unclaimed nor owed.
             var stillUnclaimed = remoteUuids.subtracting(claimedAfter).subtracting(uuidsBeingDeleted)
             // A registry row with no live Profile entity is not an account Profile this Mac lacks.
@@ -1526,7 +1564,7 @@ final class SyncKeyController {
         // good. `createLocalProfileAndAdopt` picks it up below.
         if reusablePendingProfile(forUuid: uuid) == nil,
            let twin = effective.isDefault == true ? defaultTwin : profileCreator.userAssignableProfileIds.first(where: {
-            !mappedIds.contains($0.profileId)
+            !mappedIds.contains($0.profileId) && !isExcludedFromRegistration($0.profileId)
             && !(defaultClosedToUnflagged && $0.profileId == LocalStore.defaultProfileId)
             && effective.mayPair(withLocalDefault: $0.profileId == LocalStore.defaultProfileId,
                                  authoritativeDefaultUuid: nil)

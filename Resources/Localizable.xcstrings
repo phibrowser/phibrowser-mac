@@ -98805,7 +98805,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Die gesicherten Tastaturkurzbefehle konnten nicht gelesen werden. Versuche es erneut oder setze alle Tastaturkurzbefehle zurück, um eine Wiederherstellungskopie zu behalten und die Standardwerte zu verwenden."
+            "value" : "Die gesicherten Tastaturkurzbefehle konnten nicht gelesen werden. Versuche es erneut oder wähle „Alle auf Standardwerte zurücksetzen“, um eine Wiederherstellungskopie zu behalten und die Standardwerte zu verwenden."
           }
         },
         "en" : {
@@ -98817,43 +98817,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se pudieron leer los atajos guardados. Reintenta o restablece todos los atajos para conservar una copia de recuperación y usar los predeterminados."
+            "value" : "No se pudieron leer los atajos guardados. Reintenta o elige “Restablecer todo a los valores predeterminados” para conservar una copia de recuperación y usar los valores predeterminados."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Impossible de lire les raccourcis enregistrés. Réessayez, ou rétablissez tous les raccourcis pour conserver une copie de récupération et utiliser les valeurs par défaut."
+            "value" : "Impossible de lire les raccourcis enregistrés. Réessayez, ou choisissez « Tout réinitialiser aux valeurs par défaut » pour conserver une copie de récupération et utiliser les valeurs par défaut."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保存されたショートカットを読み込めませんでした。再試行するか、すべてのショートカットをデフォルトに戻してください。戻す場合は復旧用のコピーが保持され、デフォルトが使用されます。"
+            "value" : "保存されたショートカットを読み込めませんでした。再試行するか、「すべてをデフォルトにリセット」を選択してください。リセットすると、復旧用のコピーが保持され、デフォルトが使用されます。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "저장된 단축키를 읽을 수 없어요. 다시 시도하거나, 모든 단축키를 복원하여 복구용 사본을 보관하고 기본값을 사용하세요."
+            "value" : "저장된 단축키를 읽을 수 없어요. 다시 시도하거나, “모두 기본값으로 재설정”을 선택하여 복구용 사본을 보관하고 기본값을 사용하세요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "De bewaarde toetscombinaties konden niet worden gelezen. Probeer het opnieuw of herstel alle toetscombinaties om een reservekopie te bewaren en de standaardwaarden te gebruiken."
+            "value" : "De bewaarde toetscombinaties konden niet worden gelezen. Probeer het opnieuw of kies “Stel alles opnieuw in op de standaardwaarden” om een reservekopie te bewaren en de standaardwaarden te gebruiken."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法读取已存储的快捷键。请重试，或恢复所有快捷键以保留一份恢复副本并使用默认设置。"
+            "value" : "无法读取已存储的快捷键。请重试，或选择「全部重置为默认」以保留一份恢复副本并使用默认设置。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法讀取已儲存的快速鍵。請重試，或還原所有快速鍵，系統會保留一份復原副本並使用預設值。"
+            "value" : "無法讀取已儲存的快速鍵。請重試，或選擇「全部重設為預設值」，系統會保留一份復原副本並使用預設值。"
           }
         }
       }
@@ -99759,7 +99759,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alle zurücksetzen"
+            "value" : "Alle auf Standardwerte zurücksetzen"
           }
         },
         "en" : {
@@ -99771,43 +99771,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Restablecer todos"
+            "value" : "Restablecer todo a los valores predeterminados"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tout rétablir"
+            "value" : "Tout réinitialiser aux valeurs par défaut"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "すべて戻す"
+            "value" : "すべてをデフォルトにリセット"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "모두 복원"
+            "value" : "모두 기본값으로 재설정"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Herstel alle"
+            "value" : "Stel alles opnieuw in op de standaardwaarden"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全部恢复"
+            "value" : "全部重置为默认"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全部還原"
+            "value" : "全部重設為預設值"
           }
         }
       }
@@ -99819,7 +99819,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alle angepassten Tastaturkurzbefehle werden entfernt und die Standardwerte wiederhergestellt. Diese Aktion kann nicht widerrufen werden."
+            "value" : "Alle Tastaturkurzbefehle werden auf ihre Standardwerte zurückgesetzt. Diese Aktion kann nicht widerrufen werden."
           }
         },
         "en" : {
@@ -99831,43 +99831,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se quitarán todos los atajos personalizados y se restablecerán los predeterminados. Esta acción no se puede deshacer."
+            "value" : "Todos los atajos se restablecerán a sus valores predeterminados. Esta acción no se puede deshacer."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tous les raccourcis personnalisés seront supprimés et les valeurs par défaut rétablies. Cette action est irréversible."
+            "value" : "Tous les raccourcis seront réinitialisés à leurs valeurs par défaut. Cette action est irréversible."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "すべてのカスタムショートカットが削除され、デフォルトに戻されます。この操作は取り消せません。"
+            "value" : "すべてのショートカットがデフォルトにリセットされます。この操作は取り消せません。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "모든 사용자 지정 단축키가 제거되고 기본값이 복원돼요. 이 동작은 취소할 수 없어요."
+            "value" : "모든 단축키가 기본값으로 재설정돼요. 이 동작은 취소할 수 없어요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alle aangepaste toetscombinaties worden verwijderd en de standaardwaarden worden hersteld. Deze actie kan niet ongedaan worden gemaakt."
+            "value" : "Alle toetscombinaties worden opnieuw ingesteld op de standaardwaarden. Deze actie kan niet ongedaan worden gemaakt."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "所有自定义快捷键都将被移除并恢复为默认设置。此操作无法撤销。"
+            "value" : "所有快捷键都将重置为默认设置。此操作无法撤销。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "所有自訂快速鍵將被移除，並還原為預設值。此動作無法復原。"
+            "value" : "所有快速鍵將重設為預設值。此動作無法復原。"
           }
         }
       }
@@ -99879,7 +99879,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alle Tastaturkurzbefehle zurücksetzen?"
+            "value" : "Alle auf Standardwerte zurücksetzen?"
           }
         },
         "en" : {
@@ -99891,43 +99891,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿Restablecer todos los atajos?"
+            "value" : "¿Restablecer todo a los valores predeterminados?"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rétablir tous les raccourcis ?"
+            "value" : "Tout réinitialiser aux valeurs par défaut ?"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "すべてのショートカットをデフォルトに戻しますか？"
+            "value" : "すべてをデフォルトにリセットしますか？"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "모든 단축키를 복원할까요?"
+            "value" : "모두 기본값으로 재설정할까요?"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alle toetscombinaties herstellen?"
+            "value" : "Stel alles opnieuw in op de standaardwaarden?"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "要恢复所有快捷键吗？"
+            "value" : "全部重置为默认？"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "要還原所有快速鍵嗎？"
+            "value" : "要全部重設為預設值嗎？"
           }
         }
       }
@@ -99939,7 +99939,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alle Tastaturkurzbefehle zurücksetzen"
+            "value" : "Alle auf Standardwerte zurücksetzen"
           }
         },
         "en" : {
@@ -99951,43 +99951,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Restablecer todos los atajos"
+            "value" : "Restablecer todo a los valores predeterminados"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rétablir tous les raccourcis"
+            "value" : "Tout réinitialiser aux valeurs par défaut"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "すべてのショートカットをデフォルトに戻す"
+            "value" : "すべてをデフォルトにリセット"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "모든 단축키 복원"
+            "value" : "모두 기본값으로 재설정"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Herstel alle toetscombinaties"
+            "value" : "Stel alles opnieuw in op de standaardwaarden"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "恢复所有快捷键"
+            "value" : "全部重置为默认"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "還原所有快速鍵"
+            "value" : "全部重設為預設值"
           }
         }
       }
@@ -100017,37 +100017,37 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rétablir"
+            "value" : "Réinitialiser"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "デフォルトに戻す"
+            "value" : "リセット"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "복원"
+            "value" : "재설정"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Herstel"
+            "value" : "Stel opnieuw in"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "恢复默认"
+            "value" : "重置"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "還原"
+            "value" : "重設"
           }
         }
       }

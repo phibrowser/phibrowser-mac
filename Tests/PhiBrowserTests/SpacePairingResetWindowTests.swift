@@ -8,7 +8,8 @@ import XCTest
 @testable import Phi
 
 /// The pairing reset's window handling on real slots: the `default-space`
-/// rebind's retry of a replacement that never registered. The test host has no Chromium
+/// rebind's retry of a replacement that never registered, and the deletion's
+/// abandon check ahead of any window close. The test host has no Chromium
 /// bridge, so every spawn fails; a dormant session stands in for a Browser
 /// that can be spawned, and attaching a plain window to it stands in for the
 /// Browser's arrival.
@@ -98,6 +99,40 @@ final class SpacePairingResetWindowTests: XCTestCase {
         XCTAssertFalse(liveWindows().contains { $0 === old })
     }
 
+    // MARK: - Deletion abandon
+
+    func testCloseRefusedBeforeEvictionLeavesWindowsAndRow() async throws {
+        let slot = try makeSlot(showing: "second")
+        let background = try makeSlot(showing: LocalStore.defaultSpaceId, target: "second")
+        let settled = expectation(description: "Close settled")
+        var closed: Bool?
+        var asked = false
+        manager.closeSpaceWindows(spaceId: "second", animated: false,
+                                  retreatTargetSpaceId: LocalStore.defaultSpaceId,
+                                  proceed: { asked = true; return false }) { succeeded in
+            closed = succeeded
+            settled.fulfill()
+        }
+        await fulfillment(of: [settled], timeout: 5)
+        XCTAssertTrue(asked)
+        XCTAssertEqual(closed, false)
+        // The retreat itself ran; nothing of the Space was evicted or closed.
+        XCTAssertEqual(slot.visibleController?.spaceId, LocalStore.defaultSpaceId)
+        XCTAssertNotNil(slot.windowController(for: "second"))
+        XCTAssertNotNil(background.windowController(for: "second"))
+        XCTAssertTrue(account.localStorage.getAllSpaces().contains { $0.spaceId == "second" })
+    }
+
+    func testPairingResetDeletionStillDeletesWhenTheCommitIsClaimed() async throws {
+        let slot = try makeSlot(showing: "second")
+        let result = await manager.deleteSpaceForPairingReset(spaceId: "second", timeout: .seconds(5))
+        XCTAssertEqual(result, .deleted)
+        XCTAssertEqual(slot.visibleController?.spaceId, LocalStore.defaultSpaceId)
+        XCTAssertNil(slot.windowController(for: "second"))
+        XCTAssertFalse(manager.pendingDeletionSpaceIds.contains("second"))
+        XCTAssertFalse(account.localStorage.getAllSpaces().contains { $0.spaceId == "second" })
+    }
+
     // MARK: - Helpers
 
     private func liveWindows() -> [SpaceSessionController] {
@@ -133,6 +168,20 @@ final class SpacePairingResetWindowTests: XCTestCase {
         window.isReleasedWhenClosed = false
         chromiumWindows.append(window)
         session.attachChromiumWindow(window)
+    }
+
+    private func makeSlot(showing source: String, target: String = LocalStore.defaultSpaceId) throws -> SpaceWindowSlot {
+        let slot = makeShellSlot(showing: source)
+        for id in [source, target] {
+            let session = makeSession(in: slot, spaceId: id, profileId: "Default")
+            slot.registerWindow(session, for: id)
+            if id == source { slot.presentRequestedSession(session, activate: false) }
+        }
+        let split = try XCTUnwrap(slot.shell?.split)
+        split.setSidebarGeometry(width: 240, collapsed: false)
+        split.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(slot.visibleController?.spaceId, source)
+        return slot
     }
 
     private func waitUntil(timeout: Duration = .seconds(5), _ condition: () -> Bool) async -> Bool {

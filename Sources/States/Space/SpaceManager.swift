@@ -6313,8 +6313,9 @@ final class SpaceManager: ObservableObject {
     /// completion or default-mode fallback timer is involved and no other doomed Space is built as
     /// a retreat target; and it gives up after `timeout`. It also deletes agent Spaces (those of a
     /// Profile the reset deletes), which never count toward the last-Space guard. Every other caller
-    /// keeps using `deleteSpace`. After `timedOut` the late close callback deletes nothing and the
-    /// Space is no longer pending, so a rerun may retry it.
+    /// keeps using `deleteSpace`. The commit is claimed once the retreats settle and before any
+    /// window closes, so after `timedOut` the late retreat closes no window and deletes nothing,
+    /// and the Space is no longer pending, so a rerun may retry it.
     @MainActor
     func deleteSpaceForPairingReset(spaceId: String,
                                     timeout: Duration = SpaceManager.pairingResetWindowTimeout) async -> PairingResetSpaceDeletion {
@@ -6341,16 +6342,19 @@ final class SpaceManager: ObservableObject {
             once.arm(continuation, timeout: timeout, timeoutValue: .timedOut, onAbandon: { [weak self] in
                 self?.pendingDeletionSpaceIds.remove(spaceId)
             })
+            // The commit is claimed after the retreats settle and before any window closes: once
+            // the timeout abandoned the operation, the late close leaves the Space's windows alone.
             closeSpaceWindows(spaceId: spaceId, animated: false,
-                              retreatTargetSpaceId: LocalStore.defaultSpaceId) { [weak self] succeeded in
+                              retreatTargetSpaceId: LocalStore.defaultSpaceId,
+                              proceed: { once.beginCommit() }) { [weak self] succeeded in
                 guard let self, self.storeIdentifier == deletionStoreIdentifier else {
                     once.resume(.refusedStoreMismatch)
                     return
                 }
                 // The timeout abandoned the operation and released the pending mark (a rerun may
                 // have claimed it since): touch nothing, and never start the cascade.
-                guard once.beginCommit() else {
-                    AppLogWarn("[SpaceManager] pairing reset: late window close for \(spaceId) after the timeout; not deleting")
+                guard !once.isAbandoned else {
+                    AppLogWarn("[SpaceManager] pairing reset: late window close for \(spaceId) after the timeout; nothing closed, not deleting")
                     return
                 }
                 guard succeeded, self.acceptsStoreAction(from: deletionStoreIdentifier) else {
@@ -6500,7 +6504,11 @@ final class SpaceManager: ObservableObject {
     /// Core Animation completion or its fallback timer.
     /// `retreatTargetSpaceId` (the pairing reset) forces where every slot retreats to; when it is
     /// not available the retreat fails rather than falling back to another Space.
+    /// `proceed` (the pairing reset) is asked once every retreat has settled and before any window
+    /// is evicted or closed; false leaves every window of the Space as it is and completes with
+    /// false.
     func closeSpaceWindows(spaceId: String, animated: Bool = true, retreatTargetSpaceId: String? = nil,
+                           proceed: (() -> Bool)? = nil,
                            completion: ((Bool) -> Void)? = nil) {
         let closingSlots = slots
         let deletionStoreIdentifier = storeIdentifier
@@ -6520,6 +6528,10 @@ final class SpaceManager: ObservableObject {
                   !self.slots.contains(where: {
                       $0.activeSpaceId == spaceId || $0.visibleController?.spaceId == spaceId
                   }) else {
+                completion?(false)
+                return
+            }
+            if let proceed, !proceed() {
                 completion?(false)
                 return
             }

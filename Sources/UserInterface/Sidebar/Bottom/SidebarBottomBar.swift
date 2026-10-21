@@ -76,15 +76,25 @@ struct SidebarBottomBarSwiftUI: View {
     let onDownloadTap: () -> Void
     
     var body: some View {
-        regularLayout
-            .frame(height: SidebarBottomBarState.singleRowHeight)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("sidebar.footer")
+        GeometryReader { geometry in
+            regularLayout(availableWidth: geometry.size.width)
+        }
+        .frame(height: SidebarBottomBarState.singleRowHeight)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("sidebar.footer")
     }
     
     // MARK: - Regular Layout
     
-    private var regularLayout: some View {
+    private var widthWithChatTitle: CGFloat {
+        let iconCount = 2 + (state.isMemoryHidden ? 0 : 1)
+            + (showCardEntry ? 1 : 0) + (state.isFeedbackHidden ? 0 : 1)
+        // The zero-length spacer still has a four-point gap on each side.
+        return CGFloat(iconCount) * 24 + CGFloat(iconCount + 1) * 4
+            + ChatButton.preferredContentWidth + 2 * WebContentConstant.edgesSpacing
+    }
+
+    private func regularLayout(availableWidth: CGFloat) -> some View {
         HStack(spacing: 4) {
             ProfileButton(surface: .sidebar)
                 .frame(width: 24, height: 24)
@@ -103,7 +113,7 @@ struct SidebarBottomBarSwiftUI: View {
             }
 
             if !state.isChatHidden {
-                ChatButton(action: onChatTap)
+                ChatButton(action: onChatTap, showsTitle: availableWidth >= widthWithChatTitle)
                     .layoutPriority(2)
             }
         }

@@ -6388,7 +6388,9 @@ final class SpaceManager: ObservableObject {
     ///   animation, and nothing retreats (every retreat target would be the Space itself);
     /// - a background window of the Space is closed;
     /// - the call waits until no window of the Space remains on another Profile and every replaced
-    ///   slot shows a window on `profileId`, or reports `windowsNotSettled` after `timeout`.
+    ///   slot shows a window on `profileId`, or reports `windowsNotSettled` after `timeout`;
+    /// - a slot whose earlier replacement never registered respawns again, so a rerun after
+    ///   `windowsNotSettled` can settle it.
     /// The ordinary `changeProfile` refuses the default Space and is unchanged.
     @MainActor
     func rebindDefaultSpaceForPairingReset(toProfileId profileId: String,
@@ -6414,8 +6416,26 @@ final class SpaceManager: ObservableObject {
         }
         // The spawn path reads the binding from `spaces`; publish the committed row first.
         handleSpacesUpdate(account.localStorage.getAllSpaces())
+        let settled = await settleDefaultSpaceWindowsForPairingReset(onProfileId: profileId, timeout: timeout)
+        return settled ? .rebound : .windowsNotSettled
+    }
+
+    /// The window half of `rebindDefaultSpaceForPairingReset`, run once the row is bound to
+    /// `profileId`. A slot still showing `default-space` with no registered window but a pending
+    /// replacement is one whose earlier respawn never registered (the activation was dropped or
+    /// the spawn stalled): it respawns again, so a rerun of the rebind can settle it. Returns false
+    /// when the windows did not settle within `timeout`.
+    @MainActor
+    func settleDefaultSpaceWindowsForPairingReset(onProfileId profileId: String, timeout: Duration) async -> Bool {
+        let spaceId = LocalStore.defaultSpaceId
         var replacedSlots: [SpaceWindowSlot] = []
         for slot in slots {
+            if slot.activeSpaceId == spaceId, slot.windowController(for: spaceId) == nil,
+               slot.hasPendingReplacement(for: spaceId) {
+                slot.respawnWindow(forSpaceId: spaceId, animated: false, retryingStalledReplacement: true)
+                replacedSlots.append(slot)
+                continue
+            }
             guard let controller = slot.windowController(for: spaceId), controller.profileId != profileId else { continue }
             if slot.activeSpaceId == spaceId {
                 slot.respawnWindow(forSpaceId: spaceId, animated: false)
@@ -6425,7 +6445,7 @@ final class SpaceManager: ObservableObject {
                 slot.closeRetiredWindow(controller)
             }
         }
-        let settled = await waitForPairingReset(timeout: timeout) { [weak self] in
+        return await waitForPairingReset(timeout: timeout) { [weak self] in
             guard let self else { return false }
             let stale = SpaceSessionControllersManager.shared.getAllWindows().contains {
                 $0.spaceId == spaceId && $0.profileId != profileId
@@ -6435,7 +6455,6 @@ final class SpaceManager: ObservableObject {
             }
             return !stale && replaced
         }
-        return settled ? .rebound : .windowsNotSettled
     }
 
     /// The Profiles of the live windows showing `default-space`. The pairing reset re-runs the rebind
@@ -12690,7 +12709,27 @@ final class SpaceWindowSlot: ObservableObject {
     /// `pendingCloseOnReplacementBySpaceId`): a profile load can make the
     /// spawn complete asynchronously, and closing up front would leave the
     /// slot window-less if the spawn fails.
-    func respawnWindow(forSpaceId spaceId: String, animated: Bool = true) {
+    ///
+    /// With `retryingStalledReplacement`, a call that finds the Space still
+    /// active with no registered window but a pending replacement retries
+    /// it: the earlier activation was dropped or its spawn stalled, and the
+    /// old window is still on screen. It activates again; the pending old
+    /// window stays queued, so the replacement's registration still closes
+    /// it. The in-flight spawn mark (`pendingSpawnSpaceIds`) is deliberately
+    /// not consulted: a spawn that never registers leaves it set, and the
+    /// only caller (the pairing reset's rebind) retries after waiting its
+    /// whole timeout, when a spawn still marked in flight is a stalled one.
+    /// A second registration for the Space is queued for close like any
+    /// replaced window. Without the flag this state is left alone, as the
+    /// profile-change path always did.
+    func respawnWindow(forSpaceId spaceId: String, animated: Bool = true,
+                       retryingStalledReplacement: Bool = false) {
+        if retryingStalledReplacement, activeSpaceId == spaceId, windowsBySpaceId[spaceId] == nil,
+           hasPendingReplacement(for: spaceId) {
+            AppLogInfo("[SpaceWindowSlot] respawnWindow(\(spaceId)): replacement never registered (spawn in flight: \(pendingSpawnSpaceIds.contains(spaceId))); activating again")
+            activate(spaceId: spaceId, animated: animated)
+            return
+        }
         guard activeSpaceId == spaceId, let old = windowsBySpaceId[spaceId] else {
             // The slot moved on (user switched Spaces in the gap) or the
             // window is already gone — just retire any leftover window;
@@ -12705,6 +12744,12 @@ final class SpaceWindowSlot: ObservableObject {
         evictWindow(for: spaceId, removeSlotIfEmpty: false)
         pendingCloseOnReplacementBySpaceId[spaceId] = old
         activate(spaceId: spaceId, animated: animated)
+    }
+
+    /// Whether a respawn's old window for `spaceId` is still waiting for its
+    /// replacement to register (`pendingCloseOnReplacementBySpaceId`).
+    func hasPendingReplacement(for spaceId: String) -> Bool {
+        pendingCloseOnReplacementBySpaceId[spaceId] != nil
     }
 
     /// First Space in STRIP order (`manager.spaces`) that has a live

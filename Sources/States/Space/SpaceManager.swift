@@ -6427,8 +6427,9 @@ final class SpaceManager: ObservableObject {
     /// The window half of `rebindDefaultSpaceForPairingReset`, run once the row is bound to
     /// `profileId`. A slot still showing `default-space` with no registered window but a pending
     /// replacement is one whose earlier respawn never registered (the activation was dropped or
-    /// the spawn stalled): it respawns again, so a rerun of the rebind can settle it. Returns false
-    /// when the windows did not settle within `timeout`.
+    /// the spawn stalled): it respawns again, so a rerun of the rebind can settle it. A slot that
+    /// moved to another Space after such a failure closes the old window it still holds. Returns
+    /// false when the windows did not settle within `timeout`.
     @MainActor
     func settleDefaultSpaceWindowsForPairingReset(onProfileId profileId: String, timeout: Duration) async -> Bool {
         let spaceId = LocalStore.defaultSpaceId
@@ -6439,6 +6440,11 @@ final class SpaceManager: ObservableObject {
                 slot.respawnWindow(forSpaceId: spaceId, animated: false, retryingStalledReplacement: true)
                 replacedSlots.append(slot)
                 continue
+            }
+            if slot.activeSpaceId != spaceId, slot.hasPendingReplacement(for: spaceId) {
+                // The user left the Space after a failed replacement: the old window would
+                // otherwise stay live on the old Profile until the next manual switch.
+                slot.closePendingReplacement(for: spaceId)
             }
             guard let controller = slot.windowController(for: spaceId), controller.profileId != profileId else { continue }
             if slot.activeSpaceId == spaceId {
@@ -10205,6 +10211,31 @@ final class SpaceWindowSlot: ObservableObject {
     /// flipped before), and the first tab is seeded afterwards.
     private var hostedSpawnTimings: [String: SpaceSwitchTiming] = [:]
 
+    /// Generation of the latest hosted spawn attempt per Space, bumped when an
+    /// attempt claims `pendingSpawnSpaceIds` in `spawnHostedSession` and when
+    /// `abandonStalledSpawn` gives a stalled attempt up. An attempt whose
+    /// profile load calls back after its generation moved on creates no
+    /// window and leaves the mark alone. A window of an abandoned attempt that
+    /// registers anyway is queued for close by `registerWindow`'s replace path.
+    private var hostedSpawnGenerationBySpaceId: [String: Int] = [:]
+
+    /// The latest hosted spawn attempt's generation for `spaceId` (0 before
+    /// the first attempt).
+    func hostedSpawnGeneration(for spaceId: String) -> Int {
+        hostedSpawnGenerationBySpaceId[spaceId] ?? 0
+    }
+
+    /// Gives up a spawn of `spaceId` that is marked in flight but stalled (its
+    /// profile load never called back or its window never registered): the
+    /// in-flight mark is removed so a new attempt can claim it, and the
+    /// generation moves on so the stalled attempt's late callback creates
+    /// nothing. Only the pairing reset's retry calls it.
+    func abandonStalledSpawn(for spaceId: String) {
+        guard pendingSpawnSpaceIds.remove(spaceId) != nil else { return }
+        hostedSpawnGenerationBySpaceId[spaceId, default: 0] += 1
+        AppLogInfo("[SpaceWindowSlot] abandonStalledSpawn(\(spaceId)): stalled spawn given up; generation \(hostedSpawnGenerationBySpaceId[spaceId] ?? 0)")
+    }
+
     func timingForHostedSpawn(spaceId: String) -> SpaceSwitchTiming? {
         hostedSpawnTimings[spaceId]
     }
@@ -10265,8 +10296,14 @@ final class SpaceWindowSlot: ObservableObject {
         let isIncognitoSpace = SpaceManager.isIncognitoSpaceId(spaceId)
         let previous = visibleController
         let inheritedFrame = resolveInheritedFrame(from: previous)
+        let generation = hostedSpawnGeneration(for: spaceId) + 1
         let spawn: () -> Void = { [weak self, weak previous, weak manager] in
             guard let self else {
+                onActivationFailed?()
+                return
+            }
+            guard self.hostedSpawnGeneration(for: spaceId) == generation else {
+                AppLogInfo("[SpaceWindowSlot] spawnHostedSession(\(spaceId)): attempt \(generation) abandoned; not creating a window")
                 onActivationFailed?()
                 return
             }
@@ -10330,13 +10367,17 @@ final class SpaceWindowSlot: ObservableObject {
             onSpawned(registered)
         }
         pendingSpawnSpaceIds.insert(spaceId)
+        hostedSpawnGenerationBySpaceId[spaceId] = generation
         timing?.mark("profile.load.begin")
         if isIncognitoSpace {
             bridge.ensureIncognitoSpaceProfileLoaded { [weak self] success in
                 timing?.mark(success ? "profile.load.ready" : "profile.load.failed")
                 guard success else {
                     AppLogWarn("[SpaceWindowSlot] ensureIncognitoSpaceProfileLoaded failed; not spawning")
-                    self?.pendingSpawnSpaceIds.remove(spaceId)
+                    // An abandoned attempt must not clear a newer attempt's mark.
+                    if self?.hostedSpawnGeneration(for: spaceId) == generation {
+                        self?.pendingSpawnSpaceIds.remove(spaceId)
+                    }
                     onActivationFailed?()
                     return
                 }
@@ -10347,7 +10388,9 @@ final class SpaceWindowSlot: ObservableObject {
                 timing?.mark(success ? "profile.load.ready" : "profile.load.failed")
                 guard success else {
                     AppLogWarn("[SpaceWindowSlot] ensureProfileLoaded failed for \(pid); not spawning")
-                    self?.pendingSpawnSpaceIds.remove(spaceId)
+                    if self?.hostedSpawnGeneration(for: spaceId) == generation {
+                        self?.pendingSpawnSpaceIds.remove(spaceId)
+                    }
                     onActivationFailed?()
                     return
                 }
@@ -12727,11 +12770,12 @@ final class SpaceWindowSlot: ObservableObject {
     /// it: the earlier activation was dropped or its spawn stalled, and the
     /// old window is still on screen. It activates again; the pending old
     /// window stays queued, so the replacement's registration still closes
-    /// it. The in-flight spawn mark (`pendingSpawnSpaceIds`) is deliberately
-    /// not consulted: a spawn that never registers leaves it set, and the
-    /// only caller (the pairing reset's rebind) retries after waiting its
-    /// whole timeout, when a spawn still marked in flight is a stalled one.
-    /// A second registration for the Space is queued for close like any
+    /// it. A spawn still marked in flight (`pendingSpawnSpaceIds`) is given
+    /// up first (`abandonStalledSpawn`): a spawn that never registers leaves
+    /// the mark set, and the only caller (the pairing reset's rebind) retries
+    /// after waiting its whole timeout, when a spawn still marked in flight is
+    /// a stalled one. Its late profile-load callback creates nothing, and a
+    /// window of it that registers anyway is queued for close like any
     /// replaced window. Without the flag this state is left alone, as the
     /// profile-change path always did.
     func respawnWindow(forSpaceId spaceId: String, animated: Bool = true,
@@ -12739,6 +12783,7 @@ final class SpaceWindowSlot: ObservableObject {
         if retryingStalledReplacement, activeSpaceId == spaceId, windowsBySpaceId[spaceId] == nil,
            hasPendingReplacement(for: spaceId) {
             AppLogInfo("[SpaceWindowSlot] respawnWindow(\(spaceId)): replacement never registered (spawn in flight: \(pendingSpawnSpaceIds.contains(spaceId))); activating again")
+            abandonStalledSpawn(for: spaceId)
             activate(spaceId: spaceId, animated: animated)
             return
         }
@@ -12762,6 +12807,16 @@ final class SpaceWindowSlot: ObservableObject {
     /// replacement to register (`pendingCloseOnReplacementBySpaceId`).
     func hasPendingReplacement(for spaceId: String) -> Bool {
         pendingCloseOnReplacementBySpaceId[spaceId] != nil
+    }
+
+    /// Closes a respawn's old window for `spaceId` that still waits for its
+    /// replacement although this slot has moved to another Space: no
+    /// replacement will register here until the user returns to the Space,
+    /// which then spawns on the Space's current binding.
+    func closePendingReplacement(for spaceId: String) {
+        guard let old = pendingCloseOnReplacementBySpaceId.removeValue(forKey: spaceId) else { return }
+        AppLogInfo("[SpaceWindowSlot] closePendingReplacement(\(spaceId)): closing window \(old.windowId); slot is on \(activeSpaceId ?? "nil")")
+        closeRetiredWindow(old)
     }
 
     /// First Space in STRIP order (`manager.spaces`) that has a live

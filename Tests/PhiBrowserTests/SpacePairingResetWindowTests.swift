@@ -9,9 +9,10 @@ import XCTest
 
 /// The pairing reset's window handling on real slots: the `default-space`
 /// rebind's retry of a replacement that never registered, and the deletion's
-/// abandon check ahead of any window close. The test host has no Chromium
-/// bridge, so every spawn fails; a dormant session stands in for a Browser
-/// that can be spawned, and attaching a plain window to it stands in for the
+/// abandon check ahead of any window close. A spawn in the test host never
+/// registers with these slots: without a bridge it fails, and with the hosted
+/// bridge the Browser it creates is never claimed by this manager. A session
+/// built by `makeSession` with a plain window attached stands in for the
 /// Browser's arrival.
 @MainActor
 final class SpacePairingResetWindowTests: XCTestCase {
@@ -97,6 +98,71 @@ final class SpacePairingResetWindowTests: XCTestCase {
         XCTAssertEqual(slot.windowController(for: spaceId)?.profileId, "Default")
         XCTAssertFalse(slot.hasPendingReplacement(for: spaceId))
         XCTAssertFalse(liveWindows().contains { $0 === old })
+    }
+
+    func testRebindRetryAbandonsAStalledSpawnWithoutADormantStandIn() async throws {
+        try XCTSkipIf(ChromiumLauncher.sharedInstance().bridge == nil,
+                      "needs the hosted Chromium bridge: without it no spawn claims the in-flight mark")
+        let spaceId = LocalStore.defaultSpaceId
+        let slot = makeShellSlot(showing: spaceId)
+        let old = makeSession(in: slot, spaceId: spaceId, profileId: "Doomed")
+        attachChromiumWindow(to: old)
+        slot.presentRequestedSession(old, activate: false)
+
+        // The first attempt claims the in-flight mark and its window never registers with this
+        // slot, so the mark stays set.
+        let first = await manager.settleDefaultSpaceWindowsForPairingReset(onProfileId: "Default",
+                                                                          timeout: .milliseconds(500))
+        XCTAssertFalse(first)
+        XCTAssertNil(slot.windowController(for: spaceId))
+        XCTAssertTrue(slot.hostsWindow(for: spaceId), "precondition: the stalled spawn is still marked in flight")
+        let stalledGeneration = slot.hostedSpawnGeneration(for: spaceId)
+        XCTAssertGreaterThan(stalledGeneration, 0)
+
+        // No dormant session exists: the retry must give the stalled attempt up and claim a new
+        // one (one bump for the abandon, one for the new claim).
+        let retry = Task { @MainActor [manager] in
+            await manager!.settleDefaultSpaceWindowsForPairingReset(onProfileId: "Default", timeout: .seconds(5))
+        }
+        let reclaimed = await waitUntil { slot.hostedSpawnGeneration(for: spaceId) == stalledGeneration + 2 }
+        XCTAssertTrue(reclaimed, "the retry did not reach the spawn path again")
+        // The new attempt's window arrives.
+        let replacement = makeSession(in: slot, spaceId: spaceId, profileId: "Default")
+        attachChromiumWindow(to: replacement)
+        let second = await retry.value
+        XCTAssertTrue(second)
+        XCTAssertTrue(slot.windowController(for: spaceId) === replacement)
+        XCTAssertFalse(slot.hasPendingReplacement(for: spaceId))
+        XCTAssertFalse(liveWindows().contains { $0 === old })
+    }
+
+    func testRebindClosesThePendingOldWindowOfASlotThatLeftTheSpace() async throws {
+        let spaceId = LocalStore.defaultSpaceId
+        let slot = makeShellSlot(showing: spaceId)
+        let old = makeSession(in: slot, spaceId: spaceId, profileId: "Doomed")
+        attachChromiumWindow(to: old)
+        slot.presentRequestedSession(old, activate: false)
+
+        let first = await manager.settleDefaultSpaceWindowsForPairingReset(onProfileId: "Default",
+                                                                          timeout: .milliseconds(500))
+        XCTAssertFalse(first)
+        XCTAssertTrue(slot.hasPendingReplacement(for: spaceId))
+
+        // "Finish later", then the user switches the slot to another Space.
+        let other = makeSession(in: slot, spaceId: "second", profileId: "Default")
+        slot.registerWindow(other, for: "second")
+        slot.activate(spaceId: "second", animated: false)
+        XCTAssertEqual(slot.activeSpaceId, "second")
+        XCTAssertTrue(slot.hasPendingReplacement(for: spaceId))
+        XCTAssertTrue(liveWindows().contains { $0 === old })
+
+        let second = await manager.settleDefaultSpaceWindowsForPairingReset(onProfileId: "Default",
+                                                                           timeout: .seconds(2))
+        XCTAssertTrue(second)
+        XCTAssertFalse(slot.hasPendingReplacement(for: spaceId))
+        XCTAssertFalse(liveWindows().contains { $0 === old })
+        XCTAssertFalse(liveWindows().contains { $0.spaceId == spaceId && $0.profileId == "Doomed" })
+        XCTAssertEqual(slot.activeSpaceId, "second")
     }
 
     // MARK: - Deletion abandon

@@ -372,14 +372,22 @@ class APIClient {
             return AgentAvatarImagePayload(metadata: avatar, data: data)
         }
 
-        guard let url = URL(string: avatar.url) else {
+        if let path = Self.agentAvatarFilePath(avatar.url) {
+            let response = try await sendPhiAgentRequest(path: path)
+            guard (200...299).contains(response.statusCode) else {
+                throw APIError.httpError(statusCode: response.statusCode)
+            }
+            return AgentAvatarImagePayload(metadata: avatar, data: response.body)
+        }
+
+        guard let url = URL(string: avatar.url),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              url.host != nil, url.user == nil, url.password == nil else {
             throw APIError.invalidResponse
         }
 
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // Internet images are not Phi service requests and must not receive its bearer token.
+        let (data, response) = try await URLSession.shared.data(for: URLRequest(url: url))
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
@@ -390,6 +398,25 @@ class APIClient {
         }
 
         return AgentAvatarImagePayload(metadata: avatar, data: data)
+    }
+
+    /// Stored file references may still include a loopback address from an older service run.
+    static func agentAvatarFilePath(_ value: String) -> String? {
+        guard let components = URLComponents(string: value),
+              components.user == nil, components.password == nil else { return nil }
+        let relative = value.hasPrefix("/") && !value.hasPrefix("//")
+        let host = (components.host ?? "").lowercased()
+        let octets = host.split(separator: ".", omittingEmptySubsequences: false)
+        let loopback = ["localhost", "::1", "[::1]"].contains(host)
+            || (octets.count == 4 && octets.first == "127"
+                && octets.allSatisfy { part in
+                    !part.isEmpty && part.allSatisfy { $0.isASCII && $0.isNumber }
+                        && (Int(part).map { (0...255).contains($0) } ?? false)
+                })
+        guard relative || (["http", "https"].contains(components.scheme?.lowercased() ?? "") && loopback),
+              components.percentEncodedPath.hasPrefix("/api/v1/files/")
+                || components.percentEncodedPath.hasPrefix("/v1/files/") else { return nil }
+        return components.percentEncodedPath + (components.percentEncodedQuery.map { "?" + $0 } ?? "")
     }
 
     static func decodeAgentAvatarDataURL(_ url: String) -> Data? {

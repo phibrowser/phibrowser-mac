@@ -507,6 +507,11 @@ private struct NotificationCardAgentAvatarView: View {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
+            } else {
+                Image(systemName: "sparkles")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(3)
             }
         }
         .frame(width: size, height: size)
@@ -525,13 +530,35 @@ private struct NotificationCardAgentAvatarView: View {
         image = nil
         guard ApplicationState.shared.isAuthenticated else { return }
 
+        let loaded = await Self.loadImage {
+            try await APIClient.shared.getAgentAvatarImageData().data
+        }
+        guard !Task.isCancelled else { return }
+        image = loaded
+    }
+
+    @MainActor
+    static func loadImage(loadData: () async throws -> Data) async -> NSImage? {
         do {
-            let payload = try await APIClient.shared.getAgentAvatarImageData()
-            image = NSImage(data: payload.data)
+            let data = try await loadData()
+            guard let image = NSImage(data: data), image.isValid else {
+                AppLogWarn("[NotificationMessageCardView] Agent avatar image could not be decoded; using fallback")
+                return nil
+            }
+            return image
+        } catch is CancellationError {
+            return nil
         } catch {
-            #if DEBUG
-            AppLogError("[NotificationMessageCardView] Failed to load agent avatar: \(error)")
-            #endif
+            if let error = error as? URLError {
+                if error.code != .cancelled {
+                    AppLogWarn("[NotificationMessageCardView] Agent avatar request failed (URL error \(error.code.rawValue)); using fallback")
+                }
+            } else if case APIError.httpError(let status) = error {
+                AppLogWarn("[NotificationMessageCardView] Agent avatar request failed (HTTP \(status)); using fallback")
+            } else {
+                AppLogWarn("[NotificationMessageCardView] Agent avatar unavailable; using fallback")
+            }
+            return nil
         }
     }
 }

@@ -199,6 +199,8 @@ class Tab: WebContentRepresentable {
     
     @Published private(set) var webContentWrapper: (WebContentWrapper & NSObject)?
     private var peekLinkActivationGuard: PeekLinkActivationGuard?
+    private var wantsTransparentChatCanvas = false
+    private var chatCanvas: EmbeddedChatCanvas?
     let parent: Tab? = nil
     let subTabs: [Tab] = []
     var guid: Int
@@ -329,6 +331,8 @@ class Tab: WebContentRepresentable {
     private func setupObservers<Wrapper: WebContentWrapper & NSObject>(for wrapper: Wrapper?) {
         MainActor.assumeIsolated {
             peekLinkActivationGuard = wrapper.flatMap { PeekLinkActivationGuard(wrapper: $0) }
+            chatCanvas = nil
+            if wantsTransparentChatCanvas { enableTransparentChatCanvas() }
         }
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
@@ -400,6 +404,9 @@ class Tab: WebContentRepresentable {
                     MainActor.assumeIsolated {
                         self.peekLinkActivationGuard = PeekLinkActivationGuard(wrapper: wrapper)
                     }
+                }
+                if !loading, self.wantsTransparentChatCanvas {
+                    MainActor.assumeIsolated { self.enableTransparentChatCanvas() }
                 }
             }
             .store(in: &cancellables)
@@ -554,6 +561,16 @@ class Tab: WebContentRepresentable {
 
         self.webContentWrapper = wrapper
         setupObservers(for: wrapper)
+    }
+
+    /// The shared sidebar tab owns its canvas session across pane reparenting.
+    @MainActor
+    func enableTransparentChatCanvas() {
+        wantsTransparentChatCanvas = true
+        if chatCanvas == nil, let wrapper = webContentWrapper {
+            chatCanvas = EmbeddedChatCanvas(wrapper: wrapper)
+        }
+        chatCanvas?.apply()
     }
 
     func pauseVideosForPeek() {

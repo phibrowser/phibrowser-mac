@@ -56,9 +56,11 @@ class WebContentContainerViewController: NSViewController {
         didSet {
             guard currentWebContentController !== oldValue else { return }
             bindCurrentHeaderPageColorPresentation()
+            bindCurrentPageFrameBackground()
         }
     }
     private var currentHeaderPageColorCancellable: AnyCancellable?
+    private var currentPageFrameBackgroundCancellable: AnyCancellable?
 
     /// The visible tab's web-content panel size, or nil when nothing is
     /// mounted (placeholder mode, window still restoring). See
@@ -362,7 +364,7 @@ class WebContentContainerViewController: NSViewController {
     private var closingAIChatGhostView: NSView?
 
     /// Companion of the panel slot: fills the content frame's interior
-    /// around the panel card with the same `contentOverlayBackground` that
+    /// around the panel card with the same `separatedContentFrameBackground` that
     /// `splitViewContainer` paints behind the page and chat cards, so the
     /// panel reads as a sub-card inside one frame (AI Chat parity) instead
     /// of floating on the window background. Sits just above
@@ -633,6 +635,29 @@ class WebContentContainerViewController: NSViewController {
             }
     }
 
+    /// Content-surface windows draw the shared frame below Chromium, while
+    /// non-surface windows draw it in the page controller's split container.
+    private func bindCurrentPageFrameBackground() {
+        currentPageFrameBackgroundCancellable = nil
+        let apply: (Bool) -> Void = { [weak self] separated in
+            guard let self else { return }
+            // Without a content surface the split container paints the frame;
+            // keep this backing opaque so the black alpha is not applied twice.
+            self.pageAreaBackdrop.phiLayer?.setBackgroundColor(
+                separated && self.hasContentSurface
+                    ? .separatedContentFrameBackground : .contentOverlayBackground
+            )
+        }
+        guard let controller = currentWebContentController else {
+            apply(false)
+            return
+        }
+        apply(controller.isPageCardSeparated)
+        currentPageFrameBackgroundCancellable = controller.$isPageCardSeparated
+            .removeDuplicates()
+            .sink(receiveValue: apply)
+    }
+
     // MARK: - Agent transcript dock
 
     /// Installs the docked agent console (see `AgentTranscriptPanelController`)
@@ -792,7 +817,7 @@ class WebContentContainerViewController: NSViewController {
         // corners for the same reason while the panel is open (see
         // WebContentViewController.updateLeftContainerStyle).
         backdrop.layer?.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
-        backdrop.phiLayer?.setBackgroundColor(ThemedColor.contentOverlayBackground)
+        backdrop.phiLayer?.setBackgroundColor(ThemedColor.separatedContentFrameBackground)
         view.addSubview(backdrop, positioned: .above, relativeTo: contentContainer)
         extensionSidePanelFrameBackdrop = backdrop
         return backdrop
@@ -1490,6 +1515,7 @@ class WebContentContainerViewController: NSViewController {
             controller.hasContentSurface = true
         }
         placeholderShell?.hasContentSurface = true
+        bindCurrentPageFrameBackground()
         applyBackdropPainting()
         updatePageAreaBackdropCorners(panelDocked: browserState?.extensionSidePanel != nil)
         contentSurfaceHosting = ContentSurfaceHosting(container: contentContainer,

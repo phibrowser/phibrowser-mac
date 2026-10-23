@@ -35,7 +35,7 @@ class EmbeddedChatViewController: NSViewController {
     }
 
     private func applyFill() {
-        contentView.setFill(NSColor.white <> NSColor.black, overContentSurface: hasContentSurface)
+        contentView.setFill(NSColor.clear <> NSColor.clear, overContentSurface: hasContentSurface)
     }
 
     init(with browserState: BrowserState, tab: Tab? = nil) {
@@ -61,8 +61,7 @@ class EmbeddedChatViewController: NSViewController {
         contentView.layer?.cornerRadius = LiquidGlassCompatible.webContentInnerComponentsCornerRadius
         applyFill()
 
-        contentView.layer?.borderWidth = 1
-        contentView.phiLayer?.setBorderColor(.border)
+        contentView.layer?.borderWidth = 0
         
         contentView.snp.makeConstraints { make in
             make.top.bottom.trailing.equalToSuperview().inset(WebContentConstant.contentEdgeSpacing)
@@ -375,6 +374,7 @@ class EmbeddedChatViewController: NSViewController {
         }
         contentView.subviews.forEach { $0.removeFromSuperview() }
         
+        currentAIChatTab?.enableTransparentChatCanvas()
         contentView.addSubview(native)
         native.snp.makeConstraints { make in
             make.edges.equalToSuperview()
@@ -443,5 +443,57 @@ class EmbeddedChatViewController: NSViewController {
             loginRequiredOverlayView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             loginRequiredOverlayView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
+    }
+}
+
+/// CSS transparency reveals Chromium's default canvas unless the compositor
+/// canvas is also clear. Keep the app-owned session alive with the Chat tab;
+/// Chromium restores emulation state when a DevTools session disconnects.
+@MainActor
+final class EmbeddedChatCanvas {
+    private let targetId: String
+    private var session: AppDevToolsPageSession?
+    private var applyTask: Task<Void, Never>?
+
+    init?(wrapper: WebContentWrapper & NSObject) {
+        guard wrapper.responds(to: #selector(getter: WebContentWrapper.devToolsTargetId)),
+              let targetId = wrapper.devToolsTargetId, !targetId.isEmpty else { return nil }
+        self.targetId = targetId
+    }
+
+    func apply() {
+        guard session == nil, applyTask == nil else { return }
+        let targetId = targetId
+        applyTask = Task { @MainActor [weak self] in
+            var connection: AppDevToolsPageSession?
+            defer { self?.applyTask = nil }
+            do {
+                let opened = try await AppDevToolsPageSession.open(targetId: targetId)
+                connection = opened
+                guard !Task.isCancelled, self != nil else {
+                    opened.close()
+                    return
+                }
+                _ = try await opened.command("Emulation.setDefaultBackgroundColorOverride", params: [
+                    "color": ["r": 0, "g": 0, "b": 0, "a": 0],
+                ])
+                guard !Task.isCancelled, let self else {
+                    opened.close()
+                    return
+                }
+                self.session = opened
+                AppLogDebug("[ChatCanvas] transparent compositor canvas applied")
+            } catch {
+                connection?.close()
+                if !Task.isCancelled {
+                    AppLogWarn("[ChatCanvas] transparent compositor canvas unavailable: \(error)")
+                }
+            }
+        }
+    }
+
+    isolated deinit {
+        applyTask?.cancel()
+        session?.close()
     }
 }

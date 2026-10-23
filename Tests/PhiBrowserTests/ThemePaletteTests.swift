@@ -10,13 +10,15 @@ import XCTest
 @MainActor
 final class ThemePaletteTests: XCTestCase {
     func testCenterSnapCentersEveryLinkedHandleAndPreservesPaletteSettings() {
-        for count in 1...3 {
-            let original = ThemePalette(hue: 0.73, saturation: 0.8, brightness: 0.4, colorCount: count)
+        for harmony in ThemePalette.Harmony.allCases {
+            let count = harmony.colorCount
+            let original = ThemePalette(hue: 0.73, saturation: 0.8, brightness: 0.4, harmony: harmony)
             for draggedIndex in 0..<count {
                 for point in [CGPoint(x: 0.5, y: 0.5), CGPoint(x: 0.524, y: 0.5), CGPoint(x: 0.49, y: 0.51)] {
                     let snapped = original.movingHandle(at: draggedIndex, to: point, snappingToCenter: true)
                     XCTAssertEqual(snapped.hue, original.hue)
                     XCTAssertEqual(snapped.colorCount, count)
+                    XCTAssertEqual(snapped.harmony, harmony)
                     XCTAssertEqual(snapped.brightness, original.brightness)
                     XCTAssertEqual(snapped.saturation, 0)
                     for index in 0..<count {
@@ -70,15 +72,17 @@ final class ThemePaletteTests: XCTestCase {
     }
 
     func testDraggingAnyHandleMovesEntireHarmonyToThePointer() {
-        for count in 1...3 {
+        for harmony in ThemePalette.Harmony.allCases {
+            let count = harmony.colorCount
             for index in 0..<count {
-                let original = ThemePalette(hue: 0.93, saturation: 0.5, colorCount: count)
-                let destination = ThemePalette(hue: 0.08, saturation: 0.8, colorCount: count)
+                let original = ThemePalette(hue: 0.93, saturation: 0.5, harmony: harmony)
+                let destination = ThemePalette(hue: 0.08, saturation: 0.8, harmony: harmony)
                 let pointer = destination.handlePosition(at: index)
                 let moved = original.movingHandle(at: index, to: pointer)
                 XCTAssertEqual(moved.hue, destination.hue, accuracy: 0.000001)
                 XCTAssertEqual(moved.saturation, destination.saturation, accuracy: 0.000001)
                 XCTAssertEqual(moved.brightness, original.brightness)
+                XCTAssertEqual(moved.harmony, harmony)
                 for other in 0..<count {
                     XCTAssertEqual(moved.hue(at: other), destination.hue(at: other), accuracy: 0.000001)
                     XCTAssertEqual(moved.handlePosition(at: other).x, destination.handlePosition(at: other).x, accuracy: 0.000001)
@@ -86,6 +90,38 @@ final class ThemePaletteTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testAnalogousColorsStayFortyFiveDegreesApartAcrossTheHueBoundary() {
+        let palette = ThemePalette(hue: 0.96, saturation: 0.65, brightness: 0.4, harmony: .analogous)
+        XCTAssertEqual(palette.colorCount, 2)
+        XCTAssertEqual(palette.hue(at: 0), 0.96, accuracy: 0.000001)
+        XCTAssertEqual(palette.hue(at: 1), 0.085, accuracy: 0.000001)
+        XCTAssertEqual(palette.rotatingHue(by: 0.1).harmony, .analogous)
+        XCTAssertEqual(palette.settingBrightness(0.8).harmony, .analogous)
+        for harmony in ThemePalette.Harmony.allCases {
+            let switched = palette.settingHarmony(harmony)
+            XCTAssertEqual(switched.hue, palette.hue)
+            XCTAssertEqual(switched.saturation, palette.saturation)
+            XCTAssertEqual(switched.brightness, palette.brightness)
+            XCTAssertEqual(switched.harmony, harmony)
+        }
+    }
+
+    func testEveryHarmonySurvivesEncodingAndLegacyCountsKeepTheirMeaning() throws {
+        for harmony in ThemePalette.Harmony.allCases {
+            let palette = ThemePalette(hue: 0.7, saturation: 0.45, brightness: 0.6, harmony: harmony)
+            let encoded = try JSONEncoder().encode(palette)
+            XCTAssertEqual(try JSONDecoder().decode(ThemePalette.self, from: encoded), palette)
+        }
+        for (count, harmony) in [(1, ThemePalette.Harmony.single), (2, .complementary), (3, .splitComplementary)] {
+            let old = Data("{\"version\":2,\"hue\":0.4,\"saturation\":0.6,\"brightness\":0.7,\"colorCount\":\(count)}".utf8)
+            let decoded = try JSONDecoder().decode(ThemePalette.self, from: old)
+            XCTAssertEqual(decoded.harmony, harmony)
+            XCTAssertEqual(decoded.brightness, 0.7)
+        }
+        let unknown = Data(#"{"version":3,"hue":0.4,"saturation":0.6,"brightness":0.7,"colorCount":2,"harmony":"unknown"}"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode(ThemePalette.self, from: unknown).harmony, .complementary)
     }
 
     func testFieldCenterAndOutsideDragsAreStable() {
@@ -109,7 +145,7 @@ final class ThemePaletteTests: XCTestCase {
         let account = Account(userID: UUID().uuidString)
         let preferences = AccountUserDefaults(account: account, storeURL: url)
         let first = ThemePalette(hue: 0.95, saturation: 0.65, brightness: 0.4, colorCount: 3)
-        let second = ThemePalette(hue: 0.3, saturation: 0.2, brightness: 0.8, colorCount: 2)
+        let second = ThemePalette(hue: 0.3, saturation: 0.2, brightness: 0.8, harmony: .analogous)
         XCTAssertTrue(preferences.setSpaceThemePalettes(["first": first, "second": second]))
         let reloaded = AccountUserDefaults(account: account, storeURL: url)
         XCTAssertEqual(reloaded.spaceThemePalettes(), ["first": first, "second": second])
@@ -173,10 +209,12 @@ final class ThemePaletteTests: XCTestCase {
     }
 
     func testDarkSaturationPeaksInsideAndFadesTowardTheBrighterEdge() {
-        let radii = [0.0, 0.05, 0.1, 0.2, 0.4, 0.7, 1.0]
+        let radii = [0.0, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0]
         let colors = radii.map { ThemePalette(hue: 0.6, saturation: $0).colors(for: .dark)[0] }
         XCTAssertEqual(colors[0].saturationComponent, 0, accuracy: 0.000001)
         XCTAssertEqual(colors[3].saturationComponent, 0.9, accuracy: 0.000001)
+        XCTAssertEqual(colors[2].saturationComponent, 0.225, accuracy: 0.000001,
+                       "The inner half of the transition must offer muted colors away from the center.")
         for index in 1..<colors.count {
             XCTAssertGreaterThan(colors[index].brightnessComponent, colors[index - 1].brightnessComponent)
             if index <= 3 {
@@ -190,6 +228,20 @@ final class ThemePaletteTests: XCTestCase {
             XCTAssertEqual(restored.redComponent, color.redComponent, accuracy: 0.000001)
             XCTAssertEqual(restored.greenComponent, color.greenComponent, accuracy: 0.000001)
             XCTAssertEqual(restored.blueComponent, color.blueComponent, accuracy: 0.000001)
+        }
+    }
+
+    func testDarkInnerTransitionOffersMutedColorsAwayFromTheCenter() {
+        for hue in [0.0, 0.17, 0.33, 0.5, 0.67, 0.83] {
+            for radius in [0.1, 0.2] {
+                let color = ThemePalette(hue: hue, saturation: radius).colors(for: .dark)[0]
+                XCTAssertLessThanOrEqual(color.saturationComponent, radius == 0.1 ? 0.05 : 0.25)
+                XCTAssertLessThan(color.brightnessComponent, 0.5)
+                let restored = ThemePalette(color: color, appearance: .dark).colors(for: .dark)[0]
+                XCTAssertEqual(restored.redComponent, color.redComponent, accuracy: 0.000001)
+                XCTAssertEqual(restored.greenComponent, color.greenComponent, accuracy: 0.000001)
+                XCTAssertEqual(restored.blueComponent, color.blueComponent, accuracy: 0.000001)
+            }
         }
     }
 

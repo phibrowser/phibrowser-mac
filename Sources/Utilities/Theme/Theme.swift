@@ -227,20 +227,51 @@ struct ThemeSnapshot: Codable, Equatable {
     }
 }
 
-/// A linked color harmony. Only the anchor is stored, so dragging any handle
-/// cannot break the complementary (two colors) or split complementary (three colors) rule.
+/// A linked color harmony. Dragging any handle preserves its hue relationships.
 struct ThemePalette: Codable, Equatable {
-    private let version = 2
+    enum Harmony: String, Codable, CaseIterable, Hashable {
+        case single
+        case analogous
+        case complementary
+        case splitComplementary
+
+        var colorCount: Int {
+            switch self {
+            case .single: return 1
+            case .analogous, .complementary: return 2
+            case .splitComplementary: return 3
+            }
+        }
+
+        init(colorCount: Int) {
+            switch min(max(colorCount, 1), 3) {
+            case 1: self = .single
+            case 2: self = .complementary
+            default: self = .splitComplementary
+            }
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version, hue, saturation, brightness, colorCount, harmony
+    }
+
+    private let version = 3
     private(set) var hue: Double
     private(set) var saturation: Double
     private(set) var brightness: Double
-    private(set) var colorCount: Int
+    private(set) var harmony: Harmony
+    var colorCount: Int { harmony.colorCount }
 
     init(hue: Double, saturation: Double, brightness: Double = 1, colorCount: Int = 1) {
+        self.init(hue: hue, saturation: saturation, brightness: brightness, harmony: Harmony(colorCount: colorCount))
+    }
+
+    init(hue: Double, saturation: Double, brightness: Double = 1, harmony: Harmony) {
         self.hue = Self.wrappedHue(hue)
         self.saturation = Self.unit(saturation)
         self.brightness = Self.unit(brightness)
-        self.colorCount = min(max(colorCount, 1), 3)
+        self.harmony = harmony
     }
 
     init(color: NSColor, appearance: Appearance) {
@@ -249,7 +280,9 @@ struct ThemePalette: Codable, Equatable {
         let saturation: Double
         if appearance.isDark {
             let colorSaturation = min(Double(color.saturationComponent), Self.darkInnerSaturation)
-            let innerRadius = Self.darkInnerRadius * (1 - sqrt(1 - colorSaturation / Self.darkInnerSaturation))
+            // Invert the squared smoothstep used by the inner field.
+            let innerMix = sqrt(colorSaturation / Self.darkInnerSaturation)
+            let innerRadius = Self.darkInnerRadius * (0.5 - sin(asin(1 - 2 * innerMix) / 3))
             let outerRadius = Self.unit(Self.darkInnerRadius + (1 - Self.darkInnerRadius)
                 * sqrt((Self.darkInnerSaturation - colorSaturation) / (Self.darkInnerSaturation - Self.darkOuterSaturation)))
             // Two radii can share a saturation. Prefer the outer one when it can
@@ -271,14 +304,28 @@ struct ThemePalette: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         let storedVersion = try values.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        let storedColorCount = try values.decode(Int.self, forKey: .colorCount)
+        let storedHarmony = try values.decodeIfPresent(String.self, forKey: .harmony)
+        let harmony = storedHarmony.flatMap(Harmony.init(rawValue:))
+            ?? Harmony(colorCount: storedColorCount)
         self.init(
             hue: try values.decode(Double.self, forKey: .hue),
             saturation: try values.decode(Double.self, forKey: .saturation),
             // The removed editor slider finishes at its rightmost endpoint.
             // Upgrade older saved palettes before any window resolves them.
             brightness: storedVersion < 2 ? 1 : try values.decode(Double.self, forKey: .brightness),
-            colorCount: try values.decode(Int.self, forKey: .colorCount)
+            harmony: harmony
         )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(version, forKey: .version)
+        try values.encode(hue, forKey: .hue)
+        try values.encode(saturation, forKey: .saturation)
+        try values.encode(brightness, forKey: .brightness)
+        try values.encode(colorCount, forKey: .colorCount)
+        try values.encode(harmony, forKey: .harmony)
     }
 
     func hue(at index: Int) -> Double {
@@ -286,14 +333,17 @@ struct ThemePalette: Codable, Equatable {
     }
 
     private func hueOffset(at index: Int) -> Double {
-        if colorCount == 3 {
+        switch harmony {
+        case .single: return 0
+        case .analogous: return Double(index) * 45 / 360
+        case .complementary: return Double(index) / 2
+        case .splitComplementary:
             switch index {
             case 1: return 150 / 360
             case 2: return 210 / 360
             default: return 0
             }
         }
-        return Double(index) / Double(colorCount)
     }
 
     func colors(for appearance: Appearance) -> [NSColor] {
@@ -307,14 +357,15 @@ struct ThemePalette: Codable, Equatable {
         return sample.resolvedColor(hue: sample.hue, appearance: appearance)
     }
 
-    private static let darkInnerRadius = 0.2
+    private static let darkInnerRadius = 0.4
     private static let darkInnerSaturation = 0.9
     private static let darkOuterSaturation = 0.45
 
     private var darkSaturation: Double {
         if saturation <= Self.darkInnerRadius {
-            let remaining = 1 - saturation / Self.darkInnerRadius
-            return Self.darkInnerSaturation * (1 - remaining * remaining)
+            let progress = saturation / Self.darkInnerRadius
+            let smooth = progress * progress * (3 - 2 * progress)
+            return Self.darkInnerSaturation * smooth * smooth
         }
         let progress = (saturation - Self.darkInnerRadius) / (1 - Self.darkInnerRadius)
         return Self.darkInnerSaturation
@@ -333,11 +384,15 @@ struct ThemePalette: Codable, Equatable {
     }
 
     func settingColorCount(_ count: Int) -> ThemePalette {
-        ThemePalette(hue: hue, saturation: saturation, brightness: brightness, colorCount: count)
+        settingHarmony(Harmony(colorCount: count))
+    }
+
+    func settingHarmony(_ value: Harmony) -> ThemePalette {
+        ThemePalette(hue: hue, saturation: saturation, brightness: brightness, harmony: value)
     }
 
     func settingBrightness(_ value: Double) -> ThemePalette {
-        ThemePalette(hue: hue, saturation: saturation, brightness: value, colorCount: colorCount)
+        ThemePalette(hue: hue, saturation: saturation, brightness: value, harmony: harmony)
     }
 
     /// The supplied Figma field has nonuniform angular color stops. Map hue
@@ -359,7 +414,7 @@ struct ThemePalette: Codable, Equatable {
         // Interaction snaps within about 6 points in the 244-point field.
         // Color sampling keeps the continuous mapping by leaving this disabled.
         if snappingToCenter, radius <= 0.025 {
-            return ThemePalette(hue: hue, saturation: 0, brightness: brightness, colorCount: colorCount)
+            return ThemePalette(hue: hue, saturation: 0, brightness: brightness, harmony: harmony)
         }
         // Retain the hue at the white center, where angle is undefined.
         let angle = Self.wrappedHue((atan2(y, x) + .pi / 4) / (2 * .pi))
@@ -369,12 +424,12 @@ struct ThemePalette: Codable, Equatable {
             hue: movedHue - hueOffset(at: index),
             saturation: radius / Self.fieldRadius,
             brightness: brightness,
-            colorCount: colorCount
+            harmony: harmony
         )
     }
 
     func rotatingHue(by delta: Double) -> ThemePalette {
-        ThemePalette(hue: hue + delta, saturation: saturation, brightness: brightness, colorCount: colorCount)
+        ThemePalette(hue: hue + delta, saturation: saturation, brightness: brightness, harmony: harmony)
     }
 
     private static func interpolate(_ value: Double, from source: [Double], to target: [Double]) -> Double {
@@ -408,6 +463,23 @@ struct ThemePalette: Codable, Equatable {
 
 /// Theme definition backed by semantic color roles.
 public class Theme: NSObject {
+    /// Shared by native internal-page chrome and extension NTP/Chat surfaces.
+    /// WindowThemeMessageRouter forwards this value to extension CSS.
+    static let extensionSurfaceScrimOpacity: CGFloat = 0.80
+
+    func extensionSurfaceBackground(for appearance: Appearance) -> NSColor {
+        guard appearance.isDark else { return .white }
+        guard let primary = color(for: .windowOverlayBackground, appearance: appearance)
+            .usingColorSpace(.sRGB) else { return .black }
+        let visible = 1 - Self.extensionSurfaceScrimOpacity
+        return NSColor(
+            srgbRed: primary.redComponent * visible,
+            green: primary.greenComponent * visible,
+            blue: primary.blueComponent * visible,
+            alpha: 1
+        )
+    }
+
     public let id: String
     public let name: String
     private var colorPalette: [ColorRole: ColorPair]

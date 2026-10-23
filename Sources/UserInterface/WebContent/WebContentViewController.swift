@@ -396,7 +396,9 @@ class WebContentViewController: NSViewController {
 
     /// The page card's and left container's fills (see `hasContentSurface`).
     private func applyFills() {
-        splitViewContainer.setFill(ThemedColor.contentOverlayBackground.cgColorMapperOptional,
+        let frameBackground: ThemedColor = isPageCardSeparated
+            ? .separatedContentFrameBackground : .contentOverlayBackground
+        splitViewContainer.setFill(frameBackground.cgColorMapperOptional,
                                    overContentSurface: hasContentSurface)
         leftContainerView.setFill(NSColor.white <> NSColor.black,
                                   overContentSurface: hasContentSurface)
@@ -1430,6 +1432,7 @@ class WebContentViewController: NSViewController {
 
     private func updateContentForTab(_ tab: Tab?) {
         guard let tab else { return }
+        hostView.enclosesFractionalBounds = tab.isNTP
         defer {
             updateLoginRequiredPresentation(for: tab)
             updateHeaderAndBookmarkBarSeparators()
@@ -2208,7 +2211,7 @@ class WebContentViewController: NSViewController {
         hostView.subviews.forEach { $0.removeFromSuperview() }
         contentView.translatesAutoresizingMaskIntoConstraints = true
         contentView.autoresizingMask = []
-        contentView.frame = hostView.bounds
+        contentView.frame = hostView.contentFrame
         hostView.addSubview(contentView)
 
         if let tab = associatedTab, tab.devToolsAttached {
@@ -2968,6 +2971,7 @@ class WebContentViewController: NSViewController {
         appliedPageCardSeparated = shouldSeparatePageCard
         appliedPanelDockedCorners = panelDocked
         isPageCardSeparated = shouldSeparatePageCard
+        applyFills()
 
         if shouldSeparatePageCard {
             leftContainerView.layer?.borderWidth = 1
@@ -3571,6 +3575,16 @@ extension NSView {
 /// PlusL match, and exits without further work.
 class WebContentHostView: NSView {
     var isFrameSyncPaused = false
+    var enclosesFractionalBounds = false {
+        didSet {
+            if oldValue != enclosesFractionalBounds { needsLayout = true }
+        }
+    }
+
+    /// Chromium sizes its viewport in whole DIPs. New Tab covers fractional
+    /// AppKit bounds rather than leaving an unpainted strip at the right or bottom.
+    /// The host's existing clip keeps the page aligned with the native header.
+    var contentFrame: CGRect { enclosesFractionalBounds ? bounds.integral : bounds }
 
     /// Underlying string value of Apple's `kCAFilterPlusL` (Plus Lighter
     /// additive blend, declared in `<QuartzCore/CALayer.h>`). The constant
@@ -3651,7 +3665,7 @@ class WebContentHostView: NSView {
     override func layout() {
         super.layout()
         guard !isFrameSyncPaused else { return }
-        let target = bounds
+        let target = contentFrame
         for subview in subviews where subview.translatesAutoresizingMaskIntoConstraints {
             if subview.frame != target {
                 subview.frame = target

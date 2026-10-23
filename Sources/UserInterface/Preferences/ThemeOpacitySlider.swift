@@ -415,7 +415,7 @@ struct SpaceThemeEditorView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var palette: ThemePalette
     @State private var draggedHandle: Int?
-    @State private var hoveredColorCount: Int?
+    @State private var hoveredHarmony: ThemePalette.Harmony?
     private let storeIdentifier: UUID?
     /// New Spaces edit the form's draft until creation commits it.
     private let draftPalette: Binding<ThemePalette>?
@@ -502,8 +502,8 @@ struct SpaceThemeEditorView: View {
             }
             Spacer(minLength: 0)
             HStack(spacing: 0) {
-                ForEach(1...3, id: \.self) { count in
-                    colorCountButton(count)
+                ForEach(ThemePalette.Harmony.allCases, id: \.self) { harmony in
+                    harmonyButton(harmony)
                 }
             }
             .padding(1)
@@ -514,54 +514,64 @@ struct SpaceThemeEditorView: View {
         .frame(height: 24)
     }
 
-    private func colorCountButton(_ count: Int) -> some View {
-        let selected = palette.colorCount == count
+    private func harmonyButton(_ harmony: ThemePalette.Harmony) -> some View {
+        let selected = palette.harmony == harmony
+        let mode = appearance.isDark ? "dark" : "light"
         let label: String
-        switch count {
-        case 1:
+        let assetName: String
+        switch harmony {
+        case .single:
             label = NSLocalizedString(
                 "theme.editor.singleColor", value: "Single color",
                 comment: "Theme editor - select a palette with one color"
             )
-        case 2:
+            assetName = "theme-editor-one-ring-" + mode
+        case .analogous:
+            label = NSLocalizedString(
+                "theme.editor.analogousColors", value: "Analogous colors",
+                comment: "Theme editor - select two linked neighboring colors separated by 45 degrees"
+            )
+            assetName = "theme-editor-analogous-" + mode
+        case .complementary:
             label = NSLocalizedString(
                 "theme.editor.twoColors", value: "Two colors",
                 comment: "Theme editor - select two linked complementary colors"
             )
-        default:
+            assetName = "theme-editor-count-two-" + mode
+        case .splitComplementary:
             label = NSLocalizedString(
                 "theme.editor.threeColors", value: "Three colors",
                 comment: "Theme editor - select three linked split complementary colors"
             )
+            assetName = "theme-editor-count-three-" + mode
         }
-        let mode = appearance.isDark ? "dark" : "light"
         return Button {
-            update(palette.settingColorCount(count))
+            update(palette.settingHarmony(harmony))
         } label: {
             ZStack {
-                if count == 1 {
-                    Image("theme-editor-one-ring-" + mode)
+                Image(assetName)
+                if harmony == .single {
                     Image("theme-editor-one-dot")
                         .renderingMode(.template)
                         .foregroundStyle(Color.primary)
-                } else {
-                    Image("theme-editor-count-" + (count == 2 ? "two-" : "three-") + mode)
                 }
             }
             .frame(width: 22, height: 22)
             .background {
                 Circle().fill(Color.primary.opacity(selected
                     ? (appearance.isDark ? 0.2 : 0.06)
-                    : (hoveredColorCount == count ? 0.04 : 0)))
+                    : (hoveredHarmony == harmony ? 0.04 : 0)))
             }
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .onHover { hoveredColorCount = $0 ? count : nil }
+        .onHover { hoveredHarmony = $0 ? harmony : nil }
         .anchorPreference(key: ThemeEditorControlBoundsKey.self, value: .bounds) { [$0] }
         .help(label)
         .accessibilityLabel(label)
-        .accessibilityIdentifier("theme.editor.colorCount.\(count)")
+        .accessibilityIdentifier(harmony == .analogous
+            ? "theme.editor.harmony.analogous"
+            : "theme.editor.colorCount.\(harmony.colorCount)")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 

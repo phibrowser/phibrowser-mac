@@ -71,6 +71,13 @@ a remembered decision can correctly suppress presentation.
 
 ### Content surface
 
+On New Tab, `WebContentHostView` fills fractional AppKit bounds with an enclosing
+whole-DIP content frame, both at mount and during layout. Chromium's integer viewport
+otherwise rounds the page down, leaving a narrow unpainted strip beside the
+native header when a sidebar divider sits on a half point. The host keeps its
+original clipping bounds. Navigating away restores exact host-sized frames;
+manually docked DevTools bounds remain exempt from the automatic frame sync.
+
 With the framework's `PhiContentSurface` feature on, Chromium hands each hosted
 session or standalone Incognito window one content surface view right after
 creating its window (`contentSurfaceCreated`, through `BrowserState` like the

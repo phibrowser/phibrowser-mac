@@ -17,6 +17,8 @@ final class WindowThemeMessageRouter {
     private struct ThemePayload: Encodable {
         let name: String
         let windowBackground: ColorPayload
+        let navigationColors: [ColorPayload]
+        let surfaceScrimOpacity: CGFloat
         let contentBackground: ColorPayload
         let accent: ColorPayload
         let actionAccent: ColorPayload
@@ -141,6 +143,8 @@ final class WindowThemeMessageRouter {
         ThemePayload(
             name: theme.name,
             windowBackground: colorPayload(for: .windowOverlayBackground, in: theme),
+            navigationColors: navigationColorsPayload(for: theme),
+            surfaceScrimOpacity: Theme.extensionSurfaceScrimOpacity,
             contentBackground: colorPayload(for: .windowBackground, in: theme),
             accent: colorPayload(for: .themeColor, in: theme),
             actionAccent: colorPayload(for: .extensionActonColor, in: theme)
@@ -152,6 +156,15 @@ final class WindowThemeMessageRouter {
             light: theme.color(for: role, appearance: .light).hexRGBString,
             dark: theme.color(for: role, appearance: .dark).hexRGBString
         )
+    }
+
+    private func navigationColorsPayload(for theme: Theme) -> [ColorPayload] {
+        guard let palette = theme.navigationPalette else {
+            return [colorPayload(for: .windowOverlayBackground, in: theme)]
+        }
+        return zip(palette.colors(for: .light), palette.colors(for: .dark)).map { light, dark in
+            ColorPayload(light: light.hexRGBString, dark: dark.hexRGBString)
+        }
     }
 
     private static func currentSelectionTintEnabled() -> Bool {

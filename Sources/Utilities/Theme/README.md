@@ -9,16 +9,21 @@ A theme framework for macOS that supports runtime theme switching and system lig
 The Space theme editor stores a local `ThemePalette` in account preferences.
 `SpaceManager.resolvedTheme` gives it precedence over legacy saturation/brightness
 adjustments; choosing a preset clears this override. The palette contains one
-anchor hue, shared saturation/brightness and a count of one to three colors.
-Two colors stay complementary (180 degrees); three use split complementary
+anchor hue, shared saturation/brightness and a selected harmony. Analogous mode
+links two neighboring colors 45 degrees apart. Complementary mode links two
+opposite colors (180 degrees); three use split complementary
 colors at 150 and 210 degrees from the primary hue. The secondary colors sit
 30 degrees to either side of the primary's opposite hue. Saved three-color
 palettes retain their primary hue and resolve their neighbors with the current rule.
 Moving any handle updates the anchor, preserving the harmony across hue wrap.
 `Theme.navigationPalette` travels with window-scoped theme copies. Navigation
 backdrops opt into its gradient through `ColoredVisualEffectView.usesThemePalette`;
-other semantic surfaces retain solid colors. The default new-tab URL header uses
-the primary palette color. Ordinary page headers continue to follow Chromium's
+other semantic surfaces retain solid colors. Native headers above New Tab,
+internal pages and empty states use `Theme.extensionSurfaceBackground(for:)`:
+white in light appearance, or the primary navigation color under a black scrim
+in dark appearance. `Theme.extensionSurfaceScrimOpacity` is the shared strength
+(currently 80%). `WindowThemeMessageRouter` forwards it as `surfaceScrimOpacity`
+so extension NTP and browser Chat surfaces use the same value. Ordinary page headers continue to follow Chromium's
 page color, compositing translucent colors over the original theme background;
 palettes do not replace the shared `windowBackground` role. Palette records are
 local and are not part of the existing Space sync payload or global theme snapshots.
@@ -27,10 +32,27 @@ point gradient layer. Three colors use a quadratic blend with squared progress:
 the primary dominates the upper area, both supporting colors overlap below it,
 and the third reaches its full color at the bottom. This avoids separate color
 bands and abrupt changes in the transition rate.
+The `getWindowTheme` response and `windowThemechanged` event include
+`navigationColors`: one to three ordered `{ light, dark }` colors from the
+window's resolved navigation palette. Preset themes without a palette emit
+their single `windowOverlayBackground` color. Extension New Tab backgrounds
+use these endpoints to reproduce the navigation blend beneath a black scrim.
 Editor handles show the resolved color at full opacity.
 Window chrome uses a theme-color overlay at 80% opacity above the macOS
 visual-effect material. This alpha is shared by solid colors, gradients and
 restored theme snapshots; page backgrounds remain fully opaque.
+When Chat or a docked panel separates the page into inset cards, their shared
+frame uses `ThemedColor.separatedContentFrameBackground`: 60% opaque black in
+dark appearance and 60% opaque white in light appearance. The
+page container's content-surface backdrop follows the same separation state
+so the frame is painted once, including while Chat collapses or panels hand off.
+The embedded Chat card's native backing is clear and its outer border is removed in both appearances so its
+transparent extension document reveals the shared frame.
+The Chat tab also owns an `EmbeddedChatCanvas` session using the existing
+app-owned DevTools transport. `Emulation.setDefaultBackgroundColorOverride`
+clears Chromium's otherwise opaque default canvas. The session survives pane
+reparenting, follows wrapper replacement, retries after document load and closes
+with its tab. CSS transparency alone cannot reveal the native frame.
 Both fields sample `ThemePalette.color(at:appearance:)`, sharing the handles'
 coordinate mapping, saturation and brightness resolution. Presentation applies a
 linear-light Gaussian blur and modest saturation/contrast reduction to soften
@@ -48,7 +70,8 @@ their selected backgrounds.
 
 The editor's light/dark buttons use the existing application appearance choice.
 The compact editor has no brightness slider or randomizer.
-The bottom toolbar selects one, two or three colors directly, with appearance
+The bottom toolbar selects single, analogous, complementary or split-complementary
+colors directly, with appearance
 controls on the left. Pointer edits within approximately 6 points of the center
 snap every linked handle to neutral, preserving the anchor hue, brightness and
 selected harmony. The field's color sampling remains continuous and does not
@@ -56,9 +79,16 @@ apply the interaction-only snap.
 Version 1 palettes
 decode at maximum brightness, the removed slider's rightmost endpoint; version 2
 records retain explicit brightness edits from the existing settings panes.
+Version 3 records also persist the harmony; older records retain their existing
+single, complementary or split-complementary mode based on color count.
 In dark appearance, the stored saturation controls radial position. Resolved HSB
-saturation rises continuously from zero at the center to 90% at 20% of the radius,
+saturation rises continuously from zero at the center to 90% at 40% of the radius,
 then falls to 45% at the edge, with a smooth peak between the two curves.
+The inner branch uses squared smoothstep so low-saturation dark colors occupy
+a useful area instead of clustering at the center: saturation is about 2.2%
+at 10% radius and 22.5% at 20% radius, with zero slope at both inner endpoints.
+Field sampling, handle colors and color import share the same curve and its
+analytic inverse radius mapping.
 At maximum palette brightness, HSB brightness rises from 36% at the neutral center
 to 90% at the edge. Color import prefers the outer radius when both saturation
 branches can represent the input brightness.

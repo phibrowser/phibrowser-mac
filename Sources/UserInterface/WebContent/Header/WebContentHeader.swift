@@ -452,14 +452,21 @@ class WebContentHeader: NSView {
             && owningBrowserState?.isInPlaceholderMode != true
             && owningBrowserState?.groupOverviewState == nil
             && tab.map { owningBrowserState?.splitGroup(forTabId: $0.guid) == nil } == true
-        let usesNewTabPalette = canApplyPageStyle && tab?.isNTP == true
-        let pageBackground = canApplyPageStyle && !usesNewTabPalette
+        let usesExtensionSurface = tab == nil
+            || tab?.isNTP == true
+            || tab?.url?.isLocalUrlString == true
+            || tab?.hasWebContent == false
+            || tab?.crashState != nil
+            || BookmarkManagerRoute.matches(tab?.url)
+            || owningBrowserState?.isInPlaceholderMode == true
+            || owningBrowserState?.groupOverviewState != nil
+        let pageBackground = canApplyPageStyle && !usesExtensionSurface
             ? tab?.pageColor.map { Self.compositePageColor($0, over: fallback) }
             : nil
-        // The palette belongs to default new-tab chrome. Ordinary pages keep
-        // their reported color and composite over the unmodified theme surface.
-        let background = usesNewTabPalette
-            ? theme.navigationPalette?.colors(for: fallbackAppearance).first?.withAlphaComponent(1)
+        // Internal-page chrome meets the top of the shared NTP/Chat surface.
+        // Web pages retain their own reported color and original fallback.
+        let background = usesExtensionSurface
+            ? theme.extensionSurfaceBackground(for: fallbackAppearance)
             : pageBackground
         let pageAppearance: Appearance? = pageBackground.map {
             $0.isLight() ? .light : .dark

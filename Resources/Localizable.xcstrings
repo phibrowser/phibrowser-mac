@@ -126158,6 +126158,18 @@
         }
       }
     },
+    "theme.editor.analogousColors" : {
+      "comment" : "Theme editor - select two linked neighboring colors separated by 45 degrees",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analogous colors"
+          }
+        }
+      }
+    },
     "theme.editor.colorHandle" : {
       "comment" : "Theme editor - accessible color handle label; placeholder is the color number, from one to three",
       "extractionState" : "manual",

@@ -46,6 +46,13 @@ public extension ThemedColor {
         }
     }
 
+    /// Shared frame around separated page and Chat/panel cards.
+    static let separatedContentFrameBackground = ThemedColor { _, appearance in
+        appearance.isDark
+            ? NSColor.black.withAlphaComponent(0.60)
+            : NSColor.white.withAlphaComponent(0.60)
+    }
+
     /// Background for tabs in the temporary multi-selection (excluding the active tab).
     /// Pure uses a relative neutral overlay so the selection stays visible
     /// across its adjustable light-background brightness range.

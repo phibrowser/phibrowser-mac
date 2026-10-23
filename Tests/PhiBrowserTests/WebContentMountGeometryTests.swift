@@ -19,6 +19,94 @@ final class WebContentMountGeometryTests: XCTestCase {
     private var tempDirectories: [URL] = []
     private var windows: [NSWindow] = []
 
+    func testFractionalHostBoundsKeepTheWholePageAreaCovered() {
+        let host = WebContentHostView(frame: NSRect(x: 0, y: 0, width: 800.5, height: 600.5))
+        host.enclosesFractionalBounds = true
+        let page = NSView()
+        page.translatesAutoresizingMaskIntoConstraints = true
+        page.frame = host.contentFrame
+        host.addSubview(page)
+
+        XCTAssertEqual(page.frame.size, NSSize(width: 801, height: 601))
+        XCTAssertTrue(page.frame.contains(host.bounds))
+
+        host.setFrameSize(NSSize(width: 700.5, height: 500.5))
+        host.layout()
+        XCTAssertEqual(page.frame.size, NSSize(width: 701, height: 501))
+        XCTAssertTrue(page.frame.contains(host.bounds))
+
+        host.enclosesFractionalBounds = false
+        host.layout()
+        XCTAssertEqual(page.frame, host.bounds)
+
+        host.enclosesFractionalBounds = true
+
+        host.setFrameSize(NSSize(width: 700, height: 500))
+        host.layout()
+        XCTAssertEqual(page.frame, host.bounds)
+    }
+
+    func testFractionalHostDoesNotOverrideManuallyDockedPageBounds() {
+        let host = WebContentHostView(frame: NSRect(x: 0, y: 0, width: 800.5, height: 600.5))
+        host.enclosesFractionalBounds = true
+        let page = NSView(frame: NSRect(x: 0, y: 0, width: 500, height: 600))
+        host.addSubview(page)
+        host.isFrameSyncPaused = true
+        let dockedFrame = page.frame
+
+        host.layout()
+
+        XCTAssertEqual(page.frame, dockedFrame)
+    }
+
+    func testSharedChatFrameUsesTranslucentFillInBothAppearances() throws {
+        let (fixture, controller, _) = try makeHandoffFixture(chatExpanded: true)
+        let context = fixture.state.themeContext
+        context.mirrorsSharedAppearance = false
+        context.mirrorsSharedTheme = false
+        // This fixture has a plain NSWindow rather than a browser window controller.
+        fixture.container.view.subtreeThemeSource = context
+        controller.hasContentSurface = true
+        controller.hasContentSurface = false
+        context.setUserAppearanceChoice(.dark)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        func assertFill(_ expected: NSColor, file: StaticString = #filePath, line: UInt = #line) {
+            guard let cgColor = controller.pageCardView.layer?.backgroundColor,
+                  let actual = NSColor(cgColor: cgColor)?.usingColorSpace(.sRGB),
+                  let expected = expected.usingColorSpace(.sRGB) else {
+                XCTFail("Expected a shared frame fill", file: file, line: line)
+                return
+            }
+            XCTAssertEqual(actual.redComponent, expected.redComponent, accuracy: 0.001, file: file, line: line)
+            XCTAssertEqual(actual.greenComponent, expected.greenComponent, accuracy: 0.001, file: file, line: line)
+            XCTAssertEqual(actual.blueComponent, expected.blueComponent, accuracy: 0.001, file: file, line: line)
+            XCTAssertEqual(actual.alphaComponent, expected.alphaComponent, accuracy: 0.001, file: file, line: line)
+        }
+
+        XCTAssertTrue(controller.isPageCardSeparated)
+        assertFill(.black.withAlphaComponent(0.60))
+        context.setUserAppearanceChoice(.light)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        assertFill(.white.withAlphaComponent(0.60))
+        context.setUserAppearanceChoice(.dark)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        assertFill(.black.withAlphaComponent(0.60))
+
+        // Surface-backed pages must leave the frame to the backing below them.
+        controller.hasContentSurface = true
+        XCTAssertNil(controller.pageCardView.layer?.backgroundColor)
+        controller.hasContentSurface = false
+        assertFill(.black.withAlphaComponent(0.60))
+
+        fixture.state.toggleAIChat(true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.7))
+        XCTAssertFalse(controller.isPageCardSeparated)
+        assertFill(ThemedColor.contentOverlayBackground.resolve(
+            theme: context.currentTheme, appearance: .dark
+        ))
+    }
+
     override func tearDownWithError() throws {
         WebContentContainerViewController.panelSlideDurationForTesting = nil
         windows.forEach { $0.close() }

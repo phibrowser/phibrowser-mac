@@ -53,14 +53,31 @@ change and syncs as an ordinary host string.
 2. Authentication resume and deep links are handled as before.
 3. Once rules are loaded, `forwardOpenURLsToChromium` gives every URL whose
    sender matches an App rule to that rule:
-   - a Space or Incognito target opens through
+   - "Ask every time" is checked first, whatever the target, and shows the
+     Space chooser with the rule's target (Kiosk included) as default;
+   - otherwise a Space or Incognito target opens through
      `SpaceManager.openExternalURLs(_:inURLRuleTargetSpaceId:)`;
-   - "Ask every time" shows the Space chooser with the rule's target as default;
-   - a Kiosk target opens a new Kiosk; if that fails, the URL continues to
-     step 4.
+   - otherwise a Kiosk target opens a new Kiosk; if that fails, the URL
+     continues to step 4.
 4. Every other URL follows the existing path: the external-links-in-Kiosk
-   preference with host rules evaluated in Swift, or a direct forward to
-   Chromium, which routes it by host rules.
+   preference with host rules evaluated in Swift
+   (`ExternalKioskURLRuleResolver`), or a direct forward to Chromium, which
+   routes it by host rules. The Swift resolver also checks "Ask every time"
+   before the target, so a Kiosk rule set to ask prompts instead of opening a
+   Kiosk silently.
+
+When an external ask has no window to host the chooser, the URL opens in the
+rule's default destination: a new Kiosk for a Kiosk default, otherwise that
+Space.
+
+Ask prompts queue per source window in the order the URLs arrived and are
+shown one at a time; answering or declining one presents the next. This holds
+for external opens (a batch of links, or a coalesced cold-launch batch) and for
+in-browser navigations asked by Chromium while a chooser is already up. A
+queued prompt is never replaced. If the source window closes, its queued
+prompts are dropped with a warning log, because nothing is left to host them.
+If the Space leaves a hosted shell unanswered, the open prompt and every queued
+one resolve as declined (the URL stays in its Space).
 
 Several App rules for one bundle id are ordered by lower sort order, then by the
 same account-level tie-break host rules use. A rule whose target Space is
@@ -69,7 +86,10 @@ deleted or hidden is ignored, as it is for the Chromium table.
 ## Precedence and exemption
 
 For an external open, an App rule wins over every host and URL rule and over
-the Kiosk preference. The tab it opens is created with
+the Kiosk preference. Within any rule, "Ask every time" takes precedence over
+the rule's target, Kiosk included: the target is only the chooser's default.
+Swift (App rules and `ExternalKioskURLRuleResolver` for host rules) matches
+Chromium's `PhiURLRouter`, which checks ask before the Kiosk target. The tab it opens is created with
 `openTabBypassingSpaceRouting`, a one-shot exemption, so Chromium's host rules
 do not re-route it. Later navigations in that tab are routed normally.
 

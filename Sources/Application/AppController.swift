@@ -816,7 +816,15 @@ import PostHog
             }
             let urlSummary = "\(request.url.scheme ?? "unknown")://"
                 + "\(request.url.host ?? "no-host")"
-            if rule.spaceId == SpaceManager.kioskRuleTargetId {
+            switch ExternalKioskURLRuleResolver.sourceAppRuleDecision(for: rule) {
+            case let .ask(defaultSpaceId):
+                AppLogInfo(
+                    "[ExternalLinks] App rule sender=\(bundleId) url=\(urlSummary) "
+                        + "decision=ask:\(defaultSpaceId)"
+                )
+                askForExternalURLRuleDestination(request.url,
+                                                  defaultSpaceId: defaultSpaceId)
+            case .useKiosk, .useKioskWithSpaceIdentity:
                 AppLogInfo(
                     "[ExternalLinks] App rule sender=\(bundleId) url=\(urlSummary) "
                         + "decision=kiosk"
@@ -829,19 +837,12 @@ import PostHog
                     )
                     unmatched.append(request.url)
                 }
-            } else if rule.askBeforeRouting {
+            case let .openInSpace(targetSpaceId):
                 AppLogInfo(
                     "[ExternalLinks] App rule sender=\(bundleId) url=\(urlSummary) "
-                        + "decision=ask:\(rule.spaceId)"
+                        + "decision=openInSpace:\(targetSpaceId)"
                 )
-                askForExternalURLRuleDestination(request.url,
-                                                  defaultSpaceId: rule.spaceId)
-            } else {
-                AppLogInfo(
-                    "[ExternalLinks] App rule sender=\(bundleId) url=\(urlSummary) "
-                        + "decision=openInSpace:\(rule.spaceId)"
-                )
-                urlsByTargetSpaceId[rule.spaceId, default: []]
+                urlsByTargetSpaceId[targetSpaceId, default: []]
                     .append(request.url.absoluteString)
             }
         }
@@ -970,13 +971,26 @@ import PostHog
             $0.isPresentedOrLegacy && $0.window?.isVisible == true
         }) ?? controllers.first
         guard let sourceController else {
-            // There is no window to host the chooser. Preserve the rule's
-            // non-Kiosk precedence by using its default Space destination.
+            // There is no window to host the chooser. Use the rule's default
+            // destination: a Kiosk default opens a Kiosk (the Space opener
+            // rejects the Kiosk id), any other default opens that Space.
             AppLogWarn(
                 "[ExternalLinks] Ask rule has no source window; "
-                    + "opening in default Space \(defaultSpaceId)"
+                    + "opening in default destination \(defaultSpaceId)"
             )
             MainActor.assumeIsolated {
+                if defaultSpaceId == SpaceManager.kioskRuleTargetId {
+                    if !openNewKioskWindow(url: url.absoluteString,
+                                           bringToFront: false) {
+                        AppLogWarn(
+                            "[ExternalLinks] Ask rule Kiosk default failed; "
+                                + "using the ordinary external-open path"
+                        )
+                        forwardOpenURLsDirectlyToChromium(application: NSApp,
+                                                          urls: [url])
+                    }
+                    return
+                }
                 SpaceManager.shared.openExternalURLs(
                     [url.absoluteString],
                     inURLRuleTargetSpaceId: defaultSpaceId

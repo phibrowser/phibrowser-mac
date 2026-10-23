@@ -254,6 +254,43 @@ final class URLRouterTests: XCTestCase {
         )
     }
 
+    /// "Ask every time" keeps the previous target, so an edited Kiosk rule
+    /// must still prompt (with Kiosk as the default) rather than open a Kiosk
+    /// silently. Matches Chromium's router, which checks ask first.
+    func testExternalKioskAskBeatsKioskTarget() {
+        let rules = [
+            rule(
+                space: LocalStore.kioskURLRuleTargetId,
+                host: "kiosk.example",
+                askBeforeRouting: true
+            ),
+        ]
+
+        XCTAssertEqual(
+            ExternalKioskURLRuleResolver.decision(
+                for: URL(string: "https://kiosk.example/")!,
+                rules: rules
+            ),
+            .ask(defaultSpaceId: LocalStore.kioskURLRuleTargetId)
+        )
+    }
+
+    func testSourceAppRuleDecisionChecksAskBeforeTarget() {
+        let kiosk = LocalStore.kioskURLRuleTargetId
+        func decide(_ space: String, ask: Bool) -> ExternalKioskURLRuleResolver.Decision {
+            let r = rule(space: space,
+                         host: SpaceRoutingRule.sourceAppHost(bundleId: "com.example.app"),
+                         askBeforeRouting: ask)
+            return ExternalKioskURLRuleResolver.sourceAppRuleDecision(for: r)
+        }
+        XCTAssertEqual(decide(kiosk, ask: true), .ask(defaultSpaceId: kiosk))
+        XCTAssertEqual(decide(kiosk, ask: false), .useKiosk)
+        XCTAssertEqual(decide("work", ask: true), .ask(defaultSpaceId: "work"))
+        XCTAssertEqual(decide("work", ask: false), .openInSpace("work"))
+        XCTAssertEqual(decide(SpaceManager.incognitoRuleTargetId, ask: false),
+                       .openInSpace(SpaceManager.incognitoRuleTargetId))
+    }
+
     func testExternalKioskPreservesIncognitoRuleRouting() {
         let rules = [
             rule(

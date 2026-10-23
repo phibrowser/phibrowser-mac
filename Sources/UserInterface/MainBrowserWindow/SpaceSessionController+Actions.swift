@@ -128,7 +128,10 @@ extension SpaceSessionController {
                 if browserState.groupOverviewState != nil {
                     omniBoxContainerViewController?.omniBoxController?
                         .updateStatusForGroupOverview()
-                } else if let tab = browserState.focusingTab {
+                } else if let tab = browserState.pageCommandTarget {
+                    // The page in front of the user — the peek when one is
+                    // up, else the focused tab: Cmd+L shows, selects and
+                    // copies its URL, and a submission navigates it.
                     omniBoxContainerViewController?.omniBoxController?.updateStatus(
                         with: tab,
                         suppressAutomaticSearch: true
@@ -148,7 +151,7 @@ extension SpaceSessionController {
                 omniBoxContainerViewController?.omniBoxController?
                     .updateStatusForGroupOverview()
                 omniBoxContainerViewController?.omniBoxController?.requestAtonce(source: .manualRefresh)
-            } else if let tab = browserState.focusingTab {
+            } else if let tab = browserState.pageCommandTarget {
                 omniBoxContainerViewController?.omniBoxController?.updateStatus(
                     with: tab,
                     suppressAutomaticSearch: true

@@ -4275,17 +4275,18 @@ class BrowserState {
     }
 
     /// The page that page-scoped commands act on — Reload, Bookmark, Share,
-    /// Save to Folio, Copy URL, full-page screenshot: the peek on screen in
-    /// front of `focusingTab`, else `focusingTab` itself. A peek's tab is
-    /// never the focused strip tab (its opener stays focused beneath the
-    /// panel), so a command that reads `focusingTab` directly acts on the
-    /// page hidden behind the panel. Every native handler of such a command
-    /// resolves its tab here; Chromium's own page commands (Reload, Stop,
-    /// Zoom, Print, Save Page, View Source, DevTools, Find) get the same
-    /// answer from the presented-peek marker the panel keeps for them
-    /// (`WebContentWrapper.updateIsPeekPresented`). Toolbar controls that
-    /// describe the strip tab (the address bar's reload button) are not
-    /// page commands and keep acting on `focusingTab`.
+    /// Save to Folio, Copy URL, full-page screenshot, and the address-bar
+    /// omnibox (Cmd+L prefills, selects and navigates this page's URL): the
+    /// peek on screen in front of `focusingTab`, else `focusingTab` itself.
+    /// A peek's tab is never the focused strip tab (its opener stays focused
+    /// beneath the panel), so a command that reads `focusingTab` directly
+    /// acts on the page hidden behind the panel. Every native handler of
+    /// such a command resolves its tab here; Chromium's own page commands
+    /// (Reload, Stop, Zoom, Print, Save Page, View Source, DevTools, Find)
+    /// get the same answer from the presented-peek marker the panel keeps
+    /// for them (`WebContentWrapper.updateIsPeekPresented`). Toolbar
+    /// controls that describe the strip tab (the address bar's reload
+    /// button) are not page commands and keep acting on `focusingTab`.
     var pageCommandTarget: Tab? {
         pageCommandTarget(focusingTab: focusingTab)
     }

@@ -35,6 +35,9 @@ class OmniBoxViewModel: ObservableObject {
     /// `opennedFromCurrentTab`, which still describes where the omnibox was
     /// opened from — the Cmd+L toggle reads that.
     private var opensSubmissionInNewTab = false
+    /// The tab an address-bar open describes and a submission navigates:
+    /// the page in front of the user (`BrowserState.pageCommandTarget`), so
+    /// a presented peek's tab rather than the opener behind the panel.
     var currentTab: Tab?
     private var openedFromGroupOverview = false
     private(set) var openTraceSession: OmniBoxTraceSession?
@@ -372,6 +375,20 @@ class OmniBoxViewModel: ObservableObject {
         let disposition = suggestionDisposition(for: suggestion, commandKeyPressed: commandKeyPressed)
         AppLogDebug("omni: select suggestion line: \(suggestion.index), disposition: \(disposition.rawValue)")
         if disposition == .currentTab, let currentTab {
+            // Chromium opens a CURRENT_TAB match in the strip-active tab. A
+            // peek's tab is never strip-active (its opener stays active
+            // beneath the panel), so a submission aimed at the peek would
+            // load into the opener, hidden behind the panel. Navigate the
+            // peeked page directly instead; the match skips Chromium's
+            // shortcut learning, as any native navigation does.
+            if browserState.peekState.peekTab(withId: currentTab.guid) != nil {
+                let url = suggestion.url.isEmpty
+                    ? URLProcessor.processUserInput(state.inputText) : suggestion.url
+                AppLogDebug("omni: navigating presented peek \(currentTab.guid) natively: \(url)")
+                navigateCurrentTab(to: url)
+                finishNavigationAction()
+                return
+            }
             browserState.closePeekForAddressBarNavigation(openerTabId: currentTab.guid)
             browserState.closeReaderOverlayForAddressBarNavigation(originTabId: currentTab.guid)
         }

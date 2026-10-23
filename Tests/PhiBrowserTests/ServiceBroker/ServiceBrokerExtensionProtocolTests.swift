@@ -381,6 +381,7 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             (lexingtonSender, "/ai-gateway/v1/models", .aiGateway, "/v1/models"),
             (kensingtonSender, "/phi-agent/api/health", .phiAgent, "/api/health"),
             (allowedSender, "/pi-agent/api/tasks", .piAgent, "/api/tasks"),
+            (allowedSender, "/sentinel-app/bridge", .sentinelApp, "/bridge"),
         ]
 
         for (sender, path, service, upstreamPath) in cases {
@@ -1497,6 +1498,24 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             events.map { $0["data"] as? String },
             (0..<4).map { Data("delta-\($0)".utf8).base64EncodedString() }
         )
+    }
+
+    func testSidecarManagementWebSocketPreservesRouteAndPinsSender() async throws {
+        let socket = FakeProtocolWebSocket(events: [])
+        let recorder = BrokerWebSocketOpenRecorder()
+        let handler = makeHandler(channelStore: makeStore(webSocket: socket, webSocketOpenRecorder: recorder))
+        let opened = await handler.handle(
+            type: "broker.ws.open",
+            payload: #"{"path":"/sentinel-app/bridge","headers":{"x-phi-extension-id":"forged"}}"#,
+            senderID: allowedSender
+        )
+        XCTAssertNil(opened.error)
+        XCTAssertNotNil(try successResult(opened)["channelId"] as? String)
+        let lastOpen = await recorder.lastOpen()
+        let recorded = try XCTUnwrap(lastOpen)
+        XCTAssertEqual(recorded.path, "/sentinel-app/bridge")
+        XCTAssertEqual(recorded.headers["X-Phi-Extension-ID"], allowedSender)
+        XCTAssertNil(recorded.headers["x-phi-extension-id"])
     }
 
     func testKensingtonCanOpenItsAuthorizedPhiAgentWebSocketPath() async throws {

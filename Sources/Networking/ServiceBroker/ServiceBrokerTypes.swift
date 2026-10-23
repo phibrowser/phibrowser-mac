@@ -12,6 +12,7 @@ enum BrokerService: String, Codable, Sendable {
     case phiMemory = "phi-memory"
     case piAgent = "pi-agent"
     case aiGateway = "ai-gateway"
+    case sentinelApp = "sentinel-app"
     case broker
 }
 

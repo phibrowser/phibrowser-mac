@@ -52,6 +52,34 @@ service or real two-device UI.
 For an OSS build, follow [artifact verification](open-source-build.md#verification).
 Source guards alone do not prove a bundled dependency was excluded.
 
+## Local Canary package preflight
+
+A compile-only artifact is not necessarily launchable against the installed
+engine. For local acceptance, match the native source's downward selectors and
+link against the intended framework **before** assembling the app. A
+command-line search-path override can keep the checkout's shared framework
+untouched; for example, pass this as one argument to `xcodebuild`:
+
+```sh
+'FRAMEWORK_SEARCH_PATHS="/Applications/Phi Canary.app/Contents/Frameworks" $(inherited)'
+```
+
+Check `otool -L` on the resulting native binary/debug dylib. A versioned
+`LC_LOAD_DYLIB` reference to an old engine is not repaired merely by replacing
+the framework directory afterwards. Copy the matching, already signed engine
+into a private test artifact, not into another Chromium source/build tree.
+
+Xcode's debug launch stub may load `Phi Canary.debug.dylib` and
+`__preview.dylib` from `Contents/MacOS`. Sign these with the outer app's Team ID
+before signing the outer app. `codesign --verify --deep --strict` alone does
+not prove that all loaded code has the Team ID required by library validation.
+Never disable library validation to hide this mismatch.
+
+These checks were applied during the management tracer run completed on
+2026-10-20. Its results and restoration evidence are kept separately in
+Sentinel `docs/management-bridge-test-report.md`; a static preflight is still
+not runtime acceptance.
+
 ## Manual acceptance and data isolation
 
 Use disposable test data. A `--user-data-dir` override redirects browser/native

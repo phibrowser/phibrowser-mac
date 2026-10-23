@@ -84,6 +84,34 @@ An older browser, which never reads `transport_mode`, keeps answering
 on both its socket and loopback. Browser and Sentinel therefore ship
 independently in either order.
 
+## Sentinel management route (experimental, 2026-10-19)
+
+`BrokerService.sentinelApp` adds the exact `/sentinel-app/` prefix to
+both HTTP path parsing and logical WebSocket routing. The phase-2 Phi Chat
+tracer uses only WebSocket `/sentinel-app/bridge`; prefix recognition is not a
+promise that Sentinel implements an ordinary HTTP API at that address.
+
+The browser still pins `X-Phi-Extension-ID` to the actual extension sender and
+uses the existing authenticated, account-scoped broker connection. It does not
+hand a socket path or service capability to JavaScript. The management listener
+additionally accepts only the pinned Sidecar ID, so generic broker access for
+Lexington or Kensington is not management authorization. No new native message
+name or protocol version is introduced.
+
+The corresponding Sentinel and api-base changes must be present for this
+experimental route to work. An older browser rejects the unknown prefix; a
+missing listener or unsupported native transport fails rather than selecting
+TCP. Do not interpret a route failure as permission to weaken peer verification.
+
+`ServiceBrokerExtensionProtocolTests` covers the exact HTTP prefix and logical
+WebSocket target/sender pinning. The Canary `build-for-testing` target compiled
+on 2026-10-19; the app-hosted XCTest suite is still unrun. A separately
+authorized run on 2026-10-19 to 2026-10-20 passed the real Phi Chat status read,
+polling-backed events, and concurrent Phi Chat/popup connections through a
+private, matching-154 development-signed app. The installed environment was
+restored afterwards. Exact evidence and untested account/Runner lifecycle
+boundaries are recorded in Sentinel `docs/management-bridge-test-report.md`.
+
 ## Native in-app broker clients
 
 Extensions are not the only broker clients. Every in-app Swift caller of

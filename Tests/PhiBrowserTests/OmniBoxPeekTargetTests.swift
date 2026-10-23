@@ -141,4 +141,100 @@ final class OmniBoxPeekTargetTests: XCTestCase {
         XCTAssertEqual(model.state.inputText, "https://opener.example/a")
         XCTAssertTrue(model.currentTab === state.focusingTab)
     }
+
+    private func drainMainQueue() {
+        let drained = expectation(description: "Main queue drained")
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 1)
+    }
+
+    // MARK: - The peek closing under the omnibox
+
+    /// A peek closing itself (page JS `window.close()`) leaves the opener
+    /// focused, so the container's focus observer never fires; the omnibox
+    /// has lost the page it describes and must go anyway.
+    func testThePeekClosingUnderTheOmniBoxDismissesIt() throws {
+        let (model, state, _, _) = try makePeekedOmniBox()
+        let spy = OmniBoxClearSpy()
+        model.delegate = spy
+
+        state.peekState.removePeek(forOpener: 1)
+        drainMainQueue()
+
+        XCTAssertEqual(spy.clears, 1)
+    }
+
+    /// Another opener's peek coming or going is not this omnibox's business.
+    func testAnotherOpenersPeekClosingLeavesTheOmniBoxUp() throws {
+        let (model, state, _, _) = try makePeekedOmniBox()
+        let spy = OmniBoxClearSpy()
+        model.delegate = spy
+        let (otherOpener, _) = makeTab(3, url: "https://other.example/a")
+        let (otherPeek, _) = makeTab(4, url: "https://other.example/b")
+        state.tabs.append(otherOpener)
+        state.peekState.present(otherPeek, openerTabId: otherOpener.guid)
+        drainMainQueue()
+        XCTAssertEqual(spy.clears, 0)
+
+        state.peekState.removePeek(forOpener: otherOpener.guid)
+        drainMainQueue()
+
+        XCTAssertEqual(spy.clears, 0)
+    }
+
+    /// An omnibox aimed at a strip tab ignores peeks appearing and closing.
+    func testAPeekChangeDoesNotDismissAnOmniBoxAimedAtAStripTab() throws {
+        let (model, state) = try makeModel()
+        let (tab, _) = makeTab(1, url: "https://opener.example/a")
+        state.tabs = [tab]
+        state.focusingTab = tab
+        model.updateStatus(with: state.pageCommandTarget, suppressAutomaticSearch: true)
+        let spy = OmniBoxClearSpy()
+        model.delegate = spy
+        let (peek, _) = makeTab(2, url: "https://peek.example/b")
+
+        state.peekState.present(peek, openerTabId: tab.guid)
+        state.peekState.removePeek(forOpener: tab.guid)
+        drainMainQueue()
+
+        XCTAssertEqual(spy.clears, 0)
+    }
+
+    /// Enter landing before the dismissal sink: the submission is dropped —
+    /// neither the opener behind the vanished panel nor the dead peek is
+    /// navigated — and the omnibox closes as after any submission.
+    func testSubmittingASuggestionAfterThePeekClosedDropsTheSubmission() throws {
+        let (model, state, opener, peek) = try makePeekedOmniBox()
+        model.updateInputText("https://peek.example/c")
+        deliver([urlResult("https://peek.example/c")], query: "https://peek.example/c", to: state)
+        let spy = OmniBoxClearSpy()
+        model.delegate = spy
+        state.peekState.removePeek(forOpener: 1)
+
+        model.handleEnterPressed()
+
+        XCTAssertEqual(peek.urlString, "https://peek.example/b")
+        XCTAssertEqual(opener.urlString, "https://opener.example/a")
+        XCTAssertEqual(spy.clears, 1)
+        drainMainQueue()
+        XCTAssertEqual(spy.clears, 1, "The late dismissal sink must not clear a second time")
+    }
+
+    func testSubmittingTypedTextAfterThePeekClosedDropsTheSubmission() throws {
+        let (model, state, opener, peek) = try makePeekedOmniBox()
+        model.updateInputText("https://peek.example/typed")
+        state.peekState.removePeek(forOpener: 1)
+
+        model.handleEnterPressed()
+
+        XCTAssertEqual(peek.urlString, "https://peek.example/b")
+        XCTAssertEqual(opener.urlString, "https://opener.example/a")
+    }
+}
+
+/// Stands in for the omnibox container: `omniBoxDidClear` is what hides the
+/// overlay.
+private final class OmniBoxClearSpy: OmniBoxActionDelegate {
+    var clears = 0
+    func omniBoxDidClear() { clears += 1 }
 }

@@ -1219,6 +1219,107 @@ final class URLRuleKindTests: XCTestCase {
         assertLossReplayArmed(f)
     }
 
+    // MARK: - Inbound acceptance version (docs/sync.md, "Inbound acceptance version")
+
+    private static let appRuleHost = "app:com.example.mail"
+
+    /// A device upgraded from a build that refused App rules: the gate is open, the shared marker
+    /// "5" already stands past the server's App rule (watermark 3, reachable only from nil), no
+    /// cursor or local row exists for it, and the table either predates the acceptance version
+    /// (0) or is current.
+    private func makeAcceptanceFixture(version: Int) throws -> LossFixture {
+        let spaceStore = drainedSpaceStore()
+        spaceStore.table.spaceSectionEnabled = true
+        spaceStore.table.inboundAcceptanceVersion = version
+        try silenceOtherSections(spaceStore, defaults: defaults)
+        let client = FakePhiSyncClient()
+        client.pagesByMarker = [page([ruleEntity(urlRulePayload(uuid: "r1", host: Self.appRuleHost), version: 3)],
+                                     marker: "3")]
+        return LossFixture(access: FakeURLRuleAccess(rows: []), store: MemoryOwnedItemStore(),
+                           spaceStore: spaceStore, markerStore: markerStore(marker: "5"), client: client)
+    }
+
+    private func assertAppRuleLanded(_ f: LossFixture, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(f.access.rows.map(\.host), [Self.appRuleHost], "The App rule lands locally",
+                       file: file, line: line)
+        XCTAssertEqual(f.store.table.cursors["r1"]?.entityId, "srv-r1", file: file, line: line)
+        XCTAssertEqual(f.spaceStore.table.inboundAcceptanceVersion,
+                       PhiSpaceSyncTable.currentInboundAcceptanceVersion, "The version is latched",
+                       file: file, line: line)
+        XCTAssertTrue(f.spaceStore.table.hasDrainedFullReplay, "The replay drained", file: file, line: line)
+        XCTAssertFalse(f.spaceStore.table.drainInProgress, file: file, line: line)
+        XCTAssertFalse(ruleCommits(f.client).contains { $0.clientTagHash == ruleHash("r1") },
+                       "A landed rule is not echoed back", file: file, line: line)
+    }
+
+    /// (a) Old consumer, upgrade, no remote modification: one round on this build replays data type
+    /// 2000 from a nil marker, lands the App rule an older build refused, and latches the version.
+    func testAnOutdatedAcceptanceVersionReplaysOnceAndLandsTheRefusedAppRule() async throws {
+        let f = try makeAcceptanceFixture(version: 0)
+        let engine = makeLossEngine(f)
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(outcome, .ok)
+        XCTAssertEqual(f.client.getUpdatesCalls.first?.marker ?? nil, nil, "The round starts from a nil marker")
+        assertAppRuleLanded(f)
+        XCTAssertEqual(f.markerStore.file.marker, Data("3".utf8), "The replay persists its page markers")
+    }
+
+    /// (b) A second round with the version current continues from the persisted marker; it never resets it.
+    func testACurrentAcceptanceVersionNeverResetsTheMarker() async throws {
+        let f = try makeAcceptanceFixture(version: 0)
+        let engine = makeLossEngine(f)
+        await engine.pullOnce()
+        let callsAfterReplay = f.client.getUpdatesCalls.count
+        let markerSavesAfterReplay = f.markerStore.saves.count
+
+        await engine.pullOnce()
+
+        XCTAssertEqual(f.client.getUpdatesCalls.dropFirst(callsAfterReplay).map(\.marker), [Data("3".utf8)],
+                       "An incremental pull from the replay's marker")
+        XCTAssertFalse(f.markerStore.saves.dropFirst(markerSavesAfterReplay).contains { $0.marker == nil },
+                       "No nil marker is written after the replay round")
+        assertAppRuleLanded(f)
+    }
+
+    /// (b') A table already at the current version (a fresh or already upgraded device) never arms
+    /// the replay: the server's App rule behind marker 5 is not re-pulled.
+    func testATableAtTheCurrentAcceptanceVersionDoesNotReplay() async throws {
+        let f = try makeAcceptanceFixture(version: PhiSpaceSyncTable.currentInboundAcceptanceVersion)
+        let engine = makeLossEngine(f)
+        await engine.pullOnce()
+
+        XCTAssertEqual(f.client.getUpdatesCalls.map(\.marker), [Data("5".utf8)], "No replay")
+        XCTAssertEqual(f.markerStore.file.marker, Data("5".utf8))
+        XCTAssertTrue(f.access.rows.isEmpty)
+    }
+
+    /// (c) The nil marker is written but the latch write fails: the round reports cursorSaveFailed with no
+    /// pull, the version stays unlatched, and the next round replays again and latches it.
+    func testAFailedAcceptanceLatchWriteLeavesTheVersionUnlatchedAndReplaysNextRound() async throws {
+        let f = try makeAcceptanceFixture(version: 0)
+        let engine = makeLossEngine(f)
+        f.spaceStore.failSaveOnCallNumber = f.spaceStore.saveCalls + 1   // The latch is the round's first table write
+        await engine.pullOnce()
+
+        let outcome = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(outcome, .cursorSaveFailed)
+        XCTAssertNil(f.markerStore.file.marker, "The nil marker was persisted first")
+        XCTAssertEqual(f.spaceStore.table.inboundAcceptanceVersion, 0, "The version stays unlatched")
+        XCTAssertFalse(f.spaceStore.table.drainInProgress, "Unchanged from round entry")
+        XCTAssertTrue(f.client.getUpdatesCalls.isEmpty, "No page is pulled")
+        XCTAssertTrue(f.access.rows.isEmpty)
+
+        f.spaceStore.failSaveOnCallNumber = nil
+        await engine.pullOnce()
+
+        let second = await engine.lastRoundOutcomeForTesting
+        XCTAssertEqual(second, .ok)
+        XCTAssertEqual(f.client.getUpdatesCalls.first?.marker ?? nil, nil, "The retry replays from a nil marker")
+        assertAppRuleLanded(f)
+    }
+
     // MARK: - CASE U-24 (explicit Chromium routing refresh after landing, engine coverage)
 
     /// Landing a host-only edit produces exactly one refreshRoutingTable after apply(opCount: 1), and the

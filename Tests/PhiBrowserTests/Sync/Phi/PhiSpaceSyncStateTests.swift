@@ -202,6 +202,27 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: legacy))
     }
 
+    /// The inbound acceptance version round-trips, a fresh table starts at the current version, and a
+    /// table an older build wrote (no key) decodes as 0 so it replays once (docs/sync.md, "Inbound
+    /// acceptance version").
+    func testInboundAcceptanceVersionRoundTripsAndDefaultsToZeroWhenAbsent() throws {
+        XCTAssertEqual(PhiSpaceSyncTable().inboundAcceptanceVersion,
+                       PhiSpaceSyncTable.currentInboundAcceptanceVersion)
+        var table = PhiSpaceSyncTable()
+        table.inboundAcceptanceVersion = 7
+        table.hadRecords = true
+        let encoded = try JSONEncoder().encode(table)
+        XCTAssertEqual(try JSONDecoder().decode(PhiSpaceSyncTable.self, from: encoded).inboundAcceptanceVersion, 7)
+
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertNotNil(object.removeValue(forKey: "inboundAcceptanceVersion"), "The field is always encoded")
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(PhiSpaceSyncTable.self, from: legacy)
+        XCTAssertEqual(decoded.inboundAcceptanceVersion, 0)
+        XCTAssertTrue(decoded.hadRecords)
+        XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: legacy))
+    }
+
     /// M3-4b: a table written before Profile entities has no `profileCursors` key. It must decode
     /// with an empty map rather than fail, which would discard the table and reopen pairing.
     func testATableWrittenBeforeProfileCursorsStillDecodes() throws {

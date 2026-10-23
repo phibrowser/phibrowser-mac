@@ -466,6 +466,7 @@ final class PhiOwnedItemStateTests: XCTestCase {
             "pinsReplayedForEmptyTable",
             "urlRulesHadRecords",
             "urlRulesReplayedForEmptyTable",
+            "inboundAcceptanceVersion",
         ])
     }
 

@@ -1185,6 +1185,13 @@ actor PhiSyncEngine {
     /// device silently never publishes a single Space. Idempotent: once a drain completes, only a
     /// real shut episode re-arms it.
     ///
+    /// A third trigger shares the action: `inboundAcceptanceVersion` below the build's
+    /// `currentInboundAcceptanceVersion` (docs/sync.md, "Inbound acceptance version"). A build
+    /// that predates a relaxed refusal predicate walked the shared marker past every entity it
+    /// refused, and refusals record nothing, so only a replay from a nil marker delivers them
+    /// again. The version is latched in the same write as the drain flags, after the nil marker,
+    /// so a failed write leaves it unlatched and the next live pull replays again.
+    ///
     /// Both kinds share ONE progress marker for data type 2000, so every Space entity the
     /// settings pulls walked past while the gate was shut will never be delivered again. Replay
     /// the type, and re-arm guard 1 so nothing is committed until the replay finishes.
@@ -1208,10 +1215,14 @@ actor PhiSyncEngine {
             }) else { return false }
         }
         let table = loadSpaceTable()
-        guard table.markerMovedWhileGateShut || (!table.hasDrainedFullReplay && !table.drainInProgress) else {
+        let acceptanceStale = table.inboundAcceptanceVersion < PhiSpaceSyncTable.currentInboundAcceptanceVersion
+        guard table.markerMovedWhileGateShut || (!table.hasDrainedFullReplay && !table.drainInProgress)
+                || acceptanceStale else {
             return true
         }
-        AppLogInfo("[phi-sync] space gate open (marker_moved=\(table.markerMovedWhileGateShut) drained=\(table.hasDrainedFullReplay)); replaying data type \(PhiSyncEntity.dataTypeID)")
+        AppLogInfo("[phi-sync] space gate open (marker_moved=\(table.markerMovedWhileGateShut) drained=\(table.hasDrainedFullReplay) "
+                   + "acceptance=\(table.inboundAcceptanceVersion)/\(PhiSpaceSyncTable.currentInboundAcceptanceVersion)); "
+                   + "replaying data type \(PhiSyncEntity.dataTypeID)")
         // Re-clearing an already nil marker is a no-write success.
         guard persistStoredMarker(nil) else { return false }
         // Deliberately untouched: reconciled / server / entityId / version / hidden /
@@ -1222,6 +1233,7 @@ actor PhiSyncEngine {
             table.markerMovedWhileGateShut = false
             table.hasDrainedFullReplay = false
             table.drainInProgress = true
+            table.inboundAcceptanceVersion = PhiSpaceSyncTable.currentInboundAcceptanceVersion
         }
     }
 

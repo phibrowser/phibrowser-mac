@@ -1955,6 +1955,22 @@ The engine must preserve these persistence, retry and account-isolation rules.
   arming from it (`PhiSyncEngine.armSpaceReplayIfNeeded`). The two files
   cannot commit atomically, and the opposite order let an incremental pull
   finalize a drain over the entities the shut episode walked past.
+- **Inbound acceptance version.** A refused arrival records nothing and the
+  shared marker walks past it, so relaxing a refusal predicate alone never
+  delivers what an older build refused. `PhiSpaceSyncTable` therefore carries
+  `inboundAcceptanceVersion`, compared with the build's
+  `PhiSpaceSyncTable.currentInboundAcceptanceVersion`.
+
+  | Rule | Behaviour |
+  |---|---|
+  | When to bump | Whenever an inbound refusal predicate of any kind is relaxed. The constant's doc comment keeps the version history. |
+  | Older table | A table without the key decodes as 0. A downgrade re-encodes it without the key, so the next upgrade replays again. |
+  | Fresh table | Starts at the current version; its first live pull is already a full replay. |
+  | Trigger | A version below the current one is a third trigger of `armSpaceReplayIfNeeded`, the gate-opening replay. It persists the nil marker, then latches the version with the drain flags in one table write. |
+  | Failure | A failed marker write leaves everything unchanged. A failed table write leaves the version unlatched with a nil marker. Either reports `cursorSaveFailed` and the next live pull arms again. |
+  | Cost | One full re-download of data type 2000 per account per device per bump. Landing is idempotent, and publication waits for the drain like any guard-1 replay. |
+  | Scope | The table is per account, so each account latches separately. A gated-off account latches when its gate opens. |
+
 - **A loss observed at round entry stands.** Publication treats an owned
   cursor table as lost when the store reported loss at round entry, even if
   the landing in between wrote a non-empty file back; otherwise cursor-less
@@ -2225,8 +2241,10 @@ written" restart window falls on them.
   `app:<bundle id>`; the wire format and schema are unchanged. Only the Mac
   client evaluates it, for external opens, and it is never pushed to Chromium.
   The inbound host refusal accepts that one colon (`URLRuleKind.isSourceAppHost`).
-  Clients that predate App rules refuse the host as `malformedHost` and skip
-  the entity every round, so they neither show nor route it.
+  Clients that predate App rules refuse the host as `malformedHost`, so they
+  neither show nor route it, and their marker walks past the entity. After
+  upgrading, the acceptance-version replay lands them (see "Inbound
+  acceptance version").
 
 ## Source and verification
 

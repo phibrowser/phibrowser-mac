@@ -141,6 +141,20 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     /// M3-2 was unreleased: discard lower-version tables without migration (§3.6).
     static let currentFormatVersion = 2
     var formatVersion: Int = currentFormatVersion
+
+    /// Inbound acceptance version (docs/sync.md, "Inbound acceptance version"). Bump it whenever
+    /// an inbound refusal predicate of any kind is relaxed, so every entity an older build
+    /// refused is pulled once more. A refusal records nothing and the shared data-type-2000
+    /// marker walks past it, so without a bump the entity never lands after an upgrade.
+    ///
+    /// History:
+    /// - 1 (2026-10): URL rule hosts of the `app:<bundle id>` form (App rules).
+    static let currentInboundAcceptanceVersion = 1
+    /// The acceptance version of the build that last replayed data type 2000 for this account.
+    /// A table written by an older build lacks the key and decodes as 0, which arms one
+    /// marker-first replay (`PhiSyncEngine.armSpaceReplayIfNeeded`). A fresh table starts at the
+    /// current version: its first live pull is already a full replay from a nil marker.
+    var inboundAcceptanceVersion: Int = currentInboundAcceptanceVersion
     /// Keyed by account syncUuid.
     var cursors: [String: PhiSpaceCursor] = [:]
     /// Profile entity cursors, keyed by account profile uuid (docs/sync.md, "Profile entity").
@@ -437,6 +451,10 @@ extension PhiSpaceSyncTable {
             try container.decodeIfPresent(Bool.self, forKey: .profilesReplayedForEmptyTable) ?? false
         unmatchedTombstones =
             try container.decodeIfPresent([PhiUnmatchedTombstone].self, forKey: .unmatchedTombstones) ?? []
+        // An absent key is a table an older build wrote: it may have refused entities this build
+        // accepts, so it reads as version 0 and replays once.
+        inboundAcceptanceVersion =
+            try container.decodeIfPresent(Int.self, forKey: .inboundAcceptanceVersion) ?? 0
     }
 }
 

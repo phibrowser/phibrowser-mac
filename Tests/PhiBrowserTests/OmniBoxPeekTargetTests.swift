@@ -17,6 +17,10 @@ import XCTest
 final class OmniBoxPeekTargetTests: XCTestCase {
     private var directory: URL?
     private var store: LocalStore?
+    /// Matches the model handed to Chromium's `selectSuggestion(atLine:
+    /// windowId:disposition:)`. A match aimed at a peek must never land
+    /// here: Chromium would open it in the strip-active opener.
+    private var chromiumSelections: [(line: Int, disposition: PhiOmniboxSuggestionDisposition)] = []
 
     override func tearDown() async throws {
         try await store?.closeForAccountDirectoryRemoval()
@@ -34,7 +38,10 @@ final class OmniBoxPeekTargetTests: XCTestCase {
         self.store = store
         let state = BrowserState(windowId: UUID().hashValue, localStore: store, profileId: "Default")
         let model = OmniBoxViewModel(windowState: state, keywordSearchURLBuilder: { _, _ in nil },
-                                    searchEngineSpaceShortcutProvider: { false })
+                                    searchEngineSpaceShortcutProvider: { false },
+                                    suggestionSelector: { [weak self] line, disposition in
+                                        self?.chromiumSelections.append((line, disposition))
+                                    })
         return (model, state)
     }
 
@@ -101,6 +108,8 @@ final class OmniBoxPeekTargetTests: XCTestCase {
 
         XCTAssertEqual(peek.urlString, "https://peek.example/c")
         XCTAssertEqual(opener.urlString, "https://opener.example/a")
+        XCTAssertTrue(chromiumSelections.isEmpty,
+                      "The match must not reach Chromium, whose CURRENT_TAB open lands in the opener")
         XCTAssertNotNil(state.peekState.peek(forOpener: 1), "The peek stays up, now showing the new page")
     }
 
@@ -130,6 +139,9 @@ final class OmniBoxPeekTargetTests: XCTestCase {
         model.handleEnterPressed()
 
         XCTAssertEqual(wrapper.urlString, "https://opener.example/a")
+        XCTAssertEqual(chromiumSelections.count, 1)
+        XCTAssertEqual(chromiumSelections.first?.line, 0)
+        XCTAssertEqual(chromiumSelections.first?.disposition, .currentTab)
     }
 
     func testClosingThePeekHandsTheAddressBarBackToTheOpener() throws {
@@ -215,6 +227,7 @@ final class OmniBoxPeekTargetTests: XCTestCase {
 
         XCTAssertEqual(peek.urlString, "https://peek.example/b")
         XCTAssertEqual(opener.urlString, "https://opener.example/a")
+        XCTAssertTrue(chromiumSelections.isEmpty, "A dropped submission is not handed to Chromium either")
         XCTAssertEqual(spy.clears, 1)
         drainMainQueue()
         XCTAssertEqual(spy.clears, 1, "The late dismissal sink must not clear a second time")

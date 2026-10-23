@@ -18,6 +18,10 @@ class OmniBoxViewModel: ObservableObject {
     private let searchCoordinator = OmniBoxSearchCoordinator()
     private let keywordSearchURLBuilder: (String, String) -> String?
     private let searchEngineSpaceShortcutProvider: () -> Bool
+    /// Hands a chosen match (its result line and open disposition) to
+    /// Chromium, which opens it. Tests substitute a recorder: the peek paths
+    /// must never reach it.
+    private let suggestionSelector: (Int, PhiOmniboxSuggestionDisposition) -> Void
     @Published private(set) var isSearchEngineSpaceShortcutEnabled = false
     private(set) var preventInlineCompletion: Bool = false
     
@@ -76,7 +80,8 @@ class OmniBoxViewModel: ObservableObject {
     
     init(configuration: OmniBoxConfiguration = .default, windowState: BrowserState,
          keywordSearchURLBuilder: ((String, String) -> String?)? = nil,
-         searchEngineSpaceShortcutProvider: (() -> Bool)? = nil) {
+         searchEngineSpaceShortcutProvider: (() -> Bool)? = nil,
+         suggestionSelector: ((Int, PhiOmniboxSuggestionDisposition) -> Void)? = nil) {
         self.configuration = configuration
         self.browserState = windowState
         let bridge = chromiumBridge
@@ -90,6 +95,9 @@ class OmniBoxViewModel: ObservableObject {
             guard let bridge,
                   bridge.responds(to: #selector(PhiChromiumBridgeProtocol.isSearchEngineSpaceShortcutEnabled(forWindowId:))) else { return false }
             return bridge.isSearchEngineSpaceShortcutEnabled(forWindowId: windowId)
+        }
+        self.suggestionSelector = suggestionSelector ?? { line, disposition in
+            bridge?.selectSuggestion(atLine: line, windowId: windowId, disposition: disposition)
         }
         setupBindings()
     }
@@ -429,9 +437,7 @@ class OmniBoxViewModel: ObservableObject {
         if disposition == .newForegroundTab {
             claimUpcomingNewTab()
         }
-        chromiumBridge?.selectSuggestion(atLine: suggestion.index,
-                                         windowId: browserState.windowId.int64Value,
-                                         disposition: disposition)
+        suggestionSelector(suggestion.index, disposition)
         finishNavigationAction()
     }
 

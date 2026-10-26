@@ -113606,65 +113606,6 @@
         }
       }
     },
-    "sync.devices.removeThisDevice" : {
-      "comment" : "Devices settings - button that removes this device from sync",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dieses Gerät aus der Synchronisierung entfernen…"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove this device from sync…"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Eliminar este dispositivo de la sincronización…"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Supprimer cet appareil de la synchronisation…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このデバイスを同期から削除…"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "동기화에서 이 기기 제거…"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verwijder dit apparaat uit synchronisatie…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将此设备从同步中移除…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "從同步中移除此裝置…"
-          }
-        }
-      }
-    },
     "sync.devices.setUp" : {
       "comment" : "Devices settings - button that starts sync setup on this device",
       "localizations" : {
@@ -118621,65 +118562,6 @@
         }
       }
     },
-    "sync.recovery.explanation" : {
-      "comment" : "Explain existing recovery options without offering retrieval",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Um auf einem anderen Gerät beizutreten, genehmige dessen Anfrage hier oder verwende deinen gesicherten Wiederherstellungscode. Der Code wird nur bei der ersten Einrichtung der Synchronisierung angezeigt."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "To join on another device, approve its request here or use your saved recovery code. The code is shown only when sync is first set up."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Para unirte desde otro dispositivo, aprueba aquí su solicitud o usa tu código de recuperación guardado. El código se muestra solo la primera vez que se configura la sincronización."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pour rejoindre depuis un autre appareil, approuvez sa demande ici ou utilisez votre code de récupération enregistré. Le code n'est affiché que lors de la première configuration de la synchronisation."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "別のデバイスで参加するには、そのデバイスからのリクエストをここで承認するか、保存した復旧コードを使用してください。復旧コードは、同期を最初に設定したときにのみ表示されます。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "다른 기기에서 참여하려면 여기에서 그 기기의 요청을 승인하거나 저장해 둔 복구 코드를 사용하세요. 복구 코드는 동기화를 처음 설정할 때만 표시돼요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Om een ander apparaat toe te voegen keur je hier het verzoek van dat apparaat goed, of gebruik je je bewaarde herstelcode. De code wordt alleen getoond wanneer synchronisatie voor het eerst wordt ingesteld."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "若要在另一台设备上加入，请在此处批准该设备的请求，或使用你保存的恢复代码。该代码仅在首次设置同步时显示。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "若要在另一部裝置上加入，請在這裡核准其請求，或使用你先前儲存的復原代碼。該代碼只會在初次設定同步時顯示。"
-          }
-        }
-      }
-    },
     "sync.recovery.save.confirm" : {
       "comment" : "Sync setup - button confirming the user saved the recovery code",
       "localizations" : {
@@ -119036,61 +118918,68 @@
         }
       }
     },
-    "sync.recovery.title" : {
-      "comment" : "Recovery guidance and device removal",
+    "sync.removal.sectionTitle" : {
+      "comment" : "Sync settings - header of the section that removes this Mac from sync",
       "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wiederherstellung und Entfernung"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recovery and removal"
+            "value" : "Removal"
           }
-        },
-        "es" : {
+        }
+      }
+    },
+    "sync.removal.rowTitle" : {
+      "comment" : "Sync settings - title of the row that removes this Mac from sync",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recuperación y eliminación"
+            "value" : "Remove this Mac from sync"
           }
-        },
-        "fr" : {
+        }
+      }
+    },
+    "sync.removal.rowDescription" : {
+      "comment" : "Sync settings - description under the row that removes this Mac from sync",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Récupération et suppression"
+            "value" : "This Mac will stop syncing. Your local browsing data stays on this Mac."
           }
-        },
-        "ja" : {
+        }
+      }
+    },
+    "sync.removal.rowAction" : {
+      "comment" : "Sync settings - button on the row that removes this Mac from sync; opens a confirmation",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "復旧と削除"
+            "value" : "Remove…"
           }
-        },
-        "ko" : {
+        }
+      }
+    },
+    "sync.removal.resetRowTitle" : {
+      "comment" : "Sync settings - title of the row, shown only on the account's last device, that removes it and deletes all of the account's sync data",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "복구 및 제거"
+            "value" : "Delete all sync data"
           }
-        },
-        "nl" : {
+        }
+      }
+    },
+    "sync.removal.resetRowAction" : {
+      "comment" : "Sync settings - destructive button on the last-device row that removes this Mac and deletes all of the account's sync data; opens a confirmation",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Herstel en verwijdering"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "恢复与移除"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "復原與移除"
+            "value" : "Delete…"
           }
         }
       }

@@ -583,54 +583,54 @@ struct DevicesSettingView: View {
         }
     }
 
-    /// The pane's destructive actions, at the bottom: the removal, in the same
-    /// secondary style as every other button on the pane, and after a
-    /// `last_device` refusal the account reset under the note. The
-    /// confirmations, their copy and the note all come from `SelfRevokeStrings`,
-    /// shared with the pairing gate's exit of the same name.
+    /// The pane's destructive actions, at the bottom, in the pane's standard
+    /// rows (title, one-line description, trailing button). The first row
+    /// removes this Mac and is always shown; a removal failure appears under
+    /// its description. After a `last_device` refusal a second row offers the
+    /// account reset, with the standing `last_device` explanation as its
+    /// description and a reset failure under it. `removeModel.note` is shown
+    /// only when it is an error, because its informational form is that
+    /// explanation. The confirmations, their copy and the explanation all come
+    /// from `SelfRevokeStrings`, shared with the pairing gate's exit of the
+    /// same name.
     private var removeDeviceSection: some View {
-        section(NSLocalizedString("sync.recovery.title", value: "Recovery and removal", comment: "Recovery guidance and device removal")) {
+        section(NSLocalizedString("sync.removal.sectionTitle", value: "Removal", comment: "Sync settings - header of the section that removes this Mac from sync")) {
             SettingsDetailCard {
-                HStack(alignment: .center, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        hintText(NSLocalizedString("sync.recovery.explanation", value: "To join on another device, approve its request here or use your saved recovery code. The code is shown only when sync is first set up.", comment: "Explain existing recovery options without offering retrieval"))
-                        if let note = removeModel.note {
-                            // `note` carries two different kinds of line: the standing
-                            // `last_device` explanation (informational) and a transient
-                            // failure the user has to notice and retry. The latter is
-                            // coloured like every other error on this pane.
-                            if removeModel.noteIsError {
-                                errorText(note)
-                            } else {
-                                hintText(note)
-                            }
+                row(NSLocalizedString("sync.removal.rowTitle", value: "Remove this Mac from sync", comment: "Sync settings - title of the row that removes this Mac from sync")) {
+                    hintText(NSLocalizedString("sync.removal.rowDescription", value: "This Mac will stop syncing. Your local browsing data stays on this Mac.", comment: "Sync settings - description under the row that removes this Mac from sync"))
+                    if removeModel.noteIsError && !removeModel.showsResetOffer, let note = removeModel.note {
+                        errorText(note)
+                    }
+                } control: {
+                    HStack(spacing: 12) {
+                        if removeModel.isRemoving {
+                            ProgressView().controlSize(.small)
                         }
-                        if removeModel.showsResetOffer {
-                            // Only after a `last_device` refusal: the one way off the
-                            // account's last device, so it is styled destructive and
-                            // asks again before anything is sent.
-                            Button(SelfRevokeStrings.resetOffer, role: .destructive) {
-                                Task { await removeModel.requestReset(confirm: SelfRevokeStrings.confirmReset) }
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(!removeModel.canRequestReset || viewModel.isReconfiguring)
-                            .padding(.top, 4)
+                        actionButton(NSLocalizedString("sync.removal.rowAction", value: "Remove…", comment: "Sync settings - button on the row that removes this Mac from sync; opens a confirmation")) {
+                            Task { await removeModel.requestRemoval(confirm: SelfRevokeStrings.confirmRemoval) }
                         }
+                        .disabled(!removeModel.canRequestRemoval || viewModel.isReconfiguring)
                     }
-                    Spacer(minLength: 12)
-                    if removeModel.isRemoving {
-                        ProgressView().controlSize(.small)
-                    }
-                    actionButton(NSLocalizedString("sync.devices.removeThisDevice",
-                                                   value: "Remove this device from sync…",
-                                                   comment: "Devices settings - button that removes this device from sync")) {
-                        Task { await removeModel.requestRemoval(confirm: SelfRevokeStrings.confirmRemoval) }
-                    }
-                    .disabled(!removeModel.canRequestRemoval || viewModel.isReconfiguring)
                 }
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                if removeModel.showsResetOffer {
+                    // Only after a `last_device` refusal: the one way off the
+                    // account's last device, so it is styled destructive and
+                    // asks again before anything is sent.
+                    SettingsRowDivider()
+                    row(NSLocalizedString("sync.removal.resetRowTitle", value: "Delete all sync data", comment: "Sync settings - title of the row, shown only on the account's last device, that removes it and deletes all of the account's sync data")) {
+                        hintText(SelfRevokeStrings.lastDeviceNote)
+                        if removeModel.noteIsError, let note = removeModel.note {
+                            errorText(note)
+                        }
+                    } control: {
+                        Button(NSLocalizedString("sync.removal.resetRowAction", value: "Delete…", comment: "Sync settings - destructive button on the last-device row that removes this Mac and deletes all of the account's sync data; opens a confirmation"), role: .destructive) {
+                            Task { await removeModel.requestReset(confirm: SelfRevokeStrings.confirmReset) }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!removeModel.canRequestReset || viewModel.isReconfiguring)
+                    }
+                }
             }
         }
     }

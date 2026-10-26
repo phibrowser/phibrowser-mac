@@ -206,7 +206,7 @@ reopening settings, and Finish later cannot reset this state. Settings → Sync
 shows **Set up sync again**, with confirmation before cleanup. Chromium's
 existing protocol-error recovery is unchanged.
 
-Explicit reconfiguration and successful **Remove this device from sync** share
+Explicit reconfiguration and successful **Remove this Mac from sync** share
 one native cleanup path in `SyncKeyController`. Remote self-revocation succeeds
 before removal touches local state; rejection leaves local state intact. Cleanup
 retires the engine, journals its intent, durably withdraws enrollment, discards
@@ -223,9 +223,10 @@ account journals. Setup re-fetches server state and all matching must complete
 before sync becomes eligible again.
 **Reset sync** is the removal's branch for the account's last active device
 (design: sync-service `docs/design/2026-10-26-reset-sync.md`). When the legacy
-revoke answers 409 `last_device`, both render sites (Settings → Sync and the
-setup window) keep the removal disabled and offer **Remove this device and
-delete all sync data**, which asks again in a destructive `NSAlert` before
+revoke answers 409 `last_device`, both render sites keep the removal disabled
+and offer the reset: Settings → Sync adds a **Delete all sync data** row to its
+**Removal** section, and the setup window offers **Remove this device and
+delete all sync data**. Either asks again in a destructive `NSAlert` before
 anything is sent. `SyncKeyController.resetSyncAndRemoveThisDevice()` then
 follows the same server-first rule as the removal:
 

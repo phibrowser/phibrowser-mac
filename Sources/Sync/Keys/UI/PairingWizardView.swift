@@ -24,8 +24,10 @@ struct PairingWizardView: View {
     /// Transient removal or reset failure (offline, 5xx, Keychain), shown under the note without
     /// disabling retry. Clear at each new attempt.
     @State private var removeErrorNote: String?
-    /// The account reset is in flight; both destructive buttons are inert until it returns.
-    @State private var isResetting = false
+    /// A removal or the account reset is in flight. Every footer control (both destructive buttons,
+    /// Add all as new, Finish later and the phase actions) is inert until it returns, so no setup step
+    /// (in particular "Replace this Mac's data") can start while this Mac is leaving the account.
+    @State private var isLeaving = false
 
     init(viewModel: PairingWizardViewModel, controller: SyncKeyController,
          onDismiss: @escaping () -> Void) {
@@ -356,6 +358,9 @@ struct PairingWizardView: View {
                 Spacer(minLength: 0)
                 actions
             }
+            // Leaving and setting up are mutually exclusive: nothing here may start while a removal or
+            // reset request is in flight.
+            .disabled(isLeaving)
             // The app-modal's sole alternative exit appears on every page, including confirmation.
             Button(NSLocalizedString("sync.pairing.removeThisDevice",
                                      value: "Remove this device from sync…",
@@ -363,14 +368,14 @@ struct PairingWizardView: View {
                 confirmAndRemoveThisDevice()
             }
             .buttonStyle(.bordered)
-            .disabled(removeBlockedNote != nil || isResetting || viewModel.isApplying || viewModel.isPreparing)
+            .disabled(removeBlockedNote != nil || isLeaving || viewModel.isApplying || viewModel.isPreparing)
             if let removeBlockedNote {
                 Text(removeBlockedNote).font(.callout).themedForeground(.textSecondary)
                 Button(SelfRevokeStrings.resetOffer, role: .destructive) {
                     confirmAndResetSync()
                 }
                 .buttonStyle(.bordered)
-                .disabled(isResetting || viewModel.isApplying || viewModel.isPreparing)
+                .disabled(isLeaving || viewModel.isApplying || viewModel.isPreparing)
             }
             if let removeErrorNote {
                 Text(removeErrorNote).font(.callout).themedForeground(.textSecondary)
@@ -502,11 +507,14 @@ struct PairingWizardView: View {
     }
 
     /// Confirm again, then retire before cleanup. Do not preflight the device count: the server decides
-    /// `last_device` under its lock, so request removal directly and disable on refusal.
+    /// `last_device` under its lock, so request removal directly and disable on refusal. `isLeaving`
+    /// keeps the rest of the footer inert while the request is in flight.
     private func confirmAndRemoveThisDevice() {
-        guard SelfRevokeStrings.confirmRemoval() else { return }
+        guard !isLeaving, SelfRevokeStrings.confirmRemoval() else { return }
         removeErrorNote = nil
+        isLeaving = true
         Task { @MainActor in
+            defer { isLeaving = false }
             do {
                 try await controller.removeThisDeviceFromSync()
                 onDismiss()
@@ -522,12 +530,13 @@ struct PairingWizardView: View {
 
     /// The account reset, offered only after a `last_device` refusal. The second confirmation is a
     /// synchronous `NSAlert` that awaits nothing while up. Success leaves setup like a removal does.
+    /// `isLeaving` keeps the rest of the footer inert while the request is in flight.
     private func confirmAndResetSync() {
-        guard !isResetting, SelfRevokeStrings.confirmReset() else { return }
+        guard !isLeaving, SelfRevokeStrings.confirmReset() else { return }
         removeErrorNote = nil
-        isResetting = true
+        isLeaving = true
         Task { @MainActor in
-            defer { isResetting = false }
+            defer { isLeaving = false }
             do {
                 try await controller.resetSyncAndRemoveThisDevice()
                 onDismiss()

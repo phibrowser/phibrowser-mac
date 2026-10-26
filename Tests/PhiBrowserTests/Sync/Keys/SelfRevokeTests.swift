@@ -309,6 +309,55 @@ final class SelfRevokeTests: XCTestCase {
         XCTAssertTrue(marker.deleted)
     }
 
+    /// Leaving the account and replacing this Mac's data are mutually exclusive: while the
+    /// account reset request is in flight, the pairing reset refuses as an unusable session,
+    /// before it touches anything. Once the request returns, the reset completes normally.
+    func testThePairingResetRefusesWhileAnAccountResetIsInFlight() async throws {
+        let api = FakeAPI()
+        let ledger = Ledger()
+        let rotator = RecordingDeviceKeyStore(ledger: ledger)
+        let marker = MemoryMarkerStore(file: PhiSyncMarkerFile(marker: Data("m".utf8), storeBirthday: "B"))
+        let suite = "SelfRevokeTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let recorder = TouchRecorder()
+        let controller = try await makeController(api: api, ledger: ledger, store: MemoryMappingStore(),
+                                                  rotator: rotator,
+                                                  spaceStore: PhiSyncEngineSpaceTests.MemorySpaceStore(),
+                                                  defaults: defaults, markerStore: marker,
+                                                  localResetAccess: recorder.access(),
+                                                  isPairingComplete: { false },
+                                                  profileDeletionIntents: { EmptyIntentStore() })
+        var enteredContinuation: AsyncStream<Void>.Continuation?
+        let entered = AsyncStream<Void> { enteredContinuation = $0 }
+        var releaseContinuation: AsyncStream<Void>.Continuation?
+        let release = AsyncStream<Void> { releaseContinuation = $0 }
+        let enteredSignal = try XCTUnwrap(enteredContinuation)
+        let releaseSignal = try XCTUnwrap(releaseContinuation)
+        api.beforeResetOnce = {
+            enteredSignal.yield()
+            for await _ in release { break }
+        }
+
+        let leaving = Task { try await controller.resetSyncAndRemoveThisDevice() }
+        for await _ in entered { break }          // the reset request is parked in flight
+        let reset = try XCTUnwrap(controller.localDataReset())
+        do {
+            try await reset.clear(LocalResetRequest())
+            XCTFail("the pairing reset must not run while this Mac is leaving the account")
+        } catch let error as PhiLocalDataResetError {
+            XCTAssertEqual(error, .sessionUnavailable)
+        }
+        XCTAssertFalse(recorder.touched)
+
+        releaseSignal.yield()
+        try await leaving.value
+        XCTAssertEqual(api.resetCalls.count, 1)
+        XCTAssertEqual(rotator.rotations, 1)
+        XCTAssertTrue(marker.deleted)
+        XCTAssertNil(controller.manager.currentARK)
+    }
+
     // MARK: - Pairing local data reset (docs/sync.md, "Replacing this Mac's data at pairing")
 
     /// Device removal invalidates the enrollment a pairing reset belonged to, so it drops the

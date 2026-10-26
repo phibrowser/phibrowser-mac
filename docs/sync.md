@@ -553,7 +553,7 @@ all of these hold:
 
 | Precondition | Meaning |
 | --- | --- |
-| Unpaired, usable session | The enrollment is not paired; the controller is unlocked, not retired, on the current account, and no reconfiguration is pending |
+| Unpaired, usable session | The enrollment is not paired; the controller is unlocked, not retired, on the current account, not running a removal or account reset, and no reconfiguration is pending. Leaving the account and replacing this Mac's data are mutually exclusive: the setup window also disables its footer while its removal or reset request is in flight |
 | No sync history | No Space or Profile cursor with an account entity, no progress marker or store birthday, no bookmark, pin or rule cursor with an entity or baseline, a readable and empty Profile deletion journal |
 | Nothing running | No import into any Space; no agent task in a Space the reset deletes or in any Space of a Profile it deletes |
 | Profiles | The Profile list is readable; the Default Profile and non-assignable Profiles (the agent fallback) are never deletable; every Profile being deleted is unmapped |

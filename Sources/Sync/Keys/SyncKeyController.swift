@@ -449,9 +449,11 @@ final class SyncKeyController {
         let profileDeletionIntents = profileDeletionIntents
         return PhiLocalDataReset(sync: PhiLocalDataReset.SyncAccess(
             isPaired: { [weak self] in self?.isPairingComplete() ?? true },
+            // A removal or account reset in flight (`cleaningLocalState`) is not a usable
+            // session: this Mac is leaving the account, so the pairing reset must not start.
             isSessionUsable: { [weak self] in
                 guard let self else { return false }
-                return !self.isRetired && self.manager.currentARK != nil
+                return !self.isRetired && !self.cleaningLocalState && self.manager.currentARK != nil
                     && !self.requiresReconfiguration && self.isCurrentAccount()
             },
             syncHistory: {

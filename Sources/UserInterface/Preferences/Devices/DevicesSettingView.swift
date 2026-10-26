@@ -44,10 +44,14 @@ struct DevicesSettingView: View {
                         }
                     }
                 case .needsJoin:
-                    SettingsDetailCard {
-                        row(NSLocalizedString("sync.devices.notSetUp", value: "This device isn’t set up for sync yet.", comment: "Devices settings - shown when this device has not joined sync")) {
-                            actionButton(NSLocalizedString("sync.devices.setUp", value: "Set up sync on this device", comment: "Devices settings - button that starts sync setup on this device")) {
-                                onJoinThisDevice()
+                    // A pending reconfiguration (for example a journaled account reset after a
+                    // relaunch) wins: its card above is the only way forward.
+                    if !viewModel.requiresReconfiguration {
+                        SettingsDetailCard {
+                            row(NSLocalizedString("sync.devices.notSetUp", value: "This device isn’t set up for sync yet.", comment: "Devices settings - shown when this device has not joined sync")) {
+                                actionButton(NSLocalizedString("sync.devices.setUp", value: "Set up sync on this device", comment: "Devices settings - button that starts sync setup on this device")) {
+                                    onJoinThisDevice()
+                                }
                             }
                         }
                     }

@@ -297,8 +297,10 @@ import SwiftUI
                     SyncableSettings.valueKey(for: PinnedTabScopeMirror.key)] {
             defaults.removeObject(forKey: key)
         }
-        // A pending explicit reset belongs to this account and survives switching away/back.
-        if markerStore?.load().requiresReconfiguration != true { markerStore?.deleteFile() }
+        // A pending explicit reset belongs to this account and survives switching away/back, and
+        // so does a journaled account reset (`resetOperationId`), which is an unfinished one.
+        let journal = markerStore?.load()
+        if journal?.requiresReconfiguration != true, journal?.resetOperationId == nil { markerStore?.deleteFile() }
         // The new owner is recorded last (design 3.5): a cleanup interrupted before this line still
         // sees the previous owner at the next launch and runs again.
         defaults.set(accountId, forKey: phiSyncCursorOwnerKey)

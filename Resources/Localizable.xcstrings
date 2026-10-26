@@ -118146,6 +118146,17 @@
         }
       }
     },
+    "sync.reconfigure.resumeResetBody" : {
+      "comment" : "Confirmation before Set up sync again finishes an account reset the user confirmed earlier but that did not complete",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This finishes the reset you confirmed earlier: this Mac is removed from sync and all sync data stored for this account is deleted. Your local browsing data stays on this Mac."
+          }
+        }
+      }
+    },
     "sync.reconfigure.title" : {
       "comment" : "Action to explicitly reset local sync state and configure it again",
       "extractionState" : "manual",

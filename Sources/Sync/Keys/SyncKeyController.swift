@@ -88,7 +88,21 @@ final class SyncKeyController {
     private var cleaningLocalState = false
     private let runtimeRequiresReconfiguration: () -> Bool
     private let runtimeRemovalPending: () -> Bool
-    var requiresReconfiguration: Bool { markerStore?.load().requiresReconfiguration == true || runtimeRequiresReconfiguration() }
+    /// True while confirmed cleanup is unfinished. A journaled account reset counts: its
+    /// `resetOperationId` is the durable mark of a reset whose outcome this Mac has not
+    /// recorded yet, so it must resume through Set up sync again (`reconfigureSync()`) and
+    /// never be replayed against an account set up afresh. While the reset request is in
+    /// flight the flag is momentarily true as well, which keeps the pairing reset out.
+    var requiresReconfiguration: Bool {
+        let journal = markerStore?.load()
+        return journal?.requiresReconfiguration == true || journal?.resetOperationId != nil
+            || runtimeRequiresReconfiguration()
+    }
+
+    /// Whether Set up sync again will finish a journaled account reset (and so delete the
+    /// account's sync data) rather than only clear this Mac's sync setup. The confirmation
+    /// copy follows it.
+    var resetResumePending: Bool { markerStore?.load().resetOperationId != nil }
 
     private let isPairingComplete: @MainActor () -> Bool
     /// `ProfileManager.isProfileListEnumerated`: until the list has been read once, an
@@ -508,6 +522,11 @@ final class SyncKeyController {
     /// only then does the shared cleanup run. A refusal (`notLastDevice`, `deviceNotFound`)
     /// deleted nothing, so local state stays and the journal forgets the operation; any
     /// other failure keeps the UUID so the next attempt retries the same operation.
+    ///
+    /// The journaled UUID is the durable "unfinished" mark: from the moment it is written,
+    /// `requiresReconfiguration` is true. After a lost response or a crash, a relaunched
+    /// Mac (envelope gone, so `.needsJoin`, no ARK, no engine round) therefore offers Set up
+    /// sync again, which resumes the operation, and the setup window refuses to start.
     func resetSyncAndRemoveThisDevice() async throws {
         guard !isRetired, !cleaningLocalState else { throw CancellationError() }
         cleaningLocalState = true
@@ -526,6 +545,8 @@ final class SyncKeyController {
     /// crash between the server's answer and the end of cleanup): the journaled operation
     /// is retried first with the same UUID. The server answers a finished reset with
     /// `reset` again, and a refusal turns this back into an ordinary reconfiguration.
+    /// A journaled UUID alone is enough to get here (see `requiresReconfiguration`); the
+    /// resume needs only the token and the device key id, not the account key.
     func reconfigureSync() async throws {
         guard !isRetired, !cleaningLocalState, isCurrentAccount(), requiresReconfiguration else {
             throw CancellationError()

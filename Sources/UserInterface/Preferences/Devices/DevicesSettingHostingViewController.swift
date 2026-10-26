@@ -190,7 +190,9 @@ final class DevicesSettingHostingViewController: NSViewController {
         guard !viewModel.isReconfiguring else { return }
         if controller.requiresReconfiguration {
             viewModel.isReconfiguring = true
-            guard SyncReconfigurationStrings.confirm() else { viewModel.isReconfiguring = false; return }
+            guard SyncReconfigurationStrings.confirm(resumingReset: controller.resetResumePending) else {
+                viewModel.isReconfiguring = false; return
+            }
             let accountID = AccountController.shared.account?.userID
             let model = viewModel
             Task { @MainActor [weak self] in

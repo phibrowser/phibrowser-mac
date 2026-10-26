@@ -119,6 +119,17 @@ final class PhiSyncEngineLifecycleTests: XCTestCase {
         XCTAssertFalse(markerStore.deleted)
     }
 
+    /// A journaled account reset is an unfinished reconfiguration even without the flag, so
+    /// it survives the switch the same way.
+    func testAccountSwitchPreservesAJournaledAccountReset() {
+        let file = PhiSyncMarkerFile(marker: Data([9]), storeBirthday: "old", resetOperationId: UUID())
+        let markerStore = MemoryMarkerStore(file: file)
+        PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged(
+            accountId: "auth0|alice", defaults: defaults, markerStore: markerStore)
+        XCTAssertEqual(markerStore.file, file)
+        XCTAssertFalse(markerStore.deleted)
+    }
+
     /// The ownership record must not be one of the engine's own state keys: the engine wipes
     /// those on NOT_MY_BIRTHDAY, and forgetting the owner there would make the very next
     /// mount look like an account switch.

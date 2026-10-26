@@ -97,7 +97,11 @@ final class ResetSpaces {
 final class ResetFixture {
     var isRetired = false
     var cleaningLocalState = false
-    var requiresReconfiguration: Bool { markerStore?.load().requiresReconfiguration == true }
+    /// Mirrors `SyncKeyController.requiresReconfiguration`: a journaled reset is an unfinished one.
+    var requiresReconfiguration: Bool {
+        let journal = markerStore?.load()
+        return journal?.requiresReconfiguration == true || journal?.resetOperationId != nil
+    }
     var markerStore: ResetMarkerStore? = ResetMarkerStore()
     var localResetMarker: ResetLocalResetMarker? = ResetLocalResetMarker()
     let manager = ResetManager()
@@ -192,6 +196,7 @@ func accountResetTests(_ defaults: UserDefaults) async throws {
     let reset = live()
     reset.profileKeys.beforeReset = {
         precondition(reset.markerStore!.file.resetOperationId != nil, "journal precedes the request")
+        precondition(reset.requiresReconfiguration, "a journaled reset is an unfinished reconfiguration")
         precondition(reset.steps.isEmpty, "server first: nothing local before the answer")
     }
     try await reset.resetSyncAndRemoveThisDevice()
@@ -225,12 +230,13 @@ func accountResetTests(_ defaults: UserDefaults) async throws {
     precondition(offline.profileKeys.resetCalls.map(\.operationId) == [pending!, pending!], "a retry reuses the UUID")
     precondition(offline.markerStore!.file == PhiSyncMarkerFile())
 
-    // A lost success: the server reset, then the engine hit the new birthday and asked
-    // for reconfiguration. The resume retries the journaled operation, then removes.
+    // A lost success: the server reset, then this Mac relaunched before recording it. Only
+    // the journaled UUID is on disk, and it alone makes the reconfiguration pending. The
+    // resume retries the journaled operation, then removes.
     let operation = UUID()
     let lost = live()
     lost.markerStore!.file.resetOperationId = operation
-    lost.markerStore!.file.requiresReconfiguration = true
+    precondition(lost.requiresReconfiguration, "the journal alone requires reconfiguration")
     try await lost.reconfigureSync()
     precondition(lost.profileKeys.resetCalls.map(\.operationId) == [operation])
     precondition(lost.deviceKeyRotator!.count == 1, "a resumed reset rotates the device key like a removal")

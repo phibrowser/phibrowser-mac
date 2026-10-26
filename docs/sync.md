@@ -258,13 +258,24 @@ server-first rule as the removal:
 5. Any other failure keeps the UUID for the next attempt; the UI copy is fixed
    and details go only to the log.
 
-A reset whose answer this Mac never recorded (lost response, crash before the
-cleanup journal) surfaces as `not_my_birthday` on the next round, because the
-reset deleted the account's store birthday. **Set up sync again** then resumes
-it: `reconfigureSync()` retries the journaled operation with the same UUID and,
-on `reset`, runs the cleanup with device removal; a refusal turns it back into
-an ordinary reconfiguration, and any other failure leaves sync paused for
-another attempt. The client maps a refusal only from its body `code`: the
+A journaled operation is an unfinished reconfiguration: from the moment
+`resetOperationId` is written, `SyncKeyController.requiresReconfiguration` is
+true, also while the request is in flight. A reset whose answer this Mac never
+recorded (lost response, crash before the cleanup journal) therefore needs no
+engine round to surface. After a relaunch the envelope answers 404, so there is
+no account key and no round, but Settings → Sync shows **Set up sync again**
+instead of the first-device setup, the setup window refuses to start
+(`returnToSettings`), and an account switch away and back keeps the journal.
+Its confirmation names the deletion (`sync.reconfigure.resumeResetBody`)
+instead of saying the synced data is kept. Without this rule, a same-account
+first-device setup followed by the stale marker's `not_my_birthday` would
+replay the journaled UUID against the freshly created account. In-process, the
+same reset can also surface as `not_my_birthday` on the next round, because it
+deleted the account's store birthday. Either way, **Set up sync again**
+resumes it: `reconfigureSync()` needs only the token and the device key id. It
+retries the journaled operation with the same UUID and, on `reset`, runs the
+cleanup with device removal; a refusal turns it back into an ordinary
+reconfiguration, and any other failure leaves sync paused for another attempt. The client maps a refusal only from its body `code`: the
 legacy revoke's 409 is `lastActiveDevice` only for `last_device`, and any other
 409 is an ordinary failure.
 

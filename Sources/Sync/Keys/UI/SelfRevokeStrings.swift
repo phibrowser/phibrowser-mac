@@ -122,13 +122,17 @@ enum SyncReconfigurationStrings {
     static let explanation = NSLocalizedString("sync.reconfigure.explanation", value: "The account’s sync data has changed. Syncing Phi data is paused. Review your account and connection before setting up sync again.", comment: "Native sync paused after the server rejected its previous identity")
     static let confirmation = NSLocalizedString("sync.reconfigure.confirmation", value: "This will clear this Mac’s sync setup and matching information, then let you set up sync again. Your local browsing data and account’s synced data will be kept.", comment: "Confirmation before clearing only local sync metadata")
     static let failed = NSLocalizedString("sync.reconfigure.failed", value: "Couldn’t finish clearing this Mac’s sync setup. Sync remains paused. Try setting up sync again.", comment: "Local metadata cleanup failed and may be retried")
+    /// The confirmation body when Set up sync again finishes a journaled account reset
+    /// (`SyncKeyController.resetResumePending`): it deletes the account's sync data, so it
+    /// must not say the synced data is kept.
+    static let resumeResetConfirmation = NSLocalizedString("sync.reconfigure.resumeResetBody", value: "This finishes the reset you confirmed earlier: this Mac is removed from sync and all sync data stored for this account is deleted. Your local browsing data stays on this Mac.", comment: "Confirmation before Set up sync again finishes an account reset the user confirmed earlier but that did not complete")
     static let returnToSettings = NSLocalizedString("sync.reconfigure.returnToSettings", value: "Sync needs to be set up again. Finish later, then choose Set up sync again in Settings → Sync. Your local browsing data is kept.", comment: "Pairing cannot continue until an explicit local sync reset is confirmed in settings")
 
-    @MainActor static func confirm() -> Bool {
+    @MainActor static func confirm(resumingReset: Bool = false) -> Bool {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = title
-        alert.informativeText = confirmation
+        alert.informativeText = resumingReset ? resumeResetConfirmation : confirmation
         alert.addButton(withTitle: title)
         alert.addButton(withTitle: SelfRevokeStrings.cancel)
         return alert.runModal() == .alertFirstButtonReturn

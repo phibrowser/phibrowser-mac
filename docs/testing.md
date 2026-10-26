@@ -39,6 +39,44 @@ establishes test results. Official schemes may require signing or packaged
 companion artifacts unavailable to an outside contributor; report that boundary
 explicitly instead of presenting an unrun check as passed.
 
+### Keychain-backed suites
+
+Suites that use the data-protection keychain (`kSecUseDataProtectionKeychain`),
+such as `DeviceKeyStoreTests` and `AccountDeletionLocalDataRemovalTests`, need a
+host signed with real entitlements. The recipe above fails to sign: the team's
+Canary provisioning profile lacks
+`com.apple.developer.web-browser.public-key-credential`. A host signed without
+entitlements builds, but the keychain answers `errSecMissingEntitlement`
+(-34018) for every item, so these suites fail wholesale. Build the host with
+Apple Development automatic signing and a trimmed copy of the Canary
+entitlements, passed through `APP_ENTITLEMENTS` (the project reads
+`CODE_SIGN_ENTITLEMENTS` from that variable):
+
+```sh
+mkdir -p build/DerivedData-DevSigned
+plutil -remove 'com\.apple\.developer\.web-browser\.public-key-credential' \
+  -o build/DerivedData-DevSigned/Canary-NoPasskey.entitlements \
+  Resources/PhiBrowser-Canary.entitlements
+
+xcodebuild build-for-testing \
+  -project Phi.xcodeproj \
+  -scheme PhiBrowser-canary \
+  -destination platform=macOS \
+  -derivedDataPath build/DerivedData-DevSigned \
+  CODE_SIGN_STYLE=Automatic \
+  DEVELOPMENT_TEAM=87DQ3HMK5G \
+  CODE_SIGN_IDENTITY="Apple Development" \
+  APP_ENTITLEMENTS="$PWD/build/DerivedData-DevSigned/Canary-NoPasskey.entitlements" \
+  ENABLE_HARDENED_RUNTIME=NO
+```
+
+The host must not launch against the real account. Copy the generated
+`.xctestrun` next to itself, append `-authRequiresExplicitLogin YES` to the
+`PhiBrowserTests` `CommandLineArguments`, then run `xcodebuild
+test-without-building -xctestrun <copy> -destination platform=macOS
+-only-testing:...`. The trimmed file lives under `build/`; it is never
+committed or used for a shipping build.
+
 ## Hostless and artifact checks
 
 Feature scripts under [build-scripts](../build-scripts) exercise selected native

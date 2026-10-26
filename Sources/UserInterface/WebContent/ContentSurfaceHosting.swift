@@ -15,7 +15,10 @@ import Cocoa
 /// change what the surface has to be told, an animation that moves only a
 /// web view's ancestors (the AI Chat panel's slide) changes it every frame,
 /// and a web view the surface attaches again starts out square and on top;
-/// looking at the laid-out tree after AppKit's pass covers every such path.
+/// mounted controllers supply candidate pages through `contentSurfaceTabs`,
+/// alongside the placeholder wrapper. Each pass checks their actual ancestry
+/// and geometry. New mounting paths must expose their pages as candidates,
+/// including pages still mounted while a model change awaits view teardown.
 /// A pass with nothing new sends nothing, since each send makes Chromium
 /// draw a frame.
 @MainActor

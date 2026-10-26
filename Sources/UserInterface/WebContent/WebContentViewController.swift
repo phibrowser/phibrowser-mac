@@ -1598,12 +1598,13 @@ class WebContentViewController: NSViewController {
 
     /// Candidate pages for the surface reconciler; it checks their actual
     /// ancestry before sending placement, including for docked DevTools.
+    /// Keep the installed split partner until teardown, even if the model
+    /// already dissolved the split or entered content fullscreen.
     var contentSurfaceTabs: [Tab] {
         var tabs: [Tab] = []
         if let tab = associatedTab {
             tabs.append(tab)
-            if isSplitContentMounted, let group = activeSplitForCurrentTab(),
-               let partner = partnerTab(for: group, ownTabId: tab.guid) {
+            if isSplitContentMounted, let partner = mountedSplitPartner {
                 tabs.append(partner)
             }
         }
@@ -2095,6 +2096,8 @@ class WebContentViewController: NSViewController {
             host = newHost
         }
 
+        mountedSplitPartner = partner
+
         // installSplitContent only runs on the focused VC's mount path, so
         // the host's "focused pane" is always the side that matches ownTabId.
         host.focusedPane = (group.primaryTabId == ownTabId) ? .primary : .secondary
@@ -2127,7 +2130,14 @@ class WebContentViewController: NSViewController {
         }
     }
 
-    private weak var currentSplitHost: SplitPaneHostView?
+    private weak var currentSplitHost: SplitPaneHostView? {
+        didSet {
+            if currentSplitHost == nil {
+                mountedSplitPartner = nil
+            }
+        }
+    }
+    private weak var mountedSplitPartner: Tab?
 
     private var isSplitContentMounted: Bool {
         guard let currentSplitHost else { return false }
@@ -2227,6 +2237,7 @@ class WebContentViewController: NSViewController {
 
     private func addWebContentView(_ contentView: NSView, tabId: Int) {
         hostView.subviews.forEach { $0.removeFromSuperview() }
+        currentSplitHost = nil
         contentView.translatesAutoresizingMaskIntoConstraints = true
         contentView.autoresizingMask = []
         contentView.frame = hostView.contentFrame
@@ -2270,6 +2281,7 @@ class WebContentViewController: NSViewController {
 
         hostView.subviews.forEach { $0.removeFromSuperview() }
         groupOverviewController?.view.removeFromSuperview()
+        currentSplitHost = nil
         groupOverviewController?.removeFromParent()
 
         let controller = GroupOverviewViewController(browserState: browserState,
@@ -2518,6 +2530,7 @@ class WebContentViewController: NSViewController {
         // transition to web content mode first so relativeTo: is valid.
         if webContentView.superview !== hostView {
             hostView.subviews.forEach { $0.removeFromSuperview() }
+            currentSplitHost = nil
             hostView.addSubview(webContentView)
             contentMode = .webContent
         }

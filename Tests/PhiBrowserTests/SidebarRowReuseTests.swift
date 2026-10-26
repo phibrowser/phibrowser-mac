@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import AppKit
+import class SwiftUI.NSHostingView
 import XCTest
 @testable import Phi
 
@@ -78,6 +79,42 @@ final class SidebarRowReuseTests: XCTestCase {
         XCTAssertGreaterThan(visitedTabs.count, 60)
         XCTAssertLessThan(rowViews.count, visitedTabs.count / 2,
                           "scrolling should reuse a bounded set of row views")
+    }
+
+    func testGroupHeaderStaysAtTheTopAcrossRowHeightChanges() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        tempDirectories.append(directory)
+        let store = LocalStore(account: Account(userID: UUID().uuidString), storeDirectoryURL: directory)
+        let state = BrowserState(windowId: 741, localStore: store, profileId: "Default")
+        let controller = SidebarTabListViewController(state: state)
+        let group = WebContentGroupInfo(token: "animated-group", title: "Group",
+                                       color: .blue, isCollapsed: false)
+        let item = TabGroupSidebarItem(group: group, browserState: state)
+        let row = try XCTUnwrap(controller.outlineView(NSOutlineView(), rowViewForItem: item))
+        row.frame = NSRect(x: 0, y: 0, width: 240, height: 152)
+        let cell = TabGroupCellView(frame: row.bounds)
+        row.addSubview(cell)
+        let window = NSWindow(contentRect: row.frame, styleMask: [.titled],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView?.addSubview(row)
+        window.orderFront(nil)
+        let header = try XCTUnwrap(cell.subviews.flatMap(\.subviews)
+            .compactMap { $0 as? NSHostingView<TabGroupHeaderView> }.first)
+
+        // Exercise intermediate heights as well as both endpoints. Checking only
+        // the final cell frame misses a header detached from the resizing row.
+        for height in [152.0, 116.0, 80.0, 36.0, 80.0, 116.0, 152.0] {
+            row.setFrameSize(NSSize(width: 240, height: height))
+            row.layoutSubtreeIfNeeded()
+            XCTAssertEqual(cell.frame, row.bounds)
+            let headerRect = header.convert(header.bounds, to: row)
+            let topInset = row.isFlipped ? headerRect.minY : row.bounds.maxY - headerRect.maxY
+            XCTAssertEqual(topInset, TabGroupCellView.containerVerticalInset, accuracy: 0.5)
+        }
     }
 
     func testTabContentFillsItsRowAfterResizeAndReuse() throws {

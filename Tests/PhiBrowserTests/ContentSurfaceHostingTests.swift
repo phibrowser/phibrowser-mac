@@ -99,6 +99,90 @@ final class ContentSurfaceHostingTests: XCTestCase {
         XCTAssertNotNil(fixture.lastSent(), "the focused pane must also remain hosted")
     }
 
+    func testSplitPartnerRemainsACandidateUntilDissolvedHostIsRemoved() throws {
+        let (fixture, controller, partner, partnerView) = try makeSplitFixture()
+        let split = fixture.state.splits
+
+        fixture.state.splits = []
+        // The subscription mounts asynchronously; the old tree still needs placement.
+        XCTAssertTrue(partnerView.isDescendant(of: controller.hostViewForTesting))
+        XCTAssertTrue(controller.contentSurfaceTabs.contains { $0 === partner })
+
+        waitUntil { !partnerView.isDescendant(of: controller.hostViewForTesting) }
+        XCTAssertFalse(partnerView.isDescendant(of: controller.hostViewForTesting))
+        XCTAssertFalse(controller.contentSurfaceTabs.contains { $0 === partner })
+
+        fixture.state.splits = split
+        waitUntil { partnerView.isDescendant(of: controller.hostViewForTesting) }
+        XCTAssertTrue(partnerView.isDescendant(of: controller.hostViewForTesting))
+        XCTAssertTrue(controller.contentSurfaceTabs.contains { $0 === partner })
+    }
+
+    func testSplitPartnerRemainsACandidateUntilContentFullscreenUnmountsIt() throws {
+        let (fixture, controller, partner, partnerView) = try makeSplitFixture()
+        let tab = try XCTUnwrap(fixture.state.focusingTab)
+        tab.isInContentFullscreen = true
+        XCTAssertTrue(partnerView.isDescendant(of: controller.hostViewForTesting))
+        XCTAssertTrue(controller.contentSurfaceTabs.contains { $0 === partner })
+
+        waitUntil { !partnerView.isDescendant(of: controller.hostViewForTesting) }
+        XCTAssertFalse(partnerView.isDescendant(of: controller.hostViewForTesting))
+        XCTAssertFalse(controller.contentSurfaceTabs.contains { $0 === partner })
+
+        tab.isInContentFullscreen = false
+        waitUntil { partnerView.isDescendant(of: controller.hostViewForTesting) }
+        XCTAssertTrue(partnerView.isDescendant(of: controller.hostViewForTesting))
+        XCTAssertTrue(controller.contentSurfaceTabs.contains { $0 === partner })
+    }
+
+    func testSplitCandidatesFollowReplacementAndSingleViewFallback() throws {
+        let (fixture, controller, partner, partnerView) = try makeSplitFixture()
+        let replacementView = NSView(frame: partnerView.frame)
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://replacement.example/")
+        wrapper.nativeView = replacementView
+        let replacement = Tab(guid: 2402, url: wrapper.urlString, isActive: false,
+                              index: 2, webContentView: wrapper)
+        fixture.state.tabs.append(replacement)
+        fixture.state.updateNormalTabs()
+        fixture.state.splits = [SplitGroup(id: "replacement", primaryTabId: 2400,
+                                           secondaryTabId: 2402, layout: .vertical, ratio: 0.5)]
+        waitUntil { replacementView.isDescendant(of: controller.hostViewForTesting) }
+        XCTAssertTrue(replacementView.isDescendant(of: controller.hostViewForTesting))
+        XCTAssertTrue(controller.contentSurfaceTabs.contains { $0 === replacement })
+        XCTAssertFalse(controller.contentSurfaceTabs.contains { $0 === partner })
+
+        // A pane without a native view must fall back to single content, clearing
+        // the partner recorded by the previous successful mount.
+        let unavailable = Tab(guid: 2403, url: "https://unavailable.example/",
+                              isActive: false, index: 3)
+        fixture.state.tabs.append(unavailable)
+        fixture.state.updateNormalTabs()
+        fixture.state.splits = [SplitGroup(id: "unavailable", primaryTabId: 2400,
+                                           secondaryTabId: 2403, layout: .vertical, ratio: 0.5)]
+        waitUntil { fixture.webView.superview === controller.hostViewForTesting }
+        XCTAssertTrue(fixture.webView.superview === controller.hostViewForTesting)
+        XCTAssertFalse(controller.contentSurfaceTabs.contains { $0 === replacement })
+        XCTAssertFalse(controller.contentSurfaceTabs.contains { $0 === unavailable })
+    }
+
+    private func makeSplitFixture() throws -> (Fixture, WebContentViewController, Tab, NSView) {
+        let fixture = try makeFixture()
+        let partnerView = NSView(frame: fixture.webView.frame)
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://partner.example/")
+        wrapper.nativeView = partnerView
+        let partner = Tab(guid: 2401, url: wrapper.urlString, isActive: false, index: 1,
+                          webContentView: wrapper)
+        fixture.state.tabs[1] = partner
+        fixture.state.updateNormalTabs()
+        fixture.state.splits = [SplitGroup(id: "hosting-split", primaryTabId: 2400,
+                                           secondaryTabId: 2401, layout: .vertical, ratio: 0.5)]
+        let controller = try XCTUnwrap(
+            fixture.container.children.compactMap { $0 as? WebContentViewController }.first)
+        waitUntil { partnerView.isDescendant(of: controller.hostViewForTesting) }
+        XCTAssertTrue(partnerView.isDescendant(of: controller.hostViewForTesting))
+        return (fixture, controller, partner, partnerView)
+    }
+
     /// A page laid out wider than its host shows only the part inside it.
     func testAPageWiderThanItsHostIsClippedToTheHost() throws {
         let fixture = try makeFixture()

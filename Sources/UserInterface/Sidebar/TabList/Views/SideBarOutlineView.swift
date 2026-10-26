@@ -559,9 +559,9 @@ class SideBarOutlineView: DiffableOutlineView {
     }
     
     override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
-        // Non-bookmark cells own their internal padding. Size them through
-        // AppKit's row layout instead of adding constraints that compete with
-        // NSTableView's cell frames and force layout during row realization.
+        // Non-bookmark cells own their internal padding and fill the row.
+        // Group rows also pin the cell's edges to follow animated height changes;
+        // fixed-height rows use AppKit's frames without additional constraints.
         if let item = item(atRow: row) as? SidebarItem,
            !item.isBookmark {
             let rowRect = rect(ofRow: row)

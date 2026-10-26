@@ -3718,7 +3718,11 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         }
         
         switch sidebarItem.itemType {
-        case .tab, .newTabButton, .separator, .tabGroup, .splitPair:
+        case .tabGroup:
+            // Group rows animate their height. Keep the cell attached to all
+            // four edges so its header stays at the top throughout the animation.
+            return InsetTableRowView(insets: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0))
+        case .tab, .newTabButton, .separator, .splitPair:
             let identifier = NSUserInterfaceItemIdentifier("SidebarRow")
             if let rowView = outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableRowView {
                 return rowView

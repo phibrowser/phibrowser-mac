@@ -1,7 +1,8 @@
 import Foundation
 
-/// Settings → Devices: the state machine behind "Remove this device from sync…",
-/// the runtime counterpart of the pairing modal's exit of the same name.
+/// Settings → Devices: the state machine behind the Removal row ("Remove this
+/// Mac from sync" or, on the account's only active device, "Reset sync"), the
+/// runtime counterpart of the pairing modal's exit.
 ///
 /// It deliberately does NOT hold a `SyncKeyController`. The removal arrives as a
 /// closure for two reasons: the controller is a concrete `@MainActor final class`
@@ -53,27 +54,34 @@ final class DevicesRemoveDeviceModel: ObservableObject {
 
     @Published private(set) var state: State = .idle
 
-    /// Both closures are `@MainActor`: the model is main-actor confined and the
+    /// All closures are `@MainActor`: the model is main-actor confined and the
     /// production bodies touch the pane's own view model and the coordinator.
     private let remove: @MainActor () async throws -> Void
     private let reset: @MainActor () async throws -> Void
     private let onRemoved: (@MainActor () async -> Void)?
+    private let onRefused: (@MainActor () async -> Void)?
 
     /// - Parameters:
     ///   - remove: the teardown itself — production passes the shared
     ///     controller's `removeThisDeviceFromSync()`.
-    ///   - reset: the account reset, offered only after a `last_device`
-    ///     refusal — production passes the same controller's
+    ///   - reset: the account reset, offered when the pane's device list shows
+    ///     this Mac as the only active device or after a `last_device` refusal —
+    ///     production passes the same controller's
     ///     `resetSyncAndRemoveThisDevice()`.
     ///   - onRemoved: run once, after a successful removal or reset, so the pane
     ///     can re-derive its own `unlockState` (which lives on
     ///     `DevicesSettingViewModel` and only changes when `loadAll()` runs).
+    ///   - onRefused: run once when the server refuses a reset (`not_last_device`
+    ///     or `device_not_found`), so the pane re-reads its device list and the
+    ///     row flips back to the removal; nothing was deleted, so polling goes on.
     init(remove: @escaping @MainActor () async throws -> Void,
          reset: @escaping @MainActor () async throws -> Void,
-         onRemoved: (@MainActor () async -> Void)? = nil) {
+         onRemoved: (@MainActor () async -> Void)? = nil,
+         onRefused: (@MainActor () async -> Void)? = nil) {
         self.remove = remove
         self.reset = reset
         self.onRemoved = onRemoved
+        self.onRefused = onRefused
     }
 
     /// The button is the exact complement of the pane's "Set up sync on this
@@ -103,10 +111,14 @@ final class DevicesRemoveDeviceModel: ObservableObject {
         }
     }
 
+    /// Whether the reset may be asked for. Besides the `last_device` states it
+    /// is allowed from `.idle` and `.failed`: the pane offers the reset directly
+    /// when its device list shows this Mac as the only active device, and the
+    /// server re-checks at reset time (`not_last_device`).
     var canRequestReset: Bool {
         switch state {
-        case .lastDevice, .resetFailed: return true
-        default: return false
+        case .idle, .failed, .lastDevice, .resetFailed: return true
+        case .confirming, .removing, .confirmingReset, .resetting, .done: return false
         }
     }
 
@@ -168,10 +180,11 @@ final class DevicesRemoveDeviceModel: ObservableObject {
         }
     }
 
-    /// Second confirmation, then the account reset. The server's refusals
+    /// Confirmation, then the account reset. The server's refusals
     /// (`notLastDevice`: another device appeared; `deviceNotFound`: the account
     /// was re-enrolled without this Mac) deleted nothing, so the pane returns to
-    /// an ordinary retryable state. Other failures keep the offer for a retry.
+    /// an ordinary retryable state and `onRefused` reloads its device list.
+    /// Other failures keep the offer for a retry.
     /// The UI copy is fixed; only metadata reaches the log (R12).
     func requestReset(confirm: @MainActor () -> Bool) async {
         guard canRequestReset else { return }
@@ -187,8 +200,14 @@ final class DevicesRemoveDeviceModel: ObservableObject {
             try await reset()
             state = .done
             await onRemoved?()
-        } catch KeyAPIError.notLastDevice, KeyAPIError.deviceNotFound {
+        } catch KeyAPIError.notLastDevice {
+            AppLogInfo("[phi-sync] account reset refused: not the last device")
+            state = .failed(SelfRevokeStrings.resetRefusedNotLastDevice)
+            await onRefused?()
+        } catch KeyAPIError.deviceNotFound {
+            AppLogInfo("[phi-sync] account reset refused: device not found")
             state = .failed(SelfRevokeStrings.removalUnavailable)
+            await onRefused?()
         } catch {
             AppLogWarn("[phi-sync] account reset failed (\(PhiSyncLog.describe(error)))")
             state = .resetFailed(SelfRevokeStrings.removalUnavailable)

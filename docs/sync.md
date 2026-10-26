@@ -222,13 +222,18 @@ intent for the current process and keeps the native engine paused. Account switc
 account journals. Setup re-fetches server state and all matching must complete
 before sync becomes eligible again.
 **Reset sync** is the removal's branch for the account's last active device
-(design: sync-service `docs/design/2026-10-26-reset-sync.md`). When the legacy
-revoke answers 409 `last_device`, both render sites keep the removal disabled
-and offer the reset: Settings → Sync adds a **Delete all sync data** row to its
-**Removal** section, and the setup window offers **Remove this device and
-delete all sync data**. Either asks again in a destructive `NSAlert` before
-anything is sent. `SyncKeyController.resetSyncAndRemoveThisDevice()` then
-follows the same server-first rule as the removal:
+(design: sync-service `docs/design/2026-10-26-reset-sync.md`). Settings → Sync
+shows one row in its **Removal** section. When the pane's device list shows this
+Mac as the account's only active device, the row is **Reset sync** with a
+destructive **Reset…** button; otherwise it is **Remove this Mac from sync**.
+The list is only a hint: the server's check at reset time is the authority. If
+the list was stale and the removal answers 409 `last_device`, the same row flips
+to **Reset sync**. The setup window has no device list and keeps the
+remove-first flow: after a 409 `last_device` it disables the removal and offers
+**Remove this device and delete all sync data**. Both ask again in a
+destructive `NSAlert` before anything is sent.
+`SyncKeyController.resetSyncAndRemoveThisDevice()` then follows the same
+server-first rule as the removal:
 
 1. It writes a client-generated operation UUID to the marker journal as
    `resetOperationId`, reusing one already there, before the request.
@@ -245,8 +250,11 @@ follows the same server-first rule as the removal:
    next setup, because the Profiles are registered under new UUIDs and the
    namespace change restarts the engine from scratch.
 4. 409 `not_last_device` and 404 `device_not_found` deleted nothing. The
-   journal forgets the UUID, local state stays, the UI shows the fixed "removal
-   unavailable" copy and the ordinary removal is enabled again.
+   journal forgets the UUID, local state stays and the ordinary removal is
+   enabled again. The UI shows fixed copy: for `not_last_device`, that another
+   device joined and nothing was deleted; for `device_not_found`, the "removal
+   unavailable" copy. Settings → Sync then reloads its device list without
+   stopping the poll, so the row flips back to **Remove this Mac from sync**.
 5. Any other failure keeps the UUID for the next attempt; the UI copy is fixed
    and details go only to the log.
 

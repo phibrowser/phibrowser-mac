@@ -65,6 +65,13 @@ enum SelfRevokeStrings {
         value: "Delete All Sync Data",
         comment: "Delete all sync data - confirmation dialog button that removes this device and deletes the account's sync data")
 
+    /// Shown when the server refused a reset with 409 `not_last_device`: the
+    /// Devices pane offered "Reset sync" from a device list that showed this Mac
+    /// alone, but another device joined before the request. Nothing was deleted.
+    static let resetRefusedNotLastDevice = NSLocalizedString("sync.removal.resetRefusedNotLastDevice",
+        value: "Another device has joined this account since, so nothing was deleted. You can remove this Mac from sync instead.",
+        comment: "Reset sync - error shown when the server refused the reset because another device joined the account in the meantime")
+
     /// Shown in place of a removal that never reached the server: the shared
     /// `SyncKeyController` was gone by the time the button was clicked (a
     /// sign-out in another window, say). Retrying is the fix, so this reads as a

@@ -197,20 +197,27 @@ final class DevicesSettingRemoveDeviceTests: XCTestCase {
 
     /// A model already refused with `last_device`, whose reset runs `reset`.
     private func lastDeviceModel(reset: @escaping @MainActor () async throws -> Void,
-                                 onRemoved: (@MainActor () async -> Void)? = nil) async -> DevicesRemoveDeviceModel {
+                                 onRemoved: (@MainActor () async -> Void)? = nil,
+                                 onRefused: (@MainActor () async -> Void)? = nil) async -> DevicesRemoveDeviceModel {
         let model = DevicesRemoveDeviceModel(remove: { throw KeyAPIError.lastActiveDevice },
-                                             reset: reset, onRemoved: onRemoved)
+                                             reset: reset, onRemoved: onRemoved, onRefused: onRefused)
         await model.requestRemoval(confirm: { true })
         XCTAssertEqual(model.state, .lastDevice)
         return model
     }
 
+    /// The model offers the reset itself only after a `last_device` refusal,
+    /// but accepts one from `.idle` and `.failed`: the pane shows "Reset sync"
+    /// directly when its device list has this Mac alone, and the server re-checks.
     func testTheResetIsOfferedOnlyOnTheLastDevice() async {
         let idle = DevicesRemoveDeviceModel(remove: {})
         XCTAssertFalse(idle.showsResetOffer)
-        XCTAssertFalse(idle.canRequestReset)
-        await idle.requestReset(confirm: { XCTFail("no reset before a last_device refusal"); return true })
-        XCTAssertEqual(idle.state, .idle)
+        XCTAssertTrue(idle.canRequestReset, "the pane may ask for the reset directly; the server re-checks")
+
+        let failed = DevicesRemoveDeviceModel(remove: { throw KeyAPIError.http(503, "body") })
+        await failed.requestRemoval(confirm: { true })
+        XCTAssertTrue(failed.canRequestReset)
+        XCTAssertFalse(failed.showsResetOffer)
 
         let model = await lastDeviceModel(reset: {})
         XCTAssertTrue(model.showsResetOffer)
@@ -240,17 +247,57 @@ final class DevicesSettingRemoveDeviceTests: XCTestCase {
     }
 
     /// Both server refusals deleted nothing: back to an ordinary retryable removal
-    /// with the fixed copy, and no success reload.
+    /// with fixed copy, no success reload, and the device-list reload instead.
     func testAResetRefusalReturnsToARetryableRemoval() async {
-        for refusal in [KeyAPIError.notLastDevice, KeyAPIError.deviceNotFound] {
+        let cases: [(KeyAPIError, String)] = [
+            (.notLastDevice, SelfRevokeStrings.resetRefusedNotLastDevice),
+            (.deviceNotFound, SelfRevokeStrings.removalUnavailable),
+        ]
+        for (refusal, message) in cases {
             let reloads = Counter()
-            let model = await lastDeviceModel(reset: { throw refusal }, onRemoved: { reloads.calls += 1 })
+            let refusals = Counter()
+            let model = await lastDeviceModel(reset: { throw refusal },
+                                              onRemoved: { reloads.calls += 1 },
+                                              onRefused: { refusals.calls += 1 })
             await model.requestReset(confirm: { true })
-            XCTAssertEqual(model.state, .failed(SelfRevokeStrings.removalUnavailable))
+            XCTAssertEqual(model.state, .failed(message))
             XCTAssertTrue(model.canRequestRemoval)
             XCTAssertFalse(model.showsResetOffer)
             XCTAssertEqual(reloads.calls, 0)
+            XCTAssertEqual(refusals.calls, 1, "the pane re-reads its device list so the row flips back")
         }
+    }
+
+    /// The pane's "Reset sync" row on the only active device asks for the reset
+    /// straight from `.idle`, with no removal attempt first.
+    func testAResetFromIdleEndsLikeARemoval() async {
+        let resets = Counter()
+        let reloads = Counter()
+        let model = DevicesRemoveDeviceModel(remove: { XCTFail("no removal before a direct reset") },
+                                             reset: { resets.calls += 1 },
+                                             onRemoved: { reloads.calls += 1 })
+        await model.requestReset(confirm: { true })
+        XCTAssertEqual(model.state, .done)
+        XCTAssertEqual(resets.calls, 1)
+        XCTAssertEqual(reloads.calls, 1)
+    }
+
+    /// Another device joined after the pane's list was loaded: the server
+    /// refuses with `not_last_device`, nothing was deleted, and the pane reloads
+    /// its device list so the row returns to the removal.
+    func testADirectResetRefusedAsNotLastDeviceReturnsToTheRemoval() async {
+        let reloads = Counter()
+        let refusals = Counter()
+        let model = DevicesRemoveDeviceModel(remove: { XCTFail("no removal before a direct reset") },
+                                             reset: { throw KeyAPIError.notLastDevice },
+                                             onRemoved: { reloads.calls += 1 },
+                                             onRefused: { refusals.calls += 1 })
+        await model.requestReset(confirm: { true })
+        XCTAssertEqual(model.state, .failed(SelfRevokeStrings.resetRefusedNotLastDevice))
+        XCTAssertTrue(model.noteIsError)
+        XCTAssertTrue(model.canRequestRemoval)
+        XCTAssertEqual(refusals.calls, 1)
+        XCTAssertEqual(reloads.calls, 0)
     }
 
     /// Any other failure: fixed copy (R12), still the last device, the offer stays for a retry.

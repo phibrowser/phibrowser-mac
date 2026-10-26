@@ -118963,23 +118963,45 @@
       }
     },
     "sync.removal.resetRowTitle" : {
-      "comment" : "Sync settings - title of the row, shown only on the account's last device, that removes it and deletes all of the account's sync data",
+      "comment" : "Sync settings - title of the row, shown when this Mac is the account's only active device, that removes it and deletes all of the account's sync data",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Delete all sync data"
+            "value" : "Reset sync"
+          }
+        }
+      }
+    },
+    "sync.removal.resetRowDescription" : {
+      "comment" : "Sync settings - description under the Reset sync row",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is the only device set up for sync. Resetting removes this Mac from sync and deletes all sync data stored for this account. Your local browsing data stays on this Mac."
           }
         }
       }
     },
     "sync.removal.resetRowAction" : {
-      "comment" : "Sync settings - destructive button on the last-device row that removes this Mac and deletes all of the account's sync data; opens a confirmation",
+      "comment" : "Sync settings - destructive button on the Reset sync row; opens the delete-all-sync-data confirmation",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Delete…"
+            "value" : "Reset…"
+          }
+        }
+      }
+    },
+    "sync.removal.resetRefusedNotLastDevice" : {
+      "comment" : "Reset sync - error shown when the server refused the reset because another device joined the account in the meantime",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another device has joined this account since, so nothing was deleted. You can remove this Mac from sync instead."
           }
         }
       }

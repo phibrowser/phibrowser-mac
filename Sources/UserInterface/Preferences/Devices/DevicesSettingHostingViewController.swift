@@ -121,6 +121,12 @@ final class DevicesSettingHostingViewController: NSViewController {
             // pane to `.needsJoin` and "Set up sync on this device" comes back.
             await self?.viewModel.stopPolling()
             await self?.viewModel.loadAll()
+        }, onRefused: { [weak self] in
+            // The server refused the reset (another device joined, or this Mac is
+            // no longer enrolled) and deleted nothing. Re-read the device list so
+            // the Removal row flips back to "Remove this Mac from sync"; the
+            // device is still enrolled, so the poll keeps running.
+            await self?.viewModel.refreshDevices()
         })
     }
 

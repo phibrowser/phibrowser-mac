@@ -1338,6 +1338,13 @@ settings, Spaces, bookmarks, pinned tabs and URL rules.
   still run, so the engine never takes it from its in-memory mirror: every
   engine save carries the value on disk forward (`saveMarkerFile`). Without that
   a round landing during the request would erase the UUID.
+- `PhiSyncMarkerStore.update` is the only read-modify-write path for
+  `marker.json`. It holds a per-file lock across load, mutation and save, so
+  the engine's carry-forward and the controller's journal writes
+  (`journalResetOperation`, the refusal path of `requestAccountReset`, and the
+  cleanup journal in `clearLocalSyncState`) cannot interleave and lose a field.
+  A plain `save` is only for a whole-file write by a single owner, such as the
+  legacy migration.
 - Known limitation: the first whole-scale adoption of settings is not
   atomic, so a crash between "values written" and "adoption flag written"
   replays the page and performs that adoption a second time. This remains a limitation of the native adoption sequence.

@@ -1404,6 +1404,15 @@ final class MemoryMarkerStore: PhiSyncMarkerStore {
         return true
     }
 
+    /// Load, mutate, save; recorded in `saves` like a plain save. The fake is used from one
+    /// isolation domain at a time, so it needs no lock.
+    @discardableResult
+    func update(_ mutate: (inout PhiSyncMarkerFile) -> Void) -> Bool {
+        var next = load()
+        mutate(&next)
+        return save(next)
+    }
+
     /// Delete rather than save an empty table: set deleted and reset file so the next
     /// load matches the real store's missing-file result.
     func deleteFile() {

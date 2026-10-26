@@ -569,12 +569,13 @@ final class SyncKeyController {
 
     /// Records the reset's operation UUID before the request goes out. Nil `markerStore`
     /// is unwired/test construction, which has no journal to write.
+    /// The write goes through `update`, because the engine may save the same file meanwhile.
     private func journalResetOperation(_ operationId: UUID) throws {
         guard let markerStore else { return }
-        var journal = markerStore.load()
-        guard journal.resetOperationId != operationId else { return }
-        journal.resetOperationId = operationId
-        guard markerStore.save(journal) else { throw NativeSyncResetError.cleanupFailed }
+        guard markerStore.load().resetOperationId != operationId else { return }
+        guard markerStore.update({ $0.resetOperationId = operationId }) else {
+            throw NativeSyncResetError.cleanupFailed
+        }
     }
 
     /// Sends the journaled reset. The server's two refusals deleted nothing, so the journal
@@ -589,12 +590,8 @@ final class SyncKeyController {
             default: throw error
             }
             AppLogInfo("[phi-sync] account reset refused (\(PhiSyncLog.describe(error)))")
-            if let markerStore {
-                var journal = markerStore.load()
-                journal.resetOperationId = nil
-                // A failed save leaves a UUID the server will refuse again; nothing depends on it.
-                _ = markerStore.save(journal)
-            }
+            // A failed save leaves a UUID the server will refuse again; nothing depends on it.
+            markerStore?.update { $0.resetOperationId = nil }
             throw error
         }
     }
@@ -608,10 +605,11 @@ final class SyncKeyController {
         // Keep the account-scoped marker as a cleanup journal until every other
         // step succeeds. Its original birthday and progress token remain intact.
         if let markerStore {
-            var journal = markerStore.load()
-            journal.requiresReconfiguration = true
-            journal.removalPending = removingDevice
-            guard markerStore.save(journal) else { throw NativeSyncResetError.cleanupFailed }
+            let journaled = markerStore.update { journal in
+                journal.requiresReconfiguration = true
+                journal.removalPending = removingDevice
+            }
+            guard journaled else { throw NativeSyncResetError.cleanupFailed }
         }
         try invalidateEnrollment()
         // A pairing reset in progress belongs to the enrollment just invalidated.

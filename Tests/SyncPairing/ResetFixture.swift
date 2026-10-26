@@ -40,6 +40,9 @@ final class ResetMarkerStore {
     func save(_ value: PhiSyncMarkerFile) -> Bool {
         if failSave { return false }; file = value; return true
     }
+    @discardableResult func update(_ mutate: (inout PhiSyncMarkerFile) -> Void) -> Bool {
+        var next = file; mutate(&next); return save(next)
+    }
     func deleteFile() { file = PhiSyncMarkerFile() }
 }
 final class ResetMappings {

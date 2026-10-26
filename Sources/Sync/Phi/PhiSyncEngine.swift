@@ -6973,11 +6973,15 @@ actor PhiSyncEngine {
     /// Every engine write of marker.json goes through here. `resetOperationId` belongs to the
     /// account reset in `SyncKeyController`, which journals it before its server call and so
     /// while this engine still runs; the mirror never owns it. Carrying the on-disk value
-    /// forward keeps a round that lands during the reset request from erasing it.
+    /// forward keeps a round that lands during the reset request from erasing it. The carry
+    /// happens inside `update`'s critical section, so a journal write cannot land between
+    /// this read and this write.
     private func saveMarkerFile(_ file: PhiSyncMarkerFile) -> Bool {
-        var file = file
-        file.resetOperationId = markerStore.load().resetOperationId
-        return markerStore.save(file)
+        markerStore.update { disk in
+            let operationId = disk.resetOperationId
+            disk = file
+            disk.resetOperationId = operationId
+        }
     }
 
     private var storedEntityId: String? {

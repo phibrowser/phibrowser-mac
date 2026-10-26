@@ -489,6 +489,91 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertEqual(markerStore.file.resetOperationId, operation)
     }
 
+    /// Two writers update different fields of the same marker.json concurrently (the engine's
+    /// marker/birthday, the controller's reset UUID). `update` serializes each load-mutate-save,
+    /// so both survive every time. Two store instances for the same URL share one lock.
+    func testConcurrentUpdatesOnDifferentFieldsBothSurvive() throws {
+        let url = try makeScratchDirectory().appendingPathComponent("marker.json")
+        let engineSide = FilePhiSyncMarkerStore(fileURL: url)
+        let controllerSide = FilePhiSyncMarkerStore(fileURL: url)
+        for round in 0..<200 {
+            engineSide.deleteFile()
+            let operation = UUID()
+            let marker = Data("m\(round)".utf8)
+            DispatchQueue.concurrentPerform(iterations: 2) { index in
+                if index == 0 {
+                    XCTAssertTrue(engineSide.update { $0.marker = marker; $0.storeBirthday = "b\(round)" })
+                } else {
+                    XCTAssertTrue(controllerSide.update { $0.resetOperationId = operation })
+                }
+            }
+            let file = engineSide.load()
+            XCTAssertEqual(file.marker, marker, "round \(round)")
+            XCTAssertEqual(file.storeBirthday, "b\(round)", "round \(round)")
+            XCTAssertEqual(file.resetOperationId, operation, "round \(round)")
+        }
+    }
+
+    /// Forwards to a real file store, and makes the controller's journal write start on another
+    /// thread while the engine's first `update` is inside its critical section, after the
+    /// engine has read the file. The write has to wait for the lock and lands after the save.
+    private final class InterleavingMarkerStore: PhiSyncMarkerStore {
+        let inner: FilePhiSyncMarkerStore
+        let operation: UUID
+        private(set) var journalWrite: Thread?
+        let journalDone = DispatchSemaphore(value: 0)
+        private var armed = true
+        init(inner: FilePhiSyncMarkerStore, operation: UUID) {
+            self.inner = inner
+            self.operation = operation
+        }
+        func load() -> PhiSyncMarkerFile { inner.load() }
+        func save(_ file: PhiSyncMarkerFile) -> Bool { inner.save(file) }
+        func deleteFile() { inner.deleteFile() }
+        func update(_ mutate: (inout PhiSyncMarkerFile) -> Void) -> Bool {
+            inner.update { disk in
+                mutate(&disk)
+                guard armed else { return }
+                armed = false
+                let started = DispatchSemaphore(value: 0)
+                let inner = inner, operation = operation, done = journalDone
+                let thread = Thread {
+                    started.signal()
+                    inner.update { $0.resetOperationId = operation }
+                    done.signal()
+                }
+                journalWrite = thread
+                thread.start()
+                started.wait()
+                // Give an unserialized write every chance to land before this save.
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+        }
+    }
+
+    /// The engine's carry-forward of `resetOperationId` sits inside `update`: a journal write
+    /// that starts between the engine's read and its write waits, and then keeps both the
+    /// round's marker and the UUID.
+    func testAJournalWriteDuringAnEngineSaveIsNotLost() async throws {
+        let url = try makeScratchDirectory().appendingPathComponent("marker.json")
+        let file = FilePhiSyncMarkerStore(fileURL: url)
+        XCTAssertTrue(file.save(PhiSyncMarkerFile(marker: Data("4".utf8), storeBirthday: "b")))
+        let operation = UUID()
+        let markerStore = InterleavingMarkerStore(inner: file, operation: operation)
+        let client = FakePhiSyncClient()
+        client.storeBirthday = "b"
+        client.scriptedPages = [settingsPage(value: "on", version: 10, marker: "m1")]
+        let engine = makeEngine(client: client, markerStore: markerStore)
+
+        await engine.pullOnce()
+        XCTAssertNotNil(markerStore.journalWrite, "the engine saved the marker through update")
+        XCTAssertEqual(markerStore.journalDone.wait(timeout: .now() + 5), .success)
+
+        let disk = file.load()
+        XCTAssertEqual(disk.marker, Data("m1".utf8), "the round advanced the marker")
+        XCTAssertEqual(disk.resetOperationId, operation, "the journal write was not lost")
+    }
+
     // MARK: - CASE 3.4 (stateKeys contraction)
 
     /// CASE 3.4: stateKeys has exactly five entries and excludes both marker keys; legacyMarkerStateKeys

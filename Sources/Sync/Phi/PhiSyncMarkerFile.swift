@@ -18,7 +18,9 @@ import Foundation
 // account-switch/self-revocation cleanup.
 //
 // Engine rounds write this file atomically; confirmed cleanup uses it as a journal before deleting it. The
-// engine's in-memory mirror writes through with rollback on failure in persistMarkerState.
+// engine's in-memory mirror writes through with rollback on failure in persistMarkerState. Two writers share
+// the file (the engine actor and `SyncKeyController` on the main actor), so every read-modify-write goes
+// through `PhiSyncMarkerStore.update`, which holds a per-file lock across load, mutation and save.
 
 /// Contents of users/<sub>/sync/marker.json (§2.10 / R-M3-4a-18), beside cursor tables so whole-directory
 /// user-data restore rolls back database and marker together.
@@ -47,11 +49,18 @@ struct PhiSyncMarkerFile: Codable, Equatable {
 
 /// Class-bound like PhiOwnedItemStateStore: the engine retains one instance across rounds and must observe
 /// fake-state mutations in tests.
+///
+/// Every read-modify-write MUST use `update`: the engine actor and `SyncKeyController` (main actor) both write
+/// this file, and a plain `load()` then `save(_:)` lets the other writer's save land in between and lose a
+/// field. Plain `save(_:)` is only for a whole-file write by a single owner (the legacy migration, tests).
 protocol PhiSyncMarkerStore: AnyObject {
     /// Unreadable files return empty marker/birthday state without writing back.
     func load() -> PhiSyncMarkerFile
     /// True means persisted, consumed by §2.5 item 4's third flag site (Task 2b).
     @discardableResult func save(_ file: PhiSyncMarkerFile) -> Bool
+    /// Loads, mutates and saves under one lock, so no other `update` (or `save`) on the same file interleaves.
+    /// Returns the save's result; a failed save leaves the file as it was.
+    @discardableResult func update(_ mutate: (inout PhiSyncMarkerFile) -> Void) -> Bool
     /// Self-revocation (§4.4) deletes the file rather than saving empty state.
     func deleteFile()
 }
@@ -60,9 +69,30 @@ protocol PhiSyncMarkerStore: AnyObject {
 final class FilePhiSyncMarkerStore: PhiSyncMarkerStore {
     /// Exposed for tests asserting unreadable-load paths never write back.
     let fileURL: URL
+    /// One lock per file, shared by every instance for the same URL. The coordinator hands one instance to
+    /// both the controller and the engine today; a per-URL lock keeps `update` atomic even if a second
+    /// instance for the same file appears later.
+    private let lock: NSLock
 
     init(fileURL: URL) {
         self.fileURL = fileURL
+        self.lock = Self.locks.lock(for: fileURL)
+    }
+
+    private static let locks = LockTable()
+
+    private final class LockTable {
+        private let guardLock = NSLock()
+        private var locks: [URL: NSLock] = [:]
+        func lock(for url: URL) -> NSLock {
+            let key = url.standardizedFileURL
+            guardLock.lock()
+            defer { guardLock.unlock() }
+            if let existing = locks[key] { return existing }
+            let created = NSLock()
+            locks[key] = created
+            return created
+        }
     }
 
     /// Missing files, undecodable bytes and old format versions all return empty without writing. Replacing
@@ -70,6 +100,28 @@ final class FilePhiSyncMarkerStore: PhiSyncMarkerStore {
     /// writeback so next pull replays from nil marker. Keep one guard because all three cases share this
     /// result.
     func load() -> PhiSyncMarkerFile {
+        lock.lock()
+        defer { lock.unlock() }
+        return loadLocked()
+    }
+
+    @discardableResult
+    func save(_ file: PhiSyncMarkerFile) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return saveLocked(file)
+    }
+
+    @discardableResult
+    func update(_ mutate: (inout PhiSyncMarkerFile) -> Void) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        var file = loadLocked()
+        mutate(&file)
+        return saveLocked(file)
+    }
+
+    private func loadLocked() -> PhiSyncMarkerFile {
         guard let bytes = try? Data(contentsOf: fileURL),
               let decoded = try? JSONDecoder().decode(PhiSyncMarkerFile.self, from: bytes),
               decoded.formatVersion >= PhiSyncMarkerFile.currentFormatVersion else {
@@ -81,8 +133,7 @@ final class FilePhiSyncMarkerStore: PhiSyncMarkerStore {
     /// Atomically persist the complete file. On failure return false without retry (R-M3-4a-83), letting the
     /// engine roll back its mirror and replay the page next round. Create intermediate directories as for
     /// cursor tables. R12 logs only has_marker and error metadata, never token bytes or birthday.
-    @discardableResult
-    func save(_ file: PhiSyncMarkerFile) -> Bool {
+    private func saveLocked(_ file: PhiSyncMarkerFile) -> Bool {
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
@@ -96,6 +147,8 @@ final class FilePhiSyncMarkerStore: PhiSyncMarkerStore {
     }
 
     func deleteFile() {
+        lock.lock()
+        defer { lock.unlock() }
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
         do {
             try FileManager.default.removeItem(at: fileURL)
@@ -111,6 +164,7 @@ final class FilePhiSyncMarkerStore: PhiSyncMarkerStore {
 /// guaranteeing directory-scoped markers there.
 final class DefaultsBackedPhiSyncMarkerStore: PhiSyncMarkerStore {
     private let defaults: UserDefaults
+    private let lock = NSLock()
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -129,6 +183,15 @@ final class DefaultsBackedPhiSyncMarkerStore: PhiSyncMarkerStore {
               forKey: PhiSyncEngine.storeBirthdayStateKey)
         write(file.requiresReconfiguration, forKey: "phi.sync.requiresReconfiguration")
         return true
+    }
+
+    @discardableResult
+    func update(_ mutate: (inout PhiSyncMarkerFile) -> Void) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        var file = load()
+        mutate(&file)
+        return save(file)
     }
 
     /// Delete-file semantics here remove both legacy keys, matching their former stateKeys cleanup.

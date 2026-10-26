@@ -63,7 +63,12 @@ final class AccountDeletionCoordinator {
     /// Removes everything Phi keeps on this Mac outside the credential
     /// layer. Async because the WKWebView website-data clearing only
     /// reports completion through a callback.
-    typealias ClearLocalData = () async -> Void
+    /// Receives the Auth0 subject read before the credential clear, so the
+    /// account-scoped sync device key can be removed; nil when it was
+    /// unavailable.
+    typealias ClearLocalData = (_ auth0Sub: String?) async -> Void
+    /// Reads the signed-in account's Auth0 subject from the shared token.
+    typealias CurrentAuth0Subject = @MainActor () -> String?
     typealias Quit = () -> Void
 
     enum State: Equatable {
@@ -121,6 +126,7 @@ final class AccountDeletionCoordinator {
     private let clearInitialCredentials: ClearInitialCredentials
     private let clearCredentials: ClearCredentials
     private let clearLocalData: ClearLocalData
+    private let currentAuth0Subject: CurrentAuth0Subject
     private let quit: Quit
     private let now: () -> Date
     private let makeIdempotencyKey: () -> String
@@ -221,8 +227,13 @@ final class AccountDeletionCoordinator {
             // change notification.
             await AuthManager.shared.clearLocalAccountData()
         },
-        clearLocalData: @escaping ClearLocalData = {
-            await AccountDeletionLocalDataRemoval.removeAll()
+        clearLocalData: @escaping ClearLocalData = { auth0Sub in
+            await AccountDeletionLocalDataRemoval.removeAll(auth0Sub: auth0Sub)
+        },
+        currentAuth0Subject: @escaping CurrentAuth0Subject = {
+            // Same source as the Sentinel event: the shared token, which
+            // `clearInitialCredentials` removes.
+            SharedAuthTokenStore.shared.read()?.auth0Sub
         },
         quit: @escaping Quit = {
             // The quit must be unstoppable: both clears already ran, so a
@@ -247,6 +258,7 @@ final class AccountDeletionCoordinator {
         self.clearInitialCredentials = clearInitialCredentials
         self.clearCredentials = clearCredentials
         self.clearLocalData = clearLocalData
+        self.currentAuth0Subject = currentAuth0Subject
         self.quit = quit
         self.now = now
         self.makeIdempotencyKey = makeIdempotencyKey
@@ -411,6 +423,11 @@ final class AccountDeletionCoordinator {
     /// still readable for the event, and a crash after Sentinel accepts it
     /// cannot leave the browser able to restore deleted credentials.
     ///
+    /// The Auth0 subject is read right after the fence, while the shared
+    /// token is still present, and handed to the local-data clear: the
+    /// initial credential clear removes the token, and the local-data clear
+    /// needs the subject to delete the account-scoped sync device key.
+    ///
     /// The credential fence runs before the local-data clear's long
     /// suspensions (the WKWebView sweep), so reopening Phi during cleanup
     /// cannot restore the deleted account from Auth0's local keychain. The
@@ -434,9 +451,10 @@ final class AccountDeletionCoordinator {
             )
             return
         }
+        let auth0Sub = currentAuth0Subject()
         announceAccountDeleted()
         await clearInitialCredentials()
-        await clearLocalData()
+        await clearLocalData(auth0Sub)
         await clearCredentials()
         quit()
     }

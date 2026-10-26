@@ -27,7 +27,8 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
         beginCredentialDeletion: AccountDeletionCoordinator.BeginCredentialDeletion? = nil,
         clearInitialCredentials: AccountDeletionCoordinator.ClearInitialCredentials? = nil,
         clearCredentials: AccountDeletionCoordinator.ClearCredentials? = nil,
-        clearLocalData: AccountDeletionCoordinator.ClearLocalData? = nil
+        clearLocalData: AccountDeletionCoordinator.ClearLocalData? = nil,
+        currentAuth0Subject: @escaping AccountDeletionCoordinator.CurrentAuth0Subject = { "auth0|test-subject" }
     ) -> AccountDeletionCoordinator {
         let coordinator = AccountDeletionCoordinator(
             requestDeletion: requestDeletion,
@@ -48,10 +49,11 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
                 self?.destructiveEdgeEvents.append("clearCredentials")
                 await clearCredentials?()
             },
-            clearLocalData: { [weak self] in
+            clearLocalData: { [weak self] auth0Sub in
                 self?.destructiveEdgeEvents.append("clearLocalData")
-                await clearLocalData?()
+                await clearLocalData?(auth0Sub)
             },
+            currentAuth0Subject: currentAuth0Subject,
             quit: { [weak self] in self?.destructiveEdgeEvents.append("quit") },
             now: now,
             makeIdempotencyKey: makeIdempotencyKey
@@ -790,7 +792,7 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
 
     func testFinalizeClearsCredentialsBeforeAndAfterLongLocalDataRemoval() async {
         var resumeLocalDataRemoval: CheckedContinuation<Void, Never>?
-        let coordinator = makeCoordinator(clearLocalData: {
+        let coordinator = makeCoordinator(clearLocalData: { _ in
             await withCheckedContinuation { resumeLocalDataRemoval = $0 }
         })
 
@@ -856,6 +858,53 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .finalizing)
     }
 
+    func testFinalizeHandsLocalDataClearTheSubjectReadBeforeCredentialClearing() async {
+        var storedSubject: String? = "auth0|deleted-account"
+        var receivedSubjects: [String?] = []
+        let coordinator = makeCoordinator(
+            clearInitialCredentials: { storedSubject = nil },
+            clearLocalData: { auth0Sub in receivedSubjects.append(auth0Sub) },
+            currentAuth0Subject: { storedSubject }
+        )
+
+        await coordinator.start()
+        await coordinator.submitCode("123456")
+        await coordinator.finalizeDeletion()
+
+        XCTAssertNil(storedSubject, "The initial credential clear removed the subject source")
+        XCTAssertEqual(
+            receivedSubjects, ["auth0|deleted-account"],
+            "The subject must be captured before clearInitialCredentials empties the shared token"
+        )
+        XCTAssertEqual(destructiveEdgeEvents.last, "quit")
+    }
+
+    func testFinalizeWithoutSubjectStillClearsLocalDataAndQuits() async {
+        var receivedSubjects: [String?] = []
+        let coordinator = makeCoordinator(
+            clearLocalData: { auth0Sub in receivedSubjects.append(auth0Sub) },
+            currentAuth0Subject: { nil }
+        )
+
+        await coordinator.start()
+        await coordinator.submitCode("123456")
+        await coordinator.finalizeDeletion()
+
+        XCTAssertEqual(receivedSubjects, [nil])
+        XCTAssertEqual(
+            destructiveEdgeEvents,
+            [
+                "beginCredentialDeletion",
+                "announceAccountDeleted",
+                "clearInitialCredentials",
+                "clearLocalData",
+                "clearCredentials",
+                "quit",
+            ],
+            "A missing subject skips only the device key step, never the finalize"
+        )
+    }
+
     func testFinalizeStopsWhenCredentialSafetyPreflightFails() async {
         let coordinator = makeCoordinator(beginCredentialDeletion: { false })
 
@@ -890,7 +939,7 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
 
     func testFinalizeWhileFinalizeInFlightIsIgnored() async {
         var resumeLocalDataRemoval: CheckedContinuation<Void, Never>?
-        let coordinator = makeCoordinator(clearLocalData: {
+        let coordinator = makeCoordinator(clearLocalData: { _ in
             await withCheckedContinuation { resumeLocalDataRemoval = $0 }
         })
 
@@ -921,7 +970,7 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
 
     func testCancelDuringFinalizeIsIgnored() async {
         var resumeLocalDataRemoval: CheckedContinuation<Void, Never>?
-        let coordinator = makeCoordinator(clearLocalData: {
+        let coordinator = makeCoordinator(clearLocalData: { _ in
             await withCheckedContinuation { resumeLocalDataRemoval = $0 }
         })
 
@@ -948,7 +997,7 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
                 requestCallCount += 1
                 return .verificationCodeSent(requestID: "req-1")
             },
-            clearLocalData: {
+            clearLocalData: { _ in
                 await withCheckedContinuation { resumeLocalDataRemoval = $0 }
             }
         )

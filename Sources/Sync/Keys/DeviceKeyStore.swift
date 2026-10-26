@@ -111,7 +111,20 @@ final class DeviceKeyStore {
             .replacingOccurrences(of: "=", with: "")
     }
 
-    func deleteForTesting() throws {
+    /// Deletes this store's item -- the account-scoped item, or the legacy item
+    /// only for a store built with `accountId: nil` (tests). Never deletes the
+    /// legacy item from an account-scoped store. Two legitimate callers:
+    /// - Tests, to reset the Keychain between cases.
+    /// - Account deletion (`AccountDeletionLocalDataRemoval`): the account
+    ///   identity itself is destroyed and sync-service's account purge removes
+    ///   the device row, so an absent item is correct. The next sign-in of that
+    ///   `sub` is a fresh first-device enrollment that mints a key, or copies the
+    ///   legacy key when one is present.
+    ///
+    /// Self-revoke must NOT call this: deleting leaves the item empty, the next
+    /// read copies the legacy key back, and the server never un-revokes an id.
+    /// Self-revoke rotates instead (`rotateForCurrentAccount`).
+    func deleteItem() throws {
         let status = SecItemDelete(baseQuery as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw DeviceKeyStoreError.keychainFailure(status)

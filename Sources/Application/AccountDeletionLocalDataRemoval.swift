@@ -10,7 +10,7 @@ import WebKit
 /// on this Mac outside the credential layer (which
 /// `AuthManager.clearLocalAccountData()` owns).
 ///
-/// Three pieces, in order:
+/// Four pieces, in order:
 /// 1. The data roots (user data, caches, preferences) plus the Time
 ///    Machine upgrade-snapshot root — whose snapshots hold copies of the
 ///    very data being erased, and whose pending-restore markers must not
@@ -39,6 +39,15 @@ import WebKit
 ///    `BitwardenSessionStore.clear()` removes it. The helper's own vault
 ///    data is written under the data root (`PHI_BROWSER_DATA_DIR`), so it
 ///    goes with the wipe. A no-op when Bitwarden was never configured.
+/// 4. The sync device private key (`DeviceKeyStore`), the account-scoped
+///    keychain item for the deleted `sub`. Also outside the data roots.
+///    Hygiene, not the fix: sync-service purges the account's server rows
+///    when the account-deletion orchestrator runs, so the next sign-in of
+///    the same `sub` is a fresh first-device enrollment. The legacy shared
+///    item (pre-M3-2, `device-x25519-v1`) stays: it is a read-only migration
+///    source that other accounts on this Mac may still copy from. No sync
+///    server call is made here. Skipped, with a warning, when the subject
+///    could not be read before the credential clear.
 ///
 /// The "Phi Safe Storage" keychain item — Chromium's profile encryption
 /// key — is deliberately NOT removed. Once the profiles are gone it
@@ -70,7 +79,7 @@ import WebKit
 /// paths.
 @MainActor
 enum AccountDeletionLocalDataRemoval {
-    static func removeAll() async {
+    static func removeAll(auth0Sub: String?) async {
         let targets = UserDataRemoval.Targets.currentProductIncludingTimeMachine
         UserDataRemoval.beginRemoval(of: targets)
         await removeWebsiteData()
@@ -80,6 +89,7 @@ enum AccountDeletionLocalDataRemoval {
         // this line to enable deletion once channels use per-channel key names.
         // removeSafeStorageKeychainItem()
         BitwardenSessionStore.clear()
+        removeSyncDeviceKey(auth0Sub: auth0Sub)
         UserDefaults.standard.removePersistentDomain(forName: targets.preferencesDomain)
     }
 
@@ -131,6 +141,27 @@ enum AccountDeletionLocalDataRemoval {
                 try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
                 firstResult.resume(with: false)
             }
+        }
+    }
+
+    /// Deletes the account-scoped sync device key item for `auth0Sub` (step 4
+    /// of the type doc). The subject itself is never logged. `makeStore` lets
+    /// tests point at a throwaway keychain service instead of the real one.
+    static func removeSyncDeviceKey(
+        auth0Sub: String?,
+        makeStore: (String) -> DeviceKeyStore = { DeviceKeyStore(accountId: $0) }
+    ) {
+        guard let auth0Sub, !auth0Sub.isEmpty else {
+            AppLogWarn("🗑️ [AccountDeletion] No auth0 subject; skipped removing the sync device key")
+            return
+        }
+        do {
+            try makeStore(auth0Sub).deleteItem()
+            AppLogInfo("🗑️ [AccountDeletion] Sync device key removed")
+        } catch DeviceKeyStoreError.keychainFailure(let status) {
+            AppLogWarn("🗑️ [AccountDeletion] Failed to remove the sync device key: \(status)")
+        } catch {
+            AppLogWarn("🗑️ [AccountDeletion] Failed to remove the sync device key")
         }
     }
 

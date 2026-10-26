@@ -15,7 +15,7 @@ final class DeviceKeyStoreTests: XCTestCase {
     /// A throwaway service shared by the three account dimensions in one test.
     /// NEVER the default: the default service + the default legacy account IS
     /// the developer's real device key, and `rotateForCurrentAccount()` /
-    /// `deleteForTesting()` on it turns this Mac into an unregistered device.
+    /// `deleteItem()` on it turns this Mac into an unregistered device.
     private func scopedStores() -> (legacy: DeviceKeyStore, a: DeviceKeyStore, b: DeviceKeyStore) {
         let service = "com.phibrowser.sync.device-key.test.\(UUID().uuidString)"
         return (DeviceKeyStore(service: service, accountId: nil),
@@ -25,7 +25,7 @@ final class DeviceKeyStoreTests: XCTestCase {
 
     func testLoadOrCreateIsIdempotent() throws {
         let store = makeStore()
-        defer { try? store.deleteForTesting() }
+        defer { try? store.deleteItem() }
         let k1 = try store.loadOrCreatePrivateKey()
         let k2 = try store.loadOrCreatePrivateKey()
         XCTAssertEqual(k1.rawRepresentation, k2.rawRepresentation)
@@ -33,7 +33,7 @@ final class DeviceKeyStoreTests: XCTestCase {
 
     func testDeviceKeyIdStableAndWellFormed() throws {
         let store = makeStore()
-        defer { try? store.deleteForTesting() }
+        defer { try? store.deleteItem() }
         _ = try store.loadOrCreatePrivateKey()
         let id1 = try store.deviceKeyId()
         let id2 = try store.deviceKeyId()
@@ -44,14 +44,14 @@ final class DeviceKeyStoreTests: XCTestCase {
 
     func testTwoStoresDifferentAccountsAreIndependent() throws {
         let a = makeStore(); let b = makeStore()
-        defer { try? a.deleteForTesting(); try? b.deleteForTesting() }
+        defer { try? a.deleteItem(); try? b.deleteItem() }
         XCTAssertNotEqual(try a.loadOrCreatePrivateKey().rawRepresentation,
                           try b.loadOrCreatePrivateKey().rawRepresentation)
     }
 
     func testTheLegacyItemIsMigratedByCopyingNotRegenerating() throws {
         let (legacy, scoped, _) = scopedStores()
-        defer { try? legacy.deleteForTesting(); try? scoped.deleteForTesting() }
+        defer { try? legacy.deleteItem(); try? scoped.deleteItem() }
         let legacyId = try legacy.deviceKeyId()
         XCTAssertEqual(try scoped.deviceKeyId(), legacyId,
                        "regenerating here would turn a registered device into a stranger (404 -> rejoin)")
@@ -60,7 +60,7 @@ final class DeviceKeyStoreTests: XCTestCase {
 
     func testRotationTouchesOnlyTheCurrentAccountsItem() throws {
         let (legacy, a, b) = scopedStores()
-        defer { try? legacy.deleteForTesting(); try? a.deleteForTesting(); try? b.deleteForTesting() }
+        defer { try? legacy.deleteItem(); try? a.deleteItem(); try? b.deleteItem() }
         let idA = try a.deviceKeyId(), idB = try b.deviceKeyId(), idLegacy = try legacy.deviceKeyId()
         try a.rotateForCurrentAccount()
         XCTAssertNotEqual(try a.deviceKeyId(), idA)
@@ -70,7 +70,7 @@ final class DeviceKeyStoreTests: XCTestCase {
 
     func testRotationDoesNotFallBackToTheRevokedLegacyKey() throws {
         let (legacy, scoped, _) = scopedStores()
-        defer { try? legacy.deleteForTesting(); try? scoped.deleteForTesting() }
+        defer { try? legacy.deleteItem(); try? scoped.deleteItem() }
         _ = try legacy.deviceKeyId()
         let before = try scoped.deviceKeyId()
         try scoped.rotateForCurrentAccount()
@@ -85,7 +85,7 @@ final class DeviceKeyStoreTests: XCTestCase {
     /// slot empty for the legacy-copy branch of `loadOrCreatePrivateKey()` to fill.
     func testRotationOnAnAbsentItemWritesAFreshKeyRatherThanTheLegacyOne() throws {
         let (legacy, scoped, _) = scopedStores()
-        defer { try? legacy.deleteForTesting(); try? scoped.deleteForTesting() }
+        defer { try? legacy.deleteItem(); try? scoped.deleteItem() }
         let legacyId = try legacy.deviceKeyId()   // the legacy item exists; scoped's does not
         try scoped.rotateForCurrentAccount()
         XCTAssertNotEqual(try scoped.deviceKeyId(), legacyId,
@@ -98,7 +98,7 @@ final class DeviceKeyStoreTests: XCTestCase {
     /// Every rotation must produce a new fingerprint that is readable immediately.
     func testRepeatedRotationsAlwaysLeaveAReadableNonLegacyKeyInPlace() throws {
         let (legacy, scoped, _) = scopedStores()
-        defer { try? legacy.deleteForTesting(); try? scoped.deleteForTesting() }
+        defer { try? legacy.deleteItem(); try? scoped.deleteItem() }
         let legacyId = try legacy.deviceKeyId()
         var seen: Set<String> = [try scoped.deviceKeyId()]
         for _ in 0..<3 {

@@ -324,7 +324,7 @@ private final class HolographicCardFace {
         foil.frame = bounds
         surface.addSublayer(foil)
         sheen.frame = bounds
-        sheen.colors = [0.0, 0, 136.0 / 255, 17.0 / 255].map { HolographicCardArtwork.hex(0xffffff, alpha: $0) }
+        sheen.colors = ([0.0, 0, 136.0 / 255, 17.0 / 255] as [CGFloat]).map { HolographicCardArtwork.hex(0xffffff, alpha: $0) }
             + [HolographicCardArtwork.hex(0x19224d, alpha: 74.0 / 255), NSColor.clear.cgColor]
         sheen.locations = [0.1, 0.24, 0.39, 0.49, 0.66, 0.85]
         surface.addSublayer(sheen)

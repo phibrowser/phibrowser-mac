@@ -2,7 +2,9 @@ import Foundation
 
 /* PRODUCTION_MARKER_TYPE */
 enum NativeSyncResetError: Error { case cleanupFailed }
+/* PRODUCTION_KEY_API_ERROR */
 func AppLogInfo(_ message: String) {}
+enum PhiSyncLog { static func describe(_ error: Error) -> String { "\(type(of: error))" } }
 enum PhiSyncEngine {
     static let stateKeys = ["phi.sync.entityId", "phi.sync.version"]
     static let legacyMarkerStateKeys = ["phi.sync.marker", "phi.sync.storeBirthday"]
@@ -46,6 +48,15 @@ final class ResetMappings {
     var revocations = 0
     func revokeDevice(deviceKeyId: String) async throws {
         if revokeFails { throw NativeSyncResetError.cleanupFailed }; revocations += 1
+    }
+    /// Every reset request, refused or not; `beforeReset` observes the journal at send time.
+    var resetCalls = [(operationId: UUID, deviceKeyId: String)]()
+    var resetError: Error?
+    var beforeReset: () -> Void = {}
+    func resetAccount(operationId: UUID, deviceKeyId: String) async throws {
+        beforeReset()
+        resetCalls.append((operationId, deviceKeyId))
+        if let resetError { throw resetError }
     }
     func removeAllMappings() { mappings = [:] }
     func allMappings() -> [String: String] { mappings }
@@ -164,5 +175,83 @@ final class ResetFixture {
         catch NativeSyncResetError.cleanupFailed {}
         precondition(stuckMarker.requiresReconfiguration && stuckMarker.localResetMarker!.present)
         print("PASS native reset: remote refusal, cleanup journal, retry, account fence, retained browsing preferences, pairing-reset marker")
+        try await accountResetTests(defaults)
     }
+}
+
+/// The account reset (docs/sync.md, "Enrollment and setup"): journal before the request,
+/// server first, the shared cleanup on `reset`, nothing local on a refusal, the UUID kept
+/// for a retry after any other failure, and the resume through `reconfigureSync()`.
+func accountResetTests(_ defaults: UserDefaults) async throws {
+    func live() -> ResetFixture {
+        let fixture = ResetFixture(defaults)
+        fixture.markerStore!.file = PhiSyncMarkerFile(marker: Data([9]), storeBirthday: "old")
+        return fixture
+    }
+
+    let reset = live()
+    reset.profileKeys.beforeReset = {
+        precondition(reset.markerStore!.file.resetOperationId != nil, "journal precedes the request")
+        precondition(reset.steps.isEmpty, "server first: nothing local before the answer")
+    }
+    try await reset.resetSyncAndRemoveThisDevice()
+    precondition(reset.profileKeys.resetCalls.count == 1 && reset.profileKeys.resetCalls[0].deviceKeyId == "device")
+    precondition(reset.steps.first == "stop" && reset.steps.last == "finish")
+    precondition(reset.deviceKeyRotator!.count == 1 && reset.profileKeys.mappings.isEmpty)
+    precondition(reset.markerStore!.file == PhiSyncMarkerFile(), "the marker deletion drops the journaled UUID")
+    precondition(reset.profileKeys.revocations == 0, "the reset is not a revoke")
+
+    for refusal in [KeyAPIError.notLastDevice, KeyAPIError.deviceNotFound] {
+        let refused = live()
+        let original = refused.markerStore!.file
+        refused.profileKeys.resetError = refusal
+        do { try await refused.resetSyncAndRemoveThisDevice(); fatalError("Expected refusal") }
+        catch let error as KeyAPIError {
+            switch error { case .notLastDevice, .deviceNotFound: break; default: fatalError("wrong error") }
+        }
+        precondition(refused.steps.isEmpty && refused.profileKeys.mappings == ["local": "remote"])
+        precondition(refused.deviceKeyRotator!.count == 0 && refused.manager.hasKey)
+        precondition(refused.markerStore!.file == original, "a refusal forgets the operation and nothing else")
+    }
+
+    let offline = live()
+    offline.profileKeys.resetError = KeyAPIError.transport(URLError(.notConnectedToInternet))
+    do { try await offline.resetSyncAndRemoveThisDevice(); fatalError("Expected transport failure") }
+    catch KeyAPIError.transport {}
+    let pending = offline.markerStore!.file.resetOperationId
+    precondition(pending != nil && offline.steps.isEmpty && offline.profileKeys.mappings == ["local": "remote"])
+    offline.profileKeys.resetError = nil
+    try await offline.resetSyncAndRemoveThisDevice()
+    precondition(offline.profileKeys.resetCalls.map(\.operationId) == [pending!, pending!], "a retry reuses the UUID")
+    precondition(offline.markerStore!.file == PhiSyncMarkerFile())
+
+    // A lost success: the server reset, then the engine hit the new birthday and asked
+    // for reconfiguration. The resume retries the journaled operation, then removes.
+    let operation = UUID()
+    let lost = live()
+    lost.markerStore!.file.resetOperationId = operation
+    lost.markerStore!.file.requiresReconfiguration = true
+    try await lost.reconfigureSync()
+    precondition(lost.profileKeys.resetCalls.map(\.operationId) == [operation])
+    precondition(lost.deviceKeyRotator!.count == 1, "a resumed reset rotates the device key like a removal")
+    precondition(!lost.requiresReconfiguration && lost.markerStore!.file == PhiSyncMarkerFile())
+
+    // The resume's refusal turns it into an ordinary reconfiguration: no rotation.
+    let stranger = live()
+    stranger.markerStore!.file.resetOperationId = operation
+    stranger.markerStore!.file.requiresReconfiguration = true
+    stranger.profileKeys.resetError = KeyAPIError.deviceNotFound
+    try await stranger.reconfigureSync()
+    precondition(stranger.deviceKeyRotator!.count == 0 && !stranger.requiresReconfiguration)
+
+    // The resume keeps the reconfiguration blocked while the reset's outcome is unknown.
+    let unknown = live()
+    unknown.markerStore!.file.resetOperationId = operation
+    unknown.markerStore!.file.requiresReconfiguration = true
+    unknown.profileKeys.resetError = KeyAPIError.http(503, "")
+    do { try await unknown.reconfigureSync(); fatalError("Expected server failure") }
+    catch KeyAPIError.http(503, _) {}
+    precondition(unknown.steps.isEmpty && unknown.requiresReconfiguration)
+    precondition(unknown.markerStore!.file.resetOperationId == operation)
+    print("PASS account reset: journal first, server first, shared cleanup, refusals change nothing, UUID reuse, resume")
 }

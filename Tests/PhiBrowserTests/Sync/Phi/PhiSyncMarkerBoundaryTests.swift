@@ -471,6 +471,24 @@ final class PhiSyncMarkerBoundaryTests: XCTestCase {
         XCTAssertNil(defaults.object(forKey: PhiSyncEngine.storeBirthdayStateKey))
     }
 
+    /// The account reset journals its UUID while the engine runs (docs/sync.md, "Marker
+    /// persistence boundary"). A round that saves the marker afterwards, from a mirror loaded
+    /// before the UUID existed, must carry the on-disk value forward rather than erase it.
+    func testAnEngineRoundKeepsAResetOperationJournaledAfterItLoaded() async throws {
+        let markerStore = MemoryMarkerStore(file: PhiSyncMarkerFile(marker: Data("4".utf8), storeBirthday: "b"))
+        let client = FakePhiSyncClient()
+        client.storeBirthday = "b"
+        client.scriptedPages = [settingsPage(value: "on", version: 10, marker: "m1")]
+        let engine = makeEngine(client: client, markerStore: markerStore)
+        let operation = UUID()
+        markerStore.file.resetOperationId = operation
+
+        await engine.pullOnce()
+
+        XCTAssertEqual(markerStore.file.marker, Data("m1".utf8), "the round advanced the marker")
+        XCTAssertEqual(markerStore.file.resetOperationId, operation)
+    }
+
     // MARK: - CASE 3.4 (stateKeys contraction)
 
     /// CASE 3.4: stateKeys has exactly five entries and excludes both marker keys; legacyMarkerStateKeys

@@ -23,6 +23,8 @@ final class AccountKeyManagerTests: XCTestCase {
             var maxGetDeviceEnvelopeInFlight = 0
             var revokedDeviceKeyIds: [String] = []
             var revokeError: Error?
+            var resetCalls: [(operationId: UUID, deviceKeyId: String)] = []
+            var resetError: Error?
             var joinRequests: [String: JoinRequestDTO] = [:]
             var pendingSummaries: [JoinRequestSummaryDTO] = []
             var postJoinError: Error?
@@ -130,6 +132,20 @@ final class AccountKeyManagerTests: XCTestCase {
             try locked { s in
                 if let error = s.revokeError { throw error }
                 s.revokedDeviceKeyIds.append(deviceKeyId)
+            }
+        }
+
+        /// Every reset request is recorded, refused or not, so a test can assert the
+        /// operation UUID a retry reused.
+        var resetCalls: [(operationId: UUID, deviceKeyId: String)] { locked { $0.resetCalls } }
+        var resetError: Error? {
+            get { locked { $0.resetError } }
+            set { locked { $0.resetError = newValue } }
+        }
+        func resetAccount(operationId: UUID, deviceKeyId: String) async throws {
+            try locked { s in
+                s.resetCalls.append((operationId, deviceKeyId))
+                if let error = s.resetError { throw error }
             }
         }
 

@@ -1,6 +1,9 @@
 import Foundation
 
-enum KeyAPIError: Error { case http(Int, String), transport(Error), decode, lastActiveDevice }
+/// `lastActiveDevice` is the legacy revoke's 409 `last_device`. `notLastDevice` (409) and
+/// `deviceNotFound` (404 `device_not_found`) are the account reset's two refusals; neither
+/// deleted anything server-side (docs/sync.md, "Enrollment and setup").
+enum KeyAPIError: Error { case http(Int, String), transport(Error), decode, lastActiveDevice, notLastDevice, deviceNotFound }
 
 /// Binary fields are base64(std)-encoded strings on the wire; `kdf_params` is passed through
 /// as raw JSON bytes. Note: /keys/v1 responses are NOT wrapped in the shared `Response<T>`
@@ -343,15 +346,45 @@ final class KeyEnvelopeAPIClient {
         }
     }
 
-    /// `POST /keys/v1/devices/{id}/revoke`. 409 means the account would be left
-    /// with no active device; the client deliberately does NOT pre-probe the
-    /// device count (that would need a `GET /keys/v1/devices` this client does
-    /// not have), it reacts to this code.
+    /// The `code` of a `/keys/v1` error body (`{"code": "...", "message": "..."}`), or nil
+    /// when the body is not one. Refusals that change what the client does next are
+    /// matched on this code, never on the status alone.
+    static func errorCode(in data: Data) -> String? {
+        struct ErrorBody: Decodable { let code: String }
+        return (try? JSONDecoder().decode(ErrorBody.self, from: data))?.code
+    }
+
+    /// `POST /keys/v1/devices/{id}/revoke`. 409 `last_device` means the account would
+    /// be left with no active device; the client reacts to that code rather than
+    /// pre-probing the device count, so the server's locked decision is the only one.
+    /// Any other 409 is an ordinary failure.
     func revokeDevice(deviceKeyId: String) async throws {
         let (status, data) = try await request("POST", "/keys/v1/devices/\(deviceKeyId)/revoke")
         switch status {
         case 200, 204: return
-        case 409: throw KeyAPIError.lastActiveDevice
+        case 409 where Self.errorCode(in: data) == "last_device": throw KeyAPIError.lastActiveDevice
+        default: throw KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    /// `PUT /keys/v1/reset-operations/{operation}`: the account's last active device
+    /// deletes every server-side sync row of the account. The server keeps no receipt;
+    /// a retry with the same `operationId` is answered from the account's state, so a
+    /// retry after a lost success answers `reset` again. 409 `not_last_device` (another
+    /// device is active) and 404 `device_not_found` (the account was re-enrolled without
+    /// this device) deleted nothing.
+    func resetAccount(operationId: UUID, deviceKeyId: String) async throws {
+        let (status, data) = try await request("PUT",
+            "/keys/v1/reset-operations/\(operationId.uuidString.lowercased())",
+            body: ["device_key_id": deviceKeyId])
+        switch status {
+        case 200:
+            struct ResetResult: Decodable { let outcome: String }
+            guard (try? JSONDecoder().decode(ResetResult.self, from: data))?.outcome == "reset" else {
+                throw KeyAPIError.decode
+            }
+        case 409 where Self.errorCode(in: data) == "not_last_device": throw KeyAPIError.notLastDevice
+        case 404 where Self.errorCode(in: data) == "device_not_found": throw KeyAPIError.deviceNotFound
         default: throw KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
         }
     }

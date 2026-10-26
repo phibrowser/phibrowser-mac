@@ -106,6 +106,13 @@ final class DevicesSettingHostingViewController: NSViewController {
                 throw DevicesRemoveDeviceError.syncControllerUnavailable
             }
             try await controller.removeThisDeviceFromSync()
+        }, reset: { [weak self] in
+            // Same binding rule as the removal above.
+            guard let controller = self?.syncKeyController else {
+                AppLogWarn("[phi-sync] account reset: no shared sync key controller")
+                throw DevicesRemoveDeviceError.syncControllerUnavailable
+            }
+            try await controller.resetSyncAndRemoveThisDevice()
         }, onRemoved: { [weak self] in
             // `unlockState` lives on `DevicesSettingViewModel` and only moves when
             // `loadAll()` runs, so the pane is refreshed by hand here: the poll is

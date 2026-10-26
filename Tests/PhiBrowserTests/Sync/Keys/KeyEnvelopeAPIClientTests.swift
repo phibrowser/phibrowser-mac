@@ -122,6 +122,35 @@ final class KeyEnvelopeAPIClientTests: XCTestCase {
         }
     }
 
+    /// The account reset and the legacy revoke match their refusals on the body
+    /// `code`, never on the status alone.
+    func testResetAndRevokeRefusalMapping() async throws {
+        let operation = UUID()
+        StubURLProtocol.handler = { req in
+            XCTAssertEqual(req.httpMethod, "PUT")
+            XCTAssertEqual(req.url?.path, "/keys/v1/reset-operations/\(operation.uuidString.lowercased())")
+            return (200, Data(#"{"operation_id":"o","device_key_id":"d","outcome":"reset"}"#.utf8))
+        }
+        try await makeClient().resetAccount(operationId: operation, deviceKeyId: "d")
+
+        StubURLProtocol.handler = { _ in (409, Data(#"{"code":"not_last_device","message":"x"}"#.utf8)) }
+        do { try await makeClient().resetAccount(operationId: operation, deviceKeyId: "d"); XCTFail("409") }
+        catch KeyAPIError.notLastDevice {}
+        StubURLProtocol.handler = { _ in (404, Data(#"{"code":"device_not_found","message":"x"}"#.utf8)) }
+        do { try await makeClient().resetAccount(operationId: operation, deviceKeyId: "d"); XCTFail("404") }
+        catch KeyAPIError.deviceNotFound {}
+        StubURLProtocol.handler = { _ in (409, Data(#"{"code":"other","message":"x"}"#.utf8)) }
+        do { try await makeClient().resetAccount(operationId: operation, deviceKeyId: "d"); XCTFail("409") }
+        catch KeyAPIError.http(409, _) {}
+
+        StubURLProtocol.handler = { _ in (409, Data(#"{"code":"last_device","message":"x"}"#.utf8)) }
+        do { try await makeClient().revokeDevice(deviceKeyId: "d"); XCTFail("409") }
+        catch KeyAPIError.lastActiveDevice {}
+        StubURLProtocol.handler = { _ in (409, Data(#"{"code":"other","message":"x"}"#.utf8)) }
+        do { try await makeClient().revokeDevice(deviceKeyId: "d"); XCTFail("409") }
+        catch KeyAPIError.http(409, _) {}
+    }
+
     func testListProfilesDecodes() async throws {
         let body = #"[{"profile_uuid":"11111111-1111-4111-8111-111111111111","has_envelope":true,"created_at":"2026-08-27T09:00:00.123456Z"}]"#
         StubURLProtocol.handler = { req in

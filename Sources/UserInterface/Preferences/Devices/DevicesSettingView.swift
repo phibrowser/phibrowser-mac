@@ -583,10 +583,11 @@ struct DevicesSettingView: View {
         }
     }
 
-    /// The pane's only destructive action, at the bottom and in the same
-    /// secondary style as every other button on the pane. The confirmation, its
-    /// copy and the `last_device` note all come from `SelfRevokeStrings`, shared
-    /// with the pairing gate's exit of the same name.
+    /// The pane's destructive actions, at the bottom: the removal, in the same
+    /// secondary style as every other button on the pane, and after a
+    /// `last_device` refusal the account reset under the note. The
+    /// confirmations, their copy and the note all come from `SelfRevokeStrings`,
+    /// shared with the pairing gate's exit of the same name.
     private var removeDeviceSection: some View {
         section(NSLocalizedString("sync.recovery.title", value: "Recovery and removal", comment: "Recovery guidance and device removal")) {
             SettingsDetailCard {
@@ -603,6 +604,18 @@ struct DevicesSettingView: View {
                             } else {
                                 hintText(note)
                             }
+                        }
+                        if removeModel.showsResetOffer {
+                            // Only after a `last_device` refusal: the one way off the
+                            // account's last device, so it is styled destructive and
+                            // asks again before anything is sent.
+                            Button(SelfRevokeStrings.resetOffer, role: .destructive) {
+                                Task { await removeModel.requestReset(confirm: SelfRevokeStrings.confirmReset) }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(!removeModel.canRequestReset || viewModel.isReconfiguring)
+                            .padding(.top, 4)
                         }
                     }
                     Spacer(minLength: 12)

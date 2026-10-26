@@ -35,9 +35,16 @@ final class DevicesRemoveDeviceModel: ObservableObject {
         case idle
         case confirming
         case removing
-        /// The server refused: this is the account's last active device. Sticky —
-        /// nothing the pane can do adds a second device.
+        /// The server refused: this is the account's last active device. The
+        /// removal button stays disabled; the account reset is offered instead.
         case lastDevice
+        /// The account reset's second confirmation is up (same reason as
+        /// `confirming`: the alert is app-modal).
+        case confirmingReset
+        case resetting
+        /// The reset failed without a refusal (offline, 5xx, Keychain). Still the
+        /// last device, so the reset stays on offer for a retry.
+        case resetFailed(String)
         /// Transient failure (offline, 5xx, Keychain). Retrying is the fix, so
         /// this does NOT disable the button.
         case failed(String)
@@ -49,17 +56,23 @@ final class DevicesRemoveDeviceModel: ObservableObject {
     /// Both closures are `@MainActor`: the model is main-actor confined and the
     /// production bodies touch the pane's own view model and the coordinator.
     private let remove: @MainActor () async throws -> Void
+    private let reset: @MainActor () async throws -> Void
     private let onRemoved: (@MainActor () async -> Void)?
 
     /// - Parameters:
     ///   - remove: the teardown itself — production passes the shared
     ///     controller's `removeThisDeviceFromSync()`.
-    ///   - onRemoved: run once, after a successful removal, so the pane can
-    ///     re-derive its own `unlockState` (which lives on
+    ///   - reset: the account reset, offered only after a `last_device`
+    ///     refusal — production passes the same controller's
+    ///     `resetSyncAndRemoveThisDevice()`.
+    ///   - onRemoved: run once, after a successful removal or reset, so the pane
+    ///     can re-derive its own `unlockState` (which lives on
     ///     `DevicesSettingViewModel` and only changes when `loadAll()` runs).
     init(remove: @escaping @MainActor () async throws -> Void,
+         reset: @escaping @MainActor () async throws -> Void,
          onRemoved: (@MainActor () async -> Void)? = nil) {
         self.remove = remove
+        self.reset = reset
         self.onRemoved = onRemoved
     }
 
@@ -76,19 +89,36 @@ final class DevicesRemoveDeviceModel: ObservableObject {
     var canRequestRemoval: Bool {
         switch state {
         case .idle, .failed: return true
-        case .confirming, .removing, .lastDevice, .done: return false
+        case .confirming, .removing, .lastDevice, .confirmingReset, .resetting, .resetFailed, .done:
+            return false
         }
     }
 
-    var isRemoving: Bool { state == .removing }
+    /// Whether the account reset is on screen: only on the last device, and it
+    /// stays while its confirmation is up or it is running.
+    var showsResetOffer: Bool {
+        switch state {
+        case .lastDevice, .confirmingReset, .resetting, .resetFailed: return true
+        case .idle, .confirming, .removing, .failed, .done: return false
+        }
+    }
+
+    var canRequestReset: Bool {
+        switch state {
+        case .lastDevice, .resetFailed: return true
+        default: return false
+        }
+    }
+
+    var isRemoving: Bool { state == .removing || state == .resetting }
 
     /// The line shown under the button: the `last_device` explanation, or the
     /// metadata-only rendering of a transient failure (R12 — never a response
     /// body, never a full uuid).
     var note: String? {
         switch state {
-        case .lastDevice: return SelfRevokeStrings.lastDeviceNote
-        case .failed(let message): return message
+        case .lastDevice, .confirmingReset, .resetting: return SelfRevokeStrings.lastDeviceNote
+        case .failed(let message), .resetFailed(let message): return message
         default: return nil
         }
     }
@@ -98,8 +128,10 @@ final class DevicesRemoveDeviceModel: ObservableObject {
     /// differently: every other error on that pane is red, and the one the user
     /// has to notice must not be the exception.
     var noteIsError: Bool {
-        if case .failed = state { return true }
-        return false
+        switch state {
+        case .failed, .resetFailed: return true
+        default: return false
+        }
     }
 
     /// Confirm, then run the teardown. `confirm` is injected so the pane can pass
@@ -133,6 +165,33 @@ final class DevicesRemoveDeviceModel: ObservableObject {
             let described = PhiSyncLog.describe(error)
             AppLogWarn("[phi-sync] remove this device failed (\(described))")
             state = .failed(described)
+        }
+    }
+
+    /// Second confirmation, then the account reset. The server's refusals
+    /// (`notLastDevice`: another device appeared; `deviceNotFound`: the account
+    /// was re-enrolled without this Mac) deleted nothing, so the pane returns to
+    /// an ordinary retryable state. Other failures keep the offer for a retry.
+    /// The UI copy is fixed; only metadata reaches the log (R12).
+    func requestReset(confirm: @MainActor () -> Bool) async {
+        guard canRequestReset else { return }
+        let previous = state
+        state = .confirmingReset
+        guard confirm() else {
+            state = previous
+            return
+        }
+        state = .resetting
+        AppLogInfo("[phi-sync] account reset requested")
+        do {
+            try await reset()
+            state = .done
+            await onRemoved?()
+        } catch KeyAPIError.notLastDevice, KeyAPIError.deviceNotFound {
+            state = .failed(SelfRevokeStrings.removalUnavailable)
+        } catch {
+            AppLogWarn("[phi-sync] account reset failed (\(PhiSyncLog.describe(error)))")
+            state = .resetFailed(SelfRevokeStrings.removalUnavailable)
         }
     }
 }

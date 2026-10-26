@@ -16,6 +16,7 @@ protocol KeyEnvelopeAPI {
     func getProfileKey(uuid: String) async throws -> ProfileKeyDTO?
     func listProfiles() async throws -> [ProfileSummaryDTO]
     func revokeDevice(deviceKeyId: String) async throws
+    func resetAccount(operationId: UUID, deviceKeyId: String) async throws
 }
 enum AccountKeyError: Error { case randomGenerationFailed(Int32) }
 final class AccountKeyManager { var currentARK: SymmetricKey? = SymmetricKey(size: .bits256) }
@@ -57,6 +58,7 @@ final class PassAPI: KeyEnvelopeAPI {
         if let listError { throw listError }
         return envelopes.keys.sorted().map { ProfileSummaryDTO(profileUuid: $0) } }
     func revokeDevice(deviceKeyId: String) async throws {}
+    func resetAccount(operationId: UUID, deviceKeyId: String) async throws {}
 }
 final class PassMappingStore: ProfileSyncMappingStore {
     var map: [String: String] = [:]

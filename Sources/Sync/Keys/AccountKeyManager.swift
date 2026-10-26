@@ -9,6 +9,7 @@ protocol KeyEnvelopeAPI {
     func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws
     func getDeviceEnvelope(deviceKeyId: String) async throws -> Data?
     func revokeDevice(deviceKeyId: String) async throws
+    func resetAccount(operationId: UUID, deviceKeyId: String) async throws
     func postJoinRequest(publicKey: Data, name: String, platform: String) async throws -> String
     func listPendingJoinRequests() async throws -> [JoinRequestSummaryDTO]
     func getJoinRequest(id: String) async throws -> JoinRequestDTO

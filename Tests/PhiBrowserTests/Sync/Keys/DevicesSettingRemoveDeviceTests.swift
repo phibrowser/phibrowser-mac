@@ -12,6 +12,14 @@ import XCTest
 /// production hands it `syncKeyController.removeThisDeviceFromSync()` on the
 /// coordinator-owned shared instance, the only one carrying `retirePhiSync` /
 /// `deviceKeyRotator` / `engineDefaults` / `spaceStateStore`.
+/// The removal-only cases never reach the account reset; it fails the test if they do.
+private extension DevicesRemoveDeviceModel {
+    convenience init(remove: @escaping @MainActor () async throws -> Void,
+                     onRemoved: (@MainActor () async -> Void)? = nil) {
+        self.init(remove: remove, reset: { XCTFail("the account reset was not offered") }, onRemoved: onRemoved)
+    }
+}
+
 @MainActor
 final class DevicesSettingRemoveDeviceTests: XCTestCase {
 
@@ -183,5 +191,83 @@ final class DevicesSettingRemoveDeviceTests: XCTestCase {
         XCTAssertEqual(model.state, .idle)
         XCTAssertEqual(removals.calls, 0)
         XCTAssertTrue(model.canRequestRemoval)
+    }
+
+    // MARK: - Account reset (docs/sync.md, "Enrollment and setup")
+
+    /// A model already refused with `last_device`, whose reset runs `reset`.
+    private func lastDeviceModel(reset: @escaping @MainActor () async throws -> Void,
+                                 onRemoved: (@MainActor () async -> Void)? = nil) async -> DevicesRemoveDeviceModel {
+        let model = DevicesRemoveDeviceModel(remove: { throw KeyAPIError.lastActiveDevice },
+                                             reset: reset, onRemoved: onRemoved)
+        await model.requestRemoval(confirm: { true })
+        XCTAssertEqual(model.state, .lastDevice)
+        return model
+    }
+
+    func testTheResetIsOfferedOnlyOnTheLastDevice() async {
+        let idle = DevicesRemoveDeviceModel(remove: {})
+        XCTAssertFalse(idle.showsResetOffer)
+        XCTAssertFalse(idle.canRequestReset)
+        await idle.requestReset(confirm: { XCTFail("no reset before a last_device refusal"); return true })
+        XCTAssertEqual(idle.state, .idle)
+
+        let model = await lastDeviceModel(reset: {})
+        XCTAssertTrue(model.showsResetOffer)
+        XCTAssertTrue(model.canRequestReset)
+        XCTAssertFalse(model.canRequestRemoval, "the ordinary removal stays disabled")
+        XCTAssertEqual(model.note, SelfRevokeStrings.lastDeviceNote)
+    }
+
+    func testCancellingTheResetConfirmationReturnsToTheOffer() async {
+        let resets = Counter()
+        let model = await lastDeviceModel(reset: { resets.calls += 1 })
+        await model.requestReset(confirm: { false })
+        XCTAssertEqual(model.state, .lastDevice)
+        XCTAssertEqual(resets.calls, 0)
+    }
+
+    func testASuccessfulResetEndsLikeARemoval() async {
+        let resets = Counter()
+        let reloads = Counter()
+        let model = await lastDeviceModel(reset: { resets.calls += 1 }, onRemoved: { reloads.calls += 1 })
+        await model.requestReset(confirm: { true })
+        XCTAssertEqual(model.state, .done)
+        XCTAssertEqual(resets.calls, 1)
+        XCTAssertEqual(reloads.calls, 1, "the pane reloads into the first-device setup")
+        XCTAssertFalse(model.isVisible(unlockState: .unlocked))
+        XCTAssertFalse(model.showsResetOffer)
+    }
+
+    /// Both server refusals deleted nothing: back to an ordinary retryable removal
+    /// with the fixed copy, and no success reload.
+    func testAResetRefusalReturnsToARetryableRemoval() async {
+        for refusal in [KeyAPIError.notLastDevice, KeyAPIError.deviceNotFound] {
+            let reloads = Counter()
+            let model = await lastDeviceModel(reset: { throw refusal }, onRemoved: { reloads.calls += 1 })
+            await model.requestReset(confirm: { true })
+            XCTAssertEqual(model.state, .failed(SelfRevokeStrings.removalUnavailable))
+            XCTAssertTrue(model.canRequestRemoval)
+            XCTAssertFalse(model.showsResetOffer)
+            XCTAssertEqual(reloads.calls, 0)
+        }
+    }
+
+    /// Any other failure: fixed copy (R12), still the last device, the offer stays for a retry.
+    func testAFailedResetKeepsTheOfferWithFixedCopy() async {
+        let resets = Counter()
+        let model = await lastDeviceModel(reset: {
+            resets.calls += 1
+            throw KeyAPIError.http(503, "{\"envelope\":\"secret-body\"}")
+        })
+        await model.requestReset(confirm: { true })
+        XCTAssertEqual(model.state, .resetFailed(SelfRevokeStrings.removalUnavailable))
+        XCTAssertEqual(model.note, SelfRevokeStrings.removalUnavailable)
+        XCTAssertTrue(model.noteIsError)
+        XCTAssertTrue(model.showsResetOffer && model.canRequestReset)
+        XCTAssertFalse(model.canRequestRemoval)
+
+        await model.requestReset(confirm: { true })
+        XCTAssertEqual(resets.calls, 2)
     }
 }

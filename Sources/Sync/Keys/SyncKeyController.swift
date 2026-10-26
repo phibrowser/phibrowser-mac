@@ -500,15 +500,80 @@ final class SyncKeyController {
         try await clearLocalSyncState(removingDevice: true)
     }
 
+    /// The account reset, offered only after `removeThisDeviceFromSync()` was refused with
+    /// `last_device` and the user confirmed a second time. Server first, like self-revoke:
+    /// the operation UUID is journaled, the server deletes the account's sync data, and
+    /// only then does the shared cleanup run. A refusal (`notLastDevice`, `deviceNotFound`)
+    /// deleted nothing, so local state stays and the journal forgets the operation; any
+    /// other failure keeps the UUID so the next attempt retries the same operation.
+    func resetSyncAndRemoveThisDevice() async throws {
+        guard !isRetired, !cleaningLocalState else { throw CancellationError() }
+        cleaningLocalState = true
+        defer { cleaningLocalState = false }
+        let deviceKeyId = try manager.deviceKeyProviderForTesting.deviceKeyId()
+        let operationId = markerStore?.load().resetOperationId ?? UUID()
+        try journalResetOperation(operationId)
+        try await requestAccountReset(operationId: operationId, deviceKeyId: deviceKeyId)
+        guard !isRetired, isCurrentAccount() else { throw CancellationError() }
+        try await clearLocalSyncState(removingDevice: true)
+    }
+
     /// Called only after explicit reconfiguration confirmation. Ordinary setup/retry
-    /// never calls this method. A partial removal also resumes through this path.
+    /// never calls this method. A partial removal also resumes through this path, and so
+    /// does an account reset whose outcome this Mac never recorded (a lost response, or a
+    /// crash between the server's answer and the end of cleanup): the journaled operation
+    /// is retried first with the same UUID. The server answers a finished reset with
+    /// `reset` again, and a refusal turns this back into an ordinary reconfiguration.
     func reconfigureSync() async throws {
         guard !isRetired, !cleaningLocalState, isCurrentAccount(), requiresReconfiguration else {
             throw CancellationError()
         }
         cleaningLocalState = true
         defer { cleaningLocalState = false }
-        try await clearLocalSyncState(removingDevice: markerStore?.load().removalPending == true || runtimeRemovalPending())
+        var removingDevice = markerStore?.load().removalPending == true || runtimeRemovalPending()
+        if let operationId = markerStore?.load().resetOperationId {
+            do {
+                let deviceKeyId = try manager.deviceKeyProviderForTesting.deviceKeyId()
+                try await requestAccountReset(operationId: operationId, deviceKeyId: deviceKeyId)
+                removingDevice = true
+            } catch KeyAPIError.notLastDevice, KeyAPIError.deviceNotFound {
+                AppLogInfo("[phi-sync] pending account reset was refused; reconfiguring without it")
+            }
+            guard !isRetired, isCurrentAccount() else { throw CancellationError() }
+        }
+        try await clearLocalSyncState(removingDevice: removingDevice)
+    }
+
+    /// Records the reset's operation UUID before the request goes out. Nil `markerStore`
+    /// is unwired/test construction, which has no journal to write.
+    private func journalResetOperation(_ operationId: UUID) throws {
+        guard let markerStore else { return }
+        var journal = markerStore.load()
+        guard journal.resetOperationId != operationId else { return }
+        journal.resetOperationId = operationId
+        guard markerStore.save(journal) else { throw NativeSyncResetError.cleanupFailed }
+    }
+
+    /// Sends the journaled reset. The server's two refusals deleted nothing, so the journal
+    /// forgets the operation before the refusal propagates; every other error leaves it.
+    private func requestAccountReset(operationId: UUID, deviceKeyId: String) async throws {
+        do {
+            try await profileKeys.resetAccount(operationId: operationId, deviceKeyId: deviceKeyId)
+            AppLogInfo("[phi-sync] account reset accepted by the server")
+        } catch let error as KeyAPIError {
+            switch error {
+            case .notLastDevice, .deviceNotFound: break
+            default: throw error
+            }
+            AppLogInfo("[phi-sync] account reset refused (\(PhiSyncLog.describe(error)))")
+            if let markerStore {
+                var journal = markerStore.load()
+                journal.resetOperationId = nil
+                // A failed save leaves a UUID the server will refuse again; nothing depends on it.
+                _ = markerStore.save(journal)
+            }
+            throw error
+        }
     }
 
     private func clearLocalSyncState(removingDevice: Bool) async throws {
@@ -1151,7 +1216,7 @@ final class SyncKeyController {
                 let transient = status == 0 || status == 401 || status == 403 || status == 408
                     || status == 429 || status >= 500
                 return transient ? .heldTransient : .definitiveFailure
-            case .decode, .lastActiveDevice: return .definitiveFailure
+            case .decode, .lastActiveDevice, .notLastDevice, .deviceNotFound: return .definitiveFailure
             }
         case let error as ProfileKeyManagerError:
             switch error {
@@ -1186,7 +1251,7 @@ final class SyncKeyController {
             if status == 401 || status == 403 { return .signInExpired }
             if status >= 500 || status == 429 || status == 408 { return .serverError }
             return .other
-        case .decode, .lastActiveDevice: return .other
+        case .decode, .lastActiveDevice, .notLastDevice, .deviceNotFound: return .other
         }
     }
 

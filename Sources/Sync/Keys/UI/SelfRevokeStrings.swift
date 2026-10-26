@@ -39,13 +39,31 @@ enum SelfRevokeStrings {
         comment: "Remove this device from sync - confirmation dialog cancel button")
 
     /// Shown in place under the (now disabled) button when the server answers
-    /// 409 `last_device`. The parenthetical is not politeness: an account
-    /// profile whose envelope will not open under this ARK is read-only and does
-    /// not count towards the actionable pairing predicate, so "finish pairing"
-    /// really is reachable in such an account.
+    /// 409 `last_device`, next to the `resetOffer` action it introduces.
     static let lastDeviceNote = NSLocalizedString(
-        "sync.removal.lastDevice", value: "This is the last authorized device and can’t be removed yet. Set up sync on another device first. You can still finish this setup later.",
-        comment: "Last device removal restriction does not prevent deferring setup")
+        "sync.removal.lastDeviceResetOffer", value: "This is the last device set up for sync. You can remove it and delete all sync data stored for this account, or set up sync on another device first.",
+        comment: "Remove this device from sync - note shown when this is the account's last device, introducing the option to delete all sync data")
+
+    /// The destructive action offered only after a `last_device` refusal. It runs
+    /// `SyncKeyController.resetSyncAndRemoveThisDevice()` after `confirmReset()`.
+    static let resetOffer = NSLocalizedString("sync.removal.resetOffer",
+        value: "Remove this device and delete all sync data…",
+        comment: "Remove this device from sync - button shown on the account's last device that removes it and deletes all of the account's sync data")
+
+    static let resetConfirmTitle = NSLocalizedString("sync.removal.resetConfirmTitle",
+        value: "Delete all sync data for this account?",
+        comment: "Delete all sync data - confirmation dialog title, shown before the last device removes itself and deletes the account's sync data")
+
+    /// Names the whole consequence, because the reset cannot be undone: every
+    /// device leaves, the server's copy is deleted, local browsing data stays,
+    /// and sync starts over from the first-device setup.
+    static let resetConfirmBody = NSLocalizedString("sync.removal.resetConfirmBody",
+        value: "Every device will be removed from sync, and all data stored on the sync server for this account will be deleted. Your local browsing data stays on this Mac. To use sync again, you’ll need to set it up from scratch.",
+        comment: "Delete all sync data - confirmation dialog message explaining what deleting the account's sync data does")
+
+    static let resetConfirmAction = NSLocalizedString("sync.removal.resetConfirmAction",
+        value: "Delete All Sync Data",
+        comment: "Delete all sync data - confirmation dialog button that removes this device and deletes the account's sync data")
 
     /// Shown in place of a removal that never reached the server: the shared
     /// `SyncKeyController` was gone by the time the button was clicked (a
@@ -71,6 +89,20 @@ enum SelfRevokeStrings {
         alert.messageText = confirmTitle
         alert.informativeText = confirmBody
         alert.addButton(withTitle: confirmAction)
+        alert.addButton(withTitle: cancel)
+        alert.buttons.first?.hasDestructiveAction = true
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// The account reset's second confirmation, in the same destructive style. Like
+    /// `confirmRemoval()` it is a synchronous `NSAlert` that awaits nothing while up.
+    @MainActor
+    static func confirmReset() -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = resetConfirmTitle
+        alert.informativeText = resetConfirmBody
+        alert.addButton(withTitle: resetConfirmAction)
         alert.addButton(withTitle: cancel)
         alert.buttons.first?.hasDestructiveAction = true
         return alert.runModal() == .alertFirstButtonReturn

@@ -17,12 +17,15 @@ struct PairingWizardView: View {
     let controller: SyncKeyController
     let onDismiss: () -> Void
 
-    /// A nonnil note disables removal because this is the account's last active device. Keep it sticky for
-    /// this window: the modal cannot add a second device. Carried from ProfilePairingGateView.
+    /// A nonnil note disables removal because this is the account's last active device, and offers the
+    /// account reset instead. Cleared only when the server refuses the reset (another device appeared, or
+    /// the account was re-enrolled without this Mac), which makes the ordinary removal worth retrying.
     @State private var removeBlockedNote: String?
-    /// Transient removal failure (offline, 5xx, Keychain), shown in the same slot without disabling retry.
-    /// Clear at each new attempt.
+    /// Transient removal or reset failure (offline, 5xx, Keychain), shown under the note without
+    /// disabling retry. Clear at each new attempt.
     @State private var removeErrorNote: String?
+    /// The account reset is in flight; both destructive buttons are inert until it returns.
+    @State private var isResetting = false
 
     init(viewModel: PairingWizardViewModel, controller: SyncKeyController,
          onDismiss: @escaping () -> Void) {
@@ -360,9 +363,17 @@ struct PairingWizardView: View {
                 confirmAndRemoveThisDevice()
             }
             .buttonStyle(.bordered)
-            .disabled(removeBlockedNote != nil || viewModel.isApplying || viewModel.isPreparing)
-            if let note = removeBlockedNote ?? removeErrorNote {
-                Text(note).font(.callout).themedForeground(.textSecondary)
+            .disabled(removeBlockedNote != nil || isResetting || viewModel.isApplying || viewModel.isPreparing)
+            if let removeBlockedNote {
+                Text(removeBlockedNote).font(.callout).themedForeground(.textSecondary)
+                Button(SelfRevokeStrings.resetOffer, role: .destructive) {
+                    confirmAndResetSync()
+                }
+                .buttonStyle(.bordered)
+                .disabled(isResetting || viewModel.isApplying || viewModel.isPreparing)
+            }
+            if let removeErrorNote {
+                Text(removeErrorNote).font(.callout).themedForeground(.textSecondary)
             }
         }
         .padding(.horizontal, 24)
@@ -490,9 +501,8 @@ struct PairingWizardView: View {
         !isSubmitting
     }
 
-    /// Confirm again, then retire before cleanup. Do not preflight device count: this client has no list
-    /// endpoint. Request removal directly and disable on refusal, as in
-    /// ProfilePairingGateView.confirmAndRemoveThisDevice.
+    /// Confirm again, then retire before cleanup. Do not preflight the device count: the server decides
+    /// `last_device` under its lock, so request removal directly and disable on refusal.
     private func confirmAndRemoveThisDevice() {
         guard SelfRevokeStrings.confirmRemoval() else { return }
         removeErrorNote = nil
@@ -505,6 +515,30 @@ struct PairingWizardView: View {
             } catch {
                 // R12: detailed errors go only to logs; UI uses fixed text.
                 AppLogWarn("[phi-sync] self-revoke failed (\(PhiSyncLog.describe(error)))")
+                removeErrorNote = SelfRevokeStrings.removalUnavailable
+            }
+        }
+    }
+
+    /// The account reset, offered only after a `last_device` refusal. The second confirmation is a
+    /// synchronous `NSAlert` that awaits nothing while up. Success leaves setup like a removal does.
+    private func confirmAndResetSync() {
+        guard !isResetting, SelfRevokeStrings.confirmReset() else { return }
+        removeErrorNote = nil
+        isResetting = true
+        Task { @MainActor in
+            defer { isResetting = false }
+            do {
+                try await controller.resetSyncAndRemoveThisDevice()
+                onDismiss()
+            } catch KeyAPIError.notLastDevice, KeyAPIError.deviceNotFound {
+                // Nothing was deleted and this is no longer the last device (or no longer
+                // enrolled): the ordinary removal is the next step, so it is enabled again.
+                removeBlockedNote = nil
+                removeErrorNote = SelfRevokeStrings.removalUnavailable
+            } catch {
+                // R12: detailed errors go only to logs; UI uses fixed text.
+                AppLogWarn("[phi-sync] account reset failed (\(PhiSyncLog.describe(error)))")
                 removeErrorNote = SelfRevokeStrings.removalUnavailable
             }
         }

@@ -37,6 +37,12 @@ struct PhiSyncMarkerFile: Codable, Equatable {
     var removalPending: Bool?
     /// Blocks data rounds without changing marker/birthday until confirmed cleanup.
     var requiresReconfiguration: Bool?
+    /// The account reset's operation UUID, written by `SyncKeyController` before the reset
+    /// request so a crash, timeout or lost response retries with the same UUID. Optional for
+    /// compatibility with existing format-1 files. Unlike the two fields above it is written
+    /// while the engine still runs, so the engine carries it forward from disk on every save
+    /// rather than from its mirror (`PhiSyncEngine.saveMarkerFile`).
+    var resetOperationId: UUID?
 }
 
 /// Class-bound like PhiOwnedItemStateStore: the engine retains one instance across rounds and must observe

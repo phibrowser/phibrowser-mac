@@ -12,6 +12,7 @@ protocol KeyEnvelopeAPI {
     func getProfileKey(uuid: String) async throws -> ProfileKeyDTO?
     func listProfiles() async throws -> [ProfileSummaryDTO]
     func revokeDevice(deviceKeyId: String) async throws
+    func resetAccount(operationId: UUID, deviceKeyId: String) async throws
 }
 enum AccountKeyError: Error { case randomGenerationFailed(Int32) }
 final class AccountKeyManager {
@@ -35,6 +36,7 @@ final class RetryAPI: KeyEnvelopeAPI {
     func getProfileKey(uuid: String) async throws -> ProfileKeyDTO? { envelopes[uuid].map { ProfileKeyDTO(profileKeyEnvelope: $0) } }
     func listProfiles() async throws -> [ProfileSummaryDTO] { envelopes.keys.sorted().map { ProfileSummaryDTO(profileUuid: $0) } }
     func revokeDevice(deviceKeyId: String) async throws {}
+    func resetAccount(operationId: UUID, deviceKeyId: String) async throws {}
 }
 final class RetryProfileStore: ProfileSyncMappingStore {
     var map: [String: String] = [:]

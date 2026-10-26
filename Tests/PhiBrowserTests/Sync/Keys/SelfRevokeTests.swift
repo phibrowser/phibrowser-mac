@@ -202,6 +202,113 @@ final class SelfRevokeTests: XCTestCase {
                       "Step 5 also erases migration leftovers")
     }
 
+    // MARK: - Account reset (docs/sync.md, "Enrollment and setup")
+
+    /// The reset runs the self-revoke cleanup after the server answered, with the
+    /// operation UUID journaled before the request and gone with the marker.
+    func testASuccessfulAccountResetRunsTheSharedCleanup() async throws {
+        let api = FakeAPI()
+        let ledger = Ledger()
+        let store = MemoryMappingStore()
+        store.map = ["Default": "uuid-a"]
+        let rotator = RecordingDeviceKeyStore(ledger: ledger)
+        let spaceStore = PhiSyncEngineSpaceTests.MemorySpaceStore()
+        spaceStore.table.cursors["u1"] = PhiSpaceCursor()
+        let marker = MemoryMarkerStore(file: PhiSyncMarkerFile(marker: Data("m".utf8), storeBirthday: "B"))
+        let suite = "SelfRevokeTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for key in PhiSyncEngine.stateKeys { defaults.set("x", forKey: key) }
+
+        let controller = try await makeController(api: api, ledger: ledger, store: store,
+                                                  rotator: rotator, spaceStore: spaceStore,
+                                                  defaults: defaults, markerStore: marker)
+        try await controller.resetSyncAndRemoveThisDevice()
+
+        let journaled = try XCTUnwrap(marker.saves.first?.resetOperationId, "the UUID is journaled first")
+        XCTAssertEqual(api.resetCalls.map(\.operationId), [journaled])
+        XCTAssertTrue(api.revokedDeviceKeyIds.isEmpty, "the reset is not a revoke")
+        XCTAssertEqual(ledger.steps.first, "retire")
+        XCTAssertEqual(rotator.rotations, 1)
+        XCTAssertNil(controller.manager.currentARK)
+        XCTAssertTrue(store.map.isEmpty)
+        XCTAssertEqual(spaceStore.table, PhiSpaceSyncTable())
+        XCTAssertTrue(PhiSyncEngine.stateKeys.allSatisfy { defaults.object(forKey: $0) == nil })
+        XCTAssertTrue(marker.deleted)
+    }
+
+    /// Both refusals deleted nothing server-side: nothing local changes and the
+    /// journal forgets the operation.
+    func testAResetRefusalLeavesLocalStateAndClearsTheJournal() async throws {
+        for refusal in [KeyAPIError.notLastDevice, KeyAPIError.deviceNotFound] {
+            let api = FakeAPI()
+            api.resetError = refusal
+            let ledger = Ledger()
+            let store = MemoryMappingStore()
+            store.map = ["Default": "uuid-a"]
+            let rotator = RecordingDeviceKeyStore(ledger: ledger)
+            let original = PhiSyncMarkerFile(marker: Data("m".utf8), storeBirthday: "B")
+            let marker = MemoryMarkerStore(file: original)
+            let suite = "SelfRevokeTests.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+
+            let controller = try await makeController(api: api, ledger: ledger, store: store,
+                                                      rotator: rotator,
+                                                      spaceStore: PhiSyncEngineSpaceTests.MemorySpaceStore(),
+                                                      defaults: defaults, markerStore: marker)
+            do {
+                try await controller.resetSyncAndRemoveThisDevice()
+                XCTFail("expected \(refusal)")
+            } catch let error as KeyAPIError {
+                switch error {
+                case .notLastDevice, .deviceNotFound: break
+                default: XCTFail("unexpected \(error)")
+                }
+            }
+            XCTAssertEqual(api.resetCalls.count, 1)
+            XCTAssertTrue(ledger.steps.isEmpty, "nothing is torn down when the server refuses")
+            XCTAssertEqual(rotator.rotations, 0)
+            XCTAssertEqual(store.map, ["Default": "uuid-a"])
+            XCTAssertNotNil(controller.manager.currentARK)
+            XCTAssertEqual(marker.file, original, "the journal forgets the operation and nothing else")
+            XCTAssertFalse(marker.deleted)
+        }
+    }
+
+    /// A transport failure leaves the outcome unknown: local state stays and the
+    /// journal keeps the UUID, which the next attempt sends again.
+    func testATransportFailureKeepsTheJournaledOperation() async throws {
+        let api = FakeAPI()
+        api.resetError = KeyAPIError.transport(URLError(.timedOut))
+        let ledger = Ledger()
+        let store = MemoryMappingStore()
+        store.map = ["Default": "uuid-a"]
+        let rotator = RecordingDeviceKeyStore(ledger: ledger)
+        let marker = MemoryMarkerStore(file: PhiSyncMarkerFile(marker: Data("m".utf8), storeBirthday: "B"))
+        let suite = "SelfRevokeTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let controller = try await makeController(api: api, ledger: ledger, store: store,
+                                                  rotator: rotator,
+                                                  spaceStore: PhiSyncEngineSpaceTests.MemorySpaceStore(),
+                                                  defaults: defaults, markerStore: marker)
+        do {
+            try await controller.resetSyncAndRemoveThisDevice()
+            XCTFail("expected the transport error")
+        } catch KeyAPIError.transport {}
+        let pending = try XCTUnwrap(marker.file.resetOperationId)
+        XCTAssertTrue(ledger.steps.isEmpty)
+        XCTAssertEqual(store.map, ["Default": "uuid-a"])
+        XCTAssertFalse(marker.deleted)
+
+        api.resetError = nil
+        try await controller.resetSyncAndRemoveThisDevice()
+        XCTAssertEqual(api.resetCalls.map(\.operationId), [pending, pending])
+        XCTAssertTrue(marker.deleted)
+    }
+
     // MARK: - Pairing local data reset (docs/sync.md, "Replacing this Mac's data at pairing")
 
     /// Device removal invalidates the enrollment a pairing reset belonged to, so it drops the

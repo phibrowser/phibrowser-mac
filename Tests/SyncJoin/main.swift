@@ -70,6 +70,7 @@ actor JoinAPI: KeyEnvelopeAPI {
     func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws { registrations += 1; envelopes[deviceKeyId] = arkEnvelope }
     func getDeviceEnvelope(deviceKeyId: String) async throws -> Data? { envelopes[deviceKeyId] }
     func revokeDevice(deviceKeyId: String) async throws {}
+    func resetAccount(operationId: UUID, deviceKeyId: String) async throws {}
     func postJoinRequest(publicKey: Data, name: String, platform: String) async throws -> String {
         if tooManyPending { throw JoinRequestError.tooManyPending }
         counter += 1

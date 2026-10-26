@@ -17,6 +17,21 @@ final class DeviceProtocol: URLProtocol {
 }
 
 @main struct DeviceTests {
+    /// URLProtocol sees an uploaded body as a stream, not `httpBody`.
+    static func body(of request: URLRequest) -> Data {
+        if let data = request.httpBody { return data }
+        guard let stream = request.httpBodyStream else { return Data() }
+        stream.open(); defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 1024)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count > 0 else { break }
+            data.append(buffer, count: count)
+        }
+        return data
+    }
+
     static func main() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [DeviceProtocol.self]
@@ -43,5 +58,42 @@ final class DeviceProtocol: URLProtocol {
         catch KeyAPIError.transport {}
         precondition(DeviceProtocol.requests.count == requests)
         print("PASS devices: DTO, fractional dates, identities, fresh GET, empty versus failure, missing token")
+
+        // Account reset and legacy revoke: refusals are matched on the body code.
+        let operation = UUID()
+        DeviceProtocol.status = 200
+        DeviceProtocol.body = Data(#"{"operation_id":"x","device_key_id":"a","outcome":"reset"}"#.utf8)
+        try await client.resetAccount(operationId: operation, deviceKeyId: "a")
+        let reset = DeviceProtocol.requests.last!
+        precondition(reset.httpMethod == "PUT"
+            && reset.url?.path == "/keys/v1/reset-operations/\(operation.uuidString.lowercased())")
+        precondition(reset.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
+        let sent = try JSONSerialization.jsonObject(with: Self.body(of: reset)) as? [String: String]
+        precondition(sent == ["device_key_id": "a"])
+        DeviceProtocol.body = Data(#"{"outcome":"something_else"}"#.utf8)
+        do { try await client.resetAccount(operationId: operation, deviceKeyId: "a"); preconditionFailure("unknown outcome") }
+        catch KeyAPIError.decode {}
+        DeviceProtocol.status = 409
+        DeviceProtocol.body = Data(#"{"code":"not_last_device","message":"another device is still active"}"#.utf8)
+        do { try await client.resetAccount(operationId: operation, deviceKeyId: "a"); preconditionFailure("409") }
+        catch KeyAPIError.notLastDevice {}
+        DeviceProtocol.body = Data(#"{"code":"conflict","message":"x"}"#.utf8)
+        do { try await client.resetAccount(operationId: operation, deviceKeyId: "a"); preconditionFailure("409") }
+        catch KeyAPIError.http(409, _) {}
+        DeviceProtocol.status = 404
+        DeviceProtocol.body = Data(#"{"code":"device_not_found","message":"x"}"#.utf8)
+        do { try await client.resetAccount(operationId: operation, deviceKeyId: "a"); preconditionFailure("404") }
+        catch KeyAPIError.deviceNotFound {}
+        DeviceProtocol.body = Data("404 page not found".utf8)
+        do { try await client.resetAccount(operationId: operation, deviceKeyId: "a"); preconditionFailure("404") }
+        catch KeyAPIError.http(404, _) {}
+        DeviceProtocol.status = 409
+        DeviceProtocol.body = Data(#"{"code":"last_device","message":"cannot revoke the last active device"}"#.utf8)
+        do { try await client.revokeDevice(deviceKeyId: "a"); preconditionFailure("409") }
+        catch KeyAPIError.lastActiveDevice {}
+        DeviceProtocol.body = Data(#"{"code":"operation_conflict","message":"x"}"#.utf8)
+        do { try await client.revokeDevice(deviceKeyId: "a"); preconditionFailure("409") }
+        catch KeyAPIError.http(409, _) {}
+        print("PASS reset: PUT path and body, outcome check, not_last_device, device_not_found, other 409/404; revoke last_device only")
     }
 }

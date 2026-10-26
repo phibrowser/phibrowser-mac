@@ -119331,61 +119331,57 @@
         }
       }
     },
-    "sync.removal.lastDevice" : {
-      "comment" : "Last device removal restriction does not prevent deferring setup",
+    "sync.removal.lastDeviceResetOffer" : {
+      "comment" : "Remove this device from sync - note shown when this is the account's last device, introducing the option to delete all sync data",
       "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dies ist das letzte autorisierte Gerät und kann noch nicht entfernt werden. Richte die Synchronisierung zuerst auf einem anderen Gerät ein. Du kannst diese Einrichtung trotzdem später abschließen."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This is the last authorized device and can’t be removed yet. Set up sync on another device first. You can still finish this setup later."
+            "value" : "This is the last device set up for sync. You can remove it and delete all sync data stored for this account, or set up sync on another device first."
           }
-        },
-        "es" : {
+        }
+      }
+    },
+    "sync.removal.resetConfirmAction" : {
+      "comment" : "Delete all sync data - confirmation dialog button that removes this device and deletes the account's sync data",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este es el último dispositivo autorizado y aún no se puede eliminar. Configura primero la sincronización en otro dispositivo. Aun así, puedes finalizar esta configuración más tarde."
+            "value" : "Delete All Sync Data"
           }
-        },
-        "fr" : {
+        }
+      }
+    },
+    "sync.removal.resetConfirmBody" : {
+      "comment" : "Delete all sync data - confirmation dialog message explaining what deleting the account's sync data does",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ceci est le dernier appareil autorisé et il ne peut pas encore être supprimé. Configurez d'abord la synchronisation sur un autre appareil. Vous pouvez toujours terminer cette configuration plus tard."
+            "value" : "Every device will be removed from sync, and all data stored on the sync server for this account will be deleted. Your local browsing data stays on this Mac. To use sync again, you’ll need to set it up from scratch."
           }
-        },
-        "ja" : {
+        }
+      }
+    },
+    "sync.removal.resetConfirmTitle" : {
+      "comment" : "Delete all sync data - confirmation dialog title, shown before the last device removes itself and deletes the account's sync data",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "これは最後の承認済みデバイスのため、まだ削除できません。先に別のデバイスで同期を設定してください。この設定はあとで完了することもできます。"
+            "value" : "Delete all sync data for this account?"
           }
-        },
-        "ko" : {
+        }
+      }
+    },
+    "sync.removal.resetOffer" : {
+      "comment" : "Remove this device from sync - button shown on the account's last device that removes it and deletes all of the account's sync data",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "이 기기는 마지막 승인된 기기라서 아직 제거할 수 없어요. 먼저 다른 기기에서 동기화를 설정하세요. 이 설정은 나중에 완료할 수도 있어요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dit is het laatste geautoriseerde apparaat en kan nog niet worden verwijderd. Stel eerst synchronisatie in op een ander apparaat. Je kunt het instellen later alsnog voltooien."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这是最后一台已授权的设备，目前还无法移除。请先在另一台设备上设置同步。你仍然可以稍后完成此设置。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "這是最後一部已授權的裝置，目前無法移除。請先在另一部裝置上設定同步。你仍可以稍後再完成此設定。"
+            "value" : "Remove this device and delete all sync data…"
           }
         }
       }

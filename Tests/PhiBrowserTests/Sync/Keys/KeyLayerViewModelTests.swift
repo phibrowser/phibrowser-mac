@@ -357,6 +357,9 @@ final class KeyLayerViewModelTests: XCTestCase {
         func revokeDevice(deviceKeyId: String) async throws {
             try await inner.revokeDevice(deviceKeyId: deviceKeyId)
         }
+        func resetAccount(operationId: UUID, deviceKeyId: String) async throws {
+            try await inner.resetAccount(operationId: operationId, deviceKeyId: deviceKeyId)
+        }
         func postJoinRequest(publicKey: Data, name: String, platform: String) async throws -> String {
             try await inner.postJoinRequest(publicKey: publicKey, name: name, platform: platform)
         }

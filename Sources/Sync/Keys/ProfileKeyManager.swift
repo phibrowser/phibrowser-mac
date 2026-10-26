@@ -344,6 +344,13 @@ final class ProfileKeyManager {
         try await api.revokeDevice(deviceKeyId: deviceKeyId)
     }
 
+    /// Account reset: THIS device, the last active one, deletes the account's
+    /// server-side sync data. Throws `KeyAPIError.notLastDevice` or
+    /// `.deviceNotFound` when the server refused and deleted nothing.
+    func resetAccount(operationId: UUID, deviceKeyId: String) async throws {
+        try await api.resetAccount(operationId: operationId, deviceKeyId: deviceKeyId)
+    }
+
     /// Self-revoke (§3.3): the whole local-profile -> account-uuid table goes.
     func removeAllMappings() { mappingStore.removeAllMappings() }
 

@@ -645,6 +645,7 @@ struct PreviewKeyEnvelopeAPI: KeyEnvelopeAPI {
     func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws {}
     func getDeviceEnvelope(deviceKeyId: String) async throws -> Data? { nil }
     func revokeDevice(deviceKeyId: String) async throws {}
+    func resetAccount(operationId: UUID, deviceKeyId: String) async throws {}
     func postJoinRequest(publicKey: Data, name: String, platform: String) async throws -> String { "preview" }
     func listPendingJoinRequests() async throws -> [JoinRequestSummaryDTO] { [] }
     func getJoinRequest(id: String) async throws -> JoinRequestDTO {

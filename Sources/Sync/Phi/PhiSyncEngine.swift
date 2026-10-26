@@ -29,6 +29,8 @@ enum PhiSyncLog {
             case .transport(let underlying): return "KeyAPIError.transport(\(describe(underlying)))"
             case .decode: return "KeyAPIError.decode"
             case .lastActiveDevice: return "KeyAPIError.lastActiveDevice"
+            case .notLastDevice: return "KeyAPIError.notLastDevice"
+            case .deviceNotFound: return "KeyAPIError.deviceNotFound"
             }
         case let error as PhiSyncProtocolError:
             // Every case carries an HTTP status or a protocol enum, never content.
@@ -6963,9 +6965,19 @@ actor PhiSyncEngine {
         // Preserve every cursor, baseline, identity and birthday. A durable flag blocks
         // subsequent launches too; failed persistence still blocks this engine in memory.
         markerState.requiresReconfiguration = true
-        if !markerStore.save(markerState) {
+        if !saveMarkerFile(markerState) {
             AppLogWarn("[phi-sync] could not persist the reconfiguration requirement")
         }
+    }
+
+    /// Every engine write of marker.json goes through here. `resetOperationId` belongs to the
+    /// account reset in `SyncKeyController`, which journals it before its server call and so
+    /// while this engine still runs; the mirror never owns it. Carrying the on-disk value
+    /// forward keeps a round that lands during the reset request from erasing it.
+    private func saveMarkerFile(_ file: PhiSyncMarkerFile) -> Bool {
+        var file = file
+        file.resetOperationId = markerStore.load().resetOperationId
+        return markerStore.save(file)
     }
 
     private var storedEntityId: String? {
@@ -6992,7 +7004,7 @@ actor PhiSyncEngine {
         guard updated != markerState else { return true }  // No change means no save; likewise not a failure.
         let previous = markerState
         markerState = updated
-        guard markerStore.save(updated) else {
+        guard saveMarkerFile(updated) else {
             markerState = previous
             cursorSaveFailures += 1
             return false

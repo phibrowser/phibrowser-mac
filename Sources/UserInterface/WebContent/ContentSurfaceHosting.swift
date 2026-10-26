@@ -47,6 +47,7 @@ final class ContentSurfaceHosting {
     /// lifted into content fullscreen (`update`).
     private weak var surfaceView: NSView?
     private weak var browserState: BrowserState?
+    private let hostedTabs: () -> [Tab]
     private var observer: CFRunLoopObserver?
     /// Last `Hosting` sent, keyed by address.
     private var sent: [ObjectIdentifier: Sent] = [:]
@@ -75,10 +76,12 @@ final class ContentSurfaceHosting {
     /// After AppKit's flush observer, so the views are laid out.
     private static let observerOrder = CFIndex.max
 
-    init(container: NSView, surfaceView: NSView, browserState: BrowserState?) {
+    init(container: NSView, surfaceView: NSView, browserState: BrowserState?,
+         hostedTabs: @escaping () -> [Tab]) {
         self.container = container
         self.surfaceView = surfaceView
         self.browserState = browserState
+        self.hostedTabs = hostedTabs
         let observer = CFRunLoopObserverCreateWithHandler(
             nil,
             CFRunLoopActivity.beforeWaiting.rawValue | CFRunLoopActivity.exit.rawValue,
@@ -128,7 +131,10 @@ final class ContentSurfaceHosting {
             sent.removeAll()
             sentUnder = surfaceView?.superview
         }
-        let tabs = browserState.tabs + browserState.aiChatTabs.values
+        // Controllers supply the pages they host, including split panes and
+        // embedded chat. Reading every background wrapper's nativeView here
+        // makes each run-loop pass scale with the entire Space's tab count.
+        let tabs = hostedTabs()
         var wrappers = tabs.compactMap(\.webContentWrapper)
         if let placeholder = browserState.placeholderWrapper {
             wrappers.append(placeholder)

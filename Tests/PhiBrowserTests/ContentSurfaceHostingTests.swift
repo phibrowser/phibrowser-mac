@@ -39,6 +39,66 @@ final class ContentSurfaceHostingTests: XCTestCase {
         XCTAssertEqual(sent.clip, sent.frame, "the whole page shows")
     }
 
+    func testReconciliationDoesNotReadBackgroundNativeViewsWith200Tabs() throws {
+        let fixture = try makeFixture()
+        let backgroundPages = (2..<200).map { index in
+            let wrapper = PageColorTestWebContentWrapper(urlString: "https://background.example/\(index)")
+            fixture.state.tabs.append(Tab(guid: 2400 + index, url: wrapper.urlString,
+                                          isActive: false, index: index, webContentView: wrapper))
+            return wrapper
+        }
+        let backgroundChat = PageColorTestWebContentWrapper(urlString: "https://chat.example/")
+        fixture.state.aiChatTabs["background"] = Tab(
+            guid: 3000, url: backgroundChat.urlString, isActive: false, index: 0,
+            webContentView: backgroundChat)
+        fixture.state.updateNormalTabs()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        XCTAssertEqual(fixture.state.tabs.count, 200)
+        let wrappers = backgroundPages + [backgroundChat]
+        let reads = wrappers.map(\.nativeViewReadCount)
+        let visibleReads = fixture.page.nativeViewReadCount
+        let previousFrame = try XCTUnwrap(fixture.lastSent()).frame
+
+        fixture.window.setContentSize(NSSize(width: 1300, height: 800))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        XCTAssertEqual(wrappers.map(\.nativeViewReadCount), reads)
+        XCTAssertGreaterThan(fixture.page.nativeViewReadCount, visibleReads)
+        XCTAssertNotEqual(try XCTUnwrap(fixture.lastSent()).frame, previousFrame,
+                          "the visible page must still receive placement updates")
+    }
+
+    func testUnfocusedSplitPaneAndItsDevToolsReceivePlacementUpdates() throws {
+        let fixture = try makeFixture()
+        let partnerView = NSView(frame: fixture.webView.frame)
+        let partner = PageColorTestWebContentWrapper(urlString: "https://partner.example/")
+        partner.nativeView = partnerView
+        let partnerTab = Tab(guid: 2401, url: partner.urlString, isActive: false, index: 1,
+                             webContentView: partner)
+        fixture.state.tabs[1] = partnerTab
+        fixture.state.updateNormalTabs()
+        fixture.state.splits = [SplitGroup(id: "hosting-split", primaryTabId: 2400,
+                                           secondaryTabId: 2401, layout: .vertical, ratio: 0.5)]
+        waitUntil { partnerView.window != nil }
+        XCTAssertTrue(partnerView.window === fixture.window)
+        XCTAssertFalse(partnerTab.isActive)
+
+        // The bridge supplies docked DevTools separately from the page wrapper.
+        let devTools = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+        partnerTab.devToolsView = devTools
+        try XCTUnwrap(partnerView.superview).addSubview(devTools)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        let previous = try XCTUnwrap(fixture.sends.last { $0.address === partner }).hosting
+        XCTAssertNotNil(fixture.sends.last { $0.address === devTools })
+
+        fixture.window.setContentSize(NSSize(width: 1300, height: 800))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        let updated = try XCTUnwrap(fixture.sends.last { $0.address === partner }).hosting
+        XCTAssertNotEqual(updated.frame, previous.frame)
+        XCTAssertNotNil(fixture.lastSent(), "the focused pane must also remain hosted")
+    }
+
     /// A page laid out wider than its host shows only the part inside it.
     func testAPageWiderThanItsHostIsClippedToTheHost() throws {
         let fixture = try makeFixture()

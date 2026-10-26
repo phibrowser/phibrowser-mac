@@ -10,6 +10,10 @@ import SwiftUI
 #endif
 
 struct FaviconConfiguration {
+    // Preserve image identity across row configurations so SwiftUI can reuse
+    // the symbol's rendered image when a cell displays another placeholder.
+    private static let websitePlaceholder = NSImage(systemSymbolName: "globe", accessibilityDescription: "Website")
+
     /// Corner radius for the favicon image
     var cornerRadius: CGFloat = 4
     /// Fade transition duration in seconds
@@ -17,7 +21,7 @@ struct FaviconConfiguration {
     /// Whether to cache the original image
     var cacheOriginalImage: Bool = true
     /// Placeholder image when loading or on failure
-    var placeholder: NSImage? = NSImage(systemSymbolName: "globe", accessibilityDescription: "Website")
+    var placeholder: NSImage? = websitePlaceholder
 
     static let `default` = FaviconConfiguration()
 

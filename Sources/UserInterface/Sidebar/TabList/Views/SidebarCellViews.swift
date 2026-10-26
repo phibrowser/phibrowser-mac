@@ -354,6 +354,9 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
                 self?.closePeekTapped()
             }
         ))
+        // The outline row and edge constraints own this view's size.
+        // Avoid measuring minimum, ideal and maximum SwiftUI content sizes.
+        hostingView.sizingOptions = []
         hostingView.wantsLayer = true
         hostingView.layer?.masksToBounds = false
         addSubview(hostingView)

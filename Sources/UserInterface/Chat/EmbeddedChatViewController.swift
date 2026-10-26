@@ -21,7 +21,7 @@ class EmbeddedChatViewController: NSViewController {
     private(set) weak var associatedTab: Tab?
 
     /// The current AI Chat Tab being displayed
-    private weak var currentAIChatTab: Tab?
+    private(set) weak var currentAIChatTab: Tab?
 
     /// The identifier for the associated tab (used for AI Chat tab lookup)
     private var tabIdentifier: String?

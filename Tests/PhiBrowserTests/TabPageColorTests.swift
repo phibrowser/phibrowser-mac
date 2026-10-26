@@ -168,7 +168,15 @@ func drainPageColorUpdates() {
 
 final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
     let mediaControls: PhiMediaControls = InactiveMediaControlsStub()
-    @objc dynamic weak var nativeView: NSView?
+    private weak var storedNativeView: NSView?
+    private(set) var nativeViewReadCount = 0
+    @objc dynamic var nativeView: NSView? {
+        get {
+            nativeViewReadCount += 1
+            return storedNativeView
+        }
+        set { storedNativeView = newValue }
+    }
     @objc dynamic var isLoading = false
     @objc dynamic var loadingState = PhiTabLoadingState(rawValue: 0)!
     @objc dynamic var isFocused = false

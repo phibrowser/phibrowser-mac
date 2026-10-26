@@ -559,10 +559,11 @@ class SideBarOutlineView: DiffableOutlineView {
     }
     
     override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
-        // Tab-group rows render as self-contained `TabGroupCellView`
-        // leaves; let them span the full row width starting at x=0.
+        // Non-bookmark cells own their internal padding. Size them through
+        // AppKit's row layout instead of adding constraints that compete with
+        // NSTableView's cell frames and force layout during row realization.
         if let item = item(atRow: row) as? SidebarItem,
-           item.itemType == .tabGroup {
+           !item.isBookmark {
             let rowRect = rect(ofRow: row)
             return NSRect(x: 0,
                           y: rowRect.minY,

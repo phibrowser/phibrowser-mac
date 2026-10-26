@@ -1525,7 +1525,12 @@ class WebContentContainerViewController: NSViewController {
         updatePageAreaBackdropCorners(panelDocked: browserState?.extensionSidePanel != nil)
         contentSurfaceHosting = ContentSurfaceHosting(container: contentContainer,
                                                       surfaceView: hostingView,
-                                                      browserState: browserState)
+                                                      browserState: browserState) { [weak self] in
+            // Cached, unmounted controllers are not children. Use the mounted
+            // controllers rather than focusingTab, which can lead the UI.
+            self?.children.compactMap { $0 as? WebContentViewController }
+                .flatMap(\.contentSurfaceTabs) ?? []
+        }
         AppLogInfo("[ContentSurface] [Container] installed windowId=\(browserState?.windowId ?? -1)")
     }
 

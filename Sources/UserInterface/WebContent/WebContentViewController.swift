@@ -1596,6 +1596,24 @@ class WebContentViewController: NSViewController {
         return browserState?.tabs.first { $0.guid == partnerId }
     }
 
+    /// Candidate pages for the surface reconciler; it checks their actual
+    /// ancestry before sending placement, including for docked DevTools.
+    var contentSurfaceTabs: [Tab] {
+        var tabs: [Tab] = []
+        if let tab = associatedTab {
+            tabs.append(tab)
+            if isSplitContentMounted, let group = activeSplitForCurrentTab(),
+               let partner = partnerTab(for: group, ownTabId: tab.guid) {
+                tabs.append(partner)
+            }
+        }
+        if let chat = aiChatSplitViewItem?.viewController as? EmbeddedChatViewController,
+           let tab = chat.currentAIChatTab {
+            tabs.append(tab)
+        }
+        return tabs
+    }
+
     /// True only when this tab's split can actually be mounted right now: it's in
     /// an active split (not content-fullscreen) AND the partner pane's native
     /// view exists. `installSplitContent` otherwise falls back to a single-view

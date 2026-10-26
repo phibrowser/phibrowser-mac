@@ -9,6 +9,37 @@ import XCTest
 
 @MainActor
 final class ThemePaletteTests: XCTestCase {
+    func testRebindingUnchangedThemeSourceDoesNotInvalidateReusedRows() {
+        let configuration = BrowserThemeConfiguration(
+            currentTheme: ThemeManager.shared.currentTheme,
+            userAppearanceChoice: .light,
+            mirrorsSharedTheme: false,
+            mirrorsSharedAppearance: false
+        )
+        let first = BrowserThemeContext(configuration: configuration)
+        let second = BrowserThemeContext(configuration: configuration)
+        let observer = ThemeObserver(themeSource: first)
+        drainThemeUpdates()
+        var changes = 0
+        let subscription = observer.objectWillChange.sink { changes += 1 }
+        defer { subscription.cancel() }
+
+        for _ in 0..<100 { observer.rebind(to: first) }
+        drainThemeUpdates()
+        XCTAssertEqual(changes, 0)
+
+        // A different window must still replace the subscription even when
+        // its initial appearance matches the old window.
+        observer.rebind(to: second)
+        drainThemeUpdates()
+        first.setUserAppearanceChoice(.dark)
+        drainThemeUpdates()
+        XCTAssertEqual(observer.appearance, .light)
+        second.setUserAppearanceChoice(.dark)
+        drainThemeUpdates()
+        XCTAssertEqual(observer.appearance, .dark)
+    }
+
     func testCenterSnapCentersEveryLinkedHandleAndPreservesPaletteSettings() {
         for harmony in ThemePalette.Harmony.allCases {
             let count = harmony.colorCount

@@ -3718,10 +3718,14 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         }
         
         switch sidebarItem.itemType {
-        case .tab, .newTabButton, .separator, .tabGroup:
-            return InsetTableRowView(insets: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0))
-        case .splitPair:
-            return InsetTableRowView(insets: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0))
+        case .tab, .newTabButton, .separator, .tabGroup, .splitPair:
+            let identifier = NSUserInterfaceItemIdentifier("SidebarRow")
+            if let rowView = outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableRowView {
+                return rowView
+            }
+            let rowView = NSTableRowView()
+            rowView.identifier = identifier
+            return rowView
         case .bookmark, .bookmarkFolder:
             return BookmarkRowView(/*insets:  NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)*/)
         default:

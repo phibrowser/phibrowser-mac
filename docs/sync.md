@@ -226,9 +226,12 @@ then resolves the current account again. Multiple requests coalesce; sign-out
 does not resurrect a previous account, and removal alone does not request startup.
 
 Account deletion (Settings → Account, `AccountDeletionLocalDataRemoval`) is not
-a sync cleanup path. Its finalize deletes the deleted account's account-scoped
-device key item (`device-x25519-v1:<sub>`) from the Keychain and makes no revoke
-or reset call. The account's server rows are removed by the account-deletion
+a sync cleanup path. Its finalize deletes the account-scoped device key item
+(`device-x25519-v1:<sub>`) of the account that booked the deletion, whose subject
+is captured when the server accepts the request, and makes no revoke or reset
+call. A finalize while a different account is signed in is refused before any
+cleanup runs, and reopening the flow under another account drops the stale
+booking and starts a fresh request. The account's server rows are removed by the account-deletion
 orchestrator through sync-service's account purge, not by the Mac. The legacy
 shared item `device-x25519-v1` stays untouched. A later registration with the
 same Auth0 `sub` is therefore a fresh first-device enrollment. Unlike self-revoke,

@@ -68,9 +68,9 @@ final class AccountDeletionCoordinator {
     /// subject was readable at booking time.
     typealias ClearLocalData = (_ auth0Sub: String?) async -> Void
     /// Reads the signed-in account's Auth0 subject from the shared token.
-    /// Read when the server accepts the first step, to bind the booking to
-    /// that account, and again by `start()` and `finalizeDeletion()` to
-    /// detect a booking left behind by a different sign-in.
+    /// Read before the first step is sent, to bind the request to that
+    /// account, and re-read wherever a different sign-in must not act on it
+    /// (see `bookedSubject`).
     typealias CurrentAuth0Subject = @MainActor () -> String?
     typealias Quit = () -> Void
 
@@ -155,13 +155,17 @@ final class AccountDeletionCoordinator {
     /// case the server memoizes error responses per key.
     private var pendingResendKey: String?
 
-    /// The Auth0 subject of the account whose deletion the server accepted,
-    /// captured on the first step's success. The controller keeps one
-    /// coordinator for its lifetime and a booked state survives cancel, so
-    /// without this binding a booking made under account A could be
-    /// finalized after B signed in, wiping B's credentials, local data and
-    /// sync device key. Nil before a booking, or when no subject was
-    /// readable when it was made.
+    /// The Auth0 subject of the account that sent the booked request. It is
+    /// captured BEFORE the first step is sent, never from the response: a
+    /// sign-in that changes while the request is in flight must not inherit
+    /// it. The controller keeps one coordinator for its lifetime and a
+    /// booked state survives cancel, so without this binding a booking made
+    /// under account A could be finalized after B signed in, wiping B's
+    /// credentials, local data and sync device key. The subject is
+    /// re-checked when the response arrives, before a renewed token is
+    /// reused, before the code is submitted or resent, on `start()` and
+    /// before the finalize. Nil before a booking, or when no subject was
+    /// readable when the request was sent.
     private var bookedSubject: String?
 
     init(
@@ -302,7 +306,9 @@ final class AccountDeletionCoordinator {
     ///
     /// The one exception: a booked deletion that belongs to another sign-in
     /// is dropped, and the flow starts fresh for the current account, whose
-    /// user just confirmed the warning.
+    /// user just confirmed the warning. The signed-in subject is captured
+    /// before the request is sent and becomes the booking's subject only if
+    /// the sign-in is unchanged when the response arrives.
     func start() async {
         switch state {
         case .idle, .failed:
@@ -318,11 +324,15 @@ final class AccountDeletionCoordinator {
             return
         }
 
+        let requester = currentAuth0Subject()
         state = .requestingDeletion
         let key = idempotencyKey ?? makeIdempotencyKey()
         idempotencyKey = key
         do {
-            acceptFirstStepOutcome(try await retryingAfterTokenRenewal { try await self.requestDeletion(key) })
+            let outcome = try await retryingAfterTokenRenewal(requester: requester) {
+                try await self.requestDeletion(key)
+            }
+            acceptFirstStepOutcome(outcome, requester: requester)
         } catch {
             AppLogError("🗑️ [AccountDeletion] Deletion request failed: \(error)")
             let flowError = Self.flowError(from: error)
@@ -357,11 +367,21 @@ final class AccountDeletionCoordinator {
             return
         }
 
+        if bookingBelongsToAnotherSignIn() {
+            refuseForAnotherSignIn("Booked deletion belongs to another sign-in, refusing resend")
+            return
+        }
+
+        // The resend belongs to the existing booking, so it keeps its subject.
+        let requester = bookedSubject
         let key = pendingResendKey ?? makeIdempotencyKey()
         idempotencyKey = key
         state = .requestingDeletion
         do {
-            acceptFirstStepOutcome(try await retryingAfterTokenRenewal { try await self.requestDeletion(key) })
+            let outcome = try await retryingAfterTokenRenewal(requester: requester) {
+                try await self.requestDeletion(key)
+            }
+            acceptFirstStepOutcome(outcome, requester: requester)
         } catch {
             AppLogError("🗑️ [AccountDeletion] Resend failed for request \(currentRequestID): \(error)")
             let flowError = Self.flowError(from: error)
@@ -378,10 +398,23 @@ final class AccountDeletionCoordinator {
     /// `resendCode()` — a sent code always arms the cooldown alongside the
     /// state transition. Only the failure handling differs between the two
     /// callers.
-    private func acceptFirstStepOutcome(_ outcome: AccountDeletionRequestOutcome) {
+    ///
+    /// `requester` is the subject read before the request was sent. When a
+    /// different account signed in while it was in flight, the outcome is
+    /// discarded: booking it would hand A's deletion to B. Otherwise the
+    /// booking is bound to `requester`, never to the subject read now.
+    private func acceptFirstStepOutcome(
+        _ outcome: AccountDeletionRequestOutcome,
+        requester: String?
+    ) {
+        if signInChanged(since: requester) {
+            refuseForAnotherSignIn(
+                "Sign-in changed while the deletion request was in flight, discarding the outcome"
+            )
+            return
+        }
         pendingResendKey = nil
-        // Binds the booking to the account the server just accepted it for.
-        bookedSubject = currentAuth0Subject()
+        bookedSubject = requester
         switch outcome {
         case .verificationCodeSent(let requestID):
             AppLogInfo("🗑️ [AccountDeletion] Verification code sent for request \(requestID)")
@@ -403,9 +436,16 @@ final class AccountDeletionCoordinator {
             return
         }
 
+        if bookingBelongsToAnotherSignIn() {
+            refuseForAnotherSignIn("Booked deletion belongs to another sign-in, refusing code submission")
+            return
+        }
+
         state = .verifyingCode(requestID: requestID)
         do {
-            try await retryingAfterTokenRenewal { try await self.verifyDeletion(requestID, code) }
+            try await retryingAfterTokenRenewal(requester: bookedSubject) {
+                try await self.verifyDeletion(requestID, code)
+            }
             AppLogInfo("🗑️ [AccountDeletion] Deletion request \(requestID) queued")
             state = .requestSubmitted
         } catch {
@@ -444,8 +484,9 @@ final class AccountDeletionCoordinator {
     /// still readable for the event, and a crash after Sentinel accepts it
     /// cannot leave the browser able to restore deleted credentials.
     ///
-    /// The finalize is bound to the account that booked the deletion: when
-    /// a different account is signed in now, it is refused before any edge
+    /// The finalize is bound to the account that sent the booked request
+    /// (`bookedSubject`, captured before the request went out): when a
+    /// different account is signed in now, it is refused before any edge
     /// runs and the stale booking is dropped. The refusal lands on the
     /// sign-in-again failure, which offers only Close. With nobody signed in
     /// the booked account's finalize proceeds. The local-data clear receives
@@ -468,11 +509,7 @@ final class AccountDeletionCoordinator {
             return
         }
         if bookingBelongsToAnotherSignIn() {
-            AppLogError(
-                "🗑️ [AccountDeletion] Booked deletion belongs to another sign-in, refusing finalize"
-            )
-            dropBooking()
-            state = .failed(.service(.unauthorized))
+            refuseForAnotherSignIn("Booked deletion belongs to another sign-in, refusing finalize")
             return
         }
         let bookedState = state
@@ -491,12 +528,27 @@ final class AccountDeletionCoordinator {
         quit()
     }
 
-    /// Whether a booking was made under a subject that differs from the one
-    /// signed in now. An unreadable current subject (nobody signed in) is
-    /// not a mismatch, and neither is a booking made without a subject.
+    /// Whether a different account is signed in now than `subject`. An
+    /// unreadable current subject (nobody signed in) is not a change, and
+    /// neither is a nil `subject` (nothing was readable when it was taken).
+    private func signInChanged(since subject: String?) -> Bool {
+        guard let subject, let current = currentAuth0Subject() else { return false }
+        return current != subject
+    }
+
+    /// Whether the booking was made under a subject that differs from the
+    /// one signed in now.
     private func bookingBelongsToAnotherSignIn() -> Bool {
-        guard let bookedSubject, let current = currentAuth0Subject() else { return false }
-        return current != bookedSubject
+        signInChanged(since: bookedSubject)
+    }
+
+    /// Drops the booking and lands on the sign-in-again failure, which
+    /// offers only Close; a later `start()` begins a fresh request for the
+    /// account signed in then.
+    private func refuseForAnotherSignIn(_ reason: String) {
+        AppLogError("🗑️ [AccountDeletion] \(reason)")
+        dropBooking()
+        state = .failed(.service(.unauthorized))
     }
 
     /// Forgets everything tied to the current booking or attempt, so the
@@ -513,7 +565,11 @@ final class AccountDeletionCoordinator {
     /// think-time, so a token can expire mid-flow without the user doing
     /// anything wrong. A failed renewal, or a second rejection, surfaces as
     /// `unauthorized`, which the dialog turns into sign-in-again guidance.
+    /// So does a renewal that left a different account signed in than
+    /// `requester`: a token renewed under another sign-in is never used for
+    /// this request.
     private func retryingAfterTokenRenewal<T>(
+        requester: String?,
         _ call: () async throws -> T
     ) async throws -> T {
         do {
@@ -521,6 +577,10 @@ final class AccountDeletionCoordinator {
         } catch AccountDeletionServiceError.unauthorized {
             AppLogInfo("🗑️ [AccountDeletion] Access token rejected; renewing credentials and retrying once")
             guard await renewCredentials() else {
+                throw AccountDeletionServiceError.unauthorized
+            }
+            guard !signInChanged(since: requester) else {
+                AppLogError("🗑️ [AccountDeletion] Sign-in changed during credential renewal; not retrying")
                 throw AccountDeletionServiceError.unauthorized
             }
             return try await call()

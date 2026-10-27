@@ -1015,6 +1015,133 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .failed(.service(.unauthorized)))
     }
 
+    func testAlreadyRunningArrivingAfterASignInChangeIsDiscarded() async {
+        var storedSubject: String? = "auth0|A"
+        var releaseRequest: CheckedContinuation<AccountDeletionRequestOutcome, Never>?
+        let coordinator = makeCoordinator(
+            requestDeletion: { _ in await withCheckedContinuation { releaseRequest = $0 } },
+            currentAuth0Subject: { storedSubject }
+        )
+
+        let start = Task { await coordinator.start() }
+        await waitUntil { releaseRequest != nil }
+        storedSubject = "auth0|B"
+        releaseRequest?.resume(returning: .deletionAlreadyRunning)
+        await start.value
+
+        XCTAssertEqual(coordinator.state, .failed(.service(.unauthorized)))
+        await coordinator.finalizeDeletion()
+        XCTAssertEqual(destructiveEdgeEvents, [], "A's outcome must never become B's booking")
+        XCTAssertEqual(coordinator.state, .failed(.service(.unauthorized)))
+    }
+
+    func testCodeSentArrivingAfterASignInChangeIsDiscarded() async {
+        var storedSubject: String? = "auth0|A"
+        var releaseRequest: CheckedContinuation<AccountDeletionRequestOutcome, Never>?
+        let coordinator = makeCoordinator(
+            requestDeletion: { _ in await withCheckedContinuation { releaseRequest = $0 } },
+            currentAuth0Subject: { storedSubject }
+        )
+
+        let start = Task { await coordinator.start() }
+        await waitUntil { releaseRequest != nil }
+        storedSubject = "auth0|B"
+        releaseRequest?.resume(returning: .verificationCodeSent(requestID: "req-A"))
+        await start.value
+
+        XCTAssertEqual(coordinator.state, .failed(.service(.unauthorized)))
+        XCTAssertFalse(recordedStates.contains(.awaitingVerificationCode(requestID: "req-A", error: nil)))
+        XCTAssertEqual(destructiveEdgeEvents, [])
+    }
+
+    func testBookingKeepsThePreSendSubjectWhenSignedOutInFlight() async {
+        var storedSubject: String? = "auth0|A"
+        var releaseRequest: CheckedContinuation<AccountDeletionRequestOutcome, Never>?
+        var receivedSubjects: [String?] = []
+        let coordinator = makeCoordinator(
+            requestDeletion: { _ in await withCheckedContinuation { releaseRequest = $0 } },
+            clearLocalData: { auth0Sub in receivedSubjects.append(auth0Sub) },
+            currentAuth0Subject: { storedSubject }
+        )
+
+        let start = Task { await coordinator.start() }
+        await waitUntil { releaseRequest != nil }
+        storedSubject = nil
+        releaseRequest?.resume(returning: .verificationCodeSent(requestID: "req-A"))
+        await start.value
+        XCTAssertEqual(coordinator.state, .awaitingVerificationCode(requestID: "req-A", error: nil))
+
+        storedSubject = "auth0|A"
+        await coordinator.submitCode("123456")
+        XCTAssertEqual(coordinator.state, .requestSubmitted)
+        await coordinator.finalizeDeletion()
+
+        XCTAssertEqual(receivedSubjects, ["auth0|A"], "The binding is the pre-send subject")
+        XCTAssertEqual(destructiveEdgeEvents, Self.fullFinalizeOrder)
+    }
+
+    func testRenewalUnderAnotherSignInIsNotRetried() async {
+        var storedSubject: String? = "auth0|A"
+        var requestCallCount = 0
+        let coordinator = makeCoordinator(
+            requestDeletion: { _ in
+                requestCallCount += 1
+                throw AccountDeletionServiceError.unauthorized
+            },
+            renewCredentials: {
+                storedSubject = "auth0|B"
+                return true
+            },
+            currentAuth0Subject: { storedSubject }
+        )
+
+        await coordinator.start()
+
+        XCTAssertEqual(requestCallCount, 1, "A token renewed under B must not resend A's request")
+        XCTAssertEqual(coordinator.state, .failed(.service(.unauthorized)))
+        XCTAssertEqual(destructiveEdgeEvents, [])
+    }
+
+    func testSubmitCodeUnderAnotherSignInIsRefused() async {
+        var storedSubject: String? = "auth0|A"
+        var verifyCallCount = 0
+        let coordinator = makeCoordinator(
+            verifyDeletion: { _, _ in verifyCallCount += 1 },
+            currentAuth0Subject: { storedSubject }
+        )
+
+        await coordinator.start()
+        storedSubject = "auth0|B"
+        await coordinator.submitCode("123456")
+
+        XCTAssertEqual(verifyCallCount, 0, "A's request id must never be verified with B's token")
+        XCTAssertEqual(coordinator.state, .failed(.service(.unauthorized)))
+        XCTAssertEqual(destructiveEdgeEvents, [])
+    }
+
+    func testResendUnderAnotherSignInIsRefused() async {
+        var storedSubject: String? = "auth0|A"
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        var requestCallCount = 0
+        let coordinator = makeCoordinator(
+            requestDeletion: { _ in
+                requestCallCount += 1
+                return .verificationCodeSent(requestID: "req-\(requestCallCount)")
+            },
+            now: { clock },
+            currentAuth0Subject: { storedSubject }
+        )
+
+        await coordinator.start()
+        clock = clock.addingTimeInterval(AccountDeletionCoordinator.resendCooldown + 1)
+        storedSubject = "auth0|B"
+        await coordinator.resendCode()
+
+        XCTAssertEqual(requestCallCount, 1)
+        XCTAssertEqual(coordinator.state, .failed(.service(.unauthorized)))
+        XCTAssertEqual(destructiveEdgeEvents, [])
+    }
+
     func testFinalizeStopsWhenCredentialSafetyPreflightFails() async {
         let coordinator = makeCoordinator(beginCredentialDeletion: { false })
 

@@ -86,7 +86,7 @@ previous case's hidden Space or pending edit determine the next result.
 
 | ID | Priority / mode | Preconditions and steps | Expected result |
 | --- | --- | --- | --- |
-| SYNC-A01 | P0 / Manual | Fresh U1 and A. Sign in and complete sync setup. Copy/save the recovery code, select “I've saved it”, try an incorrect code and then re-enter the saved code. Complete matching and restart A. Also close/reopen or restart between saving and verification. | The code warns it is shown only once. The next screen has blank input and never re-displays the code. Incorrect input cannot start sync. Pending confirmation survives reopening/restart despite device unlock. Correct input allows matching; only full setup enables sync. |
+| SYNC-A01 | P0 / Manual | Fresh U1 and A. Sign in and complete sync setup. Copy/save the recovery code, select “I've saved it”, select Back and “I've saved it” again, try an incorrect code and then re-enter the saved code. Complete matching and restart A. Also close/reopen or restart between saving and verification. | The code warns it is shown only once. The next screen has blank input; Back re-displays the same code only while the window stays open, and a reopened or restarted setup has no Back and never re-displays the code. Incorrect input cannot start sync. Pending confirmation survives reopening/restart despite device unlock. Correct input allows matching; only full setup enables sync. |
 | SYNC-A02 | P0 / Manual | U1 initialized on A; B is fresh. Sign in as U1 on B, choose “Enter a recovery code”, enter A's code and complete pairing. Create one bookmark on each Mac. | B joins the same account; existing data arrives and both new bookmarks propagate once. A's existing data remains intact. |
 | SYNC-A03 | P0 / Manual | Fresh B joining U1. Try an invalid code, then a valid code belonging to U2, then U1's correct code. | Incorrect codes cannot unlock U1 or expose its data. Failure remains recoverable; the correct code can complete joining without resetting A. |
 | SYNC-A04 | P0 / Manual | Fresh B requests approval. On A open Settings → Sync, compare the displayed verification code and approve the matching request. Finish pairing on B. | Request/device and code correspond on both Macs. B progresses without hanging; it receives U1 data only after approval and mapping. |
@@ -337,7 +337,7 @@ report and record the native, framework and service versions used on two Macs.
 
 | Case | Steps | Required result | Result |
 | --- | --- | --- | --- |
-| UX-01 | First device opens Sync, starts setup, saves and re-enters recovery code | No account creation before Continue; one-time warning; incorrect input/restart cannot bypass confirmation; one window through completion | Not run |
+| UX-01 | First device opens Sync, starts setup, saves and re-enters recovery code | No account creation before Continue; one-time warning; Back re-displays the code only in the open window; incorrect input/restart cannot bypass confirmation; one window through completion | Not run |
 | UX-02 | B uses a bad recovery code, then corrects it | Editable retained input and actionable inline error; proceeds to matching | Not run |
 | UX-03 | B requests approval; A approves in Sync | Matching codes/device, live expiry, recovery alternative; one continuous window | Not run |
 | UX-04 | Later/close/Escape during load, choice, overwrite review, refresh and error; restart B | Local browsing works; Sync says unpaired/not started; no automatic reopening or data sync | Not run |

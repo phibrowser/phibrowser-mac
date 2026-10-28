@@ -37,11 +37,32 @@ struct RecoveryCodeEntryView: View {
                     .foregroundColor(.red)
             }
 
-            Button(NSLocalizedString("sync.recovery.entry.submit", value: "Submit", comment: "Sync setup - button that submits the entered recovery code")) {
-                Task { await viewModel.submitRecoveryCode(viewModel.recoveryInput) }
+            if viewModel.canShowRecoveryCodeAgain {
+                // Only while the code this window displayed is still in memory. A reopened
+                // window has nothing to go back to (`KeyLayerViewModel.canShowRecoveryCodeAgain`).
+                Text(NSLocalizedString("sync.recovery.entry.backHint",
+                                       value: "Didn’t save it? Go back and save it now. The code can’t be shown after this window is closed.",
+                                       comment: "Sync setup - hint on the recovery code confirmation page while the Back button can still re-display the code"))
+                    .font(.callout)
+                    .themedForeground(.textSecondary)
+                    .multilineTextAlignment(.center)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(viewModel.recoveryInput.isEmpty || viewModel.workingOperation)
+
+            HStack(spacing: 12) {
+                if viewModel.canShowRecoveryCodeAgain {
+                    Button(NSLocalizedString("sync.recovery.entry.back", value: "Back", comment: "Sync setup - button on the recovery code confirmation page that returns to the recovery code display")) {
+                        viewModel.showRecoveryCodeAgain()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.workingOperation)
+                }
+
+                Button(NSLocalizedString("sync.recovery.entry.submit", value: "Submit", comment: "Sync setup - button that submits the entered recovery code")) {
+                    Task { await viewModel.submitRecoveryCode(viewModel.recoveryInput) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.recoveryInput.isEmpty || viewModel.workingOperation)
+            }
         }
         .padding(32)
         .frame(minWidth: 360)

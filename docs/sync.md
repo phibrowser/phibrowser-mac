@@ -26,14 +26,18 @@ client resolves it for each request instead of retaining the pre-join ID.
 Invalidation fails closed in memory even if its persistence fails.
 
 First-device setup states that the recovery code is shown only once. **I've saved
-it** discards the display and opens an empty confirmation page. The existing
+it** opens an empty confirmation page. While that window stays open, the page's
+**Back** button returns to the display of the same code, which the setup model
+holds in memory until verification; nothing is regenerated and the pending flag
+stays set. The existing
 recovery-code decoder and account-envelope decryption verify the supplied code;
 only successful verification and durable clearing of the pending flag permit
 Profile/Space matching. A valid checksum alone is insufficient. No recovery code
 or derived secret is persisted. Wrong input and transport/storage failures retain
 the confirmation page and keep sync off. Re-entry can be deferred by closing the
 window; reopening or restarting requires confirmation even when device-key unlock
-succeeds. The one-time display itself still cannot be dismissed. Full pairing
+succeeds, and offers no Back: the code left memory with the window. The one-time
+display itself still cannot be dismissed. Full pairing
 remains a separate prerequisite for native writes and Chromium ready-key exposure.
 If bootstrap throws before returning a code, the pending flag is cleared: a lost
 account-creation response must not claim that the user saved an unseen code.

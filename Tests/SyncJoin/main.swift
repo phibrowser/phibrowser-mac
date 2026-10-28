@@ -210,6 +210,11 @@ actor JoinAPI: KeyEnvelopeAPI {
                     "Acknowledging a saved code must require re-entry before verification")
         try require(bootstrap.phase == .confirmingRecoveryCode && bootstrap.recoveryInput.isEmpty,
                     "Next screen must hide the code and start with empty input")
+        try require(bootstrap.canShowRecoveryCodeAgain, "Confirmation must offer Back while the shown code is still in memory")
+        bootstrap.showRecoveryCodeAgain()
+        try require(bootstrap.phase == .showingRecoveryCode(savedCode) && ProfilePairingGate.shared.requiresRecoveryConfirmation,
+                    "Back must re-display the same code and keep sync gated")
+        await bootstrap.confirmSaved()
         await bootstrap.submitRecoveryCode("bad-code")
         try require(bootstrap.phase == .confirmingRecoveryCode && bootstrap.inputError != nil && verified == 0,
                     "Invalid input must stay in confirmation and keep sync gated")
@@ -219,10 +224,12 @@ actor JoinAPI: KeyEnvelopeAPI {
                     "A valid but different recovery code must be rejected")
         let reopened = KeyLayerViewModel(manager: bootstrapManager, beginEnrollment: {})
         await reopened.beginSetup()
-        try require(reopened.phase == .confirmingRecoveryCode, "Unlocked device must still verify after reopening setup")
+        try require(reopened.phase == .confirmingRecoveryCode && !reopened.canShowRecoveryCodeAgain,
+                    "Unlocked device must still verify after reopening setup, with no code left to show")
         await bootstrap.submitRecoveryCode(savedCode.lowercased().replacingOccurrences(of: "-", with: " "))
-        try require(verified == 1 && bootstrap.phase == .readyToPair && bootstrap.recoveryInput.isEmpty,
-                    "Only a matching code advances to pairing and clears input")
+        try require(verified == 1 && bootstrap.phase == .readyToPair && bootstrap.recoveryInput.isEmpty
+                    && !bootstrap.canShowRecoveryCodeAgain,
+                    "Only a matching code advances to pairing, clears input and drops the code from memory")
         try require(!ProfilePairingGate.shared.requiresRecoveryConfirmation && !ProfilePairingGate.shared.isPaired,
                     "Verification clears the pending flag but does not complete pairing")
         let lostAPI = JoinAPI()
@@ -274,7 +281,7 @@ actor JoinAPI: KeyEnvelopeAPI {
         try require(alreadyInitialized.phase == .error(KeyLayerStrings.saveFailed),
                     "Failed flag cleanup after an existing account must report storage failure")
         print("PASS bootstrap failures: lost response uses ordinary recovery; local write errors keep their own message and gate")
-        print("PASS recovery confirmation: one-time display, wrong/checksummed codes, normalized input, reopen, gating")
+        print("PASS recovery confirmation: one-time display, Back to the shown code, wrong/checksummed codes, normalized input, reopen, gating")
         print("PASS join lifecycle: cancel/recovery/close, stale tickets, exact-key isolation, failed withdrawal, late POST, cancelled approval, too-many-pending, retry routing")
     }
 }

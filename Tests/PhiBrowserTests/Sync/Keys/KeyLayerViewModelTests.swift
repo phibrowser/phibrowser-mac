@@ -89,6 +89,59 @@ final class KeyLayerViewModelTests: XCTestCase {
         XCTAssertEqual(api.profileEnvelopes.count, 0, "Verification alone must not register profiles")
     }
 
+    /// Feedback #248: "I've saved it" used to make the confirmation page a dead end. While the
+    /// window that displayed the code is still open, Back re-displays that same code without
+    /// releasing the gate; once the code is verified it leaves memory and Back is inert.
+    func testConfirmationPageCanReturnToTheCodeUntilItIsVerified() async {
+        let api = AccountKeyManagerTests.FakeAPI()
+        let vm = KeyLayerViewModel(manager: AccountKeyManager(
+            api: api, deviceKeyProvider: AccountKeyManagerTests.FakeDeviceKeyProvider()))
+        XCTAssertFalse(vm.canShowRecoveryCodeAgain)
+
+        await vm.startBootstrap()
+        guard case .showingRecoveryCode(let code) = vm.phase else { return XCTFail("expected code") }
+        XCTAssertFalse(vm.canShowRecoveryCodeAgain, "Back belongs to the confirmation page only")
+
+        await vm.confirmSaved()
+        XCTAssertTrue(vm.canShowRecoveryCodeAgain)
+        await vm.submitRecoveryCode("00000-00000-00000-00000-00000-00")
+        XCTAssertEqual(vm.phase, .confirmingRecoveryCode)
+        XCTAssertNotNil(vm.inputError)
+
+        vm.showRecoveryCodeAgain()
+        XCTAssertEqual(vm.phase, .showingRecoveryCode(code), "Back shows the same code, never a new one")
+        XCTAssertTrue(vm.phase.requiresAcknowledgement, "The re-displayed code pins the window again")
+        XCTAssertNil(vm.inputError)
+        XCTAssertEqual(vm.recoveryInput, "")
+        XCTAssertTrue(ProfilePairingGate.shared.requiresRecoveryConfirmation, "Going back must not release the gate")
+
+        await vm.confirmSaved()
+        XCTAssertTrue(vm.canShowRecoveryCodeAgain)
+        await vm.submitRecoveryCode(code)
+        guard case .readyToPair = vm.phase else { return XCTFail("expected ready to pair") }
+        XCTAssertFalse(vm.canShowRecoveryCodeAgain)
+        vm.showRecoveryCodeAgain()
+        XCTAssertEqual(vm.phase, .readyToPair, "A verified code is dropped from memory; Back is inert")
+    }
+
+    /// Nothing persists the code, so a model opened later (window reopened, restart) lands on the
+    /// confirmation page with no Back and only re-entry; the durable pending flag still gates sync.
+    func testReopenedConfirmationHasNoCodeToReturnTo() async {
+        let api = AccountKeyManagerTests.FakeAPI()
+        let manager = AccountKeyManager(api: api, deviceKeyProvider: AccountKeyManagerTests.FakeDeviceKeyProvider())
+        let first = KeyLayerViewModel(manager: manager)
+        await first.startBootstrap()
+        await first.confirmSaved()
+        XCTAssertTrue(first.canShowRecoveryCodeAgain)
+
+        let reopened = KeyLayerViewModel(manager: manager)
+        await reopened.beginSetup()
+        XCTAssertEqual(reopened.phase, .confirmingRecoveryCode)
+        XCTAssertFalse(reopened.canShowRecoveryCodeAgain)
+        reopened.showRecoveryCodeAgain()
+        XCTAssertEqual(reopened.phase, .confirmingRecoveryCode)
+    }
+
     func testBadCodeShowsError() async {
         let api = AccountKeyManagerTests.FakeAPI()
         let seedProvider = AccountKeyManagerTests.FakeDeviceKeyProvider()

@@ -43,8 +43,9 @@ enum KeyLayerPhase: Equatable {
 
     /// True while the window must not be closed by the user (review A9). `bootstrap()` has
     /// already initialized the account on the server by the time the recovery code is on
-    /// screen; it is shown exactly once, a second bootstrap is refused, and there is no
-    /// "regenerate". Closing the window without confirming would lose it for good.
+    /// screen; a second bootstrap is refused and there is no "regenerate". The confirmation
+    /// page can come back here while the flow is open (`showRecoveryCodeAgain`), but closing
+    /// the window without confirming would lose the code for good.
     var requiresAcknowledgement: Bool {
         if case .showingRecoveryCode = self { return true }
         return false
@@ -71,6 +72,12 @@ final class KeyLayerViewModel: ObservableObject {
     private var operationGeneration = 0
     private var pollingInFlight = false
     private(set) var createdAccountInThisFlow = false
+    /// The recovery code this flow's bootstrap displayed, held in memory only until it is
+    /// verified or the flow is cancelled, so the confirmation page's Back button can show it
+    /// again (feedback #248: "I've saved it" used to turn that page into a dead end). Never
+    /// persisted or logged: it is key material. A reopened window or a restart starts a new
+    /// model, which has nothing to return to.
+    private var unconfirmedRecoveryCode: String?
     private let recoveryConfirmationRequired: @MainActor () -> Bool
     private let setRecoveryConfirmationRequired: @MainActor (Bool) throws -> Void
     private let beginEnrollment: @MainActor () throws -> Void
@@ -95,6 +102,7 @@ final class KeyLayerViewModel: ObservableObject {
         cancelJoin()
         pairingLoad?.cancel()
         recoveryInput = ""
+        unconfirmedRecoveryCode = nil
     }
 
     /// True for the whole of `submitPairing`, from the first decision to the last.
@@ -311,6 +319,7 @@ final class KeyLayerViewModel: ObservableObject {
             let code = try await manager.bootstrap()
             guard generation == operationGeneration, flowIsCurrent else { return }
             createdAccountInThisFlow = true
+            unconfirmedRecoveryCode = code
             phase = .showingRecoveryCode(code)
         } catch AccountKeyError.alreadyInitialized {
             guard generation == operationGeneration, flowIsCurrent else { return }
@@ -333,6 +342,24 @@ final class KeyLayerViewModel: ObservableObject {
         recoveryInput = ""
         inputError = nil
         phase = .confirmingRecoveryCode
+    }
+
+    /// Whether the confirmation page can go back to the code display: only for the code THIS
+    /// model showed, and only until it is verified. A model that reached the page from
+    /// `beginSetup` (window reopened, restart) holds no code and offers re-entry alone.
+    var canShowRecoveryCodeAgain: Bool {
+        phase == .confirmingRecoveryCode && unconfirmedRecoveryCode != nil
+    }
+
+    /// Back from the confirmation page: re-displays the same code (nothing is regenerated)
+    /// and pins the window again until the next "I've saved it". The durable pending flag
+    /// is untouched, so sync stays off.
+    func showRecoveryCodeAgain() {
+        guard !workingOperation, phase == .confirmingRecoveryCode,
+              let code = unconfirmedRecoveryCode else { return }
+        recoveryInput = ""
+        inputError = nil
+        phase = .showingRecoveryCode(code)
     }
 
     func submitRecoveryCode(_ code: String) async {
@@ -358,6 +385,7 @@ final class KeyLayerViewModel: ObservableObject {
                 do { try setRecoveryConfirmationRequired(false) }
                 catch { inputError = KeyLayerStrings.saveFailed; return }
             }
+            unconfirmedRecoveryCode = nil
             verified()
         } catch AccountKeyError.badRecoveryCode {
             guard generation == operationGeneration, flowIsCurrent else { return }

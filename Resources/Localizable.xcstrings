@@ -120819,6 +120819,28 @@
         }
       }
     },
+    "sync.recovery.entry.back" : {
+      "comment" : "Sync setup - button on the recovery code confirmation page that returns to the recovery code display",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back"
+          }
+        }
+      }
+    },
+    "sync.recovery.entry.backHint" : {
+      "comment" : "Sync setup - hint on the recovery code confirmation page while the Back button can still re-display the code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Didn’t save it? Go back and save it now. The code can’t be shown after this window is closed."
+          }
+        }
+      }
+    },
     "sync.recovery.entry.confirmExplanation" : {
       "comment" : "Sync setup - explanation of required recovery code verification",
       "extractionState" : "manual",

@@ -120827,6 +120827,54 @@
             "state" : "translated",
             "value" : "Back"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "返回"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一頁"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "戻る"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "뒤로"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retour"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurück"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terug"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atrás"
+          }
         }
       }
     },
@@ -120837,6 +120885,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Didn’t save it? Go back and save it now. The code can’t be shown after this window is closed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没保存？请返回并立即保存。关闭此窗口后，该代码将无法再显示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還沒儲存？請回到上一頁並立即儲存。關閉此視窗後，此代碼將無法再顯示。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まだ保存していませんか？戻って今すぐ保存してください。このウインドウを閉じると、コードは表示できなくなります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아직 저장하지 않았나요? 뒤로 돌아가 지금 저장하세요. 이 윈도우를 닫으면 코드를 다시 표시할 수 없어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous ne l'avez pas enregistré ? Revenez en arrière et enregistrez-le maintenant. Le code ne pourra plus être affiché une fois cette fenêtre fermée."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch nicht gesichert? Geh zurück und sichere ihn jetzt. Sobald dieses Fenster geschlossen ist, kann der Code nicht mehr angezeigt werden."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nog niet bewaard? Ga terug en bewaar de code nu. Nadat dit venster is gesloten, kan de code niet meer worden getoond."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿No lo has guardado? Vuelve atrás y guárdalo ahora. El código no se podrá mostrar después de cerrar esta ventana."
           }
         }
       }

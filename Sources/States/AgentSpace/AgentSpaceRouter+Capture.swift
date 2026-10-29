@@ -58,6 +58,53 @@ extension AgentSpaceRouter {
         }
     }
 
+    /// The page area of the Space instance behind `controller`, as its window
+    /// presents it (or would): the size a page renders at there. A presented
+    /// or legacy instance is measured directly; a background instance has its
+    /// page tree laid out at the shell's page area first, the way
+    /// `renderWindow` composes it. A background instance never presented has
+    /// no page mounted yet (its container mounts on first presentation), so
+    /// it answers for the window it lives in through the Space presented
+    /// there — same window and layout; only chrome of its own (a bookmark
+    /// bar, a panel) can differ, until it is presented and measured directly.
+    /// Nil with nothing mounted or no shell yet.
+    static func pageAreaSize(of controller: SpaceSessionController) -> CGSize? {
+        if let size = mountedPageAreaSize(of: controller) { return size }
+        guard !controller.isPresentedOrLegacy,
+              let presented = controller.slot?.visibleController,
+              presented !== controller else { return nil }
+        return mountedPageAreaSize(of: presented)
+    }
+
+    private static func mountedPageAreaSize(of controller: SpaceSessionController) -> CGSize? {
+        let split = controller.mainSplitViewController
+        guard split.isViewLoaded else { return nil }
+        if !controller.isPresentedOrLegacy {
+            guard layOutPageTreeInShell(of: controller) != nil else { return nil }
+        }
+        guard let size = split.webContentContainerViewController.currentWebPanelSize,
+              size.width > 0, size.height > 0 else { return nil }
+        return size
+    }
+
+    /// A hosted session's page tree, laid out at its shell's page area the
+    /// way the shell presents a Space. A background tree stays resident in
+    /// the shell, laid out but hidden; AppKit can defer autoresizing for
+    /// hidden trees, and a tree never shown in the shell has no frame at all
+    /// (see `ShellContentHostViewController.install`). Nil without a shell
+    /// or a loaded tree.
+    static func layOutPageTreeInShell(of controller: SpaceSessionController) -> NSView? {
+        let split = controller.mainSplitViewController
+        guard split.isViewLoaded, let shell = controller.shellSplit else { return nil }
+        let page = split.view
+        let size = shell.contentHost.view.bounds.size
+        if page.frame.size != size {
+            page.frame = NSRect(origin: page.frame.origin, size: size)
+        }
+        page.layoutSubtreeIfNeeded()
+        return page
+    }
+
     /// The window as the user would see it, with `webImage` — the page the
     /// caller captured over CDP — drawn over the page panel.
     ///
@@ -84,17 +131,10 @@ extension AgentSpaceRouter {
                           panel: panel.map { ($0, $0.convert($0.bounds, to: canvas)) },
                           webImage: webImage)
         }
-        guard split.isViewLoaded, let shell = controller.shellSplit else { return nil }
+        guard let shell = controller.shellSplit,
+              let page = layOutPageTreeInShell(of: controller) else { return nil }
         let pageArea = shell.contentHost.view.convert(shell.contentHost.view.bounds, to: canvas)
         let column = shell.sidebarHost.view.convert(shell.sidebarHost.view.bounds, to: canvas)
-        let page = split.view
-        // AppKit can defer autoresizing for hidden trees; a tree never shown
-        // in the shell has no frame at all (see
-        // `ShellContentHostViewController.install`).
-        if page.frame.size != pageArea.size {
-            page.frame = NSRect(origin: page.frame.origin, size: pageArea.size)
-        }
-        page.layoutSubtreeIfNeeded()
         let sidebar = split.sidebarViewController.view
         sidebar.layoutSubtreeIfNeeded()
         var trees: [(NSView, NSRect)] = []

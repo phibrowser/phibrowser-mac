@@ -46,11 +46,12 @@ tree, and each is handled at the moment the Space withdraws
   (`BrowserState.windowController`), never through the shell's window
   controller, which is whichever Space is presented.
 - Anything that needs the window the user sees — the Dock's reopen, an
-  agent's whole-window capture — maps a hosted Browser to the shell
-  presenting it (`GetBrowserWindows` in the app controller) or composes the
-  Space's resident trees in the shell's layout
-  (`AgentSpaceRouter.renderWindow`), because the Browser's own NSWindow is
-  never shown and a hidden tree draws nothing into a bitmap.
+  agent's whole-window capture or page-area measurement — maps a hosted
+  Browser to the shell presenting it (`GetBrowserWindows` in the app
+  controller) or lays the Space's resident trees out in the shell's layout
+  (`AgentSpaceRouter.renderWindow`, `AgentSpaceRouter.pageAreaSize`),
+  because the Browser's own NSWindow is never shown and a hidden tree draws
+  nothing into a bitmap.
 
 ## Sidebar geometry ownership
 

@@ -50,6 +50,8 @@ final class SplitPaneHostView: NSView {
 
     private let dividerView: DividerHandle
     private let focusRingView: FocusRingView
+    private let primaryMirroredBorderOverlay = ScreenShareMirroredBorderOverlayView()
+    private let secondaryMirroredBorderOverlay = ScreenShareMirroredBorderOverlayView()
     /// Per-pane container that hosts the Chromium native view and (optionally)
     /// a docked DevTools view scoped to just that pane. Layout positions these
     /// containers — the native views and DevTools views auto-fill (or take a
@@ -138,6 +140,10 @@ final class SplitPaneHostView: NSView {
         addSubview(dividerView)
         addSubview(focusRingView, positioned: .above, relativeTo: dividerView)
         focusRingView.isHidden = true
+        addSubview(primaryMirroredBorderOverlay, positioned: .above, relativeTo: focusRingView)
+        addSubview(secondaryMirroredBorderOverlay, positioned: .above, relativeTo: focusRingView)
+        primaryMirroredBorderOverlay.isHidden = true
+        secondaryMirroredBorderOverlay.isHidden = true
         dividerView.onDragBegan = { [weak self] event in self?.beginDrag(at: event) }
         dividerView.onDragChanged = { [weak self] event in self?.continueDrag(at: event) }
         dividerView.onDragEnded = { [weak self] in self?.endDrag() }
@@ -374,6 +380,8 @@ final class SplitPaneHostView: NSView {
         }
         positionFocusRing(primaryFrame: primaryPaneContainer.frame,
                           secondaryFrame: secondaryPaneContainer.frame)
+        positionMirroredBorderOverlays(primaryFrame: primaryPaneContainer.frame,
+                                       secondaryFrame: secondaryPaneContainer.frame)
         if let gapFillView {
             layoutGapFill(gapFillView)
         }
@@ -663,6 +671,20 @@ final class SplitPaneHostView: NSView {
         focusRingView.isHidden = false
         focusRingView.frame = (focusedPane == .primary) ? primaryFrame : secondaryFrame
         focusRingView.updatePath(outerRadius: outerCornerRadius)
+    }
+
+    /// Yellow screen-share frame for a mirrored pane (#259).
+    func setMirroredBorderVisible(_ visible: Bool, for pane: Pane) {
+        let overlay = pane == .primary ? primaryMirroredBorderOverlay : secondaryMirroredBorderOverlay
+        overlay.setActive(visible)
+    }
+
+    private func positionMirroredBorderOverlays(primaryFrame: NSRect, secondaryFrame: NSRect) {
+        primaryMirroredBorderOverlay.frame = primaryFrame
+        secondaryMirroredBorderOverlay.frame = secondaryFrame
+        let radius = outerCornerRadius
+        primaryMirroredBorderOverlay.cornerRadius = radius
+        secondaryMirroredBorderOverlay.cornerRadius = radius
     }
 
     // MARK: - Divider dragging

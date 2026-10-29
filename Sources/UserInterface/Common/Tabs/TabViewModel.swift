@@ -215,6 +215,10 @@ final class TabViewModel {
     var isCurrentlyAudible: Bool = false
     var isMuted: Bool = false
     var isCapturingMedia: Bool = false
+    /// Video-call tab that is presenting screen content.
+    var isPresentingScreenShare: Bool = false
+    /// Tab whose page is mirrored to a remote capture consumer.
+    var isBeingSharedRemotely: Bool = false
     var isHorizontalCompactMode: Bool = false
     /// Set by the horizontal tab strip while it hides this favicon under the
     /// cell's centered recording icon, or with the whole cell laid out at
@@ -246,6 +250,10 @@ final class TabViewModel {
 
     var isShimmering: Bool {
         isLoading
+    }
+
+    var showsCaptureIndicator: Bool {
+        isCapturingMedia || isPresentingScreenShare || isBeingSharedRemotely
     }
     
     var displayTitle: String {
@@ -290,6 +298,8 @@ final class TabViewModel {
         isCurrentlyAudible = false
         isMuted = false
         isCapturingMedia = false
+        isPresentingScreenShare = false
+        isBeingSharedRemotely = false
         groupColor = nil
         status.prepareForReuse()
         faviconRevision &+= 1
@@ -350,7 +360,9 @@ final class TabViewModel {
         updateVisualLoading()
         self.isCurrentlyAudible = tab.isCurrentlyAudible
         self.isMuted = tab.isMuted
-        self.isCapturingMedia = tab.isCapturingAudio || tab.isCapturingVideo || tab.isSharingScreen
+        self.isCapturingMedia = tab.isCapturingMedia
+        self.isPresentingScreenShare = tab.isPresentingScreenShare
+        self.isBeingSharedRemotely = tab.isBeingSharedRemotely
         self.isHovered = false
         self.isHoverSuppressed = false
         
@@ -479,12 +491,19 @@ final class TabViewModel {
             }
             .store(in: &cancellables)
 
-        Publishers.CombineLatest3(tab.$isCapturingAudio, tab.$isCapturingVideo, tab.$isSharingScreen)
+        Publishers.CombineLatest4(
+            tab.$isCapturingAudio,
+            tab.$isCapturingVideo,
+            tab.$isSharingScreen,
+            tab.$isBeingMirrored
+        )
             .removeDuplicates { $0 == $1 }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] isCapturingAudio, isCapturingVideo, isSharingScreen in
+            .sink { [weak self] isCapturingAudio, isCapturingVideo, isSharingScreen, isBeingMirrored in
                 guard let self, self.isCurrentConfiguration(expectedGuid: expectedGuid, expectedGeneration: expectedGeneration) else { return }
-                self.isCapturingMedia = isCapturingAudio || isCapturingVideo || isSharingScreen
+                self.isCapturingMedia = isCapturingAudio || isCapturingVideo
+                self.isPresentingScreenShare = isSharingScreen && !isBeingMirrored
+                self.isBeingSharedRemotely = isBeingMirrored
             }
             .store(in: &cancellables)
 

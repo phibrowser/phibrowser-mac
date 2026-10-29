@@ -919,12 +919,24 @@ extension Tab {
 }
 
 extension Tab {
-    /// Aggregate "capturing media" signal that drives the tab's recording
-    /// badge. Matches the rule the normal-tab favicon badge uses (microphone,
-    /// camera, screen share) so split panes light up under the same
-    /// conditions as standalone tabs.
+    /// Microphone or camera capture — drives the red recording badge only.
     var isCapturingMedia: Bool {
-        isCapturingAudio || isCapturingVideo || isSharingScreen
+        isCapturingAudio || isCapturingVideo
+    }
+
+    /// Tab running screen capture (e.g. a video-call tab presenting).
+    var isPresentingScreenShare: Bool {
+        isSharingScreen && !isBeingMirrored
+    }
+
+    /// Tab whose content is sent to a remote peer (mirrored capture target).
+    var isBeingSharedRemotely: Bool {
+        isBeingMirrored
+    }
+
+    /// Any favicon or sidebar capture glyph for this tab.
+    var showsCaptureIndicator: Bool {
+        isCapturingMedia || isPresentingScreenShare || isBeingSharedRemotely
     }
 }
 
@@ -970,10 +982,12 @@ extension Tab {
     /// indicator path without a live WebContents.
     func setCaptureStateForTesting(audio: Bool = false,
                                    video: Bool = false,
-                                   sharingScreen: Bool = false) {
+                                   sharingScreen: Bool = false,
+                                   beingMirrored: Bool = false) {
         isCapturingAudio = audio
         isCapturingVideo = video
         isSharingScreen = sharingScreen
+        isBeingMirrored = beingMirrored
     }
 }
 

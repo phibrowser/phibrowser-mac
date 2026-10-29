@@ -1865,6 +1865,25 @@ class BrowserState {
         return pageCommandTarget.map { copyableURLStrings(from: [$0]) } ?? []
     }
 
+    /// The string an address bar's Copy URL affordance puts on the clipboard
+    /// for a bar describing `tab`: the page in front of that bar — a
+    /// presented peek, resolved the way `pageCommandTarget(focusingTab:)`
+    /// resolves it for the Copy URL command — rather than the opener hidden
+    /// behind the panel. Keeps the button and the shortcut on one answer.
+    func addressBarCopyURLString(for tab: Tab?) -> String? {
+        Self.copyURLString(forAddressBarShowing: pageCommandTarget(focusingTab: tab))
+    }
+
+    /// `addressBarCopyURLString(for:)` without the peek resolution, for a bar
+    /// that has no `BrowserState` to resolve one against.
+    static func copyURLString(forAddressBarShowing tab: Tab?) -> String? {
+        guard var urlString = tab?.url, !urlString.isEmpty else { return nil }
+        // A reader page stands in for its article, as everywhere else a URL
+        // is handed to the user.
+        urlString = ReaderExtensionBridge.sourceURLString(fromReaderPageURL: urlString) ?? urlString
+        return URLProcessor.phiBrandEnsuredUrlString(urlString)
+    }
+
     private func copyableURLStrings(from tabs: [Tab]) -> [String] {
         tabs.compactMap { tab in
             guard let url = tab.url, !url.isEmpty else { return nil }

@@ -473,11 +473,12 @@ private struct KioskCopyURLButtonView: View {
 
         Button {
             dismissTooltip()
-            guard let urlString = state.focusingTab?.url,
-                  !urlString.isEmpty else { return }
-            let branded = URLProcessor.phiBrandEnsuredUrlString(urlString)
+            // The page in front of the toolbar: a presented peek's, not the
+            // opener hidden behind the panel — as the Copy URL command
+            // resolves it, so the button and ⌘⇧C agree.
+            guard let urlString = state.addressBarCopyURLString(for: state.focusingTab) else { return }
             NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(branded, forType: .string)
+            NSPasteboard.general.setString(urlString, forType: .string)
             showCopyConfirmation = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 showCopyConfirmation = false

@@ -1195,7 +1195,7 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     /// Show or hide a pane's capture badges from its tab's capture flags.
     private func updateCaptureBadges(isLeft: Bool, tab: Tab) {
         let host = isLeft ? leftRecordingHost : rightRecordingHost
-        let shows = tab.showsCaptureIndicator
+        let shows = tab.isCapturingMedia || tab.isBeingSharedRemotely
         host?.isHidden = !shows
         guard shows, let host else { return }
         host.rootView = AnyView(

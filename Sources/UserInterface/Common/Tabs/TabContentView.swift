@@ -758,37 +758,20 @@ struct UnifiedTabBeingSharedIcon: View {
 
 struct UnifiedTabFaviconCaptureCornerBadges: View {
     let isCapturingMedia: Bool
-    let isPresentingScreenShare: Bool
 
     var body: some View {
-        Color.clear
-            .frame(width: 14, height: 16)
-            .overlay(alignment: .topTrailing) {
-                if isCapturingMedia {
-                    UnifiedTabRecordingIcon()
-                }
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if isPresentingScreenShare {
-                    UnifiedTabPresentingScreenShareIcon()
-                }
-            }
+        if isCapturingMedia {
+            UnifiedTabRecordingIcon()
+        }
     }
 }
 
 struct UnifiedTabFaviconCaptureBadgesView: View {
     let viewModel: TabViewModel
 
-    private var showsCornerBadges: Bool {
-        viewModel.isCapturingMedia || viewModel.isPresentingScreenShare
-    }
-
     var body: some View {
-        if showsCornerBadges {
-            UnifiedTabFaviconCaptureCornerBadges(
-                isCapturingMedia: viewModel.isCapturingMedia,
-                isPresentingScreenShare: viewModel.isPresentingScreenShare
-            )
+        if viewModel.isCapturingMedia {
+            UnifiedTabFaviconCaptureCornerBadges(isCapturingMedia: true)
         }
     }
 }
@@ -822,11 +805,8 @@ struct UnifiedTabFaviconCaptureBadgesViewFromTab: View {
                     faviconCornerRadius: faviconCornerRadius
                 )
             }
-            if isCapturingMedia || isPresentingScreenShare {
-                UnifiedTabFaviconCaptureCornerBadges(
-                    isCapturingMedia: isCapturingMedia,
-                    isPresentingScreenShare: isPresentingScreenShare
-                )
+            if isCapturingMedia {
+                UnifiedTabFaviconCaptureCornerBadges(isCapturingMedia: true)
             }
         }
     }
@@ -840,8 +820,6 @@ struct UnifiedTabCaptureCenterIndicator: View {
         Group {
             if viewModel.isCapturingMedia {
                 UnifiedTabRecordingIcon()
-            } else if viewModel.isPresentingScreenShare {
-                UnifiedTabPresentingScreenShareIcon()
             } else if viewModel.isBeingSharedRemotely {
                 UnifiedTabBeingSharedIcon()
             }

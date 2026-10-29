@@ -482,6 +482,10 @@ class Tab: WebContentRepresentable {
         wrapper.publisher(for: \.isSharingScreen)
             .assign(to: \.isSharingScreen, on: self)
             .store(in: &cancellables)
+
+#if DEBUG
+        installIssue259CaptureFlagsDebugLoggingIfEnabled()
+#endif
         
         wrapper.publisher(for: \.title)
             .replaceNil(with: "")
@@ -945,6 +949,42 @@ extension Tab {
         isCapturingAudio || isCapturingVideo || isSharingScreen
     }
 }
+
+#if DEBUG
+extension Tab {
+    /// Temporary instrumentation for #259 — remove before merge. Enable with
+    /// `PHI_CAPTURE_FLAGS_DEBUG=1` in the scheme environment or shell.
+    fileprivate func installIssue259CaptureFlagsDebugLoggingIfEnabled() {
+        guard ProcessInfo.processInfo.environment["PHI_CAPTURE_FLAGS_DEBUG"] == "1" else { return }
+
+        let flagPublishers: [AnyPublisher<Void, Never>] = [
+            $isCapturingAudio.map { _ in () }.eraseToAnyPublisher(),
+            $isCapturingVideo.map { _ in () }.eraseToAnyPublisher(),
+            $isCapturingWindow.map { _ in () }.eraseToAnyPublisher(),
+            $isCapturingDisplay.map { _ in () }.eraseToAnyPublisher(),
+            $isCapturingTab.map { _ in () }.eraseToAnyPublisher(),
+            $isBeingMirrored.map { _ in () }.eraseToAnyPublisher(),
+            $isSharingScreen.map { _ in () }.eraseToAnyPublisher(),
+        ]
+
+        Publishers.MergeMany(flagPublishers)
+            .debounce(for: .milliseconds(30), scheduler: RunLoop.main)
+            .sink { [weak self] in
+                guard let self else { return }
+                let host = self.url.flatMap { URL(string: $0)?.host } ?? "—"
+                AppLogWarn(
+                    "[issue-259 capture] tabId=\(self.guid) windowId=\(self.windowId) "
+                        + "active=\(self.isActive) host=\(host) "
+                        + "audio=\(self.isCapturingAudio) video=\(self.isCapturingVideo) "
+                        + "capturingWindow=\(self.isCapturingWindow) capturingDisplay=\(self.isCapturingDisplay) "
+                        + "capturingTab=\(self.isCapturingTab) mirrored=\(self.isBeingMirrored) "
+                        + "sharingScreen=\(self.isSharingScreen)"
+                )
+            }
+            .store(in: &cancellables)
+    }
+}
+#endif
 
 extension Tab {
     /// Test seam: the capture flags are normally driven by Chromium KVO,

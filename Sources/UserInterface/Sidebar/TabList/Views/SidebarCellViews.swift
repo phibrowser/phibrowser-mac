@@ -607,12 +607,10 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             // width when the pane's tab is audible or muted.
             muteHost = ZeroSafeAreaHostingView(rootView: AnyView(EmptyView()))
             muteHost.isHidden = true
-            // Recording badge (the pulsing red dot). Only its visibility is
-            // toggled; the host builds the dot on each show and drops it on
-            // hide. The observer is captured by value so the host's closure
-            // does not retain the cell.
+            // Capture badges (mic/camera, presenting, mirrored). Visibility
+            // and content are refreshed in `updateCaptureBadges`.
             recordingHost = TabRecordingIconHostingView {
-                AnyView(UnifiedTabRecordingIcon().phiThemeObserver(themeObserver))
+                AnyView(EmptyView())
             }
             recordingHost.isHidden = true
         }
@@ -1179,15 +1177,15 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             // Same identity-routed binding for the capture flags so each
             // segment's recording badge tracks its own tab, matching a
             // standalone tab.
-            Publishers.CombineLatest3(tab.$isCapturingAudio,
+            Publishers.CombineLatest4(tab.$isCapturingAudio,
                                       tab.$isCapturingVideo,
-                                      tab.$isSharingScreen)
-                .map { $0 || $1 || $2 }
-                .removeDuplicates()
+                                      tab.$isSharingScreen,
+                                      tab.$isBeingMirrored)
+                .removeDuplicates { $0 == $1 }
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self, weak tab] capturing in
+                .sink { [weak self, weak tab] _, _, _, _ in
                     guard let self, let tab, let index = self.segmentIndex(of: tab) else { return }
-                    self.updateRecording(index: index, capturing: capturing)
+                    self.updateCaptureBadges(index: index, tab: tab)
                 }
                 .store(in: &cancellables)
 
@@ -1259,7 +1257,7 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
         refreshFavicon(segment: segment, for: tab)
         updatePaneTitle(index: index, title: tab.title)
         updateMute(index: index, audible: tab.isCurrentlyAudible, muted: tab.isMuted)
-        updateRecording(index: index, capturing: tab.isCapturingMedia)
+        updateCaptureBadges(index: index, tab: tab)
     }
 
     private func segmentIndex(of tab: Tab) -> Int? {
@@ -1331,15 +1329,24 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
         )
     }
 
-    /// Show or hide a segment's recording badge based on its tab's capture
-    /// state. Mirrors the corner badge a standalone tab shows via
-    /// `UnifiedTabFaviconView` so split panes match unsplit panes.
-    private func updateRecording(index: Int, capturing: Bool) {
-        segments[index].recordingHost.isHidden = !capturing
+    /// Show or hide a segment's capture badges from its tab's capture flags.
+    private func updateCaptureBadges(index: Int, tab: Tab) {
+        let host = segments[index].recordingHost
+        let shows = tab.showsCaptureIndicator
+        host.isHidden = !shows
+        guard shows else { return }
+        host.rootView = AnyView(
+            UnifiedTabFaviconCaptureBadgesViewFromTab(
+                isCapturingMedia: tab.isCapturingMedia,
+                isPresentingScreenShare: tab.isPresentingScreenShare,
+                isBeingSharedRemotely: tab.isBeingSharedRemotely
+            )
+            .phiThemeObserver(themeObserver)
+        )
     }
 
     /// Test seam: whether the segment for pane `paneIndex` currently shows
-    /// its recording badge.
+    /// a capture badge.
     func isRecordingIndicatorVisible(paneIndex: Int) -> Bool {
         guard paneIndex < configuredPaneCount else { return false }
         return !segments[paneIndex].recordingHost.isHidden

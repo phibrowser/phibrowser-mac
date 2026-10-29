@@ -437,7 +437,7 @@ final class TabItemView: NSView {
 
     private func layoutFaviconAndMedia(mode: LayoutMode) -> CGFloat {
         let metrics = TabStripMetrics.Content.self
-        let showRecording = viewModel.isCapturingMedia
+        let showCaptureCenterGlyph = viewModel.showsCaptureIndicator
         let showMute = viewModel.isCurrentlyAudible || viewModel.isMuted
         let centerY = bounds.height / 2
         let panes = Array(mergedPanes)
@@ -457,7 +457,7 @@ final class TabItemView: NSView {
         )
         // Pinned and compact cells show recording as the centered icon below
         // and hide every favicon; drop their corner badges with them.
-        let hidesRecordingBadges = showRecording && mode != .normal
+        let hidesRecordingBadges = showCaptureCenterGlyph && mode != .normal
         viewModel.hidesRecordingBadge = hidesRecordingBadges
         for pane in panes {
             pane.viewModel.hidesRecordingBadge = hidesRecordingBadges
@@ -486,7 +486,7 @@ final class TabItemView: NSView {
             // recording corner badges they carry — are hidden, so a narrow
             // cell shows at most one state at a time by design.
             let audiblePane = panes.first { $0.showsMute }
-            if showRecording {
+            if showCaptureCenterGlyph {
                 recordingIconHostingView.isHidden = false
                 recordingIconHostingView.frame = centeredFrame(for: recordingIconSize)
                 hideAllFavicons()
@@ -921,7 +921,7 @@ final class TabItemView: NSView {
     }
 
     private func makeRecordingIconRootView() -> AnyView {
-        makeThemedRootView(UnifiedTabRecordingIcon())
+        makeThemedRootView(UnifiedTabCaptureCenterIndicator(viewModel: viewModel))
     }
 
     private func makeCloseButtonRootView() -> AnyView {
@@ -995,9 +995,14 @@ final class TabItemView: NSView {
             updateTitleHostingToolTips()
 
             // Listen for state changes to trigger re-layout
-            Publishers.CombineLatest3(tab.$isCapturingAudio, tab.$isCapturingVideo, tab.$isSharingScreen)
+            Publishers.CombineLatest4(
+                tab.$isCapturingAudio,
+                tab.$isCapturingVideo,
+                tab.$isSharingScreen,
+                tab.$isBeingMirrored
+            )
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self] _, _, _ in
+                .sink { [weak self] _, _, _, _ in
                     self?.layoutContent()
                 }
                 .store(in: &cancellables)

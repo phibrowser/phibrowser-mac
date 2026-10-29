@@ -89,6 +89,11 @@ struct SideTabView: View {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .stroke(borderColor, lineWidth: borderWidth)
         )
+        .overlay {
+            if model.isBeingSharedRemotely {
+                TabBeingSharedSidebarRowOutline(cornerRadius: cornerRadius)
+            }
+        }
         .shadow(color: .black.opacity(dropShadowOpacity), radius: 1, x: 0, y: 1)
         .overlay(alignment: .topTrailing) {
             TabCornerBadgeView(

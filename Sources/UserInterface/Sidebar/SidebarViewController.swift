@@ -519,8 +519,8 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     private var mediaWindowVisibilityCancellables = Set<AnyCancellable>()
     private weak var mediaObservedWindow: NSWindow?
     private var headerHeightConstraint: Constraint?
+    private var headerSpacerHeightConstraint: Constraint?
     private var pinnedTabsHeightConstraint: Constraint?
-    private var pinSpacerHeightConstraint: Constraint?
     private var bottomBarHeightConstraint: Constraint?
     private var mediaPlayerHeightConstraint: Constraint?
     private var messageCardHeightConstraint: Constraint?
@@ -742,15 +742,16 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
             && state.participatesInSpaces
             && (SpaceManager.shared.spaces.count > 1 || headerView.forcesSpaceSwitchVisible)
         // Base = nav row (+ address bar in sidebar layouts). The Spaces switch
-        // adds its row height plus the 8pt gap below the nav row only while it
-        // is shown, so the header reclaims the full band when it is hidden.
-        // In top-navigation layouts, 42.5pt leaves the Space strip exactly
-        // 8pt above the next sidebar band once the 5pt header spacer below is
-        // included. The half point follows the legacy header controls' 15.5pt
-        // top alignment. With the address bar in the sidebar, 79pt leaves 3pt
-        // under it, so the band below starts 8pt under the bar.
+        // adds its band (see SidebarHeaderView.spaceSwitchBandHeight) only
+        // while it is shown, so the header reclaims it when it is hidden.
+        // In top-navigation layouts, 42.5pt leaves 3pt under the nav row or
+        // Space strip; the half point follows the legacy header controls'
+        // 15.5pt top alignment. With the address bar in the sidebar, 79pt
+        // leaves 3pt under it. The pinned band's top inset, or the spacer
+        // while the band is empty, makes up the rest of the 8pt below (see
+        // setupStackView).
         let base: CGFloat = addressInSidebar ? 79 : 42.5
-        let spacesBandHeight = SpacesStripView.sidebarHeight + 8
+        let spacesBandHeight = SidebarHeaderView.spaceSwitchBandHeight(addressInSidebar: addressInSidebar)
         let headerHeight = base + (spacesEnabled ? spacesBandHeight : 0)
         headerHeightConstraint?.update(offset: headerHeight)
     }
@@ -809,29 +810,29 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         
         updateHeaderHeight()
 
-        let headerSpacer = createSpacer(height: 5)
+        // The pinned band carries its own gaps (see PinnedTabViewController),
+        // so this spacer opens only while the band is empty: with the
+        // header's 3 pt under its last row and the tab list's 2 pt row inset,
+        // 3 pt here puts the first row 8 pt under that row.
+        let initialPinnedHeight = state.isIncognito ? 0 : loadCachedFavoriteHeight()
+        let headerSpacer = NSView()
+        headerSpacer.snp.makeConstraints { make in
+            headerSpacerHeightConstraint = make.height.equalTo(initialPinnedHeight > 0 ? 0 : 3).constraint
+        }
         mainStackView.addArrangedSubview(headerSpacer)
 
         // The pinned-tab (favorites) band is a per-profile feature with no
         // meaning in an incognito session, which has no favorites. Skip mounting
-        // it entirely — along with its trailing spacer — so the tab list and its
-        // "+ New Tab" row sit directly below the address bar instead of under an
-        // empty reserved band (matching how the Spaces strip / AI chat / memory
-        // are suppressed for incognito).
+        // it entirely so the tab list and its "+ New Tab" row sit directly below
+        // the address bar instead of under an empty reserved band (matching how
+        // the Spaces strip / AI chat / memory are suppressed for incognito).
         if !state.isIncognito {
             setupFavoriteContainer()
-            let initialPinnedHeight = loadCachedFavoriteHeight()
             mainStackView.addArrangedSubview(pinnedTabContainerView)
             pinnedTabContainerView.snp.makeConstraints { make in
                 make.leading.trailing.equalToSuperview()
                 pinnedTabsHeightConstraint = make.height.equalTo(initialPinnedHeight).constraint
             }
-
-            let pinSpacer = NSView()
-            pinSpacer.snp.makeConstraints { make in
-                pinSpacerHeightConstraint = make.height.equalTo(initialPinnedHeight > 0 ? 3 : 0).constraint
-            }
-            mainStackView.addArrangedSubview(pinSpacer)
         }
 
         // The Spaces switch is mounted at the TOP of the sidebar — inside the
@@ -1266,7 +1267,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         }
 
         pinnedTabsHeightConstraint?.update(offset: clampedHeight)
-        pinSpacerHeightConstraint?.update(offset: clampedHeight > 0 ? 3 : 0)
+        headerSpacerHeightConstraint?.update(offset: clampedHeight > 0 ? 0 : 3)
         view.layoutSubtreeIfNeeded()
         persistFavoriteHeightIfNeeded(clampedHeight, isDragging: isDragging)
     }

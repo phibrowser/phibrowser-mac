@@ -207,6 +207,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     private var focusingTabPartnerAIChatEnabledCancellable: AnyCancellable?
     private var headerHeightConstraint: Constraint?
     private var pinnedHeightConstraint: Constraint?
+    private var headerSpacerHeightConstraint: Constraint?
     private var bottomBarHeightConstraint: Constraint?
     private var mediaPlayerHeightConstraint: Constraint?
     private var messageCardHeightConstraint: Constraint?
@@ -394,10 +395,16 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         // sidebar, including the window that resolves no slot to bind to.
         bindSpaceStripToSession()
 
-        // 2. Header spacer
-        mainStackView.addArrangedSubview(createSpacer(height: 5))
+        // 2. Header spacer. Opens to 3 pt only while the pinned band is empty,
+        // matching the docked sidebar (see SidebarViewController.setupStackView);
+        // the band starts empty here.
+        let headerSpacer = NSView()
+        headerSpacer.snp.makeConstraints { make in
+            headerSpacerHeightConstraint = make.height.equalTo(3).constraint
+        }
+        mainStackView.addArrangedSubview(headerSpacer)
 
-        // 3. Pinned tabs + their spacer. The pinned-tab (favorites) band is a
+        // 3. Pinned tabs. The pinned-tab (favorites) band is a
         // per-profile feature with no meaning in an incognito session; mounting
         // it here would expose the default profile's favorites as a drop target
         // whose writes land in the default Space. Skip it entirely, matching
@@ -413,12 +420,9 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
                 make.leading.trailing.equalToSuperview()
                 pinnedHeightConstraint = make.height.equalTo(Self.defaultFavoriteHeight).constraint
             }
-
-            // 4. Favorites spacer
-            mainStackView.addArrangedSubview(createSpacer(height: 3))
         }
 
-        // 5. Tab list
+        // 4. Tab list
         tabList.enableContextMenuClickRouting()
         mainStackView.addArrangedSubview(tabList.view)
         tabList.view.snp.makeConstraints { make in
@@ -427,10 +431,10 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         tabList.view.setContentHuggingPriority(.defaultLow, for: .vertical)
         tabList.view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
-        // 6. Tab list bottom spacer
+        // 5. Tab list bottom spacer
         mainStackView.addArrangedSubview(createSpacer(height: 3))
 
-        // 7. Message card container
+        // 6. Message card container
         mainStackView.addArrangedSubview(bottomContentContainerView)
         bottomContentContainerView.snp.makeConstraints { make in
             make.leading.trailing.equalToSuperview()
@@ -452,7 +456,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
 
         bindMediaPresentation()
 
-        // 8. Bottom bar
+        // 7. Bottom bar
         mainStackView.addArrangedSubview(bottomBarSwiftUI)
         bottomBarSwiftUI.snp.makeConstraints { make in
             bottomBarHeightConstraint = make.height.equalTo(SidebarBottomBarState.singleRowHeight).constraint
@@ -462,7 +466,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
             self?.updateBottomBarHeight(newHeight)
         }
 
-        // 9. Bottom spacer
+        // 8. Bottom spacer
         mainStackView.addArrangedSubview(createSpacer(height: 8))
     }
 
@@ -862,13 +866,16 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         // Reserve the Spaces switch row's height under the exact conditions
         // the header shows the row (see
         // `SidebarHeaderView.updateSpaceSwitchVisibility`), mirroring the
-        // docked sidebar's updateHeaderHeight: reserve the row height plus
-        // the 8pt gap only while shown, and reclaim both when hidden.
+        // docked sidebar's updateHeaderHeight: reserve its band only while
+        // shown, and reclaim it when hidden.
         let spacesEnabled = PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue()
             && state.participatesInSpaces
             && (SpaceManager.shared.spaces.count > 1 || headerView.forcesSpaceSwitchVisible)
-        let base: CGFloat = showInSidebar ? 79 : 42.5
-        let spacesBandHeight = SpacesStripView.sidebarHeight + 8
+        // The floating header keeps its nav row 8pt from the top in every
+        // layout (see SidebarHeaderView.sidebarButtonTopOffset), so both
+        // bases leave 3pt under the last header row, as the docked one does.
+        let base: CGFloat = showInSidebar ? 79 : 35
+        let spacesBandHeight = SidebarHeaderView.spaceSwitchBandHeight(addressInSidebar: showInSidebar)
         let headerHeight = base + (spacesEnabled ? spacesBandHeight : 0)
         headerHeightConstraint?.update(offset: headerHeight)
     }
@@ -1053,6 +1060,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         }
 
         pinnedHeightConstraint?.update(offset: clampedHeight)
+        headerSpacerHeightConstraint?.update(offset: clampedHeight > 0 ? 0 : 3)
         view.layoutSubtreeIfNeeded()
     }
 }

@@ -23,8 +23,24 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     private var sidebarButtonLeftConstraint: Constraint?
     private var upgradeButtonLeftConstraint: Constraint?
     private var addressViewHeightConstraint: Constraint?
+    private var spaceSwitchTopConstraint: Constraint?
     private let defaultSidebarButtonTopOffset: CGFloat = 8
     private let legacySidebarButtonTopOffset: CGFloat = 15.5
+    /// Address bar gap under the nav row, and under the Spaces-switch row.
+    private static let addressViewTopOffset: CGFloat = 12
+    private static let addressViewTopOffsetBelowSpaceSwitch: CGFloat = 8
+    /// Gap between the nav row and the Spaces-switch row.
+    private static func spaceSwitchTopOffset(addressInSidebar: Bool) -> CGFloat {
+        addressInSidebar ? 8 : 12
+    }
+    /// Header height the Spaces-switch row adds. With the address bar in the
+    /// sidebar the row sits above it, so the bar's gap under the nav row
+    /// becomes its gap under the row.
+    static func spaceSwitchBandHeight(addressInSidebar: Bool) -> CGFloat {
+        let band = spaceSwitchTopOffset(addressInSidebar: addressInSidebar) + SpacesStripView.sidebarHeight
+        guard addressInSidebar else { return band }
+        return band + addressViewTopOffsetBelowSpaceSwitch - addressViewTopOffset
+    }
     private let addressViewHeight: CGFloat = 32
     private var sidebarButtonLeftOffset: CGFloat = 78
     private let defaultSidebarButtonTrailingInset: CGFloat = 5
@@ -306,7 +322,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         addSubview(addressView)
         addressView.snp.makeConstraints { make in
             make.left.right.equalToSuperview()
-            make.top.equalTo(stackView.snp.bottom).offset(12)
+            make.top.equalTo(stackView.snp.bottom).offset(Self.addressViewTopOffset)
             addressViewHeightConstraint = make.height.equalTo(addressViewHeight).constraint
         }
 
@@ -355,14 +371,16 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
 
         view.isHidden = !enabled
         if enabled {
+            let addressInSidebar = isSidebarLayout(browserState?.layoutMode ?? .performance)
             view.snp.remakeConstraints { make in
                 make.leading.trailing.equalToSuperview()
-                make.top.equalTo(stackView.snp.bottom).offset(8)
+                spaceSwitchTopConstraint = make.top.equalTo(stackView.snp.bottom)
+                    .offset(Self.spaceSwitchTopOffset(addressInSidebar: addressInSidebar)).constraint
                 make.height.equalTo(SpacesStripView.sidebarHeight)
             }
             addressView.snp.remakeConstraints { make in
                 make.left.right.equalToSuperview()
-                make.top.equalTo(view.snp.bottom).offset(12)
+                make.top.equalTo(view.snp.bottom).offset(Self.addressViewTopOffsetBelowSpaceSwitch)
                 addressViewHeightConstraint = make.height.equalTo(addressViewHeight).constraint
             }
         } else {
@@ -373,7 +391,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             }
             addressView.snp.remakeConstraints { make in
                 make.left.right.equalToSuperview()
-                make.top.equalTo(stackView.snp.bottom).offset(12)
+                make.top.equalTo(stackView.snp.bottom).offset(Self.addressViewTopOffset)
                 addressViewHeightConstraint = make.height.equalTo(addressViewHeight).constraint
             }
         }
@@ -406,6 +424,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
 
         // Update addressView height constraint
         addressViewHeightConstraint?.update(offset: showInSidebar ? addressViewHeight : 0)
+        spaceSwitchTopConstraint?.update(offset: Self.spaceSwitchTopOffset(addressInSidebar: showInSidebar))
 
         // Adjust sidebarButton position
         sidebarButton.snp.remakeConstraints { make in

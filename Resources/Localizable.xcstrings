@@ -131809,6 +131809,7 @@
     },
     "tabs.captureBadge.beingShared" : {
       "comment" : "Tab favicon badge - Tooltip when this tab's content is mirrored to a remote screen share",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -131820,6 +131821,7 @@
     },
     "tabs.captureBadge.microphoneOrCamera" : {
       "comment" : "Tab favicon badge - Tooltip on the red recording dot for microphone or camera capture",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -131831,6 +131833,7 @@
     },
     "tabs.captureBadge.presentingScreenShare" : {
       "comment" : "Tab favicon badge - Tooltip when this tab is the presenter in a screen share session",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {

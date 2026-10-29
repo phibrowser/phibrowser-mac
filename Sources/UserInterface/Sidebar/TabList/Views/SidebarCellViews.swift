@@ -836,15 +836,13 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             ))
         }
 
-        // Recording badge sits at the favicon's top-trailing corner, matching
-        // `UnifiedTabFaviconView`'s overlay (8pt dot offset out by 3pt).
-        // Hosted on the segment rather than the icon so the icon's masked
-        // corners don't clip it. Hidden until the pane's tab starts capturing.
+        // Capture chrome (mic dot, share pill, mirrored outline) is centered
+        // on the favicon so the yellow ring wraps the icon correctly.
         pane.addSubview(segment.recordingHost)
         segment.recordingHost.snp.makeConstraints { make in
-            make.top.equalTo(icon.snp.top).offset(-3)
-            make.trailing.equalTo(icon.snp.trailing).offset(3)
-            make.size.equalTo(CGSize(width: 8, height: 8))
+            make.center.equalTo(icon)
+            make.width.equalTo(22)
+            make.height.equalTo(22)
         }
 
         let title = segment.titleLabel
@@ -1339,7 +1337,9 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             UnifiedTabFaviconCaptureBadgesViewFromTab(
                 isCapturingMedia: tab.isCapturingMedia,
                 isPresentingScreenShare: tab.isPresentingScreenShare,
-                isBeingSharedRemotely: tab.isBeingSharedRemotely
+                isBeingSharedRemotely: tab.isBeingSharedRemotely,
+                faviconSize: Self.faviconSize,
+                faviconCornerRadius: Self.faviconCornerRadius
             )
             .phiThemeObserver(themeObserver)
         )

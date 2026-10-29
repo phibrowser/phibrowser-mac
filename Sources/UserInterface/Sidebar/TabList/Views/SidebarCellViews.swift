@@ -1330,7 +1330,7 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
     /// Show or hide a segment's capture badges from its tab's capture flags.
     private func updateCaptureBadges(index: Int, tab: Tab) {
         let host = segments[index].recordingHost
-        let shows = tab.showsCaptureIndicator
+        let shows = tab.isCapturingMedia || tab.isBeingSharedRemotely
         host.isHidden = !shows
         guard shows else { return }
         host.rootView = AnyView(

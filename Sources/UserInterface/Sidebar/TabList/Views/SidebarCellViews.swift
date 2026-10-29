@@ -657,16 +657,13 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         leftMuteHost.isHidden = true
         rightMuteHost.isHidden = true
 
-        // Recording badges (the pulsing red dot). Only their visibility is
-        // toggled here; the host builds the dot on each show and drops it
-        // on hide. The observer is captured by value so the hosts' closures
-        // do not retain the cell.
-        let recordingThemeObserver = themeObserver
+        // Capture badges (mic/camera, presenting, mirrored). Visibility and
+        // content are refreshed in `updateCaptureBadges`.
         leftRecordingHost = TabRecordingIconHostingView {
-            AnyView(UnifiedTabRecordingIcon().phiThemeObserver(recordingThemeObserver))
+            AnyView(EmptyView())
         }
         rightRecordingHost = TabRecordingIconHostingView {
-            AnyView(UnifiedTabRecordingIcon().phiThemeObserver(recordingThemeObserver))
+            AnyView(EmptyView())
         }
         leftRecordingHost.isHidden = true
         rightRecordingHost.isHidden = true
@@ -1031,8 +1028,8 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         updateMute(isLeft: false,
                    audible: pair.rightTab.isCurrentlyAudible,
                    muted: pair.rightTab.isMuted)
-        updateRecording(isLeft: true, capturing: pair.leftTab.isCapturingMedia)
-        updateRecording(isLeft: false, capturing: pair.rightTab.isCapturingMedia)
+        updateCaptureBadges(isLeft: true, tab: pair.leftTab)
+        updateCaptureBadges(isLeft: false, tab: pair.rightTab)
 
         // Subscribe to each tab's audio state and route by tab identity so a
         // post-swap event lands in the correct pane — the configured left/right
@@ -1057,18 +1054,18 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         // Same identity-routed binding for the capture flags so each pane's
         // recording badge tracks its own tab, matching a standalone tab.
         for tab in [pair.leftTab, pair.rightTab] {
-            Publishers.CombineLatest3(tab.$isCapturingAudio,
+            Publishers.CombineLatest4(tab.$isCapturingAudio,
                                       tab.$isCapturingVideo,
-                                      tab.$isSharingScreen)
-                .map { $0 || $1 || $2 }
-                .removeDuplicates()
+                                      tab.$isSharingScreen,
+                                      tab.$isBeingMirrored)
+                .removeDuplicates { $0 == $1 }
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self, weak tab] capturing in
+                .sink { [weak self, weak tab] _, _, _, _ in
                     guard let self, let tab else { return }
                     if tab === self.configuredLeftTab {
-                        self.updateRecording(isLeft: true, capturing: capturing)
+                        self.updateCaptureBadges(isLeft: true, tab: tab)
                     } else if tab === self.configuredRightTab {
-                        self.updateRecording(isLeft: false, capturing: capturing)
+                        self.updateCaptureBadges(isLeft: false, tab: tab)
                     }
                 }
                 .store(in: &cancellables)
@@ -1212,15 +1209,23 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         )
     }
 
-    /// Show or hide a pane's recording badge based on its tab's capture
-    /// state. Mirrors the corner badge a standalone tab shows via
-    /// `UnifiedTabFaviconView` so split panes match unsplit panes.
-    private func updateRecording(isLeft: Bool, capturing: Bool) {
+    /// Show or hide a pane's capture badges from its tab's capture flags.
+    private func updateCaptureBadges(isLeft: Bool, tab: Tab) {
         let host = isLeft ? leftRecordingHost : rightRecordingHost
-        host?.isHidden = !capturing
+        let shows = tab.showsCaptureIndicator
+        host?.isHidden = !shows
+        guard shows, let host else { return }
+        host.rootView = AnyView(
+            UnifiedTabFaviconCaptureBadgesViewFromTab(
+                isCapturingMedia: tab.isCapturingMedia,
+                isPresentingScreenShare: tab.isPresentingScreenShare,
+                isBeingSharedRemotely: tab.isBeingSharedRemotely
+            )
+            .phiThemeObserver(themeObserver)
+        )
     }
 
-    /// Test seam: whether the given pane currently shows its recording badge.
+    /// Test seam: whether the given pane currently shows a capture badge.
     func isRecordingIndicatorVisible(isLeft: Bool) -> Bool {
         !(isLeft ? leftRecordingHost : rightRecordingHost).isHidden
     }

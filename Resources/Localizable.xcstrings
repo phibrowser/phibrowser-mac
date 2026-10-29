@@ -129801,6 +129801,39 @@
         }
       }
     },
+    "tabs.captureBadge.beingShared" : {
+      "comment" : "Tab favicon badge - Tooltip when this tab's content is mirrored to a remote screen share",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Others can see this tab while you share."
+          }
+        }
+      }
+    },
+    "tabs.captureBadge.microphoneOrCamera" : {
+      "comment" : "Tab favicon badge - Tooltip on the red recording dot for microphone or camera capture",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This tab is using the microphone or camera."
+          }
+        }
+      }
+    },
+    "tabs.captureBadge.presentingScreenShare" : {
+      "comment" : "Tab favicon badge - Tooltip when this tab is the presenter in a screen share session",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This tab is sharing screen content."
+          }
+        }
+      }
+    },
     "tabs.tabGroup.colorName.blue" : {
       "comment" : "Tab Groups - color name shown in auto-named group title and color picker",
       "extractionState" : "extracted_with_value",

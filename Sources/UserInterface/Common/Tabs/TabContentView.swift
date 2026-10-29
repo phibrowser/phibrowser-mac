@@ -665,6 +665,36 @@ struct TabBeingSharedFaviconOutline: View {
     }
 }
 
+/// Yellow outline around a sidebar tab row (or split pane) while its content
+/// is mirrored to a remote screen share (#259).
+struct TabBeingSharedSidebarRowOutline: View {
+    var cornerRadius: CGFloat = 8
+    @State private var isAnimating = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .strokeBorder(
+                Color.yellow.opacity(isAnimating ? 0.55 : 0.95),
+                lineWidth: TabCaptureBadgeMetrics.sharedOutlineLineWidth
+            )
+            .animation(
+                NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                    ? nil
+                    : .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
+                value: isAnimating
+            )
+            .onAppear {
+                isAnimating = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            }
+            .allowsHitTesting(false)
+            .help(NSLocalizedString(
+                "tabs.captureBadge.beingShared",
+                value: "Others can see this tab while you share.",
+                comment: "Tab row outline - Tooltip when this tab's content is mirrored to a remote screen share"
+            ))
+    }
+}
+
 struct UnifiedTabRecordingIcon: View {
     private let iconSize = TabCaptureBadgeMetrics.recordingDotSize
     @State private var isAnimating = false
@@ -790,10 +820,8 @@ struct UnifiedTabFaviconCaptureBadgesViewFromTab: View {
     }
 
     var body: some View {
-        ZStack {
-            if isCapturingMedia {
-                UnifiedTabFaviconCaptureCornerBadges(isCapturingMedia: true)
-            }
+        if isCapturingMedia {
+            UnifiedTabFaviconCaptureCornerBadges(isCapturingMedia: true)
         }
     }
 }

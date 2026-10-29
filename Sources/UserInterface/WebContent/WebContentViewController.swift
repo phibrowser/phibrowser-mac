@@ -1236,11 +1236,20 @@ class WebContentViewController: NSViewController {
     }
 
     private func installScreenShareMirroredBorderOverlayIfNeeded() {
+        if screenShareMirroredBorderOverlay.superview !== hostView {
+            screenShareMirroredBorderOverlay.removeFromSuperview()
+        }
         guard screenShareMirroredBorderOverlay.superview == nil else { return }
-        screenShareMirroredBorderOverlay.translatesAutoresizingMaskIntoConstraints = true
-        screenShareMirroredBorderOverlay.autoresizingMask = [.width, .height]
-        screenShareMirroredBorderOverlay.frame = hostView.bounds
-        hostView.addSubview(screenShareMirroredBorderOverlay, positioned: .above, relativeTo: nil)
+        hostView.addSubview(
+            screenShareMirroredBorderOverlay,
+            positioned: .above,
+            relativeTo: nil
+        )
+        screenShareMirroredBorderOverlay.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        screenShareMirroredBorderOverlay.cornerRadius =
+            LiquidGlassCompatible.webContentInnerComponentsCornerRadius
         screenShareMirroredBorderOverlay.setActive(false)
     }
     
@@ -1982,24 +1991,31 @@ class WebContentViewController: NSViewController {
             currentSplitHost?.setMirroredBorderVisible(false, for: .secondary)
             return
         }
+
         if let host = currentSplitHost,
            let tab = associatedTab,
-           let group = browserState?.splitGroup(forTabId: tab.guid) {
+           browserState?.splitGroup(forTabId: tab.guid) != nil {
             screenShareMirroredBorderOverlay.setActive(false)
-            reconcileSplitMirroredBorders(host: host, group: group)
+            refreshSplitMirroredBorders()
         } else if let tab = associatedTab {
             currentSplitHost?.setMirroredBorderVisible(false, for: .primary)
             currentSplitHost?.setMirroredBorderVisible(false, for: .secondary)
             screenShareMirroredBorderOverlay.setActive(tab.isBeingMirrored)
         } else {
             screenShareMirroredBorderOverlay.setActive(false)
+            currentSplitHost?.setMirroredBorderVisible(false, for: .primary)
+            currentSplitHost?.setMirroredBorderVisible(false, for: .secondary)
         }
     }
 
     private func refreshSplitMirroredBorders() {
         guard let host = currentSplitHost,
               let tab = associatedTab,
-              let group = browserState?.splitGroup(forTabId: tab.guid) else { return }
+              let group = browserState?.splitGroup(forTabId: tab.guid) else {
+            currentSplitHost?.setMirroredBorderVisible(false, for: .primary)
+            currentSplitHost?.setMirroredBorderVisible(false, for: .secondary)
+            return
+        }
         reconcileSplitMirroredBorders(host: host, group: group)
     }
 
@@ -2012,6 +2028,7 @@ class WebContentViewController: NSViewController {
             .isBeingMirrored == true
         host.setMirroredBorderVisible(primaryMirrored, for: .primary)
         host.setMirroredBorderVisible(secondaryMirrored, for: .secondary)
+        screenShareMirroredBorderOverlay.setActive(false)
     }
 
     /// The view representing this controller's tab inside a split pane. Native

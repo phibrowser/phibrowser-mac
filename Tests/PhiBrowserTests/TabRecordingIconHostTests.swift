@@ -158,7 +158,7 @@ final class TabRecordingIconHostTests: XCTestCase {
         viewModel.configure(with: tab, in: nil)
 
         let body = String(describing: UnifiedTabFaviconView(viewModel: viewModel).body)
-        let beingShared = String(describing: UnifiedTabBeingSharedIcon.self)
+        let beingShared = String(describing: TabBeingSharedFaviconOutline.self)
         let recording = String(describing: UnifiedTabRecordingIcon.self)
         XCTAssertTrue(body.contains("\(beingShared)("))
         XCTAssertFalse(body.contains("\(recording)("))
@@ -247,6 +247,7 @@ final class TabRecordingIconHostTests: XCTestCase {
             String(describing: UnifiedTabCaptureCenterIndicator.self),
             String(describing: UnifiedTabFaviconCaptureBadgesView.self),
             String(describing: UnifiedTabFaviconCaptureBadgesViewFromTab.self),
+            String(describing: TabBeingSharedFaviconOutline.self),
         ]
         var hosts: [NSView] = []
         var pending = [root]

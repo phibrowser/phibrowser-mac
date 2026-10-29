@@ -5,6 +5,7 @@
 
 import SwiftUI
 import Combine
+import AppKit
 import Lottie
 
 // MARK: - Atomic Components
@@ -513,8 +514,8 @@ struct UnifiedTabFaviconView: View {
             )
         }
         .overlay(alignment: .topTrailing) {
-            if viewModel.isCapturingMedia && !viewModel.hidesRecordingBadge {
-                UnifiedTabRecordingIcon()
+            if !viewModel.hidesRecordingBadge {
+                UnifiedTabFaviconCaptureBadgesView(viewModel: viewModel)
                     .offset(x: 3, y: -3)
             }
         }
@@ -637,6 +638,119 @@ struct UnifiedTabRecordingIcon: View {
                     .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: isAnimating)
             }
             .onAppear { isAnimating = true }
+            .help(NSLocalizedString(
+                "tabs.captureBadge.microphoneOrCamera",
+                value: "This tab is using the microphone or camera.",
+                comment: "Tab favicon badge - Tooltip on the red recording dot for microphone or camera capture"
+            ))
+    }
+}
+
+/// Tab that is presenting screen content to a call or other capture consumer.
+struct UnifiedTabPresentingScreenShareIcon: View {
+    private let iconSize: CGFloat = 9
+    @State private var isAnimating = false
+
+    var body: some View {
+        Image(systemName: "arrow.up.forward.square.fill")
+            .font(.system(size: iconSize, weight: .semibold))
+            .foregroundStyle(.yellow)
+            .shadow(color: .black.opacity(0.35), radius: 0.5, x: 0, y: 0.5)
+            .opacity(isAnimating ? 0.55 : 1.0)
+            .animation(
+                NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                    ? nil
+                    : .easeInOut(duration: 1.1).repeatForever(autoreverses: true),
+                value: isAnimating
+            )
+            .onAppear {
+                isAnimating = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            }
+            .help(NSLocalizedString(
+                "tabs.captureBadge.presentingScreenShare",
+                value: "This tab is sharing screen content.",
+                comment: "Tab favicon badge - Tooltip when this tab is the presenter in a screen share session"
+            ))
+    }
+}
+
+/// Tab whose content is visible to others through screen capture.
+struct UnifiedTabBeingSharedIcon: View {
+    private let iconSize: CGFloat = 9
+
+    var body: some View {
+        Image(systemName: "display")
+            .font(.system(size: iconSize, weight: .semibold))
+            .foregroundStyle(.yellow)
+            .shadow(color: .black.opacity(0.35), radius: 0.5, x: 0, y: 0.5)
+            .help(NSLocalizedString(
+                "tabs.captureBadge.beingShared",
+                value: "Others can see this tab while you share.",
+                comment: "Tab favicon badge - Tooltip when this tab's content is mirrored to a remote screen share"
+            ))
+    }
+}
+
+struct UnifiedTabFaviconCaptureBadgesView: View {
+    let viewModel: TabViewModel
+
+    var body: some View {
+        if viewModel.showsCaptureIndicator {
+            HStack(spacing: 1) {
+                if viewModel.isBeingSharedRemotely {
+                    UnifiedTabBeingSharedIcon()
+                }
+                if viewModel.isPresentingScreenShare {
+                    UnifiedTabPresentingScreenShareIcon()
+                }
+                if viewModel.isCapturingMedia {
+                    UnifiedTabRecordingIcon()
+                }
+            }
+        }
+    }
+}
+
+struct UnifiedTabFaviconCaptureBadgesViewFromTab: View {
+    let isCapturingMedia: Bool
+    let isPresentingScreenShare: Bool
+    let isBeingSharedRemotely: Bool
+
+    private var showsAny: Bool {
+        isCapturingMedia || isPresentingScreenShare || isBeingSharedRemotely
+    }
+
+    var body: some View {
+        if showsAny {
+            HStack(spacing: 1) {
+                if isBeingSharedRemotely {
+                    UnifiedTabBeingSharedIcon()
+                }
+                if isPresentingScreenShare {
+                    UnifiedTabPresentingScreenShareIcon()
+                }
+                if isCapturingMedia {
+                    UnifiedTabRecordingIcon()
+                }
+            }
+        }
+    }
+}
+
+/// Single centred strip icon when favicons are hidden in compact or pinned layout.
+struct UnifiedTabCaptureCenterIndicator: View {
+    let viewModel: TabViewModel
+
+    var body: some View {
+        Group {
+            if viewModel.isCapturingMedia {
+                UnifiedTabRecordingIcon()
+            } else if viewModel.isPresentingScreenShare {
+                UnifiedTabPresentingScreenShareIcon()
+            } else if viewModel.isBeingSharedRemotely {
+                UnifiedTabBeingSharedIcon()
+            }
+        }
     }
 }
 

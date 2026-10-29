@@ -146,6 +146,24 @@ final class TabRecordingIconHostTests: XCTestCase {
         )
     }
 
+    func test_mirroredTabFaviconBadgeShowsBeingSharedIconNotMicDot() throws {
+        let tab = Tab(
+            guid: 2,
+            url: "https://example.com/2",
+            isActive: true,
+            index: 1
+        )
+        tab.setCaptureStateForTesting(sharingScreen: true, beingMirrored: true)
+        let viewModel = TabViewModel()
+        viewModel.configure(with: tab, in: nil)
+
+        let body = String(describing: UnifiedTabFaviconView(viewModel: viewModel).body)
+        let beingShared = String(describing: UnifiedTabBeingSharedIcon.self)
+        let recording = String(describing: UnifiedTabRecordingIcon.self)
+        XCTAssertTrue(body.contains("\(beingShared)("))
+        XCTAssertFalse(body.contains("\(recording)("))
+    }
+
     // MARK: - Helpers
 
     /// Compact, because that is where a tab item shows the centred
@@ -222,16 +240,22 @@ final class TabRecordingIconHostTests: XCTestCase {
         view.layout()
     }
 
-    /// Hosting views anywhere under `root` whose content is the recording
-    /// icon, hidden or not.
+    /// Hosting views under `root` used for capture indicators (centre or favicon).
     private func recordingIconHosts(in root: NSView) -> [NSView] {
-        let iconName = String(describing: UnifiedTabRecordingIcon.self)
+        let markers = [
+            String(describing: UnifiedTabRecordingIcon.self),
+            String(describing: UnifiedTabCaptureCenterIndicator.self),
+            String(describing: UnifiedTabFaviconCaptureBadgesView.self),
+            String(describing: UnifiedTabFaviconCaptureBadgesViewFromTab.self),
+        ]
         var hosts: [NSView] = []
         var pending = [root]
         while let view = pending.popLast() {
-            if let host = view as? NSHostingView<AnyView>,
-               String(describing: host.rootView).contains(iconName) {
-                hosts.append(host)
+            if let host = view as? NSHostingView<AnyView> {
+                let description = String(describing: host.rootView)
+                if markers.contains(where: { description.contains($0) }) {
+                    hosts.append(host)
+                }
             }
             pending.append(contentsOf: view.subviews)
         }

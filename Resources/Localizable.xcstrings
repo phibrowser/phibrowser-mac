@@ -51770,13 +51770,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "我同意 %2$@ 和 %1$@"
+            "value" : "我同意%2$@和%1$@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "我同意 %2$@ 和 %1$@"
+            "value" : "我同意%2$@和%1$@"
           }
         }
       }
@@ -54830,13 +54830,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "我同意 %1$@ 和 %2$@"
+            "value" : "我同意%1$@和%2$@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "我同意 %1$@ 和 %2$@"
+            "value" : "我同意%1$@和%2$@"
           }
         }
       }

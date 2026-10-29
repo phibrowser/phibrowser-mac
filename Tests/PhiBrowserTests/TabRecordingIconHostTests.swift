@@ -160,7 +160,7 @@ final class TabRecordingIconHostTests: XCTestCase {
         let body = String(describing: UnifiedTabFaviconView(viewModel: viewModel).body)
         let beingShared = String(describing: TabBeingSharedFaviconOutline.self)
         let recording = String(describing: UnifiedTabRecordingIcon.self)
-        XCTAssertTrue(body.contains("\(beingShared)("))
+        XCTAssertFalse(body.contains("\(beingShared)("))
         XCTAssertFalse(body.contains("\(recording)("))
     }
 

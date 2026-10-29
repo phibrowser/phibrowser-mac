@@ -127,6 +127,7 @@ class WebContentViewController: NSViewController {
     /// partner URL changes so entering or leaving a native URL renderer replaces
     /// that pane immediately instead of waiting for a focus switch.
     private var partnerContentCancellable: AnyCancellable?
+    private var partnerMirroredCancellable: AnyCancellable?
     /// Saved superview reference while hostView is re-parented into an overlay
     /// over window.contentView for HTML5 content fullscreen. Nil when not in
     /// fullscreen.
@@ -220,6 +221,7 @@ class WebContentViewController: NSViewController {
     private lazy var webContentProgressBar = WebContentProgressBarView()
     private lazy var headerView = WebContentHeader(browserState: browserState)
     private lazy var loginRequiredOverlayView = LoginRequiredOverlayView()
+    private lazy var screenShareMirroredBorderOverlay = ScreenShareMirroredBorderOverlayView()
     private var splitLoginRequiredViews: [Int: LoginRequiredOverlayView] = [:]
 
     var addressBarAnchorView: NSView? { headerView.addressBarAnchorView }
@@ -1272,6 +1274,16 @@ class WebContentViewController: NSViewController {
         }
 
         installAttachedBookmarkBarIfNeeded()
+        installScreenShareMirroredBorderOverlayIfNeeded()
+    }
+
+    private func installScreenShareMirroredBorderOverlayIfNeeded() {
+        guard screenShareMirroredBorderOverlay.superview == nil else { return }
+        screenShareMirroredBorderOverlay.translatesAutoresizingMaskIntoConstraints = true
+        screenShareMirroredBorderOverlay.autoresizingMask = [.width, .height]
+        screenShareMirroredBorderOverlay.frame = hostView.bounds
+        hostView.addSubview(screenShareMirroredBorderOverlay, positioned: .above, relativeTo: nil)
+        screenShareMirroredBorderOverlay.setActive(false)
     }
     
     // MARK: - Content SplitView Setup
@@ -1420,6 +1432,14 @@ class WebContentViewController: NSViewController {
                 self?.updateContentForTab(tab)
             }
             .store(in: &contentObserverCancellables)
+        tab.$isBeingMirrored
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshScreenShareMirroredBorderPresentation()
+            }
+            .store(in: &contentObserverCancellables)
+        refreshScreenShareMirroredBorderPresentation()
     }
 
     private func bindProgressObservers(for tab: Tab) {
@@ -1984,6 +2004,7 @@ class WebContentViewController: NSViewController {
     func updatePartnerCrashSubscription() {
         partnerCrashCancellable = nil
         partnerContentCancellable = nil
+        partnerMirroredCancellable = nil
         guard let tab = associatedTab,
               let state = browserState,
               state.focusingTab?.guid == tab.guid,
@@ -1997,6 +2018,12 @@ class WebContentViewController: NSViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.refreshSplitCrashOverlays()
+            }
+        partnerMirroredCancellable = partner.$isBeingMirrored
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshSplitMirroredBorders()
             }
         partnerContentCancellable = partner.$url
             .removeDuplicates()
@@ -2012,6 +2039,7 @@ class WebContentViewController: NSViewController {
     func cancelPartnerCrashSubscription() {
         partnerCrashCancellable = nil
         partnerContentCancellable = nil
+        partnerMirroredCancellable = nil
     }
 
     private func refreshContentForSplitPartnerURLChange() {
@@ -2029,6 +2057,45 @@ class WebContentViewController: NSViewController {
               let tab = associatedTab,
               let group = browserState?.splitGroup(forTabId: tab.guid) else { return }
         reconcileSplitCrashViews(host: host, group: group)
+    }
+
+    private func refreshScreenShareMirroredBorderPresentation() {
+        guard associatedTab?.isInContentFullscreen != true else {
+            screenShareMirroredBorderOverlay.setActive(false)
+            currentSplitHost?.setMirroredBorderVisible(false, for: .primary)
+            currentSplitHost?.setMirroredBorderVisible(false, for: .secondary)
+            return
+        }
+        if let host = currentSplitHost,
+           let tab = associatedTab,
+           let group = browserState?.splitGroup(forTabId: tab.guid) {
+            screenShareMirroredBorderOverlay.setActive(false)
+            reconcileSplitMirroredBorders(host: host, group: group)
+        } else if let tab = associatedTab {
+            currentSplitHost?.setMirroredBorderVisible(false, for: .primary)
+            currentSplitHost?.setMirroredBorderVisible(false, for: .secondary)
+            screenShareMirroredBorderOverlay.setActive(tab.isBeingMirrored)
+        } else {
+            screenShareMirroredBorderOverlay.setActive(false)
+        }
+    }
+
+    private func refreshSplitMirroredBorders() {
+        guard let host = currentSplitHost,
+              let tab = associatedTab,
+              let group = browserState?.splitGroup(forTabId: tab.guid) else { return }
+        reconcileSplitMirroredBorders(host: host, group: group)
+    }
+
+    private func reconcileSplitMirroredBorders(host: SplitPaneHostView, group: SplitGroup) {
+        let primaryMirrored = browserState?.tabs
+            .first(where: { $0.guid == group.primaryTabId })?
+            .isBeingMirrored == true
+        let secondaryMirrored = browserState?.tabs
+            .first(where: { $0.guid == group.secondaryTabId })?
+            .isBeingMirrored == true
+        host.setMirroredBorderVisible(primaryMirrored, for: .primary)
+        host.setMirroredBorderVisible(secondaryMirrored, for: .secondary)
     }
 
     /// The view representing this controller's tab inside a split pane. Native
@@ -2169,6 +2236,7 @@ class WebContentViewController: NSViewController {
         // Overlay a crash view on any pane whose tab's renderer has crashed.
         reconcileSplitCrashViews(host: host, group: group)
         reconcileSplitLoginRequiredViews(host: host, group: group)
+        reconcileSplitMirroredBorders(host: host, group: group)
 
         let splitId = group.id
         host.onRatioCommit = { [weak self] newRatio in
@@ -2582,6 +2650,7 @@ class WebContentViewController: NSViewController {
             // As on entry, give the keyboard to the page.
             restoreWebContentFirstResponder()
         }
+        refreshScreenShareMirroredBorderPresentation()
     }
 
     private func restoreWebContentFirstResponder() {

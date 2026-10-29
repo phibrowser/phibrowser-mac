@@ -54,26 +54,6 @@ class ColoredVisualEffectView: NSVisualEffectView {
         }
     }
 
-    /// While true the view paints nothing of its own — neither the vibrancy
-    /// material nor the color fill — and only its subviews show. Used while a
-    /// Space switch slides this view's content over another sidebar: the
-    /// material is masked out (a mask does not affect subviews) instead of
-    /// hidden, since hiding the view would hide the content too.
-    var suppressesBackdrop = false {
-        didSet {
-            guard suppressesBackdrop != oldValue else { return }
-            maskImage = suppressesBackdrop ? Self.clearMaskImage : nil
-            colorView.isHidden = suppressesBackdrop
-        }
-    }
-
-    private static let clearMaskImage: NSImage = {
-        let image = NSImage(size: NSSize(width: 1, height: 1), flipped: false) { _ in true }
-        image.capInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-        image.resizingMode = .stretch
-        return image
-    }()
-
     // MARK: - Overrides
 
     override init(frame frameRect: NSRect) {
@@ -333,4 +313,68 @@ class ColoredVisualEffectView: NSVisualEffectView {
         }
         return backgroundColor
     }
+}
+
+/// A plain view whose themed vibrancy backdrop is its bottom-most subview
+/// rather than the view itself, so turning the backdrop off hides only that
+/// subview. An `NSVisualEffectView` root could hide its material only behind
+/// a `maskImage`, which AppKit re-renders at the view's full size on every
+/// resize; each masked page-area view then stalled the sidebar's collapse
+/// animation on every frame.
+class BackdropContainerView: NSView {
+    /// Created the first time the view paints a backdrop, so a view that
+    /// never paints one (a hosted session's page tree) never has one.
+    private(set) var backdrop: ColoredVisualEffectView?
+    private let configureBackdrop: (ColoredVisualEffectView) -> Void
+
+    var paintsBackdrop: Bool {
+        didSet {
+            guard paintsBackdrop != oldValue else { return }
+            applyBackdropPainting()
+        }
+    }
+
+    init(paintsBackdrop: Bool = true,
+         configureBackdrop: @escaping (ColoredVisualEffectView) -> Void = BackdropContainerView.configureNavigationBackdrop) {
+        self.paintsBackdrop = paintsBackdrop
+        self.configureBackdrop = configureBackdrop
+        super.init(frame: .zero)
+        wantsLayer = true
+        applyBackdropPainting()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    /// An unhandled scroll passes up the responder chain, to the owning view
+    /// controller (the sidebar's swipe-to-switch-Space handler), as it did
+    /// while the root was an `NSVisualEffectView`. A plain `NSView` would
+    /// instead hand it to the view behind it under the pointer.
+    override func scrollWheel(with event: NSEvent) {
+        nextResponder?.scrollWheel(with: event)
+    }
+
+    static func configureNavigationBackdrop(_ backdrop: ColoredVisualEffectView) {
+        backdrop.themedBackgroundColor = .windowOverlayBackground
+        backdrop.usesThemePalette = true
+        backdrop.material = .fullScreenUI
+    }
+
+    private func applyBackdropPainting() {
+        if paintsBackdrop, backdrop == nil {
+            let backdrop = BackdropEffectView(frame: bounds)
+            backdrop.autoresizingMask = [.width, .height]
+            configureBackdrop(backdrop)
+            addSubview(backdrop, positioned: .below, relativeTo: nil)
+            self.backdrop = backdrop
+        }
+        backdrop?.isHidden = !paintsBackdrop
+    }
+}
+
+/// Leaves hits to its container, which received them while it was itself
+/// the visual-effect view.
+private final class BackdropEffectView: ColoredVisualEffectView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

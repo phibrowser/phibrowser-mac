@@ -9,6 +9,32 @@ import XCTest
 
 @MainActor
 final class ThemePaletteTests: XCTestCase {
+    func testWindowBackgroundStaysNeutralAcrossThemesAndAdjustments() {
+        let custom = Theme(id: "custom-background", name: "Custom Background")
+        custom.setColor(light: .red, dark: .blue, for: .windowBackground)
+        let palette = ThemePalette(hue: 0.6, saturation: 0.8, colorCount: 3)
+
+        for base in Theme.builtInThemes + [.incognito, custom] {
+            let variants = [
+                base,
+                palette.applying(to: base),
+                base.makeSnapshot().makeTheme(),
+                ThemeColorAdjustment.applyingSaturation(
+                    light: 0.9, dark: 0.9, darkWindowBackground: 0.9, to: base
+                ),
+                ThemeColorAdjustment.applyingPureBrightness(sliderValue: 100, to: base)
+            ]
+            for theme in variants {
+                XCTAssertEqual(theme.colorPair(for: .windowBackground),
+                               ColorPair(light: NSColor(hex: 0xFFFFFF), dark: NSColor(hex: 0x212121)))
+                XCTAssertEqual(ThemedColor.windowBackground.resolve(theme: theme, appearance: .light),
+                               NSColor(hex: 0xFFFFFF))
+                XCTAssertEqual(ThemedColor.windowBackground.resolve(theme: theme, appearance: .dark),
+                               NSColor(hex: 0x212121))
+            }
+        }
+    }
+
     func testSettingsIndicatorUsesSavedLegacyColorsWithoutCreatingPalette() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let account = Account(userID: "theme-indicator-test-" + UUID().uuidString)
@@ -393,6 +419,61 @@ final class ThemePaletteTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testPaletteFieldRendersOnceOffMainAndServesLaterRequestsFromCache() {
+        let brightness = 0.37
+        let rendered = expectation(description: "field rendered")
+        rendered.expectedFulfillmentCount = 2
+        var images: [CGImage] = []
+        for _ in 0..<2 {
+            ThemeEditorPaletteRenderer.field(brightness: brightness, appearance: .dark) { image in
+                images.append(image)
+                rendered.fulfill()
+            }
+        }
+        XCTAssertTrue(images.isEmpty, "Uncached fields render off the main thread.")
+        wait(for: [rendered], timeout: 10)
+        XCTAssertEqual(images.count, 2)
+        XCTAssertTrue(images.first === images.last, "Concurrent requests share one render.")
+
+        var cached: CGImage?
+        ThemeEditorPaletteRenderer.field(brightness: brightness, appearance: .dark) { cached = $0 }
+        XCTAssertTrue(cached === images.first, "Cached fields are delivered synchronously.")
+    }
+
+    private final class ThemeBroadcastMessenger: ExtensionMessagingProtocol {
+        var broadcasts: [(type: String, payload: String)] = []
+
+        func sendResponse(_ response: String, requestId: String) {}
+        func sendError(_ error: String, requestId: String) {}
+        func broadcast(type: String, payload: String) {
+            broadcasts.append((type, payload))
+        }
+        func broadcastToAgent(type: String, payload: String, principalId: String) {}
+    }
+
+    func testExtensionThemeBroadcastLeavesInTheSamePassAsTheWindowTheme() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let account = Account(userID: "theme-broadcast-test-" + UUID().uuidString)
+        let store = LocalStore(account: account, storeDirectoryURL: directory, presentsCompatibilityAlerts: false)
+        let state = BrowserState(windowId: 4242, localStore: store, profileId: "Default")
+        let messenger = ThemeBroadcastMessenger()
+        let router = WindowThemeMessageRouter(messenger: messenger)
+        router.observeWindow(state)
+
+        let palette = ThemePalette(hue: 0.3, saturation: 0.5, colorCount: 2)
+        state.themeContext.setTheme(palette.applying(to: state.themeContext.currentTheme))
+        XCTAssertEqual(messenger.broadcasts.map(\.type), ["windowThemechanged"],
+                       "Extensions must not trail the native re-theme by a run-loop pass.")
+        for color in palette.colors(for: .light) + palette.colors(for: .dark) {
+            XCTAssertTrue(messenger.broadcasts.first?.payload.contains(color.hexRGBString) == true)
+        }
+
+        router.stopObservingWindow(windowId: state.windowId)
+        try await store.closeForAccountDirectoryRemoval()
+        try? FileManager.default.removeItem(at: directory)
+        try? FileManager.default.removeItem(at: account.userDataStorage)
     }
 
     func testDarkFieldHasNoColorSeamOrAbruptSteps() throws {

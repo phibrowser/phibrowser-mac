@@ -35,29 +35,29 @@ final class ContentSurfaceBackdropTests: XCTestCase {
     func testPagesOverASurfaceStopPaintingTheirBackdropWhileTheContainerKeepsIts() throws {
         let fixture = try makeFixture()
         let mountedPage = try pageRoot(above: fixture.webViews[0], in: fixture.container)
-        XCTAssertFalse(mountedPage.suppressesBackdrop,
+        XCTAssertTrue(mountedPage.paintsBackdrop,
                        "precondition: without a surface the page paints its backdrop")
-        XCTAssertFalse(try containerRoot(fixture).suppressesBackdrop)
+        XCTAssertTrue(try containerRoot(fixture).paintsBackdrop)
 
         fixture.state.adoptContentSurface(NSView())
         XCTAssertTrue(fixture.container.hasContentSurface)
 
-        XCTAssertTrue(mountedPage.suppressesBackdrop,
+        XCTAssertFalse(mountedPage.paintsBackdrop,
                       "a page mounted before the surface paints no backdrop over it")
-        XCTAssertFalse(try containerRoot(fixture).suppressesBackdrop,
+        XCTAssertTrue(try containerRoot(fixture).paintsBackdrop,
                        "the container's own root view, below the surface, still paints")
 
         // A page created after the install.
         fixture.state.focusingTab = fixture.tabs[1]
         try waitUntilMounted(fixture.webViews[1])
-        XCTAssertTrue(try pageRoot(above: fixture.webViews[1], in: fixture.container).suppressesBackdrop,
+        XCTAssertFalse(try pageRoot(above: fixture.webViews[1], in: fixture.container).paintsBackdrop,
                       "a page created after the surface paints no backdrop over it")
 
         // The placeholder shell, created after the install.
         let placeholderView = try enterPlaceholderMode(fixture)
-        XCTAssertTrue(try pageRoot(above: placeholderView, in: fixture.container).suppressesBackdrop,
+        XCTAssertFalse(try pageRoot(above: placeholderView, in: fixture.container).paintsBackdrop,
                       "the placeholder shell paints no backdrop over the surface")
-        XCTAssertFalse(try containerRoot(fixture).suppressesBackdrop)
+        XCTAssertTrue(try containerRoot(fixture).paintsBackdrop)
     }
 
     /// With the feature off no window receives a surface: the pages, the
@@ -66,16 +66,16 @@ final class ContentSurfaceBackdropTests: XCTestCase {
         let fixture = try makeFixture()
         XCTAssertFalse(fixture.container.hasContentSurface)
 
-        XCTAssertFalse(try pageRoot(above: fixture.webViews[0], in: fixture.container).suppressesBackdrop)
-        XCTAssertFalse(try containerRoot(fixture).suppressesBackdrop)
+        XCTAssertTrue(try pageRoot(above: fixture.webViews[0], in: fixture.container).paintsBackdrop)
+        XCTAssertTrue(try containerRoot(fixture).paintsBackdrop)
 
         fixture.state.focusingTab = fixture.tabs[1]
         try waitUntilMounted(fixture.webViews[1])
-        XCTAssertFalse(try pageRoot(above: fixture.webViews[1], in: fixture.container).suppressesBackdrop)
+        XCTAssertTrue(try pageRoot(above: fixture.webViews[1], in: fixture.container).paintsBackdrop)
 
         let placeholderView = try enterPlaceholderMode(fixture)
-        XCTAssertFalse(try pageRoot(above: placeholderView, in: fixture.container).suppressesBackdrop)
-        XCTAssertFalse(try containerRoot(fixture).suppressesBackdrop)
+        XCTAssertTrue(try pageRoot(above: placeholderView, in: fixture.container).paintsBackdrop)
+        XCTAssertTrue(try containerRoot(fixture).paintsBackdrop)
     }
 
     /// A hosted Space instance's container and pages paint nothing (the
@@ -83,16 +83,18 @@ final class ContentSurfaceBackdropTests: XCTestCase {
     func testAHostedContainerPaintsNothingWithOrWithoutASurface() throws {
         let fixture = try makeFixture(hosted: true)
         let mountedPage = try pageRoot(above: fixture.webViews[0], in: fixture.container)
-        XCTAssertTrue(mountedPage.suppressesBackdrop)
-        XCTAssertTrue(try containerRoot(fixture).suppressesBackdrop)
+        XCTAssertFalse(mountedPage.paintsBackdrop)
+        XCTAssertFalse(try containerRoot(fixture).paintsBackdrop)
+        XCTAssertNil(mountedPage.backdrop, "a page that never paints its backdrop never creates one")
+        XCTAssertNil(try containerRoot(fixture).backdrop)
 
         fixture.state.adoptContentSurface(NSView())
         XCTAssertTrue(fixture.container.hasContentSurface)
 
-        XCTAssertTrue(mountedPage.suppressesBackdrop)
-        XCTAssertTrue(try containerRoot(fixture).suppressesBackdrop)
+        XCTAssertFalse(mountedPage.paintsBackdrop)
+        XCTAssertFalse(try containerRoot(fixture).paintsBackdrop)
         let placeholderView = try enterPlaceholderMode(fixture)
-        XCTAssertTrue(try pageRoot(above: placeholderView, in: fixture.container).suppressesBackdrop)
+        XCTAssertFalse(try pageRoot(above: placeholderView, in: fixture.container).paintsBackdrop)
     }
 
     // MARK: - Helpers
@@ -167,17 +169,17 @@ final class ContentSurfaceBackdropTests: XCTestCase {
     }
 
     /// The root view of the page or placeholder shell that holds `webView`:
-    /// the outermost `ColoredVisualEffectView` between the web view and the
+    /// the outermost `BackdropContainerView` between the web view and the
     /// container's own root view.
     private func pageRoot(above webView: NSView,
                           in container: WebContentContainerViewController,
                           file: StaticString = #filePath,
-                          line: UInt = #line) throws -> ColoredVisualEffectView {
-        var root: ColoredVisualEffectView?
+                          line: UInt = #line) throws -> BackdropContainerView {
+        var root: BackdropContainerView?
         var view = webView.superview
         while let current = view, current !== container.view {
-            if let effectView = current as? ColoredVisualEffectView {
-                root = effectView
+            if let backdropContainer = current as? BackdropContainerView {
+                root = backdropContainer
             }
             view = current.superview
         }
@@ -186,9 +188,9 @@ final class ContentSurfaceBackdropTests: XCTestCase {
 
     private func containerRoot(_ fixture: Fixture,
                                file: StaticString = #filePath,
-                               line: UInt = #line) throws -> ColoredVisualEffectView {
-        try XCTUnwrap(fixture.container.view as? ColoredVisualEffectView,
-                      "the container's root view is not a ColoredVisualEffectView",
+                               line: UInt = #line) throws -> BackdropContainerView {
+        try XCTUnwrap(fixture.container.view as? BackdropContainerView,
+                      "the container's root view is not a BackdropContainerView",
                       file: file, line: line)
     }
 

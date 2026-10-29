@@ -81,6 +81,90 @@ final class SidebarRowReuseTests: XCTestCase {
                           "scrolling should reuse a bounded set of row views")
     }
 
+    func testScrollingExpandedBookmarksReusesRowsAndCellsWithCorrectIndentation() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        tempDirectories.append(directory)
+        let store = LocalStore(account: Account(userID: UUID().uuidString), storeDirectoryURL: directory)
+        let state = BrowserState(windowId: 742, localStore: store, profileId: "Default")
+        let controller = SidebarTabListViewController(state: state)
+        // Exercise the production row/cell factories and outline geometry with
+        // an in-memory tree, independent of store delivery and saved expansion.
+        let source = BookmarkReuseOutlineSource(controller: controller)
+        let outline = SideBarOutlineView(frame: NSRect(x: 0, y: 0, width: 320, height: 440))
+        outline.headerView = nil
+        outline.style = .fullWidth
+        outline.rowSizeStyle = .default
+        outline.rowHeight = 36
+        outline.autoresizingMask = [.width]
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("Bookmarks"))
+        column.resizingMask = .autoresizingMask
+        outline.addTableColumn(column)
+        outline.outlineTableColumn = column
+        outline.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
+        outline.autoresizesOutlineColumn = true
+        outline.dataSource = source
+        outline.delegate = source
+        let scroll = NSScrollView(frame: outline.frame)
+        scroll.documentView = outline
+        let window = NSWindow(contentRect: scroll.frame, styleMask: [.titled, .resizable],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = scroll
+        window.orderFront(nil)
+        outline.reloadData()
+        outline.expandItem(nil, expandChildren: true)
+        XCTAssertEqual(outline.numberOfRows, 88)
+
+        // Retain views so allocator address recycling cannot fake reuse.
+        var rows: [ObjectIdentifier: NSTableRowView] = [:]
+        var cells: [ObjectIdentifier: BookmarkCellView] = [:]
+        var visited = Set<String>()
+        var levels = Set<Int>()
+        for width in [320.0, 220.0] {
+            window.setContentSize(NSSize(width: width, height: 440))
+            scroll.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            let stops = Array(stride(from: 0, to: outline.numberOfRows, by: 5)) + [outline.numberOfRows - 1]
+            for row in stops {
+                outline.scrollRowToVisible(row)
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+                outline.layoutSubtreeIfNeeded()
+                let visible = outline.rows(in: outline.visibleRect)
+                for index in visible.location..<NSMaxRange(visible) {
+                    let bookmark = try XCTUnwrap(outline.item(atRow: index) as? Bookmark)
+                    let rowView = try XCTUnwrap(outline.rowView(atRow: index, makeIfNecessary: false))
+                    let cell = try XCTUnwrap(outline.view(atColumn: 0, row: index,
+                                                         makeIfNecessary: false) as? BookmarkCellView)
+                    rows[ObjectIdentifier(rowView)] = rowView
+                    cells[ObjectIdentifier(cell)] = cell
+                    visited.insert(bookmark.guid)
+                    levels.insert(outline.level(forRow: index))
+                    XCTAssertTrue(cell.item === bookmark)
+                    XCTAssertEqual(cell.accessibilityLabel(), bookmark.title)
+                    let indent = CGFloat(outline.level(forRow: index) * SideBarOutlineView.indentation)
+                    XCTAssertEqual(cell.frame.minX, indent, accuracy: 0.5)
+                    XCTAssertEqual(cell.frame.width, outline.bounds.width - indent, accuracy: 0.5)
+                    XCTAssertEqual(cell.frame.height, 36, accuracy: 0.5)
+                    let host = try XCTUnwrap(cell.subviews.compactMap { $0 as? ThemedHostingView }.first)
+                    XCTAssertEqual(host.frame, cell.bounds)
+                }
+            }
+        }
+        print("Bookmark scrolling: \(visited.count) items, \(rows.count) row views, \(cells.count) cells")
+        XCTAssertEqual(visited.count, 88)
+        XCTAssertEqual(levels, [0, 1])
+        XCTAssertLessThan(rows.count, visited.count / 2, "bookmark rows must be reused while scrolling")
+        XCTAssertLessThan(cells.count, visited.count / 2, "bookmark cells must be reused while scrolling")
+
+        outline.collapseItem(nil, collapseChildren: true)
+        XCTAssertEqual(outline.numberOfRows, 8)
+        outline.expandItem(nil, expandChildren: true)
+        XCTAssertEqual(outline.numberOfRows, 88)
+    }
+
     func testGroupHeaderStaysAtTheTopAcrossRowHeightChanges() throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -136,5 +220,48 @@ final class SidebarRowReuseTests: XCTestCase {
             XCTAssertEqual(hosting.frame, cell.bounds)
             XCTAssertTrue(cell.item === tab)
         }
+    }
+}
+
+@MainActor
+private final class BookmarkReuseOutlineSource: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
+    let controller: SidebarTabListViewController
+    let folders: [Bookmark]
+
+    init(controller: SidebarTabListViewController) {
+        self.controller = controller
+        folders = (0..<8).map { folderIndex in
+            let folder = Bookmark(folderTitle: "Folder \(folderIndex)")
+            for index in 0..<10 {
+                folder.addChild(Bookmark(title: "Bookmark \(folderIndex)-\(index)",
+                                         url: "data:text/html,\(folderIndex)-\(index)"))
+            }
+            return folder
+        }
+        super.init()
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
+        (item as? Bookmark)?.children.count ?? folders.count
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
+        ((item as? Bookmark)?.children ?? folders)[index]
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
+        (item as? Bookmark)?.isFolder == true
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        controller.outlineView(outlineView, heightOfRowByItem: item)
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+        controller.outlineView(outlineView, rowViewForItem: item)
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
+        controller.outlineView(outlineView, viewFor: tableColumn, item: item)
     }
 }

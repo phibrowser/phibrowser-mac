@@ -27,7 +27,14 @@ class HoverableView: NSView {
             needsDisplay = true
         }
     }
-    
+
+    /// Keeps tracking the pointer but stops painting the hovered color.
+    var isHoverSuppressed = false {
+        didSet {
+            needsDisplay = true
+        }
+    }
+
     var responseToClickAction = true
     var enableClickAnimation = false
     
@@ -74,7 +81,7 @@ class HoverableView: NSView {
             context.duration = 0.15
             if isSelected {
                 layer?.backgroundColor = selectedColor.cgColor
-            } else if mouseEntered {
+            } else if mouseEntered && !isHoverSuppressed {
                 layer?.backgroundColor = hoveredColor.cgColor
             } else {
                 layer?.backgroundColor = backgroundColor.cgColor

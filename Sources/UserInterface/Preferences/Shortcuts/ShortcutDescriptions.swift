@@ -206,6 +206,8 @@ extension CommandWrapper {
             return NSLocalizedString("settings.shortcuts.description.kioskChooseSpace", value: "Choose a Space for the current Peek or Kiosk page.", comment: "Shortcuts settings - Description of the kioskChooseSpace command")
         case .PHI_SAVE_FOR_LATER:
             return NSLocalizedString("settings.shortcuts.description.saveForLater", value: "Save the current page for later.", comment: "Shortcuts settings - Description of the saveForLater command")
+        case .PHI_SPLIT_WITH_NEW_TAB:
+            return NSLocalizedString("settings.shortcuts.description.splitWithNewTab", value: "Open a new tab in Split View next to the current tab.", comment: "Shortcuts settings - Description of the splitWithNewTab command")
         case .IDS_HIDE_OTHERS_MAC:
             return NSLocalizedString("settings.shortcuts.description.hideOthers", value: "Hide other applications.", comment: "Shortcuts settings - Description of the hideOthers command")
         case .IDS_CLOSE_ALL_WINDOWS_MAC:

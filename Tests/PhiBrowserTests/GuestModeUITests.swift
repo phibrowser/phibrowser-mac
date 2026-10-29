@@ -121,10 +121,17 @@ final class GuestModeUITests: XCTestCase {
     }
 
     @MainActor
-    func testCompletingGuestOOBESetsComfortableLayout() {
+    func testCompletingGuestOOBESetsComfortableLayoutAndOmnibox() {
         let layoutModeKey = PhiPreferences.GeneralSettings.layoutModeKey
+        let newTabPageKey = PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.rawValue
         let originalLayoutMode = UserDefaults.standard.string(forKey: layoutModeKey)
+        let originalNewTabPage = UserDefaults.standard.object(forKey: newTabPageKey)
         defer {
+            if let originalNewTabPage {
+                UserDefaults.standard.set(originalNewTabPage, forKey: newTabPageKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: newTabPageKey)
+            }
             if let originalLayoutMode {
                 UserDefaults.standard.set(originalLayoutMode, forKey: layoutModeKey)
             } else {
@@ -133,6 +140,7 @@ final class GuestModeUITests: XCTestCase {
         }
 
         PhiPreferences.GeneralSettings.saveLayoutMode(.balanced)
+        UserDefaults.standard.set(true, forKey: newTabPageKey)
 
         let controller = OnboardingWindowController()
         controller.completeGuestOOBE()
@@ -141,6 +149,7 @@ final class GuestModeUITests: XCTestCase {
             PhiPreferences.GeneralSettings.loadLayoutMode(),
             .comfortable
         )
+        XCTAssertFalse(PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.loadValue())
     }
 
     func testLoginRequiredPolicyFailsClosedForStaleEnabledGuestAIState() {

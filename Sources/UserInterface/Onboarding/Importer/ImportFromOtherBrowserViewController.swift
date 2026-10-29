@@ -1335,6 +1335,76 @@ final class ProfileSelectionButtonCell: NSButtonCell {
 
 class OnboardingBaseViewController: NSViewController {
     var nextClosure: ((Bool) -> Void)?
+
+    /// Opt-in horizontal footer. A nil title hides that button; one visible
+    /// button is centered. Titles must already be localized by the caller.
+    struct FooterButtonConfiguration {
+        var leftTitle: String?
+        var rightTitle: String?
+    }
+
+    private(set) var footerButtonConfiguration: FooterButtonConfiguration?
+    var leftButtonClosure: (() -> Void)?
+
+    /// The right action reuses nextButton and nextButtonTapped so existing
+    /// validation and enabled-state handling continue to apply.
+    func configureFooterButtons(_ configuration: FooterButtonConfiguration) {
+        footerButtonConfiguration = configuration
+        if isViewLoaded {
+            applyFooterButtonConfiguration()
+        }
+    }
+
+    lazy var leftButton: GradientBorderButton = {
+        let button = GradientBorderButton()
+        button.keyboardShortcut = .escape
+        button.backgroundColor = .white.opacity(0.05)
+        button.hoverBackgroundColor = .white.opacity(0.10)
+        button.borderColors = [.white.opacity(0.30)]
+        button.hoverBorderColor = .white.opacity(0.50)
+        button.titleFont = .systemFont(ofSize: 18, weight: .regular)
+        button.cornerRadius = 30
+        button.isHidden = true
+        button.clickAction = { [weak self] in
+            self?.leftButtonTapped()
+        }
+        return button
+    }()
+
+    func leftButtonTapped() {
+        leftButtonClosure?()
+    }
+
+    private func applyFooterButtonConfiguration() {
+        guard let configuration = footerButtonConfiguration else { return }
+
+        if leftButton.superview == nil {
+            view.addSubview(leftButton)
+        }
+        leftButton.title = configuration.leftTitle ?? ""
+        nextButton.title = configuration.rightTitle ?? ""
+        leftButton.isHidden = configuration.leftTitle == nil
+        nextButton.isHidden = configuration.rightTitle == nil
+        skipButton.isHidden = true
+        nextButton.titleFont = .systemFont(ofSize: 16, weight: .regular)
+        nextButton.cornerRadius = 30
+
+        let showsBoth = configuration.leftTitle != nil && configuration.rightTitle != nil
+        // Keep the primary in the same view hierarchy for subclasses that
+        // anchor their content to its top edge, even when it is hidden.
+        nextButton.snp.remakeConstraints { make in
+            make.bottom.equalToSuperview().offset(-96)
+            make.centerX.equalToSuperview().offset(showsBoth ? 108 : 0)
+            make.width.equalTo(200)
+            make.height.equalTo(40)
+        }
+        leftButton.snp.remakeConstraints { make in
+            make.bottom.equalTo(nextButton)
+            make.centerX.equalToSuperview().offset(showsBoth ? -108 : 0)
+            make.width.equalTo(200)
+            make.height.equalTo(40)
+        }
+    }
     
     // MARK: - Video Background
     private var videoPlayer: AVPlayer?
@@ -1385,6 +1455,9 @@ class OnboardingBaseViewController: NSViewController {
     
     lazy var nextButton: GradientBorderButton = {
         let button = GradientBorderButton()
+        button.keyboardShortcut = .enter
+        button.backgroundColor = .white.opacity(0.05)
+        button.hoverBackgroundColor = .white.opacity(0.12)
         button.title = NSLocalizedString("oobe.navigation.continueButton", value: "Next", comment: "OOBE navigation - Button to continue to the next step")
         button.clickAction = { [weak self] in
             self?.nextButtonTapped()
@@ -1459,6 +1532,7 @@ class OnboardingBaseViewController: NSViewController {
             make.top.equalTo(nextButton.snp.bottom).offset(8)
             make.centerX.equalToSuperview()
         }
+        applyFooterButtonConfiguration()
     }
     
     override func viewDidLoad() {

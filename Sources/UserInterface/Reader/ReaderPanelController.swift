@@ -14,10 +14,14 @@ import SnapKit
 final class ReaderPanelController {
     /// Opaque backing matching the page pane's rounded corners, so the
     /// full-pane cover reads as the pane itself switching to the reader
-    /// rather than a card floating over it.
+    /// rather than a card floating over it. Hosts the reader page and its
+    /// docked DevTools, without the vibrancy filter that would wash them out
+    /// (`PageOverlayVibrancySuppressor`).
     private final class ReaderContainerView: PageOverlayView {
         /// Above Peek: a reader can cover a peek's card.
         override var stackingRank: Int { 1 }
+
+        private let vibrancySuppressor = PageOverlayVibrancySuppressor()
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
@@ -35,6 +39,16 @@ final class ReaderPanelController {
         override func viewDidChangeEffectiveAppearance() {
             super.viewDidChangeEffectiveAppearance()
             updateBackground()
+        }
+
+        override func didAddSubview(_ subview: NSView) {
+            super.didAddSubview(subview)
+            vibrancySuppressor.didAddSubview(subview)
+        }
+
+        override func willRemoveSubview(_ subview: NSView) {
+            vibrancySuppressor.willRemoveSubview(subview)
+            super.willRemoveSubview(subview)
         }
 
         private func updateBackground() {

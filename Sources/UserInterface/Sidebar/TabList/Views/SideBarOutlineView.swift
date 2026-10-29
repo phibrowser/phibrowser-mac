@@ -255,6 +255,9 @@ class SideBarOutlineView: DiffableOutlineView {
     /// `rightClickedRow` when the context menu is requested.
     private(set) var rightClickedLocation: NSPoint?
     private var isUpdatingDocumentHeight = false
+    private var removalDocumentHeight: CGFloat = 0
+    private var removalScrollGeneration: UInt = 0
+    private var hasPendingAnimatedRemoval = false
     
     /// Delegate for handling middle mouse button click events
     weak var phiOutlineDelegate: SideBarOutlineViewDelegate?
@@ -313,6 +316,7 @@ class SideBarOutlineView: DiffableOutlineView {
             )
             adjusted.height = max(adjusted.height, minH)
         }
+        adjusted.height = max(adjusted.height, removalDocumentHeight)
 
         let oldSize = frame.size
         super.setFrameSize(adjusted)
@@ -324,8 +328,56 @@ class SideBarOutlineView: DiffableOutlineView {
     }
 
     override func reloadData() {
+        removalScrollGeneration &+= 1
+        removalDocumentHeight = 0
+        hasPendingAnimatedRemoval = false
         super.reloadData()
         updateDocumentHeightIfNeeded()
+    }
+
+    override func applyRemove(
+        at indexes: IndexSet,
+        inParent parent: Any?,
+        animation: NSOutlineView.AnimationOptions
+    ) {
+        if !animation.isEmpty, NSAnimationContext.current.duration > 0,
+           enclosingScrollView != nil, !hasPendingAnimatedRemoval {
+            removalScrollGeneration &+= 1
+            hasPendingAnimatedRemoval = true
+            removalDocumentHeight = max(removalDocumentHeight, frame.height)
+        }
+        super.applyRemove(at: indexes, inParent: parent, animation: animation)
+    }
+
+    override func endUpdates() {
+        guard hasPendingAnimatedRemoval else {
+            super.endUpdates()
+            return
+        }
+        hasPendingAnimatedRemoval = false
+        let generation = removalScrollGeneration
+        // Shrinking the document immediately clamps the clip origin at the
+        // bottom, moving every row before the removal fade can run. Keep the
+        // old extent until the viewport reaches its new limit with the rows.
+        NSAnimationContext.runAnimationGroup { _ in
+            super.endUpdates()
+            guard let scrollView = enclosingScrollView else { return }
+            let clipView = scrollView.contentView
+            let height = Self.documentHeight(
+                contentHeight: contentHeightForRows(),
+                visibleHeight: scrollView.contentSize.height,
+                bottomPadding: bottomPadding
+            )
+            let origin = clipView.bounds.origin
+            let targetY = min(origin.y, max(0, height - clipView.bounds.height))
+            if origin.y - targetY > 0.5 {
+                clipView.animator().setBoundsOrigin(NSPoint(x: origin.x, y: targetY))
+            }
+        } completionHandler: { [weak self] in
+            guard let self, self.removalScrollGeneration == generation else { return }
+            self.removalDocumentHeight = 0
+            self.updateDocumentHeightIfNeeded()
+        }
     }
 
     override func noteNumberOfRowsChanged() {
@@ -640,11 +692,11 @@ class SideBarOutlineView: DiffableOutlineView {
     private func updateDocumentHeightIfNeeded() {
         guard !isUpdatingDocumentHeight else { return }
 
-        let targetHeight = Self.documentHeight(
+        let targetHeight = max(removalDocumentHeight, Self.documentHeight(
             contentHeight: contentHeightForRows(),
             visibleHeight: enclosingScrollView?.contentSize.height ?? 0,
             bottomPadding: bottomPadding
-        )
+        ))
 
         guard abs(frame.height - targetHeight) > 0.5 else { return }
 

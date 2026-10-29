@@ -229,7 +229,7 @@
 		5ACE0000000000000000000E /* ProfilesSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE0000000000000000000B /* ProfilesSettingViewController.swift */; };
 		5ACE0000000000000000000F /* ProfilesSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE0000000000000000000C /* ProfilesSettingHostingViewController.swift */; };
 		5ACE00000000000000000010 /* ProfilesSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE0000000000000000000D /* ProfilesSettingsView.swift */; };
-		5ACE00000000000000000012 /* ThemeOpacitySlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000011 /* ThemeOpacitySlider.swift */; };
+		5ACE00000000000000000012 /* SpaceThemeEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000011 /* SpaceThemeEditorView.swift */; };
 		5ACE00000000000000000A22 /* ProfileDetailSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000A21 /* ProfileDetailSettingsView.swift */; };
 		5ACF00000000000000000001 /* NavigationsSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF00000000000000000011 /* NavigationsSettingViewController.swift */; };
 		5ACF00000000000000000002 /* NavigationsSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF00000000000000000012 /* NavigationsSettingHostingViewController.swift */; };
@@ -536,7 +536,6 @@
 		CC4351BD2EC73223009D8FC3 /* OnboardingWelcomeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4351BC2EC73223009D8FC3 /* OnboardingWelcomeViewController.swift */; };
 		CC4351BF2EC7327A009D8FC3 /* SetNameViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4351BE2EC7327A009D8FC3 /* SetNameViewController.swift */; };
 		CC4351C12EC73509009D8FC3 /* GradientMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4351C02EC73509009D8FC3 /* GradientMapper.swift */; };
-		CC4351C92ECAD209009D8FC3 /* CustomSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4351C82ECAD209009D8FC3 /* CustomSlider.swift */; };
 		CC4351CC2ECAD650009D8FC3 /* OnboardingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4351CA2ECAD650009D8FC3 /* OnboardingWindowController.swift */; };
 		CC450ACD2EA251D3004EE144 /* HoverableButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC450ACC2EA251D3004EE144 /* HoverableButton.swift */; };
 		CC450AE42EA74AD5004EE144 /* CommandDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC450AE32EA74AD5004EE144 /* CommandDispatcher.swift */; };
@@ -1067,7 +1066,7 @@
 		5ACE0000000000000000000B /* ProfilesSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesSettingViewController.swift; sourceTree = "<group>"; };
 		5ACE0000000000000000000C /* ProfilesSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesSettingHostingViewController.swift; sourceTree = "<group>"; };
 		5ACE0000000000000000000D /* ProfilesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesSettingsView.swift; sourceTree = "<group>"; };
-		5ACE00000000000000000011 /* ThemeOpacitySlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeOpacitySlider.swift; sourceTree = "<group>"; };
+		5ACE00000000000000000011 /* SpaceThemeEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceThemeEditorView.swift; sourceTree = "<group>"; };
 		5ACE00000000000000000A21 /* ProfileDetailSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileDetailSettingsView.swift; sourceTree = "<group>"; };
 		5ACF00000000000000000011 /* NavigationsSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationsSettingViewController.swift; sourceTree = "<group>"; };
 		5ACF00000000000000000012 /* NavigationsSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationsSettingHostingViewController.swift; sourceTree = "<group>"; };
@@ -1381,7 +1380,6 @@
 		CC4351BC2EC73223009D8FC3 /* OnboardingWelcomeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWelcomeViewController.swift; sourceTree = "<group>"; };
 		CC4351BE2EC7327A009D8FC3 /* SetNameViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetNameViewController.swift; sourceTree = "<group>"; };
 		CC4351C02EC73509009D8FC3 /* GradientMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientMapper.swift; sourceTree = "<group>"; };
-		CC4351C82ECAD209009D8FC3 /* CustomSlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomSlider.swift; sourceTree = "<group>"; };
 		CC4351CA2ECAD650009D8FC3 /* OnboardingWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWindowController.swift; sourceTree = "<group>"; };
 		CC450ACC2EA251D3004EE144 /* HoverableButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverableButton.swift; sourceTree = "<group>"; };
 		CC450AE32EA74AD5004EE144 /* CommandDispatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandDispatcher.swift; sourceTree = "<group>"; };
@@ -2912,7 +2910,6 @@
 				A197CA000000000000000003 /* HolographicCardMaterials.swift */,
 				CC4351BE2EC7327A009D8FC3 /* SetNameViewController.swift */,
 				CC4351C02EC73509009D8FC3 /* GradientMapper.swift */,
-				CC4351C82ECAD209009D8FC3 /* CustomSlider.swift */,
 			);
 			path = Welcome;
 			sourceTree = "<group>";
@@ -2967,7 +2964,7 @@
 				897C09F32F6BEDA000E5CA9B /* IMChannels */,
 				37C1B0E32ED8514E00DD4496 /* Shortcuts */,
 				5ACE00000000000000000008 /* SettingsSectionCard.swift */,
-				5ACE00000000000000000011 /* ThemeOpacitySlider.swift */,
+				5ACE00000000000000000011 /* SpaceThemeEditorView.swift */,
 				5ACE0000000000000000000A /* Profiles */,
 				5ACE00000000000000000001 /* Spaces */,
 				DEBE00000000000000000001 /* Developer */,
@@ -3630,7 +3627,6 @@
 				8E0A10052FEA000000000001 /* OverlayToastModels.swift in Sources */,
 				8E0A10062FEA000000000001 /* OverlayToastCenter.swift in Sources */,
 				8E0A10072FEA000000000001 /* OverlayToastView.swift in Sources */,
-				CC4351C92ECAD209009D8FC3 /* CustomSlider.swift in Sources */,
 				375B2D4F2ED07C780053FECC /* ConchFrameAnimationBaseViewController.swift in Sources */,
 				A197CA000000000000000001 /* HolographicCardView.swift in Sources */,
 				A197CA000000000000000006 /* HolographicCardDebugViewController.swift in Sources */,
@@ -3771,7 +3767,7 @@
 				DEBE00000000000000000006 /* DeveloperSettingHostingViewController.swift in Sources */,
 				DEBE00000000000000000007 /* DeveloperSettingsView.swift in Sources */,
 				5ACE00000000000000000009 /* SettingsSectionCard.swift in Sources */,
-				5ACE00000000000000000012 /* ThemeOpacitySlider.swift in Sources */,
+				5ACE00000000000000000012 /* SpaceThemeEditorView.swift in Sources */,
 				5ACE0000000000000000000E /* ProfilesSettingViewController.swift in Sources */,
 				5ACE0000000000000000000F /* ProfilesSettingHostingViewController.swift in Sources */,
 				5ACE00000000000000000010 /* ProfilesSettingsView.swift in Sources */,

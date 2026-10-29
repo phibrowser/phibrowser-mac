@@ -34,6 +34,7 @@ struct CommandDispatcher {
         .PHI_CAPTURE_FULL_PAGE,
         .PHI_CAPTURE_AREA,
         .PHI_SAVE_FOR_LATER,
+        .PHI_SPLIT_WITH_NEW_TAB,
     ] + CommandWrapper.spaceSelectionCommands
 
     /// Commands swallowed while the focused tab shows the native NTP — it has no
@@ -260,6 +261,8 @@ struct CommandDispatcher {
             }
             SaveForLaterService.save(tab: tab, in: state)
             return true
+        case .PHI_SPLIT_WITH_NEW_TAB:
+            return windowController.browserState.splitFocusedTabWithNewTab()
         case let c where c.spaceSelectionIndex != nil:
             guard let index = c.spaceSelectionIndex else { return false }
             return activateSpace(at: index, from: windowController)

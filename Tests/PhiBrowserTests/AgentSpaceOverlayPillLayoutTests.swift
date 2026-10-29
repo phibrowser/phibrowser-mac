@@ -23,7 +23,8 @@ final class AgentSpaceOverlayPillLayoutTests: XCTestCase {
 
     private func makeOverlay(size: NSSize,
                              ownership: AgentTaskOwnership,
-                             caption: String) -> AgentSpaceOverlayView {
+                             caption: String,
+                             agentName: String = "Claude Code") -> AgentSpaceOverlayView {
         let overlay = AgentSpaceOverlayView(frame: NSRect(origin: .zero, size: size))
         // The pill's material only resolves inside a window, and the layout
         // pass needs one anyway.
@@ -35,7 +36,7 @@ final class AgentSpaceOverlayPillLayoutTests: XCTestCase {
         host.layer?.backgroundColor = NSColor.white.cgColor
         window.contentView = host
         host.addSubview(overlay)
-        overlay.update(with: task(ownership: ownership, caption: caption))
+        overlay.update(with: task(ownership: ownership, caption: caption, agentName: agentName))
         overlay.layoutSubtreeIfNeeded()
         return overlay
     }
@@ -51,7 +52,8 @@ final class AgentSpaceOverlayPillLayoutTests: XCTestCase {
         overlay.layoutSubtreeIfNeeded()
     }
 
-    private func task(ownership: AgentTaskOwnership, caption: String) -> AgentTask {
+    private func task(ownership: AgentTaskOwnership, caption: String,
+                      agentName: String = "Claude Code") -> AgentTask {
         AgentTask(
             taskId: "overlay-layout-test",
             spaceId: "space",
@@ -65,7 +67,7 @@ final class AgentSpaceOverlayPillLayoutTests: XCTestCase {
             statusCaption: caption,
             cursor: nil,
             hasUnseenError: false,
-            agentName: "Claude Code")
+            agentName: agentName)
     }
 
     /// The handback case from the bug report: both ownership buttons are on the
@@ -126,6 +128,29 @@ final class AgentSpaceOverlayPillLayoutTests: XCTestCase {
         let pill = overlay.controlPillFrameForTesting
         XCTAssertLessThan(pill.width, 600, "short caption should not fill the pane")
         XCTAssertEqual(pill.midX, size.width / 2, accuracy: 1, "pill should stay centered")
+    }
+
+    /// The handback pill over a tab in the user's own Space: a short driver
+    /// name, the fixed caption, both ownership buttons. It was seen at the
+    /// full 720pt cap, the badge divider stretched into a 220pt horizontal
+    /// line to soak up the surplus — a separator box that has taken itself
+    /// for a horizontal rule has no intrinsic width, and nothing else pinned
+    /// it. Sized to its content means no slack anywhere in the row.
+    func testTwoButtonPillStaysSizedToItsContent() {
+        let size = NSSize(width: 1000, height: 700)
+        let overlay = makeOverlay(size: size, ownership: .user,
+                                  caption: "You have this tab — the agent is waiting",
+                                  agentName: "pnpm")
+
+        let pill = overlay.controlPillFrameForTesting
+        XCTAssertLessThan(pill.width, 600, "two-button pill should not fill the pane")
+        XCTAssertEqual(pill.width, overlay.controlPillFittingWidthForTesting, accuracy: 1,
+                       "pill should be sized to its content, with no slack in the row")
+        XCTAssertEqual(pill.midX, size.width / 2, accuracy: 1, "pill should stay centered")
+
+        let divider = overlay.controlPillDividerFrameForTesting
+        XCTAssertLessThan(divider.width, divider.height, "divider should be a vertical rule")
+        XCTAssertLessThanOrEqual(divider.width, 5, "divider should be a hairline, insets included")
     }
 
     // MARK: - Minimise

@@ -13,6 +13,7 @@ protocol OmniBoxSuggestionViewDelegate: AnyObject {
 class OmniBoxSuggestionView: NSView {
     weak var delegate: OmniBoxSuggestionViewDelegate?
     var showsSwitchToTabHint = true
+    var switchToTabAddsSplit = false
     static let topPadding: CGFloat = 2
     static let bottomPadding: CGFloat = 4
     private var suggestions: [OmniBoxSuggestion] = []
@@ -74,7 +75,10 @@ class OmniBoxSuggestionView: NSView {
             make.leading.equalToSuperview()
             make.trailing.equalToSuperview()
             make.top.equalToSuperview().offset(Self.topPadding)
-            make.bottom.equalToSuperview().offset(-Self.bottomPadding)
+            // The suggestion area collapses to zero when empty. Its padding
+            // must yield instead of requiring a negative scroll-view height.
+            make.bottom.equalToSuperview().offset(-Self.bottomPadding).priority(.high)
+            make.height.greaterThanOrEqualTo(0)
         }
     }
     
@@ -132,7 +136,8 @@ extension OmniBoxSuggestionView: NSTableViewDelegate {
         let cellView = OmniBoxSuggestionCellView(
             suggestion: suggestions[row],
             index: row,
-            showsSwitchToTabHint: showsSwitchToTabHint
+            showsSwitchToTabHint: showsSwitchToTabHint,
+            switchToTabAddsSplit: switchToTabAddsSplit
         )
         cellView.configure(with: suggestions[row], index: row)
         cellView.delegate = self

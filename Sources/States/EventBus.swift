@@ -34,6 +34,8 @@ struct TabEvent: WindowEvent {
         case newTab(_ tab: Tab)
         case newTabWithContext(_ tab: Tab, context: NativeTabCreationContext)
         case closeTab(_ tabId: Int)
+        case tabsRemoved(_ tabIds: [Int], indices: [Int: Int], activeTabId: Int?)
+        case tabsInserted(_ snapshot: BrowserState.RestoredWindowSnapshot)
         case focusTab(_ tab: Tab)
         case focusTabWithTabId(_ tabId: Int)
         case createTab(_ url: String)
@@ -221,6 +223,10 @@ class EventBus {
             state.handleNewTabFromChromium(tab, context: context)
         case .closeTab(let tabId):
             state.closeTab(tabId)
+        case .tabsRemoved(let tabIds, let indices, let activeTabId):
+            state.applyTabsRemoved(tabIds, indices: indices, activeTabId: activeTabId)
+        case .tabsInserted(let snapshot):
+            state.handleInsertedTabsSnapshot(snapshot)
         case .focusTab(let tab):
             state.focuseTab(tab)
         case .focusTabWithTabId(let tabId):

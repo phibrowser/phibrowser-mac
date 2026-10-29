@@ -551,7 +551,127 @@ private final class SideBarOutlineLayoutRepairFixture: NSObject,
     }
 }
 
+private final class SideBarRemovalAnimationFixture: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
+    let outline = SideBarOutlineView()
+    let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 220, height: 640))
+    private let window: NSWindow
+    private var items = (0..<30).map { OutlineAnimationItem(id: String($0), title: "Tab \($0)") }
+
+    override init() {
+        window = NSWindow(contentRect: NSRect(x: -10_000, y: -10_000, width: 220, height: 640),
+                          styleMask: .borderless, backing: .buffered, defer: false)
+        super.init()
+        window.isReleasedWhenClosed = false
+        let column = NSTableColumn(identifier: .init("removal"))
+        column.width = 220
+        outline.frame = scrollView.bounds
+        outline.headerView = nil
+        outline.style = .fullWidth
+        outline.rowHeight = 36
+        outline.intercellSpacing = .zero
+        outline.addTableColumn(column)
+        outline.outlineTableColumn = column
+        outline.dataSource = self
+        outline.delegate = self
+        outline.wantsLayer = true
+        scrollView.documentView = outline
+        window.contentView = scrollView
+        outline.bottomPadding = 130
+        window.orderFrontRegardless()
+        outline.reloadWith(snapshot(), animated: false, updateDataSource: {})
+        advance(0.1)
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: finalScrollLimit))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        advance(0.05)
+    }
+
+    deinit {
+        outline.dataSource = nil
+        outline.delegate = nil
+        window.close()
+    }
+
+    var origin: CGFloat { scrollView.contentView.bounds.origin.y }
+    var finalDocumentHeight: CGFloat {
+        let contentHeight = outline.numberOfRows > 0
+            ? outline.rect(ofRow: outline.numberOfRows - 1).maxY : 0
+        return SideBarOutlineView.documentHeight(contentHeight: contentHeight,
+                                                  visibleHeight: scrollView.contentSize.height,
+                                                  bottomPadding: outline.bottomPadding)
+    }
+    var finalScrollLimit: CGFloat { max(0, finalDocumentHeight - scrollView.contentSize.height) }
+
+    func removeLast(_ count: Int, animated: Bool = true) {
+        items.removeLast(count)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.5
+            outline.reloadWith(snapshot(), animated: animated, updateDataSource: {})
+        }
+    }
+
+    func advance(_ duration: TimeInterval) {
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: duration))
+    }
+
+    private func snapshot() -> DiffableOutlineSnapshot<AnyHashable> {
+        OutlineAnimationModel(roots: items, childrenByID: [:]).snapshot()
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
+        item == nil ? items.count : 0
+    }
+    func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any { items[index] }
+    func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool { false }
+    func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
+        NSTextField(labelWithString: (item as? OutlineAnimationItem)?.title ?? "")
+    }
+}
+
 final class DiffableOutlineViewAnimationTests: XCTestCase {
+    func testLastRowRemovalAnimatesBottomScrollClamp() {
+        runOnMain {
+            for count in [1, 4, 30] {
+                let fixture = SideBarRemovalAnimationFixture()
+                let oldOrigin = fixture.origin
+                let oldHeight = fixture.outline.frame.height
+                fixture.removeLast(count)
+                XCTAssertEqual(fixture.origin, oldOrigin, accuracy: 0.5)
+                XCTAssertEqual(fixture.outline.frame.height, oldHeight, accuracy: 0.5)
+                fixture.advance(0.05)
+                XCTAssertGreaterThan(fixture.origin, fixture.finalScrollLimit + 0.5)
+                fixture.advance(0.6)
+                XCTAssertEqual(fixture.origin, fixture.finalScrollLimit, accuracy: 0.5)
+                XCTAssertEqual(fixture.outline.frame.height, fixture.finalDocumentHeight, accuracy: 0.5)
+                XCTAssertEqual(fixture.outline.numberOfRows, 30 - count)
+            }
+        }
+    }
+
+    func testRepeatedRemovalKeepsDocumentExtentUntilLatestAnimationFinishes() {
+        runOnMain {
+            let fixture = SideBarRemovalAnimationFixture()
+            let oldHeight = fixture.outline.frame.height
+            fixture.removeLast(1)
+            fixture.advance(0.3)
+            fixture.removeLast(3)
+            fixture.advance(0.25)
+            XCTAssertEqual(fixture.outline.frame.height, oldHeight, accuracy: 0.5)
+            fixture.advance(0.4)
+            XCTAssertEqual(fixture.origin, fixture.finalScrollLimit, accuracy: 0.5)
+            XCTAssertEqual(fixture.outline.frame.height, fixture.finalDocumentHeight, accuracy: 0.5)
+        }
+    }
+
+    func testUnanimatedRemovalDoesNotRetainDocumentExtent() {
+        runOnMain {
+            let fixture = SideBarRemovalAnimationFixture()
+            fixture.removeLast(4, animated: false)
+            fixture.advance(0.05)
+            XCTAssertEqual(fixture.outline.frame.height, fixture.finalDocumentHeight, accuracy: 0.5)
+            XCTAssertEqual(fixture.origin, fixture.finalScrollLimit, accuracy: 0.5)
+        }
+    }
+
     func testReloadOfInsertedItemUsesCommittedAppKitRowMap() {
         runOnMain {
             let fixture = DiffableOutlineAnimationFixture()

@@ -525,12 +525,13 @@ struct UnifiedTabFaviconView: View {
 }
 
 struct UnifiedTabCloseButton: View {
+    var systemImage = "xmark"
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "xmark")
+            Image(systemName: systemImage)
                 .font(.system(size: 11, weight: .semibold))
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())

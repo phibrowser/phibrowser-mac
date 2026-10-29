@@ -259,11 +259,13 @@ Cross-origin frames can't be reached from page JS: they appear as a single
 `iframe` element with `crossOrigin: true`, and their content is NOT in the
 scan — say so if it matters to the task.
 
-Viewport: the tab renders at the real window's content-panel size — the same
-size a regular tab would use. **Do not change it on normal sites**: to read
-more of a long page, scroll and re-observe (`observe({diff: true})` keeps
-that cheap). `setViewport` exists for responsive-layout testing and
-explicitly requested sizes only — semantics in `references/observation.md`.
+Viewport: the tab renders at the Agent Space's own page area (window minus
+Sidebar, Content Header, bookmark bar, AI Chat panel) — the same size a
+regular tab there would use — re-checked before each action. **Do not change
+it on normal sites**: to read more of a long page, scroll and re-observe
+(`observe({diff: true})` keeps that cheap). `setViewport` exists for
+responsive-layout testing and explicitly requested sizes only — semantics in
+`references/observation.md`.
 
 **Canvas-like editors** (Google Docs/Sheets, Notion, Lark/Feishu Docs,
 Figma, whiteboards, heavily virtualized editors): their MAIN editing surface

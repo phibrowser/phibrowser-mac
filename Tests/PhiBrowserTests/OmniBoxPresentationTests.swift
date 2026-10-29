@@ -124,6 +124,40 @@ final class OmniBoxPresentationTests: XCTestCase {
         try FileManager.default.removeItem(at: directory)
     }
 
+    func testOpenAddressBarOmniBoxBecomesCenteredSplitPanePicker() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = LocalStore(account: Account(userID: UUID().uuidString), storeDirectoryURL: directory)
+        let state = BrowserState(windowId: UUID().hashValue, localStore: store, profileId: "Default")
+        let container = OmniBoxContainerViewController(browserState: state)
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let anchor = NSView(frame: NSRect(x: 120, y: 540, width: 500, height: 40))
+        root.addSubview(anchor)
+        root.addSubview(container.view)
+        container.view.frame = root.bounds
+        let omnibox = try XCTUnwrap(container.omniBoxController)
+        let tab = Tab(guid: 100, url: "https://source.example", isActive: true, index: 0)
+        await drainUpdates()
+
+        omnibox.updateStatus(with: tab, suppressAutomaticSearch: true)
+        container.showOmniBox(fromAddressBar: true, addressView: anchor)
+        XCTAssertTrue(container.isAnchoredToAddressBarForTesting)
+        XCTAssertTrue(omnibox.openningFromCurrenTab)
+        XCTAssertFalse(omnibox.switchToTabAddsSplitForTesting)
+
+        state.pendingSplitPreview = PendingSplitPreview(partnerTabId: tab.guid)
+        container.representAsSplitPanePicker()
+
+        XCTAssertTrue(container.hasShown)
+        XCTAssertFalse(container.isAnchoredToAddressBarForTesting)
+        XCTAssertFalse(omnibox.openningFromCurrenTab, "The picker must not keep the address-bar target")
+        XCTAssertTrue(omnibox.switchToTabAddsSplitForTesting)
+        XCTAssertEqual(state.pendingSplitPreview, PendingSplitPreview(partnerTabId: tab.guid),
+                       "Re-presenting must not end the preview")
+        try await store.closeForAccountDirectoryRemoval()
+        try FileManager.default.removeItem(at: directory)
+    }
+
     private func drainUpdates() async {
         let delivered = expectation(description: "View updates delivered")
         DispatchQueue.main.async { delivered.fulfill() }

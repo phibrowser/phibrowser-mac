@@ -51,6 +51,17 @@ struct ExternalOpenSender: Equatable {
         return sender
     }
 
+    /// The application a Kiosk opened from this link returns to on close: the
+    /// sender, when it is a running regular app. The frontmost app is no
+    /// fallback: macOS has already brought Phi forward when the link arrives.
+    func returnApplication() -> NSRunningApplication? {
+        guard let processIdentifier,
+              let application = NSRunningApplication(processIdentifier: processIdentifier),
+              application.activationPolicy == .regular,
+              !application.isTerminated else { return nil }
+        return application
+    }
+
     private static func resolve(_ event: NSAppleEventDescriptor?) -> ExternalOpenSender {
         guard let event else { return .unresolved }
         let ownBundleId = Bundle.main.bundleIdentifier?.lowercased()
@@ -172,4 +183,52 @@ struct ExternalOpenURL {
     let url: URL
     let sourceAppBundleId: String?
     let source: ExternalOpenSource
+    /// Where a Kiosk this URL opens returns to when it closes
+    /// (`KioskBrowserWindowController.returnApplication`).
+    var returnApplication: NSRunningApplication? = nil
+}
+
+/// Return targets for the Kiosks Chromium opens for external links. A Kiosk
+/// claims the entry for the URL its first tab opened: Chromium may create it
+/// only after loading the profile, and a link it never turns into a Kiosk
+/// must not hand its target to an unrelated one.
+struct KioskReturnQueue {
+    static let lifetime: TimeInterval = 30
+
+    private var entries: [(pageKey: String, application: NSRunningApplication, deadline: Date)] = []
+
+    mutating func add(_ url: URL, returningTo application: NSRunningApplication,
+                      now: Date = Date()) {
+        guard let pageKey = Self.pageKey(url) else { return }
+        entries.append((pageKey, application, now.addingTimeInterval(Self.lifetime)))
+    }
+
+    mutating func claim(forTabURL urlString: String, now: Date = Date()) -> NSRunningApplication? {
+        entries.removeAll { $0.deadline < now }
+        guard let url = URL(string: urlString),
+              let pageKey = Self.pageKey(url),
+              let index = entries.firstIndex(where: { $0.pageKey == pageKey }) else {
+            return nil
+        }
+        return entries.remove(at: index).application
+    }
+
+    /// The URL as Chromium reports a tab's: lowercase scheme and host, no
+    /// default port, and `/` for an empty path.
+    static func pageKey(_ url: URL) -> String? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        let scheme = components.scheme?.lowercased()
+        components.scheme = scheme
+        components.host = components.host?.lowercased()
+        if (scheme == "http" && components.port == 80)
+            || (scheme == "https" && components.port == 443) {
+            components.port = nil
+        }
+        if components.host != nil, components.path.isEmpty {
+            components.path = "/"
+        }
+        return components.string
+    }
 }

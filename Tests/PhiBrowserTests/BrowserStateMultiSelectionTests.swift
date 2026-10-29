@@ -7,6 +7,20 @@ import AppKit
 import XCTest
 @testable import Phi
 
+private final class BatchRecordingBrowserState: BrowserState {
+    var closedTabBatches: [[Int]] = []
+    var duplicatedTabBatches: [[Int]] = []
+
+    override func closeTabs(_ tabs: [Tab]) {
+        closedTabBatches.append(tabs.map(\.guid))
+    }
+
+    @MainActor
+    override func duplicateTabs(_ tabs: [Tab]) {
+        duplicatedTabBatches.append(tabs.map(\.guid))
+    }
+}
+
 @MainActor
 final class BrowserStateMultiSelectionTests: XCTestCase {
     private var tempDirectories: [URL] = []
@@ -24,13 +38,20 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
     }
 
     private func makeState() throws -> BrowserState {
+        BrowserState(windowId: 7, localStore: try makeStore(), profileId: "Default")
+    }
+
+    private func makeBatchRecordingState() throws -> BatchRecordingBrowserState {
+        BatchRecordingBrowserState(windowId: 7, localStore: try makeStore(), profileId: "Default")
+    }
+
+    private func makeStore() throws -> LocalStore {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         tempDirectories.append(directory)
-        let store = LocalStore(account: Account(userID: UUID().uuidString),
-                               storeDirectoryURL: directory)
-        return BrowserState(windowId: 7, localStore: store, profileId: "Default")
+        return LocalStore(account: Account(userID: UUID().uuidString),
+                          storeDirectoryURL: directory)
     }
 
     private func seed(_ state: BrowserState, guids: [Int]) {
@@ -313,6 +334,107 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
             from: NSPoint(x: 10, y: 10),
             to: NSPoint(x: 16, y: 10)
         ))
+    }
+
+    private func withTabSelectionLayouts(
+        _ body: (BrowserState, (Int, NSEvent.ModifierFlags) throws -> Void) throws -> Void
+    ) throws {
+        for horizontal in [false, true] {
+            let state = try makeState()
+            seed(state, guids: [1, 2, 3, 4, 5])
+            for tab in state.tabs { tab.title = "Tab \(tab.guid)" }
+            state.focuseTab(state.tabs[2])
+
+            if horizontal {
+                let strip = TabStrip(browserState: state)
+                strip.frame = NSRect(x: 0, y: 0, width: 1000, height: 48)
+                strip.setActive(true)
+                defer { strip.setActive(false) }
+                try body(state) { guid, flags in
+                    strip.setActive(true)
+                    strip.layoutSubtreeIfNeeded()
+                    func findTabView(in view: NSView) -> TabItemView? {
+                        if let tabView = view as? TabItemView,
+                           tabView.accessibilityLabel() == "Tab \(guid)" {
+                            return tabView
+                        }
+                        return view.subviews.lazy.compactMap { findTabView(in: $0) }.first
+                    }
+                    let tabView = try XCTUnwrap(findTabView(in: strip))
+                    let select = try XCTUnwrap(tabView.onSelect)
+                    select(flags)
+                }
+            } else {
+                let controller = SidebarTabListViewController(state: state)
+                controller.loadViewIfNeeded()
+                controller.setActive(true)
+                defer { controller.setActive(false) }
+                let scroll = try XCTUnwrap(controller.view.subviews.compactMap { $0 as? NSScrollView }.first)
+                let outline = try XCTUnwrap(scroll.documentView as? SideBarOutlineView)
+                try body(state) { guid, flags in
+                    controller.setActive(true)
+                    let row = try XCTUnwrap((0..<outline.numberOfRows).first {
+                        (outline.item(atRow: $0) as? Tab)?.guid == guid
+                    })
+                    controller.outlineView(outline, didClickRow: row, modifierFlags: flags)
+                }
+            }
+        }
+    }
+
+    func testShiftRangeStartsAtAutomaticallyFocusedTabAfterCloseInBothLayouts() throws {
+        try withTabSelectionLayouts { state, click in
+            try click(3, [])
+            state.tabs.removeAll { $0.guid == 3 }
+            state.updateNormalTabs()
+            state.focuseTab(try XCTUnwrap(state.tabs.first { $0.guid == 4 }))
+
+            try click(1, [.shift])
+
+            XCTAssertEqual(state.orderedMultiSelectedTabs.map(\.guid), [1, 2, 4])
+        }
+    }
+
+    func testShiftRangeStartsAtNewlyFocusedLinkTabInBothLayouts() throws {
+        try withTabSelectionLayouts { state, click in
+            state.focuseTab(state.tabs[1])
+            try click(2, [])
+            let linkTab = Tab(guid: 6, url: "https://link.example", isActive: false,
+                              index: 2, title: "Tab 6")
+            state.tabs.insert(linkTab, at: 2)
+            for (index, tab) in state.tabs.enumerated() { tab.setIndex(index) }
+            state.updateNormalTabs()
+            state.moveNormalTabsLocally(tabIds: [6], to: 2, syncChromiumOrder: false)
+            state.focuseTab(linkTab)
+
+            try click(3, [.shift])
+
+            XCTAssertEqual(state.orderedMultiSelectedTabs.map(\.guid), [6, 3])
+        }
+    }
+
+    func testRepeatedShiftClickKeepsRangeAnchorInBothLayouts() throws {
+        try withTabSelectionLayouts { state, click in
+            try click(3, [])
+            try click(1, [.shift])
+            XCTAssertEqual(state.orderedMultiSelectedTabs.map(\.guid), [1, 2, 3])
+
+            try click(5, [.shift])
+            XCTAssertEqual(state.orderedMultiSelectedTabs.map(\.guid), [3, 4, 5])
+        }
+    }
+
+    func testSameFocusPublicationPreservesCommandClickAnchorInBothLayouts() throws {
+        try withTabSelectionLayouts { state, click in
+            try click(3, [])
+            try click(1, [.command])
+            let focusedTab = state.focusingTab
+            state.focusingTab = focusedTab
+
+            try click(5, [.shift])
+
+            XCTAssertEqual(state.orderedMultiSelectedTabs.map(\.guid), [1, 2, 3, 4, 5])
+        }
     }
 
     func testOrderedSelectionFollowsTabOrderNotClickOrder() throws {
@@ -2371,7 +2493,7 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
     }
 
     func testDuplicateMultiSelectionPreservesSplitPair() throws {
-        let state = try makeState()
+        let state = try makeBatchRecordingState()
         seed(state, guids: [1, 2, 3, 4])
         state.splits = [
             SplitGroup(id: "split-2-3",
@@ -2387,9 +2509,33 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         state.duplicateMultiSelectedTabs()
 
         XCTAssertFalse(state.multiSelection.isActive)
-        XCTAssertEqual(state.pendingPrimarySplitTargetByGuid.count, 1)
-        XCTAssertEqual(state.pendingPrimarySplitTargetByGuid.values.first?.secondaryURL,
-                       "https://e3.example")
+        XCTAssertEqual(state.duplicatedTabBatches, [[1, 2, 3, 4]])
+        XCTAssertTrue(state.pendingPrimarySplitTargetByGuid.isEmpty)
+    }
+
+    func testCloseMultiSelectionSubmitsOneBatchIncludingSplitPartner() throws {
+        let state = try makeBatchRecordingState()
+        seed(state, guids: [1, 2, 3, 4])
+        state.splits = [SplitGroup(id: "split-2-3", primaryTabId: 2,
+                                  secondaryTabId: 3, layout: .vertical, ratio: 0.5)]
+        state.focuseTab(state.tabs[0])
+        state.toggleMultiSelection(for: state.tabs[1])
+
+        state.closeMultiSelectedTabs()
+
+        XCTAssertEqual(state.closedTabBatches, [[1, 2, 3]])
+        XCTAssertFalse(state.multiSelection.isActive)
+    }
+
+    func testCloseOtherTabsKeepsWholeSplitAndSubmitsOneBatch() throws {
+        let state = try makeBatchRecordingState()
+        seed(state, guids: [1, 2, 3, 4])
+        state.splits = [SplitGroup(id: "split-2-3", primaryTabId: 2,
+                                  secondaryTabId: 3, layout: .vertical, ratio: 0.5)]
+
+        state.closeTabs(keeping: [2])
+
+        XCTAssertEqual(state.closedTabBatches, [[1, 4]])
     }
 
     func testClosingSelectedTabPrunesSelection() throws {

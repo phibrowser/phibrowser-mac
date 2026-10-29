@@ -127,8 +127,8 @@ Other differences worth knowing:
   placeholder mode, so unlike a Space there is no empty window left behind.
   The next `enterContext` under that name spawns a fresh one; page state is
   lost.
-- **Viewport** is the window's own real off-screen frame, not a mirror of the
-  user's window, so `setViewport` is normally unnecessary.
+- **Viewport** is the window's own real off-screen frame, not an Agent Space's
+  measured page area, so `setViewport` is normally unnecessary.
 - **Tabs start muted.** Every tab that lands in a shadow window is muted
   on arrival.
 

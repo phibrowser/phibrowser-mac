@@ -45,8 +45,8 @@ class BrowserState {
         let bookmarkDeletion: MultiSelectionBookmarkDeletionContext?
     }
 
-    /// One restored saved window handed over by the Chromium bridge as a
-    /// single batch (T3A snapshot seam). `tabs` is in Chromium's final strip
+    /// Insertion payload shared by saved-window restore and native duplication.
+    /// The original restore seam also applies synchronously. `tabs` is in Chromium's final strip
     /// order with each context's `insertAfterTabId` anchoring the preceding
     /// entry; `splitActions` replay after the tabs (their pane wiring needs
     /// the tabs present); `activeTabId` applies last.
@@ -54,6 +54,8 @@ class BrowserState {
         let tabs: [(tab: Tab, context: NativeTabCreationContext)]
         let activeTabId: Int?
         let splitActions: [SplitEvent.SplitAction]
+        var indices: [Int: Int]? = nil
+        var relationships: NativeTabRelationshipSnapshot? = nil
     }
 
     /// The extension side panel Chromium is showing in this window. One
@@ -79,12 +81,15 @@ class BrowserState {
 
     /// Guids of the restored-window batch that the in-flight transaction has
     /// not walked yet. Non-nil only while `handleRestoredWindowSnapshot` is
-    /// applying. Gates `updateNormalTabs()` into order-maintenance-only mode
+    /// applying (also reused for explicit duplication). Gates `updateNormalTabs()` into order-maintenance-only mode
     /// (the single publish happens in the transaction epilogue), and keeps
     /// unwalked batch tabs out of the order backfill so each walked tab's
     /// anchor resolution sees exactly the order the per-tab path would have
     /// produced at the same point.
     private var restoreTransactionPendingGuids: Set<Int>?
+
+    /// Actual removals in one Chromium model notification; never spans an async wait.
+    private var applyingRemovalIDs: Set<Int>?
 
     private struct NormalTabRelativeOrderSyncUnit {
         let tabIds: [Int]
@@ -246,6 +251,11 @@ class BrowserState {
     /// asynchronously and therefore land at the end of the strip. Consumed in
     /// `handleSplitCreated`, which then relocates the pair to the drop index.
     var pendingSplitMoveToNormalIndexByCreateId: [String: Int] = [:]
+
+    /// "Split with New Tab" under the Omnibox new-tab behavior: the focused
+    /// tab is shown beside a blank pane while the omnibox picks the partner.
+    /// No tab exists for that pane until the omnibox submits.
+    @Published var pendingSplitPreview: PendingSplitPreview?
 
     private var nativeRelationGraph: NativeTabRelationGraph = .empty
     private var pendingSelectionOverride: NativePendingSelectionOverride?
@@ -1093,6 +1103,8 @@ class BrowserState {
     }
 
     func updateNormalTabs() {
+        guard applyingRemovalIDs == nil else { return }
+
         let openedPinnedGuids = isIncognito
             ? []
             : Set(pinnedTabs.filter { $0.isOpenned }.compactMap { $0.guidInLocalDB })
@@ -1156,8 +1168,10 @@ class BrowserState {
         // and the multi-selection prune run once in the transaction epilogue.
         if restoreTransactionPendingGuids != nil { return }
 
-        normalTabs = normalTabOrder.compactMap { guid in
-            tabs.first { $0.guid == guid }
+        let tabsByID = Dictionary(tabs.map { ($0.guid, $0) }, uniquingKeysWith: { first, _ in first })
+        let projected = normalTabOrder.compactMap { tabsByID[$0] }
+        if normalTabs.count != projected.count || !zip(normalTabs, projected).allSatisfy({ $0 === $1 }) {
+            normalTabs = projected
         }
 
         if multiSelection.isActive {
@@ -1804,11 +1818,9 @@ class BrowserState {
 
     @MainActor
     func closeMultiSelectedTabs() {
-        let tabs = orderedMultiSelectedTabs
+        let tabs = orderedMultiSelectedTabsIncludingSplitPartners
         clearMultiSelection()
-        for tab in tabs {
-            tab.close()
-        }
+        closeTabs(tabs)
     }
 
     var hasTabsOutsideMultiSelection: Bool {
@@ -2343,23 +2355,24 @@ class BrowserState {
 
     @MainActor
     func duplicateMultiSelectedTabs() {
-        let units = multiSelectionTabUnits
+        let tabs = orderedMultiSelectedTabsIncludingSplitPartners
         let bookmarks = orderedMultiSelectedBookmarkRoots
         clearMultiSelection()
-        for unit in units {
-            switch unit {
-            case .tab(let tab):
-                guard let tabURL = tab.url, !tabURL.isEmpty else { continue }
-                createTab(tabURL, focusAfterCreate: true)
-            case .split(let left, let right):
-                guard let leftURL = left.url, !leftURL.isEmpty,
-                      let rightURL = right.url, !rightURL.isEmpty else {
-                    continue
-                }
-                openTwoURLsAsSplit(primaryURL: leftURL, secondaryURL: rightURL)
-            }
-        }
+        duplicateTabs(tabs)
         duplicateBookmarkRoots(bookmarks)
+    }
+
+    @MainActor
+    func duplicateTabs(_ tabs: [Tab]) {
+        guard !tabs.isEmpty,
+              let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
+        guard bridge.responds(to: #selector(PhiChromiumBridgeProtocol.duplicateTabs(withWindowId:tabIds:))) else {
+            AppLogWarn("[TabBatch] Duplicate requires a framework with batch tab commands")
+            return
+        }
+
+        bridge.duplicateTabs(withWindowId: Int64(windowId),
+                             tabIds: tabs.map { NSNumber(value: $0.guid) })
     }
 
     /// Opens fresh tabs for an explicit bookmark selection without reading
@@ -3216,6 +3229,12 @@ class BrowserState {
     ///   - chromeTabId: The Chromium tab ID (used by Chrome extension APIs) of the associated content tab
     func createAIChatTab(for identifier: String, chromeTabId: Int) {
         guard aiChatTabCreationGateOverrideForTesting ?? ApplicationState.shared.isAuthenticated else {
+            return
+        }
+        // With the AI switch off the sidecar extension is disabled, so a panel
+        // tab could only show a blocked page. Every rebuild path ends here.
+        guard PhiPreferences.AISettings.phiAIEnabled.loadValue() else {
+            AppLogInfo("🤖 [AIChat] skipped AI tab while AI is off windowId=\(windowId) identifier=\(identifier)")
             return
         }
         // The chat panes of a closed window can outlive it and ask again when
@@ -5023,6 +5042,18 @@ class BrowserState {
     /// bridge-touching side effect is dispatched after the stack unwinds.
     @MainActor
     func handleRestoredWindowSnapshot(_ snapshot: RestoredWindowSnapshot) {
+        applyInsertionSnapshot(snapshot, isRestore: true)
+    }
+
+    /// Explicit native duplication uses the same insertion transaction as restore,
+    /// with final full-strip indices and without the synchronous restore UI signal.
+    @MainActor
+    func handleInsertedTabsSnapshot(_ snapshot: RestoredWindowSnapshot) {
+        applyInsertionSnapshot(snapshot, isRestore: false)
+    }
+
+    @MainActor
+    private func applyInsertionSnapshot(_ snapshot: RestoredWindowSnapshot, isRestore: Bool) {
         // Validation & filtering. AI Chat payloads keep their bookkeeping
         // path and never join `tabs` (mirrors the per-tab handler's early
         // return); duplicate Chromium guids fail closed — the duplicate
@@ -5138,7 +5169,15 @@ class BrowserState {
         restoreTransactionPendingGuids = Set(batch.map { $0.tab.guid })
         defer { restoreTransactionPendingGuids = nil }
 
-        tabs.append(contentsOf: batch.map { $0.tab })
+        if let indices = snapshot.indices {
+            let combined = tabs + batch.map { $0.tab }
+            for tab in combined {
+                if let index = indices[tab.guid] { tab.setIndex(index) }
+            }
+            tabs = combined.sorted { $0.index < $1.index }
+        } else {
+            tabs.append(contentsOf: batch.map { $0.tab })
+        }
 
         for (tab, context) in batch {
             restoreTransactionPendingGuids?.remove(tab.guid)
@@ -5189,6 +5228,9 @@ class BrowserState {
             }
         }
 
+        if let indices = snapshot.indices { reorderTabs(indices) }
+        if let relationships = snapshot.relationships { applyRelationshipSnapshot(relationships) }
+
         if pendingSelectionOverride != nil {
             // A leftover close-time override could route the active-tab
             // application into a synchronous `setAsActiveTab` bridge call
@@ -5207,7 +5249,7 @@ class BrowserState {
         // in this same main-thread turn.
         restoreTransactionPendingGuids = nil
         updateNormalTabs()
-        restoredWindowTransactionSignal.send()
+        if isRestore { restoredWindowTransactionSignal.send() }
 
         // Split-pending consumers run in the per-tab handler's defer; they
         // can synchronously reach the bridge (marker clearing via
@@ -5321,7 +5363,9 @@ class BrowserState {
     func prepareForActiveTabClose(tabId: Int) {
         guard focusingTab?.guid == tabId else { return }
         guard normalTabs.contains(where: { $0.guid == tabId }) else { return }
-        let visibleIds = normalTabs.map(\.guid)
+        let visibleIds = normalTabs.map(\.guid).filter {
+            $0 == tabId || applyingRemovalIDs?.contains($0) != true
+        }
         AppLogDebug(
             "[NativeTab] prepareForActiveTabClose tabId=\(tabId) " +
             "visibleIds=\(visibleIds) " +
@@ -5337,7 +5381,8 @@ class BrowserState {
         if let target = targetTabId,
            nativeRelationGraph.openerByTabId[tabId] != nil,
            !isOpenerRelated(target: target, closingTabId: tabId) {
-            if let pinnedTarget = findPinnedOrBookmarkAncestor(of: tabId) {
+            if let pinnedTarget = findPinnedOrBookmarkAncestor(of: tabId),
+               applyingRemovalIDs?.contains(pinnedTarget) != true {
                 AppLogDebug("[NativeTab] prepareForActiveTabClose redirecting to pinned/bookmark ancestor \(pinnedTarget)")
                 targetTabId = pinnedTarget
             }
@@ -5394,14 +5439,53 @@ class BrowserState {
     
     @MainActor
     func closeTab(_ tabId: Int) {
-        let t0 = CFAbsoluteTimeGetCurrent()
-        defer { splitPaneIdsBeingRemoved.remove(tabId) }
-        // Ensure selection override is computed before the graph is modified.
-        // Tab.close() already calls this for sidebar-initiated closes, but
-        // Chromium-driven closes (CMD+W, etc.) arrive via tabWillBeRemove
-        // and skip Tab.close() entirely.
-        prepareForActiveTabClose(tabId: tabId)
+        applyTabsRemoved([tabId])
+    }
 
+    /// Cleans up each removed tab, then publishes the surviving list once.
+    /// Native view detachment and recently-closed metadata were handled synchronously.
+    @MainActor
+    func applyTabsRemoved(_ tabIds: [Int], indices: [Int: Int]? = nil,
+                          activeTabId: Int? = nil) {
+        let removalIDs = Set(tabIds)
+        guard !removalIDs.isEmpty else { return }
+
+        precondition(applyingRemovalIDs == nil)
+        applyingRemovalIDs = removalIDs
+        splitPaneIdsBeingRemoved.formUnion(removalIDs)
+        defer {
+            applyingRemovalIDs = nil
+            splitPaneIdsBeingRemoved.subtract(removalIDs)
+        }
+        // Determine the override against the pre-removal graph, excluding all
+        // other tabs in this batch as possible destinations.
+        if let focusedID = focusingTab?.guid, removalIDs.contains(focusedID) {
+            prepareForActiveTabClose(tabId: focusedID)
+        }
+        var handled = Set<Int>()
+        for tabId in tabIds where handled.insert(tabId).inserted {
+            cleanUpRemovedTab(tabId)
+        }
+        var survivors = tabs.filter { !removalIDs.contains($0.guid) }
+        if let indices {
+            for tab in survivors {
+                if let index = indices[tab.guid] { tab.setIndex(index) }
+            }
+            survivors.sort { $0.index < $1.index }
+        }
+        if tabs.count != survivors.count || !zip(tabs, survivors).allSatisfy({ $0 === $1 }) {
+            tabs = survivors
+        }
+        if let indices { reorderTabs(indices) }
+        applyingRemovalIDs = nil
+        updateNormalTabs()
+        if let activeTabId { handleChromiumActiveTabChanged(activeTabId) }
+        validateActiveGroupOverview()
+    }
+
+    @MainActor
+    private func cleanUpRemovedTab(_ tabId: Int) {
+        let t0 = CFAbsoluteTimeGetCurrent()
         // When an AI Chat tab closes, also clear its association and close the linked content tab.
         for (identifier, aiTab) in aiChatTabs {
             if aiTab.guid == tabId {
@@ -5410,7 +5494,10 @@ class BrowserState {
                     boundTo: identifier,
                     in: self
                 )
-                closeAssociatedTab(for: identifier)
+                if let associated = tab(forChatIdentifier: identifier),
+                   applyingRemovalIDs?.contains(associated.guid) != true {
+                    closeAssociatedTab(for: identifier)
+                }
                 return
             }
         }
@@ -5499,6 +5586,7 @@ class BrowserState {
         var migratedConversationTabId: Int?
         if let group = splitGroup(forTabId: closedTab.guid),
            let partnerId = group.partnerTabId(of: closedTab.guid),
+           applyingRemovalIDs?.contains(partnerId) != true,
            let survivor = tabs.first(where: { $0.guid == partnerId }),
            aiChatTabs[identifier] != nil {
             // Closing pane owns the split's shared chat tab → hand it to the
@@ -5532,7 +5620,6 @@ class BrowserState {
         tabSwitchManager.removeTab(tabID: tabId)
 
         // Remove the tab from the in-memory list after linked state is updated.
-        tabs.removeAll { $0.guid == tabId }
         let closedChildren = nativeRelationGraph.directChildren(of: tabId)
         AppLogDebug(
             "[NativeTab] closeTab tabId=\(tabId) children=\(closedChildren) " +
@@ -5548,8 +5635,6 @@ class BrowserState {
             "[NativeTab] closeTab graphAfter={openers=\(nativeRelationGraph.openerByTabId), " +
             "localFix=\(nativeRelationGraph.locallyFixedOpenerTabIds)}"
         )
-        updateNormalTabs()
-        validateActiveGroupOverview()
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         AppLogDebug("[NativeTab] ⏱ closeTab tabId=\(tabId) took \(String(format: "%.2f", elapsed))ms")
     }
@@ -5620,9 +5705,8 @@ class BrowserState {
         AppLogDebug("[TAB_GROUPS] groupClosed windowId=\(windowId) token=\(token)")
         clearGroupOverview(ifToken: token)
         groups.removeValue(forKey: token)
-        // Defensive: any tab that still claims this token gets cleared. In
-        // normal flow Chromium fires kLeft for each member before kClosed,
-        // but this guards against any reordering races.
+        // Removal snapshots own departing tabs; Chromium skips their per-tab
+        // membership events. Clear claims once when the whole group closes.
         for tab in tabs where tab.groupToken == token {
             tab.groupToken = nil
         }
@@ -5792,10 +5876,30 @@ class BrowserState {
                 keep.insert(group.secondaryTabId)
             }
         }
-        for tab in tabs {
-            if !keep.contains(tab.guid) {
-                tab.close()
+        closeTabs(tabs.filter { !keep.contains($0.guid) })
+    }
+
+    func closeTabs(_ tabsToClose: [Tab]) {
+        guard !tabsToClose.isEmpty,
+              let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
+        guard bridge.responds(to: #selector(PhiChromiumBridgeProtocol.closeTabs(withWindowId:tabIds:))) else {
+            AppLogWarn("[TabBatch] Close requires a framework with batch tab commands")
+            return
+        }
+        MainActor.assumeIsolated {
+            guard !AgentSpaceManager.shared.isAgentOwned(spaceId) else { return }
+            let closingIds = Set(tabsToClose.map(\.guid))
+            if tabs.allSatisfy({ closingIds.contains($0.guid) }),
+               let controller = SpaceSessionControllersManager.shared.controller(for: windowId) {
+                if isIncognitoSpace {
+                    SpaceManager.shared.requestCloseIncognitoSpace(spaceId: controller.spaceId)
+                    return
+                }
+                controller.slot?.markTabDrivenClose(for: controller.spaceId)
             }
+
+            bridge.closeTabs(withWindowId: Int64(windowId),
+                             tabIds: tabsToClose.map { NSNumber(value: $0.guid) })
         }
     }
 

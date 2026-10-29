@@ -251,6 +251,58 @@ final class HolographicCardViewTests: XCTestCase {
         XCTAssertEqual(card.name, "Updated Name")
     }
 
+    func testProfileCardKeepsItsSavedStyleAcrossThemeAndAppearanceChanges() throws {
+        let originalAccount = AccountController.shared.account
+        let originalTheme = ThemeManager.shared.currentTheme
+        let originalAppearance = ThemeManager.shared.userAppearanceChoice
+        let account = Account(userID: UUID().uuidString)
+        defer {
+            AccountController.shared.account = originalAccount
+            ThemeManager.shared.currentTheme = originalTheme
+            ThemeManager.shared.userAppearanceChoice = originalAppearance
+            try? FileManager.default.removeItem(at: account.userDataStorage)
+        }
+        AccountController.shared.account = account
+        let style = HolographicCardStyle(palette: .gold, texture: .brushed, ornament: .modulated)
+        XCTAssertTrue(account.userDefaults.set(style, forCodableKey: AccountUserDefaults.DefaultsKey.profileCardStyle.rawValue))
+        ThemeManager.shared.switchTheme(to: "pure")
+
+        let controller = ProfileCardViewController()
+        let card = try XCTUnwrap(controller.view as? HolographicCardView)
+        XCTAssertEqual(card.style, style)
+        ThemeManager.shared.switchTheme(to: "mint")
+        XCTAssertEqual(card.style, style)
+        ThemeManager.shared.userAppearanceChoice = .dark
+        ThemeManager.shared.userAppearanceChoice = .light
+        XCTAssertEqual(card.style, style)
+
+        let reopened = ProfileCardViewController()
+        XCTAssertEqual(try XCTUnwrap(reopened.view as? HolographicCardView).style, style)
+    }
+
+    func testProfileCardRandomizationPersistsWithoutChangingBrowserTheme() throws {
+        let originalAccount = AccountController.shared.account
+        let originalTheme = ThemeManager.shared.currentTheme
+        let account = Account(userID: UUID().uuidString)
+        defer {
+            AccountController.shared.account = originalAccount
+            ThemeManager.shared.currentTheme = originalTheme
+            try? FileManager.default.removeItem(at: account.userDataStorage)
+        }
+        AccountController.shared.account = account
+        let controller = ProfileCardViewController()
+        let card = try XCTUnwrap(controller.view as? HolographicCardView)
+        for _ in 0..<12 {
+            controller.randomizeCard()
+            XCTAssertTrue(ThemeManager.shared.currentTheme === originalTheme)
+            let saved: HolographicCardStyle? = account.userDefaults.codableValue(
+                forKey: AccountUserDefaults.DefaultsKey.profileCardStyle.rawValue)
+            XCTAssertEqual(saved, card.style)
+            let reopened = ProfileCardViewController()
+            XCTAssertEqual(try XCTUnwrap(reopened.view as? HolographicCardView).style, card.style)
+        }
+    }
+
     func testWelcomeUsesTheSameNativeCardWithinItsExistingLayout() throws {
         let controller = OnboardingWelcomeViewController()
         controller.userName = "Welcome Fixture"

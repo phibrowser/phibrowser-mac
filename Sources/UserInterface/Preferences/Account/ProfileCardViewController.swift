@@ -7,7 +7,6 @@ import Cocoa
 
 final class ProfileCardViewController: NSViewController {
     private lazy var cardView = HolographicCardView(style: currentStyle(), showsShadow: false)
-    private var accentColor = NSColor.black
 
     var userName: String? {
         didSet { cardView.name = userName ?? profile?.name ?? "Phi" }
@@ -25,31 +24,14 @@ final class ProfileCardViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Theme initialization can post notifications while restoring preferences.
-        applyCurrentTheme()
-        NotificationCenter.default.addObserver(self, selector: #selector(applyCurrentTheme), name: .themeDidChange, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(applyCurrentTheme), name: .appearanceDidChange, object: nil)
         if profile == nil, let defaults = AccountController.shared.account?.userDefaults {
             profile = defaults.codableValue(forKey: AccountUserDefaults.DefaultsKey.cachedProfile.rawValue)
         }
     }
 
-    deinit { NotificationCenter.default.removeObserver(self) }
-
-    @objc private func applyCurrentTheme() {
-        let theme = ThemeManager.shared.currentTheme
-        let color = theme.color(for: .windowOverlayBackground, appearance: ThemeManager.shared.currentAppearance)
-            .withAlphaComponent(1).usingColorSpace(.deviceRGB) ?? .gray
-        cardView.style = currentStyle()
-        accentColor = theme == .pure ? .black : NSColor(hue: color.hueComponent, saturation: 0.65, brightness: 0.28, alpha: 1)
-    }
-
     private func currentStyle() -> HolographicCardStyle {
-        let theme = ThemeManager.shared.currentTheme
-        var style: HolographicCardStyle = AccountController.shared.account?.userDefaults.codableValue(
+        AccountController.shared.account?.userDefaults.codableValue(
             forKey: AccountUserDefaults.DefaultsKey.profileCardStyle.rawValue) ?? .default
-        style.palette = .init(themeID: theme.id)
-        return style
     }
 
     func randomizeCard() {
@@ -61,9 +43,7 @@ final class ProfileCardViewController: NSViewController {
             NSApp.presentError(NSError(domain: "Phi.ProfileCard", code: 1, userInfo: [NSLocalizedDescriptionKey: message]))
             return
         }
-        // Persist first because switching themes reloads the saved card style.
-        ThemeManager.shared.switchTheme(to: style.palette.themeID)
-        applyCurrentTheme()
+        cardView.style = style
     }
 
     func snapshotAndExport() {
@@ -71,7 +51,10 @@ final class ProfileCardViewController: NSViewController {
     }
 
     private func exportImage() async {
-        let backgroundColor = accentColor
+        let palette = cardView.style.palette
+        let color = NSColor(cgColor: HolographicCardArtwork.hex(palette.colors[0]))?
+            .usingColorSpace(.deviceRGB) ?? .gray
+        let backgroundColor = palette == .silver ? .black : NSColor(hue: color.hueComponent, saturation: 0.65, brightness: 0.28, alpha: 1)
         let filename = "\(userName ?? profile?.name ?? "Phi").png"
         guard let front = await cardView.frontImage() else { return }
         let cardSize = HolographicCardView.designSize

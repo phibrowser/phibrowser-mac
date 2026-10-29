@@ -60,10 +60,15 @@ final class WindowThemeMessageRouter {
         guard subscriptions[windowId] == nil else { return }
 
         subscriptions[windowId] = browserState.themeContext.themePublisher
-            .receive(on: DispatchQueue.main)
+            // No main-queue hop here: the message goes out in the same pass
+            // as the native views' re-theme instead of one pass after it.
             .sink { [weak self, weak browserState] _ in
                 guard let self, let browserState else { return }
-                self.broadcastThemeChanged(for: browserState)
+                if Thread.isMainThread {
+                    self.broadcastThemeChanged(for: browserState)
+                } else {
+                    DispatchQueue.main.async { self.broadcastThemeChanged(for: browserState) }
+                }
             }
     }
 

@@ -36,7 +36,7 @@ class PasswordManagerViewController: OnboardingBaseViewController {
     private let containerLeftOffset: CGFloat = 84
     private let containerCornerRadius: CGFloat = 14
     private let containerPadding: CGFloat = 8
-    private let thirdPartyIconSize: CGFloat = 20
+    private let thirdPartyIconSize: CGFloat = 28
     private let thirdPartyIconSpacing: CGFloat = 10
 
     // MARK: - Subviews
@@ -49,8 +49,14 @@ class PasswordManagerViewController: OnboardingBaseViewController {
         return container
     }()
 
-    private lazy var optionsStackView: NSStackView = {
-        let stackView = NSStackView()
+    private lazy var optionsStackView: OnboardingOptionStackView = {
+        let stackView = OnboardingOptionStackView()
+        stackView.onMoveSelection = { [weak self] offset in
+            guard let self else { return }
+            let managers: [PasswordManager] = [.icloudPasswords, .manual]
+            guard let index = managers.firstIndex(of: selectedManager) else { return }
+            selectManager(managers[(index + offset + managers.count) % managers.count])
+        }
         stackView.orientation = .vertical
         stackView.spacing = optionSpacing
         stackView.alignment = .centerX
@@ -116,12 +122,14 @@ class PasswordManagerViewController: OnboardingBaseViewController {
         setTitle(NSLocalizedString("oobe.passwordManager.title", value: "Passwords Manager",
             comment: "Onboarding password manager - Page title"
         ))
-        skipButton.isHidden = true
-        nextButton.title = NSLocalizedString(
-            "oobe.navigation.continueButton",
-            value: "Next",
-            comment: "OOBE navigation - Button to continue to the next step"
-        )
+        configureFooterButtons(.init(
+            leftTitle: NSLocalizedString(
+                "oobe.navigation.backButton",
+                value: "Back",
+                comment: "OOBE navigation - Button to return to the previous step"
+            ),
+            rightTitle: nextButton.title
+        ))
         setupOptions()
     }
 
@@ -201,9 +209,9 @@ class PasswordManagerOptionView: NSView {
 
     private let cornerRadius: CGFloat = 8
     private let titleFontSize: CGFloat = 18
-    private let subtitleFontSize: CGFloat = 12
+    private let subtitleFontSize: CGFloat = 16
     private let horizontalPadding: CGFloat = 18
-    private let iconSize: CGFloat = 32
+    private let iconSize: CGFloat = 28
     private let iconToCheckmarkSpacing: CGFloat = 16
     private let checkmarkSize: CGFloat = 18
 
@@ -226,11 +234,16 @@ class PasswordManagerOptionView: NSView {
         self.titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = NSFont.systemFont(ofSize: titleFontSize, weight: .regular)
         titleLabel.textColor = .white
+        titleLabel.maximumNumberOfLines = 1
+        titleLabel.lineBreakMode = .byTruncatingTail
 
         if let subtitle {
-            let sl = NSTextField(labelWithString: subtitle)
+            let sl = NSTextField(labelWithString: "(\(subtitle))")
             sl.font = NSFont.systemFont(ofSize: subtitleFontSize, weight: .regular)
-            sl.textColor = NSColor.white.withAlphaComponent(0.5)
+            sl.textColor = NSColor.white.withAlphaComponent(0.8)
+            sl.maximumNumberOfLines = 1
+            sl.lineBreakMode = .byTruncatingTail
+            sl.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             self.subtitleLabel = sl
         } else {
             self.subtitleLabel = nil
@@ -266,7 +279,9 @@ class PasswordManagerOptionView: NSView {
         if let trailingIconView {
             addSubview(trailingIconView)
             trailingIconView.snp.makeConstraints { make in
-                make.right.equalTo(checkmarkImageView.snp.left).offset(-iconToCheckmarkSpacing)
+                make.right.equalTo(checkmarkImageView.snp.left).offset(
+                    -(subtitleLabel == nil ? iconToCheckmarkSpacing : 10)
+                )
                 make.centerY.equalToSuperview()
                 if trailingIconView is NSImageView {
                     make.width.height.equalTo(iconSize)
@@ -274,21 +289,22 @@ class PasswordManagerOptionView: NSView {
             }
         }
 
-        // Text on the left
+        // Keep the title and recommendation on one line, clear of the trailing icons.
+        titleLabel.snp.makeConstraints { make in
+            make.left.equalToSuperview().offset(horizontalPadding)
+            make.centerY.equalToSuperview()
+        }
+        let textTrailingView = trailingIconView ?? checkmarkImageView
         if let subtitleLabel {
             addSubview(subtitleLabel)
-            titleLabel.snp.makeConstraints { make in
-                make.left.equalToSuperview().offset(horizontalPadding)
-                make.bottom.equalTo(self.snp.centerY).offset(-1)
-            }
             subtitleLabel.snp.makeConstraints { make in
-                make.left.equalTo(titleLabel)
-                make.top.equalTo(self.snp.centerY).offset(2)
+                make.left.equalTo(titleLabel.snp.right).offset(5)
+                make.centerY.equalToSuperview()
+                make.right.lessThanOrEqualTo(textTrailingView.snp.left).offset(-10)
             }
         } else {
             titleLabel.snp.makeConstraints { make in
-                make.left.equalToSuperview().offset(horizontalPadding)
-                make.centerY.equalToSuperview()
+                make.right.lessThanOrEqualTo(textTrailingView.snp.left).offset(-10)
             }
         }
 

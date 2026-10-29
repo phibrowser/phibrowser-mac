@@ -636,6 +636,13 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // Hide/dismiss the crash page (renderer recovered).
 - (void)hideCrashPage:(int64_t)tabId windowId:(int64_t)windowId;
 // Optional metadata-rich variants for richer native tab orchestration.
+/// Two-phase removal: synchronous lifetime work, then one actual model delta.
+- (void)tabWillDetach:(int64_t)tabId windowId:(int64_t)windowId;
+/// Dictionary payload containing removals, indices and the optional final active tab.
+- (void)tabsRemovedSnapshot:(NSDictionary *)snapshot windowId:(int64_t)windowId;
+/// Native duplicates, split changes and final order/selection in one owned payload.
+- (void)tabsInsertedSnapshot:(NSDictionary *)snapshot windowId:(int64_t)windowId;
+
 - (void)tabWillBeRemove:(int64_t)tabId
                windowId:(int64_t)windowId
                  context:(NSDictionary<NSString *, id> *)context;
@@ -1105,6 +1112,12 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                             tabId:(int64_t)tabId;
 - (void)moveTabsToNewWindowWithWindowId:(int64_t)windowId
                                  tabIds:(NSArray<NSNumber *> *)tabIds;
+
+/// Native multi-tab commands. Unknown IDs are ignored; split partners are included.
+- (void)closeTabsWithWindowId:(int64_t)windowId
+                       tabIds:(NSArray<NSNumber *> *)tabIds;
+- (void)duplicateTabsWithWindowId:(int64_t)windowId
+                           tabIds:(NSArray<NSNumber *> *)tabIds;
 
 /// Keeps the AI Chat panel record of the page tab `tabId` for undo close
 /// (chromium ADR 0017). Chromium never reads it: it writes it into the tab's

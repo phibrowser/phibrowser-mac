@@ -378,6 +378,7 @@ private final class HolographicCardFace {
             tear.lineWidth = 0.7
             tear.lineDashPattern = [2, 2]
             surface.addSublayer(tear)
+            identifier.isHidden = true
             for text in [name, identifier, dateLabel, date] {
                 text.contentsScale = 3
                 text.foregroundColor = NSColor(srgbRed: 0.19, green: 0.21, blue: 0.25, alpha: 1).cgColor

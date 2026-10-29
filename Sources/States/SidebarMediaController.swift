@@ -332,34 +332,43 @@ final class SidebarMediaController: ObservableObject {
         isSyncingTabs = true
         defer { isSyncingTabs = false; refreshSelection() }
         var newTabs: [Tab] = []
-        let liveTabs = liveStates.flatMap(\.tabs).filter { $0.isOpenned }
-        for state in liveStates {
-            guard let session = sessions[ObjectIdentifier(state)] else { continue }
-            let ids = state.tabs.filter(\.isOpenned).map(\.guid)
-            session.tabOrder = session.tabOrder.filter { ids.contains($0) }
-            session.tabOrder += ids.filter { !session.tabOrder.contains($0) }
+        let states = liveStates
+        var liveTabs: [(key: SourceKey, tab: Tab)] = []
+        var liveByKey: [SourceKey: Tab] = [:]
+        for state in states {
+            let sessionID = ObjectIdentifier(state)
+            guard let session = sessions[sessionID] else { continue }
+            let openedTabs = state.tabs.filter(\.isOpenned)
+            let ids = openedTabs.map(\.guid)
+            let liveIDs = Set(ids)
+            session.tabOrder.removeAll { !liveIDs.contains($0) }
+            var orderedIDs = Set(session.tabOrder)
+            session.tabOrder += ids.filter { orderedIDs.insert($0).inserted }
+            for tab in openedTabs {
+                let key = SourceKey(sessionID: sessionID, tabID: tab.guid)
+                liveTabs.append((key, tab))
+                liveByKey[key] = tab
+            }
         }
-        for (id, observed) in observedTabs where !liveTabs.contains(where: { $0 === observed.tab && sourceKey(for: $0) == id }) {
-            subscriptionGenerations.removeValue(forKey: id)
-            mediaSubscriptions.removeValue(forKey: id)?.close()
-            mediaWrapperIds.removeValue(forKey: id)
+        for (key, observed) in observedTabs where liveByKey[key] !== observed.tab {
+            subscriptionGenerations.removeValue(forKey: key)
+            mediaSubscriptions.removeValue(forKey: key)?.close()
+            mediaWrapperIds.removeValue(forKey: key)
         }
-        let ids = Set(liveTabs.compactMap { sourceKey(for: $0) })
-        observedTabs = observedTabs.filter { entry in
-            liveTabs.contains { sourceKey(for: $0) == entry.key && $0 === entry.value.tab }
-        }
+        let ids = Set(liveByKey.keys)
+        observedTabs = observedTabs.filter { liveByKey[$0.key] === $0.value.tab }
         documentEpochs = documentEpochs.filter { ids.contains($0.key) }
         candidates = candidates.filter { ids.contains($0.key) }
         pipRetainedSources = pipRetainedSources.filter { ids.contains($0.key) }
         visitsAwaitingPlayback.formIntersection(ids)
         visitedSources.removeAll { !ids.contains($0) }
         dismissedSources = dismissedSources.filter { ids.contains($0.key) }
-        if let item, !liveTabs.contains(where: { sourceKey(for: $0) == item.key }) {
+        if let item, !ids.contains(item.key) {
             clearSelection()
         }
 
-        for tab in liveTabs {
-            guard let key = sourceKey(for: tab), observedTabs[key] == nil else { continue }
+        for (key, tab) in liveTabs {
+            guard observedTabs[key] == nil else { continue }
             var subscriptions = Set<AnyCancellable>()
             tab.$webContentWrapper
                 .dropFirst()
@@ -419,7 +428,6 @@ final class SidebarMediaController: ObservableObject {
         }
         // Register every tab before synchronous initial observer delivery.
         for tab in newTabs { subscribe(to: tab) }
-        refreshSelection()
     }
 
     private func focusChanged(to tab: Tab?) {

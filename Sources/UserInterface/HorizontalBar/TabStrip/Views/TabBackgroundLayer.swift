@@ -122,23 +122,22 @@ final class TabBackgroundLayer: CAShapeLayer {
         // Border (top + sides + inverse curves) for the active normal tab is
         // drawn by WebContentViewController's outerBorderLayer as part of a
         // unified path, so this layer only paints the fill.
-        // Active horizontal tabs visually connect to WebContentHeader, which
-        // uses windowBackground. Pure dark gives windowOverlayBackground a
-        // separate brightness curve, so contentOverlayBackground leaves a seam.
+        // Without a page-color override, active horizontal tabs share the
+        // header's default extension surface, including while a side panel is open.
         // Split-paired tabs: the focused half fills with the active color;
         // its partner uses the same color muted so the bar still reads as a
         // single selected unit while the focused half visually stands out.
         if splitPairPosition != nil {
             if tabState == .active {
                 fillColor = (activeFillColor
-                    ?? ThemedColor.windowBackground.resolve(in: sourceView)).cgColor
+                    ?? ThemedColor.extensionSurfaceBackground.resolve(in: sourceView)).cgColor
                 strokeColor = NSColor.clear.cgColor
                 lineWidth = 0
             } else if isSplitGroupActive {
                 // Unfocused half of a focused split: keep the active fill
                 // mostly opaque so it reads as part of the same selected
                 // group as the focused half, just slightly muted.
-                fillColor = ThemedColor.windowBackground
+                fillColor = ThemedColor.extensionSurfaceBackground
                     .resolve(in: sourceView)
                     .withAlphaComponent(0.7)
                     .cgColor
@@ -160,7 +159,7 @@ final class TabBackgroundLayer: CAShapeLayer {
         switch tabState {
             case .active:
                 fillColor = (activeFillColor
-                    ?? ThemedColor.windowBackground.resolve(in: sourceView)).cgColor
+                    ?? ThemedColor.extensionSurfaceBackground.resolve(in: sourceView)).cgColor
             case .subSelected:
                 fillColor = ThemedColor.tabSubSelectionBackground.resolve(in: sourceView).cgColor
             case .hovered:

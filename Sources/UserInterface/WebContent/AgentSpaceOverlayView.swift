@@ -291,7 +291,16 @@ final class AgentSpaceOverlayView: NSView {
         stack.translatesAutoresizingMaskIntoConstraints = false
         pill.addSubview(stack)
 
+        // A separator box decides which way it runs from its own frame, and a
+        // box that takes itself for a horizontal rule reports no intrinsic
+        // width at all. That left the divider the one free variable in the
+        // row: whatever slack the layout had to put somewhere went into it,
+        // and the pill was seen at its full cap with a 220pt line between the
+        // badge and the caption. Pinned, it is a vertical hairline whatever
+        // the box believes about itself — the stack's own width for it was
+        // only ever a 750-priority suggestion.
         NSLayoutConstraint.activate([
+            agentDivider.widthAnchor.constraint(equalToConstant: 1),
             agentDivider.heightAnchor.constraint(equalToConstant: 18),
         ])
 
@@ -515,6 +524,13 @@ final class AgentSpaceOverlayView: NSView {
     /// The control pill's frame in this view's coordinates — for layout
     /// assertions over a long, agent-authored caption.
     var controlPillFrameForTesting: NSRect { pill.frame }
+
+    /// The width the pill's content asks for on its own. Unclamped, the pill
+    /// has to sit at exactly this — any excess is slack hiding in the row.
+    var controlPillFittingWidthForTesting: CGFloat { pill.fittingSize.width }
+
+    /// The badge divider's frame, for asserting it stays a vertical hairline.
+    var controlPillDividerFrameForTesting: NSRect { agentDivider.frame }
 
     /// Freezes the fold part-way — 0 wide open, 1 fully shut — so a test can
     /// inspect the geometry the animation passes through.

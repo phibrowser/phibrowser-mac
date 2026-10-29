@@ -510,14 +510,9 @@ public class Theme: NSObject {
                 )
             )
         case .windowBackground:
-            return ColorPair(
-                light: pair.light.withAlphaComponent(
-                    ThemeColorAdjustment.defaultWindowBackgroundAlpha
-                ),
-                dark: pair.dark.withAlphaComponent(
-                    ThemeColorAdjustment.defaultWindowBackgroundAlpha
-                )
-            )
+            // Content backgrounds stay neutral even when legacy snapshots or
+            // per-Space adjustments supply a different color for this role.
+            return DefaultColors.windowBackground
         default:
             return pair
         }

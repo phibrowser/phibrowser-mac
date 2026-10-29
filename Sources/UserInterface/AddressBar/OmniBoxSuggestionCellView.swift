@@ -17,6 +17,7 @@ class OmniBoxSuggestionCellView: NSTableCellView {
     private var suggestion: OmniBoxSuggestion?
     private var index: Int = 0
     private let showsSwitchToTabHint: Bool
+    private let switchToTabAddsSplit: Bool
     private var isHovered: Bool = false {
         didSet {
             updateAppearance()
@@ -88,6 +89,7 @@ class OmniBoxSuggestionCellView: NSTableCellView {
     private lazy var switchToTabView: SwitchToTabView = {
         let view = SwitchToTabView()
         view.wantsLayer = true
+        view.addsSplit = switchToTabAddsSplit
         return view
     }()
     
@@ -100,9 +102,11 @@ class OmniBoxSuggestionCellView: NSTableCellView {
     init(
         suggestion: OmniBoxSuggestion,
         index: Int,
-        showsSwitchToTabHint: Bool
+        showsSwitchToTabHint: Bool,
+        switchToTabAddsSplit: Bool = false
     ) {
         self.showsSwitchToTabHint = showsSwitchToTabHint
+        self.switchToTabAddsSplit = switchToTabAddsSplit
         super.init(frame: .zero)
         self.suggestion = suggestion
         self.index = index
@@ -160,7 +164,8 @@ class OmniBoxSuggestionCellView: NSTableCellView {
             self.switchTabTrailingConstraintToCloseButton = make.trailing.equalTo(deleteButton.snp.leading).offset(-5).constraint
             self.switchTabTrailingConstraintToSuperView = make.trailing.equalToSuperview().offset(-5).constraint
             make.height.equalTo(26)
-            make.width.equalTo(128)
+            // Fits the hint text; the title and subtitle truncate first.
+            make.width.equalTo(max(128, switchToTabView.labelWidth))
         }
         
         subtitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -330,6 +335,15 @@ class SwitchToTabView: NSView {
         return l
     }()
 
+    /// Split with New Tab preview: Hold-⌘ pairs the open tab into the split.
+    var addsSplit = false {
+        didSet {
+            label.stringValue = addsSplit
+                ? NSLocalizedString("addressBar.suggestions.addOpenTabToSplitHint", value: "Hold ⌘ to add split", comment: "Omnibox suggestion - Hint shown for an open-tab suggestion while choosing the second pane of a new split; holding Command pairs that open tab into the split")
+                : NSLocalizedString("addressBar.suggestions.switchToOpenTabHint", value: "Hold ⌘ to switch →", comment: "Omnibox suggestion - Hint shown for suggestions that can switch to an open tab")
+        }
+    }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setupViews()
@@ -355,6 +369,10 @@ class SwitchToTabView: NSView {
 
         label.setContentHuggingPriority(.required, for: .horizontal)
         label.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+    }
+
+    var labelWidth: CGFloat {
+        ceil(label.intrinsicContentSize.width)
     }
 
     func setEmphasized(_ emphasized: Bool) {

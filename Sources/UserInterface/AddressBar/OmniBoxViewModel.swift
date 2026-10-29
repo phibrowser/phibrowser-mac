@@ -52,6 +52,11 @@ class OmniBoxViewModel: ObservableObject {
     private var openedFromGroupOverview = false
     private(set) var openTraceSession: OmniBoxTraceSession?
 
+    /// Picking the pane of `BrowserState.pendingSplitPreview`.
+    var isChoosingSplitPane: Bool {
+        browserState.pendingSplitPreview?.isCommitted == false
+    }
+
     /// The submission target: the focused tab itself, or a fresh tab.
     private var navigatesCurrentTab: Bool {
         opennedFromCurrentTab && !opensSubmissionInNewTab
@@ -408,6 +413,15 @@ class OmniBoxViewModel: ObservableObject {
     }
 
     private func selectSuggestion(_ suggestion: OmniBoxSuggestion, commandKeyPressed: Bool) {
+        // Chromium would open the match in a tab of its own; the previewed
+        // split pane needs the destination instead.
+        if isChoosingSplitPane {
+            openURL(suggestion.url.isEmpty
+                    ? URLProcessor.processUserInput(state.inputText) : suggestion.url,
+                    switchToTab: suggestion.hasTabMatch,
+                    commandKeyPressed: commandKeyPressed)
+            return
+        }
         let disposition = suggestionDisposition(for: suggestion, commandKeyPressed: commandKeyPressed)
         AppLogDebug("omni: select suggestion line: \(suggestion.index), disposition: \(disposition.rawValue)")
         if disposition == .currentTab, let currentTab {
@@ -460,6 +474,11 @@ class OmniBoxViewModel: ObservableObject {
             Task { @MainActor [browserState] in
                 browserState.createTabInCurrentOverviewGroup(url: url)
             }
+        } else if switchToTab, commandKeyPressed,
+                  browserState.commitSplitPreview(pairingTabWithURL: url) {
+            // Hold-⌘ on an open tab pairs that tab into the previewed split.
+        } else if browserState.commitSplitPreview(url: url) {
+            // The submission opens as the previewed split pane.
         } else if switchToTab {
             if commandKeyPressed {
                 browserState.openTab(url)

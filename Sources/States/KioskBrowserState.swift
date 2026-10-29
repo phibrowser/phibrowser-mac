@@ -109,6 +109,11 @@ final class KioskBrowserState: BrowserState {
     }
 
     @MainActor
+    override func handleInsertedTabsSnapshot(_ snapshot: BrowserState.RestoredWindowSnapshot) {
+        handleRestoredWindowSnapshot(snapshot)
+    }
+
+    @MainActor
     override func handleChromiumActiveTabChanged(_ tabId: Int) {
         guard let tab = tabs.first(where: { $0.guid == tabId }) else { return }
         setFocusedTab(tab)
@@ -116,9 +121,18 @@ final class KioskBrowserState: BrowserState {
 
     @MainActor
     override func closeTab(_ tabId: Int) {
-        tabs.removeAll { $0.guid == tabId }
+        applyTabsRemoved([tabId])
+    }
+
+    @MainActor
+    override func applyTabsRemoved(_ tabIds: [Int], indices: [Int: Int]? = nil,
+                                   activeTabId: Int? = nil) {
+        let removed = Set(tabIds)
+        tabs.removeAll { removed.contains($0.guid) }
         normalTabs = tabs
-        if focusingTab?.guid == tabId {
+        if let activeTabId {
+            setFocusedTab(tabs.first { $0.guid == activeTabId })
+        } else if let focusedID = focusingTab?.guid, removed.contains(focusedID) {
             setFocusedTab(tabs.first)
         }
     }

@@ -187,6 +187,14 @@ class SidebarTabListViewController: NSViewController {
     private var outlineView: SideBarOutlineView!
     private var scrollView: NSScrollView!
     private var floatingNewTabView: FloatingNewTabView?
+    /// Tab and split rows scrolled under the hovered floating New Tab row still
+    /// get tracking-area hovers; new and reused cells pick this up on configure.
+    private var isTabHoverSuppressed = false
+    private let floatingNewTabContentMask: CALayer = {
+        let layer = CALayer()
+        layer.backgroundColor = NSColor.black.cgColor
+        return layer
+    }()
     
     private let tabSectionController = TabSectionController()
     private let separatorItem = SeparatorItem()
@@ -425,7 +433,7 @@ class SidebarTabListViewController: NSViewController {
         outlineView.capturesContextMenuClicks = true
     }
 
-    /// Removes the outline subtree from AppKit's tracking system while the
+    /// Removes the outline and floating row from AppKit's tracking system while the
     /// create-Space form covers it. A sibling overlay cannot block
     /// `NSTrackingArea` callbacks, so hit testing alone is insufficient.
     /// Keeping the controller's root view mounted preserves the sidebar stack
@@ -436,6 +444,7 @@ class SidebarTabListViewController: NSViewController {
             cancelVisibleTabPreviews()
         }
         scrollView.isHidden = suppressed
+        floatingNewTabView?.isHidden = suppressed
     }
     
     private func setupAppearance() {
@@ -449,6 +458,16 @@ class SidebarTabListViewController: NSViewController {
     
     private func setupBindings() {
         cancellables.removeAll()
+        // Focus can change without a tab click (close, link, keyboard navigation).
+        // Invalidate synchronously so a later Cmd/Shift click keeps its new anchor.
+        browserState.$focusingTab
+            .map { $0?.guid }
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                self?.multiSelectionRangeAnchor = nil
+            }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: .bookmarkStartEditing)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
@@ -3731,7 +3750,13 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
             rowView.identifier = identifier
             return rowView
         case .bookmark, .bookmarkFolder:
-            return BookmarkRowView(/*insets:  NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)*/)
+            let identifier = NSUserInterfaceItemIdentifier("BookmarkRow")
+            if let rowView = outlineView.makeView(withIdentifier: identifier, owner: self) as? BookmarkRowView {
+                return rowView
+            }
+            let rowView = BookmarkRowView()
+            rowView.identifier = identifier
+            return rowView
         default:
             return nil
         }
@@ -3816,7 +3841,9 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         }
         if let tabCell = cellView as? SidebarTabCellView {
             tabCell.setActiveSuppressed(browserState.groupOverviewState != nil)
+            tabCell.setHoverSuppressed(isTabHoverSuppressed)
         }
+        (cellView as? SidebarSplitPairCellView)?.setHoverSuppressed(isTabHoverSuppressed)
         if let bookmarkCell = cellView as? BookmarkCellView,
            let bookmark = sidebarItem as? Bookmark {
             bookmarkCell.setDropTargetHighlighted(bookmark.isFolder && dropFeedbackTarget == .bookmarkFolder(guid: bookmark.guid))
@@ -4532,23 +4559,22 @@ extension SidebarTabListViewController {
     private func showFloatingNewTabCell(for item: SidebarItem, rowRect: NSRect) {
         let floatingView = floatingNewTabView ?? makeFloatingNewTabView(for: item)
         floatingNewTabView = floatingView
+        // Layout can create this sibling while the create-Space form is open.
+        floatingView.isHidden = scrollView.isHidden
 
-        let needsAttach = floatingView.superview == nil
-        if needsAttach {
-            scrollView.addFloatingSubview(floatingView, for: .vertical)
+        // A sibling above the scroll view rather than a floating subview, so
+        // masking the scroll view hides the rows under it without the row.
+        if floatingView.superview == nil {
+            view.addSubview(floatingView, positioned: .above, relativeTo: scrollView)
+            scrollView.scrollerInsets.top = rowRect.height
         }
 
         layoutFloatingNewTabView(floatingView, rowHeight: rowRect.height)
-        // reflectScrolledClipView forces a clip-view/layout pass. Only do it when
-        // the floating view was just attached; repeating it on every scroll frame
-        // causes excessive main-thread work with large tab counts.
-        if needsAttach {
-            scrollView.reflectScrolledClipView(scrollView.contentView)
-        }
     }
 
     private func makeFloatingNewTabView(for item: SidebarItem) -> FloatingNewTabView {
         let floatingView = FloatingNewTabView(frame: .zero)
+        floatingView.scrollView = scrollView
         floatingView.cellView.configure(with: item)
         floatingView.cellView.clickAction = { [weak self] in
             self?.browserState.windowController?.newBrowserTab(nil)
@@ -4561,16 +4587,28 @@ extension SidebarTabListViewController {
     }
 
     private func layoutFloatingNewTabView(_ floatingView: FloatingNewTabView, rowHeight: CGFloat) {
-        let size = scrollView.contentSize
+        let scrollFrame = scrollView.frame
         let height = max(0, rowHeight)
-        let y: CGFloat
-        if let superview = floatingView.superview, !superview.isFlipped {
-            y = max(0, size.height - height)
-        } else {
-            y = 0
-        }
+        let y = view.isFlipped ? scrollFrame.minY : scrollFrame.maxY - height
+        floatingView.frame = NSRect(
+            x: scrollFrame.minX,
+            y: y,
+            width: scrollView.contentSize.width,
+            height: height
+        )
 
-        floatingView.frame = NSRect(x: 0, y: y, width: size.width, height: height)
+        let bounds = scrollView.bounds
+        let visibleContentRect = NSRect(
+            x: bounds.minX,
+            y: scrollView.isFlipped ? bounds.minY + height : bounds.minY,
+            width: bounds.width,
+            height: max(0, bounds.height - height)
+        )
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        floatingNewTabContentMask.frame = visibleContentRect
+        scrollView.layer?.mask = floatingNewTabContentMask
+        CATransaction.commit()
     }
 
     private func removeFloatingNewTabCell() {
@@ -4578,6 +4616,8 @@ extension SidebarTabListViewController {
         setVisibleTabHoverSuppressed(false)
         floatingNewTabView?.removeFromSuperview()
         floatingNewTabView = nil
+        scrollView.layer?.mask = nil
+        scrollView.scrollerInsets.top = 0
         setOriginalNewTabCellHidden(false)
     }
 
@@ -4619,13 +4659,21 @@ extension SidebarTabListViewController {
     }
 
     private func setVisibleTabHoverSuppressed(_ suppressed: Bool) {
+        isTabHoverSuppressed = suppressed
         for row in 0..<outlineView.numberOfRows {
-            guard let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarTabCellView else {
+            switch outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) {
+            case let cell as SidebarTabCellView:
+                cell.setHoverSuppressed(suppressed)
+                if !suppressed {
+                    cell.setHovered(false)
+                }
+            case let cell as SidebarSplitPairCellView:
+                cell.setHoverSuppressed(suppressed)
+                if !suppressed {
+                    cell.setHovered(false)
+                }
+            default:
                 continue
-            }
-            cell.setHoverSuppressed(suppressed)
-            if !suppressed {
-                cell.setHovered(false)
             }
         }
 
@@ -4642,13 +4690,19 @@ extension SidebarTabListViewController {
         let outlinePoint = outlineView.convert(windowPoint, from: nil)
         let row = outlineView.row(at: outlinePoint)
         guard row >= 0,
-              let item = outlineView.item(atRow: row) as? SidebarItem,
-              item.itemType == .tab,
-              let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarTabCellView else {
+              let item = outlineView.item(atRow: row) as? SidebarItem else {
             return
         }
 
-        cell.setHovered(true)
+        let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false)
+        switch item.itemType {
+        case .tab:
+            (cell as? SidebarTabCellView)?.setHovered(true)
+        case .splitPair:
+            (cell as? SidebarSplitPairCellView)?.setHovered(true)
+        default:
+            break
+        }
     }
 
     private func scheduleScrollToVisible(forItem item: Any?) {

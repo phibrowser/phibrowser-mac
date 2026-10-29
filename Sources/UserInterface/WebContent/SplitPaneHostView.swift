@@ -381,7 +381,7 @@ final class SplitPaneHostView: NSView {
 
     /// The host's and pane cards' fills (see `hasContentSurface`).
     private func applyFills() {
-        setFill(ThemedColor.windowBackground.cgColorMapperOptional,
+        setFill(ThemedColor.extensionSurfaceBackground.cgColorMapperOptional,
                 overContentSurface: hasContentSurface)
         for container in [primaryPaneContainer, secondaryPaneContainer] {
             container.setFill(NSColor.white <> NSColor.black,
@@ -392,7 +392,7 @@ final class SplitPaneHostView: NSView {
         guard hasContentSurface else { return }
         let gapFill = NSView()
         gapFill.wantsLayer = true
-        gapFill.phiLayer?.setBackgroundColor(.windowBackground)
+        gapFill.phiLayer?.setBackgroundColor(.extensionSurfaceBackground)
         let mask = CAShapeLayer()
         mask.fillRule = .evenOdd
         gapFill.layer?.mask = mask

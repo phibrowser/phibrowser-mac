@@ -3865,7 +3865,9 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         
         switch sidebarItem.itemType {
         case .separator:
-            return 16.0 // Smaller height for separator
+            // The centered 1 pt line sits 8 pt from the 2 pt-inset row
+            // backgrounds above and below it.
+            return 13.0
         case .tabGroup:
             guard let groupItem = sidebarItem as? TabGroupSidebarItem else { return 36.0 }
             if temporarilyCollapsedGroupTokenForDrag == groupItem.group.token {

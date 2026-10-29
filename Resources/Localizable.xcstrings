@@ -129802,7 +129802,7 @@
       }
     },
     "tabs.captureBadge.beingShared" : {
-      "comment" : "Tab favicon badge - Tooltip when this tab's content is mirrored to a remote screen share",
+      "comment" : "Tab favicon badge - Tooltip when this tab's content is mirrored to a remote screen share\nTab row outline - Tooltip when this tab's content is mirrored to a remote screen share",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {

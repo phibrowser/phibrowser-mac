@@ -534,6 +534,8 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     /// pane using the microphone / camera / screen share reads the same.
     private var leftRecordingHost: TabRecordingIconHostingView!
     private var rightRecordingHost: TabRecordingIconHostingView!
+    private var leftBeingSharedOutlineHost: TabDecorativeHostingView!
+    private var rightBeingSharedOutlineHost: TabDecorativeHostingView!
     private var leftMuteWidth: Constraint?
     private var rightMuteWidth: Constraint?
     private var leftTitlePaneTrailing: Constraint?
@@ -609,6 +611,8 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         rightMuteHost.isHidden = true
         leftRecordingHost.isHidden = true
         rightRecordingHost.isHidden = true
+        leftBeingSharedOutlineHost.isHidden = true
+        rightBeingSharedOutlineHost.isHidden = true
         leftMuteWidth?.update(offset: 0)
         rightMuteWidth?.update(offset: 0)
     }
@@ -668,6 +672,15 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         leftRecordingHost.isHidden = true
         rightRecordingHost.isHidden = true
 
+        leftBeingSharedOutlineHost = TabDecorativeHostingView(
+            rootView: TabBeingSharedSidebarRowOutline(cornerRadius: 6)
+        )
+        rightBeingSharedOutlineHost = TabDecorativeHostingView(
+            rootView: TabBeingSharedSidebarRowOutline(cornerRadius: 6)
+        )
+        leftBeingSharedOutlineHost.isHidden = true
+        rightBeingSharedOutlineHost.isHidden = true
+
         leftDiscardedOutlineHost = TabDecorativeHostingView(
             rootView: TabDiscardedFaviconOutline(
                 model: leftStatusModel,
@@ -705,6 +718,15 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
                                        closeTrailing: &rightTitleCloseTrailing)
         outerBackground.addSubview(leftPane)
         outerBackground.addSubview(rightPane)
+
+        leftPane.addSubview(leftBeingSharedOutlineHost, positioned: .above, relativeTo: nil)
+        leftBeingSharedOutlineHost.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        rightPane.addSubview(rightBeingSharedOutlineHost, positioned: .above, relativeTo: nil)
+        rightBeingSharedOutlineHost.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
 
         leftPane.snp.makeConstraints { make in
             make.top.bottom.leading.equalToSuperview().inset(2)
@@ -1210,18 +1232,15 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     /// Show or hide a pane's capture badges from its tab's capture flags.
     private func updateCaptureBadges(isLeft: Bool, tab: Tab) {
         let host = isLeft ? leftRecordingHost : rightRecordingHost
-        let shows = tab.isCapturingMedia || tab.isBeingSharedRemotely
-        host?.isHidden = !shows
-        guard shows, let host else { return }
+        let sharedOutline = isLeft ? leftBeingSharedOutlineHost : rightBeingSharedOutlineHost
+        sharedOutline?.isHidden = !tab.isBeingSharedRemotely
+
+        let showsMedia = tab.isCapturingMedia
+        host?.isHidden = !showsMedia
+        guard showsMedia, let host else { return }
         host.rootView = AnyView(
-            UnifiedTabFaviconCaptureBadgesViewFromTab(
-                isCapturingMedia: tab.isCapturingMedia,
-                isPresentingScreenShare: tab.isPresentingScreenShare,
-                isBeingSharedRemotely: tab.isBeingSharedRemotely,
-                faviconSize: Self.faviconSize,
-                faviconCornerRadius: Self.faviconCornerRadius
-            )
-            .phiThemeObserver(themeObserver)
+            UnifiedTabFaviconCaptureCornerBadges(isCapturingMedia: true)
+                .phiThemeObserver(themeObserver)
         )
     }
 

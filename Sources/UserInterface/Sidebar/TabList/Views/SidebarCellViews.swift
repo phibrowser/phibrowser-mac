@@ -576,6 +576,9 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
         /// badge `UnifiedTabFaviconView` draws on a normal tab so a split
         /// pane using the microphone / camera / screen share reads the same.
         let recordingHost: TabRecordingIconHostingView
+        let beingSharedOutlineHost = TabDecorativeHostingView(
+            rootView: TabBeingSharedSidebarRowOutline(cornerRadius: 6)
+        )
         var muteWidth: Constraint?
         var titlePaneTrailing: Constraint?
         var titleCloseTrailing: Constraint?
@@ -613,6 +616,7 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
                 AnyView(EmptyView())
             }
             recordingHost.isHidden = true
+            beingSharedOutlineHost.isHidden = true
         }
 
         func prepareForReuse() {
@@ -626,6 +630,7 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             closeHost.isHidden = true
             muteHost.isHidden = true
             recordingHost.isHidden = true
+            beingSharedOutlineHost.isHidden = true
             muteWidth?.update(offset: 0)
             tab = nil
         }
@@ -898,6 +903,11 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
                 .offset(-Self.titleTrailingSpacing).priority(.medium).constraint
         }
         segment.titleCloseTrailing?.deactivate()
+
+        pane.addSubview(segment.beingSharedOutlineHost, positioned: .above, relativeTo: nil)
+        segment.beingSharedOutlineHost.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
     }
 
     /// Lays out `count` equal-width segments across the background with a
@@ -1329,19 +1339,16 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     /// Show or hide a segment's capture badges from its tab's capture flags.
     private func updateCaptureBadges(index: Int, tab: Tab) {
-        let host = segments[index].recordingHost
-        let shows = tab.isCapturingMedia || tab.isBeingSharedRemotely
-        host.isHidden = !shows
-        guard shows else { return }
+        let segment = segments[index]
+        segment.beingSharedOutlineHost.isHidden = !tab.isBeingSharedRemotely
+
+        let host = segment.recordingHost
+        let showsMedia = tab.isCapturingMedia
+        host.isHidden = !showsMedia
+        guard showsMedia else { return }
         host.rootView = AnyView(
-            UnifiedTabFaviconCaptureBadgesViewFromTab(
-                isCapturingMedia: tab.isCapturingMedia,
-                isPresentingScreenShare: tab.isPresentingScreenShare,
-                isBeingSharedRemotely: tab.isBeingSharedRemotely,
-                faviconSize: Self.faviconSize,
-                faviconCornerRadius: Self.faviconCornerRadius
-            )
-            .phiThemeObserver(themeObserver)
+            UnifiedTabFaviconCaptureCornerBadges(isCapturingMedia: true)
+                .phiThemeObserver(themeObserver)
         )
     }
 

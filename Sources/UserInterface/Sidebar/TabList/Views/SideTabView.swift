@@ -44,6 +44,7 @@ final class SideTabView: NSView {
     private let closeButton = SideTabIconButton()
     private let badgeView = SideTabCornerBadgeView()
     private var splitPlaceholder: SideTabSplitPlaceholderView?
+    private var beingSharedOutlineHost: TabDecorativeHostingView?
 
     private var theme: Theme?
     private var phiAppearance: Appearance = .light
@@ -189,6 +190,22 @@ final class SideTabView: NSView {
         }
 
         renderBackground(in: tabRect)
+        if model.isBeingSharedRemotely {
+            let outlineHost: TabDecorativeHostingView
+            if let beingSharedOutlineHost {
+                outlineHost = beingSharedOutlineHost
+            } else {
+                outlineHost = TabDecorativeHostingView(
+                    rootView: TabBeingSharedSidebarRowOutline(cornerRadius: Self.cornerRadius)
+                )
+                contentView.addSubview(outlineHost, positioned: .above, relativeTo: backgroundView)
+                beingSharedOutlineHost = outlineHost
+            }
+            outlineHost.frame = tabRect
+        } else if let beingSharedOutlineHost {
+            beingSharedOutlineHost.removeFromSuperview()
+            self.beingSharedOutlineHost = nil
+        }
 
         let midY = tabRect.midY
         var x = tabRect.minX + Self.contentLeadingInset

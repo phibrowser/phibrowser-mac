@@ -1460,11 +1460,20 @@ class WebContentViewController: NSViewController {
     }
 
     private func installScreenShareMirroredBorderOverlayIfNeeded() {
+        if screenShareMirroredBorderOverlay.superview !== hostView {
+            screenShareMirroredBorderOverlay.removeFromSuperview()
+        }
         guard screenShareMirroredBorderOverlay.superview == nil else { return }
-        screenShareMirroredBorderOverlay.translatesAutoresizingMaskIntoConstraints = true
-        screenShareMirroredBorderOverlay.autoresizingMask = [.width, .height]
-        screenShareMirroredBorderOverlay.frame = hostView.bounds
-        hostView.addSubview(screenShareMirroredBorderOverlay, positioned: .above, relativeTo: nil)
+        hostView.addSubview(
+            screenShareMirroredBorderOverlay,
+            positioned: .above,
+            relativeTo: nil
+        )
+        screenShareMirroredBorderOverlay.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        screenShareMirroredBorderOverlay.cornerRadius =
+            LiquidGlassCompatible.webContentInnerComponentsCornerRadius
         screenShareMirroredBorderOverlay.setActive(false)
     }
     
@@ -2261,23 +2270,28 @@ class WebContentViewController: NSViewController {
             hideSplitMirroredBorders()
             return
         }
+
         if let host = currentSplitHost,
            let tab = associatedTab,
-           let group = browserState?.splitGroup(forTabId: tab.guid) {
+           browserState?.splitGroup(forTabId: tab.guid) != nil {
             screenShareMirroredBorderOverlay.setActive(false)
-            reconcileSplitMirroredBorders(host: host, group: group)
+            refreshSplitMirroredBorders()
         } else if let tab = associatedTab {
             hideSplitMirroredBorders()
             screenShareMirroredBorderOverlay.setActive(tab.isBeingMirrored)
         } else {
             screenShareMirroredBorderOverlay.setActive(false)
+            hideSplitMirroredBorders()
         }
     }
 
     private func refreshSplitMirroredBorders() {
         guard let host = currentSplitHost,
               let tab = associatedTab,
-              let group = browserState?.splitGroup(forTabId: tab.guid) else { return }
+              let group = browserState?.splitGroup(forTabId: tab.guid) else {
+            hideSplitMirroredBorders()
+            return
+        }
         reconcileSplitMirroredBorders(host: host, group: group)
     }
 
@@ -2286,6 +2300,7 @@ class WebContentViewController: NSViewController {
             let mirrored = browserState?.tabs.first(where: { $0.guid == tabId })?.isBeingMirrored == true
             host.setMirroredBorderVisible(mirrored, slot: slot)
         }
+        screenShareMirroredBorderOverlay.setActive(false)
     }
 
     private func hideSplitMirroredBorders() {

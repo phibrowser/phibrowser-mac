@@ -567,14 +567,6 @@ struct UnifiedTabFaviconView: View {
                 faviconCornerRadius: Self.faviconCornerRadius
             )
         }
-        .overlay {
-            if viewModel.isBeingSharedRemotely && !viewModel.hidesRecordingBadge {
-                TabBeingSharedFaviconOutline(
-                    faviconSize: Self.faviconSize,
-                    faviconCornerRadius: Self.faviconCornerRadius
-                )
-            }
-        }
         .overlay(alignment: .topTrailing) {
             if !viewModel.hidesRecordingBadge {
                 UnifiedTabFaviconCaptureBadgesView(viewModel: viewModel)
@@ -858,12 +850,6 @@ struct UnifiedTabFaviconCaptureBadgesViewFromTab: View {
 
     var body: some View {
         ZStack {
-            if isBeingSharedRemotely {
-                TabBeingSharedFaviconOutline(
-                    faviconSize: faviconSize,
-                    faviconCornerRadius: faviconCornerRadius
-                )
-            }
             if isCapturingMedia {
                 UnifiedTabFaviconCaptureCornerBadges(isCapturingMedia: true)
             }

@@ -83,6 +83,9 @@ final class SplitPaneHostView: NSView {
         /// NTP. Kept separate from crash overlays so a renderer crash can
         /// still take visual priority when both states are briefly present.
         weak var loginRequiredView: NSView?
+        /// Yellow screen-share frame shown while the pane's tab is mirrored.
+        /// Lives in the host above the focus ring, not in the container.
+        let mirroredBorderOverlay = ScreenShareMirroredBorderOverlayView()
     }
 
     private var slots: [PaneSlot] = []
@@ -319,11 +322,14 @@ final class SplitPaneHostView: NSView {
             let slot = PaneSlot()
             configurePaneContainer(slot.container)
             addSubview(slot.container, positioned: .below, relativeTo: focusRingView)
+            slot.mirroredBorderOverlay.isHidden = true
+            addSubview(slot.mirroredBorderOverlay, positioned: .above, relativeTo: focusRingView)
             slots.append(slot)
         }
         while slots.count > count {
             let slot = slots.removeLast()
             slot.container.removeFromSuperview()
+            slot.mirroredBorderOverlay.removeFromSuperview()
         }
         while dividers.count < count - 1 {
             let index = dividers.count
@@ -555,6 +561,7 @@ final class SplitPaneHostView: NSView {
             divider.frame = rect
         }
         positionFocusRing(paneFrames: rects.panes)
+        positionMirroredBorderOverlays(paneFrames: rects.panes)
         if let gapFillView {
             layoutGapFill(gapFillView)
         }
@@ -1175,6 +1182,19 @@ final class SplitPaneHostView: NSView {
         focusRingView.isHidden = false
         focusRingView.frame = paneFrames[focusedPane]
         focusRingView.updatePath(outerRadius: outerCornerRadius)
+    }
+
+    /// Yellow screen-share frame for a mirrored pane (#259).
+    func setMirroredBorderVisible(_ visible: Bool, slot index: Int) {
+        slot(index)?.mirroredBorderOverlay.setActive(visible)
+    }
+
+    private func positionMirroredBorderOverlays(paneFrames: [NSRect]) {
+        let radius = outerCornerRadius
+        for (slot, frame) in zip(slots, paneFrames) {
+            slot.mirroredBorderOverlay.frame = frame
+            slot.mirroredBorderOverlay.cornerRadius = radius
+        }
     }
 
     // MARK: - Divider dragging

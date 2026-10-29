@@ -84686,22 +84686,28 @@
     "settings.shortcuts.command.basicPrint" : {
       "comment" : "Shortcuts settings - Command title for printing with the system dialog",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über Systemdialog drucken"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Basic Print"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "基本打印"
+            "value" : "Impresión básica"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "基本列印"
+            "value" : "Imprimer à l'aide de la zone de dialogue système"
           }
         },
         "ja" : {
@@ -84716,28 +84722,22 @@
             "value" : "기본 프린트"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Imprimer à l'aide de la zone de dialogue système"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Über Systemdialog drucken"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Druk af via systeemdialoogvenster"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Impresión básica"
+            "value" : "基本打印"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基本列印"
           }
         }
       }
@@ -84745,22 +84745,28 @@
     "settings.shortcuts.command.bookmarkAllTabs" : {
       "comment" : "Shortcuts settings - Command title for bookmarking all open tabs",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lesezeichen für alle Tabs hinzufügen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bookmark All Tabs"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "为所有标签页添加书签"
+            "value" : "Agregar todas las pestañas a marcadores"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將所有分頁加入書籤"
+            "value" : "Ajouter tous les onglets aux favoris"
           }
         },
         "ja" : {
@@ -84775,28 +84781,22 @@
             "value" : "모든 탭을 북마크에 추가"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter tous les onglets aux favoris"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lesezeichen für alle Tabs hinzufügen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Maak bladwijzers van alle tabbladen"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Agregar todas las pestañas a marcadores"
+            "value" : "为所有标签页添加书签"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將所有分頁加入書籤"
           }
         }
       }
@@ -84804,22 +84804,28 @@
     "settings.shortcuts.command.bookmarkManager" : {
       "comment" : "Shortcuts settings - Command title for opening the bookmark manager",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lesezeichenverwaltung"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bookmark Manager"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "书签管理器"
+            "value" : "Administrador de marcadores"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "書籤管理員"
+            "value" : "Gestionnaire de favoris"
           }
         },
         "ja" : {
@@ -84834,28 +84840,22 @@
             "value" : "북마크 관리자"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gestionnaire de favoris"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lesezeichenverwaltung"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bladwijzerbeheer"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Administrador de marcadores"
+            "value" : "书签管理器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "書籤管理員"
           }
         }
       }
@@ -84863,22 +84863,28 @@
     "settings.shortcuts.command.bookmarkTab" : {
       "comment" : "Shortcuts settings - Command title for bookmarking the current page",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lesezeichen für diesen Tab hinzufügen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bookmark Tab"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "为标签页添加书签"
+            "value" : "Agregar pestaña a marcadores"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將分頁加入書籤"
+            "value" : "Ajouter l'onglet aux favoris"
           }
         },
         "ja" : {
@@ -84893,28 +84899,22 @@
             "value" : "탭을 북마크에 추가"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter l'onglet aux favoris"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lesezeichen für diesen Tab hinzufügen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Maak bladwijzer van tabblad"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Agregar pestaña a marcadores"
+            "value" : "为标签页添加书签"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將分頁加入書籤"
           }
         }
       }
@@ -84922,22 +84922,28 @@
     "settings.shortcuts.command.checkDocument" : {
       "comment" : "Shortcuts settings - Command title for checking spelling in the current document",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dokument jetzt prüfen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Check Document Now"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "立即检查文稿"
+            "value" : "Comprobar el documento ahora"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "立即檢查文件"
+            "value" : "Vérifier le document maintenant"
           }
         },
         "ja" : {
@@ -84952,28 +84958,22 @@
             "value" : "지금 문서 검사"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vérifier le document maintenant"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dokument jetzt prüfen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Controleer document nu"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Comprobar el documento ahora"
+            "value" : "立即检查文稿"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立即檢查文件"
           }
         }
       }
@@ -84981,22 +84981,28 @@
     "settings.shortcuts.command.clearBrowsingData" : {
       "comment" : "Shortcuts settings - Command title for choosing browsing data to clear",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browserdaten löschen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Clear Browsing Data"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除浏览数据"
+            "value" : "Borrar datos de navegación"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除瀏覽資料"
+            "value" : "Effacer les données de navigation"
           }
         },
         "ja" : {
@@ -85011,28 +85017,22 @@
             "value" : "인터넷 사용 기록 삭제"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Effacer les données de navigation"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Browserdaten löschen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Browsegegevens wissen"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Borrar datos de navegación"
+            "value" : "清除浏览数据"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除瀏覽資料"
           }
         }
       }
@@ -85040,22 +85040,28 @@
     "settings.shortcuts.command.closeAllWindows" : {
       "comment" : "Shortcuts settings - Command title for closing all browser windows",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle schließen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Close All"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全部关闭"
+            "value" : "Cerrar todo"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全部關閉"
+            "value" : "Tout fermer"
           }
         },
         "ja" : {
@@ -85070,28 +85076,22 @@
             "value" : "모두 닫기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tout fermer"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alle schließen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sluit alles"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cerrar todo"
+            "value" : "全部关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部關閉"
           }
         }
       }
@@ -85099,22 +85099,28 @@
     "settings.shortcuts.command.closeOtherTabs" : {
       "comment" : "Shortcuts settings - Command title for closing other tabs in the current window",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Andere Tabs schließen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Close Other Tabs"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关闭其他标签页"
+            "value" : "Cerrar las demás pestañas"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "關閉其他分頁"
+            "value" : "Fermer les autres onglets"
           }
         },
         "ja" : {
@@ -85129,28 +85135,22 @@
             "value" : "다른 탭 닫기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer les autres onglets"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Andere Tabs schließen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sluit andere tabbladen"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cerrar las demás pestañas"
+            "value" : "关闭其他标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉其他分頁"
           }
         }
       }
@@ -85278,22 +85278,28 @@
     "settings.shortcuts.command.closeTabsToRight" : {
       "comment" : "Shortcuts settings - Command title for closing tabs to the right of the current tab",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabs rechts schließen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Close Tabs to the Right"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关闭右侧标签页"
+            "value" : "Cerrar pestañas a la derecha"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "關閉右側分頁"
+            "value" : "Fermer les onglets à droite"
           }
         },
         "ja" : {
@@ -85308,28 +85314,22 @@
             "value" : "오른쪽 탭 닫기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer les onglets à droite"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tabs rechts schließen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sluit tabbladen rechts"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cerrar pestañas a la derecha"
+            "value" : "关闭右侧标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉右側分頁"
           }
         }
       }
@@ -85397,22 +85397,28 @@
     "settings.shortcuts.command.copy" : {
       "comment" : "Shortcuts settings - Command title for copying the selection to the clipboard",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kopieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拷贝"
+            "value" : "Copiar"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拷貝"
+            "value" : "Copier"
           }
         },
         "ja" : {
@@ -85427,28 +85433,22 @@
             "value" : "복사"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copier"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kopieren"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kopieer"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copiar"
+            "value" : "拷贝"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷貝"
           }
         }
       }
@@ -85576,22 +85576,28 @@
     "settings.shortcuts.command.cut" : {
       "comment" : "Shortcuts settings - Command title for cutting the selection to the clipboard",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausschneiden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cut"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "剪切"
+            "value" : "Cortar"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "剪下"
+            "value" : "Couper"
           }
         },
         "ja" : {
@@ -85606,28 +85612,22 @@
             "value" : "오려두기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couper"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ausschneiden"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Knip"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cortar"
+            "value" : "剪切"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "剪下"
           }
         }
       }
@@ -86295,22 +86295,28 @@
     "settings.shortcuts.command.fullscreen" : {
       "comment" : "Shortcuts settings - Command title for entering or leaving full screen",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vollbildmodus"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Full Screen"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全屏幕"
+            "value" : "Pantalla completa"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全螢幕"
+            "value" : "Plein écran"
           }
         },
         "ja" : {
@@ -86325,28 +86331,22 @@
             "value" : "전체 화면"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Plein écran"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vollbildmodus"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Schermvullende weergave"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pantalla completa"
+            "value" : "全屏幕"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全螢幕"
           }
         }
       }
@@ -86534,22 +86534,28 @@
     "settings.shortcuts.command.groupTab" : {
       "comment" : "Shortcuts settings - Command title for changing the current tab's group",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tab gruppieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Group Tab"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将标签页分组"
+            "value" : "Agrupar pestaña"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將分頁加入群組"
+            "value" : "Grouper l'onglet"
           }
         },
         "ja" : {
@@ -86564,28 +86570,22 @@
             "value" : "탭 그룹 지정"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Grouper l'onglet"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tab gruppieren"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Groepeer tabblad"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Agrupar pestaña"
+            "value" : "将标签页分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將分頁加入群組"
           }
         }
       }
@@ -86593,22 +86593,28 @@
     "settings.shortcuts.command.hideApp" : {
       "comment" : "Shortcuts settings - Command title for hiding Phi and its windows",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi ausblenden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hide Phi"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "隐藏 Phi"
+            "value" : "Ocultar Phi"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "隱藏 Phi"
+            "value" : "Masquer Phi"
           }
         },
         "ja" : {
@@ -86623,28 +86629,22 @@
             "value" : "Phi 가리기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Masquer Phi"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi ausblenden"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verberg Phi"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ocultar Phi"
+            "value" : "隐藏 Phi"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隱藏 Phi"
           }
         }
       }
@@ -86652,22 +86652,28 @@
     "settings.shortcuts.command.hideOthers" : {
       "comment" : "Shortcuts settings - Command title for hiding other applications",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Andere ausblenden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hide Others"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "隐藏其他"
+            "value" : "Ocultar otros"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "隱藏其他"
+            "value" : "Masquer les autres"
           }
         },
         "ja" : {
@@ -86682,28 +86688,22 @@
             "value" : "기타 가리기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Masquer les autres"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Andere ausblenden"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verberg andere"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ocultar otros"
+            "value" : "隐藏其他"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隱藏其他"
           }
         }
       }
@@ -86711,22 +86711,28 @@
     "settings.shortcuts.command.importSettings" : {
       "comment" : "Shortcuts settings - Command title for importing bookmarks and settings from another browser",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einstellungen importieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Import Settings"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "导入设置"
+            "value" : "Importar configuración"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "匯入設定"
+            "value" : "Importer les paramètres"
           }
         },
         "ja" : {
@@ -86741,28 +86747,22 @@
             "value" : "설정 가져오기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Importer les paramètres"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Einstellungen importieren"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Importeer instellingen"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Importar configuración"
+            "value" : "导入设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匯入設定"
           }
         }
       }
@@ -87069,22 +87069,28 @@
     "settings.shortcuts.command.minimizeWindow" : {
       "comment" : "Shortcuts settings - Command title for minimizing the current window",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fenster im Dock ablegen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Minimize Window"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最小化窗口"
+            "value" : "Minimizar ventana"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將視窗縮到最小"
+            "value" : "Placer la fenêtre dans le Dock"
           }
         },
         "ja" : {
@@ -87099,28 +87105,22 @@
             "value" : "윈도우 최소화"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Placer la fenêtre dans le Dock"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fenster im Dock ablegen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Minimaliseer venster"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Minimizar ventana"
+            "value" : "最小化窗口"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將視窗縮到最小"
           }
         }
       }
@@ -87248,22 +87248,28 @@
     "settings.shortcuts.command.moveTabToNewWindow" : {
       "comment" : "Shortcuts settings - Command title for moving the current tab to a new window",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tab in neues Fenster verschieben"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Move Tab to New Window"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将标签页移到新窗口"
+            "value" : "Mover pestaña a una ventana nueva"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將分頁移至新視窗"
+            "value" : "Déplacer l'onglet vers une nouvelle fenêtre"
           }
         },
         "ja" : {
@@ -87278,28 +87284,22 @@
             "value" : "탭을 새 윈도우로 이동"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Déplacer l'onglet vers une nouvelle fenêtre"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tab in neues Fenster verschieben"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verplaats tabblad naar nieuw venster"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mover pestaña a una ventana nueva"
+            "value" : "将标签页移到新窗口"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將分頁移至新視窗"
           }
         }
       }
@@ -87547,22 +87547,28 @@
     "settings.shortcuts.command.newSplitTab" : {
       "comment" : "Shortcuts settings - Command title for opening a tab in Split View",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuer Tab in Split View"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "New Split Tab"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新建分屏标签页"
+            "value" : "Nueva pestaña en vista dividida"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新增分割畫面分頁"
+            "value" : "Nouvel onglet en Split View"
           }
         },
         "ja" : {
@@ -87577,28 +87583,22 @@
             "value" : "새 분할 보기 탭"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nouvel onglet en Split View"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Neuer Tab in Split View"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nieuw tabblad in Split View"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nueva pestaña en vista dividida"
+            "value" : "新建分屏标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新增分割畫面分頁"
           }
         }
       }
@@ -87965,22 +87965,28 @@
     "settings.shortcuts.command.openHelp" : {
       "comment" : "Shortcuts settings - Command title for opening browser help",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi-Hilfe"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Phi Help"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Phi 帮助"
+            "value" : "Ayuda de Phi"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Phi 說明"
+            "value" : "Aide Phi"
           }
         },
         "ja" : {
@@ -87995,28 +88001,22 @@
             "value" : "Phi 도움말"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aide Phi"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi-Hilfe"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Phi-help"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ayuda de Phi"
+            "value" : "Phi 帮助"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 說明"
           }
         }
       }
@@ -88144,22 +88144,28 @@
     "settings.shortcuts.command.paste" : {
       "comment" : "Shortcuts settings - Command title for pasting the clipboard contents",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einsetzen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Paste"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "粘贴"
+            "value" : "Pegar"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "貼上"
+            "value" : "Coller"
           }
         },
         "ja" : {
@@ -88174,28 +88180,22 @@
             "value" : "붙여넣기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Coller"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Einsetzen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Plak"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pegar"
+            "value" : "粘贴"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "貼上"
           }
         }
       }
@@ -88203,22 +88203,28 @@
     "settings.shortcuts.command.pasteMatchStyle" : {
       "comment" : "Shortcuts settings - Command title for pasting text with the surrounding formatting",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einsetzen und Stil anpassen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Paste and Match Style"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "粘贴并匹配样式"
+            "value" : "Pegar con el mismo estilo"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "貼上並符合樣式"
+            "value" : "Coller et adapter le style"
           }
         },
         "ja" : {
@@ -88233,28 +88239,22 @@
             "value" : "붙여넣고 스타일 일치"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Coller et adapter le style"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Einsetzen und Stil anpassen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Plak en pas stijl aan"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pegar con el mismo estilo"
+            "value" : "粘贴并匹配样式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "貼上並符合樣式"
           }
         }
       }
@@ -88262,22 +88262,28 @@
     "settings.shortcuts.command.pinTab" : {
       "comment" : "Shortcuts settings - Command title for pinning or unpinning the current tab",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tab anpinnen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pin Tab"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "固定标签页"
+            "value" : "Fijar pestaña"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "釘選分頁"
+            "value" : "Épingler l'onglet"
           }
         },
         "ja" : {
@@ -88292,28 +88298,22 @@
             "value" : "탭 고정"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Épingler l'onglet"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tab anpinnen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zet tabblad vast"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fijar pestaña"
+            "value" : "固定标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "釘選分頁"
           }
         }
       }
@@ -88560,22 +88560,28 @@
     "settings.shortcuts.command.redo" : {
       "comment" : "Shortcuts settings - Command title for redoing the last undone edit",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiederholen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Redo"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重做"
+            "value" : "Rehacer"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重做"
+            "value" : "Rétablir"
           }
         },
         "ja" : {
@@ -88590,28 +88596,22 @@
             "value" : "실행 복귀"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rétablir"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wiederholen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opnieuw"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rehacer"
+            "value" : "重做"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重做"
           }
         }
       }
@@ -88799,22 +88799,28 @@
     "settings.shortcuts.command.savePage" : {
       "comment" : "Shortcuts settings - Command title for saving the current page to a file",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seite sichern"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Save Page"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "存储页面"
+            "value" : "Guardar página"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "儲存頁面"
+            "value" : "Enregistrer la page"
           }
         },
         "ja" : {
@@ -88829,28 +88835,22 @@
             "value" : "페이지 저장"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enregistrer la page"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Seite sichern"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bewaar pagina"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guardar página"
+            "value" : "存储页面"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存頁面"
           }
         }
       }
@@ -89038,22 +89038,28 @@
     "settings.shortcuts.command.selectAll" : {
       "comment" : "Shortcuts settings - Command title for selecting all content in the focused area",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alles auswählen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Select All"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全选"
+            "value" : "Seleccionar todo"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全選"
+            "value" : "Tout sélectionner"
           }
         },
         "ja" : {
@@ -89068,28 +89074,22 @@
             "value" : "전체 선택"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tout sélectionner"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alles auswählen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Selecteer alles"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Seleccionar todo"
+            "value" : "全选"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全選"
           }
         }
       }
@@ -89277,22 +89277,28 @@
     "settings.shortcuts.command.selectNumberedSpace" : {
       "comment" : "Shortcuts settings - Command title when a Space name is unavailable; %d is the one-based Space position",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zu Space %d wechseln"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Go to Space %d"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "前往第 %d 个空间"
+            "value" : "Ir al Espacio %d"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "前往第 %d 個空間"
+            "value" : "Passer à l'Espace %d"
           }
         },
         "ja" : {
@@ -89307,28 +89313,22 @@
             "value" : "%d번째 스페이스로 이동"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Passer à l'Espace %d"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zu Space %d wechseln"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ga naar Space %d"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ir al Espacio %d"
+            "value" : "前往第 %d 个空间"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前往第 %d 個空間"
           }
         }
       }
@@ -89516,22 +89516,28 @@
     "settings.shortcuts.command.sendFeedback" : {
       "comment" : "Shortcuts settings - Command title for opening the feedback page",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Feedback senden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Send Feedback"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "发送反馈"
+            "value" : "Enviar comentarios"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "傳送意見回饋"
+            "value" : "Envoyer des commentaires"
           }
         },
         "ja" : {
@@ -89546,28 +89552,22 @@
             "value" : "피드백 보내기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Envoyer des commentaires"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Feedback senden"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stuur feedback"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enviar comentarios"
+            "value" : "发送反馈"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "傳送意見回饋"
           }
         }
       }
@@ -89875,22 +89875,28 @@
     "settings.shortcuts.command.showSpellingAndGrammar" : {
       "comment" : "Shortcuts settings - Command title for opening spelling and grammar tools",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechtschreibung und Grammatik einblenden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show Spelling and Grammar"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示拼写和语法"
+            "value" : "Mostrar ortografía y gramática"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "顯示拼字和文法"
+            "value" : "Afficher l'orthographe et la grammaire"
           }
         },
         "ja" : {
@@ -89905,28 +89911,22 @@
             "value" : "맞춤법 및 문법 보기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Afficher l'orthographe et la grammaire"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rechtschreibung und Grammatik einblenden"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toon spelling en grammatica"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar ortografía y gramática"
+            "value" : "显示拼写和语法"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示拼字和文法"
           }
         }
       }
@@ -90114,22 +90114,28 @@
     "settings.shortcuts.command.taskManager" : {
       "comment" : "Shortcuts settings - Command title for viewing browser tasks and their resource usage",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Task-Manager"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Task Manager"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "任务管理器"
+            "value" : "Administrador de tareas"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "工作管理員"
+            "value" : "Gestionnaire de tâches"
           }
         },
         "ja" : {
@@ -90144,28 +90150,22 @@
             "value" : "작업 관리자"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gestionnaire de tâches"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Task-Manager"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Taakbeheer"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Administrador de tareas"
+            "value" : "任务管理器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工作管理員"
           }
         }
       }
@@ -90173,22 +90173,28 @@
     "settings.shortcuts.command.toggleBookmarkBar" : {
       "comment" : "Shortcuts settings - Command title for showing or hiding the bookmarks bar",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lesezeichenleiste ein-/ausblenden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toggle Bookmark Bar"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示或隐藏书签栏"
+            "value" : "Mostrar u ocultar la barra de marcadores"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "顯示或隱藏書籤列"
+            "value" : "Afficher/masquer la barre de favoris"
           }
         },
         "ja" : {
@@ -90203,28 +90209,22 @@
             "value" : "북마크 바 보기/가리기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Afficher/masquer la barre de favoris"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lesezeichenleiste ein-/ausblenden"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toon of verberg bladwijzerbalk"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar u ocultar la barra de marcadores"
+            "value" : "显示或隐藏书签栏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示或隱藏書籤列"
           }
         }
       }
@@ -90292,22 +90292,28 @@
     "settings.shortcuts.command.toggleFullscreenToolbar" : {
       "comment" : "Shortcuts settings - Command title for showing or hiding the toolbar in full screen",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Symbolleiste im Vollbildmodus ein-/ausblenden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toggle Fullscreen Toolbar"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示或隐藏全屏幕工具栏"
+            "value" : "Mostrar u ocultar la barra de herramientas en pantalla completa"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "顯示或隱藏全螢幕工具列"
+            "value" : "Afficher/masquer la barre d'outils en mode plein écran"
           }
         },
         "ja" : {
@@ -90322,28 +90328,22 @@
             "value" : "전체 화면 도구 막대 보기/가리기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Afficher/masquer la barre d'outils en mode plein écran"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Symbolleiste im Vollbildmodus ein-/ausblenden"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toon of verberg knoppenbalk in schermvullende weergave"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar u ocultar la barra de herramientas en pantalla completa"
+            "value" : "显示或隐藏全屏幕工具栏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示或隱藏全螢幕工具列"
           }
         }
       }
@@ -90531,22 +90531,28 @@
     "settings.shortcuts.command.undo" : {
       "comment" : "Shortcuts settings - Command title for undoing the last edit",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Widerrufen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Undo"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "撤销"
+            "value" : "Deshacer"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "復原"
+            "value" : "Annuler"
           }
         },
         "ja" : {
@@ -90561,28 +90567,22 @@
             "value" : "실행 취소"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Annuler"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Widerrufen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Herstel"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deshacer"
+            "value" : "撤销"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "復原"
           }
         }
       }
@@ -91369,22 +91369,28 @@
     "settings.shortcuts.description.captureArea" : {
       "comment" : "Shortcuts settings - Description of the area screenshot command",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wählt einen sichtbaren Bereich der Webseite aus, um ein Bildschirmfoto davon aufzunehmen und zu bearbeiten."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Select a visible webpage area to capture and edit."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择网页的可见区域进行捕捉和编辑。"
+            "value" : "Selecciona un área visible de la página web para capturarla y editarla."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "選取網頁中可見的區域以擷取並編輯。"
+            "value" : "Sélectionner une zone visible de la page à capturer et à modifier."
           }
         },
         "ja" : {
@@ -91399,28 +91405,22 @@
             "value" : "보이는 웹 페이지 영역을 선택하여 캡처하고 편집해요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sélectionner une zone visible de la page à capturer et à modifier."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wählt einen sichtbaren Bereich der Webseite aus, um ein Bildschirmfoto davon aufzunehmen und zu bearbeiten."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Selecteer een zichtbaar gebied van de webpagina om vast te leggen en te bewerken."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Selecciona un área visible de la página web para capturarla y editarla."
+            "value" : "选择网页的可见区域进行捕捉和编辑。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選取網頁中可見的區域以擷取並編輯。"
           }
         }
       }
@@ -91428,22 +91428,28 @@
     "settings.shortcuts.description.captureFullPage" : {
       "comment" : "Shortcuts settings - Description of the full page screenshot command",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nimmt ein Bildschirmfoto der ganzen aktuellen Webseite auf und kopiert es als Bild."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Capture the entire current webpage and copy it as an image."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "捕捉整个当前网页，并将其拷贝为图像。"
+            "value" : "Captura toda la página web actual y la copia como imagen."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "擷取目前的整個網頁，並以圖片形式拷貝。"
+            "value" : "Capturer la page actuelle en entier et la copier sous forme d'image."
           }
         },
         "ja" : {
@@ -91458,28 +91464,22 @@
             "value" : "현재 웹 페이지 전체를 캡처하여 이미지로 복사해요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Capturer la page actuelle en entier et la copier sous forme d'image."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nimmt ein Bildschirmfoto der ganzen aktuellen Webseite auf und kopiert es als Bild."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Leg de volledige huidige webpagina vast en kopieer die als afbeelding."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Captura toda la página web actual y la copia como imagen."
+            "value" : "捕捉整个当前网页，并将其拷贝为图像。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "擷取目前的整個網頁，並以圖片形式拷貝。"
           }
         }
       }
@@ -124989,6 +124989,7 @@
     },
     "tabs.captureBadge.beingShared" : {
       "comment" : "Tab favicon badge - Tooltip when this tab's content is mirrored to a remote screen share",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -125000,6 +125001,7 @@
     },
     "tabs.captureBadge.microphoneOrCamera" : {
       "comment" : "Tab favicon badge - Tooltip on the red recording dot for microphone or camera capture",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -125011,6 +125013,7 @@
     },
     "tabs.captureBadge.presentingScreenShare" : {
       "comment" : "Tab favicon badge - Tooltip when this tab is the presenter in a screen share session",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {

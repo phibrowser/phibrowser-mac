@@ -1,9 +1,11 @@
 """Export only evidence emitted by the native Computer Use session; never inspect the browser."""
 import base64,json,pathlib,re,sys,collections
 session,prefix=sys.argv[1:3];round_no=int(sys.argv[3]) if len(sys.argv)>3 else 2;folder=pathlib.Path(f'qa-raw-r{round_no}')/prefix;folder.mkdir(parents=True,exist_ok=True)
-f=next(pathlib.Path.home().glob('.codex/sessions/**/rollout-*'+session+'*.jsonl'));texts=[];index=[];i=0;calls=[];actions=[];warnings=[]
+f=next(pathlib.Path.home().glob('.codex/sessions/**/rollout-*'+session+'*.jsonl'));texts=[];index=[];i=0;calls=[];actions=[];warnings=[];mcp_events=[]
 for line in f.open():
  d=json.loads(line);p=d.get('payload',{})
+ if p.get('type')=='item_completed' and p.get('item',{}).get('type')=='McpToolCall':
+  item=p['item'];mcp_events.append({k:item.get(k) for k in ('server','tool','status','duration')})
  if p.get('type')=='custom_tool_call':
   value=p.get('input','');actions.append({'timestamp':d.get('timestamp'),'input':value});names=re.findall(r'tools\.([a-zA-Z0-9_]+)\s*\(',value);names+=re.findall(r'[\"\'](mcp__[a-zA-Z0-9_]+)[\"\']',value);calls.extend(names)
  if p.get('type')=='custom_tool_call_output':
@@ -44,4 +46,4 @@ for line in f.open():
  if p.get('type')=='message' and p.get('role')=='assistant':
   for x in p.get('content',[]):
    if x.get('type')=='output_text':texts.append(x['text'])
-(folder/'actions.json').write_text(json.dumps(actions,ensure_ascii=False,indent=2));(folder/(prefix+'.log')).write_text('\n\n'.join(texts));(folder/'index.json').write_text(json.dumps(index,ensure_ascii=False,indent=2));(folder/'audit.json').write_text(json.dumps({'session_id':session,'audit_scope':'tool references in saved CU orchestration; no browser introspection','tools_called':sorted(set(calls)),'extraction_warnings':warnings,'non_computer_use_calls':[n for n in calls if not n.startswith('mcp__computer_use__')]},indent=2));print(prefix,'images',i,'other_tools',sorted(set(n for n in calls if not n.startswith('mcp__computer_use__'))))
+(folder/'actions.json').write_text(json.dumps(actions,ensure_ascii=False,indent=2));(folder/(prefix+'.log')).write_text('\n\n'.join(texts));(folder/'index.json').write_text(json.dumps(index,ensure_ascii=False,indent=2));(folder/'audit.json').write_text(json.dumps({'session_id':session,'audit_scope':'tool references and completed MCP events in saved CU session; no browser introspection','tools_called':sorted(set(calls)),'extraction_warnings':warnings,'non_computer_use_calls':[n for n in calls if not n.startswith('mcp__computer_use__')],'mcp_event_count':len(mcp_events),'mcp_events':mcp_events,'non_computer_use_mcp_events':[e for e in mcp_events if e['server']!='computer-use']},indent=2));print(prefix,'images',i,'other_tools',sorted(set(n for n in calls if not n.startswith('mcp__computer_use__'))),'non_CU_MCP_events',sum(e['server']!='computer-use' for e in mcp_events))

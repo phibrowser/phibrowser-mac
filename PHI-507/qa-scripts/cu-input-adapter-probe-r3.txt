@@ -1,0 +1,24 @@
+本次仅诊断 Computer Use 的真实输入能力，为未完成的源用例排除工具前置问题；不执行整例验收、不判通过。仅返回 DBL-08-PER 的诊断观察，not_executed_reason 写明“仅输入适配诊断，不是完整DBL-08”。所有界面操作仍只用 CU，禁止调用其他浏览器、系统自动化或直接 AX/JS/API。
+
+先实读指定 QA app 与当前 TC Space；切换 Performance，按正常 UI 设置 on/on。只在已明确属于本活动的 TC Space 建立新的 A/B/C 普通 HTTPS fixture，逐页确认正文/编号，给 B 写 KEEP-INPUT-ADAPTER-B。保留未知窗口/保存项/Default。不要清除数据。
+
+第一部分：拖动返回值。
+
+1. 从最新原图确定 B 行及另一个真实普通页序位置，在安全空白内容上用 CU 单击校准坐标比例。保存 before。调用一次 CU drag，必须原样输出该调用的文字返回及 isError（不输出图片编码），不能丢弃结果只看下一张图。
+2. 立即读取原生顺序、截图与指针位置；等2秒、最多5秒再读一次，期间不要点击内容来收起 pin/分屏投放提示。记录是否有真实重排、投放中状态、错误，以及实际指针是否到达终点。
+3. 若返回错误，停止同类盲目重试。r2旧日志已恢复，四次drag返回都completed且含原生状态；这不证明鼠标已完成投放。若本次返回成功但 pin 区动态展开、指针仍在起点且页序未变，可根据最新画面在普通列表中真正的目标插入间隙用 CU 单击一次，尝试完成仍悬挂的原生投放（不要点内容区、pin 区、其他 tab 正中来冒充重排）。保存这一独立调用与前后状态，明确记录是否需要两个CU输入才能完成。只有真实页序改变、B原编号及KEEP仍在时才能记录重排已观察；如果未成功，正常Escape并实读，最多再尝试一次，不反复盲拖。不得用菜单代替拖动；不得把分屏/固定动作当作重排。
+
+第二部分：仅用系统原生辅助功能提供真实鼠标移动（可行性探测，不代表物理设备覆盖）。
+
+4. 上次在 System Settings 的 Mouse Keys 路径无法确认开启，本次只尝试另一个明确的正常系统入口：通过 CU 的 Control-Option-F5 打开 Accessibility Shortcuts；用 CU list_apps/get_app_state 识别实际持有面板的应用与最新控件，不猜后台进程。记录原始每个选项状态，只切 Mouse Keys。
+5. 如果此入口确实提供 Mouse Keys，启用并从当前原生值确认，关闭面板；如出现 Use/确认，只按其明确意义处理并重新确认。若仍不能确认 enabled，立刻恢复原值，不继续重复旧设置路径。
+6. 仅在确认 Mouse Keys 已启用时，回到 QA 的已核实普通 C，使用 CU click 定位 C 行中安全标题位置，然后用 CU press_key KP_6 一次，检查真实指针是否移动、是否出现标签关闭控件/预览。打印按键返回；若无效，不伪称 hover。若 C 关闭控件确实可见且坐标已核实，可在它上面真实单击一次并核对 A/B 和 B 标记；这是单一子步骤观察，不能标整个DBL08通过。
+7. 立即用同一正常系统入口恢复 Mouse Keys 及任何改动的系统选项为原值，实读确认。不要改系统双击速度，不触碰账号或未知资料。
+
+第三部分：原生虚拟键盘修饰键（可行性探测）。
+
+8. Mouse Keys 恢复后，先建立本轮 A/B/C/D 普通页并核对。通过 CU 的 Accessibility Shortcuts 或明确可见的系统原生入口检查 Sticky Keys、Accessibility Keyboard，记录原值。只在实际提供时临时开启；不得假装 press_key(super+a) 后 modifier 会跨 click 保持。
+9. 若原生屏幕键盘确实出现，用其真实可点击 Command 键按现有 UI 规则锁定/保持，必须从屏幕/原生状态确认；再在 QA 对 B、C 做原有 Command 多选操作，截图实际选中集合。若工具点击不会继承修饰键或原生界面无法确认，不继续猜测，不把“未关闭”本身当作成功。
+10. 释放任何锁定修饰键，恢复 Sticky Keys、Accessibility Keyboard 和改动选项的原始值，逐项实读；保留本轮测试页，不修改其他资料。最终恢复本次起始 app 布局/语言/两个开关（先记录再恢复），ending_state 写清所有实际恢复值和能力观察。
+
+每个部分的关键前后、错误和原值恢复都输出真实截图，marker 用 DBL-08-PER attempt1 drag-before/drag-after/drag-failure/mousekeys-before/mousekeys-after/mousekeys-restored/keyboard-before/keyboard-after/keyboard-restored 等。只有实际看到的能力才记录可用，不能据此声称真鼠标、触控板或完整源用例通过。所有不可完成的子步骤逐项写明真实原因；不让一个分支失败阻止其他独立分支。

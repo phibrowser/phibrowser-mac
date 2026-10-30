@@ -1,12 +1,16 @@
 """Create independently valid, bounded r2 QA archives; never include browser profiles or credentials."""
 from pathlib import Path
 from datetime import datetime,timezone
+from collections import Counter
 import argparse,hashlib,io,json,subprocess,zipfile
 p=argparse.ArgumentParser();p.add_argument('--max-bytes',type=int,default=3500000);p.add_argument('--round',type=int,default=2);a=p.parse_args();assert 1000000<=a.max_bytes<=3500000
 artifacts=Path('artifacts-wt');qa=artifacts/'PHI-507';report=json.loads((qa/f'report-r{a.round}/report.json').read_text());assert report['round']==a.round and report['key']=='PHI-507';assert not Path('.lane/current.json').exists(),'Release UI session before final delivery'
+if (qa/'active-qa-round.json').exists():assert json.loads((qa/'active-qa-round.json').read_text())['round']==a.round,'Package the current completed round, preserving existing historical archives'
+ledger=json.loads((qa/'execution-ledger-r2.json').read_text());mapped=lambda result:'blocked' if result=='partial' else 'skipped' if result=='pending' else result
+assert dict(Counter(mapped(row['result']) for row in ledger))==report['source_case_counts'],'Publish the current ledger before packaging it'
 head=subprocess.check_output(['git','-C',str(artifacts),'rev-parse','HEAD'],text=True).strip();site=Path.home()/'.cache/phi-test-reports/phi-ai-test-reports';sitehead=subprocess.check_output(['git','-C',str(site),'rev-parse','HEAD'],text=True).strip();assert (site/f'PHI-507/r{a.round}/index.html').is_file()
 out=Path(f'deliverables/r{a.round}');out.mkdir(parents=True,exist_ok=True);entries=[]
-for name in ['test-plan.md','execution-ledger-r2.json','handbook-snapshot-r2.md','handbook-data.json','fixture-source-r2.html','handbook-ui-source.html']+[f'test-report-r{n}.md' for n in range(2,a.round+1)]:
+for name in ['test-plan.md','execution-ledger-r2.json','handbook-snapshot-r2.md','handbook-data.json','fixture-source-r2.html','handbook-ui-source.html']+(['active-qa-round.json'] if (qa/'active-qa-round.json').is_file() else [])+[f'test-report-r{n}.md' for n in range(2,a.round+1)]:
  f=qa/name;assert f.is_file();entries.append(('artifacts/PHI-507/'+name,f.read_bytes()))
 for sub in ['test-site']+[f'qa-evidence/r{n}' for n in range(2,a.round+1)]:
  for f in sorted((qa/sub).rglob('*')):
@@ -14,7 +18,7 @@ for sub in ['test-site']+[f'qa-evidence/r{n}' for n in range(2,a.round+1)]:
 for n in range(2,a.round+1):
  f=qa/f'report-r{n}/report.json';assert f.is_file();entries.append((f'artifacts/PHI-507/report-r{n}/report.json',f.read_bytes()))
 for f in sorted((qa/'qa-scripts').iterdir()):
- if f.is_file() and (f.name.endswith(('-r2.py','-r2.txt')) or f.name.startswith(('run-cu-','curate-cu-','record-cu-','cu-operator-','cu-observation.'))):entries.append(('artifacts/PHI-507/qa-scripts/'+f.name,f.read_bytes()))
+ if f.is_file() and f.suffix in ('.py','.txt','.json') and f.name not in ('make-report.py','package-delivery.py','curate-evidence.py','extract-native-evidence.py'):entries.append(('artifacts/PHI-507/qa-scripts/'+f.name,f.read_bytes()))
 for n in range(2,a.round+1):
  folder=site/f'PHI-507/r{n}';assert (folder/'index.html').is_file()
  for f in sorted(folder.rglob('*')):

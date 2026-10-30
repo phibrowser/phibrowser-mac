@@ -1,0 +1,109 @@
+{
+  "base_case": "VIS-01；仅执行 PER、BAL、COM 三个指定点，不判 pass/fail。全程浏览器操作与读取均使用 Computer Use，app 固定为 /Applications/Phi Tab Close QA.app。起始实读 PID 78892，Balanced、System Default、双击关闭 off／按位置关闭 on。原有侧栏为 New Tab 入口、旧 TC-A、旧 TC-B/New Tab 分屏、旧 TC-C、独立手册、报告预览；这些既有对象保留。每项新建 3 个原生 New Tab：按创建次序记为 N1、N2、N3，N1 保持普通 tab，以 N3 新建并重命名测试组，再将 N2 加入，最终组成员顺序为 N3、N2。这些编号只是本报告中的创建顺序标识，不是网页打开编号；未导航 fixture，未声称有已提交 Web 文档或存活标记。三个布局设置截图均实见相同第二卡片文案：『双击关闭标签页』；说明『双击标签页即可关闭；分屏时仅关闭点击的一侧。固定标签页和书签保留原有双击操作。』；『按位置批量关闭标签页』；说明『在标签页和标签组的右键菜单中，提供关闭左侧或右侧标签页的选项；使用纵向标签栏时，显示为关闭上方或下方标签页。』。双击说明为一行；位置说明在截图中于『显示为关闭上』之后换行，下一行为『方或下方标签页。』，全文可见。初始报告页正文另见流程文字『独立包任务无PR，不作PR放行。』，仅记录，未据此增加操作。",
+  "ending_state": "指定应用保持运行，最新实读 PID 80031，Window 为 New Tab，设置窗口已关闭。恢复后实读 General 为 System Default，Balanced 卡片有选中边框；Advanced 为 Double-click to close tabs off／Close tabs by position on。语言恢复时选择原生『系统默认』并点击『重启 Phi』，重启后界面为英文。最后一项保留 1 个活动普通 New Tab 和 TC-PHI507-r2-VIS-01-COM-zh-Hans 组，组内仍有 2 个新标签页；未再重建序列。PER、BAL 的本次测试普通 tab 和测试组仅在下一项开始时关闭。旧 TC-A、旧 TC-B/New Tab 分屏、旧 TC-C、手册及报告预览仍在原顺序；未操作 Default Chrome Web Store、未知保存项、其他窗口或 Canary。无未处理确认框或打开的菜单。",
+  "observations": [
+    {
+      "active_after": "PER-N1 普通新标签页；选中集为该单页，菜单已取消。",
+      "active_before": "PER-N2，即测试组第二个成员；截图白色活动背景可见，原生组子 row 未输出 selected 标记。",
+      "after": "旧对象之后仍为 PER-N1、TC-PHI507-r2-VIS-01-PER-zh-Hans[PER-N3, PER-N2]，共 3 个本次 New Tab；未执行方向关闭。普通菜单：『关闭上方标签页』『关闭下方标签页』均可用。组菜单：『关闭标签组上方的标签页』可用，『关闭标签组下方的标签页』禁用。方向项均为单行完整中文，未见方向项 key、英文回退、左右方向或省略截断。",
+      "before": "旧对象保留，其后为 PER-N1 普通 tab、展开的 TC-PHI507-r2-VIS-01-PER-zh-Hans 测试组[PER-N3, PER-N2]。原生树逐项列出一个普通 New Tab 和两个组内 New Tab，截图核对成员数 2；组标题在侧栏显示为 TC-PHI507-r2-…。",
+      "confirmation_choices": "切换简体中文出现『Restart Phi?』『The selected language will take effect after Phi restarts. Restart now?』，选择『Restart Phi』；组重命名输入指定 TC 名后选择『保存』。两类观察菜单均调用其暴露的 Cancel，未选择关闭命令。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-01-PER attempt1 language-restart-failure",
+        "EVIDENCE: VIS-01-PER attempt1 layout",
+        "EVIDENCE: VIS-01-PER attempt1 settings",
+        "EVIDENCE: VIS-01-PER attempt1 before",
+        "EVIDENCE: VIS-01-PER attempt1 normal-menu",
+        "EVIDENCE: VIS-01-PER attempt1 group-menu",
+        "EVIDENCE: VIS-01-PER attempt1 after"
+      ],
+      "identity_checks": "起始及重启后均由指定完整 app 路径读取。语言重启后 PID 79525；关键 before/after 保留 App、PID、Window 与相关原生标签行。普通目标为新建的独立 selectable row；组目标为本项唯一 TC 名的标题。未触碰旧标签、既有分屏或其他 Space。",
+      "language_observed": "General 原生下拉实读『简体中文』，重启后工具栏、设置及菜单为简体中文。设置全文见 base_case。普通菜单完整可见项依次为：固定、复制、拷贝链接、以分屏打开、添加到书签、添加到文件夹、新建标签组、添加到标签页组、移到空间、关闭、关闭其他标签页、关闭上方标签页、关闭下方标签页；根菜单未见禁用项。组菜单为：在标签组中新建标签页、重命名标签组、更改颜色、折叠标签页组、取消分组、关闭标签页组、关闭标签组上方的标签页、关闭标签组下方的标签页；仅末项禁用。未展开无关子菜单。",
+      "layout_observed": "General 选择『性能』并截图确认选中边框；浏览器地址栏位于左侧栏，外部标签纵向排列。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "点击语言提示中的 Restart Phi，CU 返回『Computer Use server error -10005: App quit』；立即停止后续序列并 get_app_state，实见 PID 由 78892 变为 79525 且中文界面生效。未将该工具返回归因为崩溃。"
+      ],
+      "precondition_actual": "简体中文、Performance，两个关闭开关均 on；本项独立创建 3 个原生 New Tab，2 个组成指定 TC 测试组。",
+      "settings_observed": "起始 doubleClickToClose=off、directionalClosing=on。只点击前者一次后，即时树读取为 on/on，未点击的 directionalClosing 仍 on。语言重启后及本项 settings 证据再次实读 on/on；两开关名称和说明均完整可见。",
+      "steps_executed": [
+        "实读起始 General 与 Advanced；将双击关闭单独设为 on，并即时读取两个开关。",
+        "General 选择简体中文，响应重启提示，重新核实语言；选择 Performance 并截图。",
+        "查看 Advanced 第二卡片两个开关与说明，保存完整 settings 截图。",
+        "原生创建 N1、N2、N3；N3 → 新建标签组 → 重命名；N2 → 添加到标签页组 → 本项 TC 组；核对 1 个普通 tab 和 2 个成员。",
+        "选择 N1 后右键，记录完整普通菜单；Cancel 后重读，再右键组标题，记录完整组菜单；Cancel 并保存 after。"
+      ],
+      "unit_id": "VIS-01-PER"
+    },
+    {
+      "active_after": "BAL-N1 普通新标签页；原生 row(selected)，菜单已取消。",
+      "active_before": "BAL-N2，即测试组第二个成员；活动背景在截图可见。",
+      "after": "旧对象之后仍为 BAL-N1、TC-PHI507-r2-VIS-01-BAL-zh-Hans[BAL-N3, BAL-N2]，共 3 个本次 New Tab。普通菜单『关闭上方标签页』『关闭下方标签页』均可用；组菜单『关闭标签组上方的标签页』可用、『关闭标签组下方的标签页』禁用。方向项单行完整中文，未见 key、英文回退、左右方向或截断；未选择方向关闭。",
+      "before": "本项开始关闭 PER-N1 和 PER 测试组，重读确认消失、旧对象仍在，再独立创建 BAL 的 3 个 New Tab。最终顺序 BAL-N1、展开测试组[BAL-N3, BAL-N2]；树列出两个组内 row，截图核对成员数 2，侧栏组标题显示 TC-PHI507-r2-…。",
+      "confirmation_choices": "PER 测试组关闭未出现确认框；本项重命名选择『保存』。普通菜单和组菜单均用明确暴露的 Cancel 取消，未选择关闭项。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-01-BAL attempt1 layout",
+        "EVIDENCE: VIS-01-BAL attempt1 settings",
+        "EVIDENCE: VIS-01-BAL attempt1 before",
+        "EVIDENCE: VIS-01-BAL attempt1 normal-menu",
+        "EVIDENCE: VIS-01-BAL attempt1 group-menu",
+        "EVIDENCE: VIS-01-BAL attempt1 after"
+      ],
+      "identity_checks": "指定 app 路径、PID 79525；before/after 均为 Window『新标签页』，保留原生标签/容器行。普通目标是本项新建且已选中的独立 row；组标题原生全文唯一对应 BAL 测试组；原生表格有两个 New Tab 子 row。旧分屏未改变。",
+      "language_observed": "General 实读『简体中文』。第二卡片文案与换行见 base_case，本项已独立截图实读。普通菜单完整可见项为：固定、复制、拷贝链接、以分屏打开、添加到书签、添加到文件夹、新建标签组、添加到标签页组、移到空间、关闭、关闭其他标签页、关闭上方标签页、关闭下方标签页；根菜单均可用。组菜单完整可见项为：在标签组中新建标签页、重命名标签组、更改颜色、折叠标签页组、取消分组、关闭标签页组、关闭标签组上方的标签页、关闭标签组下方的标签页；仅末项禁用。",
+      "layout_observed": "General 从性能改选『均衡』，截图实见均衡选中边框；浏览器顶部有地址栏，标签在左侧纵向排列。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "简体中文、Balanced，双击关闭 on／位置关闭 on；独立重建 1 个普通 New Tab 和 2 成员 TC 测试组。",
+      "settings_observed": "本项未点击任何关闭开关；Advanced 即时实读 doubleClickToClose=on、directionalClosing=on，保存完整设置截图。",
+      "steps_executed": [
+        "在本项开始清理上一项 3 个测试对象，重读确认完成；General 改为 Balanced 并核实语言与布局。",
+        "查看第二卡片的两个开关和说明，保存 settings 截图。",
+        "独立创建 N1、N2、N3，用新建组、重命名及添加到已有组菜单构造 N1 + 组[N3,N2]。",
+        "选择普通 N1 并右键记录完整方向菜单，Cancel；重读后右键本项组标题记录完整方向菜单，Cancel；保存 after。"
+      ],
+      "unit_id": "VIS-01-BAL"
+    },
+    {
+      "active_after": "用例 after 为 COM-N1 普通新标签页；会话偏好恢复并重启后，该对象显示 New Tab，原生 row(selected)。",
+      "active_before": "COM-N2，即测试组第二个成员，横向标签栏中位于最右且呈活动背景。",
+      "after": "用例结束保留 COM-N1、TC-PHI507-r2-VIS-01-COM-zh-Hans[COM-N3, COM-N2]。普通菜单『关闭左侧标签页』『关闭右侧标签页』均可用；组菜单『关闭标签组左侧的标签页』可用、『关闭标签组右侧的标签页』禁用。方向项均单行完整中文，未见 key、英文回退、上下方向或截断。完成后仅恢复会话偏好，未额外重建或关闭本项测试对象。",
+      "before": "本项开始关闭 BAL-N1 和 BAL 测试组并重读确认；独立新建 3 个 New Tab。横向顺序为旧对象、COM-N1、TC 测试组标题、COM-N3、COM-N2；原生标题显示『TC-PHI507-r2-VIS-01-COM-zh-Hans 2』，屏幕计数为 2，标题可见部分为 TC-PHI507-r…，两个组成员均显示『新标签页』。",
+      "confirmation_choices": "BAL 测试组关闭未出现确认框；重命名选择『保存』。观察菜单均用 Cancel 取消。收尾选择『系统默认』后，提示『要重启 Phi 吗？』『所选语言将在 Phi 重启后生效。要立即重启吗？』，选择『重启 Phi』。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-01-COM attempt1 layout",
+        "EVIDENCE: VIS-01-COM attempt1 settings",
+        "EVIDENCE: VIS-01-COM attempt1 setup-pending",
+        "EVIDENCE: VIS-01-COM attempt1 before",
+        "EVIDENCE: VIS-01-COM attempt1 normal-menu",
+        "EVIDENCE: VIS-01-COM attempt1 group-menu",
+        "EVIDENCE: VIS-01-COM attempt1 after",
+        "EVIDENCE: VIS-01-COM attempt1 restore-switches",
+        "EVIDENCE: VIS-01-COM attempt1 restore-layout",
+        "EVIDENCE: VIS-01-COM attempt1 restore-restart",
+        "EVIDENCE: VIS-01-COM attempt1 restored-general",
+        "EVIDENCE: VIS-01-COM attempt1 restored-settings",
+        "EVIDENCE: VIS-01-COM attempt1 ending-state"
+      ],
+      "identity_checks": "用例关键操作时指定 app、PID 79525、Window『新标签页』。普通 tab 用经截图核对的 tabStripTab button；组标题原生全文及计数 2，与相邻两个新标签页在屏幕关系一致。收尾重启后指定路径实读 PID 80031，原生树仍列出同名组及两个成员；未使用网页身份替代原生对象核对。",
+      "language_observed": "用例中 General 实读『简体中文』；第二卡片文案与换行见 base_case，已保存本布局完整截图。普通菜单完整可见项为：固定、复制、拷贝链接、以分屏打开、添加到书签栏、添加到文件夹、新建标签组、添加到标签页组、移到空间、关闭、关闭其他标签页、关闭左侧标签页、关闭右侧标签页；根菜单均可用。组菜单为：在标签组中新建标签页、重命名标签组、更改颜色、折叠标签页组、取消分组、关闭标签页组、关闭标签组左侧的标签页、关闭标签组右侧的标签页；仅末项禁用。恢复后 General 为 System Default，界面为英文。",
+      "layout_observed": "用例中 General 选择『舒适』并截图确认选中边框；外部标签横向位于窗口顶部。收尾恢复 Balanced，重启后 General 的 Balanced 选中边框及纵向侧栏均已实见。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "重命名菜单点击返回仍是菜单过渡树，辅助解析未找到文本栏后立即停止，未发出错误索引操作；get_app_state 实见重命名对话框，再继续填写。保留 setup-pending 现场。",
+        "收尾点击『重启 Phi』时 CU 返回『Computer Use server error -10005: App quit』；停止后重读，实见 PID 80031 和英文界面。未归因为崩溃。"
+      ],
+      "precondition_actual": "简体中文、Comfortable，两个关闭开关 on/on；独立建立 1 个普通 New Tab 和同名 TC 组的 2 个成员。",
+      "settings_observed": "用例 settings 截图为『双击关闭标签页』on／『按位置批量关闭标签页』on。收尾只点击双击开关一次，即时读取为 off/on，未点击的位置开关仍 on；重启后再次实读 off/on。General 恢复 System Default、Balanced。",
+      "steps_executed": [
+        "清理上一项 3 个测试对象并重读；General 选择 Comfortable，实读简体中文并保存布局图。",
+        "查看 Advanced 第二卡片两个开关和完整说明，保存 settings 截图。",
+        "独立创建 N1、N2、N3；N3 建组并重命名，N2 经 Add to Existing 原生菜单加入；核对组计数 2 和实际横向顺序。",
+        "选择普通 N1，右键记录完整左右方向菜单并 Cancel；重读后右键组标题记录完整菜单并 Cancel，保存 after。",
+        "统一恢复双击 off／位置 on、Balanced、System Default；响应语言重启提示，重启后再次核实 General 和 Advanced，关闭设置并保存 ending-state。"
+      ],
+      "unit_id": "VIS-01-COM"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

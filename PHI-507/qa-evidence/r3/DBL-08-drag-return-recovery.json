@@ -1,0 +1,101 @@
+{
+  "session_id": "01a18d58-4eab-7b70-ab01-0ccefe16c566",
+  "scope": "Saved item_completed MCP events only; no live browser operation or state read",
+  "recovered_at": "2026-10-30T15:55:55.270069+00:00",
+  "mcp_call_count": 133,
+  "calls_by_server_tool": {
+    "computer-use/get_app_state": 43,
+    "computer-use/press_key": 40,
+    "computer-use/click": 33,
+    "computer-use/type_text": 12,
+    "computer-use/drag": 4,
+    "computer-use/perform_secondary_action": 1
+  },
+  "non_computer_use_events": [],
+  "selected_events": [
+    {
+      "server": "computer-use",
+      "tool": "drag",
+      "status": "completed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "from_x": 190,
+        "from_y": 428,
+        "to_x": 190,
+        "to_y": 330
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 890756916
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.phibrowser.opensource.Mac (pid 71817)\nWindow: \"TC-B · TC-PHI507-r2-DBL-08-PER\", App: Phi Tab Close QA.\n0 standard window TC-B · TC-PHI507-r2-DBL-08-PER, Secondary Actions: Raise\n\t1 split group\n\t\t2 button sidebarHeader.sidebarButton\n\t\t\t3 button left sidebar toggle\n\t\t4 button sidebarHeader.backButton\n\t\t\t5 button sidebar backward\n\t\t6 button sidebarHeader.forwardButton\n\t\t\t7 button (disabled) sidebar forward\n\t\t8 button sidebarHeader.refreshButton\n\t\t\t9 button\n\t\t10 text Value: woodnotfound.github.io, Placeholder: Search or Enter URL, ID: sidebarHeader.addressView\n\t\t11 container\n\t\t\t12 button Default\n\t\t\t13 button TC-QA-PHI507-r2\n\t\t\t14 button TC-QA-PHI507-r2-SET-08-COMMON-S1\n\t\t\t15 button TC-QA-PHI507-r2-SET-08-COMMON-S2\n\t\t\t16 button TC-PHI507-r2-Recovery\n\t\t17 image favorite\n\t\t18 text Drag tabs here or pin them from the tab list\n\t\t19 scroll area\n\t\t\t20 outline sidebarTabList\n\t\t\t\t21 row (selectable) New Tab\n\t\t\t\t22 row (selectable) Description: Website, Value: TC-A · TC-PHI507-r2-DBL-08-PER\n\t\t\t\t23 row (selected) Description: Website, Value: TC-B · TC-PHI507-r2-DBL-08-PER\n\t\t\t\t24 row (selectable) Description: Website, Value: TC-C · TC-PHI507-r2-DBL-08-PER\n\t\t25 container sidebar.footer\n\t\t\t26 button Description: Profile menu, ID: profile.menuButton\n\t\t\t27 button\n\t\t28 splitter (disabled, settable, float) 193\n\t29 close button\n\t30 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window\n\t31 minimize button\n32 menu bar\n\t33 Phi\n\t34 File\n\t35 Edit\n\t36 View\n\t37 Spaces\n\t38 History\n\t39 Bookmarks\n\t40 Tab\n\t41 Window\n\t42 Help\n\t43 *DEBUG*\n"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "drag",
+      "status": "completed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "from_x": 190,
+        "from_y": 428,
+        "to_x": 190,
+        "to_y": 770
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 891630708
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.phibrowser.opensource.Mac (pid 71817)\nWindow: \"TC-B · TC-PHI507-r2-DBL-08-PER-R2\", App: Phi Tab Close QA.\n0 standard window TC-B · TC-PHI507-r2-DBL-08-PER-R2, Secondary Actions: Raise\n\t1 split group\n\t\t2 button sidebarHeader.sidebarButton\n\t\t\t3 button left sidebar toggle\n\t\t4 button sidebarHeader.backButton\n\t\t\t5 button sidebar backward\n\t\t6 button sidebarHeader.forwardButton\n\t\t\t7 button (disabled) sidebar forward\n\t\t8 button sidebarHeader.refreshButton\n\t\t\t9 button\n\t\t10 text Value: woodnotfound.github.io, Placeholder: Search or Enter URL, ID: sidebarHeader.addressView\n\t\t11 container\n\t\t\t12 button Default\n\t\t\t13 button TC-QA-PHI507-r2\n\t\t\t14 button TC-QA-PHI507-r2-SET-08-COMMON-S1\n\t\t\t15 button TC-QA-PHI507-r2-SET-08-COMMON-S2\n\t\t\t16 button TC-PHI507-r2-Recovery\n\t\t17 image favorite\n\t\t18 text Drag tabs here or pin them from the tab list\n\t\t19 scroll area\n\t\t\t20 outline sidebarTabList\n\t\t\t\t21 row (selectable) New Tab\n\t\t\t\t22 row (selectable) Description: Website, Value: TC-A · TC-PHI507-r2-DBL-08-PER-R2\n\t\t\t\t23 row (selected) Description: Website, Value: TC-B · TC-PHI507-r2-DBL-08-PER-R2\n\t\t\t\t24 row (selectable) Description: Website, Value: TC-C · TC-PHI507-r2-DBL-08-PER-R2\n\t\t25 container sidebar.footer\n\t\t\t26 button Description: Profile menu, ID: profile.menuButton\n\t\t\t27 button\n\t\t28 splitter (disabled, settable, float) 193\n\t29 close button\n\t30 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window\n\t31 minimize button\n32 menu bar\n\t33 Phi\n\t34 File\n\t35 Edit\n\t36 View\n\t37 Spaces\n\t38 History\n\t39 Bookmarks\n\t40 Tab\n\t41 Window\n\t42 Help\n\t43 *DEBUG*\n"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "drag",
+      "status": "completed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "from_x": 190,
+        "from_y": 355,
+        "to_x": 190,
+        "to_y": 730
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 973040583
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.phibrowser.opensource.Mac (pid 71817)\nWindow: \"TC-B · TC-PHI507-r2-DBL-08-BAL\", App: Phi Tab Close QA.\n0 standard window TC-B · TC-PHI507-r2-DBL-08-BAL, Secondary Actions: Raise\n\t1 split group\n\t\t2 button sidebarHeader.sidebarButton\n\t\t\t3 button left sidebar toggle\n\t\t4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton\n\t\t\t5 button left sidebar search tab\n\t\t6 container\n\t\t\t7 button Default\n\t\t\t8 button TC-QA-PHI507-r2\n\t\t\t9 button TC-QA-PHI507-r2-SET-08-COMMON-S1\n\t\t\t10 button TC-QA-PHI507-r2-SET-08-COMMON-S2\n\t\t\t11 button TC-PHI507-r2-Recovery\n\t\t12 image favorite\n\t\t13 text Drag tabs here or pin them from the tab list\n\t\t14 scroll area\n\t\t\t15 outline sidebarTabList\n\t\t\t\t16 row (selectable) New Tab\n\t\t\t\t17 row (selectable) Description: Website, Value: TC-A · TC-PHI507-r2-DBL-08-BAL\n\t\t\t\t18 row (selected) Description: Website, Value: TC-B · TC-PHI507-r2-DBL-08-BAL\n\t\t\t\t19 row (selectable) Description: Website, Value: TC-C · TC-PHI507-r2-DBL-08-BAL\n\t\t20 container sidebar.footer\n\t\t\t21 button Description: Profile menu, ID: profile.menuButton\n\t\t\t22 button\n\t\t23 splitter (disabled, settable, float) 193\n\t\t24 container\n\t\t\t25 button Description: Back, ID: chevron.left\n\t\t\t26 button (disabled) Description: Forward, ID: chevron.right\n\t\t\t27 button Refresh\n\t\t\t28 text woodnotfound.github.io\n\t\t\t29 button Extensions\n\t30 close button\n\t31 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window\n\t32 minimize button\n33 menu bar\n\t34 Phi\n\t35 File\n\t36 Edit\n\t37 View\n\t38 Spaces\n\t39 History\n\t40 Bookmarks\n\t41 Tab\n\t42 Window\n\t43 Help\n\t44 *DEBUG*\n"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "drag",
+      "status": "completed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "from_x": 800,
+        "from_y": 44,
+        "to_x": 280,
+        "to_y": 44
+      },
+      "duration": {
+        "secs": 1,
+        "nanos": 285533000
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.phibrowser.opensource.Mac (pid 71817)\nWindow: \"New Tab\", App: Phi Tab Close QA.\n0 standard window New Tab, Secondary Actions: Raise\n\t1 split group\n\t\t2 container\n\t\t\t3 button (disabled) Description: Back, ID: chevron.left\n\t\t\t4 button (disabled) Description: Forward, ID: chevron.right\n\t\t\t5 button Refresh\n\t\t\t6 button Extensions\n\t\t\t7 button\n\t\t8 container\n\t\t\t9 button Description: Search Tabs, ID: tabStrip.searchTabsButton\n\t\t\t10 button Description: Profile menu, ID: profile.menuButton\n\t\t11 image Spaces\n\t\t12 button Description: TC-A · TC-PHI507-r2-DBL-08-COM, ID: tabStripTab\n\t\t\t13 image Website\n\t\t\t14 text TC-A · TC-PHI507-r2-DBL-08-COM\n\t\t15 button Description: TC-B · TC-PHI507-r2-DBL-08-COM, Value: splitPair, ID: tabStripTab\n\t\t\t16 image Website\n\t\t\t17 image phi default favicon\n\t\t\t18 text TC-B · TC-PHI507-r2-DBL-08-COM\n\t\t\t19 text New Tab\n\t\t20 button Description: TC-C · TC-PHI507-r2-DBL-08-COM, ID: tabStripTab\n\t\t\t21 image Website\n\t\t\t22 text TC-C · TC-PHI507-r2-DBL-08-COM\n\t\t23 image New Tab\n\t24 close button\n\t25 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window\n\t26 minimize button\n27 menu bar\n\t28 Phi\n\t29 File\n\t30 Edit\n\t31 View\n\t32 Spaces\n\t33 History\n\t34 Bookmarks\n\t35 Tab\n\t36 Window\n\t37 Help\n\t38 *DEBUG*\n"
+      ]
+    }
+  ],
+  "source_round": 2,
+  "recovery_round": 3,
+  "acceptance_execution": false,
+  "interpretation": "恢复的是r2已经发生的四次CU drag工具返回，不是r3重跑。返回status均completed、含原生状态，未报告错误；返回成功不证明重排完成，仍保留DBL08为部分执行。"
+}

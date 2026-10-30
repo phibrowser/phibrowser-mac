@@ -1,0 +1,1023 @@
+我会按本轮实际界面重新读取布局和快捷键，再通过原生 Spaces 创建并切换到 `TC-QA-PHI507-r2`，只记录观察结果，不改设置或绑定。
+
+
+Computer Use state (CUA App Version: 1001425)
+<app_specific_instructions>
+## Browser Computer Use
+
+When navigating to a new website or starting a separate web task, prefer opening a new tab instead of reusing the current tab; reuse the current tab only when the user explicitly asks to continue there or when the current page is clearly the right place to continue the existing workflow.
+</app_specific_instructions>
+<app_state>
+App=/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 46074)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+	1 scroll area Secondary Actions: Scroll Up, Scroll Down
+		2 text Always show full URL
+		3 toggle button off
+		4 text Show a preview card when hovering over a tab
+		5 toggle button on
+		6 text Show open tab indicators
+		7 toggle button off
+		8 text Show a dot on inactive pinned tabs and bookmarks that are currently open. Show unloaded tab indicators
+		9 toggle button on
+		10 text Show a dashed outline around tab icons when their pages are unloaded from memory. Double-click to close tabs Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions.
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		12 text Close tabs by position Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar.
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+		14 text Restore last session
+		15 toggle button on
+		16 text Reopen your windows and tabs the next time you open Phi. Shorten links to selected text
+		17 toggle button on
+		18 text Applies to “Copy Link to Highlight” in the right-click menu. Turn off to copy the full link. Mini Player Control media playing in background tabs from the sidebar.
+		19 pop up button Description: Mini Player, Value: Auto, ID: settings.sidebarMedia.presentation
+		20 text Auto picture-in-picture Pop out playing video when you switch tabs or apps
+		21 pop up button Normal
+		22 text Developer mode
+		23 toggle button on
+		24 text Agent access, permissions, and the password manager live in the Developer tab.
+		25 button Additional browser settings
+		26 scroll bar (settable, float) 0
+			27 value indicator (settable, float) 0
+			28 increment arrow button
+			29 decrement arrow button
+			30 increment page button
+			31 decrement page button
+	32 toolbar
+		33 button Guest, Secondary Actions: Move next, Remove from toolbar
+		34 button General, Secondary Actions: Move previous, Move next, Remove from toolbar
+		35 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar
+		36 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar
+		37 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar
+		38 button Phi & AI, Secondary Actions: Move previous, Move next, Remove from toolbar
+		39 button Sync, Secondary Actions: Move previous, Move next, Remove from toolbar
+		40 button Shortcuts, Secondary Actions: Move previous, Move next, Remove from toolbar
+		41 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+		42 button Developer, Secondary Actions: Move previous, Remove from toolbar
+	43 close button
+	44 zoom button (disabled)
+	45 text Advanced
+46 menu bar
+	47 Phi
+	48 File
+	49 Edit
+	50 View
+	51 Spaces
+	52 History
+	53 Bookmarks
+	54 Tab
+	55 Window
+	56 Help
+	57 *DEBUG*
+
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise
+</app_state>
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "General", App: Phi Tab Close QA.
+0 standard window General, Secondary Actions: Raise
+	1 scroll area Secondary Actions: Scroll Up, Scroll Down
+		2 text Language Display language
+		3 pop up button System Default
+		4 text Theme
+		5 button Description: Color, ID: settings.theme.colorPicker
+		6 text Apply theme to text selection on web pages
+		7 toggle button on
+		8 text Appearance Layout mode
+		9 button Balanced
+		10 button Performance
+		11 button Comfortable
+		12 text Color appearance
+		13 button System
+		14 button Light
+		15 button Dark
+		16 text Browsing New tab behavior
+		17 button New Tab Page
+		18 button Omnibox
+		19 text Folio Save pages to Each save writes a markdown article and a webpage copy side by side. Profiles can override this folder in their own settings.
+		20 button PhiFolio
+		21 text Save when you like or bookmark on supported sites Liking a YouTube video or bookmarking on X, Reddit, or Stack Overflow also saves that page here. Everything stays on this Mac.
+		22 toggle button off
+		23 link (disabled) Choose sites…
+		24 text Profile
+		25 image Description: Search, ID: magnifyingglass
+		26 text Search Engine
+		27 menu button Google
+		28 menu button Description: Up And Down Chevrons, ID: chevron.up.chevron.down
+		29 image Description: End, ID: arrow.down.to.line
+		30 text Download Location
+		31 button Downloads
+		32 text Content blocking
+		33 image Description: Block, ID: hand.raised.fill
+		34 text Block ads
+		35 button Description: Edit, Help: Choose and download rule sets, ID: slider.horizontal.3
+		36 toggle button off
+		37 image Description: Find Items, ID: circle.grid.2x2.fill
+		38 text Block cookie banners
+		39 button Description: Edit, Help: Choose and download rule sets, ID: slider.horizontal.3
+		40 toggle button off
+		41 image Description: Reading List, ID: eyeglasses
+		42 text Block trackers
+		43 button Description: Edit, Help: Choose and download rule sets, ID: slider.horizontal.3
+		44 toggle button off
+		45 text Your Data and Settings
+		46 button Privacy and Security
+		47 button Notifications
+		48 button Clear Browsing Data
+		49 scroll bar (settable, float) 0
+			50 value indicator (settable, float) 0
+			51 increment arrow button
+			52 decrement arrow button
+			53 increment page button
+			54 decrement page button
+	55 toolbar
+		56 button Guest, Secondary Actions: Move next, Remove from toolbar
+		57 button General, Secondary Actions: Move previous, Move next, Remove from toolbar
+		58 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar
+		59 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar
+		60 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar
+		61 button Phi & AI, Secondary Actions: Move previous, Move next, Remove from toolbar
+		62 button Sync, Secondary Actions: Move previous, Move next, Remove from toolbar
+		63 button Shortcuts, Secondary Actions: Move previous, Move next, Remove from toolbar
+		64 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+		65 button Developer, Secondary Actions: Move previous, Remove from toolbar
+	66 close button
+	67 zoom button (disabled)
+	68 text General
+69 menu bar
+	70 Phi
+	71 File
+	72 Edit
+	73 View
+	74 Spaces
+	75 History
+	76 Bookmarks
+	77 Tab
+	78 Window
+	79 Help
+	80 *DEBUG*
+
+The focused UI element is 0 standard window General, Secondary Actions: Raise
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Shortcuts", App: Phi Tab Close QA.
+0 standard window Shortcuts, Secondary Actions: Raise
+	1 container
+		2 image Description: Search, ID: magnifyingglass
+		3 text field (settable) Help: Search by name or keys, such as cmd ctrl S or ⌘⌃S., Placeholder: Find shortcut keys, ID: shortcuts.search
+		4 menu button Description: Filter Shortcuts, Value: All Shortcuts, ID: shortcuts.filter
+		5 text Shortcuts
+		6 button Reset All to Defaults
+		7 scroll area Secondary Actions: Scroll Up, Scroll Down
+			8 list shortcuts.list
+				9 row (selectable) App
+				10 row (selected) Description: ⌘,, Value: Settings
+				11 row (selectable) File
+				12 row (selectable) Description: ⌘T, Value: New Tab
+				13 row (selectable) Description: ⌘N, Value: New Window
+				14 row (selectable) Description: ⇧⌘N, Value: New Incognito Window
+				15 row (selectable) Description: ⌥⌘N, Value: New Kiosk Window
+				16 row (selectable) Description: ⌃⇧N, Value: New Incognito Space
+				17 row (selectable) Description: ⇧⌘T, Value: Reopen Closed Tab
+				18 row (selectable) Description: ⌘O, Value: Open File…
+				19 row (selectable) Description: ⌘L, Value: Focus Address Bar
+				20 row (selectable) Description: ⇧⌘W, Value: Close Window
+				21 row (selectable) Description: ⌘W, Value: Close Tab
+				22 row (selectable) Description: ⇧⌘1, Value: Capture Full Page
+				23 row (selectable) Description: ⇧⌘2, Value: Capture Area…
+				24 row (selectable) Description: ⌃⌥S, Value: Share Page
+				25 row (selectable) Description: ⌥⌘S, Value: Save to Folio
+				26 row (selectable) Description: ⌘P, Value: Print…
+				27 row (selectable) Description: Add New, Value: Save Page
+				28 row (selectable) Description: ⌥⌘P, Value: Basic Print
+				29 row (selectable) Edit
+				30 row (selectable) Description: ⇧⌘C, Value: Copy URL
+				31 row (selectable) Description: ⌘F, Value: Find
+				32 row (selectable) Description: ⌘G, Value: Find Next
+				33 row (selectable) Description: ⇧⌘G, Value: Find Previous
+				34 row (selectable) Description: ⌘E, Value: Use Selection for Find
+				35 row (selectable) Description: ⌘J, Value: Jump to Selection
+				36 row (selectable) Description: ⌥⌘F, Value: Search the Web...
+				37 row (selectable) View
+				38 row (selectable) Description: ⌘., Value: Stop
+				39 row (selectable) Description: ⌘R, Value: Reload Page
+				40 row (selectable) Description: ⇧⌘R, Value: Force Reload Page
+				41 row (selectable) Description: ⌘0, Value: Zoom Normal
+				42 row (selectable) Description: ⌘+, Value: Zoom Plus
+				43 row (selectable) Description: ⌘-, Value: Zoom Minus
+				44 row (selectable) Description: ⌥⌘U, Value: View Page Source
+				45 row (selectable) Description: ⌥⌘I, Value: Open DevTools
+				46 row (selectable) Description: ⌥⌘C, Value: Dev Tools Inspect
+				47 row (selectable) Description: ⌥⌘J, Value: Dev Tools Console
+				48 row (selectable) Description: ⌘S, Value: Toggle Sidebar
+				49 row (selectable) Description: ⇧⌘S, Value: Toggle Chatbar
+				50 row (selectable) Description: ⌥⌘R, Value: Toggle Reader View
+				51 row (selectable) Description: ⇧⌘O, Value: New Conversation
+				52 row (selectable) Description: ⌃⌘F, Value: Full Screen
+				53 row (selectable) History
+				54 row (selectable) Description: ⇧⌘H, Value: Home
+				55 row (selectable) Description: ⌘[, Value: Back
+				56 row (selectable) Description: ⌘], Value: Forward
+				57 row (selectable) Description: ⌘Y, Value: Show History
+				58 row (selectable) Description: ⇧⌘⌫, Value: Clear Browsing Data
+				59 row (selectable) Bookmarks
+				60 row (selectable) Description: ⇧⌘B, Value: Toggle Bookmark Bar
+				61 row (selectable) Description: ⌘D, Value: Bookmark Tab
+				62 row (selectable) Description: ⇧⌘D, Value: Bookmark All Tabs
+				63 row (selectable) Description: ⌥⌘B, Value: Bookmark Manager
+				64 row (selectable) Window
+				65 row (selectable) Description: Add New, Value: Extensions
+				66 row (selectable) Description: ⇧⌘J, Value: Downloads
+				67 row (selectable) Tab
+				68 row (selectable) Description: ⌃⇥, Value: Show Tab Switcher
+				69 row (selectable) Description: ⌃⇧⇥, Value: Show Tab Switcher(Reverse)
+				70 row (selectable) Description: ⌃⇧=, Value: Split with New Tab
+				71 row (selectable) Description: ⇧⌘], Value: Select Next Tab
+				72 row (selectable) Description: ⇧⌘[, Value: Select Previous Tab
+				73 row (selectable) Description: ⌃⇧⇞, Value: Move Tab Left
+				74 row (selectable) Description: ⌃⇧⇟, Value: Move Tab Right
+				75 row (selectable) Description: ⌘1, Value: Select Tab 1
+				76 row (selectable) Description: ⌘2, Value: Select Tab 2
+				77 row (selectable) Description: ⌘3, Value: Select Tab 3
+				78 row (selectable) Description: ⌘4, Value: Select Tab 4
+				79 row (selectable) Description: ⌘5, Value: Select Tab 5
+				80 row (selectable) Description: ⌘6, Value: Select Tab 6
+				81 row (selectable) Description: ⌘7, Value: Select Tab 7
+				82 row (selectable) Description: ⌘8, Value: Select Tab 8
+				83 row (selectable) Description: ⌘9, Value: Select Last Tab
+				84 row (selectable) Description: Add New, Value: Duplicate Tab
+				85 row (selectable) Description: Add New, Value: Mute Site
+				86 row (selectable) Description: ⌃⇧G, Value: Organize Tabs with AI
+				87 row (selectable) Description: ⇧⌘A, Value: Tab Search
+				88 row (selectable) Description: ⌃⌘P, Value: Create New Tab Group
+				89 row (selectable) Description: ⌃⌘C, Value: Add New Tab to Group
+				90 row (selectable) Description: ⌃⌘Z, Value: Focus Previous Tab Group
+				91 row (selectable) Description: ⌃⌘X, Value: Focus Next Tab Group
+				92 row (selectable) Description: ⌃⌘W, Value: Close Tab Group
+				93 row (selectable) Spaces
+				94 row (selectable) Description: ⌥⌘→, Value: Next Space
+				95 row (selectable) Description: ⌥⌘←, Value: Previous Space
+				96 row (selectable) Description: ⌃1, Value: Go to Space "Default"
+				97 row (selectable) Description: Kiosk & Peek, Value: Only work in Peek or Kiosk windows.
+				98 row (selectable) Description: ⌘O, Value: Open Kiosk or Peek in current Space
+				99 row (selectable) Description: ⇧⌘O, Value: Show Kiosk "Open in" Menu
+				100 row (selectable) Other
+				101 row (selectable) Description: ⌥⇧⌘I, Value: Send Feedback
+			102 scroll bar (settable, float) 0
+				103 value indicator (settable, float) 0
+				104 increment arrow button
+				105 decrement arrow button
+				106 increment page button
+				107 decrement page button
+		108 scroll area shortcuts.detail.40015
+			109 button Description: ⌘,, ID: shortcuts.record.40015
+			110 text Click the shortcut to record a new combination. Settings Open Phi settings.
+			111 button (disabled) Description: Reset, ID: shortcuts.restore.40015
+	112 toolbar
+		113 button Guest, Secondary Actions: Move next, Remove from toolbar
+		114 button General, Secondary Actions: Move previous, Move next, Remove from toolbar
+		115 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar
+		116 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar
+		117 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar
+		118 button Phi & AI, Secondary Actions: Move previous, Move next, Remove from toolbar
+		119 button Sync, Secondary Actions: Move previous, Move next, Remove from toolbar
+		120 button Shortcuts, Secondary Actions: Move previous, Move next, Remove from toolbar
+		121 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+		122 button Developer, Secondary Actions: Move previous, Remove from toolbar
+	123 close button
+	124 zoom button (disabled)
+	125 text Shortcuts
+126 menu bar
+	127 Phi
+	128 File
+	129 Edit
+	130 View
+	131 Spaces
+	132 History
+	133 Bookmarks
+	134 Tab
+	135 Window
+	136 Help
+	137 *DEBUG*
+
+The focused UI element is 0 standard window Shortcuts, Secondary Actions: Raise
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Shortcuts", App: Phi Tab Close QA.
+0 standard window Shortcuts, Secondary Actions: Raise
+	1 container
+		2 image Description: Search, ID: magnifyingglass
+		3 text field (settable) Help: Search by name or keys, such as cmd ctrl S or ⌘⌃S., Placeholder: Find shortcut keys, ID: shortcuts.search
+		4 menu button Description: Filter Shortcuts, Value: All Shortcuts, ID: shortcuts.filter
+		5 text Shortcuts
+		6 button Reset All to Defaults
+		7 scroll area Secondary Actions: Scroll Up, Scroll Down
+			8 list shortcuts.list
+				9 row (selectable) App
+				10 row (selected) Description: ⌘,, Value: Settings
+				11 row (selectable) File
+				12 row (selectable) Description: ⌘T, Value: New Tab
+				13 row (selectable) Description: ⌘N, Value: New Window
+				14 row (selectable) Description: ⇧⌘N, Value: New Incognito Window
+				15 row (selectable) Description: ⌥⌘N, Value: New Kiosk Window
+				16 row (selectable) Description: ⌃⇧N, Value: New Incognito Space
+				17 row (selectable) Description: ⇧⌘T, Value: Reopen Closed Tab
+				18 row (selectable) Description: ⌘O, Value: Open File…
+				19 row (selectable) Description: ⌘L, Value: Focus Address Bar
+				20 row (selectable) Description: ⇧⌘W, Value: Close Window
+				21 row (selectable) Description: ⌘W, Value: Close Tab
+				22 row (selectable) Description: ⇧⌘1, Value: Capture Full Page
+				23 row (selectable) Description: ⇧⌘2, Value: Capture Area…
+				24 row (selectable) Description: ⌃⌥S, Value: Share Page
+				25 row (selectable) Description: ⌥⌘S, Value: Save to Folio
+				26 row (selectable) Description: ⌘P, Value: Print…
+				27 row (selectable) Description: Add New, Value: Save Page
+				28 row (selectable) Description: ⌥⌘P, Value: Basic Print
+				29 row (selectable) Edit
+				30 row (selectable) Description: ⇧⌘C, Value: Copy URL
+				31 row (selectable) Description: ⌘F, Value: Find
+				32 row (selectable) Description: ⌘G, Value: Find Next
+				33 row (selectable) Description: ⇧⌘G, Value: Find Previous
+				34 row (selectable) Description: ⌘E, Value: Use Selection for Find
+				35 row (selectable) Description: ⌘J, Value: Jump to Selection
+				36 row (selectable) Description: ⌥⌘F, Value: Search the Web...
+				37 row (selectable) View
+				38 row (selectable) Description: ⌘., Value: Stop
+				39 row (selectable) Description: ⌘R, Value: Reload Page
+				40 row (selectable) Description: ⇧⌘R, Value: Force Reload Page
+				41 row (selectable) Description: ⌘0, Value: Zoom Normal
+				42 row (selectable) Description: ⌘+, Value: Zoom Plus
+				43 row (selectable) Description: ⌘-, Value: Zoom Minus
+				44 row (selectable) Description: ⌥⌘U, Value: View Page Source
+				45 row (selectable) Description: ⌥⌘I, Value: Open DevTools
+				46 row (selectable) Description: ⌥⌘C, Value: Dev Tools Inspect
+				47 row (selectable) Description: ⌥⌘J, Value: Dev Tools Console
+				48 row (selectable) Description: ⌘S, Value: Toggle Sidebar
+				49 row (selectable) Description: ⇧⌘S, Value: Toggle Chatbar
+				50 row (selectable) Description: ⌥⌘R, Value: Toggle Reader View
+				51 row (selectable) Description: ⇧⌘O, Value: New Conversation
+				52 row (selectable) Description: ⌃⌘F, Value: Full Screen
+				53 row (selectable) History
+				54 row (selectable) Description: ⇧⌘H, Value: Home
+				55 row (selectable) Description: ⌘[, Value: Back
+				56 row (selectable) Description: ⌘], Value: Forward
+				57 row (selectable) Description: ⌘Y, Value: Show History
+				58 row (selectable) Description: ⇧⌘⌫, Value: Clear Browsing Data
+				59 row (selectable) Bookmarks
+				60 row (selectable) Description: ⇧⌘B, Value: Toggle Bookmark Bar
+				61 row (selectable) Description: ⌘D, Value: Bookmark Tab
+				62 row (selectable) Description: ⇧⌘D, Value: Bookmark All Tabs
+				63 row (selectable) Description: ⌥⌘B, Value: Bookmark Manager
+				64 row (selectable) Window
+				65 row (selectable) Description: Add New, Value: Extensions
+				66 row (selectable) Description: ⇧⌘J, Value: Downloads
+				67 row (selectable) Tab
+				68 row (selectable) Description: ⌃⇥, Value: Show Tab Switcher
+				69 row (selectable) Description: ⌃⇧⇥, Value: Show Tab Switcher(Reverse)
+				70 row (selectable) Description: ⌃⇧=, Value: Split with New Tab
+				71 row (selectable) Description: ⇧⌘], Value: Select Next Tab
+				72 row (selectable) Description: ⇧⌘[, Value: Select Previous Tab
+				73 row (selectable) Description: ⌃⇧⇞, Value: Move Tab Left
+				74 row (selectable) Description: ⌃⇧⇟, Value: Move Tab Right
+				75 row (selectable) Description: ⌘1, Value: Select Tab 1
+				76 row (selectable) Description: ⌘2, Value: Select Tab 2
+				77 row (selectable) Description: ⌘3, Value: Select Tab 3
+				78 row (selectable) Description: ⌘4, Value: Select Tab 4
+				79 row (selectable) Description: ⌘5, Value: Select Tab 5
+				80 row (selectable) Description: ⌘6, Value: Select Tab 6
+				81 row (selectable) Description: ⌘7, Value: Select Tab 7
+				82 row (selectable) Description: ⌘8, Value: Select Tab 8
+				83 row (selectable) Description: ⌘9, Value: Select Last Tab
+				84 row (selectable) Description: Add New, Value: Duplicate Tab
+				85 row (selectable) Description: Add New, Value: Mute Site
+				86 row (selectable) Description: ⌃⇧G, Value: Organize Tabs with AI
+				87 row (selectable) Description: ⇧⌘A, Value: Tab Search
+				88 row (selectable) Description: ⌃⌘P, Value: Create New Tab Group
+				89 row (selectable) Description: ⌃⌘C, Value: Add New Tab to Group
+				90 row (selectable) Description: ⌃⌘Z, Value: Focus Previous Tab Group
+				91 row (selectable) Description: ⌃⌘X, Value: Focus Next Tab Group
+				92 row (selectable) Description: ⌃⌘W, Value: Close Tab Group
+				93 row (selectable) Spaces
+				94 row (selectable) Description: ⌥⌘→, Value: Next Space
+				95 row (selectable) Description: ⌥⌘←, Value: Previous Space
+				96 row (selectable) Description: ⌃1, Value: Go to Space "Default"
+				97 row (selectable) Description: Kiosk & Peek, Value: Only work in Peek or Kiosk windows.
+				98 row (selectable) Description: ⌘O, Value: Open Kiosk or Peek in current Space
+				99 row (selectable) Description: ⇧⌘O, Value: Show Kiosk "Open in" Menu
+				100 row (selectable) Other
+				101 row (selectable) Description: ⌥⇧⌘I, Value: Send Feedback
+			102 scroll bar (settable, float) 0
+				103 value indicator (settable, float) 0
+				104 increment arrow button
+				105 decrement arrow button
+				106 increment page button
+				107 decrement page button
+		108 scroll area shortcuts.detail.40015
+			109 button Description: ⌘,, ID: shortcuts.record.40015
+			110 text Click the shortcut to record a new combination. Settings Open Phi settings.
+			111 button (disabled) Description: Reset, ID: shortcuts.restore.40015
+	112 toolbar
+		113 button Guest, Secondary Actions: Move next, Remove from toolbar
+		114 button General, Secondary Actions: Move previous, Move next, Remove from toolbar
+		115 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar
+		116 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar
+		117 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar
+		118 button Phi & AI, Secondary Actions: Move previous, Move next, Remove from toolbar
+		119 button Sync, Secondary Actions: Move previous, Move next, Remove from toolbar
+		120 button Shortcuts, Secondary Actions: Move previous, Move next, Remove from toolbar
+		121 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+		122 button Developer, Secondary Actions: Move previous, Remove from toolbar
+	123 close button
+	124 zoom button (disabled)
+	125 text Shortcuts
+126 menu bar
+	127 Phi
+	128 File
+	129 Edit
+	130 View
+	131 Spaces
+	132 History
+	133 Bookmarks
+	134 Tab
+	135 Window
+	136 Help
+	137 *DEBUG*
+
+The focused UI element is 3 text field (settable) Help: Search by name or keys, such as cmd ctrl S or ⌘⌃S., Placeholder: Find shortcut keys, ID: shortcuts.search
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Shortcuts", App: Phi Tab Close QA.
+0 standard window Shortcuts, Secondary Actions: Raise
+	1 container
+		2 image Description: Search, ID: magnifyingglass
+		3 text field (settable) Help: Search by name or keys, such as cmd ctrl S or ⌘⌃S., Value: Close, Placeholder: Find shortcut keys, ID: shortcuts.search
+		4 menu button Description: Filter Shortcuts, Value: All Shortcuts, ID: shortcuts.filter
+		5 text Shortcuts
+		6 button Reset All to Defaults
+		7 scroll area
+			8 list shortcuts.list
+				9 row (selectable) File
+				10 row (selected) Description: ⇧⌘T, Value: Reopen Closed Tab
+				11 row (selectable) Description: ⇧⌘W, Value: Close Window
+				12 row (selectable) Description: ⌘W, Value: Close Tab
+				13 row (selectable) Tab
+				14 row (selectable) Description: ⌃⌘W, Value: Close Tab Group
+		15 scroll area shortcuts.detail.34028
+			16 button Description: ⇧⌘T, ID: shortcuts.record.34028
+			17 text Click the shortcut to record a new combination. Reopen Closed Tab Reopen the most recently closed tab.
+			18 button (disabled) Description: Reset, ID: shortcuts.restore.34028
+	19 toolbar
+		20 button Guest, Secondary Actions: Move next, Remove from toolbar
+		21 button General, Secondary Actions: Move previous, Move next, Remove from toolbar
+		22 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar
+		23 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar
+		24 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar
+		25 button Phi & AI, Secondary Actions: Move previous, Move next, Remove from toolbar
+		26 button Sync, Secondary Actions: Move previous, Move next, Remove from toolbar
+		27 button Shortcuts, Secondary Actions: Move previous, Move next, Remove from toolbar
+		28 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+		29 button Developer, Secondary Actions: Move previous, Remove from toolbar
+	30 close button
+	31 zoom button (disabled)
+	32 text Shortcuts
+33 menu bar
+	34 Phi
+	35 File
+	36 Edit
+	37 View
+	38 Spaces
+	39 History
+	40 Bookmarks
+	41 Tab
+	42 Window
+	43 Help
+	44 *DEBUG*
+
+The focused UI element is 3 text field (settable) Help: Search by name or keys, such as cmd ctrl S or ⌘⌃S., Value: Close, Placeholder: Find shortcut keys, ID: shortcuts.search
+
+General 实际选中的是 **Balanced**。Shortcuts 在 **All Shortcuts** 下搜索 `Close`，仅显示 Reopen Closed Tab、Close Window、Close Tab、Close Tab Group；未找到两个目标命令，因此它们的原绑定暂无法读取。接下来关闭 Settings 并建立本轮隔离 Space。
+
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Chrome Web Store", App: Phi Tab Close QA.
+0 standard window Chrome Web Store, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 collection
+		7 scroll area
+			8 outline sidebarTabList
+				9 row (selectable) New Tab
+				10 row (selected) Chrome Web Store
+		11 container sidebar.footer
+			12 button Description: Profile menu, ID: profile.menuButton
+			13 button
+		14 splitter (disabled, settable, float) 193
+		15 container
+			16 button Description: Back, ID: chevron.left
+			17 button (disabled) Description: Forward, ID: chevron.right
+			18 button Refresh
+			19 text chromewebstore.google.com
+			20 button Extensions
+	21 close button
+	22 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	23 minimize button
+24 menu bar
+	25 Phi
+	26 File
+	27 Edit
+	28 View
+	29 Spaces
+	30 History
+	31 Bookmarks
+	32 Tab
+	33 Window
+	34 Help
+	35 *DEBUG*
+
+The focused UI element is 0 standard window Chrome Web Store, Secondary Actions: Raise
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Chrome Web Store", App: Phi Tab Close QA.
+0 Spaces, Secondary Actions: Cancel, Pick
+	1 menu ID: phi.spaces.menu, Secondary Actions: Cancel
+		2 New Space…, ID: newSpaceFromMenu:
+		3 Rename Space…, ID: renameActiveSpace:
+		4 Edit Theme, ID: requestActiveSpaceThemeEditor:
+		5 Change Profile
+			6 menu Secondary Actions: Cancel
+				7 (disabled) Your Phi, ID: selectSpaceProfile:
+		8 (disabled) Delete Space…, ID: deleteActiveSpace:
+		9 (disabled) Next Space, ID: activateNextSpace:
+		10 (disabled) Previous Space, ID: activatePreviousSpace:
+		11 Default, ID: activateSpaceFromMenu:
+		12 URL Rules…, ID: openURLRulesEditor:
+		13 New Profile…, ID: newProfile:
+		14 Delete Profile
+			15 menu ID: phi.spaces.deleteProfile, Secondary Actions: Cancel
+				16 (disabled) No Profiles to Delete
+
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Chrome Web Store", App: Phi Tab Close QA.
+0 standard window Chrome Web Store, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 image phi-icon-letter-r
+		9 scroll area
+			10 text Create a Space Each space has its own independent bookmarks
+			11 text field (settable) Space name
+			12 text Profile
+			13 menu button Your Phi
+			14 button (selected) Icon
+			15 button Emoji
+			16 text field (settable) Search icons
+			17 scroll area Secondary Actions: Scroll Up, Scroll Down
+				18 collection Secondary Actions: AXScrollToTop, AXScrollToBottom
+					19 button Description: phi-icon-globe-alt, Help: globe-alt
+					20 button Description: phi-icon-sun, Help: sun
+					21 button Description: phi-icon-sparkles, Help: sparkles
+					22 button Description: phi-icon-credit-card, Help: credit-card
+					23 button Description: phi-icon-ticket, Help: ticket
+					24 button Description: phi-icon-moon, Help: moon
+					25 button Description: phi-icon-briefcase, Help: briefcase
+					26 button Description: phi-icon-archive, Help: archive
+					27 button Description: phi-icon-lock-closed, Help: lock-closed
+					28 button Description: phi-icon-office-building, Help: office-building
+					29 button Description: phi-icon-chart-pie, Help: chart-pie
+					30 button Description: phi-icon-shield-exclamation, Help: shield-exclamation
+					31 button Description: phi-icon-photograph, Help: photograph
+					32 button Description: phi-icon-cog, Help: cog
+					33 button Description: phi-icon-filter, Help: filter
+					34 button Description: phi-icon-qrcode, Help: qrcode
+					35 button Description: phi-icon-clipboard-list, Help: clipboard-list
+					36 button Description: phi-icon-lightning-bolt, Help: lightning-bolt
+					37 button Description: phi-icon-light-bulb, Help: light-bulb
+					38 button Description: phi-icon-view-grid-add, Help: view-grid-add
+					39 button Description: phi-icon-md-library, Help: md-library
+					40 button Description: phi-icon-play, Help: play
+					41 button Description: phi-icon-presentation-chart-line, Help: presentation-chart-line
+					42 button Description: phi-icon-chip, Help: chip
+					43 button Description: phi-icon-cube-transparent, Help: cube-transparent
+					44 button Description: phi-icon-search-circle, Help: search-circle
+					45 button Description: phi-icon-cloud, Help: cloud
+					46 button Description: phi-icon-academic-cap, Help: academic-cap
+					47 button Description: phi-icon-gift, Help: gift
+					48 button Description: phi-icon-truck, Help: truck
+					49 button Description: phi-icon-cake, Help: cake
+					50 button Description: phi-icon-beaker, Help: beaker
+					51 button Description: phi-icon-table, Help: table
+					52 button Description: phi-icon-paper-airplane, Help: paper-airplane
+					53 button Description: phi-icon-device-mobile, Help: device-mobile
+					54 button Description: phi-icon-music-note, Help: music-note
+					55 button Description: phi-icon-film, Help: film
+					56 button Description: phi-icon-database, Help: database
+					57 button Description: phi-icon-server, Help: server
+					58 button Description: phi-icon-identification, Help: identification
+					59 button Description: phi-icon-rss, Help: rss
+					60 button Description: phi-icon-map, Help: map
+					61 button Description: phi-icon-number-1, Help: 1
+					62 button Description: phi-icon-number-2, Help: 2
+					63 button Description: phi-icon-number-3, Help: 3
+					64 button Description: phi-icon-number-4, Help: 4
+					65 button Description: phi-icon-number-5, Help: 5
+					66 button Description: phi-icon-number-6, Help: 6
+					67 button Description: phi-icon-number-7, Help: 7
+					68 button Description: phi-icon-number-8, Help: 8
+					69 button Description: phi-icon-number-9, Help: 9
+					70 button Description: phi-icon-number-0, Help: 0
+					71 button Description: phi-icon-letter-a, Help: A
+					72 button Description: phi-icon-letter-b, Help: B
+					73 button Description: phi-icon-letter-c, Help: C
+					74 button Description: phi-icon-letter-d, Help: D
+					75 button Description: phi-icon-letter-e, Help: E
+					76 button Description: phi-icon-letter-f, Help: F
+					77 button Description: phi-icon-letter-g, Help: G
+					78 button Description: phi-icon-letter-h, Help: H
+					79 button Description: phi-icon-letter-i, Help: I
+					80 button Description: phi-icon-letter-j, Help: J
+					81 button Description: phi-icon-letter-k, Help: K
+					82 button Description: phi-icon-letter-l, Help: L
+					83 button Description: phi-icon-letter-m, Help: M
+					84 button Description: phi-icon-letter-n, Help: N
+					85 button Description: phi-icon-letter-o, Help: O
+					86 button Description: phi-icon-letter-p, Help: P
+					87 button Description: phi-icon-letter-q, Help: Q
+					88 button Description: phi-icon-letter-r, Help: R
+					89 button Description: phi-icon-letter-s, Help: S
+					90 button Description: phi-icon-letter-t, Help: T
+					91 button Description: phi-icon-letter-u, Help: U
+					92 button Description: phi-icon-letter-v, Help: V
+					93 button Description: phi-icon-letter-w, Help: W
+					94 button Description: phi-icon-letter-x, Help: X
+					95 button Description: phi-icon-letter-y, Help: Y
+					96 button Description: phi-icon-letter-z, Help: Z
+					97 button Description: phi-icon-question-mark, Help: ?
+					98 button Description: phi-icon-exclamation-mark, Help: !
+					99 button Description: phi-icon-tilde, Help: ~
+					100 button Description: phi-icon-backtick, Help: `
+				101 scroll bar (settable, float) 1
+					102 value indicator (settable, float) 1
+					103 increment arrow button
+					104 decrement arrow button
+					105 increment page button
+					106 decrement page button
+			107 button Description: Color, ID: sidebar.createSpace.colorPicker
+			108 button Create Space
+			109 button Cancel
+		110 splitter (disabled, settable, float) 193
+		111 container
+			112 button Description: Back, ID: chevron.left
+			113 button (disabled) Description: Forward, ID: chevron.right
+			114 button Refresh
+			115 text chromewebstore.google.com
+			116 button Extensions
+	117 close button
+	118 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	119 minimize button
+120 menu bar
+	121 Phi
+	122 File
+	123 Edit
+	124 View
+	125 Spaces
+	126 History
+	127 Bookmarks
+	128 Tab
+	129 Window
+	130 Help
+	131 *DEBUG*
+
+The focused UI element is 11 text field (settable) Space name
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Chrome Web Store", App: Phi Tab Close QA.
+0 standard window Chrome Web Store, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 image phi-icon-letter-r
+		9 scroll area
+			10 text Create a Space Each space has its own independent bookmarks
+			11 text field (settable) Value: TC-QA-PHI507-r2, Placeholder: Space name
+			12 text Profile
+			13 menu button Your Phi
+			14 button (selected) Icon
+			15 button Emoji
+			16 text field (settable) Search icons
+			17 scroll area Secondary Actions: Scroll Up, Scroll Down
+				18 collection Secondary Actions: AXScrollToTop, AXScrollToBottom
+					19 button Description: phi-icon-globe-alt, Help: globe-alt
+					20 button Description: phi-icon-sun, Help: sun
+					21 button Description: phi-icon-sparkles, Help: sparkles
+					22 button Description: phi-icon-credit-card, Help: credit-card
+					23 button Description: phi-icon-ticket, Help: ticket
+					24 button Description: phi-icon-moon, Help: moon
+					25 button Description: phi-icon-briefcase, Help: briefcase
+					26 button Description: phi-icon-archive, Help: archive
+					27 button Description: phi-icon-lock-closed, Help: lock-closed
+					28 button Description: phi-icon-office-building, Help: office-building
+					29 button Description: phi-icon-chart-pie, Help: chart-pie
+					30 button Description: phi-icon-shield-exclamation, Help: shield-exclamation
+					31 button Description: phi-icon-photograph, Help: photograph
+					32 button Description: phi-icon-cog, Help: cog
+					33 button Description: phi-icon-filter, Help: filter
+					34 button Description: phi-icon-qrcode, Help: qrcode
+					35 button Description: phi-icon-clipboard-list, Help: clipboard-list
+					36 button Description: phi-icon-lightning-bolt, Help: lightning-bolt
+					37 button Description: phi-icon-light-bulb, Help: light-bulb
+					38 button Description: phi-icon-view-grid-add, Help: view-grid-add
+					39 button Description: phi-icon-md-library, Help: md-library
+					40 button Description: phi-icon-play, Help: play
+					41 button Description: phi-icon-presentation-chart-line, Help: presentation-chart-line
+					42 button Description: phi-icon-chip, Help: chip
+					43 button Description: phi-icon-cube-transparent, Help: cube-transparent
+					44 button Description: phi-icon-search-circle, Help: search-circle
+					45 button Description: phi-icon-cloud, Help: cloud
+					46 button Description: phi-icon-academic-cap, Help: academic-cap
+					47 button Description: phi-icon-gift, Help: gift
+					48 button Description: phi-icon-truck, Help: truck
+					49 button Description: phi-icon-cake, Help: cake
+					50 button Description: phi-icon-beaker, Help: beaker
+					51 button Description: phi-icon-table, Help: table
+					52 button Description: phi-icon-paper-airplane, Help: paper-airplane
+					53 button Description: phi-icon-device-mobile, Help: device-mobile
+					54 button Description: phi-icon-music-note, Help: music-note
+					55 button Description: phi-icon-film, Help: film
+					56 button Description: phi-icon-database, Help: database
+					57 button Description: phi-icon-server, Help: server
+					58 button Description: phi-icon-identification, Help: identification
+					59 button Description: phi-icon-rss, Help: rss
+					60 button Description: phi-icon-map, Help: map
+					61 button Description: phi-icon-number-1, Help: 1
+					62 button Description: phi-icon-number-2, Help: 2
+					63 button Description: phi-icon-number-3, Help: 3
+					64 button Description: phi-icon-number-4, Help: 4
+					65 button Description: phi-icon-number-5, Help: 5
+					66 button Description: phi-icon-number-6, Help: 6
+					67 button Description: phi-icon-number-7, Help: 7
+					68 button Description: phi-icon-number-8, Help: 8
+					69 button Description: phi-icon-number-9, Help: 9
+					70 button Description: phi-icon-number-0, Help: 0
+					71 button Description: phi-icon-letter-a, Help: A
+					72 button Description: phi-icon-letter-b, Help: B
+					73 button Description: phi-icon-letter-c, Help: C
+					74 button Description: phi-icon-letter-d, Help: D
+					75 button Description: phi-icon-letter-e, Help: E
+					76 button Description: phi-icon-letter-f, Help: F
+					77 button Description: phi-icon-letter-g, Help: G
+					78 button Description: phi-icon-letter-h, Help: H
+					79 button Description: phi-icon-letter-i, Help: I
+					80 button Description: phi-icon-letter-j, Help: J
+					81 button Description: phi-icon-letter-k, Help: K
+					82 button Description: phi-icon-letter-l, Help: L
+					83 button Description: phi-icon-letter-m, Help: M
+					84 button Description: phi-icon-letter-n, Help: N
+					85 button Description: phi-icon-letter-o, Help: O
+					86 button Description: phi-icon-letter-p, Help: P
+					87 button Description: phi-icon-letter-q, Help: Q
+					88 button Description: phi-icon-letter-r, Help: R
+					89 button Description: phi-icon-letter-s, Help: S
+					90 button Description: phi-icon-letter-t, Help: T
+					91 button Description: phi-icon-letter-u, Help: U
+					92 button Description: phi-icon-letter-v, Help: V
+					93 button Description: phi-icon-letter-w, Help: W
+					94 button Description: phi-icon-letter-x, Help: X
+					95 button Description: phi-icon-letter-y, Help: Y
+					96 button Description: phi-icon-letter-z, Help: Z
+					97 button Description: phi-icon-question-mark, Help: ?
+					98 button Description: phi-icon-exclamation-mark, Help: !
+					99 button Description: phi-icon-tilde, Help: ~
+					100 button Description: phi-icon-backtick, Help: `
+				101 scroll bar (settable, float) 1
+					102 value indicator (settable, float) 1
+					103 increment arrow button
+					104 decrement arrow button
+					105 increment page button
+					106 decrement page button
+			107 button Description: Color, ID: sidebar.createSpace.colorPicker
+			108 button Create Space
+			109 button Cancel
+		110 splitter (disabled, settable, float) 193
+		111 container
+			112 button Description: Back, ID: chevron.left
+			113 button (disabled) Description: Forward, ID: chevron.right
+			114 button Refresh
+			115 text chromewebstore.google.com
+			116 button Extensions
+	117 close button
+	118 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	119 minimize button
+120 menu bar
+	121 Phi
+	122 File
+	123 Edit
+	124 View
+	125 Spaces
+	126 History
+	127 Bookmarks
+	128 Tab
+	129 Window
+	130 Help
+	131 *DEBUG*
+
+The focused UI element is 11 text field (settable) Value: TC-QA-PHI507-r2, Placeholder: Space name
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507-r2
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: phi default favicon, Value: New Tab
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Refresh
+			22 button Extensions
+	23 close button
+	24 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	25 minimize button
+26 menu bar
+	27 Phi
+	28 File
+	29 Edit
+	30 View
+	31 Spaces
+	32 History
+	33 Bookmarks
+	34 Tab
+	35 Window
+	36 Help
+	37 *DEBUG*
+
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "New Tab", App: Phi Tab Close QA.
+0 Bookmarks, Secondary Actions: Cancel, Pick
+	1 menu ID: phi.bookmarks.menu, Secondary Actions: Cancel
+		2 Bookmark This Tab..., ID: bookmarkThisTab:
+		3 (disabled) Bookmark All Tabs..., ID: bookmarkAllTabs:
+		4 Manage Bookmarks, ID: openBookmarkManager:
+		5 (disabled) Export Bookmarks..., ID: exportBookmarks:
+
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "New Tab", App: Phi Tab Close QA.
+0 Bookmarks, Secondary Actions: Cancel, Pick
+	1 menu ID: phi.bookmarks.menu, Secondary Actions: Cancel
+		2 Bookmark This Tab..., ID: bookmarkThisTab:
+		3 (disabled) Bookmark All Tabs..., ID: bookmarkAllTabs:
+		4 Manage Bookmarks, ID: openBookmarkManager:
+		5 (disabled) Export Bookmarks..., ID: exportBookmarks:
+
+
+Computer Use state (CUA App Version: 1001425)
+<app_state>
+App=/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 46074)
+Window: "New Tab", App: Phi Tab Close QA.
+0 Bookmarks, Secondary Actions: Cancel, Pick
+	1 menu ID: phi.bookmarks.menu, Secondary Actions: Cancel
+		2 Bookmark This Tab..., ID: bookmarkThisTab:
+		3 (disabled) Bookmark All Tabs..., ID: bookmarkAllTabs:
+		4 Manage Bookmarks, ID: openBookmarkManager:
+		5 (disabled) Export Bookmarks..., ID: exportBookmarks:
+
+</app_state>
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "New Tab", App: Phi Tab Close QA.
+0 Bookmarks, Secondary Actions: Cancel, Pick
+	1 menu ID: phi.bookmarks.menu, Secondary Actions: Cancel
+		2 Bookmark This Tab..., ID: bookmarkThisTab:
+		3 (disabled) Bookmark All Tabs..., ID: bookmarkAllTabs:
+		4 Manage Bookmarks, ID: openBookmarkManager:
+		5 (disabled) Export Bookmarks..., ID: exportBookmarks:
+
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507-r2
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: phi default favicon, Value: New Tab
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Refresh
+			22 button Extensions
+	23 close button
+	24 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	25 minimize button
+26 menu bar
+	27 Phi
+	28 File
+	29 Edit
+	30 View
+	31 Spaces
+	32 History
+	33 Bookmarks
+	34 Tab
+	35 Window
+	36 Help
+	37 *DEBUG*
+
+
+`TC-QA-PHI507-r2` 已创建，界面已切到新 Space，当前仅有一个选中的 `New Tab`。侧栏未显示保存项，Bookmarks 菜单也未列出已保存条目；新标签页另显示一个 `Chrome Web S...` 快捷入口。当前 Space 未见真实工作页面。
+
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507-r2
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: phi default favicon, Value: New Tab
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Refresh
+			22 button Extensions
+	23 close button
+	24 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	25 minimize button
+26 menu bar
+	27 Phi
+	28 File
+	29 Edit
+	30 View
+	31 Spaces
+	32 History
+	33 Bookmarks
+	34 Tab
+	35 Window
+	36 Help
+	37 *DEBUG*
+
+
+RESULT: 本轮重新观察，未沿用 r1 结果。
+
+| 项目 | 实际观察 |
+|---|---|
+| 当前布局 | General → Layout mode 中 **Balanced** 带蓝色选中边框。 |
+| Advanced 前置状态 | **Double-click to close tabs：off**；**Close tabs by position：on**。 |
+| Close Tabs to the Right 原绑定 | **未找到，无法读取原绑定**。Shortcuts 的过滤器为 **All Shortcuts**，完整列表及搜索 `Close` 的结果中均未出现该命令。 |
+| Close Other Tabs 原绑定 | **未找到，无法读取原绑定**。同上；不能据此认定为“未绑定”。 |
+| Space 创建结果 | 已关闭 Settings，经原生 **Spaces → New Space…** 创建 **TC-QA-PHI507-r2**，并切换至该 Space。创建时 Profile 显示 **Your Phi**。 |
+| 实际标签顺序／活动页 | 从上到下仅 **1 个实际标签：New Tab**，且为活动页。其上方的 **＋ New Tab** 是新建入口。 |
+| 原生保存项 | 当前 Space 侧栏保存项区域为空；Bookmarks 菜单未列出已保存条目，**Export Bookmarks…** 为禁用状态。 |
+| 新标签页可见入口 | 页面显示 **Chrome Web S...** 快捷入口及 **Add shortcut**；未点击。 |
+| 真实工作页面核对 | 当前隔离 Space 仅见原生 New Tab，未见真实工作页面。切换前 Default 中可见的活动页为 **Chrome Web Store**，未对该页面操作。 |
+| 剩余前置缺口 | 两个目标命令的原绑定仍无法确认，原因是本轮 Shortcuts 页未找到对应条目。 |
+
+本轮未导航网页、未关闭页面、未修改设置或快捷键绑定。关键状态及结束状态已返回 screenshot image；以上仅报告观察，不作 pass 判定。

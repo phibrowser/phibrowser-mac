@@ -1,0 +1,117 @@
+{
+  "base_case": "SET-03",
+  "ending_state": "固定应用 /Applications/Phi Tab Close QA.app。三个指定执行点均已执行并分别保留原生截图。最后按 reset 要求，通过新建 New Tab、原生 Close Other Tabs 和地址栏输入，重新建立 TC-PHI507-r2-SET-03-COM 批次的普通 A/B/C，屏幕最终顺序为从左到右 A/B/C，B 单独活动，未建立 split 或标签组。重置后的打开编号为 A=3446d383-7034-4e00-83bd-5083347e3a26、B=81947e7a-427c-402f-9125-159a40468d87、C=206e20e3-3f8f-4ca7-8b14-bb1817a50fdb，三个输入框均为空。最终布局为 Comfortable；显示语言设置最后读取为 System Default，实际浏览器界面为英文；Close tabs by position 最后读取为 off，Double-click to close tabs 最后读取为 off。Settings 和右键菜单均已关闭。未操作 Default、Chrome Web Store、原有 pin、书签或其他窗口；未切换到未知对象核验其内容。未创建 Profile、Space 或窗口，未启动 Canary。",
+  "observations": [
+    {
+      "active_after": "菜单取证结束时 B 活动，单选集合为 {B}。",
+      "active_before": "B 活动，原生树仅 B 为 selected，选中集合为 {B}。",
+      "after": "普通标签集合仍为 {A,B,C}，自上而下 A/B/C；无 split 配对，无标签组。B 右键菜单原生树和截图显示 Close、Close Other Tabs，两项均未标记 disabled；菜单未显示 Close Tabs Above、Close Tabs Below。没有点击菜单中的关闭动作。随后为下一执行点清理这些普通测试页并重建独立批次。",
+      "before": "普通标签集合为 {A,B,C}，自上而下 A/B/C，批次 TC-PHI507-r2-SET-03-PER；B 单选且活动；无 split 配对，无标签组。",
+      "confirmation_choices": "未出现确认对话框；未勾选任何“不再询问”选项。",
+      "evidence_markers": [
+        "EVIDENCE: SET-03-PER attempt1 layout",
+        "EVIDENCE: SET-03-PER attempt1 identity-A",
+        "EVIDENCE: SET-03-PER attempt1 identity-A-loaded",
+        "EVIDENCE: SET-03-PER attempt1 identity-B",
+        "EVIDENCE: SET-03-PER attempt1 identity-C",
+        "EVIDENCE: SET-03-PER attempt1 before",
+        "EVIDENCE: SET-03-PER attempt1 setting-before",
+        "EVIDENCE: SET-03-PER attempt1 setting-after",
+        "EVIDENCE: SET-03-PER attempt1 after"
+      ],
+      "identity_checks": "首读现场确见 TC-QA-PHI507-r2 中原有 A-F，B 活动，页面显示 KEEP-B-507-r2，打开编号 2a6e95cf-8074-4e05-b2ad-30972ab29ec8。随后按授权清理本轮普通测试页。新建 A/B/C 均通过原生地址栏输入指定 HTTPS fixture URL，kind=normal、run=TC-PHI507-r2-SET-03-PER。逐页屏幕核对 TC-A/TC-B/TC-C、批次、普通页类型及空输入框。打开编号：A=4b74e661-c7e4-4112-a391-07bee17835db；B=91efe174-c879-47aa-8be5-ea1586682b1a；C=cff02d2d-e683-401f-a171-ddf4564dd83b。A 首次取图仍在加载，未据此认定提交完成，后续 identity-A-loaded 截图才显示实际页面。B 在 before/after 截图中的打开编号相同。",
+      "language_observed": "General 的 Display language 为 System Default；Settings、菜单和浏览器原生界面实际为英文。本项未更改语言。",
+      "layout_observed": "通过 General 原生按钮选择 Performance，截图显示 Performance 卡片金色边框；浏览器外部标签栏为左侧垂直 A/B/C。没有以内部分屏替代布局。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "首次打开 Settings 时，编排代码误将 press_key 返回的整个内容对象送入 text，导致其中的图片数据被序列化为 base64 文本输出，违反图片输出约束；之后改为仅输出 text 内容并通过 image 输出截图。该输出错误未改变浏览器状态，未据此重试或伪造产品现场。"
+      ],
+      "precondition_actual": "先读取当前原生状态；在 General 选择并确认 Performance；在本轮 Space 新建 New Tab，用其右键 Close Other Tabs 清理原有本轮普通 A-F，再由该页输入 A，顺序新建 B、C。实际最终仅有普通 A/B/C，B 活动，无 pin、书签、split 或组成员参与本项。双击关闭开关初始为 off，保持原值。",
+      "settings_observed": "Advanced 原生控件 settings.tabs.doubleClickToClose：关闭位置功能前 off，关闭后仍 off。settings.tabs.directionalClosing：动作前 on，点击 Close tabs by position 后 off，截图及原生树均记录。",
+      "steps_executed": [
+        "get_app_state 重读固定应用现场。",
+        "用原生 Settings 的 General 选择 Performance 并截图确认。",
+        "通过本轮 Space 内 New Tab 的 Close Other Tabs 清理普通测试页，以地址栏输入分别建立本项 A/B/C，逐页核对页面身份和最终顺序。",
+        "单击 B，使 B 单选且活动，输出 before 截图。",
+        "打开 Settings > Advanced，记录双击开关 off、位置关闭开关 on。",
+        "单击 Close tabs by position，使其变为 off，读取双击开关仍为 off。",
+        "关闭 Settings，右键 B，输出 after 菜单截图及相关原生行。"
+      ],
+      "unit_id": "SET-03-PER"
+    },
+    {
+      "active_after": "菜单取证结束时 B 活动，单选集合为 {B}。",
+      "active_before": "B 活动，原生树仅 B 为 selected，选中集合为 {B}。",
+      "after": "普通标签集合仍为 {A,B,C}，自上而下 A/B/C；无 split 配对，无标签组。B 右键菜单显示 Close、Close Other Tabs，两项均未标记 disabled；未显示 Close Tabs Above、Close Tabs Below。没有点击菜单中的关闭动作。随后为 Comfortable 项清理普通测试页并重建独立批次。",
+      "before": "普通标签集合为 {A,B,C}，自上而下 A/B/C，批次 TC-PHI507-r2-SET-03-BAL；B 单选且活动；无 split 配对，无标签组。",
+      "confirmation_choices": "未出现确认对话框；未勾选任何“不再询问”选项。",
+      "evidence_markers": [
+        "EVIDENCE: SET-03-BAL attempt1 layout",
+        "EVIDENCE: SET-03-BAL attempt1 identity-A",
+        "EVIDENCE: SET-03-BAL attempt1 identity-B",
+        "EVIDENCE: SET-03-BAL attempt1 identity-C",
+        "EVIDENCE: SET-03-BAL attempt1 before",
+        "EVIDENCE: SET-03-BAL attempt1 setting-before",
+        "EVIDENCE: SET-03-BAL attempt1 setting-after",
+        "EVIDENCE: SET-03-BAL attempt1 after"
+      ],
+      "identity_checks": "A/B/C 均重新通过原生地址栏输入指定 HTTPS fixture URL，kind=normal、run=TC-PHI507-r2-SET-03-BAL；没有沿用 Performance 页。逐页实见 TC 标题、对应批次、普通页类型、打开编号和空输入框。打开编号：A=3ecc6153-5352-490a-ac86-f03170d7fe90；B=0d855e36-a2e3-402f-8ad3-e2c8fe8978a9；C=67de1e5c-dbd8-4e05-bec7-ce0ae6210859。B 在 before/after 截图中的打开编号相同。",
+      "language_observed": "本项重新打开 General，Display language 仍为 System Default；实际原生界面为英文，未更改语言。",
+      "layout_observed": "通过 General 原生按钮选择 Balanced，截图显示 Balanced 卡片金色边框；实际浏览器外部标签栏为左侧垂直 A/B/C。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项通过 General 重新选择 Balanced。在 Advanced 读到位置关闭开关为上一项留下的 off，经原生点击恢复 on 以建立本项关闭动作前置；双击开关保持 off。随后新建 New Tab，以其 Close Other Tabs 清理上一项普通 A/B/C，重新建立本项 A/B/C，并核实顺序和 B 单选活动状态。",
+      "settings_observed": "设置前置时 directionalClosing 从 off 恢复 on。被测关闭动作前：Close tabs by position=on、Double-click to close tabs=off；点击关闭后：Close tabs by position=off、Double-click to close tabs=off。",
+      "steps_executed": [
+        "关闭上一项右键菜单，打开 Settings > General。",
+        "原生选择 Balanced，重新读取显示语言并截图确认布局。",
+        "在 Advanced 恢复 Close tabs by position 为 on，保持双击开关 off，关闭 Settings。",
+        "新建 New Tab，用 Close Other Tabs 清理上一项普通页；由地址栏输入重新建立本项 A/B/C，逐页核对身份。",
+        "单击 B，核实 A/B/C 自上而下、B 单选活动，输出 before。",
+        "打开 Settings > Advanced，记录两个开关的动作前值。",
+        "关闭 Close tabs by position，记录其为 off 且双击开关仍 off。",
+        "关闭 Settings，右键 B，输出 after 菜单截图及相关原生行。"
+      ],
+      "unit_id": "SET-03-BAL"
+    },
+    {
+      "active_after": "被测菜单取证结束时 B 活动；之后 reset 重建新 A/B/C，最终仍为 B 单独活动。",
+      "active_before": "屏幕上 B 为唯一活动标签，选中集合为 {B}；Comfortable 原生树以 tabStripTab 按钮表示标签，未提供 selected 行，活动身份由标签高亮和页面 TC-B 核对。",
+      "after": "被测动作后集合仍为 {A,B,C}，从左到右 A/B/C；无 split 配对，无标签组。B 菜单显示 Close、Close Other Tabs，两项均未标记 disabled；未显示 Close Tabs to the Left、Close Tabs to the Right。未点击菜单中的关闭动作。菜单取证后执行 reset，新页打开编号与被测现场不同，未将重置页面作为保留证据。",
+      "before": "普通标签集合为 {A,B,C}，从左到右 A/B/C，批次 TC-PHI507-r2-SET-03-COM；B 为唯一活动标签；无 split 配对，无标签组。",
+      "confirmation_choices": "未出现确认对话框；未勾选任何“不再询问”选项。",
+      "evidence_markers": [
+        "EVIDENCE: SET-03-COM attempt1 layout",
+        "EVIDENCE: SET-03-COM attempt1 identity-A",
+        "EVIDENCE: SET-03-COM attempt1 identity-B",
+        "EVIDENCE: SET-03-COM attempt1 identity-C",
+        "EVIDENCE: SET-03-COM attempt1 before",
+        "EVIDENCE: SET-03-COM attempt1 setting-before",
+        "EVIDENCE: SET-03-COM attempt1 setting-after",
+        "EVIDENCE: SET-03-COM attempt1 after",
+        "EVIDENCE: SET-03-COM reset identity-A",
+        "EVIDENCE: SET-03-COM reset identity-B",
+        "EVIDENCE: SET-03-COM reset identity-C",
+        "EVIDENCE: SET-03-COM reset ending"
+      ],
+      "identity_checks": "被测前 A/B/C 均重新通过原生地址栏输入指定 HTTPS fixture URL，kind=normal、run=TC-PHI507-r2-SET-03-COM；逐页屏幕核对 TC 标题、批次、普通页类型、打开编号和空输入框。被测现场编号：A=b3cf13de-aaf7-40ed-8551-3acfb10e9d99；B=3c97cb2f-e862-4cbf-8ca2-1e6f6708540b；C=1d232d1b-6488-460f-856e-4a9754547b4b。B 在 before/after 截图中的编号相同。原生 tabStripTab 的 Description 在新页加载后曾仍为 New Tab，但子文本和实际页面已为对应 TC 标题，因此没有仅凭 Description 判定身份。reset 后另行逐页核对，编号为 A=3446d383-7034-4e00-83bd-5083347e3a26、B=81947e7a-427c-402f-9125-159a40468d87、C=206e20e3-3f8f-4ca7-8b14-bb1817a50fdb。",
+      "language_observed": "本项重新打开 General，Display language 为 System Default；实际原生界面为英文，未更改语言。",
+      "layout_observed": "通过 General 原生按钮选择 Comfortable，截图显示 Comfortable 卡片金色边框；浏览器实际外部标签栏位于顶部，从左到右 A/B/C。未建立内部分屏。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项重新选择 Comfortable。通过 Advanced 将上一项留下的 Close tabs by position=off 恢复为 on，双击开关保持 off。关闭 Settings 后，新建 New Tab，以其 Close Other Tabs 清理 Balanced 普通页，再重新建立 Comfortable 项 A/B/C，实际核实从左到右顺序和 B 活动状态。",
+      "settings_observed": "设置前置时 directionalClosing 从 off 恢复 on。被测动作前 Close tabs by position=on、Double-click to close tabs=off；点击关闭后两者均为 off。后续 reset 只重建普通页，未再次更改这两个开关。",
+      "steps_executed": [
+        "关闭上一项菜单，打开 Settings > General，选择 Comfortable 并重新读取语言、截图确认。",
+        "在 Advanced 恢复位置关闭开关为 on，保持双击开关 off，关闭 Settings。",
+        "新建 New Tab，用其 Close Other Tabs 清理上一项普通页，再由原生地址栏顺序建立本项 A/B/C。",
+        "逐页核对 TC 身份、批次、打开编号和输入框，选择 B，输出 before。",
+        "打开 Settings > Advanced，输出 setting-before，点击关闭 Close tabs by position，输出 setting-after。",
+        "关闭 Settings，右键 B，输出 after，记录完整菜单及相关原生行。",
+        "关闭菜单；按 reset 新建 New Tab、Close Other Tabs，重新通过地址栏建立普通 A/B/C，逐页截图核对新编号，最后选择 B 并输出 reset ending。"
+      ],
+      "unit_id": "SET-03-COM"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

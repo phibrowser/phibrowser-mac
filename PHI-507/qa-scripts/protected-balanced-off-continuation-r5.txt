@@ -1,0 +1,17 @@
+仅续做DBL-23-BAL尚未执行的off六个动作及清理，不重做on六个动作，不重新创建已有效的A/B/C/D或保存项，不判通过。前次操作器在on六动作完成后模型服务HTTP502中断；此次首先通过CU实读现场，任何旧背景都只是定位线索，不是当前事实。本文件优先于通用独立重建要求：同一用例的有效on部分保留，本次实际复读既有TC前置后仅续做off部分。
+
+前次固定app PID10708，最新CU返回Settings的Guest页，未出现产品崩溃；前次用helper在Guest页查开关报toggle missing，不能把此脚本定位失败记产品bug。若当前仍Settings，先点Advanced再实读两个开关；不要在Guest页直接猜开关。General须确认Balanced/System Default。只将双击开关设off，位置on，每次读取另一个开关状态。Settings完成后用明确close button返回已有测试窗口。
+
+本用例已存在的唯一run：TC-PHI507-r5-DBL-23-BAL-input-retry-r5-179339941。新建PS保存块是此run的A/B固定split。MS保存行值含TC-PHI507-r5-MS-C-input-retry-r5-1793399419472与对应MS-D；其原网页标题仍含本run。旧TC-P pin、旧TC-M保存行、未知行/窗口全部保留。普通C/D对照原编号C=5dc551bd-a178-4694-91af-7170f4f2729d、D=b1e0adaa-8f39-4c02-88bb-ea631821b84d，KEEP-C-DBL23-input-retry-r5、KEEP-D-DBL23-input-retry-r5。必须通过实际CU图复读对照编号/KEEP再继续；真实MS与普通副本分开，不能只凭标题认定身份。PS当前A/B是on末尾显式关闭后重开的新文档，实际读取其编号并建立本次off专属KEEP；不得假称仍是on最初文档。
+
+off六动作：
+1. PS已打开：真正A/B均实际读到编号及KEEP后，双击保存块左半，核对两侧原编号/KEEP/配对。
+2. 再双击保存块右半，同样核对。
+3. 用PS自身公开Close关闭实时split但保留保存块，读取关闭状态（前次真实关闭菜单有unpinClosedPinnedSplit/convertClosedPinnedSplitLayout且无Close），再双击左半，记录重开新编号/空框/配对。
+4. 再用同一Close重建关闭状态，双击右半，记录另一组新编号/空框/配对。
+5. MS未打开：先通过真实保存入口的Close或已有原生File Close Tab关闭其绑定实时页，保存项和原普通C/D对照保留。若File Close Tab一次只关闭一侧，记录后继续关闭另一侧，不以Delete或普通对照代替。实读关闭状态，再双击真正MS保存入口，核对新打开C/D编号/配对。
+6. 在刚从MS入口打开的两页建立off专属KEEP、实读编号，再双击同一保存入口，回读原MS两页编号/KEEP/保存结构，并回读普通C/D对照的原编号及KEEP。
+
+每个动作前后独立EVIDENCE标记并输出真实CU图。标记尚未立即显示时保留现场，允许一次切到本项另一页再回看，禁止重复盲打。显式Close后新编号/空框只用于打开动作，不能声称跨Close保留草稿。独立分支前置实在无法满足时记录，继续其他已满足的分支。没有新的源on核心动作，不把前次未完成整个unit的记录覆盖为通过。最终JSON只列本次off六动作实际观察，not_executed_reason明确本次未重做on，前次证据另存。
+
+最后仅清理这个唯一run创建的PS/MS及其纯TC专用窗口，恢复Balanced、System Default、双击off/位置on，完整实读设置图和结束图。不要新建资料或重启app；仅源前置必要的有限恢复规则适用。浏览器全程只Computer Use，原有/未知对象保留。

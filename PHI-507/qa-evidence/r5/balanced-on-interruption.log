@@ -1,0 +1,61 @@
+Window: "TC-C · TC-PHI507-r5-DBL-23-BAL-input-retry-r5-179339941", App: Phi Tab Close QA.
+
+App=/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 10708)
+Window: "TC-C · TC-PHI507-r5-DBL-23-BAL-input-retry-r5-179339941", App: Phi Tab Close QA.
+				12 button Description: TC-P · TC-PHI507-r2-DBL-09-PER, ID: sidebarPinnedTab, Help: TC-P · TC-PHI507-r2-DBL-09-PER
+				14 button ID: sidebarPinnedTab, Description: TC-A · TC-PHI507-r5-DBL-23-BAL-input-retry-r5-179339941 | TC-B · TC-PHI507-r5-DBL-23-BAL-input-retry-r5-179339941
+				19 row (selectable) Value: TC-M · TC-PHI507-r2-DBL-09-PER, Description: TC-M · TC-PHI507-r2-DBL-09-PER
+				20 row (selectable) Value: TC-PHI507-r5-MS-C-input-retry-r5-1793399419472 • TC-PHI507-r5-MS-D-input-retry-r5-1793399419472, Description: TC-C · TC-PHI507-r5-DBL-23-BAL-input-retry-r5-179339941
+				21 row (selectable)
+				22 row (selectable) New Tab
+				23 row (selectable) Description: Website
+TC-D · TC-PHI507-r5-DBL-23-BAL-input-retry-r5-179339941
+
+EVIDENCE: DBL-23-BAL attempt1 on-MS-open-control
+
+on 的六个核心双击已分别执行。PS 两个未打开分支各自先 Close，再双击对应半格，均重新显示 A/B split 和新的打开编号；这些显式关闭后的空输入按新文档记录。MS 则从真正保存入口打开出独立 C/D 编号，输入专属 KEEP 后再次双击，仍显示同一绑定编号及标记；普通 C/D 对照也已回看，仍是最初编号和 KEEP。现在切换 off，继续另外六个动作。
+
+Script failed
+Wall time 1.6 seconds
+Output:
+
+
+App=com.phibrowser.opensource.Mac (pid 10708)
+Window: "Guest", App: Phi Tab Close QA.
+0 standard window Guest, Secondary Actions: Raise
+	1 text Phi is not your default browser
+	2 button Set as default, Description: love
+	3 toolbar
+		4 button Guest, Secondary Actions: Move next, Remove from toolbar
+		5 button General, Secondary Actions: Move previous, Move next, Remove from toolbar
+		6 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar
+		7 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar
+		8 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar
+		9 button Phi & AI, Secondary Actions: Move previous, Move next, Remove from toolbar
+		10 button Sync, Secondary Actions: Move previous, Move next, Remove from toolbar
+		11 button Shortcuts, Secondary Actions: Move previous, Move next, Remove from toolbar
+		12 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+		13 button Developer, Secondary Actions: Move previous, Remove from toolbar
+	14 close button
+	15 zoom button (disabled)
+	16 text Guest
+17 menu bar
+	18 Phi
+	19 File
+	20 Edit
+	21 View
+	22 Spaces
+	23 History
+	24 Bookmarks
+	25 Tab
+	26 Window
+	27 Help
+	28 *DEBUG*
+
+The focused UI element is 0 standard window Guest, Secondary Actions: Raise
+
+Script error:
+Error: toggle missing
+    at exec_main.mjs:2:175
+
+Runner exit1 after five reconnects: HTTP 502 Bad Gateway from model service; no final observation JSON.

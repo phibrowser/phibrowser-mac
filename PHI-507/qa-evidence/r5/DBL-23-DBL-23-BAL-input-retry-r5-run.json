@@ -1,0 +1,20 @@
+{
+  "job": "DBL-23-DBL-23-BAL-input-retry-r5",
+  "exit_code": 1,
+  "session_id": "01a18eee-feed-73b2-ad5c-73bfe51baa97",
+  "round": 5,
+  "lease_id": "52a943f0-2b80-4fdf-9258-ff0ac91c8040",
+  "started_at": "2026-10-30T22:29:49.645551+00:00",
+  "ended_at": "2026-10-30T23:07:09.669766+00:00",
+  "units": [
+    "DBL-23-BAL"
+  ],
+  "computer_use_audit": {
+    "source_sha256": "695be695bfdfbc6081c6dc4fd29123f63c2e89d241171bce36c604c26abec1eb",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 109,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

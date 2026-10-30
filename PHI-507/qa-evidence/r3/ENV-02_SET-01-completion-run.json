@@ -1,0 +1,27 @@
+{
+  "job": "ENV-02_SET-01-completion",
+  "exit_code": 0,
+  "session_id": "01a18dd5-1986-7422-a578-2bbd33a5db55",
+  "round": 3,
+  "lease_id": "e4359d36-d212-4361-be64-5adbf18f0762",
+  "started_at": "2026-10-30T17:21:55.299075+00:00",
+  "ended_at": "2026-10-30T17:27:13.709386+00:00",
+  "units": [
+    "ENV-02-COMMON",
+    "SET-01-COMMON"
+  ],
+  "observed_units": [
+    "ENV-02-COMMON",
+    "SET-01-COMMON"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "3bbfea55b33a067c2c11990001dd20d3ffc936c92befc3b77037086d60e78b9c",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 58,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

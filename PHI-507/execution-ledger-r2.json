@@ -188,9 +188,19 @@
     ],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
     "evidence": [
-      "qa-evidence/r2/ENV-02-COMMON-initial-shortcuts-partial.png",
-      "qa-evidence/r2/ENV-02-COMMON-initial-empty-test-space.png",
-      "qa-evidence/r2/ENV-02-COMMON.log"
+      "qa-evidence/r3/ENV-02_SET-01-completion-observations.json",
+      "qa-evidence/r3/ENV-02-COMMON-01.png",
+      "qa-evidence/r3/ENV-02-COMMON-02.png",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-07.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png",
+      "qa-evidence/r3/ENV-02-COMMON-10.png",
+      "qa-evidence/r3/ENV-02-COMMON-11.png",
+      "qa-evidence/r3/ENV-02-COMMON-12.png"
     ],
     "kind": "acceptance",
     "key": "ENV-02-COMMON",
@@ -206,11 +216,129 @@
       {
         "session_id": "01a18bfe-a8e0-7c61-96a0-572ba946571a",
         "prefix": "ENV-02-COMMON",
-        "method": "Computer Use"
+        "method": "Computer Use",
+        "job": "ENV-02-COMMON",
+        "round": 2,
+        "outcome": "partial",
+        "actual": "Computer Use 创建并切到 TC-QA-PHI507-r2，当前仅 New Tab；Balanced，双击off/位置on，保存区为空。Shortcuts All Shortcuts 搜索Close并检查列表，未找到Close Tabs to the Right和Close Other Tabs，不能确认原绑定。",
+        "evidence": [
+          "qa-evidence/r2/ENV-02-COMMON-initial-shortcuts-partial.png",
+          "qa-evidence/r2/ENV-02-COMMON-initial-empty-test-space.png",
+          "qa-evidence/r2/ENV-02-COMMON.log"
+        ],
+        "scope": "此前实际执行记录，保留其原始结果"
+      },
+      {
+        "job": "ENV-02_SET-01-completion",
+        "round": 3,
+        "outcome": "partial",
+        "actual": "普通标签集合及顺序不变；Settings 关闭；无可见组、split、菜单或确认框。",
+        "observation": {
+          "active_after": "B；原生选中集 {B}。",
+          "active_before": "B；原生选中集 {B}。",
+          "after": "普通标签集合及顺序不变；Settings 关闭；无可见组、split、菜单或确认框。",
+          "before": "当前普通标签顺序 New Tab、A、B、C、D；无可见组或 split；原生 pin collection 为空。",
+          "confirmation_choices": "为读取当前 Space 名称打开 Rename Space 对话框，实读后选择 Cancel；未提交重命名。未出现关闭确认。",
+          "evidence_markers": [
+            "EVIDENCE: ENV-02-COMMON attempt1 before",
+            "EVIDENCE: ENV-02-COMMON attempt1 general",
+            "EVIDENCE: ENV-02-COMMON attempt1 customized",
+            "EVIDENCE: ENV-02-COMMON attempt1 close-list",
+            "EVIDENCE: ENV-02-COMMON attempt1 close-scroll",
+            "EVIDENCE: ENV-02-COMMON attempt1 close-group-detail",
+            "EVIDENCE: ENV-02-COMMON attempt1 failure",
+            "EVIDENCE: ENV-02-COMMON attempt1 tab-category-top",
+            "EVIDENCE: ENV-02-COMMON attempt1 tab-category-bottom",
+            "EVIDENCE: ENV-02-COMMON attempt1 tab-category-end",
+            "EVIDENCE: ENV-02-COMMON attempt1 after"
+          ],
+          "identity_checks": "固定路径 QA 应用，PID 87230。Rename Space 文本框实读 TC-QA-PHI507-r2。Window 菜单仅列当前 TC-B 浏览器窗口。TC-B 正文显示批次 TC-PHI507-r2-DBL-08-PER-INPUT-KEYBOARD、普通页、打开编号 b173157d-2466-41c2-9222-4ef0d83e4746，输入框显示占位。A/C/D 仅核对原生 TC 标题，未切换读取其内容。当前普通列表未见真实工作页；未知保存项内容保留未知。",
+          "language_observed": "General 的 Display language 为 System Default；实际界面为英文。",
+          "layout_observed": "General 中 Balanced 有选中边框；浏览器外部为纵向标签列表。未切换布局。",
+          "not_executed_reason": "按本批补查约束，不重复执行已建立隔离 Space 的步骤。未进入其他 Space 或盘点未知保存项内容。Close Other Tabs 和 Close Tabs to the Right 未出现在所查完整 Close 匹配列表及完整 Tab 分类原生列表中，无法从该 UI 核实这两项的绑定；不推定其存在、无绑定或全局不存在。",
+          "operator_errors": [
+            "尝试对原生搜索框执行 set_value(value=\"\") 返回 isError，随即停止该序列。该次过滤输出漏保留错误原文，具体错误原因未知；现场截图确认搜索值仍为 Close。随后使用 click 搜索框、Cmd+A、BackSpace 正常清空。"
+          ],
+          "precondition_actual": "实读指定 QA app PID 87230，当前已有 TC-QA-PHI507-r2 Space，无需新建重复 Space。当前窗口为 TC 测试页列表；保留原有 Space、保存项和窗口。",
+          "settings_observed": "基线实读 Balanced、System Default、settings.tabs.doubleClickToClose=off、settings.tabs.directionalClosing=on。Shortcuts 筛选菜单实际提供 All Shortcuts、Customized Shortcuts、Conflicting Shortcuts 及 App/File/Edit/View/History/Bookmarks/Window/Tab/Spaces/Kiosk & Peek/Other 分类；没有单独的 Default 筛选。Customized Shortcuts 在空搜索下显示 No Results。All Shortcuts 搜索 Close 的完整匹配为：File→Reopen Closed Tab=⇧⌘T、Close Window=⇧⌘W、Close Tab=⌘W；Tab→Close Tab Group=⌃⌘W。逐项选择列表读取详情，四项 Reset 均 disabled。搜索匹配列表滚动后仍为这四项。清空搜索后读取完整 Tab 分类并滚动至 scroll bar=1，未列出 Close Other Tabs 或 Close Tabs to the Right。未点击录制、Reset 或 Reset All to Defaults，未试按任何关闭绑定。",
+          "steps_executed": [
+            "get_app_state 核对固定 QA 路径、PID、当前 TC 标签集合；通过 Spaces→Rename Space 只读确认当前 Space 名称并 Cancel。",
+            "打开 General，记录 System Default 和 Balanced 的实际选中状态。",
+            "打开 Advanced，只读记录两个关闭开关 off/on。",
+            "打开 Shortcuts，查看实际筛选菜单；选择 Customized Shortcuts，记录 No Results。",
+            "回到 All Shortcuts，搜索 Close，保存完整匹配列表及滚动后截图；逐项选择已有关闭相关动作读取名称、绑定和详情。",
+            "使用正常键盘清空搜索，选择 Tab 分类，读取完整原生列表并实际滚动到末端。",
+            "恢复 All Shortcuts 筛选及空搜索，关闭 Settings。",
+            "查看 Window 菜单中的原有窗口列表，使用其明确暴露的 Cancel 退出菜单，保存结束截图。"
+          ],
+          "unit_id": "ENV-02-COMMON"
+        },
+        "evidence": [
+          "qa-evidence/r3/ENV-02_SET-01-completion-observations.json",
+          "qa-evidence/r3/ENV-02-COMMON-01.png",
+          "qa-evidence/r3/ENV-02-COMMON-02.png",
+          "qa-evidence/r3/ENV-02-COMMON-03.png",
+          "qa-evidence/r3/ENV-02-COMMON-04.png",
+          "qa-evidence/r3/ENV-02-COMMON-05.png",
+          "qa-evidence/r3/ENV-02-COMMON-06.png",
+          "qa-evidence/r3/ENV-02-COMMON-07.png",
+          "qa-evidence/r3/ENV-02-COMMON-08.png",
+          "qa-evidence/r3/ENV-02-COMMON-09.png",
+          "qa-evidence/r3/ENV-02-COMMON-10.png",
+          "qa-evidence/r3/ENV-02-COMMON-11.png",
+          "qa-evidence/r3/ENV-02-COMMON-12.png"
+        ],
+        "evidence_metadata": "qa-evidence/r3/ENV-02_SET-01-completion-evidence.json",
+        "notes": "Ripley核对15张关键图及原始003/006并补存浏览器before与General真图，原generic标记按实际画面纠正，旧图保留。ENV-02补查全部Close匹配和Tab分类末尾，四个既有绑定及无自定义已记录，但UI未暴露Close Other/Right绑定，仍不推定其不存在或默认值。SET-01在实际1360×1298窗口完整说明/滚动通过观察，原生Top Left未缩小，Return to Previous Size恢复；小于原窗口的覆盖仍未完成，整项不判pass。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T17:29:33.832110+00:00"
       }
     ],
-    "actual": "Computer Use 创建并切到 TC-QA-PHI507-r2，当前仅 New Tab；Balanced，双击off/位置on，保存区为空。Shortcuts All Shortcuts 搜索Close并检查列表，未找到Close Tabs to the Right和Close Other Tabs，不能确认原绑定。",
-    "notes": "隔离Space已建立；快捷键配置仍有缺口，暂不将整项判通过。没有关闭Default的Chrome Web Store或改动设置。"
+    "actual": "普通标签集合及顺序不变；Settings 关闭；无可见组、split、菜单或确认框。",
+    "notes": "Ripley核对15张关键图及原始003/006并补存浏览器before与General真图，原generic标记按实际画面纠正，旧图保留。ENV-02补查全部Close匹配和Tab分类末尾，四个既有绑定及无自定义已记录，但UI未暴露Close Other/Right绑定，仍不推定其不存在或默认值。SET-01在实际1360×1298窗口完整说明/滚动通过观察，原生Top Left未缩小，Return to Previous Size恢复；小于原窗口的覆盖仍未完成，整项不判pass。",
+    "observation": {
+      "active_after": "B；原生选中集 {B}。",
+      "active_before": "B；原生选中集 {B}。",
+      "after": "普通标签集合及顺序不变；Settings 关闭；无可见组、split、菜单或确认框。",
+      "before": "当前普通标签顺序 New Tab、A、B、C、D；无可见组或 split；原生 pin collection 为空。",
+      "confirmation_choices": "为读取当前 Space 名称打开 Rename Space 对话框，实读后选择 Cancel；未提交重命名。未出现关闭确认。",
+      "evidence_markers": [
+        "EVIDENCE: ENV-02-COMMON attempt1 before",
+        "EVIDENCE: ENV-02-COMMON attempt1 general",
+        "EVIDENCE: ENV-02-COMMON attempt1 customized",
+        "EVIDENCE: ENV-02-COMMON attempt1 close-list",
+        "EVIDENCE: ENV-02-COMMON attempt1 close-scroll",
+        "EVIDENCE: ENV-02-COMMON attempt1 close-group-detail",
+        "EVIDENCE: ENV-02-COMMON attempt1 failure",
+        "EVIDENCE: ENV-02-COMMON attempt1 tab-category-top",
+        "EVIDENCE: ENV-02-COMMON attempt1 tab-category-bottom",
+        "EVIDENCE: ENV-02-COMMON attempt1 tab-category-end",
+        "EVIDENCE: ENV-02-COMMON attempt1 after"
+      ],
+      "identity_checks": "固定路径 QA 应用，PID 87230。Rename Space 文本框实读 TC-QA-PHI507-r2。Window 菜单仅列当前 TC-B 浏览器窗口。TC-B 正文显示批次 TC-PHI507-r2-DBL-08-PER-INPUT-KEYBOARD、普通页、打开编号 b173157d-2466-41c2-9222-4ef0d83e4746，输入框显示占位。A/C/D 仅核对原生 TC 标题，未切换读取其内容。当前普通列表未见真实工作页；未知保存项内容保留未知。",
+      "language_observed": "General 的 Display language 为 System Default；实际界面为英文。",
+      "layout_observed": "General 中 Balanced 有选中边框；浏览器外部为纵向标签列表。未切换布局。",
+      "not_executed_reason": "按本批补查约束，不重复执行已建立隔离 Space 的步骤。未进入其他 Space 或盘点未知保存项内容。Close Other Tabs 和 Close Tabs to the Right 未出现在所查完整 Close 匹配列表及完整 Tab 分类原生列表中，无法从该 UI 核实这两项的绑定；不推定其存在、无绑定或全局不存在。",
+      "operator_errors": [
+        "尝试对原生搜索框执行 set_value(value=\"\") 返回 isError，随即停止该序列。该次过滤输出漏保留错误原文，具体错误原因未知；现场截图确认搜索值仍为 Close。随后使用 click 搜索框、Cmd+A、BackSpace 正常清空。"
+      ],
+      "precondition_actual": "实读指定 QA app PID 87230，当前已有 TC-QA-PHI507-r2 Space，无需新建重复 Space。当前窗口为 TC 测试页列表；保留原有 Space、保存项和窗口。",
+      "settings_observed": "基线实读 Balanced、System Default、settings.tabs.doubleClickToClose=off、settings.tabs.directionalClosing=on。Shortcuts 筛选菜单实际提供 All Shortcuts、Customized Shortcuts、Conflicting Shortcuts 及 App/File/Edit/View/History/Bookmarks/Window/Tab/Spaces/Kiosk & Peek/Other 分类；没有单独的 Default 筛选。Customized Shortcuts 在空搜索下显示 No Results。All Shortcuts 搜索 Close 的完整匹配为：File→Reopen Closed Tab=⇧⌘T、Close Window=⇧⌘W、Close Tab=⌘W；Tab→Close Tab Group=⌃⌘W。逐项选择列表读取详情，四项 Reset 均 disabled。搜索匹配列表滚动后仍为这四项。清空搜索后读取完整 Tab 分类并滚动至 scroll bar=1，未列出 Close Other Tabs 或 Close Tabs to the Right。未点击录制、Reset 或 Reset All to Defaults，未试按任何关闭绑定。",
+      "steps_executed": [
+        "get_app_state 核对固定 QA 路径、PID、当前 TC 标签集合；通过 Spaces→Rename Space 只读确认当前 Space 名称并 Cancel。",
+        "打开 General，记录 System Default 和 Balanced 的实际选中状态。",
+        "打开 Advanced，只读记录两个关闭开关 off/on。",
+        "打开 Shortcuts，查看实际筛选菜单；选择 Customized Shortcuts，记录 No Results。",
+        "回到 All Shortcuts，搜索 Close，保存完整匹配列表及滚动后截图；逐项选择已有关闭相关动作读取名称、绑定和详情。",
+        "使用正常键盘清空搜索，选择 Tab 分类，读取完整原生列表并实际滚动到末端。",
+        "恢复 All Shortcuts 筛选及空搜索，关闭 Settings。",
+        "查看 Window 菜单中的原有窗口列表，使用其明确暴露的 Cancel 退出菜单，保存结束截图。"
+      ],
+      "unit_id": "ENV-02-COMMON"
+    },
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列",
+    "not_run_reason": "按本批补查约束，不重复执行已建立隔离 Space 的步骤。未进入其他 Space 或盘点未知保存项内容。Close Other Tabs 和 Close Tabs to the Right 未出现在所查完整 Close 匹配列表及完整 Tab 分类原生列表中，无法从该 UI 核实这两项的绑定；不推定其存在、无绑定或全局不存在。"
   },
   {
     "id": "ENV-03",
@@ -499,9 +627,12 @@
     ],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
     "evidence": [
-      "qa-evidence/r2/SET-01-COMMON-initial-advanced-before.png",
-      "qa-evidence/r2/SET-01-COMMON-initial-advanced-after-drag.png",
-      "qa-evidence/r2/SET-01-COMMON.log"
+      "qa-evidence/r3/ENV-02_SET-01-completion-observations.json",
+      "qa-evidence/r3/SET-01-COMMON-01.png",
+      "qa-evidence/r3/SET-01-COMMON-02.png",
+      "qa-evidence/r3/SET-01-COMMON-03.png",
+      "qa-evidence/r3/SET-01-COMMON-04.png",
+      "qa-evidence/r3/SET-01-COMMON-05.png"
     ],
     "kind": "acceptance",
     "key": "SET-01-COMMON",
@@ -513,8 +644,106 @@
     },
     "result": "partial",
     "method": "Computer Use",
-    "attempts": [],
-    "actual": "第一/第二卡片内容与说明已屏幕检查并实际滚动，原尺寸可读且第二无标题；三次原生边框拖动后尺寸未变，未得到小窗口，因此小尺寸部分未覆盖。"
+    "attempts": [
+      {
+        "job": "SET-01",
+        "round": 2,
+        "outcome": "partial",
+        "actual": "第一/第二卡片内容与说明已屏幕检查并实际滚动，原尺寸可读且第二无标题；三次原生边框拖动后尺寸未变，未得到小窗口，因此小尺寸部分未覆盖。",
+        "evidence": [
+          "qa-evidence/r2/SET-01-COMMON-initial-advanced-before.png",
+          "qa-evidence/r2/SET-01-COMMON-initial-advanced-after-drag.png",
+          "qa-evidence/r2/SET-01-COMMON.log"
+        ],
+        "notes": "",
+        "scope": "此前实际执行记录，保留其原始结果"
+      },
+      {
+        "job": "ENV-02_SET-01-completion",
+        "round": 3,
+        "outcome": "partial",
+        "actual": "执行 Return to Previous Size 后 Settings 原图为 1360×1298 像素，滚动条最终为 0；随后关闭 Settings，返回原 TC-B。普通标签顺序和集合保持 New Tab、A、B、C、D。",
+        "observation": {
+          "active_after": "浏览器 B；原生选中集 {B}。",
+          "active_before": "浏览器 B、选中集 {B}；建立本项前置后 Settings→Advanced 在前台。",
+          "after": "执行 Return to Previous Size 后 Settings 原图为 1360×1298 像素，滚动条最终为 0；随后关闭 Settings，返回原 TC-B。普通标签顺序和集合保持 New Tab、A、B、C、D。",
+          "before": "重新打开 Settings→Advanced，滚动条为 0；窗口原图为 1360×1298 像素。第一张卡片四项依次为 Always show full URL、Show a preview card when hovering over a tab、Show open tab indicators、Show unloaded tab indicators。第二张卡片仅含两个关闭设置，没有额外标题。",
+          "confirmation_choices": "无确认框。使用原生 Window→Move & Resize→Top Left，随后通过 Return to Previous Size 恢复；最后点击已确认的 Settings close button。",
+          "evidence_markers": [
+            "EVIDENCE: SET-01-COMMON attempt1 before",
+            "EVIDENCE: SET-01-COMMON attempt1 resize-result",
+            "EVIDENCE: SET-01-COMMON attempt1 scrolled-card",
+            "EVIDENCE: SET-01-COMMON attempt1 restored-settings",
+            "EVIDENCE: SET-01-COMMON attempt1 after"
+          ],
+          "identity_checks": "固定路径 /Applications/Phi Tab Close QA.app，PID 87230。结束时 TC-B 正文批次仍为 TC-PHI507-r2-DBL-08-PER-INPUT-KEYBOARD，打开编号仍为 b173157d-2466-41c2-9222-4ef0d83e4746，输入框显示占位。未创建、关闭或导航任何测试标签。",
+          "language_observed": "实际英文；本批 General 已实读 System Default，未切换语言。",
+          "layout_observed": "浏览器 Balanced 未更改。Settings 原生 zoom button 为 disabled；Window 菜单的 Zoom、Fill、Full Screen Tile 也为 disabled。Move & Resize→Top Left 可执行，调用未返回错误；操作前后原图均为 1360×1298 像素，未获得更小窗口。随后 Return to Previous Size 可执行并已使用；恢复原图同为 1360×1298。CU 原生树未给出窗口位置或逻辑尺寸，无法核实固定最小尺寸的数值。",
+          "not_executed_reason": "未建立比 1360×1298 原图更小的 Settings 窗口，因此更小尺寸下的滚动覆盖未完成。此次原生平铺操作没有带来可见尺寸缩小，不能据此声称已确认固定最小尺寸或完成任意小尺寸覆盖。未重复此前不生效的边框拖动。",
+          "operator_errors": [],
+          "precondition_actual": "从原 TC 页面重新通过 Cmd+, 打开 Settings，再选择 Advanced；本项从顶部滚动位置 0 独立建立前置。两个关闭开关实际为 off/on，遵循本批只读约束未改动。",
+          "settings_observed": "Double-click to close tabs=off；Close tabs by position=on。说明一完整实读：Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions. 说明二完整实读：Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar. 顶部截图和实际向下滚动后的截图中，两段句尾均可见，两个开关均在卡片右侧可见。第二张卡片无额外标题；在本次实际窗口尺寸中未见说明截断或开关被挤出。未改变这两个开关及其他偏好。",
+          "steps_executed": [
+            "重新打开 Advanced，保存操作前截图，按顶部顺序读取第一张卡片和第二张无标题卡片。",
+            "读取两个关闭开关的即时值及两段完整说明。",
+            "先查看原生窗口能力：zoom disabled；打开 Window 菜单读取 Move & Resize 等动作。",
+            "执行 Move & Resize→Top Left，检查调用返回并重新 get_app_state；原图尺寸未缩小。",
+            "在该实际尺寸窗口中向下滚动 0.4 页，滚动条约为 0.720257；实际读取两项句尾和右侧开关，保存截图。",
+            "执行 Window→Move & Resize→Return to Previous Size；向上滚动并通过 get_app_state 确认滚动条为 0、开关仍 off/on，保存恢复截图。",
+            "关闭 Settings，回到原 TC-B 并保存结束截图。"
+          ],
+          "unit_id": "SET-01-COMMON"
+        },
+        "evidence": [
+          "qa-evidence/r3/ENV-02_SET-01-completion-observations.json",
+          "qa-evidence/r3/SET-01-COMMON-01.png",
+          "qa-evidence/r3/SET-01-COMMON-02.png",
+          "qa-evidence/r3/SET-01-COMMON-03.png",
+          "qa-evidence/r3/SET-01-COMMON-04.png",
+          "qa-evidence/r3/SET-01-COMMON-05.png"
+        ],
+        "evidence_metadata": "qa-evidence/r3/ENV-02_SET-01-completion-evidence.json",
+        "notes": "Ripley核对15张关键图及原始003/006并补存浏览器before与General真图，原generic标记按实际画面纠正，旧图保留。ENV-02补查全部Close匹配和Tab分类末尾，四个既有绑定及无自定义已记录，但UI未暴露Close Other/Right绑定，仍不推定其不存在或默认值。SET-01在实际1360×1298窗口完整说明/滚动通过观察，原生Top Left未缩小，Return to Previous Size恢复；小于原窗口的覆盖仍未完成，整项不判pass。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T17:29:33.832273+00:00"
+      }
+    ],
+    "actual": "执行 Return to Previous Size 后 Settings 原图为 1360×1298 像素，滚动条最终为 0；随后关闭 Settings，返回原 TC-B。普通标签顺序和集合保持 New Tab、A、B、C、D。",
+    "observation": {
+      "active_after": "浏览器 B；原生选中集 {B}。",
+      "active_before": "浏览器 B、选中集 {B}；建立本项前置后 Settings→Advanced 在前台。",
+      "after": "执行 Return to Previous Size 后 Settings 原图为 1360×1298 像素，滚动条最终为 0；随后关闭 Settings，返回原 TC-B。普通标签顺序和集合保持 New Tab、A、B、C、D。",
+      "before": "重新打开 Settings→Advanced，滚动条为 0；窗口原图为 1360×1298 像素。第一张卡片四项依次为 Always show full URL、Show a preview card when hovering over a tab、Show open tab indicators、Show unloaded tab indicators。第二张卡片仅含两个关闭设置，没有额外标题。",
+      "confirmation_choices": "无确认框。使用原生 Window→Move & Resize→Top Left，随后通过 Return to Previous Size 恢复；最后点击已确认的 Settings close button。",
+      "evidence_markers": [
+        "EVIDENCE: SET-01-COMMON attempt1 before",
+        "EVIDENCE: SET-01-COMMON attempt1 resize-result",
+        "EVIDENCE: SET-01-COMMON attempt1 scrolled-card",
+        "EVIDENCE: SET-01-COMMON attempt1 restored-settings",
+        "EVIDENCE: SET-01-COMMON attempt1 after"
+      ],
+      "identity_checks": "固定路径 /Applications/Phi Tab Close QA.app，PID 87230。结束时 TC-B 正文批次仍为 TC-PHI507-r2-DBL-08-PER-INPUT-KEYBOARD，打开编号仍为 b173157d-2466-41c2-9222-4ef0d83e4746，输入框显示占位。未创建、关闭或导航任何测试标签。",
+      "language_observed": "实际英文；本批 General 已实读 System Default，未切换语言。",
+      "layout_observed": "浏览器 Balanced 未更改。Settings 原生 zoom button 为 disabled；Window 菜单的 Zoom、Fill、Full Screen Tile 也为 disabled。Move & Resize→Top Left 可执行，调用未返回错误；操作前后原图均为 1360×1298 像素，未获得更小窗口。随后 Return to Previous Size 可执行并已使用；恢复原图同为 1360×1298。CU 原生树未给出窗口位置或逻辑尺寸，无法核实固定最小尺寸的数值。",
+      "not_executed_reason": "未建立比 1360×1298 原图更小的 Settings 窗口，因此更小尺寸下的滚动覆盖未完成。此次原生平铺操作没有带来可见尺寸缩小，不能据此声称已确认固定最小尺寸或完成任意小尺寸覆盖。未重复此前不生效的边框拖动。",
+      "operator_errors": [],
+      "precondition_actual": "从原 TC 页面重新通过 Cmd+, 打开 Settings，再选择 Advanced；本项从顶部滚动位置 0 独立建立前置。两个关闭开关实际为 off/on，遵循本批只读约束未改动。",
+      "settings_observed": "Double-click to close tabs=off；Close tabs by position=on。说明一完整实读：Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions. 说明二完整实读：Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar. 顶部截图和实际向下滚动后的截图中，两段句尾均可见，两个开关均在卡片右侧可见。第二张卡片无额外标题；在本次实际窗口尺寸中未见说明截断或开关被挤出。未改变这两个开关及其他偏好。",
+      "steps_executed": [
+        "重新打开 Advanced，保存操作前截图，按顶部顺序读取第一张卡片和第二张无标题卡片。",
+        "读取两个关闭开关的即时值及两段完整说明。",
+        "先查看原生窗口能力：zoom disabled；打开 Window 菜单读取 Move & Resize 等动作。",
+        "执行 Move & Resize→Top Left，检查调用返回并重新 get_app_state；原图尺寸未缩小。",
+        "在该实际尺寸窗口中向下滚动 0.4 页，滚动条约为 0.720257；实际读取两项句尾和右侧开关，保存截图。",
+        "执行 Window→Move & Resize→Return to Previous Size；向上滚动并通过 get_app_state 确认滚动条为 0、开关仍 off/on，保存恢复截图。",
+        "关闭 Settings，回到原 TC-B 并保存结束截图。"
+      ],
+      "unit_id": "SET-01-COMMON"
+    },
+    "notes": "Ripley核对15张关键图及原始003/006并补存浏览器before与General真图，原generic标记按实际画面纠正，旧图保留。ENV-02补查全部Close匹配和Tab分类末尾，四个既有绑定及无自定义已记录，但UI未暴露Close Other/Right绑定，仍不推定其不存在或默认值。SET-01在实际1360×1298窗口完整说明/滚动通过观察，原生Top Left未缩小，Return to Previous Size恢复；小于原窗口的覆盖仍未完成，整项不判pass。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列",
+    "not_run_reason": "未建立比 1360×1298 原图更小的 Settings 窗口，因此更小尺寸下的滚动覆盖未完成。此次原生平铺操作没有带来可见尺寸缩小，不能据此声称已确认固定最小尺寸或完成任意小尺寸覆盖。未重复此前不生效的边框拖动。"
   },
   {
     "id": "SET-02",
@@ -7257,6 +7486,77 @@
         ],
         "evidence_metadata": "qa-evidence/r3/DBL-08-performance-native-keyboard-adapter-evidence.json",
         "reviewed_by": "Ripley"
+      },
+      {
+        "job": "DBL-08-performance-sticky-mouse-adapter",
+        "round": 3,
+        "scope": "Sticky Keys/Mouse Keys输入诊断，不是DBL-08验收。Sticky Keys可开启但CU拒绝纯Super_L和Shift_L；Mouse Keys确认需键盘/数字键盘模拟点击Use Mouse Keys，鼠标点击及Return未满足，未实读on；不把这次无效确认当成功，也不由此认定系统功能不支持。",
+        "outcome": "partial",
+        "actual": "普通标签顺序 New Tab、A、B、C、D；无可见组或 split。未执行任何标签关闭、拖动或多选点击。",
+        "observation": {
+          "active_after": "B；选中集 {B}。",
+          "active_before": "B；选中集 {B}。",
+          "after": "普通标签顺序 New Tab、A、B、C、D；无可见组或 split。未执行任何标签关闭、拖动或多选点击。",
+          "before": "原生列表为 New Tab、A、B、C、D；B 是唯一 selected row。窗口显示 TC-B · TC-PHI507-r2-DBL-08-PER-INPUT-KEYBOARD。",
+          "confirmation_choices": "Sticky Keys 和 Mouse Keys 的详情均用 Cancel 退出，未改详情选项。Mouse Keys 第一次点击 Use Mouse Keys，返回后开关仍 off；第二次进入确认框后发送 Return，确认框仍在，随后点击 Cancel。未出现浏览器关闭确认。System Settings 关闭返回 App quit，按预期关闭事件记录。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-08-PER attempt1 sticky-before",
+            "EVIDENCE: DBL-08-PER attempt1 sticky-enabled",
+            "EVIDENCE: DBL-08-PER attempt1 failure",
+            "EVIDENCE: DBL-08-PER attempt1 shift-held",
+            "EVIDENCE: DBL-08-PER attempt1 sticky-restored",
+            "EVIDENCE: DBL-08-PER attempt1 mouse-before",
+            "EVIDENCE: DBL-08-PER attempt1 mouse-enabled",
+            "EVIDENCE: DBL-08-PER attempt1 mouse-restored",
+            "EVIDENCE: DBL-08-PER attempt1 settings-general",
+            "EVIDENCE: DBL-08-PER attempt1 settings-advanced",
+            "EVIDENCE: DBL-08-PER attempt1 after"
+          ],
+          "identity_checks": "QA 固定路径的 PID 开始、异常现场和结束均为 87230；System Settings PID 88744。A/B/C/D 原生标签容器均带批次 TC-PHI507-r2-DBL-08-PER-INPUT-KEYBOARD。B 正文实见 TC-B、相同批次、普通页、空输入框；开始结束本次打开编号均为 b173157d-2466-41c2-9222-4ef0d83e4746。A/C/D 仅核对原生标签容器，未切页读取其正文编号。",
+          "language_observed": "General 实读 System Default；QA 和 System Settings 原生 UI 均为英文。",
+          "layout_observed": "General 截图中 Balanced 带选中边框。依本次诊断约束保留 Balanced，未切换到 Performance。",
+          "not_executed_reason": "仅Sticky Keys/Mouse Keys输入适配诊断，不是完整DBL-08。Command 坐标单击 C 与原生容器单击 C 均未执行：单独 Super_L 被 CU 拒绝，无可证实保持状态。Shift 范围选择点击未执行：单独 Shift_L 同样被拒绝，无可证实保持状态。KP_6、指针移动和 C 关闭控件 hover 检查未执行：Mouse Keys 两次开启尝试均未实读 on。未执行 DBL-08 的拖动及关闭按钮验收动作。",
+          "operator_errors": [
+            "指定单独 Super_L 请求一次，CU 返回：-10005 keyPressIncludedNoNonModifierKeys(ComputerUse.XKeysymString.KeyPress(keys: [ComputerUse.XKeysym.Super_L]))；未猜其他参数或重复尝试。",
+            "独立的指定单独 Shift_L 请求一次，CU 返回：-10005 keyPressIncludedNoNonModifierKeys(ComputerUse.XKeysymString.KeyPress(keys: [ComputerUse.XKeysym.Shift_L]))；未重复尝试。",
+            "shift-held 标记对应按键错误后的现场，未观察到保持状态；mouse-enabled 标记包含确认框和仍为 off 的现场，均不能作为启用成功证据。未生成 command-selection、shift-selection 或 mouse-motion 的已执行证据。"
+          ],
+          "precondition_actual": "按额外诊断约束，实读既有 A/B/C/D 和 B 单选状态，不重建验收页面、不改双击关闭开关。Sticky Keys 原 off，临时开启后实读 on；Accessibility Keyboard 保持 off。Mouse Keys 原 off，未获得 on 的实际状态。",
+          "settings_observed": "Sticky Keys off→on→off。详情原值：五次 Shift 切换 off、提示音 on、屏幕显示 on、位置 Top Right，未改。Accessibility Keyboard、Full Keyboard Access、Slow Keys 均 off。Mouse Keys 初末 off；详情原值：五次 Option 切换 off、忽略内建触控板 off、Initial delay 3、Maximum speed 6，未改。系统 Double-click speed 实读 8，未改。QA 收尾实读双击关闭 off／按位置关闭 on，未点击这两个开关。",
+          "steps_executed": [
+            "通过 CU 打开 System Settings，正常进入 Accessibility → Keyboard，读取 Sticky Keys 及详情原值。",
+            "点击 Sticky Keys 原生开关一次，返回树及截图确认 on；同时确认 Accessibility Keyboard off。",
+            "回固定 QA 应用，实读 A/B/C/D 原生顺序和 B 唯一选中；发送单独 Super_L 一次，收到纯修饰键错误后保存现场，停止 Command 选择分支。",
+            "在仍为 B 单选的独立 Shift 分支发送 Shift_L 一次，收到相同类型错误；截图未见保持指示，停止范围选择分支。",
+            "回 Keyboard 关闭 Sticky Keys，截图及原生树确认 off；未出现可证实的保持或锁定指示。",
+            "正常进入 Accessibility → Pointer Control，读取 Mouse Keys 原 off 及详情原值。",
+            "第一次点击 Mouse Keys 开关，出现 Use Mouse Keys / Cancel 确认框；点击 Use Mouse Keys 后，原生树和截图仍显示 off。",
+            "依据最新 Mouse Keys 控件进行第二次开启尝试；确认框中发送 Return 后对话框仍在，随后点击 Cancel；原生树及截图确认 Mouse Keys off。",
+            "点击 System Settings 关闭按钮，保存 -10005: App quit 的预期关闭返回。",
+            "QA 打开 Settings，只读核对 General 的 Balanced / System Default 和 Advanced 的双击关闭 off／按位置关闭 on，关闭 Settings，保存结束截图。"
+          ],
+          "unit_id": "DBL-08-PER"
+        },
+        "evidence": [
+          "qa-evidence/r3/DBL-08-performance-sticky-mouse-adapter-observations.json",
+          "qa-evidence/r3/DBL-08-performance-sticky-mouse-adapter-run.json",
+          "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json",
+          "qa-evidence/r3/DBL-08-PER-21.png",
+          "qa-evidence/r3/DBL-08-PER-22.png",
+          "qa-evidence/r3/DBL-08-PER-23.png",
+          "qa-evidence/r3/DBL-08-PER-24.png",
+          "qa-evidence/r3/DBL-08-PER-25.png",
+          "qa-evidence/r3/DBL-08-PER-26.png",
+          "qa-evidence/r3/DBL-08-PER-27.png",
+          "qa-evidence/r3/DBL-08-PER-28.png",
+          "qa-evidence/r3/DBL-08-PER-29.png",
+          "qa-evidence/r3/DBL-08-PER-30.png",
+          "qa-evidence/r3/DBL-08-PER-31.png",
+          "qa-evidence/r3/DBL-08-PER-32.png"
+        ],
+        "evidence_metadata": "qa-evidence/r3/DBL-08-performance-sticky-mouse-adapter-evidence.json",
+        "reviewed_by": "Ripley",
+        "reviewed_at": "2026-10-30T17:26:06.501068+00:00"
       }
     ]
   },

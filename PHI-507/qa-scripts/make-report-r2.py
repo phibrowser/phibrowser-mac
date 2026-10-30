@@ -8,7 +8,7 @@ qa=Path('PHI-507');assert not Path('.lane/current.json').exists(),'Release the l
 rows=json.loads((qa/'execution-ledger-r2.json').read_text());assert len(rows)==512 and len({r['key'] for r in rows})==512
 assert a.checkpoint or not any(r['result']=='pending' for r in rows),'Resolve every pending item explicitly, preserving not-run reasons'
 if a.checkpoint:assert a.verdict=='blocked','An incomplete checkpoint cannot pass'
-identity=json.loads((qa/'qa-evidence/r2/installed-identity.json').read_text());out=qa/f'report-r{a.round}';out.mkdir(exist_ok=True);evroot=out/'evidence'
+identity=json.loads((qa/f'qa-evidence/r{a.round}/installed-identity.json').read_text());out=qa/f'report-r{a.round}';out.mkdir(exist_ok=True);evroot=out/'evidence'
 if evroot.exists():shutil.rmtree(evroot)
 evroot.mkdir()
 bugs=json.loads((qa/'bugs-r2.json').read_text()) if (qa/'bugs-r2.json').exists() else []

@@ -1,0 +1,427 @@
+[
+  {
+    "unit_id": "ENV-02-COMMON",
+    "attempt": 1,
+    "phase": "settings-opened",
+    "file": "ENV-02-COMMON-01.png",
+    "original_marker": "ENV-02-COMMON attempt1 before",
+    "source_file": "ENV-02_SET-01-completion-004.jpg",
+    "source_sha256": "1c86b52f3f889cc4203a4da8962b529334de00c7e3cf6d4a841665476d5b0d80",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-02-COMMON",
+    "attempt": 1,
+    "phase": "advanced-switches",
+    "file": "ENV-02-COMMON-02.png",
+    "original_marker": "ENV-02-COMMON attempt1 general",
+    "source_file": "ENV-02_SET-01-completion-007.jpg",
+    "source_sha256": "8f9f6b9b7380d2101ee4c32f7e34fe3aa52c8ee4fab51784eb1cfcb7ed6bf4ce",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。 原marker为general，实际为Advanced，按画面归类。"
+  },
+  {
+    "unit_id": "ENV-02-COMMON",
+    "attempt": 1,
+    "phase": "customized",
+    "file": "ENV-02-COMMON-03.png",
+    "original_marker": "ENV-02-COMMON attempt1 customized",
+    "source_file": "ENV-02_SET-01-completion-010.jpg",
+    "source_sha256": "8f8d8a7dcdf081a04143ad2855d3ac7669fc64c9d407b2276c9352c3f2fe1bb2",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-02-COMMON",
+    "attempt": 1,
+    "phase": "close-list",
+    "file": "ENV-02-COMMON-04.png",
+    "original_marker": "ENV-02-COMMON attempt1 close-list",
+    "source_file": "ENV-02_SET-01-completion-011.jpg",
+    "source_sha256": "3cfcbaf1efd9c12348e1d13495c0aa7a7206df881d33910a2d101277d2840594",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-02-COMMON",
+    "attempt": 1,
+    "phase": "close-scroll",
+    "file": "ENV-02-COMMON-05.png",
+    "original_marker": "ENV-02-COMMON attempt1 close-scroll",
+    "source_file": "ENV-02_SET-01-completion-012.jpg",
+    "source_sha256": "2614121acbc35abb174f828cfed381233f2641e7e66342575a1d8faef3c63887",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-02-COMMON",
+    "attempt": 1,
+    "phase": "close-group-detail",
+    "file": "ENV-02-COMMON-06.png",
+    "original_marker": "ENV-02-COMMON attempt1 close-group-detail",
+    "source_file": "ENV-02_SET-01-completion-013.jpg",
+    "source_sha256": "8193018f3b06731fd781e1c526d5c83d4cd0bba1d16039b7229f31315014587b",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-02-COMMON",
+    "attempt": 1,
+    "phase": "failure",
+    "file": "ENV-02-COMMON-07.png",
+    "original_marker": "ENV-02-COMMON attempt1 failure",
+    "source_file": "ENV-02_SET-01-completion-014.jpg",
+    "source_sha256": "2b36a91eddf4d0ccd30ac0c0e166b4b5cdd165a1d3da1dbedc02826c8022f805",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-02-COMMON",
+    "attempt": 1,
+    "phase": "tab-category-top",
+    "file": "ENV-02-COMMON-08.png",
+    "original_marker": "ENV-02-COMMON attempt1 tab-category-top",
+    "source_file": "ENV-02_SET-01-completion-015.jpg",
+    "source_sha256": "ff326576ac71b793feb3d1b23b68542a0ee6c89b5ffa1a566edb3a87cf8dcd36",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-02-COMMON",
+    "attempt": 1,
+    "phase": "tab-category-end",
+    "file": "ENV-02-COMMON-09.png",
+    "original_marker": "ENV-02-COMMON attempt1 tab-category-end",
+    "source_file": "ENV-02_SET-01-completion-017.jpg",
+    "source_sha256": "f906d3abb9f01c2fab964ee564a376f8699766166168fb6a945453a86fe11ee8",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-02-COMMON",
+    "attempt": 1,
+    "phase": "after",
+    "file": "ENV-02-COMMON-10.png",
+    "original_marker": "ENV-02-COMMON attempt1 after",
+    "source_file": "ENV-02_SET-01-completion-019.jpg",
+    "source_sha256": "5b5c1df6fb65508946a170cda7498572063d1ee4b95d86737a22c2faa94cceed",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-01-COMMON",
+    "attempt": 1,
+    "phase": "before",
+    "file": "SET-01-COMMON-01.png",
+    "original_marker": "SET-01-COMMON attempt1 before",
+    "source_file": "ENV-02_SET-01-completion-020.jpg",
+    "source_sha256": "ec3a43a72f0db97e8dcc8a91e3eb15636ecd10667b10400ebfe7120e4728006a",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-01-COMMON",
+    "attempt": 1,
+    "phase": "resize-result",
+    "file": "SET-01-COMMON-02.png",
+    "original_marker": "SET-01-COMMON attempt1 resize-result",
+    "source_file": "ENV-02_SET-01-completion-022.jpg",
+    "source_sha256": "007335a46c86ebb0ea6a06f9f2ec52e7338166cf845920b0ee93a1c2f32e92b0",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-01-COMMON",
+    "attempt": 1,
+    "phase": "scrolled-card",
+    "file": "SET-01-COMMON-03.png",
+    "original_marker": "SET-01-COMMON attempt1 scrolled-card",
+    "source_file": "ENV-02_SET-01-completion-023.jpg",
+    "source_sha256": "dfe23ef24832fa97656126da59b1ec4f261b356e79cc319b090e678d12403d56",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-01-COMMON",
+    "attempt": 1,
+    "phase": "restored-settings",
+    "file": "SET-01-COMMON-04.png",
+    "original_marker": "SET-01-COMMON attempt1 restored-settings",
+    "source_file": "ENV-02_SET-01-completion-024.jpg",
+    "source_sha256": "3e34a6c4c5f831ad85b2b09855613f22cfb2a3aa6e305559f9e828c12f1a73eb",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-01-COMMON",
+    "attempt": 1,
+    "phase": "after",
+    "file": "SET-01-COMMON-05.png",
+    "original_marker": "SET-01-COMMON attempt1 after",
+    "source_file": "ENV-02_SET-01-completion-025.jpg",
+    "source_sha256": "83ad6bfc13e3bc55be5e17f562d504afc043219592442228aaed623cb95868e6",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-02-COMMON",
+    "attempt": 1,
+    "phase": "browser-before",
+    "file": "ENV-02-COMMON-11.png",
+    "original_marker": "ENV-02-COMMON attempt1 before",
+    "source_file": "ENV-02_SET-01-completion-003.jpg",
+    "source_sha256": "6984e029420e98c4c238053a2380bcc0dd73b32fce024dd01c0e75c7f579438b",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "CU原始完整窗口仅缩放；补存同名marker组中较早的实际浏览器/General画面，不替换旧图。"
+  },
+  {
+    "unit_id": "ENV-02-COMMON",
+    "attempt": 1,
+    "phase": "general-language-layout",
+    "file": "ENV-02-COMMON-12.png",
+    "original_marker": "ENV-02-COMMON attempt1 general",
+    "source_file": "ENV-02_SET-01-completion-006.jpg",
+    "source_sha256": "b1f635516ca1b54455e01be98fc9af2a26538d1676e950bf52f69c5046ea19f8",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": null,
+    "caption": "CU原始完整窗口仅缩放；补存同名marker组中较早的实际浏览器/General画面，不替换旧图。"
+  }
+]

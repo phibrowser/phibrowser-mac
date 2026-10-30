@@ -1,0 +1,82 @@
+{
+  "session_id": "01a18dd0-300d-7281-949e-ed59f9ffddf0",
+  "scope": "Saved item_completed MCP events only; no live browser operation or state read",
+  "recovered_at": "2026-10-30T17:22:28.521555+00:00",
+  "mcp_call_count": 42,
+  "calls_by_server_tool": {
+    "computer-use/get_app_state": 20,
+    "computer-use/click": 18,
+    "computer-use/press_key": 4
+  },
+  "non_computer_use_events": [],
+  "selected_events": [
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "failed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "key": "Super_L"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 59347916
+      },
+      "error": null,
+      "returned_text": [
+        "Computer Use server error -10005: keyPressIncludedNoNonModifierKeys(ComputerUse.XKeysymString.KeyPress(keys: [ComputerUse.XKeysym.Super_L]))"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "failed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "key": "Shift_L"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 48456666
+      },
+      "error": null,
+      "returned_text": [
+        "Computer Use server error -10005: keyPressIncludedNoNonModifierKeys(ComputerUse.XKeysymString.KeyPress(keys: [ComputerUse.XKeysym.Shift_L]))"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "arguments": {
+        "app": "/System/Applications/System Settings.app",
+        "key": "Return"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 458710083
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.apple.systempreferences (pid 88744)\nWindow: \"\", App: System Settings.\n0 sheet Secondary Actions: Raise\n\t1 image alert\n\t2 text Mouse Keys With Mouse Keys active, you can move the pointer and press the mouse button using the keyboard or a numeric keypad. If you’d like to turn on and use Mouse Keys, use the keyboard or numeric keypad now to click the Use Mouse Keys button. Press the Escape key or click the Cancel button to stop using Mouse Keys.\n\t3 button Use Mouse Keys, ID: action-button-1\n\t4 button Cancel, ID: action-button-2\n5 menu bar\n\t6 System Settings\n\t7 Edit\n\t8 View\n\t9 Window\n\t10 Help\n"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "key": "super+comma"
+      },
+      "duration": {
+        "secs": 1,
+        "nanos": 365485625
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.phibrowser.opensource.Mac (pid 87230)\nWindow: \"Guest\", App: Phi Tab Close QA.\n0 standard window Guest, Secondary Actions: Raise\n\t1 text Phi is not your default browser\n\t2 button Set as default, Description: love\n\t3 toolbar\n\t\t4 button Guest, Secondary Actions: Move next, Remove from toolbar\n\t\t5 button General, Secondary Actions: Move previous, Move next, Remove from toolbar\n\t\t6 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar\n\t\t7 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar\n\t\t8 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar\n\t\t9 button Phi & AI, Secondary Actions: Move previous, Move next, Remove from toolbar\n\t\t10 button Sync, Secondary Actions: Move previous, Move next, Remove from toolbar\n\t\t11 button Shortcuts, Secondary Actions: Move previous, Move next, Remove from toolbar\n\t\t12 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar\n\t\t13 button Developer, Secondary Actions: Move previous, Remove from toolbar\n\t14 close button\n\t15 zoom button (disabled)\n\t16 text Guest\n17 menu bar\n\t18 Phi\n\t19 File\n\t20 Edit\n\t21 View\n\t22 Spaces\n\t23 History\n\t24 Bookmarks\n\t25 Tab\n\t26 Window\n\t27 Help\n\t28 *DEBUG*\n\nThe focused UI element is 0 standard window Guest, Secondary Actions: Raise"
+      ]
+    }
+  ]
+}

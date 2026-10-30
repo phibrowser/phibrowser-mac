@@ -553,6 +553,21 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 
 @optional
 
+/// A companion app's page action was chosen in the web-content right-click
+/// menu (the list `setPageActionContextMenu:` pushed). The Mac client sends
+/// `pageActions.invoked` to the channel `channelId` that registered
+/// `actionId`, and to no other. `info` keys:
+///   @"tabId"         (NSNumber *, int64) — the tab the menu was opened in.
+///   @"windowId"      (NSNumber *, int64) — its window, 0 when it has none.
+///   @"url"           (NSString *)        — the page's URL.
+///   @"title"         (NSString *)        — the tab's title.
+///   @"selectionText" (NSString *)        — the selected text; may be empty.
+///   @"linkUrl"       (NSString *)        — the link right-clicked; may be empty.
+///   @"isIncognito"   (NSNumber *, BOOL)  — an off-the-record profile.
+- (void)pageActionInvoked:(NSString *)actionId
+                channelId:(NSString *)channelId
+                     info:(NSDictionary<NSString *, id> *)info;
+
 /// Hosted-window mode: Chromium asked to show or activate a hosted browser
 /// window — a routed navigation landing in another Space's window, a page
 /// calling window.focus(), chrome.windows.update({focused: true}), a tab
@@ -1180,6 +1195,23 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 ///                                            exclude the current Space from the
 ///                                            submenu in the right-clicked window.
 - (void)setOpenLinkSpaceMenu:(NSArray<NSDictionary<NSString *, id> *> *)spaces;
+
+/// Push the companion apps' page actions shown in the web-content right-click
+/// menu (`menu` `context` or `both`). Replaces the whole list atomically; send
+/// on every registration change. A click comes back as
+/// `pageActionInvoked:channelId:info:`.
+///
+/// `actions` is an array of dictionaries; keys per entry:
+///   @"channelId"     (NSString *)              — the registering channel.
+///   @"actionId"      (NSString *)              — the action's id.
+///   @"title"         (NSString *)              — the row's title.
+///   @"contexts"      (NSArray<NSString *> *)   — any of @"page", @"selection",
+///                                                @"link".
+///   @"documentUrlPatterns" (NSArray<NSString *> *) — `chrome.contextMenus`
+///                                                match patterns; empty or
+///                                                absent means every page.
+///   @"incognito"     (NSNumber *, BOOL)        — shown off the record too.
+- (void)setPageActionContextMenu:(NSArray<NSDictionary<NSString *, id> *> *)actions;
 
 /// Open `url` as a new foreground tab in `windowId`, bypassing Space URL
 /// routing for that one navigation. Used by the "ask every time" flow after

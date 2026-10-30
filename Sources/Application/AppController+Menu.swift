@@ -1398,6 +1398,48 @@ extension AppController {
                                          payload: payload)
     }
 
+    /// A page action chosen in the web-content right-click menu: like a File
+    /// menu row, but for the tab the menu was opened in, with the selection
+    /// and the link it was opened on.
+    @MainActor
+    func invokePageActionFromContextMenu(actionId: String, channelId: String, info: [String: Any]) {
+        let url = info["url"] as? String ?? ""
+        let isIncognito = (info["isIncognito"] as? NSNumber)?.boolValue ?? false
+        guard let action = PageActionRegistry.shared.action(id: actionId, channelId: channelId),
+              !isIncognito || action.incognito,
+              action.applies(toDocumentAt: url),
+              let tabId = (info["tabId"] as? NSNumber)?.intValue else {
+            return
+        }
+        var payload: [String: Any] = [
+            "tabId": tabId,
+            "url": url,
+            "title": info["title"] as? String ?? "",
+            "isIncognito": isIncognito,
+        ]
+        if let windowId = (info["windowId"] as? NSNumber)?.intValue, windowId != 0 {
+            payload["windowId"] = windowId
+        }
+        for key in ["selectionText", "linkUrl"] {
+            if let value = info[key] as? String, !value.isEmpty { payload[key] = value }
+        }
+        // The tab's Profile and DevTools page target, as a File-menu row
+        // sends them, when the tab is one of ours.
+        for controller in SpaceSessionControllersManager.shared.getAllWindows() {
+            let state = controller.browserState
+            guard let tab = state.tabs.first(where: { $0.guid == tabId }) else { continue }
+            payload["profileId"] = state.profileId
+            payload["windowId"] = state.windowId
+            if let wrapper = tab.webContentWrapper,
+               wrapper.responds(to: #selector(getter: WebContentWrapper.devToolsTargetId)),
+               let targetId = wrapper.devToolsTargetId, !targetId.isEmpty {
+                payload["targetId"] = targetId
+            }
+            break
+        }
+        PageActionRegistry.shared.invoke(actionId: actionId, channelId: channelId, payload: payload)
+    }
+
     @MainActor
     @objc func copySelectedTabURLs(_ sender: Any?) {
         guard let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState else {

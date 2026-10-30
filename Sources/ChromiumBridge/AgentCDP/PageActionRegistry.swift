@@ -137,6 +137,9 @@ struct PageAction: Equatable {
 /// host is `*`, `*.<domain>` or a host name, and the path is a glob over the
 /// URL's path and query.
 struct PageActionURLPattern: Equatable {
+    /// The pattern as registered, for Chromium's right-click menu, which
+    /// matches it again itself.
+    let source: String
     private let schemes: Set<String>
     private let host: String
     private let path: String
@@ -144,6 +147,7 @@ struct PageActionURLPattern: Equatable {
     private static let allURLsSchemes: Set<String> = ["http", "https", "file", "ftp", "ws", "wss"]
 
     init?(_ pattern: String) {
+        source = pattern
         if pattern == "<all_urls>" {
             schemes = Self.allURLsSchemes
             host = "*"
@@ -219,8 +223,10 @@ struct PageActionURLPattern: Equatable {
 /// A channel's set is replaced whole by each `pageActions.register` and
 /// dropped when the channel closes (`AgentDirectConnection.teardown`), so a
 /// client's rows disappear with it. The File menu reads the set when it is
-/// rebuilt (`AppController.installOrUpdateFileMenuItems`); a click is sent back
-/// as `pageActions.invoked` to the registering channel only.
+/// rebuilt (`AppController.installOrUpdateFileMenuItems`); the web-content
+/// right-click menu is Chromium's, so the `context` rows are pushed down to it
+/// on every change (`setPageActionContextMenu:`). A click in either is sent
+/// back as `pageActions.invoked` to the registering channel only.
 ///
 /// Thread-safe: registration arrives on the main thread, removal on a
 /// channel's own queue.
@@ -327,6 +333,16 @@ final class PageActionRegistry {
         }
     }
 
+    /// The rows the web-content right-click menu shows, in registration order.
+    var contextMenuEntries: [Entry] {
+        lock.lock(); defer { lock.unlock() }
+        return channelOrder.flatMap { channelId in
+            (actionsByChannel[channelId] ?? [])
+                .filter { $0.menu != .file }
+                .map { Entry(channelId: channelId, action: $0) }
+        }
+    }
+
     /// The live registration behind a menu row, or nil once it is gone.
     func action(id: String, channelId: String) -> PageAction? {
         lock.lock(); defer { lock.unlock() }
@@ -352,6 +368,30 @@ final class PageActionRegistry {
     private static func scheduleMenuRefresh() {
         DispatchQueue.main.async {
             AppController.shared?.refreshPrefGatedMenuItems()
+            pushContextMenuToChromium()
         }
+    }
+
+    /// Replaces the right-click rows Chromium shows with the current set.
+    /// A framework without the hook keeps none.
+    static func pushContextMenuToChromium() {
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge,
+              (bridge as AnyObject).responds(to: #selector(PhiChromiumBridgeProtocol.setPageActionContextMenu(_:)))
+        else {
+            AppLogWarn("[PageActions] right-click rows not pushed: the framework has no hook")
+            return
+        }
+        let payload: [[String: Any]] = shared.contextMenuEntries.map { entry in
+            [
+                "channelId": entry.channelId,
+                "actionId": entry.action.id,
+                "title": entry.action.title,
+                "contexts": entry.action.contexts.map(\.rawValue),
+                "documentUrlPatterns": entry.action.documentURLPatterns.map(\.source),
+                "incognito": NSNumber(value: entry.action.incognito),
+            ]
+        }
+        bridge.setPageActionContextMenu(payload)
+        AppLogDebug("[PageActions] pushed \(payload.count) right-click row(s) to Chromium")
     }
 }

@@ -3878,6 +3878,16 @@ extension PhiChromiumCoordinator {
             action: .removed(splitId: splitId)))
     }
 
+    /// A companion app's page action chosen in the web-content right-click
+    /// menu: reported to the channel that registered it.
+    @objc(pageActionInvoked:channelId:info:)
+    func pageActionInvoked(_ actionId: String, channelId: String, info: [String: Any]) {
+        DispatchQueue.main.async {
+            AppController.shared?.invokePageActionFromContextMenu(actionId: actionId, channelId: channelId,
+                                                                   info: info)
+        }
+    }
+
     func openReaderView(forTabId tabId: Int64, windowId: Int64) {
         AppLogInfo("📖 [Reader] context menu asked for Reader View: " +
                    "tab=\(tabId) window=\(windowId)")

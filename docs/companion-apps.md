@@ -92,20 +92,28 @@ shortcut needs one printable key and the `command` modifier, otherwise only
 the shortcut is dropped. Registrations end when the channel closes. A request
 from outside a direct channel gets `direct_channel_required`.
 
-Rendering is File menu only: actions with `menu` `file` or `both` become rows
-after Save Page (and Save to Folio when present), tagged
-`AppController.filePageActionItemTag` and rebuilt with the menu. The page
-context menu is built by Chromium and has no Swift-side hook, so `context`
-rows are not shown yet. At validation a row is hidden in off-the-record
+Actions with `menu` `file` or `both` become File menu rows after Save Page
+(and Save to Folio when present), tagged `AppController.filePageActionItemTag`
+and rebuilt with the menu. At validation a row is hidden in off-the-record
 windows unless `incognito` is true, and disabled unless the active page
 matches `documentUrlPatterns` (`chrome.contextMenus` match patterns; none
 means every page). A shortcut becomes the row's key equivalent only when no
 menu row or configured command already owns that key.
 
+Actions with `menu` `context` or `both` also show in the web-content
+right-click menu, after the extensions' items. That menu is Chromium's, so
+the registry pushes those rows down on every change
+(`setPageActionContextMenu:`, kept in `phi::PhiPageActionMenuRegistry`), and
+Chromium shows a row when the menu was opened on one of its `contexts`
+(`selection` for selected text, `link` on a link, `page` on the page itself),
+the page matches its `documentUrlPatterns`, and the window is not off the
+record unless `incognito` is true.
+
 Choosing a row sends `pageActions.invoked` to the registering channel only:
 `{ id, tabId, targetId?, url, title, profileId, windowId, isIncognito }`.
 `targetId` is the tab's DevTools page target id, omitted when unavailable.
-File-menu invocations carry no `selectionText` or `linkUrl`.
+A right-click invocation also carries `selectionText` and `linkUrl` when the
+menu was opened on them; File-menu invocations carry neither.
 
 ## Built-in Folio while Folio.app is connected
 

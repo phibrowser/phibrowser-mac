@@ -1,0 +1,16 @@
+{
+  "source_round": 3,
+  "recorded_in_round": 4,
+  "url": "https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r3/",
+  "publish_exit_code": 0,
+  "report_site_commit": "af785aa1073f9a1bebe6c7829513e3fa66f3abad",
+  "recorded_at": "2026-10-30T18:08:52.542513+00:00",
+  "local_preview_cu_job": "VIS-05-report-preview-r3",
+  "report_case_counts": {
+    "pass": 77,
+    "fail": 0,
+    "blocked": 33,
+    "skipped": 402
+  },
+  "scope": "Report publisher returned success and URL; no CI watch or production mutation. Public page rendering can be rechecked through Computer Use later."
+}

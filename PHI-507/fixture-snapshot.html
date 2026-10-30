@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>TC 测试页</title>
+<style>
+:root{color-scheme:light dark;--paper:#f6f7f4;--sheet:#fff;--ink:#1d2320;--soft:#4f5a54;--line:#dfe3dd;--accent:#256247}
+@media(prefers-color-scheme:dark){:root{--paper:#151917;--sheet:#1d2220;--ink:#e6ebe7;--soft:#b6c0b9;--line:#38443b;--accent:#a2d6b1}}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.7 system-ui,-apple-system,"PingFang SC",sans-serif}main{max-width:820px;margin:auto;padding:40px 24px}h1{font-size:clamp(36px,7vw,64px);line-height:1.2;margin:18px 0}.muted{color:var(--soft)}.panel{background:var(--sheet);border:1px solid var(--line);border-radius:10px;padding:20px;margin:20px 0}label{display:block;font-weight:650}textarea{width:100%;min-height:140px;padding:12px;resize:vertical;font:inherit;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:6px}a{color:var(--accent)}nav{display:flex;gap:16px;flex-wrap:wrap}code{overflow-wrap:anywhere}#armed{font-weight:650}button{font:inherit;padding:8px 14px;border-radius:6px;background:var(--sheet);color:var(--ink);border:1px solid var(--line);cursor:pointer}:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+</style>
+</head>
+<body><main>
+<nav><a href="../">返回手测指南</a><a id="next" href="#">在本页访问另一测试页</a><a id="new" href="#" target="_blank" rel="noopener">在新标签页打开另一测试页</a></nav>
+<p class="muted">可丢弃的静态测试页 · 不收集输入内容 · 不向服务端提交表单</p>
+<h1 id="heading">正在准备测试页</h1>
+<div class="panel"><div>批次：<code id="run"></code></div><div>本次打开编号：<code id="instance"></code></div><div>页面类型：<strong id="kind"></strong></div><p id="armed" role="status">普通页面：输入不会阻止离开。</p></div>
+<div class="panel"><label for="draft">存活标记／临时草稿</label><p class="muted">输入例如 KEEP-P-731。切回被保护的 pin／书签时，文字和打开编号都应保持。这里不使用自动保存；不要填写真实信息。</p><textarea id="draft" placeholder="输入可丢弃的测试标记"></textarea><p><button id="disarm" type="button" hidden>停用本页离开确认</button></p></div>
+<div class="panel"><h2>可选：媒体和下载回归</h2><p class="muted">仅点击后开始低音量测试音，不申请麦克风权限。小文本下载用于下载 UI 回归；持续下载／关闭确认需要另备获准的慢速测试文件，不能用瞬间完成的小文件声称覆盖。</p><button id="audio" type="button">开始测试音</button> <button id="download" type="button">下载可丢弃测试文本</button><p id="audio-status" role="status">测试音未启动。</p></div>
+<details><summary>判定说明</summary><p>普通页不会拦截关闭。未保存型页面在你真正输入后才启用 beforeunload；浏览器决定离开提示的具体文案。必须先看到“离开确认已启用”，再做关闭测试。</p><p>保存项仍在不代表实时页面没被关过：对照临时草稿和本次打开编号。撤销关闭后浏览器可能恢复表单或重建文档；恢复用例不要求打开编号不变。</p><p>本页不能替你创建 pin、分屏或标签组，也不会自动关闭任何浏览器页面。所有原生操作都由测试人完成。</p></details>
+</main>
+<script>
+(() => {
+  'use strict';
+  let audioContext = null;
+  const audioButton = document.getElementById('audio');
+  const audioStatus = document.getElementById('audio-status');
+  audioButton.addEventListener('click', async () => {
+    try {
+      if (audioContext) { await audioContext.close(); audioContext = null; audioButton.textContent = '开始测试音'; audioStatus.textContent = '测试音已停止。'; return; }
+      audioContext = new AudioContext();
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain(); gain.gain.value = 0.015;
+      oscillator.frequency.value = 220; oscillator.connect(gain); gain.connect(audioContext.destination);
+      await audioContext.resume(); oscillator.start();
+      audioButton.textContent = '停止测试音'; audioStatus.textContent = '低音量测试音正在播放；可查看原生 tab 音频／静音控件。';
+    } catch (error) { if (audioContext) { audioContext.close(); audioContext = null; } audioStatus.textContent = '此环境无法启动音频，请记录前置限制。'; }
+  });
+  window.addEventListener('pagehide', () => { if (audioContext) audioContext.close(); });
+  document.getElementById('download').addEventListener('click', () => {
+    const url = URL.createObjectURL(new Blob(['Disposable Phi tab closing QA fixture.\n'], {type:'text/plain;charset=utf-8'}));
+    const link = document.createElement('a'); link.href = url; link.download = 'TC-disposable-download.txt';
+    document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url),1000);
+  });
+  const query = new URLSearchParams(location.search);
+  const label = (query.get('tab') || 'A').slice(0,48);
+  const run = (query.get('run') || 'manual').slice(0,48);
+  const unsaved = query.get('kind') === 'unsaved';
+  const longTitle = query.get('kind') === 'long';
+  const name = 'TC-' + label + (longTitle ? ' · 很长的标签标题用于检查截断和关闭命中区域 · Long tab title for layout checks' : '') + ' · ' + run;
+  document.title = name;
+  document.getElementById('heading').textContent = 'TC-' + label;
+  document.getElementById('run').textContent = run;
+  document.getElementById('kind').textContent = unsaved ? '未保存确认型' : longTitle ? '长标题普通页' : '普通页';
+  document.getElementById('instance').textContent = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+  const next = new URL(location.href);
+  next.searchParams.set('tab', label + '-away');
+  next.searchParams.set('kind','normal');
+  document.getElementById('next').href = next.href;
+  document.getElementById('new').href = next.href;
+  const beforeUnload = event => { event.preventDefault(); event.returnValue = ''; };
+  const armed = document.getElementById('armed');
+  const disarm = document.getElementById('disarm');
+  if (unsaved) {
+    armed.textContent = '尚未启用离开确认：请先在输入框键入测试文字。';
+    document.getElementById('draft').addEventListener('input', () => {
+      window.addEventListener('beforeunload', beforeUnload);
+      armed.textContent = '离开确认已启用：现在可以测试取消／确认关闭。';
+      disarm.hidden = false;
+    });
+    disarm.addEventListener('click', () => {
+      window.removeEventListener('beforeunload', beforeUnload);
+      armed.textContent = '离开确认已停用，可安全清理这个测试页。';
+      disarm.hidden = true;
+    });
+  }
+})();
+</script></body></html>

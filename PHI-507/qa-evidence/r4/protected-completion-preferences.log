@@ -1,0 +1,157 @@
+Output:
+
+
+App=com.phibrowser.opensource.Mac (pid 97109)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+	1 scroll area Secondary Actions: Scroll Up, Scroll Down
+		2 text Always show full URL
+		3 toggle button off
+		4 text Show a preview card when hovering over a tab
+		5 toggle button on
+		6 text Show open tab indicators
+		7 toggle button off
+		8 text Show a dot on inactive pinned tabs and bookmarks that are currently open. Show unloaded tab indicators
+		9 toggle button on
+		10 text Show a dashed outline around tab icons when their pages are unloaded from memory. Double-click to close tabs Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions.
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		12 text Close tabs by position Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar.
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+		14 text Restore last session
+		15 toggle button on
+		16 text Reopen your windows and tabs the next time you open Phi. Shorten links to selected text
+		17 toggle button on
+		18 text Applies to “Copy Link to Highlight” in the right-click menu. Turn off to copy the full link. Mini Player Control media playing in background tabs from the sidebar.
+		19 pop up button Description: Mini Player, Value: Auto, ID: settings.sidebarMedia.presentation
+		20 text Auto picture-in-picture Pop out playing video when you switch tabs or apps
+		21 pop up button Normal
+		22 text Developer mode
+		23 toggle button on
+		24 text Agent access, permissions, and the password manager live in the Developer tab.
+		25 button Additional browser settings
+		26 scroll bar (settable, float) 0
+			27 value indicator (settable, float) 0
+			28 increment arrow button
+		12 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+	14 close button
+The focused UI element is 0 standard window Guest, Secondary Actions: Raise
+
+App=com.phibrowser.opensource.Mac (pid 97109)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+			28 increment arrow button
+			29 decrement arrow button
+		41 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+	43 close button
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise
+
+App=com.phibrowser.opensource.Mac (pid 97109)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+			28 increment arrow button
+			29 decrement arrow button
+		41 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+	43 close button
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise
+
+EVIDENCE: DBL-09-PER attempt1 on-settings
+
+App=/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 97109)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+			28 increment arrow button
+			29 decrement arrow button
+		41 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+	43 close button
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise
+
+Script completed
+Wall time 9.6 seconds
+0 standard window Guest, Secondary Actions: Raise
+		12 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+	14 close button
+The focused UI element is 0 standard window Guest, Secondary Actions: Raise
+
+App=com.phibrowser.opensource.Mac (pid 97109)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+			28 increment arrow button
+			29 decrement arrow button
+		41 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+	43 close button
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise
+
+App=com.phibrowser.opensource.Mac (pid 97109)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+			28 increment arrow button
+			29 decrement arrow button
+		41 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+	43 close button
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise
+
+EVIDENCE: DBL-23-PER attempt1 off-settings
+
+App=/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 97109)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+			28 increment arrow button
+			29 decrement arrow button
+		41 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+	43 close button
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise
+
+App=com.phibrowser.opensource.Mac (pid 97109)
+Window: "TC-C · TC-PHI507-r2-DBL-23-PER-complete-r4", App: Phi Tab Close QA.
+
+The focused UI element is 0 standard window General, Secondary Actions: Raise
+</app_state>
+
+Script completed
+Wall time 2.7 seconds
+Output:
+
+
+App=com.phibrowser.opensource.Mac (pid 97109)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+		5 toggle button on
+		9 toggle button on
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+		14 text Restore last session
+		15 toggle button on
+		17 toggle button on
+		23 toggle button on
+	43 close button
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise
+
+EVIDENCE: DBL-23-PER attempt1 restored-advanced
+
+App=/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 97109)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+		5 toggle button on
+		9 toggle button on
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+		14 text Restore last session
+		15 toggle button on
+		17 toggle button on
+		23 toggle button on
+	43 close button
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise
+
+App=com.phibrowser.opensource.Mac (pid 97109)

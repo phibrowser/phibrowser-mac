@@ -1,0 +1,28 @@
+{
+  "reviewer": "Ripley",
+  "job": "DBL-09_DBL-23-performance-protected-complete-r4",
+  "reviewed_scope": "已阅读完整原始观察、CU审计、偏好原生返回片段，并实际查看本次全部64张整理截图。",
+  "decisions": {
+    "DBL-09-PER": "pass",
+    "DBL-23-PER": "pass"
+  },
+  "basis": [
+    "DBL-09四个核心双击前置均成立：新P与真正M保存入口绑定实时页已打开，有各自原编号与KEEP；普通M对照的编号不同且逐次保留。M进入原名编辑，Return结束后原编号和KEEP仍在。可选pin另页导航未做，不属于必做步骤。",
+    "DBL-23的on/off各六个动作，共十二次双击均有实际前后证据。PS左右半格分别命中；已打开时原编号与KEEP保留；显式Close保留保存入口后重开为新编号、空输入，未将重开误记为旧页存活。",
+    "MS off关闭前置中File Close Tab先关闭C并留下D，再关闭D。完整关闭前置形成后才重开真正保存入口；普通C/D对照原编号和KEEP在开始、on后、off后均保留。",
+    "初始off/on偏好有原生文字返回；initial-settings实际截图为General，不能当Advanced开关图。on-settings、off-settings及最终完整Advanced截图已核对。",
+    "原整理restored-general/advanced为上部裁切，未覆盖布局和开关；保留原图片，追加同一原始截图的完整窗口版本DBL-23-PER-68/69。最终Balanced、System Default、off/on实见。",
+    "此前前置不成立的两项partial尝试保留，未覆盖、未改判。准备误开Edit菜单原样记录，未归为产品bug。"
+  ],
+  "limitations": [
+    "仅Performance布局本次两项，不推及Balanced/Comfortable或其他用例。",
+    "未执行旧版构建对照；本次未发现可确认的产品缺陷。"
+  ],
+  "audit": {
+    "session_id": "01a18e99-edba-78c2-a81c-0df87cb94a33",
+    "actual_computer_use_events": 246,
+    "non_computer_use_calls": 0,
+    "raw_images": 90,
+    "reviewed_curated_images": 64
+  }
+}

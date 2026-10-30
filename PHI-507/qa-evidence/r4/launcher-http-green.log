@@ -1,0 +1,7 @@
+test_invalid_page_specification_is_rejected_before_preparation (__main__.FixtureLauncherTest) ... ok
+test_ordinary_links_preserve_requested_document_urls_and_original_fixture (__main__.FixtureLauncherTest) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.066s
+
+OK

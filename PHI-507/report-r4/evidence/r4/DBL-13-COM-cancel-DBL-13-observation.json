@@ -1,0 +1,33 @@
+{
+  "unit_id": "DBL-13-COM-cancel",
+  "job": "DBL-13",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-13-observations.json",
+  "observation": {
+    "active_after": "A/{A}，屏幕唯一活动标签。",
+    "active_before": "A/{A}，屏幕唯一活动标签。",
+    "after": "仍仅 A，正文空白；无组或 split。",
+    "before": "唯一 A（TC-PHI507-r2-DBL-13-COM-cancel）；未创建 B/C。",
+    "confirmation_choices": "未触发被测离开确认，未选择取消。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-13-COM-cancel attempt1 settings",
+      "EVIDENCE: DBL-13-COM-cancel attempt1 setup-A",
+      "EVIDENCE: DBL-13-COM-cancel attempt1 before",
+      "EVIDENCE: DBL-13-COM-cancel attempt1 after"
+    ],
+    "identity_checks": "固定 app 路径，PID 95460。tabStripTab 的 Description 为 New Tab，内部 text、窗口标题及屏幕标签为本项 TC-A；正文编号无法核对。",
+    "language_observed": "General 为 System Default，原生界面英文。",
+    "layout_observed": "General 实际选择 Comfortable，紫色选中框及外部横向标签已截图确认。",
+    "not_executed_reason": "本项 A 在 91613ms 的读取中正文仍为空白，无法建立可核对的 A/B/C 和已输入 unsaved B。未执行双击、取消及存活检查。",
+    "operator_errors": [],
+    "precondition_actual": "仅本项 A 屏幕标签和窗口标题；未见正文、批次、编号及输入框，未创建 B/C 或草稿。",
+    "settings_observed": "Advanced 重读 doubleClick=on、directional=on；未点击开关。",
+    "steps_executed": [
+      "通过 General 选择 Comfortable 并截图确认，读取 System Default。",
+      "Advanced 核对两个开关均为 on。",
+      "在新建 New Tab 的实际 tabStripTab 上打开菜单，选择 Close Other Tabs，再经地址栏导航本项 normal A。",
+      "分段读取至 91613ms，正文仍空白；记录容器 Description 与内部 text 的实际差异并保存结束证据。"
+    ],
+    "unit_id": "DBL-13-COM-cancel"
+  }
+}

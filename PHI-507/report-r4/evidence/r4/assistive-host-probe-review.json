@@ -1,0 +1,24 @@
+{
+  "issue": "PHI-507",
+  "reviewer": "Ripley",
+  "job": "DBL-08-DBL-08-PER-assistive-host-probe-r4",
+  "scope": "Balanced上的真实辅助键盘宿主诊断；不是Performance或DBL-08验收",
+  "finding": "实际Accessibility Keyboard从off开启on；精确宿主/System/Library/Input Methods/Assistive Control.app两次读取成功，PID6399、原生树仅无标题window及Raise，截图全白，没有可操作的Command键。未执行不存在的虚拟键或依赖其状态的多选点击。经Turn off确认恢复，最终五项输入开关均off，QA偏好和ABC/B单选原状态保留。",
+  "capture_notes": "追加同次原008的Accessibility Keyboard on现场与原012的Turn off确认；原有图保留，不把空白宿主图当作不存在应用的证据。",
+  "audit": "29实际CU事件，非CU0；宿主两次实际返回另存。",
+  "limits": "仅确认该会话可观察且可操作的能力，不推定其他设备或所有系统键盘均不存在；本项未执行DBL-08验收动作。",
+  "reviewed_at": "2026-10-30T20:40:06.715836+00:00",
+  "viewed_evidence": [
+    "DBL-08-PER-25.png",
+    "DBL-08-PER-26.png",
+    "DBL-08-PER-27.png",
+    "DBL-08-PER-28.png",
+    "DBL-08-PER-29.png",
+    "DBL-08-PER-30.png",
+    "DBL-08-PER-31.png",
+    "DBL-08-PER-32.png",
+    "DBL-08-PER-33.png",
+    "DBL-08-PER-34.png",
+    "DBL-08-PER-35.png"
+  ]
+}

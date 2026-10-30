@@ -1,0 +1,37 @@
+{
+  "unit_id": "DBL-13-BAL-cancel",
+  "job": "DBL-13-link-preparation-retry-r4",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+  "observation": {
+    "active_after": "B；逐页核对结束返回 B",
+    "active_before": "B",
+    "after": "[A,B,C]；选中集 {B}；三页标记和原编号保留",
+    "before": "[A,B,C]；选中集 {B}；普通标签，无 split 配对或测试组",
+    "confirmation_choices": "核心观察到 1 次 Leave site? Changes you made may not be saved.；点击 Cancel。后续逐页核对未见重复确认。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-13-BAL-cancel attempt1 layout",
+      "EVIDENCE: DBL-13-BAL-cancel attempt1 before",
+      "EVIDENCE: DBL-13-BAL-cancel attempt1 confirmation",
+      "EVIDENCE: DBL-13-BAL-cancel attempt1 after",
+      "EVIDENCE: DBL-13-BAL-cancel attempt1 retained-A",
+      "EVIDENCE: DBL-13-BAL-cancel attempt1 retained-C",
+      "EVIDENCE: DBL-13-BAL-cancel attempt1 retained-B"
+    ],
+    "identity_checks": "PID 97109；run=TC-PHI507-r2-DBL-13-BAL-cancel。A=d4a5f67e-f595-4a1f-9a14-b8021b79b16b；B=e22e2e87-7e83-429a-86ad-ca927b1dd097；C=d8bc64f6-a86c-4128-8fca-3dabbeb8fcc7。KEEP-DBL-13-BAL-cancel-A/C、DRAFT-DBL-13-BAL-cancel-B 与原编号均逐页复读保留。",
+    "language_observed": "General=System Default；英文。",
+    "layout_observed": "General 选择 Balanced，截图显示选中；浏览器为外部纵向。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "清理上一专用窗口，独立新窗口准确建立 A/B/C；A/C normal 与 KEEP 标记，B unsaved 与 DRAFT；B 实见离开确认已启用。",
+    "settings_observed": "Advanced 原生树复读双击关闭 on、按位置关闭 on；未点击开关。",
+    "steps_executed": [
+      "General 选择 Balanced 并截图，复读双开关。",
+      "独立 File→New Window，按真实 fixture 链接及准确地址导航建立 A/B/C。",
+      "输入并实读三页标记、类型和编号。",
+      "B 原生 row 请求 click_count:2，确认框点击 Cancel。",
+      "逐页复读 A/C/B，输出 OBSERVATION。"
+    ],
+    "unit_id": "DBL-13-BAL-cancel"
+  }
+}

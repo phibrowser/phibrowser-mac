@@ -1,0 +1,36 @@
+{
+  "unit_id": "VIS-05-COMMON",
+  "job": "VIS-05-report-preview-r3",
+  "scope": "r4中只读预览r3本地报告：汇总512/77/0/33/402、ENV-04沿用说明与旧图、新DBL-10说明/缩略图/放大图实际显示；不是VIS-05验收，不改变产品测试计数。",
+  "source": "qa-evidence/r4/VIS-05-report-preview-r3-observations.json",
+  "observation": {
+    "active_after": "Phi TabClose 独立安装包完整手册测试 需求测试文档 - PHI-507；选中集{本次新建报告预览tab}。",
+    "active_before": "TC-E · TC-PHI507-r2-DBL-10-COM-INACTIVE；选中集{E}。",
+    "after": "A | 原TC-G[B,D] | E | 本次新建r3报告预览tab；无可见split。ENV-04-COMMON和DBL-10-PER已展开，图像放大层已关闭，无菜单或确认框。",
+    "before": "原生列表A | TC-PHI507-r2-DBL-10-COM-INACTIVE-TC-G[B,D] | E；无可见split。通过Spaces菜单选择TC-QA-PHI507-r2后列表未变。",
+    "confirmation_choices": "未触发确认。未访问需要账号的计划文档，未填写或修改报告结果，未导出、复制报告或清理对象。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-05-COMMON attempt1 report-top",
+      "EVIDENCE: VIS-05-COMMON attempt1 report-carried",
+      "EVIDENCE: VIS-05-COMMON attempt1 report-new-case",
+      "EVIDENCE: VIS-05-COMMON attempt1 after"
+    ],
+    "identity_checks": "新租约固定路径app实读PID为92816，各关键截图PID一致。报告tab由本轮Cmd+T明确创建，原生地址实见指定file URL。首页显示报告构建文字@b30ef8b3acbc，仅作报告内容记录，未核验为当前app构建。ENV旧截图实见TC-B及旧编号2a6e95cf-8074-4e05-b2ad-30972ab29ec8，未当作本轮页面编号。原TC成员仅核对原生列表，未切换或重跑其关闭行为。",
+    "language_observed": "General显示System Default；浏览器设置及菜单实际为英文，报告正文为中文。未切换语言。",
+    "layout_observed": "General截图实见Balanced选中，浏览器为纵向侧栏布局；未切换布局。",
+    "not_executed_reason": "仅r3报告本地预览，不是VIS-05验收；完整手册测试继续",
+    "operator_errors": [],
+    "precondition_actual": "固定QA app在新租约中实读PID 92816，初始活动页E。只读核对General及Advanced偏好，关闭Settings后在已确认的TC-QA-PHI507-r2内新建一个普通报告预览tab。",
+    "settings_observed": "Double-click to close tabs=off；Close tabs by position=on；Restore last session=on。仅查看，未点击开关；快捷键未修改。",
+    "steps_executed": [
+      "get_app_state重新读取固定QA app、PID、窗口及原TC列表；通过原生Settings读取语言、布局和两个关闭开关，再关闭Settings。",
+      "通过Spaces原生菜单选择TC-QA-PHI507-r2，Cmd+T新建一个普通tab，经原生地址栏输入file:///Users/e2e02/lane/qa-preview-r3/PHI-507/r3/index.html并提交，实见报告正文。",
+      "保存report-top：标题为“Phi TabClose 独立安装包完整手册测试 需求测试文档 - PHI-507”，显示第r3轮、未完成，以及512总数、77通过、0失败、33阻塞、402未执行。上述数字为报告现有内容。",
+      "首页摘要实见本轮新增31项，说明包含9语言×3布局27点、ENV-01补齐及DBL-10三个布局；先前有效结果和无效尝试保留，沿用项明确注明本轮未重跑。",
+      "用浏览器正常页面查找定位ENV-04-COMMON，点击该报告行展开。实见前置、步骤及“沿用r2的本次Computer Use测试活动结果，本轮未重跑”说明；旧截图预览实际加载，保存report-carried。",
+      "用正常页面查找定位DBL-10-PER并展开。实见前置“A | TC-G[B,C,D] | E；双击开”、活动及非活动C分支步骤、预期和实际记录；截图缩略图实际显示，保存report-new-case。",
+      "点击DBL-10-PER第1次历史尝试的一张缩略图，实见放大图。Escape后放大层仍可见，随后点击图片外侧深色遮罩关闭；最终get_app_state确认放大层关闭并保存after。"
+    ],
+    "unit_id": "VIS-05-COMMON"
+  }
+}

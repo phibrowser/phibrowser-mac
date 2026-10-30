@@ -1,0 +1,55 @@
+{
+  "unit_id": "DBL-16-COM",
+  "job": "DBL-16",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-16-observations.json",
+  "observation": {
+    "active_after": "普通结构 B→C→B；组内结构 B→C→B。每次 C 半双击后窗口 TC-C、右窗格蓝色边框；每次 B 半双击后窗口 TC-B、左窗格蓝色边框。结束逐页核对 A、D 后返回 B；恢复 Balanced 后仍为 B 左窗格活动。",
+    "active_before": "普通及组内关键动作前均为 B 左窗格活动，C 在右窗格。",
+    "after": "TC-PHI507-r2-DBL-16-COM-G[A,S[B+C],D]，组原生计数4；集合仍为 {A,B,C,D}，B 左/C 右。Comfortable 图中 split button 高亮，未暴露 selected 值；恢复 Balanced 后仅 split row 高亮，原生 row 标为 selectable。结束 PID 97109、窗口 TC-B。",
+    "before": "独立窗口内 [A,S[B+C],D]；随后组结构成员 A、S[B+C]、D，组计数4。关键截图保留 App、PID 97109、Window、水平 tabStripTab 或恢复后纵向 row 等相关原生行。",
+    "confirmation_choices": "核心双击没有确认框。Rename Group 对话框输入 TC-PHI507-r2-DBL-16-COM-G 后 Save。setup 关闭 BAL 专用窗口无离开确认。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-16-COM attempt1 layout",
+      "EVIDENCE: DBL-16-COM attempt1 settings",
+      "EVIDENCE: DBL-16-COM attempt1 failure",
+      "EVIDENCE: DBL-16-COM attempt1 new-A",
+      "EVIDENCE: DBL-16-COM attempt1 new-B",
+      "EVIDENCE: DBL-16-COM attempt1 new-C",
+      "EVIDENCE: DBL-16-COM attempt1 new-D",
+      "EVIDENCE: DBL-16-COM attempt1 identity-D",
+      "EVIDENCE: DBL-16-COM attempt1 identity-A",
+      "EVIDENCE: DBL-16-COM attempt1 identity-B",
+      "EVIDENCE: DBL-16-COM attempt1 identity-C",
+      "EVIDENCE: DBL-16-COM attempt1 ordinary-before",
+      "EVIDENCE: DBL-16-COM attempt1 ordinary-C-after",
+      "EVIDENCE: DBL-16-COM attempt1 ordinary-B-after",
+      "EVIDENCE: DBL-16-COM attempt1 group-before",
+      "EVIDENCE: DBL-16-COM attempt1 group-C-after",
+      "EVIDENCE: DBL-16-COM attempt1 group-B-after",
+      "EVIDENCE: DBL-16-COM attempt1 retained-A",
+      "EVIDENCE: DBL-16-COM attempt1 retained-D",
+      "EVIDENCE: DBL-16-COM attempt1 after",
+      "EVIDENCE: DBL-16-COM attempt1 restored-layout",
+      "EVIDENCE: DBL-16-COM attempt1 restored-settings",
+      "EVIDENCE: DBL-16-COM attempt1 ending-state"
+    ],
+    "identity_checks": "批次 TC-PHI507-r2-DBL-16-COM，四页均实见准确标题、普通页类型、正文和输入框。原打开编号：A=2a13b5cd-fbb4-4677-8b92-c78f8aefaf09；B=2418bd71-018b-41bf-9cac-f3bebdcb577d；C=f033cfb6-f8d3-436c-8e4c-dfa1c19de85c；D=14a27cbb-4db6-4e42-aa01-369338422a8e。KEEP-DBL-16-COM-A/B/C/D 实际输入并可见；B/C 在每次核心动作后保留原编号和标记，A/D 在结束时逐页复核。最终恢复 Balanced 的图仍可见 B/C 原编号及 KEEP。",
+    "language_observed": "General 实读 System Default；界面英文，未切换语言或触发语言重启。",
+    "layout_observed": "核心操作时 General 截图确认 Comfortable，外部水平标签栏；内部 B/C 左右分屏。批次结束通过 General 原生 Balanced button 恢复起始布局，截图确认蓝色选框，关闭 Settings 后实见外部纵向列表。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "setup 首次 File→New Window 点击返回 Computer Use server error -10005：The element ID is no longer valid。立即停止序列并 get_app_state；PID 97109，仍为旧 DBL-15-COM 窗口及 File 菜单。failure 标记对应读取仅返回文字，无 image 块，未声称存在该现场截图。依据新树索引重试后建立独立 COM 窗口；当时尚未建立 COM 页面或执行核心动作。"
+    ],
+    "precondition_actual": "正常关闭 BAL 专用窗口后，File→New Window 建立本项独立窗口。A/B/C/D 均通过原生地址栏到准确本地 fixture URL，后续页由真实页面的新标签链接建立；最终正文、类型、编号逐页核对后输入 KEEP。选择 B，右键 C→Split with Current，实见 A|S[B+C]|D。普通动作后右键 A→New Tab Group，右键准确组标题→Rename Group；完整 split 与 D 分别经 Add to Group 加入，组计数依次为1、3、4，画面顺序 A、S[B+C]、D。",
+    "settings_observed": "核心前及收尾 Advanced 均实读双击关闭 off、按位置关闭 on、Restore last session on。未点击任何开关，快捷键未改。最终仅将 Comfortable 布局恢复为起始 Balanced，Settings 已关闭。",
+    "steps_executed": [
+      "ordinary-before 后重新读取真实画面；3840×1920 原图中，对 C 标题半 (895,44) 请求 click_count:2，实见右窗格活动、窗口 TC-C；对 B 标题半 (710,44) 请求 click_count:2，实见左窗格活动、窗口 TC-B。每次重读并输出真实 image。",
+      "通过原生菜单建立 TC-PHI507-r2-DBL-16-COM-G[A,S[B+C],D]，实读计数4及正确顺序，输出 group-before。",
+      "根据组内最新原图，对 C 标题半 (1250,44) 请求 click_count:2，实见右窗格活动；对 B 标题半 (1080,44) 请求 click_count:2，实见左窗格活动。每次 B/C 原编号、KEEP 均可见并取图。",
+      "分别选择 A、D，读取其原编号及 KEEP；单击 B 半返回左窗格，输出 after 和逐 unit OBSERVATION。",
+      "打开原生 Settings→General，点击 Balanced 并取 restored-layout 图；进入 Advanced，读取 off/on/session on 并取 restored-settings 图；点击确认的 Settings close button，重读窗口及分屏身份，取 ending-state 图。"
+    ],
+    "unit_id": "DBL-16-COM"
+  }
+}

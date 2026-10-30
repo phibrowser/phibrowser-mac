@@ -1,0 +1,35 @@
+{
+  "job": "DBL-13-link-preparation-retry-r4",
+  "exit_code": 0,
+  "session_id": "01a18e41-539d-7993-abb5-571db81460d2",
+  "round": 4,
+  "lease_id": "cfcec3e6-9abd-43e8-87c4-779d0c5cf732",
+  "started_at": "2026-10-30T19:20:08.053491+00:00",
+  "ended_at": "2026-10-30T19:38:18.380933+00:00",
+  "units": [
+    "DBL-13-PER-cancel",
+    "DBL-13-PER-leave",
+    "DBL-13-BAL-cancel",
+    "DBL-13-BAL-leave",
+    "DBL-13-COM-cancel",
+    "DBL-13-COM-leave"
+  ],
+  "observed_units": [
+    "DBL-13-PER-cancel",
+    "DBL-13-PER-leave",
+    "DBL-13-BAL-cancel",
+    "DBL-13-BAL-leave",
+    "DBL-13-COM-cancel",
+    "DBL-13-COM-leave"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "b48e342b92f73b839c640e30f94b1de7cd9613d13b0dbc6024386b53d858ffbf",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 292,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

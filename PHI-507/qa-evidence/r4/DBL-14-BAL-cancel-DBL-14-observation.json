@@ -1,0 +1,45 @@
+{
+  "unit_id": "DBL-14-BAL-cancel",
+  "job": "DBL-14",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-14-observations.json",
+  "observation": {
+    "active_after": "Cancel 后 B，分屏条目保留；逐页检查结束为 D/{D}。",
+    "active_before": "B 活动，B+C 分屏；无多选。",
+    "after": "仍为 A | S[B+C] | D；B 草稿、启用离开确认提示、C 标记及两页原编号同时可见；A/D 原编号与标记随后逐页可见。",
+    "before": "独立窗口 A | S[B+C] | D；B 左、C 右；无组/pin。",
+    "confirmation_choices": "核心 Leave site?→Cancel；无勾选项。前项仅含普通页的窗口清理未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-14-BAL-cancel attempt1 settings-layout",
+      "EVIDENCE: DBL-14-BAL-cancel attempt1 setup-A",
+      "EVIDENCE: DBL-14-BAL-cancel attempt1 setup-B",
+      "EVIDENCE: DBL-14-BAL-cancel attempt1 setup-C",
+      "EVIDENCE: DBL-14-BAL-cancel attempt1 setup-D",
+      "EVIDENCE: DBL-14-BAL-cancel attempt1 identity-D",
+      "EVIDENCE: DBL-14-BAL-cancel attempt1 identity-A",
+      "EVIDENCE: DBL-14-BAL-cancel attempt1 identity-C",
+      "EVIDENCE: DBL-14-BAL-cancel attempt1 identity-B",
+      "EVIDENCE: DBL-14-BAL-cancel attempt1 before",
+      "EVIDENCE: DBL-14-BAL-cancel attempt1 confirmation",
+      "EVIDENCE: DBL-14-BAL-cancel attempt1 after",
+      "EVIDENCE: DBL-14-BAL-cancel attempt1 after-A",
+      "EVIDENCE: DBL-14-BAL-cancel attempt1 after-D"
+    ],
+    "identity_checks": "PID 97109。A=55c6308c-74e4-4751-b570-6f836376f666；B=175a661c-449b-4ae9-979c-697a23f8a785；C=8ae3eb69-8215-4f42-b0c8-5eac5d999d7c；D=ecf44527-137f-4037-a154-0e473d427b5c。标记 KEEP-DBL-14-BAL-cancel-[A/B/C/D]；动作后四页原编号和标记已核对。",
+    "language_observed": "General 实读 System Default；英文 UI 和确认框。",
+    "layout_observed": "General 从 Performance 切到 Balanced，截图确认选中；外部纵向。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "独立新窗口通过 fixture 链接建立四页，正文、类型、批次和编号逐页可见；建立多页后输入四页 KEEP，B 显示“离开确认已启用”；B 当前，对 C 使用 Split with Current 后实见指定顺序。",
+    "settings_observed": "Advanced 实读双击关闭 on、按位置关闭 on、Restore last session on；未重复点击已正确的开关。",
+    "steps_executed": [
+      "通过 General 原生 UI 切换 Balanced，实读 Advanced 两开关。",
+      "清理前项专用窗口；File→New Window 独立建立 A/B/C/D 并输入 KEEP。",
+      "B 当前，对 C 选择 Split with Current。",
+      "对侧栏 B 半格 (110,355) 请求 click_count:2。",
+      "在 Leave site? 选择 Cancel。",
+      "核对 B/C 分屏与内容，再逐页检查 A、D。"
+    ],
+    "unit_id": "DBL-14-BAL-cancel"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "unit_id": "DBL-11-PER",
+  "job": "DBL-11",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-11-observations.json",
+  "observation": {
+    "active_after": "双击后：S1 New Tab/{New Tab}；逐页核对结束：S2 X/{X}。",
+    "active_before": "S1 A/{A}。",
+    "after": "A 不再列出；S1 出现一个 New Tab 占位，未自动切换 Space，窗口保留。切到 S2 后原生顺序仍为 X | Y，两个输入标记和打开编号均保持。",
+    "before": "S1:[A]；S2:[X,Y]。测试对象均为普通页，无组、split 或 pin。",
+    "confirmation_choices": "未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-11-PER attempt1 settings",
+      "EVIDENCE: DBL-11-PER attempt1 A-loaded",
+      "EVIDENCE: DBL-11-PER attempt1 X-before",
+      "EVIDENCE: DBL-11-PER attempt1 Y-before",
+      "EVIDENCE: DBL-11-PER attempt1 before",
+      "EVIDENCE: DBL-11-PER attempt1 after",
+      "EVIDENCE: DBL-11-PER attempt1 Y-after",
+      "EVIDENCE: DBL-11-PER attempt1 X-after"
+    ],
+    "identity_checks": "固定路径，前后 PID 均为 92816。批次 TC-PHI507-r2-DBL-11-PER。A=53f17853-1ffa-4c63-9875-07817eb343f1；X=fc62a7e4-a347-4bee-8ab0-e6096706a761；Y=77648b2a-d94c-46f3-bf2d-a1109a87d05d。X/Y 前后实见 KEEP-DBL-11-PER-X/Y 及相同编号。首次 A 导航约 8.2 秒后实见正文、批次、编号和输入框。其他既有 Space 保留；未知 pin/书签内部数据未打开核对。",
+    "language_observed": "System Default，浏览器界面实际英文；未切换语言。",
+    "layout_observed": "Performance；通过 General 原生按钮选择，选中图及浏览器外部纵向标签已确认。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "通过 Spaces → New Space 新建 TC-QA-PHI507-r2-DBL-11-S1/S2；S1 仅 A，S2 顺序 X/Y，均为 normal fixture。",
+    "settings_observed": "起始实读双击关闭 off、按位置关闭 on、恢复会话 on。仅点击双击关闭使其变为 on；即时读取另一开关仍为 on。被测动作时为 on/on；收尾已恢复 off/on。",
+    "steps_executed": [
+      "读取当前 QA app、原始布局、语言和开关值，选择 Performance。",
+      "独立建立 S1:A 与 S2:X/Y；逐页确认正文身份。",
+      "分别在 X/Y 输入 KEEP-DBL-11-PER-X/Y，看到输入框焦点边框及实际文字，记录打开编号。",
+      "切回 S1，关键动作前 get_app_state 取证，确认只有 A。",
+      "对 A 对应的 selected row 请求 CU click_count:2。",
+      "get_app_state 记录 S1 占位，再切 S2，逐页核对 Y、X 的输入和编号。"
+    ],
+    "unit_id": "DBL-11-PER"
+  }
+}

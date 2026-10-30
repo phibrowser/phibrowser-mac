@@ -1,0 +1,28 @@
+{
+  "reviewer": "Ripley",
+  "job": "DBL-08-DBL-08-PER-input-focus-probe-r4",
+  "scope": "Balanced上的输入能力维护；非Performance或DBL-08验收",
+  "finding": "两个指定应用路径返回Invalid app。FKA从off开启on后焦点落到网页链接，未构造B/C多选。误点Panel Editor时FKA仍on，最新树恢复off。Mouse Keys四次KP_2返回成功，截图未观察到移动，KP_5未发送；不据此声称键盘点击无法启用。全部输入开关恢复off，浏览器偏好保持。",
+  "capture_notes": "原error marker延续至恢复off画面，原06图保留并改标restore-after，另追加原023错误现场；原005 General、014off、015on也追加，不覆盖旧图。",
+  "audit": "74实际CU事件，非CU0；实际Invalid app、KP_2和预期Panel Editor App quit返回另存。",
+  "follow_up": "独立mouse-click-confirm-r4补足真正键盘点击。真实Panel Editor路径包含/System/Library/Input Methods/Assistive Control.app，可用于有限核实实际宿主；先前错误路径不证明所有辅助键盘均不存在。",
+  "reviewed_at": "2026-10-30T20:33:17.512312+00:00",
+  "viewed_evidence": [
+    "DBL-08-PER-01.png",
+    "DBL-08-PER-02.png",
+    "DBL-08-PER-03.png",
+    "DBL-08-PER-04.png",
+    "DBL-08-PER-05.png",
+    "DBL-08-PER-06.png",
+    "DBL-08-PER-07.png",
+    "DBL-08-PER-08.png",
+    "DBL-08-PER-09.png",
+    "DBL-08-PER-10.png",
+    "DBL-08-PER-11.png",
+    "DBL-08-PER-12.png",
+    "DBL-08-PER-13.png",
+    "DBL-08-PER-14.png",
+    "DBL-08-PER-15.png",
+    "DBL-08-PER-16.png"
+  ]
+}

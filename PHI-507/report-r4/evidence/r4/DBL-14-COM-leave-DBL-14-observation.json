@@ -1,0 +1,49 @@
+{
+  "unit_id": "DBL-14-COM-leave",
+  "job": "DBL-14",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-14-observations.json",
+  "observation": {
+    "active_after": "Leave 后 C/{C}；逐页检查及偏好恢复结束为 D/{D}。",
+    "active_before": "B 活动，横向标签显示 B+C 分屏配对；无多选。",
+    "after": "原生顺序 A | C | D；B 条目消失，C 为单页，C/A/D 原编号和 KEEP 标记逐页可见。批次收尾恢复 Balanced 后最后实见 D，列表仍为 A/C/D。",
+    "before": "独立窗口 A | S[B+C] | D；B 左、C 右；无组/pin。",
+    "confirmation_choices": "核心 Leave site?→Leave。setup 清理上一取消变体专用窗口的 Leave site?→Leave，单独记录。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-14-COM-leave attempt1 setup-cleanup",
+      "EVIDENCE: DBL-14-COM-leave attempt1 setup-A",
+      "EVIDENCE: DBL-14-COM-leave attempt1 setup-B",
+      "EVIDENCE: DBL-14-COM-leave attempt1 setup-C",
+      "EVIDENCE: DBL-14-COM-leave attempt1 setup-D",
+      "EVIDENCE: DBL-14-COM-leave attempt1 identity-D",
+      "EVIDENCE: DBL-14-COM-leave attempt1 identity-A",
+      "EVIDENCE: DBL-14-COM-leave attempt1 identity-C",
+      "EVIDENCE: DBL-14-COM-leave attempt1 identity-B",
+      "EVIDENCE: DBL-14-COM-leave attempt1 before",
+      "EVIDENCE: DBL-14-COM-leave attempt1 confirmation",
+      "EVIDENCE: DBL-14-COM-leave attempt1 after",
+      "EVIDENCE: DBL-14-COM-leave attempt1 after-A",
+      "EVIDENCE: DBL-14-COM-leave attempt1 after-D",
+      "EVIDENCE: DBL-14-COM-leave attempt1 restore-layout",
+      "EVIDENCE: DBL-14-COM-leave attempt1 restore-settings",
+      "EVIDENCE: DBL-14-COM-leave attempt1 ending-state"
+    ],
+    "identity_checks": "PID 97109。A=0df42153-dc9b-4af1-b093-2327bf2a6b5c；B=c670c836-7db0-44c0-ada3-c258bcc04e55；C=a6023de6-0797-494e-8124-cceca4b0ba5a；D=1fbfb883-0eb1-4487-bfa2-cca1712f6e8e。标记 KEEP-DBL-14-COM-leave-[A/B/C/D]；动作后 C/A/D 原编号和标记已核对，结束图再次实见 D 原编号和标记。",
+    "language_observed": "System Default；英文 UI 和确认框；收尾 General 再读 System Default。",
+    "layout_observed": "核心动作为 Comfortable、外部横向，同布局未重复选择；批次收尾通过 General 恢复 Balanced 并截图确认。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "独立新窗口准确 A/B/C/D fixture 正文、类型、批次和编号均可见；四页输入 KEEP 后 B 实见离开确认已启用；原生菜单建立 B+C 分屏，横向标签和内容显示指定配对及顺序。",
+    "settings_observed": "核心动作时双击关闭 on、按位置关闭 on、Restore last session on。收尾仅点击双击关闭一次恢复 off，CU 即时树显示按位置关闭仍 on；Restore last session 仍 on，未改快捷键。",
+    "steps_executed": [
+      "File→Close Window 清理上一专用窗口，单独处理 setup Leave。",
+      "独立 File→New Window，通过 fixture 链接建立 B/C/D，导航准确 URL 并输入四页 KEEP。",
+      "B 当前，对 C 的实际 tabStripTab 右键选择 Split with Current。",
+      "对本次横向分屏标签 B 半格 (700,44) 请求 click_count:2。",
+      "在 Leave site? 选择 Leave。",
+      "核对 C 单页及原编号/标记，再逐页检查 A、D。",
+      "统一恢复 Balanced 和双击关闭 off，读取另一开关仍 on，关闭 Settings，保留最后专用窗口。"
+    ],
+    "unit_id": "DBL-14-COM-leave"
+  }
+}

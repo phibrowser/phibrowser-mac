@@ -1,0 +1,41 @@
+{
+  "unit_id": "DBL-15-BAL",
+  "job": "DBL-15",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-15-observations.json",
+  "observation": {
+    "active_after": "C；选中集 {C}",
+    "active_before": "B；选中分屏条目 S[B+C]，B 为活动半格",
+    "after": "原生列表为 [A,C,D]，B 不在列表，分屏结束；C 草稿、原打开编号及“离开确认已启用”可见。",
+    "before": "原生顺序 [A,S[B+C],D]；内容区 B 左、C 右；无组、无待处理确认框。",
+    "confirmation_choices": "核心双击动作未显示离开确认。仅在 setup 清理 PER 专用窗口时，出现“Leave site? Changes you made may not be saved.”，选择 Leave。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-15-BAL attempt1 setup-cleanup",
+      "EVIDENCE: DBL-15-BAL attempt1 settings-layout",
+      "EVIDENCE: DBL-15-BAL attempt1 settings",
+      "EVIDENCE: DBL-15-BAL attempt1 setup-A",
+      "EVIDENCE: DBL-15-BAL attempt1 setup-B",
+      "EVIDENCE: DBL-15-BAL attempt1 setup-C",
+      "EVIDENCE: DBL-15-BAL attempt1 setup-D",
+      "EVIDENCE: DBL-15-BAL attempt1 C-draft",
+      "EVIDENCE: DBL-15-BAL attempt1 before",
+      "EVIDENCE: DBL-15-BAL attempt1 after"
+    ],
+    "identity_checks": "固定应用 PID 97109；批次 TC-PHI507-r2-DBL-15-BAL。逐页实见正文、类型、输入框及编号：A=6348d21d-8681-424b-ad30-983905cb424f；B=749d411a-f41f-4afc-a734-aeb87cd17c95；C=1b704aa2-4201-4432-87bc-950f90db9100；D=47d9601d-02fb-4fd6-8129-f6ebb92601f1。C 双击前后编号相同，均显示 KEEP-DBL-15-BAL-C。",
+    "language_observed": "General 实读 System Default；界面英文。",
+    "layout_observed": "通过 General 从 Performance 切换 Balanced，截图确认选框；关键动作前为外部纵向侧栏。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "独立新窗口 A | S[B+C] | D；A/B/D 普通，C 未保存确认型。输入 KEEP-DBL-15-BAL-C 后实际显示草稿和“离开确认已启用”；两个关闭开关均 on。",
+    "settings_observed": "Advanced 实读双击关闭 on、按位置关闭 on、Restore last session on；本项未点击开关。",
+    "steps_executed": [
+      "setup 通过 File→Close Window 清理 PER 专用窗口，并对其中 C 的离开确认选择 Leave。",
+      "General 切换 Balanced；File→New Window 直接导航本项 A，再经 fixture 新标签链接和原生地址栏建立准确 B/C/D，逐页读取正文和编号。",
+      "选择 C，点击输入框并核实焦点边框，输入 KEEP-DBL-15-BAL-C。",
+      "选择 B 为当前页，对 C 右键选择 Split with Current，实读 B 左/C 右及指定顺序。",
+      "在本项原图安全区重新校准坐标为 1:1；对侧栏 B 半格标题点 (110,355) 请求 click_count=2。",
+      "get_app_state 核对结束集合以及 C 的草稿、原编号和启用状态。"
+    ],
+    "unit_id": "DBL-15-BAL"
+  }
+}

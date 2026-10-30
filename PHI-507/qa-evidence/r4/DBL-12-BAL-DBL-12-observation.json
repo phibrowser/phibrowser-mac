@@ -1,0 +1,37 @@
+{
+  "unit_id": "DBL-12-BAL",
+  "job": "DBL-12",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-12-observations.json",
+  "observation": {
+    "active_after": "双击后 New Tab/{New Tab}；unit 最终为 A-control/{A-control}。",
+    "active_before": "A/{A}。",
+    "after": "双击后 A 消失，同一测试窗口显示唯一 New Tab。重新建立的对照窗口最终保留唯一 A-control，未执行标签关闭按钮动作。",
+    "before": "独立专用窗口仅 [A]，无 split、组或 pin；另一个工作窗口为 X | Y。",
+    "confirmation_choices": "未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-12-BAL attempt1 layout-settings",
+      "EVIDENCE: DBL-12-BAL attempt1 before",
+      "EVIDENCE: DBL-12-BAL attempt1 double-after",
+      "EVIDENCE: DBL-12-BAL attempt1 work-observed",
+      "EVIDENCE: DBL-12-BAL attempt1 control-before",
+      "EVIDENCE: DBL-12-BAL attempt1 after"
+    ],
+    "identity_checks": "固定 QA app，关键状态均实读 PID 92816。双击 A：批次 TC-PHI507-r2-DBL-12-BAL，编号 8b83b475-77ba-4f20-a56f-76c08fa60301；对照 A：批次 TC-PHI507-r2-DBL-12-BAL-control，编号 58288727-f06d-4d03-b7d1-75844d39c562。均实见正文批次、普通页、编号及空输入框。工作窗口实见 X | Y、X 选中，X 编号 a2c1f804-ed87-4da6-b3b2-7f85e4abce22 和 KEEP-DBL-11-COM-X；Y 未逐页核对正文。",
+    "language_observed": "General 实读 System Default，实际英文；未切换语言。",
+    "layout_observed": "General 切为 Balanced 并截图确认选框；浏览器实见左侧纵向标签及顶部地址栏。",
+    "not_executed_reason": "已有标签关闭按钮对照未执行：对照 A 已实见完整正文，但标签 row 未暴露关闭按钮，单击标签容器后的截图仍未显示可辨认的标签关闭图标；原生树中的窗口 close button 未作为标签关闭对照。",
+    "operator_errors": [],
+    "precondition_actual": "在本项开始时清理上一项测试窗口，重新建立独立窗口，仅加载 BAL 普通 A；工作窗口只观察。双开关均为 on。",
+    "settings_observed": "Advanced 实读 Double-click to close tabs=on、Close tabs by position=on、Restore last session=on；本项未点击开关。全批次收尾恢复双击关闭 off，位置关闭与 Restore 保持 on。",
+    "steps_executed": [
+      "本项 setup 时关闭上一项 TC 测试窗口；General 切 Balanced 并截图，Advanced 读取 on/on、Restore on。",
+      "新建专用窗口，通过原生地址栏加载 BAL A，核对实际正文及编号。",
+      "对最新 selected row 请求 click_count:2，检查返回值并保存 double-after 图；记录 A 消失、唯一 New Tab 出现。",
+      "重建对照时关闭测试占位窗口，仅观察工作窗口 X/Y 及 X 的原编号和 KEEP。",
+      "另建专用窗口加载 BAL-control A，核对正文及编号；单击 A 标签容器检查现有关闭控件，未见可辨认标签关闭按钮。",
+      "保存 after 图和 OBSERVATION，保留 A-control；仅在 COM setup 开始时关闭该测试窗口。"
+    ],
+    "unit_id": "DBL-12-BAL"
+  }
+}

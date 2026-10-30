@@ -1,0 +1,42 @@
+{
+  "unit_id": "DBL-13-COM-cancel",
+  "job": "DBL-13-link-preparation-retry-r4",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+  "observation": {
+    "active_after": "B；逐页核对结束返回 B",
+    "active_before": "B",
+    "after": "[A,B,C]；活动/选中 B；三页标记和原编号保留",
+    "before": "attempt2：[A,B,C]；活动/选中 B；普通标签，无 split 配对或测试组",
+    "confirmation_choices": "attempt2 核心观察到 1 次 Leave site? Changes you made may not be saved.；点击 Cancel。后续逐页核对未见重复确认。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-13-COM-cancel attempt1 layout",
+      "EVIDENCE: DBL-13-COM-cancel attempt1 failure",
+      "EVIDENCE: DBL-13-COM-cancel attempt1 failure-recovered",
+      "EVIDENCE: DBL-13-COM-cancel attempt2 before",
+      "EVIDENCE: DBL-13-COM-cancel attempt2 confirmation",
+      "EVIDENCE: DBL-13-COM-cancel attempt2 after",
+      "EVIDENCE: DBL-13-COM-cancel attempt2 retained-A",
+      "EVIDENCE: DBL-13-COM-cancel attempt2 retained-C",
+      "EVIDENCE: DBL-13-COM-cancel attempt2 retained-B"
+    ],
+    "identity_checks": "PID 97109；attempt2 run=TC-PHI507-r2-DBL-13-COM-cancel-a2。A=b8dce1ea-d30b-437e-a3a7-36b0521a07ca；B=13cfa2d9-041d-432d-833e-f595deac4c67；C=cf1f3e92-7371-4eae-ac9b-57b87c5f3b01。KEEP-DBL-13-COM-cancel-A/C、DRAFT-DBL-13-COM-cancel-B 及原编号逐页复读不变。导航后 AX 标签描述曾仍为旧名，切页后更新；核心动作前原生容器与屏幕均为准确 A/B/C。",
+    "language_observed": "General=System Default；英文。",
+    "layout_observed": "General 选择 Comfortable 并截图确认选中；外部横向标签条。",
+    "not_executed_reason": "attempt1 未执行被测双击：setup 的 New Window 原生元素失效。随后 attempt2 独立重建前置并执行了指定核心动作。",
+    "operator_errors": [
+      "attempt1 setup 点击最新 File→New Window 索引3，CU 返回 -10005：The element ID is no longer valid。立即停止该序列。",
+      "failure 的 get_app_state 仅返回菜单文字，未含 image；调用菜单明确暴露的 Cancel 后，failure-recovered 取得真实 image，再独立建立 attempt2。"
+    ],
+    "precondition_actual": "attempt1 尚未创建本项页面即遇菜单控件失效。正常取消菜单后，attempt2 通过 File→New Window 使用新 tag -a2 独立建立准确 A/B/C；A/C normal 与 KEEP，B unsaved 与 DRAFT，B 显示离开确认已启用。",
+    "settings_observed": "Advanced 复读双击关闭 on、按位置关闭 on；未点击开关。",
+    "steps_executed": [
+      "General 选择 Comfortable 并截图，复读双开关 on/on。",
+      "保留 attempt1 菜单失效文字及取消后的现场图。",
+      "attempt2 独立新窗口重建 A/B/C，实读正文、类型、编号和输入标记。",
+      "B 实际 tabStripTab button 请求 click_count:2，确认点击 Cancel。",
+      "逐页复读 A/C/B，输出 OBSERVATION。"
+    ],
+    "unit_id": "DBL-13-COM-cancel"
+  }
+}

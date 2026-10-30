@@ -1,0 +1,53 @@
+{
+  "unit_id": "DBL-09-PER",
+  "job": "DBL-09_DBL-23-performance-protected-complete-r4",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-09_DBL-23-performance-protected-complete-r4-observations.json",
+  "observation": {
+    "active_after": "核心动作结束时，新 M 普通对照单选活动；随后仅作本次对象清理并关闭专用窗口。",
+    "active_before": "off-P 核心动作前，新 P 活动；没有普通标签多选。",
+    "after": "四次核心双击后，新 P、M 保存入口及普通对照仍在。P 页面保留原编号和 KEEP；M 两次进入原名编辑，均以 Return 结束且未改名，绑定页面保留原编号和 KEEP。普通对照逐次回看均为原编号及 KEEP。后续 reset 仅清理本次新建对象。",
+    "before": "保存区依次为既有 P、新 P；书签区依次为既有 M、新 M；New Tab 下方为本次普通 M 副本对照。新 P 与真正 M 保存入口绑定实时页均已打开并输入 KEEP。",
+    "confirmation_choices": "off-M、on-M 的名称编辑均直接 Return，未输入名称、未改名；没有离开确认。reset 删除本次 M 保存项时未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-09-PER attempt1 initial-settings",
+      "EVIDENCE: DBL-09-PER attempt1 layout",
+      "EVIDENCE: DBL-09-PER attempt1 setup-P",
+      "EVIDENCE: DBL-09-PER attempt1 P-focus",
+      "EVIDENCE: DBL-09-PER attempt1 setup-M",
+      "EVIDENCE: DBL-09-PER attempt1 saved-M-open",
+      "EVIDENCE: DBL-09-PER attempt1 control-before",
+      "EVIDENCE: DBL-09-PER attempt1 off-P-before",
+      "EVIDENCE: DBL-09-PER attempt1 off-P-after",
+      "EVIDENCE: DBL-09-PER attempt1 off-P-control-after",
+      "EVIDENCE: DBL-09-PER attempt1 off-M-before",
+      "EVIDENCE: DBL-09-PER attempt1 off-M-after",
+      "EVIDENCE: DBL-09-PER attempt1 off-M-control-after",
+      "EVIDENCE: DBL-09-PER attempt1 on-settings",
+      "EVIDENCE: DBL-09-PER attempt1 on-P-before",
+      "EVIDENCE: DBL-09-PER attempt1 on-P-after",
+      "EVIDENCE: DBL-09-PER attempt1 on-P-control-after",
+      "EVIDENCE: DBL-09-PER attempt1 on-M-before",
+      "EVIDENCE: DBL-09-PER attempt1 on-M-after",
+      "EVIDENCE: DBL-09-PER attempt1 on-M-edit-ended",
+      "EVIDENCE: DBL-09-PER attempt1 on-M-control-after"
+    ],
+    "identity_checks": "run=TC-PHI507-r2-DBL-09-PER-complete-r4，均实见普通页正文、批次、输入框与编号。P=e4edd3d3-8b7b-436b-97e3-3c58fe683aaf，KEEP-P-DBL09-complete-r4。真正保存入口绑定 M=f369ea29-e371-43ab-a373-30a1ee102e15，KEEP-M-DBL09-complete-r4；该编号与普通 M 副本不同。普通对照 M=781c77e5-580f-408b-8207-0504c2dd32fa，KEEP-CONTROL-DBL09-complete-r4。各目标核心动作后及逐次对照回看均实见相应原编号和标记。",
+    "language_observed": "System Default，英文原生界面；未切换语言。",
+    "layout_observed": "起始 General 截图为 Balanced；点击 Performance 后蓝框选择已截图确认。四次核心动作均在 Performance 外部纵向 sidebar 中执行。",
+    "not_executed_reason": "四个指定双击均实际执行。可选的 pin 内导航到另一页未执行。",
+    "operator_errors": [
+      "准备阶段关闭 Settings 后误开一次 Edit 菜单；没有选择其中命令，使用该菜单明确暴露的原生 Cancel 结束。该误点保留了 CU 原生文字返回，未另输出 failure 截图。"
+    ],
+    "precondition_actual": "独立 File→New Window，原生地址栏导航 P；从真实 fixture 新标签链接建立 M 后导航准确 URL。通过原生 Pin、Add to Bookmark 创建本次保存对象。创建书签后实际单击真正 M 保存入口，实见其新绑定实时编号，再输入 KEEP；普通 M 副本另作未双击对照并输入 KEEP。既有 P/M 保存项未改动。",
+    "settings_observed": "初始实读双击关闭 off、按位置关闭 on、Restore last session on。off 两动作后仅点击双击开关一次，返回树即时为双击 on、位置仍 on。随后执行 on 两动作；收尾统一恢复双击 off、位置 on。",
+    "steps_executed": [
+      "off-P：已执行。对真正新 P 保存入口调用 click_count:2；前后页面编号 e4edd3d3-8b7b-436b-97e3-3c58fe683aaf 和 KEEP-P-DBL09-complete-r4 可见，保存入口仍在；回看普通对照原编号和 KEEP。",
+      "off-M：已执行。M 真正保存入口此前已单击打开绑定实时页；对该保存入口调用 click_count:2，进入名称编辑。Return 正常结束且未改名，绑定 M 的 f369ea29-e371-43ab-a373-30a1ee102e15 和 KEEP-M-DBL09-complete-r4 仍可见；回看普通对照原编号和 KEEP。",
+      "on-P：已执行。开关实读 on/位置 on 后，对真正新 P 保存入口调用 click_count:2；P 原编号和 KEEP 可见，保存入口仍在；回看普通对照原编号和 KEEP。",
+      "on-M：已执行。对真正新 M 保存入口调用 click_count:2，再次进入原名编辑。Return 结束且未改名，绑定 M 原编号和 KEEP 可见；回看普通对照原编号和 KEEP。",
+      "reset：仅将本次 -complete-r4 P Unpin、M 保存项 Delete，再 File→Close Window 关闭本次专用窗口；既有 P/M 保留。"
+    ],
+    "unit_id": "DBL-09-PER"
+  }
+}

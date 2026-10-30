@@ -1,0 +1,40 @@
+{
+  "unit_id": "DBL-13-COM-leave",
+  "job": "DBL-13-link-preparation-retry-r4",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+  "observation": {
+    "active_after": "双击确认离开后 C；逐页核对及偏好恢复结束仍 C",
+    "active_before": "B",
+    "after": "[A,C]；活动/选中 C；B 不在标签条。恢复 Balanced 后仍为 [A,C]、C/{C}",
+    "before": "[A,B,C]；活动/选中 B；普通标签，无 split 配对或测试组",
+    "confirmation_choices": "核心确认 1 次，点击 Leave；后续核对未见重复确认。setup 清理上一专用窗口另有 1 次离开确认并点击 Leave。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-13-COM-leave attempt1 setup-cleanup-confirmation",
+      "EVIDENCE: DBL-13-COM-leave attempt1 before",
+      "EVIDENCE: DBL-13-COM-leave attempt1 confirmation",
+      "EVIDENCE: DBL-13-COM-leave attempt1 after",
+      "EVIDENCE: DBL-13-COM-leave attempt1 retained-A",
+      "EVIDENCE: DBL-13-COM-leave attempt1 retained-C",
+      "EVIDENCE: DBL-13-COM-leave attempt1 restored-layout",
+      "EVIDENCE: DBL-13-COM-leave attempt1 restored-settings",
+      "EVIDENCE: DBL-13-COM-leave attempt1 ending"
+    ],
+    "identity_checks": "PID 97109；run=TC-PHI507-r2-DBL-13-COM-leave。A=109f94d8-203a-4c3a-bcef-63ab72e655b7；B=4bea5a08-06fe-417b-9720-20532da52519；C=22959e99-6f0b-45b2-93ec-5c566c472996。A/C KEEP-DBL-13-COM-leave-A/C 与原编号逐页复读不变；B 关闭后无草稿可读。导航后 AX 标签旧名在切页后更新，核心前准确 A/B/C。",
+    "language_observed": "英文；General 显示 System Default，收尾仍相同。",
+    "layout_observed": "核心动作使用 Comfortable 外部横向；同布局未重复切换。批次收尾在 General 恢复 Balanced，已截图确认选中及实际纵向 chrome。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "清理上一专用窗口并单独处理 setup 确认；独立新窗口准确建立 A/B/C。A/C normal 与 KEEP；B unsaved 与 DRAFT，离开确认已启用。",
+    "settings_observed": "核心使用双击关闭 on、按位置关闭 on。批次收尾只点击双击关闭一次恢复 off，即时原生树显示按位置仍 on；Restore last session 仍 on。未修改快捷键。",
+    "steps_executed": [
+      "File→Close Window 清理上一专用窗口，setup 确认点击 Leave。",
+      "独立新窗口重建准确 A/B/C，实读正文、类型、编号及标记。",
+      "B 实际 tabStripTab button 请求 click_count:2，核心确认点击 Leave。",
+      "逐页核对 A/C 标记与原编号，输出 OBSERVATION。",
+      "统一恢复 Balanced、双击关闭 off，逐次核对另一开关仍 on，关闭 Settings。",
+      "实读最后窗口 [A,C]、活动/选中 C，补充输出收尾 OBSERVATION。"
+    ],
+    "unit_id": "DBL-13-COM-leave"
+  }
+}

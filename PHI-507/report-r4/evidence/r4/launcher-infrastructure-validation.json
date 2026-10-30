@@ -1,0 +1,22 @@
+{
+  "issue": "PHI-507",
+  "scope": "辅助测试站HTTP验证，不是产品单元测试、GUI用例或浏览器状态读取。",
+  "method": "test-driven-development",
+  "red": "同一测试文件在旧候选服务上运行，两项断言失败：新路径返回404，分别未达到200及400。",
+  "green": "增加普通HTML链接入口后，同一测试文件两项通过；检查完整run、原顺序、重复网址、未保存类型、target=_blank、无脚本及所有目标原fixture SHA。",
+  "fixture_sha256": "d2b6a75d142a7c2624836557e90c07d0a15c8dd9ed0adb60f5fe2e152c951627",
+  "candidate_port": 18212,
+  "existing_service_port": 18211,
+  "existing_service_reloaded": false,
+  "browser_verified": false,
+  "adopted_for_browser_preparation": false,
+  "next_step": "后续会话启动新测试站后，用CU实际点击两个普通链接并验证最终正文、编号、标记及关闭launcher后的序列；确认前仍用已验证的fixture链接准备。源用例明确CmdT或原生新标签页的步骤仍照原文执行。",
+  "evidence": [
+    "qa-evidence/r4/launcher-http-red.log",
+    "qa-evidence/r4/launcher-http-green.log",
+    "qa-evidence/r4/launcher-existing-service-check.json"
+  ],
+  "verified_at": "2026-10-30T21:11:58.159291+00:00",
+  "candidate_source_sha256": "52e050c6dcebdcc7ecc9cc0d789a1a7ab1ecdcf73d0f308945e5b4c53b5bb463",
+  "test_source_sha256": "e309d7c7da24d29dceff0ff773576e0acc8f26a9161c88ab8a8f0dec44b9c1cb"
+}

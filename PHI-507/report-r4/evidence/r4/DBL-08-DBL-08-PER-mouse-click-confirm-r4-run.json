@@ -1,0 +1,25 @@
+{
+  "job": "DBL-08-DBL-08-PER-mouse-click-confirm-r4",
+  "exit_code": 0,
+  "session_id": "01a18e81-a67d-7f73-a67c-a37046cbd4ed",
+  "round": 4,
+  "lease_id": "cfcec3e6-9abd-43e8-87c4-779d0c5cf732",
+  "started_at": "2026-10-30T20:30:23.579366+00:00",
+  "ended_at": "2026-10-30T20:33:16.372476+00:00",
+  "units": [
+    "DBL-08-PER"
+  ],
+  "observed_units": [
+    "DBL-08-PER"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "339719e192adb55880ece84fa09ba664a29f3f94202046920b02dd949aa0c585",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 26,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

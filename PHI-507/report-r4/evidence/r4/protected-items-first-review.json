@@ -1,0 +1,49 @@
+{
+  "issue": "PHI-507",
+  "reviewer": "Ripley",
+  "job": "DBL-09_DBL-23-performance-protected-items-r4",
+  "grades": {
+    "DBL-09-PER": "partial",
+    "DBL-23-PER": "partial"
+  },
+  "finding": "P在off/on双击后仍为83e4ee6d且KEEP保留；普通M始终00300e11且KEEP保留。off-M首次前置未实际打开保存入口绑定页，双击后才建立d08d42cc，输入为空，不能冒充已打开前置。PS打开状态on/off两半双击后A001c2b48/B7b72a3c5及KEEP保留；普通C/D为f8a33190/f3eadfb1且KEEP保留。保存MS首次打开26f9cc59/af73b684，后续off动作仍同编号但实时输入为空；未执行PS未打开分支。已独立重跑完整状态条件，原attempt保留。",
+  "capture_notes": {
+    "invalid_off_m": "本次off-M没有满足保存页预先已打开前置，保留为准备无效现场，不是产品失败。",
+    "download_panel": "操作器误用旧索引打开空Downloads面板，未触发下载；本图不表示已在绑定书签页输入标记。",
+    "restored_general": "本图为General，确认Balanced已恢复；不是Advanced截图。"
+  },
+  "audit": "156实际CU事件，非CU0；50张原始截图、36张保留截图。",
+  "limits": "只是首次尝试的部分覆盖。未以普通副本代替保存入口，也未以Unpin/Delete作为保存入口已关闭前置。reset中的主动清理与核心不混计。",
+  "reviewed_at": "2026-10-30T21:00:35.265769+00:00",
+  "viewed_evidence": [
+    "DBL-09-PER-01.png",
+    "DBL-09-PER-02.png",
+    "DBL-09-PER-03.png",
+    "DBL-09-PER-04.png",
+    "DBL-09-PER-05.png",
+    "DBL-09-PER-06.png",
+    "DBL-09-PER-07.png",
+    "DBL-09-PER-08.png",
+    "DBL-09-PER-09.png",
+    "DBL-09-PER-10.png",
+    "DBL-09-PER-12.png",
+    "DBL-09-PER-13.png",
+    "DBL-09-PER-14.png",
+    "DBL-23-PER-01.png",
+    "DBL-23-PER-02.png",
+    "DBL-23-PER-04.png",
+    "DBL-23-PER-07.png",
+    "DBL-23-PER-08.png",
+    "DBL-23-PER-10.png",
+    "DBL-23-PER-05.png",
+    "DBL-23-PER-06.png",
+    "DBL-23-PER-11.png",
+    "DBL-23-PER-12.png",
+    "DBL-23-PER-13.png",
+    "DBL-23-PER-18.png",
+    "DBL-23-PER-19.png",
+    "DBL-23-PER-14.png",
+    "DBL-23-PER-15.png",
+    "DBL-23-PER-22.png"
+  ]
+}

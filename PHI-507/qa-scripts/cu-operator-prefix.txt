@@ -16,7 +16,7 @@ perform_secondary_action({app,element_index:"字符串索引",action:该原生�
 
 每次改变界面的 CU 调用都必须检查其返回值，尤其是 drag：保存简短文字返回或错误（排除图片编码），发现 isError、invalidParameter 等就立即停下，不得丢弃返回值后仅凭下一张图认为手势成功。可用同一个小函数检查并输出工具文字块，成功的常规步骤无需重复整树。拖动开始后原生界面可能出现 pin 投放区或分屏投放状态；未确认投放已结束时，不要点击内容空白“收起提示”，因为该点击本身可能完成其他投放动作。用允许的 CU 正常取消动作并重读；源步骤需要真实重排时必须观察重排结果，不能把拖动函数返回当作完成。
 
-fixture原文来源为 https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/ 。当前r4租约内已启动其逐字节相同的本地副本（SHA-256 d2b6a75d142a7c2624836557e90c07d0a15c8dd9ed0adb60f5fe2e152c951627），后续普通测试优先使用 http://127.0.0.1:18211/fixture/?tab=A&run=TC-PHI507-r2-执行点ID&kind=normal ，避免远端加载延迟影响前置。替换tab字母；未保存页kind=unsaved，真实输入后必须看到“离开确认已启用”；长标题kind=long。这里只能用原生地址栏输入。URL变化不等于页面提交，需实见TC标题、批次、打开编号和输入框。不要开网页DevTools/执行JS。原文明确需要网络、Reader或下载条件的步骤仍使用该步骤指定端点，不以普通本地静态页替代。
+fixture原文来源为 https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/ 。当前r5租约内已启动其逐字节相同的本地副本（SHA-256 d2b6a75d142a7c2624836557e90c07d0a15c8dd9ed0adb60f5fe2e152c951627），后续普通测试优先使用 http://127.0.0.1:18211/fixture/?tab=A&run=TC-PHI507-r2-执行点ID&kind=normal ，避免远端加载延迟影响前置。替换tab字母；未保存页kind=unsaved，真实输入后必须看到“离开确认已启用”；长标题kind=long。这里只能用原生地址栏输入。URL变化不等于页面提交，需实见TC标题、批次、打开编号和输入框。不要开网页DevTools/执行JS。原文明确需要网络、Reader或下载条件的步骤仍使用该步骤指定端点，不以普通本地静态页替代。
 
 每个执行点先通过原生UI独立重建其前置，不能把上一执行点残留当作本项。r4原生路径对照已实测：Command-T新建页后导航可能只有标题、正文空白；File→New Window直接导航首个A可显示，已有真实页面内地址栏导航可显示；fixture正文的“在新标签页打开另一测试页”正常链接能建立可见的多页。因此普通fixture准备改用：独立File→New Window直接导航本项A；需要下一页时，点击当前真实fixture的该链接，从CU返回的最新原生树确认新普通条目及当前选择，再用原生地址栏导航为本项准确的tab=B/C/...、run、kind，实际读取最终正文和打开编号。临时A-away/B-away不属于本项被测文档，无需为其重复输入或保存编号；不能把临时页冒充B/C，最终准确URL的正文、类型及编号必须实际看见。除非源步骤明确测试Command-T/New Tab，否则不再用Command-T或“新建空页→关闭其他”作为通用准备，也不为清理前置执行Close Other Tabs。源步骤本身要求这些动作时仍按原步骤执行，不能用链接替代后判通过。多页建立后才按本项要求输入标记，unsaved必须实际出现“离开确认已启用”。
 

@@ -1,0 +1,40 @@
+{
+  "unit_id": "DBL-13-PER-cancel",
+  "job": "DBL-13-link-preparation-retry-r4",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+  "observation": {
+    "active_after": "B；逐页核对结束返回 B",
+    "active_before": "B",
+    "after": "[A,B,C]；选中集 {B}；三页输入标记和原打开编号均保留",
+    "before": "[A,B,C]；选中集 {B}；普通标签，无 split 配对或测试组",
+    "confirmation_choices": "核心观察到 1 次英文确认：Leave site? Changes you made may not be saved.；点击 Cancel。随后逐页核对期间未见重复确认。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-13-PER-cancel attempt1 original-settings",
+      "EVIDENCE: DBL-13-PER-cancel attempt1 settings",
+      "EVIDENCE: DBL-13-PER-cancel attempt1 before",
+      "EVIDENCE: DBL-13-PER-cancel attempt1 confirmation",
+      "EVIDENCE: DBL-13-PER-cancel attempt1 after",
+      "EVIDENCE: DBL-13-PER-cancel attempt1 retained-A",
+      "EVIDENCE: DBL-13-PER-cancel attempt1 retained-C",
+      "EVIDENCE: DBL-13-PER-cancel attempt1 retained-B"
+    ],
+    "identity_checks": "PID 97109；run=TC-PHI507-r2-DBL-13-PER-cancel。A=8938b473-a7ed-47df-89b1-f5c1e07f5e8f；B=5f5faed4-b619-47a0-b9ed-ef00650de4ce；C=c552e5b2-d42c-479d-b5fc-2dd449e72c48。结束逐页实读 KEEP-DBL-13-PER-cancel-A/C、DRAFT-DBL-13-PER-cancel-B，编号与准备时一致。",
+    "language_observed": "General 显示 System Default；原生界面及确认框为英文，未切换语言。",
+    "layout_observed": "通过 General 的 Performance button 切换，后续浏览器 chrome 为外部纵向、地址栏位于侧栏。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "切换 Performance 后未另取 General 选中态截图；保留了切换返回文字及后续实际 Performance chrome 的页面截图。"
+    ],
+    "precondition_actual": "独立 File→New Window 导航 A；通过真实 fixture 新标签链接建立后续页，再地址栏导航为准确 B/C。A/C 为 normal，B 为 unsaved；多页建成后输入三页标记，B 实见“离开确认已启用”。",
+    "settings_observed": "起始双击关闭 off、按位置关闭 on。仅点击双击关闭一次改为 on；即时原生树显示双击 on、按位置仍 on。核心动作使用 on/on。",
+    "steps_executed": [
+      "独立建立并实读 A/B/C 正文、批次、类型及打开编号。",
+      "在 B 原生 row 上请求 click_count:2。",
+      "确认框出现后点击 Cancel。",
+      "逐页核对 A、C、B 的标记和打开编号，结束返回 B。",
+      "输出本 unit 的 OBSERVATION。"
+    ],
+    "unit_id": "DBL-13-PER-cancel"
+  }
+}

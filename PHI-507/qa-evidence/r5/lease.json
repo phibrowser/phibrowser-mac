@@ -1,0 +1,41 @@
+{
+  "acquired_at": "2026-10-30T21:22:06Z",
+  "env": {
+    "LANE_AGENT_PORT": "18201",
+    "LANE_CDP_PORT": "18209",
+    "LANE_DB_PREFIX": "e2e02_",
+    "LANE_HOME": "/Users/e2e02",
+    "LANE_PORT_BASE": "18200",
+    "LANE_SITE_PORT_RANGE": "18210-18219",
+    "LANE_USER": "e2e02",
+    "LANE_WORKDIR": "/Users/e2e02/lane"
+  },
+  "expires_at": "2026-10-31T05:22:06.466946Z",
+  "host": {
+    "hostname": "phitekiMac-mini",
+    "id": "60d1a712-1cb0-40a9-b299-a6cbbc227b1b",
+    "name": "mini"
+  },
+  "issue_key": "01a18bbf-18c4-7791-bee5-2c1715d5311d",
+  "lane": {
+    "address": "192.168.66.125",
+    "env": {
+      "LANE_AGENT_PORT": "18201",
+      "LANE_CDP_PORT": "18209",
+      "LANE_DB_PREFIX": "e2e02_",
+      "LANE_HOME": "/Users/e2e02",
+      "LANE_PORT_BASE": "18200",
+      "LANE_SITE_PORT_RANGE": "18210-18219",
+      "LANE_USER": "e2e02",
+      "LANE_WORKDIR": "/Users/e2e02/lane"
+    },
+    "host": "mini",
+    "remote": false,
+    "ssh": "e2e02@localhost",
+    "uid": 503,
+    "user": "e2e02",
+    "workdir": "/Users/e2e02/lane"
+  },
+  "lease_id": "52a943f0-2b80-4fdf-9258-ff0ac91c8040",
+  "task_name": "PHI-507 \u72ec\u7acb\u5b89\u88c5\u5305\u5b8c\u6574\u6d4b\u8bd5 r5"
+}

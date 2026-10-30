@@ -1,0 +1,23 @@
+test_invalid_page_specification_is_rejected_before_preparation (__main__.FixtureLauncherTest) ... FAIL
+test_ordinary_links_preserve_requested_document_urls_and_original_fixture (__main__.FixtureLauncherTest) ... FAIL
+
+======================================================================
+FAIL: test_invalid_page_specification_is_rejected_before_preparation (__main__.FixtureLauncherTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/e2e02/lane/qa-tools/test-fixture-launcher.py", line 97, in test_invalid_page_specification_is_rejected_before_preparation
+    self.assertEqual(status, 400)
+AssertionError: 404 != 400
+
+======================================================================
+FAIL: test_ordinary_links_preserve_requested_document_urls_and_original_fixture (__main__.FixtureLauncherTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/e2e02/lane/qa-tools/test-fixture-launcher.py", line 80, in test_ordinary_links_preserve_requested_document_urls_and_original_fixture
+    self.assertEqual(status, 200, 'The helper must serve the ordinary link launcher')
+AssertionError: 404 != 200 : The helper must serve the ordinary link launcher
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.065s
+
+FAILED (failures=2)

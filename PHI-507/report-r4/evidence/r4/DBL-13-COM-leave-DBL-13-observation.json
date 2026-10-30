@@ -1,0 +1,36 @@
+{
+  "unit_id": "DBL-13-COM-leave",
+  "job": "DBL-13",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-13-observations.json",
+  "observation": {
+    "active_after": "A/{A}；收尾恢复 Balanced 后原生 row 明示 selected。",
+    "active_before": "A/{A}，屏幕唯一活动标签。",
+    "after": "仍仅 A（TC-PHI507-r2-DBL-13-COM-leave），正文空白；收尾仅恢复偏好，没有重建页面。",
+    "before": "唯一 A（TC-PHI507-r2-DBL-13-COM-leave）；未创建 B/C。",
+    "confirmation_choices": "未触发被测离开确认，未选择确认离开。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-13-COM-leave attempt1 setup-A",
+      "EVIDENCE: DBL-13-COM-leave attempt1 before",
+      "EVIDENCE: DBL-13-COM-leave attempt1 after",
+      "EVIDENCE: DBL-13-COM-leave attempt1 restore-switches",
+      "EVIDENCE: DBL-13-COM-leave attempt1 restore-layout",
+      "EVIDENCE: DBL-13-COM-leave attempt1 ending"
+    ],
+    "identity_checks": "固定 app 路径，PID 95460。Comfortable 中 tabStripTab Description 为 New Tab，内部 text、窗口标题及屏幕标签为本项 TC-A；正文编号无法核对。收尾 Balanced 原生树显示本项 TC-A selected row。",
+    "language_observed": "System Default，原生界面英文；全程未切换语言。",
+    "layout_observed": "本项 Comfortable 外部横向标签再次确认；收尾通过 General 恢复 Balanced 并截图。",
+    "not_executed_reason": "本项 A 在 100910ms 的读取中正文仍为空白，无法建立可核对的 A/B/C 和已输入 unsaved B。未执行双击、确认离开及存活检查。",
+    "operator_errors": [],
+    "precondition_actual": "仅本项 A 屏幕标签和窗口标题；未见正文、批次、编号及输入框，未创建 B/C 或草稿。",
+    "settings_observed": "本项使用已实读 doubleClick=on、directional=on。收尾仅将 doubleClick 改回 off，即时读取 directional 仍为 on、Restore last session=on；快捷键未修改。",
+    "steps_executed": [
+      "从实际 chrome 再次核对 Comfortable。",
+      "本专用窗口新建 New Tab → Close Other Tabs，再经地址栏导航本项 normal A。",
+      "分段读取至 100910ms，正文仍空白；保存本项结束证据。",
+      "会话收尾：Advanced 仅将 doubleClick on→off，并读取两个开关即时值及 Restore last session；General 恢复 Balanced，保留 System Default。",
+      "关闭 Settings；Window 菜单列出本项 A 与旧 TC-X 窗口，调用原生 Cancel 后读取正常窗口并保存 ending 图。"
+    ],
+    "unit_id": "DBL-13-COM-leave"
+  }
+}

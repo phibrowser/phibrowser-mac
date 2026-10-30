@@ -1,0 +1,33 @@
+{
+  "pid": 10559,
+  "port": 18211,
+  "started_at": "2026-10-30T21:22:42.840698+00:00",
+  "source_sha256": "52e050c6dcebdcc7ecc9cc0d789a1a7ab1ecdcf73d0f308945e5b4c53b5bb463",
+  "console_log": "qa-tools/condition-server-console.log",
+  "event_log": "qa-tools/condition-server-events.jsonl",
+  "scope": "Lease-owned disposable fixture server only; no browser operation or acceptance result",
+  "ready": {
+    "port": 18211,
+    "fixture_sha256": "d2b6a75d142a7c2624836557e90c07d0a15c8dd9ed0adb60f5fe2e152c951627",
+    "routes": [
+      "/fixture/",
+      "/launch/",
+      "/article/",
+      "/slow",
+      "/download"
+    ]
+  },
+  "article_http_checks": [
+    {
+      "status": 200,
+      "bytes": 11698,
+      "sha256": "2329c1646197aa2cb2f8b4c86a0bfcfe353a605aacef70d0b843bc3d210bc50c"
+    },
+    {
+      "status": 200,
+      "bytes": 11698,
+      "sha256": "8388350a067ae8bf4ee12dd359851ebc9cb76cb098bc3c2b50bdb97008f4ccfc"
+    }
+  ],
+  "browser_reader_tested": false
+}

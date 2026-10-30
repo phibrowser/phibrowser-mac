@@ -1,0 +1,48 @@
+{
+  "unit_id": "DBL-14-PER-leave",
+  "job": "DBL-14",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-14-observations.json",
+  "observation": {
+    "active_after": "Leave 后 C/{C}；逐页检查结束为 D/{D}。",
+    "active_before": "B 为活动窗格，B+C 分屏；选择分屏条目，无多选。",
+    "after": "原生顺序为 A | C | D，B 条目消失；C 以单页显示，原编号和 KEEP 标记可见。A/D 随后逐页显示原编号与标记。",
+    "before": "独立窗口 A | S[B+C] | D；B 左、C 右；无组/pin。",
+    "confirmation_choices": "核心 Leave site?→Leave。setup 清理上一取消变体专用窗口时另一次 Leave site?→Leave，仅计为 setup 清理。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-14-PER-leave attempt1 setup-cleanup",
+      "EVIDENCE: DBL-14-PER-leave attempt1 failure",
+      "EVIDENCE: DBL-14-PER-leave attempt1 setup-A",
+      "EVIDENCE: DBL-14-PER-leave attempt1 setup-B",
+      "EVIDENCE: DBL-14-PER-leave attempt1 setup-C",
+      "EVIDENCE: DBL-14-PER-leave attempt1 setup-D",
+      "EVIDENCE: DBL-14-PER-leave attempt1 identity-D",
+      "EVIDENCE: DBL-14-PER-leave attempt1 identity-A",
+      "EVIDENCE: DBL-14-PER-leave attempt1 identity-C",
+      "EVIDENCE: DBL-14-PER-leave attempt1 identity-B",
+      "EVIDENCE: DBL-14-PER-leave attempt1 before",
+      "EVIDENCE: DBL-14-PER-leave attempt1 confirmation",
+      "EVIDENCE: DBL-14-PER-leave attempt1 after",
+      "EVIDENCE: DBL-14-PER-leave attempt1 after-A",
+      "EVIDENCE: DBL-14-PER-leave attempt1 after-D"
+    ],
+    "identity_checks": "PID 97109。A=0a804a2e-c9c8-4259-af6b-9a2e107405eb；B=9c5d00be-5bab-4924-bf67-8d23045c8e73；C=23143e7f-3847-492a-9a24-5696b1c1ecb7；D=a2ac7c66-1c58-4071-ab7e-7aad8b405286。标记 KEEP-DBL-14-PER-leave-[A/B/C/D]；动作后 C/A/D 原编号和标记可见。",
+    "language_observed": "System Default 未改变；本项实见英文 UI 和确认框。",
+    "layout_observed": "Performance，外部纵向；从本项 chrome 再确认，未重复选择布局。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "setup 首次点击 File→New Window 返回 CU server error -10005：element ID no longer valid。立即停止并 get_app_state，现场仍为 File 菜单；工具未返回 image，保留 failure 标记和原生文字。重读最新索引后正常建立独立窗口，核心动作未受该无效点击替代。"
+    ],
+    "precondition_actual": "独立新窗口四页均实际提交准确 fixture；四页 KEEP 标记可见，B unsaved 的离开确认已启用；B 当前，对 C 使用原生 Split with Current，实见 A | S[B+C] | D。",
+    "settings_observed": "核心动作时双击关闭 on、按位置关闭 on；Restore last session on，未点击开关。",
+    "steps_executed": [
+      "File→Close Window 清理上一专用窗口，并单独处理其 B 的 setup 离开确认。",
+      "File→New Window；通过真实 fixture 链接建立 B/C/D，分别导航准确 URL。",
+      "输入四页 KEEP 标记；以 B 当前，对 C 选择 Split with Current。",
+      "对本次侧栏 B 半格 (110,429) 请求 click_count:2。",
+      "在 Leave site? 选择 Leave。",
+      "核对 C 单页及原编号/标记，再逐页检查 A、D。"
+    ],
+    "unit_id": "DBL-14-PER-leave"
+  }
+}

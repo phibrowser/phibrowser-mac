@@ -1,0 +1,47 @@
+{
+  "unit_id": "DBL-13-PER-cancel",
+  "job": "DBL-13",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-13-observations.json",
+  "observation": {
+    "active_after": "A/{A}",
+    "active_before": "A/{A}",
+    "after": "仅 A（TC-PHI507-r2-DBL-13-PER-cancel-a2），正文空白；无组或 split。",
+    "before": "重建后仅 A（TC-PHI507-r2-DBL-13-PER-cancel-a2）；未创建 B/C。",
+    "confirmation_choices": "未触发被测离开确认。有限导航恢复中出现退出确认 1 次，选择 Quit；随后 CU 返回 App quit。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-13-PER-cancel attempt1 initial-settings",
+      "EVIDENCE: DBL-13-PER-cancel attempt1 settings",
+      "EVIDENCE: DBL-13-PER-cancel attempt1 setup-A",
+      "EVIDENCE: DBL-13-PER-cancel attempt1 setup-A-wait",
+      "EVIDENCE: DBL-13-PER-cancel attempt1 setup-A-stage",
+      "EVIDENCE: DBL-13-PER-cancel attempt1 setup-A-final-wait",
+      "EVIDENCE: DBL-13-PER-cancel attempt1 quit-result",
+      "EVIDENCE: DBL-13-PER-cancel attempt1 quit-confirm-result",
+      "EVIDENCE: DBL-13-PER-cancel attempt2 restart-result",
+      "EVIDENCE: DBL-13-PER-cancel attempt2 setup-A",
+      "EVIDENCE: DBL-13-PER-cancel attempt2 setup-A-stage",
+      "EVIDENCE: DBL-13-PER-cancel attempt2 setup-A-selected",
+      "EVIDENCE: DBL-13-PER-cancel attempt2 setup-A-late",
+      "EVIDENCE: DBL-13-PER-cancel attempt2 setup-A-raised",
+      "EVIDENCE: DBL-13-PER-cancel attempt2 setup-A-focus-return",
+      "EVIDENCE: DBL-13-PER-cancel attempt2 before",
+      "EVIDENCE: DBL-13-PER-cancel attempt2 after"
+    ],
+    "identity_checks": "固定 app 路径；PID 92816 → 正常退出重开后 95460。恢复后旧 A 曾实见正文编号 2bd29006-72f7-44ae-a424-158330efb997；随后新 tag -a2 的 A 仅见标题，未见正文编号。",
+    "language_observed": "General 为 System Default，原生界面实际英文。",
+    "layout_observed": "General 中由 Balanced 切为 Performance，紫色选中框及纵向 chrome 已截图确认。",
+    "not_executed_reason": "新 tag A 在 131894ms 的读取中正文仍为空白，不能核对 fixture 正文身份或构造已输入的 unsaved B。未执行双击、取消、B 草稿保留和 A/C 存活检查。",
+    "operator_errors": [],
+    "precondition_actual": "仅 A 标题存在；缺正文批次、打开编号和输入框，A/B/C 与已输入 unsaved B 的前置未成立。",
+    "settings_observed": "起始实读 doubleClick=off、directional=on、Restore last session=on。本项仅将 doubleClick 改为 on，立即读取 directional 仍为 on。",
+    "steps_executed": [
+      "读取起始窗口 PID 92816 及原生 General、Advanced 偏好，切 Performance，开启双击关闭。",
+      "新建 New Tab，使用 Close Other Tabs 清理本专用窗口旧 TC-A，再经地址栏导航本项 normal A；分段读取持续空白。",
+      "执行一次有限导航恢复：Cmd+Q，退出确认选择 Quit，通过 get_app_state 重开固定 app，实读新 PID 95460。",
+      "以 -a2 新 tag 重新建立 A；分段读取，并单击 A、选择 Window 同名项、切回原窗口核对，正文仍空白。",
+      "保存结束证据，保留实际 A 状态；未创建 B/C，未执行被测双击。"
+    ],
+    "unit_id": "DBL-13-PER-cancel"
+  }
+}

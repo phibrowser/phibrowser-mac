@@ -1,0 +1,46 @@
+{
+  "unit_id": "DBL-12-PER",
+  "job": "DBL-12",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-12-observations.json",
+  "observation": {
+    "active_after": "双击后 New Tab/{New Tab}；unit 最终为 A-control2/{A-control2}。",
+    "active_before": "A/{A}。",
+    "after": "双击后 A 消失，原命名窗口 TC-QA-PHI507-r2-DBL-12-W 留在屏幕，显示唯一 New Tab。对照最终另建专用窗口保留唯一 A-control2，未执行标签关闭按钮动作。",
+    "before": "专用测试窗口仅 [A]；无其他普通测试页、组、split 或 pin。另一个工作窗口为 X | Y。",
+    "confirmation_choices": "窗口命名输入 TC-QA-PHI507-r2-DBL-12-W 后以 Return 确认；未出现关闭确认框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-12-PER attempt1 initial-settings",
+      "EVIDENCE: DBL-12-PER attempt1 layout-settings",
+      "EVIDENCE: DBL-12-PER attempt1 switches-settings",
+      "EVIDENCE: DBL-12-PER attempt1 before",
+      "EVIDENCE: DBL-12-PER attempt1 double-after",
+      "EVIDENCE: DBL-12-PER attempt1 control-calibration",
+      "EVIDENCE: DBL-12-PER attempt1 control-loading",
+      "EVIDENCE: DBL-12-PER attempt1 control-loading-later",
+      "EVIDENCE: DBL-12-PER attempt1 control-selected",
+      "EVIDENCE: DBL-12-PER attempt1 control-unavailable",
+      "EVIDENCE: DBL-12-PER attempt1 work-observed",
+      "EVIDENCE: DBL-12-PER attempt1 control-rebuild",
+      "EVIDENCE: DBL-12-PER attempt1 control-before",
+      "EVIDENCE: DBL-12-PER attempt1 after"
+    ],
+    "identity_checks": "关键状态均实读固定 QA app、PID 92816。双击 A：批次 TC-PHI507-r2-DBL-12-PER，打开编号 ac61a86d-42c2-4f32-9587-8750d8e8406e。重建对照 A：批次 TC-PHI507-r2-DBL-12-PER-control2，编号 7bb23fd1-47cf-40a5-ad15-7064537e459a。两者均实见 TC-A、批次、普通页、编号及空输入框。工作 X 复核为编号 a2c1f804-ed87-4da6-b3b2-7f85e4abce22、KEEP-DBL-11-COM-X，原生顺序 X | Y、X 选中；Y 未逐页核对正文。",
+    "language_observed": "General 实读 System Default，界面实际英文；未切换语言。",
+    "layout_observed": "General 从 Balanced 切为 Performance，截图确认 Performance 选框；浏览器为左侧纵向标签及侧栏地址区域。",
+    "not_executed_reason": "已有标签关闭按钮对照未执行：control2 的正文前置已满足，但原生树仅暴露窗口 close button，A 标签 row 无关闭按钮，截图未显示可辨认的标签关闭图标。未用菜单、快捷键或窗口关闭代替该动作。更早 control 导航只有对应标题、正文空白，亦未据此执行关闭。",
+    "operator_errors": [],
+    "precondition_actual": "通过 File → New Window 独立建立仅 A 的专用窗口；工作 X/Y 窗口保留。双击前双开关均为 on。",
+    "settings_observed": "起始实读：Double-click to close tabs=off、Close tabs by position=on、Restore last session=on。仅点击双击关闭开关后，立即实读为 on/on，未点击的位置关闭仍 on。全批次结束后恢复 off/on、Restore on。",
+    "steps_executed": [
+      "读取 General 和 Advanced，切 Performance，仅将双击关闭 off→on，截图记录布局及开关。",
+      "新建专用窗口，通过原生地址栏加载 PER 普通 A，核对正文身份；命名测试窗口。",
+      "对最新原生 selected row 请求 click_count:2；读取返回值及 double-after 截图，记录唯一 A 被 New Tab 替代。",
+      "为对照在该 New Tab 导航 PER-control：标题出现，但正文持续空白；分段等待 12、25、25、30 秒并读取现场，期间单击 A 容器确认选择，未执行关闭。未从这些观察推定永久导航阻断。",
+      "通过窗口关闭按钮清理该测试窗口以重建前置；实见原工作 X/Y 窗口及 X 原编号、KEEP 标记。",
+      "另建专用窗口加载 PER-control2，实见完整正文及编号；在空白内容区的坐标校准输入 (2000,900) 对应截图指针约 (2000,900)，随后标题区域单击 (280,356) 未暴露可辨认标签关闭按钮。",
+      "保存 unit 结束截图及 OBSERVATION，保留 A-control2；到下一 unit setup 才关闭该测试窗口。"
+    ],
+    "unit_id": "DBL-12-PER"
+  }
+}

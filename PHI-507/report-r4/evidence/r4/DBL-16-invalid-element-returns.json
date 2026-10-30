@@ -1,0 +1,33 @@
+{
+  "session_id": "01a18e69-1fab-7e91-a7aa-786ae6ddf699",
+  "scope": "Saved item_completed MCP events only; no live browser operation or state read",
+  "recovered_at": "2026-10-30T20:23:02.516503+00:00",
+  "mcp_call_count": 258,
+  "calls_by_server_tool": {
+    "computer-use/get_app_state": 80,
+    "computer-use/press_key": 28,
+    "computer-use/click": 121,
+    "computer-use/perform_secondary_action": 2,
+    "computer-use/type_text": 27
+  },
+  "non_computer_use_events": [],
+  "selected_invalid_events": [
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "failed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "element_index": "3"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 130817042
+      },
+      "error": null,
+      "returned_text": [
+        "Computer Use server error -10005: The element ID is no longer valid. Try to get the on-screen content again and see if that resolves the issue."
+      ]
+    }
+  ]
+}

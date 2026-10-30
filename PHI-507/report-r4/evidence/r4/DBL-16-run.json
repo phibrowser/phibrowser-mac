@@ -1,0 +1,29 @@
+{
+  "job": "DBL-16",
+  "exit_code": 0,
+  "session_id": "01a18e69-1fab-7e91-a7aa-786ae6ddf699",
+  "round": 4,
+  "lease_id": "cfcec3e6-9abd-43e8-87c4-779d0c5cf732",
+  "started_at": "2026-10-30T20:03:36.204300+00:00",
+  "ended_at": "2026-10-30T20:22:30.004699+00:00",
+  "units": [
+    "DBL-16-PER",
+    "DBL-16-BAL",
+    "DBL-16-COM"
+  ],
+  "observed_units": [
+    "DBL-16-PER",
+    "DBL-16-BAL",
+    "DBL-16-COM"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "0876081f71bb44f563a59bf17aa5ddfdbcbe1bdbd42cea4726901e0e1c3ba4ac",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 258,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

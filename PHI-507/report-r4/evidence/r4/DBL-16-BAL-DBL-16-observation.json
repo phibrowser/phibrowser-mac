@@ -1,0 +1,49 @@
+{
+  "unit_id": "DBL-16-BAL",
+  "job": "DBL-16",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-16-observations.json",
+  "observation": {
+    "active_after": "普通结构及组内结构均为：双击 C 后右窗格活动、窗口 TC-C；双击 B 后左窗格活动、窗口 TC-B。结束核对 A、D 后返回 B 左窗格。",
+    "active_before": "普通及组内关键动作前均为 B 左窗格活动，C 在右窗格。",
+    "after": "TC-PHI507-r2-DBL-16-BAL-G[A,S[B+C],D]；集合仍为 {A,B,C,D}，split 配对 B 左/C 右。屏幕仅 split 条目高亮，组内原生 row 未暴露 selected 值。结束 PID 97109、窗口 TC-B。该专用窗口随后在 COM setup 中正常关闭。",
+    "before": "独立窗口内 [A,S[B+C],D]；随后原生建立 TC-PHI507-r2-DBL-16-BAL-G，成员顺序为 A、S[B+C]、D。关键截图保留 App、PID 97109、Window 和相关标签行。",
+    "confirmation_choices": "核心双击过程中没有确认框。Rename Group 输入准确 TC 组名并 Save。setup 关闭 PER 专用窗口没有离开确认。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-16-BAL attempt1 layout",
+      "EVIDENCE: DBL-16-BAL attempt1 settings",
+      "EVIDENCE: DBL-16-BAL attempt1 new-A",
+      "EVIDENCE: DBL-16-BAL attempt1 new-B",
+      "EVIDENCE: DBL-16-BAL attempt1 new-C",
+      "EVIDENCE: DBL-16-BAL attempt1 new-D",
+      "EVIDENCE: DBL-16-BAL attempt1 identity-D",
+      "EVIDENCE: DBL-16-BAL attempt1 identity-A",
+      "EVIDENCE: DBL-16-BAL attempt1 identity-B",
+      "EVIDENCE: DBL-16-BAL attempt1 identity-C",
+      "EVIDENCE: DBL-16-BAL attempt1 ordinary-before",
+      "EVIDENCE: DBL-16-BAL attempt1 ordinary-C-after",
+      "EVIDENCE: DBL-16-BAL attempt1 ordinary-B-after",
+      "EVIDENCE: DBL-16-BAL attempt1 group-before",
+      "EVIDENCE: DBL-16-BAL attempt1 group-C-after",
+      "EVIDENCE: DBL-16-BAL attempt1 group-B-after",
+      "EVIDENCE: DBL-16-BAL attempt1 retained-A",
+      "EVIDENCE: DBL-16-BAL attempt1 retained-D",
+      "EVIDENCE: DBL-16-BAL attempt1 after"
+    ],
+    "identity_checks": "批次 TC-PHI507-r2-DBL-16-BAL，四页均实见准确标题、普通页类型、正文及输入框。原打开编号：A=78d635b5-4059-4a24-b95c-547575972469；B=cb88ac6f-393d-4d54-98a8-9e37f81021af；C=e431e8f2-14c8-4a88-88f7-9b86e59061d2；D=45937135-5bf0-494c-9fb8-5b3791a9e0d2。KEEP-DBL-16-BAL-A/B/C/D 实际输入并可见。每次核心动作后 B/C 原编号及标记仍可见；结束逐页选择 A、D 复核原编号和标记，再返回 B。",
+    "language_observed": "System Default；原生界面英文，未切换语言。",
+    "layout_observed": "General 截图确认 Balanced 蓝色选框；外部纵向标签列表，内部 B/C 左右分屏。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "先在 setup 正常关闭 PER 专用窗口，再通过 File→New Window 独立建立本项 A。B/C/D 采用真实 fixture 新标签链接和原生地址栏导航至准确 URL，逐页实见最终正文与编号后输入 KEEP。选择 B，对 C 使用 Split with Current。普通结构操作后，以 New Tab Group、Rename Group 和 Add to Group 构造准确 TC 组，核实成员顺序 A、S[B+C]、D。",
+    "settings_observed": "双击关闭 off；按位置关闭 on；Restore last session on。未点击开关，快捷键未改。",
+    "steps_executed": [
+      "普通结构 before 取图；对 C 半 (285,355) 请求 click_count:2，实见右窗格蓝色活动边框和窗口 TC-C，重读并取图。",
+      "对 B 半 (110,355) 请求 click_count:2，实见左窗格蓝色活动边框和窗口 TC-B，重读并取图。",
+      "通过原生菜单构造 TC-PHI507-r2-DBL-16-BAL-G[A,S[B+C],D]，取 group-before 图。",
+      "组内对 C 半 (275,430) 请求 click_count:2，实见右窗格活动；对 B 半 (110,430) 请求 click_count:2，实见左窗格活动；每次核对 B/C 身份并取图。",
+      "分别选择 A、D 核对原编号和 KEEP，返回 B，结束取图并输出逐 unit OBSERVATION。"
+    ],
+    "unit_id": "DBL-16-BAL"
+  }
+}

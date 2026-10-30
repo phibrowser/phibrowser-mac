@@ -1,0 +1,39 @@
+{
+  "unit_id": "DBL-11-BAL",
+  "job": "DBL-11",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-11-observations.json",
+  "observation": {
+    "active_after": "双击后：S1 New Tab/{New Tab}；逐页核对结束：S2 X/{X}。",
+    "active_before": "S1 A/{A}。",
+    "after": "A 不再列出；S1 出现一个 New Tab 占位，未自动切换 Space，窗口保留。S2 顺序仍为 X | Y，输入标记与原打开编号均可见。",
+    "before": "S1:[A]；S2:[X,Y]。无组、split 或 pin。",
+    "confirmation_choices": "清理普通页及被测双击均未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-11-BAL attempt1 settings",
+      "EVIDENCE: DBL-11-BAL attempt1 X-loaded",
+      "EVIDENCE: DBL-11-BAL attempt1 X-before",
+      "EVIDENCE: DBL-11-BAL attempt1 Y-before",
+      "EVIDENCE: DBL-11-BAL attempt1 before",
+      "EVIDENCE: DBL-11-BAL attempt1 after",
+      "EVIDENCE: DBL-11-BAL attempt1 Y-after",
+      "EVIDENCE: DBL-11-BAL attempt1 X-after"
+    ],
+    "identity_checks": "固定路径，前后 PID 均为 92816。批次 TC-PHI507-r2-DBL-11-BAL。A=eedbc1fc-6aae-484f-b372-077c9b42e026；X=5891f8e3-2a0e-4852-82c4-3311421f24de；Y=60118701-e8e0-4147-b009-5bb36d4007c6。X/Y 前后实见 KEEP-DBL-11-BAL-X/Y 及相同编号。其他 Space 保留；未知 pin/书签内部数据未打开核对。",
+    "language_observed": "System Default，浏览器界面实际英文。",
+    "layout_observed": "Balanced；General 选中截图及浏览器外部纵向标签已确认。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "在 S2 新建 New Tab，通过 Close Other Tabs 清理 PER 的 X/Y；get_app_state 实读仅一个 New Tab 后重建 BAL 的 X/Y。S1 原占位导航为本项新 A，最终确认 S1 仅 A。",
+    "settings_observed": "Advanced 实读双击关闭 on、按位置关闭 on、恢复会话 on；本项未点击开关。快捷键未修改。",
+    "steps_executed": [
+      "通过 General 原生按钮切换 Balanced 并截图，读取 Advanced 双开关 on/on。",
+      "原生清理并重建本项 S1:A、S2:X/Y。",
+      "分别在 X/Y 输入 KEEP-DBL-11-BAL-X/Y，确认焦点边框与实际文字，记录打开编号。",
+      "切 S1，关键动作前 get_app_state 确认只有 A。",
+      "对 A 对应的 selected row 请求 CU click_count:2。",
+      "记录 S1 的 New Tab 占位，再切 S2，逐页核对 Y、X 的输入和原编号。"
+    ],
+    "unit_id": "DBL-11-BAL"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "session_id": "01a18e84-7c63-7ac2-9d0e-85f3f6619651",
+  "scope": "Saved item_completed MCP events only; no live browser operation or state read",
+  "recovered_at": "2026-10-30T20:39:07.042806+00:00",
+  "mcp_call_count": 29,
+  "calls_by_server_tool": {
+    "computer-use/get_app_state": 9,
+    "computer-use/press_key": 2,
+    "computer-use/click": 17,
+    "computer-use/list_apps": 1
+  },
+  "non_computer_use_events": [],
+  "actual_host_events": [
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "arguments": {
+        "app": "/System/Library/Input Methods/Assistive Control.app"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 259904791
+      },
+      "error": null,
+      "returned_text": [
+        "Computer Use state (CUA App Version: 1001425)\n<app_state>\nApp=/System/Library/Input Methods/Assistive Control.app/ (bundleID com.apple.inputmethod.AssistiveControl, pid 6399)\nWindow: \"\", App: AssistiveControl.\n0 window Secondary Actions: Raise\n\n</app_state>"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "arguments": {
+        "app": "/System/Library/Input Methods/Assistive Control.app"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 252014875
+      },
+      "error": null,
+      "returned_text": [
+        "Computer Use state (CUA App Version: 1001425)\n<app_state>\nApp=/System/Library/Input Methods/Assistive Control.app/ (bundleID com.apple.inputmethod.AssistiveControl, pid 6399)\nWindow: \"\", App: AssistiveControl.\n0 window Secondary Actions: Raise\n\n</app_state>"
+      ]
+    }
+  ]
+}

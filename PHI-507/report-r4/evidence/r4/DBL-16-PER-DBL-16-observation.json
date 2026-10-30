@@ -1,0 +1,53 @@
+{
+  "unit_id": "DBL-16-PER",
+  "job": "DBL-16",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-16-observations.json",
+  "observation": {
+    "active_after": "普通结构：双击 C 后右窗格活动、窗口 TC-C；双击 B 后左窗格活动、窗口 TC-B。组内结构同样为 B→C→B。结束逐页核对 A、D 后返回 B 左窗格。",
+    "active_before": "普通及组内关键动作前均为 B 左窗格活动，C 在右窗格。",
+    "after": "TC-PHI507-r2-DBL-16-PER-G[A,S[B+C],D]；A/B/C/D 均保留，split 配对仍为 B 左、C 右，屏幕仅 split 条目高亮。组内原生 row 标为 selectable，未暴露 selected 值。结束 PID 97109、窗口 TC-B。该专用窗口随后在 BAL setup 中正常关闭。",
+    "before": "独立窗口内 [A,S[B+C],D]，集合 {A,B,C,D}；普通结构无组。随后原生建立 TC-PHI507-r2-DBL-16-PER-G，成员顺序为 A、S[B+C]、D。关键截图均保留 App、PID 97109、Window 和相关标签行。",
+    "confirmation_choices": "核心双击过程中没有确认框。Rename Group 输入准确 TC 组名后选择 Save。误开的菜单通过明确暴露的 Cancel 取消。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-16-PER attempt1 settings",
+      "EVIDENCE: DBL-16-PER attempt1 layout",
+      "EVIDENCE: DBL-16-PER attempt1 new-A",
+      "EVIDENCE: DBL-16-PER attempt1 new-B",
+      "EVIDENCE: DBL-16-PER attempt1 new-C",
+      "EVIDENCE: DBL-16-PER attempt1 new-D",
+      "EVIDENCE: DBL-16-PER attempt1 identity-D",
+      "EVIDENCE: DBL-16-PER attempt1 identity-A",
+      "EVIDENCE: DBL-16-PER attempt1 identity-B",
+      "EVIDENCE: DBL-16-PER attempt1 identity-C",
+      "EVIDENCE: DBL-16-PER attempt1 ordinary-before",
+      "EVIDENCE: DBL-16-PER attempt1 ordinary-C-after",
+      "EVIDENCE: DBL-16-PER attempt1 ordinary-B-after",
+      "EVIDENCE: DBL-16-PER attempt1 group-setup",
+      "EVIDENCE: DBL-16-PER attempt1 group-before",
+      "EVIDENCE: DBL-16-PER attempt1 group-C-after",
+      "EVIDENCE: DBL-16-PER attempt1 group-B-after",
+      "EVIDENCE: DBL-16-PER attempt1 retained-A",
+      "EVIDENCE: DBL-16-PER attempt1 retained-D",
+      "EVIDENCE: DBL-16-PER attempt1 after"
+    ],
+    "identity_checks": "本地 fixture，批次 TC-PHI507-r2-DBL-16-PER，四页均实见准确 TC 标题、普通页类型、正文及输入框。原打开编号：A=1af4de35-e1b5-40ec-836c-1a486e6176e8；B=0238d45e-cf09-43ff-b227-01efd7c7a0c3；C=3920963c-8b8f-4c9e-ba81-fc779135a973；D=d694b234-e289-4c45-8349-1fdb449a5d0b。各页实际输入 KEEP-DBL-16-PER-A/B/C/D。每次核心动作后 B/C 原编号及标记仍可见；结束分别选择 A、D，复核原编号和标记，再返回 B。",
+    "language_observed": "General 实读 System Default；原生界面英文，未切换语言。",
+    "layout_observed": "General 原生选择并截图确认 Performance；浏览器外部标签列表为纵向，内部 B/C 左右分屏。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "关闭 Settings 后沿用了此前 File 索引“32”，实际打开 Edit 菜单；未选择菜单命令。使用其明确暴露的 Cancel 取消，重读后定位最新 File。该误开没有单独现场 image，未将其记作产品结果。",
+      "分组准备时右键外层组 row“19”命中了 A 的标签菜单；未选择错误菜单项。Cancel 后重读并核对画面，改为右键准确组标题 text，再执行 Rename Group；保留 group-setup 现场。"
+    ],
+    "precondition_actual": "通过 File→New Window 独立建立 A；B/C/D 由真实 fixture 的新标签链接建立后，通过原生地址栏导航至本项准确 tab、run、kind=normal。四页提交正文并核实身份后输入 KEEP。选择 B，对 C 使用 Split with Current，实见 A|S[B+C]|D。普通动作完成后，以 A→New Tab Group→Rename Group 创建准确 TC 组，再将完整 split 与 D 通过 Add to Group 加入，实读指定成员及顺序。",
+    "settings_observed": "Double-click to close tabs off；Close tabs by position on；Restore last session on。开关已符合本项要求，未点击任何开关；快捷键未改。批次最后统一恢复起始布局 Balanced。",
+    "steps_executed": [
+      "普通结构 before 取图；对 C 半坐标 (285,428) 请求 click_count:2，重读窗口 TC-C、右侧蓝色活动边框及 B/C 身份并取图。",
+      "对 B 半坐标 (110,428) 请求 click_count:2，重读窗口 TC-B、左侧蓝色活动边框及 B/C 身份并取图。",
+      "原生菜单建立 TC-PHI507-r2-DBL-16-PER-G[A,S[B+C],D]，group-before 取图。",
+      "组内对 C 半 (275,504) 请求 click_count:2，实见右窗格活动；对 B 半 (110,504) 请求 click_count:2，实见左窗格活动；每次重读并取图，B/C 均仍可见。",
+      "分别选择 A、D 核对原打开编号和 KEEP，返回 B，结束取图并输出逐 unit OBSERVATION。"
+    ],
+    "unit_id": "DBL-16-PER"
+  }
+}

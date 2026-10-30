@@ -1,0 +1,127 @@
+{
+  "session_id": "01a18e7a-9738-7e51-81f7-f9f73627460e",
+  "scope": "Saved item_completed MCP events only; no live browser operation or state read",
+  "mcp_call_count": 74,
+  "non_computer_use_events": [],
+  "invalid_app_events": [
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "failed",
+      "arguments": {
+        "app": "/System/Library/Input Methods/KeyboardViewer.app"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 39792875
+      },
+      "error": null,
+      "returned_text": [
+        "Invalid app: /System/Library/Input Methods/KeyboardViewer.app"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "failed",
+      "arguments": {
+        "app": "/System/Library/CoreServices/AssistiveControl.app"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 31562583
+      },
+      "error": null,
+      "returned_text": [
+        "Invalid app: /System/Library/CoreServices/AssistiveControl.app"
+      ]
+    }
+  ],
+  "keypad_and_expected_quit_events": [
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "arguments": {
+        "app": "/System/Applications/System Settings.app",
+        "key": "KP_2"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 464512000
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.apple.systempreferences (pid 4617)\nWindow: \"\", App: System Settings.\n0 sheet Secondary Actions: Raise\n\t1 image alert\n\t2 text Mouse Keys With Mouse Keys active, you can move the pointer and press the mouse button using the keyboard or a numeric keypad. If you’d like to turn on and use Mouse Keys, use the keyboard or numeric keypad now to click the Use Mouse Keys button. Press the Escape key or click the Cancel button to stop using Mouse Keys.\n\t3 button Use Mouse Keys, ID: action-button-1\n\t4 button Cancel, ID: action-button-2\n5 menu bar\n\t6 System Settings\n\t7 Edit\n\t8 View\n\t9 Window\n\t10 Help\n"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "arguments": {
+        "app": "/System/Applications/System Settings.app",
+        "key": "KP_2"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 474353416
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.apple.systempreferences (pid 4617)\nWindow: \"\", App: System Settings.\n0 sheet Secondary Actions: Raise\n\t1 image alert\n\t2 text Mouse Keys With Mouse Keys active, you can move the pointer and press the mouse button using the keyboard or a numeric keypad. If you’d like to turn on and use Mouse Keys, use the keyboard or numeric keypad now to click the Use Mouse Keys button. Press the Escape key or click the Cancel button to stop using Mouse Keys.\n\t3 button Use Mouse Keys, ID: action-button-1\n\t4 button Cancel, ID: action-button-2\n5 menu bar\n\t6 System Settings\n\t7 Edit\n\t8 View\n\t9 Window\n\t10 Help\n"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "arguments": {
+        "app": "/System/Applications/System Settings.app",
+        "key": "KP_2"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 491972250
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.apple.systempreferences (pid 4617)\nWindow: \"\", App: System Settings.\n0 sheet Secondary Actions: Raise\n\t1 image alert\n\t2 text Mouse Keys With Mouse Keys active, you can move the pointer and press the mouse button using the keyboard or a numeric keypad. If you’d like to turn on and use Mouse Keys, use the keyboard or numeric keypad now to click the Use Mouse Keys button. Press the Escape key or click the Cancel button to stop using Mouse Keys.\n\t3 button Use Mouse Keys, ID: action-button-1\n\t4 button Cancel, ID: action-button-2\n5 menu bar\n\t6 System Settings\n\t7 Edit\n\t8 View\n\t9 Window\n\t10 Help\n"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "arguments": {
+        "app": "/System/Applications/System Settings.app",
+        "key": "KP_2"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 486962458
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.apple.systempreferences (pid 4617)\nWindow: \"\", App: System Settings.\n0 sheet Secondary Actions: Raise\n\t1 image alert\n\t2 text Mouse Keys With Mouse Keys active, you can move the pointer and press the mouse button using the keyboard or a numeric keypad. If you’d like to turn on and use Mouse Keys, use the keyboard or numeric keypad now to click the Use Mouse Keys button. Press the Escape key or click the Cancel button to stop using Mouse Keys.\n\t3 button Use Mouse Keys, ID: action-button-1\n\t4 button Cancel, ID: action-button-2\n5 menu bar\n\t6 System Settings\n\t7 Edit\n\t8 View\n\t9 Window\n\t10 Help\n"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "failed",
+      "arguments": {
+        "app": "/System/Library/Input Methods/Assistive Control.app/Contents/Resources/Panel Editor.app",
+        "key": "super+q"
+      },
+      "duration": {
+        "secs": 5,
+        "nanos": 40994125
+      },
+      "error": null,
+      "returned_text": [
+        "Computer Use server error -10005: App quit"
+      ]
+    }
+  ]
+}

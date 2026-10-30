@@ -1,0 +1,34 @@
+{
+  "session_id": "01a18e11-caa1-7de0-9967-63db07bcb5e9",
+  "scope": "Saved item_completed MCP events only; no live browser operation or state read",
+  "recovered_at": "2026-10-30T18:48:40.880970+00:00",
+  "mcp_call_count": 114,
+  "calls_by_server_tool": {
+    "computer-use/get_app_state": 36,
+    "computer-use/press_key": 29,
+    "computer-use/click": 41,
+    "computer-use/type_text": 7,
+    "computer-use/perform_secondary_action": 1
+  },
+  "non_computer_use_events": [],
+  "selected_events": [
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "failed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "element_index": "7"
+      },
+      "duration": {
+        "secs": 6,
+        "nanos": 708201958
+      },
+      "error": null,
+      "returned_text": [
+        "Computer Use server error -10005: App quit"
+      ]
+    }
+  ],
+  "filter": "Only actual click events whose returned error/text includes App quit; expected normal Quit lifecycle"
+}

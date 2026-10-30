@@ -1,0 +1,27 @@
+{
+  "job": "DBL-09_DBL-23-performance-protected-items-r4",
+  "exit_code": 0,
+  "session_id": "01a18e88-585c-7b91-8e16-7857e11d9a5f",
+  "round": 4,
+  "lease_id": "cfcec3e6-9abd-43e8-87c4-779d0c5cf732",
+  "started_at": "2026-10-30T20:37:42.331274+00:00",
+  "ended_at": "2026-10-30T20:55:05.973329+00:00",
+  "units": [
+    "DBL-09-PER",
+    "DBL-23-PER"
+  ],
+  "observed_units": [
+    "DBL-09-PER",
+    "DBL-23-PER"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "910e0548f5344601dc91219d52924f0c1b26c56ae0f30f3045906c3b9d154355",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 156,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

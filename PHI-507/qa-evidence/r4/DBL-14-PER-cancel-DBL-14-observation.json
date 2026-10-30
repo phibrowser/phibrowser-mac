@@ -1,0 +1,50 @@
+{
+  "unit_id": "DBL-14-PER-cancel",
+  "job": "DBL-14",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-14-observations.json",
+  "observation": {
+    "active_after": "Cancel 后为 B，分屏条目保留；逐页检查结束为 D/{D}。",
+    "active_before": "B 为活动窗格，内容显示 B+C 分屏；无多选。",
+    "after": "原生顺序仍为 A | S[B+C] | D。B 草稿、离开确认已启用提示、C 标记及两页原编号同时可见；随后逐页看到 A/D 原编号与标记。",
+    "before": "独立窗口 A | S[B+C] | D；B 左、C 右；无组/pin。",
+    "confirmation_choices": "核心动作出现“Leave site? Changes you made may not be saved.”，选择 Cancel；无勾选项。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-14-PER-cancel attempt1 settings-layout",
+      "EVIDENCE: DBL-14-PER-cancel attempt1 settings",
+      "EVIDENCE: DBL-14-PER-cancel attempt1 setup-A",
+      "EVIDENCE: DBL-14-PER-cancel attempt1 identity-A",
+      "EVIDENCE: DBL-14-PER-cancel attempt1 setup-B",
+      "EVIDENCE: DBL-14-PER-cancel attempt1 setup-C",
+      "EVIDENCE: DBL-14-PER-cancel attempt1 setup-D",
+      "EVIDENCE: DBL-14-PER-cancel attempt1 identity-D",
+      "EVIDENCE: DBL-14-PER-cancel attempt1 identity-C",
+      "EVIDENCE: DBL-14-PER-cancel attempt1 identity-B",
+      "EVIDENCE: DBL-14-PER-cancel attempt1 before",
+      "EVIDENCE: DBL-14-PER-cancel attempt1 confirmation",
+      "EVIDENCE: DBL-14-PER-cancel attempt1 after",
+      "EVIDENCE: DBL-14-PER-cancel attempt1 after-A",
+      "EVIDENCE: DBL-14-PER-cancel attempt1 after-D"
+    ],
+    "identity_checks": "PID 97109。打开编号：A=84eda93e-92de-482f-979a-58df233352e4；B=a6df553d-af06-43e0-8cab-8cbe0377df51；C=22c6aa37-f76d-4032-b704-38673c33fb8e；D=962b7b4a-6dcc-4eb3-b5f8-6c7b6dac7025。标记为 KEEP-DBL-14-PER-cancel-[A/B/C/D]；动作后 B/C/A/D 均逐屏核对原编号和标记。",
+    "language_observed": "General 实读 System Default；英文浏览器界面及确认框。",
+    "layout_observed": "General 从起始 Balanced 切到 Performance，并截图确认选中；外部标签为纵向。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "setup 关闭 Settings 后误打开 Edit 菜单，立即用其暴露的 Cancel 取消，未执行菜单命令；该次菜单返回仅保留了原生文字，未转发图片。",
+      "辅助函数首次 eval 出现语法错误，未发出 CU 调用；随后纠正编排。",
+      "A 标记在其余页面建立前输入；其后 A 的原编号和标记已重新实读。"
+    ],
+    "precondition_actual": "File→New Window 独立建立 A，经 fixture 的新标签链接建立 B/C/D 并分别导航准确 URL。四页正文、批次、类型、编号和 KEEP 标记可见；B 为 unsaved 且已显示“离开确认已启用”。B 当前，对 C 使用 Split with Current 后实见 A | S[B+C] | D。",
+    "settings_observed": "起始双击关闭 off、按位置关闭 on、Restore last session on。仅点击双击关闭一次改为 on，返回树即时显示按位置关闭仍 on；核心动作时两开关均 on。",
+    "steps_executed": [
+      "实读起始窗口与偏好，清理已确认的上一批 DBL-13 专用窗口。",
+      "独立准备 A/B/C/D、输入 KEEP 标记并建立 B+C 分屏。",
+      "在本窗口安全内容区校准：请求 (700,500)，原图指针约 (700,500)；使用本次原图 1:1 坐标。",
+      "对侧栏分屏标签的 B 左半格 (110,429) 请求 click_count:2。",
+      "在 Leave site? 确认框选择 Cancel。",
+      "核对 B/C 分屏和内容，再分别选择 A、D 核对编号与标记。"
+    ],
+    "unit_id": "DBL-14-PER-cancel"
+  }
+}

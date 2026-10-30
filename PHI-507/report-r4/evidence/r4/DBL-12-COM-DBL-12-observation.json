@@ -1,0 +1,43 @@
+{
+  "unit_id": "DBL-12-COM",
+  "job": "DBL-12",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-12-observations.json",
+  "observation": {
+    "active_after": "双击后 New Tab/{New Tab}；unit 最终及收尾为 A-control/{A-control}。",
+    "active_before": "A/{A}。",
+    "after": "双击后 A 消失，同一测试窗口显示唯一 New Tab。对照窗口保留唯一 A-control。统一恢复 Balanced 后，A 标签仍在且选中，内容区为空白；两次结束截图记录该状态，未再导航或重建。",
+    "before": "独立专用窗口仅 [A]，无 split、组或 pin；另一个工作窗口为 X | Y。",
+    "confirmation_choices": "未出现确认框；最终 Window 菜单通过其明确暴露的 Cancel 动作关闭。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-12-COM attempt1 layout-settings",
+      "EVIDENCE: DBL-12-COM attempt1 before",
+      "EVIDENCE: DBL-12-COM attempt1 double-after",
+      "EVIDENCE: DBL-12-COM attempt1 work-observed",
+      "EVIDENCE: DBL-12-COM attempt1 control-before",
+      "EVIDENCE: DBL-12-COM attempt1 after",
+      "EVIDENCE: DBL-12-COM attempt1 restored-switches",
+      "EVIDENCE: DBL-12-COM attempt1 restored-layout",
+      "EVIDENCE: DBL-12-COM attempt1 ending-state",
+      "EVIDENCE: DBL-12-COM attempt1 ending-confirmed"
+    ],
+    "identity_checks": "固定 QA app，关键状态均实读 PID 92816。双击 A：批次 TC-PHI507-r2-DBL-12-COM，编号 bd4d7e86-a2d9-456e-8e02-3bef917528af；对照 A：批次 TC-PHI507-r2-DBL-12-COM-control，编号 e5650bf0-a3b7-4ee0-a63a-48a3ebd32f63。动作前均实见批次、普通页、编号及空输入框。A 的 tabStripTab 当时 Description 仍为 New Tab，但其唯一子文本和屏幕均为对应 TC-A。工作窗口实见 X | Y、活动 X，X 编号 a2c1f804-ed87-4da6-b3b2-7f85e4abce22、KEEP-DBL-11-COM-X；Y 未逐页核对正文。最终 Window 菜单仍列工作 X 窗口和 COM-control 窗口。",
+    "language_observed": "General 实读 System Default，实际英文；收尾保持此值。",
+    "layout_observed": "动作时 General 中 Comfortable 选框及顶部横向标签 chrome 均实见。收尾切回 Balanced 并截图确认，最终浏览器为左侧纵向标签。",
+    "not_executed_reason": "已有标签关闭按钮对照未执行：对照 A 已提交完整正文，但原生树未暴露标签关闭按钮，单击唯一 A 的 tabStripTab 后截图仍未显示可辨认的标签关闭图标；未以菜单、快捷键或窗口关闭替代该动作。",
+    "operator_errors": [],
+    "precondition_actual": "在本项开始时关闭 BAL 测试窗口，经 General 切 Comfortable、Advanced 核对 on/on 后，独立新建仅 A 的专用窗口；工作窗口只观察。",
+    "settings_observed": "动作时 Double-click to close tabs=on、Close tabs by position=on、Restore last session=on。统一收尾仅点击双击关闭 on→off，立即读取位置关闭仍 on、Restore on；General 恢复 Balanced、语言 System Default。快捷键未修改，Settings 已关闭。",
+    "steps_executed": [
+      "COM setup 清理 BAL 测试窗口，切 Comfortable 并截图；实读两个关闭开关均 on、Restore on。",
+      "新建专用窗口，通过原生地址栏加载 COM A，核对正文和打开编号。",
+      "对仅包含该 A 的 tabStripTab button 请求 click_count:2，检查返回值并保存 double-after 图；记录 A 消失、唯一 New Tab 出现。",
+      "重建对照时关闭测试占位窗口，观察工作 X/Y 及 X 原编号、KEEP 标记；另建专用窗口加载 COM-control A。",
+      "核对对照正文和编号后，单击唯一 A 的 tabStripTab button 检查现有关闭控件；未见可辨认标签关闭按钮，保存 after 图并保留 A。",
+      "统一恢复起始开关及 Balanced 布局，分别保存开关和布局截图，关闭 Settings。",
+      "两次读取结束现场，记录 A 标签仍在但内容空白；Window 菜单读取两个窗口条目，以原生 Cancel 关闭菜单并重读正常窗口。",
+      "输出 unit OBSERVATION 及收尾补充观察；未额外重建页面序列。"
+    ],
+    "unit_id": "DBL-12-COM"
+  }
+}

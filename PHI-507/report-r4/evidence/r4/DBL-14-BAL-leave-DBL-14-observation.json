@@ -1,0 +1,45 @@
+{
+  "unit_id": "DBL-14-BAL-leave",
+  "job": "DBL-14",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r4/DBL-14-observations.json",
+  "observation": {
+    "active_after": "Leave 后 C/{C}；逐页检查结束为 D/{D}。",
+    "active_before": "B 活动，B+C 分屏；无多选。",
+    "after": "原生顺序 A | C | D；B 条目消失，C 转为单页，原编号及标记可见；A/D 原编号及标记随后逐页可见。",
+    "before": "独立窗口 A | S[B+C] | D；B 左、C 右；无组/pin。",
+    "confirmation_choices": "核心 Leave site?→Leave。setup 清理上一取消变体专用窗口的 Leave site? 也选择 Leave，单独记录。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-14-BAL-leave attempt1 setup-cleanup",
+      "EVIDENCE: DBL-14-BAL-leave attempt1 setup-A",
+      "EVIDENCE: DBL-14-BAL-leave attempt1 setup-B",
+      "EVIDENCE: DBL-14-BAL-leave attempt1 setup-C",
+      "EVIDENCE: DBL-14-BAL-leave attempt1 setup-D",
+      "EVIDENCE: DBL-14-BAL-leave attempt1 identity-D",
+      "EVIDENCE: DBL-14-BAL-leave attempt1 identity-A",
+      "EVIDENCE: DBL-14-BAL-leave attempt1 identity-C",
+      "EVIDENCE: DBL-14-BAL-leave attempt1 identity-B",
+      "EVIDENCE: DBL-14-BAL-leave attempt1 before",
+      "EVIDENCE: DBL-14-BAL-leave attempt1 confirmation",
+      "EVIDENCE: DBL-14-BAL-leave attempt1 after",
+      "EVIDENCE: DBL-14-BAL-leave attempt1 after-A",
+      "EVIDENCE: DBL-14-BAL-leave attempt1 after-D"
+    ],
+    "identity_checks": "PID 97109。A=4b71d811-782f-4780-8a55-f092d20261d8；B=21997b3c-9bc6-45c6-8975-15054db20dfb；C=e4b20cbc-0deb-4a68-93b6-6e820807659b；D=def9c548-41c0-4a93-b315-f5103dc1fdb7。标记 KEEP-DBL-14-BAL-leave-[A/B/C/D]；动作后 C/A/D 原编号和标记已核对。",
+    "language_observed": "System Default 未改变；本项实见英文 UI 和确认框。",
+    "layout_observed": "Balanced，外部纵向；从本项 chrome 再确认，未重复切换。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "独立新窗口准确 A/B/C/D fixture 正文和编号均可见；四页输入 KEEP 后实见 B 离开确认已启用；原生菜单建立 B+C 分屏，顺序 A | S[B+C] | D。",
+    "settings_observed": "双击关闭 on、按位置关闭 on、Restore last session on；本项未修改开关。",
+    "steps_executed": [
+      "File→Close Window 清理上一专用窗口，单独处理 setup Leave。",
+      "File→New Window，通过 fixture 链接建立 B/C/D 并导航准确 URL，输入四页 KEEP。",
+      "B 当前，对 C 选择 Split with Current。",
+      "对侧栏 B 半格 (110,355) 请求 click_count:2。",
+      "在 Leave site? 选择 Leave。",
+      "核对 C 单页与原编号/标记，再逐页检查 A、D。"
+    ],
+    "unit_id": "DBL-14-BAL-leave"
+  }
+}

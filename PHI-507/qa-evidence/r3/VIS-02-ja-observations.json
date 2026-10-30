@@ -1,0 +1,119 @@
+{
+  "base_case": "VIS-02；仅执行 PER-ja、BAL-ja、COM-ja 三个指定执行点，不作 pass/fail 判定。全部浏览器操作和取证使用 /Applications/Phi Tab Close QA.app 的 Computer Use。起始实读 PID 81822、Window=\"New Tab\"，System Default、英文界面、Balanced，Double-click to close tabs=off、Close tabs by position=on。N、G1、G2为本记录对逐次创建的原生 New Tab 对象的逻辑称呼，不是页面标题或网页身份标记。每项检查前独立重建普通 N 与两成员 TC 测试组；未导航 fixture，未声称存在已提交 Web 文档或存活编号。旧 TC-A、TC-B／New Tab 分屏、TC-C、手册和报告容器保持原顺序；未操作 Default、pin、书签或其他窗口。",
+  "ending_state": "最终实读指定应用 PID 82780，Window=\"New Tab\"。General 为 System Default，界面英文，Balanced 卡片有选中边框；Advanced 为 Double-click to close tabs=off、Close tabs by position=on。Settings 已关闭，无打开菜单或确认框。保留最后一项普通 N 和 TC-PHI507-r2-VIS-02-COM-ja 组，两成员顺序为 G1、G2，活动页为 G2，无多选；恢复语言并重启后，N、G1原生标题仍显示「新しいタブ」，G2显示「New Tab」。前项 COM-en、PER-ja、BAL-ja 测试组及对应普通 N 已分别在下一项 setup 时关闭。最后没有额外重建序列。",
+  "observations": [
+    {
+      "active_after": "G2；截图显示组内第二个「新しいタブ」为活动页，无多选。",
+      "active_before": "G2；普通 N 在组外，组内 G1、G2顺序明确。",
+      "after": "N＋TC-PHI507-r2-VIS-02-PER-ja[G1,G2]保留；普通菜单、组菜单均已取消，没有执行方向关闭项。",
+      "before": "旧保留容器之后为 N，再为 TC-PHI507-r2-VIS-02-PER-ja 组；组内两个实际「新しいタブ」对象。",
+      "confirmation_choices": "语言下拉选择「日本語」；在「Restart Phi?」提示选择「Restart Phi」。返回「Computer Use server error -10005: App quit」作为预期重启结果保留，随后通过指定路径重新读取，PID 82193。组重命名输入本项 TC 名称后 Return 保存。关闭旧测试组未出现确认框；未勾选任何不再询问选项。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-02-PER-ja attempt1 restart-result",
+        "EVIDENCE: VIS-02-PER-ja attempt1 layout",
+        "EVIDENCE: VIS-02-PER-ja attempt1 settings",
+        "EVIDENCE: VIS-02-PER-ja attempt1 failure",
+        "EVIDENCE: VIS-02-PER-ja attempt1 setup-error",
+        "EVIDENCE: VIS-02-PER-ja attempt1 before",
+        "EVIDENCE: VIS-02-PER-ja attempt1 normal-menu",
+        "EVIDENCE: VIS-02-PER-ja attempt1 group-menu",
+        "EVIDENCE: VIS-02-PER-ja attempt1 after"
+      ],
+      "identity_checks": "检查时 App=/Applications/Phi Tab Close QA.app/，PID 82193；设置窗口「一般」「詳細」，浏览器窗口「新しいタブ」。普通 N 为顶层标签行，组标题为 TC-PHI507-r2-VIS-02-PER-ja，原生 table 下实读两个成员。只记录本地 New Tab 身份，不记录网页编号。",
+      "language_observed": "General 下拉实读「日本語」，重启后原生菜单栏为「ファイル」「編集」「表示」等日文。指定两条开关标题、两条说明和四条上下方向菜单文字均为日文；这些目标文字中未见本地化 key、缺字或英文回退。",
+      "layout_observed": "General 原生点击「パフォーマンス」，完整截图显示该卡片选中边框；浏览器为外部纵向标签栏。普通菜单：「上側のタブを閉じる」「下側のタブを閉じる」均可用。组标题菜单：「グループの上側のタブを閉じる」可用，「グループの下側のタブを閉じる」禁用。四条方向菜单均单行完整显示。设置两条标题均单行；双击说明换两行，第一行末为「ブックマー」、第二行从「クの」继续；位置说明换两行，第一行末为「下側」、第二行为「になります。」。末尾均可见，未见目标文案截断；长 TC 组名在侧栏以省略号显示，原生树保留全名。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "setup 时右键旧 COM-en 外层组 row，实际打开成员普通菜单；已保存 failure 图片并用该菜单明确暴露的 Cancel 取消，未点击菜单命令。随后右键组标题 text 才打开组菜单。",
+        "新建三个普通 New Tab 后，右键未选中的第二个同名 row 返回 -10005：元素失效，refetch 因多个匹配对象无法开始。立即停止该调用序列并保存 setup-error 图片。",
+        "恢复 setup 时，关闭当前第三个新建普通对象，再将第二个对象建组，并用「グループ内に新しいタブ」创建第二成员；最终实读为一个普通 N 和两个组成员。该清理不作为被测关闭结果。"
+      ],
+      "precondition_actual": "原生关闭上次 COM-en 测试组和其普通 N，重新创建本项对象；日文重启完成，Performance 实际选中。公共开关设为 on/on 后才观察目标菜单。",
+      "settings_observed": "「ダブルクリックでタブを閉じる」=on；说明：「タブをダブルクリックすると閉じます。分割表示では、クリックした側だけを閉じます。固定タブとブックマークのダブルクリック操作は変わりません。」。「位置を指定してタブをまとめて閉じる」=on；说明：「タブとタブグループのメニューに、左側・右側のタブを閉じる項目を追加します。縦型タブバーでは上側・下側になります。」。起始只点击双击关闭一个开关使 off→on，即时树读取另一开关仍为 on。",
+      "steps_executed": [
+        "实读起始 General、Advanced 偏好；单独开启双击关闭并读取两个即时值。",
+        "General 选择日本語，按提示重启并核对新 PID、实际日文界面。",
+        "选择 Performance，保留 General 布局和 Advanced 完整设置截图，逐字读取标题与说明。",
+        "独立重建 N＋两成员 TC 测试组，核对成员数、顺序及活动页，保存 before。",
+        "右键普通 N，保留完整 normal-menu 截图和上下方向项可用状态；Cancel 后重读正常窗口。",
+        "右键本项组标题，保留完整 group-menu 截图及上下方向项状态；Cancel 后保存 after。"
+      ],
+      "unit_id": "VIS-02-PER-ja"
+    },
+    {
+      "active_after": "G2；组内第二个「新しいタブ」，无多选。",
+      "active_before": "G2；组内第二个「新しいタブ」，无多选。",
+      "after": "N＋TC-PHI507-r2-VIS-02-BAL-ja[G1,G2]保留；两类菜单均已取消，没有执行方向关闭项。",
+      "before": "旧保留容器之后为新建普通 N，再为 TC-PHI507-r2-VIS-02-BAL-ja[G1,G2]。",
+      "confirmation_choices": "本项 General 实读已经是「日本語」，未重复选择或重启。组重命名输入 TC-PHI507-r2-VIS-02-BAL-ja 后 Return 保存。关闭前项测试组未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-02-BAL-ja attempt1 failure",
+        "EVIDENCE: VIS-02-BAL-ja attempt1 layout",
+        "EVIDENCE: VIS-02-BAL-ja attempt1 settings",
+        "EVIDENCE: VIS-02-BAL-ja attempt1 before",
+        "EVIDENCE: VIS-02-BAL-ja attempt1 normal-menu",
+        "EVIDENCE: VIS-02-BAL-ja attempt1 group-menu",
+        "EVIDENCE: VIS-02-BAL-ja attempt1 after"
+      ],
+      "identity_checks": "App=/Applications/Phi Tab Close QA.app/，PID 82193；设置窗口「一般」「詳細」，浏览器窗口「新しいタブ」。本项普通 N 为独立顶层行；TC-PHI507-r2-VIS-02-BAL-ja 的 table 下实读 G1、G2两个成员。创建顺序、原生包含关系和截图共同核对身份，未声称存在网页标记。",
+      "language_observed": "General 实读「日本語」；当前原生 chrome 和目标设置、菜单为日文。指定标题、说明及上下方向菜单未见 key、缺字或英文回退。",
+      "layout_observed": "General 原生选择「バランス」，截图显示该卡片选中边框；浏览器外部标签栏纵向。普通菜单：「上側のタブを閉じる」「下側のタブを閉じる」均可用。组菜单：「グループの上側のタブを閉じる」可用，「グループの下側のタブを閉じる」禁用。方向菜单单行完整可读。两条开关标题单行，说明各两行；双击说明在「ブックマー／クの」处续行，位置说明在「下側／になります。」处续行，末尾均可见。长 TC 组名在侧栏省略，原生树全名可读。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "setup 后第一次右键当前同名普通标签调用返回 isError；辅助函数立即终止序列，但文字过滤遗漏了该错误的具体文本，因此不补写错误原因。随后 get_app_state 保存 failure 图片，实读仍为两个普通新しいタブ且没有菜单；重读后右键当前选中行成功，继续建组。"
+      ],
+      "precondition_actual": "本项开始才关闭 PER-ja 组和对应 N；新建普通 N、G1，用原生 New Tab Group 建组、Rename Group 命名，再用 New Tab in Group 创建 G2。实际为三对象、两组成员。日本語保持不变，切换 Balanced，两个开关实读 on/on。",
+      "settings_observed": "「ダブルクリックでタブを閉じる」=on；说明：「タブをダブルクリックすると閉じます。分割表示では、クリックした側だけを閉じます。固定タブとブックマークのダブルクリック操作は変わりません。」。「位置を指定してタブをまとめて閉じる」=on；说明：「タブとタブグループのメニューに、左側・右側のタブを閉じる項目を追加します。縦型タブバーでは上側・下側になります。」。本项未点击任何已正确的开关。",
+      "steps_executed": [
+        "关闭前项可丢弃对象，在本项 setup 独立创建普通 N 与两成员 BAL-ja 测试组。",
+        "General 核对日本語并选择 Balanced，保存 layout 完整截图。",
+        "Advanced 实读两个 on 值、两条标题和说明，保存完整 settings 截图。",
+        "核对浏览器实际纵向顺序、组成员与活动 G2，保存 before。",
+        "分别右键普通 N 和本项组标题，保存完整 normal-menu、group-menu 截图及方向项可用状态；每次均用明确 Cancel 退出并重读。",
+        "保存 after，保留本项实际对象至下一项 setup。"
+      ],
+      "unit_id": "VIS-02-BAL-ja"
+    },
+    {
+      "active_after": "本项结束为 G2「新しいタブ」；统一恢复语言重启后仍为 G2，显示「New Tab」，无多选。",
+      "active_before": "G2；横向最右侧组成员「新しいタブ」为活动页。",
+      "after": "本项 after 时保留 N＋TC-PHI507-r2-VIS-02-COM-ja[G1,G2]，Comfortable、日文、on/on；随后只恢复偏好和按语言提示重启，三对象继续保留，未重建。",
+      "before": "原生横向 tabStrip 中，旧保留容器之后是普通 N，随后为 TC-PHI507-r2-VIS-02-COM-ja 组；标题计数2，成员 G1、G2顺序与 setup 原生 table 一致。",
+      "confirmation_choices": "本项观察期间日本語已经生效，未重复选择。组名以 Return 保存。收尾 General 选择「システムのデフォルト」，在「Phiを再起動しますか？」提示选择「Phiを再起動」；返回 App quit 作为预期重启结果保留，随后指定路径重读 PID 82780。未出现关闭确认框，未选择不再询问。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-02-COM-ja attempt1 layout",
+        "EVIDENCE: VIS-02-COM-ja attempt1 settings",
+        "EVIDENCE: VIS-02-COM-ja attempt1 before",
+        "EVIDENCE: VIS-02-COM-ja attempt1 normal-menu",
+        "EVIDENCE: VIS-02-COM-ja attempt1 group-menu",
+        "EVIDENCE: VIS-02-COM-ja attempt1 after",
+        "EVIDENCE: VIS-02-COM-ja attempt1 restore-switches",
+        "EVIDENCE: VIS-02-COM-ja attempt1 restore-layout",
+        "EVIDENCE: VIS-02-COM-ja attempt1 restore-restart-result",
+        "EVIDENCE: VIS-02-COM-ja attempt1 restored-general",
+        "EVIDENCE: VIS-02-COM-ja attempt1 restored-settings",
+        "EVIDENCE: VIS-02-COM-ja attempt1 ending-state"
+      ],
+      "identity_checks": "检查时 App=/Applications/Phi Tab Close QA.app/，PID 82193，浏览器「新しいタブ」。setup 原生 table 下实读两个成员；Comfortable chrome 实读组标题「TC-PHI507-r2-VIS-02-COM-ja 2」，普通 N 与 G1、G2为三个独立 tabStripTab button，截图与创建顺序对应。恢复后 PID 82780、Window=\"New Tab\"，相同组名及两个成员仍可见。",
+      "language_observed": "观察阶段 General 为「日本語」，指定目标设置及左右方向菜单均为日文，未见目标 key、缺字或英文回退。统一恢复后 General 为 System Default，原生界面英文；非活动本地页 N、G1仍保留日文标题，活动 G2为 New Tab。",
+      "layout_observed": "General 原生选择「ゆったり」，完整截图显示 Comfortable 卡片选中边框；浏览器为外部横向标签栏。普通菜单：「左側のタブを閉じる」「右側のタブを閉じる」均可用。组菜单：「グループの左側のタブを閉じる」可用，「グループの右側のタブを閉じる」禁用。四条方向菜单均单行完整显示。设置标题各单行、说明各两行，续行位置分别为「ブックマー／クの」和「下側／になります。」；未见目标文案截断。TC 组标题在横向 chrome 省略显示，成员数2可见。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "恢复语言重启后，两次 Cmd+, 的 CU 返回仍为浏览器窗口，未实际打开 Settings；没有据此假定设置窗口存在。随后通过实读 Phi 菜单中的 Settings… 打开设置，并完成最终偏好实读。"
+      ],
+      "precondition_actual": "本项开始关闭 BAL-ja 组及对应 N，独立重建新 N、G1及原生 TC 组，再通过 New Tab in Group 创建 G2。日本語实际生效，General 选择 Comfortable，Advanced 两开关 on/on。",
+      "settings_observed": "观察时「ダブルクリックでタブを閉じる」=on；说明：「タブをダブルクリックすると閉じます。分割表示では、クリックした側だけを閉じます。固定タブとブックマークのダブルクリック操作は変わりません。」。「位置を指定してタブをまとめて閉じる」=on；说明：「タブとタブグループのメニューに、左側・右側のタブを閉じる項目を追加します。縦型タブバーでは上側・下側になります。」。收尾只点击双击开关 on→off，返回树即时读取 directionalClosing 仍为 on；恢复语言重启后再次实读 off/on。",
+      "steps_executed": [
+        "独立重建普通 N 和两成员 COM-ja 组，核对原生组关系及顺序。",
+        "General 实读日本語、选择 Comfortable，保存 layout；Advanced 读取 on/on 和完整标题说明，保存 settings。",
+        "核对横向 chrome、组计数2、三个本地标签与活动 G2，保存 before。",
+        "右键普通 N，保存 normal-menu 完整截图及左右项状态；Cancel 后重读正常窗口。",
+        "右键本项组标题，保存 group-menu 完整截图及组左右项状态；Cancel 后保存 after。",
+        "统一恢复双击关闭 off，核对另一个开关仍 on；恢复 Balanced 并截图。",
+        "恢复 System Default，按提示重启；重新实读 System Default、Balanced、英文界面、off/on，关闭 Settings，保存 ending-state。"
+      ],
+      "unit_id": "VIS-02-COM-ja"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

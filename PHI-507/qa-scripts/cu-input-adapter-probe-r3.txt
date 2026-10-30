@@ -17,7 +17,7 @@
 
 第三部分：原生虚拟键盘修饰键（可行性探测）。
 
-8. Mouse Keys 恢复后，先建立本轮 A/B/C/D 普通页并核对。通过 CU 的 Accessibility Shortcuts 或明确可见的系统原生入口检查 Sticky Keys、Accessibility Keyboard，记录原值。只在实际提供时临时开启；不得假装 press_key(super+a) 后 modifier 会跨 click 保持。
+8. Mouse Keys 恢复后，先建立本轮 A/B/C/D 普通页并核对。先用已有原生键盘范围选择做一个最小探测：明确点中 B 的 tab 容器、读取焦点，再用 CU press_key 的 Shift+Down，检查原生实际选中集合是否变成 B/C（若实际只是网页滚动，照实记录，不冒充多选）。这种键盘方式若可用，只证明可构造“已有多选”的前置，不替代源用例明确要求的 Command-单击手势。随后通过 CU 的 Accessibility Shortcuts 或明确可见的系统原生入口检查 Sticky Keys、Accessibility Keyboard，记录原值。只在实际提供时临时开启；不得假装 press_key(super+a) 后 modifier 会跨 click 保持。
 9. 若原生屏幕键盘确实出现，用其真实可点击 Command 键按现有 UI 规则锁定/保持，必须从屏幕/原生状态确认；再在 QA 对 B、C 做原有 Command 多选操作，截图实际选中集合。若工具点击不会继承修饰键或原生界面无法确认，不继续猜测，不把“未关闭”本身当作成功。
 10. 释放任何锁定修饰键，恢复 Sticky Keys、Accessibility Keyboard 和改动选项的原始值，逐项实读；保留本轮测试页，不修改其他资料。最终恢复本次起始 app 布局/语言/两个开关（先记录再恢复），ending_state 写清所有实际恢复值和能力观察。
 

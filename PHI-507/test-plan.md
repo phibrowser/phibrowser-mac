@@ -43,6 +43,8 @@ Computer Use 已观察到正常重启后的首次公网 fixture 导航可能在�
 
 续测 r3：r2 检查点已发布于 https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r2/ ，产物提交 `a04fe329d36bd05c259cc80386095760527263cf`。2026-10-30T15:31:43Z 重新租到 e2e02，lease `e4359d36-d212-4361-be64-5adbf18f0762`，二进制 SHA-256 再核对相同。r3 继续同一 Computer Use 活动，不沿用 r1；ENV-01 原先漏做的手册环境字段已用 CU 补齐并保留修正史，手册自身的结果选择尚未填写，不能把它的全未测汇总误作累计台账。后续先完成 27 个语言/布局点，再继续关闭行为和其余手册场景。
 
+r3 夹具准备：当前lease内条件服务已重新启动，`LANE_SITE_PORT_RANGE` 首端口+1 为18211，`/ready` 和 `/article/` 的服务器侧HTTP检查已保存到 `qa-evidence/r3/condition-server-process.json`。`/article/?tab=B&run=TC-PHI507-reader` 提供无账号、带真实每次请求编号及临时输入框的语义文章，供 LIFE-13 Reader 前置自救；服务器响应正常不代表浏览器已提交或 Reader 可用。浏览器侧仍须通过 CU 实际打开、建立辅助表面并验证。服务仅在本lease有效，归还后不能沿用旧PID/就绪记录。
+
 ## 回归影响面
 
 双击输入分发、方向锚点、split 整体保护、pin/书签持久性、组确认、多选、未保存确认的部分完成、窗口/Space/Profile 范围、旧快捷键、恢复、语言布局、媒体、辅助功能和官方集成。仍按下方完整手册逐项执行；所有未执行项保持可见。本轮发布 r2 报告，结束前收齐证据并归还会话。

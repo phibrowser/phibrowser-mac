@@ -1,0 +1,302 @@
+[
+  {
+    "unit_id": "VIS-02-PER-ja",
+    "attempt": 1,
+    "phase": "settings",
+    "file": "VIS-02-PER-ja-01.png",
+    "original_marker": "VIS-02-PER-ja attempt1 settings",
+    "source_file": "VIS-02-ja-006.jpg",
+    "source_sha256": "cf7dabb49dcc91f7fe2cd2bf574878692ebfa76b561ddf8615fe6ea70d278e19",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-PER-ja",
+    "attempt": 1,
+    "phase": "failure",
+    "file": "VIS-02-PER-ja-02.png",
+    "original_marker": "VIS-02-PER-ja attempt1 failure",
+    "source_file": "VIS-02-ja-007.jpg",
+    "source_sha256": "af4abf01381e4627d1f74a0921fd351b83b6b959299559347e6c65a26b5dfb06",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-PER-ja",
+    "attempt": 1,
+    "phase": "setup-row-operator-failure",
+    "file": "VIS-02-PER-ja-05.png",
+    "original_marker": "VIS-02-PER-ja attempt1 setup-error",
+    "source_file": "VIS-02-ja-008.jpg",
+    "source_sha256": "5f47d948e38cbbabd41012c0e614efcf4571aa2a29822568964390e249eca7d8",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。 原始marker为setup-error；重复New Tab行定位无效的准备现场，重建后才执行菜单观察，不计产品缺陷。"
+  },
+  {
+    "unit_id": "VIS-02-PER-ja",
+    "attempt": 1,
+    "phase": "normal-menu",
+    "file": "VIS-02-PER-ja-03.png",
+    "original_marker": "VIS-02-PER-ja attempt1 normal-menu",
+    "source_file": "VIS-02-ja-010.jpg",
+    "source_sha256": "e5757a4b7034f065734668ce0f71ab4269ff321af60bb789cc68edb1fce4383c",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-PER-ja",
+    "attempt": 1,
+    "phase": "group-menu",
+    "file": "VIS-02-PER-ja-04.png",
+    "original_marker": "VIS-02-PER-ja attempt1 group-menu",
+    "source_file": "VIS-02-ja-011.jpg",
+    "source_sha256": "ec1c0283e3d4731b4bb6f01d5a754edd402b8ce13259704ec32762736df4f4f8",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-BAL-ja",
+    "attempt": 1,
+    "phase": "failure",
+    "file": "VIS-02-BAL-ja-01.png",
+    "original_marker": "VIS-02-BAL-ja attempt1 failure",
+    "source_file": "VIS-02-ja-013.jpg",
+    "source_sha256": "472b1b8749a6226a5f4c8c2678deba9a4d8fad54e7c19b9d5791d28c57403a3f",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-BAL-ja",
+    "attempt": 1,
+    "phase": "settings",
+    "file": "VIS-02-BAL-ja-02.png",
+    "original_marker": "VIS-02-BAL-ja attempt1 settings",
+    "source_file": "VIS-02-ja-015.jpg",
+    "source_sha256": "d9f1bed795175af4661bc0aec8d7bd4fe1166c554d1ed385387686138192b86e",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-BAL-ja",
+    "attempt": 1,
+    "phase": "normal-menu",
+    "file": "VIS-02-BAL-ja-03.png",
+    "original_marker": "VIS-02-BAL-ja attempt1 normal-menu",
+    "source_file": "VIS-02-ja-017.jpg",
+    "source_sha256": "f4b3c6fa4c9b84ed1796c042336333e9e67330ac505247fb606fe7aefc075e05",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-BAL-ja",
+    "attempt": 1,
+    "phase": "group-menu",
+    "file": "VIS-02-BAL-ja-04.png",
+    "original_marker": "VIS-02-BAL-ja attempt1 group-menu",
+    "source_file": "VIS-02-ja-018.jpg",
+    "source_sha256": "6bdd7f946a313e4ad5bb99666d374f6d131f193bd643d167c56c7345dfeb12ca",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-COM-ja",
+    "attempt": 1,
+    "phase": "settings",
+    "file": "VIS-02-COM-ja-01.png",
+    "original_marker": "VIS-02-COM-ja attempt1 settings",
+    "source_file": "VIS-02-ja-021.jpg",
+    "source_sha256": "b51a706d577f03b0537926bc97b8bc4c36ed8c1eb2aedb1308350dd664d6f201",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-COM-ja",
+    "attempt": 1,
+    "phase": "normal-menu",
+    "file": "VIS-02-COM-ja-02.png",
+    "original_marker": "VIS-02-COM-ja attempt1 normal-menu",
+    "source_file": "VIS-02-ja-023.jpg",
+    "source_sha256": "88ac9145922c9f2d4bb53ecb6f2fc1c97b01261385f510cf795a23e9092f110d",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-COM-ja",
+    "attempt": 1,
+    "phase": "group-menu",
+    "file": "VIS-02-COM-ja-03.png",
+    "original_marker": "VIS-02-COM-ja attempt1 group-menu",
+    "source_file": "VIS-02-ja-024.jpg",
+    "source_sha256": "ae9c80c3b69b31dd949d9610c6affc9bd89e97d190a778d4fe1bc5eedfefb5ce",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

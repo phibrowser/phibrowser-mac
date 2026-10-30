@@ -1,7 +1,14 @@
 {
-  "current": "VIS-02:nl",
-  "index": 8,
-  "total": 9,
-  "state": "running",
-  "time": "2026-10-30T16:53:29.694829+00:00"
+  "state": "finished",
+  "jobs": [
+    "VIS-01",
+    "VIS-02:zh-Hant",
+    "VIS-02:en",
+    "VIS-02:ja",
+    "VIS-02:ko",
+    "VIS-02:de",
+    "VIS-02:fr",
+    "VIS-02:es",
+    "VIS-02:nl"
+  ]
 }

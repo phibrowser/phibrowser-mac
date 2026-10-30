@@ -1,0 +1,127 @@
+[
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "before",
+    "file": "DBL-19-PER-01.png",
+    "original_marker": "DBL-19-PER attempt1 before",
+    "source_file": "DBL-19-DBL-19-PER-visibility-probe-014.jpg",
+    "source_sha256": "215558a3f15f849ac98fad0e47e671ff9f64c8638460ed49e712dacb8d9e2d19",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "mouse-keys-confirmation-after",
+    "file": "DBL-19-PER-02.png",
+    "original_marker": "DBL-19-PER attempt1 mouse-keys-confirmation-after",
+    "source_file": "DBL-19-DBL-19-PER-visibility-probe-023.jpg",
+    "source_sha256": "1e711ae7d428769bc46a3e0578d4f02a47dfd4e82df3bdd1a2eddd7268f0071e",
+    "original_size": [
+      1446,
+      1250
+    ],
+    "crop_box": [
+      0,
+      0,
+      1446,
+      1250
+    ],
+    "output_size": [
+      1280,
+      1107
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "failure",
+    "file": "DBL-19-PER-03.png",
+    "original_marker": "DBL-19-PER attempt1 failure",
+    "source_file": "DBL-19-DBL-19-PER-visibility-probe-027.jpg",
+    "source_sha256": "4981bbcced4cfda89b81df733990e20fe20e8c005c3b81c101b6b66248f23aba",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "row-tail-after",
+    "file": "DBL-19-PER-04.png",
+    "original_marker": "DBL-19-PER attempt1 row-tail-after",
+    "source_file": "DBL-19-DBL-19-PER-visibility-probe-032.jpg",
+    "source_sha256": "9fe6147c3262f39ed04494d871e081069f537e3f24ded1524ef589afbad5b07d",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "after",
+    "file": "DBL-19-PER-05.png",
+    "original_marker": "DBL-19-PER attempt1 after",
+    "source_file": "DBL-19-DBL-19-PER-visibility-probe-035.jpg",
+    "source_sha256": "3939ee30feef40a848eda237100b016e21d9813a6d4e1c7782c5a063d27c5d89",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

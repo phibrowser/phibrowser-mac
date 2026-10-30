@@ -105,5 +105,135 @@
       "mcp__computer_use__type_text"
     ],
     "non_computer_use_calls": []
+  },
+  "SET-10-SET-10-COM-complete": {
+    "session_id": "01a18c8a-441f-7652-8478-bb033516e109",
+    "audit_scope": "tool references in saved CU orchestration; no browser introspection",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__press_key"
+    ],
+    "extraction_warnings": [],
+    "non_computer_use_calls": []
+  },
+  "ENV-03-navigation-recovery": {
+    "session_id": "01a18c52-3b56-7062-865d-052a6e502b36",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__perform_secondary_action",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__type_text"
+    ],
+    "non_computer_use_calls": []
+  },
+  "DBL-19-interrupted": {
+    "session_id": "01a18ca6-5318-70c2-90c8-e6af4e3bb85e",
+    "audit_scope": "tool references in saved CU orchestration; no browser introspection",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__drag",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__set_value",
+      "mcp__computer_use__type_text"
+    ],
+    "extraction_warnings": [],
+    "non_computer_use_calls": []
+  },
+  "SET-08-retry": {
+    "session_id": "01a18c59-ccda-73a1-90a8-35b8fd666626",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__type_text"
+    ],
+    "non_computer_use_calls": []
+  },
+  "SET-10-retry": {
+    "session_id": "01a18c61-934f-79f3-9f2a-fd4812f7e8e1",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__set_value",
+      "mcp__computer_use__type_text"
+    ],
+    "non_computer_use_calls": []
+  },
+  "DBL-03": {
+    "session_id": "01a18c9e-533e-7f62-aefc-0195a048add5",
+    "audit_scope": "tool references in saved CU orchestration; no browser introspection",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__perform_secondary_action",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__type_text"
+    ],
+    "extraction_warnings": [],
+    "non_computer_use_calls": []
+  },
+  "DBL-02": {
+    "session_id": "01a18c98-9ac5-7750-a7cd-9c7d6525b37c",
+    "audit_scope": "tool references in saved CU orchestration; no browser introspection",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__type_text"
+    ],
+    "extraction_warnings": [],
+    "non_computer_use_calls": []
+  },
+  "SET-10-SET-10-COM-both-off": {
+    "session_id": "01a18c8e-2a59-7823-a5bf-20eeb14670d3",
+    "audit_scope": "tool references in saved CU orchestration; no browser introspection",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__perform_secondary_action",
+      "mcp__computer_use__press_key"
+    ],
+    "extraction_warnings": [],
+    "non_computer_use_calls": []
+  },
+  "SET-10-SET-10-PER-hit-diagnostic": {
+    "session_id": "01a18c71-d33d-7890-a6b9-300ea1c13f77",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__type_text"
+    ],
+    "extraction_warnings": [],
+    "non_computer_use_calls": []
+  },
+  "SET-10-fresh-surfaces": {
+    "session_id": "01a18c7b-d500-7d81-a962-66505750819b",
+    "audit_scope": "tool references in saved CU orchestration; no browser introspection",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__set_value",
+      "mcp__computer_use__type_text"
+    ],
+    "extraction_warnings": [],
+    "non_computer_use_calls": []
+  },
+  "DBL-01": {
+    "session_id": "01a18c92-6cc4-7231-8820-936b79a3f41e",
+    "audit_scope": "tool references in saved CU orchestration; no browser introspection",
+    "tools_called": [
+      "mcp__computer_use__",
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__press_key"
+    ],
+    "extraction_warnings": [],
+    "non_computer_use_calls": []
   }
 }

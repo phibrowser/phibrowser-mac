@@ -2,7 +2,7 @@
 from pathlib import Path
 from collections import Counter
 from datetime import datetime,timezone
-import argparse,json,shutil
+import argparse,json,shutil,re
 p=argparse.ArgumentParser();p.add_argument('--plan-sha',required=True);p.add_argument('--verdict',choices=['pass','fail','blocked'],required=True);p.add_argument('--summary',required=True);a=p.parse_args()
 qa=Path('PHI-507');assert not Path('.lane/current.json').exists(),'Release the leased UI session before writing the report'
 rows=json.loads((qa/'execution-ledger-r2.json').read_text());assert len(rows)==512 and len({r['key'] for r in rows})==512
@@ -24,7 +24,8 @@ for r in rows:
   if dest.exists():assert dest.read_bytes()==source.read_bytes(),'Duplicate evidence basename'
   else:shutil.copy2(source,dest)
   item={'type':'image' if source.suffix=='.png' else 'log','path':'evidence/'+source.name,'caption':caption}
-  if attempt is not None:item.update(attempt=attempt,outcome=outcome)
+  if attempt is not None:item['attempt']=attempt
+  if outcome is not None:item['outcome']=outcome
   if provenance:item['provenance']=provenance
   evidence.append(item)
  attempts=list(r.get('attempts',[]))
@@ -34,16 +35,24 @@ for r in rows:
  for record in attempts:
   job=record['job'];meta=qa/record.get('evidence_metadata',f'qa-evidence/r2/{job}-evidence.json')
   frames=[e for e in json.loads(meta.read_text()) if e['unit_id']==r['key']] if meta.is_file() else []
-  groups=sorted({('setup' if e['phase']=='setup-failure' else 'test',e['attempt']) for e in frames},key=lambda k:(k[0]!='setup',k[1]))
-  mapping={key:sequence+i+1 for i,key in enumerate(groups)};sequence+=len(groups) or 1
-  max_native=max([e['attempt'] for e in frames if e['phase']!='setup-failure'],default=1)
+  family=lambda phase:re.sub(r'-(before|after|failure)$','',phase) if '-' in phase else 'main'
+  max_by_family={}
   for frame in frames:
-   kind='setup' if frame['phase']=='setup-failure' else 'test';native=frame['attempt'];outcome='pass' if record['outcome']=='pass' and kind=='test' and native==max_native else 'fail'
-   add('qa-evidence/r2/'+frame['file'],f"{job}：{frame['phase']}（原生marker attempt{native}；准备/操作无效与产品缺陷分开）",mapping[(kind,native)],outcome,frame)
+   fam=family(frame['phase']);max_by_family[fam]=max(frame['attempt'],max_by_family.get(fam,0))
+  def frame_outcome(frame):
+   if 'failure' in frame['phase']:return 'fail'
+   if record.get('evidence_outcome') in ('pass','fail'):return record['evidence_outcome']
+   if record['outcome']=='pass' and frame['attempt']==max_by_family[family(frame['phase'])]:return 'pass'
+   return None
+  groups=list(dict.fromkeys((family(e['phase']),e['attempt'],frame_outcome(e)) for e in frames))
+  mapping={key:sequence+i+1 for i,key in enumerate(groups)};sequence+=len(groups) or 1
+  for frame in frames:
+   native=frame['attempt'];outcome=frame_outcome(frame)
+   add('qa-evidence/r2/'+frame['file'],f"{job}：{frame['phase']}（原生marker attempt{native}；子步骤观察不等于整例通过，准备/操作无效与产品缺陷分开）",mapping[(family(frame['phase']),native,outcome)],outcome,frame)
   if record.get('observation'):
    part=f"qa-evidence/r2/{r['key']}-{job}-observation.json";original=qa/f'qa-evidence/r2/{job}-observations.json'
    (qa/part).write_text(json.dumps({'unit_id':r['key'],'job':job,'scope':record.get('scope','本执行点的实际步骤'),'source':str(original.relative_to(qa)),'observation':record['observation']},ensure_ascii=False,indent=2)+'\n')
-   add(part,record.get('scope','本执行点')+' 原始观察',sequence,'pass' if record['outcome']=='pass' else 'fail')
+   add(part,record.get('scope','本执行点')+' 原始观察',sequence,'pass' if record['outcome']=='pass' else ('fail' if record['outcome']=='fail' else None))
   for path in record.get('evidence',[]):
    if not isinstance(path,str) or path.endswith(('-observations.json','-evidence.json')) or path.endswith('.png') and frames:continue
    add(path,job+' 原始观察/证据索引',sequence,'pass' if record['outcome']=='pass' else 'fail')

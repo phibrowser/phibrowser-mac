@@ -11,7 +11,7 @@ for i,job in enumerate(jobs):
  if len(args)>2 and args[2]:cmd+=['--tag',args[2]]
  if args[0] in ('VIS-01','VIS-02','VIS-04'):
   cmd+=['--instructions',str(qa/'qa-scripts/native-menu-only-r2.txt')]
- if args[0]=='DBL-19':cmd+=['--instructions',str(qa/'qa-scripts/dbl19-controls-r2.txt')]
+ if args[0]=='DBL-19':cmd+=['--instructions',str(qa/'qa-scripts/dbl19-retry-r2.txt')]
  timeout=7200 if args[0]=='LIFE-11' else (5400 if args[0]=='DBL-19' else 2400)
  cmd+=['--timeout',str(timeout)]
  print('START',job,flush=True);r=subprocess.run(cmd);print('END',job,'exit',r.returncode,flush=True)

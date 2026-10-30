@@ -1,0 +1,13 @@
+{
+  "job": "DBL-19-DBL-19-PER-visibility-probe",
+  "exit_code": 0,
+  "session_id": "01a18d23-aabd-7c40-b36d-3baaba6bea4f",
+  "units": [
+    "DBL-19-PER"
+  ],
+  "observed_units": [
+    "DBL-19-PER"
+  ],
+  "collection_recovery": "last-message parent directory absent after renewed lease; complete structured final JSON recovered verbatim from saved operator console; rawCU images pulled successfully",
+  "scope": "input capability diagnostic only; no acceptance verdict"
+}

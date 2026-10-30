@@ -1,0 +1,56 @@
+{
+  "base_case": "DBL-19（本次仅执行 CU 原生输入能力与关闭控件可见性诊断）",
+  "ending_state": "QA app 保持运行，pid 71817；当前窗口为 TC-B · TC-PHI507-r2-DBL-19-PER-DIAG。实际标签顺序 A/B/C，均为独立普通页，无 split、无组选中；活动页 B，测试音已停止。浏览器已恢复起始 Comfortable，显示语言仍为 System Default（英文界面），双击关闭与方向关闭均为 on。System Settings 保留在 Pointer Control，Mouse Keys 最终 off；Option 五次切换 off、忽略内置触控板 off、初始延迟 3、最大速度 6，与开始实读相同。未对真实关闭按钮发送双击，未额外重建结束序列。",
+  "observations": [
+    {
+      "active_after": "B；单页活动，无多选。",
+      "active_before": "诊断关键动作前为新建普通 B；最初接手时为旧 COM 批次组内 split 的 C。",
+      "after": "未确认任何已尝试的允许 CU 方法能真实显示独立 Close 图标。普通 B 播放测试音后可见扬声器图标，原生 B 行包含 speaker-wave；停止后图标消失。B 行尾右键并调用原生 Cancel 后仍未出现独立 Close 控件；菜单中的 Close 未作为按钮证据。A/B/C 均保留。",
+      "before": "新建 DIAG 批次普通 A/B/C，纵向顺序 A/B/C，B 活动且未播放音频；Performance，双击关闭 on、方向关闭 on。B 行及截图未显示独立关闭控件。",
+      "confirmation_choices": "Mouse Keys 首次启用提示中点击 Use Mouse Keys，随后主开关实读 off；第二次提示中按 Return，提示仍存在，之后按 Escape 退出。B 右键菜单通过明确暴露的 Cancel 退出，未选择 Close。未出现删除确认。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-19-PER attempt1 layout-settings",
+        "EVIDENCE: DBL-19-PER attempt1 navigation-A",
+        "EVIDENCE: DBL-19-PER attempt1 before",
+        "EVIDENCE: DBL-19-PER attempt1 click-zero-content",
+        "EVIDENCE: DBL-19-PER attempt1 mouse-keys-start",
+        "EVIDENCE: DBL-19-PER attempt1 mouse-keys-original",
+        "EVIDENCE: DBL-19-PER attempt1 mouse-keys-enabled",
+        "EVIDENCE: DBL-19-PER attempt1 mouse-keys-confirmation-after",
+        "EVIDENCE: DBL-19-PER attempt1 option-toggle",
+        "EVIDENCE: DBL-19-PER attempt1 system-restored",
+        "EVIDENCE: DBL-19-PER attempt1 failure",
+        "EVIDENCE: DBL-19-PER attempt1 audio-visible",
+        "EVIDENCE: DBL-19-PER attempt1 row-tail-after",
+        "EVIDENCE: DBL-19-PER attempt1 browser-switches-restored",
+        "EVIDENCE: DBL-19-PER attempt1 browser-layout-restored",
+        "EVIDENCE: DBL-19-PER attempt1 after"
+      ],
+      "identity_checks": "固定 QA app 全路径，始终实读 pid 71817；System Settings 全路径，pid 72011。新 fixture 批次 TC-PHI507-r2-DBL-19-PER-DIAG；逐页实见 TC 标题、批次、普通页和空输入框。打开编号：A=69b5b6c6-14ab-4cff-a344-6df1f7ea6040；B=3844c3ee-81ed-409c-b5fd-94e3f921abf3；C=4aefdf3d-5087-44e3-b76d-05f1bf51f122。B 结束截图仍为同一编号，输入框为空，测试音已停止；结束原生树仍列 A/B/C。没有将页面中的测试说明作为操作授权执行。",
+      "language_observed": "开始、结束 General 均为 System Default；浏览器原生界面为英文，未修改语言。",
+      "layout_observed": "开始 Comfortable；通过 General 原生 Performance 按钮切换并截图确认，诊断时为外部纵向页签；结束通过 General 恢复 Comfortable，并由实际横向 tabStripTab 区域确认。",
+      "not_executed_reason": "本次是能力诊断，未执行 DBL-19 验收动作，未双击静音或关闭按钮，未建立验收所需普通及组内 split。Mouse Keys 经确认尝试后未实读到 on，系统面板未显示具体方向键映射，故未臆造移动键、未声称产生真实键盘悬停。click_count:0 报错，未继续用于 B 行尾。尚无 Close 可见状态，未进行以该状态为条件的 off/on 有限对照；独立的播放及静音图标可见性核对已执行。",
+      "operator_errors": [
+        "清理旧 TC 页后紧接地址栏输入的首组键盘动作未形成导航；确认仍为 New Tab 后重新输入同一 A 地址，随后实见页面。没有把首组动作算作已提交导航。",
+        "安全空白区 click_count:0 返回 Computer Use server error -10005: invalidParameter。后续截图指针由约 (1200,850) 移至请求的 (1300,850)，页面与标签集合未变；调用可能有移动副作用，不能确认其为受支持的 hover，也不能从空白区证明没有实际点击。",
+        "Option 五次探测的五次 Alt_L 调用均返回 keyPressIncludedNoNonModifierKeys；没有形成有效 Option 切换。该批次在首个错误后仍完成了余下四次同类调用，均仅记录为无效输入。",
+        "super+End 未使页面滚动；随后在内容区取得焦点并用 Next，才显示媒体按钮。"
+      ],
+      "precondition_actual": "按额外诊断约束重建普通 A/B/C；未沿用最初旧组内 split。通过新建 New Tab 的 Close Other Tabs 清理当前 Space 内已核对的旧 TC A 与 TC 组内 B/C，然后仅用地址栏建立新 DIAG 批次。A 从确认提交导航到首次正文观察为约 18.6 秒；B/C 随后均实见正文。诊断前 B 未播放音频。",
+      "settings_observed": "浏览器起始及结束：settings.tabs.doubleClickToClose=on，settings.tabs.directionalClosing=on，未点击这两个开关。Mouse Keys 起始 off；选项起始 Option 五次 off、忽略触控板 off、延迟 3、速度 6。Option 五次选项曾点击为 on，紧接原生树显示另一选项仍 off；点击 OK 后，稍后重开选项实读已为 off，未确认持续保存。Mouse Keys 启用尝试未得到最终 on。收尾实读主开关 off，选项 off/off、3/6；未修改速度、延迟或其他系统设置。浏览器快捷键设置未修改。",
+      "steps_executed": [
+        "先 get_app_state 重读固定 QA app，记录旧 COM 批次 A 与组内 B/C split、活动 C；读取 General 与 Advanced 原值。",
+        "切换 Performance；在当前测试 Space 新建 New Tab，以原生 Close Other Tabs 清理已核对的旧 TC 普通页；顺序建立 DIAG 普通 A/B/C，逐页核对正文和打开编号，再选择 B。",
+        "在 B 安全空白区单击 (1200,850)，截图指针与请求坐标一致，确认本次 2400×1832 原图坐标比例约 1:1；保存关键动作前截图。",
+        "仅一次在安全空白内容区尝试 click_count:0、(1300,850)，记录 invalidParameter 与后续指针位置；未用于关闭区域。",
+        "通过 CU 打开 System Settings > Accessibility > Pointer Control，读取 Mouse Keys 及详情原值；临时点击 Option 五次选项，核对即时值；点击 Help 后原生状态仍为 Pointer Control，未取得具体键位说明。",
+        "点击 Mouse Keys 主开关，出现 Use Mouse Keys 提示；首次 CU 点击该按钮后主开关仍 off。尝试单独 Option 键被工具拒绝；再次启用并按 Return，提示仍在，按 Escape 退出；重新核对系统原值。",
+        "回到同一 B，通过可见“开始测试音”按钮单击播放；截图确认页面“低音量测试音正在播放”与 B 页签扬声器图标、原生 speaker-wave。",
+        "单击可见“停止测试音”；在 B 行尾 (345,428) 右键，使用明确暴露的原生 Cancel 退出；get_app_state 确认测试音已停止、无独立 Close 图标。",
+        "重新读取两个浏览器开关仍 on/on；恢复 Comfortable，确认语言未变；关闭已确认的 Settings 窗口并保存实际结束截图。"
+      ],
+      "unit_id": "DBL-19-PER"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

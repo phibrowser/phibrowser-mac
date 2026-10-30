@@ -13,7 +13,8 @@
       580,
       624
     ],
-    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范",
+    "compression": "80 source-dominant colors plus reserved black/white/grayscale/native accents; raw source unchanged"
   },
   {
     "unit_id": "ENV-01-COMMON",
@@ -29,7 +30,8 @@
       1280,
       1222
     ],
-    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范",
+    "compression": "80 source-dominant colors plus reserved black/white/grayscale/native accents; raw source unchanged"
   },
   {
     "unit_id": "ENV-02-COMMON",
@@ -45,7 +47,8 @@
       1280,
       1222
     ],
-    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范",
+    "compression": "80 source-dominant colors plus reserved black/white/grayscale/native accents; raw source unchanged"
   },
   {
     "unit_id": "ENV-02-COMMON",
@@ -61,7 +64,8 @@
       1280,
       977
     ],
-    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范",
+    "compression": "80 source-dominant colors plus reserved black/white/grayscale/native accents; raw source unchanged"
   },
   {
     "unit_id": "ENV-03-COMMON",
@@ -77,7 +81,8 @@
       1280,
       977
     ],
-    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范",
+    "compression": "80 source-dominant colors plus reserved black/white/grayscale/native accents; raw source unchanged"
   },
   {
     "unit_id": "ENV-04-COMMON",
@@ -93,7 +98,8 @@
       1280,
       977
     ],
-    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范",
+    "compression": "80 source-dominant colors plus reserved black/white/grayscale/native accents; raw source unchanged"
   },
   {
     "unit_id": "ENV-04-COMMON",
@@ -109,7 +115,8 @@
       1280,
       977
     ],
-    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范",
+    "compression": "80 source-dominant colors plus reserved black/white/grayscale/native accents; raw source unchanged"
   },
   {
     "unit_id": "SET-01-COMMON",
@@ -125,7 +132,8 @@
       1280,
       1222
     ],
-    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范",
+    "compression": "80 source-dominant colors plus reserved black/white/grayscale/native accents; raw source unchanged"
   },
   {
     "unit_id": "SET-01-COMMON",
@@ -141,6 +149,7 @@
       1280,
       1222
     ],
-    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范",
+    "compression": "80 source-dominant colors plus reserved black/white/grayscale/native accents; raw source unchanged"
   }
 ]

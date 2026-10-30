@@ -4,5 +4,10 @@
   "released_at": "2026-10-30T12:48:12.386801Z",
   "unfinished_job": "DBL-19",
   "raw_console_preserved": "scratch-PHI507-r2/DBL-19/DBL-19-console.log",
-  "result_policy": "已审查的前轮执行点保留；未返回完整结构化结果的DBL-19不判通过，恢复后重建前置续测。"
+  "result_policy": "已审查的前轮执行点保留；未返回完整结构化结果的DBL-19不判通过，恢复后重建前置续测。",
+  "new_lease": "b0e9392c-a0e4-47cd-8ae7-685e1520b443",
+  "resumed_at": "2026-10-30T14:07:42Z",
+  "resumed_executable_sha256": "b30ef8b3acbc832ee3f1aaa8ce682ebb28289654ff3fdb84fbdf04151bb59d0b",
+  "old_CU_images_recovered": 77,
+  "old_result_not_reused": true
 }

@@ -1,1 +1,1 @@
-上轮服务端522中断，旧租约task_ended自动归还；已新租e2e02，profile/窗口可能被重置。旧background不再可信。新lease b0e9392c-a0e4-47cd-8ae7-685e1520b443，已核对共享app exeSHA相同；仅保留本地证据和结论，所有新操作先CU读取，重新建立本次TC前置。Default原页面不得假设仍在。
+QA app 保持运行，pid 71817；当前窗口为 TC-B · TC-PHI507-r2-DBL-19-PER-DIAG。实际标签顺序 A/B/C，均为独立普通页，无 split、无组选中；活动页 B，测试音已停止。浏览器已恢复起始 Comfortable，显示语言仍为 System Default（英文界面），双击关闭与方向关闭均为 on。System Settings 保留在 Pointer Control，Mouse Keys 最终 off；Option 五次切换 off、忽略内置触控板 off、初始延迟 3、最大速度 6，与开始实读相同。未对真实关闭按钮发送双击，未额外重建结束序列。

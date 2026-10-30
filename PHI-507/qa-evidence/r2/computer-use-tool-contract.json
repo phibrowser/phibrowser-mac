@@ -13,5 +13,12 @@
     ]
   },
   "modifier_hold_argument": false,
-  "note": "press_key支持xdotool key组合，但单次按键后不据此声称持续按住修饰键跨越click。实际物理设备覆盖不由注入点击代替。"
+  "note": "press_key支持xdotool key组合，但单次按键后不据此声称持续按住修饰键跨越click。实际物理设备覆盖不由注入点击代替。",
+  "resumed_actual_probes": {
+    "click_count_0": "invalidParameter returned; later pointer position changed, so not a supported no-side-effect hover",
+    "modifier_only_Alt_L": "keyPressIncludedNoNonModifierKeys returned",
+    "Mouse_Keys": "could not confirm enabled through allowed CU UI; original main/option states restored",
+    "scope": "only input capability diagnostic; no acceptance double-click on close controls",
+    "source_observations": "DBL-19-DBL-19-PER-visibility-probe-observations.json"
+  }
 }

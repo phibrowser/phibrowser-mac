@@ -1,6 +1,6 @@
 """Run one precisely specified native UI case through the leased Computer Use operator."""
 from pathlib import Path
-import argparse,datetime,json,re,subprocess,sys
+import argparse,datetime,hashlib,json,re,subprocess,sys
 p=argparse.ArgumentParser();p.add_argument('base');p.add_argument('--language');p.add_argument('--layout');p.add_argument('--unit');p.add_argument('--tag');p.add_argument('--instructions');p.add_argument('--timeout',type=int,default=1800);a=p.parse_args()
 root=Path.cwd();qa=root/'PHI-507';lane=Path('/Users/phi/multica_workspaces_mca/phi-7b4ee50429fe/phi-507-e5a0d2f5aff4/codex-home/skills/phi-e2e-lane/scripts/lane')
 round_state=qa/'active-qa-round.json'
@@ -39,4 +39,7 @@ if r.returncode==0:
  data=json.loads((evidence_dir/(job+'-observations.json')).read_text());seen=[v['unit_id'] for v in data['observations']]
  result['observed_units']=seen;result['missing_units']=sorted(set(result['units'])-set(seen));result['duplicate_units']=len(seen)!=len(set(seen));state.write_text(data['ending_state'])
 subprocess.run(['python3',str(lane),'pull',f'qa-raw-r{round_no}/'+job+'/',str(scratch/'raw/')],check=True)
+audit_path=scratch/'raw/audit.json'
+if audit_path.exists():
+ audit=json.loads(audit_path.read_text());result['computer_use_audit']={'source_sha256':hashlib.sha256(audit_path.read_bytes()).hexdigest(),'scope':audit.get('audit_scope'),'completed_mcp_event_count':audit.get('mcp_event_count'),'non_computer_use_calls':audit.get('non_computer_use_calls',[]),'non_computer_use_mcp_events':audit.get('non_computer_use_mcp_events',[]),'extraction_warnings':audit.get('extraction_warnings',[])}
 (evidence_dir/(job+'-run.json')).write_text(json.dumps(result,ensure_ascii=False,indent=2));(evidence_dir/'runner-state.json').write_text(json.dumps({**result,'state':'finished'},ensure_ascii=False,indent=2));print(json.dumps(result,ensure_ascii=False,indent=2));sys.exit(r.returncode)

@@ -17,5 +17,13 @@
     "VIS-02-COM-de"
   ],
   "missing_units": [],
-  "duplicate_units": false
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "4a20c8ad08056bf246a3e8a638e5cfb615085d84a46eb8c11451534c9779e9d4",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 153,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
 }

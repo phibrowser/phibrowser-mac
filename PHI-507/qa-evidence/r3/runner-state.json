@@ -1,10 +1,10 @@
 {
-  "job": "VIS-02-fr",
-  "started_at": "2026-10-30T16:36:23.135723+00:00",
+  "job": "VIS-02-es",
+  "started_at": "2026-10-30T16:44:33.694519+00:00",
   "state": "running",
   "units": [
-    "VIS-02-PER-fr",
-    "VIS-02-BAL-fr",
-    "VIS-02-COM-fr"
+    "VIS-02-PER-es",
+    "VIS-02-BAL-es",
+    "VIS-02-COM-es"
   ]
 }

@@ -1,0 +1,29 @@
+{
+  "job": "VIS-02-fr",
+  "exit_code": 0,
+  "session_id": "01a18dab-6900-7b91-ba86-716a4189500f",
+  "round": 3,
+  "lease_id": "e4359d36-d212-4361-be64-5adbf18f0762",
+  "started_at": "2026-10-30T16:36:23.135723+00:00",
+  "ended_at": "2026-10-30T16:44:32.494363+00:00",
+  "units": [
+    "VIS-02-PER-fr",
+    "VIS-02-BAL-fr",
+    "VIS-02-COM-fr"
+  ],
+  "observed_units": [
+    "VIS-02-PER-fr",
+    "VIS-02-BAL-fr",
+    "VIS-02-COM-fr"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "3bef47b6c93ab9e99f09c8c7b01cd3a31337968063eddd635caab2ab789a4b9a",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 137,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

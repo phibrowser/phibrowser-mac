@@ -1,10 +1,10 @@
 {
-  "job": "DBL-04",
-  "started_at": "2026-10-30T14:16:19.685220+00:00",
+  "job": "DBL-06",
+  "started_at": "2026-10-30T14:39:10.227659+00:00",
   "state": "running",
   "units": [
-    "DBL-04-PER",
-    "DBL-04-BAL",
-    "DBL-04-COM"
+    "DBL-06-PER",
+    "DBL-06-BAL",
+    "DBL-06-COM"
   ]
 }

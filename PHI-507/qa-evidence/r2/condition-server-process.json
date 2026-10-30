@@ -1,1 +1,8 @@
-{"pid": 62827, "port": 18211, "purpose": "PHI-507 r2 real HTTP loading/download conditions", "environment": "LANE and basic process variables only; no connector credentials"}
+{
+  "pid": 62827,
+  "port": 18211,
+  "purpose": "PHI-507 r2 real HTTP loading/download conditions",
+  "environment": "LANE and basic process variables only; no connector credentials",
+  "lease_id": "e619fb28-bbd8-4e7f-a356-aaf26a387735",
+  "lifecycle_note": "此记录属于中断前租约。task_ended归还会结束该租约服务；恢复后未据此假定服务仍就绪，实际用例使用前必须重新拉起并核验。"
+}

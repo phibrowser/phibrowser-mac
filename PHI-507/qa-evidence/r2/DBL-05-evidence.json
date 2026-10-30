@@ -1,0 +1,402 @@
+[
+  {
+    "unit_id": "DBL-05-PER",
+    "attempt": 1,
+    "phase": "failure",
+    "file": "DBL-05-PER-01.png",
+    "original_marker": "DBL-05-PER attempt1 failure",
+    "source_file": "DBL-05-010.jpg",
+    "source_sha256": "60291d803ea5bf846fba7bfc52cdb115d2c45fa599d570b9f05bdf3fc437efa8",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-PER",
+    "attempt": 1,
+    "phase": "first-before",
+    "file": "DBL-05-PER-02.png",
+    "original_marker": "DBL-05-PER attempt1 first-before",
+    "source_file": "DBL-05-013.jpg",
+    "source_sha256": "b61803a728c8762c88acd52dc8eee9b8fa7215b59d4a6ea326a182900b1d0090",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-PER",
+    "attempt": 1,
+    "phase": "first-after",
+    "file": "DBL-05-PER-03.png",
+    "original_marker": "DBL-05-PER attempt1 first-after",
+    "source_file": "DBL-05-014.jpg",
+    "source_sha256": "5e0c882befdd928e067f1d8ae1a6141c5577c394b6504b1c36ed869c93bcc67f",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-PER",
+    "attempt": 1,
+    "phase": "first-B-identity",
+    "file": "DBL-05-PER-06.png",
+    "original_marker": "DBL-05-PER attempt1 first-B-identity",
+    "source_file": "DBL-05-015.jpg",
+    "source_sha256": "a4beceda56b399b5ad1cf00fe18c4ce3dc3bbe2029745221136b1f1543b5e369",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-PER",
+    "attempt": 1,
+    "phase": "swap-before",
+    "file": "DBL-05-PER-04.png",
+    "original_marker": "DBL-05-PER attempt1 swap-before",
+    "source_file": "DBL-05-022.jpg",
+    "source_sha256": "88514e5f1e251499066601a5fc4338ecf822f1fc00df4aa694fcf3a5204093db",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-PER",
+    "attempt": 1,
+    "phase": "swap-after",
+    "file": "DBL-05-PER-05.png",
+    "original_marker": "DBL-05-PER attempt1 swap-after",
+    "source_file": "DBL-05-023.jpg",
+    "source_sha256": "e58a2ca0a28f6ba435d9f4fe8a792ab4c716bcbefabd808df08bd396746d8afd",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-BAL",
+    "attempt": 1,
+    "phase": "first-before",
+    "file": "DBL-05-BAL-01.png",
+    "original_marker": "DBL-05-BAL attempt1 first-before",
+    "source_file": "DBL-05-032.jpg",
+    "source_sha256": "6695b921f129ccda28ede74232f72a8e10e65f8e4b3a6df9eb9285c9a464cdaa",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-BAL",
+    "attempt": 1,
+    "phase": "first-after",
+    "file": "DBL-05-BAL-02.png",
+    "original_marker": "DBL-05-BAL attempt1 first-after",
+    "source_file": "DBL-05-033.jpg",
+    "source_sha256": "fa5623dd1bc801c6fb2a0b426a3c1f3f391550da5e41a640f6a8f587d5a1a87d",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-BAL",
+    "attempt": 1,
+    "phase": "first-B-identity",
+    "file": "DBL-05-BAL-05.png",
+    "original_marker": "DBL-05-BAL attempt1 first-B-identity",
+    "source_file": "DBL-05-034.jpg",
+    "source_sha256": "c3856cf25871f5bb758c37f835bf29a71e949c7649c92e92e20aea45a102d7c6",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-BAL",
+    "attempt": 1,
+    "phase": "swap-before",
+    "file": "DBL-05-BAL-03.png",
+    "original_marker": "DBL-05-BAL attempt1 swap-before",
+    "source_file": "DBL-05-041.jpg",
+    "source_sha256": "71500bedc93a908f1879c0e07ca82ccf19b71f388c4770dc806b66e24e7ddd6a",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-BAL",
+    "attempt": 1,
+    "phase": "swap-after",
+    "file": "DBL-05-BAL-04.png",
+    "original_marker": "DBL-05-BAL attempt1 swap-after",
+    "source_file": "DBL-05-042.jpg",
+    "source_sha256": "db6735541a19c7a4935581a33e6e60d8bf61a5d9bd96693ac07bd2fab9ed151a",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-COM",
+    "attempt": 1,
+    "phase": "first-before",
+    "file": "DBL-05-COM-01.png",
+    "original_marker": "DBL-05-COM attempt1 first-before",
+    "source_file": "DBL-05-051.jpg",
+    "source_sha256": "8041bbb5fb98efbe03a4e17b21ae58e3fd0dc5a656b408e2612327b345e8783f",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-COM",
+    "attempt": 1,
+    "phase": "first-after",
+    "file": "DBL-05-COM-02.png",
+    "original_marker": "DBL-05-COM attempt1 first-after",
+    "source_file": "DBL-05-052.jpg",
+    "source_sha256": "0dda1ec64183441c6fcf066d338b0f85d56010600f8cae3c6b6c27e06527d8de",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-COM",
+    "attempt": 1,
+    "phase": "first-B-identity",
+    "file": "DBL-05-COM-05.png",
+    "original_marker": "DBL-05-COM attempt1 first-B-identity",
+    "source_file": "DBL-05-053.jpg",
+    "source_sha256": "b3a6e0e06d994dec6645ebab8d22a48faf4cc10d3482b64d768840a3d558d039",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-COM",
+    "attempt": 1,
+    "phase": "swap-before",
+    "file": "DBL-05-COM-03.png",
+    "original_marker": "DBL-05-COM attempt1 swap-before",
+    "source_file": "DBL-05-060.jpg",
+    "source_sha256": "5483dc29088b8a192a6854c1bfd0963d28ad9f09973fe91980d947dd47ee3fb9",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-05-COM",
+    "attempt": 1,
+    "phase": "swap-after",
+    "file": "DBL-05-COM-04.png",
+    "original_marker": "DBL-05-COM attempt1 swap-after",
+    "source_file": "DBL-05-061.jpg",
+    "source_sha256": "fa72d1eb470772d297cf42668879497e03f63f18efc620e31f4c7b5c8c673d1f",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

@@ -6,5 +6,7 @@
   "http_status": 200,
   "bytes": 7084,
   "sha256": "d2b6a75d142a7c2624836557e90c07d0a15c8dd9ed0adb60f5fe2e152c951627",
-  "note": "仅HTTP服务端可用性检查，不是浏览器导航成功证据"
+  "note": "仅HTTP服务端可用性检查，不是浏览器导航成功证据",
+  "lease_id": "e619fb28-bbd8-4e7f-a356-aaf26a387735",
+  "lifecycle_note": "此记录属于中断前租约。task_ended归还会结束该租约服务；恢复后未据此假定服务仍就绪，实际用例使用前必须重新拉起并核验。"
 }

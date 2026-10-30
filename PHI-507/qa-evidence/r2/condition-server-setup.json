@@ -7,5 +7,7 @@
   "download_control_status": 200,
   "download_header": "attachment; filename=\"TC-PHI507-r2-TC-PHI507-r2-server-control.txt\"",
   "control_clients_closed_early": true,
-  "note": "仅CLI检查测试站可用性/真实传输响应，未据此判任何浏览器用例通过；等待后续Computer Use实际访问。"
+  "note": "仅CLI检查测试站可用性/真实传输响应，未据此判任何浏览器用例通过；等待后续Computer Use实际访问。",
+  "lease_id": "e619fb28-bbd8-4e7f-a356-aaf26a387735",
+  "lifecycle_note": "此记录属于中断前租约。task_ended归还会结束该租约服务；恢复后未据此假定服务仍就绪，实际用例使用前必须重新拉起并核验。"
 }

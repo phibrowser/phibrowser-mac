@@ -1,0 +1,19 @@
+{
+  "job": "DBL-04",
+  "exit_code": 0,
+  "session_id": "01a18d2b-3004-77b2-a0d8-42d228f663c2",
+  "started_at": "2026-10-30T14:16:19.685220+00:00",
+  "ended_at": "2026-10-30T14:25:21.223673+00:00",
+  "units": [
+    "DBL-04-PER",
+    "DBL-04-BAL",
+    "DBL-04-COM"
+  ],
+  "observed_units": [
+    "DBL-04-PER",
+    "DBL-04-BAL",
+    "DBL-04-COM"
+  ],
+  "missing_units": [],
+  "duplicate_units": false
+}

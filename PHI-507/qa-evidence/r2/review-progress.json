@@ -1,0 +1,13 @@
+{
+  "state": "in_progress",
+  "parent_reviewed_case_counts": {
+    "blocked": 28,
+    "partial": 2,
+    "pass": 41,
+    "pending": 441
+  },
+  "total": 512,
+  "current_run_lease": "b0e9392c-a0e4-47cd-8ae7-685e1520b443",
+  "previous_work_preserved": true,
+  "note": "此为运行中台账检查点，不是最终测试报告或完整验收结论。"
+}

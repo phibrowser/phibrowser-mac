@@ -26120,7 +26120,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复原先的快捷键绑定和开关值；不得覆盖系统保留快捷键。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "key": "SCOPE-07-PER",
     "layout": "performance",
@@ -26129,9 +26137,14 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-07",
@@ -26153,7 +26166,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复原先的快捷键绑定和开关值；不得覆盖系统保留快捷键。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "key": "SCOPE-07-COM",
     "layout": "comfortable",
@@ -26162,9 +26183,14 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-08",
@@ -26185,7 +26211,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复原先的快捷键绑定和开关值。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "key": "SCOPE-08-COMMON",
     "layout": "once",
@@ -26194,9 +26228,14 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-09",
@@ -26620,7 +26659,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -26647,9 +26694,14 @@
       "id": "pin",
       "label": "普通 pin"
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-13",
@@ -26671,7 +26723,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -26698,9 +26758,14 @@
       "id": "pin-split",
       "label": "固定 split"
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-13",
@@ -26722,7 +26787,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -26749,9 +26822,14 @@
       "id": "bookmark",
       "label": "绑定书签"
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-13",
@@ -26773,7 +26851,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -26800,9 +26886,14 @@
       "id": "bookmark-split",
       "label": "绑定 split 书签"
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-13",
@@ -26824,7 +26915,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -26851,9 +26950,14 @@
       "id": "pin",
       "label": "普通 pin"
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-13",
@@ -26875,7 +26979,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -26902,9 +27014,14 @@
       "id": "pin-split",
       "label": "固定 split"
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-13",
@@ -26926,7 +27043,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -26953,9 +27078,14 @@
       "id": "bookmark",
       "label": "绑定书签"
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-13",
@@ -26977,7 +27107,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -27004,9 +27142,14 @@
       "id": "bookmark-split",
       "label": "绑定 split 书签"
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-14",
@@ -27028,7 +27171,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "key": "SCOPE-14-PER",
     "layout": "performance",
@@ -27037,9 +27188,14 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-14",
@@ -27061,7 +27217,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "key": "SCOPE-14-BAL",
     "layout": "balanced",
@@ -27070,9 +27234,14 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-14",
@@ -27094,7 +27263,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "key": "SCOPE-14-COM",
     "layout": "comfortable",
@@ -27103,9 +27280,14 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-15",
@@ -27230,7 +27412,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "key": "SCOPE-16-PER",
     "layout": "performance",
@@ -27239,9 +27429,14 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-16",
@@ -27264,7 +27459,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "key": "SCOPE-16-BAL",
     "layout": "balanced",
@@ -27273,9 +27476,14 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-16",
@@ -27298,7 +27506,15 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "kind": "acceptance",
     "key": "SCOPE-16-COM",
     "layout": "comfortable",
@@ -27307,9 +27523,14 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-17",
@@ -27633,7 +27854,15 @@
     "observed": [],
     "kind": "acceptance",
     "reset": "恢复本项布局、开关和测试快捷键；只清理本轮 TC- 测试资料。",
-    "evidence": "记录本轮环境、初始集合、焦点对象、菜单／快捷键入口、最终集合和截图；保护项检查原文档标记。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "variants": [
       {
         "id": "pin",
@@ -27651,9 +27880,14 @@
       "id": "pin",
       "label": "普通 pin"
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录本轮环境、初始集合、焦点对象、菜单／快捷键入口、最终集合和截图；保护项检查原文档标记。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-19",
@@ -27675,7 +27909,15 @@
     "observed": [],
     "kind": "acceptance",
     "reset": "恢复本项布局、开关和测试快捷键；只清理本轮 TC- 测试资料。",
-    "evidence": "记录本轮环境、初始集合、焦点对象、菜单／快捷键入口、最终集合和截图；保护项检查原文档标记。",
+    "evidence": [
+      "qa-evidence/r5/legacy-shortcut-precondition-limit.json",
+      "qa-evidence/r3/ENV-02-COMMON-03.png",
+      "qa-evidence/r3/ENV-02-COMMON-04.png",
+      "qa-evidence/r3/ENV-02-COMMON-05.png",
+      "qa-evidence/r3/ENV-02-COMMON-06.png",
+      "qa-evidence/r3/ENV-02-COMMON-08.png",
+      "qa-evidence/r3/ENV-02-COMMON-09.png"
+    ],
     "variants": [
       {
         "id": "pin",
@@ -27693,9 +27935,14 @@
       "id": "pin-split",
       "label": "固定 split"
     },
-    "result": "pending",
-    "method": "Computer Use",
-    "attempts": []
+    "result": "blocked",
+    "method": "Computer Use prerequisite evidence carried from r3; core not executed",
+    "attempts": [],
+    "source_evidence_requirement": "记录本轮环境、初始集合、焦点对象、菜单／快捷键入口、最终集合和截图；保护项检查原文档标记。",
+    "actual": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "not_run_reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+    "notes": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+    "reviewed_by": "Ripley"
   },
   {
     "id": "SCOPE-20",
@@ -32257,6 +32504,56 @@
           "qa-evidence/r4/VIS-05-COMMON-48.png"
         ],
         "evidence_metadata": "qa-evidence/r4/VIS-05-checkpoint-cleanup-r4-evidence.json"
+      },
+      {
+        "job": "VIS-05-report-preview-r4",
+        "round": 5,
+        "scope": "Local r4 report preview only, not VIS-05 source acceptance. Ripley reviewed all 5 saved images: actual top/counts in -04, historical carried evidence in -02, new-case details in -03 and zoom in -05. Initial report-top marker actually coverage. Default Rename dialog was opened then canceled, violating narrow navigation boundary; no name or page changed. Explicit new-23 statistic was not visible; computed from data separately, not claimed from browser.",
+        "observation": {
+          "active_after": "本次新建的报告预览普通tab：Phi TabClose 独立安装包完整手册测试 需求测试文档 - PHI-507。",
+          "active_before": "初始为Default中的TC-A · TC-PHI507-r2-render-recovery-r4；切到TC-QA-PHI507-r2-Recovery-R4后，活动页为既有New Tab。",
+          "after": "TC Space原有条目保留，列表末尾新增报告预览tab，单选且活动。报告中ENV-04-COMMON和DBL-23-PER详情已展开；结束回到顶部，无图像放大层、查找栏、菜单或确认框。",
+          "before": "TC Space新建前原生列表依次含TC-M保存行、一个无名行、New Tab创建行、一个既有New Tab普通行；另有TC-P pin。未将既有同名New Tab认作本次对象。",
+          "confirmation_choices": "核对初始Space时打开Rename对话框，读到Default后选择Cancel，未提交。未触发删除或退出确认。报告顶部原文“未完成”“不允许提交 PR”仅作记录。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-05-COMMON attempt1 report-top",
+            "EVIDENCE: VIS-05-COMMON attempt1 report-carried",
+            "EVIDENCE: VIS-05-COMMON attempt1 report-new-case",
+            "EVIDENCE: VIS-05-COMMON attempt1 report-new-case-zoom",
+            "EVIDENCE: VIS-05-COMMON attempt1 after"
+          ],
+          "identity_checks": "固定app路径及PID 10708由本租约CU重读，各关键截图PID一致。报告tab由本次Command-T新建，指定file URL和实际正文均实见。顶部显示完整PHI-507标题、第r4轮、未完成，以及页面汇总512总数、100通过、0失败、71阻塞、341未执行；数字仅转录报告内容。ENV-04-COMMON说明“沿用r2的本次Computer Use测试活动结果，本轮未重跑”，旧截图缩略图正常显示，备注说明先前有效结果保留、非本轮新增执行。DBL-23-PER的前置、两条步骤、预期和实际文字可读，多张截图缩略图显示；首张放大图可见TC-C/TC-D、KEEP-C-DBL23和KEEP-D-DBL23及旧编号，未把图内编号作为当前活页身份。未实见明确的“本轮新增23项”统计；原生Find查找“23项”无结果，查找“本轮新增”和“23”显示其他匹配，因此该统计未确认。报告展示构建TC-QA-20261030.1 / 0.0.0 (1030.1)、b30ef8b3acbc；未独立核验当前安装构建。",
+          "language_observed": "General显示System Default，原生界面为英文；报告正文为中文。",
+          "layout_observed": "Balanced；General中蓝色选择框及浏览器外部纵向标签列表实见。",
+          "not_executed_reason": "仅r4报告本地预览，不是VIS-05验收；完整手册测试继续",
+          "operator_errors": [
+            "核对Space时在初始Default打开Rename对话框，超出不操作Default的限制；发现名称后立即Cancel，未修改名称、页面或资料。",
+            "type_text请求“23 项”后，Find实际值仅为“23 ”；后续改用CU返回的原生settable Find控件输入中文并核对实际值。"
+          ],
+          "precondition_actual": "固定QA app实际PID为10708。初始Space经原生Rename对话框读为Default，取消后点击已存在的TC-QA-PHI507-r2-Recovery-R4具名按钮，才创建报告预览tab。偏好只读，未沿用前次PID或服务状态。",
+          "settings_observed": "General：Balanced、System Default。Advanced：Double-click to close tabs=off；Close tabs by position=on；Restore last session=on。未点击开关，未修改快捷键或其他偏好。",
+          "steps_executed": [
+            "get_app_state重读固定app、PID、窗口和原生条目；取消初始Space名称核对对话框，切到具名TC测试Space。",
+            "只读查看General和Advanced，记录布局、语言和三个开关后，点击已确认的Settings close button关闭设置。",
+            "在TC Space通过Command-T新建一个普通tab，用原生地址栏访问指定本地HTML，实见正文并保存report-top截图。",
+            "通过原生Find定位ENV-04-COMMON，关闭查找栏，点击报告行展开；读取沿用r2、本轮未重跑说明，查看已加载的旧截图缩略图，保存report-carried截图。",
+            "通过原生Find定位DBL-23-PER，点击报告行展开；查看前置、步骤、实际文字和多张缩略图，保存report-new-case截图。",
+            "点击首张DBL-23缩略图放大并截图；Escape后放大层仍在，随后点击可见遮罩关闭并实读确认。",
+            "正常查找新增数量相关文字，未确认明确新增23项统计；关闭查找栏，返回顶部并保存after截图。保留报告tab与原TC对象。"
+          ],
+          "unit_id": "VIS-05-COMMON"
+        },
+        "evidence": [
+          "qa-evidence/r5/VIS-05-report-preview-r4-observations.json",
+          "qa-evidence/r5/VIS-05-report-preview-r4-evidence.json",
+          "qa-evidence/r5/VIS-05-report-preview-r4-run.json",
+          "qa-evidence/r5/VIS-05-COMMON-01.png",
+          "qa-evidence/r5/VIS-05-COMMON-02.png",
+          "qa-evidence/r5/VIS-05-COMMON-03.png",
+          "qa-evidence/r5/VIS-05-COMMON-04.png",
+          "qa-evidence/r5/VIS-05-COMMON-05.png"
+        ],
+        "evidence_metadata": "qa-evidence/r5/VIS-05-report-preview-r4-evidence.json"
       }
     ]
   },

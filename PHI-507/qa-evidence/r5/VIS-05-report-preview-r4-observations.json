@@ -1,0 +1,41 @@
+{
+  "base_case": "VIS-05；本次按额外约束仅浏览r4本地报告，不执行VIS-05验收、结果填写、导出或最终清理。",
+  "ending_state": "/Applications/Phi Tab Close QA.app，PID 10708，保持运行。当前Space为通过具名按钮切换的TC-QA-PHI507-r2-Recovery-R4。本次明确新建的普通报告tab保持单选、活动，地址为file:///Users/e2e02/lane/qa-preview-r4/PHI-507/r4/index.html，停在报告顶部。既有TC-P pin、TC-M保存行、无名行和New Tab条目保留，未关闭或删除其他对象。Balanced、System Default、双击关闭off、按位置关闭on、恢复会话on均未修改；快捷键未修改。Settings、查找栏和图像放大层均已关闭，无菜单或确认框。",
+  "observations": [
+    {
+      "active_after": "本次新建的报告预览普通tab：Phi TabClose 独立安装包完整手册测试 需求测试文档 - PHI-507。",
+      "active_before": "初始为Default中的TC-A · TC-PHI507-r2-render-recovery-r4；切到TC-QA-PHI507-r2-Recovery-R4后，活动页为既有New Tab。",
+      "after": "TC Space原有条目保留，列表末尾新增报告预览tab，单选且活动。报告中ENV-04-COMMON和DBL-23-PER详情已展开；结束回到顶部，无图像放大层、查找栏、菜单或确认框。",
+      "before": "TC Space新建前原生列表依次含TC-M保存行、一个无名行、New Tab创建行、一个既有New Tab普通行；另有TC-P pin。未将既有同名New Tab认作本次对象。",
+      "confirmation_choices": "核对初始Space时打开Rename对话框，读到Default后选择Cancel，未提交。未触发删除或退出确认。报告顶部原文“未完成”“不允许提交 PR”仅作记录。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-05-COMMON attempt1 report-top",
+        "EVIDENCE: VIS-05-COMMON attempt1 report-carried",
+        "EVIDENCE: VIS-05-COMMON attempt1 report-new-case",
+        "EVIDENCE: VIS-05-COMMON attempt1 report-new-case-zoom",
+        "EVIDENCE: VIS-05-COMMON attempt1 after"
+      ],
+      "identity_checks": "固定app路径及PID 10708由本租约CU重读，各关键截图PID一致。报告tab由本次Command-T新建，指定file URL和实际正文均实见。顶部显示完整PHI-507标题、第r4轮、未完成，以及页面汇总512总数、100通过、0失败、71阻塞、341未执行；数字仅转录报告内容。ENV-04-COMMON说明“沿用r2的本次Computer Use测试活动结果，本轮未重跑”，旧截图缩略图正常显示，备注说明先前有效结果保留、非本轮新增执行。DBL-23-PER的前置、两条步骤、预期和实际文字可读，多张截图缩略图显示；首张放大图可见TC-C/TC-D、KEEP-C-DBL23和KEEP-D-DBL23及旧编号，未把图内编号作为当前活页身份。未实见明确的“本轮新增23项”统计；原生Find查找“23项”无结果，查找“本轮新增”和“23”显示其他匹配，因此该统计未确认。报告展示构建TC-QA-20261030.1 / 0.0.0 (1030.1)、b30ef8b3acbc；未独立核验当前安装构建。",
+      "language_observed": "General显示System Default，原生界面为英文；报告正文为中文。",
+      "layout_observed": "Balanced；General中蓝色选择框及浏览器外部纵向标签列表实见。",
+      "not_executed_reason": "仅r4报告本地预览，不是VIS-05验收；完整手册测试继续",
+      "operator_errors": [
+        "核对Space时在初始Default打开Rename对话框，超出不操作Default的限制；发现名称后立即Cancel，未修改名称、页面或资料。",
+        "type_text请求“23 项”后，Find实际值仅为“23 ”；后续改用CU返回的原生settable Find控件输入中文并核对实际值。"
+      ],
+      "precondition_actual": "固定QA app实际PID为10708。初始Space经原生Rename对话框读为Default，取消后点击已存在的TC-QA-PHI507-r2-Recovery-R4具名按钮，才创建报告预览tab。偏好只读，未沿用前次PID或服务状态。",
+      "settings_observed": "General：Balanced、System Default。Advanced：Double-click to close tabs=off；Close tabs by position=on；Restore last session=on。未点击开关，未修改快捷键或其他偏好。",
+      "steps_executed": [
+        "get_app_state重读固定app、PID、窗口和原生条目；取消初始Space名称核对对话框，切到具名TC测试Space。",
+        "只读查看General和Advanced，记录布局、语言和三个开关后，点击已确认的Settings close button关闭设置。",
+        "在TC Space通过Command-T新建一个普通tab，用原生地址栏访问指定本地HTML，实见正文并保存report-top截图。",
+        "通过原生Find定位ENV-04-COMMON，关闭查找栏，点击报告行展开；读取沿用r2、本轮未重跑说明，查看已加载的旧截图缩略图，保存report-carried截图。",
+        "通过原生Find定位DBL-23-PER，点击报告行展开；查看前置、步骤、实际文字和多张缩略图，保存report-new-case截图。",
+        "点击首张DBL-23缩略图放大并截图；Escape后放大层仍在，随后点击可见遮罩关闭并实读确认。",
+        "正常查找新增数量相关文字，未确认明确新增23项统计；关闭查找栏，返回顶部并保存after截图。保留报告tab与原TC对象。"
+      ],
+      "unit_id": "VIS-05-COMMON"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

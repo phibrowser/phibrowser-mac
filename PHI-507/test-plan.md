@@ -7178,3 +7178,9 @@ DBL-13首次尝试的六变体均因正文前置未具备而未执行核心动�
 因此 DBL-17、DBL-18、SEL-02/03/04/06/07/08/09 共35个执行点的必需输入前置未能建立，核心动作未执行，台账标 blocked 并引用共享诊断。此前 DBL-07 的12个阻断结果保留并补充该证据。这些是当前执行手段的限制，不是已确认产品缺陷；SEL-09 也未被认定为产品不支持混选。不能以普通双击、替代选择集合或内部状态写入冒充源步骤。其他用例及正常带字母的 app 快捷键继续逐条执行，实际可见且前置满足的关闭或静音按钮仍按原步骤测试。
 
 DBL-09前置解释：书签保存入口对应的绑定实时页必须先打开，普通同网址副本不代替该前置；在真正P/M实时页和普通对照输入标记后，再做off/on四次双击。DBL-23步骤2的“已打开时／未打开时”分别覆盖：每个开关值中，PS左右半格各含打开及关闭状态，MS入口含打开及关闭状态，共12次核心双击；关闭状态通过现有公开关闭命令建立，保存项必须保留，不能用Unpin/Delete代替关闭。详见 `qa-scripts/protected-items-complete-r4.txt`。首次Performance尝试的off-M前置偏差和未打开PS覆盖缺口保留为partial，新tag独立补齐，不能把原记录抹去或计作完整通过。
+
+## 旧快捷键用例的实际前置限制（r5续测）
+
+ENV-02已通过CU查验Shortcuts：Customized空搜索为No Results；All Shortcuts搜索Close，完整列表和滚动后仅见Reopen Closed Tab、Close Window、Close Tab、Close Tab Group；完整Tab分类实际滚动至末端，未见Close Other Tabs或Close Tabs to the Right。 原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。 SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。
+
+证据索引：`qa-evidence/r5/legacy-shortcut-precondition-limit.json`。发现可由Computer Use实际访问的原生配置入口或得到可从界面核实的现有绑定后，重新建立本项前置并执行，不改写历史未执行记录。

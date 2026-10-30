@@ -1,0 +1,127 @@
+[
+  {
+    "unit_id": "VIS-05-COMMON",
+    "attempt": 1,
+    "phase": "report-overview-actual",
+    "file": "VIS-05-COMMON-01.png",
+    "original_marker": "VIS-05-COMMON attempt1 report-top",
+    "source_file": "VIS-05-report-preview-r4-008.jpg",
+    "source_sha256": "5ff202a34228d39dc795308bb662645e24b505a22460f6695c17c4bad447c7eb",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Original report-top marker was captured after scrolling; this image shows coverage overview. Actual full title/counts are in VIS-05-COMMON-04.png."
+  },
+  {
+    "unit_id": "VIS-05-COMMON",
+    "attempt": 1,
+    "phase": "report-carried",
+    "file": "VIS-05-COMMON-02.png",
+    "original_marker": "VIS-05-COMMON attempt1 report-carried",
+    "source_file": "VIS-05-report-preview-r4-013.jpg",
+    "source_sha256": "4ccafbcb582af1755670daff9445c78be38c8d015c139e354460360e84482bc5",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-05-COMMON",
+    "attempt": 1,
+    "phase": "report-new-case",
+    "file": "VIS-05-COMMON-03.png",
+    "original_marker": "VIS-05-COMMON attempt1 report-new-case",
+    "source_file": "VIS-05-report-preview-r4-016.jpg",
+    "source_sha256": "5c35d6a596c34b39f410c0be9ff5ea7911b45f7c17f69fd5893b442b897a6868",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-05-COMMON",
+    "attempt": 1,
+    "phase": "after",
+    "file": "VIS-05-COMMON-04.png",
+    "original_marker": "VIS-05-COMMON attempt1 after",
+    "source_file": "VIS-05-report-preview-r4-028.jpg",
+    "source_sha256": "1f3e902363a2e583d60a71ae2f1617f83414684fa05ad043679812856191b68d",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-05-COMMON",
+    "attempt": 1,
+    "phase": "report-new-case-zoom",
+    "file": "VIS-05-COMMON-05.png",
+    "original_marker": "VIS-05-COMMON attempt1 report-new-case-zoom",
+    "source_file": "VIS-05-report-preview-r4-017.jpg",
+    "source_sha256": "59f4abc69023fc851bb663ddfcee0c61c2964f04c1b67c0669a21d6e386abfa2",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

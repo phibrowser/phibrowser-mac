@@ -1,0 +1,15 @@
+{
+  "report_round": 4,
+  "url": "https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r4/",
+  "site_commit": "cb0ecf001b170846e993573c87c0fedb42583e23",
+  "artifact_commit": "bca598dc",
+  "local_preview_cu_job": "VIS-05-report-preview-r4",
+  "local_preview_session": "01a18eb1-8e9b-7950-936a-9ebffc1ce693",
+  "local_preview_computer_use_events": 95,
+  "local_preview_non_computer_use_events": 0,
+  "local_preview_reviewed_images": 5,
+  "local_preview_result": "标题、r4轮次、未完成状态、512/100/0/71/341计数、ENV-04沿用说明及缩略图、DBL-23详情及放大图实见。没有实见单独新增23项统计；该数仅来自结构化数据核对。",
+  "deviation": "预览时初始误打开Default的Rename对话框后立即Cancel；未提交修改。原生Find中文type_text曾未完整输入，保留实际返回，改用CU原生可设置控件后核对。",
+  "publication_result": "固定报告脚本publish退出0，已提交推送并返回URL；Pages HTTP可访问性尚未单独检查。",
+  "product_acceptance": false
+}

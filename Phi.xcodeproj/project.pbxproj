@@ -433,6 +433,7 @@
 		ACDC00000000000000000B02 /* AgentPeerIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDC00000000000000000A02 /* AgentPeerIdentity.swift */; };
 		ACDC00000000000000000B03 /* AgentDirectChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDC00000000000000000A03 /* AgentDirectChannel.swift */; };
 		ACDC00000000000000000B04 /* AppDevToolsPageSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDC00000000000000000A04 /* AppDevToolsPageSession.swift */; };
+		ACDC00000000000000000B05 /* PageActionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDC00000000000000000A05 /* PageActionRegistry.swift */; };
 		AE00FFFE0000000000000002 /* PhiAgentEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE00FFFE0000000000000001 /* PhiAgentEndpointResolver.swift */; };
 		AE00FFFE0000000000000004 /* PhiAgentTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE00FFFE0000000000000003 /* PhiAgentTransport.swift */; };
 		AE5ACE000000000000000011 /* AgentSpaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000001 /* AgentSpaceManager.swift */; };
@@ -1280,6 +1281,7 @@
 		ACDC00000000000000000A02 /* AgentPeerIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPeerIdentity.swift; sourceTree = "<group>"; };
 		ACDC00000000000000000A03 /* AgentDirectChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectChannel.swift; sourceTree = "<group>"; };
 		ACDC00000000000000000A04 /* AppDevToolsPageSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDevToolsPageSession.swift; sourceTree = "<group>"; };
+		ACDC00000000000000000A05 /* PageActionRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageActionRegistry.swift; sourceTree = "<group>"; };
 		AE00FFFE0000000000000001 /* PhiAgentEndpointResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiAgentEndpointResolver.swift; sourceTree = "<group>"; };
 		AE00FFFE0000000000000003 /* PhiAgentTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiAgentTransport.swift; sourceTree = "<group>"; };
 		AE5ACE000000000000000001 /* AgentSpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSpaceManager.swift; sourceTree = "<group>"; };
@@ -2486,6 +2488,7 @@
 				ACDC00000000000000000A02 /* AgentPeerIdentity.swift */,
 				ACDC00000000000000000A03 /* AgentDirectChannel.swift */,
 				ACDC00000000000000000A04 /* AppDevToolsPageSession.swift */,
+				ACDC00000000000000000A05 /* PageActionRegistry.swift */,
 			);
 			path = AgentCDP;
 			sourceTree = "<group>";
@@ -3695,6 +3698,7 @@
 				ACDC00000000000000000B02 /* AgentPeerIdentity.swift in Sources */,
 				ACDC00000000000000000B03 /* AgentDirectChannel.swift in Sources */,
 				ACDC00000000000000000B04 /* AppDevToolsPageSession.swift in Sources */,
+				ACDC00000000000000000B05 /* PageActionRegistry.swift in Sources */,
 				A17100000000000000000011 /* NativeMediaAdapter.swift in Sources */,
 				A17200000000000000000011 /* PeekLinkActivationGuard.swift in Sources */,
 				CC450AE42EA74AD5004EE144 /* CommandDispatcher.swift in Sources */,

@@ -32,7 +32,10 @@ import Foundation
 /// share one key, so a single "Always Allow" would approve all of them forever.
 /// The second covers the skill's own plumbing when the walk finds nothing above
 /// it: those scripts act for whoever drives them, so failing to find the driver
-/// is what happened, not "an agent named phi-browser is asking".
+/// is what happened, not "an agent named phi-browser is asking". A verified
+/// first-party companion app (`firstPartyCompanion`, see
+/// docs/companion-apps.md) is admitted like the browser's own runtime, but
+/// held to an allowlist on the private channel.
 ///
 /// A doorbell anyone may ring needs a way to silence it, so the prompt's deny
 /// side is scoped too: this connection, 30 minutes, or never again, for the
@@ -93,6 +96,9 @@ final class AgentCDPListener {
     // The agent process whose first-party pass this launch has already logged
     // (see logFirstPartyPass).
     private var loggedFirstPartyPassPid: pid_t?
+    // Companion processes whose pass this launch has already logged, as
+    // "key|pid" (see logCompanionPass).
+    private var loggedCompanionPasses = Set<String>()
     private let grantsLock = NSLock()
 
     private init() {}
@@ -127,7 +133,8 @@ final class AgentCDPListener {
                 PhiPreferences.AgentSpaces.agentDenials = []
             }
         } else {
-            revokeActiveAccess()
+            // The switch is about agents; a companion app's channels stay open.
+            revokeActiveAccess(sparingCompanions: true)
         }
         DispatchQueue.main.async {
             AppController.shared?.refreshPrefGatedMenuItems()
@@ -319,13 +326,19 @@ final class AgentCDPListener {
     /// blanket one included — so a reconnecting agent has to pass consent
     /// again. Persisted "Always Allow" grants survive: they are revoked from
     /// Settings, one entry at a time.
-    private func revokeActiveAccess() {
+    ///
+    /// `sparingCompanions` keeps first-party companion apps' `/phi-agent`
+    /// channels open — the master switch closing access is not meant for
+    /// them (see `evaluate`). Their stock CDP connections still go with
+    /// everyone else's: Chromium can only sever all injected connections at
+    /// once, and a companion simply reconnects through its pass.
+    private func revokeActiveAccess(sparingCompanions: Bool = false) {
         grantsLock.lock()
         sessionGrants.removeAll()
         sessionAllAgentsGrant = false
         grantsLock.unlock()
 
-        AgentDirectChannelRegistry.shared.closeAll()
+        AgentDirectChannelRegistry.shared.closeAll(sparingCompanions: sparingCompanions)
         DispatchQueue.main.async {
             ChromiumLauncher.sharedInstance().bridge?.closeAllDevToolsConnections()
         }
@@ -384,8 +397,12 @@ final class AgentCDPListener {
         // a phi-agent orphaned by a dead runner — the walk resolves it to
         // `unresolvedOwnCode` and `evaluate` refuses it without a prompt,
         // rather than asking about a version-stamped "phi-agent.bundle".
-        // Every other peer falls through to the walk.
+        // A first-party companion app's helper is recognized next, for the
+        // same reason (see AgentPeerIdentity.firstPartyCompanion): it is part
+        // of the product, not an agent for the walk to name and the user to
+        // be asked about. Every other peer falls through to the walk.
         let peerIdentity = AgentPeerIdentity.firstPartyAgent(socketFD: fd)
+            ?? AgentPeerIdentity.firstPartyCompanion(socketFD: fd)
             ?? AgentPeerIdentity.resolve(socketFD: fd)
             ?? .unresolved
 
@@ -436,7 +453,8 @@ final class AgentCDPListener {
                 agentName: session.identity.displayName,
                 agentPid: session.identity.pid,
                 driverPrincipalId: session.principalId,
-                agentCapability: session.capability
+                agentCapability: session.capability,
+                companion: session.identity.companion
             ).start()
             return
         }
@@ -464,11 +482,16 @@ final class AgentCDPListener {
         // opened it first: nothing downstream of the handover can say which
         // agent a browser-reported drive belongs to, so the operating mask's
         // pill names the driver from here — best effort, and only while one
-        // agent is connected (AgentCDPDriverRoster).
+        // agent is connected (AgentCDPDriverRoster). A companion app is not a
+        // driver the pill names; it stays out of the roster, or a companion
+        // that is always connected would leave the pill unable to name anyone.
+        let notesDriver = identity.companion == nil
         DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                AgentCDPDriverRoster.shared.noteInjection(
-                    key: identity.key, displayName: identity.displayName)
+            if notesDriver {
+                MainActor.assumeIsolated {
+                    AgentCDPDriverRoster.shared.noteInjection(
+                        key: identity.key, displayName: identity.displayName)
+                }
             }
             let attached = ChromiumLauncher.sharedInstance().bridge?
                 .attachDevToolsConnection(withFD: fd) ?? false
@@ -584,6 +607,19 @@ final class AgentCDPListener {
         // behind a setting the user can no longer see.
         if identity.firstParty {
             logFirstPartyPass(identity)
+            return true
+        }
+
+        // A first-party companion app is admitted the same way and for the
+        // same reasons: it ships with the browser as part of the product, so
+        // there is no one to prompt, nothing to remember, and nothing the
+        // master switches — which gate handing the browser to third-party
+        // tooling — should say about it. Someone who turns agents off has not
+        // turned off their read-later app. What it may do once connected is
+        // narrower than the browser's own agent: `AgentDirectConnection`
+        // holds it to its `AgentCompanion` allowlist on the private channel.
+        if identity.companion != nil {
+            logCompanionPass(identity)
             return true
         }
 
@@ -815,6 +851,19 @@ final class AgentCDPListener {
         guard !alreadyLogged else { return }
         AppLogInfo("[AgentCDP] admitted \(identity.displayName) (pid \(identity.pid.map(String.init) ?? "?")) "
                    + "on the first-party pass — Phi-signed runtime, no consent required")
+    }
+
+    /// The companion pass's counterpart of `logFirstPartyPass`: once per
+    /// companion process, so a helper's many connections log one line and a
+    /// restarted helper logs a fresh one.
+    private func logCompanionPass(_ identity: AgentIdentity) {
+        let marker = "\(identity.key)|\(identity.pid.map(String.init) ?? "?")"
+        grantsLock.lock()
+        let firstTime = loggedCompanionPasses.insert(marker).inserted
+        grantsLock.unlock()
+        guard firstTime else { return }
+        AppLogInfo("[AgentCDP] admitted \(identity.displayName) (pid \(identity.pid.map(String.init) ?? "?")) "
+                   + "on the companion pass — Phi-signed companion app, no consent required")
     }
 
     // MARK: - Standing refusals

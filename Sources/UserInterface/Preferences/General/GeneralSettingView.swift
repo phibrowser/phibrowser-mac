@@ -37,8 +37,12 @@ enum NewTabBehaviour: String, CaseIterable, Identifiable {
 
 struct GeneralSettingView: View {
     @ObservedObject private var settingsPresentation = SettingsPresentationState.shared
+    /// Bumped when a companion app connects or quits. Reading it in `body`
+    /// re-runs `body`, which re-reads Folio's flag.
+    @State private var companionRevision = 0
 
     var body: some View {
+        let _ = companionRevision
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 24) {
                 LanguageSectionView()
@@ -58,6 +62,11 @@ struct GeneralSettingView: View {
         }
         .themedBackground(PhiPreferences.fixedWindowBackground)
         .frame(width: 680, height: 561)
+        // The Folio app connecting or quitting flips Folio while Settings is
+        // open (see SaveForLaterService.featureEnabled).
+        .onReceive(NotificationCenter.default.publisher(for: .agentCompanionsDidChange)) { _ in
+            companionRevision += 1
+        }
     }
 }
 

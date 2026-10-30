@@ -204,6 +204,14 @@ private struct LibraryContentView: View {
                 "is_standalone_window": presentation == .standalone,
             ])
         }
+        // The Folio app connecting or quitting flips Folio while the Library
+        // is open; re-read it rather than wait for the next selection.
+        .onReceive(NotificationCenter.default.publisher(for: .agentCompanionsDidChange)) { _ in
+            folioAvailable = SaveForLaterService.featureEnabled
+            if selection == .folio, !folioAvailable {
+                selection = .downloads
+            }
+        }
     }
 
     private var content: some View {

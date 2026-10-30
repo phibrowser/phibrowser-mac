@@ -233,6 +233,12 @@ class ShortcutsViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.rebuildSections() }
             .store(in: &cancellables)
+        // A companion app connecting or quitting can take a command away
+        // (Save to Folio, see SaveForLaterService.featureEnabled) or give it back.
+        NotificationCenter.default.publisher(for: .agentCompanionsDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.rebuildSections() }
+            .store(in: &cancellables)
         DistributedNotificationCenter.default()
             .publisher(for: KioskGlobalShortcutRegistrar.inputSourceDidChangeNotification)
             .receive(on: DispatchQueue.main)

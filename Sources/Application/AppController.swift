@@ -183,7 +183,13 @@ import PostHog
         // while it is off gets a consent prompt offering to turn it on, rather
         // than an endpoint that isn't there (see AgentCDPListener).
         AgentCDPListener.shared.start()
-        
+        // The Folio app connecting or quitting flips Folio's flag the way a
+        // flag load does (see SaveForLaterService.featureEnabled).
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(agentCompanionsDidChange(_:)),
+                                               name: .agentCompanionsDidChange,
+                                               object: nil)
+
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(phiWillTryToTerminateApplicationNotification(_:)),
                                                name: Notification.Name("PhiWillTryToTerminateApplicationNotification"),
@@ -328,8 +334,7 @@ import PostHog
                 queue: .main
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.refreshPrefGatedMenuItems()
-                    SaveForLaterService.broadcastArmedState()
+                    self?.reapplyFolioAvailability()
                 }
             }
             AccountController.shared.reconcilePostHogIdentityForAnonymousLaunchIfNeeded(
@@ -1244,6 +1249,23 @@ import PostHog
         // pending and lands with the next write.
         SpaceManager.shared.clearTerminating()
         crashFeedbackCoordinator?.resumeAfterCancelledTermination()
+    }
+
+    /// Re-applies `SaveForLaterService.featureEnabled` once it may have
+    /// changed — PostHog's flags landing, or the Folio app connecting or
+    /// quitting: the flag-gated menu rows are rebuilt (after menu tracking
+    /// ends), and Mirage is told the decided state so its highlight menu and
+    /// site-action auto-save follow.
+    @MainActor
+    func reapplyFolioAvailability() {
+        refreshPrefGatedMenuItems()
+        SaveForLaterService.broadcastArmedState()
+    }
+
+    /// Posted on the main thread by `AgentDirectChannelRegistry`.
+    @MainActor
+    @objc private func agentCompanionsDidChange(_ notification: Notification) {
+        reapplyFolioAvailability()
     }
 
     @objc private func loginStatusRefreshCompleted(_ notification: Notification) {

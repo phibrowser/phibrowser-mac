@@ -291,6 +291,8 @@ extension AppController {
     static let browserMigrationItemTag = 500038
     static let fileSaveForLaterLibraryItemTag = 500039
     static let viewLibraryItemTag = 500040
+    /// Every File menu row rendered from `PageActionRegistry`.
+    static let filePageActionItemTag = 500041
     static let debugMenuItemTag = 500027
     static let spacesProfileSeparatorTag = 500020
     static let deleteProfileSubmenuIdentifier = NSUserInterfaceItemIdentifier("phi.spaces.deleteProfile")
@@ -882,6 +884,7 @@ extension AppController {
                 || item.action == #selector(AppController.capturePageAreaFromMenu(_:))
                 || item.tag == CommandWrapper.PHI_SAVE_FOR_LATER.rawValue
                 || item.tag == AppController.fileSaveForLaterLibraryItemTag
+                || item.tag == AppController.filePageActionItemTag
         }
 
         let newKioskWindowItem = NSMenuItem(
@@ -966,6 +969,10 @@ extension AppController {
             subMenu.addItem(sharePageItem)
         }
 
+        // Page actions go in last, whichever way this returns, so their
+        // shortcuts are checked against every other row already in place.
+        defer { installPageActionItems(in: subMenu, target: target) }
+
         // Folio disabled: the rows above were already removed and nothing is
         // reinserted — the feature leaves no trace in the menu.
         guard SaveForLaterService.featureEnabled else { return }
@@ -1016,6 +1023,51 @@ extension AppController {
             subMenu.insertItem(libraryItem, at: openLocationIndex)
         } else {
             subMenu.addItem(libraryItem)
+        }
+    }
+
+    /// Rows for the page actions `/phi-agent` clients registered
+    /// (`PageActionRegistry`), among the page-saving rows. Rebuilt with the
+    /// rest of the File menu; `installOrUpdateFileMenuItems` removes the
+    /// previous ones by tag first.
+    ///
+    /// A registered shortcut becomes the row's key equivalent only while no
+    /// other menu row or configured command owns that key — a client never
+    /// takes a shortcut from Phi or from another client. Availability per
+    /// page (URL patterns, off-the-record windows) is decided at validation.
+    private static func installPageActionItems(in subMenu: NSMenu, target: AppController?) {
+        let entries = PageActionRegistry.shared.fileMenuEntries
+        guard !entries.isEmpty else { return }
+
+        let inventory = Shortcuts.bindingInventory(additionalBindings: Shortcuts.menuBindings())
+        var claimed: [ShortcutsKey.MenuKeyEquivalent] = []
+        let anchorIndex = subMenu.items.lastIndex(where: {
+            $0.tag == CommandWrapper.PHI_SAVE_FOR_LATER.rawValue
+                || $0.tag == CommandWrapper.IDC_SAVE_PAGE.rawValue
+        })
+        var insertionIndex = anchorIndex.map { $0 + 1 } ?? subMenu.items.count
+
+        for entry in entries {
+            let item = NSMenuItem(title: entry.action.title,
+                                  action: #selector(AppController.invokePageActionFromMenu(_:)),
+                                  keyEquivalent: "")
+            if let shortcut = entry.action.shortcut {
+                let key = shortcut.shortcutsKey
+                let menuKey = key.menuKeyEquivalent
+                if inventory.occupants(of: key).isEmpty, !claimed.contains(menuKey) {
+                    item.keyEquivalent = menuKey.characters
+                    item.keyEquivalentModifierMask = menuKey.modifiers
+                    claimed.append(menuKey)
+                } else {
+                    AppLogInfo("[PageActions] \(entry.action.id) keeps no shortcut: "
+                               + "its key is already taken in the main menu")
+                }
+            }
+            item.tag = AppController.filePageActionItemTag
+            item.representedObject = entry
+            item.target = target
+            subMenu.insertItem(item, at: insertionIndex)
+            insertionIndex += 1
         }
     }
 
@@ -1312,6 +1364,38 @@ extension AppController {
     @MainActor
     @objc func openSaveForLaterLibrary(_ sender: Any?) {
         SaveForLaterService.openLibrary()
+    }
+
+    /// A page-action row: reports the page it was chosen on to the channel
+    /// that registered the action, which then does the work itself.
+    @MainActor
+    @objc func invokePageActionFromMenu(_ sender: Any?) {
+        guard let entry = (sender as? NSMenuItem)?.representedObject as? PageActionRegistry.Entry,
+              let action = PageActionRegistry.shared.action(id: entry.action.id,
+                                                            channelId: entry.channelId),
+              let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState,
+              let tab = state.pageCommandTarget,
+              !state.isIncognito || action.incognito,
+              action.applies(toDocumentAt: tab.url) else {
+            return
+        }
+        var payload: [String: Any] = [
+            "tabId": tab.guid,
+            "url": tab.url ?? "",
+            "title": tab.title,
+            "profileId": state.profileId,
+            "windowId": state.windowId,
+            "isIncognito": state.isIncognito,
+        ]
+        // The tab's DevTools page target, so the client can attach over stock
+        // CDP without a lookup. Omitted when the framework or page has none.
+        if let wrapper = tab.webContentWrapper,
+           wrapper.responds(to: #selector(getter: WebContentWrapper.devToolsTargetId)),
+           let targetId = wrapper.devToolsTargetId, !targetId.isEmpty {
+            payload["targetId"] = targetId
+        }
+        PageActionRegistry.shared.invoke(actionId: action.id, channelId: entry.channelId,
+                                         payload: payload)
     }
 
     @MainActor
@@ -3259,6 +3343,25 @@ extension AppController {
         if item.action == #selector(openSaveForLaterLibrary(_:)) {
             return SaveForLaterService.featureEnabled
                 && ApplicationState.shared.canUseBrowser
+        }
+
+        // Page actions: hidden in off-the-record windows unless registered
+        // with `incognito`, and enabled only on pages their
+        // `documentUrlPatterns` match.
+        if item.action == #selector(invokePageActionFromMenu(_:)),
+           let menuItem = item as? NSMenuItem {
+            let applies = MainActor.assumeIsolated { () -> Bool in
+                guard let entry = menuItem.representedObject as? PageActionRegistry.Entry,
+                      let action = PageActionRegistry.shared.action(id: entry.action.id,
+                                                                    channelId: entry.channelId) else {
+                    return false
+                }
+                let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState
+                menuItem.isHidden = state?.isIncognito == true && !action.incognito
+                guard !menuItem.isHidden, let tab = state?.pageCommandTarget else { return false }
+                return action.applies(toDocumentAt: tab.url)
+            }
+            return applies && ApplicationState.shared.canUseBrowser
         }
 
         if item.action == #selector(toggleAgentTranscript(_:)) {

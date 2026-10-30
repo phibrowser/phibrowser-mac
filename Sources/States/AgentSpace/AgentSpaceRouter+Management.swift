@@ -32,11 +32,17 @@ extension AgentSpaceRouter {
     /// agent tooling may only operate inside its own agent Spaces — every
     /// user-space management message refuses with this response. nil means
     /// allowed.
-    static func userSpaceOperationsRefusal() -> String? {
+    ///
+    /// `exemptingCompanion` is set for a verified first-party companion app's
+    /// channel: the toggle governs agent tooling, not a companion app, whose
+    /// channel only ever reaches its allowlisted types. The guest-transition
+    /// block still applies to it.
+    static func userSpaceOperationsRefusal(exemptingCompanion: Bool = false) -> String? {
         if SpaceSessionControllersManager.shared
             .isGuestTransitionInteractionBlocked {
             return failure("guest_account_transition_in_progress")
         }
+        if exemptingCompanion { return nil }
         guard !PhiPreferences.AgentSpaces.userSpaceOperationsEnabled else { return nil }
         return failure("user_space_operations_disabled")
     }

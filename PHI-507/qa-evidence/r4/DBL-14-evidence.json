@@ -77,7 +77,7 @@
   {
     "unit_id": "DBL-14-PER-cancel",
     "attempt": 1,
-    "phase": "identity-C-unmarked-original-mislabeled-D",
+    "phase": "identity-D-capture-failure-actual-C-unmarked",
     "file": "DBL-14-PER-cancel-04.png",
     "original_marker": "DBL-14-PER-cancel attempt1 identity-D",
     "source_file": "DBL-14-016.jpg",

@@ -1,0 +1,114 @@
+{
+  "base_case": "DBL-15：未点击的分屏伙伴有未保存内容。按 PER→BAL→COM 顺序执行，各项独立新建专用窗口，使用本地 fixture 建立 A | S[B+C] | D，C 输入草稿并实际显示“离开确认已启用”，随后双击 B 半格并核对 C。所有浏览器操作和状态取证均使用固定路径 /Applications/Phi Tab Close QA.app 的 Computer Use。",
+  "ending_state": "最后实读 PID 97109，窗口为“TC-C · TC-PHI507-r2-DBL-15-COM”；页序 [A,C,D]，活动页 C、选中集 {C}，无分屏、无待处理确认框。C 的 KEEP-DBL-15-COM-C、“离开确认已启用”和原打开编号 7c3bd6d7-0366-48a6-b847-faff7bc50936 仍可见。已统一恢复起始布局 Balanced、双击关闭 off；点击双击开关后即时读取按位置关闭仍 on，Restore last session 仍 on。显示语言为 System Default，界面英文；快捷键未修改，Settings 和菜单已关闭。DBL-14 最后专用窗口及本批 PER、BAL 窗口在后续 setup 中通过 File→Close Window 清理；最后 COM 窗口保留，未为收尾重建。未退出或重启应用，未操作 Canary、Default 中的 Chrome Web Store 或未知保存项；其他既有窗口未逐窗复读，新窗口的 Space 归属未独立核实。",
+  "observations": [
+    {
+      "active_after": "C；选中集 {C}",
+      "active_before": "B；选中分屏条目 S[B+C]，B 为活动半格",
+      "after": "原生列表为 [A,C,D]，B 不在列表，分屏结束；C 显示原草稿、原打开编号和“离开确认已启用”。",
+      "before": "原生顺序 [A,S[B+C],D]；内容区 B 左、C 右；无组、无待处理确认框。",
+      "confirmation_choices": "核心双击动作未显示离开确认，未作确认选择。setup 清理 DBL-14-COM-leave 窗口时未出现确认。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-15-PER attempt1 settings",
+        "EVIDENCE: DBL-15-PER attempt1 setup-A",
+        "EVIDENCE: DBL-15-PER attempt1 setup-B",
+        "EVIDENCE: DBL-15-PER attempt1 setup-C",
+        "EVIDENCE: DBL-15-PER attempt1 setup-D",
+        "EVIDENCE: DBL-15-PER attempt1 C-draft",
+        "EVIDENCE: DBL-15-PER attempt1 before",
+        "EVIDENCE: DBL-15-PER attempt1 after"
+      ],
+      "identity_checks": "固定应用 PID 97109；批次 TC-PHI507-r2-DBL-15-PER。逐页实见正文、类型、输入框及编号：A=24845774-c239-47d2-af40-16a64f459d2c；B=2f6c61bb-87ce-4e0c-a2ea-40bdaf4b9b1b；C=b1024214-9845-49af-b2a4-b14ab341c0cb；D=d8bac291-777b-48bb-a793-2c2ef66c03d0。C 双击前后编号相同，均显示 KEEP-DBL-15-PER-C。",
+      "language_observed": "General 实读 System Default；界面英文。",
+      "layout_observed": "起始 Balanced；通过 General 切换 Performance，截图显示 Performance 选框；关键动作前为外部纵向侧栏。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "独立新窗口 A | S[B+C] | D；A/B/D 为普通页，C 为未保存确认型。多页建立后输入 KEEP-DBL-15-PER-C，实见焦点边框、草稿和“离开确认已启用”。双击关闭及按位置关闭均 on。",
+      "settings_observed": "起始双击关闭 off、按位置关闭 on、Restore last session on。仅点击双击关闭一次使其为 on，即时读取按位置关闭仍 on。",
+      "steps_executed": [
+        "通过 File→Close Window 清理已核实的 DBL-14-COM-leave 专用窗口。",
+        "File→New Window 后直接导航本项 A；经 fixture 的新标签链接建立下一页，再用原生地址栏分别导航准确的 B、C、D URL，逐页读取正文和编号。",
+        "选择 C，点击输入框并确认焦点边框，输入 KEEP-DBL-15-PER-C。",
+        "选择 B 为当前页，对 C 右键选择 Split with Current，核实 A | S[B+C] | D。",
+        "在本项 3840×1920 原图安全区校准坐标为 1:1；对侧栏 B 左半格标题点 (110,428) 请求 click_count=2。",
+        "get_app_state 读取结束列表及 C 草稿、打开编号和启用状态。"
+      ],
+      "unit_id": "DBL-15-PER"
+    },
+    {
+      "active_after": "C；选中集 {C}",
+      "active_before": "B；选中分屏条目 S[B+C]，B 为活动半格",
+      "after": "原生列表为 [A,C,D]，B 不在列表，分屏结束；C 草稿、原打开编号及“离开确认已启用”可见。",
+      "before": "原生顺序 [A,S[B+C],D]；内容区 B 左、C 右；无组、无待处理确认框。",
+      "confirmation_choices": "核心双击动作未显示离开确认。仅在 setup 清理 PER 专用窗口时，出现“Leave site? Changes you made may not be saved.”，选择 Leave。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-15-BAL attempt1 setup-cleanup",
+        "EVIDENCE: DBL-15-BAL attempt1 settings-layout",
+        "EVIDENCE: DBL-15-BAL attempt1 settings",
+        "EVIDENCE: DBL-15-BAL attempt1 setup-A",
+        "EVIDENCE: DBL-15-BAL attempt1 setup-B",
+        "EVIDENCE: DBL-15-BAL attempt1 setup-C",
+        "EVIDENCE: DBL-15-BAL attempt1 setup-D",
+        "EVIDENCE: DBL-15-BAL attempt1 C-draft",
+        "EVIDENCE: DBL-15-BAL attempt1 before",
+        "EVIDENCE: DBL-15-BAL attempt1 after"
+      ],
+      "identity_checks": "固定应用 PID 97109；批次 TC-PHI507-r2-DBL-15-BAL。逐页实见正文、类型、输入框及编号：A=6348d21d-8681-424b-ad30-983905cb424f；B=749d411a-f41f-4afc-a734-aeb87cd17c95；C=1b704aa2-4201-4432-87bc-950f90db9100；D=47d9601d-02fb-4fd6-8129-f6ebb92601f1。C 双击前后编号相同，均显示 KEEP-DBL-15-BAL-C。",
+      "language_observed": "General 实读 System Default；界面英文。",
+      "layout_observed": "通过 General 从 Performance 切换 Balanced，截图确认选框；关键动作前为外部纵向侧栏。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "独立新窗口 A | S[B+C] | D；A/B/D 普通，C 未保存确认型。输入 KEEP-DBL-15-BAL-C 后实际显示草稿和“离开确认已启用”；两个关闭开关均 on。",
+      "settings_observed": "Advanced 实读双击关闭 on、按位置关闭 on、Restore last session on；本项未点击开关。",
+      "steps_executed": [
+        "setup 通过 File→Close Window 清理 PER 专用窗口，并对其中 C 的离开确认选择 Leave。",
+        "General 切换 Balanced；File→New Window 直接导航本项 A，再经 fixture 新标签链接和原生地址栏建立准确 B/C/D，逐页读取正文和编号。",
+        "选择 C，点击输入框并核实焦点边框，输入 KEEP-DBL-15-BAL-C。",
+        "选择 B 为当前页，对 C 右键选择 Split with Current，实读 B 左/C 右及指定顺序。",
+        "在本项原图安全区重新校准坐标为 1:1；对侧栏 B 半格标题点 (110,355) 请求 click_count=2。",
+        "get_app_state 核对结束集合以及 C 的草稿、原编号和启用状态。"
+      ],
+      "unit_id": "DBL-15-BAL"
+    },
+    {
+      "active_after": "C；选中集 {C}",
+      "active_before": "B；选中分屏条目 S[B+C]，B 为活动半格",
+      "after": "顶部标签顺序为 [A,C,D]，B 不在标签栏，分屏结束；C 草稿、原编号和“离开确认已启用”可见。恢复偏好后仍为 [A,C,D]、活动 C。",
+      "before": "顶部顺序 [A,S[B+C],D]；原生 tabStripTab 暴露 splitPair，包含准确 B/C 文本；内容区 B 左、C 右；无组、无待处理确认框。",
+      "confirmation_choices": "核心双击动作未显示离开确认。仅在 setup 清理 BAL 专用窗口时，出现“Leave site? Changes you made may not be saved.”，选择 Leave。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-15-COM attempt1 setup-cleanup",
+        "EVIDENCE: DBL-15-COM attempt1 settings-layout",
+        "EVIDENCE: DBL-15-COM attempt1 settings",
+        "EVIDENCE: DBL-15-COM attempt1 setup-A",
+        "EVIDENCE: DBL-15-COM attempt1 setup-B",
+        "EVIDENCE: DBL-15-COM attempt1 setup-C",
+        "EVIDENCE: DBL-15-COM attempt1 setup-D",
+        "EVIDENCE: DBL-15-COM attempt1 C-draft",
+        "EVIDENCE: DBL-15-COM attempt1 before",
+        "EVIDENCE: DBL-15-COM attempt1 after",
+        "EVIDENCE: DBL-15-COM attempt1 restore-layout",
+        "EVIDENCE: DBL-15-COM attempt1 restore-settings",
+        "EVIDENCE: DBL-15-COM attempt1 ending"
+      ],
+      "identity_checks": "固定应用 PID 97109；批次 TC-PHI507-r2-DBL-15-COM。逐页实见正文、类型、输入框及编号：A=dbd78e94-d6f6-49ba-b48f-89460b71099d；B=c29b935a-2c08-4d1c-9416-21a8d2df2aa8；C=7c3bd6d7-0366-48a6-b847-faff7bc50936；D=0e548855-001b-4872-9644-31784c54fb73。C 在双击前、双击后及恢复偏好后编号相同，KEEP-DBL-15-COM-C 仍可见。",
+      "language_observed": "General 实读 System Default；界面英文；未切换语言。",
+      "layout_observed": "通过 General 从 Balanced 切换 Comfortable，截图确认选框和外部横向标签栏。批次结束统一恢复 Balanced，截图确认。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "独立新窗口 A | S[B+C] | D；A/B/D 普通，C 未保存确认型。输入 KEEP-DBL-15-COM-C 并实见“离开确认已启用”；两个关闭开关均 on。",
+      "settings_observed": "核心前 Advanced 实读双击关闭 on、按位置关闭 on、Restore last session on。批次结束点击双击关闭使其恢复 off，即时读取按位置关闭仍 on，Restore last session 仍 on；快捷键未修改。",
+      "steps_executed": [
+        "setup 通过 File→Close Window 清理 BAL 专用窗口，对 C 的清理确认选择 Leave。",
+        "General 切换 Comfortable；File→New Window 直接导航本项 A，再经 fixture 新标签链接和原生地址栏逐页建立准确 B/C/D，读取正文和编号。",
+        "选择 C，点击输入框并核实焦点边框，输入 KEEP-DBL-15-COM-C。",
+        "选择 B 为当前页，对 C 右键选择 Split with Current，核实指定顺序、splitPair 和 B 左/C 右。",
+        "在本项原图安全区重新校准坐标为 1:1；对顶部 split 标签 B 左半格标题点 (710,44) 请求 click_count=2。",
+        "get_app_state 核对 C 草稿、原编号及结束集合。",
+        "统一恢复 Balanced、双击关闭 off，核实按位置关闭仍 on；关闭 Settings 并读取最终窗口，保留最后专用窗口。"
+      ],
+      "unit_id": "DBL-15-COM"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

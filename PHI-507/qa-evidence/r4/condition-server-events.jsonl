@@ -1,0 +1,3 @@
+{"at": "2026-10-30T18:22:46.575871+00:00", "event": "listening", "port": 18211, "fixture_sha256": "d2b6a75d142a7c2624836557e90c07d0a15c8dd9ed0adb60f5fe2e152c951627"}
+{"at": "2026-10-30T18:22:46.605126+00:00", "route": "/article/", "run": "TC-PHI507-reader-readiness", "tab": "B", "request_id": "e9852fd2-d55f-40c7-aebd-4e0717611f85", "bytes_sent": 11698, "outcome": "complete"}
+{"at": "2026-10-30T18:22:46.605551+00:00", "route": "/article/", "run": "TC-PHI507-reader-readiness", "tab": "B", "request_id": "75a5b3d3-c37b-418c-a63c-0baa54450d8f", "bytes_sent": 11698, "outcome": "complete"}

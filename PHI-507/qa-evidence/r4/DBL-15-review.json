@@ -1,0 +1,27 @@
+{
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-30T20:10:20.145987+00:00",
+  "job": "DBL-15",
+  "grades": {
+    "DBL-15-PER": "pass",
+    "DBL-15-BAL": "pass",
+    "DBL-15-COM": "pass"
+  },
+  "viewed_evidence": [
+    "DBL-15-PER-02.png",
+    "DBL-15-PER-03.png",
+    "DBL-15-BAL-03.png",
+    "DBL-15-BAL-04.png",
+    "DBL-15-COM-03.png",
+    "DBL-15-COM-04.png",
+    "DBL-15-PER-01.png",
+    "DBL-15-BAL-02.png",
+    "DBL-15-COM-02.png",
+    "DBL-15-COM-05.png",
+    "DBL-15-COM-06.png",
+    "DBL-15-COM-07.png"
+  ],
+  "finding": "三布局核心前后均显示C同一打开编号和KEEP草稿，B关闭后C转单页、A/D仍列出；核心无确认，setup清理旧C的确认不混计。",
+  "audit": "131实际CU事件，非CU为0。",
+  "limits": "源步骤未要求A/D输入存活标记，本项只对C草稿及打开编号作前后核对；不外推其他窗口或Space隔离。"
+}

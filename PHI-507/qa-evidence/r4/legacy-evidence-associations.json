@@ -1,0 +1,86 @@
+[
+  {
+    "unit": "SET-03-PER",
+    "original_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/SET-03-PER-01.png",
+      "qa-evidence/r2/SET-03-PER-04.png",
+      "qa-evidence/r2/SET-03-PER-05.png",
+      "qa-evidence/r2/SET-03-PER-02.png"
+    ],
+    "original_observations": [
+      "qa-evidence/r2/SET-03-observations.json",
+      "qa-evidence/r2/SET-03-run.json"
+    ],
+    "reason": "补齐已有且已发布截图的台账直接关联；原始观察仍保存在仓库，不改写冻结的r2/r3报告。"
+  },
+  {
+    "unit": "SET-03-BAL",
+    "original_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/SET-03-BAL-01.png",
+      "qa-evidence/r2/SET-03-BAL-04.png",
+      "qa-evidence/r2/SET-03-BAL-05.png",
+      "qa-evidence/r2/SET-03-BAL-02.png"
+    ],
+    "original_observations": [
+      "qa-evidence/r2/SET-03-observations.json",
+      "qa-evidence/r2/SET-03-run.json"
+    ],
+    "reason": "补齐已有且已发布截图的台账直接关联；原始观察仍保存在仓库，不改写冻结的r2/r3报告。"
+  },
+  {
+    "unit": "SET-03-COM",
+    "original_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/SET-03-COM-01.png",
+      "qa-evidence/r2/SET-03-COM-04.png",
+      "qa-evidence/r2/SET-03-COM-05.png",
+      "qa-evidence/r2/SET-03-COM-02.png"
+    ],
+    "original_observations": [
+      "qa-evidence/r2/SET-03-observations.json",
+      "qa-evidence/r2/SET-03-run.json"
+    ],
+    "reason": "补齐已有且已发布截图的台账直接关联；原始观察仍保存在仓库，不改写冻结的r2/r3报告。"
+  },
+  {
+    "unit": "SET-04-PER",
+    "original_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/SET-04-PER-01.png",
+      "qa-evidence/r2/SET-04-PER-02.png"
+    ],
+    "original_observations": [
+      "qa-evidence/r2/SET-04-observations.json",
+      "qa-evidence/r2/SET-04-run.json"
+    ],
+    "reason": "补齐已有且已发布截图的台账直接关联；原始观察仍保存在仓库，不改写冻结的r2/r3报告。"
+  },
+  {
+    "unit": "SET-04-BAL",
+    "original_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/SET-04-BAL-01.png",
+      "qa-evidence/r2/SET-04-BAL-02.png"
+    ],
+    "original_observations": [
+      "qa-evidence/r2/SET-04-observations.json",
+      "qa-evidence/r2/SET-04-run.json"
+    ],
+    "reason": "补齐已有且已发布截图的台账直接关联；原始观察仍保存在仓库，不改写冻结的r2/r3报告。"
+  },
+  {
+    "unit": "SET-04-COM",
+    "original_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/SET-04-COM-01.png",
+      "qa-evidence/r2/SET-04-COM-02.png"
+    ],
+    "original_observations": [
+      "qa-evidence/r2/SET-04-observations.json",
+      "qa-evidence/r2/SET-04-run.json"
+    ],
+    "reason": "补齐已有且已发布截图的台账直接关联；原始观察仍保存在仓库，不改写冻结的r2/r3报告。"
+  }
+]

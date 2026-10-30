@@ -1,0 +1,7 @@
+{
+  "issue": "PHI-507",
+  "based_on": "PHI-507/qa-evidence/r4/VIS-05-render-path-controls-r4-observations.json",
+  "scope": "渲染准备路径对照，不是VIS-05验收。C1未执行关闭其他，Command-T新建页导航B仍空白120.374秒；C2已有真实页面导航normal和unsaved均可见；C3通过fixture正常新开链接获得三页可见正文和稳定编号/KEEP。C4因C3已提供多页前置而未触发，不声称已尝试。",
+  "notes": "Ripley已复核19张关键图及100次实际MCP、non-CU 0。C1 A的编号84c79ad6-9ab7-4112-8f91-04cbc7a70ed7在返回后不变，B无正文。C2正常B编号4a48a772-28d5-4845-a0c7-b0ca13a3a1ed、unsaved B编号d62e5f76-1cc0-42f6-bf29-72969ba39b95分别作为新文档；未输入未启用确认。C3实际名称是A、A-away、A-away-away，不能冒充已准备真实B/C；各自编号及KEEP前后相同。第三页最初输入无效帧保留，按新图取得绿色焦点后才输入成功；没有重载或更换文档。以后可先用正常新开链接建立真实页面，再按C2原生地址栏导航为准确的B/C与kind，并在输入前重新读取最终编号。仅此准备方法可用于继续测试，不把空白前置标为通过，也不把实际要求Command-T的用例改用此入口代替。新窗口的Space归属未独立实读，不声称全程未涉及Default。未执行关闭命令、退出或重启；VIS-05仍未验收。",
+  "reviewed_by": "Ripley"
+}

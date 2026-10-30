@@ -7164,3 +7164,9 @@ mode: gui；对应手册：EXP-04；优先级：P2；布局：once；语言：�
 ## r4 静态夹具服务
 
 本轮 e2e02 租约内已实际启动会话专属服务 `http://127.0.0.1:18211/fixture/`，端口为 `LANE_SITE_PORT_RANGE` 首端口加一。静态正文 SHA-256 `d2b6a75d142a7c2624836557e90c07d0a15c8dd9ed0adb60f5fe2e152c951627` 与原手册 fixture 完全相同；不改 fixture 逻辑或浏览器内部状态。从 DBL-13 起普通夹具导航优先使用本地副本，避免远端网络加载拖延前置；所有页面创建、状态读取、输入、截图仍仅通过 Computer Use。服务就绪检查不是用例结果，实际页面身份仍须由 CU 核对。加载中、持续下载和 Reader 的专项条件使用服务专门端点并在执行时记录，不用普通页替代。服务进程及来源见 `qa-evidence/r4/condition-server-process.json`；归还前拉取日志，会话归还时结束服务。
+
+## r4 前置构造的原生路径对照
+
+DBL-13首次尝试的六变体均因正文前置未具备而未执行核心动作，原记录与截图保留。两组维护诊断见 `qa-evidence/r4/VIS-05-render-recovery-r4-observations.json`、`qa-evidence/r4/VIS-05-render-path-controls-r4-observations.json`，不算VIS-05验收。Balanced中的C1不执行关闭其他，仅Command-T新建页并导航仍出现正文空白；C2已有真实页面内导航可显示normal及unsaved；C3正常页面新开链接获得三页可见正文，并核对了原编号及KEEP。观察F4-01仍单列待归因，未宣称已修复。
+
+后续普通fixture前置使用独立TC专用新窗口直接打开首个A；通过页面正常“在新标签页打开另一测试页”链接建立下一真实页面，再用原生地址栏导航为用例要求的准确tab、run和kind。链接会生成A-away等临时名称，必须完成准确URL导航，不能把临时页冒充B/C。每页最终正文、类型、编号及原生顺序实际确认后，才输入标记并执行核心动作；unsaved必须看到“离开确认已启用”。这条路径仅在Balanced的维护对照中确认；其他布局在对应用例准备时独立核对。要求Command-T、新标签页空状态或关闭其他的源步骤仍按原步骤执行，不能以此入口替代验收。旧阻断尝试与新tag重跑分组保存。

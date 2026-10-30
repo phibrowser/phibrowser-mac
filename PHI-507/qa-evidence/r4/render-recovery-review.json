@@ -1,0 +1,7 @@
+{
+  "issue": "PHI-507",
+  "based_on": "PHI-507/qa-evidence/r4/VIS-05-render-recovery-r4-observations.json",
+  "scope": "有限渲染恢复维护，不是VIS-05验收；两次新窗口直接A可见，但N、Close Other Tabs、导航B路径后空白。仍缺不关闭其他的新建tab反事实对照，未认定具体触发原因或产品缺陷；预加载重启未执行，不能声称此恢复手段已穷尽。",
+  "notes": "Ripley已查看17张保留截图并核对实际CU 148次、non-CU 0，以及5个同名TC删除确认与1个正常App quit返回。初始A与重复A的UUID分别为4b155ecf-e6b8-41f6-aede-1caa90052a7c、996aad5f-f9cf-4f3e-a5a0-cd50785ec22b。原生Zoom未恢复空白，普通全屏入口未找到，头像菜单无本地Profile创建项仅限该菜单观察。部分观察超过120秒，恢复A所属Space未在导航前确认，不能声称全程未涉及Default；未点击Chrome Web Store或未知保存项。手册导出及最终完整清理均未执行。",
+  "reviewed_by": "Ripley"
+}

@@ -1,5 +1,7 @@
 本批次只是DBL-08关联的Computer Use输入能力诊断，不执行DBL-08验收，也不判通过。输出指定unit但not_executed_reason明确说明诊断范围。不要重复r3已失败的原样操作。
 
+QA浏览器的布局、语言、双击关闭和按位置关闭保持实读起始值；本批次不套用一般DBL验收前置开启双击关闭，也不执行任何浏览器关闭命令。
+
 前序已实际记录：CU click没有modifier参数；press_key纯Super_L/Shift_L返回keyPressIncludedNoNonModifierKeys；Accessibility Keyboard切到on但本app截图/list_apps中未见键盘面板；Sticky Keys能切换，但此前纯修饰键拒绝；Mouse Keys确认框明确要求用键盘模拟鼠标去点击Use Mouse Keys，此前直接mouse click与Return未完成启用。CU drag加实际列表插入间隙click曾完成Performance重排，只说明该输入能力，不等于本项关闭控件通过。
 
 只做下列有新增信息的自救，不操作浏览器内部数据：

@@ -1,8 +1,13 @@
 {
-  "job": "VIS-05-render-recovery-r4",
-  "started_at": "2026-10-30T18:47:15.728456+00:00",
+  "job": "DBL-13-link-preparation-retry-r4",
+  "started_at": "2026-10-30T19:20:08.053491+00:00",
   "state": "running",
   "units": [
-    "VIS-05-COMMON"
+    "DBL-13-PER-cancel",
+    "DBL-13-PER-leave",
+    "DBL-13-BAL-cancel",
+    "DBL-13-BAL-leave",
+    "DBL-13-COM-cancel",
+    "DBL-13-COM-leave"
   ]
 }

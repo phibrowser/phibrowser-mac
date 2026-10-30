@@ -1,0 +1,119 @@
+{
+  "session_id": "01a18e23-3b33-7fc2-9138-25d8c4175512",
+  "scope": "Saved item_completed MCP events only; no live browser operation or state read",
+  "recovered_at": "2026-10-30T19:09:17.756401+00:00",
+  "mcp_call_count": 148,
+  "calls_by_server_tool": {
+    "computer-use/get_app_state": 55,
+    "computer-use/click": 62,
+    "computer-use/press_key": 18,
+    "computer-use/type_text": 8,
+    "computer-use/perform_secondary_action": 5
+  },
+  "non_computer_use_events": [],
+  "selected_events": [
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "element_index": "9"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 655521000
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.phibrowser.opensource.Mac (pid 95460)\nWindow: \"\", App: Phi Tab Close QA.\n0 dialog Description: alert, Secondary Actions: Raise\n\t1 image Phi alert\n\t2 text Delete “TC-QA-PHI507-r2-DBL-11-S1”? Bookmarks belonging to this Space will also be removed. This action cannot be undone.\n\t3 button Cancel, ID: action-button-2\n\t4 button Delete, ID: action-button-1\n5 menu bar\n\t6 Phi\n\t7 File\n\t8 Edit\n\t9 View\n\t10 Spaces\n\t11 History\n\t12 Bookmarks\n\t13 Tab\n\t14 Window\n\t15 Help\n\t16 *DEBUG*\n\nThe focused UI element is 0 dialog Description: alert, Secondary Actions: Raise"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "element_index": "9"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 636225791
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.phibrowser.opensource.Mac (pid 95460)\nWindow: \"\", App: Phi Tab Close QA.\n0 dialog Description: alert, Secondary Actions: Raise\n\t1 image Phi alert\n\t2 text Delete “TC-QA-PHI507-r2-DBL-11-S2”? Bookmarks belonging to this Space will also be removed. This action cannot be undone.\n\t3 button Cancel, ID: action-button-2\n\t4 button Delete, ID: action-button-1\n5 menu bar\n\t6 Phi\n\t7 File\n\t8 Edit\n\t9 View\n\t10 Spaces\n\t11 History\n\t12 Bookmarks\n\t13 Tab\n\t14 Window\n\t15 Help\n\t16 *DEBUG*\n\nThe focused UI element is 0 dialog Description: alert, Secondary Actions: Raise"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "element_index": "9"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 585863791
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.phibrowser.opensource.Mac (pid 95460)\nWindow: \"\", App: Phi Tab Close QA.\n0 dialog Description: alert, Secondary Actions: Raise\n\t1 image Phi alert\n\t2 text Delete “TC-QA-PHI507-r2-SET-08-COMMON-S1”? Bookmarks belonging to this Space will also be removed. This action cannot be undone.\n\t3 button Cancel, ID: action-button-2\n\t4 button Delete, ID: action-button-1\n5 menu bar\n\t6 Phi\n\t7 File\n\t8 Edit\n\t9 View\n\t10 Spaces\n\t11 History\n\t12 Bookmarks\n\t13 Tab\n\t14 Window\n\t15 Help\n\t16 *DEBUG*\n\nThe focused UI element is 0 dialog Description: alert, Secondary Actions: Raise"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "element_index": "9"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 644078667
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.phibrowser.opensource.Mac (pid 95460)\nWindow: \"\", App: Phi Tab Close QA.\n0 dialog Description: alert, Secondary Actions: Raise\n\t1 image Phi alert\n\t2 text Delete “TC-QA-PHI507-r2-SET-08-COMMON-S2”? Bookmarks belonging to this Space will also be removed. This action cannot be undone.\n\t3 button Cancel, ID: action-button-2\n\t4 button Delete, ID: action-button-1\n5 menu bar\n\t6 Phi\n\t7 File\n\t8 Edit\n\t9 View\n\t10 Spaces\n\t11 History\n\t12 Bookmarks\n\t13 Tab\n\t14 Window\n\t15 Help\n\t16 *DEBUG*\n\nThe focused UI element is 0 dialog Description: alert, Secondary Actions: Raise"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "element_index": "9"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 880962041
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.phibrowser.opensource.Mac (pid 95460)\nWindow: \"\", App: Phi Tab Close QA.\n0 dialog Description: alert, Secondary Actions: Raise\n\t1 image Phi alert\n\t2 text Delete “TC-QA-PHI507-r2”? Bookmarks belonging to this Space will also be removed. This action cannot be undone.\n\t3 button Cancel, ID: action-button-2\n\t4 button Delete, ID: action-button-1\n5 menu bar\n\t6 Phi\n\t7 File\n\t8 Edit\n\t9 View\n\t10 Spaces\n\t11 History\n\t12 Bookmarks\n\t13 Tab\n\t14 Window\n\t15 Help\n\t16 *DEBUG*\n\nThe focused UI element is 0 dialog Description: alert, Secondary Actions: Raise"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "failed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "element_index": "7"
+      },
+      "duration": {
+        "secs": 6,
+        "nanos": 766957125
+      },
+      "error": null,
+      "returned_text": [
+        "Computer Use server error -10005: App quit"
+      ]
+    }
+  ],
+  "filter": "Actual CU click returns showing TC Delete Space confirmation or expected App quit; saved events only"
+}

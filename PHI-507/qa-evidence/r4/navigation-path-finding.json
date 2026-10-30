@@ -1,0 +1,33 @@
+{
+  "issue": "PHI-507",
+  "based_on": [
+    "PHI-507/qa-evidence/r4/VIS-05-render-recovery-r4-observations.json",
+    "PHI-507/qa-evidence/r4/VIS-05-render-path-controls-r4-observations.json"
+  ],
+  "id": "F4-01",
+  "classification": "investigation",
+  "status": "open",
+  "title": "Computer Use输入Command-T新建页导航后，标签标题更新但正文持续空白",
+  "repro": [
+    "使用固定Phi Tab Close QA.app，Balanced布局、双击关闭off、按位置关闭on。",
+    "File菜单New Window，地址栏打开本地normal fixture A，实见正文与打开编号。",
+    "Computer Use发送super+t新建页，地址栏导航同批次normal fixture B；不执行任何关闭命令。",
+    "分段读取至120.374秒：B的原生标题正确但内容区空白。切回A，A原编号与正文仍在。"
+  ],
+  "comparisons": [
+    "同构建、同PID97109：已有真实A页面内地址栏导航为B normal，约1.448秒显示正文；再导航B unsaved，约1.352秒显示正文和未启用离开确认提示。",
+    "正常fixture新开链接得到A、A-away、A-away-away三页；各自输入KEEP，切回后原编号和输入保持。",
+    "另两次新建N、执行Close Other Tabs再导航B，同样空白约126及179秒；C1不执行Close Other Tabs也出现，不能把该命令作为必要原因。",
+    "原生Reload、Window Zoom、正常重开均未使所记录的新导航稳定恢复；直接新窗口A两次可显示。"
+  ],
+  "limits": [
+    "目前证据限定于本轮Computer Use输入与窗口取证；尚未用同任务的原生新建按钮分支进一步区分输入路径差异。",
+    "没有可比旧构建，不能归因为本功能新引入，也尚未确定产品与工具交互的具体原因。",
+    "此记录不是已修复结论，也不替代被阻断的DBL-13离开确认测试；使用有效准备路径重跑时保留原尝试。"
+  ],
+  "evidence": [
+    "PHI-507/qa-evidence/r4/VIS-05-render-path-controls-r4-run.json",
+    "PHI-507/qa-evidence/r4/VIS-05-render-path-controls-r4-evidence.json",
+    "PHI-507/qa-evidence/r4/render-path-controls-review.json"
+  ]
+}

@@ -1825,7 +1825,7 @@ class BrowserState {
 
     var hasTabsOutsideMultiSelection: Bool {
         let selectedTabIds = Set(orderedMultiSelectedTabs.map(\.guid))
-        return tabs.contains { !selectedTabIds.contains($0.guid) }
+        return !otherTabCloseCandidates(keeping: selectedTabIds).isEmpty
     }
 
     @MainActor
@@ -5865,18 +5865,78 @@ class BrowserState {
         info.objectWillChange.send()
     }
 
-    func closeTabs(keeping: Set<Int>) {
-        // Expand the keep-set to cover the partner pane of any split the user
-        // is keeping — "Close Other Tabs" should leave the whole splitview
-        // intact rather than dissolve it into a single pane.
-        var keep = keeping
-        for tabId in keeping {
+    enum TabCloseDirection: Int, CaseIterable {
+        case before
+        case after
+    }
+
+    /// Only ordinary strip entries participate in range/other-tab closing.
+    /// The batch bridge includes split partners, so protect an entire split
+    /// when either pane belongs to a persistent surface outside this strip.
+    private var ordinaryTabCloseCandidates: [Tab] {
+        let pinnedGuids = Set(pinnedTabs.compactMap(\.guidInLocalDB))
+        let eligible = normalTabs.filter { tab in
+            !tab.isPinned
+                && !pinnedGuids.contains(tab.guidInLocalDB ?? "")
+                && (layoutMode.isTraditional || !isBookmarkBackedTab(tab))
+        }
+        let eligibleIds = Set(eligible.map(\.guid))
+        return eligible.filter { tab in
+            guard let split = splitGroup(forTabId: tab.guid) else { return true }
+            return !split.isPinned
+                && eligibleIds.contains(split.primaryTabId)
+                && eligibleIds.contains(split.secondaryTabId)
+        }
+    }
+
+    private func tabCloseUnits(containing tabIds: Set<Int>) -> Set<Int> {
+        var expanded = tabIds
+        for tabId in tabIds {
             if let group = splitGroup(forTabId: tabId) {
-                keep.insert(group.primaryTabId)
-                keep.insert(group.secondaryTabId)
+                expanded.insert(group.primaryTabId)
+                expanded.insert(group.secondaryTabId)
             }
         }
-        closeTabs(tabs.filter { !keep.contains($0.guid) })
+        return expanded
+    }
+
+    func isCurrentTabCloseAnchor(_ tab: Tab) -> Bool {
+        tabs.contains { $0 === tab } || pinnedTabs.contains { $0 === tab }
+    }
+
+    func otherTabCloseCandidates(keeping: Set<Int>) -> [Tab] {
+        guard !keeping.isEmpty else { return [] }
+        let keep = tabCloseUnits(containing: keeping)
+        return ordinaryTabCloseCandidates.filter { !keep.contains($0.guid) }
+    }
+
+    /// Uses native strip order, including collapsed group members. A group
+    /// anchor supplies every member, protecting the entire group's range.
+    func directionalTabCloseCandidates(anchoredAt tabIds: Set<Int>,
+                                       direction: TabCloseDirection) -> [Tab] {
+        guard PhiPreferences.GeneralSettings.directionalTabClosingEnabled.loadValue(),
+              !tabIds.isEmpty else { return [] }
+        let candidates = ordinaryTabCloseCandidates
+        let eligibleIds = Set(candidates.map(\.guid))
+        guard tabIds.isSubset(of: eligibleIds) else { return [] }
+        let anchor = tabCloseUnits(containing: tabIds)
+        let positions = normalTabs.indices.filter { anchor.contains(normalTabs[$0].guid) }
+        guard let first = positions.first, let last = positions.last else { return [] }
+        let rangeIds: Set<Int>
+        switch direction {
+        case .before:
+            rangeIds = Set(normalTabs.prefix(first).map(\.guid))
+        case .after:
+            rangeIds = Set(normalTabs.dropFirst(last + 1).map(\.guid))
+        }
+        // Expand before submitting so menu validation and invocation agree
+        // with the framework's split-aware batch behavior.
+        let closing = tabCloseUnits(containing: rangeIds).subtracting(anchor)
+        return candidates.filter { closing.contains($0.guid) }
+    }
+
+    func closeTabs(keeping: Set<Int>) {
+        closeTabs(otherTabCloseCandidates(keeping: keeping))
     }
 
     func closeTabs(_ tabsToClose: [Tab]) {

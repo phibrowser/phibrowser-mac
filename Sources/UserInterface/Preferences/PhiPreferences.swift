@@ -103,6 +103,8 @@ extension PhiPreferences {
         case showBookmarkBarOnNewTabPage // In traditional layout, show bookmark bar on new tab page
         case alwaysShowURLPath // In address bar menu, always show full URL path
         case showTabPreviews // Whether open tabs use custom hover preview cards
+        case doubleClickToCloseTabs // Close ordinary tabs with an unmodified double-click
+        case directionalTabClosingEnabled // Show and enable closing ordinary tabs before or after an anchor
         case sidebarMediaPlayerEnabled // Show controls for background page media
         case showOpenTabIndicators // Show dots on inactive open pinned tabs and bookmarks
         case showUnloadedTabIndicators // Show dashed outlines and smaller icons for unloaded or discarded tabs
@@ -133,6 +135,10 @@ extension PhiPreferences {
             case .alwaysShowURLPath:
                 return false
             case .showTabPreviews:
+                return true
+            case .doubleClickToCloseTabs:
+                return false
+            case .directionalTabClosingEnabled:
                 return true
             case .sidebarMediaPlayerEnabled:
                 return true

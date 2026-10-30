@@ -536,10 +536,17 @@ extension SpaceSessionController: NSMenuItemValidation {
             return false
         }
         if menuItem.action == #selector(closeOther(_:)) {
-            guard let tab = menuItem.representedObject as? Tab else {
+            guard let tab = menuItem.representedObject as? Tab,
+                  browserState.isCurrentTabCloseAnchor(tab) else {
                 return false
             }
-            return browserState.tabs.filter { $0.guid != tab.guid }.count > 0
+            return !browserState.otherTabCloseCandidates(keeping: [tab.guid]).isEmpty
+        }
+        if menuItem.action == #selector(closeTabsInDirection(_:)) {
+            guard let tab = menuItem.representedObject as? Tab,
+                  browserState.isCurrentTabCloseAnchor(tab),
+                  let direction = BrowserState.TabCloseDirection(rawValue: menuItem.tag) else { return false }
+            return !browserState.directionalTabCloseCandidates(anchoredAt: [tab.guid], direction: direction).isEmpty
         }
         return true
     }
@@ -596,10 +603,19 @@ extension SpaceSessionController: NSMenuItemValidation {
     }
     
     @objc func closeOther(_ item: NSMenuItem) {
-        guard let tab = item.representedObject as? Tab else {
+        guard let tab = item.representedObject as? Tab,
+              browserState.isCurrentTabCloseAnchor(tab) else {
             return
         }
         browserState.closeTabs(keeping: [tab.guid])
+    }
+
+    @objc func closeTabsInDirection(_ item: NSMenuItem) {
+        guard let tab = item.representedObject as? Tab,
+              browserState.isCurrentTabCloseAnchor(tab),
+              let direction = BrowserState.TabCloseDirection(rawValue: item.tag) else { return }
+        browserState.closeTabs(browserState.directionalTabCloseCandidates(
+            anchoredAt: [tab.guid], direction: direction))
     }
     
     @objc func togglePin(_ item: NSMenuItem) {

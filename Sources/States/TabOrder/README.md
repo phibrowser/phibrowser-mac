@@ -330,9 +330,36 @@ When a tab is detached to another window, its own opener and reset flag are clea
 - Snapshot merge with local-fix protection
 - `forgetOpenerOnActiveTabChange` simulation
 
+### Native range closing
+
+Tab and group context menus resolve directional close targets from `normalTabs`,
+the native strip projection. Horizontal bars present left/right actions; vertical
+bars present above/below actions. The clicked tab is the anchor, and a group-header
+anchor protects the full member range. Collapsed members still participate.
+Splits are complete units for range closing: both anchor panes survive and both
+target panes are submitted. A split containing a protected pane is excluded.
+
+Range closing and Close Other Tabs exclude pins and bookmark-bound pages outside
+the ordinary strip. Comfortable opens bookmarks as ordinary unbound tabs, which
+participate normally without deleting saved bookmarks. Explicit Close remains
+available for persistent surfaces and retains their saved records.
+
+`BrowserState` computes eligibility and targets; menus only supply anchors and
+direction. Existing Close Other / Close Tabs to Right shortcut commands use the
+same native policy (the latter means following tabs in vertical layouts). All
+targets go through the existing batch bridge and removal snapshots. Beforeunload
+and group confirmation remain framework-owned; a batch can complete partially.
+Invocation recomputes targets so disappeared anchors do not close unrelated tabs.
+
+Advanced settings groups the existing double-click preference and positional
+closing in one untitled card. Positional closing defaults on; disabling it hides
+both tab and group menu entries and suppresses directional shortcut execution.
+Close Other Tabs remains independently available. Double-click closing keeps its
+existing preference key and default-off behavior. Both preferences apply without
+restarting the application.
+
 ### What neither side handles (known gaps)
 
-- `Close Tabs to Right` has not been implemented with native order semantics
 - `pinned/bookmark → normal` opener policy is not finalized
 - Dangling window (pre-login tabs) loses `creationContext` during replay — negligible impact as those tabs use `restore`/`typedNewTab` which append to end
 

@@ -35,6 +35,8 @@ struct CommandDispatcher {
         .PHI_CAPTURE_AREA,
         .PHI_SAVE_FOR_LATER,
         .PHI_SPLIT_WITH_NEW_TAB,
+        .IDC_WINDOW_CLOSE_OTHER_TABS,
+        .IDC_WINDOW_CLOSE_TABS_TO_RIGHT,
     ] + CommandWrapper.spaceSelectionCommands
 
     /// Commands swallowed while the focused tab shows the native NTP — it has no
@@ -138,6 +140,20 @@ struct CommandDispatcher {
         }
 
         switch command {
+        case .IDC_WINDOW_CLOSE_OTHER_TABS:
+            let state = windowController.browserState
+            if state.multiSelection.isActive {
+                state.closeTabsOutsideMultiSelection()
+            } else if let tab = state.focusingTab {
+                state.closeTabs(keeping: [tab.guid])
+            }
+            return true
+        case .IDC_WINDOW_CLOSE_TABS_TO_RIGHT:
+            let state = windowController.browserState
+            if let tab = state.focusingTab {
+                state.closeTabs(state.directionalTabCloseCandidates(anchoredAt: [tab.guid], direction: .after))
+            }
+            return true
         case .IDC_SHOW_BOOKMARK_BAR:
             // Keep the Chromium command identity while Phi owns its presentation.
             if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {

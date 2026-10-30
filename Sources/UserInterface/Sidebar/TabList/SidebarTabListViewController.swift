@@ -1301,6 +1301,12 @@ class SidebarTabListViewController: NSViewController {
     @objc private func outlineViewDoubleClicked(_ sender: NSOutlineView) {
         let clickedRow = sender.clickedRow
         guard clickedRow != -1 else { return }
+        if let cell = sender.view(atColumn: 0, row: clickedRow, makeIfNecessary: false)
+            as? SidebarSplitPairCellView,
+           let event = NSApp.currentEvent,
+           cell.handleDoubleClick(with: event) {
+            return
+        }
         guard let bookmark = bookmarkForRow(clickedRow), !bookmark.isFolder else { return }
         guard !isSplitBookmark(bookmark) else { return }
         guard !bookmark.isEditing else { return }
@@ -5379,6 +5385,7 @@ extension SidebarTabListViewController: SideBarOutlineViewDelegate {
 
     func outlineView(_ outlineView: SideBarOutlineView,
                      didClickRow row: Int,
+                     clickCount: Int = 1,
                      modifierFlags: NSEvent.ModifierFlags) {
         guard row >= 0 else {
             handleSidebarBlankAreaClick()
@@ -5388,6 +5395,10 @@ extension SidebarTabListViewController: SideBarOutlineViewDelegate {
             return
         }
         cancelTabPreview(at: row, in: outlineView)
+        if clickCount == 2, let tab = item as? Tab,
+           tab.closeOnDoubleClick(modifierFlags: modifierFlags) {
+            return
+        }
         if let tab = item as? Tab, modifierFlags.isPureOptionClick {
             let didPerformSplit = MainActor.assumeIsolated {
                 tab.performSplitAction(in: browserState)

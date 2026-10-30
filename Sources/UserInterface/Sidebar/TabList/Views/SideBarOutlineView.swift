@@ -217,6 +217,7 @@ protocol SideBarOutlineViewDelegate: AnyObject {
                      at location: NSPoint)
     func outlineView(_ outlineView: SideBarOutlineView,
                      didClickRow row: Int,
+                     clickCount: Int,
                      modifierFlags: NSEvent.ModifierFlags)
     func outlineView(_ outlineView: SideBarOutlineView,
                      beginDraggingTabAtRow row: Int,
@@ -510,7 +511,7 @@ class SideBarOutlineView: DiffableOutlineView {
             AppLogDebug("[SIDEBAR_TAB_DRAG_THRESHOLD] dragging window from empty area")
             window.performDrag(with: event)
             if Self.isBlankAreaClick(from: mouseDownLocation, to: NSEvent.mouseLocation) {
-                phiOutlineDelegate?.outlineView(self, didClickRow: -1, modifierFlags: [])
+                phiOutlineDelegate?.outlineView(self, didClickRow: -1, clickCount: 1, modifierFlags: [])
             }
         } else {
             super.mouseDown(with: event)
@@ -585,6 +586,7 @@ class SideBarOutlineView: DiffableOutlineView {
                     phiOutlineDelegate?.outlineView(
                         self,
                         didClickRow: pendingRow,
+                        clickCount: event.clickCount,
                         modifierFlags: modifierFlags
                     )
                 }

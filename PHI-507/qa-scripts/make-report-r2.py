@@ -99,11 +99,26 @@ for r in rows:
 counts=Counter(c['status'] for c in cases)
 if a.verdict=='pass':assert not counts['blocked'] and not counts['skipped'] and not counts['fail'] and not any(b['severity'] in ('major','blocker') for b in bugs)
 report={'issue':'PHI-507','based_on':'PHI-507/test-plan.md@'+a.plan_sha,'key':'PHI-507','title':'Phi TabClose 独立安装包完整手册测试','round':a.round,'kind':'test','work_type':'feature','verdict':a.verdict,'pr_allowed':False,'summary':a.summary,'sha':'b30ef8b3acbc832ee3f1aaa8ce682ebb28289654ff3fdb84fbdf04151bb59d0b','sha_kind':'installed_executable_sha256','branch':'feature/tab-close-improvements（指定二进制，含未提交修改；不是检出分支测试）','generated_at':datetime.now(timezone.utc).isoformat(),'source_base_commit':'d390230615c172c3a3f94132e0b36ce081dac0be','source_complete_commit':None,'source_diff_sha256':'6865cc137ce00f136bbf6ce303a7bbd2380a659dfb460b06b7e238948fc16d92','source_case_count':512,'source_case_counts':dict(counts),'checkpoint':a.checkpoint,'cumulative_CU_results':True,'carried_forward_case_ids':[c['id'] for c in cases if c.get('carried_forward')],'environment':{'系统/芯片':'macOS 26.6.2 (25G83) / arm64，仅此环境','app':'/Applications/Phi Tab Close QA.app；Wood已安装，本轮未替换/卸载','构建':'TC-QA-20261030.1 / 0.0.0 (1030.1)','渠道/Framework':'OpenSource / com.phibrowser.opensource.Mac / 156.0.8078.52','SHA口径':'本轮实际安装app的可执行文件SHA-256；没有重新取得或校验ZIP','手册':'2026-10-30-r2；166基础用例展开512项；原文快照已保留','浏览器手段':'仅租用e2e02中的Computer Use；本轮未使用CDP/API/DOM/JS/AppleScript/直接AX脚本','r2历史导航延迟':'r2早期重启后一度Stop/空白，约73–75秒后实见fixture并重跑；这条历史记录不代表后续新导航均恢复。后续空白和恢复对照以本轮逐项观察、诊断及摘要为准','官方/硬件/旧版':'缺失项逐项列出，不代表官方AI、Intel、最低系统或真实鼠标/触控板通过','源代码验证':'独立二进制黑盒任务；未运行或宣称源码单元测试/类型检查/构建通过','环境身份记录':json.dumps(identity,ensure_ascii=False),'会话清理':'见lane-release.json及cleanup观察；共享app及Wood预先挂载DMG保留'},'plan_docs':[{'title':'本轮完整测试计划与Computer Use手测方案','url':f'https://github.com/phibrowser/phibrowser-mac/blob/{a.plan_sha}/PHI-507/test-plan.md'},{'title':'本轮手册快照','url':f'https://github.com/phibrowser/phibrowser-mac/blob/{a.plan_sha}/PHI-507/handbook-snapshot-r2.md'},{'title':'原手册','url':'https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/'},{'title':'r1历史报告（本轮不沿用任何测试结果）','url':'https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r1/'}],'cases':cases,'bugs':bugs,'known_issues':[],'execution_deviations':['r1通过或失败均不作为r2结果；r2从头执行。','早期SET-08/SET-10在15–30秒加载状态停止前置；发现首次加载约75秒后成功，保留旧尝试并另开retry重跑。','部分CU坐标/原生元素定位无效尝试被保留并明确区分产品结果。','早期SET-03/SET-05各有一次把图片编码串成文本并截断的输出；该文本不作为截图，只使用实际保存且可解码的关键图。','SET-10源步骤分段补齐；错误限定横向row及off/on条件偏差均未冒充完整执行，最后按真实tabStripTab button和off/off补齐。','PNG可缩放和裁切关键区域，并用原图主色与保留黑白、原生强调色的调色板压缩；失败/外观关键帧保留RGB，来源SHA与裁切框见证据索引。']}
+investigations=[]
+for finding_path in sorted((qa/'qa-evidence').glob('r*/navigation-path-finding.json')):
+ finding_round=int(finding_path.parent.name[1:])
+ if finding_round<=a.round:
+  finding=json.loads(finding_path.read_text())
+  investigations.append({**finding,'source_path':str(finding_path.relative_to(qa))})
+report['investigations']=investigations
+for finding in investigations:
+ report['environment']['待确认观察 '+finding['id']]=finding['title']+'；状态 '+finding['status']+'，未认定产品缺陷或已修复。'+ '；'.join(finding.get('limits',[]))
 (out/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
 url=f'https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r{a.round}/'
 lines=['issue: PHI-507','based_on: PHI-507/test-plan.md@'+a.plan_sha,'',f'# 独立安装包 Computer Use 续测 r{a.round}','',f'报告站：{url}','','结论：`'+a.verdict+'`。'+a.summary,'','## 构建与执行边界','','- 已纳入Wood在触发评论中的补充；浏览器操作、状态读取、截图均通过e2e02的Computer Use，r1结果不继承。',f'- 构建与范围见 `report-r{a.round}/report.json`；可执行文件SHA-256为 `'+report['sha']+'`；base commit不是完整被测源SHA。','- 真实环境仅macOS 26.6.2 arm64、OpenSource。没有声称源代码检查或未取得环境通过。','- 手册全部512项均保留；部分执行不标pass，未执行按具体原因列blocked/skipped。','- r2历史首次导航等待曾恢复；这不代表后续新导航均恢复。本轮空白及恢复前置以逐项观察、诊断和摘要为准；r1的B1-1未作为当前已确认缺陷继承。','','## 缺陷与范围外已知问题','']
 lines += [f"- {b['id']} / {b['severity']}：{b['title']}；{b.get('repro','')}" for b in bugs] or ['没有已确认的当前产品缺陷。']
-lines+=['','无旧构建基线证实的范围外既有问题；没有建立PBL。独立包无PR，不作PR放行。','','## 全量执行结果','','| 用例 | 优先级 | 布局/语言 | 结果 | 实际/未完成原因 | 证据 |','|---|---|---|---|---|---|']
+lines+=['','无旧构建基线证实的范围外既有问题；没有建立PBL。独立包无PR，不作PR放行。']
+if investigations:
+ lines+=['','## 待确认观察','']
+ for finding in investigations:
+  lines+=[f"- {finding['id']}：{finding['title']}；{finding['classification']}/{finding['status']}；记录 `{finding['source_path']}`。"]
+  lines+=['  - '+text for text in finding.get('comparisons',[])+finding.get('limits',[])]
+lines+=['','## 全量执行结果','','| 用例 | 优先级 | 布局/语言 | 结果 | 实际/未完成原因 | 证据 |','|---|---|---|---|---|---|']
 for c in cases:
  vals=[c['id'],c['priority'],c['layout']+'/'+c['language'],c['status'],c['actual']+' '+c['notes'],'、'.join(e.get('source_path',e.get('path','')) for e in c['evidence']) or '无（未执行）']
  lines.append('| '+' | '.join(str(v).replace('|','／').replace('\n',' ') for v in vals)+' |')

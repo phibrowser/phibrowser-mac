@@ -1,7 +1,17 @@
 {
-  "current": "DBL-08",
-  "index": 3,
-  "total": 15,
-  "state": "running",
-  "time": "2026-10-30T15:05:36.683891+00:00"
+  "state": "stopped_before_next",
+  "next": "DBL-10",
+  "remaining": [
+    "DBL-10",
+    "DBL-11",
+    "DBL-12",
+    "DBL-13",
+    "DBL-14",
+    "DBL-15",
+    "DBL-16",
+    "DBL-20",
+    "DBL-21",
+    "DBL-22",
+    "DBL-19::retry"
+  ]
 }

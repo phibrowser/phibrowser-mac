@@ -1,0 +1,14 @@
+{
+  "key": "PHI-507",
+  "round": 2,
+  "lease_id": "b0e9392c-a0e4-47cd-8ae7-685e1520b443",
+  "lane": "e2e02",
+  "recorded_at": "2026-10-30T15:28:26.941482+00:00",
+  "command_exit_code": 0,
+  "stdout": "released lease b0e9392c-a0e4-47cd-8ae7-685e1520b443 (e2e02); the lane is being reset",
+  "scope": "Evidence capacity checkpoint; overall task continues. Reset completion is not claimed.",
+  "cleanup_observations": "VIS-05-checkpoint-cleanup-observations.json",
+  "preferences": "Balanced / System Default / double-click off / directional on",
+  "qa_app_exit": "CU Command-Q and native Quit confirmed; tool returned App quit",
+  "preserved": "Installed shared app, preexisting DMG, all existing Space/page/pin/bookmark data; no final cleanup/export claim"
+}

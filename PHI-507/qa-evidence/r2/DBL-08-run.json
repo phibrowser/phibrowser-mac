@@ -1,0 +1,21 @@
+{
+  "job": "DBL-08",
+  "exit_code": 0,
+  "session_id": "01a18d58-4eab-7b70-ab01-0ccefe16c566",
+  "round": 2,
+  "lease_id": "b0e9392c-a0e4-47cd-8ae7-685e1520b443",
+  "started_at": "2026-10-30T15:05:36.910009+00:00",
+  "ended_at": "2026-10-30T15:23:32.176910+00:00",
+  "units": [
+    "DBL-08-PER",
+    "DBL-08-BAL",
+    "DBL-08-COM"
+  ],
+  "observed_units": [
+    "DBL-08-PER",
+    "DBL-08-BAL",
+    "DBL-08-COM"
+  ],
+  "missing_units": [],
+  "duplicate_units": false
+}

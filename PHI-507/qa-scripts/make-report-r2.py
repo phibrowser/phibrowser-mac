@@ -12,7 +12,13 @@ identity=json.loads((qa/'qa-evidence/r2/installed-identity.json').read_text());o
 if evroot.exists():shutil.rmtree(evroot)
 evroot.mkdir()
 bugs=json.loads((qa/'bugs-r2.json').read_text()) if (qa/'bugs-r2.json').exists() else []
-cases=[]
+cases=[];published_sources={}
+for prior_round in range(2,a.round):
+ prior=json.loads((qa/f'report-r{prior_round}/report.json').read_text())
+ for case in prior['cases']:
+  for item in case.get('evidence',[]):
+   if item.get('source_path') and item.get('path'):
+    published_sources.setdefault(item['source_path'],f"https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r{prior_round}/"+item['path'])
 for r in rows:
  status='blocked' if r['result']=='partial' else ('skipped' if r['result']=='pending' else r['result']);assert status in ('pass','fail','blocked','skipped')
  direct=lambda s:s.replace('{before}','关闭左侧标签页' if r['layout']=='comfortable' else '关闭上方标签页').replace('{after}','关闭右侧标签页' if r['layout']=='comfortable' else '关闭下方标签页')
@@ -22,6 +28,22 @@ for r in rows:
   key=(path,attempt,outcome)
   if key in seen:return
   seen.add(key);source_round=next((part for part in source.parts if re.fullmatch(r'r[0-9]+',part)),'shared');target_name=source.name
+  if source_round!='shared' and int(source_round[1:])<a.round:
+   assert path in published_sources,'Publish the source round before carrying its evidence forward: '+path
+   item={'type':'link','url':published_sources[path],'caption':caption+'；先前轮次的完整原始证据，本轮未重跑','source_path':path}
+   if attempt is not None:item['attempt']=attempt
+   if outcome is not None:item['outcome']=outcome
+   evidence.append(item)
+   if source.suffix.lower()=='.png' and not any(e.get('carried_preview') for e in evidence):
+    from PIL import Image
+    dest=evroot/source_round/(r['key']+'-prior-preview.webp');dest.parent.mkdir(exist_ok=True)
+    with Image.open(source) as im:
+     preview=im.convert('RGB');preview.thumbnail((640,10000),Image.Resampling.LANCZOS);preview.save(dest,'WEBP',lossless=True,method=6)
+    preview_item={'type':'image','path':str(dest.relative_to(out)),'caption':f'沿用{source_round}的实际截图缩略图；完整尺寸及全部尝试见同组先前证据链接，本轮未重跑。','carried_preview':True,'source_path':path}
+    if attempt is not None:preview_item['attempt']=attempt
+    if outcome is not None:preview_item['outcome']=outcome
+    evidence.append(preview_item)
+   return
   if a.webp and source.suffix.lower()=='.png':target_name=source.stem+'.webp'
   dest=evroot/source_round/target_name;dest.parent.mkdir(exist_ok=True)
   if not dest.exists():

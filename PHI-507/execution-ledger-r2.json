@@ -35,11 +35,19 @@
       "id": "",
       "label": ""
     },
-    "result": "pass",
+    "result": "partial",
     "method": "Computer Use",
     "attempts": [],
     "actual": "Computer Use 核对运行路径 /Applications/Phi Tab Close QA.app；About 为 0.0.0 (1030.1)、Chromium 156.0.8078.52。Advanced 第二张无标题卡片有两个开关及说明，Double-click off、Close by position on。",
-    "notes": "早期数值索引调用失败并有一次无依据(0,0)点击，未打开目标菜单；随后用完整app路径及字符串最新索引完成。未使用非Computer Use浏览器能力。"
+    "notes": "早期数值索引调用失败并有一次无依据(0,0)点击，未打开目标菜单；随后用完整app路径及字符串最新索引完成。未使用非Computer Use浏览器能力。；前序整例通过判定过早，当前按源步骤复核修正为部分执行；既有原始身份观察和证据全部保留。",
+    "review_history": [
+      {
+        "previous_result": "pass",
+        "reviewed_at": "2026-10-30T15:27:44.721045+00:00",
+        "reason": "复核源手册发现步骤1要求在手册页面填写环境元数据；已有ENV01原生日志只读取About/Advanced，没有执行页面表单填写。保留已核实身份子步骤，补齐后才可通过。"
+      }
+    ],
+    "not_run_reason": "原生 About、构建身份及 Advanced 第二卡片已实读；源步骤1的手册页面环境元数据填写未执行，留待续测以CU补齐。"
   },
   {
     "id": "ENV-02",
@@ -6862,7 +6870,15 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/DBL-08-observations.json",
+      "qa-evidence/r2/DBL-08-PER-01.png",
+      "qa-evidence/r2/DBL-08-PER-02.png",
+      "qa-evidence/r2/DBL-08-PER-03.png",
+      "qa-evidence/r2/DBL-08-PER-04.png",
+      "qa-evidence/r2/DBL-08-PER-05.png",
+      "qa-evidence/r2/DBL-08-PER-06.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-08-PER",
     "layout": "performance",
@@ -6871,9 +6887,126 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "partial",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-08",
+        "round": 2,
+        "outcome": "partial",
+        "actual": "attempt1 拖动后即时实读 A/B/C，B 仍存在，未确认重排；随后作为无效操作重建。attempt2 最终为 A/B/C，三页独立，无 split、无组、无多选，活动页 C；C 关闭按钮动作未执行。",
+        "observation": {
+          "active_after": "attempt2：C，单一选中。",
+          "active_before": "两次尝试均为 C，单一选中；单击 B 后活动页为 B。",
+          "after": "attempt1 拖动后即时实读 A/B/C，B 仍存在，未确认重排；随后作为无效操作重建。attempt2 最终为 A/B/C，三页独立，无 split、无组、无多选，活动页 C；C 关闭按钮动作未执行。",
+          "before": "attempt1：TC-PHI507-r2-DBL-08-PER 的 A/B/C，自上而下排列。attempt2：重新清理并建立 TC-PHI507-r2-DBL-08-PER-R2 的 A/B/C，自上而下排列。",
+          "confirmation_choices": "前置清理上一轮 TC-PHI507-r2-DBL-06-COM-C-G 时，出现“Close Tabs and Delete Group?”，选择 Delete Group；Don't Ask Again 保持未勾选。被测操作期间未出现关闭确认框。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-08-PER attempt1 layout",
+            "EVIDENCE: DBL-08-PER attempt1 new-A-start",
+            "EVIDENCE: DBL-08-PER attempt1 new-B-after",
+            "EVIDENCE: DBL-08-PER attempt1 new-C-after",
+            "EVIDENCE: DBL-08-PER attempt1 before",
+            "EVIDENCE: DBL-08-PER attempt1 single-B-after",
+            "EVIDENCE: DBL-08-PER attempt1 drag-B-after",
+            "EVIDENCE: DBL-08-PER attempt1 failure",
+            "EVIDENCE: DBL-08-PER attempt2 new-A-committed",
+            "EVIDENCE: DBL-08-PER attempt2 new-B-after",
+            "EVIDENCE: DBL-08-PER attempt2 new-C-after",
+            "EVIDENCE: DBL-08-PER attempt2 before",
+            "EVIDENCE: DBL-08-PER attempt2 single-B-after",
+            "EVIDENCE: DBL-08-PER attempt2 drag-B-after",
+            "EVIDENCE: DBL-08-PER attempt2 close-C-control",
+            "EVIDENCE: DBL-08-PER attempt2 after"
+          ],
+          "identity_checks": "App 路径与 pid 71817 均由 CU 实读。每页创建后均实见 TC 标题、对应批次、普通页说明、打开编号及空输入框。attempt1 编号：A=11c16665-84da-444a-821e-0b3ed61bf511；B=f0c13600-bb09-4829-8f54-a82e53ffd773；C=1abf13aa-5bd2-4643-a87c-9eb9996dd9d4。attempt2 编号：A=49feaae8-2b92-4253-b2c4-82b5ad9d90db；B=01f6f66a-d4a8-47aa-8e22-44e328f38d19；C=f7388f38-d191-4097-b689-a79aa197dff0。两次单击及拖动后 B 的可见编号均未变。",
+          "language_observed": "General 为 System Default；浏览器与设置界面英文，未切换语言。",
+          "layout_observed": "从起始 Comfortable 经 General 原生 Performance button 切换并截图确认；实际 chrome 为左侧纵向标签列表。",
+          "not_executed_reason": "未执行“只点击 C 的关闭按钮一次”：选中 C，并尝试通过其右侧原生上下文菜单及取消使控件可见后，画面仍未确认到 C 的关闭图标，原生树也未暴露标签关闭按钮。没有以菜单 Close、快捷键或中键替代。拖动调用已执行，但未确认 B 到达另一页序位置。",
+          "operator_errors": [
+            "attempt1 拖动坐标为 (190,428)→(190,330)，随后出现 pin 投放提示而未重排；当时将其视作无效拖动，保留现场后重新建立前置。投放未完成的具体原因未得到实证，不能把先前“释放落在 pin 区”的推测作为已确认原因。",
+            "attempt2 拖动坐标为 (190,428)→(190,770)，即时画面仍为 A/B/C 并显示 pin 投放区。随后按最新树中的 C 行索引点击时侧栏收起，实际未选中 C；重新读取后单击 C 行才选中 C。",
+            "为确认关闭控件，额外选中 C，并打开、取消其上下文菜单；未点击任何替代关闭命令。"
+          ],
+          "precondition_actual": "两次均独立建立且核实普通 A/B/C，无组、无 split、无多选；Advanced 实读双击关闭 on、方向关闭 on。",
+          "settings_observed": "起始双击关闭 on、方向关闭 on；本项未点击两个开关。仅修改布局。",
+          "steps_executed": [
+            "通过 Settings 原生界面读取起始 Comfortable、System Default、双击关闭 on、方向关闭 on，并切换 Performance。",
+            "新建 New Tab，使用 Close Other Tabs 清理已识别的本轮 TC 对象；确认删除上一轮 TC 组后，经地址栏依次建立 A/B/C。",
+            "在本项安全内容区点击 (2200,350)，原图指针位置与输入坐标对应后使用截图坐标。",
+            "attempt1 保存 before，单击 B 的 selectable row 一次；随后拖动 B，保存未重排现场。",
+            "重新清理并用新 tag PER-R2 建立 A/B/C，逐页核对正文和打开编号。",
+            "attempt2 保存 before，单击 B 的 selectable row 一次；拖动 B，实读仍为 A/B/C，B 编号不变。",
+            "选中 C 并确认关闭控件可见性；未确认按钮，保存实际 after，保留 A/B/C。"
+          ],
+          "unit_id": "DBL-08-PER"
+        },
+        "evidence": [
+          "qa-evidence/r2/DBL-08-observations.json",
+          "qa-evidence/r2/DBL-08-PER-01.png",
+          "qa-evidence/r2/DBL-08-PER-02.png",
+          "qa-evidence/r2/DBL-08-PER-03.png",
+          "qa-evidence/r2/DBL-08-PER-04.png",
+          "qa-evidence/r2/DBL-08-PER-05.png",
+          "qa-evidence/r2/DBL-08-PER-06.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/DBL-08-evidence.json",
+        "notes": "Ripley 已复核三布局14张完整关键/无效现场图和原生身份观察。单击后的 B 存活；指定拖动未建立重排，Performance 两次尝试均保留 A/B/C，Balanced 在随后额外内容点击后出现 New Tab/B 分屏，Comfortable 拖动调用后出现 B/New Tab 分屏；不能据此确认有效的重排手势或产品缺陷。C 关闭控件未可靠定位，按钮步骤未执行，不用菜单/快捷键替代。本项保留部分执行，后续先核查 CU 拖动返回与动态投放位置后再定向补测。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T15:25:20.493911+00:00"
+      }
+    ],
+    "actual": "attempt1 拖动后即时实读 A/B/C，B 仍存在，未确认重排；随后作为无效操作重建。attempt2 最终为 A/B/C，三页独立，无 split、无组、无多选，活动页 C；C 关闭按钮动作未执行。",
+    "observation": {
+      "active_after": "attempt2：C，单一选中。",
+      "active_before": "两次尝试均为 C，单一选中；单击 B 后活动页为 B。",
+      "after": "attempt1 拖动后即时实读 A/B/C，B 仍存在，未确认重排；随后作为无效操作重建。attempt2 最终为 A/B/C，三页独立，无 split、无组、无多选，活动页 C；C 关闭按钮动作未执行。",
+      "before": "attempt1：TC-PHI507-r2-DBL-08-PER 的 A/B/C，自上而下排列。attempt2：重新清理并建立 TC-PHI507-r2-DBL-08-PER-R2 的 A/B/C，自上而下排列。",
+      "confirmation_choices": "前置清理上一轮 TC-PHI507-r2-DBL-06-COM-C-G 时，出现“Close Tabs and Delete Group?”，选择 Delete Group；Don't Ask Again 保持未勾选。被测操作期间未出现关闭确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-08-PER attempt1 layout",
+        "EVIDENCE: DBL-08-PER attempt1 new-A-start",
+        "EVIDENCE: DBL-08-PER attempt1 new-B-after",
+        "EVIDENCE: DBL-08-PER attempt1 new-C-after",
+        "EVIDENCE: DBL-08-PER attempt1 before",
+        "EVIDENCE: DBL-08-PER attempt1 single-B-after",
+        "EVIDENCE: DBL-08-PER attempt1 drag-B-after",
+        "EVIDENCE: DBL-08-PER attempt1 failure",
+        "EVIDENCE: DBL-08-PER attempt2 new-A-committed",
+        "EVIDENCE: DBL-08-PER attempt2 new-B-after",
+        "EVIDENCE: DBL-08-PER attempt2 new-C-after",
+        "EVIDENCE: DBL-08-PER attempt2 before",
+        "EVIDENCE: DBL-08-PER attempt2 single-B-after",
+        "EVIDENCE: DBL-08-PER attempt2 drag-B-after",
+        "EVIDENCE: DBL-08-PER attempt2 close-C-control",
+        "EVIDENCE: DBL-08-PER attempt2 after"
+      ],
+      "identity_checks": "App 路径与 pid 71817 均由 CU 实读。每页创建后均实见 TC 标题、对应批次、普通页说明、打开编号及空输入框。attempt1 编号：A=11c16665-84da-444a-821e-0b3ed61bf511；B=f0c13600-bb09-4829-8f54-a82e53ffd773；C=1abf13aa-5bd2-4643-a87c-9eb9996dd9d4。attempt2 编号：A=49feaae8-2b92-4253-b2c4-82b5ad9d90db；B=01f6f66a-d4a8-47aa-8e22-44e328f38d19；C=f7388f38-d191-4097-b689-a79aa197dff0。两次单击及拖动后 B 的可见编号均未变。",
+      "language_observed": "General 为 System Default；浏览器与设置界面英文，未切换语言。",
+      "layout_observed": "从起始 Comfortable 经 General 原生 Performance button 切换并截图确认；实际 chrome 为左侧纵向标签列表。",
+      "not_executed_reason": "未执行“只点击 C 的关闭按钮一次”：选中 C，并尝试通过其右侧原生上下文菜单及取消使控件可见后，画面仍未确认到 C 的关闭图标，原生树也未暴露标签关闭按钮。没有以菜单 Close、快捷键或中键替代。拖动调用已执行，但未确认 B 到达另一页序位置。",
+      "operator_errors": [
+        "attempt1 拖动坐标为 (190,428)→(190,330)，随后出现 pin 投放提示而未重排；当时将其视作无效拖动，保留现场后重新建立前置。投放未完成的具体原因未得到实证，不能把先前“释放落在 pin 区”的推测作为已确认原因。",
+        "attempt2 拖动坐标为 (190,428)→(190,770)，即时画面仍为 A/B/C 并显示 pin 投放区。随后按最新树中的 C 行索引点击时侧栏收起，实际未选中 C；重新读取后单击 C 行才选中 C。",
+        "为确认关闭控件，额外选中 C，并打开、取消其上下文菜单；未点击任何替代关闭命令。"
+      ],
+      "precondition_actual": "两次均独立建立且核实普通 A/B/C，无组、无 split、无多选；Advanced 实读双击关闭 on、方向关闭 on。",
+      "settings_observed": "起始双击关闭 on、方向关闭 on；本项未点击两个开关。仅修改布局。",
+      "steps_executed": [
+        "通过 Settings 原生界面读取起始 Comfortable、System Default、双击关闭 on、方向关闭 on，并切换 Performance。",
+        "新建 New Tab，使用 Close Other Tabs 清理已识别的本轮 TC 对象；确认删除上一轮 TC 组后，经地址栏依次建立 A/B/C。",
+        "在本项安全内容区点击 (2200,350)，原图指针位置与输入坐标对应后使用截图坐标。",
+        "attempt1 保存 before，单击 B 的 selectable row 一次；随后拖动 B，保存未重排现场。",
+        "重新清理并用新 tag PER-R2 建立 A/B/C，逐页核对正文和打开编号。",
+        "attempt2 保存 before，单击 B 的 selectable row 一次；拖动 B，实读仍为 A/B/C，B 编号不变。",
+        "选中 C 并确认关闭控件可见性；未确认按钮，保存实际 after，保留 A/B/C。"
+      ],
+      "unit_id": "DBL-08-PER"
+    },
+    "notes": "Ripley 已复核三布局14张完整关键/无效现场图和原生身份观察。单击后的 B 存活；指定拖动未建立重排，Performance 两次尝试均保留 A/B/C，Balanced 在随后额外内容点击后出现 New Tab/B 分屏，Comfortable 拖动调用后出现 B/New Tab 分屏；不能据此确认有效的重排手势或产品缺陷。C 关闭控件未可靠定位，按钮步骤未执行，不用菜单/快捷键替代。本项保留部分执行，后续先核查 CU 拖动返回与动态投放位置后再定向补测。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列",
+    "not_run_reason": "未执行“只点击 C 的关闭按钮一次”：选中 C，并尝试通过其右侧原生上下文菜单及取消使控件可见后，画面仍未确认到 C 的关闭图标，原生树也未暴露标签关闭按钮。没有以菜单 Close、快捷键或中键替代。拖动调用已执行，但未确认 B 到达另一页序位置。"
   },
   {
     "id": "DBL-08",
@@ -6897,7 +7030,13 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/DBL-08-observations.json",
+      "qa-evidence/r2/DBL-08-BAL-01.png",
+      "qa-evidence/r2/DBL-08-BAL-02.png",
+      "qa-evidence/r2/DBL-08-BAL-03.png",
+      "qa-evidence/r2/DBL-08-BAL-04.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-08-BAL",
     "layout": "balanced",
@@ -6906,9 +7045,108 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "partial",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-08",
+        "round": 2,
+        "outcome": "partial",
+        "actual": "外部纵向顺序为 A /（New Tab + B 分屏配对）/ C；A、B、C 均仍列出，C 为独立普通页且未关闭。额外内容区点击后的分屏现场中，New Tab 在左、B 在右，B 的编号未变。",
+        "observation": {
+          "active_after": "C，单一选中；B 的分屏配对保留在列表中。",
+          "active_before": "C，单一选中；单击 B 后活动页为 B。",
+          "after": "外部纵向顺序为 A /（New Tab + B 分屏配对）/ C；A、B、C 均仍列出，C 为独立普通页且未关闭。额外内容区点击后的分屏现场中，New Tab 在左、B 在右，B 的编号未变。",
+          "before": "TC-PHI507-r2-DBL-08-BAL 的普通 A/B/C，自上而下排列，无组、无 split、无多选。",
+          "confirmation_choices": "本项清理和被测操作均未出现确认框。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-08-BAL attempt1 layout",
+            "EVIDENCE: DBL-08-BAL attempt1 new-A-after",
+            "EVIDENCE: DBL-08-BAL attempt1 new-B-after",
+            "EVIDENCE: DBL-08-BAL attempt1 new-C-after",
+            "EVIDENCE: DBL-08-BAL attempt1 before",
+            "EVIDENCE: DBL-08-BAL attempt1 single-B-after",
+            "EVIDENCE: DBL-08-BAL attempt1 drag-B-after",
+            "EVIDENCE: DBL-08-BAL attempt1 failure",
+            "EVIDENCE: DBL-08-BAL attempt1 close-C-before",
+            "EVIDENCE: DBL-08-BAL attempt1 after"
+          ],
+          "identity_checks": "CU 实读固定 app 路径、pid 71817。逐页实见 TC 标题、BAL 批次、普通页说明、打开编号和空输入框：A=c7ebb2ae-abf2-4d66-a47a-6b41f31f00e6；B=5b8ae31c-3ddd-44ba-882b-8d9c419b85db；C=e152e601-d29e-4930-8b68-8eb487aab120。单击 B 后以及随后分屏现场中的 B 编号均相同；结束 C 正文编号与创建时一致。",
+          "language_observed": "General 实读 System Default；设置及浏览器界面英文，未切换语言。",
+          "layout_observed": "General 原生选择 Balanced 并截图确认；实际 chrome 为左侧纵向标签列表、顶部地址栏。",
+          "not_executed_reason": "未执行 C 关闭按钮单击：独立选中 C 后，画面未确认到标签关闭图标，原生树未暴露 C 的关闭按钮。没有以其他关闭方式替代。B 拖动调用已执行，但未观察到预定的页序移动。",
+          "operator_errors": [
+            "拖动后为了收起 pin 投放提示，额外点击原本空白的内容区 (2200,400)；该点击之后才实见 New Tab 与 B 分屏。因此现有证据不能把分屏变化单独归因于拖动调用，也不能将其当作成功重排。",
+            "为确认独立关闭分支的控件，额外单击 C 行使其活动；未执行任何关闭命令。"
+          ],
+          "precondition_actual": "在本项开始前新建 New Tab 并原生关闭上一项测试页，重新建立普通 A/B/C，实读顺序正确。Advanced 再读双击关闭 on、方向关闭 on。",
+          "settings_observed": "双击关闭 on、方向关闭 on；两个开关均未点击。仅切换为 Balanced。",
+          "steps_executed": [
+            "通过 General 切换 Balanced，读取语言；通过 Advanced 再读两个开关后以 Settings 原生 close button 关闭设置。",
+            "新建 New Tab，使用原生 Close Other Tabs 清理上一项对象，经地址栏依次建立并逐页核实 BAL 的 A/B/C。",
+            "保存 before，单击 B 对应 selectable row 一次；A/B/C 仍存在，B 活动且编号不变。",
+            "从 B 行截图位置 (190,355) 拖至 (190,730)；即时实读 A/B/C，侧栏显示 pin 投放提示。",
+            "额外点击内容空白区域后，实际出现 New Tab/B 分屏配对，保存 failure 现场。",
+            "选中独立 C 检查关闭按钮可见性；未确认按钮，保存 after，保留实际分屏和页面集合。"
+          ],
+          "unit_id": "DBL-08-BAL"
+        },
+        "evidence": [
+          "qa-evidence/r2/DBL-08-observations.json",
+          "qa-evidence/r2/DBL-08-BAL-01.png",
+          "qa-evidence/r2/DBL-08-BAL-02.png",
+          "qa-evidence/r2/DBL-08-BAL-03.png",
+          "qa-evidence/r2/DBL-08-BAL-04.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/DBL-08-evidence.json",
+        "notes": "Ripley 已复核三布局14张完整关键/无效现场图和原生身份观察。单击后的 B 存活；指定拖动未建立重排，Performance 两次尝试均保留 A/B/C，Balanced 在随后额外内容点击后出现 New Tab/B 分屏，Comfortable 拖动调用后出现 B/New Tab 分屏；不能据此确认有效的重排手势或产品缺陷。C 关闭控件未可靠定位，按钮步骤未执行，不用菜单/快捷键替代。本项保留部分执行，后续先核查 CU 拖动返回与动态投放位置后再定向补测。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T15:25:20.494114+00:00"
+      }
+    ],
+    "actual": "外部纵向顺序为 A /（New Tab + B 分屏配对）/ C；A、B、C 均仍列出，C 为独立普通页且未关闭。额外内容区点击后的分屏现场中，New Tab 在左、B 在右，B 的编号未变。",
+    "observation": {
+      "active_after": "C，单一选中；B 的分屏配对保留在列表中。",
+      "active_before": "C，单一选中；单击 B 后活动页为 B。",
+      "after": "外部纵向顺序为 A /（New Tab + B 分屏配对）/ C；A、B、C 均仍列出，C 为独立普通页且未关闭。额外内容区点击后的分屏现场中，New Tab 在左、B 在右，B 的编号未变。",
+      "before": "TC-PHI507-r2-DBL-08-BAL 的普通 A/B/C，自上而下排列，无组、无 split、无多选。",
+      "confirmation_choices": "本项清理和被测操作均未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-08-BAL attempt1 layout",
+        "EVIDENCE: DBL-08-BAL attempt1 new-A-after",
+        "EVIDENCE: DBL-08-BAL attempt1 new-B-after",
+        "EVIDENCE: DBL-08-BAL attempt1 new-C-after",
+        "EVIDENCE: DBL-08-BAL attempt1 before",
+        "EVIDENCE: DBL-08-BAL attempt1 single-B-after",
+        "EVIDENCE: DBL-08-BAL attempt1 drag-B-after",
+        "EVIDENCE: DBL-08-BAL attempt1 failure",
+        "EVIDENCE: DBL-08-BAL attempt1 close-C-before",
+        "EVIDENCE: DBL-08-BAL attempt1 after"
+      ],
+      "identity_checks": "CU 实读固定 app 路径、pid 71817。逐页实见 TC 标题、BAL 批次、普通页说明、打开编号和空输入框：A=c7ebb2ae-abf2-4d66-a47a-6b41f31f00e6；B=5b8ae31c-3ddd-44ba-882b-8d9c419b85db；C=e152e601-d29e-4930-8b68-8eb487aab120。单击 B 后以及随后分屏现场中的 B 编号均相同；结束 C 正文编号与创建时一致。",
+      "language_observed": "General 实读 System Default；设置及浏览器界面英文，未切换语言。",
+      "layout_observed": "General 原生选择 Balanced 并截图确认；实际 chrome 为左侧纵向标签列表、顶部地址栏。",
+      "not_executed_reason": "未执行 C 关闭按钮单击：独立选中 C 后，画面未确认到标签关闭图标，原生树未暴露 C 的关闭按钮。没有以其他关闭方式替代。B 拖动调用已执行，但未观察到预定的页序移动。",
+      "operator_errors": [
+        "拖动后为了收起 pin 投放提示，额外点击原本空白的内容区 (2200,400)；该点击之后才实见 New Tab 与 B 分屏。因此现有证据不能把分屏变化单独归因于拖动调用，也不能将其当作成功重排。",
+        "为确认独立关闭分支的控件，额外单击 C 行使其活动；未执行任何关闭命令。"
+      ],
+      "precondition_actual": "在本项开始前新建 New Tab 并原生关闭上一项测试页，重新建立普通 A/B/C，实读顺序正确。Advanced 再读双击关闭 on、方向关闭 on。",
+      "settings_observed": "双击关闭 on、方向关闭 on；两个开关均未点击。仅切换为 Balanced。",
+      "steps_executed": [
+        "通过 General 切换 Balanced，读取语言；通过 Advanced 再读两个开关后以 Settings 原生 close button 关闭设置。",
+        "新建 New Tab，使用原生 Close Other Tabs 清理上一项对象，经地址栏依次建立并逐页核实 BAL 的 A/B/C。",
+        "保存 before，单击 B 对应 selectable row 一次；A/B/C 仍存在，B 活动且编号不变。",
+        "从 B 行截图位置 (190,355) 拖至 (190,730)；即时实读 A/B/C，侧栏显示 pin 投放提示。",
+        "额外点击内容空白区域后，实际出现 New Tab/B 分屏配对，保存 failure 现场。",
+        "选中独立 C 检查关闭按钮可见性；未确认按钮，保存 after，保留实际分屏和页面集合。"
+      ],
+      "unit_id": "DBL-08-BAL"
+    },
+    "notes": "Ripley 已复核三布局14张完整关键/无效现场图和原生身份观察。单击后的 B 存活；指定拖动未建立重排，Performance 两次尝试均保留 A/B/C，Balanced 在随后额外内容点击后出现 New Tab/B 分屏，Comfortable 拖动调用后出现 B/New Tab 分屏；不能据此确认有效的重排手势或产品缺陷。C 关闭控件未可靠定位，按钮步骤未执行，不用菜单/快捷键替代。本项保留部分执行，后续先核查 CU 拖动返回与动态投放位置后再定向补测。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列",
+    "not_run_reason": "未执行 C 关闭按钮单击：独立选中 C 后，画面未确认到标签关闭图标，原生树未暴露 C 的关闭按钮。没有以其他关闭方式替代。B 拖动调用已执行，但未观察到预定的页序移动。"
   },
   {
     "id": "DBL-08",
@@ -6932,7 +7170,13 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/DBL-08-observations.json",
+      "qa-evidence/r2/DBL-08-COM-01.png",
+      "qa-evidence/r2/DBL-08-COM-02.png",
+      "qa-evidence/r2/DBL-08-COM-03.png",
+      "qa-evidence/r2/DBL-08-COM-04.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-08-COM",
     "layout": "comfortable",
@@ -6941,9 +7185,110 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "partial",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-08",
+        "round": 2,
+        "outcome": "partial",
+        "actual": "外部横向顺序为 A /（B + New Tab splitPair）/ C；分屏现场中 B 在左、New Tab 在右。B 仍存在且打开编号未变；A、C 为独立普通页。结束活动页 C，C 未关闭，无组、无多选。",
+        "observation": {
+          "active_after": "C，单一选中。拖动后的短暂活动对象为 B/New Tab 配对中的右侧 New Tab。",
+          "active_before": "C；单击 B 后活动页为 B。",
+          "after": "外部横向顺序为 A /（B + New Tab splitPair）/ C；分屏现场中 B 在左、New Tab 在右。B 仍存在且打开编号未变；A、C 为独立普通页。结束活动页 C，C 未关闭，无组、无多选。",
+          "before": "TC-PHI507-r2-DBL-08-COM 的普通 A/B/C，从左至右排列，无组、无 split、无多选。",
+          "confirmation_choices": "本项未出现确认框。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-08-COM attempt1 layout",
+            "EVIDENCE: DBL-08-COM attempt1 settings",
+            "EVIDENCE: DBL-08-COM attempt1 new-A-after",
+            "EVIDENCE: DBL-08-COM attempt1 new-B-after",
+            "EVIDENCE: DBL-08-COM attempt1 new-C-after",
+            "EVIDENCE: DBL-08-COM attempt1 before",
+            "EVIDENCE: DBL-08-COM attempt1 single-B-after",
+            "EVIDENCE: DBL-08-COM attempt1 drag-B-after",
+            "EVIDENCE: DBL-08-COM attempt1 failure",
+            "EVIDENCE: DBL-08-COM attempt1 close-C-before",
+            "EVIDENCE: DBL-08-COM attempt1 after"
+          ],
+          "identity_checks": "CU 实读固定 app 路径、pid 71817。逐页实见 TC 标题、COM 批次、普通页说明、打开编号和空输入框：A=6f695d6a-984b-4226-908e-0a5f2b4e60fd；B=1f106563-2cd6-42f3-bf9e-b3979336a0f7；C=b0f7ead8-b3e7-4cc8-8929-3874afef8aa6。单击 B 后与拖动后的左侧 B 正文均显示同一编号；结束 C 正文编号未变。",
+          "language_observed": "General 实读 System Default；浏览器及设置界面英文，未切换语言。",
+          "layout_observed": "General 原生选择 Comfortable 并截图确认；实际 chrome 为顶部横向标签栏。此值同时恢复了本次起始布局。",
+          "not_executed_reason": "未执行 C 关闭按钮单击：C 已独立选中，但画面未确认到 C 的关闭图标，原生树仅暴露其 tabStripTab 容器，没有标签关闭按钮。未用菜单或快捷键替代。B 拖动调用已执行，实际产生 splitPair，未观察到目标页序移动。",
+          "operator_errors": [
+            "为显示并确认独立关闭分支的控件，拖动现场保存后额外单击 C 的 tabStripTab 容器一次；没有点击关闭命令。",
+            "拖动后出现 New Tab 分屏配对的原因未由现有证据确定，未将其归因为已确认的操作器误命中，也未重建覆盖该现场。"
+          ],
+          "precondition_actual": "本项开始前新建 New Tab，原生关闭上一项 A、New Tab/B 配对及 C，再经地址栏重新建立 COM 的 A/B/C。创建后实读真实横向顺序正确；Advanced 实读双击关闭 on、方向关闭 on。",
+          "settings_observed": "双击关闭 on、方向关闭 on，未点击开关；Comfortable、System Default 与本次起始值一致。Settings 已通过其原生 close button 关闭，结束未重复改动偏好。",
+          "steps_executed": [
+            "通过 General 切换 Comfortable 并截图，读取 System Default；Advanced 再读两个开关后关闭 Settings。",
+            "原生清理上一项对象，独立建立 COM 的普通 A/B/C，逐页核实正文、批次、编号和输入框。",
+            "保存 before，单击 B 对应 tabStripTab button 一次；B 活动，编号未变，A/B/C 均存在。",
+            "按最新截图从 B 标题区域 (800,44) 拖至 A 左侧位置 (280,44)。随后 get_app_state 实读 B + New Tab splitPair，保存拖动后及异常现场。",
+            "单击独立 C 的 tabStripTab 容器以确认关闭按钮可见性；未确认按钮，未执行替代关闭。",
+            "保存最终 after，保留 A /（B + New Tab）/ C 的实际状态，未额外重建。"
+          ],
+          "unit_id": "DBL-08-COM"
+        },
+        "evidence": [
+          "qa-evidence/r2/DBL-08-observations.json",
+          "qa-evidence/r2/DBL-08-COM-01.png",
+          "qa-evidence/r2/DBL-08-COM-02.png",
+          "qa-evidence/r2/DBL-08-COM-03.png",
+          "qa-evidence/r2/DBL-08-COM-04.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/DBL-08-evidence.json",
+        "notes": "Ripley 已复核三布局14张完整关键/无效现场图和原生身份观察。单击后的 B 存活；指定拖动未建立重排，Performance 两次尝试均保留 A/B/C，Balanced 在随后额外内容点击后出现 New Tab/B 分屏，Comfortable 拖动调用后出现 B/New Tab 分屏；不能据此确认有效的重排手势或产品缺陷。C 关闭控件未可靠定位，按钮步骤未执行，不用菜单/快捷键替代。本项保留部分执行，后续先核查 CU 拖动返回与动态投放位置后再定向补测。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T15:25:20.494128+00:00"
+      }
+    ],
+    "actual": "外部横向顺序为 A /（B + New Tab splitPair）/ C；分屏现场中 B 在左、New Tab 在右。B 仍存在且打开编号未变；A、C 为独立普通页。结束活动页 C，C 未关闭，无组、无多选。",
+    "observation": {
+      "active_after": "C，单一选中。拖动后的短暂活动对象为 B/New Tab 配对中的右侧 New Tab。",
+      "active_before": "C；单击 B 后活动页为 B。",
+      "after": "外部横向顺序为 A /（B + New Tab splitPair）/ C；分屏现场中 B 在左、New Tab 在右。B 仍存在且打开编号未变；A、C 为独立普通页。结束活动页 C，C 未关闭，无组、无多选。",
+      "before": "TC-PHI507-r2-DBL-08-COM 的普通 A/B/C，从左至右排列，无组、无 split、无多选。",
+      "confirmation_choices": "本项未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-08-COM attempt1 layout",
+        "EVIDENCE: DBL-08-COM attempt1 settings",
+        "EVIDENCE: DBL-08-COM attempt1 new-A-after",
+        "EVIDENCE: DBL-08-COM attempt1 new-B-after",
+        "EVIDENCE: DBL-08-COM attempt1 new-C-after",
+        "EVIDENCE: DBL-08-COM attempt1 before",
+        "EVIDENCE: DBL-08-COM attempt1 single-B-after",
+        "EVIDENCE: DBL-08-COM attempt1 drag-B-after",
+        "EVIDENCE: DBL-08-COM attempt1 failure",
+        "EVIDENCE: DBL-08-COM attempt1 close-C-before",
+        "EVIDENCE: DBL-08-COM attempt1 after"
+      ],
+      "identity_checks": "CU 实读固定 app 路径、pid 71817。逐页实见 TC 标题、COM 批次、普通页说明、打开编号和空输入框：A=6f695d6a-984b-4226-908e-0a5f2b4e60fd；B=1f106563-2cd6-42f3-bf9e-b3979336a0f7；C=b0f7ead8-b3e7-4cc8-8929-3874afef8aa6。单击 B 后与拖动后的左侧 B 正文均显示同一编号；结束 C 正文编号未变。",
+      "language_observed": "General 实读 System Default；浏览器及设置界面英文，未切换语言。",
+      "layout_observed": "General 原生选择 Comfortable 并截图确认；实际 chrome 为顶部横向标签栏。此值同时恢复了本次起始布局。",
+      "not_executed_reason": "未执行 C 关闭按钮单击：C 已独立选中，但画面未确认到 C 的关闭图标，原生树仅暴露其 tabStripTab 容器，没有标签关闭按钮。未用菜单或快捷键替代。B 拖动调用已执行，实际产生 splitPair，未观察到目标页序移动。",
+      "operator_errors": [
+        "为显示并确认独立关闭分支的控件，拖动现场保存后额外单击 C 的 tabStripTab 容器一次；没有点击关闭命令。",
+        "拖动后出现 New Tab 分屏配对的原因未由现有证据确定，未将其归因为已确认的操作器误命中，也未重建覆盖该现场。"
+      ],
+      "precondition_actual": "本项开始前新建 New Tab，原生关闭上一项 A、New Tab/B 配对及 C，再经地址栏重新建立 COM 的 A/B/C。创建后实读真实横向顺序正确；Advanced 实读双击关闭 on、方向关闭 on。",
+      "settings_observed": "双击关闭 on、方向关闭 on，未点击开关；Comfortable、System Default 与本次起始值一致。Settings 已通过其原生 close button 关闭，结束未重复改动偏好。",
+      "steps_executed": [
+        "通过 General 切换 Comfortable 并截图，读取 System Default；Advanced 再读两个开关后关闭 Settings。",
+        "原生清理上一项对象，独立建立 COM 的普通 A/B/C，逐页核实正文、批次、编号和输入框。",
+        "保存 before，单击 B 对应 tabStripTab button 一次；B 活动，编号未变，A/B/C 均存在。",
+        "按最新截图从 B 标题区域 (800,44) 拖至 A 左侧位置 (280,44)。随后 get_app_state 实读 B + New Tab splitPair，保存拖动后及异常现场。",
+        "单击独立 C 的 tabStripTab 容器以确认关闭按钮可见性；未确认按钮，未执行替代关闭。",
+        "保存最终 after，保留 A /（B + New Tab）/ C 的实际状态，未额外重建。"
+      ],
+      "unit_id": "DBL-08-COM"
+    },
+    "notes": "Ripley 已复核三布局14张完整关键/无效现场图和原生身份观察。单击后的 B 存活；指定拖动未建立重排，Performance 两次尝试均保留 A/B/C，Balanced 在随后额外内容点击后出现 New Tab/B 分屏，Comfortable 拖动调用后出现 B/New Tab 分屏；不能据此确认有效的重排手势或产品缺陷。C 关闭控件未可靠定位，按钮步骤未执行，不用菜单/快捷键替代。本项保留部分执行，后续先核查 CU 拖动返回与动态投放位置后再定向补测。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列",
+    "not_run_reason": "未执行 C 关闭按钮单击：C 已独立选中，但画面未确认到 C 的关闭图标，原生树仅暴露其 tabStripTab 容器，没有标签关闭按钮。未用菜单或快捷键替代。B 拖动调用已执行，实际产生 splitPair，未观察到目标页序移动。"
   },
   {
     "id": "DBL-09",
@@ -22611,7 +22956,45 @@
     },
     "result": "pending",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "diagnostics": [
+      {
+        "job": "VIS-05-checkpoint-cleanup",
+        "round": 2,
+        "scope": "仅容量检查点偏好恢复与正常退出，不是VIS-05导出/最终清理验收；任务继续",
+        "observation": {
+          "active_after": "退出前仍为 TC-C · TC-PHI507-r2-DBL-08-COM，单一选中；随后应用正常退出操作得到 CU 的 App quit 返回。",
+          "active_before": "TC-C · TC-PHI507-r2-DBL-08-COM。",
+          "after": "退出前集合保留为 A /（B + New Tab splitPair）/ C，无测试组；未创建、导航、关闭或删除测试页面。",
+          "before": "原生横向标签为 TC-A /（TC-B + New Tab splitPair）/ TC-C，均属 TC-PHI507-r2-DBL-08-COM；C 活动。",
+          "confirmation_choices": "首次 Command-Q 出现“Are you sure you want to quit Phi? / Any unsaved changes may be lost.”，选择 Cancel 后核对 Window 菜单仅列当前 TC-C 测试窗口；再次 Command-Q，在同一原生确认框选择 Quit。读取当前 Space 名称时打开 Rename Space 对话框，仅读取既有名称后选择 Cancel，未改名。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-before",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-general-after",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-advanced-after",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-ending-after",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-quit-result",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-quit-after"
+          ],
+          "identity_checks": "始终使用固定 app 路径；CU 实读 PID 始终为 71817。当前 Space 原生名称字段为 TC-QA-PHI507-r2-SET-08-COMMON-S1。C 正文实见批次 TC-PHI507-r2-DBL-08-COM、普通页、空输入框及打开编号 b0f7ead8-b3e7-4cc8-8929-3874afef8aa6，结束图编号一致。A/B 本次仅核对原生标签身份及配对结构，未逐页读取正文。",
+          "language_observed": "System Default，原生界面为英文；无需修改，未出现语言重启提示。",
+          "layout_observed": "起始 Comfortable；在 General 点击 Balanced 一次，结束截图显示 Balanced 被选中，关闭 Settings 后浏览器为外部纵向标签布局。",
+          "not_executed_reason": "仅检查点偏好恢复；本轮任务仍继续，VIS-05 导出与最终清理尚未执行",
+          "operator_errors": [],
+          "precondition_actual": "重新实读现有 QA app 与当前测试窗口，沿用并保留实际页面集合；本次未重建页面，未将检查点视为 VIS-05 验收。",
+          "settings_observed": "General：Comfortable→Balanced；System Default 保持不变。Advanced 初读 on/on；仅点击 Double-click to Close Tabs 一次后即时实读 off/on，未点击的 Close Tabs by Position 保持 on；最终 get_app_state 再读为 off/on。未操作快捷键或其他偏好。",
+          "steps_executed": [
+            "get_app_state 实读固定 QA app 的 PID、窗口和标签结构，并通过原生菜单读取 Space 列表。",
+            "Command-comma 打开 Settings，读取 General；保存动作前图，点击 Balanced，保存 checkpoint-general-after 原生状态与截图。",
+            "打开 Advanced，读取两个开关；仅将 Double-click to Close Tabs 从 on 切到 off，立即读取两个开关值，保存 checkpoint-advanced-after 原生状态与截图。",
+            "通过 Settings 的原生 close button 关闭设置；读取当前 Space 名称后取消名称对话框，保存 checkpoint-ending-after 原生状态与截图。",
+            "Command-Q 出现确认后先取消，核对 Window 菜单仅列当前 TC 测试窗口；返回窗口，再次 Command-Q 并点击 Quit。",
+            "记录 CU 返回“Computer Use server error -10005: App quit”；此后未调用 get_app_state。"
+          ],
+          "unit_id": "VIS-05-COMMON"
+        }
+      }
+    ]
   },
   {
     "id": "VIS-06",

@@ -1,0 +1,8 @@
+{
+  "app": "/Applications/Phi Tab Close QA.app",
+  "version": "0.0.0",
+  "build": "1030.1",
+  "executable_sha256": "b30ef8b3acbc832ee3f1aaa8ce682ebb28289654ff3fdb84fbdf04151bb59d0b",
+  "checked_at": "2026-10-30T15:28:07.477064+00:00",
+  "scope": "Installed binary file only; no browser control or state read"
+}

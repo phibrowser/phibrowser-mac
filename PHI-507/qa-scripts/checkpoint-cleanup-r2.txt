@@ -1,0 +1,10 @@
+本次是 r2 证据容量检查点的偏好恢复，不是 VIS-05 验收执行。只执行下面一个维护目标，不执行上方 VIS-05 的报告导出或完整清理步骤，不判通过。
+
+1. 用 Computer Use 重新读取 /Applications/Phi Tab Close QA.app 的实际窗口、PID、当前 Space 与布局。不要关闭未知窗口、Default 的 Chrome Web Store 或任何不明确归属本轮的对象。
+2. General 原生设置恢复整个测试活动最初的 Balanced、System Default。System Default 原先实际为英文；若恢复提示重启，按真实提示正常重启同一 app，并重新核实，不能通过 shell 启动/退出。
+3. Advanced 恢复 Double-click to Close Tabs=off、Close Tabs by Position=on。每次只点一个需要变化的开关，重读两个即时值，不把联动掩盖。
+4. 原生读取最终 General 与 Advanced，分别输出 EVIDENCE: VIS-05-COMMON attempt1 checkpoint-general-after 及 checkpoint-advanced-after 的真实截图。关闭 Settings，保存 checkpoint-ending-after 截图。
+5. 保留当前已核实的 TC 测试 Space/页面供下轮续测，不删除测试 Space、pin、书签或未知资料。最终偏好与窗口截图保存后，通过 Computer Use 的 Command-Q 正常退出同一个 QA app，记录工具返回结果；退出后不要再次 get_app_state 以免重新启动。若退出出现原有确认，先确认全为本轮 TC 测试数据，再按原生正常退出；不能关闭未知资料。
+6. 只做这些检查点恢复与正常退出。本次没有手册导出、所有 TC 清理等 VIS-05 验收，不要声称已执行。
+
+最终观察 unit_id=VIS-05-COMMON，not_executed_reason 明确“仅检查点偏好恢复；本轮任务仍继续，VIS-05 导出与最终清理尚未执行”。ending_state 写实读设置、当前 TC 页面/组/Space 与保留内容。tools_outside_computer_use 仍为空（如果实际符合）。

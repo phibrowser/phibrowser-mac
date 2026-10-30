@@ -2,7 +2,7 @@
 from pathlib import Path
 from PIL import Image
 import argparse,hashlib,json,re
-p=argparse.ArgumentParser();p.add_argument('job');p.add_argument('--phases',default='before,after,failure');p.add_argument('--full',action='store_true');p.add_argument('--compact-ui',action='store_true');p.add_argument('--full-phases',default='');a=p.parse_args();phases=set(a.phases.split(','));root=Path.cwd();qa=root/'PHI-507';round_state=qa/'active-qa-round.json';round_no=json.loads(round_state.read_text())['round'] if round_state.exists() else 2;assert isinstance(round_no,int) and round_no>=2;raw=root/f'scratch-PHI507-r{round_no}'/a.job/'raw';index=json.loads((raw/'index.json').read_text());records=[];out=qa/'qa-evidence'/f'r{round_no}';out.mkdir(exist_ok=True)
+p=argparse.ArgumentParser();p.add_argument('job');p.add_argument('--phases',default='before,after,failure');p.add_argument('--exact-phases',action='store_true');p.add_argument('--full',action='store_true');p.add_argument('--compact-ui',action='store_true');p.add_argument('--full-phases',default='');a=p.parse_args();phases=set(a.phases.split(','));root=Path.cwd();qa=root/'PHI-507';round_state=qa/'active-qa-round.json';round_no=json.loads(round_state.read_text())['round'] if round_state.exists() else 2;assert isinstance(round_no,int) and round_no>=2;raw=root/f'scratch-PHI507-r{round_no}'/a.job/'raw';index=json.loads((raw/'index.json').read_text());records=[];out=qa/'qa-evidence'/f'r{round_no}';out.mkdir(exist_ok=True)
 previous_path=out/(a.job+'-evidence.json');previous=json.loads(previous_path.read_text()) if previous_path.exists() else []
 old_names={(x['unit_id'],x['attempt'],x['phase']):x['file'] for x in previous}
 selected={}
@@ -22,7 +22,7 @@ for item in index:
   setup=re.match(r'setup(\d+)\s+failure',rest)
   if setup:keep(unit,int(setup[1]),'setup-failure',item);continue
   phase=rest.replace(' ','-');attempt=2 if phase.startswith('sequence-') else 1
- if phase in phases or phase.rsplit('-',1)[-1] in phases or 'failure' in phase:keep(unit,attempt,phase,item)
+ if phase in phases or (not a.exact_phases and phase.rsplit('-',1)[-1] in phases) or 'failure' in phase:keep(unit,attempt,phase,item)
 for (unit,attempt,phase),item in selected.items():
  src=raw/item['file'];im=Image.open(src).convert('RGB');w,h=im.size
  full=a.full or any(tag in phase for tag in ('settings','switch','layout','language')) or phase in set(a.full_phases.split(',')) or h<800 or 'failure' in phase or phase in ('failure','setup-failure','settings','before-switch','after-restart-switches') or unit.endswith('-COMMON') or unit.startswith(('VIS-','LIFE-10','LIFE-13','LIFE-14'))

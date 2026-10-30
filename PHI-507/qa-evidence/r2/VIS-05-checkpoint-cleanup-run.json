@@ -1,0 +1,17 @@
+{
+  "job": "VIS-05-checkpoint-cleanup",
+  "exit_code": 0,
+  "session_id": "01a18d69-9296-70c0-b92e-8a90922e48f8",
+  "round": 2,
+  "lease_id": "b0e9392c-a0e4-47cd-8ae7-685e1520b443",
+  "started_at": "2026-10-30T15:24:28.376008+00:00",
+  "ended_at": "2026-10-30T15:27:13.601754+00:00",
+  "units": [
+    "VIS-05-COMMON"
+  ],
+  "observed_units": [
+    "VIS-05-COMMON"
+  ],
+  "missing_units": [],
+  "duplicate_units": false
+}

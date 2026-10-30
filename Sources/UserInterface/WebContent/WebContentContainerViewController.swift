@@ -398,6 +398,13 @@ class WebContentContainerViewController: NSViewController {
 
     /// Test-only view of the panel's frame-interior fill.
     var extensionSidePanelFrameBackdropForTesting: NSView? { extensionSidePanelFrameBackdrop }
+
+    /// Test-only view of the unified content outline, in `view` coordinates.
+    var contentOuterBorderPathForTesting: CGPath? { outerBorderLayer.path }
+
+    /// Test-only: called with each outline the container draws; a recompute
+    /// that clears the outline instead does not report.
+    var contentOuterBorderDidUpdateForTesting: ((CGPath) -> Void)?
     
     // MARK: - Initialization
     
@@ -969,6 +976,17 @@ class WebContentContainerViewController: NSViewController {
 
     override func viewDidLayout() {
         super.viewDidLayout()
+        // The outline and the Peek scale pivot read the page card's frame two
+        // levels down (contentContainer → controllerView → splitViewContainer).
+        // AppKit lays a tree out top-down, so here that subtree still carries
+        // its frames from the previous pass: after a one-shot height change (a
+        // step of a window-edge drag, a programmatic setFrame) the outline
+        // kept the old card top, and the active tab's sides ran down through
+        // the page to meet it. A later recompute from the tab strip's own
+        // layout hid that wherever the strip relaid out in the same pass (a
+        // window showing the Space picker); a standalone Incognito window and
+        // a single-Space window got none. Settle the page subtree first.
+        contentContainer.layoutSubtreeIfNeeded()
         if isPeekBackgroundDeemphasized {
             updatePeekBackgroundPresentation(animated: false)
         }
@@ -1125,6 +1143,7 @@ class WebContentContainerViewController: NSViewController {
         updateGroupBoundaryLayers(apexY: topY, invR: invR, activeTab: activeTabForBorder)
 
         CATransaction.commit()
+        contentOuterBorderDidUpdateForTesting?(path)
     }
 
     /// Builds / refreshes one `CAShapeLayer` per visible expanded group,
@@ -1842,10 +1861,10 @@ class WebContentContainerViewController: NSViewController {
                 pageController?.finishPanelTransition(transition)
             }
             self?.releaseContentSurfaceHold()
-            // Settle on completion only: during the slide the stale outline
-            // still traces the full-width card the panel is covering, while
-            // an immediate snap would draw the narrow outline across the
-            // not-yet-shrunk page.
+            // The group's layout pass already derived the outline from the
+            // settled geometry; with the panel mounted its right edge stays
+            // pinned to the window margin, so the slide shows the full-width
+            // frame throughout. Re-derive once more now that it has landed.
             self?.settlePanelTransitionOuterBorder()
         })
     }
@@ -1984,15 +2003,12 @@ class WebContentContainerViewController: NSViewController {
         }
     }
 
-    /// Re-derives the content outline once a panel transition's layout has
-    /// settled. The viewDidLayout recompute that fires inside the
-    /// transition's own layout pass reads `splitViewContainerFrame` before
-    /// the split-view subtree has re-laid out (top-down layout order), so
-    /// the outline is left at the pre-transition geometry — a stray border
-    /// line over the page after a close — and, with the container not laid
-    /// out again, nothing heals it until the next window resize. Same
-    /// stale-convert hazard `switchToWebContentController` documents before
-    /// its own explicit recompute.
+    /// Re-derives the content outline from the settled layout at the end of
+    /// a panel transition. `viewDidLayout` settles the page subtree before
+    /// it reads the card frame, so a transition's own layout pass already
+    /// lands the outline on the post-transition geometry; this forces that
+    /// pass where none is pending yet (the no-animation path) and re-derives
+    /// once more at a completion, which runs outside any layout pass.
     private func settlePanelTransitionOuterBorder() {
         view.layoutSubtreeIfNeeded()
         updateContentOuterBorder()

@@ -2,7 +2,7 @@
 
 Wood 的本轮要求优先：浏览器的所有启动/退出/导航、标签/分屏/组/pin/书签/设置/快捷键操作，浏览器状态读取及取证，只允许 mcp__computer_use 工具。禁止 CDP、浏览器/扩展API、网页JS/DOM、AppleScript、System Events、直接AX脚本、shell/exec命令、文件读写、记忆搜索、网络请求或别的用户/会话。functions.exec 仅编排Computer Use调用与返回内容、内存中解析该工具的原生树/错误、Date.now计时。不得以脚本状态代替屏幕。最终结构化输出由宿主保存，你不写文件。
 
-固定app=/Applications/Phi Tab Close QA.app。禁止用歧义Bundle ID（挂载卷还有副本）。每次先get_app_state。不要启动或操作Canary。不要设默认浏览器、登录、触发真实通知或处理真实资料。Default里的Chrome Web Store保留不动。仅操作本轮TC-PHI507-r2、TC-QA-PHI507-r2开头的可丢弃对象；未知保存项/窗口保留。
+固定app=/Applications/Phi Tab Close QA.app。禁止用歧义Bundle ID（挂载卷还有副本）。每次先get_app_state。不要启动或操作Canary。不要设默认浏览器、登录、触发真实通知或处理真实资料。Default里的Chrome Web Store保留不动。仅操作本活动明确创建的TC-PHI507-r2、TC-PHI507-r5、TC-QA-PHI507-r2开头的可丢弃对象；未知保存项/窗口保留。
 
 已验证的Computer Use字段：
 get_app_state({app}) -> image和原生状态树；
@@ -67,3 +67,5 @@ Performance/Balanced为外部上下方向，Comfortable为外部左右方向；�
 r4已完成有限输入自救，证据见input-capability-limits.json：FKA开启后未取得标签行焦点或多选；真实Assistive Control宿主已读取但全白无按钮；Mouse Keys在准确Use按钮位置实际发送KP_5、i均未启用。全部系统输入设置恢复off。没有新信息时不重复这些系统修改，不虚构modifier-click字段、锁存或多选集合。普通带字母/方向键的快捷键仍可按源步骤用press_key实际执行，这些限制不能用于跳过所有含Command的快捷键。关闭/静音等控件只要本次实际可见且前置满足，仍执行指定动作；未见控件不以菜单命令或快捷键冒充该按钮。诊断不等于源用例验收通过。
 
 Space边界补充：初始Space不明确时，不得打开未知Space或Default的Rename对话框来探测名称。直接从已存在且具名的TC-QA-PHI507-r2或TC-QA-PHI507-r2-Recovery-R4按钮进入本活动测试Space，再执行本项；未知窗口、无名行、Default内容全部保留。仅源用例明确要求创建/操作新TC Space时才走对应原生入口，不能借元数据核对修改或打开Default编辑界面。
+
+r5通用fixture准备更新（替代前文逐页A-away再地址栏导航的通用准备；不替代源用例明确的原生动作）：新的普通HTML链接入口已经过CU两页实测。独立File→New Window后，原生地址栏访问 http://127.0.0.1:18211/launch/?run=TC-PHI507-r5-本执行点ID&pages=A:normal,B:normal,C:normal （只列本项真实需要的页，unsaved/long按本项改kind，唯一run加本次后缀）。入口页面只有普通target=_blank链接；必须逐个通过CU左键单击，不能执行网页JS、脚本创建或API。Balanced实测每个新子页插在LAUNCH之后，所以为取得A/B/C，先点C，再从最新原生行回LAUNCH点B，再回LAUNCH点A；每页新开后实读最终准确正文、批次、类型和独立编号。全部目标建好后，仅用LAUNCH的明确File→Close Tab关闭入口，实际读取全部本项普通顺序；不同布局仍以实际列表为准，前置顺序不符就正常原生修复并记录，不能按假设进入核心动作。分组/分屏/固定/收藏仍走真实原生UI并核对关系。保护标记只按本用例需要输入，必须实见标记及编号才算前置成立；输入后当前图未显示时，保留该现场，允许一次正常切到本项另一页再回来看实际值，不能盲目重复输入或宣称输入已成功。source明确Command-T、新标签页、原生新建入口、特殊网络/Reader/下载的步骤仍原样执行。必要时仍可用已验证的fixture普通新开链接路径，原始fixture内容不变。整个入口只用于准备，不算任何源用例通过。

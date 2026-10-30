@@ -7184,3 +7184,10 @@ DBL-09前置解释：书签保存入口对应的绑定实时页必须先打开�
 ENV-02已通过CU查验Shortcuts：Customized空搜索为No Results；All Shortcuts搜索Close，完整列表和滚动后仅见Reopen Closed Tab、Close Window、Close Tab、Close Tab Group；完整Tab分类实际滚动至末端，未见Close Other Tabs或Close Tabs to the Right。 原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。 SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。
 
 证据索引：`qa-evidence/r5/legacy-shortcut-precondition-limit.json`。发现可由Computer Use实际访问的原生配置入口或得到可从界面核实的现有绑定后，重新建立本项前置并执行，不改写历史未执行记录。
+
+## r5实际验证后的fixture准备
+
+r5通用fixture准备更新（替代前文逐页A-away再地址栏导航的通用准备；不替代源用例明确的原生动作）：新的普通HTML链接入口已经过CU两页实测。独立File→New Window后，原生地址栏访问 http://127.0.0.1:18211/launch/?run=TC-PHI507-r5-本执行点ID&pages=A:normal,B:normal,C:normal （只列本项真实需要的页，unsaved/long按本项改kind，唯一run加本次后缀）。入口页面只有普通target=_blank链接；必须逐个通过CU左键单击，不能执行网页JS、脚本创建或API。Balanced实测每个新子页插在LAUNCH之后，所以为取得A/B/C，先点C，再从最新原生行回LAUNCH点B，再回LAUNCH点A；每页新开后实读最终准确正文、批次、类型和独立编号。全部目标建好后，仅用LAUNCH的明确File→Close Tab关闭入口，实际读取全部本项普通顺序；不同布局仍以实际列表为准，前置顺序不符就正常原生修复并记录，不能按假设进入核心动作。分组/分屏/固定/收藏仍走真实原生UI并核对关系。保护标记只按本用例需要输入，必须实见标记及编号才算前置成立；输入后当前图未显示时，保留该现场，允许一次正常切到本项另一页再回来看实际值，不能盲目重复输入或宣称输入已成功。source明确Command-T、新标签页、原生新建入口、特殊网络/Reader/下载的步骤仍原样执行。必要时仍可用已验证的fixture普通新开链接路径，原始fixture内容不变。整个入口只用于准备，不算任何源用例通过。
+
+
+依据：`qa-evidence/r5/launcher-control-review.json`、`qa-evidence/r5/launcher-order-review.json`。上述维护验证没有计入ENV-06通过，也不替代全量用例执行。

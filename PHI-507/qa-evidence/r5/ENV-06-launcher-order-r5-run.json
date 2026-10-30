@@ -1,0 +1,25 @@
+{
+  "job": "ENV-06-launcher-order-r5",
+  "exit_code": 0,
+  "session_id": "01a18ec3-4e39-7903-bdec-6766a09573e8",
+  "round": 5,
+  "lease_id": "52a943f0-2b80-4fdf-9258-ff0ac91c8040",
+  "started_at": "2026-10-30T21:42:06.362959+00:00",
+  "ended_at": "2026-10-30T21:44:33.798982+00:00",
+  "units": [
+    "ENV-06-COMMON"
+  ],
+  "observed_units": [
+    "ENV-06-COMMON"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "0e2df04c06b8d5add7c1a0b360f7b8975fb4d108fcca9cbcd1611798f37591c2",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 23,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

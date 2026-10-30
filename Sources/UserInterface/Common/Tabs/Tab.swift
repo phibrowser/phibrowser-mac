@@ -670,6 +670,18 @@ class Tab: WebContentRepresentable {
         }
     }
     
+    /// Shared by tab surfaces so double-click closing keeps the existing lifecycle guards.
+    @discardableResult
+    func closeOnDoubleClick(modifierFlags: NSEvent.ModifierFlags) -> Bool {
+        guard !isPinned,
+              PhiPreferences.GeneralSettings.doubleClickToCloseTabs.loadValue(),
+              modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty else {
+            return false
+        }
+        close()
+        return true
+    }
+
     @objc func close() {
         // While the agent controls its Space, the watching user cannot close
         // its tabs (the ✕ button, split close, ⌘W all funnel here) — the agent

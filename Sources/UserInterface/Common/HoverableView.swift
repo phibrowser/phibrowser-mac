@@ -42,10 +42,25 @@ class HoverableView: NSView {
     var shouldClickOnMouseDown: (() -> Bool)?
     private var clickedOnMouseDown = false
     private var handledMouseDownEvent: NSEvent?
+    private var mouseDownLocation: NSPoint?
+    private var draggedSinceMouseDown = false
+    private var handledDoubleClick = false
 
     /// Ancestor drag owners can forward this press without activating it again.
     func handledClick(onMouseDown event: NSEvent) -> Bool {
         handledMouseDownEvent === event
+    }
+
+    /// Table tracking loops can consume mouse-up. Let the owner forward the
+    /// double-click without dispatching it again if mouse-up also reaches us.
+    @discardableResult
+    func handleDoubleClick(with event: NSEvent) -> Bool {
+        guard event.clickCount == 2, responseToClickAction,
+              !draggedSinceMouseDown, !handledDoubleClick,
+              let doubleClickAction else { return false }
+        handledDoubleClick = true
+        doubleClickAction(event)
+        return true
     }
 
     var clickAction: (() -> Void)?
@@ -131,6 +146,9 @@ class HoverableView: NSView {
     }
     
     override func mouseDown(with event: NSEvent) {
+        handledDoubleClick = false
+        mouseDownLocation = event.locationInWindow
+        draggedSinceMouseDown = false
         mouseDownModifierFlags = event.modifierFlags
         clickedOnMouseDown = responseToClickAction
             && event.clickCount == 1
@@ -151,19 +169,31 @@ class HoverableView: NSView {
         }
     }
     
+    override func mouseDragged(with event: NSEvent) {
+        // The parent table owns tab drags; their release must not become a double-click.
+        if let start = mouseDownLocation,
+           abs(event.locationInWindow.x - start.x) > 5 || abs(event.locationInWindow.y - start.y) > 5 {
+            draggedSinceMouseDown = true
+        }
+        super.mouseDragged(with: event)
+    }
+
     override func mouseUp(with event: NSEvent) {
         defer {
             mouseDownModifierFlags = nil
             clickedOnMouseDown = false
             handledMouseDownEvent = nil
+            mouseDownLocation = nil
+            draggedSinceMouseDown = false
+            handledDoubleClick = false
         }
         super.mouseUp(with: event)
         if responseToClickAction && enableClickAnimation {
             animateScaleUp()
         }
         if responseToClickAction && !clickedOnMouseDown {
-            if event.clickCount == 2, let doubleClickAction {
-                doubleClickAction(event)
+            if event.clickCount == 2, doubleClickAction != nil {
+                handleDoubleClick(with: event)
             } else if let clickActionWithModifierFlags {
                 clickActionWithModifierFlags(mouseDownModifierFlags ?? event.modifierFlags)
             } else {

@@ -1103,6 +1103,7 @@ extension TabGroupCellView: GroupTabsTableViewDelegate {
 
     func tableView(_ tableView: GroupTabsTableView,
                    didClickRow row: Int,
+                   clickCount: Int,
                    modifierFlags: NSEvent.ModifierFlags) {
         guard currentMemberOrder.indices.contains(row) else {
             return
@@ -1113,6 +1114,10 @@ extension TabGroupCellView: GroupTabsTableViewDelegate {
             makeIfNecessary: false
         ) as? TabPreviewInteractionCancelling)?.cancelTabPreviewForInteraction()
         let key = currentMemberOrder[row]
+        if clickCount == 2, let tab = tabsByGuid[key],
+           tab.closeOnDoubleClick(modifierFlags: modifierFlags) {
+            return
+        }
         if modifierFlags.isPureOptionClick,
            let tab = tabsByGuid[key],
            let state = configuredBrowserState {

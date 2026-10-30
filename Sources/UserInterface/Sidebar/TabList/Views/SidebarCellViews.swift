@@ -512,6 +512,23 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         leftPane.handledClick(onMouseDown: event) || rightPane.handledClick(onMouseDown: event)
     }
 
+    @discardableResult
+    func handleDoubleClick(with event: NSEvent) -> Bool {
+        // Functional controls retain their own actions, including double-clicks.
+        for control in [leftCloseHost, rightCloseHost, leftMuteHost, rightMuteHost] {
+            if let control, !control.isHidden,
+               control.bounds.contains(control.convert(event.locationInWindow, from: nil)) {
+                return false
+            }
+        }
+        for pane in [leftPane, rightPane] {
+            if pane.bounds.contains(pane.convert(event.locationInWindow, from: nil)) {
+                return pane.handleDoubleClick(with: event)
+            }
+        }
+        return false
+    }
+
     private lazy var leftIconView = TabFaviconImageView(
         model: leftStatusModel, cornerRadius: Self.faviconCornerRadius
     )
@@ -740,6 +757,12 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         rightPane.clickAction = { [weak self] in
             self?.handlePaneClick(isLeft: false)
         }
+        leftPane.doubleClickAction = { [weak self] event in
+            self?.handlePaneDoubleClick(isLeft: true, event: event)
+        }
+        rightPane.doubleClickAction = { [weak self] event in
+            self?.handlePaneDoubleClick(isLeft: false, event: event)
+        }
 
         // Vertical seam in the gap between the two panes so the pair
         // always reads as two grouped tabs. Mirrors `splitDividerView`
@@ -771,6 +794,14 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
                 width: TabCornerBadgeMetrics.visualSize,
                 height: TabCornerBadgeMetrics.visualSize
             ))
+        }
+    }
+
+    private func handlePaneDoubleClick(isLeft: Bool, event: NSEvent) {
+        guard let tab = (isLeft ? configuredLeftTab : configuredRightTab) else { return }
+        cancelTabPreviewForInteraction()
+        if !tab.closeOnDoubleClick(modifierFlags: event.modifierFlags) {
+            handlePaneClick(isLeft: isLeft)
         }
     }
 

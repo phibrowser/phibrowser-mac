@@ -61832,6 +61832,18 @@
         }
       }
     },
+    "settings.advanced.tabs.doubleClickToCloseToggle" : {
+      "comment" : "Advanced settings - Toggle for closing ordinary tabs by double-clicking; pinned tabs and bookmarks keep their existing double-click actions",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable double-click to close tabs"
+          }
+        }
+      }
+    },
     "settings.advanced.unloadedTabIcons.description" : {
       "comment" : "Advanced settings - Explains the dashed outline on icons of tabs whose pages are unloaded from memory",
       "localizations" : {

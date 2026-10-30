@@ -13,6 +13,9 @@ struct AdvancedSettingsView: View {
     @AppStorage(PhiPreferences.GeneralSettings.showTabPreviews.rawValue)
     private var showTabPreviews: Bool = PhiPreferences.GeneralSettings.showTabPreviews.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.doubleClickToCloseTabs.rawValue)
+    private var doubleClickToCloseTabs = PhiPreferences.GeneralSettings.doubleClickToCloseTabs.defaultValue
+
     @AppStorage(PhiPreferences.GeneralSettings.showOpenTabIndicators.rawValue)
     private var showOpenTabIndicators = PhiPreferences.GeneralSettings.showOpenTabIndicators.defaultValue
 
@@ -94,6 +97,18 @@ struct AdvancedSettingsView: View {
 
     private var pageCard: some View {
         SettingsDetailCard {
+            SettingsDetailRow(NSLocalizedString("settings.advanced.tabs.doubleClickToCloseToggle", value: "Enable double-click to close tabs", comment: "Advanced settings - Toggle for closing ordinary tabs by double-clicking; pinned tabs and bookmarks keep their existing double-click actions")) {
+                Toggle("", isOn: $doubleClickToCloseTabs)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .themedTint(.themeColor)
+                    .accessibilityLabel(NSLocalizedString("settings.advanced.tabs.doubleClickToCloseToggle", value: "Enable double-click to close tabs", comment: "Advanced settings - Toggle for closing ordinary tabs by double-clicking; pinned tabs and bookmarks keep their existing double-click actions"))
+                    .accessibilityIdentifier("settings.tabs.doubleClickToClose")
+            }
+
+            Divider()
+
             SettingsDetailRow(NSLocalizedString("settings.advanced.addressBar.showFullURLToggle", value: "Always show full URL", comment: "Advanced settings - Toggle title for always showing full URL in address bar")) {
                 Toggle("", isOn: $alwaysShowURLPath)
                     .labelsHidden()

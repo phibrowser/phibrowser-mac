@@ -21782,7 +21782,9 @@
       "qa-evidence/r3/VIS-01-PER-01.png",
       "qa-evidence/r3/VIS-01-PER-02.png",
       "qa-evidence/r3/VIS-01-PER-03.png",
-      "qa-evidence/r3/VIS-01-PER-04.png"
+      "qa-evidence/r3/VIS-01-PER-04.png",
+      "qa-evidence/r3/VIS-01-PER-05.png",
+      "qa-evidence/r3/VIS-01-PER-06.png"
     ],
     "kind": "acceptance",
     "key": "VIS-01-PER",
@@ -21838,7 +21840,9 @@
           "qa-evidence/r3/VIS-01-PER-01.png",
           "qa-evidence/r3/VIS-01-PER-02.png",
           "qa-evidence/r3/VIS-01-PER-03.png",
-          "qa-evidence/r3/VIS-01-PER-04.png"
+          "qa-evidence/r3/VIS-01-PER-04.png",
+          "qa-evidence/r3/VIS-01-PER-05.png",
+          "qa-evidence/r3/VIS-01-PER-06.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-01-evidence.json",
         "notes": "Ripley逐张复核三布局设置/普通菜单/组菜单共9张完整图及正常重启事件图；两个中文开关和完整说明逐字符合手册labels，Performance/Balanced为上方/下方，Comfortable为左侧/右侧，组外边界文案完整且禁用态可辨，无key、英文回退或方向错误。原生New Tab仅用于菜单文案，未冒充Web文档存活测试；旧TC页面、手册和报告保留。正常语言Restart的App quit工具返回不计失败。",
@@ -21911,7 +21915,9 @@
       "qa-evidence/r3/VIS-01-observations.json",
       "qa-evidence/r3/VIS-01-BAL-01.png",
       "qa-evidence/r3/VIS-01-BAL-02.png",
-      "qa-evidence/r3/VIS-01-BAL-03.png"
+      "qa-evidence/r3/VIS-01-BAL-03.png",
+      "qa-evidence/r3/VIS-01-BAL-04.png",
+      "qa-evidence/r3/VIS-01-BAL-05.png"
     ],
     "kind": "acceptance",
     "key": "VIS-01-BAL",
@@ -21962,7 +21968,9 @@
           "qa-evidence/r3/VIS-01-observations.json",
           "qa-evidence/r3/VIS-01-BAL-01.png",
           "qa-evidence/r3/VIS-01-BAL-02.png",
-          "qa-evidence/r3/VIS-01-BAL-03.png"
+          "qa-evidence/r3/VIS-01-BAL-03.png",
+          "qa-evidence/r3/VIS-01-BAL-04.png",
+          "qa-evidence/r3/VIS-01-BAL-05.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-01-evidence.json",
         "notes": "Ripley逐张复核三布局设置/普通菜单/组菜单共9张完整图及正常重启事件图；两个中文开关和完整说明逐字符合手册labels，Performance/Balanced为上方/下方，Comfortable为左侧/右侧，组外边界文案完整且禁用态可辨，无key、英文回退或方向错误。原生New Tab仅用于菜单文案，未冒充Web文档存活测试；旧TC页面、手册和报告保留。正常语言Restart的App quit工具返回不计失败。",
@@ -22031,7 +22039,9 @@
       "qa-evidence/r3/VIS-01-observations.json",
       "qa-evidence/r3/VIS-01-COM-01.png",
       "qa-evidence/r3/VIS-01-COM-02.png",
-      "qa-evidence/r3/VIS-01-COM-03.png"
+      "qa-evidence/r3/VIS-01-COM-03.png",
+      "qa-evidence/r3/VIS-01-COM-04.png",
+      "qa-evidence/r3/VIS-01-COM-05.png"
     ],
     "kind": "acceptance",
     "key": "VIS-01-COM",
@@ -22093,7 +22103,9 @@
           "qa-evidence/r3/VIS-01-observations.json",
           "qa-evidence/r3/VIS-01-COM-01.png",
           "qa-evidence/r3/VIS-01-COM-02.png",
-          "qa-evidence/r3/VIS-01-COM-03.png"
+          "qa-evidence/r3/VIS-01-COM-03.png",
+          "qa-evidence/r3/VIS-01-COM-04.png",
+          "qa-evidence/r3/VIS-01-COM-05.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-01-evidence.json",
         "notes": "Ripley逐张复核三布局设置/普通菜单/组菜单共9张完整图及正常重启事件图；两个中文开关和完整说明逐字符合手册labels，Performance/Balanced为上方/下方，Comfortable为左侧/右侧，组外边界文案完整且禁用态可辨，无key、英文回退或方向错误。原生New Tab仅用于菜单文案，未冒充Web文档存活测试；旧TC页面、手册和报告保留。正常语言Restart的App quit工具返回不计失败。",
@@ -22173,7 +22185,9 @@
       "qa-evidence/r3/VIS-02-PER-en-01.png",
       "qa-evidence/r3/VIS-02-PER-en-02.png",
       "qa-evidence/r3/VIS-02-PER-en-03.png",
-      "qa-evidence/r3/VIS-02-PER-en-04.png"
+      "qa-evidence/r3/VIS-02-PER-en-04.png",
+      "qa-evidence/r3/VIS-02-PER-en-05.png",
+      "qa-evidence/r3/VIS-02-PER-en-06.png"
     ],
     "languages": [
       "en",
@@ -22240,7 +22254,9 @@
           "qa-evidence/r3/VIS-02-PER-en-01.png",
           "qa-evidence/r3/VIS-02-PER-en-02.png",
           "qa-evidence/r3/VIS-02-PER-en-03.png",
-          "qa-evidence/r3/VIS-02-PER-en-04.png"
+          "qa-evidence/r3/VIS-02-PER-en-04.png",
+          "qa-evidence/r3/VIS-02-PER-en-05.png",
+          "qa-evidence/r3/VIS-02-PER-en-06.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-en-evidence.json",
         "notes": "Ripley已逐张复核三个布局设置/普通菜单/组菜单9张关键图，以及PER无效索引、BAL遗留组确认、COM缺参调用3个准备现场。目标英文标签、两段说明和方向项逐字符合handbook en labels；纵向Above/Below、横向Left/Right正确，长组方向项单行完整、禁用态可辨。所有准备错误均留证并在有效前置下重建/恢复后才记录菜单观察，不计产品失败；全程138个实际MCP事件均为Computer Use。未用New Tab观察替代Web文档或范围关闭验证。",
@@ -22313,7 +22329,9 @@
       "qa-evidence/r3/VIS-02-zh-Hant-observations.json",
       "qa-evidence/r3/VIS-02-PER-zh-Hant-01.png",
       "qa-evidence/r3/VIS-02-PER-zh-Hant-02.png",
-      "qa-evidence/r3/VIS-02-PER-zh-Hant-03.png"
+      "qa-evidence/r3/VIS-02-PER-zh-Hant-03.png",
+      "qa-evidence/r3/VIS-02-PER-zh-Hant-04.png",
+      "qa-evidence/r3/VIS-02-PER-zh-Hant-05.png"
     ],
     "languages": [
       "en",
@@ -22378,7 +22396,9 @@
           "qa-evidence/r3/VIS-02-zh-Hant-observations.json",
           "qa-evidence/r3/VIS-02-PER-zh-Hant-01.png",
           "qa-evidence/r3/VIS-02-PER-zh-Hant-02.png",
-          "qa-evidence/r3/VIS-02-PER-zh-Hant-03.png"
+          "qa-evidence/r3/VIS-02-PER-zh-Hant-03.png",
+          "qa-evidence/r3/VIS-02-PER-zh-Hant-04.png",
+          "qa-evidence/r3/VIS-02-PER-zh-Hant-05.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-zh-Hant-evidence.json",
         "notes": "Ripley逐张复核三布局设置、普通菜单和组菜单9张完整关键图及BAL取消工具异常现场，目标文案逐字符合手册zh-Hant labels；效能/平衡使用上方/下方、舒適使用左側/右側，开关与两段说明完整可读，组边界禁用态可辨。BAL的Cancel元素失效后以Escape正常取消并重读原集合，未改变菜单观察或冒充产品失败；COM重命名匹配守卫未执行错误索引。只作为原生语言验收，不声称Web存活或关闭范围通过。",
@@ -22452,7 +22472,9 @@
       "qa-evidence/r3/VIS-02-PER-ja-02.png",
       "qa-evidence/r3/VIS-02-PER-ja-05.png",
       "qa-evidence/r3/VIS-02-PER-ja-03.png",
-      "qa-evidence/r3/VIS-02-PER-ja-04.png"
+      "qa-evidence/r3/VIS-02-PER-ja-04.png",
+      "qa-evidence/r3/VIS-02-PER-ja-06.png",
+      "qa-evidence/r3/VIS-02-PER-ja-07.png"
     ],
     "languages": [
       "en",
@@ -22524,7 +22546,9 @@
           "qa-evidence/r3/VIS-02-PER-ja-02.png",
           "qa-evidence/r3/VIS-02-PER-ja-05.png",
           "qa-evidence/r3/VIS-02-PER-ja-03.png",
-          "qa-evidence/r3/VIS-02-PER-ja-04.png"
+          "qa-evidence/r3/VIS-02-PER-ja-04.png",
+          "qa-evidence/r3/VIS-02-PER-ja-06.png",
+          "qa-evidence/r3/VIS-02-PER-ja-07.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-ja-evidence.json",
         "notes": "Ripley逐张复核三个布局的设置/普通菜单/组菜单9张关键图，以及PER旧组误中成员菜单、重复行定位失效和BAL错误恢复3张准备现场。目标日文标题、两段完整说明及上下/左右方向项逐字符合handbook ja labels；长说明正常两行续接，菜单项完整单行、边界禁用态可辨，无目标key或英文回退。各准备错误均保留且在有效前置完成后才取证；收尾快捷键未打开Settings时改用实际Phi菜单完成核对。155个实际MCP事件全部为Computer Use。",
@@ -22601,7 +22625,9 @@
       "qa-evidence/r3/VIS-02-ko-observations.json",
       "qa-evidence/r3/VIS-02-PER-ko-01.png",
       "qa-evidence/r3/VIS-02-PER-ko-02.png",
-      "qa-evidence/r3/VIS-02-PER-ko-03.png"
+      "qa-evidence/r3/VIS-02-PER-ko-03.png",
+      "qa-evidence/r3/VIS-02-PER-ko-04.png",
+      "qa-evidence/r3/VIS-02-PER-ko-05.png"
     ],
     "languages": [
       "en",
@@ -22666,7 +22692,9 @@
           "qa-evidence/r3/VIS-02-ko-observations.json",
           "qa-evidence/r3/VIS-02-PER-ko-01.png",
           "qa-evidence/r3/VIS-02-PER-ko-02.png",
-          "qa-evidence/r3/VIS-02-PER-ko-03.png"
+          "qa-evidence/r3/VIS-02-PER-ko-03.png",
+          "qa-evidence/r3/VIS-02-PER-ko-04.png",
+          "qa-evidence/r3/VIS-02-PER-ko-05.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-ko-evidence.json",
         "notes": "Ripley已逐张复核三布局9张设置/普通菜单/组菜单关键图及2张准备匹配错误现场；韩文目标标题、两段说明和上下/左右方向项逐字符合handbook ko labels。双击说明两行、方向说明一行，完整可读；组边界禁用态清晰，无目标key、缺字或英文回退。JS编排语法错误发生在UI调用前，BAL/COM匹配守卫恢复后才观察菜单，原始异常保留且不计产品失败。149个实际MCP事件全部来自Computer Use。",
@@ -22739,7 +22767,9 @@
       "qa-evidence/r3/VIS-02-PER-de-01.png",
       "qa-evidence/r3/VIS-02-PER-de-02.png",
       "qa-evidence/r3/VIS-02-PER-de-03.png",
-      "qa-evidence/r3/VIS-02-PER-de-04.png"
+      "qa-evidence/r3/VIS-02-PER-de-04.png",
+      "qa-evidence/r3/VIS-02-PER-de-05.png",
+      "qa-evidence/r3/VIS-02-PER-de-06.png"
     ],
     "languages": [
       "en",
@@ -22809,7 +22839,9 @@
           "qa-evidence/r3/VIS-02-PER-de-01.png",
           "qa-evidence/r3/VIS-02-PER-de-02.png",
           "qa-evidence/r3/VIS-02-PER-de-03.png",
-          "qa-evidence/r3/VIS-02-PER-de-04.png"
+          "qa-evidence/r3/VIS-02-PER-de-04.png",
+          "qa-evidence/r3/VIS-02-PER-de-05.png",
+          "qa-evidence/r3/VIS-02-PER-de-06.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-de-evidence.json",
         "notes": "Ripley已逐张核对11张设置、普通菜单、组菜单及无效准备动作截图。两个设置说明及四个目标方向关闭文案完整且符合手册；纵向上下、横向左右正确。COM普通菜单超出应用窗口右缘的非目标书签项未完整入图，不据此判断该无关项；指定关闭标签完整可见。准备报错保留，不作产品缺陷。",
@@ -22885,7 +22917,9 @@
       "qa-evidence/r3/VIS-02-fr-observations.json",
       "qa-evidence/r3/VIS-02-PER-fr-01.png",
       "qa-evidence/r3/VIS-02-PER-fr-02.png",
-      "qa-evidence/r3/VIS-02-PER-fr-03.png"
+      "qa-evidence/r3/VIS-02-PER-fr-03.png",
+      "qa-evidence/r3/VIS-02-PER-fr-04.png",
+      "qa-evidence/r3/VIS-02-PER-fr-05.png"
     ],
     "languages": [
       "en",
@@ -22951,7 +22985,9 @@
           "qa-evidence/r3/VIS-02-fr-observations.json",
           "qa-evidence/r3/VIS-02-PER-fr-01.png",
           "qa-evidence/r3/VIS-02-PER-fr-02.png",
-          "qa-evidence/r3/VIS-02-PER-fr-03.png"
+          "qa-evidence/r3/VIS-02-PER-fr-03.png",
+          "qa-evidence/r3/VIS-02-PER-fr-04.png",
+          "qa-evidence/r3/VIS-02-PER-fr-05.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-fr-evidence.json",
         "notes": "Ripley逐张核对10张真实CU图：三布局的两个开关及说明完整，指定普通/组方向文案与法语表一致，上下/左右及可用状态符合实际顺序。COM普通菜单右边界超出应用图，目标方向文字仍完整可读；未评定未入图的菜单边界。既有Split View产品名称原样记录，不视作本功能新文案回退。准备匹配错误现场独立保留。",
@@ -23020,7 +23056,15 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录本项语言代码，附两个布局的方向菜单截图；设置说明不能被截断。",
+    "evidence": [
+      "qa-evidence/r3/VIS-02-es-observations.json",
+      "qa-evidence/r3/VIS-02-PER-es-01.png",
+      "qa-evidence/r3/VIS-02-PER-es-02.png",
+      "qa-evidence/r3/VIS-02-PER-es-03.png",
+      "qa-evidence/r3/VIS-02-PER-es-04.png",
+      "qa-evidence/r3/VIS-02-PER-es-05.png",
+      "qa-evidence/r3/VIS-02-PER-es-06.png"
+    ],
     "languages": [
       "en",
       "zh-Hant",
@@ -23039,9 +23083,107 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "VIS-02-es",
+        "round": 3,
+        "outcome": "pass",
+        "actual": "TC-PHI507-r2-VIS-02-PER-es[G1,G2]→普通N；3对象均保留，菜单已取消。本项对象无split。",
+        "observation": {
+          "active_after": "普通N，单选。",
+          "active_before": "普通N，单选。",
+          "after": "TC-PHI507-r2-VIS-02-PER-es[G1,G2]→普通N；3对象均保留，菜单已取消。本项对象无split。",
+          "before": "TC-PHI507-r2-VIS-02-PER-es[G1,G2]→普通N；3对象标题均Nueva pestaña，无多选，本项对象无split。",
+          "confirmation_choices": "语言提示选择Restart Phi；返回App quit后通过CU重新读取并启动指定路径应用。组重命名选择Guardar；观察菜单均用原生Cancel退出。清理旧COM-fr组未出现确认框。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-02-PER-es attempt1 initial-general",
+            "EVIDENCE: VIS-02-PER-es attempt1 restart-result",
+            "EVIDENCE: VIS-02-PER-es attempt1 layout",
+            "EVIDENCE: VIS-02-PER-es attempt1 settings",
+            "EVIDENCE: VIS-02-PER-es attempt1 failure",
+            "EVIDENCE: VIS-02-PER-es attempt1 before",
+            "EVIDENCE: VIS-02-PER-es attempt1 normal-menu",
+            "EVIDENCE: VIS-02-PER-es attempt1 group-menu",
+            "EVIDENCE: VIS-02-PER-es attempt1 after"
+          ],
+          "identity_checks": "初始App路径对应PID85395；语言重启后PID85765，Window=Nueva pestaña。原生组树中G1/G2为两个独立成员row，N为组外selected row；屏幕逐个核对3对象位置。仅本地New Tab。",
+          "language_observed": "General实读Español。指定两开关标题、两段说明和本布局四个方向项的原生全文逐字与提供表一致；所查文本未见key、缺字或英文回退。",
+          "layout_observed": "Rendimiento卡片选中，外部纵向标签栏。普通菜单：Cerrar las pestañas de arriba可用；Cerrar las pestañas de abajo禁用。组标题菜单：Cerrar las pestañas encima del grupo、Cerrar las pestañas debajo del grupo均可用。方向项均单行完整，菜单全图未见文字截断；侧栏长TC组名显示省略号。",
+          "not_executed_reason": "",
+          "operator_errors": [
+            "setup关闭Settings后误沿用索引25，右键到既有手册标签；仅打开菜单，未选任何命令。保存failure现场后用Cancel取消并get_app_state重读，再操作正确TC组。该现场不作为本项普通N菜单观察。"
+          ],
+          "precondition_actual": "起始实读System Default、Balanced、双击off/按位置on。仅点击双击开关改为on，另一开关即时仍on。General选择Español并遵循重启提示，再选择Rendimiento。清理上一COM-fr组及其普通N，独立新建本项G1/G2/N并核对组成员数2。",
+          "settings_observed": "两个开关on/on。标题：Cerrar pestañas con doble clic；Cerrar pestañas por posición。双击说明：Haz doble clic en una pestaña para cerrarla. En la vista dividida, solo se cierra el panel pulsado. Las pestañas fijadas y los marcadores conservan sus acciones habituales de doble clic. 位置说明：Añade a los menús de pestañas y grupos opciones para cerrar las pestañas a la izquierda o a la derecha, o las de arriba o abajo en una barra vertical. 两说明各2行，末句完整、可读，无省略号；设置完整截图包含两个开关。",
+          "steps_executed": [
+            "实读起始偏好，设置公共on/on条件并逐次读取两开关即时值。",
+            "通过General原生下拉选择Español，点击Restart Phi，重新核实语言和新PID。",
+            "选择Performance对应的Rendimiento并截图确认。",
+            "清理上一项可丢弃对象，通过Nuevo grupo de pestañas、Renombrar grupo、Nueva pestaña en el grupo及Cmd+T独立创建本项3对象。",
+            "读取Advanced两个开关及说明，保存完整设置截图。",
+            "对普通N和TC组标题分别右键，读取方向文案与禁用状态并保存完整菜单截图，随后Cancel。",
+            "保存before/after原生状态和截图；结束保留实际3对象。"
+          ],
+          "unit_id": "VIS-02-PER-es"
+        },
+        "evidence": [
+          "qa-evidence/r3/VIS-02-es-observations.json",
+          "qa-evidence/r3/VIS-02-PER-es-01.png",
+          "qa-evidence/r3/VIS-02-PER-es-02.png",
+          "qa-evidence/r3/VIS-02-PER-es-03.png",
+          "qa-evidence/r3/VIS-02-PER-es-04.png",
+          "qa-evidence/r3/VIS-02-PER-es-05.png",
+          "qa-evidence/r3/VIS-02-PER-es-06.png"
+        ],
+        "evidence_metadata": "qa-evidence/r3/VIS-02-es-evidence.json",
+        "notes": "Ripley已核对三布局设置和普通/组目标菜单、误右键现场及COM补取完整菜单/还原图。两段说明完整，四条目标方向文案符合西班牙语表，纵向上下和横向左右及禁用态正确。COM首次截图边界外文字不作判断；原生窗口缩放补图后目标文案完整。保留误用旧索引打开手册菜单的无效动作，未执行其关闭命令。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T16:54:49.910633+00:00"
+      }
+    ],
+    "actual": "TC-PHI507-r2-VIS-02-PER-es[G1,G2]→普通N；3对象均保留，菜单已取消。本项对象无split。",
+    "observation": {
+      "active_after": "普通N，单选。",
+      "active_before": "普通N，单选。",
+      "after": "TC-PHI507-r2-VIS-02-PER-es[G1,G2]→普通N；3对象均保留，菜单已取消。本项对象无split。",
+      "before": "TC-PHI507-r2-VIS-02-PER-es[G1,G2]→普通N；3对象标题均Nueva pestaña，无多选，本项对象无split。",
+      "confirmation_choices": "语言提示选择Restart Phi；返回App quit后通过CU重新读取并启动指定路径应用。组重命名选择Guardar；观察菜单均用原生Cancel退出。清理旧COM-fr组未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-02-PER-es attempt1 initial-general",
+        "EVIDENCE: VIS-02-PER-es attempt1 restart-result",
+        "EVIDENCE: VIS-02-PER-es attempt1 layout",
+        "EVIDENCE: VIS-02-PER-es attempt1 settings",
+        "EVIDENCE: VIS-02-PER-es attempt1 failure",
+        "EVIDENCE: VIS-02-PER-es attempt1 before",
+        "EVIDENCE: VIS-02-PER-es attempt1 normal-menu",
+        "EVIDENCE: VIS-02-PER-es attempt1 group-menu",
+        "EVIDENCE: VIS-02-PER-es attempt1 after"
+      ],
+      "identity_checks": "初始App路径对应PID85395；语言重启后PID85765，Window=Nueva pestaña。原生组树中G1/G2为两个独立成员row，N为组外selected row；屏幕逐个核对3对象位置。仅本地New Tab。",
+      "language_observed": "General实读Español。指定两开关标题、两段说明和本布局四个方向项的原生全文逐字与提供表一致；所查文本未见key、缺字或英文回退。",
+      "layout_observed": "Rendimiento卡片选中，外部纵向标签栏。普通菜单：Cerrar las pestañas de arriba可用；Cerrar las pestañas de abajo禁用。组标题菜单：Cerrar las pestañas encima del grupo、Cerrar las pestañas debajo del grupo均可用。方向项均单行完整，菜单全图未见文字截断；侧栏长TC组名显示省略号。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "setup关闭Settings后误沿用索引25，右键到既有手册标签；仅打开菜单，未选任何命令。保存failure现场后用Cancel取消并get_app_state重读，再操作正确TC组。该现场不作为本项普通N菜单观察。"
+      ],
+      "precondition_actual": "起始实读System Default、Balanced、双击off/按位置on。仅点击双击开关改为on，另一开关即时仍on。General选择Español并遵循重启提示，再选择Rendimiento。清理上一COM-fr组及其普通N，独立新建本项G1/G2/N并核对组成员数2。",
+      "settings_observed": "两个开关on/on。标题：Cerrar pestañas con doble clic；Cerrar pestañas por posición。双击说明：Haz doble clic en una pestaña para cerrarla. En la vista dividida, solo se cierra el panel pulsado. Las pestañas fijadas y los marcadores conservan sus acciones habituales de doble clic. 位置说明：Añade a los menús de pestañas y grupos opciones para cerrar las pestañas a la izquierda o a la derecha, o las de arriba o abajo en una barra vertical. 两说明各2行，末句完整、可读，无省略号；设置完整截图包含两个开关。",
+      "steps_executed": [
+        "实读起始偏好，设置公共on/on条件并逐次读取两开关即时值。",
+        "通过General原生下拉选择Español，点击Restart Phi，重新核实语言和新PID。",
+        "选择Performance对应的Rendimiento并截图确认。",
+        "清理上一项可丢弃对象，通过Nuevo grupo de pestañas、Renombrar grupo、Nueva pestaña en el grupo及Cmd+T独立创建本项3对象。",
+        "读取Advanced两个开关及说明，保存完整设置截图。",
+        "对普通N和TC组标题分别右键，读取方向文案与禁用状态并保存完整菜单截图，随后Cancel。",
+        "保存before/after原生状态和截图；结束保留实际3对象。"
+      ],
+      "unit_id": "VIS-02-PER-es"
+    },
+    "notes": "Ripley已核对三布局设置和普通/组目标菜单、误右键现场及COM补取完整菜单/还原图。两段说明完整，四条目标方向文案符合西班牙语表，纵向上下和横向左右及禁用态正确。COM首次截图边界外文字不作判断；原生窗口缩放补图后目标文案完整。保留误用旧索引打开手册菜单的无效动作，未执行其关闭命令。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "VIS-02",
@@ -23115,7 +23257,9 @@
       "qa-evidence/r3/VIS-02-BAL-en-01.png",
       "qa-evidence/r3/VIS-02-BAL-en-04.png",
       "qa-evidence/r3/VIS-02-BAL-en-02.png",
-      "qa-evidence/r3/VIS-02-BAL-en-03.png"
+      "qa-evidence/r3/VIS-02-BAL-en-03.png",
+      "qa-evidence/r3/VIS-02-BAL-en-05.png",
+      "qa-evidence/r3/VIS-02-BAL-en-06.png"
     ],
     "languages": [
       "en",
@@ -23181,7 +23325,9 @@
           "qa-evidence/r3/VIS-02-BAL-en-01.png",
           "qa-evidence/r3/VIS-02-BAL-en-04.png",
           "qa-evidence/r3/VIS-02-BAL-en-02.png",
-          "qa-evidence/r3/VIS-02-BAL-en-03.png"
+          "qa-evidence/r3/VIS-02-BAL-en-03.png",
+          "qa-evidence/r3/VIS-02-BAL-en-05.png",
+          "qa-evidence/r3/VIS-02-BAL-en-06.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-en-evidence.json",
         "notes": "Ripley已逐张复核三个布局设置/普通菜单/组菜单9张关键图，以及PER无效索引、BAL遗留组确认、COM缺参调用3个准备现场。目标英文标签、两段说明和方向项逐字符合handbook en labels；纵向Above/Below、横向Left/Right正确，长组方向项单行完整、禁用态可辨。所有准备错误均留证并在有效前置下重建/恢复后才记录菜单观察，不计产品失败；全程138个实际MCP事件均为Computer Use。未用New Tab观察替代Web文档或范围关闭验证。",
@@ -23254,7 +23400,9 @@
       "qa-evidence/r3/VIS-02-BAL-zh-Hant-01.png",
       "qa-evidence/r3/VIS-02-BAL-zh-Hant-02.png",
       "qa-evidence/r3/VIS-02-BAL-zh-Hant-03.png",
-      "qa-evidence/r3/VIS-02-BAL-zh-Hant-04.png"
+      "qa-evidence/r3/VIS-02-BAL-zh-Hant-04.png",
+      "qa-evidence/r3/VIS-02-BAL-zh-Hant-05.png",
+      "qa-evidence/r3/VIS-02-BAL-zh-Hant-06.png"
     ],
     "languages": [
       "en",
@@ -23322,7 +23470,9 @@
           "qa-evidence/r3/VIS-02-BAL-zh-Hant-01.png",
           "qa-evidence/r3/VIS-02-BAL-zh-Hant-02.png",
           "qa-evidence/r3/VIS-02-BAL-zh-Hant-03.png",
-          "qa-evidence/r3/VIS-02-BAL-zh-Hant-04.png"
+          "qa-evidence/r3/VIS-02-BAL-zh-Hant-04.png",
+          "qa-evidence/r3/VIS-02-BAL-zh-Hant-05.png",
+          "qa-evidence/r3/VIS-02-BAL-zh-Hant-06.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-zh-Hant-evidence.json",
         "notes": "Ripley逐张复核三布局设置、普通菜单和组菜单9张完整关键图及BAL取消工具异常现场，目标文案逐字符合手册zh-Hant labels；效能/平衡使用上方/下方、舒適使用左側/右側，开关与两段说明完整可读，组边界禁用态可辨。BAL的Cancel元素失效后以Escape正常取消并重读原集合，未改变菜单观察或冒充产品失败；COM重命名匹配守卫未执行错误索引。只作为原生语言验收，不声称Web存活或关闭范围通过。",
@@ -23397,7 +23547,9 @@
       "qa-evidence/r3/VIS-02-BAL-ja-01.png",
       "qa-evidence/r3/VIS-02-BAL-ja-02.png",
       "qa-evidence/r3/VIS-02-BAL-ja-03.png",
-      "qa-evidence/r3/VIS-02-BAL-ja-04.png"
+      "qa-evidence/r3/VIS-02-BAL-ja-04.png",
+      "qa-evidence/r3/VIS-02-BAL-ja-05.png",
+      "qa-evidence/r3/VIS-02-BAL-ja-06.png"
     ],
     "languages": [
       "en",
@@ -23464,7 +23616,9 @@
           "qa-evidence/r3/VIS-02-BAL-ja-01.png",
           "qa-evidence/r3/VIS-02-BAL-ja-02.png",
           "qa-evidence/r3/VIS-02-BAL-ja-03.png",
-          "qa-evidence/r3/VIS-02-BAL-ja-04.png"
+          "qa-evidence/r3/VIS-02-BAL-ja-04.png",
+          "qa-evidence/r3/VIS-02-BAL-ja-05.png",
+          "qa-evidence/r3/VIS-02-BAL-ja-06.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-ja-evidence.json",
         "notes": "Ripley逐张复核三个布局的设置/普通菜单/组菜单9张关键图，以及PER旧组误中成员菜单、重复行定位失效和BAL错误恢复3张准备现场。目标日文标题、两段完整说明及上下/左右方向项逐字符合handbook ja labels；长说明正常两行续接，菜单项完整单行、边界禁用态可辨，无目标key或英文回退。各准备错误均保留且在有效前置完成后才取证；收尾快捷键未打开Settings时改用实际Phi菜单完成核对。155个实际MCP事件全部为Computer Use。",
@@ -23538,7 +23692,9 @@
       "qa-evidence/r3/VIS-02-BAL-ko-01.png",
       "qa-evidence/r3/VIS-02-BAL-ko-02.png",
       "qa-evidence/r3/VIS-02-BAL-ko-03.png",
-      "qa-evidence/r3/VIS-02-BAL-ko-04.png"
+      "qa-evidence/r3/VIS-02-BAL-ko-04.png",
+      "qa-evidence/r3/VIS-02-BAL-ko-05.png",
+      "qa-evidence/r3/VIS-02-BAL-ko-06.png"
     ],
     "languages": [
       "en",
@@ -23604,7 +23760,9 @@
           "qa-evidence/r3/VIS-02-BAL-ko-01.png",
           "qa-evidence/r3/VIS-02-BAL-ko-02.png",
           "qa-evidence/r3/VIS-02-BAL-ko-03.png",
-          "qa-evidence/r3/VIS-02-BAL-ko-04.png"
+          "qa-evidence/r3/VIS-02-BAL-ko-04.png",
+          "qa-evidence/r3/VIS-02-BAL-ko-05.png",
+          "qa-evidence/r3/VIS-02-BAL-ko-06.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-ko-evidence.json",
         "notes": "Ripley已逐张复核三布局9张设置/普通菜单/组菜单关键图及2张准备匹配错误现场；韩文目标标题、两段说明和上下/左右方向项逐字符合handbook ko labels。双击说明两行、方向说明一行，完整可读；组边界禁用态清晰，无目标key、缺字或英文回退。JS编排语法错误发生在UI调用前，BAL/COM匹配守卫恢复后才观察菜单，原始异常保留且不计产品失败。149个实际MCP事件全部来自Computer Use。",
@@ -23676,7 +23834,9 @@
       "qa-evidence/r3/VIS-02-de-observations.json",
       "qa-evidence/r3/VIS-02-BAL-de-01.png",
       "qa-evidence/r3/VIS-02-BAL-de-02.png",
-      "qa-evidence/r3/VIS-02-BAL-de-03.png"
+      "qa-evidence/r3/VIS-02-BAL-de-03.png",
+      "qa-evidence/r3/VIS-02-BAL-de-04.png",
+      "qa-evidence/r3/VIS-02-BAL-de-05.png"
     ],
     "languages": [
       "en",
@@ -23740,7 +23900,9 @@
           "qa-evidence/r3/VIS-02-de-observations.json",
           "qa-evidence/r3/VIS-02-BAL-de-01.png",
           "qa-evidence/r3/VIS-02-BAL-de-02.png",
-          "qa-evidence/r3/VIS-02-BAL-de-03.png"
+          "qa-evidence/r3/VIS-02-BAL-de-03.png",
+          "qa-evidence/r3/VIS-02-BAL-de-04.png",
+          "qa-evidence/r3/VIS-02-BAL-de-05.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-de-evidence.json",
         "notes": "Ripley已逐张核对11张设置、普通菜单、组菜单及无效准备动作截图。两个设置说明及四个目标方向关闭文案完整且符合手册；纵向上下、横向左右正确。COM普通菜单超出应用窗口右缘的非目标书签项未完整入图，不据此判断该无关项；指定关闭标签完整可见。准备报错保留，不作产品缺陷。",
@@ -23811,7 +23973,9 @@
       "qa-evidence/r3/VIS-02-fr-observations.json",
       "qa-evidence/r3/VIS-02-BAL-fr-01.png",
       "qa-evidence/r3/VIS-02-BAL-fr-02.png",
-      "qa-evidence/r3/VIS-02-BAL-fr-03.png"
+      "qa-evidence/r3/VIS-02-BAL-fr-03.png",
+      "qa-evidence/r3/VIS-02-BAL-fr-04.png",
+      "qa-evidence/r3/VIS-02-BAL-fr-05.png"
     ],
     "languages": [
       "en",
@@ -23872,7 +24036,9 @@
           "qa-evidence/r3/VIS-02-fr-observations.json",
           "qa-evidence/r3/VIS-02-BAL-fr-01.png",
           "qa-evidence/r3/VIS-02-BAL-fr-02.png",
-          "qa-evidence/r3/VIS-02-BAL-fr-03.png"
+          "qa-evidence/r3/VIS-02-BAL-fr-03.png",
+          "qa-evidence/r3/VIS-02-BAL-fr-04.png",
+          "qa-evidence/r3/VIS-02-BAL-fr-05.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-fr-evidence.json",
         "notes": "Ripley逐张核对10张真实CU图：三布局的两个开关及说明完整，指定普通/组方向文案与法语表一致，上下/左右及可用状态符合实际顺序。COM普通菜单右边界超出应用图，目标方向文字仍完整可读；未评定未入图的菜单边界。既有Split View产品名称原样记录，不视作本功能新文案回退。准备匹配错误现场独立保留。",
@@ -23936,7 +24102,14 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录本项语言代码，附两个布局的方向菜单截图；设置说明不能被截断。",
+    "evidence": [
+      "qa-evidence/r3/VIS-02-es-observations.json",
+      "qa-evidence/r3/VIS-02-BAL-es-01.png",
+      "qa-evidence/r3/VIS-02-BAL-es-02.png",
+      "qa-evidence/r3/VIS-02-BAL-es-03.png",
+      "qa-evidence/r3/VIS-02-BAL-es-04.png",
+      "qa-evidence/r3/VIS-02-BAL-es-05.png"
+    ],
     "languages": [
       "en",
       "zh-Hant",
@@ -23955,9 +24128,94 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "VIS-02-es",
+        "round": 3,
+        "outcome": "pass",
+        "actual": "TC-PHI507-r2-VIS-02-BAL-es[G1,G2]→普通N；3对象均保留，无菜单或确认框。",
+        "observation": {
+          "active_after": "普通N，单选。",
+          "active_before": "普通N，单选。",
+          "after": "TC-PHI507-r2-VIS-02-BAL-es[G1,G2]→普通N；3对象均保留，无菜单或确认框。",
+          "before": "TC-PHI507-r2-VIS-02-BAL-es[G1,G2]→普通N；3对象标题均Nueva pestaña，无多选，本项对象无split。",
+          "confirmation_choices": "重命名选择Guardar；观察菜单均用原生Cancel退出。清理PER-es组未出现确认框。语言已为Español，本项未重复切换或重启。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-02-BAL-es attempt1 layout",
+            "EVIDENCE: VIS-02-BAL-es attempt1 settings",
+            "EVIDENCE: VIS-02-BAL-es attempt1 before",
+            "EVIDENCE: VIS-02-BAL-es attempt1 normal-menu",
+            "EVIDENCE: VIS-02-BAL-es attempt1 group-menu",
+            "EVIDENCE: VIS-02-BAL-es attempt1 after"
+          ],
+          "identity_checks": "指定路径App，PID85765，Window=Nueva pestaña。原生树中BAL-es组有G1/G2两个独立成员row，普通N为组外selected row；屏幕核对组内2页及组后N。仅本地New Tab。",
+          "language_observed": "General重新实读Español。所查两开关标题、两说明和四个方向项逐字与提供表一致；未见key、缺字或英文回退。",
+          "layout_observed": "Equilibrado卡片选中，外部纵向标签栏。普通菜单：Cerrar las pestañas de arriba可用；Cerrar las pestañas de abajo禁用。组标题菜单：Cerrar las pestañas encima del grupo、Cerrar las pestañas debajo del grupo均可用。方向项单行完整、可读；完整菜单图未见文字截断。侧栏TC长组名显示省略号。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "General实读Español并选择Equilibrado；两个开关实读on/on，未重复点击。清理PER-es组及普通N，独立新建BAL-es组G1/G2和组后普通N，核对成员数2与顺序。",
+          "settings_observed": "两个开关on/on。标题：Cerrar pestañas con doble clic；Cerrar pestañas por posición。双击说明：Haz doble clic en una pestaña para cerrarla. En la vista dividida, solo se cierra el panel pulsado. Las pestañas fijadas y los marcadores conservan sus acciones habituales de doble clic. 位置说明：Añade a los menús de pestañas y grupos opciones para cerrar las pestañas a la izquierda o a la derecha, o las de arriba o abajo en una barra vertical. 两说明各2行，末句完整、可读，无省略号；设置完整截图包含两个开关。",
+          "steps_executed": [
+            "General重新确认Español，选择Balanced对应的Equilibrado并截图。",
+            "读取Advanced两个开关和两说明，保存完整设置截图。",
+            "原生清理PER-es组与普通N，重新创建本项G1/G2组及普通N。",
+            "保存前置集合及before截图。",
+            "分别打开普通N菜单和组标题菜单，读取方向项全文及禁用状态，保存完整截图并Cancel退出。",
+            "保存after状态和截图，保留本项3对象至下一项setup。"
+          ],
+          "unit_id": "VIS-02-BAL-es"
+        },
+        "evidence": [
+          "qa-evidence/r3/VIS-02-es-observations.json",
+          "qa-evidence/r3/VIS-02-BAL-es-01.png",
+          "qa-evidence/r3/VIS-02-BAL-es-02.png",
+          "qa-evidence/r3/VIS-02-BAL-es-03.png",
+          "qa-evidence/r3/VIS-02-BAL-es-04.png",
+          "qa-evidence/r3/VIS-02-BAL-es-05.png"
+        ],
+        "evidence_metadata": "qa-evidence/r3/VIS-02-es-evidence.json",
+        "notes": "Ripley已核对三布局设置和普通/组目标菜单、误右键现场及COM补取完整菜单/还原图。两段说明完整，四条目标方向文案符合西班牙语表，纵向上下和横向左右及禁用态正确。COM首次截图边界外文字不作判断；原生窗口缩放补图后目标文案完整。保留误用旧索引打开手册菜单的无效动作，未执行其关闭命令。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T16:54:49.910884+00:00"
+      }
+    ],
+    "actual": "TC-PHI507-r2-VIS-02-BAL-es[G1,G2]→普通N；3对象均保留，无菜单或确认框。",
+    "observation": {
+      "active_after": "普通N，单选。",
+      "active_before": "普通N，单选。",
+      "after": "TC-PHI507-r2-VIS-02-BAL-es[G1,G2]→普通N；3对象均保留，无菜单或确认框。",
+      "before": "TC-PHI507-r2-VIS-02-BAL-es[G1,G2]→普通N；3对象标题均Nueva pestaña，无多选，本项对象无split。",
+      "confirmation_choices": "重命名选择Guardar；观察菜单均用原生Cancel退出。清理PER-es组未出现确认框。语言已为Español，本项未重复切换或重启。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-02-BAL-es attempt1 layout",
+        "EVIDENCE: VIS-02-BAL-es attempt1 settings",
+        "EVIDENCE: VIS-02-BAL-es attempt1 before",
+        "EVIDENCE: VIS-02-BAL-es attempt1 normal-menu",
+        "EVIDENCE: VIS-02-BAL-es attempt1 group-menu",
+        "EVIDENCE: VIS-02-BAL-es attempt1 after"
+      ],
+      "identity_checks": "指定路径App，PID85765，Window=Nueva pestaña。原生树中BAL-es组有G1/G2两个独立成员row，普通N为组外selected row；屏幕核对组内2页及组后N。仅本地New Tab。",
+      "language_observed": "General重新实读Español。所查两开关标题、两说明和四个方向项逐字与提供表一致；未见key、缺字或英文回退。",
+      "layout_observed": "Equilibrado卡片选中，外部纵向标签栏。普通菜单：Cerrar las pestañas de arriba可用；Cerrar las pestañas de abajo禁用。组标题菜单：Cerrar las pestañas encima del grupo、Cerrar las pestañas debajo del grupo均可用。方向项单行完整、可读；完整菜单图未见文字截断。侧栏TC长组名显示省略号。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "General实读Español并选择Equilibrado；两个开关实读on/on，未重复点击。清理PER-es组及普通N，独立新建BAL-es组G1/G2和组后普通N，核对成员数2与顺序。",
+      "settings_observed": "两个开关on/on。标题：Cerrar pestañas con doble clic；Cerrar pestañas por posición。双击说明：Haz doble clic en una pestaña para cerrarla. En la vista dividida, solo se cierra el panel pulsado. Las pestañas fijadas y los marcadores conservan sus acciones habituales de doble clic. 位置说明：Añade a los menús de pestañas y grupos opciones para cerrar las pestañas a la izquierda o a la derecha, o las de arriba o abajo en una barra vertical. 两说明各2行，末句完整、可读，无省略号；设置完整截图包含两个开关。",
+      "steps_executed": [
+        "General重新确认Español，选择Balanced对应的Equilibrado并截图。",
+        "读取Advanced两个开关和两说明，保存完整设置截图。",
+        "原生清理PER-es组与普通N，重新创建本项G1/G2组及普通N。",
+        "保存前置集合及before截图。",
+        "分别打开普通N菜单和组标题菜单，读取方向项全文及禁用状态，保存完整截图并Cancel退出。",
+        "保存after状态和截图，保留本项3对象至下一项setup。"
+      ],
+      "unit_id": "VIS-02-BAL-es"
+    },
+    "notes": "Ripley已核对三布局设置和普通/组目标菜单、误右键现场及COM补取完整菜单/还原图。两段说明完整，四条目标方向文案符合西班牙语表，纵向上下和横向左右及禁用态正确。COM首次截图边界外文字不作判断；原生窗口缩放补图后目标文案完整。保留误用旧索引打开手册菜单的无效动作，未执行其关闭命令。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "VIS-02",
@@ -24031,7 +24289,9 @@
       "qa-evidence/r3/VIS-02-COM-en-01.png",
       "qa-evidence/r3/VIS-02-COM-en-02.png",
       "qa-evidence/r3/VIS-02-COM-en-03.png",
-      "qa-evidence/r3/VIS-02-COM-en-04.png"
+      "qa-evidence/r3/VIS-02-COM-en-04.png",
+      "qa-evidence/r3/VIS-02-COM-en-05.png",
+      "qa-evidence/r3/VIS-02-COM-en-06.png"
     ],
     "languages": [
       "en",
@@ -24103,7 +24363,9 @@
           "qa-evidence/r3/VIS-02-COM-en-01.png",
           "qa-evidence/r3/VIS-02-COM-en-02.png",
           "qa-evidence/r3/VIS-02-COM-en-03.png",
-          "qa-evidence/r3/VIS-02-COM-en-04.png"
+          "qa-evidence/r3/VIS-02-COM-en-04.png",
+          "qa-evidence/r3/VIS-02-COM-en-05.png",
+          "qa-evidence/r3/VIS-02-COM-en-06.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-en-evidence.json",
         "notes": "Ripley已逐张复核三个布局设置/普通菜单/组菜单9张关键图，以及PER无效索引、BAL遗留组确认、COM缺参调用3个准备现场。目标英文标签、两段说明和方向项逐字符合handbook en labels；纵向Above/Below、横向Left/Right正确，长组方向项单行完整、禁用态可辨。所有准备错误均留证并在有效前置下重建/恢复后才记录菜单观察，不计产品失败；全程138个实际MCP事件均为Computer Use。未用New Tab观察替代Web文档或范围关闭验证。",
@@ -24181,7 +24443,9 @@
       "qa-evidence/r3/VIS-02-zh-Hant-observations.json",
       "qa-evidence/r3/VIS-02-COM-zh-Hant-01.png",
       "qa-evidence/r3/VIS-02-COM-zh-Hant-02.png",
-      "qa-evidence/r3/VIS-02-COM-zh-Hant-03.png"
+      "qa-evidence/r3/VIS-02-COM-zh-Hant-03.png",
+      "qa-evidence/r3/VIS-02-COM-zh-Hant-04.png",
+      "qa-evidence/r3/VIS-02-COM-zh-Hant-05.png"
     ],
     "languages": [
       "en",
@@ -24255,7 +24519,9 @@
           "qa-evidence/r3/VIS-02-zh-Hant-observations.json",
           "qa-evidence/r3/VIS-02-COM-zh-Hant-01.png",
           "qa-evidence/r3/VIS-02-COM-zh-Hant-02.png",
-          "qa-evidence/r3/VIS-02-COM-zh-Hant-03.png"
+          "qa-evidence/r3/VIS-02-COM-zh-Hant-03.png",
+          "qa-evidence/r3/VIS-02-COM-zh-Hant-04.png",
+          "qa-evidence/r3/VIS-02-COM-zh-Hant-05.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-zh-Hant-evidence.json",
         "notes": "Ripley逐张复核三布局设置、普通菜单和组菜单9张完整关键图及BAL取消工具异常现场，目标文案逐字符合手册zh-Hant labels；效能/平衡使用上方/下方、舒適使用左側/右側，开关与两段说明完整可读，组边界禁用态可辨。BAL的Cancel元素失效后以Escape正常取消并重读原集合，未改变菜单观察或冒充产品失败；COM重命名匹配守卫未执行错误索引。只作为原生语言验收，不声称Web存活或关闭范围通过。",
@@ -24336,7 +24602,9 @@
       "qa-evidence/r3/VIS-02-ja-observations.json",
       "qa-evidence/r3/VIS-02-COM-ja-01.png",
       "qa-evidence/r3/VIS-02-COM-ja-02.png",
-      "qa-evidence/r3/VIS-02-COM-ja-03.png"
+      "qa-evidence/r3/VIS-02-COM-ja-03.png",
+      "qa-evidence/r3/VIS-02-COM-ja-04.png",
+      "qa-evidence/r3/VIS-02-COM-ja-05.png"
     ],
     "languages": [
       "en",
@@ -24408,7 +24676,9 @@
           "qa-evidence/r3/VIS-02-ja-observations.json",
           "qa-evidence/r3/VIS-02-COM-ja-01.png",
           "qa-evidence/r3/VIS-02-COM-ja-02.png",
-          "qa-evidence/r3/VIS-02-COM-ja-03.png"
+          "qa-evidence/r3/VIS-02-COM-ja-03.png",
+          "qa-evidence/r3/VIS-02-COM-ja-04.png",
+          "qa-evidence/r3/VIS-02-COM-ja-05.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-ja-evidence.json",
         "notes": "Ripley逐张复核三个布局的设置/普通菜单/组菜单9张关键图，以及PER旧组误中成员菜单、重复行定位失效和BAL错误恢复3张准备现场。目标日文标题、两段完整说明及上下/左右方向项逐字符合handbook ja labels；长说明正常两行续接，菜单项完整单行、边界禁用态可辨，无目标key或英文回退。各准备错误均保留且在有效前置完成后才取证；收尾快捷键未打开Settings时改用实际Phi菜单完成核对。155个实际MCP事件全部为Computer Use。",
@@ -24488,7 +24758,9 @@
       "qa-evidence/r3/VIS-02-COM-ko-01.png",
       "qa-evidence/r3/VIS-02-COM-ko-02.png",
       "qa-evidence/r3/VIS-02-COM-ko-03.png",
-      "qa-evidence/r3/VIS-02-COM-ko-04.png"
+      "qa-evidence/r3/VIS-02-COM-ko-04.png",
+      "qa-evidence/r3/VIS-02-COM-ko-05.png",
+      "qa-evidence/r3/VIS-02-COM-ko-06.png"
     ],
     "languages": [
       "en",
@@ -24563,7 +24835,9 @@
           "qa-evidence/r3/VIS-02-COM-ko-01.png",
           "qa-evidence/r3/VIS-02-COM-ko-02.png",
           "qa-evidence/r3/VIS-02-COM-ko-03.png",
-          "qa-evidence/r3/VIS-02-COM-ko-04.png"
+          "qa-evidence/r3/VIS-02-COM-ko-04.png",
+          "qa-evidence/r3/VIS-02-COM-ko-05.png",
+          "qa-evidence/r3/VIS-02-COM-ko-06.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-ko-evidence.json",
         "notes": "Ripley已逐张复核三布局9张设置/普通菜单/组菜单关键图及2张准备匹配错误现场；韩文目标标题、两段说明和上下/左右方向项逐字符合handbook ko labels。双击说明两行、方向说明一行，完整可读；组边界禁用态清晰，无目标key、缺字或英文回退。JS编排语法错误发生在UI调用前，BAL/COM匹配守卫恢复后才观察菜单，原始异常保留且不计产品失败。149个实际MCP事件全部来自Computer Use。",
@@ -24645,7 +24919,9 @@
       "qa-evidence/r3/VIS-02-COM-de-01.png",
       "qa-evidence/r3/VIS-02-COM-de-02.png",
       "qa-evidence/r3/VIS-02-COM-de-03.png",
-      "qa-evidence/r3/VIS-02-COM-de-04.png"
+      "qa-evidence/r3/VIS-02-COM-de-04.png",
+      "qa-evidence/r3/VIS-02-COM-de-05.png",
+      "qa-evidence/r3/VIS-02-COM-de-06.png"
     ],
     "languages": [
       "en",
@@ -24721,7 +24997,9 @@
           "qa-evidence/r3/VIS-02-COM-de-01.png",
           "qa-evidence/r3/VIS-02-COM-de-02.png",
           "qa-evidence/r3/VIS-02-COM-de-03.png",
-          "qa-evidence/r3/VIS-02-COM-de-04.png"
+          "qa-evidence/r3/VIS-02-COM-de-04.png",
+          "qa-evidence/r3/VIS-02-COM-de-05.png",
+          "qa-evidence/r3/VIS-02-COM-de-06.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-de-evidence.json",
         "notes": "Ripley已逐张核对11张设置、普通菜单、组菜单及无效准备动作截图。两个设置说明及四个目标方向关闭文案完整且符合手册；纵向上下、横向左右正确。COM普通菜单超出应用窗口右缘的非目标书签项未完整入图，不据此判断该无关项；指定关闭标签完整可见。准备报错保留，不作产品缺陷。",
@@ -24804,7 +25082,9 @@
       "qa-evidence/r3/VIS-02-COM-fr-01.png",
       "qa-evidence/r3/VIS-02-COM-fr-04.png",
       "qa-evidence/r3/VIS-02-COM-fr-02.png",
-      "qa-evidence/r3/VIS-02-COM-fr-03.png"
+      "qa-evidence/r3/VIS-02-COM-fr-03.png",
+      "qa-evidence/r3/VIS-02-COM-fr-05.png",
+      "qa-evidence/r3/VIS-02-COM-fr-06.png"
     ],
     "languages": [
       "en",
@@ -24876,7 +25156,9 @@
           "qa-evidence/r3/VIS-02-COM-fr-01.png",
           "qa-evidence/r3/VIS-02-COM-fr-04.png",
           "qa-evidence/r3/VIS-02-COM-fr-02.png",
-          "qa-evidence/r3/VIS-02-COM-fr-03.png"
+          "qa-evidence/r3/VIS-02-COM-fr-03.png",
+          "qa-evidence/r3/VIS-02-COM-fr-05.png",
+          "qa-evidence/r3/VIS-02-COM-fr-06.png"
         ],
         "evidence_metadata": "qa-evidence/r3/VIS-02-fr-evidence.json",
         "notes": "Ripley逐张核对10张真实CU图：三布局的两个开关及说明完整，指定普通/组方向文案与法语表一致，上下/左右及可用状态符合实际顺序。COM普通菜单右边界超出应用图，目标方向文字仍完整可读；未评定未入图的菜单边界。既有Split View产品名称原样记录，不视作本功能新文案回退。准备匹配错误现场独立保留。",
@@ -24950,7 +25232,17 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录本项语言代码，附两个布局的方向菜单截图；设置说明不能被截断。",
+    "evidence": [
+      "qa-evidence/r3/VIS-02-es-observations.json",
+      "qa-evidence/r3/VIS-02-COM-es-01.png",
+      "qa-evidence/r3/VIS-02-COM-es-02.png",
+      "qa-evidence/r3/VIS-02-COM-es-03.png",
+      "qa-evidence/r3/VIS-02-COM-es-04.png",
+      "qa-evidence/r3/VIS-02-COM-es-05.png",
+      "qa-evidence/r3/VIS-02-COM-es-06.png",
+      "qa-evidence/r3/VIS-02-COM-es-07.png",
+      "qa-evidence/r3/VIS-02-COM-es-08.png"
+    ],
     "languages": [
       "en",
       "zh-Hant",
@@ -24969,9 +25261,119 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "VIS-02-es",
+        "round": 3,
+        "outcome": "pass",
+        "actual": "菜单观察结束仍为TC-PHI507-r2-VIS-02-COM-es[G1,G2]→普通N；窗口缩放已还原，菜单已取消。后续只恢复偏好，未重建对象。",
+        "observation": {
+          "active_after": "菜单观察结束为普通N，单选；会话恢复后仍为该N，标题New Tab。",
+          "active_before": "最右普通N，单选。",
+          "after": "菜单观察结束仍为TC-PHI507-r2-VIS-02-COM-es[G1,G2]→普通N；窗口缩放已还原，菜单已取消。后续只恢复偏好，未重建对象。",
+          "before": "TC-PHI507-r2-VIS-02-COM-es[G1,G2]→普通N；3对象均Nueva pestaña，无多选，本项对象无split。",
+          "confirmation_choices": "重命名选择Guardar；观察菜单均用原生Cancel退出。清理BAL-es组未出现确认框。收尾General选择Predeterminado del sistema，在¿Reiniciar Phi?提示中选择Reiniciar Phi；App quit作为该次预期重启返回保留。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-02-COM-es attempt1 layout",
+            "EVIDENCE: VIS-02-COM-es attempt1 settings",
+            "EVIDENCE: VIS-02-COM-es attempt1 before",
+            "EVIDENCE: VIS-02-COM-es attempt1 normal-menu",
+            "EVIDENCE: VIS-02-COM-es attempt1 group-menu",
+            "EVIDENCE: VIS-02-COM-es attempt1 after",
+            "EVIDENCE: VIS-02-COM-es attempt1 menu-capture-zoom",
+            "EVIDENCE: VIS-02-COM-es attempt1 normal-menu-full",
+            "EVIDENCE: VIS-02-COM-es attempt1 after-capture",
+            "EVIDENCE: VIS-02-COM-es attempt1 restore-switches",
+            "EVIDENCE: VIS-02-COM-es attempt1 restore-layout",
+            "EVIDENCE: VIS-02-COM-es attempt1 restore-restart-result",
+            "EVIDENCE: VIS-02-COM-es attempt1 restored-browser",
+            "EVIDENCE: VIS-02-COM-es attempt1 restored-general",
+            "EVIDENCE: VIS-02-COM-es attempt1 restored-advanced",
+            "EVIDENCE: VIS-02-COM-es attempt1 ending-state"
+          ],
+          "identity_checks": "观察时指定路径App、PID85765、Window=Nueva pestaña。组标题原生计数2，创建顺序G1/G2；普通N为第3个Nueva pestaña tabStripTab按钮，屏幕显示其位于组后且活动。收尾语言重启后PID86310、Window=New Tab；纵向原生树再次核实COM-es组2成员及组外活动N。仅本地New Tab。",
+          "language_observed": "观察时General实读Español。所查两开关标题、两说明、左右四方向项原生全文逐字与提供表一致；未见key、缺字或英文回退。收尾实读System Default，界面英文。",
+          "layout_observed": "观察时Cómodo卡片选中，外部横向标签栏。普通菜单：Cerrar las pestañas a la izquierda可用；Cerrar las pestañas a la derecha禁用。组标题菜单：Cerrar las pestañas a la izquierda del grupo、Cerrar las pestañas a la derecha del grupo均可用。组菜单和补取的普通菜单全图中方向项均单行完整。初次普通菜单右端超出CU窗口捕获边界，不能据该图确认完整右缘；使用窗口暴露的ampliar la ventana动作缩放后补取完整图，再Cancel并还原。顶部长组名及标签标题受宽度限制。收尾General确认Balanced选中。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "General重新实读Español并选择Cómodo；两个开关实读on/on。清理BAL-es组与普通N，独立创建COM-es组G1/G2和组后普通N；原生组计数2并核对屏幕顺序。",
+          "settings_observed": "观察时on/on。标题：Cerrar pestañas con doble clic；Cerrar pestañas por posición。双击说明：Haz doble clic en una pestaña para cerrarla. En la vista dividida, solo se cierra el panel pulsado. Las pestañas fijadas y los marcadores conservan sus acciones habituales de doble clic. 位置说明：Añade a los menús de pestañas y grupos opciones para cerrar las pestañas a la izquierda o a la derecha, o las de arriba o abajo en una barra vertical. 两说明各2行，完整可读，设置全图包含两个开关。收尾仅点击双击开关恢复off，另一开关即时仍on；重启后再次实读off/on。",
+          "steps_executed": [
+            "General确认Español，选择Comfortable对应的Cómodo并截图。",
+            "读取Advanced两个开关和两说明，保存完整设置截图。",
+            "原生清理BAL-es对象，独立重建COM-es组G1/G2及普通N。",
+            "保存before状态；分别打开普通N及组标题菜单，读取左右文案与可用状态并截图，Cancel退出。",
+            "保留初次普通菜单捕获不全记录；原生缩放同窗口，重开同N菜单补取完整图，Cancel并缩放还原，保存after-capture。",
+            "统一恢复双击off/按位置on、Balanced及System Default，遵循原生语言重启提示。",
+            "在新PID下重新实读General和Advanced恢复值，关闭Settings，保存最终集合和ending-state截图；未额外重建页面。"
+          ],
+          "unit_id": "VIS-02-COM-es"
+        },
+        "evidence": [
+          "qa-evidence/r3/VIS-02-es-observations.json",
+          "qa-evidence/r3/VIS-02-COM-es-01.png",
+          "qa-evidence/r3/VIS-02-COM-es-02.png",
+          "qa-evidence/r3/VIS-02-COM-es-03.png",
+          "qa-evidence/r3/VIS-02-COM-es-04.png",
+          "qa-evidence/r3/VIS-02-COM-es-05.png",
+          "qa-evidence/r3/VIS-02-COM-es-06.png",
+          "qa-evidence/r3/VIS-02-COM-es-07.png",
+          "qa-evidence/r3/VIS-02-COM-es-08.png"
+        ],
+        "evidence_metadata": "qa-evidence/r3/VIS-02-es-evidence.json",
+        "notes": "Ripley已核对三布局设置和普通/组目标菜单、误右键现场及COM补取完整菜单/还原图。两段说明完整，四条目标方向文案符合西班牙语表，纵向上下和横向左右及禁用态正确。COM首次截图边界外文字不作判断；原生窗口缩放补图后目标文案完整。保留误用旧索引打开手册菜单的无效动作，未执行其关闭命令。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T16:54:49.910927+00:00"
+      }
+    ],
+    "actual": "菜单观察结束仍为TC-PHI507-r2-VIS-02-COM-es[G1,G2]→普通N；窗口缩放已还原，菜单已取消。后续只恢复偏好，未重建对象。",
+    "observation": {
+      "active_after": "菜单观察结束为普通N，单选；会话恢复后仍为该N，标题New Tab。",
+      "active_before": "最右普通N，单选。",
+      "after": "菜单观察结束仍为TC-PHI507-r2-VIS-02-COM-es[G1,G2]→普通N；窗口缩放已还原，菜单已取消。后续只恢复偏好，未重建对象。",
+      "before": "TC-PHI507-r2-VIS-02-COM-es[G1,G2]→普通N；3对象均Nueva pestaña，无多选，本项对象无split。",
+      "confirmation_choices": "重命名选择Guardar；观察菜单均用原生Cancel退出。清理BAL-es组未出现确认框。收尾General选择Predeterminado del sistema，在¿Reiniciar Phi?提示中选择Reiniciar Phi；App quit作为该次预期重启返回保留。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-02-COM-es attempt1 layout",
+        "EVIDENCE: VIS-02-COM-es attempt1 settings",
+        "EVIDENCE: VIS-02-COM-es attempt1 before",
+        "EVIDENCE: VIS-02-COM-es attempt1 normal-menu",
+        "EVIDENCE: VIS-02-COM-es attempt1 group-menu",
+        "EVIDENCE: VIS-02-COM-es attempt1 after",
+        "EVIDENCE: VIS-02-COM-es attempt1 menu-capture-zoom",
+        "EVIDENCE: VIS-02-COM-es attempt1 normal-menu-full",
+        "EVIDENCE: VIS-02-COM-es attempt1 after-capture",
+        "EVIDENCE: VIS-02-COM-es attempt1 restore-switches",
+        "EVIDENCE: VIS-02-COM-es attempt1 restore-layout",
+        "EVIDENCE: VIS-02-COM-es attempt1 restore-restart-result",
+        "EVIDENCE: VIS-02-COM-es attempt1 restored-browser",
+        "EVIDENCE: VIS-02-COM-es attempt1 restored-general",
+        "EVIDENCE: VIS-02-COM-es attempt1 restored-advanced",
+        "EVIDENCE: VIS-02-COM-es attempt1 ending-state"
+      ],
+      "identity_checks": "观察时指定路径App、PID85765、Window=Nueva pestaña。组标题原生计数2，创建顺序G1/G2；普通N为第3个Nueva pestaña tabStripTab按钮，屏幕显示其位于组后且活动。收尾语言重启后PID86310、Window=New Tab；纵向原生树再次核实COM-es组2成员及组外活动N。仅本地New Tab。",
+      "language_observed": "观察时General实读Español。所查两开关标题、两说明、左右四方向项原生全文逐字与提供表一致；未见key、缺字或英文回退。收尾实读System Default，界面英文。",
+      "layout_observed": "观察时Cómodo卡片选中，外部横向标签栏。普通菜单：Cerrar las pestañas a la izquierda可用；Cerrar las pestañas a la derecha禁用。组标题菜单：Cerrar las pestañas a la izquierda del grupo、Cerrar las pestañas a la derecha del grupo均可用。组菜单和补取的普通菜单全图中方向项均单行完整。初次普通菜单右端超出CU窗口捕获边界，不能据该图确认完整右缘；使用窗口暴露的ampliar la ventana动作缩放后补取完整图，再Cancel并还原。顶部长组名及标签标题受宽度限制。收尾General确认Balanced选中。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "General重新实读Español并选择Cómodo；两个开关实读on/on。清理BAL-es组与普通N，独立创建COM-es组G1/G2和组后普通N；原生组计数2并核对屏幕顺序。",
+      "settings_observed": "观察时on/on。标题：Cerrar pestañas con doble clic；Cerrar pestañas por posición。双击说明：Haz doble clic en una pestaña para cerrarla. En la vista dividida, solo se cierra el panel pulsado. Las pestañas fijadas y los marcadores conservan sus acciones habituales de doble clic. 位置说明：Añade a los menús de pestañas y grupos opciones para cerrar las pestañas a la izquierda o a la derecha, o las de arriba o abajo en una barra vertical. 两说明各2行，完整可读，设置全图包含两个开关。收尾仅点击双击开关恢复off，另一开关即时仍on；重启后再次实读off/on。",
+      "steps_executed": [
+        "General确认Español，选择Comfortable对应的Cómodo并截图。",
+        "读取Advanced两个开关和两说明，保存完整设置截图。",
+        "原生清理BAL-es对象，独立重建COM-es组G1/G2及普通N。",
+        "保存before状态；分别打开普通N及组标题菜单，读取左右文案与可用状态并截图，Cancel退出。",
+        "保留初次普通菜单捕获不全记录；原生缩放同窗口，重开同N菜单补取完整图，Cancel并缩放还原，保存after-capture。",
+        "统一恢复双击off/按位置on、Balanced及System Default，遵循原生语言重启提示。",
+        "在新PID下重新实读General和Advanced恢复值，关闭Settings，保存最终集合和ending-state截图；未额外重建页面。"
+      ],
+      "unit_id": "VIS-02-COM-es"
+    },
+    "notes": "Ripley已核对三布局设置和普通/组目标菜单、误右键现场及COM补取完整菜单/还原图。两段说明完整，四条目标方向文案符合西班牙语表，纵向上下和横向左右及禁用态正确。COM首次截图边界外文字不作判断；原生窗口缩放补图后目标文案完整。保留误用旧索引打开手册菜单的无效动作，未执行其关闭命令。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "VIS-02",

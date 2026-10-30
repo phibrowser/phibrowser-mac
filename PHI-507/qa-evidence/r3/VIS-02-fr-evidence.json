@@ -248,5 +248,155 @@
     ],
     "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-PER-fr",
+    "attempt": 1,
+    "phase": "before",
+    "file": "VIS-02-PER-fr-04.png",
+    "original_marker": "VIS-02-PER-fr attempt1 before",
+    "source_file": "VIS-02-fr-007.jpg",
+    "source_sha256": "9a2341a4eeade3a42ea7367e7077f84b48fa1e3f5fd7480d76c3fddc45d49d72",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-PER-fr",
+    "attempt": 1,
+    "phase": "after",
+    "file": "VIS-02-PER-fr-05.png",
+    "original_marker": "VIS-02-PER-fr attempt1 after",
+    "source_file": "VIS-02-fr-010.jpg",
+    "source_sha256": "89e6f79b1ec39d27fa69ecb3f86a5837b04cfc7fbb645e4e9289dc131d8f00ce",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-BAL-fr",
+    "attempt": 1,
+    "phase": "before",
+    "file": "VIS-02-BAL-fr-04.png",
+    "original_marker": "VIS-02-BAL-fr attempt1 before",
+    "source_file": "VIS-02-fr-013.jpg",
+    "source_sha256": "91f1d2fd90d1bca6ff733341f2355eca454cff6b1cf73fd9d04642b0d26460fe",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-BAL-fr",
+    "attempt": 1,
+    "phase": "after",
+    "file": "VIS-02-BAL-fr-05.png",
+    "original_marker": "VIS-02-BAL-fr attempt1 after",
+    "source_file": "VIS-02-fr-016.jpg",
+    "source_sha256": "d9c9515b2088b2550fab0376c1c7516392509e71075d4eae81403640060dacb3",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-COM-fr",
+    "attempt": 1,
+    "phase": "before",
+    "file": "VIS-02-COM-fr-05.png",
+    "original_marker": "VIS-02-COM-fr attempt1 before",
+    "source_file": "VIS-02-fr-021.jpg",
+    "source_sha256": "8d51d4e76963d1b2c2282d37c7c7f0870dfab5d89579927abc431c84f3e5418e",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-COM-fr",
+    "attempt": 1,
+    "phase": "after",
+    "file": "VIS-02-COM-fr-06.png",
+    "original_marker": "VIS-02-COM-fr attempt1 after",
+    "source_file": "VIS-02-fr-024.jpg",
+    "source_sha256": "c4e450f6e227980643e1d7413f8e66ba55e50065503f282bbc8cdb9ccbb49b5f",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   }
 ]

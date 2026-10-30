@@ -248,5 +248,155 @@
     ],
     "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-PER-zh-Hant",
+    "attempt": 1,
+    "phase": "before",
+    "file": "VIS-02-PER-zh-Hant-04.png",
+    "original_marker": "VIS-02-PER-zh-Hant attempt1 before",
+    "source_file": "VIS-02-zh-Hant-012.jpg",
+    "source_sha256": "ea00272de9e4d5856104b75281a7846996e035e219127f731bce369a5942e877",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-PER-zh-Hant",
+    "attempt": 1,
+    "phase": "after",
+    "file": "VIS-02-PER-zh-Hant-05.png",
+    "original_marker": "VIS-02-PER-zh-Hant attempt1 after",
+    "source_file": "VIS-02-zh-Hant-015.jpg",
+    "source_sha256": "6e0daedc411c6e070ad74173e838fc9603d45c18a738354c724b53464681c6cf",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-BAL-zh-Hant",
+    "attempt": 1,
+    "phase": "before",
+    "file": "VIS-02-BAL-zh-Hant-05.png",
+    "original_marker": "VIS-02-BAL-zh-Hant attempt1 before",
+    "source_file": "VIS-02-zh-Hant-018.jpg",
+    "source_sha256": "ed189d1d7166889400a4bdbb7a4a0f94ff8cf607ccd05684bd1350ec0d867a11",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-BAL-zh-Hant",
+    "attempt": 1,
+    "phase": "after",
+    "file": "VIS-02-BAL-zh-Hant-06.png",
+    "original_marker": "VIS-02-BAL-zh-Hant attempt1 after",
+    "source_file": "VIS-02-zh-Hant-022.jpg",
+    "source_sha256": "1a67264953d313d278b0c0c478f158d7ae97fc076a6c0db580d675630a5d6c51",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-COM-zh-Hant",
+    "attempt": 1,
+    "phase": "before",
+    "file": "VIS-02-COM-zh-Hant-04.png",
+    "original_marker": "VIS-02-COM-zh-Hant attempt1 before",
+    "source_file": "VIS-02-zh-Hant-027.jpg",
+    "source_sha256": "c291ca184007e582913428030ee79642ab6729271c62d98fe278ec501557f308",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "VIS-02-COM-zh-Hant",
+    "attempt": 1,
+    "phase": "after",
+    "file": "VIS-02-COM-zh-Hant-05.png",
+    "original_marker": "VIS-02-COM-zh-Hant attempt1 after",
+    "source_file": "VIS-02-zh-Hant-030.jpg",
+    "source_sha256": "bab150f08e172a45890a5ae9b393123ec08be4e179825f860c47401c9dc0a063",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   }
 ]

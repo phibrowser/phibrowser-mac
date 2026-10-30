@@ -1,0 +1,791 @@
+我会仅用 Computer Use 确认并启动指定应用，检查原生 About 和 Settings → Advanced；如发现 Canary 正在运行，会先正常退出。过程中不改动开关，并在关键步骤和结束时返回截图。
+
+
+Computer Use state (CUA App Version: 1001425)
+<app_state>
+App=/System/Library/CoreServices/Finder.app/ (bundleID com.apple.finder, pid 5295)
+Window: "Desktop", App: Finder.
+0 scroll area desktop
+	1 container desktop
+		2 image (selected) Phi Installer, Secondary Actions: open
+		3 image Phi Tab Close QA, Secondary Actions: open
+4 menu bar
+	5 Finder
+	6 File
+	7 Edit
+	8 View
+	9 Go
+	10 Window
+	11 Help
+
+Selected:
+	2 image (selected) Phi Installer, Secondary Actions: open
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).
+</app_state>
+
+App=com.apple.finder (pid 5295)
+Window: "Go to Folder", App: Finder.
+0 standard window Go to Folder, ID: GoToWindow, Secondary Actions: Raise
+	1 text Go to Folder
+	2 button Description: Close, ID: CloseButton
+	3 text field (settable) PathTextField
+4 menu bar
+	5 Finder
+	6 File
+	7 Edit
+	8 View
+	9 Go
+	10 Window
+	11 Help
+
+The focused UI element is 3 text field (settable) PathTextField
+
+App=com.apple.finder (pid 5295)
+Window: "Go to Folder", App: Finder.
+0 standard window Go to Folder, ID: GoToWindow, Secondary Actions: Raise
+	1 text /Applications/Phi Tab Close QA.app
+	2 button Description: Close, ID: CloseButton
+	3 text field (settable) Value: /Applications/Phi Tab Close QA.app, ID: PathTextField
+	4 scroll area
+		5 table
+			6 row (selectable)
+				7 cell
+					8 text Go to:
+			9 row (selected)
+				10 cell (selected)
+					11 list (disabled) Description: path, ID: /Applications/Phi Tab Close QA.app
+						12 text Value: Applications Phi Tab Close QA, Secondary Actions: open
+13 menu bar
+	14 Finder
+	15 File
+	16 Edit
+	17 View
+	18 Go
+	19 Window
+	20 Help
+
+The focused UI element is 3 text field (settable) Value: /Applications/Phi Tab Close QA.app, ID: PathTextField
+
+App=com.apple.finder (pid 5295)
+Window: "Applications", App: Finder.
+0 standard window Applications, ID: FinderWindow, Secondary Actions: Raise
+	1 split group
+		2 scroll area Secondary Actions: Scroll Up, Scroll Down
+			3 outline sidebar
+				4 row (selectable) Description: clock, Value: Recents
+				5 row (selectable) Description: Shared Folder, Value: Shared
+				6 row (selectable, expanded) Value: Favourites, Secondary Actions: Collapse
+				7 row (selected) Applications
+				8 row (selectable) Desktop
+				9 row (selectable) Description: document, Value: Documents
+				10 row (selectable) Description: Arrow Down Circle, Value: Downloads
+				11 row (selectable, expanded) Value: Locations, Secondary Actions: Collapse
+				12 row (selectable) Description: iCloud, Value: iCloud Drive
+				13 row (selectable) Description: home, Value: e2e02
+				14 row (selectable) Macintosh HD
+				15 row (selectable) Eject, Description: eject, Value: Phi Installer
+				16 row (selectable) Eject, Description: eject, Value: Phi Tab Close QA
+				17 row (selectable) AirDrop
+				18 row (selectable) Eject, Value: 192.168.66.66, Description: document
+eject
+				19 row (selectable) Network
+				20 row (selectable) Description: bin, Value: Bin
+				21 row (selectable, expanded) Value: Tags, Secondary Actions: Collapse
+				22 row (selectable) Red
+				23 row (selectable) Orange
+				24 row (selectable) Yellow
+				25 row (selectable) Green
+				26 row (selectable) Blue
+				27 row (selectable) Purple
+				28 row (selectable) Grey
+				29 row (selectable) All Tags…
+			30 scroll bar (settable, float) 0
+				31 value indicator (settable, float) 0
+				32 increment arrow button
+				33 decrement arrow button
+				34 increment page button
+				35 decrement page button
+		36 splitter (disabled, settable, float) 158
+		37 scroll area Secondary Actions: Scroll Up, Scroll Down
+			38 collection Description: icon view, ID: IconView
+				39 section (disabled)
+					40 image Journal, Secondary Actions: open
+					41 image Mail, Secondary Actions: open
+					42 image Maps, Secondary Actions: open
+					43 image Messages, Secondary Actions: open
+					44 image Mission Control, Secondary Actions: open
+					45 image Music, Secondary Actions: open
+					46 image Notes, Secondary Actions: open
+					47 image Passwords, Secondary Actions: open
+					48 image Phi Canary, Secondary Actions: open
+					49 image (selected) Phi Tab Close QA, Secondary Actions: open
+					50 image Phone, Secondary Actions: open
+					51 image Photo Booth, Secondary Actions: open
+					52 image Photos, Secondary Actions: open
+					53 image Podcasts, Secondary Actions: open
+					54 image Preview, Secondary Actions: open
+					55 image QuickTime Player, Secondary Actions: open
+					56 image Reminders, Secondary Actions: open
+					57 image Safari, Secondary Actions: open
+					58 image Shortcuts, Secondary Actions: open
+					59 image Siri, Secondary Actions: open
+					60 image Stickies, Secondary Actions: open
+					61 image Stocks, Secondary Actions: open
+					62 image System Settings, Secondary Actions: open
+					63 image TextEdit, Secondary Actions: open
+			64 scroll bar (settable, float) 0.7846975088967971
+				65 value indicator (settable, float) 0.7846975088967971
+				66 increment arrow button
+				67 decrement arrow button
+				68 increment page button
+				69 decrement page button
+		70 unknown Details: status bar, ID: statusBar
+			71 image not editable
+			72 text Value: 1 of 48 selected, 1.92 TB available, ID: statusBarText
+			73 slider (settable, float) Description: resize icon, Value: 24
+				74 value indicator (settable, float) 24
+	75 toolbar
+		76 container Back/Forward
+			77 button (disabled) back
+			78 button (disabled) forward
+		79 radio button Description: icon view, Value: 1
+		80 radio button Description: list view, Value: 0
+		81 radio button Description: column view, Value: 0
+		82 radio button Description: gallery view, Value: 0
+		83 menu button Description: Group, Help: Change the item grouping (hold down Option to change the sort), Secondary Actions: Move previous, Move next, Remove from toolbar
+		84 button Description: Share, Help: Share the selected items, Secondary Actions: Move previous, Move next, Remove from toolbar
+		85 button Description: Add Tags, Help: Edit Tags, Secondary Actions: Move previous, Move next, Remove from toolbar
+		86 menu button Description: Action, Help: Perform tasks with the selected items, Secondary Actions: Move previous, Move next, Remove from toolbar
+		87 button Search
+	88 close button
+	89 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	90 minimise button
+	91 text Applications
+92 menu bar
+	93 Finder
+	94 File
+	95 Edit
+	96 View
+	97 Go
+	98 Window
+	99 Help
+
+The focused UI element is 38 collection Description: icon view, ID: IconView
+
+App=com.apple.finder (pid 5295)
+Window: "Applications", App: Finder.
+0 standard window Applications, ID: FinderWindow, Secondary Actions: Raise
+	1 split group
+		2 scroll area Secondary Actions: Scroll Up, Scroll Down
+			3 outline sidebar
+				4 row (selectable) Description: clock, Value: Recents
+				5 row (selectable) Description: Shared Folder, Value: Shared
+				6 row (selectable, expanded) Value: Favourites, Secondary Actions: Collapse
+				7 row (selected) Applications
+				8 row (selectable) Desktop
+				9 row (selectable) Description: document, Value: Documents
+				10 row (selectable) Description: Arrow Down Circle, Value: Downloads
+				11 row (selectable, expanded) Value: Locations, Secondary Actions: Collapse
+				12 row (selectable) Description: iCloud, Value: iCloud Drive
+				13 row (selectable) Description: home, Value: e2e02
+				14 row (selectable) Macintosh HD
+				15 row (selectable) Eject, Description: eject, Value: Phi Installer
+				16 row (selectable) Eject, Description: eject, Value: Phi Tab Close QA
+				17 row (selectable) AirDrop
+				18 row (selectable) Eject, Value: 192.168.66.66, Description: document
+eject
+				19 row (selectable) Network
+				20 row (selectable) Description: bin, Value: Bin
+				21 row (selectable, expanded) Value: Tags, Secondary Actions: Collapse
+				22 row (selectable) Red
+				23 row (selectable) Orange
+				24 row (selectable) Yellow
+				25 row (selectable) Green
+				26 row (selectable) Blue
+				27 row (selectable) Purple
+				28 row (selectable) Grey
+				29 row (selectable) All Tags…
+			30 scroll bar (settable, float) 0
+				31 value indicator (settable, float) 0
+				32 increment arrow button
+				33 decrement arrow button
+				34 increment page button
+				35 decrement page button
+		36 splitter (disabled, settable, float) 158
+		37 scroll area Secondary Actions: Scroll Up, Scroll Down
+			38 collection Description: icon view, ID: IconView
+				39 section (disabled)
+					40 image Journal, Secondary Actions: open
+					41 image Mail, Secondary Actions: open
+					42 image Maps, Secondary Actions: open
+					43 image Messages, Secondary Actions: open
+					44 image Mission Control, Secondary Actions: open
+					45 image Music, Secondary Actions: open
+					46 image Notes, Secondary Actions: open
+					47 image Passwords, Secondary Actions: open
+					48 image Phi Canary, Secondary Actions: open
+					49 image (selected) Phi Tab Close QA, Secondary Actions: open
+					50 image Phone, Secondary Actions: open
+					51 image Photo Booth, Secondary Actions: open
+					52 image Photos, Secondary Actions: open
+					53 image Podcasts, Secondary Actions: open
+					54 image Preview, Secondary Actions: open
+					55 image QuickTime Player, Secondary Actions: open
+					56 image Reminders, Secondary Actions: open
+					57 image Safari, Secondary Actions: open
+					58 image Shortcuts, Secondary Actions: open
+					59 image Siri, Secondary Actions: open
+					60 image Stickies, Secondary Actions: open
+					61 image Stocks, Secondary Actions: open
+					62 image System Settings, Secondary Actions: open
+					63 image TextEdit, Secondary Actions: open
+			64 scroll bar (settable, float) 0.7846975088967971
+				65 value indicator (settable, float) 0.7846975088967971
+				66 increment arrow button
+				67 decrement arrow button
+				68 increment page button
+				69 decrement page button
+		70 unknown Details: status bar, ID: statusBar
+			71 image not editable
+			72 text Value: 1 of 48 selected, 1.92 TB available, ID: statusBarText
+			73 slider (settable, float) Description: resize icon, Value: 24
+				74 value indicator (settable, float) 24
+	75 toolbar
+		76 container Back/Forward
+			77 button (disabled) back
+			78 button (disabled) forward
+		79 radio button Description: icon view, Value: 1
+		80 radio button Description: list view, Value: 0
+		81 radio button Description: column view, Value: 0
+		82 radio button Description: gallery view, Value: 0
+		83 menu button Description: Group, Help: Change the item grouping (hold down Option to change the sort), Secondary Actions: Move previous, Move next, Remove from toolbar
+		84 button Description: Share, Help: Share the selected items, Secondary Actions: Move previous, Move next, Remove from toolbar
+		85 button Description: Add Tags, Help: Edit Tags, Secondary Actions: Move previous, Move next, Remove from toolbar
+		86 menu button Description: Action, Help: Perform tasks with the selected items, Secondary Actions: Move previous, Move next, Remove from toolbar
+		87 button Search
+	88 close button
+	89 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	90 minimise button
+	91 text Applications
+92 menu bar
+	93 Finder
+	94 File
+	95 Edit
+	96 View
+	97 Go
+	98 Window
+	99 Help
+
+The focused UI element is 38 collection Description: icon view, ID: IconView
+
+Computer Use state (CUA App Version: 1001425)
+<app_specific_instructions>
+## Browser Computer Use
+
+When navigating to a new website or starting a separate web task, prefer opening a new tab instead of reusing the current tab; reuse the current tab only when the user explicitly asks to continue there or when the current page is clearly the right place to continue the existing workflow.
+</app_specific_instructions>
+<app_state>
+App=/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 46074)
+Window: "Chrome Web Store", App: Phi Tab Close QA.
+0 standard window Chrome Web Store, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 collection
+		7 scroll area
+			8 outline sidebarTabList
+				9 row (selectable) New Tab
+				10 row (selected) Chrome Web Store
+		11 container sidebar.footer
+			12 button Description: Profile menu, ID: profile.menuButton
+			13 button
+		14 splitter (disabled, settable, float) 193
+		15 container
+			16 button Description: Back, ID: chevron.left
+			17 button (disabled) Description: Forward, ID: chevron.right
+			18 button Description: Stop, ID: xmark
+			19 text chromewebstore.google.com
+			20 button Extensions
+	21 close button
+	22 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	23 minimize button
+24 menu bar
+	25 Phi
+	26 File
+	27 Edit
+	28 View
+	29 Spaces
+	30 History
+	31 Bookmarks
+	32 Tab
+	33 Window
+	34 Help
+	35 *DEBUG*
+
+</app_state>
+
+Computer Use 的运行应用列表未显示 Canary。已从 Finder 启动指定应用，工具确认实际运行路径为 `/Applications/Phi Tab Close QA.app/`、Bundle ID 为 `com.phibrowser.opensource.Mac`。该 Bundle ID 同时对应已挂载卷中的副本，后续会使用完整安装路径定位。
+
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Chrome Web Store", App: Phi Tab Close QA.
+0 standard window Chrome Web Store, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 collection
+		7 scroll area
+			8 outline sidebarTabList
+				9 row (selectable) New Tab
+				10 row (selected) Chrome Web Store
+		11 container sidebar.footer
+			12 button Description: Profile menu, ID: profile.menuButton
+			13 button
+		14 splitter (disabled, settable, float) 193
+		15 container
+			16 button Description: Back, ID: chevron.left
+			17 button (disabled) Description: Forward, ID: chevron.right
+			18 button Description: Stop, ID: xmark
+			19 text chromewebstore.google.com
+			20 button Extensions
+	21 close button
+	22 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	23 minimize button
+24 menu bar
+	25 Phi
+	26 File
+	27 Edit
+	28 View
+	29 Spaces
+	30 History
+	31 Bookmarks
+	32 Tab
+	33 Window
+	34 Help
+	35 *DEBUG*
+
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Chrome Web Store", App: Phi Tab Close QA.
+0 standard window Chrome Web Store, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 collection
+		7 scroll area
+			8 outline sidebarTabList
+				9 row (selectable) New Tab
+				10 row (selected) Chrome Web Store
+		11 container sidebar.footer
+			12 button Description: Profile menu, ID: profile.menuButton
+			13 button
+		14 splitter (disabled, settable, float) 193
+		15 container
+			16 button Description: Back, ID: chevron.left
+			17 button (disabled) Description: Forward, ID: chevron.right
+			18 button Description: Stop, ID: xmark
+			19 text chromewebstore.google.com
+			20 button Extensions
+	21 close button
+	22 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	23 minimize button
+24 menu bar
+	25 Phi
+	26 File
+	27 Edit
+	28 View
+	29 Spaces
+	30 History
+	31 Bookmarks
+	32 Tab
+	33 Window
+	34 Help
+	35 *DEBUG*
+
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Chrome Web Store", App: Phi Tab Close QA.
+0 standard window Chrome Web Store, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 collection
+		7 scroll area
+			8 outline sidebarTabList
+				9 row (selectable) New Tab
+				10 row (selected) Chrome Web Store
+		11 container sidebar.footer
+			12 button Description: Profile menu, ID: profile.menuButton
+			13 button
+		14 splitter (disabled, settable, float) 193
+		15 container
+			16 button Description: Back, ID: chevron.left
+			17 button (disabled) Description: Forward, ID: chevron.right
+			18 button Description: Stop, ID: xmark
+			19 text chromewebstore.google.com
+			20 button Extensions
+	21 close button
+	22 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	23 minimize button
+24 menu bar
+	25 (selected) Phi
+	26 File
+	27 Edit
+	28 View
+	29 Spaces
+	30 History
+	31 Bookmarks
+	32 Tab
+	33 Window
+	34 Help
+	35 *DEBUG*
+
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Chrome Web Store", App: Phi Tab Close QA.
+0 (selected) Phi, Secondary Actions: Cancel, Pick
+	1 menu Secondary Actions: Cancel
+		2 About Phi, ID: orderFrontStandardAboutPanel:
+		3 Settings…, ID: showPreferences:
+		4 Delete Browsing Data…, ID: commandDispatch:
+		5 Import from Another Browser..., ID: showImportDataWindowFromMenu:
+		6 (disabled) Migrate from Another Browser…, ID: showBrowserMigrationWizard:
+		7 Services
+			8 menu Secondary Actions: Cancel
+				9 (disabled) No Services Apply
+				10 Services Settings…
+		11 Hide Phi, ID: hide:
+		12 Hide Others, ID: hideOtherApplications:
+		13 (disabled) Show All, ID: unhideAllApplications:
+		14 Warn Before Quitting (⌘Q), ID: toggleConfirmToQuit:
+		15 Quit Phi, ID: terminate:
+		16 Quit and Keep Windows
+
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Chrome Web Store", App: Phi Tab Close QA.
+0 standard window Chrome Web Store, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 collection
+		7 scroll area
+			8 outline sidebarTabList
+				9 row (selectable) New Tab
+				10 row (selected) Chrome Web Store
+		11 container sidebar.footer
+			12 button Description: Profile menu, ID: profile.menuButton
+			13 button
+		14 splitter (disabled, settable, float) 193
+		15 container
+			16 button Description: Back, ID: chevron.left
+			17 button (disabled) Description: Forward, ID: chevron.right
+			18 button Description: Stop, ID: xmark
+			19 text chromewebstore.google.com
+			20 button Extensions
+	21 close button
+	22 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	23 minimize button
+24 menu bar
+	25 Phi
+	26 File
+	27 Edit
+	28 View
+	29 Spaces
+	30 History
+	31 Bookmarks
+	32 Tab
+	33 Window
+	34 Help
+	35 *DEBUG*
+
+
+Computer Use state (CUA App Version: 1001425)
+<app_state>
+App=/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 46074)
+Window: "", App: Phi Tab Close QA.
+0 standard window ID: About Phi Browser, Secondary Actions: Raise
+	1 container
+		2 image
+		3 text Phi Tab Close QA Version 0.0.0 (1030.1) Chromium Engine Version 156.0.8078.52 © 2026 Phinomenon. All rights reserved.
+		4 text entry area Phi is made possible by the <u>[Chromium](chromium.org/Home/)</u> open source project, Chromium's <u>[open source software](chrome://credits)</u>, as well as other <u>[open source software](file:///Applications/Phi%20Tab%20Close%20QA.app/Contents/Resources/credits.html)</u>.
+			5 link Chromium, Value: chromium.org/Home/
+			6 link open source software, Value: chrome://credits
+			7 link open source software, Value: file:///Applications/Phi%20Tab%20Close%20QA.app/Contents/Resources/credits.html
+	8 close button
+	9 zoom button (disabled)
+10 menu bar
+	11 Phi
+	12 File
+	13 Edit
+	14 View
+	15 Spaces
+	16 History
+	17 Bookmarks
+	18 Tab
+	19 Window
+	20 Help
+	21 *DEBUG*
+
+The focused UI element is 4 text entry area Phi is made possible by the <u>[Chromium](chromium.org/Home/)</u> open source project, Chromium's <u>[open source software](chrome://credits)</u>, as well as other <u>[open source software](file:///Applications/Phi%20Tab%20Close%20QA.app/Contents/Resources/credits.html)</u>.
+</app_state>
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Chrome Web Store", App: Phi Tab Close QA.
+0 standard window Chrome Web Store, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 collection
+		7 scroll area
+			8 outline sidebarTabList
+				9 row (selectable) New Tab
+				10 row (selected) Chrome Web Store
+		11 container sidebar.footer
+			12 button Description: Profile menu, ID: profile.menuButton
+			13 button
+		14 splitter (disabled, settable, float) 193
+		15 container
+			16 button Description: Back, ID: chevron.left
+			17 button (disabled) Description: Forward, ID: chevron.right
+			18 button Description: Stop, ID: xmark
+			19 text chromewebstore.google.com
+			20 button Extensions
+	21 close button
+	22 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	23 minimize button
+24 menu bar
+	25 Phi
+	26 File
+	27 Edit
+	28 View
+	29 Spaces
+	30 History
+	31 Bookmarks
+	32 Tab
+	33 Window
+	34 Help
+	35 *DEBUG*
+
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Chrome Web Store", App: Phi Tab Close QA.
+0 Phi, Secondary Actions: Cancel, Pick
+	1 menu Secondary Actions: Cancel
+		2 About Phi, ID: orderFrontStandardAboutPanel:
+		3 Settings…, ID: showPreferences:
+		4 Delete Browsing Data…, ID: commandDispatch:
+		5 Import from Another Browser..., ID: showImportDataWindowFromMenu:
+		6 (disabled) Migrate from Another Browser…, ID: showBrowserMigrationWizard:
+		7 Services
+			8 menu Secondary Actions: Cancel
+				9 (disabled) No Services Apply
+				10 Services Settings…
+		11 Hide Phi, ID: hide:
+		12 Hide Others, ID: hideOtherApplications:
+		13 (disabled) Show All, ID: unhideAllApplications:
+		14 Warn Before Quitting (⌘Q), ID: toggleConfirmToQuit:
+		15 Quit Phi, ID: terminate:
+		16 Quit and Keep Windows
+
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Guest", App: Phi Tab Close QA.
+0 standard window Guest, Secondary Actions: Raise
+	1 text Phi is not your default browser
+	2 button Set as default, Description: love
+	3 toolbar
+		4 button Guest, Secondary Actions: Move next, Remove from toolbar
+		5 button General, Secondary Actions: Move previous, Move next, Remove from toolbar
+		6 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar
+		7 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar
+		8 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar
+		9 button Phi & AI, Secondary Actions: Move previous, Move next, Remove from toolbar
+		10 button Sync, Secondary Actions: Move previous, Move next, Remove from toolbar
+		11 button Shortcuts, Secondary Actions: Move previous, Move next, Remove from toolbar
+		12 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+		13 button Developer, Secondary Actions: Move previous, Remove from toolbar
+	14 close button
+	15 zoom button (disabled)
+	16 text Guest
+17 menu bar
+	18 Phi
+	19 File
+	20 Edit
+	21 View
+	22 Spaces
+	23 History
+	24 Bookmarks
+	25 Tab
+	26 Window
+	27 Help
+	28 *DEBUG*
+
+The focused UI element is 0 standard window Guest, Secondary Actions: Raise
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+	1 scroll area Secondary Actions: Scroll Up, Scroll Down
+		2 text Always show full URL
+		3 toggle button off
+		4 text Show a preview card when hovering over a tab
+		5 toggle button on
+		6 text Show open tab indicators
+		7 toggle button off
+		8 text Show a dot on inactive pinned tabs and bookmarks that are currently open. Show unloaded tab indicators
+		9 toggle button on
+		10 text Show a dashed outline around tab icons when their pages are unloaded from memory. Double-click to close tabs Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions.
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		12 text Close tabs by position Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar.
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+		14 text Restore last session
+		15 toggle button on
+		16 text Reopen your windows and tabs the next time you open Phi. Shorten links to selected text
+		17 toggle button on
+		18 text Applies to “Copy Link to Highlight” in the right-click menu. Turn off to copy the full link. Mini Player Control media playing in background tabs from the sidebar.
+		19 pop up button Description: Mini Player, Value: Auto, ID: settings.sidebarMedia.presentation
+		20 text Auto picture-in-picture Pop out playing video when you switch tabs or apps
+		21 pop up button Normal
+		22 text Developer mode
+		23 toggle button on
+		24 text Agent access, permissions, and the password manager live in the Developer tab.
+		25 button Additional browser settings
+		26 scroll bar (settable, float) 0
+			27 value indicator (settable, float) 0
+			28 increment arrow button
+			29 decrement arrow button
+			30 increment page button
+			31 decrement page button
+	32 toolbar
+		33 button Guest, Secondary Actions: Move next, Remove from toolbar
+		34 button General, Secondary Actions: Move previous, Move next, Remove from toolbar
+		35 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar
+		36 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar
+		37 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar
+		38 button Phi & AI, Secondary Actions: Move previous, Move next, Remove from toolbar
+		39 button Sync, Secondary Actions: Move previous, Move next, Remove from toolbar
+		40 button Shortcuts, Secondary Actions: Move previous, Move next, Remove from toolbar
+		41 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+		42 button Developer, Secondary Actions: Move previous, Remove from toolbar
+	43 close button
+	44 zoom button (disabled)
+	45 text Advanced
+46 menu bar
+	47 Phi
+	48 File
+	49 Edit
+	50 View
+	51 Spaces
+	52 History
+	53 Bookmarks
+	54 Tab
+	55 Window
+	56 Help
+	57 *DEBUG*
+
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise
+
+原生 About 显示版本为 `0.0.0 (1030.1)`，Chromium 引擎为 `156.0.8078.52`。Advanced 第二卡片的两个开关分别为 “Double-click to close tabs”：off，以及 “Close tabs by position”：on，说明文字均已读取。
+
+操作中有一处偏差：早期工具未识别数值类型的 `element_index`，一次调用携带了 `(0,0)` 坐标，未打开目标菜单。随后改用字符串类型的最新索引完成操作。下面返回结束截图，界面保持在 Advanced，未改动开关。
+
+
+Computer Use state (CUA App Version: 1001425)
+<app_state>
+App=/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 46074)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+	1 scroll area Secondary Actions: Scroll Up, Scroll Down
+		2 text Always show full URL
+		3 toggle button off
+		4 text Show a preview card when hovering over a tab
+		5 toggle button on
+		6 text Show open tab indicators
+		7 toggle button off
+		8 text Show a dot on inactive pinned tabs and bookmarks that are currently open. Show unloaded tab indicators
+		9 toggle button on
+		10 text Show a dashed outline around tab icons when their pages are unloaded from memory. Double-click to close tabs Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions.
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		12 text Close tabs by position Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar.
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+		14 text Restore last session
+		15 toggle button on
+		16 text Reopen your windows and tabs the next time you open Phi. Shorten links to selected text
+		17 toggle button on
+		18 text Applies to “Copy Link to Highlight” in the right-click menu. Turn off to copy the full link. Mini Player Control media playing in background tabs from the sidebar.
+		19 pop up button Description: Mini Player, Value: Auto, ID: settings.sidebarMedia.presentation
+		20 text Auto picture-in-picture Pop out playing video when you switch tabs or apps
+		21 pop up button Normal
+		22 text Developer mode
+		23 toggle button on
+		24 text Agent access, permissions, and the password manager live in the Developer tab.
+		25 button Additional browser settings
+		26 scroll bar (settable, float) 0
+			27 value indicator (settable, float) 0
+			28 increment arrow button
+			29 decrement arrow button
+			30 increment page button
+			31 decrement page button
+	32 toolbar
+		33 button Guest, Secondary Actions: Move next, Remove from toolbar
+		34 button General, Secondary Actions: Move previous, Move next, Remove from toolbar
+		35 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar
+		36 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar
+		37 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar
+		38 button Phi & AI, Secondary Actions: Move previous, Move next, Remove from toolbar
+		39 button Sync, Secondary Actions: Move previous, Move next, Remove from toolbar
+		40 button Shortcuts, Secondary Actions: Move previous, Move next, Remove from toolbar
+		41 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+		42 button Developer, Secondary Actions: Move previous, Remove from toolbar
+	43 close button
+	44 zoom button (disabled)
+	45 text Advanced
+46 menu bar
+	47 Phi
+	48 File
+	49 Edit
+	50 View
+	51 Spaces
+	52 History
+	53 Bookmarks
+	54 Tab
+	55 Window
+	56 Help
+	57 *DEBUG*
+
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise
+</app_state>
+
+RESULT: ENV-01 的应用身份、原生 About 与 Settings → Advanced 第二卡片已读取，记录如下，不作 Pass 判定。
+
+- 实际启动并运行的 App 路径：`/Applications/Phi Tab Close QA.app/`
+- Bundle ID：`com.phibrowser.opensource.Mac`
+- 原生 About 应用名称：`Phi Tab Close QA`
+- 版本原文：`Version 0.0.0 (1030.1)`
+- 引擎原文：`Chromium Engine Version 156.0.8078.52`
+- Canary：启动前 Computer Use 的运行应用列表仅显示 Finder，未发现 Canary 正在运行，因此未执行退出操作。
+
+Settings → Advanced 的第二卡片没有独立标题，两个开关及说明原文为：
+
+| 开关原文 | 说明原文 | 当前值 |
+|---|---|---|
+| Double-click to close tabs | Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions. | **off（关闭）** |
+| Close tabs by position | Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar. | **on（开启）** |
+
+启动确认、原生 About、Advanced 及结束截图均已通过 Computer Use 返回为 image，未写文件。应用保持运行，结束界面停留在 Advanced；未改开关、未设默认浏览器、未登录。
+
+错误与操作偏差：早期工具参数调用出现错误；Bundle ID 定位还因安装目录与挂载卷中存在同 ID 副本而报告歧义，随后使用完整安装路径解决。另有一次点击因数值类型 `element_index` 未被识别，携带了未经界面定位的 `(0,0)` 坐标，未打开目标菜单，**违反了本轮“不猜坐标”的要求**。随后改用字符串类型的最新 `element_index` 完成读取。所请求的信息无未完成项。

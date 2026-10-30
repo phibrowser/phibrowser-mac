@@ -1,0 +1,50 @@
+{
+  "unit_id": "SET-06-COM-off-off",
+  "job": "SET-06",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-06-observations.json",
+  "observation": {
+    "active_after": "有效 attempt2：C 单独活动，选中集 {C}；右键目标 B。无效 attempt1：坐标落到 B，B 成为活动页，A/B/C 均保留。",
+    "active_before": "attempt1 与重新建立的 attempt2 均为 C 单独活动，选中集 {C}。",
+    "after": "有效 attempt2 外部从左到右 A/B/C 全部保留，无多选、无组、无 split。B 菜单显示 Close、Close Other Tabs，没有 Close Tabs to the Left 或 Close Tabs to the Right。attempt1 的坐标双击不作为指定 C 动作的观察。",
+    "before": "两次均重新建立本项批次的普通 A/B/C，Comfortable 外部从左到右 A、B、C。页面和标签画面显示 C，原生树第三个标签仍描述为 New Tab。",
+    "confirmation_choices": "无确认框；菜单命令仅观察。",
+    "evidence_markers": [
+      "SET-06-COM-off-off layout",
+      "SET-06-COM-off-off settings",
+      "SET-06-COM-off-off identity-A",
+      "SET-06-COM-off-off identity-B",
+      "SET-06-COM-off-off identity-C attempt1 before",
+      "SET-06-COM-off-off attempt1 before",
+      "SET-06-COM-off-off attempt1 native-tree-title-mismatch",
+      "SET-06-COM-off-off attempt1 after",
+      "SET-06-COM-off-off attempt2 layout",
+      "SET-06-COM-off-off attempt2 settings",
+      "SET-06-COM-off-off attempt2 identity-A",
+      "SET-06-COM-off-off attempt2 identity-B",
+      "SET-06-COM-off-off attempt2 identity-C before",
+      "SET-06-COM-off-off attempt2 before",
+      "SET-06-COM-off-off attempt2 after"
+    ],
+    "identity_checks": "两次均逐页实见 TC 标题、本项批次、普通页说明、空输入框及编号。attempt1：A=25cf188e-6a0a-47e6-941d-d03094278231，B=84bb569d-783e-4096-b28f-e5f05118d6f7，C=e7b7a8d8-239e-4f7b-a3ee-a3eda0bdfa91。attempt2：A=39025dda-baf0-4143-98ab-075374adb79f，B=a9ed5a3a-5c35-453a-8149-dedcbccd8f55，C=ccba456c-e88d-4d9d-996e-bf911d504052。有效 after 中 C 编号仍为 attempt2 的该值。第三个原生 tabStripTab 虽描述 New Tab，但其顺序、活动页面与屏幕对应 C，attempt2 使用该最新字符串索引进行双击。",
+    "language_observed": "两次 General 均实读 System Default；实际界面英文。",
+    "layout_observed": "两次均通过 General 原生选择 Comfortable 并截图确认选中边框；外部横向标签栏。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "attempt1 查找原生描述 TC-C 的编排守卫停止，因为最新原生树仍为 New Tab；此时未发送双击。",
+      "随后坐标双击 (867,34) 未正确处理截图与点击坐标比例，实际落到 B；A/B/C 保留但 B 活动。此操作无效，保留 attempt1 before、原生树差异及 after，不作为 C 的双击结果。",
+      "识别同一坐标问题后，重新选择布局、设置 off/off、清理并重建 A/B/C，以最新原生第三个标签控件完成 attempt2；没有沿用无效现场作为有效前置。"
+    ],
+    "precondition_actual": "有效 attempt2 已重新原生构造 TC-PHI507-r2-SET-06-COM-off-off A/B/C，真实顺序 A→B→C、C 活动，无组、无 split；off/off。",
+    "settings_observed": "attempt1 逐个将双击和位置从 on/on 设为 off/off；attempt2 从当时 on/off 只将双击改回 off，位置保持 off。两次最终均原生实读 off/off。",
+    "steps_executed": [
+      "attempt1 General 选择 Comfortable，Advanced 逐个设置 off/off。",
+      "清理上一项普通页，地址栏依次建立 A/B/C 并逐页核对；保存 before。",
+      "原生名称匹配停止后保留差异画面；坐标双击实际落到 B，随后打开 B 菜单并保留现场。",
+      "确认坐标操作无效后，在 attempt2 开始前重新通过 General/Advanced 构造设置并清理重建全部 A/B/C。",
+      "attempt2 保存 before，通过最新原生第三个 tabStripTab 控件双击 C，重读 C 保留并活动。",
+      "右键 B，保存没有左右方向项的 attempt2 after。"
+    ],
+    "unit_id": "SET-06-COM-off-off"
+  }
+}

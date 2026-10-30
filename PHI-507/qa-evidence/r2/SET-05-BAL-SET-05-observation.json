@@ -1,0 +1,49 @@
+{
+  "unit_id": "SET-05-BAL",
+  "job": "SET-05",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-05-observations.json",
+  "observation": {
+    "active_after": "B 单独活动；选中集仅 B；无 split。",
+    "active_before": "B 单独活动；选中集仅 B；无 split。",
+    "after": "外部自上而下仍为普通 A、普通 B、普通 C、展开的 TC-PHI507-r2-SET-05-BAL-G[D,E]。开启位置关闭后未重启，B 菜单实见 Close Tabs Above、Close Tabs Below，两项均未标为 disabled；组标题菜单实见 Close Tabs Above Group，以及 disabled 的 Close Tabs Below Group。未选择任何方向关闭项。结束时菜单关闭，五个页面与组成员未变。",
+    "before": "Balanced 外部自上而下为普通 A、普通 B、普通 C、展开的 TC-PHI507-r2-SET-05-BAL-G[D,E]。关键动作前位置关闭开关为 off，双击关闭开关为 off。",
+    "confirmation_choices": "本项开始清理上一项 TC-PHI507-r2-SET-05-PER-G 时，原生确认框显示 Close Tabs and Delete Group?；Don't Ask Again=0。明确点击 Delete Group，未勾选 Don't Ask Again。重命名新组时点击 Save。被测开关与菜单查看阶段无确认框。",
+    "evidence_markers": [
+      "EVIDENCE: SET-05-BAL setup-layout",
+      "IDENTITY SET-05-BAL A",
+      "IDENTITY SET-05-BAL B",
+      "IDENTITY SET-05-BAL C",
+      "IDENTITY SET-05-BAL D",
+      "IDENTITY SET-05-BAL E",
+      "EVIDENCE: SET-05-BAL setup1 failure",
+      "EVIDENCE: SET-05-BAL attempt1 before",
+      "EVIDENCE: SET-05-BAL attempt1 before-toggle",
+      "EVIDENCE: SET-05-BAL attempt1 after-B-menu",
+      "EVIDENCE: SET-05-BAL attempt1 after-group-menu",
+      "EVIDENCE: SET-05-BAL attempt1 after"
+    ],
+    "identity_checks": "A 至 E 均逐页屏幕实见相应 TC 标题、批次 TC-PHI507-r2-SET-05-BAL、页面类型普通页及空输入框。本次打开编号：A=b080b94c-a513-4025-9fc9-046d5af0c6f3；B=6a6a0220-608b-4edf-8b8a-003023e7d90d；C=10ab65f4-6b65-41a3-b802-ee8726a4a02f；D=c1b52939-3924-4d86-bb80-366cfd3742cf；E=de0cb43c-df19-4ab0-a54a-24871e35f6cc。动作前后 B 屏幕编号一致。原生层级实见 D、E 同属于本项组，A/B/C 为组外普通页。受保护对象未被切换或操作，未逐页验证其标记。",
+    "language_observed": "本项 General 重新实读 Display language=System Default；实际设置和菜单为英文。未切换语言。",
+    "layout_observed": "通过 General 原生 UI 选择 Balanced，截图实见 Balanced 卡片选中；浏览器外部标签栏为上下排列。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "重命名组时，内存中的原生文本定位器同时匹配了元素行和工具附带的焦点描述，因多义主动抛错并在 set_value 调用前停止；未发生错误界面操作。已保存重命名对话框现场，随后仅匹配带数字索引的唯一原生元素行，继续完成尚未执行的重命名。"
+    ],
+    "precondition_actual": "本项开始才在 General 选择 Balanced，并将上一项留下的 Close tabs by position 从 on 关闭为 off。通过新建 New Tab、Close Other Tabs 及删除已识别测试组确认清理上一项集合，再独立建立 A/B/C/D/E，将 D/E 组成 TC-PHI507-r2-SET-05-BAL-G。屏幕及原生层级确认最终顺序和成员后才执行开启动作。",
+    "settings_observed": "前置重建期间 Close tabs by position=off、Double-click to close tabs=off；关键动作将位置关闭从 off 点为 on，同一原生返回中双击关闭仍为 off。无重启。",
+    "steps_executed": [
+      "打开 Settings，在 General 重新选择 Balanced，读取当前语言并保存布局截图。",
+      "进入 Advanced，将位置关闭开关关闭，核对双击关闭仍为 off。",
+      "在当前测试 Space 新建 New Tab，以 Close Other Tabs 清理上一项测试页和组，处理删除确认。",
+      "从 A 开始顺序建立五个本项 fixture，逐页核对可见身份。",
+      "将 D 建组并重命名 TC-PHI507-r2-SET-05-BAL-G，将 E 加入该组。",
+      "选择 B，核实真实顺序、组成员和单选状态，保存动作前截图。",
+      "在 Advanced 核对两个开关均为 off，保存开关动作前截图。",
+      "开启 Close tabs by position，不重启。",
+      "关闭 Settings，依次重新打开 B 菜单与组标题菜单，分别记录方向项和禁用状态。",
+      "关闭菜单，保存实际结束截图，保留集合直到下一项开始。"
+    ],
+    "unit_id": "SET-05-BAL"
+  }
+}

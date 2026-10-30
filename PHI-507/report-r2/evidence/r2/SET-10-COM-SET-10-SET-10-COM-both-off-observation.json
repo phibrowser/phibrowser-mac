@@ -1,0 +1,43 @@
+{
+  "unit_id": "SET-10-COM",
+  "job": "SET-10-SET-10-COM-both-off",
+  "scope": "仅补严格off/off下新建组内D双击，沿用同编号/标记文档",
+  "source": "qa-evidence/r2/SET-10-SET-10-COM-both-off-observations.json",
+  "observation": {
+    "active_after": "双击后仍为 D，单一活动标签；随后单击 E 核对身份，最终活动页 E。",
+    "active_before": "D，单一活动标签，无多选。",
+    "after": "D 双击后仍存在，原编号及 KEEP 标记不变；随后逐页实见 E 原编号及标记。横向顺序仍为 A、组头、D、E，组计数仍为 2，无 split，未出现确认框。",
+    "before": "Comfortable 顶部横向标签顺序 A、组头 TC-PHI507-r2-SET10-fresh-COM（计数 2）、D、E。最新原生索引 18 为 D 的独立 tabStripTab button，其子元素仅为 Website 图标和 D 文本，不包含 E 或组标题；截图核对按钮主体位于 D 标签区域。",
+    "confirmation_choices": "被测动作及设置恢复均未出现确认框，无确认选项操作。",
+    "evidence_markers": [
+      "SET-10-COM off-off E initial-identity",
+      "SET-10-COM off-off D initial-identity",
+      "SET-10-COM off-off Comfortable",
+      "SET-10-COM off-off switches-before",
+      "SET-10-COM off-off D attempt1 before",
+      "SET-10-COM off-off D attempt1 after",
+      "SET-10-COM off-off E identity-after",
+      "SET-10-COM off-off restore-switches",
+      "SET-10-COM off-off restore-layout-language",
+      "SET-10-COM off-off ending-state-final"
+    ],
+    "identity_checks": "沿用原对象，未新建。批次均为 TC-PHI507-r2-SET-10-COM-fresh。D：dec4344e-3f66-451e-a837-4bd1ad4de195，KEEP-SET10-COM-D；E：3c211369-f344-4385-9a65-d59648143501，KEEP-SET10-COM-E。动作前后均从屏幕实见各自 TC 标题、批次、本次打开编号、普通页类型及输入框标记，与提供记录一致。A 仅核对标签仍在，未读取其正文或重做其子步骤。",
+    "language_observed": "General 前后均实读 System Default，浏览器设置 UI 为英文；未切换语言、未重启。",
+    "layout_observed": "初始实见 Balanced 纵向栏；通过 General 原生 Comfortable button 切换，get_app_state 截图确认 Comfortable 选中边框。被测动作前后实见顶部横向标签栏；收尾通过 General 恢复 Balanced 并截图确认。",
+    "not_executed_reason": "本次仅补 SET-10-COM 严格 off/off 条件下对原有组内普通 D 的一次双击，该动作已实际执行。其余 SET-10 子步骤按本次限定不复测，未将此前全用例视为本次重跑。",
+    "operator_errors": [],
+    "precondition_actual": "首次 CU 实读 PID 57596 的原测试窗口，活动 E，普通 A 和展开组 D/E 均在；逐页核对 D/E 原编号与标记一致，因此按续做要求不重建。当前 W Space 图标选中，原生列表包含 TC-QA-PHI507-r2-SET-08-COMMON-S1，期间未切换 Space。Advanced 初始实读双击 off／位置 on；仅单击位置开关关闭，返回原生树即时显示双击仍 off、位置已 off，然后关闭 Settings 执行动作。",
+    "settings_observed": "动作前 settings.tabs.doubleClickToClose=off、settings.tabs.directionalClosing=off。关闭位置开关后即时读取两个值，未点击的双击开关保持 off。动作及身份复核后重新打开 Advanced，仍实读 off/off；只单击位置开关恢复 on，返回原生树即时显示 off/on。布局 Balanced→Comfortable→Balanced；System Default 保持，快捷键未修改。",
+    "steps_executed": [
+      "先 get_app_state，保存 E 身份截图；用最新组内 D selectable row 单击 D，保存 D 身份截图，核对两页原编号及 KEEP 标记。",
+      "Cmd+, 打开 Settings；General 实读 System Default 和 Balanced，单击 Comfortable，get_app_state 保存选中布局截图。",
+      "Advanced 实读双击 off／位置 on；只单击位置开关，立即从返回原生树核对双击 off／位置 off，再 get_app_state 保存开关截图。",
+      "单击已确认的 Settings close button；get_app_state 保存 attempt1 before，核对 D 正文、组计数 2、横向顺序及仅包含 D 的独立 tabStripTab button 索引 18。",
+      "Unix 毫秒 1793359560930，对最新 D button 索引 18 发送 click_count:2、mouse_button:left；仅此一次被测双击。get_app_state 保存 attempt1 after，实见 D 原编号及标记、组计数 2，活动页仍 D。",
+      "单击最新 E tabStripTab button，get_app_state 保存 identity-after，实见 E 原编号与标记，组计数和顺序未变。",
+      "重新打开 Settings，Advanced 复读 off/off；仅恢复位置开关为 on，立即核对双击仍 off 并截图。General 恢复 Balanced，实读 System Default 并截图，关闭 Settings。",
+      "收尾查看 Spaces 原生菜单，未选择或修改 Space；Escape 后原生树仍为菜单，随后调用菜单明确暴露的 Cancel 动作关闭。最后 get_app_state 保存 ending-state-final 真实截图，活动 E，保留 A、组[D,E]。"
+    ],
+    "unit_id": "SET-10-COM"
+  }
+}

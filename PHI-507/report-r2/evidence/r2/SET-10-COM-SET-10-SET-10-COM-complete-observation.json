@@ -1,0 +1,41 @@
+{
+  "unit_id": "SET-10-COM",
+  "job": "SET-10-SET-10-COM-complete",
+  "scope": "Comfortable组内D补动作；本次实测off/on，严格off/off条件仍待补",
+  "source": "qa-evidence/r2/SET-10-SET-10-COM-complete-observations.json",
+  "observation": {
+    "active_after": "双击动作后仍为 D；随后单击 E 核对身份，最终活动页 E。",
+    "active_before": "D，单一活动标签，无多选。",
+    "after": "D 双击后仍存在，正文编号及 KEEP 标记不变；随后逐页实见 E 原编号及标记。A、组[D,E] 的顺序未变，组计数仍为 2，无 split，未出现确认框。",
+    "before": "Comfortable 顶部横向标签顺序 A、组头 TC-PHI507-r2-SET10-fresh-COM（计数 2）、D、E。D 的最新原生 tabStripTab button 为索引 18，只包含 Website 图标及 D 文本，不含 E 或组标题；截图中按钮中心位于 D 标签主体，远离右侧边缘控件。",
+    "confirmation_choices": "本次未出现确认框，无确认选项操作。",
+    "evidence_markers": [
+      "SET-10-COM continuation D initial-identity",
+      "SET-10-COM continuation Comfortable",
+      "SET-10-COM continuation switches-before",
+      "SET-10-COM continuation E identity-before",
+      "SET-10-COM continuation D attempt1 before",
+      "SET-10-COM continuation D attempt1 after",
+      "SET-10-COM continuation E identity-after",
+      "SET-10-COM continuation restore-switches",
+      "SET-10-COM continuation restore-layout-language",
+      "SET-10-COM continuation ending-state"
+    ],
+    "identity_checks": "继续原有文档，未重建。批次均为 TC-PHI507-r2-SET-10-COM-fresh。D：dec4344e-3f66-451e-a837-4bd1ad4de195，KEEP-SET10-COM-D；E：3c211369-f344-4385-9a65-d59648143501，KEEP-SET10-COM-E。动作前后均通过屏幕实见标题、批次、本次打开编号、普通页类型和输入框标记，与源记录相同。A 仅核对标签仍在，未重复其子步骤或读取正文身份。",
+    "language_observed": "General 实读 System Default，浏览器 UI 为英文；未切换语言或重启。",
+    "layout_observed": "初始实见 Balanced 纵向栏；通过 General 原生 Comfortable button 切换并截图确认选中边框，动作前后实见顶部横向标签栏。完成身份复核后通过 General 恢复 Balanced，并截图确认。",
+    "not_executed_reason": "本次仅续做 SET-10-COM 在双击关闭 off 时对组内普通 D 的最后一次双击，其余 SET-10 子步骤按要求不复测；本次指定双击已实际执行。",
+    "operator_errors": [],
+    "precondition_actual": "首次 CU 已定位到保留原批次的窗口，PID 57596，初始活动 E；逐页核对 D/E 均为原编号和原 KEEP 标记，因此沿用原有组。Advanced 实读双击关闭 off、位置关闭 on；只切换所需布局，未改动两个开关。",
+    "settings_observed": "动作前及收尾 Advanced 均实读 settings.tabs.doubleClickToClose=off、settings.tabs.directionalClosing=on；本次未点击任一开关。System Default 保持，布局 Balanced→Comfortable→Balanced，快捷键未修改。",
+    "steps_executed": [
+      "先 get_app_state，实见原批次 E、普通 A 及展开组 D/E；单击 D 核对原编号与标记。",
+      "通过 Cmd+, 打开 Settings，General 原生选择 Comfortable，get_app_state 保存布局截图；Advanced 实读双击 off／位置 on 并保存截图，关闭已确认的 Settings close button。",
+      "在 Comfortable 单击 E，逐页实见原编号及 KEEP 标记和组计数 2；再单击 D，get_app_state 保存 attempt1 before，确认 D 的独立 tabStripTab button。",
+      "Unix 毫秒 1793359297294，对最新 D tabStripTab button 索引 18 发送 click_count:2、mouse_button:left；随后 get_app_state 保存 attempt1 after，活动页仍为 D，实见原编号与标记，组计数仍为 2。",
+      "单击 E 并 get_app_state 保存 identity-after，实见 E 原编号和标记；未重建或补改对象。",
+      "重新打开 Settings，Advanced 复读 off／on；General 恢复 Balanced 并实读 System Default，关闭 Settings，get_app_state 保存最终活动 E 及 A、组[D,E] 的结束现场。"
+    ],
+    "unit_id": "SET-10-COM"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "unit_id": "SET-10-BAL",
+  "job": "SET-10-fresh-surfaces",
+  "scope": "补执行关闭后新建普通与组内普通",
+  "source": "qa-evidence/r2/SET-10-fresh-surfaces-observations.json",
+  "observation": {
+    "active_after": "A 双击后仍为 A；D 双击后仍为 D；随后逐页核对 E，单元结束活动页 E。",
+    "active_before": "普通 A 子步骤为 A；组内 D 子步骤为 D。",
+    "after": "两次双击后均保留普通 A、展开组 TC-PHI507-r2-SET10-fresh-BAL[D,E]，顺序及成员未变；无多选、无 split。A、D 打开编号和输入标记前后一致，E 结束复核时也保持原身份。",
+    "before": "普通 A、展开组 TC-PHI507-r2-SET10-fresh-BAL[D,E]，真实顺序 A、D、E；均为本项双击反向关闭后新建的普通 fixture。",
+    "confirmation_choices": "被测动作未出现确认框。准备时 Close Group、Close Other Tabs 未出现删除确认；组重命名选择 Save，未勾选“不再询问”。",
+    "evidence_markers": [
+      "SET-10-BAL fresh layout",
+      "SET-10-BAL fresh settings-off",
+      "SET-10-BAL fresh A created",
+      "SET-10-BAL fresh D created",
+      "SET-10-BAL fresh E created",
+      "SET-10-BAL fresh-A attempt1 before",
+      "SET-10-BAL fresh-A attempt1 after",
+      "SET-10-BAL fresh-D attempt1 before",
+      "SET-10-BAL fresh-D attempt1 after",
+      "SET-10-BAL fresh-E identity-after"
+    ],
+    "identity_checks": "正文批次 TC-PHI507-r2-SET-10-BAL-fresh。A：db177c4e-f6cf-44b1-a792-2a6cb515e295，KEEP-SET10-BAL-A；D：e3c6c5b3-7598-49e3-8302-1920bc9f429c，KEEP-SET10-BAL-D；E：3baf7bd0-54d4-4a7d-833e-f8bbd56156e7，KEEP-SET10-BAL-E。逐页实见标题、批次、编号、普通页类型与输入框；输入前均以 Tab 后绿色焦点边框确认。关键动作前后 A、D 同号同标记，结束逐页核对 E 同号同标记，没有重建。",
+    "language_observed": "System Default，浏览器设置与菜单英文；未切换语言或重启。",
+    "layout_observed": "General 原生选择 Balanced 并截图显示选中；浏览器 chrome 为左侧纵向标签栏和顶部地址栏。",
+    "not_executed_reason": "此前其余子步骤已在SET-10-retry保存，本次仅补关闭后新建普通与组内普通子步骤",
+    "operator_errors": [],
+    "precondition_actual": "本项重新实读初始 off/off；单独切换双击 on→off，并逐次读取双击与位置值。清理 PER 当前 TC 对象后，才通过新 New Tab 创建 BAL 的 A、D、E，并在 off/off 状态原生分组。",
+    "settings_observed": "Unix 毫秒：1793358565997 初始 off/off；1793358576288 单独开启双击后 on/off；1793358576910 单独关闭双击后 off/off。位置全程 off，未观察到联动。快捷键未修改。",
+    "steps_executed": [
+      "双击关闭设 off（1793358576910）后，Close Group 清理 PER 组；Cmd+T 新建 New Tab，再 Close Other Tabs 清理 PER 普通 A。1793358591980 开始在该新页原生地址栏导航 BAL A，1793358594961 已实见正文与编号。",
+      "确认焦点并输入 A 标记；1793358617573 通过 Cmd+T 开始创建 D，1793358621439 已实见 D 正文；确认焦点后输入 D 标记。",
+      "1793358645854 通过 Cmd+T 开始创建 E，1793358649958 已实见 E 正文；确认焦点后输入 E 标记。",
+      "通过 D 的 New Tab Group、Rename Group/Save 创建 TC-PHI507-r2-SET10-fresh-BAL，再 Add to Group 加入 E；1793358698709 实读组内 D/E。",
+      "选中 A 并 get_app_state 保存 before；对最新 A 安全 row（16）双击，再 get_app_state 保存 after。",
+      "核对 D 所属最内层原生 row（23），单击选中并保存 before；对该 row 双击，保存 after；随后单击 E 核对原编号和输入标记。"
+    ],
+    "unit_id": "SET-10-BAL"
+  }
+}

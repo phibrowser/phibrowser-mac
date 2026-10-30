@@ -1,0 +1,49 @@
+{
+  "unit_id": "SET-05-PER",
+  "job": "SET-05",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-05-observations.json",
+  "observation": {
+    "active_after": "B 单独活动；选中集仅 B；无 split。",
+    "active_before": "B 单独活动；选中集仅 B；无 split。",
+    "after": "外部自上而下仍为普通 A、普通 B、普通 C、展开的 TC-PHI507-r2-SET-05-PER-G[D,E]。开启位置关闭后未重启，重新打开 B 菜单实见 Close Tabs Above、Close Tabs Below，两项均未标为 disabled；组标题菜单实见 Close Tabs Above Group，以及 disabled 的 Close Tabs Below Group。仅查看菜单，没有选择方向关闭项。结束取证后关闭菜单，页面集合与组成员未变。",
+    "before": "Performance 外部自上而下为普通 A、普通 B、普通 C、展开的 TC-PHI507-r2-SET-05-PER-G[D,E]，共五个普通测试页。关键动作前 Settings 原生开关显示 Close tabs by position=off、Double-click to close tabs=off。",
+    "confirmation_choices": "开始清理旧 TC-PHI507-r2-SET-04-COM 页面及组时，Close Other Tabs 弹出 Close Tabs and Delete Group?，Don't Ask Again 的原生值为 0。操作器未及时在该确认处停止后续键盘序列，Return 实际确认删除了已授权清理的旧测试组；未勾选 Don't Ask Again。随后重新在保留的 New Tab 中输入 A 并建立本项序列。新建组重命名时选择 Save。被测开关与菜单查看阶段无确认框。",
+    "evidence_markers": [
+      "EVIDENCE: SET-05-PER setup1 failure",
+      "IDENTITY SET-05-PER B",
+      "IDENTITY SET-05-PER C",
+      "IDENTITY SET-05-PER D",
+      "IDENTITY SET-05-PER E",
+      "EVIDENCE: SET-05-PER attempt1 before",
+      "EVIDENCE: SET-05-PER attempt1 before-toggle",
+      "EVIDENCE: SET-05-PER attempt1 after-B-menu",
+      "EVIDENCE: SET-05-PER attempt1 after-group-menu",
+      "EVIDENCE: SET-05-PER attempt1 after"
+    ],
+    "identity_checks": "A 至 E 均通过原生地址栏访问指定 fixture，屏幕逐页看到相应 TC 标题、批次 TC-PHI507-r2-SET-05-PER、页面类型普通页及空输入框。本次打开编号：A=e3e3ba1b-762e-4fee-97ec-6550ae30876c；B=42118f8f-ee1c-4ae7-a202-f8a84d67cfe7；C=8e676d0a-2af7-442f-be66-b1d9e93a50d4；D=86330b4d-838d-4593-b280-513a8ca318c5；E=384d8b06-8145-4c72-a0f2-155ccf849d15。动作前后 B 屏幕编号一致。D 通过 New Tab Group 建组，E 通过 Add to Group 加入；原生层级实见 D、E 同属该组。未操作受保护对象，也未对不可见的受保护对象作身份保留结论。",
+    "language_observed": "General 实读 Display language=System Default；浏览器设置及菜单为英文。未切换语言。",
+    "layout_observed": "通过 General 原生 UI 选择 Performance，截图实见 Performance 卡片选中；浏览器外部标签栏为上下排列。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "首次打开 Settings 时，将一次 Computer Use 返回整体传给 text，导致工具图片编码被作为文本输出。随后改为仅输出原生文本块和真实 image；没有写文件。",
+      "清理旧测试组后，本应先处理删除确认，但预先编排的地址栏键盘序列继续执行；Return 确认了旧测试组删除，首次 A 导航未提交。已保存空白页现场并重新建立前置；未把该次导航当作页面已加载，也未在前置缺失时执行被测开关动作。"
+    ],
+    "precondition_actual": "在本轮 TC-QA-PHI507-r2 Space 内清理已识别的旧测试页及旧测试组，再从 New Tab 依次建立本项 A/B/C/D/E。重命名并加入组后，原生层级与屏幕共同确认普通 A/B/C、可丢弃组 TC-PHI507-r2-SET-05-PER-G[D,E]，顺序正确；位置关闭开关先为 off。",
+    "settings_observed": "本轮起始实读：Comfortable、System Default、Close tabs by position=off、Double-click to close tabs=off。本项关键动作将 Close tabs by position 从 off 点为 on，原生返回显示 on；同一返回显示 Double-click to close tabs 仍为 off。没有重启。",
+    "steps_executed": [
+      "先 get_app_state 重读当前测试应用、旧批次页面及原生状态。",
+      "打开 Settings，读取原始语言、布局与两个关闭开关。",
+      "在 General 选择 Performance 并截图确认。",
+      "通过当前 Space 的 New Tab 和 Close Other Tabs 清理旧测试页、旧组，保留未勾选 Don't Ask Again 的状态；重新输入 A。",
+      "顺序新建 B/C/D/E，逐页屏幕核对 fixture 身份。",
+      "将 D 新建为组，重命名 TC-PHI507-r2-SET-05-PER-G，将 E 加入该组，选择 B 并保存动作前截图。",
+      "在 Advanced 核对位置开关 off、双击开关 off，保存开关动作前截图。",
+      "单击开启 Close tabs by position，不重启。",
+      "关闭 Settings，重新打开 B 右键菜单并保存实际方向项截图。",
+      "关闭 B 菜单，打开组标题右键菜单并保存实际方向项及禁用状态截图。",
+      "关闭菜单并保存结束截图，保留实际结束集合直到下一项开始。"
+    ],
+    "unit_id": "SET-05-PER"
+  }
+}

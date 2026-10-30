@@ -1,0 +1,43 @@
+{
+  "unit_id": "DBL-03-BAL",
+  "job": "DBL-03",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/DBL-03-observations.json",
+  "observation": {
+    "active_after": "标题区和图标区双击结束时均为 C 单选；随后单击 A 核对存活身份，图标区变体核对完后单击 C 返回。",
+    "active_before": "两个变体均为 C 活动且单选，B 非活动。",
+    "after": "两个变体的原生列表均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。",
+    "before": "标题区批次 TC-PHI507-r2-DBL-03-BAL-title；图标区批次 TC-PHI507-r2-DBL-03-BAL-icon。每次均为普通页 A→B→C，无组、多选或 split。",
+    "confirmation_choices": "未出现关闭确认或离开确认；未选择“不再询问”。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-03-BAL attempt1 settings",
+      "EVIDENCE: DBL-03-BAL attempt1 title-A-identity",
+      "EVIDENCE: DBL-03-BAL attempt1 title-B-identity",
+      "EVIDENCE: DBL-03-BAL attempt1 title-C-identity",
+      "EVIDENCE: DBL-03-BAL attempt1 title-before",
+      "EVIDENCE: DBL-03-BAL attempt1 title-after",
+      "EVIDENCE: DBL-03-BAL attempt1 title-A-retained",
+      "EVIDENCE: DBL-03-BAL attempt1 icon-A-identity",
+      "EVIDENCE: DBL-03-BAL attempt1 icon-B-identity",
+      "EVIDENCE: DBL-03-BAL attempt1 icon-C-identity",
+      "EVIDENCE: DBL-03-BAL attempt1 icon-before",
+      "EVIDENCE: DBL-03-BAL attempt1 icon-after",
+      "EVIDENCE: DBL-03-BAL attempt1 icon-A-retained"
+    ],
+    "identity_checks": "本应用 PID 57596。逐页实见 TC 标题、对应批次、普通页说明、打开编号及空输入框。title：A=0305eb93-fb2a-4247-ade4-3998afa597ea，B=6c848078-aa31-454b-ac3f-5c3533f49e8f，C=69baa12d-6842-4181-934a-d9b004c0899d；icon：A=b659c965-7c4c-4d53-9b99-97bbce194021，B=2d3058c3-c35c-42b3-b6b6-256198a70ac4，C=e49fbafc-d6e5-4e5e-bd6c-3c88c59659fa。两次动作后均逐页核对 A/C 原编号。",
+    "language_observed": "General 实读 System Default；浏览器和设置界面为英文。",
+    "layout_observed": "General 原生选择 Balanced 并截图确认；实际浏览器 chrome 为纵向标签栏，A/B/C 自上而下排列。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "本项开始才清理 Performance 残留页并重建；标题区与图标区动作各使用新序列，均确认 A→B→C、C 单选、B 非活动。",
+    "settings_observed": "Advanced 重新实读双击关闭 on／位置关闭 on；本项未点击任何关闭开关。",
+    "steps_executed": [
+      "原生切换到 Balanced，读取语言及两个关闭开关。",
+      "新建 New Tab 后原生 Close Other Tabs，经地址栏顺序建立 title 批次 A/B/C。",
+      "关键动作前 get_app_state 留图；按当前原图对 B 标题区 (150,355) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。",
+      "重新清理并经地址栏顺序建立 icon 批次 A/B/C，确认 C 活动。",
+      "关键动作前 get_app_state 留图；对 B 地球图标中心 (44,355) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。"
+    ],
+    "unit_id": "DBL-03-BAL"
+  }
+}

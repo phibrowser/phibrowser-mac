@@ -1,0 +1,52 @@
+{
+  "unit_id": "SET-10-PER",
+  "job": "SET-10-retry",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-10-retry-observations.json",
+  "observation": {
+    "active_after": "有效组内普通操作后为 D；普通 split 操作后焦点为 C；最终显示组内 split[D,E]，E 侧有活动焦点边框。组内子行未在原生树标 selected，依据截图高亮和焦点边框记录，无多选。",
+    "active_before": "E，截图高亮组内 E；原生组内子行未标 selected。",
+    "after": "开启后：已有 B 消失，活动页转 C；新建普通 N 双击后消失，活动页转 C。关闭后：普通 A 保留并被选中；有效重试的组内 D 保留并高亮；新建 split[A,C] 双击 C 后两页仍在，焦点转 C；新建组内 split[D,E] 双击 E 后两页仍在，焦点转 E。最终顺序 split[A,C] → TC-G 内 split[D,E]，B/N 不在。",
+    "before": "自上而下 A → B → C → TC-PHI507-r2-SET-10-PER-TC-G[D,E]；无 split，无多选；两个开关均 off。",
+    "confirmation_choices": "组重命名使用 Save。普通页关闭无离开确认。未勾选任何“不再询问”。",
+    "evidence_markers": [
+      "SET-10-PER attempt1 before",
+      "SET-10-PER existing-B before",
+      "SET-10-PER existing-B after",
+      "SET-10-PER new-N before",
+      "SET-10-PER new-N after",
+      "SET-10-PER off-normal before",
+      "SET-10-PER off-normal after",
+      "SET-10-PER off-group before",
+      "SET-10-PER off-group after",
+      "SET-10-PER off-group attempt1 failure",
+      "SET-10-PER off-group attempt2 before",
+      "SET-10-PER off-group attempt2 after",
+      "SET-10-PER off-normal-split before",
+      "SET-10-PER off-normal-split after",
+      "SET-10-PER off-group-split before",
+      "SET-10-PER attempt1 after"
+    ],
+    "identity_checks": "逐页实见 TC 标题、批次、普通页说明、打开编号及空输入框。批次 TC-PHI507-r2-SET-10-PER：A=136c0b5e-c7c3-46c8-8c4f-498e08385049；B=fd3f0cde-2996-45c4-9719-8b057514f019；C=4265a9d0-ca81-498f-8d21-1d93dd971871；初始 D=86d02f09-13ec-40f6-a837-93daf6e69c64；初始 E=98618df0-9daa-43a2-b52f-927bd302ae72；N=8842f57c-5682-4bb3-9f2b-fed85f73aebe。误操作后仅重建 D/E，批次 TC-PHI507-r2-SET-10-PER-retry-group：D=fcc2d840-872d-44a0-bf4f-3887bbd40887；E=d06b77d8-d3ae-4315-8bc0-f4e8c8b2a14a。有效组内及最终 split 使用重建后的编号；A/C split 中编号与初始一致。",
+    "language_observed": "General 为 System Default；浏览器与设置界面英文，未切换语言。",
+    "layout_observed": "起始实读 Balanced；通过 General 原生 Performance 按钮切换，截图实见 Performance 选中边框；浏览器外部页签上下排列。",
+    "not_executed_reason": "关闭后的普通及组内普通表面未另行新建 cell：普通使用既有 A；组内有效操作使用误点后重新建立的 D/E。两个 split 均在关闭开关后原生新建。故不记录“关闭后四种表面全部分别新建 cell”的完整覆盖。",
+    "operator_errors": [
+      "前置组菜单定位时，对聚合组 row 右击曾打开子页菜单；另一次坐标右击落在 B，均以 Escape 退出，未选择菜单动作。",
+      "关闭开关后的组内普通首次双击使用 TC-D 文本索引 33，点击位置落在页签右侧区域，D/E 随后均消失；不能确认是所要求的页签主体双击，保留 failure 现场，不作为有效组内行为记录。随后仅重建缺失 D/E，改用真实子 row 29 重试，D/E 保留。",
+      "辅助匹配函数曾把焦点说明行和控件行重复计数，停在 Rename Group 对话框；未执行错误点击，改为只匹配带数字索引的控件行后继续。"
+    ],
+    "precondition_actual": "在本轮 S1 新建 New Tab，原生 Close Other Tabs 清理 SET-08 普通测试页，再按 A/B/C/D/E 顺序地址栏导航；原生建立并命名 TC-G，把 E 加入 D 所在组。执行开启动作前已确认 A/B/C、组[D,E] 和双 off。",
+    "settings_observed": "会话起始双击 off、位置 on。单独点击位置开关后即时读取双击 off/位置 off；开启双击后即时读取 on/off；反向关闭双击后即时读取 off/off。未点击项在这些读取中未变化；无重启或快捷键改动。",
+    "steps_executed": [
+      "原生切换 Performance，单独关闭位置关闭并读取两个开关；重建五页及 TC-G[D,E]。",
+      "开启双击关闭，立即双击既有 B；实读 B 消失。",
+      "新建普通 N，实见正文与编号后双击；实读 N 消失。",
+      "关闭双击关闭并读取双 off，双击普通 A；A 保留并选中。",
+      "组内首次操作无效，保存现场；以 retry-group 批次重建 D/E 及组，双击 D 子 row；D/E 保留。",
+      "原生 Split with Current 建立普通 split[A,C]，双击 C 标签；配对保留、焦点转 C。",
+      "原生建立组内 split[D,E]，双击 E 标签；配对与组成员保留、焦点转 E，保存结束图。"
+    ],
+    "unit_id": "SET-10-PER"
+  }
+}

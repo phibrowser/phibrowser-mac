@@ -1,0 +1,60 @@
+{
+  "unit_id": "ENV-03-COMMON",
+  "job": "ENV-03-navigation-recovery",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/ENV-03-navigation-recovery-observations.json",
+  "observation": {
+    "active_after": "F；唯一选中 TC-F · TC-PHI507-r2-ENV-03-COMMON。",
+    "active_before": "窗口 TC-QA-PHI507-r2-SET-08-COMMON-W2 中唯一的 New Tab；地址已指向旧批次 fixture A，内容仍为 New Tab。",
+    "after": "TC-PHI507-r2-Recovery 内实际原生顺序 A → B → C → D → E → F；六页均实见相应 TC 标题、相同批次、各自打开编号、普通页说明和空输入框。A 位于最上。无需拖动；无多选、split 配对或组成员。",
+    "before": "当前窗口原生树仅列一个测试标签。完整地址为 https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r2-SET-10-COM&kind=normal；工具栏为 Refresh，内容为 New Tab，未见 fixture 身份信息。",
+    "confirmation_choices": "Cmd+Q 后出现“Are you sure you want to quit Phi?”及“Any unsaved changes may be lost.”，点击 Quit；工具返回 -10005: App quit。未出现或选择“不再询问”。创建 Space 时保留现有 Your Phi Profile，输入 TC-PHI507-r2-Recovery 后点击 Create Space；未创建新 Profile、未登录。未出现系统权限或安全确认框。",
+    "evidence_markers": [
+      "ENV-03-COMMON attempt1 before",
+      "ENV-03-COMMON https-initial",
+      "ENV-03-COMMON stop",
+      "ENV-03-COMMON http-failure",
+      "ENV-03-COMMON fixture-before-restart",
+      "ENV-03-COMMON quit",
+      "ENV-03-COMMON launch-path",
+      "ENV-03-COMMON finder-open",
+      "ENV-03-COMMON finder-cmd-open",
+      "ENV-03-COMMON restarted",
+      "ENV-03-COMMON restart-fixture-failure",
+      "ENV-03-COMMON recovery-space",
+      "ENV-03-COMMON recovery-https-failure",
+      "ENV-03-COMMON balanced-restored",
+      "ENV-03-COMMON switches-restored",
+      "ENV-03-COMMON recovery-fixture-failure（59.1秒时的加载现场）",
+      "ENV-03-COMMON final-url（随后已出现真实 A 页）",
+      "ENV-03-COMMON attempt1 after（恢复阶段 A 页，75.4秒）",
+      "ENV-03-COMMON sequence before（A 身份；同次调用随后包含 B 身份截图）",
+      "ENV-03-COMMON identity-C",
+      "ENV-03-COMMON identity-D",
+      "ENV-03-COMMON identity-E",
+      "ENV-03-COMMON sequence after（最终 A–F 顺序及 F 身份）"
+    ],
+    "identity_checks": "六页批次均为 TC-PHI507-r2-ENV-03-COMMON，页面类型均为普通页，输入框均为空，未输入保护标记。屏幕读取本次打开编号：A=9ebfab65-318e-424e-ace9-768c3c3ede57；B=d8a28247-9925-415c-866a-ae9682140cb6；C=86bc2633-c399-4c94-a2fb-e7c092b016d2；D=3eff0d7b-c8f2-4a74-9024-2738fb4aff1e；E=82190188-37fd-48ad-9d3b-11d8b07ebb38；F=fe96f352-1e9a-4d4e-834a-bd2e971e12e5。未用 URL 或标签变化代替提交确认。",
+    "language_observed": "General 原生控件实读 System Default，浏览器菜单及 Settings 为英文；fixture 正文为中文。未切换语言，未出现语言重启提示。",
+    "layout_observed": "恢复诊断起始 chrome 为顶部横向标签，随后 General 截图确认 Comfortable 处于选中状态。收尾通过 General 原生 Balanced button 切换，截图确认 Balanced 已选；最终 chrome 为左侧纵向标签，方向为上/下。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "Finder 对已确认的 /Applications/Phi Tab Close QA.app 先后执行原生 secondary action“open”和“Open Finder item”后，返回仍是 Finder，未据此认定启动。随后在同一完整路径选中项上使用 Cmd+O，再由 Computer Use 核实测试 app 已运行且 PID 已变化；未操作 Canary。"
+    ],
+    "precondition_actual": "先按额外约束保留并诊断现有失败现场。恢复后使用本轮新建 Recovery Space 的 A 作为新序列首项，再逐一新建 B–F；未沿用其他用例的 A–F 残留。",
+    "settings_observed": "Advanced 首次实读 doubleClickToClose=off、directionalClosing=off。仅点击 directionalClosing 一次，返回树立即实读 off/on；未点击的 doubleClickToClose 保持 off。General 选择 Balanced，System Default 保持原值。未修改快捷键、默认浏览器或其他设置。",
+    "steps_executed": [
+      "使用 get_app_state 读取起始截图及原生树；Cmd+L 读取完整旧 fixture URL并保存 before 图片。",
+      "点击原生 Refresh 后标签回到 New Tab，约7.6秒后仍未显示 fixture。地址栏输入 https://example.com/；约8.0秒仍为 Stop 和 New Tab 内容，约15.0秒点击原生 Stop，返回 Refresh。",
+      "地址栏输入 http://example.com/；约12.6秒读取时实际地址为 https://example.com/，屏幕出现“This site can’t be reached”“example.com took too long to respond.”及 ERR_TIMED_OUT。仅记录错误页，未执行其中连接、代理或防火墙建议。",
+      "地址栏输入本项 fixture A URL；约10.6秒仍显示先前 example.com 错误页，工具栏为 Stop；约20.4秒执行 Cmd+Q，并明确点击 Quit。",
+      "通过 Finder 的 Cmd+Shift+G 输入 /Applications/Phi Tab Close QA.app，核实 Applications 中的选中项及完整原生文件 URL后执行原生打开。重新读取测试 app，PID由53002变为54426，页面为 example.com 空白加载状态。",
+      "重启后在地址栏正常导航本项 fixture A；约20.9秒仍是空白加载画面及 Stop，未见身份。",
+      "通过 Spaces → New Space 创建 TC-PHI507-r2-Recovery，沿用现有 Your Phi Profile。在新 Space 地址栏输入 https://example.com/；约15.2秒仍为 Stop 和 New Tab 内容，未见 Example Domain HTML。",
+      "在 Recovery Space 地址栏输入同批次 fixture A。观察期间恢复 Balanced、System Default及两个开关off/on；约59.1秒仍为 Stop 和 New Tab 内容，保存加载现场。随后约73–75秒间实见 TC-A、批次、打开编号及输入框，停止恢复操作。",
+      "保留新 Space 的真实 A，依次通过 Cmd+T、Cmd+L、输入 fixture URL、Return 建立 B、C、D、E、F；每页分别 get_app_state 并目视核对标题、批次、打开编号及输入框。",
+      "最终 get_app_state 记录原生顺序 A → F、F唯一选中及实际 HTML。未拖动、未关闭序列、未再次重建。"
+    ],
+    "unit_id": "ENV-03-COMMON"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "unit_id": "DBL-01-COM",
+  "job": "DBL-01",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/DBL-01-observations.json",
+  "observation": {
+    "active_after": "标题区双击后 B；图标区双击后 B；恢复起始偏好后仍为 B。",
+    "active_before": "标题区动作前 C；图标区动作前 B。",
+    "after": "Comfortable 下两步后实际横向顺序均为 A、B、C，B 活动，无标签消失，无组、多选或 split。收尾恢复 Balanced 后同一 A/B/C 保留，B 单选。",
+    "before": "普通 A、B、C 从左至右排列，C 活动，无组、多选或 split。",
+    "confirmation_choices": "本项清理及两次被测双击未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-01-COM attempt1 settings",
+      "EVIDENCE: DBL-01-COM attempt1 switches",
+      "EVIDENCE: DBL-01-COM attempt1 setup-A",
+      "EVIDENCE: DBL-01-COM attempt1 setup-B",
+      "EVIDENCE: DBL-01-COM attempt1 setup-C",
+      "EVIDENCE: DBL-01-COM attempt1 title-before",
+      "EVIDENCE: DBL-01-COM attempt1 title-after",
+      "EVIDENCE: DBL-01-COM attempt1 icon-before",
+      "EVIDENCE: DBL-01-COM attempt1 icon-after",
+      "EVIDENCE: DBL-01-COM attempt1 restore-settings",
+      "EVIDENCE: DBL-01-COM attempt1 restore-switches",
+      "EVIDENCE: DBL-01-COM attempt1 ending"
+    ],
+    "identity_checks": "逐页实见 TC-A/B/C、批次 TC-PHI507-r2-DBL-01-COM、普通页正文、本次打开编号及空输入框。A=7c429bc9-2765-4b9e-8972-b76fcac2253f，B=9b5ebc7a-c973-465c-a010-ba7912019456，C=1bfc8ef4-67d5-48fb-a642-212bd85f818c；两次双击及收尾后 B 编号不变。横向原生 tabStripTab 容器分别对应 A、B、C。",
+    "language_observed": "General 实读 System Default，界面英文，未切换语言；收尾值相同。",
+    "layout_observed": "General 原生选择并截图确认 Comfortable，实际标签从左至右排列；结束证据保存后统一恢复起始 Balanced。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "切换 Comfortable，Advanced 实读双击关闭 off、位置关闭 on。新建 New Tab并原生 Close Other Tabs 清理上一项，再通过地址栏独立创建本项 A/B/C，确认 C 活动。",
+    "settings_observed": "动作时 Comfortable、双击关闭 off／位置关闭 on；收尾截图确认 Balanced、System Default、双击关闭 off／位置关闭 on，两个开关全程未点击。",
+    "steps_executed": [
+      "原生切换 Comfortable并截图确认，重读 Advanced 两个开关。",
+      "清理上一项测试页，地址栏创建本项普通 A/B/C，逐页核对身份及真实顺序。",
+      "C 活动时双击 B 标题区：CU 坐标 (733,44)，展示图约 (550,33)。保存前后截图，B 活动且 A/B/C 均在。",
+      "继续双击 B 图标区：CU 坐标 (645,44)，展示图约 (484,33)。保存前后截图，B 活动且 A/B/C 均在。",
+      "保留实际结束页面，统一恢复起始 Balanced；重读 System Default及双击关闭 off／位置关闭 on，关闭 Settings并保存最终截图。"
+    ],
+    "unit_id": "DBL-01-COM"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "unit_id": "SET-06-BAL-off-off",
+  "job": "SET-06",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-06-observations.json",
+  "observation": {
+    "active_after": "C 单独活动，选中集 {C}；菜单目标 B。",
+    "active_before": "C 单独活动，选中集 {C}。",
+    "after": "A/B/C 全部保留，外部从上到下 A、B、C；B 菜单显示 Close 和 Close Other Tabs，没有 Above/Below 方向项；无组、无 split、无多选。",
+    "before": "本项普通 A/B/C，Balanced 外部纵向顺序 A→B→C。",
+    "confirmation_choices": "无确认框；未执行菜单命令。",
+    "evidence_markers": [
+      "SET-06-BAL-off-off layout",
+      "SET-06-BAL-off-off settings",
+      "SET-06-BAL-off-off identity-A",
+      "SET-06-BAL-off-off identity-B",
+      "SET-06-BAL-off-off identity-C attempt1 before",
+      "SET-06-BAL-off-off attempt1 after"
+    ],
+    "identity_checks": "A/B/C 页面均实见 TC 标题、本项批次、普通页、空输入框及编号。A=8811b1fa-e7e8-4b4d-a1b7-042ae9e2cd23；B=abdba0aa-cab8-4d8d-abfc-343049ff42e6；C=596ce514-7f19-470e-87e0-1adfaaecde98。after 中 C 编号仍为该值。",
+    "language_observed": "System Default，设置和菜单英文。",
+    "layout_observed": "通过 General 原生选择 Balanced；截图选中边框位于 Balanced，浏览器外部纵向排列。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "本项开始前原生清理并重建 TC-PHI507-r2-SET-06-BAL-off-off A/B/C，C 活动，无组、无 split；off/off。",
+    "settings_observed": "逐个将双击 on→off、位置 on→off；中间原生树为双击 off、位置 on；最终截图与树为 off/off。",
+    "steps_executed": [
+      "General 选择 Balanced 并截图。",
+      "Advanced 逐个设置本项 off/off，保留中间实读行及最终截图。",
+      "新建 New Tab、Close Other Tabs，地址栏依次新建加载本项 A/B/C。",
+      "逐页核对身份和最终顺序，保存 before。",
+      "双击 C，重读集合；右键 B 并保存没有方向项的 after。"
+    ],
+    "unit_id": "SET-06-BAL-off-off"
+  }
+}

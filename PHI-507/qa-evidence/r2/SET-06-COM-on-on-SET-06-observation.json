@@ -1,0 +1,43 @@
+{
+  "unit_id": "SET-06-COM-on-on",
+  "job": "SET-06",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-06-observations.json",
+  "observation": {
+    "active_after": "B 单独活动，选中集 {B}；收尾恢复偏好后仍为 B 活动。",
+    "active_before": "C 单独活动，选中集 {C}。",
+    "after": "C 关闭，外部从左到右保留 A/B；B 菜单有 Close Tabs to the Left（可用）、Close Tabs to the Right（disabled），以及 Close、Close Other Tabs。无多选、无组、无 split。保存该结束证据后只恢复偏好，未重建序列。",
+    "before": "本项普通 A/B/C，外部从左到右 A、B、C。",
+    "confirmation_choices": "无确认框；未执行任何方向菜单命令。",
+    "evidence_markers": [
+      "SET-06-COM-on-on layout",
+      "SET-06-COM-on-on settings",
+      "SET-06-COM-on-on identity-A",
+      "SET-06-COM-on-on identity-B",
+      "SET-06-COM-on-on identity-C attempt1 before",
+      "SET-06-COM-on-on attempt1 before",
+      "SET-06-COM-on-on attempt1 after",
+      "SET-06 session-restore switches",
+      "SET-06 session-restore language-layout",
+      "SET-06 ending-state"
+    ],
+    "identity_checks": "逐页实见本项 TC 标题、批次、普通页、空输入框及编号。A=a0942c96-b8c4-4876-9c0d-951169b75d82；B=0f65d236-0708-43c1-958c-7910172eb840；C=6a00b84a-ece4-444c-ba37-e568abef1262。after 与最终收尾截图 B 编号均为 0f65d236-0708-43c1-958c-7910172eb840。原生树第三个标签描述仍为 New Tab，屏幕及活动页面为 C；使用其最新原生索引双击。",
+    "language_observed": "本项 General 及收尾 General 均实读 Display language=System Default；实际浏览器、设置和菜单英文。",
+    "layout_observed": "本项通过 General 原生选择 Comfortable，截图确认选中；收尾再次在 General 截图确认 Comfortable。浏览器外部横向。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "收尾首次打开 Settings 后实际为 Guest 页，编排查找开关未找到即停止，没有发送错误点击；重读画面后原生选择 Advanced，随后完成恢复。此事发生在本项 after 证据保存之后。"
+    ],
+    "precondition_actual": "清理并重新建立 TC-PHI507-r2-SET-06-COM-on-on A/B/C，真实顺序 A→B→C、C 活动，无组、无 split；on/on。",
+    "settings_observed": "被测前只将双击 off→on，位置保持 on，原生实读 on/on。保存 after 后，收尾逐个将双击与位置恢复 off/off；中间实读双击 off、位置 on，最终截图实读 off/off。",
+    "steps_executed": [
+      "General 原生选择 Comfortable，Advanced 只修改双击开关并核对 on/on。",
+      "新建 New Tab、Close Other Tabs，地址栏依次建立本项 A/B/C 并逐页截图核对身份。",
+      "保存 before，通过最新原生第三个标签控件双击 C。",
+      "重读 A/B、B 活动，右键 B 并保存含 Left 可用、Right 灰置的 after。",
+      "关闭菜单，原生进入 Advanced，逐个恢复两个开关为起始 off/off 并截图。",
+      "General 核对 Comfortable 与 System Default，关闭 Settings，保存实际 A/B 结束画面。"
+    ],
+    "unit_id": "SET-06-COM-on-on"
+  }
+}

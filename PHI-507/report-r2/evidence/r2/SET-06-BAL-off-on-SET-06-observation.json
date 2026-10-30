@@ -1,0 +1,36 @@
+{
+  "unit_id": "SET-06-BAL-off-on",
+  "job": "SET-06",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-06-observations.json",
+  "observation": {
+    "active_after": "C 单独活动，选中集 {C}；菜单目标 B。",
+    "active_before": "C 单独活动，选中集 {C}。",
+    "after": "A/B/C 全部保留，外部顺序 A→B→C；B 菜单出现可用的 Close Tabs Above 和 Close Tabs Below，以及 Close、Close Other Tabs；无多选、无组、无 split。",
+    "before": "本项普通 A/B/C，外部从上到下 A、B、C。",
+    "confirmation_choices": "无确认框；方向项只观察。",
+    "evidence_markers": [
+      "SET-06-BAL-off-on layout",
+      "SET-06-BAL-off-on settings",
+      "SET-06-BAL-off-on identity-A",
+      "SET-06-BAL-off-on identity-B",
+      "SET-06-BAL-off-on identity-C attempt1 before",
+      "SET-06-BAL-off-on attempt1 after"
+    ],
+    "identity_checks": "逐页实见 TC 标题、本项批次、普通页、空输入框及编号。A=9802ef47-3b40-4e00-bf9a-ed2bfda2c8fc；B=46d87f9d-449e-4397-b38e-a22954e907b4；C=e42e10e0-5ac9-4d97-bd08-24f647409e38。after 中 C 编号仍为该值。",
+    "language_observed": "System Default，实际设置及菜单英文。",
+    "layout_observed": "General 原生选择并截图确认 Balanced；外部纵向。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "本项开始前清理并重建 TC-PHI507-r2-SET-06-BAL-off-on A/B/C，C 活动，无组、无 split；off/on。",
+    "settings_observed": "逐个将双击 on→off，再将位置 off→on；中间原生树为 off/off，最终为 off/on。",
+    "steps_executed": [
+      "General 选择 Balanced。",
+      "Advanced 逐个设置指定开关，保留中间实读行和最终截图。",
+      "新建 New Tab、Close Other Tabs，依次建立并逐页截图核对本项 A/B/C。",
+      "保存 before，双击 C 并重读保留集合。",
+      "右键 B，保存 Above/Below 均可见可用的 after。"
+    ],
+    "unit_id": "SET-06-BAL-off-on"
+  }
+}

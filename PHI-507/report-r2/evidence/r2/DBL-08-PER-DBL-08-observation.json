@@ -1,0 +1,52 @@
+{
+  "unit_id": "DBL-08-PER",
+  "job": "DBL-08",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r2/DBL-08-observations.json",
+  "observation": {
+    "active_after": "attempt2：C，单一选中。",
+    "active_before": "两次尝试均为 C，单一选中；单击 B 后活动页为 B。",
+    "after": "attempt1 拖动后即时实读 A/B/C，B 仍存在，未确认重排；随后作为无效操作重建。attempt2 最终为 A/B/C，三页独立，无 split、无组、无多选，活动页 C；C 关闭按钮动作未执行。",
+    "before": "attempt1：TC-PHI507-r2-DBL-08-PER 的 A/B/C，自上而下排列。attempt2：重新清理并建立 TC-PHI507-r2-DBL-08-PER-R2 的 A/B/C，自上而下排列。",
+    "confirmation_choices": "前置清理上一轮 TC-PHI507-r2-DBL-06-COM-C-G 时，出现“Close Tabs and Delete Group?”，选择 Delete Group；Don't Ask Again 保持未勾选。被测操作期间未出现关闭确认框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-08-PER attempt1 layout",
+      "EVIDENCE: DBL-08-PER attempt1 new-A-start",
+      "EVIDENCE: DBL-08-PER attempt1 new-B-after",
+      "EVIDENCE: DBL-08-PER attempt1 new-C-after",
+      "EVIDENCE: DBL-08-PER attempt1 before",
+      "EVIDENCE: DBL-08-PER attempt1 single-B-after",
+      "EVIDENCE: DBL-08-PER attempt1 drag-B-after",
+      "EVIDENCE: DBL-08-PER attempt1 failure",
+      "EVIDENCE: DBL-08-PER attempt2 new-A-committed",
+      "EVIDENCE: DBL-08-PER attempt2 new-B-after",
+      "EVIDENCE: DBL-08-PER attempt2 new-C-after",
+      "EVIDENCE: DBL-08-PER attempt2 before",
+      "EVIDENCE: DBL-08-PER attempt2 single-B-after",
+      "EVIDENCE: DBL-08-PER attempt2 drag-B-after",
+      "EVIDENCE: DBL-08-PER attempt2 close-C-control",
+      "EVIDENCE: DBL-08-PER attempt2 after"
+    ],
+    "identity_checks": "App 路径与 pid 71817 均由 CU 实读。每页创建后均实见 TC 标题、对应批次、普通页说明、打开编号及空输入框。attempt1 编号：A=11c16665-84da-444a-821e-0b3ed61bf511；B=f0c13600-bb09-4829-8f54-a82e53ffd773；C=1abf13aa-5bd2-4643-a87c-9eb9996dd9d4。attempt2 编号：A=49feaae8-2b92-4253-b2c4-82b5ad9d90db；B=01f6f66a-d4a8-47aa-8e22-44e328f38d19；C=f7388f38-d191-4097-b689-a79aa197dff0。两次单击及拖动后 B 的可见编号均未变。",
+    "language_observed": "General 为 System Default；浏览器与设置界面英文，未切换语言。",
+    "layout_observed": "从起始 Comfortable 经 General 原生 Performance button 切换并截图确认；实际 chrome 为左侧纵向标签列表。",
+    "not_executed_reason": "未执行“只点击 C 的关闭按钮一次”：选中 C，并尝试通过其右侧原生上下文菜单及取消使控件可见后，画面仍未确认到 C 的关闭图标，原生树也未暴露标签关闭按钮。没有以菜单 Close、快捷键或中键替代。拖动调用已执行，但未确认 B 到达另一页序位置。",
+    "operator_errors": [
+      "attempt1 拖动坐标为 (190,428)→(190,330)，随后出现 pin 投放提示而未重排；当时将其视作无效拖动，保留现场后重新建立前置。投放未完成的具体原因未得到实证，不能把先前“释放落在 pin 区”的推测作为已确认原因。",
+      "attempt2 拖动坐标为 (190,428)→(190,770)，即时画面仍为 A/B/C 并显示 pin 投放区。随后按最新树中的 C 行索引点击时侧栏收起，实际未选中 C；重新读取后单击 C 行才选中 C。",
+      "为确认关闭控件，额外选中 C，并打开、取消其上下文菜单；未点击任何替代关闭命令。"
+    ],
+    "precondition_actual": "两次均独立建立且核实普通 A/B/C，无组、无 split、无多选；Advanced 实读双击关闭 on、方向关闭 on。",
+    "settings_observed": "起始双击关闭 on、方向关闭 on；本项未点击两个开关。仅修改布局。",
+    "steps_executed": [
+      "通过 Settings 原生界面读取起始 Comfortable、System Default、双击关闭 on、方向关闭 on，并切换 Performance。",
+      "新建 New Tab，使用 Close Other Tabs 清理已识别的本轮 TC 对象；确认删除上一轮 TC 组后，经地址栏依次建立 A/B/C。",
+      "在本项安全内容区点击 (2200,350)，原图指针位置与输入坐标对应后使用截图坐标。",
+      "attempt1 保存 before，单击 B 的 selectable row 一次；随后拖动 B，保存未重排现场。",
+      "重新清理并用新 tag PER-R2 建立 A/B/C，逐页核对正文和打开编号。",
+      "attempt2 保存 before，单击 B 的 selectable row 一次；拖动 B，实读仍为 A/B/C，B 编号不变。",
+      "选中 C 并确认关闭控件可见性；未确认按钮，保存实际 after，保留 A/B/C。"
+    ],
+    "unit_id": "DBL-08-PER"
+  }
+}

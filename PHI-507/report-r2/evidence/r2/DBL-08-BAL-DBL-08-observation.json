@@ -1,0 +1,44 @@
+{
+  "unit_id": "DBL-08-BAL",
+  "job": "DBL-08",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r2/DBL-08-observations.json",
+  "observation": {
+    "active_after": "C，单一选中；B 的分屏配对保留在列表中。",
+    "active_before": "C，单一选中；单击 B 后活动页为 B。",
+    "after": "外部纵向顺序为 A /（New Tab + B 分屏配对）/ C；A、B、C 均仍列出，C 为独立普通页且未关闭。额外内容区点击后的分屏现场中，New Tab 在左、B 在右，B 的编号未变。",
+    "before": "TC-PHI507-r2-DBL-08-BAL 的普通 A/B/C，自上而下排列，无组、无 split、无多选。",
+    "confirmation_choices": "本项清理和被测操作均未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-08-BAL attempt1 layout",
+      "EVIDENCE: DBL-08-BAL attempt1 new-A-after",
+      "EVIDENCE: DBL-08-BAL attempt1 new-B-after",
+      "EVIDENCE: DBL-08-BAL attempt1 new-C-after",
+      "EVIDENCE: DBL-08-BAL attempt1 before",
+      "EVIDENCE: DBL-08-BAL attempt1 single-B-after",
+      "EVIDENCE: DBL-08-BAL attempt1 drag-B-after",
+      "EVIDENCE: DBL-08-BAL attempt1 failure",
+      "EVIDENCE: DBL-08-BAL attempt1 close-C-before",
+      "EVIDENCE: DBL-08-BAL attempt1 after"
+    ],
+    "identity_checks": "CU 实读固定 app 路径、pid 71817。逐页实见 TC 标题、BAL 批次、普通页说明、打开编号和空输入框：A=c7ebb2ae-abf2-4d66-a47a-6b41f31f00e6；B=5b8ae31c-3ddd-44ba-882b-8d9c419b85db；C=e152e601-d29e-4930-8b68-8eb487aab120。单击 B 后以及随后分屏现场中的 B 编号均相同；结束 C 正文编号与创建时一致。",
+    "language_observed": "General 实读 System Default；设置及浏览器界面英文，未切换语言。",
+    "layout_observed": "General 原生选择 Balanced 并截图确认；实际 chrome 为左侧纵向标签列表、顶部地址栏。",
+    "not_executed_reason": "未执行 C 关闭按钮单击：独立选中 C 后，画面未确认到标签关闭图标，原生树未暴露 C 的关闭按钮。没有以其他关闭方式替代。B 拖动调用已执行，但未观察到预定的页序移动。",
+    "operator_errors": [
+      "拖动后为了收起 pin 投放提示，额外点击原本空白的内容区 (2200,400)；该点击之后才实见 New Tab 与 B 分屏。因此现有证据不能把分屏变化单独归因于拖动调用，也不能将其当作成功重排。",
+      "为确认独立关闭分支的控件，额外单击 C 行使其活动；未执行任何关闭命令。"
+    ],
+    "precondition_actual": "在本项开始前新建 New Tab 并原生关闭上一项测试页，重新建立普通 A/B/C，实读顺序正确。Advanced 再读双击关闭 on、方向关闭 on。",
+    "settings_observed": "双击关闭 on、方向关闭 on；两个开关均未点击。仅切换为 Balanced。",
+    "steps_executed": [
+      "通过 General 切换 Balanced，读取语言；通过 Advanced 再读两个开关后以 Settings 原生 close button 关闭设置。",
+      "新建 New Tab，使用原生 Close Other Tabs 清理上一项对象，经地址栏依次建立并逐页核实 BAL 的 A/B/C。",
+      "保存 before，单击 B 对应 selectable row 一次；A/B/C 仍存在，B 活动且编号不变。",
+      "从 B 行截图位置 (190,355) 拖至 (190,730)；即时实读 A/B/C，侧栏显示 pin 投放提示。",
+      "额外点击内容空白区域后，实际出现 New Tab/B 分屏配对，保存 failure 现场。",
+      "选中独立 C 检查关闭按钮可见性；未确认按钮，保存 after，保留实际分屏和页面集合。"
+    ],
+    "unit_id": "DBL-08-BAL"
+  }
+}

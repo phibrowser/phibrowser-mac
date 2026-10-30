@@ -1,0 +1,48 @@
+{
+  "unit_id": "SET-10-BAL",
+  "job": "SET-10-retry",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-10-retry-observations.json",
+  "observation": {
+    "active_after": "最终显示组内 split[D,E]，E 侧活动焦点边框；此前普通 A、组内 D 分别高亮，普通 split 操作后 C 侧有焦点边框，无多选。",
+    "active_before": "E，截图高亮组内 E；原生子行未标 selected。",
+    "after": "已有 B、新建 N 在开启后双击均从列表消失，活动页均转 C。关闭后双击 A、组内 D 均保留并切换高亮；原生建立普通 split[A,C] 后双击 C，两页保留、焦点转 C；建立组内 split[D,E] 后双击 E，两页和组保留、焦点转 E。最终顺序 split[A,C] → TC-G 内 split[D,E]。",
+    "before": "自上而下 A → B → C → TC-PHI507-r2-SET-10-BAL-TC-G[D,E]；无 split，无多选；双击关闭 off、位置关闭 off。",
+    "confirmation_choices": "组重命名使用 Save；普通页被测关闭无离开确认。下一执行点清理本项组时出现 Close Tabs and Delete Group?，当时 Don't Ask Again=0，随后键盘序列中的 Return 使该本轮组删除，未勾选复选框。",
+    "evidence_markers": [
+      "SET-10-BAL layout",
+      "SET-10-BAL attempt1 before",
+      "SET-10-BAL existing-B before",
+      "SET-10-BAL existing-B after",
+      "SET-10-BAL new-N before",
+      "SET-10-BAL new-N after",
+      "SET-10-BAL off-normal before",
+      "SET-10-BAL off-normal after",
+      "SET-10-BAL off-group before",
+      "SET-10-BAL off-group after",
+      "SET-10-BAL off-normal-split before",
+      "SET-10-BAL off-normal-split after",
+      "SET-10-BAL off-group-split before",
+      "SET-10-BAL attempt1 after"
+    ],
+    "identity_checks": "逐页实见 TC 标题、TC-PHI507-r2-SET-10-BAL 批次、普通页说明、打开编号及空输入框：A=0477fe8d-94ff-4b8f-b0e2-60341da768ff；B=52c4b365-f423-454f-9d6d-233b3d17fe2b；C=3c81430e-6d57-4c2c-b372-405a89840f59；D=883d9ffc-ce7a-4a33-9367-df6962734e2a；E=d999cf2d-2f24-4ac0-8cb4-ec971e448a8c；N=ae85ecf9-5dad-4684-b7ee-f7d87865be33。A/C、D/E split 截图编号与建立时一致。",
+    "language_observed": "General 实读 System Default；浏览器与设置界面英文，未改语言。",
+    "layout_observed": "通过 General 原生 Balanced 按钮切换，保存选中边框截图；外部页签上下排列。",
+    "not_executed_reason": "关闭后的普通和组内普通操作使用既有 A、D，未分别新建 cell；关闭后两个 split 已原生新建。因此新建 cell 的四表面覆盖不完整。",
+    "operator_errors": [
+      "清理 Performance 对象后的首组地址栏键盘序列未产生导航，随后两次实读仍为 New Tab、无 Stop；重新原生输入同一 A URL 后真实提交，再继续建页。",
+      "进入 Comfortable 清理本项组时，编排未在新出现的删除确认处暂停，后续键盘 Return 接受了删除；对象仅为本项已确认的 TC-G，Don't Ask Again 未勾选。"
+    ],
+    "precondition_actual": "本项开始后切换 Balanced，在 S1 新建 New Tab 并原生关闭其他本轮测试对象；重新导航 A/B/C/D/E，建立本项 TC-G[D,E]。开启前 Advanced 实读双 off。",
+    "settings_observed": "本项开启前 off/off；仅点击双击开关后即时读取 on/off；反向点击后读取 off/off，位置关闭始终 off。未重启，未修改快捷键。",
+    "steps_executed": [
+      "切换 Balanced、清理并重建 A/B/C 和 TC-G[D,E]。",
+      "开启双击关闭，立即双击既有 B；B 消失。",
+      "新建并核对普通 N 后双击；N 消失。",
+      "关闭双击关闭，读取双 off，分别双击普通 A、组内 D；均保留并高亮。",
+      "原生建立普通 split[A,C]，双击 C 标签；配对保留，焦点转 C。",
+      "原生建立组内 split[D,E]，双击 E 标签；配对与组保留，焦点转 E，保存结束图。"
+    ],
+    "unit_id": "SET-10-BAL"
+  }
+}

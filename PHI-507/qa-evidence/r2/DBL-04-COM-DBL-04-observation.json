@@ -1,0 +1,43 @@
+{
+  "unit_id": "DBL-04-COM",
+  "job": "DBL-04",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/DBL-04-observations.json",
+  "observation": {
+    "active_after": "双击后立即为 C；随后逐页核对 A、D，最终活动页 D。",
+    "active_before": "B；左侧正文有焦点边框，无多选。",
+    "after": "横向标签顺序 A/C/D；B 不再列出，原 splitPair 容器已成为 C 的普通 tabStripTab。C 为单页，A/C/D 原打开编号均继续可见；未出现批量关闭界面。",
+    "before": "横向标签顺序 A、S[B,C]、D；原生 S 容器 Value=splitPair，成员 B/C，标签左半格 B、右半格 C；正文左右分屏，无标签组。",
+    "confirmation_choices": "未出现确认对话框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-04-COM attempt1 settings-layout",
+      "EVIDENCE: DBL-04-COM attempt1 settings-switches",
+      "EVIDENCE: DBL-04-COM attempt1 setup-A",
+      "EVIDENCE: DBL-04-COM attempt1 setup-B",
+      "EVIDENCE: DBL-04-COM attempt1 setup-C",
+      "EVIDENCE: DBL-04-COM attempt1 setup-D",
+      "EVIDENCE: DBL-04-COM attempt1 coordinate-calibration",
+      "EVIDENCE: DBL-04-COM attempt1 before",
+      "EVIDENCE: DBL-04-COM attempt1 after",
+      "EVIDENCE: DBL-04-COM attempt1 retained-A",
+      "EVIDENCE: DBL-04-COM attempt1 retained-D",
+      "EVIDENCE: DBL-04-COM attempt1 ending-state"
+    ],
+    "identity_checks": "关键前后及最终 QA app pid 均为 71817。四页均实见 TC 标题、批次 TC-PHI507-r2-DBL-04-COM、普通页说明和空输入框。打开编号：A=bdc5f09c-d21e-4372-bf83-d2800f2434f1；B=34f39949-a833-48d9-a769-fb12395dc6f5；C=35a85812-9e72-40f1-9093-2be91f85a708；D=54e45b3b-6aff-4de1-898d-324d8b86c866。操作后逐页核对 A/C/D 编号一致，输入框仍空。",
+    "language_observed": "General 显示 System Default；英文界面。",
+    "layout_observed": "通过 General 从 Balanced 切为 Comfortable，截图显示 Comfortable 选中；浏览器 chrome 为横向标签栏，与本轮起始布局一致。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "新建 New Tab 后原生 Close Other Tabs 清理 BAL 留下的普通页，重新建立本项 A-D；激活 B，对 C 使用 Split with Current，实见 A、S[B,C]、D。双击关闭 on。",
+    "settings_observed": "本项 Advanced 实读双击关闭 on、方向关闭 on；均未点击。结束时布局、语言及两个开关已与本轮起始值一致，无需再次切换。",
+    "steps_executed": [
+      "切换 Comfortable 并截图确认，独立重建四页，逐页核对正文与打开编号。",
+      "通过 C 的 Split with Current 建立普通分屏，核对 splitPair 成员及真实标签顺序。",
+      "安全正文空白区单击校准，原图指针与输入坐标一致。",
+      "保存 before 的 get_app_state 原生文字及 image。",
+      "对原图 B 标签左半格内坐标 (705,44) 发送一次 click_count=2。",
+      "保存 after 的 get_app_state，逐页查看 A、D，并再次 get_app_state 保存最终三页及活动页 D；未额外重建。"
+    ],
+    "unit_id": "DBL-04-COM"
+  }
+}

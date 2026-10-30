@@ -1,0 +1,42 @@
+{
+  "unit_id": "DBL-02-COM",
+  "job": "DBL-02",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/DBL-02-observations.json",
+  "observation": {
+    "active_after": "动作后为 C；身份核对时短暂切至 A，随后返回 C。收尾恢复偏好后 C 仍活动且单选。",
+    "active_before": "B，单选。",
+    "after": "稳定后的普通页顺序 A→C；B 的 tabStripTab 容器及标题不再出现。活动正文为 TC-C，A/C 的打开编号均与动作前相同。最终保留此两页，无组、多选或 split。",
+    "before": "横向普通标签顺序 A→B→C；批次均为 TC-PHI507-r2-DBL-02-COM，B 活动；无组、多选或 split。",
+    "confirmation_choices": "未出现确认对话框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-02-COM attempt1 settings-layout",
+      "EVIDENCE: DBL-02-COM attempt1 settings",
+      "EVIDENCE: DBL-02-COM attempt1 identity-A",
+      "EVIDENCE: DBL-02-COM attempt1 identity-B",
+      "EVIDENCE: DBL-02-COM attempt1 identity-C",
+      "EVIDENCE: DBL-02-COM attempt1 before",
+      "EVIDENCE: DBL-02-COM attempt1 after",
+      "EVIDENCE: DBL-02-COM attempt1 retained-A",
+      "EVIDENCE: DBL-02-COM attempt1 final-pages",
+      "EVIDENCE: DBL-02-COM attempt1 restored-switches",
+      "EVIDENCE: DBL-02-COM attempt1 restored-layout",
+      "EVIDENCE: DBL-02-COM attempt1 ending-state"
+    ],
+    "identity_checks": "关键前后 CU 均为固定 app、PID 57596，Window 从 TC-B 转为 TC-C。逐页实见 TC 标题、批次、普通页类型及空输入框。本次打开编号：A=d7b276f7-2640-4068-a0cd-0e7a9448c8d5；B=311a1ad7-5084-4c5a-9850-2cbaf5e1d7e6；C=88a5454a-5a2d-45c9-b12b-151cd1a54dcb。动作后 A/C 编号保持。",
+    "language_observed": "General 再读 System Default，界面为英文；收尾仍为该值。",
+    "layout_observed": "通过 General 原生 button 从 Balanced 切为 Comfortable，截图显示 Comfortable 选中；动作前后 chrome 为横向标签条。收尾恢复 Balanced 并截图确认。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "本项开始时新建 New Tab 并原生 Close Other Tabs 清理上一项 A/C；通过地址栏重新建立本项 A/B/C，确认真实横向顺序后选中 B。",
+    "settings_observed": "动作前 Advanced 实读双击关闭 on／位置关闭 on。本轮收尾仅点击双击关闭一次，即时原生树为 off／on，未点击的位置关闭仍为 on。",
+    "steps_executed": [
+      "切换 Comfortable，实读语言和两个开关，再独立清理并建立本项 A/B/C。",
+      "get_app_state 保存 before 图，确认 B 活动；最新树中 B 的 tabStripTab 仅含 B 图标和标题。",
+      "对 B 的实际 tabStripTab button 执行一次 click_count=2；命中位于标题文字区。",
+      "get_app_state 读取稳定列表并保存 after 图，核对 C 的正文和编号；单击 A 核对身份后返回 C。",
+      "保留 A/C 实际结束集合；统一恢复起始开关及 Balanced，关闭 Settings，再 get_app_state 保存最终状态。"
+    ],
+    "unit_id": "DBL-02-COM"
+  }
+}

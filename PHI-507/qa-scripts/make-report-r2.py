@@ -61,7 +61,8 @@ for r in rows:
  for d in r.get('diagnostics',[]):attempts.append({**d,'outcome':'partial','scope':d['scope'],'evidence':[]})
  if not attempts and r.get('observation'):
   attempts=[{'job':r['id'],'outcome':r['result'],'observation':r['observation'],'evidence':r.get('evidence',[])}]
- for record in attempts:
+ for raw_record in attempts:
+  record={**raw_record,'job':raw_record.get('job',raw_record.get('prefix',r['id'])),'outcome':raw_record.get('outcome',r['result']),'evidence':raw_record.get('evidence',r.get('evidence',[]) if isinstance(r.get('evidence'),list) else [])}
   job=record['job'];record_round=record.get('round',2);meta=qa/record.get('evidence_metadata',f'qa-evidence/r{record_round}/{job}-evidence.json');frame_prefix=str(meta.parent.relative_to(qa))
   frames=[e for e in json.loads(meta.read_text()) if e['unit_id']==r['key']] if meta.is_file() else []
   family=lambda phase:re.sub(r'-(before|after|failure)$','',phase) if '-' in phase else 'main'

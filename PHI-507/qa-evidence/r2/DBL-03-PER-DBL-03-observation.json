@@ -1,0 +1,45 @@
+{
+  "unit_id": "DBL-03-PER",
+  "job": "DBL-03",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/DBL-03-observations.json",
+  "observation": {
+    "active_after": "标题区和图标区双击结束时均为 C 单选；随后单击 A 核对存活身份，图标区变体核对完后单击 C 返回。",
+    "active_before": "两个变体均为 C 活动且单选，B 非活动。",
+    "after": "两个变体的原生列表均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。",
+    "before": "标题区批次 TC-PHI507-r2-DBL-03-PER-title；图标区批次 TC-PHI507-r2-DBL-03-PER-icon。每次均为普通页 A→B→C，无组、多选或 split。",
+    "confirmation_choices": "未出现关闭确认或离开确认；未选择“不再询问”。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-03-PER attempt1 settings",
+      "EVIDENCE: DBL-03-PER attempt1 switches",
+      "EVIDENCE: DBL-03-PER attempt1 coordinate-calibration",
+      "EVIDENCE: DBL-03-PER attempt1 title-A-identity",
+      "EVIDENCE: DBL-03-PER attempt1 title-B-identity",
+      "EVIDENCE: DBL-03-PER attempt1 title-C-identity",
+      "EVIDENCE: DBL-03-PER attempt1 title-before",
+      "EVIDENCE: DBL-03-PER attempt1 title-after",
+      "EVIDENCE: DBL-03-PER attempt1 title-A-retained",
+      "EVIDENCE: DBL-03-PER attempt1 icon-A-identity",
+      "EVIDENCE: DBL-03-PER attempt1 icon-B-identity",
+      "EVIDENCE: DBL-03-PER attempt1 icon-C-identity",
+      "EVIDENCE: DBL-03-PER attempt1 icon-before",
+      "EVIDENCE: DBL-03-PER attempt1 icon-after",
+      "EVIDENCE: DBL-03-PER attempt1 icon-A-retained"
+    ],
+    "identity_checks": "全程本应用 PID 57596。逐页实见 TC 标题、对应批次、普通页说明、打开编号及空输入框。title：A=8ff526f5-486f-4cb7-8859-62a6451b735a，B=6461b5d0-3f78-4fa5-87bf-5292bd86e533，C=c8df655e-4746-4984-a432-e535f0c5c40a；icon：A=1dbd6a7d-f79e-4d76-b02a-6bff20f5e995，B=2f5aebfa-3071-4e75-aa1c-32652d1e0c85，C=6a800935-f924-4cb6-8a51-32be0ed06c84。两次动作后均逐页核对 A/C 原编号。",
+    "language_observed": "General 实读 System Default；浏览器和设置界面为英文，未切换语言。",
+    "layout_observed": "General 原生选择 Performance 并截图确认；实际浏览器 chrome 为纵向标签栏，A/B/C 自上而下排列。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "本项开始先实读前轮 A/C，再原生清理并重建两个独立的 A/B/C 序列；两次关键动作前均确认 C 活动、B 非活动、双击关闭 on。",
+    "settings_observed": "会话初始实读 Balanced、双击关闭 off／位置关闭 on。本项只点击双击关闭开关一次，返回原生树即时值为双击关闭 on／位置关闭 on；未点击位置关闭。",
+    "steps_executed": [
+      "用新建 New Tab 的原生 Close Other Tabs 清理本轮普通测试页，再经地址栏顺序建立 title 批次 A/B/C。",
+      "在无控件内容区单击 (1000,440)，截图指针位置与输入坐标一致，按本次原图比例定位。",
+      "关键动作前 get_app_state 留图；对 B 标题区 (150,428) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。",
+      "重新新建 New Tab、关闭其他普通测试页，经地址栏顺序建立 icon 批次 A/B/C，实读 C 活动。",
+      "关键动作前 get_app_state 留图；对 B 地球图标中心 (44,428) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。"
+    ],
+    "unit_id": "DBL-03-PER"
+  }
+}

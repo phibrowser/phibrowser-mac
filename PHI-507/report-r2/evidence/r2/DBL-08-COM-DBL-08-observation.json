@@ -1,0 +1,45 @@
+{
+  "unit_id": "DBL-08-COM",
+  "job": "DBL-08",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r2/DBL-08-observations.json",
+  "observation": {
+    "active_after": "C，单一选中。拖动后的短暂活动对象为 B/New Tab 配对中的右侧 New Tab。",
+    "active_before": "C；单击 B 后活动页为 B。",
+    "after": "外部横向顺序为 A /（B + New Tab splitPair）/ C；分屏现场中 B 在左、New Tab 在右。B 仍存在且打开编号未变；A、C 为独立普通页。结束活动页 C，C 未关闭，无组、无多选。",
+    "before": "TC-PHI507-r2-DBL-08-COM 的普通 A/B/C，从左至右排列，无组、无 split、无多选。",
+    "confirmation_choices": "本项未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-08-COM attempt1 layout",
+      "EVIDENCE: DBL-08-COM attempt1 settings",
+      "EVIDENCE: DBL-08-COM attempt1 new-A-after",
+      "EVIDENCE: DBL-08-COM attempt1 new-B-after",
+      "EVIDENCE: DBL-08-COM attempt1 new-C-after",
+      "EVIDENCE: DBL-08-COM attempt1 before",
+      "EVIDENCE: DBL-08-COM attempt1 single-B-after",
+      "EVIDENCE: DBL-08-COM attempt1 drag-B-after",
+      "EVIDENCE: DBL-08-COM attempt1 failure",
+      "EVIDENCE: DBL-08-COM attempt1 close-C-before",
+      "EVIDENCE: DBL-08-COM attempt1 after"
+    ],
+    "identity_checks": "CU 实读固定 app 路径、pid 71817。逐页实见 TC 标题、COM 批次、普通页说明、打开编号和空输入框：A=6f695d6a-984b-4226-908e-0a5f2b4e60fd；B=1f106563-2cd6-42f3-bf9e-b3979336a0f7；C=b0f7ead8-b3e7-4cc8-8929-3874afef8aa6。单击 B 后与拖动后的左侧 B 正文均显示同一编号；结束 C 正文编号未变。",
+    "language_observed": "General 实读 System Default；浏览器及设置界面英文，未切换语言。",
+    "layout_observed": "General 原生选择 Comfortable 并截图确认；实际 chrome 为顶部横向标签栏。此值同时恢复了本次起始布局。",
+    "not_executed_reason": "未执行 C 关闭按钮单击：C 已独立选中，但画面未确认到 C 的关闭图标，原生树仅暴露其 tabStripTab 容器，没有标签关闭按钮。未用菜单或快捷键替代。B 拖动调用已执行，实际产生 splitPair，未观察到目标页序移动。",
+    "operator_errors": [
+      "为显示并确认独立关闭分支的控件，拖动现场保存后额外单击 C 的 tabStripTab 容器一次；没有点击关闭命令。",
+      "拖动后出现 New Tab 分屏配对的原因未由现有证据确定，未将其归因为已确认的操作器误命中，也未重建覆盖该现场。"
+    ],
+    "precondition_actual": "本项开始前新建 New Tab，原生关闭上一项 A、New Tab/B 配对及 C，再经地址栏重新建立 COM 的 A/B/C。创建后实读真实横向顺序正确；Advanced 实读双击关闭 on、方向关闭 on。",
+    "settings_observed": "双击关闭 on、方向关闭 on，未点击开关；Comfortable、System Default 与本次起始值一致。Settings 已通过其原生 close button 关闭，结束未重复改动偏好。",
+    "steps_executed": [
+      "通过 General 切换 Comfortable 并截图，读取 System Default；Advanced 再读两个开关后关闭 Settings。",
+      "原生清理上一项对象，独立建立 COM 的普通 A/B/C，逐页核实正文、批次、编号和输入框。",
+      "保存 before，单击 B 对应 tabStripTab button 一次；B 活动，编号未变，A/B/C 均存在。",
+      "按最新截图从 B 标题区域 (800,44) 拖至 A 左侧位置 (280,44)。随后 get_app_state 实读 B + New Tab splitPair，保存拖动后及异常现场。",
+      "单击独立 C 的 tabStripTab 容器以确认关闭按钮可见性；未确认按钮，未执行替代关闭。",
+      "保存最终 after，保留 A /（B + New Tab）/ C 的实际状态，未额外重建。"
+    ],
+    "unit_id": "DBL-08-COM"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "unit_id": "DBL-06-BAL",
+  "job": "DBL-06",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r2/DBL-06-observations.json",
+  "observation": {
+    "active_after": "B 分支：双击后 C，逐页核对后 D。C 分支：双击后 D，逐页核对后 D。",
+    "active_before": "B 分支 C；C 分支 B。均无多选。",
+    "after": "B 分支：G[A,C,D]，B 消失，分屏解除，A/C/D 保留组关系。C 分支：G[A,B,D]，C 消失，分屏解除，A/B/D 保留组关系。两次双击后的首次状态读取均只少一个目标页。",
+    "before": "分别为组 TC-PHI507-r2-DBL-06-BAL-B-G 和独立重建的 TC-PHI507-r2-DBL-06-BAL-C-G；顺序均为 A、B/C 分屏行、D，B 左/C 右，无多选。",
+    "confirmation_choices": "组重命名选择 Save。关闭前一测试组及被测双击均未出现关闭确认。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-06-BAL attempt1 settings",
+      "EVIDENCE: DBL-06-BAL attempt1 new-B-before",
+      "EVIDENCE: DBL-06-BAL attempt1 new-B-after",
+      "EVIDENCE: DBL-06-BAL attempt1 new-B-after-A",
+      "EVIDENCE: DBL-06-BAL attempt1 new-B-after-D",
+      "EVIDENCE: DBL-06-BAL attempt1 new-C-split",
+      "EVIDENCE: DBL-06-BAL attempt1 new-C-before",
+      "EVIDENCE: DBL-06-BAL attempt1 new-C-after",
+      "EVIDENCE: DBL-06-BAL attempt1 new-C-after-A",
+      "EVIDENCE: DBL-06-BAL attempt1 new-C-after-B",
+      "EVIDENCE: DBL-06-BAL attempt1 new-C-after-D"
+    ],
+    "identity_checks": "固定 app，关键前后 CU 实读 pid 71817。B 分支批次 TC-PHI507-r2-DBL-06-BAL-B：A=7462961d-4324-4d4d-9e04-bf7250b575e3，B=f8a4a716-1e20-4343-8556-d2e20ea11716，C=06b48cf3-46a1-4447-bbae-9265cb0bac27，D=2fc7cd68-1a88-4867-9eaf-9f78bb0e36a6；动作后逐页确认 A/C/D 的编号及 KEEP-BAL-B-A/C/D。C 分支批次 TC-PHI507-r2-DBL-06-BAL-C：A=84ed4326-48ea-400e-bbd9-528a88d19b46，B=77c5ae84-88dd-48cf-afc8-b2393db79a9d，C=a9a1ca5c-5834-487e-87b4-778d38ee6f69，D=2cd768b6-2a5a-4245-b7dc-adf6d0685ae9；动作后逐页确认 A/B/D 的编号及 KEEP-BAL-C-A/B/D。建立时均实见正文、批次、编号、输入框。",
+    "language_observed": "System Default，实际英文 chrome；未切换语言。",
+    "layout_observed": "General 原生选择 Balanced 并截图确认，外部标签区纵向；同布局 C 分支未重复切换。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "C 分支 setup 关闭最后一个测试组后，实际为空 Space，未自动产生 New Tab；编排守卫停止了后续地址栏输入。随后通过 Cmd+T 创建 New Tab 再重建，未发生无效双击。",
+      "空 Space 画面出现“Press spacebar to start game”；只记录其位置及原文，未按该页面提示操作。"
+    ],
+    "precondition_actual": "各分支均关闭上一测试组后独立建立 G[A,S[B,C],D]；原生组顺序、实际分屏和页面身份均核实，双击关闭 on。",
+    "settings_observed": "Advanced 实读双击关闭 on、方向关闭 on；未点击两个开关。",
+    "steps_executed": [
+      "切换 Balanced，关闭前一 Performance 测试组，通过组菜单创建并命名本分支 A/B/C/D。",
+      "写入保护页标记；激活 B，在 C 原生菜单选择 Split with Current。",
+      "保存 new-B-before；按原图坐标 (110,430) 对 B 半格执行一次 click_count=2，保存结束图，逐页核对 C/A/D。",
+      "关闭本轮 B 分支组，以新批次重新创建 A/B/C/D、组和分屏。",
+      "保存 new-C-before；按原图坐标 (270,430) 对 C 半格执行一次 click_count=2，保存结束图，逐页核对 A/B/D；未在结束后额外重建。"
+    ],
+    "unit_id": "DBL-06-BAL"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "unit_id": "DBL-05-COM",
+  "job": "DBL-05",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r2/DBL-05-observations.json",
+  "observation": {
+    "active_after": "首次双击后 D；交换分支双击后 B。结束身份核对后活动页为 D。",
+    "active_before": "两个分支均为 B；首次左窗格、交换后右窗格，均实见活动边框。",
+    "after": "两次双击后横向标签从左到右均为 A/B/D，C 消失、split 消失，B 为独立普通页；无组、无多选。最后保留第二分支实际结束集合。",
+    "before": "首次横向标签 A、S[B,C]、D，内部 B 左/C 右；第二分支独立重建并 Reverse Panes 后为 A、S[C,B]、D，内部 C 左/B 右。",
+    "confirmation_choices": "未出现确认对话框；未勾选任何“不再询问”选项。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-05-COM attempt1 settings",
+      "EVIDENCE: DBL-05-COM attempt1 setup-A",
+      "EVIDENCE: DBL-05-COM attempt1 setup-B",
+      "EVIDENCE: DBL-05-COM attempt1 setup-C",
+      "EVIDENCE: DBL-05-COM attempt1 setup-D",
+      "EVIDENCE: DBL-05-COM attempt1 first-before",
+      "EVIDENCE: DBL-05-COM attempt1 first-after",
+      "EVIDENCE: DBL-05-COM attempt1 first-B-identity",
+      "EVIDENCE: DBL-05-COM attempt1 first-A-identity",
+      "EVIDENCE: DBL-05-COM attempt1 swap-setup-A",
+      "EVIDENCE: DBL-05-COM attempt1 swap-setup-B",
+      "EVIDENCE: DBL-05-COM attempt1 swap-setup-C",
+      "EVIDENCE: DBL-05-COM attempt1 swap-setup-D",
+      "EVIDENCE: DBL-05-COM attempt1 swap-before",
+      "EVIDENCE: DBL-05-COM attempt1 swap-after",
+      "EVIDENCE: DBL-05-COM attempt1 swap-A-identity",
+      "EVIDENCE: DBL-05-COM attempt1 swap-D-identity",
+      "EVIDENCE: DBL-05-COM attempt1 final-switches",
+      "EVIDENCE: DBL-05-COM attempt1 ending-state"
+    ],
+    "identity_checks": "固定完整 app 路径，前后 pid 71817。首次批次 TC-PHI507-r2-DBL-05-COM：A=d36731a0-f032-4578-9bb4-c96f5c0d0244，B=da5cd080-2631-4ce9-bc32-62efb185d4d1，C=eff44354-428e-4e6b-92e2-13de4c72ce93，D=1c80e539-14d7-4c96-b8bd-7e5e52136d61。结束逐页实见 A/B/D 原编号；B 标记 TC-PHI507-r2-DBL-05-COM-B-KEEP 保留。交换批次后缀 DBL-05-COM-swap：A=d33a11e2-2bd4-44e6-8119-1ea411992844，B=f7fcb993-95de-40ad-83d7-be60a6e24c8d，C=64bda07f-ff7e-415b-b492-f42ea5b14f4b，D=3b5a7c41-23ea-4d0d-a995-b26151cd6f55。结束逐页实见 A/B/D 原编号；B 标记 TC-PHI507-r2-DBL-05-COM-swap-B-KEEP 保留。所有 setup 页均实见正文、批次、编号及输入框。",
+    "language_observed": "General 为 System Default，原生英文界面；本轮未更改语言。",
+    "layout_observed": "General 原生选择 Comfortable 后截图确认；外部标签按左右方向排列。两个分支均从实际横向 chrome 核对，未以内部 split 方向代替布局。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "两个分支均用新页及 Close Other Tabs 独立清理并顺序新建 A/B/C/D，再通过 Split with Current 建立 B/C 配对；第二分支用 Reverse Panes 交换。B 均为活动窗格。未创建额外窗口、Space、组或保存对象。",
+    "settings_observed": "从 Balanced 改为 Comfortable，已与会话起始布局一致。末尾 Advanced 实读 settings.tabs.doubleClickToClose=on、settings.tabs.directionalClosing=on；两个开关整个批次未点击。Settings 已关闭。",
+    "steps_executed": [
+      "General 选择 Comfortable 并保存截图。",
+      "独立重建四页及 S[B,C]，给 B 输入存活标记并核对活动边框。",
+      "保存 first-before，在横向 split tab 的 C 右半格 (890,44) 执行双击；保存 first-after，逐页核对存留身份。",
+      "重新独立建立四页及 S[B,C]，从原生菜单选择 Reverse Panes；实见 C 左/B 右且 B 活动。",
+      "输入第二分支 B 标记，保存 swap-before，在 C 左半格 (720,44) 双击；保存 swap-after。",
+      "逐页回看 A/B/D 的编号与输入框，读取末尾两个开关，关闭 Settings；保存最终 D 活动的结束状态，未额外重建。"
+    ],
+    "unit_id": "DBL-05-COM"
+  }
+}

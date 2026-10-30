@@ -1,0 +1,47 @@
+{
+  "unit_id": "DBL-05-BAL",
+  "job": "DBL-05",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r2/DBL-05-observations.json",
+  "observation": {
+    "active_after": "首次双击后 D；交换分支双击后 B。身份核对结束停在 D，随后开始 COM setup。",
+    "active_before": "两个分支均为 B；首次左窗格、交换后右窗格，均实见活动边框。",
+    "after": "两次双击后原生列表均为 A/B/D，C 消失、split 消失，B 为独立普通页；无组、无多选。",
+    "before": "首次外部上下顺序 A、S[B,C]、D，内部 B 左/C 右；重建并 Reverse Panes 后为 A、S[C,B]、D，内部 C 左/B 右。",
+    "confirmation_choices": "未出现确认对话框；未勾选任何“不再询问”选项。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-05-BAL attempt1 settings",
+      "EVIDENCE: DBL-05-BAL attempt1 setup-A",
+      "EVIDENCE: DBL-05-BAL attempt1 setup-B",
+      "EVIDENCE: DBL-05-BAL attempt1 setup-C",
+      "EVIDENCE: DBL-05-BAL attempt1 setup-D",
+      "EVIDENCE: DBL-05-BAL attempt1 first-before",
+      "EVIDENCE: DBL-05-BAL attempt1 first-after",
+      "EVIDENCE: DBL-05-BAL attempt1 first-B-identity",
+      "EVIDENCE: DBL-05-BAL attempt1 first-A-identity",
+      "EVIDENCE: DBL-05-BAL attempt1 swap-setup-A",
+      "EVIDENCE: DBL-05-BAL attempt1 swap-setup-B",
+      "EVIDENCE: DBL-05-BAL attempt1 swap-setup-C",
+      "EVIDENCE: DBL-05-BAL attempt1 swap-setup-D",
+      "EVIDENCE: DBL-05-BAL attempt1 swap-before",
+      "EVIDENCE: DBL-05-BAL attempt1 swap-after",
+      "EVIDENCE: DBL-05-BAL attempt1 swap-A-identity",
+      "EVIDENCE: DBL-05-BAL attempt1 swap-D-identity"
+    ],
+    "identity_checks": "固定完整 app 路径，前后 pid 71817。首次批次 TC-PHI507-r2-DBL-05-BAL：A=271f73be-7a85-4c78-9469-3e2d14f564aa，B=37b7ce30-0a89-484d-a5b3-d51736735e4a，C=0de0b6b9-755a-46a8-8b1c-6f2d49a675fc，D=c89808ab-4ad7-4260-933f-1370f78eef90。结束逐页实见 A/B/D 原编号；B 标记 TC-PHI507-r2-DBL-05-BAL-B-KEEP 保留。交换批次后缀 DBL-05-BAL-swap：A=02703025-d53b-4f89-bac2-ae8a9a7fe3a5，B=48f4cccc-13c5-443f-95a6-e815d1a261ce，C=845879e2-62f0-49e4-b794-f1b66ddd8353，D=1901a5ff-fde6-447d-9852-e6c0265fe326。结束逐页实见 A/B/D 原编号；B 标记 TC-PHI507-r2-DBL-05-BAL-swap-B-KEEP 保留。所有 setup 页均实见正文、批次、编号及输入框。",
+    "language_observed": "General 仍为 System Default，原生英文界面。",
+    "layout_observed": "General 选择 Balanced 并截图确认；外部侧栏标签按上下顺序排列。交换分支再次从 chrome 核对相同布局，未重复点击布局。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "两个分支各自清理并新建 A/B/C/D，使用原生 Split with Current 配对 B/C；第二分支另用 Reverse Panes 实际交换。B 均为活动窗格；双击关闭沿用本轮实读 on，期间未操作开关。",
+    "settings_observed": "仅从 Performance 改为 Balanced；System Default 未变，两个关闭开关均未点击。会话末重新实读两个开关仍为 on。",
+    "steps_executed": [
+      "General 切换 Balanced 并保存设置证据。",
+      "独立重建 A/B/C/D，原生建立 S[B,C]，给 B 输入本分支存活标记，核对 B 活动边框。",
+      "保存 first-before，在 C 右半格 (280,355) 双击一次，保存 first-after；逐页核对存留页。",
+      "再次独立重建四页及 S[B,C]，原生 Reverse Panes 交换为 C 左/B 右，核对 B 活动并输入新标记。",
+      "保存 swap-before，在 C 左半格 (110,355) 双击一次，保存 swap-after；逐页核对 A/B/D。"
+    ],
+    "unit_id": "DBL-05-BAL"
+  }
+}

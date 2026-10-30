@@ -1,0 +1,48 @@
+{
+  "unit_id": "DBL-01-PER",
+  "job": "DBL-01",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/DBL-01-observations.json",
+  "observation": {
+    "active_after": "attempt2：标题区双击后 B；图标区双击后 B。",
+    "active_before": "attempt1、attempt2 的标题区动作前均为 C；attempt2 图标区动作前为 B。",
+    "after": "attempt2 两步结束均为 A、B、C，B 单选且活动，无标签消失，无组或 split。attempt1 误操作后为 A 活动，A/B/C 仍在。",
+    "before": "attempt2：普通 A、B、C 自上而下排列，仅 C 选中，无组、多选或 split。",
+    "confirmation_choices": "初次清理旧测试对象时出现 Close Tabs and Delete Group?，选择 Delete Group；Don't Ask Again 保持未勾选。被测双击未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-01-PER attempt1 settings",
+      "EVIDENCE: DBL-01-PER attempt1 setup-A",
+      "EVIDENCE: DBL-01-PER attempt1 setup-A-loaded",
+      "EVIDENCE: DBL-01-PER attempt1 setup-B",
+      "EVIDENCE: DBL-01-PER attempt1 title-before",
+      "EVIDENCE: DBL-01-PER attempt1 title-after",
+      "EVIDENCE: DBL-01-PER attempt1 failure",
+      "EVIDENCE: DBL-01-PER attempt2 setup-A",
+      "EVIDENCE: DBL-01-PER attempt2 setup-B",
+      "EVIDENCE: DBL-01-PER attempt2 setup-C",
+      "EVIDENCE: DBL-01-PER attempt2 title-before",
+      "EVIDENCE: DBL-01-PER attempt2 title-after",
+      "EVIDENCE: DBL-01-PER attempt2 icon-before",
+      "EVIDENCE: DBL-01-PER attempt2 icon-after"
+    ],
+    "identity_checks": "逐页实见 TC-A/B/C、对应批次、普通页正文、本次打开编号及空输入框，未输入额外标记。attempt2 批次 TC-PHI507-r2-DBL-01-PER-retry2：A=46b47f5c-408b-4a32-b081-35ad00f13056，B=c84b12e1-d171-495f-919d-bf08a6ef0e64，C=82be21ee-f0b7-417b-9e12-14c3075c33b7；双击后 B 编号不变。attempt1 批次 TC-PHI507-r2-DBL-01-PER：A=0681ac5b-426a-44a5-b224-2b9105ba100c，B=541e4c88-d459-44b1-aa00-fb3770ced02f，C=85988348-30ef-42e7-9bf0-60bc774679f7。",
+    "language_observed": "General 实读 System Default，Settings 与浏览器菜单为英文；未切换语言。",
+    "layout_observed": "General 原生选择并截图确认 Performance；实际 chrome 为左侧纵向标签、地址及导航位于侧栏。",
+    "not_executed_reason": "无最终未执行步骤。attempt1 未命中 B，因此未继续其图标区步骤；保存现场后重建并以 attempt2 执行两步。",
+    "operator_errors": [
+      "attempt1 使用 click(110,321,click_count=2) 时，截图指针实际约落在展示图 (83,241)，激活 A，未命中 B；该现场不作为 B 双击结果。",
+      "根据原图展示与实际指针的 3:4 比例校正后，重建前置；attempt2 标题区 click(147,429) 对应展示图约 (110,322)，图标区 click(44,429) 对应约 (33,322)，前后截图核对指针分别位于 B 标题与图标。"
+    ],
+    "precondition_actual": "通过新建 New Tab、原生 Close Other Tabs 清理旧测试页及 TC-PHI507-r2-SET10-fresh-COM 组后，地址栏顺序建立 A/B/C；误操作后再次清理并用 retry2 批次独立重建。Advanced 实读双击关闭 off、位置关闭 on，未点击两个开关。",
+    "settings_observed": "起始偏好实读 Balanced、System Default、双击关闭 off／位置关闭 on。本项仅修改布局为 Performance。",
+    "steps_executed": [
+      "实读应用、General 与 Advanced，选择 Performance。",
+      "清理本轮旧测试对象，地址栏顺序创建普通 A/B/C并核对正文及编号。",
+      "attempt1 坐标双击误命中 A，保存 failure 现场。",
+      "用 TC-PHI507-r2-DBL-01-PER-retry2 重新建立 A/B/C，确认 C 活动。",
+      "双击 B 标题区，get_app_state 保存前后截图：B 活动，A/B/C 均在。",
+      "继续双击 B 图标区，get_app_state 保存前后截图：B 活动，A/B/C 均在。"
+    ],
+    "unit_id": "DBL-01-PER"
+  }
+}

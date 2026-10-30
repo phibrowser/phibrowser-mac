@@ -1,0 +1,43 @@
+{
+  "unit_id": "DBL-06-PER",
+  "job": "DBL-06",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r2/DBL-06-observations.json",
+  "observation": {
+    "active_after": "B 分支：双击后 C，逐页核对后 D。C 分支：双击后 D，逐页核对后 B。",
+    "active_before": "B 分支 C；C 分支 B。均无多选。",
+    "after": "B 分支：G[A,C,D]，B 消失，B/C 分屏解除，A/C/D 仍在原组。C 分支：G[A,B,D]，C 消失，分屏解除，A/B/D 仍在原组。两次双击后的首次状态读取均只少一个目标页。",
+    "before": "B 分支组 TC-PHI507-r2-DBL-06-PER-B-G；C 分支重建为 TC-PHI507-r2-DBL-06-PER-C-G。两次原生顺序均为 A、包含 B/C 的分屏行、D；B 左/C 右，无组外测试页、无多选。",
+    "confirmation_choices": "两次组重命名选择 Save。关闭本轮测试组及普通页时未出现关闭确认；双击时无确认框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-06-PER attempt1 settings",
+      "EVIDENCE: DBL-06-PER attempt1 setup-drag-failure",
+      "EVIDENCE: DBL-06-PER attempt1 new-B-before",
+      "EVIDENCE: DBL-06-PER attempt1 new-B-after",
+      "EVIDENCE: DBL-06-PER attempt1 new-B-identity-A",
+      "EVIDENCE: DBL-06-PER attempt1 new-B-identity-D",
+      "EVIDENCE: DBL-06-PER attempt1 new-C-before",
+      "EVIDENCE: DBL-06-PER attempt1 new-C-after",
+      "EVIDENCE: DBL-06-PER attempt1 new-C-after-A",
+      "EVIDENCE: DBL-06-PER attempt1 new-C-after-D",
+      "EVIDENCE: DBL-06-PER attempt1 new-C-after-B"
+    ],
+    "identity_checks": "固定 app，关键前后 CU 均读到 pid 71817 及对应 TC 窗口。B 分支批次 TC-PHI507-r2-DBL-06-PER-B：A=3a6aa845-5ecc-46b4-8f7c-dc189b974771，B=3a3e1158-1850-4885-a5fe-7df341dbbfd2，C=a78f69e0-0222-4ab5-98d3-0bee44664541，D=f403f23f-bdc8-4c55-aea1-c343accb3a3e；A/C/D 的 KEEP-PER-B-A/C/D 与编号在动作后逐页可见且一致。C 分支批次 TC-PHI507-r2-DBL-06-PER-C：A=8882f44a-da49-4b65-8371-803cfad5182a，B=11c654e7-2cf6-4c29-b845-3691b988f839，C=0d1adcf5-9fe0-4e27-b765-a4a29ccd5fa1，D=22f0699d-2bd9-468e-af74-cac38375b154；A/B/D 的 KEEP-PER-C-A/B/D 与编号在动作后逐页可见且一致。各页建立时均实见 TC 标题、批次、编号和输入框。",
+    "language_observed": "System Default；浏览器设置与菜单为英文，未切换语言。",
+    "layout_observed": "General 原生选择 Performance 并截图确认；外部标签区为纵向。C 分支沿用并从实际 chrome 再次确认。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "建立 B 分支时两次拖动 B 入组均未形成组关系；第一次还显示临时 pin 放置区域。保留现场，未将这些拖动计为被测动作。随后关闭组外本轮 B/C/D，通过 New Tab in Group 重建，满足前置后才双击。"
+    ],
+    "precondition_actual": "两个分支各自原生重建并核实 G[A,S[B,C],D]；双击关闭 on，方向关闭 on。保护页先确认输入焦点，再写入并实见存活标记。",
+    "settings_observed": "Advanced 实读 settings.tabs.doubleClickToClose=on、settings.tabs.directionalClosing=on；本 unit 未点击两个开关。",
+    "steps_executed": [
+      "在 General 切换 Performance；清理本轮旧普通测试页，建立 A 及测试组，经 New Tab in Group 创建 B/C/D。",
+      "激活 B，在 C 的原生菜单选择 Split with Current；核对组成员、分屏配对、页面正文和存活标记。",
+      "保存 new-B-before；按原图坐标 (110,504) 对分屏标签行的 B 半格执行一次 click_count=2；保存 new-B-after，再逐页核对 C/A/D。",
+      "下一分支开始时关闭本轮前一组，以新批次重建 A/B/C/D、组和 B/C 分屏。",
+      "保存 new-C-before；按原图坐标 (270,504) 对 C 半格执行一次 click_count=2；保存 new-C-after，再逐页核对 A/D/B，保留该结束状态至下一 unit setup。"
+    ],
+    "unit_id": "DBL-06-PER"
+  }
+}

@@ -28,7 +28,7 @@ if a.language or a.base=='VIS-01':
 if a.instructions:prompt+='\n本任务额外操作约束：\n'+Path(a.instructions).read_text()
 subprocess.run(['python3',str(lane),'run','--','mkdir','-p',lease['env']['LANE_WORKDIR']+f'/qa-evidence/r{round_no}/observations'],check=True)
 scratch=root/f'scratch-PHI507-r{round_no}'/job;scratch.mkdir(parents=True,exist_ok=True);log=scratch/(job+'-console.log');started=datetime.datetime.now(datetime.timezone.utc).isoformat();(evidence_dir/'runner-state.json').write_text(json.dumps({'job':job,'started_at':started,'state':'running','units':[u['key'] for u in units]},indent=2))
-cmd=['python3',str(lane),'gui','--timeout',str(a.timeout),'--','codex','exec','--skip-git-repo-check','--output-schema','/Users/e2e02/lane/qa-tools/cu-observation.schema.json','--output-last-message',remote,prompt]
+cmd=['python3',str(lane),'gui','--timeout',str(a.timeout),'--','codex','exec','--skip-git-repo-check','--output-schema',lease['env']['LANE_WORKDIR']+'/qa-tools/cu-observation.schema.json','--output-last-message',remote,prompt]
 with log.open('w') as f:r=subprocess.run(cmd,stdout=f,stderr=subprocess.STDOUT)
 text=log.read_text();m=re.search(r'session id: ([a-f0-9-]+)',text);sid=m[1] if m else None
 result={'job':job,'exit_code':r.returncode,'session_id':sid,'round':round_no,'lease_id':lease['lease_id'],'started_at':started,'ended_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'units':[u['key'] for u in units]}

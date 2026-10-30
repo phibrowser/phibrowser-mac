@@ -1,0 +1,49 @@
+{
+  "unit_id": "SET-07-COMMON",
+  "job": "SET-07",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-07-observations.json",
+  "observation": {
+    "active_after": "C 单独活动；右键查看 B 和组菜单未改变活动页。收尾关闭 Settings 后仍为 C，无多选、无 split。",
+    "active_before": "C 单独活动，属于展开组 G；无多选、无 split。",
+    "after": "重启后 chrome 显示 A、B、G[C]，顺序及组计数 1 仍可见。Advanced 实读双击关闭 on、按位置关闭 off。普通 B 右键菜单显示 Close、Close Other Tabs；组菜单显示 New Tab in Group、Rename Group、Change Color、Collapse Group、Ungroup、Close Group；两者均未显示左右位置关闭项。C 在重启后至结束截图中内容区为空白且显示 Stop，未据标签标题推定页面已提交。",
+    "before": "独立重建批次 TC-PHI507-r2-SET-07-COMMON，实际从左到右为普通 A、普通 B、G[C]。A/B/C 均在重启前逐页看见 TC 标题、批次、普通页类型、本次打开编号及空输入框。",
+    "confirmation_choices": "Rename Group 对话框输入 TC-PHI507-r2-SET-07-COMMON-G 后选择 Save。Cmd+Q 弹出“Are you sure you want to quit Phi?”及“Any unsaved changes may be lost.”，选择 Quit；没有“不再询问”选项。未触发组删除确认。",
+    "evidence_markers": [
+      "SET-07-COMMON original-switches",
+      "SET-07-COMMON original-language-layout",
+      "SET-07-COMMON attempt1 before-switch",
+      "SET-07-COMMON attempt1 switches-immediate",
+      "SET-07-COMMON attempt1 before-restart",
+      "SET-07-COMMON attempt1 relaunched",
+      "SET-07-COMMON attempt1 after-restart-switches",
+      "SET-07-COMMON attempt1 after-restart-language-layout",
+      "SET-07-COMMON attempt1 restored-C（实际截图为空白加载状态）",
+      "SET-07-COMMON attempt1 after-normal-menu",
+      "SET-07-COMMON attempt1 after-group-menu",
+      "SET-07-COMMON attempt1 after",
+      "SET-07-COMMON session-restore switches",
+      "SET-07-COMMON ending-state"
+    ],
+    "identity_checks": "全程固定路径 /Applications/Phi Tab Close QA.app；退出前 PID 46074，确认 Quit 后 CU 返回 -10005: App quit，同路径 get_app_state 重新启动后 PID 53002；未切换 macOS 用户。重启前屏幕编号：A=fa848eba-aef3-42da-a791-41812d56abbd；B=18af9daa-3323-4566-9f75-9e29877851fb；C=17bac5e6-c47a-46bf-b9ba-612a5efd9c30。重启后未看见 C 页面内容，不能确认其打开编号；A/B 未在重启后切换逐页核验。未切换核验原有 pin、书签或其他 Space 的保护页输入标记与编号。",
+    "language_observed": "重启前后 General 均显示 Display language=System Default；实际设置及菜单为英文；未切换语言。",
+    "layout_observed": "重启前后 General 截图均显示 Comfortable 被选中；外部标签栏为左右方向；未更改布局。",
+    "not_executed_reason": "指定三个步骤均已执行；未额外执行双击关闭或位置关闭动作。页面重载后的内容及编号恢复情况未得到屏幕确认。",
+    "operator_errors": [
+      "准备阶段查看 Window 菜单后，Escape 返回仍为菜单原生树；一次标记“attempt1 before”的 get_app_state 仅返回菜单树、无 image，未作为关键前截图使用。随后用该原生菜单明确暴露的 Cancel 动作关闭菜单，并补充 before-switch、before-restart 真图；未误点开关或重试被测动作。"
+    ],
+    "precondition_actual": "起始实读双击关闭 off、按位置关闭 off，Restore last session on。当前 Space 起始为上一批次 SET-06 的 A/B；新建 New Tab 后使用 Close Other Tabs 清理这两个可丢弃页，再通过地址栏顺序建立本项 A/B/C。Window 菜单当时仅列一个浏览器窗口。本项三个输入框均为空，未输入真实资料；未检查其他 Space 的页面内容，不宣称全 profile 的未保存资料已逐页核实。",
+    "settings_observed": "起始 off/off；仅点击双击关闭一次，CU 即时树读到 on/off，未点击项保持 off。正常退出并重启后仍为 on/off，Restore last session 仍 on。收尾仅点击双击关闭一次，即时树及截图均为 off/off，按位置关闭未联动变化。",
+    "steps_executed": [
+      "通过原生 Settings 读取并记录两个开关、Restore last session、语言及布局。",
+      "在当前测试 Space 新建 New Tab，原生 Close Other Tabs 清理旧 SET-06 A/B；地址栏依次建立本项普通 A、B、C并逐页核验可见身份。",
+      "对 C 使用 New Tab Group，原生 Rename Group 命名为 TC-PHI507-r2-SET-07-COMMON-G，核实 G[C] 和真实顺序。",
+      "保存 before-switch 图；仅点击 Double-click to close tabs，立即读取两个开关为 on/off并取证。",
+      "关闭 Settings，保存 before-restart 图；Cmd+Q，选择 Quit；CU 返回 App quit 后以同一完整路径 get_app_state 重新启动。",
+      "重新查看 Advanced，记录 on/off；查看 General，记录 System Default、英文、Comfortable。",
+      "关闭 Settings，分别右键查看普通 B 与 G 的菜单，保存截图后取消菜单；保存 after 现场。",
+      "恢复原有 off/off并逐开关即时读取，保存恢复证据，关闭 Settings，保留实际结束集合并保存 ending-state。"
+    ],
+    "unit_id": "SET-07-COMMON"
+  }
+}

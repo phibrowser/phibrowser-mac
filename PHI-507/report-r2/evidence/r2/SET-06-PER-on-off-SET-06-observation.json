@@ -1,0 +1,36 @@
+{
+  "unit_id": "SET-06-PER-on-off",
+  "job": "SET-06",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-06-observations.json",
+  "observation": {
+    "active_after": "B 单独活动，选中集 {B}。",
+    "active_before": "C 单独活动，选中集 {C}。",
+    "after": "C 关闭，外部从上到下保留 A/B；无多选、无 split、无组。B 菜单显示 Close、Close Other Tabs，没有 Above/Below 方向项。",
+    "before": "本项批次普通 A/B/C，外部从上到下 A、B、C。",
+    "confirmation_choices": "本项清理、双击及菜单观察未出现确认框；未选择菜单关闭命令。",
+    "evidence_markers": [
+      "SET-06-PER-on-off layout",
+      "SET-06-PER-on-off settings",
+      "SET-06-PER-on-off identity-A",
+      "SET-06-PER-on-off identity-B",
+      "SET-06-PER-on-off identity-C attempt1 before",
+      "SET-06-PER-on-off attempt1 after"
+    ],
+    "identity_checks": "逐页实见 TC 标题、本项批次、普通页、打开编号和空输入框。A=497610ef-e5ab-4ca9-a85f-1cd442877147；B=b8e9e5a6-c1b6-4479-a64a-41842dc528d；C=6c8b25c8-05a7-4e89-830a-fa4df327359。结束 B 截图编号仍为 b8e9e5a6-c1b6-4479-a64a-41842dc528d。",
+    "language_observed": "System Default，实际设置及菜单英文。",
+    "layout_observed": "本项通过 General 再次选择并截图确认 Performance；外部纵向标签栏。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "清理上一项页面后重建 TC-PHI507-r2-SET-06-PER-on-off 的 A/B/C，顺序与活动页已核对，无组、无 split；on/off。",
+    "settings_observed": "只将 Double-click to close tabs 从 off 改为 on，实读 Close tabs by position 仍为 off。",
+    "steps_executed": [
+      "关闭上一项菜单，General 原生选择 Performance。",
+      "Advanced 将双击开关设为 on，核对位置开关 off。",
+      "新建 New Tab 并 Close Other Tabs，原生地址栏依次建立本项 A/B/C。",
+      "逐页身份截图，C 页面截图作为关键 before。",
+      "双击 C，重读显示 A/B 且 B 活动；右键 B 并保存 after。"
+    ],
+    "unit_id": "SET-06-PER-on-off"
+  }
+}

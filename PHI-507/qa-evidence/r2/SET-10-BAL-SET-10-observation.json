@@ -1,0 +1,35 @@
+{
+  "unit_id": "SET-10-BAL",
+  "job": "SET-10",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-10-observations.json",
+  "observation": {
+    "active_after": "唯一选中的 SET-10-BAL A 导航标签；内容仍为 New Tab。",
+    "active_before": "前置核对时唯一选中的 SET-10-BAL A 导航标签。",
+    "after": "当前 Space 实际标签顺序：[A（SET-10-BAL，未见 fixture 内容）]；单选 A，无组、无 split，工具栏显示 Stop。",
+    "before": "独立清理重建后顺序：[A（SET-10-BAL，未见 fixture 内容）]；未创建后续 B/C/D/E。",
+    "confirmation_choices": "Close Other Tabs 未出现确认对话框；无其他确认选择。",
+    "evidence_markers": [
+      "SET-10-BAL attempt1 layout",
+      "SET-10-BAL attempt1 setup-navigation",
+      "SET-10-BAL attempt1 before",
+      "SET-10-BAL attempt1 failure",
+      "SET-10-BAL attempt1 after"
+    ],
+    "identity_checks": "原生选中行包含 tab=A、run=TC-PHI507-r2-SET-10-BAL、kind=normal；屏幕仍为 New Tab，未见 TC 标题、批次、本次打开编号或 fixture 输入框。",
+    "language_observed": "本项 General 再读为 System Default，实际界面英文；未切换语言。",
+    "layout_observed": "通过 General 原生 Balanced button 切换并截图确认蓝框选中；浏览器外部标签栏为纵向，内容工具栏位于上方。",
+    "not_executed_reason": "本项独立新建的 A 未显示 fixture 内容，完整序列及身份无法核实；未执行任何开关切换或指定双击动作。",
+    "operator_errors": [],
+    "precondition_actual": "Advanced 再读两个开关 off/off；仅有一个本项 A 尝试导航标签，普通 A/B/C、TC-G[D,E] 前置未完成。",
+    "settings_observed": "doubleClickToClose=off、directionalClosing=off；全程未点击，快捷键未更改。",
+    "steps_executed": [
+      "打开 General，选择 Balanced 并保存布局截图。",
+      "进入 Advanced，分别读取两个控件均为 off，关闭 Settings。",
+      "新建 New Tab，通过其原生 Close Other Tabs 清理上一项 A。",
+      "经原生地址栏输入 SET-10-BAL 的 A fixture URL 并 Return。",
+      "多次 get_app_state 核实唯一选中 A、Stop 和 New Tab 内容；未继续构造组或 split，保留结束现场。"
+    ],
+    "unit_id": "SET-10-BAL"
+  }
+}

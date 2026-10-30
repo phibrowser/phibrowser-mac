@@ -1,0 +1,35 @@
+{
+  "unit_id": "SET-06-BAL-on-on",
+  "job": "SET-06",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-06-observations.json",
+  "observation": {
+    "active_after": "B 单独活动，选中集 {B}。",
+    "active_before": "C 单独活动，选中集 {C}。",
+    "after": "C 关闭，外部从上到下保留 A/B。B 菜单有 Close Tabs Above（可用）、Close Tabs Below（disabled），以及 Close、Close Other Tabs；无多选、无组、无 split。",
+    "before": "本项普通 A/B/C，外部从上到下 A、B、C。",
+    "confirmation_choices": "无确认框；未执行菜单命令。",
+    "evidence_markers": [
+      "SET-06-BAL-on-on layout",
+      "SET-06-BAL-on-on settings",
+      "SET-06-BAL-on-on identity-A",
+      "SET-06-BAL-on-on identity-B",
+      "SET-06-BAL-on-on identity-C attempt1 before",
+      "SET-06-BAL-on-on attempt1 after"
+    ],
+    "identity_checks": "逐页实见本项 TC 标题、批次、普通页、空输入框及编号。A=c83985a7-054c-4d49-b9b2-8de8b3af3101；B=9a38da46-5476-4d71-bd40-10ac279c5582；C=c12cd1a0-41fd-4279-abc1-32a956a331c1。after 中 B 编号仍为该值。",
+    "language_observed": "System Default，实际界面英文。",
+    "layout_observed": "General 原生选择并截图确认 Balanced；外部纵向。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "清理并重建 TC-PHI507-r2-SET-06-BAL-on-on A/B/C，C 活动，无组、无 split；on/on。",
+    "settings_observed": "只将双击 off→on，位置保持 on；最终原生实读 on/on。",
+    "steps_executed": [
+      "General 选择 Balanced，Advanced 只修改双击开关并核对位置 on。",
+      "新建 New Tab、Close Other Tabs 后，依次建立本项 A/B/C 并逐页核对。",
+      "保存 before，双击 C，重读 A/B 和活动 B。",
+      "右键 B，保存含 Above 可用、Below 灰置的 after。"
+    ],
+    "unit_id": "SET-06-BAL-on-on"
+  }
+}

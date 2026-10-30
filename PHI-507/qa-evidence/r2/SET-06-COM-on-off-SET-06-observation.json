@@ -1,0 +1,48 @@
+{
+  "unit_id": "SET-06-COM-on-off",
+  "job": "SET-06",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-06-observations.json",
+  "observation": {
+    "active_after": "有效 attempt2：B 单独活动，选中集 {B}。无效 attempt1：B 被坐标误双击关闭，C 仍活动。",
+    "active_before": "两次重新建立后均为 C 单独活动，选中集 {C}。",
+    "after": "有效 attempt2：C 关闭，外部从左到右保留 A/B，无多选、无组、无 split；B 菜单有 Close、Close Other Tabs，没有左右方向项。无效 attempt1 的实际结束集合为 A/C，未因 B 缺失而伪造其菜单。",
+    "before": "两次均重新建立本项普通 A/B/C，外部从左到右 A、B、C。C 页面身份可见，原生树第三个标签描述仍为 New Tab。",
+    "confirmation_choices": "无确认框；有效重试只打开 B 菜单，未点击其中命令。",
+    "evidence_markers": [
+      "SET-06-COM-on-off layout",
+      "SET-06-COM-on-off settings",
+      "SET-06-COM-on-off identity-A",
+      "SET-06-COM-on-off identity-B",
+      "SET-06-COM-on-off identity-C attempt1 before",
+      "SET-06-COM-on-off attempt1 before",
+      "SET-06-COM-on-off attempt1 failure",
+      "SET-06-COM-on-off attempt2 layout",
+      "SET-06-COM-on-off attempt2 settings",
+      "SET-06-COM-on-off attempt2 identity-A",
+      "SET-06-COM-on-off attempt2 identity-B",
+      "SET-06-COM-on-off attempt2 identity-C before",
+      "SET-06-COM-on-off attempt2 before",
+      "SET-06-COM-on-off attempt2 after"
+    ],
+    "identity_checks": "逐页均实见 TC 标题、本项批次、普通页、空输入框及打开编号。attempt1：A=cef623e7-ca75-454b-81ee-5acecbc85c2a，B=c7fd33a0-e6aa-4f6c-938f-0fbec6f52bbf，C=7a1eb023-2f36-45b3-9acb-16d1550ab788。attempt2：A=16cef09f-0ddc-4e21-bb65-5a2c31cf1dc5，B=324a8ce5-77be-4319-8e7f-fca46040840c，C=9baaa2fb-d200-4b95-a5d6-ef198497901e。有效 after 中 B 编号仍为 attempt2 的该值。",
+    "language_observed": "两次均实读 System Default，实际界面英文。",
+    "layout_observed": "两次均通过 General 原生选择并截图确认 Comfortable；外部横向。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "attempt1 坐标双击 (867,34) 未正确处理截图与点击坐标比例，实际落在 B，导致 B 关闭、集合成为 A/C。",
+      "随后原生树中无法找到 B，编排守卫停止，没有打开错误对象菜单；保存 attempt1 failure 现场。",
+      "仅因上述无效操作重试；attempt2 重新选择 Comfortable、核对 on/off、清理并重建 A/B/C，改用最新原生第三个标签控件双击 C。"
+    ],
+    "precondition_actual": "有效 attempt2 已重新原生构造 TC-PHI507-r2-SET-06-COM-on-off A/B/C，真实顺序 A→B→C、C 活动，无组、无 split；on/off。",
+    "settings_observed": "两次均只将双击 off→on，位置保持 off；最终原生实读 on/off。",
+    "steps_executed": [
+      "attempt1 General 选择 Comfortable，Advanced 设置并核对 on/off，清理后新建 A/B/C。",
+      "逐页核对身份、保存 before；坐标双击误落 B，重读集合 A/C 后停止并保存 failure。",
+      "在重试前重新完成 General 布局、Advanced 设置核对及全部 A/B/C 的清理重建。",
+      "attempt2 保存 before，通过最新原生第三个标签控件双击 C。",
+      "重读 A/B、B 活动；右键 B 并保存没有左右方向项的 attempt2 after。"
+    ],
+    "unit_id": "SET-06-COM-on-off"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "unit_id": "SET-10-PER",
+  "job": "SET-10-fresh-surfaces",
+  "scope": "补执行关闭后新建普通与组内普通",
+  "source": "qa-evidence/r2/SET-10-fresh-surfaces-observations.json",
+  "observation": {
+    "active_after": "A 双击后仍为 A；D 双击后仍为 D；随后逐页核对 E，单元结束活动页 E。",
+    "active_before": "普通 A 子步骤为 A；组内 D 子步骤为 D。",
+    "after": "两次双击后，真实集合均仍为普通 A、展开组 TC-PHI507-r2-SET10-fresh-PER[D,E]；无多选、无 split。A、D 的打开编号及输入标记前后一致；随后实见 E 原编号和标记。",
+    "before": "普通 A、展开组 TC-PHI507-r2-SET10-fresh-PER[D,E]，顺序 A、D、E。三页均为本次关闭双击开关后新建的 normal fixture。",
+    "confirmation_choices": "测试动作未出现确认框。准备时对旧 TC 组使用 Close Group，未出现删除确认；新组重命名选择 Save。未勾选任何“不再询问”。",
+    "evidence_markers": [
+      "SET-10-PER fresh layout",
+      "SET-10-PER fresh settings-off",
+      "SET-10-PER fresh D created",
+      "SET-10-PER fresh E created",
+      "SET-10-PER fresh-A attempt1 before",
+      "SET-10-PER fresh-A attempt1 after",
+      "SET-10-PER fresh-D attempt1 before",
+      "SET-10-PER fresh-D attempt1 after",
+      "SET-10-PER fresh-E identity-after"
+    ],
+    "identity_checks": "正文批次 TC-PHI507-r2-SET-10-PER-fresh。A：1eb912cc-cca6-4657-a6ad-54bd171fe10d，KEEP-SET10-PER-A；D：9a84e480-333e-47fb-8472-d1b0d73d91e8，KEEP-SET10-PER-D；E：f8bc8b46-9692-4793-ba76-e108176561ff，KEEP-SET10-PER-E。均实见 TC 标题、批次、普通页类型、打开编号及输入框；输入前以四次 Tab 后的绿色焦点边框确认 textarea。A、D 在关键动作前后同号同标记；E 在结束逐页复核时同号同标记，没有重建。",
+    "language_observed": "General 为 System Default，浏览器菜单与设置实际显示英文；本项未切换语言或重启。",
+    "layout_observed": "从起始 Balanced 经 General 原生 button 选择 Performance，截图显示 Performance 选中；浏览器 chrome 为左侧纵向标签栏。",
+    "not_executed_reason": "此前其余子步骤已在SET-10-retry保存，本次仅补关闭后新建普通与组内普通子步骤",
+    "operator_errors": [
+      "准备清理旧组时，先右击父 row、再按截图坐标右击，均打开了普通标签菜单；均 Escape 取消，未选择菜单动作。随后用最新树的旧组标题原生 text 打开组菜单并 Close Group。此过程发生于新对象创建和被测双击之前；取消后的现场及随后正确组菜单截图已输出，前两次菜单未单独添加 failure 标记。"
+    ],
+    "precondition_actual": "先实读起始双击 off／位置 on；单独关闭位置后为 off/off，再单独切换双击 on→off，每次即时读取两个开关。随后仅在当前测试 Space 清理旧 TC 对象，新建 A、D、E，并在 off/off 下组成新组；未创建 B/C 或 split。",
+    "settings_observed": "时间均为 Date.now 的 Unix 毫秒：1793358325451，单独关闭位置后双击 off／位置 off；1793358326031，单独开启双击后 on/off；1793358326620，反向关闭双击后 off/off。未点击项未观察到联动变化。快捷键未修改。",
+    "steps_executed": [
+      "双击关闭设 off（1793358326620）后关闭 Settings，清理当前旧 TC 组与普通页；通过 Cmd+T 创建新的 New Tab，再 Close Other Tabs。该新页于 1793358406734 开始通过原生地址栏输入本项 A fixture URL，随后实见 A 正文与编号。",
+      "确认 A 输入焦点并输入 KEEP-SET10-PER-A；1793358434139 通过 Cmd+T 开始创建 D，1793358438097 已实见 D 正文；确认焦点后输入 KEEP-SET10-PER-D。",
+      "1793358455775 通过 Cmd+T 开始创建 E，1793358459626 已实见 E 正文；确认焦点后输入 KEEP-SET10-PER-E。",
+      "通过 D 的原生右键 New Tab Group、Rename Group/Save 创建 TC-PHI507-r2-SET10-fresh-PER，再将 E 通过 Add to Group 加入；1793358509982 实读组内 D/E。",
+      "选中 A，get_app_state 保存 before；对最新树 A 的原生安全 row（21）执行 click_count:2，再 get_app_state 保存 after。",
+      "从最新树核对 D 文本所属最内层 row，单击选中 D 并保存 before；对该最内层 row（28）执行 click_count:2，保存 after；再单击 E 逐页核对原编号和标记。"
+    ],
+    "unit_id": "SET-10-PER"
+  }
+}

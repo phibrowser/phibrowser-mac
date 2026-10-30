@@ -1,0 +1,37 @@
+{
+  "unit_id": "SET-08-COMMON",
+  "job": "SET-08",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-08-observations.json",
+  "observation": {
+    "active_after": "前台为 W2/S2 的唯一标签，原生名称仍为 New Tab；未形成已核实的 TC-B 页面。",
+    "active_before": "本项 setup 结束、被测动作尚未执行时，前台为 W1/S1 的唯一标签，原生名称仍为 New Tab。",
+    "after": "未执行偏好切换及切换后的菜单读取。W1/S1、W2/S2 各保留一个导航未获页面身份确认的标签；均无多选、无 split、无组。结束图为 W2/S2，显示新标签页内容与 Stop。",
+    "before": "已在同一 app 内建立 W1/S1 和 W2/S2；每处仅一个标签，分别从原生地址栏输入本项 normal fixture A、B URL。未见 fixture 正文，不能记为已加载的 A/B。",
+    "confirmation_choices": "原生 Name Window 对话框输入本轮 W1/W2 名称并确认；没有删除、离开页面或“不再询问”确认。",
+    "evidence_markers": [
+      "EVIDENCE: SET-08-COMMON attempt1 before",
+      "EVIDENCE: SET-08-COMMON attempt1 failure",
+      "EVIDENCE: SET-08-COMMON attempt1 after"
+    ],
+    "identity_checks": "固定路径 /Applications/Phi Tab Close QA.app，CU 实读 pid 53002。Window 菜单同时列出本轮 W1/W2，Spaces 菜单列出本轮 S1/S2；创建 Space 时 Profile 为 Your Phi。A/B 地址包含 run=TC-PHI507-r2-SET-08-COMMON，但截图未出现 TC 标题、批次、打开编号或 fixture 输入框，未以 URL 代替页面提交及身份核对。",
+    "language_observed": "General 实读 System Default；实际设置、菜单和浏览器界面为英文，未切换语言。",
+    "layout_observed": "General 截图中 Comfortable 为选中边框；浏览器外部标签栏为水平方向，未切换布局。",
+    "not_executed_reason": "窗口与 Space 已建立，但 fixture A/B 导航后持续显示原 New Tab 内容，缺少要求实见的 TC 标题、批次、打开编号和输入框，页面身份前置未能核实。因此未执行“在 W1/S1 关闭位置功能”“在 W2 和 S2 重新打开菜单读取变更”“再开启”，没有生成偏好共用的观察结论。",
+    "operator_errors": [
+      "核对 Spaces 菜单后按 Escape 未关闭菜单；随后通过该原生菜单明确暴露的 Cancel 动作关闭。未触发被测动作或重试偏好切换。"
+    ],
+    "precondition_actual": "复读原 SET-07 现场后，新建 TC-QA-PHI507-r2-SET-08-COMMON-S1；在原窗口进入 S1，并将该窗口原生命名为同前缀 W1。通过 File > New Window 新建 W2，再新建 S2，原生命名 W2。窗口／Space 对象已具备，fixture 正文身份未具备。",
+    "settings_observed": "Advanced 起始和收尾均实读 settings.tabs.doubleClickToClose=off、settings.tabs.directionalClosing=off；本项未点击任何目标开关。",
+    "steps_executed": [
+      "get_app_state 复读原窗口：SET-07 普通 A、B、展开组 G[C]；C 活动，内容空白且显示 Stop。",
+      "原生打开 Settings，读取 General 的语言、布局及 Advanced 两个开关，关闭 Settings。",
+      "通过 Spaces > New Space 创建本轮 S1；在唯一 New Tab 用地址栏输入 fixture A URL 并回车。",
+      "通过 File > New Window 创建第二窗口，在其中创建本轮 S2；用地址栏输入 fixture B URL 并回车。",
+      "通过 Window > Name Window 分别命名 W2、W1；通过 Window 和 Spaces 菜单核对对象。",
+      "保存 W1 前置图和 W2 未显示 fixture 正文的现场图；未重新导航或重建掩盖现场。",
+      "收尾重读两个开关仍为 off/off，关闭 Settings，保存 W2 结束图。"
+    ],
+    "unit_id": "SET-08-COMMON"
+  }
+}

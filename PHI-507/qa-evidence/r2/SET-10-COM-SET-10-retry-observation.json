@@ -1,0 +1,52 @@
+{
+  "unit_id": "SET-10-COM",
+  "job": "SET-10-retry",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-10-retry-observations.json",
+  "observation": {
+    "active_after": "执行点结束显示组内 split[D,E]，E 侧有活动焦点边框；统一恢复偏好后仍为同一配对及 E 焦点，无多选。",
+    "active_before": "E，顶部组内 E 标签高亮。",
+    "after": "开启后已有 B 消失并转 C；新建 N 双击后消失并转 C。关闭后普通 A、组内 D 双击均保留并被选中；新建普通 split[A,C] 双击 C 后配对保留、焦点转 C；新建组内 split[D,E] 双击 E 后配对和组保留、焦点转 E。结束集合为 split[A,C] → TC-G 内 split[D,E]。",
+    "before": "从左至右 A → B → C → TC-PHI507-r2-SET-10-COM-TC-G[D,E]；组计数 2，无 split、无多选；两个开关均 off。",
+    "confirmation_choices": "建立本项前清理 Balanced 的 TC-G 时，删除确认 Don't Ask Again=0，经键盘 Return 删除，见操作错误记录；本项重命名组用 Save。被测普通页关闭无离开确认。",
+    "evidence_markers": [
+      "SET-10-COM layout",
+      "SET-10-COM attempt1 before",
+      "SET-10-COM existing-B before",
+      "SET-10-COM existing-B after",
+      "SET-10-COM new-N before",
+      "SET-10-COM new-N after",
+      "SET-10-COM off-normal before",
+      "SET-10-COM off-normal after",
+      "SET-10-COM off-group before",
+      "SET-10-COM off-group after",
+      "SET-10-COM off-normal-split before",
+      "SET-10-COM off-normal-split after",
+      "SET-10-COM off-group-split before",
+      "SET-10-COM attempt1 after",
+      "SET-10 session-restore switches",
+      "SET-10 session-restore layout",
+      "SET-10 ending_state"
+    ],
+    "identity_checks": "逐页实见 TC 标题、TC-PHI507-r2-SET-10-COM 批次、普通页说明、打开编号及空输入框：A=12dc896b-0548-417d-be73-3495980729eb；B=6bd6b208-b84b-4052-9c2c-234144c85c30；C=fe745e1b-afc4-447f-93a7-d1d6c001b074；D=d8a9d5c9-8d64-414e-9ff5-72eb4b402901；E=8dd2a19a-57ed-4899-913e-6ff1bdce0d1f；N=8202e47a-9399-4f6f-aae6-d9b209517f57。N 正文已提交时原生按钮 Description 仍为 New Tab，子文本为 TC-N；按最新父子关系定位该按钮。两组 split 及最终截图中的编号未变化。",
+    "language_observed": "General 实读 System Default；浏览器与设置界面英文，未切语言、未重启。",
+    "layout_observed": "General 原生 Comfortable 按钮切换并截图确认选中，实际外部页签从左至右排列。执行点结束取证后统一恢复 Balanced 并截图确认。",
+    "not_executed_reason": "关闭后的普通及组内普通表面使用既有 A、D，未分别新建 cell；关闭后普通 split 与组内 split 均原生新建。未记录四种表面全部新建 cell 的完整覆盖。",
+    "operator_errors": [
+      "本项 setup 清理前项组时，编排在读取到 Close Tabs and Delete Group? 后仍继续地址栏键盘序列；Return 接受删除，本项 A 未导航。重新实读仅 New Tab 后，再次通过地址栏输入 A 才真实提交。未勾选 Don't Ask Again。",
+      "定位新建 N 时仅按按钮 Description 匹配未找到，辅助函数停止且未点击；重读原生树后按 TC-N 子文本的唯一父按钮定位，随后执行双击。"
+    ],
+    "precondition_actual": "切换 Comfortable，在同一 S1 清理前项测试对象和组后重新导航 A/B/C/D/E；原生建立本项 TC-G 并加入 E，组计数 2。开启前 Advanced 实读双 off。",
+    "settings_observed": "开启前 off/off；单独点击双击开关后即时读取 on/off；反向关闭后即时读取 off/off。收尾单独点击位置关闭后即时读取双击 off、位置 on；未点击项未联动变化。最终 Balanced，快捷键未修改。",
+    "steps_executed": [
+      "切换 Comfortable，原生清理并重建五页及 TC-G[D,E]，核对真实顺序。",
+      "开启双击关闭，立即双击已有 B；B 消失。",
+      "新建普通 N，实见正文、批次、编号后双击其父 tab 按钮；N 消失。",
+      "关闭双击关闭并读取双 off，双击普通 A、组内 D；均保留并切换选中。",
+      "原生建立普通 split[A,C]，双击右侧 C 标签；配对保留，焦点转 C。",
+      "原生建立组内 split[D,E]，双击右侧 E 标签；配对和组保留，焦点转 E，保存本项结束图。",
+      "统一恢复位置关闭 on 与 Balanced，读取两个开关并保存设置和最终浏览器截图；未重建页面。"
+    ],
+    "unit_id": "SET-10-COM"
+  }
+}

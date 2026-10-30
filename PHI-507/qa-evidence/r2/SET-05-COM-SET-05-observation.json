@@ -1,0 +1,51 @@
+{
+  "unit_id": "SET-05-COM",
+  "job": "SET-05",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-05-observations.json",
+  "observation": {
+    "active_after": "B 单独活动；选中集仅 B；无 split。收尾恢复设置后仍为 B 活动。",
+    "active_before": "B 单独活动；选中集仅 B；无 split。",
+    "after": "Comfortable 外部从左到右仍为普通 A、普通 B、普通 C、展开的 TC-PHI507-r2-SET-05-COM-G[D,E]，组标题显示 2。开启位置关闭后未重启，B 菜单实见 Close Tabs to the Left、Close Tabs to the Right，两项均未标为 disabled；组标题菜单实见 Close Tabs to the Left of Group，以及 disabled 的 Close Tabs to the Right of Group。没有选择方向关闭项。结束截图保存后仅恢复原始设置，没有再重建页面序列。",
+    "before": "Comfortable 外部从左到右为普通 A、普通 B、普通 C、展开的 TC-PHI507-r2-SET-05-COM-G[D,E]；组标题显示成员数 2。关键动作前 Close tabs by position=off、Double-click to close tabs=off。",
+    "confirmation_choices": "本项开始清理上一项 TC-PHI507-r2-SET-05-BAL-G 时，原生确认框显示 Close Tabs and Delete Group?，Don't Ask Again=0；点击 Delete Group，未勾选 Don't Ask Again。新组重命名时点击 Save。开启开关、查看菜单及收尾恢复设置均无确认框。",
+    "evidence_markers": [
+      "EVIDENCE: SET-05-COM setup-layout",
+      "IDENTITY SET-05-COM A",
+      "IDENTITY SET-05-COM B",
+      "IDENTITY SET-05-COM C",
+      "IDENTITY SET-05-COM D",
+      "IDENTITY SET-05-COM E",
+      "EVIDENCE: SET-05-COM attempt1 before",
+      "EVIDENCE: SET-05-COM attempt1 before-toggle",
+      "EVIDENCE: SET-05-COM attempt1 after-B-menu",
+      "EVIDENCE: SET-05-COM attempt1 after-group-menu",
+      "EVIDENCE: SET-05-COM attempt1 after",
+      "EVIDENCE: SET-05 session restored-switches",
+      "EVIDENCE: SET-05 session restored-layout-language",
+      "EVIDENCE: SET-05 session ending"
+    ],
+    "identity_checks": "A 至 E 均逐页屏幕实见相应 TC 标题、批次 TC-PHI507-r2-SET-05-COM、页面类型普通页及空输入框。本次打开编号：A=b7fd5d54-1796-48e5-922d-8d8ff9175b2c；B=8c70694d-0314-47e8-8473-fe26ff16859a；C=ae1a9780-7160-4ff3-b3cf-83f4f990b9b9；D=b8f31060-a67a-4406-9301-695c68117949；E=19890747-5ff9-4ab3-9876-288b2df53d5b。动作前、菜单截图、结束及会话收尾时 B 编号一致。D 经 New Tab Group 建组，E 经 Add to Group 加入；屏幕实见组标题位于 C 后、D/E 前并显示成员数 2。没有输入标记或未保存页。未切换保护页，不宣称其输入标记和打开编号已被本项验证。",
+    "language_observed": "本项及收尾 General 均实读 Display language=System Default；浏览器界面及菜单为英文。未切换语言。",
+    "layout_observed": "本项通过 General 原生 UI 选择 Comfortable，截图实见选中边框；浏览器外部标签栏横向左右排列。收尾重新读取仍为 Comfortable。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "本项开始才选择 Comfortable 并将位置关闭开关先关。通过当前 Space 新建 New Tab、Close Other Tabs 及删除上一项测试组确认清理旧集合，再独立建立本项 A/B/C/D/E。按原生菜单建立并重命名 TC-PHI507-r2-SET-05-COM-G，将 E 加入 D 所在组。屏幕核实 A、B、C、G[D,E] 的真实左右顺序后才执行被测动作。",
+    "settings_observed": "关键动作前位置关闭 off、双击关闭 off；开启后原生返回位置关闭 on、双击关闭 off。被测动作期间未重启。结束证据保存后，进入 Advanced 将位置关闭恢复为起始 off，双击关闭仍为 off；General 实见 Comfortable、System Default。最后关闭 Settings。",
+    "steps_executed": [
+      "打开 Settings，在 General 选择 Comfortable，读取语言并截图确认真实布局。",
+      "在 Advanced 关闭位置关闭开关，确认双击关闭保持 off。",
+      "新建 New Tab，以 Close Other Tabs 清理上一项测试页与组，明确处理删除确认。",
+      "从 A 开始顺序建立本项五个普通 fixture，逐页核对可见身份。",
+      "将 D 新建为组，重命名 TC-PHI507-r2-SET-05-COM-G，并将 E 加入。",
+      "选择 B，核实实际左右顺序、组标题成员数和无 split 状态，保存动作前截图。",
+      "打开 Advanced，核对两个开关均为 off 并保存开关动作前截图。",
+      "开启 Close tabs by position，不重启。",
+      "关闭 Settings，重新打开 B 右键菜单并保存左右方向项截图。",
+      "关闭 B 菜单，打开组标题菜单并保存左右方向项及右侧项禁用状态截图。",
+      "关闭菜单并保存本项结束截图，未重建页面。",
+      "通过原生 Settings 恢复位置开关 off，确认双击开关 off、Comfortable、System Default，关闭 Settings 并保存会话最终截图。"
+    ],
+    "unit_id": "SET-05-COM"
+  }
+}

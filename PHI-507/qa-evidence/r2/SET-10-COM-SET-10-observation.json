@@ -1,0 +1,40 @@
+{
+  "unit_id": "SET-10-COM",
+  "job": "SET-10",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-10-observations.json",
+  "observation": {
+    "active_after": "唯一的 SET-10-COM A 导航标签；内容仍为 New Tab。",
+    "active_before": "前置核对时唯一的 SET-10-COM A 导航标签，工具栏显示 Stop。",
+    "after": "当前 Space 实际标签顺序：[A（SET-10-COM，未见 fixture 内容）]；无多选、组或 split；最终工具栏显示 Refresh，Settings 和菜单已关闭。",
+    "before": "独立清理重建后仅一个 SET-10-COM A 导航标签；未创建 B/C/D/E 或 TC-G。",
+    "confirmation_choices": "Close Other Tabs 未出现确认；收尾使用 Spaces 菜单明确暴露的 Cancel 动作关闭菜单，未选择任何 Space 或资料操作。",
+    "evidence_markers": [
+      "SET-10-COM attempt1 layout",
+      "SET-10-COM attempt1 settings",
+      "SET-10-COM attempt1 before",
+      "SET-10-COM attempt1 operator-menu-state",
+      "SET-10-COM attempt1 final-settings",
+      "SET-10-COM attempt1 failure",
+      "SET-10-COM attempt1 after"
+    ],
+    "identity_checks": "原生标签文本包含 tab=A、run=TC-PHI507-r2-SET-10-COM、kind=normal；最终按钮 Description 仍为 New Tab，屏幕未见 TC 标题、批次、本次打开编号或 fixture 输入框。Stop 消失后仍不能确认 fixture 已提交。",
+    "language_observed": "General 实读 System Default，实际界面英文；语言未改。",
+    "layout_observed": "选择 General 原生 Comfortable button 并截图确认；浏览器恢复外部横向标签栏，与本轮原始布局一致。",
+    "not_executed_reason": "独立重建 A 后直到最终 Refresh 状态，页面仍未展示 fixture 身份及输入框，无法完成完整前置；未执行开启、关闭开关及任何四种表面的双击动作。",
+    "operator_errors": [
+      "收尾读取 Spaces 菜单后，Escape 未使返回树中的菜单消失；随后 Cmd+, 已打开 Guest 设置窗口，但返回树仍被菜单占用。已停止依索引继续操作，get_app_state 保存 operator-menu-state 原生文本（该次 CU 未返回 image），再用菜单明确暴露的 Cancel 动作解除；未改变 Space 或测试对象。"
+    ],
+    "precondition_actual": "两个开关本项开始及最终均实读 off/off；只有一个 A 尝试导航标签，完整 A/B/C、TC-G[D,E] 前置未满足。",
+    "settings_observed": "本项开始及收尾读取 doubleClickToClose=off、directionalClosing=off；均未点击。布局恢复 Comfortable；快捷键未更改。",
+    "steps_executed": [
+      "打开 General，选择 Comfortable 并保存截图；进入 Advanced 读取 off/off 后关闭 Settings。",
+      "新建 New Tab，以原生 Close Other Tabs 清理上一项 A。",
+      "通过原生地址栏输入 SET-10-COM 的 A fixture URL 并 Return，get_app_state 保存前置现场。",
+      "读取 Spaces 菜单但未选择任何项目；处理菜单未关闭的操作状态。",
+      "重新进入 Advanced 核实最终 off/off，使用已确认的 Settings close button 关闭设置。",
+      "最终 get_app_state 显示唯一 A、Refresh 和 New Tab 内容，保存结束证据；未额外重建。"
+    ],
+    "unit_id": "SET-10-COM"
+  }
+}

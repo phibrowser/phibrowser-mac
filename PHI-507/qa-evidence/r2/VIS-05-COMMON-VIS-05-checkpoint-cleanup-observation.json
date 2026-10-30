@@ -1,0 +1,37 @@
+{
+  "unit_id": "VIS-05-COMMON",
+  "job": "VIS-05-checkpoint-cleanup",
+  "scope": "仅容量检查点偏好恢复与正常退出，不是VIS-05导出/最终清理验收；任务继续",
+  "source": "qa-evidence/r2/VIS-05-checkpoint-cleanup-observations.json",
+  "observation": {
+    "active_after": "退出前仍为 TC-C · TC-PHI507-r2-DBL-08-COM，单一选中；随后应用正常退出操作得到 CU 的 App quit 返回。",
+    "active_before": "TC-C · TC-PHI507-r2-DBL-08-COM。",
+    "after": "退出前集合保留为 A /（B + New Tab splitPair）/ C，无测试组；未创建、导航、关闭或删除测试页面。",
+    "before": "原生横向标签为 TC-A /（TC-B + New Tab splitPair）/ TC-C，均属 TC-PHI507-r2-DBL-08-COM；C 活动。",
+    "confirmation_choices": "首次 Command-Q 出现“Are you sure you want to quit Phi? / Any unsaved changes may be lost.”，选择 Cancel 后核对 Window 菜单仅列当前 TC-C 测试窗口；再次 Command-Q，在同一原生确认框选择 Quit。读取当前 Space 名称时打开 Rename Space 对话框，仅读取既有名称后选择 Cancel，未改名。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-before",
+      "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-general-after",
+      "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-advanced-after",
+      "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-ending-after",
+      "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-quit-result",
+      "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-quit-after"
+    ],
+    "identity_checks": "始终使用固定 app 路径；CU 实读 PID 始终为 71817。当前 Space 原生名称字段为 TC-QA-PHI507-r2-SET-08-COMMON-S1。C 正文实见批次 TC-PHI507-r2-DBL-08-COM、普通页、空输入框及打开编号 b0f7ead8-b3e7-4cc8-8929-3874afef8aa6，结束图编号一致。A/B 本次仅核对原生标签身份及配对结构，未逐页读取正文。",
+    "language_observed": "System Default，原生界面为英文；无需修改，未出现语言重启提示。",
+    "layout_observed": "起始 Comfortable；在 General 点击 Balanced 一次，结束截图显示 Balanced 被选中，关闭 Settings 后浏览器为外部纵向标签布局。",
+    "not_executed_reason": "仅检查点偏好恢复；本轮任务仍继续，VIS-05 导出与最终清理尚未执行",
+    "operator_errors": [],
+    "precondition_actual": "重新实读现有 QA app 与当前测试窗口，沿用并保留实际页面集合；本次未重建页面，未将检查点视为 VIS-05 验收。",
+    "settings_observed": "General：Comfortable→Balanced；System Default 保持不变。Advanced 初读 on/on；仅点击 Double-click to Close Tabs 一次后即时实读 off/on，未点击的 Close Tabs by Position 保持 on；最终 get_app_state 再读为 off/on。未操作快捷键或其他偏好。",
+    "steps_executed": [
+      "get_app_state 实读固定 QA app 的 PID、窗口和标签结构，并通过原生菜单读取 Space 列表。",
+      "Command-comma 打开 Settings，读取 General；保存动作前图，点击 Balanced，保存 checkpoint-general-after 原生状态与截图。",
+      "打开 Advanced，读取两个开关；仅将 Double-click to Close Tabs 从 on 切到 off，立即读取两个开关值，保存 checkpoint-advanced-after 原生状态与截图。",
+      "通过 Settings 的原生 close button 关闭设置；读取当前 Space 名称后取消名称对话框，保存 checkpoint-ending-after 原生状态与截图。",
+      "Command-Q 出现确认后先取消，核对 Window 菜单仅列当前 TC 测试窗口；返回窗口，再次 Command-Q 并点击 Quit。",
+      "记录 CU 返回“Computer Use server error -10005: App quit”；此后未调用 get_app_state。"
+    ],
+    "unit_id": "VIS-05-COMMON"
+  }
+}

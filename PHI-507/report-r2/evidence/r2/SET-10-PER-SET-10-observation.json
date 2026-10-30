@@ -1,0 +1,36 @@
+{
+  "unit_id": "SET-10-PER",
+  "job": "SET-10",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/SET-10-observations.json",
+  "observation": {
+    "active_after": "唯一选中的 SET-10-PER A 导航标签；内容仍为 New Tab。",
+    "active_before": "前置核对时唯一选中的 SET-10-PER A 导航标签。",
+    "after": "当前 Space 实际标签顺序：[A（SET-10-PER，未见 fixture 内容）]；单选 A，无组、无 split。工具栏仍显示 Stop。",
+    "before": "清理后实际标签顺序：[A（SET-10-PER，未见 fixture 内容）]；B/C/D/E 和 TC-G 尚未创建，无 split。",
+    "confirmation_choices": "原生 Close Other Tabs 未出现确认对话框；未勾选任何“不再询问”。",
+    "evidence_markers": [
+      "SET-10-PER attempt1 layout",
+      "SET-10-PER attempt1 setup-navigation",
+      "SET-10-PER attempt1 before",
+      "SET-10-PER attempt1 failure",
+      "SET-10-PER attempt1 after"
+    ],
+    "identity_checks": "原生标签值包含 tab=A、run=TC-PHI507-r2-SET-10-PER、kind=normal；屏幕为 New Tab，未见 TC 标题、批次、本次打开编号或 fixture 输入框，不能据 URL 确认页面已提交。",
+    "language_observed": "General 的 Display language 为 System Default；实际界面英文，未切换语言。",
+    "layout_observed": "开始实读 Comfortable；通过 General 原生 Performance button 切换并截图确认蓝框选中；浏览器外部标签栏为纵向。",
+    "not_executed_reason": "A 导航后多次读取仍为 New Tab，无法建立并核实普通 A/B/C、TC-G[D,E] 的完整前置；因此未执行开启后双击已有 B、新建普通页双击、反向关闭及四种表面的双击动作。",
+    "operator_errors": [],
+    "precondition_actual": "两个开关实读 off/off；仅建立了一个尝试导航本项 A 的标签，页面身份未能确认，完整前置未满足。",
+    "settings_observed": "settings.tabs.doubleClickToClose=off；settings.tabs.directionalClosing=off；均未点击。快捷键未更改。",
+    "steps_executed": [
+      "get_app_state 实读 W2 当前状态。",
+      "以 Cmd+, 打开 Settings，读取 General 的原始语言和 Comfortable 布局。",
+      "选择 Performance，进入 Advanced 读取两个开关 off/off，关闭 Settings。",
+      "在当前测试 Space 新建标签，经原生地址栏输入 SET-10-PER 的 A fixture URL 并 Return。",
+      "对新标签使用原生 Close Other Tabs，关闭该 Space 原有的 SET-08-COMMON B 尝试导航标签。",
+      "重新读取唯一 A 的原生状态和截图；因页面身份缺失停止被测动作，保留现场至下一项开始。"
+    ],
+    "unit_id": "SET-10-PER"
+  }
+}

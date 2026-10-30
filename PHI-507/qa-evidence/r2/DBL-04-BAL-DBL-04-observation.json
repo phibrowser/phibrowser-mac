@@ -1,0 +1,42 @@
+{
+  "unit_id": "DBL-04-BAL",
+  "job": "DBL-04",
+  "scope": "本执行点的实际步骤",
+  "source": "qa-evidence/r2/DBL-04-observations.json",
+  "observation": {
+    "active_after": "双击后立即为 C；随后逐页核对 A、D，结束取证时活动页 D。",
+    "active_before": "B；分屏左侧 B 有焦点边框，无多选。",
+    "after": "原生顺序 A/C/D；B 不再列出，C 为独立单页，split 配对消失。A、C、D 原打开编号继续可见；未出现批量关闭界面。",
+    "before": "纵向标签顺序 A、S[B,C]、D；S 标签行左半格 B、右半格 C，正文左右分屏 B/C；无标签组。",
+    "confirmation_choices": "未出现确认对话框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-04-BAL attempt1 settings-layout",
+      "EVIDENCE: DBL-04-BAL attempt1 settings-switches",
+      "EVIDENCE: DBL-04-BAL attempt1 setup-A",
+      "EVIDENCE: DBL-04-BAL attempt1 setup-B",
+      "EVIDENCE: DBL-04-BAL attempt1 setup-C",
+      "EVIDENCE: DBL-04-BAL attempt1 setup-D",
+      "EVIDENCE: DBL-04-BAL attempt1 coordinate-calibration",
+      "EVIDENCE: DBL-04-BAL attempt1 before",
+      "EVIDENCE: DBL-04-BAL attempt1 after",
+      "EVIDENCE: DBL-04-BAL attempt1 retained-A",
+      "EVIDENCE: DBL-04-BAL attempt1 retained-D"
+    ],
+    "identity_checks": "关键前后固定 QA app，pid 71817。四页均实见 TC 标题、批次 TC-PHI507-r2-DBL-04-BAL、普通页说明和空输入框。打开编号：A=11d8ec43-80ad-417f-be54-4068fe335f4b；B=c3ff8e06-e316-42ae-b4c5-214bb892fb9b；C=9d076c86-d03c-42fd-b0c7-a580045a6a6d；D=9199e4e7-0bb0-490f-bb8a-41493ba83611。操作后逐页核对 A/C/D 编号一致，输入框仍空。",
+    "language_observed": "General 显示 System Default；英文界面。",
+    "layout_observed": "通过 General 从 Performance 切为 Balanced，截图显示 Balanced 选中；浏览器 chrome 为纵向标签栏，地址栏位于正文上方。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "新建 New Tab 后原生 Close Other Tabs 清理 PER 留下的普通页，重新通过地址栏建立本项 A-D；激活 B，对 C 使用 Split with Current，实见 A、S[B,C]、D。双击关闭 on。",
+    "settings_observed": "本项 Advanced 实读双击关闭 on、方向关闭 on；均未点击。",
+    "steps_executed": [
+      "切换 Balanced 并截图确认，重新建立四页并逐页核对身份。",
+      "通过 C 的 Split with Current 建立普通分屏，核对真实顺序及 B/C 配对。",
+      "安全空白区单击校准，原图指针与输入坐标一致。",
+      "保存 before 的 get_app_state 原生文字及 image。",
+      "对原图 B 标签半格内坐标 (105,355) 发送一次 click_count=2。",
+      "保存 after 的 get_app_state，并逐页查看 A、D 的存活身份。"
+    ],
+    "unit_id": "DBL-04-BAL"
+  }
+}

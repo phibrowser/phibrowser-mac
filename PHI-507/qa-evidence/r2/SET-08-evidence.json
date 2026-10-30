@@ -1,0 +1,74 @@
+[
+  {
+    "unit_id": "SET-08-COMMON",
+    "attempt": 1,
+    "phase": "before",
+    "file": "SET-08-COMMON-01.png",
+    "source_file": "SET-08-015.jpg",
+    "source_sha256": "f340387c1956e061a16ccf2256061434205ecd571b99fce0eba1a6af1889f708",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-08-COMMON",
+    "attempt": 1,
+    "phase": "failure",
+    "file": "SET-08-COMMON-02.png",
+    "source_file": "SET-08-017.jpg",
+    "source_sha256": "a2d2ca8a3fa5a1eb144c30ace99c6f511abe608f02b1bf587b13140954ba0fde",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-08-COMMON",
+    "attempt": 1,
+    "phase": "after",
+    "file": "SET-08-COMMON-03.png",
+    "source_file": "SET-08-018.jpg",
+    "source_sha256": "9d0b7d340641dd2ffa7b05d75ad44aff1678140361c3fac91f7013fa33c331d5",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  }
+]

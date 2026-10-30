@@ -1,0 +1,124 @@
+我会仅用指定应用的 Computer Use 完成 ENV-04：重新读取 B 的本次编号，输入并确认标记，切到 C 后再切回 B，并返回三个关键时点的截图与观察记录。
+
+Computer Use state (CUA App Version: 1001425)
+<app_specific_instructions>
+## Browser Computer Use
+
+When navigating to a new website or starting a separate web task, prefer opening a new tab instead of reusing the current tab; reuse the current tab only when the user explicitly asks to continue there or when the current page is clearly the right place to continue the existing workflow.
+</app_specific_instructions>
+<app_state>
+App=/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 46074)
+Window: "TC-F · TC-PHI507-r2", App: Phi Tab Close QA.
+0 standard window TC-F · TC-PHI507-r2, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507-r2
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selectable) Description: Website, Value: TC-A · TC-PHI507-r2
+				14 row (selectable) Description: Website, Value: TC-B · TC-PHI507-r2
+				15 row (selectable) Description: Website, Value: TC-C · TC-PHI507-r2
+				16 row (selectable) Description: Website, Value: TC-D · TC-PHI507-r2
+				17 row (selectable) Description: Website, Value: TC-E · TC-PHI507-r2
+				18 row (selected) Description: Website, Value: TC-F · TC-PHI507-r2
+		19 container sidebar.footer
+			20 button Description: Profile menu, ID: profile.menuButton
+			21 button
+		22 splitter (disabled, settable, float) 193
+		23 container
+			24 button Description: Back, ID: chevron.left
+			25 button (disabled) Description: Forward, ID: chevron.right
+			26 button Refresh
+			27 text woodnotfound.github.io
+			28 button Extensions
+	29 close button
+	30 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	31 minimize button
+32 menu bar
+	33 Phi
+	34 File
+	35 Edit
+	36 View
+	37 Spaces
+	38 History
+	39 Bookmarks
+	40 Tab
+	41 Window
+	42 Help
+	43 *DEBUG*
+
+</app_state>
+
+App=com.phibrowser.opensource.Mac (pid 46074)
+Window: "TC-B · TC-PHI507-r2", App: Phi Tab Close QA.
+0 standard window TC-B · TC-PHI507-r2, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507-r2
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selectable) Description: Website, Value: TC-A · TC-PHI507-r2
+				14 row (selected) Description: Website, Value: TC-B · TC-PHI507-r2
+				15 row (selectable) Description: Website, Value: TC-C · TC-PHI507-r2
+				16 row (selectable) Description: Website, Value: TC-D · TC-PHI507-r2
+				17 row (selectable) Description: Website, Value: TC-E · TC-PHI507-r2
+				18 row (selectable) Description: Website, Value: TC-F · TC-PHI507-r2
+		19 container sidebar.footer
+			20 button Description: Profile menu, ID: profile.menuButton
+			21 button
+		22 splitter (disabled, settable, float) 193
+		23 container
+			24 button Description: Back, ID: chevron.left
+			25 button (disabled) Description: Forward, ID: chevron.right
+			26 button Refresh
+			27 text woodnotfound.github.io
+			28 button Extensions
+	29 close button
+	30 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	31 minimize button
+32 menu bar
+	33 Phi
+	34 File
+	35 Edit
+	36 View
+	37 Spaces
+	38 History
+	39 Bookmarks
+	40 Tab
+	41 Window
+	42 Help
+	43 *DEBUG*
+
+
+已从当前 B 页面实际读到本次打开编号：`2a6e95cf-8074-4e05-b2ad-30972ab29ec8`，输入框当前为空。当前截图中，“存活标记 / 临时草稿”的 textarea 位于约 x=492–1587、y=920–1128；我将点击框内并先检查焦点。
+
+第一次坐标点击实际落在输入框上方的非交互区域，未输入内容；随后按一次 Tab，当前截图已显示 textarea 的绿色焦点边框和插入光标，确认焦点正确。现在输入指定标记。
+
+RESULT: ENV-04 已完成操作与屏幕观察，未作 pass 判定。固定应用为 `/Applications/Phi Tab Close QA.app`，全程仅使用 `mcp__computer_use` 获取状态、操作和截图。
+
+| 观察时点 | 从屏幕实际读取的 B 本次打开编号 | textarea 可见内容 |
+|---|---|---|
+| 输入前 | `2a6e95cf-8074-4e05-b2ad-30972ab29ec8` | 空，显示占位文字“输入可丢弃的测试标记” |
+| 输入后 | `2a6e95cf-8074-4e05-b2ad-30972ab29ec8` | `KEEP-B-507-r2` |
+| 单击 C、切回 B 后 | `2a6e95cf-8074-4e05-b2ad-30972ab29ec8` | `KEEP-B-507-r2` |
+
+B 编号在三个观察时点均未改变；输入内容由空变为 `KEEP-B-507-r2`，切到 C 再切回 B 后保持可见、未改变。输入前、输入后及切回后的三个关键 `get_app_state` image 均已直接返回于本轮工具结果中，未写文件。
+
+- **切换目标及索引：** 初始 F 活动；使用最新字符串 `element_index:"14"` 单击 B，输入后使用最新 `"15"` 单击 C，确认原生选中行及页面为 C，再使用最新 `"14"` 切回 B。
+- **最终原生顺序／活动页：** `New Tab → A → B → C → D → E → F`；六个 fixture 顺序仍为 `A → B → C → D → E → F`，最终 B 为 selected，窗口标题为 `TC-B · TC-PHI507-r2`，空间为 `TC-QA-PHI507-r2`。
+- **误操作记录：** 一次按当前截图定位的坐标点击实际落在 textarea 上方的非交互区域，未输入内容。随后按一次 Tab，通过截图中的绿色焦点边框和插入光标确认 textarea 获得焦点，才输入标记。
+- **未执行：** 未关闭、重载、导航、分组或改设置；未使用 CDP、API、网页 JS、DOM、AppleScript、System Events、AX 脚本、shell、文件操作或 memory 搜索。

@@ -1,0 +1,10 @@
+{
+  "port": 18210,
+  "pid": 54586,
+  "bind": "127.0.0.1",
+  "source_url": "https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/",
+  "http_status": 200,
+  "bytes": 7084,
+  "sha256": "d2b6a75d142a7c2624836557e90c07d0a15c8dd9ed0adb60f5fe2e152c951627",
+  "note": "仅HTTP服务端可用性检查，不是浏览器导航成功证据"
+}

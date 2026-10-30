@@ -1,0 +1,100 @@
+{
+  "base_case": "SET-10",
+  "ending_state": "前台为 /Applications/Phi Tab Close QA.app 的 TC-QA-PHI507-r2-SET-08-COMMON-W2。当前 Space 仅保留一个本轮新建标签：尝试导航 tab=A、run=TC-PHI507-r2-SET-10-COM、kind=normal；内容仍为 New Tab，最终工具栏已由 Stop 变为 Refresh，未出现 fixture 身份信息。布局已恢复本轮开始实读的 Comfortable；语言设置保持 System Default，界面为英文；两个开关最终实读 off/off，全程未点击开关，未更改快捷键。Settings 和原生菜单均已关闭。最后一项结束未额外重建序列。未操作其他窗口、Default、Chrome Web Store、原 TC-QA-PHI507-r2 内的对象、pin、书签或未知保存项。",
+  "observations": [
+    {
+      "active_after": "唯一选中的 SET-10-PER A 导航标签；内容仍为 New Tab。",
+      "active_before": "前置核对时唯一选中的 SET-10-PER A 导航标签。",
+      "after": "当前 Space 实际标签顺序：[A（SET-10-PER，未见 fixture 内容）]；单选 A，无组、无 split。工具栏仍显示 Stop。",
+      "before": "清理后实际标签顺序：[A（SET-10-PER，未见 fixture 内容）]；B/C/D/E 和 TC-G 尚未创建，无 split。",
+      "confirmation_choices": "原生 Close Other Tabs 未出现确认对话框；未勾选任何“不再询问”。",
+      "evidence_markers": [
+        "SET-10-PER attempt1 layout",
+        "SET-10-PER attempt1 setup-navigation",
+        "SET-10-PER attempt1 before",
+        "SET-10-PER attempt1 failure",
+        "SET-10-PER attempt1 after"
+      ],
+      "identity_checks": "原生标签值包含 tab=A、run=TC-PHI507-r2-SET-10-PER、kind=normal；屏幕为 New Tab，未见 TC 标题、批次、本次打开编号或 fixture 输入框，不能据 URL 确认页面已提交。",
+      "language_observed": "General 的 Display language 为 System Default；实际界面英文，未切换语言。",
+      "layout_observed": "开始实读 Comfortable；通过 General 原生 Performance button 切换并截图确认蓝框选中；浏览器外部标签栏为纵向。",
+      "not_executed_reason": "A 导航后多次读取仍为 New Tab，无法建立并核实普通 A/B/C、TC-G[D,E] 的完整前置；因此未执行开启后双击已有 B、新建普通页双击、反向关闭及四种表面的双击动作。",
+      "operator_errors": [],
+      "precondition_actual": "两个开关实读 off/off；仅建立了一个尝试导航本项 A 的标签，页面身份未能确认，完整前置未满足。",
+      "settings_observed": "settings.tabs.doubleClickToClose=off；settings.tabs.directionalClosing=off；均未点击。快捷键未更改。",
+      "steps_executed": [
+        "get_app_state 实读 W2 当前状态。",
+        "以 Cmd+, 打开 Settings，读取 General 的原始语言和 Comfortable 布局。",
+        "选择 Performance，进入 Advanced 读取两个开关 off/off，关闭 Settings。",
+        "在当前测试 Space 新建标签，经原生地址栏输入 SET-10-PER 的 A fixture URL 并 Return。",
+        "对新标签使用原生 Close Other Tabs，关闭该 Space 原有的 SET-08-COMMON B 尝试导航标签。",
+        "重新读取唯一 A 的原生状态和截图；因页面身份缺失停止被测动作，保留现场至下一项开始。"
+      ],
+      "unit_id": "SET-10-PER"
+    },
+    {
+      "active_after": "唯一选中的 SET-10-BAL A 导航标签；内容仍为 New Tab。",
+      "active_before": "前置核对时唯一选中的 SET-10-BAL A 导航标签。",
+      "after": "当前 Space 实际标签顺序：[A（SET-10-BAL，未见 fixture 内容）]；单选 A，无组、无 split，工具栏显示 Stop。",
+      "before": "独立清理重建后顺序：[A（SET-10-BAL，未见 fixture 内容）]；未创建后续 B/C/D/E。",
+      "confirmation_choices": "Close Other Tabs 未出现确认对话框；无其他确认选择。",
+      "evidence_markers": [
+        "SET-10-BAL attempt1 layout",
+        "SET-10-BAL attempt1 setup-navigation",
+        "SET-10-BAL attempt1 before",
+        "SET-10-BAL attempt1 failure",
+        "SET-10-BAL attempt1 after"
+      ],
+      "identity_checks": "原生选中行包含 tab=A、run=TC-PHI507-r2-SET-10-BAL、kind=normal；屏幕仍为 New Tab，未见 TC 标题、批次、本次打开编号或 fixture 输入框。",
+      "language_observed": "本项 General 再读为 System Default，实际界面英文；未切换语言。",
+      "layout_observed": "通过 General 原生 Balanced button 切换并截图确认蓝框选中；浏览器外部标签栏为纵向，内容工具栏位于上方。",
+      "not_executed_reason": "本项独立新建的 A 未显示 fixture 内容，完整序列及身份无法核实；未执行任何开关切换或指定双击动作。",
+      "operator_errors": [],
+      "precondition_actual": "Advanced 再读两个开关 off/off；仅有一个本项 A 尝试导航标签，普通 A/B/C、TC-G[D,E] 前置未完成。",
+      "settings_observed": "doubleClickToClose=off、directionalClosing=off；全程未点击，快捷键未更改。",
+      "steps_executed": [
+        "打开 General，选择 Balanced 并保存布局截图。",
+        "进入 Advanced，分别读取两个控件均为 off，关闭 Settings。",
+        "新建 New Tab，通过其原生 Close Other Tabs 清理上一项 A。",
+        "经原生地址栏输入 SET-10-BAL 的 A fixture URL 并 Return。",
+        "多次 get_app_state 核实唯一选中 A、Stop 和 New Tab 内容；未继续构造组或 split，保留结束现场。"
+      ],
+      "unit_id": "SET-10-BAL"
+    },
+    {
+      "active_after": "唯一的 SET-10-COM A 导航标签；内容仍为 New Tab。",
+      "active_before": "前置核对时唯一的 SET-10-COM A 导航标签，工具栏显示 Stop。",
+      "after": "当前 Space 实际标签顺序：[A（SET-10-COM，未见 fixture 内容）]；无多选、组或 split；最终工具栏显示 Refresh，Settings 和菜单已关闭。",
+      "before": "独立清理重建后仅一个 SET-10-COM A 导航标签；未创建 B/C/D/E 或 TC-G。",
+      "confirmation_choices": "Close Other Tabs 未出现确认；收尾使用 Spaces 菜单明确暴露的 Cancel 动作关闭菜单，未选择任何 Space 或资料操作。",
+      "evidence_markers": [
+        "SET-10-COM attempt1 layout",
+        "SET-10-COM attempt1 settings",
+        "SET-10-COM attempt1 before",
+        "SET-10-COM attempt1 operator-menu-state",
+        "SET-10-COM attempt1 final-settings",
+        "SET-10-COM attempt1 failure",
+        "SET-10-COM attempt1 after"
+      ],
+      "identity_checks": "原生标签文本包含 tab=A、run=TC-PHI507-r2-SET-10-COM、kind=normal；最终按钮 Description 仍为 New Tab，屏幕未见 TC 标题、批次、本次打开编号或 fixture 输入框。Stop 消失后仍不能确认 fixture 已提交。",
+      "language_observed": "General 实读 System Default，实际界面英文；语言未改。",
+      "layout_observed": "选择 General 原生 Comfortable button 并截图确认；浏览器恢复外部横向标签栏，与本轮原始布局一致。",
+      "not_executed_reason": "独立重建 A 后直到最终 Refresh 状态，页面仍未展示 fixture 身份及输入框，无法完成完整前置；未执行开启、关闭开关及任何四种表面的双击动作。",
+      "operator_errors": [
+        "收尾读取 Spaces 菜单后，Escape 未使返回树中的菜单消失；随后 Cmd+, 已打开 Guest 设置窗口，但返回树仍被菜单占用。已停止依索引继续操作，get_app_state 保存 operator-menu-state 原生文本（该次 CU 未返回 image），再用菜单明确暴露的 Cancel 动作解除；未改变 Space 或测试对象。"
+      ],
+      "precondition_actual": "两个开关本项开始及最终均实读 off/off；只有一个 A 尝试导航标签，完整 A/B/C、TC-G[D,E] 前置未满足。",
+      "settings_observed": "本项开始及收尾读取 doubleClickToClose=off、directionalClosing=off；均未点击。布局恢复 Comfortable；快捷键未更改。",
+      "steps_executed": [
+        "打开 General，选择 Comfortable 并保存截图；进入 Advanced 读取 off/off 后关闭 Settings。",
+        "新建 New Tab，以原生 Close Other Tabs 清理上一项 A。",
+        "通过原生地址栏输入 SET-10-COM 的 A fixture URL 并 Return，get_app_state 保存前置现场。",
+        "读取 Spaces 菜单但未选择任何项目；处理菜单未关闭的操作状态。",
+        "重新进入 Advanced 核实最终 off/off，使用已确认的 Settings close button 关闭设置。",
+        "最终 get_app_state 显示唯一 A、Refresh 和 New Tab 内容，保存结束证据；未额外重建。"
+      ],
+      "unit_id": "SET-10-COM"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

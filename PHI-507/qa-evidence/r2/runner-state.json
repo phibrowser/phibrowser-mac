@@ -1,0 +1,8 @@
+{
+  "job": "SET-08-retry",
+  "started_at": "2026-10-30T10:27:37.531537+00:00",
+  "state": "running",
+  "units": [
+    "SET-08-COMMON"
+  ]
+}

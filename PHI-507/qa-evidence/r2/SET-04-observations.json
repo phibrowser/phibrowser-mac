@@ -1,0 +1,106 @@
+{
+  "base_case": "SET-04：关闭位置功能：组菜单隐藏。固定应用为 /Applications/Phi Tab Close QA.app。仅执行 SET-04-PER、SET-04-BAL、SET-04-COM 三个指定执行点，记录实际界面与菜单内容，不作 pass/fail 判断。",
+  "ending_state": "最后保留 TC-PHI507-r2-SET-04-COM 批次的实际结束状态：Comfortable 外部横向顺序为普通 A、展开的 TC-PHI507-r2-SET-04-COM-G[B,C]、普通 D；B 单独活动，无多选，无 split。组标题显示成员数 2。右键菜单和 Settings 均已关闭。最后一项结束后未再清理或重建页面。布局已随最后一项恢复为本轮起始实读的 Comfortable；Display language 保持 System Default，实际浏览器界面为英文；Close tabs by position 与 Double-click to close tabs 均保持本轮起始实读的 off。未切换 Default，未操作 Chrome Web Store、原有 pin、书签、未知保存项或其他窗口；未创建 Profile、Space 或窗口，未启动 Canary。",
+  "observations": [
+    {
+      "active_after": "B 单独活动；无多选。",
+      "active_before": "B 单独活动；无多选。",
+      "after": "外部从上到下仍为 A、展开的 G[B,C]、D，四个测试页均保留，无 split。组标题菜单实际显示 New Tab in Group、Rename Group、Change Color、Collapse Group、Ungroup、Close Group。B 成员菜单实际显示 Pin、Duplicate、Copy Link、Open as Split、Add to Bookmark、Add to Folder、Move to New Group、Remove from Group、Move to Space、Close、Close Other Tabs。两个菜单均未见 Close Tabs Above、Close Tabs Below 或其他方向关闭项；记录后均用 Escape 收起。",
+      "before": "TC-QA-PHI507-r2 Space 内，普通页 A、展开的 TC-PHI507-r2-SET-04-PER-G[B,C]、普通页 D；外部顺序从上到下为 A、G 标题、B、C、D。B 活动，无多选，无 split。",
+      "confirmation_choices": "建立组后通过 Rename Group 输入 TC-PHI507-r2-SET-04-PER-G 并选择 Save。两个被测菜单仅展开和收起，未选择菜单命令，未触发关闭确认。",
+      "evidence_markers": [
+        "EVIDENCE: SET-04-PER attempt1 before",
+        "EVIDENCE: SET-04-PER attempt1 group-menu",
+        "EVIDENCE: SET-04-PER attempt1 member-menu",
+        "EVIDENCE: SET-04-PER attempt1 after"
+      ],
+      "identity_checks": "建立前置时逐页实见 TC-A/TC-B/TC-C/TC-D、批次 TC-PHI507-r2-SET-04-PER、页面类型普通页和空输入框。打开编号：A=8f1e75c5-d100-4422-a115-d197aa40603a；B=538ca7ea-41f4-432e-8138-e7036f71cd9f；C=a76ce2f0-ae2a-4731-a575-16161d897eaf；D=e5d26849-17c7-4293-896d-e3b85020b276。关键前后 B 屏幕均显示同一打开编号和空输入框。原生树明确将 B、C 列在本项 G 的成员表内，A、D 在组外。未切换未知保护对象核对其内容。",
+      "language_observed": "General 实读 Display language=System Default；设置界面和被测菜单实际为英文。未切换语言，未出现语言重启提示。",
+      "layout_observed": "通过 General 原生 UI 选择 Performance，并以截图中 Performance 卡片的选中边框确认；浏览器实际显示外部纵向标签栏。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "本项准备阶段打开 Settings 时，一次 functions.exec 输出编排误将 Computer Use 返回对象整体传给 text，导致图片编码文本被打印。随后改为仅输出原生文字和 image；没有写文件，也未使用额外浏览器控制方式。",
+        "准备阶段在 B 活动时尝试 Shift+Down，原生返回仍仅 B 选中，未据此认定已多选。之后通过 B 的 New Tab Group 和 C 的 Add to Group 建立成员关系；未重试该键盘选择操作。该次未形成多选的返回未单独输出 failure 标记截图，后续组建立截图保留了实际现场。"
+      ],
+      "precondition_actual": "先实读当前应用，确认起始为 SET-03-COM 的 A/B/C、B 活动及 Comfortable；General 的 Display language 为 System Default，Advanced 的 Close tabs by position 和 Double-click to close tabs 均为 off。随后选择 Performance；在本轮 Space 新建 New Tab，原生 Close Other Tabs 清理原来的测试普通页，经地址栏依次创建本项 A/B/C/D。B 通过 New Tab Group 建组并重命名为本项 G，C 通过 Add to Group 加入。最终屏幕及原生树确认 A、G[B,C]、D 后才执行两个指定右键动作。",
+      "settings_observed": "Close tabs by position=off；Double-click to close tabs=off。未切换这两个开关。",
+      "steps_executed": [
+        "通过原生 Settings > General 选择并屏幕确认 Performance；在 Advanced 读取位置关闭开关为 off。",
+        "在 TC-QA-PHI507-r2 Space 原生清理并重建本项普通 A/B/C/D，逐页确认实际 fixture 内容。",
+        "通过 B 的 New Tab Group、Rename Group > Save，以及 C 的 Add to Group，建立 TC-PHI507-r2-SET-04-PER-G[B,C]。",
+        "get_app_state 输出 before 原生截图与顺序、成员关系。",
+        "右键 G 标题，读取菜单并输出 group-menu 原生截图。",
+        "Escape 收起组菜单；右键组内 B，读取菜单并输出 member-menu 原生截图。",
+        "Escape 收起成员菜单；get_app_state 输出 after 原生截图，保留实际结束状态至下一项开始。"
+      ],
+      "unit_id": "SET-04-PER"
+    },
+    {
+      "active_after": "B 单独活动；无多选。",
+      "active_before": "B 单独活动；无多选。",
+      "after": "外部从上到下仍为 A、展开的 G[B,C]、D，四个测试页均保留，无 split。组标题菜单实际显示 New Tab in Group、Rename Group、Change Color、Collapse Group、Ungroup、Close Group。B 成员菜单实际显示 Pin、Duplicate、Copy Link、Open as Split、Add to Bookmark、Add to Folder、Move to New Group、Remove from Group、Move to Space、Close、Close Other Tabs。两个菜单均未见方向关闭项；记录后均用 Escape 收起。",
+      "before": "TC-QA-PHI507-r2 Space 内，普通页 A、展开的 TC-PHI507-r2-SET-04-BAL-G[B,C]、普通页 D；外部顺序从上到下为 A、G 标题、B、C、D。B 活动，无多选，无 split。",
+      "confirmation_choices": "本项开始清理上一批测试对象时，Close Other Tabs 出现 Close Tabs and Delete Group?；屏幕显示 Don't Ask Again=0，选择 Delete Group，未勾选 Don't Ask Again。仅删除上一项本轮测试组。建立本项组时 Rename Group 选择 Save。两个被测右键菜单未执行任何菜单命令。",
+      "evidence_markers": [
+        "EVIDENCE: SET-04-BAL layout",
+        "EVIDENCE: SET-04-BAL attempt1 before",
+        "EVIDENCE: SET-04-BAL attempt1 group-menu",
+        "EVIDENCE: SET-04-BAL attempt1 member-menu",
+        "EVIDENCE: SET-04-BAL attempt1 after"
+      ],
+      "identity_checks": "逐页实见 TC-A/TC-B/TC-C/TC-D、批次 TC-PHI507-r2-SET-04-BAL、普通页和空输入框。打开编号：A=d42c11b9-7e3a-4845-ab78-12f68ef8d0cc；B=a893f51e-0fb2-4e5e-8ecd-a9a2ad058635；C=23a6d0cf-4c2f-4a63-a7f5-8e61e0cdb039；D=54c0b9e5-273c-4ca8-9a43-542acf78648b。关键前后 B 屏幕显示同一打开编号和空输入框。原生树明确显示本项 G 的成员为 B、C，A、D 位于组外。未切换未知保护对象核对其内容。",
+      "language_observed": "本项 General 重读 Display language=System Default；设置界面和两个被测菜单实际为英文。未切换语言。",
+      "layout_observed": "通过 General 原生 UI 选择 Balanced，并以 layout 截图中 Balanced 卡片的选中边框确认；浏览器实际显示外部纵向标签栏和内容上方工具栏。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "在本项开始时通过 General 选择 Balanced，Advanced 重读 Close tabs by position=off。新建 New Tab 后通过原生 Close Other Tabs 并确认删除上一项测试组，核实只剩新建测试页，再通过地址栏依次建立本项 A/B/C/D。用 B 的 New Tab Group 建立本项 G 并重命名，C 通过 Add to Group 加入。最终屏幕及原生树确认 A、G[B,C]、D，B 活动，才执行指定动作；未沿用上一项页面或组。",
+      "settings_observed": "Close tabs by position=off；Double-click to close tabs=off，均于本项准备时原生重读，未修改。",
+      "steps_executed": [
+        "通过原生 Settings > General 选择并截图确认 Balanced；在 Advanced 重读位置关闭开关为 off。",
+        "新建 New Tab，原生 Close Other Tabs；在测试组删除确认中选择 Delete Group，保持 Don't Ask Again 未勾选。",
+        "通过原生地址栏依次创建本项 A/B/C/D，逐页确认页面标题、批次、打开编号及空输入框。",
+        "通过 B 的 New Tab Group、Rename Group > Save，以及 C 的 Add to Group 建立本项 G[B,C]。",
+        "get_app_state 输出 before 原生截图。",
+        "右键 G 标题，读取菜单并输出 group-menu 原生截图。",
+        "Escape 后右键组内 B，读取菜单并输出 member-menu 原生截图。",
+        "Escape 收起菜单，get_app_state 输出 after 原生截图，保留结束状态至下一项开始。"
+      ],
+      "unit_id": "SET-04-BAL"
+    },
+    {
+      "active_after": "B 单独活动；无多选。",
+      "active_before": "B 单独活动；无多选。",
+      "after": "外部横向顺序仍为普通 A、展开的 G[B,C]、普通 D；G 标题显示成员数 2，B 活动，四个测试页均保留，无 split。组标题菜单实际显示 New Tab in Group、Rename Group、Change Color、Collapse Group、Ungroup、Close Group。B 成员菜单实际显示 Pin、Duplicate、Copy Link、Open as Split、Add to Bookmark Bar、Add to Folder、Move to New Group、Remove from Group、Move to Space、Close、Close Other Tabs。两个菜单均未见 Close Tabs to the Left、Close Tabs to the Right 或其他方向关闭项。最后收起菜单并保留实际结束状态。",
+      "before": "TC-QA-PHI507-r2 Space 内，本项普通 A、TC-PHI507-r2-SET-04-COM-G[B,C]、普通 D。屏幕从左到右为 A、G 标题及成员数 2、B、C、D；B 单独活动，无多选，无 split。组由 B 原生建组后将 C 原生加入。",
+      "confirmation_choices": "本项开始通过 Close Other Tabs 清理上一批测试对象时，出现 Close Tabs and Delete Group?；Don't Ask Again=0，选择 Delete Group，未勾选 Don't Ask Again。仅删除上一项本轮测试组。建立本项 G 时 Rename Group 选择 Save。被测菜单仅展开和收起，未执行关闭、取消分组等命令。",
+      "evidence_markers": [
+        "EVIDENCE: SET-04-COM layout",
+        "EVIDENCE: SET-04-COM attempt1 before",
+        "EVIDENCE: SET-04-COM attempt1 group-menu",
+        "EVIDENCE: SET-04-COM attempt1 member-menu",
+        "EVIDENCE: SET-04-COM attempt1 after"
+      ],
+      "identity_checks": "逐页实见 TC-A/TC-B/TC-C/TC-D、批次 TC-PHI507-r2-SET-04-COM、普通页和空输入框。打开编号：A=6a2e1766-4bcb-46de-9d90-a63c5f67f27a；B=cbb56c3e-196b-4051-9f9d-749505927173；C=002ed64f-c03d-4154-91e2-5fdf87d529e9；D=e0e6a574-fe3e-46e4-a86f-e61e30ad35b8。关键前后 B 屏幕显示同一打开编号和空输入框。通过 B 的 New Tab Group 建立组、C 的 Add to Group 选择本项具名组，随后原生标题显示 G 2；被测 B 菜单显示 Remove from Group，确认 B 在组内。未切换未知保护对象核对其内容。",
+      "language_observed": "本项 General 重读 Display language=System Default；设置与被测菜单实际为英文。未切换语言。",
+      "layout_observed": "通过 General 原生 UI 选择 Comfortable，并以 layout 截图中 Comfortable 卡片的选中边框确认；浏览器实际为外部横向标签栏。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项开始通过 General 选择 Comfortable，在 Advanced 原生重读 Close tabs by position=off。新建 New Tab，原生 Close Other Tabs 并确认删除上一批测试组，核实清理后只剩新建测试页。通过地址栏依次创建本项 A/B/C/D，逐页实见 fixture 内容；B 原生 New Tab Group 后重命名为本项 G，C 原生 Add to Group 加入。屏幕确认 A、G[B,C]、D 及组成员数 2，B 活动后执行指定动作。未沿用上一项页面或组。",
+      "settings_observed": "Close tabs by position=off；Double-click to close tabs=off，于本项准备时重读。Comfortable 与本轮起始实读布局一致；语言和两个关闭开关始终保持起始值，无需额外恢复操作。",
+      "steps_executed": [
+        "通过原生 Settings > General 选择并截图确认 Comfortable；在 Advanced 重读位置关闭开关为 off。",
+        "新建 New Tab，原生 Close Other Tabs；测试组删除确认中选择 Delete Group，保持 Don't Ask Again 未勾选。",
+        "通过原生地址栏依次重建本项 A/B/C/D，逐页确认页面标题、批次、打开编号及空输入框。",
+        "通过 B 的 New Tab Group 和 Rename Group > Save 建立具名 G；通过 C 的 Add to Group 加入本项 G。",
+        "get_app_state 输出 before 原生截图，确认横向顺序和成员数 2。",
+        "右键 G 标题，读取菜单并输出 group-menu 原生截图。",
+        "Escape 后右键组内 B，读取菜单并输出 member-menu 原生截图。",
+        "Escape 收起菜单，get_app_state 输出 after 原生截图；未在最后一项结束后额外清理或重建。"
+      ],
+      "unit_id": "SET-04-COM"
+    }
+  ],
+  "tools_outside_computer_use": [
+    "functions.exec：仅用于发现 Computer Use 工具定义、顺序编排 mcp__computer_use 调用、在内存中解析其原生状态树，以及输出原生文字和 image。一次输出编排误打印了含图片编码的完整 Computer Use 返回对象，已在 SET-04-PER 的 operator_errors 中记录。未使用 shell、文件读写、记忆搜索、CDP、浏览器 API、网页 JS/DOM、网络请求或其他会话。"
+  ]
+}

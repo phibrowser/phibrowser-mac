@@ -1,0 +1,6 @@
+本次为 ENV-03 的导航恢复诊断，不必重新完整 A-F；先保留当前 loading 失败现场，并按顺序做以下有限恢复，成功后停止恢复步骤再建立并读出 A-F 身份。全部只用 Computer Use。不要尝试 CDP、JS、文件或shell。
+1. 当前地址栏读取实际显示的完整 URL，页面/工具栏截图。用原生 Stop、Reload 观察；再从地址栏尝试 https://example.com/，必要时尝试 http://example.com/ 和手册 fixture，分开记录实际文本与状态。
+2. 若均不提交，正常 Cmd+Q，明确处理 Quit；重新启动必须使用 Computer Use 的实际启动/打开应用动作（可查看该工具定义），始终指定 /Applications/Phi Tab Close QA.app，不使用 shell/open 或歧义bundle id。不要仅假定 get_app_state 已完整启动引擎。
+3. 重新读取页面及正常导航 fixture。可通过 Finder 的前往文件夹/选择完整 app 并原生打开来启动，仍只用 Computer Use。若有权限/确认框，保存并按测试应用范围处理；不改系统安全设置，不登录。
+4. 如仍无法导航，可在本轮可丢弃测试 Profile/Space 创建一个新的 TC-PHI507-r2-Recovery 测试 Space，尝试公开HTTPS和 fixture；只允许一个新的测试 Profile（本地/Guest，不登录），记录实际结果。保留 Default Chrome Web Store。不清理浏览器内部数据/不重装共享 app。
+不要反复同样重试。每一步记录实际工具、前后原生状态，是否出现真实HTML内容，超时持续时间；导航未修复也如实输出，不能因为标签/域名变化认定成功。最后恢复两个开关 off/on、Balanced、System Default（实际英文），保留失败现场以便后续判断。

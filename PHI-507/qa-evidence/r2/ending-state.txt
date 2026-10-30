@@ -1,0 +1,1 @@
+/Applications/Phi Tab Close QA.app 保持运行，PID 54426。当前为新建的 TC-PHI507-r2-Recovery Space，同一批次 TC-PHI507-r2-ENV-03-COMMON 的六个普通页按界面从上到下为 A → B → C → D → E → F，活动页及唯一选中页为 F；无分屏、无组。最终设置为 Double-click to close tabs=off、Close tabs by position=on、Balanced、System Default，浏览器界面实际为英文。Settings 和菜单已关闭，未再重建序列。先前加载失败和错误页现场已通过会话图片保留；原窗口及其他 Space 未删除，未操作 Default 的 Chrome Web Store、pin、书签或未知保存项。

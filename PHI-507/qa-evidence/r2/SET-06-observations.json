@@ -1,0 +1,401 @@
+{
+  "base_case": "SET-06：开关组合互不影响。仅使用 /Applications/Phi Tab Close QA.app 的 Computer Use 原生界面操作并记录实际观察；未作 pass/fail 判断。每个执行点及有效重试均通过 General 选择并截图确认外部布局，通过 Advanced 实读两个开关，再清理本轮普通测试页并重新创建该执行点批次的 A/B/C。双击对象为最后新建的普通 C，随后打开 B 的右键菜单，只观察菜单，不点击方向关闭项。",
+  "ending_state": "最后保留 TC-PHI507-r2-SET-06-COM-on-on 批次的实际结束集合：Comfortable 外部从左到右为普通 A、普通 B；C 已在最后一项双击中关闭。B 单独活动，无多选、无 split、无标签组。最后一项结束后没有额外重建 A/B/C。B 的右键菜单及 Settings 已关闭。收尾通过原生设置界面确认 Double-click to close tabs=off、Close tabs by position=off，恢复本轮起始实读值；General 截图确认 Comfortable，Display language=System Default，实际浏览器界面英文。收尾证据为 SET-06 session-restore switches、SET-06 session-restore language-layout、SET-06 ending-state。首项 setup 清理了旧 TC-PHI507-r2-SET-05-COM 普通页及该批次 G[D,E] 组，确认框选择 Delete Group，未勾 Don't Ask Again。全程未退出或重启浏览器，未启动 Canary，未创建 Profile、Space 或其他浏览器窗口，未切换 Default，未操作 Chrome Web Store、原有 pin、书签或未知保存项。其他窗口及受保护页面没有切换逐页核验，不宣称其输入标记或打开编号已验证。",
+  "observations": [
+    {
+      "active_after": "C 单独活动；右键目标为 B，打开菜单没有将活动页切换为 B。",
+      "active_before": "C 单独活动，选中集为 {C}。",
+      "after": "外部从上到下 A/B/C 均保留，无多选、无 split、无组。B 菜单显示 Close、Close Other Tabs，没有 Close Tabs Above 或 Close Tabs Below。",
+      "before": "TC-PHI507-r2-SET-06-PER-off-off 批次普通 A/B/C，外部从上到下 A、B、C；无组、无 split。",
+      "confirmation_choices": "首项 setup 的 Close Other Tabs 触发 Close Tabs and Delete Group?；已核对待清理对象为旧 TC-PHI507-r2-SET-05-COM-G，选择 Delete Group，Don't Ask Again 保持未勾选。被测双击及菜单观察没有确认框。",
+      "evidence_markers": [
+        "initial-language-layout and SET-06-PER-off-off layout",
+        "SET-06-PER-off-off settings",
+        "SET-06-PER-off-off identity-A",
+        "SET-06-PER-off-off identity-B",
+        "SET-06-PER-off-off identity-C",
+        "SET-06-PER-off-off attempt1 before",
+        "SET-06-PER-off-off attempt1 after"
+      ],
+      "identity_checks": "逐页实见 TC-A/TC-B/TC-C、批次 TC-PHI507-r2-SET-06-PER-off-off、普通页说明及空输入框。打开编号：A=90f41d1a-68a9-4c56-803e-f765ee8e87cd；B=bf9da337-e264-4a11-ad34-12d01e11a003；C=e17025a5-b90b-4076-896f-06467d8c60d7。结束截图 C 编号仍为该值。未向普通页输入标记。",
+      "language_observed": "General 实读 Display language=System Default；设置与菜单为英文，符合当前 en。",
+      "layout_observed": "General 原生选择 Performance，截图中 Performance 有选中边框；浏览器外部标签纵向排列。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "原生清理后重新建立本项普通 A/B/C，真实顺序 A→B→C，C 活动；双击关、位置关。",
+      "settings_observed": "Double-click to close tabs=off；Close tabs by position=off。两项均与起始实读一致，未额外切换其他偏好。",
+      "steps_executed": [
+        "重读应用及原始设置，General 选择 Performance。",
+        "Advanced 核对 off/off；新建 New Tab，原生 Close Other Tabs 清理旧 TC 页面和 TC 组并遵循删除确认。",
+        "通过原生地址栏依次加载本项 A/B/C，逐页截图核对身份及最终顺序。",
+        "保存 before，双击原生 C 标签一次。",
+        "重读集合，右键 B，保存包含完整关闭菜单区域的 after。"
+      ],
+      "unit_id": "SET-06-PER-off-off"
+    },
+    {
+      "active_after": "B 单独活动，选中集 {B}。",
+      "active_before": "C 单独活动，选中集 {C}。",
+      "after": "C 关闭，外部从上到下保留 A/B；无多选、无 split、无组。B 菜单显示 Close、Close Other Tabs，没有 Above/Below 方向项。",
+      "before": "本项批次普通 A/B/C，外部从上到下 A、B、C。",
+      "confirmation_choices": "本项清理、双击及菜单观察未出现确认框；未选择菜单关闭命令。",
+      "evidence_markers": [
+        "SET-06-PER-on-off layout",
+        "SET-06-PER-on-off settings",
+        "SET-06-PER-on-off identity-A",
+        "SET-06-PER-on-off identity-B",
+        "SET-06-PER-on-off identity-C attempt1 before",
+        "SET-06-PER-on-off attempt1 after"
+      ],
+      "identity_checks": "逐页实见 TC 标题、本项批次、普通页、打开编号和空输入框。A=497610ef-e5ab-4ca9-a85f-1cd442877147；B=b8e9e5a6-c1b6-4479-a64a-41842dc528d；C=6c8b25c8-05a7-4e89-830a-fa4df327359。结束 B 截图编号仍为 b8e9e5a6-c1b6-4479-a64a-41842dc528d。",
+      "language_observed": "System Default，实际设置及菜单英文。",
+      "layout_observed": "本项通过 General 再次选择并截图确认 Performance；外部纵向标签栏。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "清理上一项页面后重建 TC-PHI507-r2-SET-06-PER-on-off 的 A/B/C，顺序与活动页已核对，无组、无 split；on/off。",
+      "settings_observed": "只将 Double-click to close tabs 从 off 改为 on，实读 Close tabs by position 仍为 off。",
+      "steps_executed": [
+        "关闭上一项菜单，General 原生选择 Performance。",
+        "Advanced 将双击开关设为 on，核对位置开关 off。",
+        "新建 New Tab 并 Close Other Tabs，原生地址栏依次建立本项 A/B/C。",
+        "逐页身份截图，C 页面截图作为关键 before。",
+        "双击 C，重读显示 A/B 且 B 活动；右键 B 并保存 after。"
+      ],
+      "unit_id": "SET-06-PER-on-off"
+    },
+    {
+      "active_after": "C 单独活动，选中集 {C}；B 为右键菜单目标。",
+      "active_before": "C 单独活动，选中集 {C}。",
+      "after": "A/B/C 保留，外部顺序 A→B→C；无组、无 split。B 菜单出现 Close Tabs Above、Close Tabs Below，两项均可用；同时显示 Close 和 Close Other Tabs。",
+      "before": "本项普通 A/B/C，外部从上到下 A、B、C。",
+      "confirmation_choices": "无确认框；方向项仅观察，未执行。",
+      "evidence_markers": [
+        "SET-06-PER-off-on layout",
+        "SET-06-PER-off-on settings",
+        "SET-06-PER-off-on identity-A",
+        "SET-06-PER-off-on identity-B",
+        "SET-06-PER-off-on identity-C attempt1 before",
+        "SET-06-PER-off-on attempt1 after"
+      ],
+      "identity_checks": "逐页核对 TC 标题、本项批次、普通页说明、空输入框及编号。A=24700d03-840c-4df6-8421-623980a17847；B=3ee7053c-4875-4910-a609-6e64dd76bb45；C=fc2ef261-836f-4500-9cfa-522d5bacb0c5。after 中 C 编号仍为该值。",
+      "language_observed": "System Default，实际界面英文。",
+      "layout_observed": "General 原生选择并截图确认 Performance；外部纵向标签栏。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "在本项开始前清理并重建 TC-PHI507-r2-SET-06-PER-off-on A/B/C；C 活动，无多选、无组、无 split；off/on。",
+      "settings_observed": "先只将双击 on→off，原生树实读位置仍 on/off 转换前的 off；再只将位置 off→on。最终 Double-click=off、Close tabs by position=on。",
+      "steps_executed": [
+        "General 选择 Performance。",
+        "Advanced 逐个修改本项指定开关，并保留中间两个开关的实读行及最终设置截图。",
+        "新建 New Tab、Close Other Tabs 后依次通过地址栏建立 A/B/C。",
+        "逐页截图核对身份及最终顺序，保存 before。",
+        "双击 C，重读 C 保留；右键 B，保存带 Above/Below 的 after。"
+      ],
+      "unit_id": "SET-06-PER-off-on"
+    },
+    {
+      "active_after": "B 单独活动，选中集 {B}。",
+      "active_before": "C 单独活动，选中集 {C}。",
+      "after": "C 关闭，外部从上到下 A/B。B 菜单有 Close Tabs Above（可用）、Close Tabs Below（disabled），以及 Close、Close Other Tabs；无组、无 split、无多选。",
+      "before": "本项普通 A/B/C，外部从上到下 A、B、C。",
+      "confirmation_choices": "无确认框；未执行菜单命令。",
+      "evidence_markers": [
+        "SET-06-PER-on-on layout",
+        "SET-06-PER-on-on settings",
+        "SET-06-PER-on-on identity-A",
+        "SET-06-PER-on-on identity-B",
+        "SET-06-PER-on-on identity-C attempt1 before",
+        "SET-06-PER-on-on attempt1 after"
+      ],
+      "identity_checks": "逐页实见本项 TC 标题、批次、普通页、空输入框和编号。A=26380dff-1c57-4fce-9ada-5fc9de9fac98；B=0b5edae7-4b43-40ee-ac67-af8b5184741e；C=903765f1-bf81-488e-bb63-1fa789421bf8。结束 B 编号仍为该值。",
+      "language_observed": "System Default，实际界面英文。",
+      "layout_observed": "General 原生选择并截图确认 Performance；外部纵向。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "清理后重新建立 TC-PHI507-r2-SET-06-PER-on-on A/B/C，C 活动；无多选、无组、无 split；on/on。",
+      "settings_observed": "只将 Double-click off→on，Close tabs by position 保持 on；最终实读 on/on。",
+      "steps_executed": [
+        "原生关闭上一项菜单，General 选择 Performance。",
+        "Advanced 只修改双击开关并核对 on/on。",
+        "新建 New Tab、Close Other Tabs，再建立并逐页核对本项 A/B/C。",
+        "保存 before，双击 C，重读 C 消失、B 活动。",
+        "右键 B 并保存含 Above/Below 状态的 after。"
+      ],
+      "unit_id": "SET-06-PER-on-on"
+    },
+    {
+      "active_after": "C 单独活动，选中集 {C}；菜单目标 B。",
+      "active_before": "C 单独活动，选中集 {C}。",
+      "after": "A/B/C 全部保留，外部从上到下 A、B、C；B 菜单显示 Close 和 Close Other Tabs，没有 Above/Below 方向项；无组、无 split、无多选。",
+      "before": "本项普通 A/B/C，Balanced 外部纵向顺序 A→B→C。",
+      "confirmation_choices": "无确认框；未执行菜单命令。",
+      "evidence_markers": [
+        "SET-06-BAL-off-off layout",
+        "SET-06-BAL-off-off settings",
+        "SET-06-BAL-off-off identity-A",
+        "SET-06-BAL-off-off identity-B",
+        "SET-06-BAL-off-off identity-C attempt1 before",
+        "SET-06-BAL-off-off attempt1 after"
+      ],
+      "identity_checks": "A/B/C 页面均实见 TC 标题、本项批次、普通页、空输入框及编号。A=8811b1fa-e7e8-4b4d-a1b7-042ae9e2cd23；B=abdba0aa-cab8-4d8d-abfc-343049ff42e6；C=596ce514-7f19-470e-87e0-1adfaaecde98。after 中 C 编号仍为该值。",
+      "language_observed": "System Default，设置和菜单英文。",
+      "layout_observed": "通过 General 原生选择 Balanced；截图选中边框位于 Balanced，浏览器外部纵向排列。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项开始前原生清理并重建 TC-PHI507-r2-SET-06-BAL-off-off A/B/C，C 活动，无组、无 split；off/off。",
+      "settings_observed": "逐个将双击 on→off、位置 on→off；中间原生树为双击 off、位置 on；最终截图与树为 off/off。",
+      "steps_executed": [
+        "General 选择 Balanced 并截图。",
+        "Advanced 逐个设置本项 off/off，保留中间实读行及最终截图。",
+        "新建 New Tab、Close Other Tabs，地址栏依次新建加载本项 A/B/C。",
+        "逐页核对身份和最终顺序，保存 before。",
+        "双击 C，重读集合；右键 B 并保存没有方向项的 after。"
+      ],
+      "unit_id": "SET-06-BAL-off-off"
+    },
+    {
+      "active_after": "B 单独活动，选中集 {B}。",
+      "active_before": "C 单独活动，选中集 {C}。",
+      "after": "C 关闭，外部从上到下保留 A/B；B 菜单没有 Above/Below 方向项，显示 Close、Close Other Tabs；无多选、无组、无 split。",
+      "before": "本项普通 A/B/C，外部从上到下 A、B、C。",
+      "confirmation_choices": "无确认框；未执行菜单命令。",
+      "evidence_markers": [
+        "SET-06-BAL-on-off layout",
+        "SET-06-BAL-on-off settings",
+        "SET-06-BAL-on-off identity-A",
+        "SET-06-BAL-on-off identity-B",
+        "SET-06-BAL-on-off identity-C attempt1 before",
+        "SET-06-BAL-on-off attempt1 after"
+      ],
+      "identity_checks": "逐页核对 TC 标题、批次、普通页说明、空输入框及编号。A=e6590c63-1e32-4192-ae79-fa45a1962aa1；B=4b9c0f12-a86a-4ceb-b958-1130d294f0d1；C=496ba191-6bf5-4131-9261-b70735083518。after 中 B 编号仍为该值。",
+      "language_observed": "System Default，实际界面英文。",
+      "layout_observed": "本项 General 再次原生选择并截图确认 Balanced，外部纵向。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "清理并重建 TC-PHI507-r2-SET-06-BAL-on-off A/B/C，C 活动，无组、无 split；on/off。",
+      "settings_observed": "只将双击 off→on，位置保持 off；最终原生实读 on/off。",
+      "steps_executed": [
+        "General 选择 Balanced，Advanced 只修改双击开关并核对位置 off。",
+        "新建 New Tab、Close Other Tabs 后，地址栏依次建立本项 A/B/C。",
+        "逐页截图核对身份，C 页面作为 before。",
+        "双击 C，原生重读 A/B 且 B 活动。",
+        "右键 B，保存没有方向项的 after。"
+      ],
+      "unit_id": "SET-06-BAL-on-off"
+    },
+    {
+      "active_after": "C 单独活动，选中集 {C}；菜单目标 B。",
+      "active_before": "C 单独活动，选中集 {C}。",
+      "after": "A/B/C 全部保留，外部顺序 A→B→C；B 菜单出现可用的 Close Tabs Above 和 Close Tabs Below，以及 Close、Close Other Tabs；无多选、无组、无 split。",
+      "before": "本项普通 A/B/C，外部从上到下 A、B、C。",
+      "confirmation_choices": "无确认框；方向项只观察。",
+      "evidence_markers": [
+        "SET-06-BAL-off-on layout",
+        "SET-06-BAL-off-on settings",
+        "SET-06-BAL-off-on identity-A",
+        "SET-06-BAL-off-on identity-B",
+        "SET-06-BAL-off-on identity-C attempt1 before",
+        "SET-06-BAL-off-on attempt1 after"
+      ],
+      "identity_checks": "逐页实见 TC 标题、本项批次、普通页、空输入框及编号。A=9802ef47-3b40-4e00-bf9a-ed2bfda2c8fc；B=46d87f9d-449e-4397-b38e-a22954e907b4；C=e42e10e0-5ac9-4d97-bd08-24f647409e38。after 中 C 编号仍为该值。",
+      "language_observed": "System Default，实际设置及菜单英文。",
+      "layout_observed": "General 原生选择并截图确认 Balanced；外部纵向。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项开始前清理并重建 TC-PHI507-r2-SET-06-BAL-off-on A/B/C，C 活动，无组、无 split；off/on。",
+      "settings_observed": "逐个将双击 on→off，再将位置 off→on；中间原生树为 off/off，最终为 off/on。",
+      "steps_executed": [
+        "General 选择 Balanced。",
+        "Advanced 逐个设置指定开关，保留中间实读行和最终截图。",
+        "新建 New Tab、Close Other Tabs，依次建立并逐页截图核对本项 A/B/C。",
+        "保存 before，双击 C 并重读保留集合。",
+        "右键 B，保存 Above/Below 均可见可用的 after。"
+      ],
+      "unit_id": "SET-06-BAL-off-on"
+    },
+    {
+      "active_after": "B 单独活动，选中集 {B}。",
+      "active_before": "C 单独活动，选中集 {C}。",
+      "after": "C 关闭，外部从上到下保留 A/B。B 菜单有 Close Tabs Above（可用）、Close Tabs Below（disabled），以及 Close、Close Other Tabs；无多选、无组、无 split。",
+      "before": "本项普通 A/B/C，外部从上到下 A、B、C。",
+      "confirmation_choices": "无确认框；未执行菜单命令。",
+      "evidence_markers": [
+        "SET-06-BAL-on-on layout",
+        "SET-06-BAL-on-on settings",
+        "SET-06-BAL-on-on identity-A",
+        "SET-06-BAL-on-on identity-B",
+        "SET-06-BAL-on-on identity-C attempt1 before",
+        "SET-06-BAL-on-on attempt1 after"
+      ],
+      "identity_checks": "逐页实见本项 TC 标题、批次、普通页、空输入框及编号。A=c83985a7-054c-4d49-b9b2-8de8b3af3101；B=9a38da46-5476-4d71-bd40-10ac279c5582；C=c12cd1a0-41fd-4279-abc1-32a956a331c1。after 中 B 编号仍为该值。",
+      "language_observed": "System Default，实际界面英文。",
+      "layout_observed": "General 原生选择并截图确认 Balanced；外部纵向。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "清理并重建 TC-PHI507-r2-SET-06-BAL-on-on A/B/C，C 活动，无组、无 split；on/on。",
+      "settings_observed": "只将双击 off→on，位置保持 on；最终原生实读 on/on。",
+      "steps_executed": [
+        "General 选择 Balanced，Advanced 只修改双击开关并核对位置 on。",
+        "新建 New Tab、Close Other Tabs 后，依次建立本项 A/B/C 并逐页核对。",
+        "保存 before，双击 C，重读 A/B 和活动 B。",
+        "右键 B，保存含 Above 可用、Below 灰置的 after。"
+      ],
+      "unit_id": "SET-06-BAL-on-on"
+    },
+    {
+      "active_after": "有效 attempt2：C 单独活动，选中集 {C}；右键目标 B。无效 attempt1：坐标落到 B，B 成为活动页，A/B/C 均保留。",
+      "active_before": "attempt1 与重新建立的 attempt2 均为 C 单独活动，选中集 {C}。",
+      "after": "有效 attempt2 外部从左到右 A/B/C 全部保留，无多选、无组、无 split。B 菜单显示 Close、Close Other Tabs，没有 Close Tabs to the Left 或 Close Tabs to the Right。attempt1 的坐标双击不作为指定 C 动作的观察。",
+      "before": "两次均重新建立本项批次的普通 A/B/C，Comfortable 外部从左到右 A、B、C。页面和标签画面显示 C，原生树第三个标签仍描述为 New Tab。",
+      "confirmation_choices": "无确认框；菜单命令仅观察。",
+      "evidence_markers": [
+        "SET-06-COM-off-off layout",
+        "SET-06-COM-off-off settings",
+        "SET-06-COM-off-off identity-A",
+        "SET-06-COM-off-off identity-B",
+        "SET-06-COM-off-off identity-C attempt1 before",
+        "SET-06-COM-off-off attempt1 before",
+        "SET-06-COM-off-off attempt1 native-tree-title-mismatch",
+        "SET-06-COM-off-off attempt1 after",
+        "SET-06-COM-off-off attempt2 layout",
+        "SET-06-COM-off-off attempt2 settings",
+        "SET-06-COM-off-off attempt2 identity-A",
+        "SET-06-COM-off-off attempt2 identity-B",
+        "SET-06-COM-off-off attempt2 identity-C before",
+        "SET-06-COM-off-off attempt2 before",
+        "SET-06-COM-off-off attempt2 after"
+      ],
+      "identity_checks": "两次均逐页实见 TC 标题、本项批次、普通页说明、空输入框及编号。attempt1：A=25cf188e-6a0a-47e6-941d-d03094278231，B=84bb569d-783e-4096-b28f-e5f05118d6f7，C=e7b7a8d8-239e-4f7b-a3ee-a3eda0bdfa91。attempt2：A=39025dda-baf0-4143-98ab-075374adb79f，B=a9ed5a3a-5c35-453a-8149-dedcbccd8f55，C=ccba456c-e88d-4d9d-996e-bf911d504052。有效 after 中 C 编号仍为 attempt2 的该值。第三个原生 tabStripTab 虽描述 New Tab，但其顺序、活动页面与屏幕对应 C，attempt2 使用该最新字符串索引进行双击。",
+      "language_observed": "两次 General 均实读 System Default；实际界面英文。",
+      "layout_observed": "两次均通过 General 原生选择 Comfortable 并截图确认选中边框；外部横向标签栏。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "attempt1 查找原生描述 TC-C 的编排守卫停止，因为最新原生树仍为 New Tab；此时未发送双击。",
+        "随后坐标双击 (867,34) 未正确处理截图与点击坐标比例，实际落到 B；A/B/C 保留但 B 活动。此操作无效，保留 attempt1 before、原生树差异及 after，不作为 C 的双击结果。",
+        "识别同一坐标问题后，重新选择布局、设置 off/off、清理并重建 A/B/C，以最新原生第三个标签控件完成 attempt2；没有沿用无效现场作为有效前置。"
+      ],
+      "precondition_actual": "有效 attempt2 已重新原生构造 TC-PHI507-r2-SET-06-COM-off-off A/B/C，真实顺序 A→B→C、C 活动，无组、无 split；off/off。",
+      "settings_observed": "attempt1 逐个将双击和位置从 on/on 设为 off/off；attempt2 从当时 on/off 只将双击改回 off，位置保持 off。两次最终均原生实读 off/off。",
+      "steps_executed": [
+        "attempt1 General 选择 Comfortable，Advanced 逐个设置 off/off。",
+        "清理上一项普通页，地址栏依次建立 A/B/C 并逐页核对；保存 before。",
+        "原生名称匹配停止后保留差异画面；坐标双击实际落到 B，随后打开 B 菜单并保留现场。",
+        "确认坐标操作无效后，在 attempt2 开始前重新通过 General/Advanced 构造设置并清理重建全部 A/B/C。",
+        "attempt2 保存 before，通过最新原生第三个 tabStripTab 控件双击 C，重读 C 保留并活动。",
+        "右键 B，保存没有左右方向项的 attempt2 after。"
+      ],
+      "unit_id": "SET-06-COM-off-off"
+    },
+    {
+      "active_after": "有效 attempt2：B 单独活动，选中集 {B}。无效 attempt1：B 被坐标误双击关闭，C 仍活动。",
+      "active_before": "两次重新建立后均为 C 单独活动，选中集 {C}。",
+      "after": "有效 attempt2：C 关闭，外部从左到右保留 A/B，无多选、无组、无 split；B 菜单有 Close、Close Other Tabs，没有左右方向项。无效 attempt1 的实际结束集合为 A/C，未因 B 缺失而伪造其菜单。",
+      "before": "两次均重新建立本项普通 A/B/C，外部从左到右 A、B、C。C 页面身份可见，原生树第三个标签描述仍为 New Tab。",
+      "confirmation_choices": "无确认框；有效重试只打开 B 菜单，未点击其中命令。",
+      "evidence_markers": [
+        "SET-06-COM-on-off layout",
+        "SET-06-COM-on-off settings",
+        "SET-06-COM-on-off identity-A",
+        "SET-06-COM-on-off identity-B",
+        "SET-06-COM-on-off identity-C attempt1 before",
+        "SET-06-COM-on-off attempt1 before",
+        "SET-06-COM-on-off attempt1 failure",
+        "SET-06-COM-on-off attempt2 layout",
+        "SET-06-COM-on-off attempt2 settings",
+        "SET-06-COM-on-off attempt2 identity-A",
+        "SET-06-COM-on-off attempt2 identity-B",
+        "SET-06-COM-on-off attempt2 identity-C before",
+        "SET-06-COM-on-off attempt2 before",
+        "SET-06-COM-on-off attempt2 after"
+      ],
+      "identity_checks": "逐页均实见 TC 标题、本项批次、普通页、空输入框及打开编号。attempt1：A=cef623e7-ca75-454b-81ee-5acecbc85c2a，B=c7fd33a0-e6aa-4f6c-938f-0fbec6f52bbf，C=7a1eb023-2f36-45b3-9acb-16d1550ab788。attempt2：A=16cef09f-0ddc-4e21-bb65-5a2c31cf1dc5，B=324a8ce5-77be-4319-8e7f-fca46040840c，C=9baaa2fb-d200-4b95-a5d6-ef198497901e。有效 after 中 B 编号仍为 attempt2 的该值。",
+      "language_observed": "两次均实读 System Default，实际界面英文。",
+      "layout_observed": "两次均通过 General 原生选择并截图确认 Comfortable；外部横向。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "attempt1 坐标双击 (867,34) 未正确处理截图与点击坐标比例，实际落在 B，导致 B 关闭、集合成为 A/C。",
+        "随后原生树中无法找到 B，编排守卫停止，没有打开错误对象菜单；保存 attempt1 failure 现场。",
+        "仅因上述无效操作重试；attempt2 重新选择 Comfortable、核对 on/off、清理并重建 A/B/C，改用最新原生第三个标签控件双击 C。"
+      ],
+      "precondition_actual": "有效 attempt2 已重新原生构造 TC-PHI507-r2-SET-06-COM-on-off A/B/C，真实顺序 A→B→C、C 活动，无组、无 split；on/off。",
+      "settings_observed": "两次均只将双击 off→on，位置保持 off；最终原生实读 on/off。",
+      "steps_executed": [
+        "attempt1 General 选择 Comfortable，Advanced 设置并核对 on/off，清理后新建 A/B/C。",
+        "逐页核对身份、保存 before；坐标双击误落 B，重读集合 A/C 后停止并保存 failure。",
+        "在重试前重新完成 General 布局、Advanced 设置核对及全部 A/B/C 的清理重建。",
+        "attempt2 保存 before，通过最新原生第三个标签控件双击 C。",
+        "重读 A/B、B 活动；右键 B 并保存没有左右方向项的 attempt2 after。"
+      ],
+      "unit_id": "SET-06-COM-on-off"
+    },
+    {
+      "active_after": "C 单独活动，选中集 {C}；菜单目标 B。",
+      "active_before": "C 单独活动，选中集 {C}。",
+      "after": "A/B/C 保留，外部从左到右 A、B、C；B 菜单有 Close Tabs to the Left、Close Tabs to the Right，两项均可用；同时显示 Close、Close Other Tabs。无多选、无组、无 split。",
+      "before": "本项普通 A/B/C，Comfortable 外部从左到右 A、B、C。",
+      "confirmation_choices": "无确认框；方向项只观察。",
+      "evidence_markers": [
+        "SET-06-COM-off-on layout",
+        "SET-06-COM-off-on settings",
+        "SET-06-COM-off-on identity-A",
+        "SET-06-COM-off-on identity-B",
+        "SET-06-COM-off-on identity-C attempt1 before",
+        "SET-06-COM-off-on attempt1 before",
+        "SET-06-COM-off-on attempt1 after"
+      ],
+      "identity_checks": "逐页实见本项 TC 标题、批次、普通页说明、空输入框及打开编号。A=cbaf9a6f-23db-4c35-9354-622b397ecc64；B=3593d2e1-f4ea-472c-8c46-e560358c9b1b；C=40298c84-0c1d-4483-ba1b-a5e858a1ee36。after 中 C 编号仍为该值。原生第三个标签描述为 New Tab，与屏幕已加载的 C 存在名称差异；按第三个 tabStripTab 的真实顺序及活动页面对应关系使用其最新索引。",
+      "language_observed": "General 实读 System Default；实际设置及菜单英文。",
+      "layout_observed": "General 原生选择并截图确认 Comfortable；外部横向。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项开始前清理并重建 TC-PHI507-r2-SET-06-COM-off-on A/B/C，C 活动，无组、无 split；off/on。",
+      "settings_observed": "逐个将双击 on→off，再将位置 off→on；中间原生树为 off/off，最终为 off/on。",
+      "steps_executed": [
+        "General 原生选择 Comfortable，Advanced 逐个修改指定开关并保留中间实读行。",
+        "新建 New Tab、Close Other Tabs，地址栏依次建立本项 A/B/C。",
+        "逐页截图核对身份和最终顺序；保存 before。",
+        "通过最新原生第三个标签控件双击 C，重读 C 保留且活动。",
+        "右键 B，保存左右方向项均可用的 after。"
+      ],
+      "unit_id": "SET-06-COM-off-on"
+    },
+    {
+      "active_after": "B 单独活动，选中集 {B}；收尾恢复偏好后仍为 B 活动。",
+      "active_before": "C 单独活动，选中集 {C}。",
+      "after": "C 关闭，外部从左到右保留 A/B；B 菜单有 Close Tabs to the Left（可用）、Close Tabs to the Right（disabled），以及 Close、Close Other Tabs。无多选、无组、无 split。保存该结束证据后只恢复偏好，未重建序列。",
+      "before": "本项普通 A/B/C，外部从左到右 A、B、C。",
+      "confirmation_choices": "无确认框；未执行任何方向菜单命令。",
+      "evidence_markers": [
+        "SET-06-COM-on-on layout",
+        "SET-06-COM-on-on settings",
+        "SET-06-COM-on-on identity-A",
+        "SET-06-COM-on-on identity-B",
+        "SET-06-COM-on-on identity-C attempt1 before",
+        "SET-06-COM-on-on attempt1 before",
+        "SET-06-COM-on-on attempt1 after",
+        "SET-06 session-restore switches",
+        "SET-06 session-restore language-layout",
+        "SET-06 ending-state"
+      ],
+      "identity_checks": "逐页实见本项 TC 标题、批次、普通页、空输入框及编号。A=a0942c96-b8c4-4876-9c0d-951169b75d82；B=0f65d236-0708-43c1-958c-7910172eb840；C=6a00b84a-ece4-444c-ba37-e568abef1262。after 与最终收尾截图 B 编号均为 0f65d236-0708-43c1-958c-7910172eb840。原生树第三个标签描述仍为 New Tab，屏幕及活动页面为 C；使用其最新原生索引双击。",
+      "language_observed": "本项 General 及收尾 General 均实读 Display language=System Default；实际浏览器、设置和菜单英文。",
+      "layout_observed": "本项通过 General 原生选择 Comfortable，截图确认选中；收尾再次在 General 截图确认 Comfortable。浏览器外部横向。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "收尾首次打开 Settings 后实际为 Guest 页，编排查找开关未找到即停止，没有发送错误点击；重读画面后原生选择 Advanced，随后完成恢复。此事发生在本项 after 证据保存之后。"
+      ],
+      "precondition_actual": "清理并重新建立 TC-PHI507-r2-SET-06-COM-on-on A/B/C，真实顺序 A→B→C、C 活动，无组、无 split；on/on。",
+      "settings_observed": "被测前只将双击 off→on，位置保持 on，原生实读 on/on。保存 after 后，收尾逐个将双击与位置恢复 off/off；中间实读双击 off、位置 on，最终截图实读 off/off。",
+      "steps_executed": [
+        "General 原生选择 Comfortable，Advanced 只修改双击开关并核对 on/on。",
+        "新建 New Tab、Close Other Tabs，地址栏依次建立本项 A/B/C 并逐页截图核对身份。",
+        "保存 before，通过最新原生第三个标签控件双击 C。",
+        "重读 A/B、B 活动，右键 B 并保存含 Left 可用、Right 灰置的 after。",
+        "关闭菜单，原生进入 Advanced，逐个恢复两个开关为起始 off/off 并截图。",
+        "General 核对 Comfortable 与 System Default，关闭 Settings，保存实际 A/B 结束画面。"
+      ],
+      "unit_id": "SET-06-COM-on-on"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

@@ -1,0 +1,109 @@
+{
+  "SET-07": {
+    "session_id": "01a18c44-5390-7931-9f0b-6697fcda6229",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__perform_secondary_action",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__type_text"
+    ],
+    "non_computer_use_calls": []
+  },
+  "SET-06": {
+    "session_id": "01a18c30-329f-7481-9ed5-c2c0564735d5",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__type_text"
+    ],
+    "non_computer_use_calls": []
+  },
+  "SET-08": {
+    "session_id": "01a18c49-b9a8-7410-891c-4b1d806949ea",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__perform_secondary_action",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__type_text"
+    ],
+    "non_computer_use_calls": []
+  },
+  "ENV-04-COMMON": {
+    "session_id": "01a18c06-bb55-7aa2-aa32-d54ebeecf45a",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__type_text"
+    ],
+    "non_computer_use_calls": []
+  },
+  "SET-03": {
+    "session_id": "01a18c12-7c83-73e3-be14-6fec1e86f2d6",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__type_text"
+    ],
+    "non_computer_use_calls": []
+  },
+  "SET-04": {
+    "session_id": "01a18c1e-2c5f-73d2-b876-46ec9feecb26",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__set_value",
+      "mcp__computer_use__type_text"
+    ],
+    "non_computer_use_calls": []
+  },
+  "SET-05": {
+    "session_id": "01a18c27-87ad-7363-84e5-d9446b9e311c",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__set_value"
+    ],
+    "non_computer_use_calls": []
+  },
+  "ENV-01-COMMON": {
+    "session_id": "01a18bfa-61c3-7ad2-a7d5-63535faf74c6",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__list_apps",
+      "mcp__computer_use__perform_secondary_action",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__type_text"
+    ],
+    "non_computer_use_calls": []
+  },
+  "SET-01-COMMON": {
+    "session_id": "01a18c0a-7621-7ea0-9c3f-c0cc77a831e9",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__drag",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__scroll"
+    ],
+    "non_computer_use_calls": []
+  },
+  "SET-10": {
+    "session_id": "01a18c4d-4cd6-7dd1-b96c-da12a68c0654",
+    "tools_called": [
+      "mcp__computer_use__click",
+      "mcp__computer_use__get_app_state",
+      "mcp__computer_use__perform_secondary_action",
+      "mcp__computer_use__press_key",
+      "mcp__computer_use__type_text"
+    ],
+    "non_computer_use_calls": []
+  }
+}

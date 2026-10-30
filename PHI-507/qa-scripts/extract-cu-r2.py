@@ -1,5 +1,5 @@
 """Export only evidence emitted by the native Computer Use session; never inspect the browser."""
-import base64,json,pathlib,re,sys
+import base64,json,pathlib,re,sys,collections
 session,prefix=sys.argv[1:];folder=pathlib.Path('qa-raw-r2')/prefix;folder.mkdir(parents=True,exist_ok=True)
 f=next(pathlib.Path.home().glob('.codex/sessions/**/rollout-*'+session+'*.jsonl'));texts=[];index=[];i=0;calls=[]
 for line in f.open():
@@ -9,15 +9,26 @@ for line in f.open():
  if p.get('type')=='custom_tool_call_output':
   marker='';state=''
   output=p.get('output',[])
-  if not isinstance(output,list):
-   if isinstance(output,str) and len(output)<4000:texts.append(output)
-   continue
-  for x in output:
+  if not isinstance(output,list):output=[{'type':'input_text','text':output}] if isinstance(output,str) else []
+  queue=collections.deque(output)
+  while queue:
+   x=queue.popleft()
    if not isinstance(x,dict):continue
    if x.get('type')=='input_text':
     t=x.get('text','')
     m=re.search(r'^EVIDENCE:\s*(.+)',t,re.M)
-    if m:marker=m[1].strip();texts.append(t)
+    if m:marker=m[1].strip();texts.append(t if len(t)<4000 else m[0])
+    start=t.find('{"content":')
+    if start>=0:
+     try:serialized,_=json.JSONDecoder().raw_decode(t[start:])
+     except Exception:serialized=None
+     if isinstance(serialized,dict) and isinstance(serialized.get('content'),list):
+      converted=[]
+      for block in serialized['content']:
+       if not isinstance(block,dict):continue
+       if block.get('type')=='text':converted.append({'type':'input_text','text':block.get('text','')})
+       elif block.get('type')=='image' and block.get('data'):converted.append({'type':'input_image','image_url':'data:'+block.get('mimeType','image/jpeg')+';base64,'+block['data']})
+      queue.extendleft(reversed(converted));continue
     if t.startswith(('App=','Computer Use state')):state=t;texts.append(t)
     if 'error' in t.lower() and len(t)<4000:texts.append(t)
    elif x.get('type')=='input_image':

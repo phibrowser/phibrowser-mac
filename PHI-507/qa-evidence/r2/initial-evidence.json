@@ -1,0 +1,146 @@
+[
+  {
+    "unit_id": "ENV-01-COMMON",
+    "file": "ENV-01-COMMON-initial-about.png",
+    "phase": "about",
+    "source_file": "scratch-PHI507-r2/ENV-01-COMMON/raw/ENV-01-COMMON-011.jpg",
+    "source_sha256": "375693a086347af638c3e1ea12f392fdb07c8d81a2354ef4cdc65f334c02c5a9",
+    "original_size": [
+      580,
+      624
+    ],
+    "output_size": [
+      580,
+      624
+    ],
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+  },
+  {
+    "unit_id": "ENV-01-COMMON",
+    "file": "ENV-01-COMMON-initial-advanced.png",
+    "phase": "advanced",
+    "source_file": "scratch-PHI507-r2/ENV-01-COMMON/raw/ENV-01-COMMON-015.jpg",
+    "source_sha256": "1d1e88e732895b8b766fb0b40990684b7cffcc5f02be46488be44de8c2c14c3a",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+  },
+  {
+    "unit_id": "ENV-02-COMMON",
+    "file": "ENV-02-COMMON-initial-shortcuts-partial.png",
+    "phase": "shortcuts-partial",
+    "source_file": "scratch-PHI507-r2/initial-raw/ENV-02-COMMON-04.jpg",
+    "source_sha256": "b0b4577b812f00a6406f56bb8447e98c2475d4dca803d177f2aaf1369229a0f0",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+  },
+  {
+    "unit_id": "ENV-02-COMMON",
+    "file": "ENV-02-COMMON-initial-empty-test-space.png",
+    "phase": "empty-test-space",
+    "source_file": "scratch-PHI507-r2/initial-raw/ENV-02-COMMON-11.jpg",
+    "source_sha256": "2e2f9d0a9dd67ba0011707a2c446cc1d8226b59a1530a5d103c9ae9a46ce1111",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+  },
+  {
+    "unit_id": "ENV-03-COMMON",
+    "file": "ENV-03-COMMON-initial-initial-F.png",
+    "phase": "initial-F",
+    "source_file": "scratch-PHI507-r2/initial-raw/ENV-03-COMMON-12.jpg",
+    "source_sha256": "dc783105eaa6ff218175c20614d63d38fb436cb0497c22e369b0f81ad833fa0c",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+  },
+  {
+    "unit_id": "ENV-04-COMMON",
+    "file": "ENV-04-COMMON-initial-B-before.png",
+    "phase": "B-before",
+    "source_file": "scratch-PHI507-r2/ENV-04-COMMON/raw/ENV-04-COMMON-002.jpg",
+    "source_sha256": "ce0e5b9f428191cacc81d699d054009bfa96b44ce06d5773b50ff221b00c03de",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+  },
+  {
+    "unit_id": "ENV-04-COMMON",
+    "file": "ENV-04-COMMON-initial-B-after.png",
+    "phase": "B-after",
+    "source_file": "scratch-PHI507-r2/ENV-04-COMMON/raw/ENV-04-COMMON-009.jpg",
+    "source_sha256": "55f837be16742e77cb88b71e7b10f93b177d682ec71288e8a38584aba7edfdb2",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+  },
+  {
+    "unit_id": "SET-01-COMMON",
+    "file": "SET-01-COMMON-initial-advanced-before.png",
+    "phase": "advanced-before",
+    "source_file": "scratch-PHI507-r2/SET-01-COMMON/raw/SET-01-COMMON-004.jpg",
+    "source_sha256": "5c7869890b37c559450c468a9751d467c66a5b448625ebb2e1d6b1fe641307cb",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+  },
+  {
+    "unit_id": "SET-01-COMMON",
+    "file": "SET-01-COMMON-initial-advanced-after-drag.png",
+    "phase": "advanced-after-drag",
+    "source_file": "scratch-PHI507-r2/SET-01-COMMON/raw/SET-01-COMMON-008.jpg",
+    "source_sha256": "f0330814287ce65c5f326235eeff262d7076396fbdc252254e82104c93426e81",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "caption": "初始Computer Use原始完整窗口，仅缩放；此批早于EVIDENCE marker规范"
+  }
+]

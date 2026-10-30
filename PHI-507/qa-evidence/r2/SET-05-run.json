@@ -1,0 +1,19 @@
+{
+  "job": "SET-05",
+  "exit_code": 0,
+  "session_id": "01a18c27-87ad-7363-84e5-d9446b9e311c",
+  "started_at": "2026-10-30T09:32:43.034843+00:00",
+  "ended_at": "2026-10-30T09:42:10.181289+00:00",
+  "units": [
+    "SET-05-PER",
+    "SET-05-BAL",
+    "SET-05-COM"
+  ],
+  "observed_units": [
+    "SET-05-PER",
+    "SET-05-BAL",
+    "SET-05-COM"
+  ],
+  "missing_units": [],
+  "duplicate_units": false
+}

@@ -3,7 +3,7 @@
     "unit_id": "SET-03-PER",
     "attempt": 1,
     "phase": "before",
-    "file": "SET-03-PER-a1-before.png",
+    "file": "SET-03-PER-01.png",
     "source_file": "SET-03-010.jpg",
     "source_sha256": "97de9ed30c2f321eb290671056e0f3a465e79735ed1e0827fb85ba3c0512ae8a",
     "original_size": [
@@ -14,20 +14,20 @@
       0,
       0,
       660,
-      1000
+      1376
     ],
     "output_size": [
       660,
-      1000
+      1376
     ],
-    "palette_colors": 8,
+    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
     "unit_id": "SET-03-PER",
     "attempt": 1,
     "phase": "after",
-    "file": "SET-03-PER-a1-after.png",
+    "file": "SET-03-PER-02.png",
     "source_file": "SET-03-013.jpg",
     "source_sha256": "69ec3c2e43cb39ec4d0992b17e1959af52de2eddbb7dafbaa8df40b304bba7a0",
     "original_size": [
@@ -38,20 +38,20 @@
       0,
       0,
       660,
-      1000
+      1376
     ],
     "output_size": [
       660,
-      1000
+      1376
     ],
-    "palette_colors": 8,
+    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
     "unit_id": "SET-03-BAL",
     "attempt": 1,
     "phase": "before",
-    "file": "SET-03-BAL-a1-before.png",
+    "file": "SET-03-BAL-01.png",
     "source_file": "SET-03-018.jpg",
     "source_sha256": "1bbad6ef48d9cddcca5a14d6e68096d8e032c4780755c4ec75b08a227260e4d1",
     "original_size": [
@@ -62,20 +62,20 @@
       0,
       0,
       660,
-      1000
+      1376
     ],
     "output_size": [
       660,
-      1000
+      1376
     ],
-    "palette_colors": 8,
+    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
     "unit_id": "SET-03-BAL",
     "attempt": 1,
     "phase": "after",
-    "file": "SET-03-BAL-a1-after.png",
+    "file": "SET-03-BAL-02.png",
     "source_file": "SET-03-021.jpg",
     "source_sha256": "4a8f1f30fe2fc73df7d8df79a3a9dff8da497a9ce4a7f68e76c01d53dabfeb1d",
     "original_size": [
@@ -86,20 +86,20 @@
       0,
       0,
       660,
-      1000
+      1376
     ],
     "output_size": [
       660,
-      1000
+      1376
     ],
-    "palette_colors": 8,
+    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
     "unit_id": "SET-03-COM",
     "attempt": 1,
     "phase": "before",
-    "file": "SET-03-COM-a1-before.png",
+    "file": "SET-03-COM-01.png",
     "source_file": "SET-03-027.jpg",
     "source_sha256": "8dc09bd3e678da86a2d3906b3badf3a8aed617e80885f8d0ba1556d683f73ee0",
     "original_size": [
@@ -116,14 +116,14 @@
       1280,
       533
     ],
-    "palette_colors": 8,
+    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
     "unit_id": "SET-03-COM",
     "attempt": 1,
     "phase": "after",
-    "file": "SET-03-COM-a1-after.png",
+    "file": "SET-03-COM-02.png",
     "source_file": "SET-03-030.jpg",
     "source_sha256": "9b29dd3648086cc90a4dd4a1b43f80684fdb97e26e85459a9c220058d5edb2c7",
     "original_size": [
@@ -140,7 +140,7 @@
       1280,
       533
     ],
-    "palette_colors": 8,
+    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   }
 ]

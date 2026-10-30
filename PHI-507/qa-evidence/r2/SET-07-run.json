@@ -1,0 +1,15 @@
+{
+  "job": "SET-07",
+  "exit_code": 0,
+  "session_id": "01a18c44-5390-7931-9f0b-6697fcda6229",
+  "started_at": "2026-10-30T10:04:10.225753+00:00",
+  "ended_at": "2026-10-30T10:10:03.091411+00:00",
+  "units": [
+    "SET-07-COMMON"
+  ],
+  "observed_units": [
+    "SET-07-COMMON"
+  ],
+  "missing_units": [],
+  "duplicate_units": false
+}

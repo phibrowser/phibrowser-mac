@@ -1,0 +1,146 @@
+[
+  {
+    "unit_id": "ENV-03-COMMON",
+    "attempt": 1,
+    "phase": "before",
+    "file": "ENV-03-COMMON-01.png",
+    "source_file": "ENV-03-navigation-recovery-002.jpg",
+    "source_sha256": "79632a10e95b322a040a4a195e80f1978867329903540d4a96fb7e2403a68e6d",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-03-COMMON",
+    "attempt": 1,
+    "phase": "http-failure",
+    "file": "ENV-03-COMMON-03.png",
+    "source_file": "ENV-03-navigation-recovery-007.jpg",
+    "source_sha256": "6e7e35fcd3dc1a0ca5e7eb56891587078a8465b7cdfef8c04a3ecd2a2ee90c2d",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-03-COMMON",
+    "attempt": 1,
+    "phase": "recovery-fixture-failure",
+    "file": "ENV-03-COMMON-04.png",
+    "source_file": "ENV-03-navigation-recovery-031.jpg",
+    "source_sha256": "621bb94d003f087356b490f17ea4295d90109fdb196cf09040b7cb96e8712eb3",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-03-COMMON",
+    "attempt": 1,
+    "phase": "after",
+    "file": "ENV-03-COMMON-02.png",
+    "source_file": "ENV-03-navigation-recovery-033.jpg",
+    "source_sha256": "89c497b4b6368412118f2946d95c26d7bf97ea485754d0a6ff86572e82a79d5c",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-03-COMMON",
+    "attempt": 2,
+    "phase": "sequence-before",
+    "file": "ENV-03-COMMON-05.png",
+    "source_file": "ENV-03-navigation-recovery-035.jpg",
+    "source_sha256": "b69997bee3af7819154a1f6e3149168fb7429690dc85b3d0135a2b3656debcd4",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-03-COMMON",
+    "attempt": 2,
+    "phase": "sequence-after",
+    "file": "ENV-03-COMMON-06.png",
+    "source_file": "ENV-03-navigation-recovery-039.jpg",
+    "source_sha256": "0235b24bdb90808494fe480b4401c51491dc05603218d01dd79b71b76ae28d15",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

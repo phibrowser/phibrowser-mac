@@ -1,0 +1,15 @@
+{
+  "job": "ENV-03-navigation-recovery",
+  "exit_code": 0,
+  "session_id": "01a18c52-3b56-7062-865d-052a6e502b36",
+  "started_at": "2026-10-30T10:19:21.527043+00:00",
+  "ended_at": "2026-10-30T10:27:09.875089+00:00",
+  "units": [
+    "ENV-03-COMMON"
+  ],
+  "observed_units": [
+    "ENV-03-COMMON"
+  ],
+  "missing_units": [],
+  "duplicate_units": false
+}

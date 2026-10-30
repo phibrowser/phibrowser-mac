@@ -1,0 +1,146 @@
+[
+  {
+    "unit_id": "SET-07-COMMON",
+    "attempt": 1,
+    "phase": "before-switch",
+    "file": "SET-07-COMMON-01.png",
+    "source_file": "SET-07-018.jpg",
+    "source_sha256": "0e024ed33a2f2c3852e5207b7f0212c8795e4430c775ef017c5dc023fcb9e826",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-07-COMMON",
+    "attempt": 1,
+    "phase": "before-restart",
+    "file": "SET-07-COMMON-02.png",
+    "source_file": "SET-07-021.jpg",
+    "source_sha256": "2bee171d17bcd13b9a6e76235a2c9007d15e32a6e4ed78c740ac8c9bbf06c24c",
+    "original_size": [
+      930,
+      444
+    ],
+    "crop_box": [
+      0,
+      0,
+      930,
+      444
+    ],
+    "output_size": [
+      930,
+      444
+    ],
+    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-07-COMMON",
+    "attempt": 1,
+    "phase": "after-restart-switches",
+    "file": "SET-07-COMMON-04.png",
+    "source_file": "SET-07-023.jpg",
+    "source_sha256": "2d6c59d3248fb3124f7971c47e3f5aaa76fca2d5990efffa18cc2611654c62b3",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-07-COMMON",
+    "attempt": 1,
+    "phase": "after-normal-menu",
+    "file": "SET-07-COMMON-05.png",
+    "source_file": "SET-07-026.jpg",
+    "source_sha256": "287292cd99c125aa584bffd10c5cf9f966d6adf51392babc361835b4bd0e6209",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-07-COMMON",
+    "attempt": 1,
+    "phase": "after-group-menu",
+    "file": "SET-07-COMMON-06.png",
+    "source_file": "SET-07-027.jpg",
+    "source_sha256": "5ca381100eb99cbd8db99a81cf78a10cf698d264b2e370a842ee65873a4173e7",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-07-COMMON",
+    "attempt": 1,
+    "phase": "after",
+    "file": "SET-07-COMMON-03.png",
+    "source_file": "SET-07-028.jpg",
+    "source_sha256": "96a10606950d843bf9ada2a5fad8307308fbc7a3194ac7e14b1fe6f8a90964cd",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

@@ -8465,7 +8465,16 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/DBL-11-observations.json",
+      "qa-evidence/r4/DBL-11-PER-01.png",
+      "qa-evidence/r4/DBL-11-PER-02.png",
+      "qa-evidence/r4/DBL-11-PER-03.png",
+      "qa-evidence/r4/DBL-11-PER-04.png",
+      "qa-evidence/r4/DBL-11-PER-05.png",
+      "qa-evidence/r4/DBL-11-PER-06.png",
+      "qa-evidence/r4/DBL-11-PER-07.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-11-PER",
     "layout": "performance",
@@ -8474,9 +8483,100 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-11",
+        "round": 4,
+        "outcome": "pass",
+        "actual": "A 不再列出；S1 出现一个 New Tab 占位，未自动切换 Space，窗口保留。切到 S2 后原生顺序仍为 X | Y，两个输入标记和打开编号均保持。",
+        "observation": {
+          "active_after": "双击后：S1 New Tab/{New Tab}；逐页核对结束：S2 X/{X}。",
+          "active_before": "S1 A/{A}。",
+          "after": "A 不再列出；S1 出现一个 New Tab 占位，未自动切换 Space，窗口保留。切到 S2 后原生顺序仍为 X | Y，两个输入标记和打开编号均保持。",
+          "before": "S1:[A]；S2:[X,Y]。测试对象均为普通页，无组、split 或 pin。",
+          "confirmation_choices": "未出现确认框。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-11-PER attempt1 settings",
+            "EVIDENCE: DBL-11-PER attempt1 A-loaded",
+            "EVIDENCE: DBL-11-PER attempt1 X-before",
+            "EVIDENCE: DBL-11-PER attempt1 Y-before",
+            "EVIDENCE: DBL-11-PER attempt1 before",
+            "EVIDENCE: DBL-11-PER attempt1 after",
+            "EVIDENCE: DBL-11-PER attempt1 Y-after",
+            "EVIDENCE: DBL-11-PER attempt1 X-after"
+          ],
+          "identity_checks": "固定路径，前后 PID 均为 92816。批次 TC-PHI507-r2-DBL-11-PER。A=53f17853-1ffa-4c63-9875-07817eb343f1；X=fc62a7e4-a347-4bee-8ab0-e6096706a761；Y=77648b2a-d94c-46f3-bf2d-a1109a87d05d。X/Y 前后实见 KEEP-DBL-11-PER-X/Y 及相同编号。首次 A 导航约 8.2 秒后实见正文、批次、编号和输入框。其他既有 Space 保留；未知 pin/书签内部数据未打开核对。",
+          "language_observed": "System Default，浏览器界面实际英文；未切换语言。",
+          "layout_observed": "Performance；通过 General 原生按钮选择，选中图及浏览器外部纵向标签已确认。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "通过 Spaces → New Space 新建 TC-QA-PHI507-r2-DBL-11-S1/S2；S1 仅 A，S2 顺序 X/Y，均为 normal fixture。",
+          "settings_observed": "起始实读双击关闭 off、按位置关闭 on、恢复会话 on。仅点击双击关闭使其变为 on；即时读取另一开关仍为 on。被测动作时为 on/on；收尾已恢复 off/on。",
+          "steps_executed": [
+            "读取当前 QA app、原始布局、语言和开关值，选择 Performance。",
+            "独立建立 S1:A 与 S2:X/Y；逐页确认正文身份。",
+            "分别在 X/Y 输入 KEEP-DBL-11-PER-X/Y，看到输入框焦点边框及实际文字，记录打开编号。",
+            "切回 S1，关键动作前 get_app_state 取证，确认只有 A。",
+            "对 A 对应的 selected row 请求 CU click_count:2。",
+            "get_app_state 记录 S1 占位，再切 S2，逐页核对 Y、X 的输入和编号。"
+          ],
+          "unit_id": "DBL-11-PER"
+        },
+        "evidence": [
+          "qa-evidence/r4/DBL-11-observations.json",
+          "qa-evidence/r4/DBL-11-PER-01.png",
+          "qa-evidence/r4/DBL-11-PER-02.png",
+          "qa-evidence/r4/DBL-11-PER-03.png",
+          "qa-evidence/r4/DBL-11-PER-04.png",
+          "qa-evidence/r4/DBL-11-PER-05.png",
+          "qa-evidence/r4/DBL-11-PER-06.png",
+          "qa-evidence/r4/DBL-11-PER-07.png"
+        ],
+        "evidence_metadata": "qa-evidence/r4/DBL-11-evidence.json",
+        "notes": "Ripley 已审阅三布局关键前后画面及全部21张证据；S1唯一普通A消失，S2:X/Y前后UUID及KEEP均不变。PER/BAL为New Tab占位，COM为无普通tab的地址/游戏占位，均保留当前Space及窗口。原错标X-before的Y空输入帧保留并更正元数据，另附同marker较早的真正X-before，不改原图。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T18:21:46.233973+00:00"
+      }
+    ],
+    "actual": "A 不再列出；S1 出现一个 New Tab 占位，未自动切换 Space，窗口保留。切到 S2 后原生顺序仍为 X | Y，两个输入标记和打开编号均保持。",
+    "observation": {
+      "active_after": "双击后：S1 New Tab/{New Tab}；逐页核对结束：S2 X/{X}。",
+      "active_before": "S1 A/{A}。",
+      "after": "A 不再列出；S1 出现一个 New Tab 占位，未自动切换 Space，窗口保留。切到 S2 后原生顺序仍为 X | Y，两个输入标记和打开编号均保持。",
+      "before": "S1:[A]；S2:[X,Y]。测试对象均为普通页，无组、split 或 pin。",
+      "confirmation_choices": "未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-11-PER attempt1 settings",
+        "EVIDENCE: DBL-11-PER attempt1 A-loaded",
+        "EVIDENCE: DBL-11-PER attempt1 X-before",
+        "EVIDENCE: DBL-11-PER attempt1 Y-before",
+        "EVIDENCE: DBL-11-PER attempt1 before",
+        "EVIDENCE: DBL-11-PER attempt1 after",
+        "EVIDENCE: DBL-11-PER attempt1 Y-after",
+        "EVIDENCE: DBL-11-PER attempt1 X-after"
+      ],
+      "identity_checks": "固定路径，前后 PID 均为 92816。批次 TC-PHI507-r2-DBL-11-PER。A=53f17853-1ffa-4c63-9875-07817eb343f1；X=fc62a7e4-a347-4bee-8ab0-e6096706a761；Y=77648b2a-d94c-46f3-bf2d-a1109a87d05d。X/Y 前后实见 KEEP-DBL-11-PER-X/Y 及相同编号。首次 A 导航约 8.2 秒后实见正文、批次、编号和输入框。其他既有 Space 保留；未知 pin/书签内部数据未打开核对。",
+      "language_observed": "System Default，浏览器界面实际英文；未切换语言。",
+      "layout_observed": "Performance；通过 General 原生按钮选择，选中图及浏览器外部纵向标签已确认。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "通过 Spaces → New Space 新建 TC-QA-PHI507-r2-DBL-11-S1/S2；S1 仅 A，S2 顺序 X/Y，均为 normal fixture。",
+      "settings_observed": "起始实读双击关闭 off、按位置关闭 on、恢复会话 on。仅点击双击关闭使其变为 on；即时读取另一开关仍为 on。被测动作时为 on/on；收尾已恢复 off/on。",
+      "steps_executed": [
+        "读取当前 QA app、原始布局、语言和开关值，选择 Performance。",
+        "独立建立 S1:A 与 S2:X/Y；逐页确认正文身份。",
+        "分别在 X/Y 输入 KEEP-DBL-11-PER-X/Y，看到输入框焦点边框及实际文字，记录打开编号。",
+        "切回 S1，关键动作前 get_app_state 取证，确认只有 A。",
+        "对 A 对应的 selected row 请求 CU click_count:2。",
+        "get_app_state 记录 S1 占位，再切 S2，逐页核对 Y、X 的输入和编号。"
+      ],
+      "unit_id": "DBL-11-PER"
+    },
+    "notes": "Ripley 已审阅三布局关键前后画面及全部21张证据；S1唯一普通A消失，S2:X/Y前后UUID及KEEP均不变。PER/BAL为New Tab占位，COM为无普通tab的地址/游戏占位，均保留当前Space及窗口。原错标X-before的Y空输入帧保留并更正元数据，另附同marker较早的真正X-before，不改原图。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-11",
@@ -8499,7 +8599,16 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/DBL-11-observations.json",
+      "qa-evidence/r4/DBL-11-BAL-01.png",
+      "qa-evidence/r4/DBL-11-BAL-02.png",
+      "qa-evidence/r4/DBL-11-BAL-03.png",
+      "qa-evidence/r4/DBL-11-BAL-04.png",
+      "qa-evidence/r4/DBL-11-BAL-05.png",
+      "qa-evidence/r4/DBL-11-BAL-06.png",
+      "qa-evidence/r4/DBL-11-BAL-07.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-11-BAL",
     "layout": "balanced",
@@ -8508,9 +8617,100 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-11",
+        "round": 4,
+        "outcome": "pass",
+        "actual": "A 不再列出；S1 出现一个 New Tab 占位，未自动切换 Space，窗口保留。S2 顺序仍为 X | Y，输入标记与原打开编号均可见。",
+        "observation": {
+          "active_after": "双击后：S1 New Tab/{New Tab}；逐页核对结束：S2 X/{X}。",
+          "active_before": "S1 A/{A}。",
+          "after": "A 不再列出；S1 出现一个 New Tab 占位，未自动切换 Space，窗口保留。S2 顺序仍为 X | Y，输入标记与原打开编号均可见。",
+          "before": "S1:[A]；S2:[X,Y]。无组、split 或 pin。",
+          "confirmation_choices": "清理普通页及被测双击均未出现确认框。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-11-BAL attempt1 settings",
+            "EVIDENCE: DBL-11-BAL attempt1 X-loaded",
+            "EVIDENCE: DBL-11-BAL attempt1 X-before",
+            "EVIDENCE: DBL-11-BAL attempt1 Y-before",
+            "EVIDENCE: DBL-11-BAL attempt1 before",
+            "EVIDENCE: DBL-11-BAL attempt1 after",
+            "EVIDENCE: DBL-11-BAL attempt1 Y-after",
+            "EVIDENCE: DBL-11-BAL attempt1 X-after"
+          ],
+          "identity_checks": "固定路径，前后 PID 均为 92816。批次 TC-PHI507-r2-DBL-11-BAL。A=eedbc1fc-6aae-484f-b372-077c9b42e026；X=5891f8e3-2a0e-4852-82c4-3311421f24de；Y=60118701-e8e0-4147-b009-5bb36d4007c6。X/Y 前后实见 KEEP-DBL-11-BAL-X/Y 及相同编号。其他 Space 保留；未知 pin/书签内部数据未打开核对。",
+          "language_observed": "System Default，浏览器界面实际英文。",
+          "layout_observed": "Balanced；General 选中截图及浏览器外部纵向标签已确认。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "在 S2 新建 New Tab，通过 Close Other Tabs 清理 PER 的 X/Y；get_app_state 实读仅一个 New Tab 后重建 BAL 的 X/Y。S1 原占位导航为本项新 A，最终确认 S1 仅 A。",
+          "settings_observed": "Advanced 实读双击关闭 on、按位置关闭 on、恢复会话 on；本项未点击开关。快捷键未修改。",
+          "steps_executed": [
+            "通过 General 原生按钮切换 Balanced 并截图，读取 Advanced 双开关 on/on。",
+            "原生清理并重建本项 S1:A、S2:X/Y。",
+            "分别在 X/Y 输入 KEEP-DBL-11-BAL-X/Y，确认焦点边框与实际文字，记录打开编号。",
+            "切 S1，关键动作前 get_app_state 确认只有 A。",
+            "对 A 对应的 selected row 请求 CU click_count:2。",
+            "记录 S1 的 New Tab 占位，再切 S2，逐页核对 Y、X 的输入和原编号。"
+          ],
+          "unit_id": "DBL-11-BAL"
+        },
+        "evidence": [
+          "qa-evidence/r4/DBL-11-observations.json",
+          "qa-evidence/r4/DBL-11-BAL-01.png",
+          "qa-evidence/r4/DBL-11-BAL-02.png",
+          "qa-evidence/r4/DBL-11-BAL-03.png",
+          "qa-evidence/r4/DBL-11-BAL-04.png",
+          "qa-evidence/r4/DBL-11-BAL-05.png",
+          "qa-evidence/r4/DBL-11-BAL-06.png",
+          "qa-evidence/r4/DBL-11-BAL-07.png"
+        ],
+        "evidence_metadata": "qa-evidence/r4/DBL-11-evidence.json",
+        "notes": "Ripley 已审阅三布局关键前后画面及全部21张证据；S1唯一普通A消失，S2:X/Y前后UUID及KEEP均不变。PER/BAL为New Tab占位，COM为无普通tab的地址/游戏占位，均保留当前Space及窗口。原错标X-before的Y空输入帧保留并更正元数据，另附同marker较早的真正X-before，不改原图。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T18:21:46.234173+00:00"
+      }
+    ],
+    "actual": "A 不再列出；S1 出现一个 New Tab 占位，未自动切换 Space，窗口保留。S2 顺序仍为 X | Y，输入标记与原打开编号均可见。",
+    "observation": {
+      "active_after": "双击后：S1 New Tab/{New Tab}；逐页核对结束：S2 X/{X}。",
+      "active_before": "S1 A/{A}。",
+      "after": "A 不再列出；S1 出现一个 New Tab 占位，未自动切换 Space，窗口保留。S2 顺序仍为 X | Y，输入标记与原打开编号均可见。",
+      "before": "S1:[A]；S2:[X,Y]。无组、split 或 pin。",
+      "confirmation_choices": "清理普通页及被测双击均未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-11-BAL attempt1 settings",
+        "EVIDENCE: DBL-11-BAL attempt1 X-loaded",
+        "EVIDENCE: DBL-11-BAL attempt1 X-before",
+        "EVIDENCE: DBL-11-BAL attempt1 Y-before",
+        "EVIDENCE: DBL-11-BAL attempt1 before",
+        "EVIDENCE: DBL-11-BAL attempt1 after",
+        "EVIDENCE: DBL-11-BAL attempt1 Y-after",
+        "EVIDENCE: DBL-11-BAL attempt1 X-after"
+      ],
+      "identity_checks": "固定路径，前后 PID 均为 92816。批次 TC-PHI507-r2-DBL-11-BAL。A=eedbc1fc-6aae-484f-b372-077c9b42e026；X=5891f8e3-2a0e-4852-82c4-3311421f24de；Y=60118701-e8e0-4147-b009-5bb36d4007c6。X/Y 前后实见 KEEP-DBL-11-BAL-X/Y 及相同编号。其他 Space 保留；未知 pin/书签内部数据未打开核对。",
+      "language_observed": "System Default，浏览器界面实际英文。",
+      "layout_observed": "Balanced；General 选中截图及浏览器外部纵向标签已确认。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "在 S2 新建 New Tab，通过 Close Other Tabs 清理 PER 的 X/Y；get_app_state 实读仅一个 New Tab 后重建 BAL 的 X/Y。S1 原占位导航为本项新 A，最终确认 S1 仅 A。",
+      "settings_observed": "Advanced 实读双击关闭 on、按位置关闭 on、恢复会话 on；本项未点击开关。快捷键未修改。",
+      "steps_executed": [
+        "通过 General 原生按钮切换 Balanced 并截图，读取 Advanced 双开关 on/on。",
+        "原生清理并重建本项 S1:A、S2:X/Y。",
+        "分别在 X/Y 输入 KEEP-DBL-11-BAL-X/Y，确认焦点边框与实际文字，记录打开编号。",
+        "切 S1，关键动作前 get_app_state 确认只有 A。",
+        "对 A 对应的 selected row 请求 CU click_count:2。",
+        "记录 S1 的 New Tab 占位，再切 S2，逐页核对 Y、X 的输入和原编号。"
+      ],
+      "unit_id": "DBL-11-BAL"
+    },
+    "notes": "Ripley 已审阅三布局关键前后画面及全部21张证据；S1唯一普通A消失，S2:X/Y前后UUID及KEEP均不变。PER/BAL为New Tab占位，COM为无普通tab的地址/游戏占位，均保留当前Space及窗口。原错标X-before的Y空输入帧保留并更正元数据，另附同marker较早的真正X-before，不改原图。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-11",
@@ -8533,7 +8733,16 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/DBL-11-observations.json",
+      "qa-evidence/r4/DBL-11-COM-01.png",
+      "qa-evidence/r4/DBL-11-COM-02.png",
+      "qa-evidence/r4/DBL-11-COM-03.png",
+      "qa-evidence/r4/DBL-11-COM-04.png",
+      "qa-evidence/r4/DBL-11-COM-05.png",
+      "qa-evidence/r4/DBL-11-COM-06.png",
+      "qa-evidence/r4/DBL-11-COM-07.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-11-COM",
     "layout": "comfortable",
@@ -8542,9 +8751,108 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-11",
+        "round": 4,
+        "outcome": "pass",
+        "actual": "A 消失，S1 原生树无 tabStripTab，窗口标题变为 TC-QA-PHI507-r2-DBL-11-S1；显示 Search or Enter URL 及游戏占位，未自动切 Space。S2 仍为 X | Y，两个输入标记和原打开编号保持。",
+        "observation": {
+          "active_after": "双击后：S1 无活动普通 tab、空选中集；逐页核对结束：S2 X/{X}。恢复偏好后仍为 S2 X/{X}。",
+          "active_before": "S1 A/{A}。",
+          "after": "A 消失，S1 原生树无 tabStripTab，窗口标题变为 TC-QA-PHI507-r2-DBL-11-S1；显示 Search or Enter URL 及游戏占位，未自动切 Space。S2 仍为 X | Y，两个输入标记和原打开编号保持。",
+          "before": "S1:[A]；S2:[X,Y]。无组、split 或 pin。",
+          "confirmation_choices": "未出现确认框。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-11-COM attempt1 settings",
+            "EVIDENCE: DBL-11-COM attempt1 X-loaded",
+            "EVIDENCE: DBL-11-COM attempt1 X-before",
+            "EVIDENCE: DBL-11-COM attempt1 Y-before",
+            "EVIDENCE: DBL-11-COM attempt1 before",
+            "EVIDENCE: DBL-11-COM attempt1 after",
+            "EVIDENCE: DBL-11-COM attempt1 Y-after",
+            "EVIDENCE: DBL-11-COM attempt1 X-after",
+            "EVIDENCE: DBL-11-COM attempt1 restore-layout",
+            "EVIDENCE: DBL-11-COM attempt1 restore-settings",
+            "EVIDENCE: DBL-11-COM attempt1 ending-state"
+          ],
+          "identity_checks": "固定路径，前后 PID 均为 92816。批次 TC-PHI507-r2-DBL-11-COM。A=87a768b6-8f4a-4c97-929a-b7641a52ac9d；X=a2c1f804-ed87-4da6-b3b2-7f85e4abce22；Y=08cb5e5f-53ab-46ab-89e9-42e4710f0714。X/Y 前后实见 KEEP-DBL-11-COM-X/Y 及相同编号。双击前 A 的 tabStripTab Description 仍为 New Tab，但其唯一子 text、窗口标题和屏幕正文均为本项 TC-A，实际点击该容器。结束占位中央原文为“Press spacebar to start game”，未执行。未知 pin/书签内部数据未打开核对。",
+          "language_observed": "System Default，浏览器界面实际英文；收尾保持原值。",
+          "layout_observed": "被测动作时为 Comfortable，General 选中截图及顶部外部横向标签已确认；收尾恢复 Balanced 并截图。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "S2 新建 New Tab → Close Other Tabs 清理 BAL 的 X/Y，实读仅 New Tab 后重建 COM 的 X/Y；经 Spaces 菜单切 S1，将占位原生导航为本项 A，确认仅一个 A。",
+          "settings_observed": "被测动作时双击关闭 on、按位置关闭 on、恢复会话 on。收尾仅点击双击关闭使其 on→off，即时读取按位置关闭仍 on；恢复会话仍 on。快捷键未修改。",
+          "steps_executed": [
+            "通过 General 原生按钮切换 Comfortable 并截图；Advanced 实读 on/on。",
+            "原生清理并独立重建 S1:A、S2:X/Y。",
+            "分别在 X/Y 输入 KEEP-DBL-11-COM-X/Y，确认焦点边框与实际文字，记录打开编号。",
+            "通过 Spaces 菜单切 S1，关键动作前 get_app_state 确认单独 A。",
+            "对仅包含本项 TC-A 文本的 tabStripTab 容器请求 CU click_count:2。",
+            "get_app_state 记录无普通 tab 的 S1 占位，再经 Spaces 菜单回 S2，逐页核对 Y、X。",
+            "最后统一恢复 Balanced 与双击关闭 off，读取按位置关闭 on、恢复会话 on，关闭 Settings 并保存最终状态；未额外重建序列。"
+          ],
+          "unit_id": "DBL-11-COM"
+        },
+        "evidence": [
+          "qa-evidence/r4/DBL-11-observations.json",
+          "qa-evidence/r4/DBL-11-COM-01.png",
+          "qa-evidence/r4/DBL-11-COM-02.png",
+          "qa-evidence/r4/DBL-11-COM-03.png",
+          "qa-evidence/r4/DBL-11-COM-04.png",
+          "qa-evidence/r4/DBL-11-COM-05.png",
+          "qa-evidence/r4/DBL-11-COM-06.png",
+          "qa-evidence/r4/DBL-11-COM-07.png"
+        ],
+        "evidence_metadata": "qa-evidence/r4/DBL-11-evidence.json",
+        "notes": "Ripley 已审阅三布局关键前后画面及全部21张证据；S1唯一普通A消失，S2:X/Y前后UUID及KEEP均不变。PER/BAL为New Tab占位，COM为无普通tab的地址/游戏占位，均保留当前Space及窗口。原错标X-before的Y空输入帧保留并更正元数据，另附同marker较早的真正X-before，不改原图。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T18:21:46.234192+00:00"
+      }
+    ],
+    "actual": "A 消失，S1 原生树无 tabStripTab，窗口标题变为 TC-QA-PHI507-r2-DBL-11-S1；显示 Search or Enter URL 及游戏占位，未自动切 Space。S2 仍为 X | Y，两个输入标记和原打开编号保持。",
+    "observation": {
+      "active_after": "双击后：S1 无活动普通 tab、空选中集；逐页核对结束：S2 X/{X}。恢复偏好后仍为 S2 X/{X}。",
+      "active_before": "S1 A/{A}。",
+      "after": "A 消失，S1 原生树无 tabStripTab，窗口标题变为 TC-QA-PHI507-r2-DBL-11-S1；显示 Search or Enter URL 及游戏占位，未自动切 Space。S2 仍为 X | Y，两个输入标记和原打开编号保持。",
+      "before": "S1:[A]；S2:[X,Y]。无组、split 或 pin。",
+      "confirmation_choices": "未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-11-COM attempt1 settings",
+        "EVIDENCE: DBL-11-COM attempt1 X-loaded",
+        "EVIDENCE: DBL-11-COM attempt1 X-before",
+        "EVIDENCE: DBL-11-COM attempt1 Y-before",
+        "EVIDENCE: DBL-11-COM attempt1 before",
+        "EVIDENCE: DBL-11-COM attempt1 after",
+        "EVIDENCE: DBL-11-COM attempt1 Y-after",
+        "EVIDENCE: DBL-11-COM attempt1 X-after",
+        "EVIDENCE: DBL-11-COM attempt1 restore-layout",
+        "EVIDENCE: DBL-11-COM attempt1 restore-settings",
+        "EVIDENCE: DBL-11-COM attempt1 ending-state"
+      ],
+      "identity_checks": "固定路径，前后 PID 均为 92816。批次 TC-PHI507-r2-DBL-11-COM。A=87a768b6-8f4a-4c97-929a-b7641a52ac9d；X=a2c1f804-ed87-4da6-b3b2-7f85e4abce22；Y=08cb5e5f-53ab-46ab-89e9-42e4710f0714。X/Y 前后实见 KEEP-DBL-11-COM-X/Y 及相同编号。双击前 A 的 tabStripTab Description 仍为 New Tab，但其唯一子 text、窗口标题和屏幕正文均为本项 TC-A，实际点击该容器。结束占位中央原文为“Press spacebar to start game”，未执行。未知 pin/书签内部数据未打开核对。",
+      "language_observed": "System Default，浏览器界面实际英文；收尾保持原值。",
+      "layout_observed": "被测动作时为 Comfortable，General 选中截图及顶部外部横向标签已确认；收尾恢复 Balanced 并截图。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "S2 新建 New Tab → Close Other Tabs 清理 BAL 的 X/Y，实读仅 New Tab 后重建 COM 的 X/Y；经 Spaces 菜单切 S1，将占位原生导航为本项 A，确认仅一个 A。",
+      "settings_observed": "被测动作时双击关闭 on、按位置关闭 on、恢复会话 on。收尾仅点击双击关闭使其 on→off，即时读取按位置关闭仍 on；恢复会话仍 on。快捷键未修改。",
+      "steps_executed": [
+        "通过 General 原生按钮切换 Comfortable 并截图；Advanced 实读 on/on。",
+        "原生清理并独立重建 S1:A、S2:X/Y。",
+        "分别在 X/Y 输入 KEEP-DBL-11-COM-X/Y，确认焦点边框与实际文字，记录打开编号。",
+        "通过 Spaces 菜单切 S1，关键动作前 get_app_state 确认单独 A。",
+        "对仅包含本项 TC-A 文本的 tabStripTab 容器请求 CU click_count:2。",
+        "get_app_state 记录无普通 tab 的 S1 占位，再经 Spaces 菜单回 S2，逐页核对 Y、X。",
+        "最后统一恢复 Balanced 与双击关闭 off，读取按位置关闭 on、恢复会话 on，关闭 Settings 并保存最终状态；未额外重建序列。"
+      ],
+      "unit_id": "DBL-11-COM"
+    },
+    "notes": "Ripley 已审阅三布局关键前后画面及全部21张证据；S1唯一普通A消失，S2:X/Y前后UUID及KEEP均不变。PER/BAL为New Tab占位，COM为无普通tab的地址/游戏占位，均保留当前Space及窗口。原错标X-before的Y空输入帧保留并更正元数据，另附同marker较早的真正X-before，不改原图。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-12",

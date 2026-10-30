@@ -22597,7 +22597,12 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录本项语言代码，附两个布局的方向菜单截图；设置说明不能被截断。",
+    "evidence": [
+      "qa-evidence/r3/VIS-02-ko-observations.json",
+      "qa-evidence/r3/VIS-02-PER-ko-01.png",
+      "qa-evidence/r3/VIS-02-PER-ko-02.png",
+      "qa-evidence/r3/VIS-02-PER-ko-03.png"
+    ],
     "languages": [
       "en",
       "zh-Hant",
@@ -22616,9 +22621,96 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "VIS-02-ko",
+        "round": 3,
+        "outcome": "pass",
+        "actual": "本项集合仍为普通 N；TC-PHI507-r2-VIS-02-PER-ko[G1,G2]。三个标题均 새 탭；菜单已取消，未点击方向关闭项。",
+        "observation": {
+          "active_after": "G2",
+          "active_before": "G2",
+          "after": "本项集合仍为普通 N；TC-PHI507-r2-VIS-02-PER-ko[G1,G2]。三个标题均 새 탭；菜单已取消，未点击方向关闭项。",
+          "before": "普通 N 在组前；TC-PHI507-r2-VIS-02-PER-ko 展开，成员 G1、G2。三个新建对象无多选、无 split；既有其他对象保留。",
+          "confirmation_choices": "语言提示选择 Restart Phi，返回 App quit 后通过 CU 重开；组重命名选择 저장。关闭前项 COM-ja 测试组时未出现确认框。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-02-PER-ko attempt1 restart-result",
+            "EVIDENCE: VIS-02-PER-ko attempt1 layout",
+            "EVIDENCE: VIS-02-PER-ko attempt1 settings",
+            "EVIDENCE: VIS-02-PER-ko attempt1 before",
+            "EVIDENCE: VIS-02-PER-ko attempt1 normal-menu",
+            "EVIDENCE: VIS-02-PER-ko attempt1 group-menu",
+            "EVIDENCE: VIS-02-PER-ko attempt1 after"
+          ],
+          "identity_checks": "指定路径应用 PID82780→83231，对应语言提示重启。关键截图实读 App、Window=고급/새 탭。N 为普通 row26；组内两个独立子 row33、38，按创建顺序为 G1、G2；G2 白色活动背景。仅记录原生 New Tab 身份，不声称 Web 文档提交或存活编号。",
+          "language_observed": "General 实读 한국어。所查两个开关、两段说明及方向菜单项逐字与提供语言表相同，这些区域未见 key、缺字或英文回退。普通菜单可见：고정、복제、링크 복사、현재 탭과 분할、북마크에 추가、폴더에 추가、새 탭 그룹、그룹에 추가、스페이스로 이동、닫기、다른 탭 닫기、위쪽 탭 닫기、아래쪽 탭 닫기，顶层项均可用。组菜单可见：그룹에 새 탭、그룹 이름 변경、색상 변경、그룹 접기、그룹 해제、그룹 닫기、그룹 위쪽 탭 닫기、그룹 아래쪽 탭 닫기；仅最后一项禁用。",
+          "layout_observed": "General 的 성능 卡片选中，浏览器外部标签纵向排列。双击说明两行，第二行为「그대로 유지돼요.」；方向说明一行，均完整可读。普通 위쪽 탭 닫기、아래쪽 탭 닫기 均可用；组 그룹 위쪽 탭 닫기 可用，그룹 아래쪽 탭 닫기 禁用。菜单项单行无截断；组长名称在侧栏省略显示。",
+          "not_executed_reason": "",
+          "operator_errors": [
+            "一次 functions.exec 辅助函数 eval 语法错误，未发出 CU 或改变界面；改为异步封装后继续。"
+          ],
+          "precondition_actual": "原生关闭前项 COM-ja 组及对应 N，独立新建 N、G1、G2，并组成两成员 PER-ko 测试组；한국어、Performance、两个开关 on。",
+          "settings_observed": "두 번 클릭하여 탭 닫기=on；위치에 따라 탭 한꺼번에 닫기=on。双击说明：「탭을 두 번 클릭하면 닫혀요. 분할 보기에서는 클릭한 쪽만 닫혀요. 고정 탭과 북마크의 두 번 클릭 동작은 그대로 유지돼요.」方向说明：「탭과 탭 그룹 메뉴에 왼쪽 또는 오른쪽 탭을 닫는 항목을 추가해요. 세로 탭 표시줄에서는 위쪽 또는 아래쪽 탭을 닫아요.」双击开关 off→on 后即时实读另一个开关仍 on。",
+          "steps_executed": [
+            "General 下拉选择 한국어，按提示 Restart Phi；CU 重开后核对新 PID 和韩语界面。",
+            "Advanced 单独开启双击关闭，读取两个开关即时值；General 选择 성능 并截图确认。",
+            "关闭前项 COM-ja 测试组及对应普通 N；新建 N、G1，通过 New Tab Group→Rename Group 命名，再 New Tab in Group 新建 G2，核对两成员顺序。",
+            "保留完整 Advanced 设置截图及文字；对 N 原生 row 右键读取普通菜单，Cancel 后对组标题右键读取组菜单。",
+            "Cancel 组菜单，保存结束截图并输出本项 OBSERVATION。"
+          ],
+          "unit_id": "VIS-02-PER-ko"
+        },
+        "evidence": [
+          "qa-evidence/r3/VIS-02-ko-observations.json",
+          "qa-evidence/r3/VIS-02-PER-ko-01.png",
+          "qa-evidence/r3/VIS-02-PER-ko-02.png",
+          "qa-evidence/r3/VIS-02-PER-ko-03.png"
+        ],
+        "evidence_metadata": "qa-evidence/r3/VIS-02-ko-evidence.json",
+        "notes": "Ripley已逐张复核三布局9张设置/普通菜单/组菜单关键图及2张准备匹配错误现场；韩文目标标题、两段说明和上下/左右方向项逐字符合handbook ko labels。双击说明两行、方向说明一行，完整可读；组边界禁用态清晰，无目标key、缺字或英文回退。JS编排语法错误发生在UI调用前，BAL/COM匹配守卫恢复后才观察菜单，原始异常保留且不计产品失败。149个实际MCP事件全部来自Computer Use。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T16:28:19.076055+00:00"
+      }
+    ],
+    "actual": "本项集合仍为普通 N；TC-PHI507-r2-VIS-02-PER-ko[G1,G2]。三个标题均 새 탭；菜单已取消，未点击方向关闭项。",
+    "observation": {
+      "active_after": "G2",
+      "active_before": "G2",
+      "after": "本项集合仍为普通 N；TC-PHI507-r2-VIS-02-PER-ko[G1,G2]。三个标题均 새 탭；菜单已取消，未点击方向关闭项。",
+      "before": "普通 N 在组前；TC-PHI507-r2-VIS-02-PER-ko 展开，成员 G1、G2。三个新建对象无多选、无 split；既有其他对象保留。",
+      "confirmation_choices": "语言提示选择 Restart Phi，返回 App quit 后通过 CU 重开；组重命名选择 저장。关闭前项 COM-ja 测试组时未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-02-PER-ko attempt1 restart-result",
+        "EVIDENCE: VIS-02-PER-ko attempt1 layout",
+        "EVIDENCE: VIS-02-PER-ko attempt1 settings",
+        "EVIDENCE: VIS-02-PER-ko attempt1 before",
+        "EVIDENCE: VIS-02-PER-ko attempt1 normal-menu",
+        "EVIDENCE: VIS-02-PER-ko attempt1 group-menu",
+        "EVIDENCE: VIS-02-PER-ko attempt1 after"
+      ],
+      "identity_checks": "指定路径应用 PID82780→83231，对应语言提示重启。关键截图实读 App、Window=고급/새 탭。N 为普通 row26；组内两个独立子 row33、38，按创建顺序为 G1、G2；G2 白色活动背景。仅记录原生 New Tab 身份，不声称 Web 文档提交或存活编号。",
+      "language_observed": "General 实读 한국어。所查两个开关、两段说明及方向菜单项逐字与提供语言表相同，这些区域未见 key、缺字或英文回退。普通菜单可见：고정、복제、링크 복사、현재 탭과 분할、북마크에 추가、폴더에 추가、새 탭 그룹、그룹에 추가、스페이스로 이동、닫기、다른 탭 닫기、위쪽 탭 닫기、아래쪽 탭 닫기，顶层项均可用。组菜单可见：그룹에 새 탭、그룹 이름 변경、색상 변경、그룹 접기、그룹 해제、그룹 닫기、그룹 위쪽 탭 닫기、그룹 아래쪽 탭 닫기；仅最后一项禁用。",
+      "layout_observed": "General 的 성능 卡片选中，浏览器外部标签纵向排列。双击说明两行，第二行为「그대로 유지돼요.」；方向说明一行，均完整可读。普通 위쪽 탭 닫기、아래쪽 탭 닫기 均可用；组 그룹 위쪽 탭 닫기 可用，그룹 아래쪽 탭 닫기 禁用。菜单项单行无截断；组长名称在侧栏省略显示。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "一次 functions.exec 辅助函数 eval 语法错误，未发出 CU 或改变界面；改为异步封装后继续。"
+      ],
+      "precondition_actual": "原生关闭前项 COM-ja 组及对应 N，独立新建 N、G1、G2，并组成两成员 PER-ko 测试组；한국어、Performance、两个开关 on。",
+      "settings_observed": "두 번 클릭하여 탭 닫기=on；위치에 따라 탭 한꺼번에 닫기=on。双击说明：「탭을 두 번 클릭하면 닫혀요. 분할 보기에서는 클릭한 쪽만 닫혀요. 고정 탭과 북마크의 두 번 클릭 동작은 그대로 유지돼요.」方向说明：「탭과 탭 그룹 메뉴에 왼쪽 또는 오른쪽 탭을 닫는 항목을 추가해요. 세로 탭 표시줄에서는 위쪽 또는 아래쪽 탭을 닫아요.」双击开关 off→on 后即时实读另一个开关仍 on。",
+      "steps_executed": [
+        "General 下拉选择 한국어，按提示 Restart Phi；CU 重开后核对新 PID 和韩语界面。",
+        "Advanced 单独开启双击关闭，读取两个开关即时值；General 选择 성능 并截图确认。",
+        "关闭前项 COM-ja 测试组及对应普通 N；新建 N、G1，通过 New Tab Group→Rename Group 命名，再 New Tab in Group 新建 G2，核对两成员顺序。",
+        "保留完整 Advanced 设置截图及文字；对 N 原生 row 右键读取普通菜单，Cancel 后对组标题右键读取组菜单。",
+        "Cancel 组菜单，保存结束截图并输出本项 OBSERVATION。"
+      ],
+      "unit_id": "VIS-02-PER-ko"
+    },
+    "notes": "Ripley已逐张复核三布局9张设置/普通菜单/组菜单关键图及2张准备匹配错误现场；韩文目标标题、两段说明和上下/左右方向项逐字符合handbook ko labels。双击说明两行、方向说明一行，完整可读；组边界禁用态清晰，无目标key、缺字或英文回退。JS编排语法错误发生在UI调用前，BAL/COM匹配守卫恢复后才观察菜单，原始异常保留且不计产品失败。149个实际MCP事件全部来自Computer Use。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "VIS-02",
@@ -22642,7 +22734,13 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录本项语言代码，附两个布局的方向菜单截图；设置说明不能被截断。",
+    "evidence": [
+      "qa-evidence/r3/VIS-02-de-observations.json",
+      "qa-evidence/r3/VIS-02-PER-de-01.png",
+      "qa-evidence/r3/VIS-02-PER-de-02.png",
+      "qa-evidence/r3/VIS-02-PER-de-03.png",
+      "qa-evidence/r3/VIS-02-PER-de-04.png"
+    ],
     "languages": [
       "en",
       "zh-Hant",
@@ -22661,9 +22759,105 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "VIS-02-de",
+        "round": 3,
+        "outcome": "pass",
+        "actual": "本轮对象仍为组[G1,G2]、N，三个标题均为 Neuer Tab；菜单已用原生 Cancel 关闭，无确认框、无多选。既有其他行保留。",
+        "observation": {
+          "active_after": "G2",
+          "active_before": "G2",
+          "after": "本轮对象仍为组[G1,G2]、N，三个标题均为 Neuer Tab；菜单已用原生 Cancel 关闭，无确认框、无多选。既有其他行保留。",
+          "before": "实际屏幕顺序为 TC-PHI507-r2-VIS-02-PER-de 组[G1,G2]、普通 N；组内原生表有两个成员，三个标题均为 Neuer Tab。",
+          "confirmation_choices": "General 选择 Deutsch 后接受 Restart Phi；返回 App quit，随后通过 CU 重开。组重命名选择 Speichern。关闭本轮 COM-ko 组未出现确认框，未勾选任何不再询问选项。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-02-PER-de attempt1 restart-result",
+            "EVIDENCE: VIS-02-PER-de attempt1 layout",
+            "EVIDENCE: VIS-02-PER-de attempt1 settings",
+            "EVIDENCE: VIS-02-PER-de attempt1 failure",
+            "EVIDENCE: VIS-02-PER-de attempt1 before",
+            "EVIDENCE: VIS-02-PER-de attempt1 normal-menu",
+            "EVIDENCE: VIS-02-PER-de attempt1 group-menu",
+            "EVIDENCE: VIS-02-PER-de attempt1 after"
+          ],
+          "identity_checks": "指定路径初始 PID83734；语言重启后 PID84085，Window=\"Neuer Tab\"。新建两个普通对象后，将第一个建组并记为 G1，第二个保留为 N；通过组菜单新增 G2。原生表与截图逐个核对两个组成员及一个组外普通页。本轮对象无 split，未声称 fixture 文档或存活编号。",
+          "language_observed": "General=Deutsch，重启后原生菜单和设置为德语。普通 N 菜单：Tabs oberhalb schließen 可用，Tabs unterhalb schließen 禁用。组标题菜单：Tabs oberhalb der Gruppe schließen、Tabs unterhalb der Gruppe schließen 均可用。四个方向项与提供的原文逐字相同，完整单行显示。所查开关、说明和方向项未见 key、缺字或英文回退。",
+          "layout_observed": "General 的 Performance 卡片有选中边框；浏览器 chrome 为外部纵向标签栏，菜单使用上下方向。组标题栏内显示 TC-PHI507-r2-…，完整组名见原生树。设置两段说明各换为两行，末尾完整可见；普通菜单和组菜单完整显示。",
+          "not_executed_reason": "",
+          "operator_errors": [
+            "一次 helper 编排 SyntaxError 发生于 CU 调用前，没有界面动作。",
+            "右键第二个普通 New Tab 的原生 row 时，CU 返回 element was invalidated / multiple elements 错误；立即停止并保留 failure 图。重读后在第一个实际对象上打开菜单，最终依据真实关系记录 G1 和 N，未将报错调用记作成功。"
+          ],
+          "precondition_actual": "Deutsch 重启后 PID84085；Performance；Tabs per Doppelklick schließen=on、Tabs nach Position schließen=on。已关闭前项 COM-ko 组及核对过的残留 N，独立创建本项三个本地 New Tab。",
+          "settings_observed": "Tabs per Doppelklick schließen=on；Tabs nach Position schließen=on。双击说明实读：Schließe einen Tab per Doppelklick. In der geteilten Ansicht wird nur der angeklickte Bereich geschlossen. Angeheftete Tabs und Lesezeichen behalten ihre bisherigen Doppelklick-Aktionen. 方向说明实读：Fügt den Menüs für Tabs und Tabgruppen Optionen zum Schließen der Tabs links oder rechts hinzu. Bei einer vertikalen Tableiste gelten die Optionen für Tabs oberhalb oder unterhalb. 两个标签及两段说明与提供原文逐字相同。初始仅将双击开关 off→on，该次返回树中按位置关闭仍为 on。",
+          "steps_executed": [
+            "原生 General 选择 Deutsch，接受重启提示；CU 重开并实读德语及新 PID。",
+            "选择 Performance，保存 General 语言与布局截图。",
+            "读取 Advanced 两个开关及说明，保存完整设置截图。",
+            "在本项 setup 关闭 COM-ko 测试组及对应普通 N；新建两个普通 New Tab，经 Neue Tab-Gruppe、Gruppe umbenennen 创建 TC-PHI507-r2-VIS-02-PER-de，再用 Neuer Tab in Gruppe 新建第二个组成员。",
+            "核对组[G1,G2]、N 和活动 G2，保存 before 图。",
+            "分别打开普通 N 菜单及组标题菜单，读取上下关闭项及可用状态，保存截图；仅用原生 Cancel 退出菜单，未点击方向关闭项。",
+            "保存 after 图并输出本项 OBSERVATION。"
+          ],
+          "unit_id": "VIS-02-PER-de"
+        },
+        "evidence": [
+          "qa-evidence/r3/VIS-02-de-observations.json",
+          "qa-evidence/r3/VIS-02-PER-de-01.png",
+          "qa-evidence/r3/VIS-02-PER-de-02.png",
+          "qa-evidence/r3/VIS-02-PER-de-03.png",
+          "qa-evidence/r3/VIS-02-PER-de-04.png"
+        ],
+        "evidence_metadata": "qa-evidence/r3/VIS-02-de-evidence.json",
+        "notes": "Ripley已逐张核对11张设置、普通菜单、组菜单及无效准备动作截图。两个设置说明及四个目标方向关闭文案完整且符合手册；纵向上下、横向左右正确。COM普通菜单超出应用窗口右缘的非目标书签项未完整入图，不据此判断该无关项；指定关闭标签完整可见。准备报错保留，不作产品缺陷。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T16:40:36.438023+00:00"
+      }
+    ],
+    "actual": "本轮对象仍为组[G1,G2]、N，三个标题均为 Neuer Tab；菜单已用原生 Cancel 关闭，无确认框、无多选。既有其他行保留。",
+    "observation": {
+      "active_after": "G2",
+      "active_before": "G2",
+      "after": "本轮对象仍为组[G1,G2]、N，三个标题均为 Neuer Tab；菜单已用原生 Cancel 关闭，无确认框、无多选。既有其他行保留。",
+      "before": "实际屏幕顺序为 TC-PHI507-r2-VIS-02-PER-de 组[G1,G2]、普通 N；组内原生表有两个成员，三个标题均为 Neuer Tab。",
+      "confirmation_choices": "General 选择 Deutsch 后接受 Restart Phi；返回 App quit，随后通过 CU 重开。组重命名选择 Speichern。关闭本轮 COM-ko 组未出现确认框，未勾选任何不再询问选项。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-02-PER-de attempt1 restart-result",
+        "EVIDENCE: VIS-02-PER-de attempt1 layout",
+        "EVIDENCE: VIS-02-PER-de attempt1 settings",
+        "EVIDENCE: VIS-02-PER-de attempt1 failure",
+        "EVIDENCE: VIS-02-PER-de attempt1 before",
+        "EVIDENCE: VIS-02-PER-de attempt1 normal-menu",
+        "EVIDENCE: VIS-02-PER-de attempt1 group-menu",
+        "EVIDENCE: VIS-02-PER-de attempt1 after"
+      ],
+      "identity_checks": "指定路径初始 PID83734；语言重启后 PID84085，Window=\"Neuer Tab\"。新建两个普通对象后，将第一个建组并记为 G1，第二个保留为 N；通过组菜单新增 G2。原生表与截图逐个核对两个组成员及一个组外普通页。本轮对象无 split，未声称 fixture 文档或存活编号。",
+      "language_observed": "General=Deutsch，重启后原生菜单和设置为德语。普通 N 菜单：Tabs oberhalb schließen 可用，Tabs unterhalb schließen 禁用。组标题菜单：Tabs oberhalb der Gruppe schließen、Tabs unterhalb der Gruppe schließen 均可用。四个方向项与提供的原文逐字相同，完整单行显示。所查开关、说明和方向项未见 key、缺字或英文回退。",
+      "layout_observed": "General 的 Performance 卡片有选中边框；浏览器 chrome 为外部纵向标签栏，菜单使用上下方向。组标题栏内显示 TC-PHI507-r2-…，完整组名见原生树。设置两段说明各换为两行，末尾完整可见；普通菜单和组菜单完整显示。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "一次 helper 编排 SyntaxError 发生于 CU 调用前，没有界面动作。",
+        "右键第二个普通 New Tab 的原生 row 时，CU 返回 element was invalidated / multiple elements 错误；立即停止并保留 failure 图。重读后在第一个实际对象上打开菜单，最终依据真实关系记录 G1 和 N，未将报错调用记作成功。"
+      ],
+      "precondition_actual": "Deutsch 重启后 PID84085；Performance；Tabs per Doppelklick schließen=on、Tabs nach Position schließen=on。已关闭前项 COM-ko 组及核对过的残留 N，独立创建本项三个本地 New Tab。",
+      "settings_observed": "Tabs per Doppelklick schließen=on；Tabs nach Position schließen=on。双击说明实读：Schließe einen Tab per Doppelklick. In der geteilten Ansicht wird nur der angeklickte Bereich geschlossen. Angeheftete Tabs und Lesezeichen behalten ihre bisherigen Doppelklick-Aktionen. 方向说明实读：Fügt den Menüs für Tabs und Tabgruppen Optionen zum Schließen der Tabs links oder rechts hinzu. Bei einer vertikalen Tableiste gelten die Optionen für Tabs oberhalb oder unterhalb. 两个标签及两段说明与提供原文逐字相同。初始仅将双击开关 off→on，该次返回树中按位置关闭仍为 on。",
+      "steps_executed": [
+        "原生 General 选择 Deutsch，接受重启提示；CU 重开并实读德语及新 PID。",
+        "选择 Performance，保存 General 语言与布局截图。",
+        "读取 Advanced 两个开关及说明，保存完整设置截图。",
+        "在本项 setup 关闭 COM-ko 测试组及对应普通 N；新建两个普通 New Tab，经 Neue Tab-Gruppe、Gruppe umbenennen 创建 TC-PHI507-r2-VIS-02-PER-de，再用 Neuer Tab in Gruppe 新建第二个组成员。",
+        "核对组[G1,G2]、N 和活动 G2，保存 before 图。",
+        "分别打开普通 N 菜单及组标题菜单，读取上下关闭项及可用状态，保存截图；仅用原生 Cancel 退出菜单，未点击方向关闭项。",
+        "保存 after 图并输出本项 OBSERVATION。"
+      ],
+      "unit_id": "VIS-02-PER-de"
+    },
+    "notes": "Ripley已逐张核对11张设置、普通菜单、组菜单及无效准备动作截图。两个设置说明及四个目标方向关闭文案完整且符合手册；纵向上下、横向左右正确。COM普通菜单超出应用窗口右缘的非目标书签项未完整入图，不据此判断该无关项；指定关闭标签完整可见。准备报错保留，不作产品缺陷。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "VIS-02",
@@ -23245,7 +23439,13 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录本项语言代码，附两个布局的方向菜单截图；设置说明不能被截断。",
+    "evidence": [
+      "qa-evidence/r3/VIS-02-ko-observations.json",
+      "qa-evidence/r3/VIS-02-BAL-ko-01.png",
+      "qa-evidence/r3/VIS-02-BAL-ko-02.png",
+      "qa-evidence/r3/VIS-02-BAL-ko-03.png",
+      "qa-evidence/r3/VIS-02-BAL-ko-04.png"
+    ],
     "languages": [
       "en",
       "zh-Hant",
@@ -23264,9 +23464,97 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "VIS-02-ko",
+        "round": 3,
+        "outcome": "pass",
+        "actual": "本项集合仍为普通 N；TC-PHI507-r2-VIS-02-BAL-ko[G1,G2]。三个标题均 새 탭；菜单已取消，未点击方向关闭项。",
+        "observation": {
+          "active_after": "G2",
+          "active_before": "G2",
+          "after": "本项集合仍为普通 N；TC-PHI507-r2-VIS-02-BAL-ko[G1,G2]。三个标题均 새 탭；菜单已取消，未点击方向关闭项。",
+          "before": "普通 N 在组前；TC-PHI507-r2-VIS-02-BAL-ko 展开，成员 G1、G2。三个新建对象无多选、无 split。",
+          "confirmation_choices": "组重命名选择 저장；关闭 PER-ko 测试组时未出现确认框。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-02-BAL-ko attempt1 layout",
+            "EVIDENCE: VIS-02-BAL-ko attempt1 settings",
+            "EVIDENCE: VIS-02-BAL-ko attempt1 failure",
+            "EVIDENCE: VIS-02-BAL-ko attempt1 before",
+            "EVIDENCE: VIS-02-BAL-ko attempt1 normal-menu",
+            "EVIDENCE: VIS-02-BAL-ko attempt1 group-menu",
+            "EVIDENCE: VIS-02-BAL-ko attempt1 after"
+          ],
+          "identity_checks": "指定路径应用 PID83231，Window=고급/새 탭。N 普通 row21；组内独立子 row28、33，按创建顺序为 G1、G2；G2 白色活动背景。仅记录原生 New Tab 身份。",
+          "language_observed": "General 再次实读 한국어。所查两个开关、两段说明及方向项逐字与提供语言表相同，这些区域未见 key、缺字或英文回退。普通菜单可见：고정、복제、링크 복사、현재 탭과 분할、북마크에 추가、폴더에 추가、새 탭 그룹、그룹에 추가、스페이스로 이동、닫기、다른 탭 닫기、위쪽 탭 닫기、아래쪽 탭 닫기，顶层项均可用。组菜单可见：그룹에 새 탭、그룹 이름 변경、색상 변경、그룹 접기、그룹 해제、그룹 닫기、그룹 위쪽 탭 닫기、그룹 아래쪽 탭 닫기；仅最后一项禁用。",
+          "layout_observed": "General 的 균형 卡片选中，外部标签纵向排列。双击说明两行，第二行为「그대로 유지돼요.」；方向说明一行，均完整可读。普通 위쪽 탭 닫기、아래쪽 탭 닫기 均可用；组 그룹 위쪽 탭 닫기 可用，그룹 아래쪽 탭 닫기 禁用。菜单项单行无截断；组长名称在侧栏省略。",
+          "not_executed_reason": "",
+          "operator_errors": [
+            "setup 中辅助匹配器把焦点复述当成第二个控件，停在 Rename Group 对话框；第一次正则修正仍未匹配到原生行。均在发出目标 CU 前停止，failure 截图保留。修正为仅匹配带数字索引的控件行后继续原对话框，未发生误点或被测菜单动作重试。"
+          ],
+          "precondition_actual": "关闭 PER-ko 测试组及对应 N 后独立新建三个 새 탭，组成普通 N 和两成员 BAL-ko 测试组；한국어、Balanced、两个开关 on。",
+          "settings_observed": "두 번 클릭하여 탭 닫기=on；위치에 따라 탭 한꺼번에 닫기=on，未点击已正确开关。双击说明：「탭을 두 번 클릭하면 닫혀요. 분할 보기에서는 클릭한 쪽만 닫혀요. 고정 탭과 북마크의 두 번 클릭 동작은 그대로 유지돼요.」方向说明：「탭과 탭 그룹 메뉴에 왼쪽 또는 오른쪽 탭을 닫는 항목을 추가해요. 세로 탭 표시줄에서는 위쪽 또는 아래쪽 탭을 닫아요.」",
+          "steps_executed": [
+            "关闭 PER-ko 组及对应 N；General 实读 한국어，选择 균형，保留选中边框截图。",
+            "读取 Advanced 两个开关和两段说明，保留完整设置截图。",
+            "独立新建 N、G1，以 New Tab Group→Rename Group 命名 BAL-ko；New Tab in Group 创建 G2，核对两成员顺序。",
+            "读取 N 普通菜单和组标题菜单，各保留完整截图，并分别以原生 Cancel 取消。",
+            "保存结束截图并输出本项 OBSERVATION。"
+          ],
+          "unit_id": "VIS-02-BAL-ko"
+        },
+        "evidence": [
+          "qa-evidence/r3/VIS-02-ko-observations.json",
+          "qa-evidence/r3/VIS-02-BAL-ko-01.png",
+          "qa-evidence/r3/VIS-02-BAL-ko-02.png",
+          "qa-evidence/r3/VIS-02-BAL-ko-03.png",
+          "qa-evidence/r3/VIS-02-BAL-ko-04.png"
+        ],
+        "evidence_metadata": "qa-evidence/r3/VIS-02-ko-evidence.json",
+        "notes": "Ripley已逐张复核三布局9张设置/普通菜单/组菜单关键图及2张准备匹配错误现场；韩文目标标题、两段说明和上下/左右方向项逐字符合handbook ko labels。双击说明两行、方向说明一行，完整可读；组边界禁用态清晰，无目标key、缺字或英文回退。JS编排语法错误发生在UI调用前，BAL/COM匹配守卫恢复后才观察菜单，原始异常保留且不计产品失败。149个实际MCP事件全部来自Computer Use。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T16:28:19.076295+00:00"
+      }
+    ],
+    "actual": "本项集合仍为普通 N；TC-PHI507-r2-VIS-02-BAL-ko[G1,G2]。三个标题均 새 탭；菜单已取消，未点击方向关闭项。",
+    "observation": {
+      "active_after": "G2",
+      "active_before": "G2",
+      "after": "本项集合仍为普通 N；TC-PHI507-r2-VIS-02-BAL-ko[G1,G2]。三个标题均 새 탭；菜单已取消，未点击方向关闭项。",
+      "before": "普通 N 在组前；TC-PHI507-r2-VIS-02-BAL-ko 展开，成员 G1、G2。三个新建对象无多选、无 split。",
+      "confirmation_choices": "组重命名选择 저장；关闭 PER-ko 测试组时未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-02-BAL-ko attempt1 layout",
+        "EVIDENCE: VIS-02-BAL-ko attempt1 settings",
+        "EVIDENCE: VIS-02-BAL-ko attempt1 failure",
+        "EVIDENCE: VIS-02-BAL-ko attempt1 before",
+        "EVIDENCE: VIS-02-BAL-ko attempt1 normal-menu",
+        "EVIDENCE: VIS-02-BAL-ko attempt1 group-menu",
+        "EVIDENCE: VIS-02-BAL-ko attempt1 after"
+      ],
+      "identity_checks": "指定路径应用 PID83231，Window=고급/새 탭。N 普通 row21；组内独立子 row28、33，按创建顺序为 G1、G2；G2 白色活动背景。仅记录原生 New Tab 身份。",
+      "language_observed": "General 再次实读 한국어。所查两个开关、两段说明及方向项逐字与提供语言表相同，这些区域未见 key、缺字或英文回退。普通菜单可见：고정、복제、링크 복사、현재 탭과 분할、북마크에 추가、폴더에 추가、새 탭 그룹、그룹에 추가、스페이스로 이동、닫기、다른 탭 닫기、위쪽 탭 닫기、아래쪽 탭 닫기，顶层项均可用。组菜单可见：그룹에 새 탭、그룹 이름 변경、색상 변경、그룹 접기、그룹 해제、그룹 닫기、그룹 위쪽 탭 닫기、그룹 아래쪽 탭 닫기；仅最后一项禁用。",
+      "layout_observed": "General 的 균형 卡片选中，外部标签纵向排列。双击说明两行，第二行为「그대로 유지돼요.」；方向说明一行，均完整可读。普通 위쪽 탭 닫기、아래쪽 탭 닫기 均可用；组 그룹 위쪽 탭 닫기 可用，그룹 아래쪽 탭 닫기 禁用。菜单项单行无截断；组长名称在侧栏省略。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "setup 中辅助匹配器把焦点复述当成第二个控件，停在 Rename Group 对话框；第一次正则修正仍未匹配到原生行。均在发出目标 CU 前停止，failure 截图保留。修正为仅匹配带数字索引的控件行后继续原对话框，未发生误点或被测菜单动作重试。"
+      ],
+      "precondition_actual": "关闭 PER-ko 测试组及对应 N 后独立新建三个 새 탭，组成普通 N 和两成员 BAL-ko 测试组；한국어、Balanced、两个开关 on。",
+      "settings_observed": "두 번 클릭하여 탭 닫기=on；위치에 따라 탭 한꺼번에 닫기=on，未点击已正确开关。双击说明：「탭을 두 번 클릭하면 닫혀요. 분할 보기에서는 클릭한 쪽만 닫혀요. 고정 탭과 북마크의 두 번 클릭 동작은 그대로 유지돼요.」方向说明：「탭과 탭 그룹 메뉴에 왼쪽 또는 오른쪽 탭을 닫는 항목을 추가해요. 세로 탭 표시줄에서는 위쪽 또는 아래쪽 탭을 닫아요.」",
+      "steps_executed": [
+        "关闭 PER-ko 组及对应 N；General 实读 한국어，选择 균형，保留选中边框截图。",
+        "读取 Advanced 两个开关和两段说明，保留完整设置截图。",
+        "独立新建 N、G1，以 New Tab Group→Rename Group 命名 BAL-ko；New Tab in Group 创建 G2，核对两成员顺序。",
+        "读取 N 普通菜单和组标题菜单，各保留完整截图，并分别以原生 Cancel 取消。",
+        "保存结束截图并输出本项 OBSERVATION。"
+      ],
+      "unit_id": "VIS-02-BAL-ko"
+    },
+    "notes": "Ripley已逐张复核三布局9张设置/普通菜单/组菜单关键图及2张准备匹配错误现场；韩文目标标题、两段说明和上下/左右方向项逐字符合handbook ko labels。双击说明两行、方向说明一行，完整可读；组边界禁用态清晰，无目标key、缺字或英文回退。JS编排语法错误发生在UI调用前，BAL/COM匹配守卫恢复后才观察菜单，原始异常保留且不计产品失败。149个实际MCP事件全部来自Computer Use。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "VIS-02",
@@ -23290,7 +23578,12 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录本项语言代码，附两个布局的方向菜单截图；设置说明不能被截断。",
+    "evidence": [
+      "qa-evidence/r3/VIS-02-de-observations.json",
+      "qa-evidence/r3/VIS-02-BAL-de-01.png",
+      "qa-evidence/r3/VIS-02-BAL-de-02.png",
+      "qa-evidence/r3/VIS-02-BAL-de-03.png"
+    ],
     "languages": [
       "en",
       "zh-Hant",
@@ -23309,9 +23602,94 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "VIS-02-de",
+        "round": 3,
+        "outcome": "pass",
+        "actual": "组[G1,G2]、N 均仍在；三个标题均为 Neuer Tab，活动 N。菜单已关闭，无确认框、无多选。",
+        "observation": {
+          "active_after": "N",
+          "active_before": "N",
+          "after": "组[G1,G2]、N 均仍在；三个标题均为 Neuer Tab，活动 N。菜单已关闭，无确认框、无多选。",
+          "before": "实际屏幕顺序为 TC-PHI507-r2-VIS-02-BAL-de 组[G1,G2]、普通 N；组内原生表有两个成员，三个标题均为 Neuer Tab。",
+          "confirmation_choices": "组重命名选择 Speichern；关闭 PER-de 测试组未出现确认框。语言已为 Deutsch，未重复选择语言或重启。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-02-BAL-de attempt1 layout",
+            "EVIDENCE: VIS-02-BAL-de attempt1 settings",
+            "EVIDENCE: VIS-02-BAL-de attempt1 before",
+            "EVIDENCE: VIS-02-BAL-de attempt1 normal-menu",
+            "EVIDENCE: VIS-02-BAL-de attempt1 group-menu",
+            "EVIDENCE: VIS-02-BAL-de attempt1 after"
+          ],
+          "identity_checks": "指定应用 PID84085，Window=\"Neuer Tab\"。本项重新创建 G1，经原生菜单建组，再新增 G2，最后 Cmd+T 创建普通 N；原生表与截图核对两个组成员和一个组外普通页。实际顺序组[G1,G2]、N，无多选，本轮对象无 split；仅本地 New Tab。",
+          "language_observed": "General=Deutsch。普通 N 菜单：Tabs oberhalb schließen 可用，Tabs unterhalb schließen 禁用。组标题菜单：Tabs oberhalb der Gruppe schließen、Tabs unterhalb der Gruppe schließen 均可用。四个方向项与提供原文逐字相同，完整单行显示。所查开关、说明和方向项未见 key、缺字或英文回退。",
+          "layout_observed": "General 的 Ausgewogen（Balanced）卡片有选中边框；外部纵向标签栏，菜单关闭项为上下方向。组标题栏内省略为 TC-PHI507-r2-…，原生完整组名可读。两段设置说明各两行、末尾完整；普通菜单和组菜单完整显示。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "本项 setup 已关闭 PER-de 组和对应 N；General 实读 Deutsch，切换为 Ausgewogen（Balanced）；两个关闭开关均为 on。独立新建组[G1,G2]和普通 N。",
+          "settings_observed": "Tabs per Doppelklick schließen=on；Tabs nach Position schließen=on，未点击已正确的开关。双击说明实读：Schließe einen Tab per Doppelklick. In der geteilten Ansicht wird nur der angeklickte Bereich geschlossen. Angeheftete Tabs und Lesezeichen behalten ihre bisherigen Doppelklick-Aktionen. 方向说明实读：Fügt den Menüs für Tabs und Tabgruppen Optionen zum Schließen der Tabs links oder rechts hinzu. Bei einer vertikalen Tableiste gelten die Optionen für Tabs oberhalb oder unterhalb. 两个标签及两段说明与提供原文逐字相同。",
+          "steps_executed": [
+            "在本项 setup 关闭 PER-de 组及对应普通 N。",
+            "General 实读 Deutsch，选择 Ausgewogen 并保存语言与布局截图。",
+            "Advanced 读取两个 on 及说明，保存完整设置截图。",
+            "新建 G1，经 Neue Tab-Gruppe、Gruppe umbenennen 创建 TC-PHI507-r2-VIS-02-BAL-de；用 Neuer Tab in Gruppe 创建 G2，再 Cmd+T 创建普通 N。",
+            "核对组[G1,G2]、N 和活动 N，保存 before 图。",
+            "分别打开普通 N 菜单及组标题菜单，记录上下关闭项及可用状态，保存截图；用原生 Cancel 关闭菜单，未点击方向关闭项。",
+            "保存 after 图并输出本项 OBSERVATION。"
+          ],
+          "unit_id": "VIS-02-BAL-de"
+        },
+        "evidence": [
+          "qa-evidence/r3/VIS-02-de-observations.json",
+          "qa-evidence/r3/VIS-02-BAL-de-01.png",
+          "qa-evidence/r3/VIS-02-BAL-de-02.png",
+          "qa-evidence/r3/VIS-02-BAL-de-03.png"
+        ],
+        "evidence_metadata": "qa-evidence/r3/VIS-02-de-evidence.json",
+        "notes": "Ripley已逐张核对11张设置、普通菜单、组菜单及无效准备动作截图。两个设置说明及四个目标方向关闭文案完整且符合手册；纵向上下、横向左右正确。COM普通菜单超出应用窗口右缘的非目标书签项未完整入图，不据此判断该无关项；指定关闭标签完整可见。准备报错保留，不作产品缺陷。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T16:40:36.438312+00:00"
+      }
+    ],
+    "actual": "组[G1,G2]、N 均仍在；三个标题均为 Neuer Tab，活动 N。菜单已关闭，无确认框、无多选。",
+    "observation": {
+      "active_after": "N",
+      "active_before": "N",
+      "after": "组[G1,G2]、N 均仍在；三个标题均为 Neuer Tab，活动 N。菜单已关闭，无确认框、无多选。",
+      "before": "实际屏幕顺序为 TC-PHI507-r2-VIS-02-BAL-de 组[G1,G2]、普通 N；组内原生表有两个成员，三个标题均为 Neuer Tab。",
+      "confirmation_choices": "组重命名选择 Speichern；关闭 PER-de 测试组未出现确认框。语言已为 Deutsch，未重复选择语言或重启。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-02-BAL-de attempt1 layout",
+        "EVIDENCE: VIS-02-BAL-de attempt1 settings",
+        "EVIDENCE: VIS-02-BAL-de attempt1 before",
+        "EVIDENCE: VIS-02-BAL-de attempt1 normal-menu",
+        "EVIDENCE: VIS-02-BAL-de attempt1 group-menu",
+        "EVIDENCE: VIS-02-BAL-de attempt1 after"
+      ],
+      "identity_checks": "指定应用 PID84085，Window=\"Neuer Tab\"。本项重新创建 G1，经原生菜单建组，再新增 G2，最后 Cmd+T 创建普通 N；原生表与截图核对两个组成员和一个组外普通页。实际顺序组[G1,G2]、N，无多选，本轮对象无 split；仅本地 New Tab。",
+      "language_observed": "General=Deutsch。普通 N 菜单：Tabs oberhalb schließen 可用，Tabs unterhalb schließen 禁用。组标题菜单：Tabs oberhalb der Gruppe schließen、Tabs unterhalb der Gruppe schließen 均可用。四个方向项与提供原文逐字相同，完整单行显示。所查开关、说明和方向项未见 key、缺字或英文回退。",
+      "layout_observed": "General 的 Ausgewogen（Balanced）卡片有选中边框；外部纵向标签栏，菜单关闭项为上下方向。组标题栏内省略为 TC-PHI507-r2-…，原生完整组名可读。两段设置说明各两行、末尾完整；普通菜单和组菜单完整显示。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项 setup 已关闭 PER-de 组和对应 N；General 实读 Deutsch，切换为 Ausgewogen（Balanced）；两个关闭开关均为 on。独立新建组[G1,G2]和普通 N。",
+      "settings_observed": "Tabs per Doppelklick schließen=on；Tabs nach Position schließen=on，未点击已正确的开关。双击说明实读：Schließe einen Tab per Doppelklick. In der geteilten Ansicht wird nur der angeklickte Bereich geschlossen. Angeheftete Tabs und Lesezeichen behalten ihre bisherigen Doppelklick-Aktionen. 方向说明实读：Fügt den Menüs für Tabs und Tabgruppen Optionen zum Schließen der Tabs links oder rechts hinzu. Bei einer vertikalen Tableiste gelten die Optionen für Tabs oberhalb oder unterhalb. 两个标签及两段说明与提供原文逐字相同。",
+      "steps_executed": [
+        "在本项 setup 关闭 PER-de 组及对应普通 N。",
+        "General 实读 Deutsch，选择 Ausgewogen 并保存语言与布局截图。",
+        "Advanced 读取两个 on 及说明，保存完整设置截图。",
+        "新建 G1，经 Neue Tab-Gruppe、Gruppe umbenennen 创建 TC-PHI507-r2-VIS-02-BAL-de；用 Neuer Tab in Gruppe 创建 G2，再 Cmd+T 创建普通 N。",
+        "核对组[G1,G2]、N 和活动 N，保存 before 图。",
+        "分别打开普通 N 菜单及组标题菜单，记录上下关闭项及可用状态，保存截图；用原生 Cancel 关闭菜单，未点击方向关闭项。",
+        "保存 after 图并输出本项 OBSERVATION。"
+      ],
+      "unit_id": "VIS-02-BAL-de"
+    },
+    "notes": "Ripley已逐张核对11张设置、普通菜单、组菜单及无效准备动作截图。两个设置说明及四个目标方向关闭文案完整且符合手册；纵向上下、横向左右正确。COM普通菜单超出应用窗口右缘的非目标书签项未完整入图，不据此判断该无关项；指定关闭标签完整可见。准备报错保留，不作产品缺陷。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "VIS-02",
@@ -23927,7 +24305,13 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录本项语言代码，附两个布局的方向菜单截图；设置说明不能被截断。",
+    "evidence": [
+      "qa-evidence/r3/VIS-02-ko-observations.json",
+      "qa-evidence/r3/VIS-02-COM-ko-01.png",
+      "qa-evidence/r3/VIS-02-COM-ko-02.png",
+      "qa-evidence/r3/VIS-02-COM-ko-03.png",
+      "qa-evidence/r3/VIS-02-COM-ko-04.png"
+    ],
     "languages": [
       "en",
       "zh-Hant",
@@ -23946,9 +24330,115 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "VIS-02-ko",
+        "round": 3,
+        "outcome": "pass",
+        "actual": "菜单观察结束仍为普通 N；TC-PHI507-r2-VIS-02-COM-ko[G1,G2]，三个标题均 새 탭。统一恢复偏好后保留同一集合，N、G1 仍显示 새 탭，G2 显示 New Tab；无菜单或确认框。",
+        "observation": {
+          "active_after": "G2；偏好恢复并重启后仍为 G2。",
+          "active_before": "G2",
+          "after": "菜单观察结束仍为普通 N；TC-PHI507-r2-VIS-02-COM-ko[G1,G2]，三个标题均 새 탭。统一恢复偏好后保留同一集合，N、G1 仍显示 새 탭，G2 显示 New Tab；无菜单或确认框。",
+          "before": "普通 N 位于组左侧；COM-ko 组含 G1、G2，原生标题计数2，截图组下划线跨两个成员。三个新建对象无多选、无 split；既有 TC-B splitPair 保留。",
+          "confirmation_choices": "组重命名选择 저장；关闭 BAL-ko 组时无确认框。收尾恢复 System Default 后选择 Phi 다시 시작；返回 App quit 作为提示重启结果保留，随后 CU 重开。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-02-COM-ko attempt1 layout",
+            "EVIDENCE: VIS-02-COM-ko attempt1 settings",
+            "EVIDENCE: VIS-02-COM-ko attempt1 setup-tabs",
+            "EVIDENCE: VIS-02-COM-ko attempt1 failure",
+            "EVIDENCE: VIS-02-COM-ko attempt1 before",
+            "EVIDENCE: VIS-02-COM-ko attempt1 normal-menu",
+            "EVIDENCE: VIS-02-COM-ko attempt1 group-menu",
+            "EVIDENCE: VIS-02-COM-ko attempt1 after",
+            "EVIDENCE: VIS-02-COM-ko attempt1 restore-settings",
+            "EVIDENCE: VIS-02-COM-ko attempt1 restore-layout",
+            "EVIDENCE: VIS-02-COM-ko attempt1 restore-language-prompt",
+            "EVIDENCE: VIS-02-COM-ko attempt1 restart-result",
+            "EVIDENCE: VIS-02-COM-ko attempt1 restored-general",
+            "EVIDENCE: VIS-02-COM-ko attempt1 restored-advanced",
+            "EVIDENCE: VIS-02-COM-ko attempt1 ending"
+          ],
+          "identity_checks": "观察阶段指定路径应用 PID83231，Window=고급/새 탭；N 为 tabStripTab27，G1 为30、G2 为35，均为只对应各目标的标签容器。原生组标题含计数2；G2 白色活动背景。收尾语言重启后 PID83734，Window=New Tab，纵向组内仍有两个独立子 row。未声称 Web 文档提交或存活编号。",
+          "language_observed": "General 实读 한국어。所查两个开关、两段说明及方向项逐字与提供语言表相同，这些区域未见 key、缺字或英文回退。普通菜单可见：고정、복제、링크 복사、현재 탭과 분할、북마크 바에 추가、폴더에 추가、새 탭 그룹、그룹에 추가、스페이스로 이동、닫기、다른 탭 닫기、왼쪽 탭 닫기、오른쪽 탭 닫기，顶层项均可用。组菜单可见：그룹에 새 탭、그룹 이름 변경、색상 변경、그룹 접기、그룹 해제、그룹 닫기、그룹 왼쪽 탭 닫기、그룹 오른쪽 탭 닫기；仅最后一项禁用。收尾实读 System Default，界面英文。",
+          "layout_observed": "General 的 여유 卡片选中，外部标签横向排列。双击说明两行，第二行为「그대로 유지돼요.」；方向说明一行，均完整可读。普通 왼쪽 탭 닫기、오른쪽 탭 닫기 均可用；组 그룹 왼쪽 탭 닫기 可用，그룹 오른쪽 탭 닫기 禁用。方向项单行无截断；组名在顶部省略，成员数2清晰显示。收尾恢复 Balanced 并截图确认选中边框。",
+          "not_executed_reason": "",
+          "operator_errors": [
+            "setup 中沿用纵向组标题 텍스트 的精确匹配，未找到横向布局中 text 加成员数的原生行，发 CU 前停止；保留 failure 图，依据最新树的 text TC-PHI507-r2-VIS-02-COM-ko 1 继续组内新建。无误点或被测动作重试。"
+          ],
+          "precondition_actual": "关闭 BAL-ko 组及对应 N 后独立新建 N、G1、G2；原生菜单组成 TC-PHI507-r2-VIS-02-COM-ko，实读成员数2。한국어、Comfortable、两个开关 on。",
+          "settings_observed": "观察阶段 두 번 클릭하여 탭 닫기=on；위치에 따라 탭 한꺼번에 닫기=on。双击说明：「탭을 두 번 클릭하면 닫혀요. 분할 보기에서는 클릭한 쪽만 닫혀요. 고정 탭과 북마크의 두 번 클릭 동작은 그대로 유지돼요.」方向说明：「탭과 탭 그룹 메뉴에 왼쪽 또는 오른쪽 탭을 닫는 항목을 추가해요. 세로 탭 표시줄에서는 위쪽 또는 아래쪽 탭을 닫아요.」收尾单独将双击关闭 on→off，即时读取另一个仍 on；语言重启后再次实读 off/on。",
+          "steps_executed": [
+            "关闭 BAL-ko 组及对应 N；General 实读 한국어，选择 여유，保存选中边框截图。",
+            "读取 Advanced 两开关及两段说明，未点击已 on 的开关，保留完整设置截图。",
+            "新建 N、G1；对 G1 的 tabStripTab 右键，以 New Tab Group→Rename Group 命名 COM-ko，再组菜单 New Tab in Group 创建 G2，核对成员数和顺序。",
+            "对 N 的 tabStripTab 右键读取普通菜单，Cancel 后对组标题右键读取组菜单，各保存完整截图。",
+            "Cancel 后保存本项结束截图，输出 OBSERVATION；未点击方向关闭项。",
+            "统一恢复双击关闭 off、按位置关闭 on、Balanced、System Default，按提示重启；PID83734 下复读 General 和 Advanced，关闭 Settings，保留最终截图和补充 OBSERVATION。"
+          ],
+          "unit_id": "VIS-02-COM-ko"
+        },
+        "evidence": [
+          "qa-evidence/r3/VIS-02-ko-observations.json",
+          "qa-evidence/r3/VIS-02-COM-ko-01.png",
+          "qa-evidence/r3/VIS-02-COM-ko-02.png",
+          "qa-evidence/r3/VIS-02-COM-ko-03.png",
+          "qa-evidence/r3/VIS-02-COM-ko-04.png"
+        ],
+        "evidence_metadata": "qa-evidence/r3/VIS-02-ko-evidence.json",
+        "notes": "Ripley已逐张复核三布局9张设置/普通菜单/组菜单关键图及2张准备匹配错误现场；韩文目标标题、两段说明和上下/左右方向项逐字符合handbook ko labels。双击说明两行、方向说明一行，完整可读；组边界禁用态清晰，无目标key、缺字或英文回退。JS编排语法错误发生在UI调用前，BAL/COM匹配守卫恢复后才观察菜单，原始异常保留且不计产品失败。149个实际MCP事件全部来自Computer Use。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T16:28:19.076336+00:00"
+      }
+    ],
+    "actual": "菜单观察结束仍为普通 N；TC-PHI507-r2-VIS-02-COM-ko[G1,G2]，三个标题均 새 탭。统一恢复偏好后保留同一集合，N、G1 仍显示 새 탭，G2 显示 New Tab；无菜单或确认框。",
+    "observation": {
+      "active_after": "G2；偏好恢复并重启后仍为 G2。",
+      "active_before": "G2",
+      "after": "菜单观察结束仍为普通 N；TC-PHI507-r2-VIS-02-COM-ko[G1,G2]，三个标题均 새 탭。统一恢复偏好后保留同一集合，N、G1 仍显示 새 탭，G2 显示 New Tab；无菜单或确认框。",
+      "before": "普通 N 位于组左侧；COM-ko 组含 G1、G2，原生标题计数2，截图组下划线跨两个成员。三个新建对象无多选、无 split；既有 TC-B splitPair 保留。",
+      "confirmation_choices": "组重命名选择 저장；关闭 BAL-ko 组时无确认框。收尾恢复 System Default 后选择 Phi 다시 시작；返回 App quit 作为提示重启结果保留，随后 CU 重开。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-02-COM-ko attempt1 layout",
+        "EVIDENCE: VIS-02-COM-ko attempt1 settings",
+        "EVIDENCE: VIS-02-COM-ko attempt1 setup-tabs",
+        "EVIDENCE: VIS-02-COM-ko attempt1 failure",
+        "EVIDENCE: VIS-02-COM-ko attempt1 before",
+        "EVIDENCE: VIS-02-COM-ko attempt1 normal-menu",
+        "EVIDENCE: VIS-02-COM-ko attempt1 group-menu",
+        "EVIDENCE: VIS-02-COM-ko attempt1 after",
+        "EVIDENCE: VIS-02-COM-ko attempt1 restore-settings",
+        "EVIDENCE: VIS-02-COM-ko attempt1 restore-layout",
+        "EVIDENCE: VIS-02-COM-ko attempt1 restore-language-prompt",
+        "EVIDENCE: VIS-02-COM-ko attempt1 restart-result",
+        "EVIDENCE: VIS-02-COM-ko attempt1 restored-general",
+        "EVIDENCE: VIS-02-COM-ko attempt1 restored-advanced",
+        "EVIDENCE: VIS-02-COM-ko attempt1 ending"
+      ],
+      "identity_checks": "观察阶段指定路径应用 PID83231，Window=고급/새 탭；N 为 tabStripTab27，G1 为30、G2 为35，均为只对应各目标的标签容器。原生组标题含计数2；G2 白色活动背景。收尾语言重启后 PID83734，Window=New Tab，纵向组内仍有两个独立子 row。未声称 Web 文档提交或存活编号。",
+      "language_observed": "General 实读 한국어。所查两个开关、两段说明及方向项逐字与提供语言表相同，这些区域未见 key、缺字或英文回退。普通菜单可见：고정、복제、링크 복사、현재 탭과 분할、북마크 바에 추가、폴더에 추가、새 탭 그룹、그룹에 추가、스페이스로 이동、닫기、다른 탭 닫기、왼쪽 탭 닫기、오른쪽 탭 닫기，顶层项均可用。组菜单可见：그룹에 새 탭、그룹 이름 변경、색상 변경、그룹 접기、그룹 해제、그룹 닫기、그룹 왼쪽 탭 닫기、그룹 오른쪽 탭 닫기；仅最后一项禁用。收尾实读 System Default，界面英文。",
+      "layout_observed": "General 的 여유 卡片选中，外部标签横向排列。双击说明两行，第二行为「그대로 유지돼요.」；方向说明一行，均完整可读。普通 왼쪽 탭 닫기、오른쪽 탭 닫기 均可用；组 그룹 왼쪽 탭 닫기 可用，그룹 오른쪽 탭 닫기 禁用。方向项单行无截断；组名在顶部省略，成员数2清晰显示。收尾恢复 Balanced 并截图确认选中边框。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "setup 中沿用纵向组标题 텍스트 的精确匹配，未找到横向布局中 text 加成员数的原生行，发 CU 前停止；保留 failure 图，依据最新树的 text TC-PHI507-r2-VIS-02-COM-ko 1 继续组内新建。无误点或被测动作重试。"
+      ],
+      "precondition_actual": "关闭 BAL-ko 组及对应 N 后独立新建 N、G1、G2；原生菜单组成 TC-PHI507-r2-VIS-02-COM-ko，实读成员数2。한국어、Comfortable、两个开关 on。",
+      "settings_observed": "观察阶段 두 번 클릭하여 탭 닫기=on；위치에 따라 탭 한꺼번에 닫기=on。双击说明：「탭을 두 번 클릭하면 닫혀요. 분할 보기에서는 클릭한 쪽만 닫혀요. 고정 탭과 북마크의 두 번 클릭 동작은 그대로 유지돼요.」方向说明：「탭과 탭 그룹 메뉴에 왼쪽 또는 오른쪽 탭을 닫는 항목을 추가해요. 세로 탭 표시줄에서는 위쪽 또는 아래쪽 탭을 닫아요.」收尾单独将双击关闭 on→off，即时读取另一个仍 on；语言重启后再次实读 off/on。",
+      "steps_executed": [
+        "关闭 BAL-ko 组及对应 N；General 实读 한국어，选择 여유，保存选中边框截图。",
+        "读取 Advanced 两开关及两段说明，未点击已 on 的开关，保留完整设置截图。",
+        "新建 N、G1；对 G1 的 tabStripTab 右键，以 New Tab Group→Rename Group 命名 COM-ko，再组菜单 New Tab in Group 创建 G2，核对成员数和顺序。",
+        "对 N 的 tabStripTab 右键读取普通菜单，Cancel 后对组标题右键读取组菜单，各保存完整截图。",
+        "Cancel 后保存本项结束截图，输出 OBSERVATION；未点击方向关闭项。",
+        "统一恢复双击关闭 off、按位置关闭 on、Balanced、System Default，按提示重启；PID83734 下复读 General 和 Advanced，关闭 Settings，保留最终截图和补充 OBSERVATION。"
+      ],
+      "unit_id": "VIS-02-COM-ko"
+    },
+    "notes": "Ripley已逐张复核三布局9张设置/普通菜单/组菜单关键图及2张准备匹配错误现场；韩文目标标题、两段说明和上下/左右方向项逐字符合handbook ko labels。双击说明两行、方向说明一行，完整可读；组边界禁用态清晰，无目标key、缺字或英文回退。JS编排语法错误发生在UI调用前，BAL/COM匹配守卫恢复后才观察菜单，原始异常保留且不计产品失败。149个实际MCP事件全部来自Computer Use。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "VIS-02",
@@ -23972,7 +24462,13 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录本项语言代码，附两个布局的方向菜单截图；设置说明不能被截断。",
+    "evidence": [
+      "qa-evidence/r3/VIS-02-de-observations.json",
+      "qa-evidence/r3/VIS-02-COM-de-01.png",
+      "qa-evidence/r3/VIS-02-COM-de-02.png",
+      "qa-evidence/r3/VIS-02-COM-de-03.png",
+      "qa-evidence/r3/VIS-02-COM-de-04.png"
+    ],
     "languages": [
       "en",
       "zh-Hant",
@@ -23991,9 +24487,117 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "VIS-02-de",
+        "round": 3,
+        "outcome": "pass",
+        "actual": "德语 Comfortable 检查结束时仍为组[G1,G2]、N，三个标题均为 Neuer Tab，活动 N；无菜单、确认框或多选。随后统一恢复偏好并重启：PID84583，Balanced、System Default、英文界面，双击关闭 off、按位置关闭 on；组成员 G1/G2 标题仍为 Neuer Tab，普通 N 标题为 New Tab。最后未重建或清理这三个对象。",
+        "observation": {
+          "active_after": "本项 after 为 N；统一恢复偏好并重启后仍为 N。",
+          "active_before": "N",
+          "after": "德语 Comfortable 检查结束时仍为组[G1,G2]、N，三个标题均为 Neuer Tab，活动 N；无菜单、确认框或多选。随后统一恢复偏好并重启：PID84583，Balanced、System Default、英文界面，双击关闭 off、按位置关闭 on；组成员 G1/G2 标题仍为 Neuer Tab，普通 N 标题为 New Tab。最后未重建或清理这三个对象。",
+          "before": "屏幕从左至右为 TC-PHI507-r2-VIS-02-COM-de 组标题（成员数2）、G1、G2、普通 N。三个实际标签标题均为 Neuer Tab，最右 N 活动。",
+          "confirmation_choices": "组重命名选择 Speichern；关闭 BAL-de 组未出现确认框。收尾选择 Systemstandard 后，德语提示为 Phi neu starten? / Die ausgewählte Sprache wird nach einem Neustart von Phi wirksam. Jetzt neu starten?，选择 Phi neu starten；返回 App quit 后通过 CU 重开。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-02-COM-de attempt1 layout",
+            "EVIDENCE: VIS-02-COM-de attempt1 settings",
+            "EVIDENCE: VIS-02-COM-de attempt1 failure",
+            "EVIDENCE: VIS-02-COM-de attempt1 before",
+            "EVIDENCE: VIS-02-COM-de attempt1 normal-menu",
+            "EVIDENCE: VIS-02-COM-de attempt1 group-menu",
+            "EVIDENCE: VIS-02-COM-de attempt1 after",
+            "EVIDENCE: VIS-02-COM-de attempt1 restore-layout",
+            "EVIDENCE: VIS-02-COM-de attempt1 restore-settings",
+            "EVIDENCE: VIS-02-COM-de attempt1 restart-result",
+            "EVIDENCE: VIS-02-COM-de attempt1 restored-browser",
+            "EVIDENCE: VIS-02-COM-de attempt1 restored-general",
+            "EVIDENCE: VIS-02-COM-de attempt1 restored-switches",
+            "EVIDENCE: VIS-02-COM-de attempt1 ending-state"
+          ],
+          "identity_checks": "检查时指定应用 PID84085，Window=\"Neuer Tab\"。本项逐次创建并实读组成员数1→2；截图核对 G1、G2 和最右普通 N，普通菜单使用最新树中对应 N 的 tabStripTab 容器。三个本轮对象无 split、无多选；未导航 fixture。统一恢复语言重启后 PID84583，Window=\"New Tab\"，再次核对组表两个成员和选中的普通 N。",
+          "language_observed": "General=Deutsch。普通菜单：Tabs links schließen 可用，Tabs rechts schließen 禁用。组菜单：Tabs links von der Gruppe schließen、Tabs rechts von der Gruppe schließen 均可用。四个指定方向项与原文逐字相同，完整单行显示；所查开关、说明及方向项未见 key、缺字或英文回退。普通菜单位于窗口最右侧，CU 整窗图未包含菜单超出窗口的右边缘；非指定的书签项可见至 Zur Lesezeichenleiste hinzuf…，不能据此判断完整项的显示情况。组菜单完整可见。",
+          "layout_observed": "General 的 Komfortabel（Comfortable）卡片有选中边框；外部横向标签栏，菜单方向为左右。组标题屏幕省略显示 TC-PHI507-r… 并显示成员数2，原生文字为 TC-PHI507-r2-VIS-02-COM-de 2。两段设置说明各两行、末尾完整。收尾已恢复 Balanced，并在重启后截图核实选中边框。",
+          "not_executed_reason": "指定设置及菜单动作均已执行；普通菜单超出应用窗口右边缘的部分未取得完整图像，指定左右关闭项已完整观察。未补造窗口外文字或图像。",
+          "operator_errors": [
+            "一次 helper 沿用纵向 Text 形式匹配组名而未命中；横向实际原生行是小写 text，并带成员数1。匹配器在 CU 点击前停止，保留 failure 图后按最新原生树继续，没有误点击。"
+          ],
+          "precondition_actual": "本项 setup 已关闭 BAL-de 组及对应 N；General 实读 Deutsch，选择 Komfortabel（Comfortable）；两个关闭开关均为 on。独立创建 TC-PHI507-r2-VIS-02-COM-de 组两个成员及一个组外普通 N。",
+          "settings_observed": "检查时 Tabs per Doppelklick schließen=on；Tabs nach Position schließen=on。双击说明实读：Schließe einen Tab per Doppelklick. In der geteilten Ansicht wird nur der angeklickte Bereich geschlossen. Angeheftete Tabs und Lesezeichen behalten ihre bisherigen Doppelklick-Aktionen. 方向说明实读：Fügt den Menüs für Tabs und Tabgruppen Optionen zum Schließen der Tabs links oder rechts hinzu. Bei einer vertikalen Tableiste gelten die Optionen für Tabs oberhalb oder unterhalb. 标签及说明与提供原文逐字相同。收尾仅将双击关闭 on→off，即时返回树中按位置关闭仍为 on；恢复 System Default 并重启后再次实读 off/on。",
+          "steps_executed": [
+            "在本项 setup 关闭 BAL-de 组及对应普通 N。",
+            "General 实读 Deutsch，选择 Komfortabel 并截图；Advanced 读取两个 on 和两段说明，保存完整设置截图。",
+            "新建 G1，通过原生菜单建组并重命名为 TC-PHI507-r2-VIS-02-COM-de；Neuer Tab in Gruppe 创建 G2；Cmd+T 创建普通 N。",
+            "核对组计数2、三个实际标签和活动 N，保存 before 图。",
+            "打开普通 N 菜单及组标题菜单，记录左右关闭项及可用状态，输出 CU 完整应用窗口截图；均以原生 Cancel 关闭，未点击方向关闭项。",
+            "保存 after 图并输出本项 OBSERVATION。",
+            "统一恢复 Balanced、双击关闭 off、按位置关闭 on；General 选择 Systemstandard 并遵循重启提示。",
+            "CU 重开后核实 PID84583、System Default、英文、Balanced 和两个开关 off/on；关闭 Settings，保存最终浏览器图，保留最后实际对象集合。"
+          ],
+          "unit_id": "VIS-02-COM-de"
+        },
+        "evidence": [
+          "qa-evidence/r3/VIS-02-de-observations.json",
+          "qa-evidence/r3/VIS-02-COM-de-01.png",
+          "qa-evidence/r3/VIS-02-COM-de-02.png",
+          "qa-evidence/r3/VIS-02-COM-de-03.png",
+          "qa-evidence/r3/VIS-02-COM-de-04.png"
+        ],
+        "evidence_metadata": "qa-evidence/r3/VIS-02-de-evidence.json",
+        "notes": "Ripley已逐张核对11张设置、普通菜单、组菜单及无效准备动作截图。两个设置说明及四个目标方向关闭文案完整且符合手册；纵向上下、横向左右正确。COM普通菜单超出应用窗口右缘的非目标书签项未完整入图，不据此判断该无关项；指定关闭标签完整可见。准备报错保留，不作产品缺陷。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T16:40:36.438354+00:00"
+      }
+    ],
+    "actual": "德语 Comfortable 检查结束时仍为组[G1,G2]、N，三个标题均为 Neuer Tab，活动 N；无菜单、确认框或多选。随后统一恢复偏好并重启：PID84583，Balanced、System Default、英文界面，双击关闭 off、按位置关闭 on；组成员 G1/G2 标题仍为 Neuer Tab，普通 N 标题为 New Tab。最后未重建或清理这三个对象。",
+    "observation": {
+      "active_after": "本项 after 为 N；统一恢复偏好并重启后仍为 N。",
+      "active_before": "N",
+      "after": "德语 Comfortable 检查结束时仍为组[G1,G2]、N，三个标题均为 Neuer Tab，活动 N；无菜单、确认框或多选。随后统一恢复偏好并重启：PID84583，Balanced、System Default、英文界面，双击关闭 off、按位置关闭 on；组成员 G1/G2 标题仍为 Neuer Tab，普通 N 标题为 New Tab。最后未重建或清理这三个对象。",
+      "before": "屏幕从左至右为 TC-PHI507-r2-VIS-02-COM-de 组标题（成员数2）、G1、G2、普通 N。三个实际标签标题均为 Neuer Tab，最右 N 活动。",
+      "confirmation_choices": "组重命名选择 Speichern；关闭 BAL-de 组未出现确认框。收尾选择 Systemstandard 后，德语提示为 Phi neu starten? / Die ausgewählte Sprache wird nach einem Neustart von Phi wirksam. Jetzt neu starten?，选择 Phi neu starten；返回 App quit 后通过 CU 重开。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-02-COM-de attempt1 layout",
+        "EVIDENCE: VIS-02-COM-de attempt1 settings",
+        "EVIDENCE: VIS-02-COM-de attempt1 failure",
+        "EVIDENCE: VIS-02-COM-de attempt1 before",
+        "EVIDENCE: VIS-02-COM-de attempt1 normal-menu",
+        "EVIDENCE: VIS-02-COM-de attempt1 group-menu",
+        "EVIDENCE: VIS-02-COM-de attempt1 after",
+        "EVIDENCE: VIS-02-COM-de attempt1 restore-layout",
+        "EVIDENCE: VIS-02-COM-de attempt1 restore-settings",
+        "EVIDENCE: VIS-02-COM-de attempt1 restart-result",
+        "EVIDENCE: VIS-02-COM-de attempt1 restored-browser",
+        "EVIDENCE: VIS-02-COM-de attempt1 restored-general",
+        "EVIDENCE: VIS-02-COM-de attempt1 restored-switches",
+        "EVIDENCE: VIS-02-COM-de attempt1 ending-state"
+      ],
+      "identity_checks": "检查时指定应用 PID84085，Window=\"Neuer Tab\"。本项逐次创建并实读组成员数1→2；截图核对 G1、G2 和最右普通 N，普通菜单使用最新树中对应 N 的 tabStripTab 容器。三个本轮对象无 split、无多选；未导航 fixture。统一恢复语言重启后 PID84583，Window=\"New Tab\"，再次核对组表两个成员和选中的普通 N。",
+      "language_observed": "General=Deutsch。普通菜单：Tabs links schließen 可用，Tabs rechts schließen 禁用。组菜单：Tabs links von der Gruppe schließen、Tabs rechts von der Gruppe schließen 均可用。四个指定方向项与原文逐字相同，完整单行显示；所查开关、说明及方向项未见 key、缺字或英文回退。普通菜单位于窗口最右侧，CU 整窗图未包含菜单超出窗口的右边缘；非指定的书签项可见至 Zur Lesezeichenleiste hinzuf…，不能据此判断完整项的显示情况。组菜单完整可见。",
+      "layout_observed": "General 的 Komfortabel（Comfortable）卡片有选中边框；外部横向标签栏，菜单方向为左右。组标题屏幕省略显示 TC-PHI507-r… 并显示成员数2，原生文字为 TC-PHI507-r2-VIS-02-COM-de 2。两段设置说明各两行、末尾完整。收尾已恢复 Balanced，并在重启后截图核实选中边框。",
+      "not_executed_reason": "指定设置及菜单动作均已执行；普通菜单超出应用窗口右边缘的部分未取得完整图像，指定左右关闭项已完整观察。未补造窗口外文字或图像。",
+      "operator_errors": [
+        "一次 helper 沿用纵向 Text 形式匹配组名而未命中；横向实际原生行是小写 text，并带成员数1。匹配器在 CU 点击前停止，保留 failure 图后按最新原生树继续，没有误点击。"
+      ],
+      "precondition_actual": "本项 setup 已关闭 BAL-de 组及对应 N；General 实读 Deutsch，选择 Komfortabel（Comfortable）；两个关闭开关均为 on。独立创建 TC-PHI507-r2-VIS-02-COM-de 组两个成员及一个组外普通 N。",
+      "settings_observed": "检查时 Tabs per Doppelklick schließen=on；Tabs nach Position schließen=on。双击说明实读：Schließe einen Tab per Doppelklick. In der geteilten Ansicht wird nur der angeklickte Bereich geschlossen. Angeheftete Tabs und Lesezeichen behalten ihre bisherigen Doppelklick-Aktionen. 方向说明实读：Fügt den Menüs für Tabs und Tabgruppen Optionen zum Schließen der Tabs links oder rechts hinzu. Bei einer vertikalen Tableiste gelten die Optionen für Tabs oberhalb oder unterhalb. 标签及说明与提供原文逐字相同。收尾仅将双击关闭 on→off，即时返回树中按位置关闭仍为 on；恢复 System Default 并重启后再次实读 off/on。",
+      "steps_executed": [
+        "在本项 setup 关闭 BAL-de 组及对应普通 N。",
+        "General 实读 Deutsch，选择 Komfortabel 并截图；Advanced 读取两个 on 和两段说明，保存完整设置截图。",
+        "新建 G1，通过原生菜单建组并重命名为 TC-PHI507-r2-VIS-02-COM-de；Neuer Tab in Gruppe 创建 G2；Cmd+T 创建普通 N。",
+        "核对组计数2、三个实际标签和活动 N，保存 before 图。",
+        "打开普通 N 菜单及组标题菜单，记录左右关闭项及可用状态，输出 CU 完整应用窗口截图；均以原生 Cancel 关闭，未点击方向关闭项。",
+        "保存 after 图并输出本项 OBSERVATION。",
+        "统一恢复 Balanced、双击关闭 off、按位置关闭 on；General 选择 Systemstandard 并遵循重启提示。",
+        "CU 重开后核实 PID84583、System Default、英文、Balanced 和两个开关 off/on；关闭 Settings，保存最终浏览器图，保留最后实际对象集合。"
+      ],
+      "unit_id": "VIS-02-COM-de"
+    },
+    "notes": "Ripley已逐张核对11张设置、普通菜单、组菜单及无效准备动作截图。两个设置说明及四个目标方向关闭文案完整且符合手册；纵向上下、横向左右正确。COM普通菜单超出应用窗口右缘的非目标书签项未完整入图，不据此判断该无关项；指定关闭标签完整可见。准备报错保留，不作产品缺陷。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "VIS-02",

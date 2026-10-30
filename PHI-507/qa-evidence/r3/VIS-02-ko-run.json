@@ -1,0 +1,21 @@
+{
+  "job": "VIS-02-ko",
+  "exit_code": 0,
+  "session_id": "01a18d9a-6ded-7fb2-a296-1699762827ce",
+  "round": 3,
+  "lease_id": "e4359d36-d212-4361-be64-5adbf18f0762",
+  "started_at": "2026-10-30T16:17:50.275753+00:00",
+  "ended_at": "2026-10-30T16:26:38.706590+00:00",
+  "units": [
+    "VIS-02-PER-ko",
+    "VIS-02-BAL-ko",
+    "VIS-02-COM-ko"
+  ],
+  "observed_units": [
+    "VIS-02-PER-ko",
+    "VIS-02-BAL-ko",
+    "VIS-02-COM-ko"
+  ],
+  "missing_units": [],
+  "duplicate_units": false
+}

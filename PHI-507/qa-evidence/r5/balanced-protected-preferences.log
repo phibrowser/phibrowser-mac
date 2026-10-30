@@ -1,0 +1,110 @@
+
+App=com.phibrowser.opensource.Mac (pid 10708)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+	1 scroll area Secondary Actions: Scroll Up, Scroll Down
+		2 text Always show full URL
+		3 toggle button off
+		4 text Show a preview card when hovering over a tab
+		5 toggle button on
+		6 text Show open tab indicators
+		7 toggle button off
+		8 text Show a dot on inactive pinned tabs and bookmarks that are currently open. Show unloaded tab indicators
+		9 toggle button on
+		10 text Show a dashed outline around tab icons when their pages are unloaded from memory. Double-click to close tabs Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions.
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		12 text Close tabs by position Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar.
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+		14 text Restore last session
+		15 toggle button on
+		16 text Reopen your windows and tabs the next time you open Phi. Shorten links to selected text
+		17 toggle button on
+		18 text Applies to “Copy Link to Highlight” in the right-click menu. Turn off to copy the full link. Mini Player Control media playing in background tabs from the sidebar.
+		19 pop up button Description: Mini Player, Value: Auto, ID: settings.sidebarMedia.presentation
+		20 text Auto picture-in-picture Pop out playing video when you switch tabs or apps
+		21 pop up button Normal
+		22 text Developer mode
+		23 toggle button on
+		24 text Agent access, permissions, and the password manager live in the Developer tab.
+		25 button Additional browser settings
+		26 scroll bar (settable, float) 0
+		13 button Developer, Secondary Actions: Move previous, Remove from toolbar
+	14 close button
+The focused UI element is 0 standard window Guest, Secondary Actions: Raise
+
+App=com.phibrowser.opensource.Mac (pid 10708)
+Window: "Advanced", App: Phi Tab Close QA.
+		3 toggle button off
+		5 toggle button on
+		7 toggle button off
+		9 toggle button on
+		10 text Show a dashed outline around tab icons when their pages are unloaded from memory. Double-click to close tabs Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions.
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		12 text Close tabs by position Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar.
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+		15 toggle button on
+		17 toggle button on
+		23 toggle button on
+			28 increment arrow button
+			29 decrement arrow button
+		33 button Guest, Secondary Actions: Move next, Remove from toolbar
+		34 button General, Secondary Actions: Move previous, Move next, Remove from toolbar
+		35 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar
+		36 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar
+		37 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar
+		38 button Phi & AI, Secondary Actions: Move previous, Move next, Remove from toolbar
+		39 button Sync, Secondary Actions: Move previous, Move next, Remove from toolbar
+		40 button Shortcuts, Secondary Actions: Move previous, Move next, Remove from toolbar
+		41 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+		42 button Developer, Secondary Actions: Move previous, Remove from toolbar
+	43 close button
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise
+
+App=com.phibrowser.opensource.Mac (pid 10708)
+Window: "Advanced", App: Phi Tab Close QA.
+		3 toggle button off
+		5 toggle button on
+		7 toggle button off
+		9 toggle button on
+		10 text Show a dashed outline around tab icons when their pages are unloaded from memory. Double-click to close tabs Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions.
+		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+		12 text Close tabs by position Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar.
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+		15 toggle button on
+		17 toggle button on
+		23 toggle button on
+			28 increment arrow button
+			29 decrement arrow button
+		33 button Guest, Secondary Actions: Move next, Remove from toolbar
+		34 button General, Secondary Actions: Move previous, Move next, Remove from toolbar
+		35 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar
+		36 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar
+		37 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar
+		38 button Phi & AI, Secondary Actions: Move previous, Move next, Remove from toolbar
+		39 button Sync, Secondary Actions: Move previous, Move next, Remove from toolbar
+		40 button Shortcuts, Secondary Actions: Move previous, Move next, Remove from toolbar
+		41 button Advanced, Secondary Actions: Move previous, Move next, Remove from toolbar
+		42 button Developer, Secondary Actions: Move previous, Remove from toolbar
+	43 close button
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise
+
+App=/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 10708)
+Window: "Advanced", App: Phi Tab Close QA.
+		3 toggle button off
+		5 toggle button on
+		7 toggle button off
+		9 toggle button on
+		10 text Show a dashed outline around tab icons when their pages are unloaded from memory. Double-click to close tabs Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions.
+		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+		12 text Close tabs by position Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar.
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+		15 toggle button on
+		17 toggle button on
+		23 toggle button on
+			28 increment arrow button
+			29 decrement arrow button
+		33 button Guest, Secondary Actions: Move next, Remove from toolbar
+		34 button General, Secondary Actions: Move previous, Move next, Remove from toolbar
+		35 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar
+		36 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar
+		37 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar

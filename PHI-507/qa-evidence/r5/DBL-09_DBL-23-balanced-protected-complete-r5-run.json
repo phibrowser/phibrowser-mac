@@ -1,0 +1,27 @@
+{
+  "job": "DBL-09_DBL-23-balanced-protected-complete-r5",
+  "exit_code": 0,
+  "session_id": "01a18ec6-49d4-7e52-871b-e50c386843b6",
+  "round": 5,
+  "lease_id": "52a943f0-2b80-4fdf-9258-ff0ac91c8040",
+  "started_at": "2026-10-30T21:45:21.842861+00:00",
+  "ended_at": "2026-10-30T22:00:34.932444+00:00",
+  "units": [
+    "DBL-09-BAL",
+    "DBL-23-BAL"
+  ],
+  "observed_units": [
+    "DBL-09-BAL",
+    "DBL-23-BAL"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "16db7c489df19304f2dd8b10621ade781a1b10b9abac6a97e6fff3de7d2937d8",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 202,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

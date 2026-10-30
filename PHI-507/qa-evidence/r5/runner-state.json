@@ -1,9 +1,9 @@
 {
-  "job": "DBL-09_DBL-23-balanced-protected-complete-r5",
-  "started_at": "2026-10-30T21:45:21.842861+00:00",
+  "job": "DBL-09_DBL-23-comfortable-protected-complete-r5",
+  "started_at": "2026-10-30T22:00:36.255729+00:00",
   "state": "running",
   "units": [
-    "DBL-09-BAL",
-    "DBL-23-BAL"
+    "DBL-09-COM",
+    "DBL-23-COM"
   ]
 }

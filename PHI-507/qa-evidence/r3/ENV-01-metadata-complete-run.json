@@ -1,0 +1,17 @@
+{
+  "job": "ENV-01-metadata-complete",
+  "exit_code": 0,
+  "session_id": "01a18d70-ffb6-7281-b982-a543b92662c4",
+  "round": 3,
+  "lease_id": "e4359d36-d212-4361-be64-5adbf18f0762",
+  "started_at": "2026-10-30T15:32:35.095707+00:00",
+  "ended_at": "2026-10-30T15:37:56.324288+00:00",
+  "units": [
+    "ENV-01-COMMON"
+  ],
+  "observed_units": [
+    "ENV-01-COMMON"
+  ],
+  "missing_units": [],
+  "duplicate_units": false
+}

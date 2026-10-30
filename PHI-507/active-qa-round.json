@@ -1,0 +1,6 @@
+{
+  "round": 3,
+  "prior_checkpoint": "https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r2/",
+  "prior_artifact_commit": "a04fe329d36bd05c259cc80386095760527263cf",
+  "note": "Continuation of the same CU campaign; prior results and all attempts preserved."
+}

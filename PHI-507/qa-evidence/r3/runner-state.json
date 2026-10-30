@@ -1,0 +1,10 @@
+{
+  "job": "VIS-01",
+  "started_at": "2026-10-30T15:38:23.623976+00:00",
+  "state": "running",
+  "units": [
+    "VIS-01-PER",
+    "VIS-01-BAL",
+    "VIS-01-COM"
+  ]
+}

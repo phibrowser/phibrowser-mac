@@ -1,0 +1,44 @@
+{
+  "base_case": "ENV-01：记录实际被测构建；仅补齐环境元数据、确认 Advanced 第二张卡片，并查看已发布 r2 报告，不判定产品 pass/fail。",
+  "ending_state": "指定 /Applications/Phi Tab Close QA.app 保持运行，最新 PID 78892。当前 Space 为通过原生 Spaces 菜单选定的 TC-QA-PHI507-r2-SET-08-COMMON-S1；活动页为新建的 r2 报告预览 tab，填写后的独立手册 tab 保留。侧栏顺序为 New Tab、旧 TC-A、旧 TC-B/New Tab 分屏、旧 TC-C、本次手册、本次报告。未关闭或清理既有对象；未操作 Default Chrome Web Store、未知数据、其他窗口或 DMG。全程未更改偏好，保持 Balanced、System Default、双击关闭 off／按位置关闭 on；未导出或设置任何测试结果。",
+  "observations": [
+    {
+      "active_after": "Phi TabClose 独立安装包完整手册测试 需求测试文档 - PHI-507（本次新建报告 tab）。",
+      "active_before": "TC-C · TC-PHI507-r2-DBL-08-COM；首读窗口同名，PID 78892。",
+      "after": "手册字段已填写并从屏幕重读：测试人=Ripley；实际构建标识=TC-QA-20261030.1 / 0.0.0 (1030.1)；app 渠道与版本=OpenSource / com.phibrowser.opensource.Mac；macOS / 芯片=macOS 26.6.2 (25G83), arm64；Framework 版本=156.0.8078.52。本轮编号留空；环境表单未见其他备注字段，未新增控件填写路径或 SHA-256。填写后汇总仍为总数512、未测512、通过0、失败0、阻塞0、跳过0、P0尚未通过272。报告预览显示标题、未完成结论，以及512总数／46通过／0失败／34阻塞／432未执行；这些是既有报告内容，本轮未改动。",
+      "before": "当前 TC Space 原生侧栏包含 New Tab、TC-A · TC-PHI507-r2-DBL-08-COM、TC-B · TC-PHI507-r2-DBL-08-COM/New Tab 分屏、TC-C · TC-PHI507-r2-DBL-08-COM，C 被选中。新手册环境表单六个字段均显示空白占位；汇总为512总数、512未测，其他结果计数为0，P0尚未通过272。",
+      "confirmation_choices": "未出现确认对话框；未点击默认浏览器、登录、结果标记、导出或清空记录控件；空白表单允许直接填写，未启用隐身分支。",
+      "evidence_markers": [
+        "EVIDENCE: ENV-01-COMMON attempt1 about-after",
+        "EVIDENCE: ENV-01-COMMON attempt1 advanced-after",
+        "EVIDENCE: ENV-01-COMMON attempt1 handbook-loading",
+        "EVIDENCE: ENV-01-COMMON attempt1 failure",
+        "EVIDENCE: ENV-01-COMMON attempt1 handbook-before",
+        "EVIDENCE: ENV-01-COMMON attempt1 handbook-metadata-after",
+        "EVIDENCE: ENV-01-COMMON attempt1 report-preview-after"
+      ],
+      "identity_checks": "通过 CU get_app_state 启动固定路径并重新读取：App=/Applications/Phi Tab Close QA.app/，bundleID=com.phibrowser.opensource.Mac，pid=78892；后续关键图 PID 相同。原生 About 显示 Phi Tab Close QA Version 0.0.0 (1030.1)，Chromium Engine Version 156.0.8078.52。构建标识、macOS/芯片按用户指定值填入；未通过外部工具核验 macOS 或 exe SHA-256。新手册正文标题为“标签页关闭操作 完整手测指南”，报告路径为指定 PHI-507/r2/，正文显示 r2。",
+      "language_observed": "General 的 Display language=System Default，浏览器设置与菜单为英文；手册及报告正文为中文。未切换语言。",
+      "layout_observed": "General 截图中 Balanced 具有选中边框；浏览器外部标签栏纵向排列。未切换布局。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "首次输入手册根 URL 后未先删除地址栏自动补全的选中后缀，Return 导航到 TC-PHI507-r2-ENV-03-COMMON fixture。已保存 failure 现场，在同一本次新建 tab 重新输入根 URL、BackSpace 删除补全后缀并核对地址栏，再导航到正确手册；未更改旧 tab。",
+        "重读被裁切字段时使用 End，实际滚动到页面底部，后续预排坐标未命中预期输入框；未输入或修改数据。返回环境区域后重新截图确认输入框焦点，再用 super+Right 查看字段尾部。该滚动现场保留在一次 handbook-metadata-after 图中。"
+      ],
+      "precondition_actual": "固定路径 app 可由 CU 正常进入运行界面。原生 About 已识别具体版本与引擎，Advanced 第二张卡片实见两个关闭开关。通过 Spaces 原生菜单明确选定现有 TC-QA-PHI507-r2-SET-08-COMMON-S1，保留其既有页面。手册空白环境字段和全未测汇总满足填写条件。",
+      "settings_observed": "Advanced 第二张卡片：Double-click to close tabs=off，ID=settings.tabs.doubleClickToClose；说明为双击标签关闭、分屏只关闭所点 pane、pin 和书签保持原双击动作。Close tabs by position=on，ID=settings.tabs.directionalClosing；说明为向标签与组菜单添加左右关闭项，纵向标签栏为上下关闭项。两个开关均未点击。General 实读 Balanced、System Default，保持起始值。",
+      "steps_executed": [
+        "先用 CU get_app_state 启动 /Applications/Phi Tab Close QA.app，读取新 PID、窗口及现有 TC 页面集合。",
+        "从 Phi → About Phi 读取版本和引擎，保存 about-after；关闭 About，通过原生 Settings 查看 General 的语言、布局。",
+        "打开 Advanced，确认第二张卡片、两个开关及说明，保存 advanced-after；未更改开关，关闭 Settings。",
+        "通过 Spaces 菜单选定现有 TC-QA-PHI507-r2-SET-08-COMMON-S1，新建本次手册 tab，使用原生地址栏进入指定公开手册；修正首次自动补全误导航。",
+        "从屏幕进入“本轮记录与筛选”，保存填写前截图，核对六个空白环境字段及512全未测汇总。",
+        "确认测试人输入框焦点边框后，用原生键盘填写五个指定环境字段，跳过本轮编号；重读全部值及长字段尾部，保存 handbook-metadata-after。",
+        "保留手册 tab，另建报告 tab，核对地址栏后导航指定 r2 报告；正文实见标题、“未完成”及512／46／34／432计数，保存 report-preview-after。",
+        "保留实际结束状态；未执行其他验收用例、未标记结果、未导出、未清理或更改偏好。"
+      ],
+      "unit_id": "ENV-01-COMMON"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

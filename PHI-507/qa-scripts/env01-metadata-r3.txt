@@ -1,0 +1,10 @@
+本次只补齐 ENV-01 的源步骤，重新核实运行身份，不执行其他验收用例，不判 pass。
+
+1. 正常通过 CU 启动固定 /Applications/Phi Tab Close QA.app，读最新 PID、当前 Space/窗口。上一轮已用 CU 正常退出，启动后重新核实，不假设状态。保留 Default Chrome Web Store、已有 TC 对象、未知资料和 DMG。
+2. 从原生 About 读取版本/引擎，Advanced 读取第二张卡片、两个开关及说明。不要更改原有开关，预期原始 baseline 为 Balanced、System Default、off/on，但以实读为准。保存真实截图。
+3. 在当前明确属于本活动的 TC Space 新建本次手册 tab，用原生地址栏访问 https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/ 。先读取顶部环境表单现有内容与结果汇总，保存填写前截图。不要清空任何记录。只有空白/原页面默认值，或者明确属于 Ripley 本活动的 TC-PHI507 数据时才继续填写；若发现未知已有结果或身份信息，不能覆盖，改用原生新建临时隐身窗口打开同一公开页面，在空白状态填写本项，不操作真实资料。
+4. 用可见的原生输入控件填写页面环境字段：执行人 Ripley；构建标识 TC-QA-20261030.1 / 0.0.0 (1030.1)；macOS 26.6.2 (25G83), arm64；Framework 156.0.8078.52；渠道 OpenSource / com.phibrowser.opensource.Mac；若有其他环境备注字段，填 app=/Applications/Phi Tab Close QA.app，exe SHA-256=b30ef8b3acbc832ee3f1aaa8ce682ebb28289654ff3fdb84fbdf04151bb59d0b。字段以当前页面实际标签为准，不新增虚构控件。不填写真实邮箱/账号，不调用 DOM/JS/localStorage 或导入 API。
+5. 填写后通过 CU 重读所有已填写的可见字段并截图，记录实际值、原有结果汇总及未修改结果状态的事实。本次不把手册结果设为 pass，也不做最终导出/清理。
+6. 若本次已有独立 TC 手册 tab，可另建 TC 可丢弃 tab，访问已发布的 r2 检查点 https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r2/ ，只从真实屏幕核对标题、未完成结论、512总数和46/34/432计数并保存报告预览截图。这只是报告产物可读性检查，不算产品验收；若尚未部署/404，如实记录，不能当作产品缺陷。不要为此改任何结果。
+
+各关键图标记使用 ENV-01-COMMON，phase 为 about-after、advanced-after、handbook-before、handbook-metadata-after、report-preview-after。最终按 schema 返回本项实际步骤、字段、PID、是否保留未知数据及结束状态；not_executed_reason 仅在源步骤真正未完成时填写。

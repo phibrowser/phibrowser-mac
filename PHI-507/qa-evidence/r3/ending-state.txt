@@ -1,0 +1,1 @@
+指定 /Applications/Phi Tab Close QA.app 保持运行，最新 PID 78892。当前 Space 为通过原生 Spaces 菜单选定的 TC-QA-PHI507-r2-SET-08-COMMON-S1；活动页为新建的 r2 报告预览 tab，填写后的独立手册 tab 保留。侧栏顺序为 New Tab、旧 TC-A、旧 TC-B/New Tab 分屏、旧 TC-C、本次手册、本次报告。未关闭或清理既有对象；未操作 Default Chrome Web Store、未知数据、其他窗口或 DMG。全程未更改偏好，保持 Balanced、System Default、双击关闭 off／按位置关闭 on；未导出或设置任何测试结果。

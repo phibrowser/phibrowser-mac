@@ -378,7 +378,23 @@ extension Tab: ContextMenuRepresentable {
         }
         
         let closeOther = NSMenuItem(title: NSLocalizedString("sidebar.tabContextMenu.closeOtherTabs", value: "Close Other Tabs", comment: "Tab context menu - Menu item to close all tabs except the selected one"), action: #selector(SpaceSessionController.closeOther(_:)), keyEquivalent: "")
+        closeOther.target = browserStateForMenu?.windowController
         items.append(closeOther)
+
+        if let state = browserStateForMenu,
+           PhiPreferences.GeneralSettings.directionalTabClosingEnabled.loadValue(),
+           state.normalTabs.contains(where: { $0 === self }),
+           !isPinnedSplitCell, !isPinned {
+            for direction in BrowserState.TabCloseDirection.allCases {
+                let item = NSMenuItem(
+                    title: direction.menuTitle(isHorizontal: state.layoutMode.isTraditional),
+                    action: #selector(SpaceSessionController.closeTabsInDirection(_:)),
+                    keyEquivalent: "")
+                item.tag = direction.rawValue
+                item.target = state.windowController
+                items.append(item)
+            }
+        }
         
         items.forEach { item in
             if item.representedObject == nil {
@@ -1056,5 +1072,28 @@ extension Tab: ContextMenuRepresentable {
               let pair = sender.representedObject as? [String], pair.count == 2 else { return }
         let layout = state.pinnedSplitLayout(leftDB: pair[0], rightDB: pair[1])
         state.updatePinnedSplitLayout(leftDB: pair[0], rightDB: pair[1], layout: layout.toggled)
+    }
+}
+
+extension BrowserState.TabCloseDirection {
+    func menuTitle(isHorizontal: Bool, relativeToGroup: Bool = false) -> String {
+        switch (relativeToGroup, isHorizontal, self) {
+        case (false, true, .before):
+            return NSLocalizedString("sidebar.tabContextMenu.closeTabsToLeft", value: "Close Tabs to the Left", comment: "Tab context menu - Close ordinary tabs before this tab in a horizontal tab bar")
+        case (false, true, .after):
+            return NSLocalizedString("sidebar.tabContextMenu.closeTabsToRight", value: "Close Tabs to the Right", comment: "Tab context menu - Close ordinary tabs after this tab in a horizontal tab bar")
+        case (false, false, .before):
+            return NSLocalizedString("sidebar.tabContextMenu.closeTabsAbove", value: "Close Tabs Above", comment: "Tab context menu - Close ordinary tabs before this tab in a vertical tab bar")
+        case (false, false, .after):
+            return NSLocalizedString("sidebar.tabContextMenu.closeTabsBelow", value: "Close Tabs Below", comment: "Tab context menu - Close ordinary tabs after this tab in a vertical tab bar")
+        case (true, true, .before):
+            return NSLocalizedString("sidebar.tabGroupContextMenu.closeTabsToLeft", value: "Close Tabs to the Left of Group", comment: "Tab group context menu - Close ordinary tabs before the group, preserving all its members, in a horizontal tab bar")
+        case (true, true, .after):
+            return NSLocalizedString("sidebar.tabGroupContextMenu.closeTabsToRight", value: "Close Tabs to the Right of Group", comment: "Tab group context menu - Close ordinary tabs after the group, preserving all its members, in a horizontal tab bar")
+        case (true, false, .before):
+            return NSLocalizedString("sidebar.tabGroupContextMenu.closeTabsAbove", value: "Close Tabs Above Group", comment: "Tab group context menu - Close ordinary tabs before the group, preserving all its members, in a vertical tab bar")
+        case (true, false, .after):
+            return NSLocalizedString("sidebar.tabGroupContextMenu.closeTabsBelow", value: "Close Tabs Below Group", comment: "Tab group context menu - Close ordinary tabs after the group, preserving all its members, in a vertical tab bar")
+        }
     }
 }

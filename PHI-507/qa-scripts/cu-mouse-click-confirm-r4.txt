@@ -1,0 +1,11 @@
+本批次仅补足 Mouse Keys 的原生键盘确认诊断，不执行 DBL-08 验收，不判通过。保持 QA 起始布局 Balanced、双击关闭 off、按位置关闭 on；不执行浏览器关闭命令，不重建页面或窗口。前一诊断的 A/B/C 窗口可只读或单击标题，起始系统输入设置均已恢复 off。
+
+前一诊断已实际进入确认框，发送四次 KP_2 无工具错误但截图未观察到指针移动，因此没有发送 KP_5。这里不再重复那套移动尝试，而只做以下有新增信息的有限操作：
+
+1. 通过 Computer Use 读 QA 与 System Settings 当前状态、Mouse Keys 原值。进入 Mouse Keys 原生确认框，完整读取当前说明及 Use Mouse Keys 按钮。若实际说明不同，以实际原文为准，不输入密码。
+2. 对准确的 Use Mouse Keys 按钮使用一次 CU 坐标单击，只为将真实指针定位到已经核实的该按钮；坐标来自当前原图且比例已核对。立即读状态：若该普通点击已使开关 on，记录实际情况，不再补发键盘点击。
+3. 若确认框仍在，指针位于 Use Mouse Keys，按实际说明用 CU press_key 发送 KP_5 一次并立即读状态；若工具拒绝该键或界面无变化且说明允许标准键盘点击键 i，则用 i 一次并立即读状态。若已开启立即停止确认输入，避免下一次点击触及别的控件。没有可靠定位或按钮不明确时不发键盘点击。不得用 Return/普通点击当作完成键盘确认。
+4. 若实际开关成为 on，仅做一次低风险能力确认：回 QA 当前 TC 诊断窗口，用 CU 坐标单击已核实的 B 标签标题中心（避开关闭控件），再用实际系统说明支持的鼠标方向键作小幅移动；观察是否出现真实 hover/关闭按钮，记录实际画面，不点击关闭、不拖动或执行双击。只证明输入能力，不等同源用例验收。若开关仍 off，如实记该路径未提供能力；不循环重试。
+5. 按原生 UI 将本批次改动的 Mouse Keys 恢复起始 off，复读确认。FKA/Sticky/Slow/Accessibility Keyboard 不重新开启；核对其仍 off。最后重读 QA 原偏好和实际 A/B/C 集合，保留现场。系统和浏览器均只使用 Computer Use。
+
+逐个关键动作记录原文返回/错误与前后截图，marker仍用 DBL-08-PER attempt1 mouse-keyboard-click-before/after、mouse-enabled-after、mouse-hover-after、mouse-restore-after、browser-after。最终 JSON 的 not_executed_reason 明确仅输入诊断，是否实际键盘点击/开启及未执行的具体步骤；不能泛称前一诊断已经完成过 KP_5 确认。

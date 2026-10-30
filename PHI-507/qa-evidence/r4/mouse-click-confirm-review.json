@@ -1,0 +1,20 @@
+{
+  "reviewer": "Ripley",
+  "job": "DBL-08-DBL-08-PER-mouse-click-confirm-r4",
+  "scope": "Balanced上的Mouse Keys确认诊断；非Performance或DBL-08验收",
+  "finding": "指针定位到Use Mouse Keys后，实际发送一次KP_5及一次i，均无工具错误，但每次读取确认框均保留。Escape取消后Mouse Keys实读off，其余四项输入开关off；未取得启用后的移动或hover能力。QA仍Balanced/off/on，ABC顺序和B原文档保持。",
+  "capture_notes": "原mouse-keyboard-click-after同marker有多个阶段；保留现有最终i后图，追加原011对应KP_5后确认框的同次实图，不覆盖原图。",
+  "audit": "26实际CU事件、非CU0；两次键盘点击原文返回另存。",
+  "limits": "只描述该CU输入路径的实际结果，不归因系统或产品实现；未执行源用例关闭、拖动、双击动作，未证明实际硬件输入。",
+  "reviewed_at": "2026-10-30T20:34:46.880696+00:00",
+  "viewed_evidence": [
+    "DBL-08-PER-17.png",
+    "DBL-08-PER-18.png",
+    "DBL-08-PER-19.png",
+    "DBL-08-PER-20.png",
+    "DBL-08-PER-21.png",
+    "DBL-08-PER-22.png",
+    "DBL-08-PER-23.png",
+    "DBL-08-PER-24.png"
+  ]
+}

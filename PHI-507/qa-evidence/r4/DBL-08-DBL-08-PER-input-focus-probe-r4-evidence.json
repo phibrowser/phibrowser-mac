@@ -1,0 +1,402 @@
+[
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "keyboardviewer-after",
+    "file": "DBL-08-PER-01.png",
+    "original_marker": "DBL-08-PER attempt1 keyboardviewer-after",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-006.jpg",
+    "source_sha256": "7fd7a87a31559a47d30e1f37a86f828980d91a5b77900a9c22352567a30109bf",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "new-B-after",
+    "file": "DBL-08-PER-02.png",
+    "original_marker": "DBL-08-PER attempt1 new-B-after",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-012.jpg",
+    "source_sha256": "84fd7276638a0b090a9f5bff1b021e65561681280ae2cc20e4acd2eebefd77fc",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "new-C-after",
+    "file": "DBL-08-PER-03.png",
+    "original_marker": "DBL-08-PER attempt1 new-C-after",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-013.jpg",
+    "source_sha256": "0f40aabd1dc45a5fb1f2709df55b15ac68a777e3729123463058274ee63fa145",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "focus-before",
+    "file": "DBL-08-PER-04.png",
+    "original_marker": "DBL-08-PER attempt1 focus-before",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-016.jpg",
+    "source_sha256": "71d6a92329e2fad6f8ad8a6355deccdf83f36920924fd9dfb1b0c41de36a1f6a",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "focus-after",
+    "file": "DBL-08-PER-05.png",
+    "original_marker": "DBL-08-PER attempt1 focus-after",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-022.jpg",
+    "source_sha256": "01b24856474493d64bb5370d666fd0fd29a2b5f6088cc00bddf4e19c594d53a0",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "focus-restore-after",
+    "file": "DBL-08-PER-06.png",
+    "original_marker": "DBL-08-PER attempt1 focus-restore-error",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-024.jpg",
+    "source_sha256": "051f463dac4e9a0fe1d889672cd0c3e1c436ce5f38faf7700d4f56e155aefebe",
+    "original_size": [
+      1446,
+      1250
+    ],
+    "crop_box": [
+      0,
+      0,
+      1446,
+      1250
+    ],
+    "output_size": [
+      1280,
+      1107
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。 Ripley复核：原error marker延续到恢复后的off画面，此帧证明恢复，不是误点时仍on现场。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "mouse-confirm-before",
+    "file": "DBL-08-PER-07.png",
+    "original_marker": "DBL-08-PER attempt1 mouse-confirm-before",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-029.jpg",
+    "source_sha256": "8bebbd08e49e05497117da2c5860ab00fdb2ae25da9a5a6886fb0369f52b1968",
+    "original_size": [
+      520,
+      760
+    ],
+    "crop_box": [
+      0,
+      0,
+      520,
+      760
+    ],
+    "output_size": [
+      520,
+      760
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "mouse-confirm-after",
+    "file": "DBL-08-PER-08.png",
+    "original_marker": "DBL-08-PER attempt1 mouse-confirm-after",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-030.jpg",
+    "source_sha256": "4f9300e3c0e04e98e28507e28175ebb9a0d969029ee7a95a73fa5d40c0e758b4",
+    "original_size": [
+      520,
+      760
+    ],
+    "crop_box": [
+      0,
+      0,
+      520,
+      760
+    ],
+    "output_size": [
+      520,
+      760
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "restore-after",
+    "file": "DBL-08-PER-09.png",
+    "original_marker": "DBL-08-PER attempt1 restore-after",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-031.jpg",
+    "source_sha256": "2b979e21b6a90a83f19fe45d7ac752538990e6ebf26e8383cfb62dedf069c9a4",
+    "original_size": [
+      1446,
+      1250
+    ],
+    "crop_box": [
+      0,
+      0,
+      1446,
+      1250
+    ],
+    "output_size": [
+      1280,
+      1107
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "panel-editor-before",
+    "file": "DBL-08-PER-10.png",
+    "original_marker": "DBL-08-PER attempt1 panel-editor-before",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-032.jpg",
+    "source_sha256": "a5cd8a9aa0ade1cabdd3ed8927348ad9e645a013bd31137c3b954bae156971cb",
+    "original_size": [
+      2200,
+      1400
+    ],
+    "crop_box": [
+      0,
+      0,
+      2200,
+      1400
+    ],
+    "output_size": [
+      1280,
+      815
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "keyboard-restore-after",
+    "file": "DBL-08-PER-11.png",
+    "original_marker": "DBL-08-PER attempt1 keyboard-restore-after",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-033.jpg",
+    "source_sha256": "dd8db1ab8dc4d8156aa2a8084477042029e97735b5b2aad9a0547e0b36c02b7a",
+    "original_size": [
+      1446,
+      1250
+    ],
+    "crop_box": [
+      0,
+      0,
+      1446,
+      1250
+    ],
+    "output_size": [
+      1280,
+      1107
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "browser-after",
+    "file": "DBL-08-PER-12.png",
+    "original_marker": "DBL-08-PER attempt1 browser-after",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-034.jpg",
+    "source_sha256": "498314700f4ba15ebdcbc593ffa362ced4a4e8af78392d7f91d7a4739ed7b1c4",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "initial-general",
+    "file": "DBL-08-PER-13.png",
+    "original_marker": "DBL-08-PER attempt1 keyboardviewer-after",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-005.jpg",
+    "source_sha256": "ed20472f43ed24005b50cdeb599404912221b554116d7224421b324f49f71a04",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口，仅缩放至1280宽；原marker keyboardviewer-after，画面实际为QA General，显示Balanced及System Default；追加早于Advanced的同次实图。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "focus-system-off",
+    "file": "DBL-08-PER-14.png",
+    "original_marker": "DBL-08-PER attempt1 focus-before",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-014.jpg",
+    "source_sha256": "e72020a73994dc1b778484a10dfb92caa4050a32196061ead9edbb30419fb22b",
+    "original_size": [
+      1446,
+      1250
+    ],
+    "crop_box": [
+      0,
+      0,
+      1446,
+      1250
+    ],
+    "output_size": [
+      1280,
+      1107
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口，仅缩放至1280宽；原marker focus-before：系统Keyboard初读FKA off。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "focus-system-on",
+    "file": "DBL-08-PER-15.png",
+    "original_marker": "DBL-08-PER attempt1 focus-before",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-015.jpg",
+    "source_sha256": "84139805b8e20361237cbf131313870991d9eace291bf87930cc8dda5b70f07e",
+    "original_size": [
+      1446,
+      1250
+    ],
+    "crop_box": [
+      0,
+      0,
+      1446,
+      1250
+    ],
+    "output_size": [
+      1280,
+      1107
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口，仅缩放至1280宽；原marker focus-before：临时启用FKA后on。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "focus-restore-failure",
+    "file": "DBL-08-PER-16.png",
+    "original_marker": "DBL-08-PER attempt1 focus-restore-error",
+    "source_file": "DBL-08-DBL-08-PER-input-focus-probe-r4-023.jpg",
+    "source_sha256": "560cf36f071bac04bf4dd94085d11d4a51bf6d2608704fa86cf5d7eda893aede",
+    "original_size": [
+      1446,
+      1250
+    ],
+    "crop_box": [
+      0,
+      0,
+      1446,
+      1250
+    ],
+    "output_size": [
+      1280,
+      1107
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口，仅缩放至1280宽；原marker focus-restore-error：误点Panel Editor时FKA仍on，后续正常恢复off。"
+  }
+]

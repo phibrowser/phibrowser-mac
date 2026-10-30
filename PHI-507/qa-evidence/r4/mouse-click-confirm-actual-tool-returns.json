@@ -1,0 +1,48 @@
+{
+  "session_id": "01a18e81-a67d-7f73-a67c-a37046cbd4ed",
+  "scope": "Saved item_completed MCP events only; no live browser operation or state read",
+  "recovered_at": "2026-10-30T20:34:05.015424+00:00",
+  "mcp_call_count": 26,
+  "calls_by_server_tool": {
+    "computer-use/get_app_state": 12,
+    "computer-use/click": 10,
+    "computer-use/press_key": 4
+  },
+  "non_computer_use_events": [],
+  "actual_keyboard_click_events": [
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "arguments": {
+        "app": "/System/Applications/System Settings.app",
+        "key": "KP_5"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 555668041
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.apple.systempreferences (pid 4617)\nWindow: \"\", App: System Settings.\n0 sheet Secondary Actions: Raise\n\t1 image alert\n\t2 text Mouse Keys With Mouse Keys active, you can move the pointer and press the mouse button using the keyboard or a numeric keypad. If you’d like to turn on and use Mouse Keys, use the keyboard or numeric keypad now to click the Use Mouse Keys button. Press the Escape key or click the Cancel button to stop using Mouse Keys.\n\t3 button Use Mouse Keys, ID: action-button-1\n\t4 button Cancel, ID: action-button-2\n5 menu bar\n\t6 System Settings\n\t7 Edit\n\t8 View\n\t9 Window\n\t10 Help\n"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "arguments": {
+        "app": "/System/Applications/System Settings.app",
+        "key": "i"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 445074333
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.apple.systempreferences (pid 4617)\nWindow: \"\", App: System Settings.\n0 sheet Secondary Actions: Raise\n\t1 image alert\n\t2 text Mouse Keys With Mouse Keys active, you can move the pointer and press the mouse button using the keyboard or a numeric keypad. If you’d like to turn on and use Mouse Keys, use the keyboard or numeric keypad now to click the Use Mouse Keys button. Press the Escape key or click the Cancel button to stop using Mouse Keys.\n\t3 button Use Mouse Keys, ID: action-button-1\n\t4 button Cancel, ID: action-button-2\n5 menu bar\n\t6 System Settings\n\t7 Edit\n\t8 View\n\t9 Window\n\t10 Help\n"
+      ]
+    }
+  ]
+}

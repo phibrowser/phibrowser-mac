@@ -1,0 +1,11 @@
+本批次只核实新发现的真实辅助键盘宿主路径及可用输入，不执行DBL-08验收，不判pass。QA偏好保持Balanced、System Default、双击关闭off、按位置关闭on；不关闭页面、窗口，不新建页面，不改保存项。沿用当前最小TC诊断A/B/C作为维护输入对象，最终恢复原选择。
+
+新的实际定位依据：同一任务上一轮Computer Use返回的Panel Editor路径为 `/System/Library/Input Methods/Assistive Control.app/Contents/Resources/Panel Editor.app`。此前使用 `/System/Library/CoreServices/AssistiveControl.app` 的Invalid app仅证明该错误路径不可用，尚未检验这个实际存在的宿主。这里不重复Mouse Keys启用：已独立在正确按钮位置发送KP_5和i而未启用，最终off。
+
+1. 先CU读取QA、System Settings与输入开关原值，确认本项仅将Accessibility Keyboard从原off临时开启，FKA/Sticky/Slow/Mouse Keys保持off。只用当前实际原生控件索引，开关后立即实读。
+2. 用CU get_app_state精确指向 `/System/Library/Input Methods/Assistive Control.app`。这是从实际子应用路径得出的宿主，不是猜测bundle ID。必要时CU list_apps查看实际正在运行的宿主/键盘面板，再仅按其确切路径读取；不搜索文件系统或调用其他工具，不创建/编辑Panel。
+3. 若出现真实虚拟键盘，记录其原生按钮、窗口与截图。只在实际存在的Command键按钮上尝试原生单击/其明确暴露的锁存操作，观察真实按下或锁存状态。不要发工具已经拒绝的纯modifier press_key。回QA，在已确认的B/C普通标签标题中心执行一次普通CU单击，观察是否真实出现B/C多选；双击关闭始终off，禁止关闭动作。只有屏幕/原生树实际显示多选才记录能力可用，不能仅因发送过点击而认定修饰状态存在。若首次实际产生其他原有行为，照实保留，不循环猜手势。
+4. 未出现可操作面板时记录Invalid app、无窗口或实际界面，不把不存在的键盘按钮当作已尝试。若虚拟键存在但不能锁存或未得到多选，也具体记录。除本项明确动作外不再开其他辅助应用或改系统设置。
+5. 释放所有本项实际锁存的虚拟修饰键，按原生UI将Accessibility Keyboard恢复off，实读全部五项输入开关均回原off。QA恢复原单选B，核对Balanced/off/on和ABC实际集合。只关闭本项确实新打开的辅助面板，未知窗口保留；不输入密码、不编辑面板。
+
+关键动作前后真实CU图，marker为DBL-08-PER attempt1 assistive-host-before/after、virtual-modifier-before/after、selection-before/after、system-restore-after、browser-after。最终JSON明确仅输入诊断，任何未执行点及真实工具错误。不把真实宿主路径未试过的旧记录描述成已穷尽。

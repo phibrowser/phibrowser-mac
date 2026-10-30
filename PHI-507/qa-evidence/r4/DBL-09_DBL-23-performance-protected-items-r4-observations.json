@@ -1,0 +1,102 @@
+{
+  "base_case": "限定批次 DBL-09、DBL-23；仅通过 mcp__computer_use 操作 /Applications/Phi Tab Close QA.app。实际执行顺序为 DBL-09-PER → DBL-23-PER；不作 pass/fail 判定。",
+  "ending_state": "QA 最后实读 PID 97109。原始偏好已恢复并核对：Balanced、System Default（英文界面）、双击关闭 off、按位置关闭 on；Restore last session on，快捷键未改。Settings 已关闭。DBL-23 的 PS 已通过 Unpin Split 取消固定，MS 保存入口已通过 Delete 删除，本项专用窗口已通过 File→Close Window 关闭。最后前台为 DBL-09 专用窗口，普通 M 单选且活动，编号 00300e11-bc6b-4ab5-9b86-9ada46a96c28 与 KEEP-M-DBL09 可见；DBL-09 pin P 和书签 M 保留。起始 DBL-08 窗口及未知窗口、保存项未关闭或删除；未操作 Canary、Default 的 Chrome Web Store 或 System Settings。",
+  "observations": [
+    {
+      "active_after": "普通 M 单选且活动。",
+      "active_before": "普通 M 副本。",
+      "after": "pin P、书签 M 保存入口及普通 M 均仍在。off 双击 M 保存入口打开独立 M 页面并进入名称编辑；on 双击再次进入名称编辑，未改名。结束普通 M 的原编号和输入标记仍可见。",
+      "before": "独立 TC 专用窗口中有 pin P、书签 M 保存入口和普通 M 副本；P 已打开。首次 off 动作前，仅普通 M 副本打开，M 保存入口对应页面尚未打开。",
+      "confirmation_choices": "无确认框。M 名称编辑按 Return 结束，未更改名称。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-09-PER attempt1 settings-layout",
+        "EVIDENCE: DBL-09-PER attempt1 setup-menu-error",
+        "EVIDENCE: DBL-09-PER attempt1 off-P-before",
+        "EVIDENCE: DBL-09-PER attempt1 off-P-after",
+        "EVIDENCE: DBL-09-PER attempt1 off-M-before",
+        "EVIDENCE: DBL-09-PER attempt1 off-M-after",
+        "EVIDENCE: DBL-09-PER attempt1 off-protected-M",
+        "EVIDENCE: DBL-09-PER attempt1 settings-on",
+        "EVIDENCE: DBL-09-PER attempt1 protected-M-check",
+        "EVIDENCE: DBL-09-PER attempt1 on-P-before",
+        "EVIDENCE: DBL-09-PER attempt1 on-P-after",
+        "EVIDENCE: DBL-09-PER attempt1 on-M-before",
+        "EVIDENCE: DBL-09-PER attempt1 on-M-after",
+        "EVIDENCE: DBL-09-PER attempt1 after"
+      ],
+      "identity_checks": "P：83e4ee6d-0738-4e3b-8db4-4c1669228770，KEEP-P-DBL09，off/on 双击后均相同。普通 M：00300e11-bc6b-4ab5-9b86-9ada46a96c28，KEEP-M-DBL09，结束核对相同。保存入口首次打开的 M：d08d42cc-41c8-4439-b0e7-57e2ed2a75df，on 双击后相同，输入框为空。三者正文均实见本项批次和普通页类型。",
+      "language_observed": "System Default，英文原生界面；未切换语言。",
+      "layout_observed": "起始 General 截图实见 Balanced；点击 Performance 后截图确认，核心动作在 Performance 中执行。",
+      "not_executed_reason": "off 分支未形成“M 保存页面预先已打开”的有效观察：操作器未先打开保存入口便执行了双击，实际记录为打开和名称编辑，不能替代该前置下的结果。未执行可选的 pin 内导航。",
+      "operator_errors": [
+        "准备阶段沿用 Settings 关闭前的索引，误开 Edit 菜单；用该菜单暴露的原生 Cancel 取消，保留现场。",
+        "M 名称编辑按 Return 后沿用旧索引 27，误开 Downloads 面板；未触发下载，现场已保存；后续关闭 Settings 返回时面板已不显示。",
+        "首次 off 双击 M 前未先确认保存入口对应页面已打开，前置核对有遗漏。该次结果仅保留为实际打开/编辑观察。"
+      ],
+      "precondition_actual": "通过 File→New Window 独立建立本地 normal P，再用真实 fixture 链接建立 M。P 经 Pin 保存，M 经 Add to Bookmark 保存；正文、批次、编号和输入标记均实见。on 分支前两个保存对象均已实际打开；off 分支存在上述 M 前置偏差。",
+      "settings_observed": "初始双击关闭 off、按位置关闭 on、Restore last session on。仅点击双击关闭 off→on，立即读取两个开关，按位置关闭仍为 on。全批次收尾恢复 off/on。",
+      "steps_executed": [
+        "P 输入 KEEP-P-DBL09 并 Pin；M 输入 KEEP-M-DBL09 并 Add to Bookmark。",
+        "双击关闭 off：对 pin P 和 M 保存入口分别请求 click_count:2，保留每次前后截图。",
+        "将双击关闭切为 on，即时复读按位置关闭仍为 on。",
+        "双击关闭 on：对 pin P 和 M 保存入口分别请求 click_count:2，保留每次前后截图。",
+        "结束名称编辑，单击普通 M 核对原编号和标记；P 的编号和标记由两次双击后的实际正文核对。"
+      ],
+      "unit_id": "DBL-09-PER"
+    },
+    {
+      "active_after": "核心结束为普通 C/D split 的左 C；reset 后返回 DBL-09 普通 M 单选活动。",
+      "active_before": "普通 C/D split，左 C 有蓝色活动边框。",
+      "after": "核心动作结束时 PS 的 A/B 固定结构、MS 的 C/D 保存结构及普通 C/D split 均仍在；普通副本原编号和标记可见。reset 中另行取消 PS 固定状态、删除 MS 保存入口并关闭本项窗口。",
+      "before": "PS=A/B 固定 split，已打开；MS=C/D 分屏书签保存入口尚未打开其独立页面；下方另有已打开的普通 C/D split。共享可见的 DBL-09 P/M 保存项未操作。",
+      "confirmation_choices": "核心无确认框。reset 的 Unpin Split、MS Delete 均未显示确认框；未勾“不再询问”。关闭本项窗口未出现离开确认。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-23-PER attempt1 setup-A",
+        "EVIDENCE: DBL-23-PER attempt1 setup-B",
+        "EVIDENCE: DBL-23-PER attempt1 setup-C",
+        "EVIDENCE: DBL-23-PER attempt1 setup-D",
+        "EVIDENCE: DBL-23-PER attempt1 mark-A",
+        "EVIDENCE: DBL-23-PER attempt1 mark-B",
+        "EVIDENCE: DBL-23-PER attempt1 mark-C",
+        "EVIDENCE: DBL-23-PER attempt1 mark-D",
+        "EVIDENCE: DBL-23-PER attempt1 split-AB",
+        "EVIDENCE: DBL-23-PER attempt1 saved-PS",
+        "EVIDENCE: DBL-23-PER attempt1 saved-MS",
+        "EVIDENCE: DBL-23-PER attempt1 on-PS-left-before",
+        "EVIDENCE: DBL-23-PER attempt1 on-PS-left-after",
+        "EVIDENCE: DBL-23-PER attempt1 on-PS-right-before",
+        "EVIDENCE: DBL-23-PER attempt1 on-PS-right-after",
+        "EVIDENCE: DBL-23-PER attempt1 on-MS-before",
+        "EVIDENCE: DBL-23-PER attempt1 on-MS-after",
+        "EVIDENCE: DBL-23-PER attempt1 settings-off",
+        "EVIDENCE: DBL-23-PER attempt1 off-PS-left-before",
+        "EVIDENCE: DBL-23-PER attempt1 off-PS-left-after",
+        "EVIDENCE: DBL-23-PER attempt1 off-PS-right-before",
+        "EVIDENCE: DBL-23-PER attempt1 off-PS-right-after",
+        "EVIDENCE: DBL-23-PER attempt1 off-MS-before",
+        "EVIDENCE: DBL-23-PER attempt1 off-MS-after",
+        "EVIDENCE: DBL-23-PER attempt1 after",
+        "EVIDENCE: DBL-23-PER attempt1 restored-settings",
+        "EVIDENCE: DBL-23-PER attempt1 cleanup-after"
+      ],
+      "identity_checks": "PS：A=001c2b48-3928-4627-a1d3-1764a5637eaf，B=7b72a3c5-f74b-4d4a-9fb1-249c41c11a27；on/off 两半格双击后原编号及 KEEP-A/B-DBL23 均可见。普通 C=f8a33190-f2fe-4cef-99c1-804651c43c17，D=f3eadfb1-65ff-463f-a513-6a8400003ebb；结束编号及 KEEP-C/D-DBL23 相同。MS 保存入口 on 首次打开 C=26f9cc59-4db3-412a-8fd7-ff8d7fbee1f2、D=af73b684-6f33-4acf-a103-68bbf22db743，输入均空；off 双击后编号相同。PS 双击坐标分别在其保存块的左右半格，截图指针位置与请求对应；MS 使用 New Tab 上方保存入口，未双击下方普通副本。",
+      "language_observed": "System Default，英文原生界面；未切换语言。",
+      "layout_observed": "核心执行时 Performance，外部栏为纵向；内部 split 为左右。收尾 General 截图确认 Balanced 已恢复。",
+      "not_executed_reason": "指定核心动作均有实际输入及前后观察。未额外构造未打开的 PS 或其他副本分支。",
+      "operator_errors": [],
+      "precondition_actual": "通过 File→New Window 独立建立 A/B/C/D，准确本地 normal URL 的正文、批次和编号均实见。A/B 用 Split with Current 配对后 Pin Split，记为 PS；C/D 同法配对后 Add Split to Bookmark，记为 MS。保存 MS 行与下方普通 C/D split 分离。",
+      "settings_observed": "核心顺序为双击关闭 on→off；每次只点击该开关，按位置关闭即时仍为 on。Restore last session on。全批次结束复读 off/on，并恢复原始 Balanced；快捷键未改。",
+      "steps_executed": [
+        "建立四页后，逐页输入并实见 KEEP-A/B/C/D-DBL23，再组成 PS 和 MS。",
+        "双击关闭 on：对 PS 左半格 (243,309)、右半格 (329,309) 各请求 click_count:2，分别保存前后截图。",
+        "双击 MS 保存入口，观察其独立 C/D 页面首次打开，核对两个新编号及空输入框。",
+        "只将双击关闭切为 off，立即复读按位置关闭仍为 on。",
+        "双击关闭 off：对 PS 两个相同半格及 MS 保存入口分别请求 click_count:2，保存前后截图并核对实时页面。",
+        "单击普通 C/D split，核对原编号和 KEEP-C/D 标记。",
+        "reset：通过 Unpin Split 取消 PS 固定状态，通过 Delete 删除 MS 保存入口；恢复原始偏好，关闭 Settings，再通过 File→Close Window 关闭本项 TC 专用窗口。"
+      ],
+      "unit_id": "DBL-23-PER"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

@@ -7176,3 +7176,5 @@ DBL-13首次尝试的六变体均因正文前置未具备而未执行核心动�
 三组原生输入诊断保留在 `qa-evidence/r4/`：`input-focus-probe-review.json`、`mouse-click-confirm-review.json`、`assistive-host-probe-review.json`，汇总为 `input-capability-limits.json`。这三组均在 Balanced 上维护输入能力，不是 DBL-08 的 Performance 验收。FKA 实际开启后未建立标签行焦点或 B/C 多选；Mouse Keys 在确认按钮处实际发送 KP_5 和 i 后仍未启用；从真实 Panel Editor 路径定位的 Assistive Control 宿主读取成功，但两次均全白、无可操作的虚拟修饰键。所有系统输入开关已复读恢复 off，浏览器偏好保持原值。
 
 因此 DBL-17、DBL-18、SEL-02/03/04/06/07/08/09 共35个执行点的必需输入前置未能建立，核心动作未执行，台账标 blocked 并引用共享诊断。此前 DBL-07 的12个阻断结果保留并补充该证据。这些是当前执行手段的限制，不是已确认产品缺陷；SEL-09 也未被认定为产品不支持混选。不能以普通双击、替代选择集合或内部状态写入冒充源步骤。其他用例及正常带字母的 app 快捷键继续逐条执行，实际可见且前置满足的关闭或静音按钮仍按原步骤测试。
+
+DBL-09前置解释：书签保存入口对应的绑定实时页必须先打开，普通同网址副本不代替该前置；在真正P/M实时页和普通对照输入标记后，再做off/on四次双击。DBL-23步骤2的“已打开时／未打开时”分别覆盖：每个开关值中，PS左右半格各含打开及关闭状态，MS入口含打开及关闭状态，共12次核心双击；关闭状态通过现有公开关闭命令建立，保存项必须保留，不能用Unpin/Delete代替关闭。详见 `qa-scripts/protected-items-complete-r4.txt`。首次Performance尝试的off-M前置偏差和未打开PS覆盖缺口保留为partial，新tag独立补齐，不能把原记录抹去或计作完整通过。

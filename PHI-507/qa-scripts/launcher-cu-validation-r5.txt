@@ -1,0 +1,8 @@
+本次仅验证辅助测试站的新普通链接入口，不执行上方ENV-06验收，不判通过。禁止shell、浏览器API、CDP或网页JS，全部浏览器操作仅Computer Use。
+
+1. 先实读固定QA app身份、当前窗口与偏好；未知对象保留。在原生File→New Window创建纯TC专用窗口，地址栏访问 http://127.0.0.1:18211/launch/?run=TC-PHI507-r5-launcher-control&pages=A:normal,B:normal 。
+2. 实读入口页批次与两个普通链接。单击1.TC-A链接，读取新开的真实A正文、批次、普通页类型、打开编号，输入KEEP-A-LAUNCHER-CONTROL。回到真正TC-LAUNCH页，再单击2.TC-B链接，同样核实B并输入KEEP-B-LAUNCHER-CONTROL。不得用地址栏重写目标URL替代链接点击。
+3. 回到TC-LAUNCH，仅通过其明确原生Close Tab菜单关闭入口页。实读最终只剩A/B顺序，分别回看两页原编号与KEEP。窗口外已有保存项不计为本批普通页，不修改。
+4. 保存关键前后截图，并记录实际新标签打开/最终顺序/文档身份。若某次仅标题无正文，按前缀有限恢复规则记录，不能宣称路径可用。结束通过File→Close Window仅关闭本次两个普通TC页面的专用窗口。保留全部未知窗口和保存项。偏好不变，最终仍为Balanced/System Default/off/on。
+
+最终unit_id=ENV-06-COMMON，not_executed_reason明确“仅辅助launcher准备路径验证；ENV-06原用例尚未执行”，逐页完整编号、标记、app PID写入JSON。不要将本维护任务用于ENV-06通过判定。

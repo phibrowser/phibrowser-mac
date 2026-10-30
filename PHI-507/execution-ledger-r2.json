@@ -32200,6 +32200,63 @@
           "qa-evidence/r4/launcher-existing-service-check.json"
         ],
         "notes": "后续会话启动新测试站后，用CU实际点击两个普通链接并验证最终正文、编号、标记及关闭launcher后的序列；确认前仍用已验证的fixture链接准备。源用例明确CmdT或原生新标签页的步骤仍照原文执行。"
+      },
+      {
+        "job": "VIS-05-checkpoint-cleanup-r4",
+        "round": 4,
+        "scope": "Checkpoint maintenance only; no VIS-05 acceptance execution. Ripley reviewed all 8 saved screenshots and actual CU observations. Settings restored; Quit canceled to preserve two unclassified New Tab windows.",
+        "observation": {
+          "active_after": "普通 TC-M · TC-PHI507-r2-DBL-09-PER，单选；取消退出后仍为同一页面。",
+          "active_before": "普通 TC-M · TC-PHI507-r2-DBL-09-PER，单选。",
+          "after": "QA 保持运行，PID 97109；所有窗口及对象保留。Settings 已关闭。Window 菜单列有 11 个窗口：New Tab ×2；TC-A · TC-PHI507-r2-PATH-C1-r4；TC-A · TC-PHI507-r2-PATH-C3-r4；TC-A · TC-PHI507-r2-render-recovery-r4；TC-B · TC-PHI507-r2-DBL-08-PER-DIAG；TC-B · TC-PHI507-r2-DBL-16-COM；TC-B · TC-PHI507-r2-PATH-C2-r4；TC-C · TC-PHI507-r2-DBL-15-COM；TC-M · TC-PHI507-r2-DBL-09-PER；TC-QA-PHI507-r2-Recovery-R4-Example。",
+          "before": "QA PID 97109，当前窗口 TC-M · TC-PHI507-r2-DBL-09-PER；当前 Space 可见既有 TC-P pin、TC-M 保存条目和单选普通 TC-M。Space 入口另有 Default、TC-PHI507-r2-Recovery；未切换或清理。",
+          "confirmation_choices": "Rename Space 对话框仅用于读取当前名称，随后 Cancel，未重命名。Command-Q 显示“Are you sure you want to quit Phi?”及“Any unsaved changes may be lost.”，选择 Cancel；未选择 Quit。Window 菜单复核后以其原生 Cancel 动作收起。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-before",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-general-after",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-advanced-after",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-system-keyboard-after",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-system-mouse-after",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-ending-after",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-quit-result",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-quit-held-after"
+          ],
+          "identity_checks": "固定 QA 路径 /Applications/Phi Tab Close QA.app；各次 QA 实读 PID 均为 97109。当前 Space 名称经原生 Rename Space 对话框核对为 TC-QA-PHI507-r2-Recovery-R4。起始及结束截图均见 TC-M、批次 TC-PHI507-r2-DBL-09-PER、普通页、打开编号 00300e11-bc6b-4ab5-9b86-9ada46a96c28、输入 KEEP-M-DBL09。未核实两个 New Tab 窗口的归属，未操作其内容。",
+          "language_observed": "General 的 Display language=System Default；实际 QA 设置与退出确认均为英文。未出现语言重启提示，未重启 QA。",
+          "layout_observed": "General 中 Balanced 蓝框选中；浏览器 chrome 为左侧纵向标签列表。未切换布局。",
+          "not_executed_reason": "仅检查点偏好恢复；本轮任务仍继续，VIS-05 导出与最终清理尚未执行。正常退出未完成：Window 菜单有两个归属未明的 New Tab 窗口，无法满足退出确认前全部为本轮 TC 测试数据的条件，因此取消退出并保留 QA 运行。",
+          "operator_errors": [],
+          "precondition_actual": "以维护任务独立实读当前状态，未重建测试页或新增对象。QA 偏好已经符合本次恢复目标；系统辅助输入目标选项也均为 off。",
+          "settings_observed": "General：Balanced、System Default。Advanced：Double-click to close tabs=off、Close tabs by position=on、Restore last session=on。已符合目标，未点击开关；未修改快捷键。System Settings → Accessibility → Keyboard：Sticky Keys=off、Accessibility Keyboard=off，另见 Full Keyboard Access=off；Pointer Control：Mouse Keys=off。未修改系统选项、双击间隔或其他系统参数。",
+          "steps_executed": [
+            "先以 Computer Use get_app_state 读取固定 QA app 的 PID、窗口、标签与页面截图。",
+            "通过 Spaces → Rename Space 只读核对当前 Space 名称，再 Cancel。",
+            "用原生 Command-comma 打开 Settings，读取 General 并输出 checkpoint-general-after 真实截图。",
+            "读取 Advanced 的两个关闭开关及 Restore last session，输出 checkpoint-advanced-after 真实截图；关闭已确认的 Settings 窗口。",
+            "读取 Window 菜单中的实际窗口列表，使用其原生 Cancel 收起。",
+            "通过 Computer Use 打开 System Settings，读取 Accessibility → Keyboard，输出 checkpoint-system-keyboard-after 真实截图。",
+            "进入 Accessibility → Pointer Control，读取 Mouse Keys，输出 checkpoint-system-mouse-after 真实截图。",
+            "点击 System Settings 的原生 close button；工具返回“Computer Use server error -10005: App quit”，作为关闭后的返回记录。",
+            "重新读取 QA，核对同一 TC-M 页面、编号和输入标记，输出 checkpoint-ending-after 真实截图。",
+            "对同一固定 QA app 发送 Command-Q，保存 checkpoint-quit-result 的实际确认框截图。",
+            "因无法确认全部窗口均为本轮 TC 数据，点击 Cancel；复核 Window 菜单仍有两个归属未明的 New Tab 窗口后取消菜单，输出 checkpoint-quit-held-after 真实截图。"
+          ],
+          "unit_id": "VIS-05-COMMON"
+        },
+        "evidence": [
+          "qa-evidence/r4/VIS-05-checkpoint-cleanup-r4-observations.json",
+          "qa-evidence/r4/VIS-05-checkpoint-cleanup-r4-evidence.json",
+          "qa-evidence/r4/VIS-05-checkpoint-cleanup-r4-run.json",
+          "qa-evidence/r4/VIS-05-COMMON-41.png",
+          "qa-evidence/r4/VIS-05-COMMON-42.png",
+          "qa-evidence/r4/VIS-05-COMMON-43.png",
+          "qa-evidence/r4/VIS-05-COMMON-44.png",
+          "qa-evidence/r4/VIS-05-COMMON-45.png",
+          "qa-evidence/r4/VIS-05-COMMON-46.png",
+          "qa-evidence/r4/VIS-05-COMMON-47.png",
+          "qa-evidence/r4/VIS-05-COMMON-48.png"
+        ],
+        "evidence_metadata": "qa-evidence/r4/VIS-05-checkpoint-cleanup-r4-evidence.json"
       }
     ]
   },

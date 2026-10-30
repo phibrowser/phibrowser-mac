@@ -97,7 +97,7 @@ final class HolographicCardView: NSView {
         updateCopy()
         updateMaterial()
         setAccessibilityElement(true)
-        setAccessibilityRole(.image)
+        setAccessibilityRole(.staticText)
 
         NotificationCenter.default.addObserver(self, selector: #selector(windowVisibilityChanged),
             name: NSWindow.didChangeOcclusionStateNotification, object: nil)
@@ -245,7 +245,26 @@ final class HolographicCardView: NSView {
 
     private func updateCopy() {
         front.setCopy(name: name, identifier: memberID, joinedDate: joinedDate)
-        setAccessibilityLabel([name, memberID, joinedDate].filter { !$0.isEmpty }.joined(separator: ", "))
+        setAccessibilityValue(accessibilitySummary)
+    }
+
+    /// VoiceOver reads the card as one sentence; the member ID is omitted and
+    /// the "yyyy.MM" join date is spoken as a localized month and year.
+    private var accessibilitySummary: String {
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = .current
+        parser.dateFormat = "yyyy.MM"
+        guard let date = parser.date(from: joinedDate) else {
+            let format = NSLocalizedString("profile.card.accessibilitySummaryWithoutDate", value: "Phi member card, %@",
+                comment: "Profile membership card - VoiceOver description when the join date is unknown; the placeholder is the member's name")
+            return String(format: format, name)
+        }
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("yMMMM")
+        let format = NSLocalizedString("profile.card.accessibilitySummary", value: "Phi member card, %1$@, joined %2$@",
+            comment: "Profile membership card - VoiceOver description; first placeholder is the member's name, second is the month and year they joined")
+        return String(format: format, name, formatter.string(from: date))
     }
 
     private func updateMaterial() {

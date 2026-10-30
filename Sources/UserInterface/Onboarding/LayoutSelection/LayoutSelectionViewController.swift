@@ -243,6 +243,10 @@ class LayoutOptionView: NSView {
 
         let click = NSClickGestureRecognizer(target: self, action: #selector(handleTap))
         addGestureRecognizer(click)
+
+        setAccessibilityElement(true)
+        setAccessibilityRole(.radioButton)
+        setAccessibilityLabel(titleLabel.stringValue)
     }
 
     func setSelected(_ selected: Bool) {
@@ -258,9 +262,19 @@ class LayoutOptionView: NSView {
             layer?.backgroundColor = deselectedColor.cgColor
             checkmarkImageView.image = NSImage(resource: .uncheck)
         }
+        setAccessibilityValue(isSelected ? 1 : 0)
     }
 
     @objc private func handleTap() {
         onTap?()
+    }
+
+    // VoiceOver reads the option as a single radio button; the title, preview
+    // and checkmark are not exposed separately.
+    override func accessibilityChildren() -> [Any]? { [] }
+
+    override func accessibilityPerformPress() -> Bool {
+        onTap?()
+        return true
     }
 }

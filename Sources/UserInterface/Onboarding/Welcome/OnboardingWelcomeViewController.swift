@@ -41,6 +41,9 @@ class OnboardingWelcomeViewController: OnboardingBaseViewController {
         }
     }
 
+    // The page has no visible title, so VoiceOver starts on the card.
+    override var initialAccessibilityElement: NSView? { cardView }
+
     // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()

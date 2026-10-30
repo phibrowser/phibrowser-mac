@@ -2113,13 +2113,9 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                     modifierFlags: flags
                 )
             }
-            if isPinned {
-                view.onDoubleSelect = { [weak self, weak tab] modifierFlags in
-                    guard let tab else { return }
-                    self?.handlePinnedTabDoubleClick(tab, modifierFlags: modifierFlags)
-                }
-            } else {
-                view.onDoubleSelect = nil
+            view.onDoubleSelect = { [weak self, weak tab] modifierFlags in
+                guard let tab else { return }
+                self?.handleTabDoubleClick(tab, isPinned: isPinned, modifierFlags: modifierFlags)
             }
             // Split-merged cells: the right favicon represents the partner
             // pane; clicking that half should focus the partner instead of
@@ -2133,10 +2129,10 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                     modifierFlags: flags
                 )
             }
-            if isPinned, let partner = pinnedSplitPartners[id] {
+            if let partner = pinnedSplitPartners[id] {
                 view.onSecondaryDoubleSelect = { [weak self, weak partner] modifierFlags in
                     guard let partner else { return }
-                    self?.handlePinnedTabDoubleClick(partner, modifierFlags: modifierFlags)
+                    self?.handleTabDoubleClick(partner, isPinned: isPinned, modifierFlags: modifierFlags)
                 }
             } else {
                 view.onSecondaryDoubleSelect = nil
@@ -2991,10 +2987,17 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         }
     }
 
-    private func handlePinnedTabDoubleClick(
+    private func handleTabDoubleClick(
         _ tab: Tab,
+        isPinned: Bool,
         modifierFlags: NSEvent.ModifierFlags
     ) {
+        if !isPinned {
+            if !tab.closeOnDoubleClick(modifierFlags: modifierFlags) {
+                handleTabClick(tab: tab, isPinned: false, modifierFlags: modifierFlags)
+            }
+            return
+        }
         if modifierFlags.contains(.command) {
             if browserState.multiSelection.isActive {
                 browserState.clearMultiSelection()

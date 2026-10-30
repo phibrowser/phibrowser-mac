@@ -248,6 +248,32 @@ final class PinnedTabDoubleClickTests: XCTestCase {
         XCTAssertEqual(fixture.rowClicks, 0)
     }
 
+    func testGroupedSplitTableForwardsDoubleClickToOnlyTheClickedPane() throws {
+        let fixture = GroupedSplitPressFixture()
+        let window = makeHostWindow(for: fixture.table)
+        fixture.table.reloadData()
+        let cell = try XCTUnwrap(fixture.table.view(atColumn: 0, row: 0, makeIfNecessary: true)
+            as? SidebarSplitPairCellView)
+        window.contentView?.layoutSubtreeIfNeeded()
+        let panes = cell.subviews.flatMap(\.subviews).compactMap { $0 as? HoverableView }
+            .filter { $0.shouldClickOnMouseDown != nil }
+            .sorted { $0.frame.minX < $1.frame.minX }
+        XCTAssertEqual(panes.count, 2)
+        var doubleClicks = [0, 0]
+        for (index, pane) in panes.enumerated() {
+            pane.doubleClickAction = { _ in doubleClicks[index] += 1 }
+            let point = pane.convert(NSPoint(x: pane.bounds.midX, y: pane.bounds.midY), to: nil)
+            fixture.table.mouseDown(with: try makeMouseEvent(type: .leftMouseDown, at: point,
+                                                             clickCount: 2, windowNumber: window.windowNumber))
+            let release = try makeMouseEvent(at: point, clickCount: 2, windowNumber: window.windowNumber)
+            fixture.table.mouseUp(with: release)
+            pane.mouseUp(with: release)
+            XCTAssertEqual(doubleClicks[index], 1)
+            XCTAssertEqual(fixture.rowClicks, 0, "The table must not activate the pair after forwarding its double-click")
+        }
+        XCTAssertEqual(doubleClicks, [1, 1])
+    }
+
     private func makeHostWindow(for view: NSView) -> NSWindow {
         let window = NSWindow(
             contentRect: view.frame,
@@ -305,6 +331,7 @@ private final class GroupedSplitPressFixture: NSObject, NSTableViewDataSource,
         cell
     }
     func tableView(_ tableView: GroupTabsTableView, didClickRow row: Int,
+                   clickCount: Int,
                    modifierFlags: NSEvent.ModifierFlags) { rowClicks += 1 }
     func tableView(_ tableView: GroupTabsTableView, beginDraggingRow row: Int,
                    with event: NSEvent) { dragStarts += 1 }

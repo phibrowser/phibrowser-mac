@@ -1,0 +1,35 @@
+{
+  "unit_id": "VIS-01-BAL",
+  "job": "VIS-01",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-01-observations.json",
+  "observation": {
+    "active_after": "BAL-N1 普通新标签页；原生 row(selected)，菜单已取消。",
+    "active_before": "BAL-N2，即测试组第二个成员；活动背景在截图可见。",
+    "after": "旧对象之后仍为 BAL-N1、TC-PHI507-r2-VIS-01-BAL-zh-Hans[BAL-N3, BAL-N2]，共 3 个本次 New Tab。普通菜单『关闭上方标签页』『关闭下方标签页』均可用；组菜单『关闭标签组上方的标签页』可用、『关闭标签组下方的标签页』禁用。方向项单行完整中文，未见 key、英文回退、左右方向或截断；未选择方向关闭。",
+    "before": "本项开始关闭 PER-N1 和 PER 测试组，重读确认消失、旧对象仍在，再独立创建 BAL 的 3 个 New Tab。最终顺序 BAL-N1、展开测试组[BAL-N3, BAL-N2]；树列出两个组内 row，截图核对成员数 2，侧栏组标题显示 TC-PHI507-r2-…。",
+    "confirmation_choices": "PER 测试组关闭未出现确认框；本项重命名选择『保存』。普通菜单和组菜单均用明确暴露的 Cancel 取消，未选择关闭项。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-01-BAL attempt1 layout",
+      "EVIDENCE: VIS-01-BAL attempt1 settings",
+      "EVIDENCE: VIS-01-BAL attempt1 before",
+      "EVIDENCE: VIS-01-BAL attempt1 normal-menu",
+      "EVIDENCE: VIS-01-BAL attempt1 group-menu",
+      "EVIDENCE: VIS-01-BAL attempt1 after"
+    ],
+    "identity_checks": "指定 app 路径、PID 79525；before/after 均为 Window『新标签页』，保留原生标签/容器行。普通目标是本项新建且已选中的独立 row；组标题原生全文唯一对应 BAL 测试组；原生表格有两个 New Tab 子 row。旧分屏未改变。",
+    "language_observed": "General 实读『简体中文』。第二卡片文案与换行见 base_case，本项已独立截图实读。普通菜单完整可见项为：固定、复制、拷贝链接、以分屏打开、添加到书签、添加到文件夹、新建标签组、添加到标签页组、移到空间、关闭、关闭其他标签页、关闭上方标签页、关闭下方标签页；根菜单均可用。组菜单完整可见项为：在标签组中新建标签页、重命名标签组、更改颜色、折叠标签页组、取消分组、关闭标签页组、关闭标签组上方的标签页、关闭标签组下方的标签页；仅末项禁用。",
+    "layout_observed": "General 从性能改选『均衡』，截图实见均衡选中边框；浏览器顶部有地址栏，标签在左侧纵向排列。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "简体中文、Balanced，双击关闭 on／位置关闭 on；独立重建 1 个普通 New Tab 和 2 成员 TC 测试组。",
+    "settings_observed": "本项未点击任何关闭开关；Advanced 即时实读 doubleClickToClose=on、directionalClosing=on，保存完整设置截图。",
+    "steps_executed": [
+      "在本项开始清理上一项 3 个测试对象，重读确认完成；General 改为 Balanced 并核实语言与布局。",
+      "查看第二卡片的两个开关和说明，保存 settings 截图。",
+      "独立创建 N1、N2、N3，用新建组、重命名及添加到已有组菜单构造 N1 + 组[N3,N2]。",
+      "选择普通 N1 并右键记录完整方向菜单，Cancel；重读后右键本项组标题记录完整方向菜单，Cancel；保存 after。"
+    ],
+    "unit_id": "VIS-01-BAL"
+  }
+}

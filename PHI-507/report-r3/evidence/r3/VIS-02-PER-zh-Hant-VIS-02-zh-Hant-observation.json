@@ -1,0 +1,39 @@
+{
+  "unit_id": "VIS-02-PER-zh-Hant",
+  "job": "VIS-02-zh-Hant",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-zh-Hant-observations.json",
+  "observation": {
+    "active_after": "G2；截图为组内第二个新分頁高亮。右键观察未改变活动页。",
+    "active_before": "G2；截图为组内第二个新分頁高亮。",
+    "after": "N → TC-PHI507-r2-VIS-02-PER-zh-Hant[G1,G2]，3个测试 New Tab 均保留；组展开，成员2，无新增split或多选。菜单已取消。",
+    "before": "保留旧序列之后为N → TC-PHI507-r2-VIS-02-PER-zh-Hant[G1,G2]；组展开，实际成员2。",
+    "confirmation_choices": "语言提示选择 Restart Phi；返回 App quit 后以指定应用路径重新读取，PID由80031变为80405。重命名组选择「儲存」。清理前次测试组未出现确认框；未选择任何方向关闭项。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-PER-zh-Hant attempt1 restart-result",
+      "EVIDENCE: VIS-02-PER-zh-Hant attempt1 layout",
+      "EVIDENCE: VIS-02-PER-zh-Hant attempt1 settings",
+      "EVIDENCE: VIS-02-PER-zh-Hant attempt1 before",
+      "EVIDENCE: VIS-02-PER-zh-Hant attempt1 normal-menu",
+      "EVIDENCE: VIS-02-PER-zh-Hant attempt1 group-menu",
+      "EVIDENCE: VIS-02-PER-zh-Hant attempt1 after"
+    ],
+    "identity_checks": "前后原生状态均为指定应用、PID 80405、Window=\"新分頁\"。N为独立顶层row；组名原生全文可读，表格内逐项存在G1和G2两个新分頁。N/G1/G2按本项创建过程区分；未声称存在Web文档、输入标记或本次打开编号。",
+    "language_observed": "General实读「繁體中文」，重启后菜单栏为「檔案、編輯、顯示方式、空間、瀏覽記錄、書籤、分頁、視窗、輔助說明」。本项指定的两开关、两说明及四个方向菜单项均显示繁体中文全文，未见这些目标项显示本地化key或英文。",
+    "layout_observed": "General点击「效能」后截图选中边框在效能卡片；浏览器外部标签栏为纵向。普通菜单完整可见：釘選、複製、拷貝連結、與目前分頁分割畫面、加入書籤、加入資料夾、新增分頁群組、加入群組、移至空間、關閉、關閉其他分頁、關閉上方分頁、關閉下方分頁；这些主菜单项均可用。组菜单：在群組中新增分頁、重新命名群組、變更顏色、收合群組、取消群組、關閉群組、關閉群組上方的分頁均可用；「關閉群組下方的分頁」灰色且原生标为disabled。方向菜单文字均单行显示，未截断；侧栏长组名显示省略号，原生树保留全文。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "清理前次VIS测试组及其组外普通New Tab后，独立新建N、G1；对G1使用「新增分頁群組」并重命名，再由「在群組中新增分頁」创建G2。语言繁體中文、效能布局、两开关on/on均已实读。",
+    "settings_observed": "「連按兩下關閉分頁」on；说明：「連按兩下分頁即可關閉；分割檢視時僅關閉點選的一側。固定分頁與書籤保留原有的連按兩下操作。」。「依位置批次關閉分頁」on；说明：「在分頁與分頁群組的右鍵選單中，提供關閉左側或右側分頁的選項；使用垂直分頁列時，顯示為關閉上方或下方分頁。」。双击说明一行完整可见；位置说明两行，在「上方」后换行，下一行为「或下方分頁。」；未见省略号或文字被控件遮挡。仅将双击开关从off点击为on，点击后的原生树即时显示双击on／依位置on。",
+    "steps_executed": [
+      "原生读取起始General和Advanced偏好；单独开启双击关闭并核对另一开关仍on。",
+      "General选择繁體中文，执行提示重启，重读新PID及实际语言。",
+      "General选择效能并截图；读取并完整截图两开关及说明。",
+      "独立重建N与两成员TC测试组，核对顺序和成员数并保存before。",
+      "右键N，读取普通菜单全文、方向及可用状态，保存完整normal-menu截图。",
+      "取消菜单并重读；右键组标题，读取组菜单及禁用状态，保存完整group-menu截图。",
+      "取消菜单并保存after，保留本项实际结束集合。"
+    ],
+    "unit_id": "VIS-02-PER-zh-Hant"
+  }
+}

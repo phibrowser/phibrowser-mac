@@ -1,0 +1,40 @@
+{
+  "unit_id": "VIS-02-BAL-ja",
+  "job": "VIS-02-ja",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-ja-observations.json",
+  "observation": {
+    "active_after": "G2；组内第二个「新しいタブ」，无多选。",
+    "active_before": "G2；组内第二个「新しいタブ」，无多选。",
+    "after": "N＋TC-PHI507-r2-VIS-02-BAL-ja[G1,G2]保留；两类菜单均已取消，没有执行方向关闭项。",
+    "before": "旧保留容器之后为新建普通 N，再为 TC-PHI507-r2-VIS-02-BAL-ja[G1,G2]。",
+    "confirmation_choices": "本项 General 实读已经是「日本語」，未重复选择或重启。组重命名输入 TC-PHI507-r2-VIS-02-BAL-ja 后 Return 保存。关闭前项测试组未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-BAL-ja attempt1 failure",
+      "EVIDENCE: VIS-02-BAL-ja attempt1 layout",
+      "EVIDENCE: VIS-02-BAL-ja attempt1 settings",
+      "EVIDENCE: VIS-02-BAL-ja attempt1 before",
+      "EVIDENCE: VIS-02-BAL-ja attempt1 normal-menu",
+      "EVIDENCE: VIS-02-BAL-ja attempt1 group-menu",
+      "EVIDENCE: VIS-02-BAL-ja attempt1 after"
+    ],
+    "identity_checks": "App=/Applications/Phi Tab Close QA.app/，PID 82193；设置窗口「一般」「詳細」，浏览器窗口「新しいタブ」。本项普通 N 为独立顶层行；TC-PHI507-r2-VIS-02-BAL-ja 的 table 下实读 G1、G2两个成员。创建顺序、原生包含关系和截图共同核对身份，未声称存在网页标记。",
+    "language_observed": "General 实读「日本語」；当前原生 chrome 和目标设置、菜单为日文。指定标题、说明及上下方向菜单未见 key、缺字或英文回退。",
+    "layout_observed": "General 原生选择「バランス」，截图显示该卡片选中边框；浏览器外部标签栏纵向。普通菜单：「上側のタブを閉じる」「下側のタブを閉じる」均可用。组菜单：「グループの上側のタブを閉じる」可用，「グループの下側のタブを閉じる」禁用。方向菜单单行完整可读。两条开关标题单行，说明各两行；双击说明在「ブックマー／クの」处续行，位置说明在「下側／になります。」处续行，末尾均可见。长 TC 组名在侧栏省略，原生树全名可读。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "setup 后第一次右键当前同名普通标签调用返回 isError；辅助函数立即终止序列，但文字过滤遗漏了该错误的具体文本，因此不补写错误原因。随后 get_app_state 保存 failure 图片，实读仍为两个普通新しいタブ且没有菜单；重读后右键当前选中行成功，继续建组。"
+    ],
+    "precondition_actual": "本项开始才关闭 PER-ja 组和对应 N；新建普通 N、G1，用原生 New Tab Group 建组、Rename Group 命名，再用 New Tab in Group 创建 G2。实际为三对象、两组成员。日本語保持不变，切换 Balanced，两个开关实读 on/on。",
+    "settings_observed": "「ダブルクリックでタブを閉じる」=on；说明：「タブをダブルクリックすると閉じます。分割表示では、クリックした側だけを閉じます。固定タブとブックマークのダブルクリック操作は変わりません。」。「位置を指定してタブをまとめて閉じる」=on；说明：「タブとタブグループのメニューに、左側・右側のタブを閉じる項目を追加します。縦型タブバーでは上側・下側になります。」。本项未点击任何已正确的开关。",
+    "steps_executed": [
+      "关闭前项可丢弃对象，在本项 setup 独立创建普通 N 与两成员 BAL-ja 测试组。",
+      "General 核对日本語并选择 Balanced，保存 layout 完整截图。",
+      "Advanced 实读两个 on 值、两条标题和说明，保存完整 settings 截图。",
+      "核对浏览器实际纵向顺序、组成员与活动 G2，保存 before。",
+      "分别右键普通 N 和本项组标题，保存完整 normal-menu、group-menu 截图及方向项可用状态；每次均用明确 Cancel 退出并重读。",
+      "保存 after，保留本项实际对象至下一项 setup。"
+    ],
+    "unit_id": "VIS-02-BAL-ja"
+  }
+}

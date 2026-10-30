@@ -1,0 +1,39 @@
+{
+  "unit_id": "VIS-02-PER-ko",
+  "job": "VIS-02-ko",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-ko-observations.json",
+  "observation": {
+    "active_after": "G2",
+    "active_before": "G2",
+    "after": "本项集合仍为普通 N；TC-PHI507-r2-VIS-02-PER-ko[G1,G2]。三个标题均 새 탭；菜单已取消，未点击方向关闭项。",
+    "before": "普通 N 在组前；TC-PHI507-r2-VIS-02-PER-ko 展开，成员 G1、G2。三个新建对象无多选、无 split；既有其他对象保留。",
+    "confirmation_choices": "语言提示选择 Restart Phi，返回 App quit 后通过 CU 重开；组重命名选择 저장。关闭前项 COM-ja 测试组时未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-PER-ko attempt1 restart-result",
+      "EVIDENCE: VIS-02-PER-ko attempt1 layout",
+      "EVIDENCE: VIS-02-PER-ko attempt1 settings",
+      "EVIDENCE: VIS-02-PER-ko attempt1 before",
+      "EVIDENCE: VIS-02-PER-ko attempt1 normal-menu",
+      "EVIDENCE: VIS-02-PER-ko attempt1 group-menu",
+      "EVIDENCE: VIS-02-PER-ko attempt1 after"
+    ],
+    "identity_checks": "指定路径应用 PID82780→83231，对应语言提示重启。关键截图实读 App、Window=고급/새 탭。N 为普通 row26；组内两个独立子 row33、38，按创建顺序为 G1、G2；G2 白色活动背景。仅记录原生 New Tab 身份，不声称 Web 文档提交或存活编号。",
+    "language_observed": "General 实读 한국어。所查两个开关、两段说明及方向菜单项逐字与提供语言表相同，这些区域未见 key、缺字或英文回退。普通菜单可见：고정、복제、링크 복사、현재 탭과 분할、북마크에 추가、폴더에 추가、새 탭 그룹、그룹에 추가、스페이스로 이동、닫기、다른 탭 닫기、위쪽 탭 닫기、아래쪽 탭 닫기，顶层项均可用。组菜单可见：그룹에 새 탭、그룹 이름 변경、색상 변경、그룹 접기、그룹 해제、그룹 닫기、그룹 위쪽 탭 닫기、그룹 아래쪽 탭 닫기；仅最后一项禁用。",
+    "layout_observed": "General 的 성능 卡片选中，浏览器外部标签纵向排列。双击说明两行，第二行为「그대로 유지돼요.」；方向说明一行，均完整可读。普通 위쪽 탭 닫기、아래쪽 탭 닫기 均可用；组 그룹 위쪽 탭 닫기 可用，그룹 아래쪽 탭 닫기 禁用。菜单项单行无截断；组长名称在侧栏省略显示。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "一次 functions.exec 辅助函数 eval 语法错误，未发出 CU 或改变界面；改为异步封装后继续。"
+    ],
+    "precondition_actual": "原生关闭前项 COM-ja 组及对应 N，独立新建 N、G1、G2，并组成两成员 PER-ko 测试组；한국어、Performance、两个开关 on。",
+    "settings_observed": "두 번 클릭하여 탭 닫기=on；위치에 따라 탭 한꺼번에 닫기=on。双击说明：「탭을 두 번 클릭하면 닫혀요. 분할 보기에서는 클릭한 쪽만 닫혀요. 고정 탭과 북마크의 두 번 클릭 동작은 그대로 유지돼요.」方向说明：「탭과 탭 그룹 메뉴에 왼쪽 또는 오른쪽 탭을 닫는 항목을 추가해요. 세로 탭 표시줄에서는 위쪽 또는 아래쪽 탭을 닫아요.」双击开关 off→on 后即时实读另一个开关仍 on。",
+    "steps_executed": [
+      "General 下拉选择 한국어，按提示 Restart Phi；CU 重开后核对新 PID 和韩语界面。",
+      "Advanced 单独开启双击关闭，读取两个开关即时值；General 选择 성능 并截图确认。",
+      "关闭前项 COM-ja 测试组及对应普通 N；新建 N、G1，通过 New Tab Group→Rename Group 命名，再 New Tab in Group 新建 G2，核对两成员顺序。",
+      "保留完整 Advanced 设置截图及文字；对 N 原生 row 右键读取普通菜单，Cancel 后对组标题右键读取组菜单。",
+      "Cancel 组菜单，保存结束截图并输出本项 OBSERVATION。"
+    ],
+    "unit_id": "VIS-02-PER-ko"
+  }
+}

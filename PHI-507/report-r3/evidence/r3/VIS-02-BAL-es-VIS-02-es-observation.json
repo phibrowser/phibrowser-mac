@@ -1,0 +1,37 @@
+{
+  "unit_id": "VIS-02-BAL-es",
+  "job": "VIS-02-es",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-es-observations.json",
+  "observation": {
+    "active_after": "普通N，单选。",
+    "active_before": "普通N，单选。",
+    "after": "TC-PHI507-r2-VIS-02-BAL-es[G1,G2]→普通N；3对象均保留，无菜单或确认框。",
+    "before": "TC-PHI507-r2-VIS-02-BAL-es[G1,G2]→普通N；3对象标题均Nueva pestaña，无多选，本项对象无split。",
+    "confirmation_choices": "重命名选择Guardar；观察菜单均用原生Cancel退出。清理PER-es组未出现确认框。语言已为Español，本项未重复切换或重启。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-BAL-es attempt1 layout",
+      "EVIDENCE: VIS-02-BAL-es attempt1 settings",
+      "EVIDENCE: VIS-02-BAL-es attempt1 before",
+      "EVIDENCE: VIS-02-BAL-es attempt1 normal-menu",
+      "EVIDENCE: VIS-02-BAL-es attempt1 group-menu",
+      "EVIDENCE: VIS-02-BAL-es attempt1 after"
+    ],
+    "identity_checks": "指定路径App，PID85765，Window=Nueva pestaña。原生树中BAL-es组有G1/G2两个独立成员row，普通N为组外selected row；屏幕核对组内2页及组后N。仅本地New Tab。",
+    "language_observed": "General重新实读Español。所查两开关标题、两说明和四个方向项逐字与提供表一致；未见key、缺字或英文回退。",
+    "layout_observed": "Equilibrado卡片选中，外部纵向标签栏。普通菜单：Cerrar las pestañas de arriba可用；Cerrar las pestañas de abajo禁用。组标题菜单：Cerrar las pestañas encima del grupo、Cerrar las pestañas debajo del grupo均可用。方向项单行完整、可读；完整菜单图未见文字截断。侧栏TC长组名显示省略号。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "General实读Español并选择Equilibrado；两个开关实读on/on，未重复点击。清理PER-es组及普通N，独立新建BAL-es组G1/G2和组后普通N，核对成员数2与顺序。",
+    "settings_observed": "两个开关on/on。标题：Cerrar pestañas con doble clic；Cerrar pestañas por posición。双击说明：Haz doble clic en una pestaña para cerrarla. En la vista dividida, solo se cierra el panel pulsado. Las pestañas fijadas y los marcadores conservan sus acciones habituales de doble clic. 位置说明：Añade a los menús de pestañas y grupos opciones para cerrar las pestañas a la izquierda o a la derecha, o las de arriba o abajo en una barra vertical. 两说明各2行，末句完整、可读，无省略号；设置完整截图包含两个开关。",
+    "steps_executed": [
+      "General重新确认Español，选择Balanced对应的Equilibrado并截图。",
+      "读取Advanced两个开关和两说明，保存完整设置截图。",
+      "原生清理PER-es组与普通N，重新创建本项G1/G2组及普通N。",
+      "保存前置集合及before截图。",
+      "分别打开普通N菜单和组标题菜单，读取方向项全文及禁用状态，保存完整截图并Cancel退出。",
+      "保存after状态和截图，保留本项3对象至下一项setup。"
+    ],
+    "unit_id": "VIS-02-BAL-es"
+  }
+}

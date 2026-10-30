@@ -1,0 +1,45 @@
+{
+  "unit_id": "VIS-02-COM-en",
+  "job": "VIS-02-en",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-en-observations.json",
+  "observation": {
+    "active_after": "本项观察结束为 G2（New Tab）；会话恢复偏好及语言重启后，最终仍为 G2。",
+    "active_before": "本项 G2（New Tab），实际横向标签条中为第二个组成员。",
+    "after": "观察结束保留 N 和 TC-PHI507-r2-VIS-02-COM-en{G1,G2}，组标题计数为 2。普通 Close、Close Other Tabs、Close Tabs to the Left、Close Tabs to the Right 均可用。组 Close Group、Close Tabs to the Left of Group 可用，Close Tabs to the Right of Group 禁用。观察后未关闭本项对象；统一恢复偏好后的集合仍保留。",
+    "before": "PID 81235，Window=\"New Tab\"；外部横向顺序为原有保留容器 → N → 测试组标题 → G1 → G2。原生树显示三个对应 New Tab 的 tabStripTab button，组标题实读“TC-PHI507-r2-VIS-02-COM-en 2”；截图逐个核对。",
+    "confirmation_choices": "本项组重命名选择 Save。会话末将 English 恢复 System Default 后出现 Restart Phi?，选择 Restart Phi，调用返回预期“App quit”；随后指定路径重开并实读新 PID 81822。未勾选任何 Don't Ask Again。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-COM-en attempt1 layout",
+      "EVIDENCE: VIS-02-COM-en attempt1 settings",
+      "EVIDENCE: VIS-02-COM-en attempt1 failure",
+      "EVIDENCE: VIS-02-COM-en attempt1 before",
+      "EVIDENCE: VIS-02-COM-en attempt1 normal-menu",
+      "EVIDENCE: VIS-02-COM-en attempt1 group-menu",
+      "EVIDENCE: VIS-02-COM-en attempt1 after",
+      "EVIDENCE: VIS-02-COM-en attempt1 restore-switches",
+      "EVIDENCE: VIS-02-COM-en attempt1 restore-layout",
+      "EVIDENCE: VIS-02-COM-en attempt1 restart-result",
+      "EVIDENCE: VIS-02-COM-en attempt1 restored-general",
+      "EVIDENCE: VIS-02-COM-en attempt1 restored-switches",
+      "EVIDENCE: VIS-02-COM-en attempt1 ending-state"
+    ],
+    "identity_checks": "通过上一项 BAL 组标题菜单 Close Group 清理，get_app_state 核实组消失、普通 N 被选中后才关闭 N。新建两页后，对只包含目标 New Tab 的实际 tabStripTab button 建组；通过本项组 New Tab in Group 创建第三页，视觉核对 G1/G2 与计数 2。未以 Web 标记或 URL 声称身份。恢复语言前 PID 81235，提示重启后 PID 81822。",
+    "language_observed": "本项 General 实读 English。普通菜单完整可见：Pin；Duplicate；Copy Link；Split with Current；Add to Bookmark Bar；Add to Folder；New Tab Group；Add to Group；Move to Space；Close；Close Other Tabs；Close Tabs to the Left；Close Tabs to the Right。组菜单完整可见：New Tab in Group；Rename Group；Change Color；Collapse Group；Ungroup；Close Group；Close Tabs to the Left of Group；Close Tabs to the Right of Group。目标可见文字未显示本地化 key 或缺字。",
+    "layout_observed": "General 选择 Comfortable，卡片有选中边框；实际浏览器为顶部外部横向标签条，关闭方向使用 Left／Right。两条普通方向项及较长的两条组方向项均完整单行显示，无截断；Right of Group 为灰色禁用。设置两段说明均完整两行，双击说明在“and”之后、方向说明在“a”之后换行。组标题视觉上省略名称但保留成员数 2，原生树显示完整名称。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "组重命名后辅助匹配使用了不含成员数后缀的精确名称，未匹配“TC-PHI507-r2-VIS-02-COM-en 1”，仍发出一次无 element_index 的 click，工具调用抛出“Missing required argument: x”。立即停止并保存 failure 图，未使用坐标兜底；重新实读完整原生组标题后，使用最新字符串索引打开组菜单并创建 G2。"
+    ],
+    "precondition_actual": "已独立清理 BAL 三对象；General 实读 English 并设置 Comfortable；Advanced on/on。本项新建普通 N 和测试组 G1、G2，计数及实际横向顺序核实后执行菜单观察。",
+    "settings_observed": "观察时 Double-click to close tabs=on；Close tabs by position=on。实际完整说明：“Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions.”；“Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar.”。会话末只点击双击关闭一次恢复 off，即时读取另一开关仍为 on；重启后再次实读 off/on。General 恢复 Balanced 与 System Default，并在重启后截图核实。",
+    "steps_executed": [
+      "开始本项时用 BAL 组原生 Close Group 清理，重读后关闭其普通 N；选择 Comfortable 并记录 English、on/on 设置完整截图。",
+      "新建 N、G1；对目标 tabStripTab button 使用 New Tab Group → Rename Group。名称匹配工具错误留证后，重读组标题并用 New Tab in Group 创建 G2。",
+      "核对三对象和组计数 2，保存 before；对 N 的实际 tabStripTab button 右键，记录完整普通菜单后 Cancel。",
+      "重读正常窗口，对本项组标题右键，记录完整左右方向组菜单和禁用状态；Cancel 后保存 after。",
+      "统一恢复原始 off/on、Balanced、System Default；按提示重启，实读 PID 81822、恢复后的 General 和 Advanced；关闭 Settings，保存最终集合。"
+    ],
+    "unit_id": "VIS-02-COM-en"
+  }
+}

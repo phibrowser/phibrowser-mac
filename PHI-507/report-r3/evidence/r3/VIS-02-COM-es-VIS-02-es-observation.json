@@ -1,0 +1,48 @@
+{
+  "unit_id": "VIS-02-COM-es",
+  "job": "VIS-02-es",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-es-observations.json",
+  "observation": {
+    "active_after": "菜单观察结束为普通N，单选；会话恢复后仍为该N，标题New Tab。",
+    "active_before": "最右普通N，单选。",
+    "after": "菜单观察结束仍为TC-PHI507-r2-VIS-02-COM-es[G1,G2]→普通N；窗口缩放已还原，菜单已取消。后续只恢复偏好，未重建对象。",
+    "before": "TC-PHI507-r2-VIS-02-COM-es[G1,G2]→普通N；3对象均Nueva pestaña，无多选，本项对象无split。",
+    "confirmation_choices": "重命名选择Guardar；观察菜单均用原生Cancel退出。清理BAL-es组未出现确认框。收尾General选择Predeterminado del sistema，在¿Reiniciar Phi?提示中选择Reiniciar Phi；App quit作为该次预期重启返回保留。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-COM-es attempt1 layout",
+      "EVIDENCE: VIS-02-COM-es attempt1 settings",
+      "EVIDENCE: VIS-02-COM-es attempt1 before",
+      "EVIDENCE: VIS-02-COM-es attempt1 normal-menu",
+      "EVIDENCE: VIS-02-COM-es attempt1 group-menu",
+      "EVIDENCE: VIS-02-COM-es attempt1 after",
+      "EVIDENCE: VIS-02-COM-es attempt1 menu-capture-zoom",
+      "EVIDENCE: VIS-02-COM-es attempt1 normal-menu-full",
+      "EVIDENCE: VIS-02-COM-es attempt1 after-capture",
+      "EVIDENCE: VIS-02-COM-es attempt1 restore-switches",
+      "EVIDENCE: VIS-02-COM-es attempt1 restore-layout",
+      "EVIDENCE: VIS-02-COM-es attempt1 restore-restart-result",
+      "EVIDENCE: VIS-02-COM-es attempt1 restored-browser",
+      "EVIDENCE: VIS-02-COM-es attempt1 restored-general",
+      "EVIDENCE: VIS-02-COM-es attempt1 restored-advanced",
+      "EVIDENCE: VIS-02-COM-es attempt1 ending-state"
+    ],
+    "identity_checks": "观察时指定路径App、PID85765、Window=Nueva pestaña。组标题原生计数2，创建顺序G1/G2；普通N为第3个Nueva pestaña tabStripTab按钮，屏幕显示其位于组后且活动。收尾语言重启后PID86310、Window=New Tab；纵向原生树再次核实COM-es组2成员及组外活动N。仅本地New Tab。",
+    "language_observed": "观察时General实读Español。所查两开关标题、两说明、左右四方向项原生全文逐字与提供表一致；未见key、缺字或英文回退。收尾实读System Default，界面英文。",
+    "layout_observed": "观察时Cómodo卡片选中，外部横向标签栏。普通菜单：Cerrar las pestañas a la izquierda可用；Cerrar las pestañas a la derecha禁用。组标题菜单：Cerrar las pestañas a la izquierda del grupo、Cerrar las pestañas a la derecha del grupo均可用。组菜单和补取的普通菜单全图中方向项均单行完整。初次普通菜单右端超出CU窗口捕获边界，不能据该图确认完整右缘；使用窗口暴露的ampliar la ventana动作缩放后补取完整图，再Cancel并还原。顶部长组名及标签标题受宽度限制。收尾General确认Balanced选中。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "General重新实读Español并选择Cómodo；两个开关实读on/on。清理BAL-es组与普通N，独立创建COM-es组G1/G2和组后普通N；原生组计数2并核对屏幕顺序。",
+    "settings_observed": "观察时on/on。标题：Cerrar pestañas con doble clic；Cerrar pestañas por posición。双击说明：Haz doble clic en una pestaña para cerrarla. En la vista dividida, solo se cierra el panel pulsado. Las pestañas fijadas y los marcadores conservan sus acciones habituales de doble clic. 位置说明：Añade a los menús de pestañas y grupos opciones para cerrar las pestañas a la izquierda o a la derecha, o las de arriba o abajo en una barra vertical. 两说明各2行，完整可读，设置全图包含两个开关。收尾仅点击双击开关恢复off，另一开关即时仍on；重启后再次实读off/on。",
+    "steps_executed": [
+      "General确认Español，选择Comfortable对应的Cómodo并截图。",
+      "读取Advanced两个开关和两说明，保存完整设置截图。",
+      "原生清理BAL-es对象，独立重建COM-es组G1/G2及普通N。",
+      "保存before状态；分别打开普通N及组标题菜单，读取左右文案与可用状态并截图，Cancel退出。",
+      "保留初次普通菜单捕获不全记录；原生缩放同窗口，重开同N菜单补取完整图，Cancel并缩放还原，保存after-capture。",
+      "统一恢复双击off/按位置on、Balanced及System Default，遵循原生语言重启提示。",
+      "在新PID下重新实读General和Advanced恢复值，关闭Settings，保存最终集合和ending-state截图；未额外重建页面。"
+    ],
+    "unit_id": "VIS-02-COM-es"
+  }
+}

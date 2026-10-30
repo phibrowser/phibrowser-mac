@@ -533,7 +533,20 @@
     },
     "result": "pass",
     "method": "Computer Use",
-    "attempts": [],
+    "attempts": [
+      {
+        "job": "ENV-04-initial",
+        "round": 2,
+        "outcome": "pass",
+        "actual": "本轮纯Computer Use在B输入KEEP-B-507-r2，切到C再回B；编号2a6e95cf-8074-4e05-b2ad-30972ab29ec8和标记均不变。",
+        "evidence": [
+          "qa-evidence/r2/ENV-04-COMMON-initial-B-before.png",
+          "qa-evidence/r2/ENV-04-COMMON-initial-B-after.png",
+          "qa-evidence/r2/ENV-04-COMMON.log"
+        ],
+        "scope": "r2已实际执行的原始Computer Use记录；补齐历史标记，r3未重跑，原始结果与证据不变"
+      }
+    ],
     "actual": "本轮纯Computer Use在B输入KEEP-B-507-r2，切到C再回B；编号2a6e95cf-8074-4e05-b2ad-30972ab29ec8和标记均不变。"
   },
   {

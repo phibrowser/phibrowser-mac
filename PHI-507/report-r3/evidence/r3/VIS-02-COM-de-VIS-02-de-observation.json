@@ -1,0 +1,49 @@
+{
+  "unit_id": "VIS-02-COM-de",
+  "job": "VIS-02-de",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-de-observations.json",
+  "observation": {
+    "active_after": "本项 after 为 N；统一恢复偏好并重启后仍为 N。",
+    "active_before": "N",
+    "after": "德语 Comfortable 检查结束时仍为组[G1,G2]、N，三个标题均为 Neuer Tab，活动 N；无菜单、确认框或多选。随后统一恢复偏好并重启：PID84583，Balanced、System Default、英文界面，双击关闭 off、按位置关闭 on；组成员 G1/G2 标题仍为 Neuer Tab，普通 N 标题为 New Tab。最后未重建或清理这三个对象。",
+    "before": "屏幕从左至右为 TC-PHI507-r2-VIS-02-COM-de 组标题（成员数2）、G1、G2、普通 N。三个实际标签标题均为 Neuer Tab，最右 N 活动。",
+    "confirmation_choices": "组重命名选择 Speichern；关闭 BAL-de 组未出现确认框。收尾选择 Systemstandard 后，德语提示为 Phi neu starten? / Die ausgewählte Sprache wird nach einem Neustart von Phi wirksam. Jetzt neu starten?，选择 Phi neu starten；返回 App quit 后通过 CU 重开。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-COM-de attempt1 layout",
+      "EVIDENCE: VIS-02-COM-de attempt1 settings",
+      "EVIDENCE: VIS-02-COM-de attempt1 failure",
+      "EVIDENCE: VIS-02-COM-de attempt1 before",
+      "EVIDENCE: VIS-02-COM-de attempt1 normal-menu",
+      "EVIDENCE: VIS-02-COM-de attempt1 group-menu",
+      "EVIDENCE: VIS-02-COM-de attempt1 after",
+      "EVIDENCE: VIS-02-COM-de attempt1 restore-layout",
+      "EVIDENCE: VIS-02-COM-de attempt1 restore-settings",
+      "EVIDENCE: VIS-02-COM-de attempt1 restart-result",
+      "EVIDENCE: VIS-02-COM-de attempt1 restored-browser",
+      "EVIDENCE: VIS-02-COM-de attempt1 restored-general",
+      "EVIDENCE: VIS-02-COM-de attempt1 restored-switches",
+      "EVIDENCE: VIS-02-COM-de attempt1 ending-state"
+    ],
+    "identity_checks": "检查时指定应用 PID84085，Window=\"Neuer Tab\"。本项逐次创建并实读组成员数1→2；截图核对 G1、G2 和最右普通 N，普通菜单使用最新树中对应 N 的 tabStripTab 容器。三个本轮对象无 split、无多选；未导航 fixture。统一恢复语言重启后 PID84583，Window=\"New Tab\"，再次核对组表两个成员和选中的普通 N。",
+    "language_observed": "General=Deutsch。普通菜单：Tabs links schließen 可用，Tabs rechts schließen 禁用。组菜单：Tabs links von der Gruppe schließen、Tabs rechts von der Gruppe schließen 均可用。四个指定方向项与原文逐字相同，完整单行显示；所查开关、说明及方向项未见 key、缺字或英文回退。普通菜单位于窗口最右侧，CU 整窗图未包含菜单超出窗口的右边缘；非指定的书签项可见至 Zur Lesezeichenleiste hinzuf…，不能据此判断完整项的显示情况。组菜单完整可见。",
+    "layout_observed": "General 的 Komfortabel（Comfortable）卡片有选中边框；外部横向标签栏，菜单方向为左右。组标题屏幕省略显示 TC-PHI507-r… 并显示成员数2，原生文字为 TC-PHI507-r2-VIS-02-COM-de 2。两段设置说明各两行、末尾完整。收尾已恢复 Balanced，并在重启后截图核实选中边框。",
+    "not_executed_reason": "指定设置及菜单动作均已执行；普通菜单超出应用窗口右边缘的部分未取得完整图像，指定左右关闭项已完整观察。未补造窗口外文字或图像。",
+    "operator_errors": [
+      "一次 helper 沿用纵向 Text 形式匹配组名而未命中；横向实际原生行是小写 text，并带成员数1。匹配器在 CU 点击前停止，保留 failure 图后按最新原生树继续，没有误点击。"
+    ],
+    "precondition_actual": "本项 setup 已关闭 BAL-de 组及对应 N；General 实读 Deutsch，选择 Komfortabel（Comfortable）；两个关闭开关均为 on。独立创建 TC-PHI507-r2-VIS-02-COM-de 组两个成员及一个组外普通 N。",
+    "settings_observed": "检查时 Tabs per Doppelklick schließen=on；Tabs nach Position schließen=on。双击说明实读：Schließe einen Tab per Doppelklick. In der geteilten Ansicht wird nur der angeklickte Bereich geschlossen. Angeheftete Tabs und Lesezeichen behalten ihre bisherigen Doppelklick-Aktionen. 方向说明实读：Fügt den Menüs für Tabs und Tabgruppen Optionen zum Schließen der Tabs links oder rechts hinzu. Bei einer vertikalen Tableiste gelten die Optionen für Tabs oberhalb oder unterhalb. 标签及说明与提供原文逐字相同。收尾仅将双击关闭 on→off，即时返回树中按位置关闭仍为 on；恢复 System Default 并重启后再次实读 off/on。",
+    "steps_executed": [
+      "在本项 setup 关闭 BAL-de 组及对应普通 N。",
+      "General 实读 Deutsch，选择 Komfortabel 并截图；Advanced 读取两个 on 和两段说明，保存完整设置截图。",
+      "新建 G1，通过原生菜单建组并重命名为 TC-PHI507-r2-VIS-02-COM-de；Neuer Tab in Gruppe 创建 G2；Cmd+T 创建普通 N。",
+      "核对组计数2、三个实际标签和活动 N，保存 before 图。",
+      "打开普通 N 菜单及组标题菜单，记录左右关闭项及可用状态，输出 CU 完整应用窗口截图；均以原生 Cancel 关闭，未点击方向关闭项。",
+      "保存 after 图并输出本项 OBSERVATION。",
+      "统一恢复 Balanced、双击关闭 off、按位置关闭 on；General 选择 Systemstandard 并遵循重启提示。",
+      "CU 重开后核实 PID84583、System Default、英文、Balanced 和两个开关 off/on；关闭 Settings，保存最终浏览器图，保留最后实际对象集合。"
+    ],
+    "unit_id": "VIS-02-COM-de"
+  }
+}

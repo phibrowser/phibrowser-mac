@@ -1,0 +1,25 @@
+{
+  "session_id": "01a18dda-459a-7b50-9fca-226b17dcfdd8",
+  "scope": "Saved item_completed MCP events only; no live browser operation or state read",
+  "recovered_at": "2026-10-30T17:49:53.835334+00:00",
+  "mcp_call_count": 377,
+  "non_computer_use_events": [],
+  "selected_failed_get_app_state_events": [
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "failed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app"
+      },
+      "duration": {
+        "secs": 0,
+        "nanos": 422529000
+      },
+      "error": null,
+      "returned_text": [
+        "Computer Use server error -10005: The screen capture size is invalid: (0.0, 0.0)."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "unit_id": "VIS-01-PER",
+  "job": "VIS-01",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-01-observations.json",
+  "observation": {
+    "active_after": "PER-N1 普通新标签页；选中集为该单页，菜单已取消。",
+    "active_before": "PER-N2，即测试组第二个成员；截图白色活动背景可见，原生组子 row 未输出 selected 标记。",
+    "after": "旧对象之后仍为 PER-N1、TC-PHI507-r2-VIS-01-PER-zh-Hans[PER-N3, PER-N2]，共 3 个本次 New Tab；未执行方向关闭。普通菜单：『关闭上方标签页』『关闭下方标签页』均可用。组菜单：『关闭标签组上方的标签页』可用，『关闭标签组下方的标签页』禁用。方向项均为单行完整中文，未见方向项 key、英文回退、左右方向或省略截断。",
+    "before": "旧对象保留，其后为 PER-N1 普通 tab、展开的 TC-PHI507-r2-VIS-01-PER-zh-Hans 测试组[PER-N3, PER-N2]。原生树逐项列出一个普通 New Tab 和两个组内 New Tab，截图核对成员数 2；组标题在侧栏显示为 TC-PHI507-r2-…。",
+    "confirmation_choices": "切换简体中文出现『Restart Phi?』『The selected language will take effect after Phi restarts. Restart now?』，选择『Restart Phi』；组重命名输入指定 TC 名后选择『保存』。两类观察菜单均调用其暴露的 Cancel，未选择关闭命令。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-01-PER attempt1 language-restart-failure",
+      "EVIDENCE: VIS-01-PER attempt1 layout",
+      "EVIDENCE: VIS-01-PER attempt1 settings",
+      "EVIDENCE: VIS-01-PER attempt1 before",
+      "EVIDENCE: VIS-01-PER attempt1 normal-menu",
+      "EVIDENCE: VIS-01-PER attempt1 group-menu",
+      "EVIDENCE: VIS-01-PER attempt1 after"
+    ],
+    "identity_checks": "起始及重启后均由指定完整 app 路径读取。语言重启后 PID 79525；关键 before/after 保留 App、PID、Window 与相关原生标签行。普通目标为新建的独立 selectable row；组目标为本项唯一 TC 名的标题。未触碰旧标签、既有分屏或其他 Space。",
+    "language_observed": "General 原生下拉实读『简体中文』，重启后工具栏、设置及菜单为简体中文。设置全文见 base_case。普通菜单完整可见项依次为：固定、复制、拷贝链接、以分屏打开、添加到书签、添加到文件夹、新建标签组、添加到标签页组、移到空间、关闭、关闭其他标签页、关闭上方标签页、关闭下方标签页；根菜单未见禁用项。组菜单为：在标签组中新建标签页、重命名标签组、更改颜色、折叠标签页组、取消分组、关闭标签页组、关闭标签组上方的标签页、关闭标签组下方的标签页；仅末项禁用。未展开无关子菜单。",
+    "layout_observed": "General 选择『性能』并截图确认选中边框；浏览器地址栏位于左侧栏，外部标签纵向排列。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "点击语言提示中的 Restart Phi，CU 返回『Computer Use server error -10005: App quit』；立即停止后续序列并 get_app_state，实见 PID 由 78892 变为 79525 且中文界面生效。未将该工具返回归因为崩溃。"
+    ],
+    "precondition_actual": "简体中文、Performance，两个关闭开关均 on；本项独立创建 3 个原生 New Tab，2 个组成指定 TC 测试组。",
+    "settings_observed": "起始 doubleClickToClose=off、directionalClosing=on。只点击前者一次后，即时树读取为 on/on，未点击的 directionalClosing 仍 on。语言重启后及本项 settings 证据再次实读 on/on；两开关名称和说明均完整可见。",
+    "steps_executed": [
+      "实读起始 General 与 Advanced；将双击关闭单独设为 on，并即时读取两个开关。",
+      "General 选择简体中文，响应重启提示，重新核实语言；选择 Performance 并截图。",
+      "查看 Advanced 第二卡片两个开关与说明，保存完整 settings 截图。",
+      "原生创建 N1、N2、N3；N3 → 新建标签组 → 重命名；N2 → 添加到标签页组 → 本项 TC 组；核对 1 个普通 tab 和 2 个成员。",
+      "选择 N1 后右键，记录完整普通菜单；Cancel 后重读，再右键组标题，记录完整组菜单；Cancel 并保存 after。"
+    ],
+    "unit_id": "VIS-01-PER"
+  }
+}

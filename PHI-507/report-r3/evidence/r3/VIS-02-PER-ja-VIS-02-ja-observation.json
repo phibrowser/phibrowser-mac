@@ -1,0 +1,44 @@
+{
+  "unit_id": "VIS-02-PER-ja",
+  "job": "VIS-02-ja",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-ja-observations.json",
+  "observation": {
+    "active_after": "G2；截图显示组内第二个「新しいタブ」为活动页，无多选。",
+    "active_before": "G2；普通 N 在组外，组内 G1、G2顺序明确。",
+    "after": "N＋TC-PHI507-r2-VIS-02-PER-ja[G1,G2]保留；普通菜单、组菜单均已取消，没有执行方向关闭项。",
+    "before": "旧保留容器之后为 N，再为 TC-PHI507-r2-VIS-02-PER-ja 组；组内两个实际「新しいタブ」对象。",
+    "confirmation_choices": "语言下拉选择「日本語」；在「Restart Phi?」提示选择「Restart Phi」。返回「Computer Use server error -10005: App quit」作为预期重启结果保留，随后通过指定路径重新读取，PID 82193。组重命名输入本项 TC 名称后 Return 保存。关闭旧测试组未出现确认框；未勾选任何不再询问选项。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-PER-ja attempt1 restart-result",
+      "EVIDENCE: VIS-02-PER-ja attempt1 layout",
+      "EVIDENCE: VIS-02-PER-ja attempt1 settings",
+      "EVIDENCE: VIS-02-PER-ja attempt1 failure",
+      "EVIDENCE: VIS-02-PER-ja attempt1 setup-error",
+      "EVIDENCE: VIS-02-PER-ja attempt1 before",
+      "EVIDENCE: VIS-02-PER-ja attempt1 normal-menu",
+      "EVIDENCE: VIS-02-PER-ja attempt1 group-menu",
+      "EVIDENCE: VIS-02-PER-ja attempt1 after"
+    ],
+    "identity_checks": "检查时 App=/Applications/Phi Tab Close QA.app/，PID 82193；设置窗口「一般」「詳細」，浏览器窗口「新しいタブ」。普通 N 为顶层标签行，组标题为 TC-PHI507-r2-VIS-02-PER-ja，原生 table 下实读两个成员。只记录本地 New Tab 身份，不记录网页编号。",
+    "language_observed": "General 下拉实读「日本語」，重启后原生菜单栏为「ファイル」「編集」「表示」等日文。指定两条开关标题、两条说明和四条上下方向菜单文字均为日文；这些目标文字中未见本地化 key、缺字或英文回退。",
+    "layout_observed": "General 原生点击「パフォーマンス」，完整截图显示该卡片选中边框；浏览器为外部纵向标签栏。普通菜单：「上側のタブを閉じる」「下側のタブを閉じる」均可用。组标题菜单：「グループの上側のタブを閉じる」可用，「グループの下側のタブを閉じる」禁用。四条方向菜单均单行完整显示。设置两条标题均单行；双击说明换两行，第一行末为「ブックマー」、第二行从「クの」继续；位置说明换两行，第一行末为「下側」、第二行为「になります。」。末尾均可见，未见目标文案截断；长 TC 组名在侧栏以省略号显示，原生树保留全名。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "setup 时右键旧 COM-en 外层组 row，实际打开成员普通菜单；已保存 failure 图片并用该菜单明确暴露的 Cancel 取消，未点击菜单命令。随后右键组标题 text 才打开组菜单。",
+      "新建三个普通 New Tab 后，右键未选中的第二个同名 row 返回 -10005：元素失效，refetch 因多个匹配对象无法开始。立即停止该调用序列并保存 setup-error 图片。",
+      "恢复 setup 时，关闭当前第三个新建普通对象，再将第二个对象建组，并用「グループ内に新しいタブ」创建第二成员；最终实读为一个普通 N 和两个组成员。该清理不作为被测关闭结果。"
+    ],
+    "precondition_actual": "原生关闭上次 COM-en 测试组和其普通 N，重新创建本项对象；日文重启完成，Performance 实际选中。公共开关设为 on/on 后才观察目标菜单。",
+    "settings_observed": "「ダブルクリックでタブを閉じる」=on；说明：「タブをダブルクリックすると閉じます。分割表示では、クリックした側だけを閉じます。固定タブとブックマークのダブルクリック操作は変わりません。」。「位置を指定してタブをまとめて閉じる」=on；说明：「タブとタブグループのメニューに、左側・右側のタブを閉じる項目を追加します。縦型タブバーでは上側・下側になります。」。起始只点击双击关闭一个开关使 off→on，即时树读取另一开关仍为 on。",
+    "steps_executed": [
+      "实读起始 General、Advanced 偏好；单独开启双击关闭并读取两个即时值。",
+      "General 选择日本語，按提示重启并核对新 PID、实际日文界面。",
+      "选择 Performance，保留 General 布局和 Advanced 完整设置截图，逐字读取标题与说明。",
+      "独立重建 N＋两成员 TC 测试组，核对成员数、顺序及活动页，保存 before。",
+      "右键普通 N，保留完整 normal-menu 截图和上下方向项可用状态；Cancel 后重读正常窗口。",
+      "右键本项组标题，保留完整 group-menu 截图及上下方向项状态；Cancel 后保存 after。"
+    ],
+    "unit_id": "VIS-02-PER-ja"
+  }
+}

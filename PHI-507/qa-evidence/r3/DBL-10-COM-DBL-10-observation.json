@@ -1,0 +1,54 @@
+{
+  "unit_id": "DBL-10-COM",
+  "job": "DBL-10",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/DBL-10-observations.json",
+  "observation": {
+    "active_after": "两个被测双击后均为 D；逐页取证后为 E。横向容器未暴露 selected，活动由窗口标题和画面高亮确认；未进行多选。偏好恢复后原生选中集为 {E}。",
+    "active_before": "ACTIVE 分支 C／单页高亮；INACTIVE 分支 E／单页高亮，C 未活动。",
+    "after": "两套均为 A | 原 TC-G[B,D] | E；组计数由 3 变为 2，组下划线仍覆盖 B/D，C 不再列出，未见其他成员消失。最终保留 INACTIVE 结束集合，无 split。",
+    "before": "两套均实见顶部横向 A | TC-G[B,C,D] | E，组计数 3、下划线覆盖 B/C/D；批次分别为 TC-PHI507-r2-DBL-10-COM-ACTIVE、TC-PHI507-r2-DBL-10-COM-INACTIVE。",
+    "confirmation_choices": "两次 setup 清理上一 TC 组时均选择 Delete Group，Don't Ask Again 未勾；被测双击无确认框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-10-COM attempt1 settings",
+      "EVIDENCE: DBL-10-COM attempt1 setup-start",
+      "EVIDENCE: DBL-10-COM attempt1 active-setup-confirm",
+      "EVIDENCE: DBL-10-COM attempt1 failure",
+      "EVIDENCE: DBL-10-COM attempt1 group-setup",
+      "EVIDENCE: DBL-10-COM attempt1 active-before",
+      "EVIDENCE: DBL-10-COM attempt1 active-after",
+      "EVIDENCE: DBL-10-COM attempt1 active-survivor-A",
+      "EVIDENCE: DBL-10-COM attempt1 active-survivor-B",
+      "EVIDENCE: DBL-10-COM attempt1 active-survivor-E",
+      "EVIDENCE: DBL-10-COM attempt1 setup-confirm",
+      "EVIDENCE: DBL-10-COM attempt1 inactive-before",
+      "EVIDENCE: DBL-10-COM attempt1 inactive-after",
+      "EVIDENCE: DBL-10-COM attempt1 inactive-survivor-A",
+      "EVIDENCE: DBL-10-COM attempt1 inactive-survivor-B",
+      "EVIDENCE: DBL-10-COM attempt1 inactive-survivor-E",
+      "EVIDENCE: DBL-10-COM attempt1 restore-switches",
+      "EVIDENCE: DBL-10-COM attempt1 restore-layout",
+      "EVIDENCE: DBL-10-COM attempt1 ending"
+    ],
+    "identity_checks": "PID 87230。ACTIVE 打开编号：A=bd608b96-de35-46d2-ab43-d882dfcb4c78；B=e5ec706f-f307-4df5-bbf9-e93311e30e6f；C=45b5930d-652e-4ac2-b602-f9fed9d04496；D=f8626884-fec2-4461-9222-1ce51cd702d7；E=f5d8a912-58ac-4f09-a49a-acbbabb9a7bf。INACTIVE：A=f59e4879-45b7-4962-a7d2-51ec2eb84faf；B=754317b0-1eac-4dc5-9b90-8b55de7c4668；C=d7704475-e70d-4fd9-9cee-28405319e0e9；D=05f44a59-dc96-4460-a586-30cc24bbf6b9；E=a9c81660-ef15-4283-ac27-7af8e73281e0。创建时逐页实见标题、批次、编号、普通页正文及输入框；双击后逐页查看 A/B/D/E，原编号相同，输入框为空，未输入 KEEP 标记。实际点击使用只包含对应 TC 文本的 tabStripTab button。",
+    "language_observed": "General 实读 System Default，界面英文；全程未切换语言。",
+    "layout_observed": "General 原生 UI 选择 Comfortable 并截图确认；两分支均显示顶部横向标签。完成最后分支后统一恢复起始 Balanced，并保存设置及浏览器结束画面。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "第一套 setup 的辅助匹配按 button Description 查找新 A 未找到，在发出 CU 前停止；该容器 Description 仍显示 New Tab，而其唯一 TC-A 文本子元素和屏幕均对应新 A。随后按最新树确认父 tabStripTab 容器操作。",
+      "第一套 Rename Group 后一次 get_app_state 返回 isError，辅助函数立即停止，但该次错误原文未转发留存。随后重新 get_app_state，保存 failure 图，实见重命名对话框并继续原 setup；未重试被测双击。"
+    ],
+    "precondition_actual": "ACTIVE、INACTIVE 两套各独立重建 A–E，以 New Tab Group、Rename Group、Add to Group 建立对应 TC-G[B,C,D]。关键动作前逐次核对真实横向顺序、组计数、成员下划线和活动页，无 split、菜单或确认框。",
+    "settings_observed": "执行前 Advanced 实读 on/on，本 unit setup 未点击开关。全部动作结束后仅点击双击关闭恢复为 off，即时读取双击关闭 off、按位置关闭 on；按位置关闭未点击。快捷键未修改。",
+    "steps_executed": [
+      "切换 Comfortable，清理上一套 TC 资料，原生地址栏创建 ACTIVE 批次 A–E，建立 TC-G[B,C,D]。",
+      "单击 C 的实际 tabStripTab button 激活，保存 active-before；对最新树同一 C button 请求 click_count:2，保存 active-after。",
+      "逐页核对存活 A/B/D/E 的正文、空输入框和原打开编号。",
+      "非活动分支开始时清理并独立重建 INACTIVE 批次 A–E 与 TC-G[B,C,D]。",
+      "保持 E 活动，保存 inactive-before；对 C 的实际 tabStripTab button 请求 click_count:2，保存 inactive-after。",
+      "逐页核对 A/B/D/E，停在 E；不再重建序列。",
+      "通过原生 Settings 恢复双击关闭 off／按位置关闭 on 和 Balanced，保持 System Default；关闭 Settings，保存 ending 画面。"
+    ],
+    "unit_id": "DBL-10-COM"
+  }
+}

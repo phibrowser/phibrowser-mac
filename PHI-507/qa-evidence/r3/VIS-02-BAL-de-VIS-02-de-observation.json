@@ -1,0 +1,38 @@
+{
+  "unit_id": "VIS-02-BAL-de",
+  "job": "VIS-02-de",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-de-observations.json",
+  "observation": {
+    "active_after": "N",
+    "active_before": "N",
+    "after": "组[G1,G2]、N 均仍在；三个标题均为 Neuer Tab，活动 N。菜单已关闭，无确认框、无多选。",
+    "before": "实际屏幕顺序为 TC-PHI507-r2-VIS-02-BAL-de 组[G1,G2]、普通 N；组内原生表有两个成员，三个标题均为 Neuer Tab。",
+    "confirmation_choices": "组重命名选择 Speichern；关闭 PER-de 测试组未出现确认框。语言已为 Deutsch，未重复选择语言或重启。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-BAL-de attempt1 layout",
+      "EVIDENCE: VIS-02-BAL-de attempt1 settings",
+      "EVIDENCE: VIS-02-BAL-de attempt1 before",
+      "EVIDENCE: VIS-02-BAL-de attempt1 normal-menu",
+      "EVIDENCE: VIS-02-BAL-de attempt1 group-menu",
+      "EVIDENCE: VIS-02-BAL-de attempt1 after"
+    ],
+    "identity_checks": "指定应用 PID84085，Window=\"Neuer Tab\"。本项重新创建 G1，经原生菜单建组，再新增 G2，最后 Cmd+T 创建普通 N；原生表与截图核对两个组成员和一个组外普通页。实际顺序组[G1,G2]、N，无多选，本轮对象无 split；仅本地 New Tab。",
+    "language_observed": "General=Deutsch。普通 N 菜单：Tabs oberhalb schließen 可用，Tabs unterhalb schließen 禁用。组标题菜单：Tabs oberhalb der Gruppe schließen、Tabs unterhalb der Gruppe schließen 均可用。四个方向项与提供原文逐字相同，完整单行显示。所查开关、说明和方向项未见 key、缺字或英文回退。",
+    "layout_observed": "General 的 Ausgewogen（Balanced）卡片有选中边框；外部纵向标签栏，菜单关闭项为上下方向。组标题栏内省略为 TC-PHI507-r2-…，原生完整组名可读。两段设置说明各两行、末尾完整；普通菜单和组菜单完整显示。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "本项 setup 已关闭 PER-de 组和对应 N；General 实读 Deutsch，切换为 Ausgewogen（Balanced）；两个关闭开关均为 on。独立新建组[G1,G2]和普通 N。",
+    "settings_observed": "Tabs per Doppelklick schließen=on；Tabs nach Position schließen=on，未点击已正确的开关。双击说明实读：Schließe einen Tab per Doppelklick. In der geteilten Ansicht wird nur der angeklickte Bereich geschlossen. Angeheftete Tabs und Lesezeichen behalten ihre bisherigen Doppelklick-Aktionen. 方向说明实读：Fügt den Menüs für Tabs und Tabgruppen Optionen zum Schließen der Tabs links oder rechts hinzu. Bei einer vertikalen Tableiste gelten die Optionen für Tabs oberhalb oder unterhalb. 两个标签及两段说明与提供原文逐字相同。",
+    "steps_executed": [
+      "在本项 setup 关闭 PER-de 组及对应普通 N。",
+      "General 实读 Deutsch，选择 Ausgewogen 并保存语言与布局截图。",
+      "Advanced 读取两个 on 及说明，保存完整设置截图。",
+      "新建 G1，经 Neue Tab-Gruppe、Gruppe umbenennen 创建 TC-PHI507-r2-VIS-02-BAL-de；用 Neuer Tab in Gruppe 创建 G2，再 Cmd+T 创建普通 N。",
+      "核对组[G1,G2]、N 和活动 N，保存 before 图。",
+      "分别打开普通 N 菜单及组标题菜单，记录上下关闭项及可用状态，保存截图；用原生 Cancel 关闭菜单，未点击方向关闭项。",
+      "保存 after 图并输出本项 OBSERVATION。"
+    ],
+    "unit_id": "VIS-02-BAL-de"
+  }
+}

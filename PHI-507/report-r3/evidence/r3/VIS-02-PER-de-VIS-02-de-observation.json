@@ -1,0 +1,43 @@
+{
+  "unit_id": "VIS-02-PER-de",
+  "job": "VIS-02-de",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-de-observations.json",
+  "observation": {
+    "active_after": "G2",
+    "active_before": "G2",
+    "after": "本轮对象仍为组[G1,G2]、N，三个标题均为 Neuer Tab；菜单已用原生 Cancel 关闭，无确认框、无多选。既有其他行保留。",
+    "before": "实际屏幕顺序为 TC-PHI507-r2-VIS-02-PER-de 组[G1,G2]、普通 N；组内原生表有两个成员，三个标题均为 Neuer Tab。",
+    "confirmation_choices": "General 选择 Deutsch 后接受 Restart Phi；返回 App quit，随后通过 CU 重开。组重命名选择 Speichern。关闭本轮 COM-ko 组未出现确认框，未勾选任何不再询问选项。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-PER-de attempt1 restart-result",
+      "EVIDENCE: VIS-02-PER-de attempt1 layout",
+      "EVIDENCE: VIS-02-PER-de attempt1 settings",
+      "EVIDENCE: VIS-02-PER-de attempt1 failure",
+      "EVIDENCE: VIS-02-PER-de attempt1 before",
+      "EVIDENCE: VIS-02-PER-de attempt1 normal-menu",
+      "EVIDENCE: VIS-02-PER-de attempt1 group-menu",
+      "EVIDENCE: VIS-02-PER-de attempt1 after"
+    ],
+    "identity_checks": "指定路径初始 PID83734；语言重启后 PID84085，Window=\"Neuer Tab\"。新建两个普通对象后，将第一个建组并记为 G1，第二个保留为 N；通过组菜单新增 G2。原生表与截图逐个核对两个组成员及一个组外普通页。本轮对象无 split，未声称 fixture 文档或存活编号。",
+    "language_observed": "General=Deutsch，重启后原生菜单和设置为德语。普通 N 菜单：Tabs oberhalb schließen 可用，Tabs unterhalb schließen 禁用。组标题菜单：Tabs oberhalb der Gruppe schließen、Tabs unterhalb der Gruppe schließen 均可用。四个方向项与提供的原文逐字相同，完整单行显示。所查开关、说明和方向项未见 key、缺字或英文回退。",
+    "layout_observed": "General 的 Performance 卡片有选中边框；浏览器 chrome 为外部纵向标签栏，菜单使用上下方向。组标题栏内显示 TC-PHI507-r2-…，完整组名见原生树。设置两段说明各换为两行，末尾完整可见；普通菜单和组菜单完整显示。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "一次 helper 编排 SyntaxError 发生于 CU 调用前，没有界面动作。",
+      "右键第二个普通 New Tab 的原生 row 时，CU 返回 element was invalidated / multiple elements 错误；立即停止并保留 failure 图。重读后在第一个实际对象上打开菜单，最终依据真实关系记录 G1 和 N，未将报错调用记作成功。"
+    ],
+    "precondition_actual": "Deutsch 重启后 PID84085；Performance；Tabs per Doppelklick schließen=on、Tabs nach Position schließen=on。已关闭前项 COM-ko 组及核对过的残留 N，独立创建本项三个本地 New Tab。",
+    "settings_observed": "Tabs per Doppelklick schließen=on；Tabs nach Position schließen=on。双击说明实读：Schließe einen Tab per Doppelklick. In der geteilten Ansicht wird nur der angeklickte Bereich geschlossen. Angeheftete Tabs und Lesezeichen behalten ihre bisherigen Doppelklick-Aktionen. 方向说明实读：Fügt den Menüs für Tabs und Tabgruppen Optionen zum Schließen der Tabs links oder rechts hinzu. Bei einer vertikalen Tableiste gelten die Optionen für Tabs oberhalb oder unterhalb. 两个标签及两段说明与提供原文逐字相同。初始仅将双击开关 off→on，该次返回树中按位置关闭仍为 on。",
+    "steps_executed": [
+      "原生 General 选择 Deutsch，接受重启提示；CU 重开并实读德语及新 PID。",
+      "选择 Performance，保存 General 语言与布局截图。",
+      "读取 Advanced 两个开关及说明，保存完整设置截图。",
+      "在本项 setup 关闭 COM-ko 测试组及对应普通 N；新建两个普通 New Tab，经 Neue Tab-Gruppe、Gruppe umbenennen 创建 TC-PHI507-r2-VIS-02-PER-de，再用 Neuer Tab in Gruppe 新建第二个组成员。",
+      "核对组[G1,G2]、N 和活动 G2，保存 before 图。",
+      "分别打开普通 N 菜单及组标题菜单，读取上下关闭项及可用状态，保存截图；仅用原生 Cancel 退出菜单，未点击方向关闭项。",
+      "保存 after 图并输出本项 OBSERVATION。"
+    ],
+    "unit_id": "VIS-02-PER-de"
+  }
+}

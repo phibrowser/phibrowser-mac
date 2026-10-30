@@ -1,0 +1,48 @@
+{
+  "unit_id": "VIS-02-COM-zh-Hant",
+  "job": "VIS-02-zh-Hant",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-zh-Hant-observations.json",
+  "observation": {
+    "active_after": "观察结束为G2；恢复偏好并重启后仍为G2，标题变为New Tab。",
+    "active_before": "G2；横向标签栏最右侧第二个组成员高亮。",
+    "after": "观察结束仍为N → TC-PHI507-r2-VIS-02-COM-zh-Hant[G1,G2]，组成员徽标2，菜单已取消。随后仅恢复偏好；最终集合仍保留，未重建。",
+    "before": "N在TC组左侧；展开的 TC-PHI507-r2-VIS-02-COM-zh-Hant 组含G1、G2两个新分頁，徽标2。3个测试页均为本项新建。",
+    "confirmation_choices": "组重命名选择「儲存」。收尾General选择「系統預設」，提示「要重新啟動 Phi 嗎？」时选择「重新啟動 Phi」；返回App quit后重新读取指定应用，PID由80405变为80865。未选择方向关闭项，未勾选任何不再询问项。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-COM-zh-Hant attempt1 layout",
+      "EVIDENCE: VIS-02-COM-zh-Hant attempt1 settings",
+      "EVIDENCE: VIS-02-COM-zh-Hant attempt1 setup-state",
+      "EVIDENCE: VIS-02-COM-zh-Hant attempt1 before",
+      "EVIDENCE: VIS-02-COM-zh-Hant attempt1 normal-menu",
+      "EVIDENCE: VIS-02-COM-zh-Hant attempt1 group-menu",
+      "EVIDENCE: VIS-02-COM-zh-Hant attempt1 after",
+      "EVIDENCE: VIS-02-COM-zh-Hant attempt1 restored-switches",
+      "EVIDENCE: VIS-02-COM-zh-Hant attempt1 restored-layout",
+      "EVIDENCE: VIS-02-COM-zh-Hant attempt1 restore-restart-result",
+      "EVIDENCE: VIS-02-COM-zh-Hant attempt1 restored-browser",
+      "EVIDENCE: VIS-02-COM-zh-Hant attempt1 restored-general",
+      "EVIDENCE: VIS-02-COM-zh-Hant attempt1 restored-advanced",
+      "EVIDENCE: VIS-02-COM-zh-Hant attempt1 ending-state"
+    ],
+    "identity_checks": "观察前后指定应用PID 80405、Window=\"新分頁\"；N使用只对应该页的tabStripTab按钮，组成员两个tabStripTab与屏幕徽标2核对，组名原生text含完整名称。恢复后PID 80865，Window=\"New Tab\"，纵向树中该组仍有两个成员。未新增或操作旧TC-B分屏关系，未声称New Tab有Web文档或存活编号。",
+    "language_observed": "本项General实读「繁體中文」，观察阶段目标开关、说明及左右方向菜单均显示繁体中文全文。收尾选择系統預設并遵循重启提示；新PID下General实读System Default，设置及浏览器chrome为英文。",
+    "layout_observed": "General选择「舒適」后截图选中边框在舒適卡片；浏览器外部标签栏为横向。普通菜单：釘選、複製、拷貝連結、與目前分頁分割畫面、加入書籤列、加入資料夾、新增分頁群組、加入群組、移至空間、關閉、關閉其他分頁、關閉左側分頁、關閉右側分頁，主菜单项均可用。组菜单：在群組中新增分頁、重新命名群組、變更顏色、收合群組、取消群組、關閉群組、關閉群組左側的分頁可用；「關閉群組右側的分頁」灰色且disabled。方向菜单文字单行完整显示；横向长组标题显示省略号并有成员数2，原生树保留组名全文。收尾已恢复Balanced并截图确认边框。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "建组重命名后，辅助匹配只接受「文字」行，未匹配实际的「text TC-PHI507-r2-VIS-02-COM-zh-Hant 1」，编排以control missing停止，未发出后续点击。保存setup-state原生树及图后，按最新text索引继续在组内新增第二页；未发生误点或对象丢失。"
+    ],
+    "precondition_actual": "本项开始关闭BAL组及N，独立新建COM的N、G1；原生新增组、重命名，再用组菜单创建G2。繁體中文、舒適布局、两开关on/on、三页及组成员数2均实读后才观察菜单。",
+    "settings_observed": "观察阶段「連按兩下關閉分頁」on；说明：「連按兩下分頁即可關閉；分割檢視時僅關閉點選的一側。固定分頁與書籤保留原有的連按兩下操作。」。「依位置批次關閉分頁」on；说明：「在分頁與分頁群組的右鍵選單中，提供關閉左側或右側分頁的選項；使用垂直分頁列時，顯示為關閉上方或下方分頁。」。双击说明一行，位置说明在「上方」后换行至「或下方分頁。」，全文可读，无省略号或遮挡。收尾仅点击双击开关on→off，即时树显示双击off／依位置仍on；重启后再次实读off/on。",
+    "steps_executed": [
+      "本项开始清理BAL三个测试对象，General实读繁體中文并选择舒適，保存布局图。",
+      "读取Advanced两开关与说明，保存完整settings图；未点击已正确的开关。",
+      "通过原生菜单独立创建N与COM两成员组，核对横向实际顺序、徽标2及活动G2，保存before。",
+      "右键普通N对应tabStripTab，记录左右方向及完整普通菜单，保存normal-menu图。",
+      "Escape并重读正常窗口；右键组标题，记录左右方向及禁用状态，保存group-menu图。",
+      "Escape取消菜单，保存after；保留三个测试对象。",
+      "统一恢复双击off／依位置on、Balanced、System Default；按提示重启，重读新PID、语言和偏好，关闭Settings并保存ending-state。"
+    ],
+    "unit_id": "VIS-02-COM-zh-Hant"
+  }
+}

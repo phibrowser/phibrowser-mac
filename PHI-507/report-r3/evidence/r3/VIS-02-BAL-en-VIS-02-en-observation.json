@@ -1,0 +1,39 @@
+{
+  "unit_id": "VIS-02-BAL-en",
+  "job": "VIS-02-en",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-en-observations.json",
+  "observation": {
+    "active_after": "G2（New Tab）；菜单取消后仍为 G2，无多选。",
+    "active_before": "本项新建 G2（New Tab）。",
+    "after": "原有保留容器 → N → TC-PHI507-r2-VIS-02-BAL-en{G1,G2}，集合及顺序保持。普通 Close、Close Other Tabs、Close Tabs Above、Close Tabs Below 均可用；组 Close Group、Close Tabs Above Group 可用，Close Tabs Below Group 禁用。仅观察并取消菜单。",
+    "before": "PID 81235，Window=\"New Tab\"；N 位于原有保留容器之后，随后为本项 TC 组；原生 table 下分别显示 G1、G2 两个 New Tab。",
+    "confirmation_choices": "清理上一项最后一个组成员时出现“Close Tab and Delete Group?”，正文“This will permanently delete the group from your device.”；选择 Delete Group，Don't Ask Again 保持 Value: 0。重命名本项组选择 Save。未出现需要再次语言重启的提示。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-BAL-en attempt1 layout",
+      "EVIDENCE: VIS-02-BAL-en attempt1 settings",
+      "EVIDENCE: VIS-02-BAL-en attempt1 cleanup-confirmation",
+      "EVIDENCE: VIS-02-BAL-en attempt1 before",
+      "EVIDENCE: VIS-02-BAL-en attempt1 normal-menu",
+      "EVIDENCE: VIS-02-BAL-en attempt1 group-menu",
+      "EVIDENCE: VIS-02-BAL-en attempt1 after"
+    ],
+    "identity_checks": "本项应用 PID 持续实读为 81235。删除确认对应上一项 PER 组；确认后实读只剩上一项普通 N，再关闭 N 并新建本项对象。G1 经 New Tab Group 建组，G2 经本项组的 New Tab in Group 创建；组成员逐项计数。",
+    "language_observed": "General 下拉再次实读 English；目标英文文案与本项表相同。普通菜单完整可见：Pin；Duplicate；Copy Link；Split with Current；Add to Bookmark；Add to Folder；New Tab Group；Add to Group；Move to Space；Close；Close Other Tabs；Close Tabs Above；Close Tabs Below。组菜单完整可见：New Tab in Group；Rename Group；Change Color；Collapse Group；Ungroup；Close Group；Close Tabs Above Group；Close Tabs Below Group。",
+    "layout_observed": "General 选择 Balanced，卡片有选中边框；实际浏览器 chrome 为外部纵向标签栏，方向项为 Above／Below。普通和组菜单目标项均单行完整显示；Below Group 为灰色禁用。两段设置说明均为两行，双击说明在“and”后、方向说明在“a”后换行，未见目标说明截断。侧栏组名称视觉上有省略号，原生树显示完整名称。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "上一项清理连续 Cmd+W 返回“Close Tab and Delete Group?”后，操作器继续打开了 Settings 并切换布局，未先处理确认框。随后关闭 Settings，完整保存仍存在的确认框，保持 Don't Ask Again 未勾选并选择 Delete Group；完成清理和独立重建后才观察本项菜单。"
+    ],
+    "precondition_actual": "General 实读 English；选择并截图确认 Balanced；Advanced 两开关已为 on/on，无重复点击。清理完上一项对象后，新建 N、G1，并通过原生组菜单创建 G2。",
+    "settings_observed": "Double-click to close tabs=on；Close tabs by position=on；本项未点击任一开关。实际完整说明：“Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions.”；“Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar.”。设置完整截图同时包含两开关和两段说明。",
+    "steps_executed": [
+      "开始本项 setup 时清理 PER 对象；记录并处理最后一个组成员删除确认，随后关闭其普通 N。",
+      "在 General 选择 Balanced，实读 English；查看 Advanced on/on 及两段完整说明并取证。",
+      "独立新建 N、G1，使用 New Tab Group → Rename Group 命名，再用 New Tab in Group 创建 G2，核对两成员。",
+      "对本项 N 的唯一普通 row 右键，记录完整菜单、方向项和可用状态；用明确的 Cancel 取消并重读。",
+      "对本项组标题右键，记录完整组菜单；Cancel 后保存实际结束状态。"
+    ],
+    "unit_id": "VIS-02-BAL-en"
+  }
+}

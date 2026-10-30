@@ -1,0 +1,37 @@
+{
+  "unit_id": "SET-01-COMMON",
+  "job": "ENV-02_SET-01-completion",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/ENV-02_SET-01-completion-observations.json",
+  "observation": {
+    "active_after": "浏览器 B；原生选中集 {B}。",
+    "active_before": "浏览器 B、选中集 {B}；建立本项前置后 Settings→Advanced 在前台。",
+    "after": "执行 Return to Previous Size 后 Settings 原图为 1360×1298 像素，滚动条最终为 0；随后关闭 Settings，返回原 TC-B。普通标签顺序和集合保持 New Tab、A、B、C、D。",
+    "before": "重新打开 Settings→Advanced，滚动条为 0；窗口原图为 1360×1298 像素。第一张卡片四项依次为 Always show full URL、Show a preview card when hovering over a tab、Show open tab indicators、Show unloaded tab indicators。第二张卡片仅含两个关闭设置，没有额外标题。",
+    "confirmation_choices": "无确认框。使用原生 Window→Move & Resize→Top Left，随后通过 Return to Previous Size 恢复；最后点击已确认的 Settings close button。",
+    "evidence_markers": [
+      "EVIDENCE: SET-01-COMMON attempt1 before",
+      "EVIDENCE: SET-01-COMMON attempt1 resize-result",
+      "EVIDENCE: SET-01-COMMON attempt1 scrolled-card",
+      "EVIDENCE: SET-01-COMMON attempt1 restored-settings",
+      "EVIDENCE: SET-01-COMMON attempt1 after"
+    ],
+    "identity_checks": "固定路径 /Applications/Phi Tab Close QA.app，PID 87230。结束时 TC-B 正文批次仍为 TC-PHI507-r2-DBL-08-PER-INPUT-KEYBOARD，打开编号仍为 b173157d-2466-41c2-9222-4ef0d83e4746，输入框显示占位。未创建、关闭或导航任何测试标签。",
+    "language_observed": "实际英文；本批 General 已实读 System Default，未切换语言。",
+    "layout_observed": "浏览器 Balanced 未更改。Settings 原生 zoom button 为 disabled；Window 菜单的 Zoom、Fill、Full Screen Tile 也为 disabled。Move & Resize→Top Left 可执行，调用未返回错误；操作前后原图均为 1360×1298 像素，未获得更小窗口。随后 Return to Previous Size 可执行并已使用；恢复原图同为 1360×1298。CU 原生树未给出窗口位置或逻辑尺寸，无法核实固定最小尺寸的数值。",
+    "not_executed_reason": "未建立比 1360×1298 原图更小的 Settings 窗口，因此更小尺寸下的滚动覆盖未完成。此次原生平铺操作没有带来可见尺寸缩小，不能据此声称已确认固定最小尺寸或完成任意小尺寸覆盖。未重复此前不生效的边框拖动。",
+    "operator_errors": [],
+    "precondition_actual": "从原 TC 页面重新通过 Cmd+, 打开 Settings，再选择 Advanced；本项从顶部滚动位置 0 独立建立前置。两个关闭开关实际为 off/on，遵循本批只读约束未改动。",
+    "settings_observed": "Double-click to close tabs=off；Close tabs by position=on。说明一完整实读：Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions. 说明二完整实读：Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar. 顶部截图和实际向下滚动后的截图中，两段句尾均可见，两个开关均在卡片右侧可见。第二张卡片无额外标题；在本次实际窗口尺寸中未见说明截断或开关被挤出。未改变这两个开关及其他偏好。",
+    "steps_executed": [
+      "重新打开 Advanced，保存操作前截图，按顶部顺序读取第一张卡片和第二张无标题卡片。",
+      "读取两个关闭开关的即时值及两段完整说明。",
+      "先查看原生窗口能力：zoom disabled；打开 Window 菜单读取 Move & Resize 等动作。",
+      "执行 Move & Resize→Top Left，检查调用返回并重新 get_app_state；原图尺寸未缩小。",
+      "在该实际尺寸窗口中向下滚动 0.4 页，滚动条约为 0.720257；实际读取两项句尾和右侧开关，保存截图。",
+      "执行 Window→Move & Resize→Return to Previous Size；向上滚动并通过 get_app_state 确认滚动条为 0、开关仍 off/on，保存恢复截图。",
+      "关闭 Settings，回到原 TC-B 并保存结束截图。"
+    ],
+    "unit_id": "SET-01-COMMON"
+  }
+}

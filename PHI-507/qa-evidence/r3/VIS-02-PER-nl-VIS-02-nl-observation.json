@@ -1,0 +1,39 @@
+{
+  "unit_id": "VIS-02-PER-nl",
+  "job": "VIS-02-nl",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-nl-observations.json",
+  "observation": {
+    "active_after": "普通N，单选。",
+    "active_before": "普通N，单选。",
+    "after": "TC-PHI507-r2-VIS-02-PER-nl组[G1,G2]、组后N仍在；本项菜单观察未执行关闭动作；菜单已Cancel。",
+    "before": "纵向顺序为本项测试组[G1,G2]、N；三页标题均为Nieuw tabblad。组内两个独立row，N为组外selected row；本项对象无split或多选。",
+    "confirmation_choices": "语言提示选择Restart Phi；CU返回App quit后按步骤重新get_app_state启动。组重命名选择Bewaar。setup关闭上批COM-es组未出现确认框，未勾选任何不再询问选项。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-PER-nl attempt1 restart-result",
+      "EVIDENCE: VIS-02-PER-nl attempt1 layout",
+      "EVIDENCE: VIS-02-PER-nl attempt1 settings",
+      "EVIDENCE: VIS-02-PER-nl attempt1 before",
+      "EVIDENCE: VIS-02-PER-nl attempt1 normal-menu",
+      "EVIDENCE: VIS-02-PER-nl attempt1 group-menu",
+      "EVIDENCE: VIS-02-PER-nl attempt1 after"
+    ],
+    "identity_checks": "指定应用路径；按语言提示重启前PID86310、重启后PID86655。原生树核对对应TC组及两个成员，组后普通N独立存在。仅记录原生New Tab对象，不声称Web正文、输入标记或打开编号。",
+    "language_observed": "General实读Nederlands，重启后原生界面为荷兰语。普通菜单可见Zet vast、Dupliceer、Kopieer link、Open als split、Voeg toe aan bladwijzers、Voeg toe aan map、Nieuwe tabbladgroep、Voeg toe aan groep、Verplaats naar Space、Sluit、Sluit andere tabbladen、Tabbladen erboven sluiten、Tabbladen eronder sluiten。组菜单可见Nieuw tabblad in groep、Wijzig groepsnaam、Wijzig kleur、Klap groep in、Maak groepering ongedaan、Sluit groep、Tabbladen boven de groep sluiten、Tabbladen onder de groep sluiten。指定上下方向四项逐字与语言表一致。",
+    "layout_observed": "General截图确认Prestaties选中，实际chrome为外部纵向标签栏。双击说明三行，按位置说明两行，句尾完整可读。普通菜单Tabbladen erboven sluiten可用，Tabbladen eronder sluiten禁用；组菜单Tabbladen boven de groep sluiten、Tabbladen onder de groep sluiten均可用。菜单方向文字单行完整；侧栏长TC组标题显示省略号。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "setup首次右击旧COM-es组的外层row，实际打开成员tab菜单；立即Cancel，随后改用最新树的组标题text打开组菜单，未执行误开菜单中的动作。该误命中返回的原生树已保留，但未单独输出failure标记截图。"
+    ],
+    "precondition_actual": "选择Nederlands并按提示重启，再选择Performance。实读两开关on/on。清理上批COM-es测试组和对应普通N后，独立建立本项组内G1/G2及组后普通N。",
+    "settings_observed": "Dubbelklik om tabbladen te sluiten=on；Tabbladen op positie sluiten=on。两标题及两说明全文见base_case，均在本项settings完整截图与原生树中实读。",
+    "steps_executed": [
+      "读取起始语言、布局、两个开关；仅将双击关闭从off改on，另一个即时仍on。",
+      "General原生语言下拉选择Nederlands，选择Restart Phi；CU重开后核对PID86655和实际荷兰语。",
+      "General选择Prestaties并截图；Advanced读取两开关及完整说明。",
+      "原生新建G1并New Tab Group，Rename Group为TC-PHI507-r2-VIS-02-PER-nl；New Tab in Group添加G2，再Cmd+T新建组外N。",
+      "核对两成员及真实顺序，保存before；分别展开普通N菜单和组标题菜单，保存完整截图并Cancel，保存after。"
+    ],
+    "unit_id": "VIS-02-PER-nl"
+  }
+}

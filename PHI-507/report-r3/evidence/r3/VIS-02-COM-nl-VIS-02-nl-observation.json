@@ -1,0 +1,49 @@
+{
+  "unit_id": "VIS-02-COM-nl",
+  "job": "VIS-02-nl",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-nl-observations.json",
+  "observation": {
+    "active_after": "本项观察结束及会话收尾后均为组后普通N，单选；语言恢复重启后标题为New Tab。",
+    "active_before": "组后普通N，活动白色轮廓，单选。",
+    "after": "观察结束时COM-nl组[G1,G2]、组后N均保留，菜单Cancel，窗口zoom还原。随后仅恢复会话起始偏好及语言，未额外重建或清理最后三页。",
+    "before": "横向从左到右为本项组[G1,G2]、N。原生组计数2，三个独立tabStripTab均为Nieuw tabblad；屏幕组下划线覆盖G1/G2，N位于其后。本项没有split或多选；原有其他split对象保留。",
+    "confirmation_choices": "组重命名选择Bewaar；setup关闭BAL组无确认框。菜单只观察后Cancel。会话收尾语言提示选择Herstart Phi，返回App quit后用CU重开。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-COM-nl attempt1 layout",
+      "EVIDENCE: VIS-02-COM-nl attempt1 settings",
+      "EVIDENCE: VIS-02-COM-nl attempt1 setup-interruption",
+      "EVIDENCE: VIS-02-COM-nl attempt1 before",
+      "EVIDENCE: VIS-02-COM-nl attempt1 normal-menu",
+      "EVIDENCE: VIS-02-COM-nl attempt1 normal-menu-full",
+      "EVIDENCE: VIS-02-COM-nl attempt1 group-menu",
+      "EVIDENCE: VIS-02-COM-nl attempt1 after",
+      "EVIDENCE: VIS-02-COM-nl attempt1 restore-settings",
+      "EVIDENCE: VIS-02-COM-nl attempt1 restore-layout",
+      "EVIDENCE: VIS-02-COM-nl attempt1 restore-restart-result",
+      "EVIDENCE: VIS-02-COM-nl attempt1 restored-browser",
+      "EVIDENCE: VIS-02-COM-nl attempt1 restored-general",
+      "EVIDENCE: VIS-02-COM-nl attempt1 restored-advanced",
+      "EVIDENCE: VIS-02-COM-nl attempt1 ending-state"
+    ],
+    "identity_checks": "观察期间为指定路径PID86655；三个独立tabStripTab、原生组计数2与屏幕组范围共同核对成员。收尾按语言提示重启后PID87230，最终纵向树仍有COM-nl组两成员及组外selected N。仅New Tab对象，不声称已加载Web文档。",
+    "language_observed": "观察时General实读Nederlands。普通菜单可见Zet vast、Dupliceer、Kopieer link、Open als split、Voeg toe aan bladwijzerbalk、Voeg toe aan map、Nieuwe tabbladgroep、Voeg toe aan groep、Verplaats naar Space、Sluit、Sluit andere tabbladen、Tabbladen links sluiten、Tabbladen rechts sluiten。组菜单可见Nieuw tabblad in groep、Wijzig groepsnaam、Wijzig kleur、Klap groep in、Maak groepering ongedaan、Sluit groep、Tabbladen links van de groep sluiten、Tabbladen rechts van de groep sluiten。指定左右方向四项逐字与语言表一致。收尾恢复System Default并重启后界面英文。",
+    "layout_observed": "General完整图确认Comfortabel选中，实际chrome为外部横向标签栏。双击说明三行、方向说明两行，全文句尾可见。普通菜单Tabbladen links sluiten可用、Tabbladen rechts sluiten禁用；组菜单Tabbladen links van de groep sluiten、Tabbladen rechts van de groep sluiten均可用，单行完整。原窗口普通菜单初图右边框未全部纳入；原生zoom后normal-menu-full补图完整，随后还原zoom。拥挤标签条中组标题和tab标题显示省略。收尾General截图确认Balanced恢复。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "setup辅助匹配最初只接受tekst，遇横向text及组计数后停止，未发出后续CU动作；保存setup-interruption图，实读新树后继续添加G2，没有重建或额外创建页面。",
+      "普通菜单初图右边缘未全纳入，保留初图后以原生窗口zoom补取完整菜单图，并还原窗口大小。"
+    ],
+    "precondition_actual": "本项setup清理BAL组及对应普通N，独立新建TC-PHI507-r2-VIS-02-COM-nl组[G1,G2]及组后N。General实读Nederlands并选择Comfortable；Advanced实读on/on。",
+    "settings_observed": "观察时Dubbelklik om tabbladen te sluiten=on、Tabbladen op positie sluiten=on；两标题与两说明全文见base_case，本项完整截图与原生树均实读。会话收尾仅点击双击开关恢复off，另一个即时仍on；语言恢复重启后Advanced再次实读Double-click to close tabs=off、Close tabs by position=on。",
+    "steps_executed": [
+      "清理BAL组三页；General核对Nederlands并选择Comfortabel，保存布局图；Advanced读取on/on及两段全文。",
+      "新建G1→New Tab Group→Rename Group为TC-PHI507-r2-VIS-02-COM-nl；New Tab in Group添加G2；Cmd+T新建组外N。",
+      "核对组三页实际顺序、组计数和N活动状态，保存before。",
+      "展开普通N菜单保存初图；Cancel后用原生zoom扩大窗口，重新核对N并补取完整普通菜单；展开组标题菜单保存完整图；Cancel并还原zoom，保存after。",
+      "统一收尾：仅点击双击开关恢复off并即时读取另一个仍on；General恢复Balanced及System Default，选择Herstart Phi。",
+      "CU重开后核对PID87230、System Default、Balanced及off/on；关闭Settings，保存ending-state，保留最后组三页。"
+    ],
+    "unit_id": "VIS-02-COM-nl"
+  }
+}

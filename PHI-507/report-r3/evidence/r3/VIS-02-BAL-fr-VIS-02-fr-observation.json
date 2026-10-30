@@ -1,0 +1,35 @@
+{
+  "unit_id": "VIS-02-BAL-fr",
+  "job": "VIS-02-fr",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-fr-observations.json",
+  "observation": {
+    "active_after": "N",
+    "active_before": "N",
+    "after": "TC-PHI507-r2-VIS-02-BAL-fr组[G1,G2]及组后N均保留，顺序不变；菜单已Cancel。",
+    "before": "TC-PHI507-r2-VIS-02-BAL-fr组[G1,G2]，其后普通N；三个原生标题均Nouvel onglet，无多选、本项无split。",
+    "confirmation_choices": "组重命名选择Enregistrer；清理上一PER-fr组时未出现确认框。语言已为Français，未重复选择或重启。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-BAL-fr attempt1 layout",
+      "EVIDENCE: VIS-02-BAL-fr attempt1 settings",
+      "EVIDENCE: VIS-02-BAL-fr attempt1 before",
+      "EVIDENCE: VIS-02-BAL-fr attempt1 normal-menu",
+      "EVIDENCE: VIS-02-BAL-fr attempt1 group-menu",
+      "EVIDENCE: VIS-02-BAL-fr attempt1 after"
+    ],
+    "identity_checks": "指定应用路径PID84927，Window=Nouvel onglet。原生树核对本项TC组下两个成员row及组外selected N；仅记录New Tab对象身份。",
+    "language_observed": "General实读Français。普通菜单逐字可见：Épingler；Dupliquer；Copier le lien；Ouvrir en Split View；Ajouter aux favoris；Ajouter à un dossier；Nouveau groupe d'onglets；Ajouter à un groupe；Déplacer vers un Espace；Fermer；Fermer les autres onglets；Fermer les onglets au-dessus；Fermer les onglets en dessous。除最后一项禁用外，其余主菜单项可用。组标题菜单：Nouvel onglet dans le groupe；Renommer le groupe；Modifier la couleur；Réduire le groupe；Dissocier；Fermer le groupe；Fermer les onglets au-dessus du groupe；Fermer les onglets en dessous du groupe，均可用。指定两开关、两说明及四条方向文案与提供的法语表逐字一致；普通菜单另实见英文词组Split View。",
+    "layout_observed": "Balanced对应Équilibré卡片选中，外部标签栏纵向。双击说明第1行止于“Les”，第2行为“onglets épinglés et les favoris conservent leurs actions de double-clic habituelles.”；位置说明第1行止于“à”，第2行为“droite, ou au-dessus ou en dessous dans une barre verticale.”。两段各2行完整可读。普通及组方向项均为上下，单行完整；普通下方项灰显禁用，组上下项均可用。组名在窄侧栏省略，原生树保留完整名。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "关闭上一PER-fr组及其N；General重新实读Français，选择Équilibré并截图确认。Advanced实读on/on，未重复点击开关。独立新建本项G1/G2/N。",
+    "settings_observed": "两个开关均on。标题：Fermer les onglets par double-clic。说明：Double-cliquez sur un onglet pour le fermer. En vue partagée, seul le volet cliqué se ferme. Les onglets épinglés et les favoris conservent leurs actions de double-clic habituelles. 标题：Fermer les onglets selon leur position。说明：Ajoute aux menus des onglets et des groupes des options pour fermer les onglets à gauche ou à droite, ou au-dessus ou en dessous dans une barre verticale.",
+    "steps_executed": [
+      "在本项setup关闭上一PER-fr组及N。",
+      "General确认Français并选择Équilibré，保存布局图；Advanced读取两个开关和说明并保存完整图。",
+      "原生新建G1→Nouveau groupe d'onglets→Renommer le groupe；组内新建G2，组外新建N。",
+      "核实组下两行及组外N，保存before；依次读取普通N菜单与组标题菜单并保存完整截图；分别Cancel，保存after。"
+    ],
+    "unit_id": "VIS-02-BAL-fr"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "unit_id": "DBL-08-PER",
+  "job": "DBL-08-performance-sticky-mouse-adapter",
+  "scope": "Sticky Keys/Mouse Keys输入诊断，不是DBL-08验收。Sticky Keys可开启但CU拒绝纯Super_L和Shift_L；Mouse Keys确认需键盘/数字键盘模拟点击Use Mouse Keys，鼠标点击及Return未满足，未实读on；不把这次无效确认当成功，也不由此认定系统功能不支持。",
+  "source": "qa-evidence/r3/DBL-08-performance-sticky-mouse-adapter-observations.json",
+  "observation": {
+    "active_after": "B；选中集 {B}。",
+    "active_before": "B；选中集 {B}。",
+    "after": "普通标签顺序 New Tab、A、B、C、D；无可见组或 split。未执行任何标签关闭、拖动或多选点击。",
+    "before": "原生列表为 New Tab、A、B、C、D；B 是唯一 selected row。窗口显示 TC-B · TC-PHI507-r2-DBL-08-PER-INPUT-KEYBOARD。",
+    "confirmation_choices": "Sticky Keys 和 Mouse Keys 的详情均用 Cancel 退出，未改详情选项。Mouse Keys 第一次点击 Use Mouse Keys，返回后开关仍 off；第二次进入确认框后发送 Return，确认框仍在，随后点击 Cancel。未出现浏览器关闭确认。System Settings 关闭返回 App quit，按预期关闭事件记录。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-08-PER attempt1 sticky-before",
+      "EVIDENCE: DBL-08-PER attempt1 sticky-enabled",
+      "EVIDENCE: DBL-08-PER attempt1 failure",
+      "EVIDENCE: DBL-08-PER attempt1 shift-held",
+      "EVIDENCE: DBL-08-PER attempt1 sticky-restored",
+      "EVIDENCE: DBL-08-PER attempt1 mouse-before",
+      "EVIDENCE: DBL-08-PER attempt1 mouse-enabled",
+      "EVIDENCE: DBL-08-PER attempt1 mouse-restored",
+      "EVIDENCE: DBL-08-PER attempt1 settings-general",
+      "EVIDENCE: DBL-08-PER attempt1 settings-advanced",
+      "EVIDENCE: DBL-08-PER attempt1 after"
+    ],
+    "identity_checks": "QA 固定路径的 PID 开始、异常现场和结束均为 87230；System Settings PID 88744。A/B/C/D 原生标签容器均带批次 TC-PHI507-r2-DBL-08-PER-INPUT-KEYBOARD。B 正文实见 TC-B、相同批次、普通页、空输入框；开始结束本次打开编号均为 b173157d-2466-41c2-9222-4ef0d83e4746。A/C/D 仅核对原生标签容器，未切页读取其正文编号。",
+    "language_observed": "General 实读 System Default；QA 和 System Settings 原生 UI 均为英文。",
+    "layout_observed": "General 截图中 Balanced 带选中边框。依本次诊断约束保留 Balanced，未切换到 Performance。",
+    "not_executed_reason": "仅Sticky Keys/Mouse Keys输入适配诊断，不是完整DBL-08。Command 坐标单击 C 与原生容器单击 C 均未执行：单独 Super_L 被 CU 拒绝，无可证实保持状态。Shift 范围选择点击未执行：单独 Shift_L 同样被拒绝，无可证实保持状态。KP_6、指针移动和 C 关闭控件 hover 检查未执行：Mouse Keys 两次开启尝试均未实读 on。未执行 DBL-08 的拖动及关闭按钮验收动作。",
+    "operator_errors": [
+      "指定单独 Super_L 请求一次，CU 返回：-10005 keyPressIncludedNoNonModifierKeys(ComputerUse.XKeysymString.KeyPress(keys: [ComputerUse.XKeysym.Super_L]))；未猜其他参数或重复尝试。",
+      "独立的指定单独 Shift_L 请求一次，CU 返回：-10005 keyPressIncludedNoNonModifierKeys(ComputerUse.XKeysymString.KeyPress(keys: [ComputerUse.XKeysym.Shift_L]))；未重复尝试。",
+      "shift-held 标记对应按键错误后的现场，未观察到保持状态；mouse-enabled 标记包含确认框和仍为 off 的现场，均不能作为启用成功证据。未生成 command-selection、shift-selection 或 mouse-motion 的已执行证据。"
+    ],
+    "precondition_actual": "按额外诊断约束，实读既有 A/B/C/D 和 B 单选状态，不重建验收页面、不改双击关闭开关。Sticky Keys 原 off，临时开启后实读 on；Accessibility Keyboard 保持 off。Mouse Keys 原 off，未获得 on 的实际状态。",
+    "settings_observed": "Sticky Keys off→on→off。详情原值：五次 Shift 切换 off、提示音 on、屏幕显示 on、位置 Top Right，未改。Accessibility Keyboard、Full Keyboard Access、Slow Keys 均 off。Mouse Keys 初末 off；详情原值：五次 Option 切换 off、忽略内建触控板 off、Initial delay 3、Maximum speed 6，未改。系统 Double-click speed 实读 8，未改。QA 收尾实读双击关闭 off／按位置关闭 on，未点击这两个开关。",
+    "steps_executed": [
+      "通过 CU 打开 System Settings，正常进入 Accessibility → Keyboard，读取 Sticky Keys 及详情原值。",
+      "点击 Sticky Keys 原生开关一次，返回树及截图确认 on；同时确认 Accessibility Keyboard off。",
+      "回固定 QA 应用，实读 A/B/C/D 原生顺序和 B 唯一选中；发送单独 Super_L 一次，收到纯修饰键错误后保存现场，停止 Command 选择分支。",
+      "在仍为 B 单选的独立 Shift 分支发送 Shift_L 一次，收到相同类型错误；截图未见保持指示，停止范围选择分支。",
+      "回 Keyboard 关闭 Sticky Keys，截图及原生树确认 off；未出现可证实的保持或锁定指示。",
+      "正常进入 Accessibility → Pointer Control，读取 Mouse Keys 原 off 及详情原值。",
+      "第一次点击 Mouse Keys 开关，出现 Use Mouse Keys / Cancel 确认框；点击 Use Mouse Keys 后，原生树和截图仍显示 off。",
+      "依据最新 Mouse Keys 控件进行第二次开启尝试；确认框中发送 Return 后对话框仍在，随后点击 Cancel；原生树及截图确认 Mouse Keys off。",
+      "点击 System Settings 关闭按钮，保存 -10005: App quit 的预期关闭返回。",
+      "QA 打开 Settings，只读核对 General 的 Balanced / System Default 和 Advanced 的双击关闭 off／按位置关闭 on，关闭 Settings，保存结束截图。"
+    ],
+    "unit_id": "DBL-08-PER"
+  }
+}

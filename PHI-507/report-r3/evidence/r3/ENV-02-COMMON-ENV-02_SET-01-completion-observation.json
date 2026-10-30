@@ -1,0 +1,46 @@
+{
+  "unit_id": "ENV-02-COMMON",
+  "job": "ENV-02_SET-01-completion",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/ENV-02_SET-01-completion-observations.json",
+  "observation": {
+    "active_after": "B；原生选中集 {B}。",
+    "active_before": "B；原生选中集 {B}。",
+    "after": "普通标签集合及顺序不变；Settings 关闭；无可见组、split、菜单或确认框。",
+    "before": "当前普通标签顺序 New Tab、A、B、C、D；无可见组或 split；原生 pin collection 为空。",
+    "confirmation_choices": "为读取当前 Space 名称打开 Rename Space 对话框，实读后选择 Cancel；未提交重命名。未出现关闭确认。",
+    "evidence_markers": [
+      "EVIDENCE: ENV-02-COMMON attempt1 before",
+      "EVIDENCE: ENV-02-COMMON attempt1 general",
+      "EVIDENCE: ENV-02-COMMON attempt1 customized",
+      "EVIDENCE: ENV-02-COMMON attempt1 close-list",
+      "EVIDENCE: ENV-02-COMMON attempt1 close-scroll",
+      "EVIDENCE: ENV-02-COMMON attempt1 close-group-detail",
+      "EVIDENCE: ENV-02-COMMON attempt1 failure",
+      "EVIDENCE: ENV-02-COMMON attempt1 tab-category-top",
+      "EVIDENCE: ENV-02-COMMON attempt1 tab-category-bottom",
+      "EVIDENCE: ENV-02-COMMON attempt1 tab-category-end",
+      "EVIDENCE: ENV-02-COMMON attempt1 after"
+    ],
+    "identity_checks": "固定路径 QA 应用，PID 87230。Rename Space 文本框实读 TC-QA-PHI507-r2。Window 菜单仅列当前 TC-B 浏览器窗口。TC-B 正文显示批次 TC-PHI507-r2-DBL-08-PER-INPUT-KEYBOARD、普通页、打开编号 b173157d-2466-41c2-9222-4ef0d83e4746，输入框显示占位。A/C/D 仅核对原生 TC 标题，未切换读取其内容。当前普通列表未见真实工作页；未知保存项内容保留未知。",
+    "language_observed": "General 的 Display language 为 System Default；实际界面为英文。",
+    "layout_observed": "General 中 Balanced 有选中边框；浏览器外部为纵向标签列表。未切换布局。",
+    "not_executed_reason": "按本批补查约束，不重复执行已建立隔离 Space 的步骤。未进入其他 Space 或盘点未知保存项内容。Close Other Tabs 和 Close Tabs to the Right 未出现在所查完整 Close 匹配列表及完整 Tab 分类原生列表中，无法从该 UI 核实这两项的绑定；不推定其存在、无绑定或全局不存在。",
+    "operator_errors": [
+      "尝试对原生搜索框执行 set_value(value=\"\") 返回 isError，随即停止该序列。该次过滤输出漏保留错误原文，具体错误原因未知；现场截图确认搜索值仍为 Close。随后使用 click 搜索框、Cmd+A、BackSpace 正常清空。"
+    ],
+    "precondition_actual": "实读指定 QA app PID 87230，当前已有 TC-QA-PHI507-r2 Space，无需新建重复 Space。当前窗口为 TC 测试页列表；保留原有 Space、保存项和窗口。",
+    "settings_observed": "基线实读 Balanced、System Default、settings.tabs.doubleClickToClose=off、settings.tabs.directionalClosing=on。Shortcuts 筛选菜单实际提供 All Shortcuts、Customized Shortcuts、Conflicting Shortcuts 及 App/File/Edit/View/History/Bookmarks/Window/Tab/Spaces/Kiosk & Peek/Other 分类；没有单独的 Default 筛选。Customized Shortcuts 在空搜索下显示 No Results。All Shortcuts 搜索 Close 的完整匹配为：File→Reopen Closed Tab=⇧⌘T、Close Window=⇧⌘W、Close Tab=⌘W；Tab→Close Tab Group=⌃⌘W。逐项选择列表读取详情，四项 Reset 均 disabled。搜索匹配列表滚动后仍为这四项。清空搜索后读取完整 Tab 分类并滚动至 scroll bar=1，未列出 Close Other Tabs 或 Close Tabs to the Right。未点击录制、Reset 或 Reset All to Defaults，未试按任何关闭绑定。",
+    "steps_executed": [
+      "get_app_state 核对固定 QA 路径、PID、当前 TC 标签集合；通过 Spaces→Rename Space 只读确认当前 Space 名称并 Cancel。",
+      "打开 General，记录 System Default 和 Balanced 的实际选中状态。",
+      "打开 Advanced，只读记录两个关闭开关 off/on。",
+      "打开 Shortcuts，查看实际筛选菜单；选择 Customized Shortcuts，记录 No Results。",
+      "回到 All Shortcuts，搜索 Close，保存完整匹配列表及滚动后截图；逐项选择已有关闭相关动作读取名称、绑定和详情。",
+      "使用正常键盘清空搜索，选择 Tab 分类，读取完整原生列表并实际滚动到末端。",
+      "恢复 All Shortcuts 筛选及空搜索，关闭 Settings。",
+      "查看 Window 菜单中的原有窗口列表，使用其明确暴露的 Cancel 退出菜单，保存结束截图。"
+    ],
+    "unit_id": "ENV-02-COMMON"
+  }
+}

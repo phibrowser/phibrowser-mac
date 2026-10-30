@@ -1,0 +1,37 @@
+{
+  "unit_id": "VIS-02-BAL-nl",
+  "job": "VIS-02-nl",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-nl-observations.json",
+  "observation": {
+    "active_after": "普通N，单选。",
+    "active_before": "普通N，单选。",
+    "after": "TC-PHI507-r2-VIS-02-BAL-nl组[G1,G2]、组后N仍在；未执行关闭方向项；菜单已Cancel。",
+    "before": "纵向顺序为本项测试组[G1,G2]、N；三页标题均为Nieuw tabblad；组内两个独立row，组外N selected；本项无split或多选。",
+    "confirmation_choices": "组重命名选择Bewaar；setup关闭PER组未出现确认框。菜单仅观察后Cancel。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-BAL-nl attempt1 layout",
+      "EVIDENCE: VIS-02-BAL-nl attempt1 settings",
+      "EVIDENCE: VIS-02-BAL-nl attempt1 before",
+      "EVIDENCE: VIS-02-BAL-nl attempt1 normal-menu",
+      "EVIDENCE: VIS-02-BAL-nl attempt1 group-menu",
+      "EVIDENCE: VIS-02-BAL-nl attempt1 after"
+    ],
+    "identity_checks": "指定应用路径，PID86655。原生树核对TC-PHI507-r2-VIS-02-BAL-nl内两独立成员及组外普通N。仅原生New Tab对象，没有Web文档身份或存活编号记录。",
+    "language_observed": "General实读Nederlands。普通菜单可见Zet vast、Dupliceer、Kopieer link、Open als split、Voeg toe aan bladwijzers、Voeg toe aan map、Nieuwe tabbladgroep、Voeg toe aan groep、Verplaats naar Space、Sluit、Sluit andere tabbladen、Tabbladen erboven sluiten、Tabbladen eronder sluiten。组菜单可见Nieuw tabblad in groep、Wijzig groepsnaam、Wijzig kleur、Klap groep in、Maak groepering ongedaan、Sluit groep、Tabbladen boven de groep sluiten、Tabbladen onder de groep sluiten。指定上下方向四项逐字与语言表一致。",
+    "layout_observed": "General完整图确认Gebalanceerd选中；实际chrome为外部纵向标签栏。双击说明三行、方向说明两行，句尾完整。普通菜单Tabbladen erboven sluiten可用、Tabbladen eronder sluiten禁用；组菜单Tabbladen boven de groep sluiten、Tabbladen onder de groep sluiten均可用，方向文字均单行完整。侧栏长TC组标题显示省略号。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "Cancel定位辅助函数同时匹配主菜单和子菜单后停止，未发出CU动作；随后按最新树中的主菜单层级定位并Cancel，页面对象未改变。"
+    ],
+    "precondition_actual": "在本项setup清理PER组和对应N，独立新建BAL组[G1,G2]及组后普通N。General实读Nederlands并选择Balanced；Advanced实读on/on，未重复点击开关或切换语言。",
+    "settings_observed": "Dubbelklik om tabbladen te sluiten=on；Tabbladen op positie sluiten=on。两标题及两说明全文见base_case，均在本项settings完整截图与原生树中实读。",
+    "steps_executed": [
+      "清理前项PER组三页，仅保留其他原有对象。",
+      "General核对Nederlands，选择Gebalanceerd并截图；Advanced读取两个开关及全文，不点击已正确的开关。",
+      "新建G1→New Tab Group→Rename Group为TC-PHI507-r2-VIS-02-BAL-nl；New Tab in Group添加G2；Cmd+T新建组外N。",
+      "核对真实成员和顺序并保存before；分别展开普通N与组标题菜单，保存完整图后Cancel，保存after。"
+    ],
+    "unit_id": "VIS-02-BAL-nl"
+  }
+}

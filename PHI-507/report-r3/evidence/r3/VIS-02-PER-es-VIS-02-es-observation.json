@@ -1,0 +1,43 @@
+{
+  "unit_id": "VIS-02-PER-es",
+  "job": "VIS-02-es",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-es-observations.json",
+  "observation": {
+    "active_after": "普通N，单选。",
+    "active_before": "普通N，单选。",
+    "after": "TC-PHI507-r2-VIS-02-PER-es[G1,G2]→普通N；3对象均保留，菜单已取消。本项对象无split。",
+    "before": "TC-PHI507-r2-VIS-02-PER-es[G1,G2]→普通N；3对象标题均Nueva pestaña，无多选，本项对象无split。",
+    "confirmation_choices": "语言提示选择Restart Phi；返回App quit后通过CU重新读取并启动指定路径应用。组重命名选择Guardar；观察菜单均用原生Cancel退出。清理旧COM-fr组未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-PER-es attempt1 initial-general",
+      "EVIDENCE: VIS-02-PER-es attempt1 restart-result",
+      "EVIDENCE: VIS-02-PER-es attempt1 layout",
+      "EVIDENCE: VIS-02-PER-es attempt1 settings",
+      "EVIDENCE: VIS-02-PER-es attempt1 failure",
+      "EVIDENCE: VIS-02-PER-es attempt1 before",
+      "EVIDENCE: VIS-02-PER-es attempt1 normal-menu",
+      "EVIDENCE: VIS-02-PER-es attempt1 group-menu",
+      "EVIDENCE: VIS-02-PER-es attempt1 after"
+    ],
+    "identity_checks": "初始App路径对应PID85395；语言重启后PID85765，Window=Nueva pestaña。原生组树中G1/G2为两个独立成员row，N为组外selected row；屏幕逐个核对3对象位置。仅本地New Tab。",
+    "language_observed": "General实读Español。指定两开关标题、两段说明和本布局四个方向项的原生全文逐字与提供表一致；所查文本未见key、缺字或英文回退。",
+    "layout_observed": "Rendimiento卡片选中，外部纵向标签栏。普通菜单：Cerrar las pestañas de arriba可用；Cerrar las pestañas de abajo禁用。组标题菜单：Cerrar las pestañas encima del grupo、Cerrar las pestañas debajo del grupo均可用。方向项均单行完整，菜单全图未见文字截断；侧栏长TC组名显示省略号。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "setup关闭Settings后误沿用索引25，右键到既有手册标签；仅打开菜单，未选任何命令。保存failure现场后用Cancel取消并get_app_state重读，再操作正确TC组。该现场不作为本项普通N菜单观察。"
+    ],
+    "precondition_actual": "起始实读System Default、Balanced、双击off/按位置on。仅点击双击开关改为on，另一开关即时仍on。General选择Español并遵循重启提示，再选择Rendimiento。清理上一COM-fr组及其普通N，独立新建本项G1/G2/N并核对组成员数2。",
+    "settings_observed": "两个开关on/on。标题：Cerrar pestañas con doble clic；Cerrar pestañas por posición。双击说明：Haz doble clic en una pestaña para cerrarla. En la vista dividida, solo se cierra el panel pulsado. Las pestañas fijadas y los marcadores conservan sus acciones habituales de doble clic. 位置说明：Añade a los menús de pestañas y grupos opciones para cerrar las pestañas a la izquierda o a la derecha, o las de arriba o abajo en una barra vertical. 两说明各2行，末句完整、可读，无省略号；设置完整截图包含两个开关。",
+    "steps_executed": [
+      "实读起始偏好，设置公共on/on条件并逐次读取两开关即时值。",
+      "通过General原生下拉选择Español，点击Restart Phi，重新核实语言和新PID。",
+      "选择Performance对应的Rendimiento并截图确认。",
+      "清理上一项可丢弃对象，通过Nuevo grupo de pestañas、Renombrar grupo、Nueva pestaña en el grupo及Cmd+T独立创建本项3对象。",
+      "读取Advanced两个开关及说明，保存完整设置截图。",
+      "对普通N和TC组标题分别右键，读取方向文案与禁用状态并保存完整菜单截图，随后Cancel。",
+      "保存before/after原生状态和截图；结束保留实际3对象。"
+    ],
+    "unit_id": "VIS-02-PER-es"
+  }
+}

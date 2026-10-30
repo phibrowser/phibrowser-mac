@@ -1,0 +1,40 @@
+{
+  "unit_id": "VIS-02-PER-en",
+  "job": "VIS-02-en",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-en-observations.json",
+  "observation": {
+    "active_after": "G2（New Tab）；菜单取消后仍为 G2，无多选。",
+    "active_before": "G2（New Tab），为本项通过 New Tab in Group 创建的第二个组成员。",
+    "after": "原有保留容器 → N → TC-PHI507-r2-VIS-02-PER-en{G1,G2}，对象集合及顺序未因菜单观察改变。普通菜单实读 Close、Close Other Tabs、Close Tabs Above、Close Tabs Below，均可用。组菜单实读 Close Group、Close Tabs Above Group，可用；Close Tabs Below Group，禁用。未点击任何方向关闭项。",
+    "before": "PID 81235，Window=\"New Tab\"；原有保留容器之后为 N，再为 TC-PHI507-r2-VIS-02-PER-en 测试组；原生 table 下逐项核对两个成员 G1、G2。",
+    "confirmation_choices": "General 下拉由 System Default 选择 English，提示“Restart Phi?”／“The selected language will take effect after Phi restarts. Restart now?”，选择 Restart Phi。调用返回“Computer Use server error -10005: App quit”，按语言重启生命周期记录，随后实读 PID 由 80865 变为 81235。组重命名选择 Save。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-PER-en attempt1 restart-result",
+      "EVIDENCE: VIS-02-PER-en attempt1 layout",
+      "EVIDENCE: VIS-02-PER-en attempt1 settings",
+      "EVIDENCE: VIS-02-PER-en attempt1 failure",
+      "EVIDENCE: VIS-02-PER-en attempt1 before",
+      "EVIDENCE: VIS-02-PER-en attempt1 normal-menu",
+      "EVIDENCE: VIS-02-PER-en attempt1 group-menu",
+      "EVIDENCE: VIS-02-PER-en attempt1 after"
+    ],
+    "identity_checks": "起始 get_app_state 实读指定路径及 PID 80865；重启后指定路径 PID 81235。关闭前次明确的 TC-PHI507-r2-VIS-02-COM-zh-Hant 组及其已知普通 N。新对象按创建和原生容器顺序核对，未以重复 New Tab 标题冒充 Web 身份。",
+    "language_observed": "重启后 General 下拉实读 English；目标开关、说明和菜单均显示英文。普通菜单完整可见：Pin；Duplicate；Copy Link；Split with Current；Add to Bookmark；Add to Folder；New Tab Group；Add to Group；Move to Space；Close；Close Other Tabs；Close Tabs Above；Close Tabs Below。组菜单完整可见：New Tab in Group；Rename Group；Change Color；Collapse Group；Ungroup；Close Group；Close Tabs Above Group；Close Tabs Below Group。",
+    "layout_observed": "General 原生选择 Performance，卡片有选中边框；浏览器外部标签栏为纵向，菜单使用 Above／Below。目标菜单文字均为单行，包含禁用的 Close Tabs Below Group，未见截断或缺字。两段设置说明均完整显示为两行：双击说明在“and”之后换行；方向说明在“a”之后换行，第二行为“vertical tab bar.”。侧栏测试组长名称以省略号显示，原生树提供完整名称。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "首次为第二个重复 New Tab 行请求右键 click(element_index=\"27\")，CU 返回元素失效且 refetch 匹配多个元素；立即停止并保存 failure 图。随后关闭该次新建的三个测试 New Tab，重新建立 N 与活动 G1，再通过 New Tab Group、Rename Group、New Tab in Group 构造三对象前置。该无效点击未作为菜单观察结果。"
+    ],
+    "precondition_actual": "English 已通过原生 General 下拉选择并重启实读；Performance 已通过 General 设置并截图确认；两个公共开关均为 on；独立重建 N 和含 G1、G2 的 TC 测试组。",
+    "settings_observed": "Double-click to close tabs=on；Close tabs by position=on。只点击原先 off 的双击关闭开关一次，返回树即时显示 on/on，未点击项 Close tabs by position 保持 on。实际说明逐字为：“Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions.”；“Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar.”。两开关标题与所给英文表相同。",
+    "steps_executed": [
+      "实读起始应用、System Default、Balanced 和原始 off/on 开关值；原生选择 English 并遵循重启提示。",
+      "选择 Performance；将双击关闭从 off 改为 on，立即读取两个开关；保存完整设置图。",
+      "清理前次已知 VIS 对象；首次重复行操作报错后保留现场，重建最小三对象并核对顺序及组成员。",
+      "对 N 的原生 selectable row 右键，保存完整普通菜单图和状态；通过菜单明确暴露的 Cancel 取消。",
+      "对测试组标题右键，保存完整组菜单图和禁用状态；Cancel 后 get_app_state 保存结束图。"
+    ],
+    "unit_id": "VIS-02-PER-en"
+  }
+}

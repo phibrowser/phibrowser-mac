@@ -1,0 +1,43 @@
+{
+  "unit_id": "DBL-10-BAL",
+  "job": "DBL-10",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/DBL-10-observations.json",
+  "observation": {
+    "active_after": "两个被测动作后均为 D；逐页取证后停在 E。组内 row 未暴露 selected，活动由窗口标题和画面高亮核对；未进行多选。",
+    "active_before": "ACTIVE 分支 C／单页高亮；INACTIVE 分支 E／{E}，C 未活动。",
+    "after": "两套均为 A | 原 TC-G[B,D] | E；C 不再列出，未见其他成员消失。B、D 保持在各自原 TC 组中，无 split。",
+    "before": "两套均为 A | TC-G[B,C,D] | E，成员真实顺序 B、C、D；批次分别为 TC-PHI507-r2-DBL-10-BAL-ACTIVE、TC-PHI507-r2-DBL-10-BAL-INACTIVE。",
+    "confirmation_choices": "两次 setup 清理上一 TC 组时均选择 Delete Group，Don't Ask Again 未勾；被测双击无确认框。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-10-BAL attempt1 settings",
+      "EVIDENCE: DBL-10-BAL attempt1 setup-confirm",
+      "EVIDENCE: DBL-10-BAL attempt1 active-before",
+      "EVIDENCE: DBL-10-BAL attempt1 active-after",
+      "EVIDENCE: DBL-10-BAL attempt1 active-survivor-A",
+      "EVIDENCE: DBL-10-BAL attempt1 active-survivor-B",
+      "EVIDENCE: DBL-10-BAL attempt1 active-survivor-E",
+      "EVIDENCE: DBL-10-BAL attempt1 inactive-before",
+      "EVIDENCE: DBL-10-BAL attempt1 inactive-after",
+      "EVIDENCE: DBL-10-BAL attempt1 inactive-survivor-A",
+      "EVIDENCE: DBL-10-BAL attempt1 inactive-survivor-B",
+      "EVIDENCE: DBL-10-BAL attempt1 inactive-survivor-E"
+    ],
+    "identity_checks": "PID 87230。ACTIVE 打开编号：A=29b89514-f6af-43c2-bc99-286a004c1af2；B=a9c11957-ca4b-4d39-969b-40f674608024；C=c8d0c066-9667-4326-9303-baa99790de0e；D=e8597819-63f2-40a8-82b3-c84f39307be5；E=d4a15d69-e997-43b0-9819-24be8712b7ef。INACTIVE：A=8828992a-d558-42ad-9b92-5bd23db43529；B=e93a8f6d-5821-4c22-8cf8-9e98a8550405；C=bd83f8d9-4828-4394-9a14-a06042d79c4f；D=3979ccdc-e301-4680-9d9c-c6b20d05ec77；E=04b61466-10ff-47fe-95ce-32c5b994887b。创建时逐页实见标题、批次、编号、普通页正文和输入框；双击后逐页查看 A/B/D/E，编号前后相同，输入框为空，未输入 KEEP 标记。",
+    "language_observed": "General 实读 System Default，界面英文，未切换。",
+    "layout_observed": "General 原生 UI 选择 Balanced 并截图确认；浏览器左侧纵向标签、上方地址栏。第二套从实际 chrome 再确认，未重复点击布局。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "ACTIVE 和 INACTIVE 各独立重建 A–E，通过原生菜单创建并命名各自 TC-G，再依次加入 C、D。关键动作前均实见所需顺序、组成员及活动页，无 split 或待处理确认。",
+    "settings_observed": "Advanced 实读双击关闭 on、按位置关闭 on；本 unit 未点击开关。",
+    "steps_executed": [
+      "切换到 Balanced，原生清理上一套 TC 资料，创建 ACTIVE 批次 A–E 并建立 TC-G[B,C,D]。",
+      "单击最内层 C row 激活，保存 active-before；对最新树的 C row 请求 click_count:2，保存 active-after。",
+      "逐页核对存活 A/B/D/E 的正文、空输入框和原编号。",
+      "在非活动分支开始时清理并独立重建 INACTIVE 批次 A–E 及 TC-G[B,C,D]。",
+      "E 活动时保存 inactive-before，对最内层 C row 请求 click_count:2，保存 inactive-after。",
+      "逐页核对 A/B/D/E 身份，结束停在 E。"
+    ],
+    "unit_id": "DBL-10-BAL"
+  }
+}

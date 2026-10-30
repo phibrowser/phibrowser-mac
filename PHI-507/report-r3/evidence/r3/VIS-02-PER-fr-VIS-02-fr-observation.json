@@ -1,0 +1,40 @@
+{
+  "unit_id": "VIS-02-PER-fr",
+  "job": "VIS-02-fr",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-fr-observations.json",
+  "observation": {
+    "active_after": "N",
+    "active_before": "N",
+    "after": "TC-PHI507-r2-VIS-02-PER-fr组[G1,G2]及组后N均保留，顺序不变；菜单已Cancel。",
+    "before": "TC-PHI507-r2-VIS-02-PER-fr组[G1,G2]，其后普通N；三个原生标题均Nouvel onglet，无多选、本项无split。",
+    "confirmation_choices": "语言提示选择Restart Phi；返回Computer Use server error -10005: App quit，随后通过CU重开并核实新PID及法语。组重命名选择Enregistrer；关闭上一项测试组时未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-PER-fr attempt1 restart-result",
+      "EVIDENCE: VIS-02-PER-fr attempt1 layout",
+      "EVIDENCE: VIS-02-PER-fr attempt1 settings",
+      "EVIDENCE: VIS-02-PER-fr attempt1 before",
+      "EVIDENCE: VIS-02-PER-fr attempt1 normal-menu",
+      "EVIDENCE: VIS-02-PER-fr attempt1 group-menu",
+      "EVIDENCE: VIS-02-PER-fr attempt1 after"
+    ],
+    "identity_checks": "指定应用路径；语言重启PID84583→84927，观察时Window=Nouvel onglet。原生树核对TC组下两个成员row及组外selected N；仅记录New Tab对象身份。",
+    "language_observed": "General=Français，重启后菜单栏为Fichier、Édition、Présentation等。普通菜单逐字可见：Épingler；Dupliquer；Copier le lien；Ouvrir en Split View；Ajouter aux favoris；Ajouter à un dossier；Nouveau groupe d'onglets；Ajouter à un groupe；Déplacer vers un Espace；Fermer；Fermer les autres onglets；Fermer les onglets au-dessus；Fermer les onglets en dessous。除最后一项禁用外，其余主菜单项可用。组标题菜单：Nouvel onglet dans le groupe；Renommer le groupe；Modifier la couleur；Réduire le groupe；Dissocier；Fermer le groupe；Fermer les onglets au-dessus du groupe；Fermer les onglets en dessous du groupe，均可用。指定两开关、两说明及四条方向文案与提供的法语表逐字一致；普通菜单另实见英文词组Split View。",
+    "layout_observed": "Performance卡片选中，外部标签栏纵向。双击说明第1行止于“Les”，第2行为“onglets épinglés et les favoris conservent leurs actions de double-clic habituelles.”；位置说明第1行止于“à”，第2行为“droite, ou au-dessus ou en dessous dans une barre verticale.”。两段各2行，完整可读。普通及组方向项均为上下，单行完整；普通下方项灰显禁用，组上下项均可用。组名在窄侧栏显示省略号，完整名由原生树核实。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "首次编排辅助函数发生ReferenceError: cu is not defined，未发起浏览器动作。",
+      "普通菜单截图后，取消菜单的索引匹配表达式发生nonunique /a^/ 0，未发起CU取消动作；随后依据最新树明确暴露的Cancel正常取消。未改变或重建已成功对象。"
+    ],
+    "precondition_actual": "单独将双击关闭从off设为on，按位置关闭即时仍on；General原生选择Français并遵循重启提示，再选择Performance。清理上一COM-de测试组及其N后，独立新建本项G1/G2/N。",
+    "settings_observed": "两个开关均on。标题：Fermer les onglets par double-clic。说明：Double-cliquez sur un onglet pour le fermer. En vue partagée, seul le volet cliqué se ferme. Les onglets épinglés et les favoris conservent leurs actions de double-clic habituelles. 标题：Fermer les onglets selon leur position。说明：Ajoute aux menus des onglets et des groupes des options pour fermer les onglets à gauche ou à droite, ou au-dessus ou en dessous dans une barre verticale.",
+    "steps_executed": [
+      "实读起始语言、布局与两个开关；仅点击双击关闭，复读on/on。",
+      "General下拉选择Français，选择Restart Phi；CU重开核实PID84927及法语。",
+      "选择Performance并保存General及Advanced完整截图。",
+      "原生关闭上一COM-de组及其普通N；新建G1，通过Nouveau groupe d'onglets成组并Renommer le groupe命名；Nouvel onglet dans le groupe创建G2；Cmd+T创建组外N。",
+      "核实组成员数及顺序，保存before；右键普通N、保存normal-menu；Cancel后右键组标题、保存group-menu；Cancel后保存after。"
+    ],
+    "unit_id": "VIS-02-PER-fr"
+  }
+}

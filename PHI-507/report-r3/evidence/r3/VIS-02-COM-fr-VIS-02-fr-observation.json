@@ -1,0 +1,45 @@
+{
+  "unit_id": "VIS-02-COM-fr",
+  "job": "VIS-02-fr",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-fr-observations.json",
+  "observation": {
+    "active_after": "N；恢复语言重启后标题为New Tab",
+    "active_before": "N",
+    "after": "本项检查结束时Confortable组[G1,G2]及组后N保留。统一恢复后为Balanced纵向，组内两个标题仍Nouvel onglet，组后活动N标题New Tab；无多选、菜单或确认框。",
+    "before": "TC-PHI507-r2-VIS-02-COM-fr组[G1,G2]，组计数2，其后普通N；三个tabStripTab标题均Nouvel onglet，无多选、本项无split。",
+    "confirmation_choices": "组重命名选择Enregistrer；清理上一BAL-fr组时未出现确认框。本项检查时Français已生效，无重复语言重启。收尾选择Langue du système后，提示“Redémarrer Phi ?”及“La langue sélectionnée sera appliquée après le redémarrage de Phi. Redémarrer maintenant ?”，选择Redémarrer Phi；返回App quit后通过CU重开。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-COM-fr attempt1 layout",
+      "EVIDENCE: VIS-02-COM-fr attempt1 settings",
+      "EVIDENCE: VIS-02-COM-fr attempt1 setup-state",
+      "EVIDENCE: VIS-02-COM-fr attempt1 before",
+      "EVIDENCE: VIS-02-COM-fr attempt1 normal-menu",
+      "EVIDENCE: VIS-02-COM-fr attempt1 group-menu",
+      "EVIDENCE: VIS-02-COM-fr attempt1 after",
+      "EVIDENCE: VIS-02-COM-fr attempt1 restore-switches",
+      "EVIDENCE: VIS-02-COM-fr attempt1 restore-layout",
+      "EVIDENCE: VIS-02-COM-fr attempt1 restore-restart-result",
+      "EVIDENCE: VIS-02-COM-fr attempt1 restored-general",
+      "EVIDENCE: VIS-02-COM-fr attempt1 restored-switches",
+      "EVIDENCE: VIS-02-COM-fr attempt1 ending-state"
+    ],
+    "identity_checks": "检查时指定路径PID84927、Window=Nouvel onglet；依创建顺序和屏幕核对三个tabStripTab，组标题原生text含完整TC名及计数2，G1/G2在组内，最右N活动。收尾重启PID85395、Window=New Tab；纵向原生树再次确认组下两行和组外selected N。无Web文档或打开编号主张。",
+    "language_observed": "检查时General=Français。普通菜单逐字可见：Épingler；Dupliquer；Copier le lien；Ouvrir en Split View；Ajouter à la barre de favoris；Ajouter à un dossier；Nouveau groupe d'onglets；Ajouter à un groupe；Déplacer vers un Espace；Fermer；Fermer les autres onglets；Fermer les onglets à gauche；Fermer les onglets à droite。除最后一项禁用外，其余主菜单项可用。组标题菜单：Nouvel onglet dans le groupe；Renommer le groupe；Modifier la couleur；Réduire le groupe；Dissocier；Fermer le groupe；Fermer les onglets à gauche du groupe；Fermer les onglets à droite du groupe，均可用。指定两开关、两说明及四条方向文案与提供的法语表逐字一致；普通菜单另实见英文词组Split View。收尾恢复System Default后实读英文界面。",
+    "layout_observed": "Comfortable对应Confortable卡片选中，外部标签栏横向。两段说明各2行，换行位置与本项settings截图所示一致，完整可读。普通菜单为左右方向：Fermer les onglets à gauche可用，Fermer les onglets à droite禁用；该菜单位于截图右缘，右侧边界及部分箭头超出画面，方向文字仍可读且未见省略号。组菜单完整入图，两条左右方向项均可用、单行完整。横向组标题和标签标题因可用宽度显示省略；组完整名称由原生text核实。收尾恢复Balanced卡片选中。",
+    "not_executed_reason": "所有指定偏好与菜单读取动作均已执行；普通菜单的完整右侧边界未收入CU返回截图，保留原图并记录此取证限制。",
+    "operator_errors": [
+      "setup辅助匹配仅接受texte且未包含成员计数，匹配失败在CU点击前停止。随后读取完整现场，实际行为text TC-PHI507-r2-VIS-02-COM-fr 1；按新树继续创建G2，未重建或覆盖已成功对象。"
+    ],
+    "precondition_actual": "关闭上一BAL-fr组及其N；General实读Français，选择Confortable并截图确认。Advanced实读on/on；独立新建本项G1/G2/N，组计数2，N在组外。",
+    "settings_observed": "检查时两个开关均on。标题：Fermer les onglets par double-clic。说明：Double-cliquez sur un onglet pour le fermer. En vue partagée, seul le volet cliqué se ferme. Les onglets épinglés et les favoris conservent leurs actions de double-clic habituelles. 标题：Fermer les onglets selon leur position。说明：Ajoute aux menus des onglets et des groupes des options pour fermer les onglets à gauche ou à droite, ou au-dessus ou en dessous dans une barre verticale. 收尾只点击双击关闭恢复off，另一项即时仍on；语言恢复重启后再次实读off/on。",
+    "steps_executed": [
+      "在本项setup关闭上一BAL-fr组及N。",
+      "General确认Français并选择Confortable，保存布局图；Advanced读取两个开关和说明并保存完整图。",
+      "右键实际tabStripTab新建组，原生重命名为TC-PHI507-r2-VIS-02-COM-fr；组内新建G2，Cmd+T新建组外N；核对计数2及三个对象。",
+      "保存before；右键最右侧普通N并保存normal-menu；Cancel后右键组标题并保存group-menu；Cancel后保存after。",
+      "统一收尾：仅将双击关闭恢复off并复读off/on；恢复Équilibré及Langue du système，选择Redémarrer Phi；CU重开PID85395，实读System Default、Balanced选中、off/on，关闭Settings并保存ending-state。"
+    ],
+    "unit_id": "VIS-02-COM-fr"
+  }
+}

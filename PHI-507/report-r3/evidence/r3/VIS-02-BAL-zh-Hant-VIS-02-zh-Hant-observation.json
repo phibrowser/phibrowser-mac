@@ -1,0 +1,41 @@
+{
+  "unit_id": "VIS-02-BAL-zh-Hant",
+  "job": "VIS-02-zh-Hant",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r3/VIS-02-zh-Hant-observations.json",
+  "observation": {
+    "active_after": "G2；组内第二个新分頁在截图中高亮。",
+    "active_before": "G2；组内第二个新分頁在截图中高亮。",
+    "after": "N → TC-PHI507-r2-VIS-02-BAL-zh-Hant[G1,G2]，3个测试New Tab保留，组展开、成员2；菜单已取消。",
+    "before": "独立重建的N → TC-PHI507-r2-VIS-02-BAL-zh-Hant[G1,G2]，组展开、成员2。",
+    "confirmation_choices": "重命名选择「儲存」。关闭上一项测试组未出现确认框。普通菜单Cancel调用报错后使用Escape取消；未点击方向关闭项。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-02-BAL-zh-Hant attempt1 layout",
+      "EVIDENCE: VIS-02-BAL-zh-Hant attempt1 settings",
+      "EVIDENCE: VIS-02-BAL-zh-Hant attempt1 before",
+      "EVIDENCE: VIS-02-BAL-zh-Hant attempt1 normal-menu",
+      "EVIDENCE: VIS-02-BAL-zh-Hant attempt1 failure",
+      "EVIDENCE: VIS-02-BAL-zh-Hant attempt1 group-menu",
+      "EVIDENCE: VIS-02-BAL-zh-Hant attempt1 after"
+    ],
+    "identity_checks": "前后均实读指定应用PID 80405、Window=\"新分頁\"。普通页为顶层row，TC组下表格逐项显示两个新分頁；未沿用PER组。无网页提交或存活身份声明。",
+    "language_observed": "General重新实读「繁體中文」，浏览器chrome及本项目标设置、菜单为繁体中文。目标项未见key或英文文本。",
+    "layout_observed": "General从效能切为「平衡」，截图选中边框在平衡卡片；外部标签栏纵向。普通菜单完整显示：釘選、複製、拷貝連結、與目前分頁分割畫面、加入書籤、加入資料夾、新增分頁群組、加入群組、移至空間、關閉、關閉其他分頁、關閉上方分頁、關閉下方分頁；主菜单项均可用。组菜单：在群組中新增分頁、重新命名群組、變更顏色、收合群組、取消群組、關閉群組、關閉群組上方的分頁可用；「關閉群組下方的分頁」disabled且灰色。菜单目标文字均单行完整可见；侧栏长组标题显示省略号，原生树可读全文。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "普通菜单取证后，perform_secondary_action(Cancel)返回Computer Use -10005：element was invalidated，refetch因multiple elements匹配而无法开始。立即停止后续编排并保存failure原生树及截图；菜单仍在。随后Escape取消，get_app_state确认正常窗口及原集合后继续独立的组菜单观察。"
+    ],
+    "precondition_actual": "本项开始时关闭PER测试组及N，核实清理后的旧序列，再新建N、G1，通过原生菜单建BAL组并创建G2。繁體中文／平衡／on-on实读后执行菜单观察。",
+    "settings_observed": "「連按兩下關閉分頁」on；说明：「連按兩下分頁即可關閉；分割檢視時僅關閉點選的一側。固定分頁與書籤保留原有的連按兩下操作。」。「依位置批次關閉分頁」on；说明：「在分頁與分頁群組的右鍵選單中，提供關閉左側或右側分頁的選項；使用垂直分頁列時，顯示為關閉上方或下方分頁。」。双击说明一行，位置说明在「上方」后换行，全文可见，无省略号或遮挡；本项未重复点击已为on的开关。",
+    "steps_executed": [
+      "在本项开始时清理PER三个测试对象，独立建立BAL的N和两成员组。",
+      "General实读繁體中文并选择平衡，保存布局截图；读取Advanced两开关及说明并保存完整settings截图。",
+      "核对N、组名和两成员顺序，保存before。",
+      "右键普通N，逐字读取菜单及状态并保存normal-menu完整截图。",
+      "保存Cancel工具错误现场；Escape后重读确认菜单取消、对象保留。",
+      "右键BAL组标题，记录组菜单及方向项状态，保存group-menu完整截图。",
+      "Escape取消并保存after。"
+    ],
+    "unit_id": "VIS-02-BAL-zh-Hant"
+  }
+}

@@ -9285,17 +9285,18 @@
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
     "evidence": [
-      "qa-evidence/r4/DBL-13-observations.json",
-      "qa-evidence/r4/DBL-13-PER-cancel-01.png",
-      "qa-evidence/r4/DBL-13-PER-cancel-02.png",
-      "qa-evidence/r4/DBL-13-PER-cancel-03.png",
-      "qa-evidence/r4/DBL-13-PER-cancel-04.png",
-      "qa-evidence/r4/DBL-13-PER-cancel-05.png",
-      "qa-evidence/r4/DBL-13-PER-cancel-06.png",
-      "qa-evidence/r4/DBL-13-PER-cancel-07.png",
-      "qa-evidence/r4/DBL-13-PER-cancel-08.png",
-      "qa-evidence/r4/DBL-13-PER-cancel-09.png",
-      "qa-evidence/r4/DBL-13-quit-returns.json"
+      "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+      "qa-evidence/r4/DBL-13-PER-cancel-10.png",
+      "qa-evidence/r4/DBL-13-PER-cancel-11.png",
+      "qa-evidence/r4/DBL-13-PER-cancel-12.png",
+      "qa-evidence/r4/DBL-13-PER-cancel-13.png",
+      "qa-evidence/r4/DBL-13-PER-cancel-14.png",
+      "qa-evidence/r4/DBL-13-PER-cancel-15.png",
+      "qa-evidence/r4/DBL-13-PER-cancel-16.png",
+      "qa-evidence/r4/DBL-13-PER-cancel-17.png",
+      "qa-evidence/r4/DBL-13-PER-cancel-18.png",
+      "qa-evidence/r4/DBL-13-PER-cancel-19.png",
+      "qa-evidence/r4/DBL-13-link-preparation-retry-r4-run.json"
     ],
     "kind": "acceptance",
     "variants": [
@@ -9315,7 +9316,7 @@
       "id": "cancel",
       "label": "取消"
     },
-    "result": "blocked",
+    "result": "pass",
     "method": "Computer Use",
     "attempts": [
       {
@@ -9381,54 +9382,104 @@
         "notes": "Ripley已审阅20张关键、初始空白、退出确认、重开及最终截图；114次实际MCP均为CU。六变体均未构造完整A/B/C及unsaved B输入，双击/取消/离开全部未执行，不能判通过。各项等待约91–132秒仍只有对应A标题和空白正文。一次原生Quit/重开使PID92816→95460，旧A正文及编号曾出现，换新tag重建又空白；重开先显示X的图与随后实际A图单独注明，不混淆或宣称原文档跨重启存活。原因未定，正做独立原生恢复与准备路径对照；本条是当前未执行记录，后续若可恢复须另tag重跑保留此尝试。",
         "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
         "reviewed_at": "2026-10-30T18:48:12.268656+00:00"
+      },
+      {
+        "job": "DBL-13-link-preparation-retry-r4",
+        "round": 4,
+        "outcome": "pass",
+        "actual": "[A,B,C]；选中集 {B}；三页输入标记和原打开编号均保留",
+        "observation": {
+          "active_after": "B；逐页核对结束返回 B",
+          "active_before": "B",
+          "after": "[A,B,C]；选中集 {B}；三页输入标记和原打开编号均保留",
+          "before": "[A,B,C]；选中集 {B}；普通标签，无 split 配对或测试组",
+          "confirmation_choices": "核心观察到 1 次英文确认：Leave site? Changes you made may not be saved.；点击 Cancel。随后逐页核对期间未见重复确认。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-13-PER-cancel attempt1 original-settings",
+            "EVIDENCE: DBL-13-PER-cancel attempt1 settings",
+            "EVIDENCE: DBL-13-PER-cancel attempt1 before",
+            "EVIDENCE: DBL-13-PER-cancel attempt1 confirmation",
+            "EVIDENCE: DBL-13-PER-cancel attempt1 after",
+            "EVIDENCE: DBL-13-PER-cancel attempt1 retained-A",
+            "EVIDENCE: DBL-13-PER-cancel attempt1 retained-C",
+            "EVIDENCE: DBL-13-PER-cancel attempt1 retained-B"
+          ],
+          "identity_checks": "PID 97109；run=TC-PHI507-r2-DBL-13-PER-cancel。A=8938b473-a7ed-47df-89b1-f5c1e07f5e8f；B=5f5faed4-b619-47a0-b9ed-ef00650de4ce；C=c552e5b2-d42c-479d-b5fc-2dd449e72c48。结束逐页实读 KEEP-DBL-13-PER-cancel-A/C、DRAFT-DBL-13-PER-cancel-B，编号与准备时一致。",
+          "language_observed": "General 显示 System Default；原生界面及确认框为英文，未切换语言。",
+          "layout_observed": "通过 General 的 Performance button 切换，后续浏览器 chrome 为外部纵向、地址栏位于侧栏。",
+          "not_executed_reason": "",
+          "operator_errors": [
+            "切换 Performance 后未另取 General 选中态截图；保留了切换返回文字及后续实际 Performance chrome 的页面截图。"
+          ],
+          "precondition_actual": "独立 File→New Window 导航 A；通过真实 fixture 新标签链接建立后续页，再地址栏导航为准确 B/C。A/C 为 normal，B 为 unsaved；多页建成后输入三页标记，B 实见“离开确认已启用”。",
+          "settings_observed": "起始双击关闭 off、按位置关闭 on。仅点击双击关闭一次改为 on；即时原生树显示双击 on、按位置仍 on。核心动作使用 on/on。",
+          "steps_executed": [
+            "独立建立并实读 A/B/C 正文、批次、类型及打开编号。",
+            "在 B 原生 row 上请求 click_count:2。",
+            "确认框出现后点击 Cancel。",
+            "逐页核对 A、C、B 的标记和打开编号，结束返回 B。",
+            "输出本 unit 的 OBSERVATION。"
+          ],
+          "unit_id": "DBL-13-PER-cancel"
+        },
+        "evidence": [
+          "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+          "qa-evidence/r4/DBL-13-PER-cancel-10.png",
+          "qa-evidence/r4/DBL-13-PER-cancel-11.png",
+          "qa-evidence/r4/DBL-13-PER-cancel-12.png",
+          "qa-evidence/r4/DBL-13-PER-cancel-13.png",
+          "qa-evidence/r4/DBL-13-PER-cancel-14.png",
+          "qa-evidence/r4/DBL-13-PER-cancel-15.png",
+          "qa-evidence/r4/DBL-13-PER-cancel-16.png",
+          "qa-evidence/r4/DBL-13-PER-cancel-17.png",
+          "qa-evidence/r4/DBL-13-PER-cancel-18.png",
+          "qa-evidence/r4/DBL-13-PER-cancel-19.png",
+          "qa-evidence/r4/DBL-13-link-preparation-retry-r4-run.json"
+        ],
+        "evidence_metadata": "qa-evidence/r4/DBL-13-link-preparation-retry-r4-evidence.json",
+        "notes": "Ripley 已逐一核阅六个核心分支及结束状态截图：取消保留 ABC 和 B 草稿，离开仅关闭 B，A/C 文档身份与 KEEP 保留。COM-cancel 首次准备因 CU 元素过期无效，独立第二次准备和核心动作完成；旧无效尝试原样保留。PER 选中布局的 General 截图遗漏，以实际切换回执和独特布局界面佐证，未宣称存在该截图。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T19:44:16.476281+00:00"
       }
     ],
-    "actual": "仅 A（TC-PHI507-r2-DBL-13-PER-cancel-a2），正文空白；无组或 split。",
+    "actual": "[A,B,C]；选中集 {B}；三页输入标记和原打开编号均保留",
     "observation": {
-      "active_after": "A/{A}",
-      "active_before": "A/{A}",
-      "after": "仅 A（TC-PHI507-r2-DBL-13-PER-cancel-a2），正文空白；无组或 split。",
-      "before": "重建后仅 A（TC-PHI507-r2-DBL-13-PER-cancel-a2）；未创建 B/C。",
-      "confirmation_choices": "未触发被测离开确认。有限导航恢复中出现退出确认 1 次，选择 Quit；随后 CU 返回 App quit。",
+      "active_after": "B；逐页核对结束返回 B",
+      "active_before": "B",
+      "after": "[A,B,C]；选中集 {B}；三页输入标记和原打开编号均保留",
+      "before": "[A,B,C]；选中集 {B}；普通标签，无 split 配对或测试组",
+      "confirmation_choices": "核心观察到 1 次英文确认：Leave site? Changes you made may not be saved.；点击 Cancel。随后逐页核对期间未见重复确认。",
       "evidence_markers": [
-        "EVIDENCE: DBL-13-PER-cancel attempt1 initial-settings",
+        "EVIDENCE: DBL-13-PER-cancel attempt1 original-settings",
         "EVIDENCE: DBL-13-PER-cancel attempt1 settings",
-        "EVIDENCE: DBL-13-PER-cancel attempt1 setup-A",
-        "EVIDENCE: DBL-13-PER-cancel attempt1 setup-A-wait",
-        "EVIDENCE: DBL-13-PER-cancel attempt1 setup-A-stage",
-        "EVIDENCE: DBL-13-PER-cancel attempt1 setup-A-final-wait",
-        "EVIDENCE: DBL-13-PER-cancel attempt1 quit-result",
-        "EVIDENCE: DBL-13-PER-cancel attempt1 quit-confirm-result",
-        "EVIDENCE: DBL-13-PER-cancel attempt2 restart-result",
-        "EVIDENCE: DBL-13-PER-cancel attempt2 setup-A",
-        "EVIDENCE: DBL-13-PER-cancel attempt2 setup-A-stage",
-        "EVIDENCE: DBL-13-PER-cancel attempt2 setup-A-selected",
-        "EVIDENCE: DBL-13-PER-cancel attempt2 setup-A-late",
-        "EVIDENCE: DBL-13-PER-cancel attempt2 setup-A-raised",
-        "EVIDENCE: DBL-13-PER-cancel attempt2 setup-A-focus-return",
-        "EVIDENCE: DBL-13-PER-cancel attempt2 before",
-        "EVIDENCE: DBL-13-PER-cancel attempt2 after"
+        "EVIDENCE: DBL-13-PER-cancel attempt1 before",
+        "EVIDENCE: DBL-13-PER-cancel attempt1 confirmation",
+        "EVIDENCE: DBL-13-PER-cancel attempt1 after",
+        "EVIDENCE: DBL-13-PER-cancel attempt1 retained-A",
+        "EVIDENCE: DBL-13-PER-cancel attempt1 retained-C",
+        "EVIDENCE: DBL-13-PER-cancel attempt1 retained-B"
       ],
-      "identity_checks": "固定 app 路径；PID 92816 → 正常退出重开后 95460。恢复后旧 A 曾实见正文编号 2bd29006-72f7-44ae-a424-158330efb997；随后新 tag -a2 的 A 仅见标题，未见正文编号。",
-      "language_observed": "General 为 System Default，原生界面实际英文。",
-      "layout_observed": "General 中由 Balanced 切为 Performance，紫色选中框及纵向 chrome 已截图确认。",
-      "not_executed_reason": "新 tag A 在 131894ms 的读取中正文仍为空白，不能核对 fixture 正文身份或构造已输入的 unsaved B。未执行双击、取消、B 草稿保留和 A/C 存活检查。",
-      "operator_errors": [],
-      "precondition_actual": "仅 A 标题存在；缺正文批次、打开编号和输入框，A/B/C 与已输入 unsaved B 的前置未成立。",
-      "settings_observed": "起始实读 doubleClick=off、directional=on、Restore last session=on。本项仅将 doubleClick 改为 on，立即读取 directional 仍为 on。",
+      "identity_checks": "PID 97109；run=TC-PHI507-r2-DBL-13-PER-cancel。A=8938b473-a7ed-47df-89b1-f5c1e07f5e8f；B=5f5faed4-b619-47a0-b9ed-ef00650de4ce；C=c552e5b2-d42c-479d-b5fc-2dd449e72c48。结束逐页实读 KEEP-DBL-13-PER-cancel-A/C、DRAFT-DBL-13-PER-cancel-B，编号与准备时一致。",
+      "language_observed": "General 显示 System Default；原生界面及确认框为英文，未切换语言。",
+      "layout_observed": "通过 General 的 Performance button 切换，后续浏览器 chrome 为外部纵向、地址栏位于侧栏。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "切换 Performance 后未另取 General 选中态截图；保留了切换返回文字及后续实际 Performance chrome 的页面截图。"
+      ],
+      "precondition_actual": "独立 File→New Window 导航 A；通过真实 fixture 新标签链接建立后续页，再地址栏导航为准确 B/C。A/C 为 normal，B 为 unsaved；多页建成后输入三页标记，B 实见“离开确认已启用”。",
+      "settings_observed": "起始双击关闭 off、按位置关闭 on。仅点击双击关闭一次改为 on；即时原生树显示双击 on、按位置仍 on。核心动作使用 on/on。",
       "steps_executed": [
-        "读取起始窗口 PID 92816 及原生 General、Advanced 偏好，切 Performance，开启双击关闭。",
-        "新建 New Tab，使用 Close Other Tabs 清理本专用窗口旧 TC-A，再经地址栏导航本项 normal A；分段读取持续空白。",
-        "执行一次有限导航恢复：Cmd+Q，退出确认选择 Quit，通过 get_app_state 重开固定 app，实读新 PID 95460。",
-        "以 -a2 新 tag 重新建立 A；分段读取，并单击 A、选择 Window 同名项、切回原窗口核对，正文仍空白。",
-        "保存结束证据，保留实际 A 状态；未创建 B/C，未执行被测双击。"
+        "独立建立并实读 A/B/C 正文、批次、类型及打开编号。",
+        "在 B 原生 row 上请求 click_count:2。",
+        "确认框出现后点击 Cancel。",
+        "逐页核对 A、C、B 的标记和打开编号，结束返回 B。",
+        "输出本 unit 的 OBSERVATION。"
       ],
       "unit_id": "DBL-13-PER-cancel"
     },
-    "notes": "Ripley已审阅20张关键、初始空白、退出确认、重开及最终截图；114次实际MCP均为CU。六变体均未构造完整A/B/C及unsaved B输入，双击/取消/离开全部未执行，不能判通过。各项等待约91–132秒仍只有对应A标题和空白正文。一次原生Quit/重开使PID92816→95460，旧A正文及编号曾出现，换新tag重建又空白；重开先显示X的图与随后实际A图单独注明，不混淆或宣称原文档跨重启存活。原因未定，正做独立原生恢复与准备路径对照；本条是当前未执行记录，后续若可恢复须另tag重跑保留此尝试。",
+    "notes": "Ripley 已逐一核阅六个核心分支及结束状态截图：取消保留 ABC 和 B 草稿，离开仅关闭 B，A/C 文档身份与 KEEP 保留。COM-cancel 首次准备因 CU 元素过期无效，独立第二次准备和核心动作完成；旧无效尝试原样保留。PER 选中布局的 General 截图遗漏，以实际切换回执和独特布局界面佐证，未宣称存在该截图。",
     "reviewed_by": "Ripley",
-    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列",
-    "not_run_reason": "新 tag A 在 131894ms 的读取中正文仍为空白，不能核对 fixture 正文身份或构造已输入的 unsaved B。未执行双击、取消、B 草稿保留和 A/C 存活检查。"
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-13",
@@ -9452,9 +9503,16 @@
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
     "evidence": [
-      "qa-evidence/r4/DBL-13-observations.json",
-      "qa-evidence/r4/DBL-13-PER-leave-01.png",
-      "qa-evidence/r4/DBL-13-PER-leave-02.png"
+      "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+      "qa-evidence/r4/DBL-13-PER-leave-03.png",
+      "qa-evidence/r4/DBL-13-PER-leave-04.png",
+      "qa-evidence/r4/DBL-13-PER-leave-05.png",
+      "qa-evidence/r4/DBL-13-PER-leave-06.png",
+      "qa-evidence/r4/DBL-13-PER-leave-07.png",
+      "qa-evidence/r4/DBL-13-PER-leave-08.png",
+      "qa-evidence/r4/DBL-13-PER-leave-09.png",
+      "qa-evidence/r4/DBL-13-PER-leave-10.png",
+      "qa-evidence/r4/DBL-13-link-preparation-retry-r4-run.json"
     ],
     "kind": "acceptance",
     "variants": [
@@ -9474,7 +9532,7 @@
       "id": "leave",
       "label": "确认离开"
     },
-    "result": "blocked",
+    "result": "pass",
     "method": "Computer Use",
     "attempts": [
       {
@@ -9517,39 +9575,94 @@
         "notes": "Ripley已审阅20张关键、初始空白、退出确认、重开及最终截图；114次实际MCP均为CU。六变体均未构造完整A/B/C及unsaved B输入，双击/取消/离开全部未执行，不能判通过。各项等待约91–132秒仍只有对应A标题和空白正文。一次原生Quit/重开使PID92816→95460，旧A正文及编号曾出现，换新tag重建又空白；重开先显示X的图与随后实际A图单独注明，不混淆或宣称原文档跨重启存活。原因未定，正做独立原生恢复与准备路径对照；本条是当前未执行记录，后续若可恢复须另tag重跑保留此尝试。",
         "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
         "reviewed_at": "2026-10-30T18:48:12.268792+00:00"
+      },
+      {
+        "job": "DBL-13-link-preparation-retry-r4",
+        "round": 4,
+        "outcome": "pass",
+        "actual": "[A,C]；选中集 {C}；B 不在列表，A/C 标记和原编号保留",
+        "observation": {
+          "active_after": "双击确认离开后 C；逐页核对结束 C",
+          "active_before": "B",
+          "after": "[A,C]；选中集 {C}；B 不在列表，A/C 标记和原编号保留",
+          "before": "[A,B,C]；选中集 {B}；普通标签，无 split 配对或测试组",
+          "confirmation_choices": "核心确认 1 次，点击 Leave；后续核对未见重复确认。setup 清理上一取消变体专用窗口时另出现 1 次离开确认并点击 Leave，未计入核心次数。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-13-PER-leave attempt1 setup-cleanup-confirmation",
+            "EVIDENCE: DBL-13-PER-leave attempt1 before",
+            "EVIDENCE: DBL-13-PER-leave attempt1 confirmation",
+            "EVIDENCE: DBL-13-PER-leave attempt1 after",
+            "EVIDENCE: DBL-13-PER-leave attempt1 retained-A",
+            "EVIDENCE: DBL-13-PER-leave attempt1 retained-C"
+          ],
+          "identity_checks": "PID 97109；run=TC-PHI507-r2-DBL-13-PER-leave。A=38c06931-9008-4962-ab69-e5e18928faf0；B=f4b8c3e9-97c4-4550-8ffa-5d0ce7c7f5a6；C=1b3ad854-e89e-41d3-a055-5b53ec7f62fb。A/C 的 KEEP-DBL-13-PER-leave-A/C 及原编号逐页复读不变；B 关闭后无草稿可读。",
+          "language_observed": "英文；System Default 未改。",
+          "layout_observed": "Performance，外部纵向 chrome 再次确认；同布局未重复切换。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "清理上一纯 TC 专用窗口后，独立新窗口重建准确 A/B/C；A/C normal，B unsaved。三页输入标记，B 显示离开确认已启用。",
+          "settings_observed": "双击关闭 on、按位置关闭 on；本项未再次点击开关。",
+          "steps_executed": [
+            "File→Close Window 清理上一专用窗口，并处理其 setup 离开确认。",
+            "File→New Window 独立建立 A/B/C，逐页实读正文及编号并输入标记。",
+            "B 原生 row 请求 click_count:2。",
+            "核心确认点击 Leave。",
+            "逐页核对 A/C 标记和原编号，输出 OBSERVATION。"
+          ],
+          "unit_id": "DBL-13-PER-leave"
+        },
+        "evidence": [
+          "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+          "qa-evidence/r4/DBL-13-PER-leave-03.png",
+          "qa-evidence/r4/DBL-13-PER-leave-04.png",
+          "qa-evidence/r4/DBL-13-PER-leave-05.png",
+          "qa-evidence/r4/DBL-13-PER-leave-06.png",
+          "qa-evidence/r4/DBL-13-PER-leave-07.png",
+          "qa-evidence/r4/DBL-13-PER-leave-08.png",
+          "qa-evidence/r4/DBL-13-PER-leave-09.png",
+          "qa-evidence/r4/DBL-13-PER-leave-10.png",
+          "qa-evidence/r4/DBL-13-link-preparation-retry-r4-run.json"
+        ],
+        "evidence_metadata": "qa-evidence/r4/DBL-13-link-preparation-retry-r4-evidence.json",
+        "notes": "Ripley 已逐一核阅六个核心分支及结束状态截图：取消保留 ABC 和 B 草稿，离开仅关闭 B，A/C 文档身份与 KEEP 保留。COM-cancel 首次准备因 CU 元素过期无效，独立第二次准备和核心动作完成；旧无效尝试原样保留。PER 选中布局的 General 截图遗漏，以实际切换回执和独特布局界面佐证，未宣称存在该截图。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T19:44:16.476663+00:00"
       }
     ],
-    "actual": "仍仅 A，正文空白；无组或 split。",
+    "actual": "[A,C]；选中集 {C}；B 不在列表，A/C 标记和原编号保留",
     "observation": {
-      "active_after": "A/{A}",
-      "active_before": "A/{A}",
-      "after": "仍仅 A，正文空白；无组或 split。",
-      "before": "A（TC-PHI507-r2-DBL-13-PER-leave）；未创建 B/C。",
-      "confirmation_choices": "未触发被测离开确认，未选择确认离开。",
+      "active_after": "双击确认离开后 C；逐页核对结束 C",
+      "active_before": "B",
+      "after": "[A,C]；选中集 {C}；B 不在列表，A/C 标记和原编号保留",
+      "before": "[A,B,C]；选中集 {B}；普通标签，无 split 配对或测试组",
+      "confirmation_choices": "核心确认 1 次，点击 Leave；后续核对未见重复确认。setup 清理上一取消变体专用窗口时另出现 1 次离开确认并点击 Leave，未计入核心次数。",
       "evidence_markers": [
-        "EVIDENCE: DBL-13-PER-leave attempt1 setup-A",
+        "EVIDENCE: DBL-13-PER-leave attempt1 setup-cleanup-confirmation",
         "EVIDENCE: DBL-13-PER-leave attempt1 before",
-        "EVIDENCE: DBL-13-PER-leave attempt1 after"
+        "EVIDENCE: DBL-13-PER-leave attempt1 confirmation",
+        "EVIDENCE: DBL-13-PER-leave attempt1 after",
+        "EVIDENCE: DBL-13-PER-leave attempt1 retained-A",
+        "EVIDENCE: DBL-13-PER-leave attempt1 retained-C"
       ],
-      "identity_checks": "固定 app 路径，PID 95460；A 标签及窗口标题匹配本 unit，正文编号无法核对。",
-      "language_observed": "System Default，原生界面英文。",
-      "layout_observed": "Performance；纵向标签和侧栏地址栏 chrome 再次确认，未重复切换。",
-      "not_executed_reason": "本项 A 在 91362ms 的读取中正文仍为空白，无法建立可核对的 A/B/C 和已输入 unsaved B。未执行双击、确认离开及存活检查。",
+      "identity_checks": "PID 97109；run=TC-PHI507-r2-DBL-13-PER-leave。A=38c06931-9008-4962-ab69-e5e18928faf0；B=f4b8c3e9-97c4-4550-8ffa-5d0ce7c7f5a6；C=1b3ad854-e89e-41d3-a055-5b53ec7f62fb。A/C 的 KEEP-DBL-13-PER-leave-A/C 及原编号逐页复读不变；B 关闭后无草稿可读。",
+      "language_observed": "英文；System Default 未改。",
+      "layout_observed": "Performance，外部纵向 chrome 再次确认；同布局未重复切换。",
+      "not_executed_reason": "",
       "operator_errors": [],
-      "precondition_actual": "仅本项 A 标题；未见正文、批次、编号及输入框，未创建 B/C 或草稿。",
-      "settings_observed": "Advanced 重读 doubleClick=on、directional=on、Restore last session=on；未点击已正确的开关。",
+      "precondition_actual": "清理上一纯 TC 专用窗口后，独立新窗口重建准确 A/B/C；A/C normal，B unsaved。三页输入标记，B 显示离开确认已启用。",
+      "settings_observed": "双击关闭 on、按位置关闭 on；本项未再次点击开关。",
       "steps_executed": [
-        "重读 Advanced 两个开关均为 on。",
-        "本专用窗口新建 New Tab → Close Other Tabs，清理上一项 TC-A。",
-        "经地址栏导航本项 normal A，分段读取至 91362ms，正文仍空白。",
-        "保存前置及结束证据，保留 A。"
+        "File→Close Window 清理上一专用窗口，并处理其 setup 离开确认。",
+        "File→New Window 独立建立 A/B/C，逐页实读正文及编号并输入标记。",
+        "B 原生 row 请求 click_count:2。",
+        "核心确认点击 Leave。",
+        "逐页核对 A/C 标记和原编号，输出 OBSERVATION。"
       ],
       "unit_id": "DBL-13-PER-leave"
     },
-    "notes": "Ripley已审阅20张关键、初始空白、退出确认、重开及最终截图；114次实际MCP均为CU。六变体均未构造完整A/B/C及unsaved B输入，双击/取消/离开全部未执行，不能判通过。各项等待约91–132秒仍只有对应A标题和空白正文。一次原生Quit/重开使PID92816→95460，旧A正文及编号曾出现，换新tag重建又空白；重开先显示X的图与随后实际A图单独注明，不混淆或宣称原文档跨重启存活。原因未定，正做独立原生恢复与准备路径对照；本条是当前未执行记录，后续若可恢复须另tag重跑保留此尝试。",
+    "notes": "Ripley 已逐一核阅六个核心分支及结束状态截图：取消保留 ABC 和 B 草稿，离开仅关闭 B，A/C 文档身份与 KEEP 保留。COM-cancel 首次准备因 CU 元素过期无效，独立第二次准备和核心动作完成；旧无效尝试原样保留。PER 选中布局的 General 截图遗漏，以实际切换回执和独特布局界面佐证，未宣称存在该截图。",
     "reviewed_by": "Ripley",
-    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列",
-    "not_run_reason": "本项 A 在 91362ms 的读取中正文仍为空白，无法建立可核对的 A/B/C 和已输入 unsaved B。未执行双击、确认离开及存活检查。"
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-13",
@@ -9573,9 +9686,17 @@
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
     "evidence": [
-      "qa-evidence/r4/DBL-13-observations.json",
-      "qa-evidence/r4/DBL-13-BAL-cancel-01.png",
-      "qa-evidence/r4/DBL-13-BAL-cancel-02.png"
+      "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+      "qa-evidence/r4/DBL-13-BAL-cancel-03.png",
+      "qa-evidence/r4/DBL-13-BAL-cancel-04.png",
+      "qa-evidence/r4/DBL-13-BAL-cancel-05.png",
+      "qa-evidence/r4/DBL-13-BAL-cancel-06.png",
+      "qa-evidence/r4/DBL-13-BAL-cancel-07.png",
+      "qa-evidence/r4/DBL-13-BAL-cancel-08.png",
+      "qa-evidence/r4/DBL-13-BAL-cancel-09.png",
+      "qa-evidence/r4/DBL-13-BAL-cancel-10.png",
+      "qa-evidence/r4/DBL-13-BAL-cancel-11.png",
+      "qa-evidence/r4/DBL-13-link-preparation-retry-r4-run.json"
     ],
     "kind": "acceptance",
     "variants": [
@@ -9595,7 +9716,7 @@
       "id": "cancel",
       "label": "取消"
     },
-    "result": "blocked",
+    "result": "pass",
     "method": "Computer Use",
     "attempts": [
       {
@@ -9639,40 +9760,97 @@
         "notes": "Ripley已审阅20张关键、初始空白、退出确认、重开及最终截图；114次实际MCP均为CU。六变体均未构造完整A/B/C及unsaved B输入，双击/取消/离开全部未执行，不能判通过。各项等待约91–132秒仍只有对应A标题和空白正文。一次原生Quit/重开使PID92816→95460，旧A正文及编号曾出现，换新tag重建又空白；重开先显示X的图与随后实际A图单独注明，不混淆或宣称原文档跨重启存活。原因未定，正做独立原生恢复与准备路径对照；本条是当前未执行记录，后续若可恢复须另tag重跑保留此尝试。",
         "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
         "reviewed_at": "2026-10-30T18:48:12.268803+00:00"
+      },
+      {
+        "job": "DBL-13-link-preparation-retry-r4",
+        "round": 4,
+        "outcome": "pass",
+        "actual": "[A,B,C]；选中集 {B}；三页标记和原编号保留",
+        "observation": {
+          "active_after": "B；逐页核对结束返回 B",
+          "active_before": "B",
+          "after": "[A,B,C]；选中集 {B}；三页标记和原编号保留",
+          "before": "[A,B,C]；选中集 {B}；普通标签，无 split 配对或测试组",
+          "confirmation_choices": "核心观察到 1 次 Leave site? Changes you made may not be saved.；点击 Cancel。后续逐页核对未见重复确认。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-13-BAL-cancel attempt1 layout",
+            "EVIDENCE: DBL-13-BAL-cancel attempt1 before",
+            "EVIDENCE: DBL-13-BAL-cancel attempt1 confirmation",
+            "EVIDENCE: DBL-13-BAL-cancel attempt1 after",
+            "EVIDENCE: DBL-13-BAL-cancel attempt1 retained-A",
+            "EVIDENCE: DBL-13-BAL-cancel attempt1 retained-C",
+            "EVIDENCE: DBL-13-BAL-cancel attempt1 retained-B"
+          ],
+          "identity_checks": "PID 97109；run=TC-PHI507-r2-DBL-13-BAL-cancel。A=d4a5f67e-f595-4a1f-9a14-b8021b79b16b；B=e22e2e87-7e83-429a-86ad-ca927b1dd097；C=d8bc64f6-a86c-4128-8fca-3dabbeb8fcc7。KEEP-DBL-13-BAL-cancel-A/C、DRAFT-DBL-13-BAL-cancel-B 与原编号均逐页复读保留。",
+          "language_observed": "General=System Default；英文。",
+          "layout_observed": "General 选择 Balanced，截图显示选中；浏览器为外部纵向。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "清理上一专用窗口，独立新窗口准确建立 A/B/C；A/C normal 与 KEEP 标记，B unsaved 与 DRAFT；B 实见离开确认已启用。",
+          "settings_observed": "Advanced 原生树复读双击关闭 on、按位置关闭 on；未点击开关。",
+          "steps_executed": [
+            "General 选择 Balanced 并截图，复读双开关。",
+            "独立 File→New Window，按真实 fixture 链接及准确地址导航建立 A/B/C。",
+            "输入并实读三页标记、类型和编号。",
+            "B 原生 row 请求 click_count:2，确认框点击 Cancel。",
+            "逐页复读 A/C/B，输出 OBSERVATION。"
+          ],
+          "unit_id": "DBL-13-BAL-cancel"
+        },
+        "evidence": [
+          "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+          "qa-evidence/r4/DBL-13-BAL-cancel-03.png",
+          "qa-evidence/r4/DBL-13-BAL-cancel-04.png",
+          "qa-evidence/r4/DBL-13-BAL-cancel-05.png",
+          "qa-evidence/r4/DBL-13-BAL-cancel-06.png",
+          "qa-evidence/r4/DBL-13-BAL-cancel-07.png",
+          "qa-evidence/r4/DBL-13-BAL-cancel-08.png",
+          "qa-evidence/r4/DBL-13-BAL-cancel-09.png",
+          "qa-evidence/r4/DBL-13-BAL-cancel-10.png",
+          "qa-evidence/r4/DBL-13-BAL-cancel-11.png",
+          "qa-evidence/r4/DBL-13-link-preparation-retry-r4-run.json"
+        ],
+        "evidence_metadata": "qa-evidence/r4/DBL-13-link-preparation-retry-r4-evidence.json",
+        "notes": "Ripley 已逐一核阅六个核心分支及结束状态截图：取消保留 ABC 和 B 草稿，离开仅关闭 B，A/C 文档身份与 KEEP 保留。COM-cancel 首次准备因 CU 元素过期无效，独立第二次准备和核心动作完成；旧无效尝试原样保留。PER 选中布局的 General 截图遗漏，以实际切换回执和独特布局界面佐证，未宣称存在该截图。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T19:44:16.476698+00:00"
       }
     ],
-    "actual": "仍仅 A，正文空白；无组或 split。",
+    "actual": "[A,B,C]；选中集 {B}；三页标记和原编号保留",
     "observation": {
-      "active_after": "A/{A}",
-      "active_before": "A/{A}",
-      "after": "仍仅 A，正文空白；无组或 split。",
-      "before": "A（TC-PHI507-r2-DBL-13-BAL-cancel）；未创建 B/C。",
-      "confirmation_choices": "未触发被测离开确认，未选择取消。",
+      "active_after": "B；逐页核对结束返回 B",
+      "active_before": "B",
+      "after": "[A,B,C]；选中集 {B}；三页标记和原编号保留",
+      "before": "[A,B,C]；选中集 {B}；普通标签，无 split 配对或测试组",
+      "confirmation_choices": "核心观察到 1 次 Leave site? Changes you made may not be saved.；点击 Cancel。后续逐页核对未见重复确认。",
       "evidence_markers": [
-        "EVIDENCE: DBL-13-BAL-cancel attempt1 settings",
-        "EVIDENCE: DBL-13-BAL-cancel attempt1 setup-A",
+        "EVIDENCE: DBL-13-BAL-cancel attempt1 layout",
         "EVIDENCE: DBL-13-BAL-cancel attempt1 before",
-        "EVIDENCE: DBL-13-BAL-cancel attempt1 after"
+        "EVIDENCE: DBL-13-BAL-cancel attempt1 confirmation",
+        "EVIDENCE: DBL-13-BAL-cancel attempt1 after",
+        "EVIDENCE: DBL-13-BAL-cancel attempt1 retained-A",
+        "EVIDENCE: DBL-13-BAL-cancel attempt1 retained-C",
+        "EVIDENCE: DBL-13-BAL-cancel attempt1 retained-B"
       ],
-      "identity_checks": "固定 app 路径，PID 95460；A 标签及窗口标题匹配本 unit，正文编号无法核对。",
-      "language_observed": "General 为 System Default，原生界面英文。",
-      "layout_observed": "General 实际选择 Balanced，紫色选中框及纵向标签、顶部地址栏已截图确认。",
-      "not_executed_reason": "本项 A 在 94397ms 的读取中正文仍为空白，无法建立可核对的 A/B/C 和已输入 unsaved B。未执行双击、取消及存活检查。",
+      "identity_checks": "PID 97109；run=TC-PHI507-r2-DBL-13-BAL-cancel。A=d4a5f67e-f595-4a1f-9a14-b8021b79b16b；B=e22e2e87-7e83-429a-86ad-ca927b1dd097；C=d8bc64f6-a86c-4128-8fca-3dabbeb8fcc7。KEEP-DBL-13-BAL-cancel-A/C、DRAFT-DBL-13-BAL-cancel-B 与原编号均逐页复读保留。",
+      "language_observed": "General=System Default；英文。",
+      "layout_observed": "General 选择 Balanced，截图显示选中；浏览器为外部纵向。",
+      "not_executed_reason": "",
       "operator_errors": [],
-      "precondition_actual": "仅本项 A 标题；未见正文、批次、编号及输入框，未创建 B/C 或草稿。",
-      "settings_observed": "Advanced 重读 doubleClick=on、directional=on；未点击开关，Restore last session 未改。",
+      "precondition_actual": "清理上一专用窗口，独立新窗口准确建立 A/B/C；A/C normal 与 KEEP 标记，B unsaved 与 DRAFT；B 实见离开确认已启用。",
+      "settings_observed": "Advanced 原生树复读双击关闭 on、按位置关闭 on；未点击开关。",
       "steps_executed": [
-        "通过 General 选择 Balanced 并截图确认，读取 System Default。",
-        "Advanced 核对两个开关均为 on。",
-        "本专用窗口新建 New Tab → Close Other Tabs，再经地址栏导航本项 normal A。",
-        "分段读取至 94397ms，正文仍空白；保存结束证据。"
+        "General 选择 Balanced 并截图，复读双开关。",
+        "独立 File→New Window，按真实 fixture 链接及准确地址导航建立 A/B/C。",
+        "输入并实读三页标记、类型和编号。",
+        "B 原生 row 请求 click_count:2，确认框点击 Cancel。",
+        "逐页复读 A/C/B，输出 OBSERVATION。"
       ],
       "unit_id": "DBL-13-BAL-cancel"
     },
-    "notes": "Ripley已审阅20张关键、初始空白、退出确认、重开及最终截图；114次实际MCP均为CU。六变体均未构造完整A/B/C及unsaved B输入，双击/取消/离开全部未执行，不能判通过。各项等待约91–132秒仍只有对应A标题和空白正文。一次原生Quit/重开使PID92816→95460，旧A正文及编号曾出现，换新tag重建又空白；重开先显示X的图与随后实际A图单独注明，不混淆或宣称原文档跨重启存活。原因未定，正做独立原生恢复与准备路径对照；本条是当前未执行记录，后续若可恢复须另tag重跑保留此尝试。",
+    "notes": "Ripley 已逐一核阅六个核心分支及结束状态截图：取消保留 ABC 和 B 草稿，离开仅关闭 B，A/C 文档身份与 KEEP 保留。COM-cancel 首次准备因 CU 元素过期无效，独立第二次准备和核心动作完成；旧无效尝试原样保留。PER 选中布局的 General 截图遗漏，以实际切换回执和独特布局界面佐证，未宣称存在该截图。",
     "reviewed_by": "Ripley",
-    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列",
-    "not_run_reason": "本项 A 在 94397ms 的读取中正文仍为空白，无法建立可核对的 A/B/C 和已输入 unsaved B。未执行双击、取消及存活检查。"
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-13",
@@ -9696,9 +9874,16 @@
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
     "evidence": [
-      "qa-evidence/r4/DBL-13-observations.json",
-      "qa-evidence/r4/DBL-13-BAL-leave-01.png",
-      "qa-evidence/r4/DBL-13-BAL-leave-02.png"
+      "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+      "qa-evidence/r4/DBL-13-BAL-leave-03.png",
+      "qa-evidence/r4/DBL-13-BAL-leave-04.png",
+      "qa-evidence/r4/DBL-13-BAL-leave-05.png",
+      "qa-evidence/r4/DBL-13-BAL-leave-06.png",
+      "qa-evidence/r4/DBL-13-BAL-leave-07.png",
+      "qa-evidence/r4/DBL-13-BAL-leave-08.png",
+      "qa-evidence/r4/DBL-13-BAL-leave-09.png",
+      "qa-evidence/r4/DBL-13-BAL-leave-10.png",
+      "qa-evidence/r4/DBL-13-link-preparation-retry-r4-run.json"
     ],
     "kind": "acceptance",
     "variants": [
@@ -9718,7 +9903,7 @@
       "id": "leave",
       "label": "确认离开"
     },
-    "result": "blocked",
+    "result": "pass",
     "method": "Computer Use",
     "attempts": [
       {
@@ -9760,38 +9945,94 @@
         "notes": "Ripley已审阅20张关键、初始空白、退出确认、重开及最终截图；114次实际MCP均为CU。六变体均未构造完整A/B/C及unsaved B输入，双击/取消/离开全部未执行，不能判通过。各项等待约91–132秒仍只有对应A标题和空白正文。一次原生Quit/重开使PID92816→95460，旧A正文及编号曾出现，换新tag重建又空白；重开先显示X的图与随后实际A图单独注明，不混淆或宣称原文档跨重启存活。原因未定，正做独立原生恢复与准备路径对照；本条是当前未执行记录，后续若可恢复须另tag重跑保留此尝试。",
         "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
         "reviewed_at": "2026-10-30T18:48:12.268813+00:00"
+      },
+      {
+        "job": "DBL-13-link-preparation-retry-r4",
+        "round": 4,
+        "outcome": "pass",
+        "actual": "[A,C]；选中集 {C}；B 不在列表，A/C 标记和原编号保留",
+        "observation": {
+          "active_after": "双击确认离开后 C；逐页核对结束 C",
+          "active_before": "B",
+          "after": "[A,C]；选中集 {C}；B 不在列表，A/C 标记和原编号保留",
+          "before": "[A,B,C]；选中集 {B}；普通标签，无 split 配对或测试组",
+          "confirmation_choices": "核心确认 1 次，点击 Leave；后续核对未见重复确认。setup 清理上一项另有 1 次离开确认，点击 Leave。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-13-BAL-leave attempt1 setup-cleanup-confirmation",
+            "EVIDENCE: DBL-13-BAL-leave attempt1 before",
+            "EVIDENCE: DBL-13-BAL-leave attempt1 confirmation",
+            "EVIDENCE: DBL-13-BAL-leave attempt1 after",
+            "EVIDENCE: DBL-13-BAL-leave attempt1 retained-A",
+            "EVIDENCE: DBL-13-BAL-leave attempt1 retained-C"
+          ],
+          "identity_checks": "PID 97109；run=TC-PHI507-r2-DBL-13-BAL-leave。A=164d8980-da1d-4ded-8540-e399e5acff91；B=039ab160-0b93-4de0-a97a-ef8f9991d210；C=a8736eab-0f19-4ba0-a739-fe211a0b4746。A/C KEEP-DBL-13-BAL-leave-A/C 与原编号逐页复读不变；B 关闭后无草稿可读。",
+          "language_observed": "英文；System Default 未改。",
+          "layout_observed": "Balanced，外部纵向 chrome 再次确认；未重复选择布局。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "独立新窗口 A/B/C；A/C normal，B unsaved。三页实际输入标记，B 离开确认已启用。上一专用窗口清理确认单独处理。",
+          "settings_observed": "双击关闭 on、按位置关闭 on；本项未切换开关。",
+          "steps_executed": [
+            "File→Close Window 清理上一专用窗口，setup 确认点击 Leave。",
+            "独立新窗口重建准确 A/B/C，实读正文、类型、编号及输入标记。",
+            "B 原生 row 请求 click_count:2。",
+            "核心确认点击 Leave。",
+            "逐页核对 A/C 标记和原编号，输出 OBSERVATION。"
+          ],
+          "unit_id": "DBL-13-BAL-leave"
+        },
+        "evidence": [
+          "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+          "qa-evidence/r4/DBL-13-BAL-leave-03.png",
+          "qa-evidence/r4/DBL-13-BAL-leave-04.png",
+          "qa-evidence/r4/DBL-13-BAL-leave-05.png",
+          "qa-evidence/r4/DBL-13-BAL-leave-06.png",
+          "qa-evidence/r4/DBL-13-BAL-leave-07.png",
+          "qa-evidence/r4/DBL-13-BAL-leave-08.png",
+          "qa-evidence/r4/DBL-13-BAL-leave-09.png",
+          "qa-evidence/r4/DBL-13-BAL-leave-10.png",
+          "qa-evidence/r4/DBL-13-link-preparation-retry-r4-run.json"
+        ],
+        "evidence_metadata": "qa-evidence/r4/DBL-13-link-preparation-retry-r4-evidence.json",
+        "notes": "Ripley 已逐一核阅六个核心分支及结束状态截图：取消保留 ABC 和 B 草稿，离开仅关闭 B，A/C 文档身份与 KEEP 保留。COM-cancel 首次准备因 CU 元素过期无效，独立第二次准备和核心动作完成；旧无效尝试原样保留。PER 选中布局的 General 截图遗漏，以实际切换回执和独特布局界面佐证，未宣称存在该截图。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T19:44:16.476729+00:00"
       }
     ],
-    "actual": "仍仅 A，正文空白；无组或 split。",
+    "actual": "[A,C]；选中集 {C}；B 不在列表，A/C 标记和原编号保留",
     "observation": {
-      "active_after": "A/{A}",
-      "active_before": "A/{A}",
-      "after": "仍仅 A，正文空白；无组或 split。",
-      "before": "A（TC-PHI507-r2-DBL-13-BAL-leave）；未创建 B/C。",
-      "confirmation_choices": "未触发被测离开确认，未选择确认离开。",
+      "active_after": "双击确认离开后 C；逐页核对结束 C",
+      "active_before": "B",
+      "after": "[A,C]；选中集 {C}；B 不在列表，A/C 标记和原编号保留",
+      "before": "[A,B,C]；选中集 {B}；普通标签，无 split 配对或测试组",
+      "confirmation_choices": "核心确认 1 次，点击 Leave；后续核对未见重复确认。setup 清理上一项另有 1 次离开确认，点击 Leave。",
       "evidence_markers": [
-        "EVIDENCE: DBL-13-BAL-leave attempt1 setup-A",
+        "EVIDENCE: DBL-13-BAL-leave attempt1 setup-cleanup-confirmation",
         "EVIDENCE: DBL-13-BAL-leave attempt1 before",
-        "EVIDENCE: DBL-13-BAL-leave attempt1 after"
+        "EVIDENCE: DBL-13-BAL-leave attempt1 confirmation",
+        "EVIDENCE: DBL-13-BAL-leave attempt1 after",
+        "EVIDENCE: DBL-13-BAL-leave attempt1 retained-A",
+        "EVIDENCE: DBL-13-BAL-leave attempt1 retained-C"
       ],
-      "identity_checks": "固定 app 路径，PID 95460；A 标签及窗口标题匹配本 unit，正文编号无法核对。",
-      "language_observed": "System Default，原生界面英文；本项未切换语言。",
-      "layout_observed": "Balanced；纵向标签、顶部地址栏 chrome 再次确认，未重复切换。",
-      "not_executed_reason": "本项 A 在 91865ms 的读取中正文仍为空白，无法建立可核对的 A/B/C 和已输入 unsaved B。未执行双击、确认离开及存活检查。",
+      "identity_checks": "PID 97109；run=TC-PHI507-r2-DBL-13-BAL-leave。A=164d8980-da1d-4ded-8540-e399e5acff91；B=039ab160-0b93-4de0-a97a-ef8f9991d210；C=a8736eab-0f19-4ba0-a739-fe211a0b4746。A/C KEEP-DBL-13-BAL-leave-A/C 与原编号逐页复读不变；B 关闭后无草稿可读。",
+      "language_observed": "英文；System Default 未改。",
+      "layout_observed": "Balanced，外部纵向 chrome 再次确认；未重复选择布局。",
+      "not_executed_reason": "",
       "operator_errors": [],
-      "precondition_actual": "仅本项 A 标题；未见正文、批次、编号及输入框，未创建 B/C 或草稿。",
-      "settings_observed": "沿用已实读 doubleClick=on、directional=on；本项未改开关。",
+      "precondition_actual": "独立新窗口 A/B/C；A/C normal，B unsaved。三页实际输入标记，B 离开确认已启用。上一专用窗口清理确认单独处理。",
+      "settings_observed": "双击关闭 on、按位置关闭 on；本项未切换开关。",
       "steps_executed": [
-        "从实际 chrome 再次核对 Balanced。",
-        "本专用窗口新建 New Tab → Close Other Tabs，再经地址栏导航本项 normal A。",
-        "分段读取至 91865ms，正文仍空白；保存前置及结束证据。"
+        "File→Close Window 清理上一专用窗口，setup 确认点击 Leave。",
+        "独立新窗口重建准确 A/B/C，实读正文、类型、编号及输入标记。",
+        "B 原生 row 请求 click_count:2。",
+        "核心确认点击 Leave。",
+        "逐页核对 A/C 标记和原编号，输出 OBSERVATION。"
       ],
       "unit_id": "DBL-13-BAL-leave"
     },
-    "notes": "Ripley已审阅20张关键、初始空白、退出确认、重开及最终截图；114次实际MCP均为CU。六变体均未构造完整A/B/C及unsaved B输入，双击/取消/离开全部未执行，不能判通过。各项等待约91–132秒仍只有对应A标题和空白正文。一次原生Quit/重开使PID92816→95460，旧A正文及编号曾出现，换新tag重建又空白；重开先显示X的图与随后实际A图单独注明，不混淆或宣称原文档跨重启存活。原因未定，正做独立原生恢复与准备路径对照；本条是当前未执行记录，后续若可恢复须另tag重跑保留此尝试。",
+    "notes": "Ripley 已逐一核阅六个核心分支及结束状态截图：取消保留 ABC 和 B 草稿，离开仅关闭 B，A/C 文档身份与 KEEP 保留。COM-cancel 首次准备因 CU 元素过期无效，独立第二次准备和核心动作完成；旧无效尝试原样保留。PER 选中布局的 General 截图遗漏，以实际切换回执和独特布局界面佐证，未宣称存在该截图。",
     "reviewed_by": "Ripley",
-    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列",
-    "not_run_reason": "本项 A 在 91865ms 的读取中正文仍为空白，无法建立可核对的 A/B/C 和已输入 unsaved B。未执行双击、确认离开及存活检查。"
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-13",
@@ -9815,9 +10056,19 @@
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
     "evidence": [
-      "qa-evidence/r4/DBL-13-observations.json",
-      "qa-evidence/r4/DBL-13-COM-cancel-01.png",
-      "qa-evidence/r4/DBL-13-COM-cancel-02.png"
+      "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+      "qa-evidence/r4/DBL-13-COM-cancel-03.png",
+      "qa-evidence/r4/DBL-13-COM-cancel-04.png",
+      "qa-evidence/r4/DBL-13-COM-cancel-05.png",
+      "qa-evidence/r4/DBL-13-COM-cancel-06.png",
+      "qa-evidence/r4/DBL-13-COM-cancel-07.png",
+      "qa-evidence/r4/DBL-13-COM-cancel-08.png",
+      "qa-evidence/r4/DBL-13-COM-cancel-09.png",
+      "qa-evidence/r4/DBL-13-COM-cancel-10.png",
+      "qa-evidence/r4/DBL-13-COM-cancel-11.png",
+      "qa-evidence/r4/DBL-13-COM-cancel-12.png",
+      "qa-evidence/r4/DBL-13-link-preparation-retry-r4-run.json",
+      "qa-evidence/r4/DBL-13-link-preparation-retry-r4-invalid-element-returns.json"
     ],
     "kind": "acceptance",
     "variants": [
@@ -9837,7 +10088,7 @@
       "id": "cancel",
       "label": "取消"
     },
-    "result": "blocked",
+    "result": "pass",
     "method": "Computer Use",
     "attempts": [
       {
@@ -9881,40 +10132,109 @@
         "notes": "Ripley已审阅20张关键、初始空白、退出确认、重开及最终截图；114次实际MCP均为CU。六变体均未构造完整A/B/C及unsaved B输入，双击/取消/离开全部未执行，不能判通过。各项等待约91–132秒仍只有对应A标题和空白正文。一次原生Quit/重开使PID92816→95460，旧A正文及编号曾出现，换新tag重建又空白；重开先显示X的图与随后实际A图单独注明，不混淆或宣称原文档跨重启存活。原因未定，正做独立原生恢复与准备路径对照；本条是当前未执行记录，后续若可恢复须另tag重跑保留此尝试。",
         "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
         "reviewed_at": "2026-10-30T18:48:12.268823+00:00"
+      },
+      {
+        "job": "DBL-13-link-preparation-retry-r4",
+        "round": 4,
+        "outcome": "pass",
+        "actual": "[A,B,C]；活动/选中 B；三页标记和原编号保留",
+        "observation": {
+          "active_after": "B；逐页核对结束返回 B",
+          "active_before": "B",
+          "after": "[A,B,C]；活动/选中 B；三页标记和原编号保留",
+          "before": "attempt2：[A,B,C]；活动/选中 B；普通标签，无 split 配对或测试组",
+          "confirmation_choices": "attempt2 核心观察到 1 次 Leave site? Changes you made may not be saved.；点击 Cancel。后续逐页核对未见重复确认。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-13-COM-cancel attempt1 layout",
+            "EVIDENCE: DBL-13-COM-cancel attempt1 failure",
+            "EVIDENCE: DBL-13-COM-cancel attempt1 failure-recovered",
+            "EVIDENCE: DBL-13-COM-cancel attempt2 before",
+            "EVIDENCE: DBL-13-COM-cancel attempt2 confirmation",
+            "EVIDENCE: DBL-13-COM-cancel attempt2 after",
+            "EVIDENCE: DBL-13-COM-cancel attempt2 retained-A",
+            "EVIDENCE: DBL-13-COM-cancel attempt2 retained-C",
+            "EVIDENCE: DBL-13-COM-cancel attempt2 retained-B"
+          ],
+          "identity_checks": "PID 97109；attempt2 run=TC-PHI507-r2-DBL-13-COM-cancel-a2。A=b8dce1ea-d30b-437e-a3a7-36b0521a07ca；B=13cfa2d9-041d-432d-833e-f595deac4c67；C=cf1f3e92-7371-4eae-ac9b-57b87c5f3b01。KEEP-DBL-13-COM-cancel-A/C、DRAFT-DBL-13-COM-cancel-B 及原编号逐页复读不变。导航后 AX 标签描述曾仍为旧名，切页后更新；核心动作前原生容器与屏幕均为准确 A/B/C。",
+          "language_observed": "General=System Default；英文。",
+          "layout_observed": "General 选择 Comfortable 并截图确认选中；外部横向标签条。",
+          "not_executed_reason": "attempt1 未执行被测双击：setup 的 New Window 原生元素失效。随后 attempt2 独立重建前置并执行了指定核心动作。",
+          "operator_errors": [
+            "attempt1 setup 点击最新 File→New Window 索引3，CU 返回 -10005：The element ID is no longer valid。立即停止该序列。",
+            "failure 的 get_app_state 仅返回菜单文字，未含 image；调用菜单明确暴露的 Cancel 后，failure-recovered 取得真实 image，再独立建立 attempt2。"
+          ],
+          "precondition_actual": "attempt1 尚未创建本项页面即遇菜单控件失效。正常取消菜单后，attempt2 通过 File→New Window 使用新 tag -a2 独立建立准确 A/B/C；A/C normal 与 KEEP，B unsaved 与 DRAFT，B 显示离开确认已启用。",
+          "settings_observed": "Advanced 复读双击关闭 on、按位置关闭 on；未点击开关。",
+          "steps_executed": [
+            "General 选择 Comfortable 并截图，复读双开关 on/on。",
+            "保留 attempt1 菜单失效文字及取消后的现场图。",
+            "attempt2 独立新窗口重建 A/B/C，实读正文、类型、编号和输入标记。",
+            "B 实际 tabStripTab button 请求 click_count:2，确认点击 Cancel。",
+            "逐页复读 A/C/B，输出 OBSERVATION。"
+          ],
+          "unit_id": "DBL-13-COM-cancel"
+        },
+        "evidence": [
+          "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+          "qa-evidence/r4/DBL-13-COM-cancel-03.png",
+          "qa-evidence/r4/DBL-13-COM-cancel-04.png",
+          "qa-evidence/r4/DBL-13-COM-cancel-05.png",
+          "qa-evidence/r4/DBL-13-COM-cancel-06.png",
+          "qa-evidence/r4/DBL-13-COM-cancel-07.png",
+          "qa-evidence/r4/DBL-13-COM-cancel-08.png",
+          "qa-evidence/r4/DBL-13-COM-cancel-09.png",
+          "qa-evidence/r4/DBL-13-COM-cancel-10.png",
+          "qa-evidence/r4/DBL-13-COM-cancel-11.png",
+          "qa-evidence/r4/DBL-13-COM-cancel-12.png",
+          "qa-evidence/r4/DBL-13-link-preparation-retry-r4-run.json",
+          "qa-evidence/r4/DBL-13-link-preparation-retry-r4-invalid-element-returns.json"
+        ],
+        "evidence_metadata": "qa-evidence/r4/DBL-13-link-preparation-retry-r4-evidence.json",
+        "notes": "Ripley 已逐一核阅六个核心分支及结束状态截图：取消保留 ABC 和 B 草稿，离开仅关闭 B，A/C 文档身份与 KEEP 保留。COM-cancel 首次准备因 CU 元素过期无效，独立第二次准备和核心动作完成；旧无效尝试原样保留。PER 选中布局的 General 截图遗漏，以实际切换回执和独特布局界面佐证，未宣称存在该截图。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T19:44:16.476759+00:00"
       }
     ],
-    "actual": "仍仅 A，正文空白；无组或 split。",
+    "actual": "[A,B,C]；活动/选中 B；三页标记和原编号保留",
     "observation": {
-      "active_after": "A/{A}，屏幕唯一活动标签。",
-      "active_before": "A/{A}，屏幕唯一活动标签。",
-      "after": "仍仅 A，正文空白；无组或 split。",
-      "before": "唯一 A（TC-PHI507-r2-DBL-13-COM-cancel）；未创建 B/C。",
-      "confirmation_choices": "未触发被测离开确认，未选择取消。",
+      "active_after": "B；逐页核对结束返回 B",
+      "active_before": "B",
+      "after": "[A,B,C]；活动/选中 B；三页标记和原编号保留",
+      "before": "attempt2：[A,B,C]；活动/选中 B；普通标签，无 split 配对或测试组",
+      "confirmation_choices": "attempt2 核心观察到 1 次 Leave site? Changes you made may not be saved.；点击 Cancel。后续逐页核对未见重复确认。",
       "evidence_markers": [
-        "EVIDENCE: DBL-13-COM-cancel attempt1 settings",
-        "EVIDENCE: DBL-13-COM-cancel attempt1 setup-A",
-        "EVIDENCE: DBL-13-COM-cancel attempt1 before",
-        "EVIDENCE: DBL-13-COM-cancel attempt1 after"
+        "EVIDENCE: DBL-13-COM-cancel attempt1 layout",
+        "EVIDENCE: DBL-13-COM-cancel attempt1 failure",
+        "EVIDENCE: DBL-13-COM-cancel attempt1 failure-recovered",
+        "EVIDENCE: DBL-13-COM-cancel attempt2 before",
+        "EVIDENCE: DBL-13-COM-cancel attempt2 confirmation",
+        "EVIDENCE: DBL-13-COM-cancel attempt2 after",
+        "EVIDENCE: DBL-13-COM-cancel attempt2 retained-A",
+        "EVIDENCE: DBL-13-COM-cancel attempt2 retained-C",
+        "EVIDENCE: DBL-13-COM-cancel attempt2 retained-B"
       ],
-      "identity_checks": "固定 app 路径，PID 95460。tabStripTab 的 Description 为 New Tab，内部 text、窗口标题及屏幕标签为本项 TC-A；正文编号无法核对。",
-      "language_observed": "General 为 System Default，原生界面英文。",
-      "layout_observed": "General 实际选择 Comfortable，紫色选中框及外部横向标签已截图确认。",
-      "not_executed_reason": "本项 A 在 91613ms 的读取中正文仍为空白，无法建立可核对的 A/B/C 和已输入 unsaved B。未执行双击、取消及存活检查。",
-      "operator_errors": [],
-      "precondition_actual": "仅本项 A 屏幕标签和窗口标题；未见正文、批次、编号及输入框，未创建 B/C 或草稿。",
-      "settings_observed": "Advanced 重读 doubleClick=on、directional=on；未点击开关。",
+      "identity_checks": "PID 97109；attempt2 run=TC-PHI507-r2-DBL-13-COM-cancel-a2。A=b8dce1ea-d30b-437e-a3a7-36b0521a07ca；B=13cfa2d9-041d-432d-833e-f595deac4c67；C=cf1f3e92-7371-4eae-ac9b-57b87c5f3b01。KEEP-DBL-13-COM-cancel-A/C、DRAFT-DBL-13-COM-cancel-B 及原编号逐页复读不变。导航后 AX 标签描述曾仍为旧名，切页后更新；核心动作前原生容器与屏幕均为准确 A/B/C。",
+      "language_observed": "General=System Default；英文。",
+      "layout_observed": "General 选择 Comfortable 并截图确认选中；外部横向标签条。",
+      "not_executed_reason": "attempt1 未执行被测双击：setup 的 New Window 原生元素失效。随后 attempt2 独立重建前置并执行了指定核心动作。",
+      "operator_errors": [
+        "attempt1 setup 点击最新 File→New Window 索引3，CU 返回 -10005：The element ID is no longer valid。立即停止该序列。",
+        "failure 的 get_app_state 仅返回菜单文字，未含 image；调用菜单明确暴露的 Cancel 后，failure-recovered 取得真实 image，再独立建立 attempt2。"
+      ],
+      "precondition_actual": "attempt1 尚未创建本项页面即遇菜单控件失效。正常取消菜单后，attempt2 通过 File→New Window 使用新 tag -a2 独立建立准确 A/B/C；A/C normal 与 KEEP，B unsaved 与 DRAFT，B 显示离开确认已启用。",
+      "settings_observed": "Advanced 复读双击关闭 on、按位置关闭 on；未点击开关。",
       "steps_executed": [
-        "通过 General 选择 Comfortable 并截图确认，读取 System Default。",
-        "Advanced 核对两个开关均为 on。",
-        "在新建 New Tab 的实际 tabStripTab 上打开菜单，选择 Close Other Tabs，再经地址栏导航本项 normal A。",
-        "分段读取至 91613ms，正文仍空白；记录容器 Description 与内部 text 的实际差异并保存结束证据。"
+        "General 选择 Comfortable 并截图，复读双开关 on/on。",
+        "保留 attempt1 菜单失效文字及取消后的现场图。",
+        "attempt2 独立新窗口重建 A/B/C，实读正文、类型、编号和输入标记。",
+        "B 实际 tabStripTab button 请求 click_count:2，确认点击 Cancel。",
+        "逐页复读 A/C/B，输出 OBSERVATION。"
       ],
       "unit_id": "DBL-13-COM-cancel"
     },
-    "notes": "Ripley已审阅20张关键、初始空白、退出确认、重开及最终截图；114次实际MCP均为CU。六变体均未构造完整A/B/C及unsaved B输入，双击/取消/离开全部未执行，不能判通过。各项等待约91–132秒仍只有对应A标题和空白正文。一次原生Quit/重开使PID92816→95460，旧A正文及编号曾出现，换新tag重建又空白；重开先显示X的图与随后实际A图单独注明，不混淆或宣称原文档跨重启存活。原因未定，正做独立原生恢复与准备路径对照；本条是当前未执行记录，后续若可恢复须另tag重跑保留此尝试。",
+    "notes": "Ripley 已逐一核阅六个核心分支及结束状态截图：取消保留 ABC 和 B 草稿，离开仅关闭 B，A/C 文档身份与 KEEP 保留。COM-cancel 首次准备因 CU 元素过期无效，独立第二次准备和核心动作完成；旧无效尝试原样保留。PER 选中布局的 General 截图遗漏，以实际切换回执和独特布局界面佐证，未宣称存在该截图。",
     "reviewed_by": "Ripley",
-    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列",
-    "not_run_reason": "本项 A 在 91613ms 的读取中正文仍为空白，无法建立可核对的 A/B/C 和已输入 unsaved B。未执行双击、取消及存活检查。"
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-13",
@@ -9938,10 +10258,19 @@
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
     "evidence": [
-      "qa-evidence/r4/DBL-13-observations.json",
-      "qa-evidence/r4/DBL-13-COM-leave-01.png",
-      "qa-evidence/r4/DBL-13-COM-leave-02.png",
-      "qa-evidence/r4/DBL-13-COM-leave-03.png"
+      "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+      "qa-evidence/r4/DBL-13-COM-leave-04.png",
+      "qa-evidence/r4/DBL-13-COM-leave-05.png",
+      "qa-evidence/r4/DBL-13-COM-leave-06.png",
+      "qa-evidence/r4/DBL-13-COM-leave-07.png",
+      "qa-evidence/r4/DBL-13-COM-leave-08.png",
+      "qa-evidence/r4/DBL-13-COM-leave-09.png",
+      "qa-evidence/r4/DBL-13-COM-leave-10.png",
+      "qa-evidence/r4/DBL-13-COM-leave-11.png",
+      "qa-evidence/r4/DBL-13-COM-leave-12.png",
+      "qa-evidence/r4/DBL-13-COM-leave-13.png",
+      "qa-evidence/r4/DBL-13-COM-leave-14.png",
+      "qa-evidence/r4/DBL-13-link-preparation-retry-r4-run.json"
     ],
     "kind": "acceptance",
     "variants": [
@@ -9961,7 +10290,7 @@
       "id": "leave",
       "label": "确认离开"
     },
-    "result": "blocked",
+    "result": "pass",
     "method": "Computer Use",
     "attempts": [
       {
@@ -10009,43 +10338,105 @@
         "notes": "Ripley已审阅20张关键、初始空白、退出确认、重开及最终截图；114次实际MCP均为CU。六变体均未构造完整A/B/C及unsaved B输入，双击/取消/离开全部未执行，不能判通过。各项等待约91–132秒仍只有对应A标题和空白正文。一次原生Quit/重开使PID92816→95460，旧A正文及编号曾出现，换新tag重建又空白；重开先显示X的图与随后实际A图单独注明，不混淆或宣称原文档跨重启存活。原因未定，正做独立原生恢复与准备路径对照；本条是当前未执行记录，后续若可恢复须另tag重跑保留此尝试。",
         "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
         "reviewed_at": "2026-10-30T18:48:12.268832+00:00"
+      },
+      {
+        "job": "DBL-13-link-preparation-retry-r4",
+        "round": 4,
+        "outcome": "pass",
+        "actual": "[A,C]；活动/选中 C；B 不在标签条。恢复 Balanced 后仍为 [A,C]、C/{C}",
+        "observation": {
+          "active_after": "双击确认离开后 C；逐页核对及偏好恢复结束仍 C",
+          "active_before": "B",
+          "after": "[A,C]；活动/选中 C；B 不在标签条。恢复 Balanced 后仍为 [A,C]、C/{C}",
+          "before": "[A,B,C]；活动/选中 B；普通标签，无 split 配对或测试组",
+          "confirmation_choices": "核心确认 1 次，点击 Leave；后续核对未见重复确认。setup 清理上一专用窗口另有 1 次离开确认并点击 Leave。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-13-COM-leave attempt1 setup-cleanup-confirmation",
+            "EVIDENCE: DBL-13-COM-leave attempt1 before",
+            "EVIDENCE: DBL-13-COM-leave attempt1 confirmation",
+            "EVIDENCE: DBL-13-COM-leave attempt1 after",
+            "EVIDENCE: DBL-13-COM-leave attempt1 retained-A",
+            "EVIDENCE: DBL-13-COM-leave attempt1 retained-C",
+            "EVIDENCE: DBL-13-COM-leave attempt1 restored-layout",
+            "EVIDENCE: DBL-13-COM-leave attempt1 restored-settings",
+            "EVIDENCE: DBL-13-COM-leave attempt1 ending"
+          ],
+          "identity_checks": "PID 97109；run=TC-PHI507-r2-DBL-13-COM-leave。A=109f94d8-203a-4c3a-bcef-63ab72e655b7；B=4bea5a08-06fe-417b-9720-20532da52519；C=22959e99-6f0b-45b2-93ec-5c566c472996。A/C KEEP-DBL-13-COM-leave-A/C 与原编号逐页复读不变；B 关闭后无草稿可读。导航后 AX 标签旧名在切页后更新，核心前准确 A/B/C。",
+          "language_observed": "英文；General 显示 System Default，收尾仍相同。",
+          "layout_observed": "核心动作使用 Comfortable 外部横向；同布局未重复切换。批次收尾在 General 恢复 Balanced，已截图确认选中及实际纵向 chrome。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "清理上一专用窗口并单独处理 setup 确认；独立新窗口准确建立 A/B/C。A/C normal 与 KEEP；B unsaved 与 DRAFT，离开确认已启用。",
+          "settings_observed": "核心使用双击关闭 on、按位置关闭 on。批次收尾只点击双击关闭一次恢复 off，即时原生树显示按位置仍 on；Restore last session 仍 on。未修改快捷键。",
+          "steps_executed": [
+            "File→Close Window 清理上一专用窗口，setup 确认点击 Leave。",
+            "独立新窗口重建准确 A/B/C，实读正文、类型、编号及标记。",
+            "B 实际 tabStripTab button 请求 click_count:2，核心确认点击 Leave。",
+            "逐页核对 A/C 标记与原编号，输出 OBSERVATION。",
+            "统一恢复 Balanced、双击关闭 off，逐次核对另一开关仍 on，关闭 Settings。",
+            "实读最后窗口 [A,C]、活动/选中 C，补充输出收尾 OBSERVATION。"
+          ],
+          "unit_id": "DBL-13-COM-leave"
+        },
+        "evidence": [
+          "qa-evidence/r4/DBL-13-link-preparation-retry-r4-observations.json",
+          "qa-evidence/r4/DBL-13-COM-leave-04.png",
+          "qa-evidence/r4/DBL-13-COM-leave-05.png",
+          "qa-evidence/r4/DBL-13-COM-leave-06.png",
+          "qa-evidence/r4/DBL-13-COM-leave-07.png",
+          "qa-evidence/r4/DBL-13-COM-leave-08.png",
+          "qa-evidence/r4/DBL-13-COM-leave-09.png",
+          "qa-evidence/r4/DBL-13-COM-leave-10.png",
+          "qa-evidence/r4/DBL-13-COM-leave-11.png",
+          "qa-evidence/r4/DBL-13-COM-leave-12.png",
+          "qa-evidence/r4/DBL-13-COM-leave-13.png",
+          "qa-evidence/r4/DBL-13-COM-leave-14.png",
+          "qa-evidence/r4/DBL-13-link-preparation-retry-r4-run.json"
+        ],
+        "evidence_metadata": "qa-evidence/r4/DBL-13-link-preparation-retry-r4-evidence.json",
+        "notes": "Ripley 已逐一核阅六个核心分支及结束状态截图：取消保留 ABC 和 B 草稿，离开仅关闭 B，A/C 文档身份与 KEEP 保留。COM-cancel 首次准备因 CU 元素过期无效，独立第二次准备和核心动作完成；旧无效尝试原样保留。PER 选中布局的 General 截图遗漏，以实际切换回执和独特布局界面佐证，未宣称存在该截图。",
+        "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+        "reviewed_at": "2026-10-30T19:44:16.476794+00:00"
       }
     ],
-    "actual": "仍仅 A（TC-PHI507-r2-DBL-13-COM-leave），正文空白；收尾仅恢复偏好，没有重建页面。",
+    "actual": "[A,C]；活动/选中 C；B 不在标签条。恢复 Balanced 后仍为 [A,C]、C/{C}",
     "observation": {
-      "active_after": "A/{A}；收尾恢复 Balanced 后原生 row 明示 selected。",
-      "active_before": "A/{A}，屏幕唯一活动标签。",
-      "after": "仍仅 A（TC-PHI507-r2-DBL-13-COM-leave），正文空白；收尾仅恢复偏好，没有重建页面。",
-      "before": "唯一 A（TC-PHI507-r2-DBL-13-COM-leave）；未创建 B/C。",
-      "confirmation_choices": "未触发被测离开确认，未选择确认离开。",
+      "active_after": "双击确认离开后 C；逐页核对及偏好恢复结束仍 C",
+      "active_before": "B",
+      "after": "[A,C]；活动/选中 C；B 不在标签条。恢复 Balanced 后仍为 [A,C]、C/{C}",
+      "before": "[A,B,C]；活动/选中 B；普通标签，无 split 配对或测试组",
+      "confirmation_choices": "核心确认 1 次，点击 Leave；后续核对未见重复确认。setup 清理上一专用窗口另有 1 次离开确认并点击 Leave。",
       "evidence_markers": [
-        "EVIDENCE: DBL-13-COM-leave attempt1 setup-A",
+        "EVIDENCE: DBL-13-COM-leave attempt1 setup-cleanup-confirmation",
         "EVIDENCE: DBL-13-COM-leave attempt1 before",
+        "EVIDENCE: DBL-13-COM-leave attempt1 confirmation",
         "EVIDENCE: DBL-13-COM-leave attempt1 after",
-        "EVIDENCE: DBL-13-COM-leave attempt1 restore-switches",
-        "EVIDENCE: DBL-13-COM-leave attempt1 restore-layout",
+        "EVIDENCE: DBL-13-COM-leave attempt1 retained-A",
+        "EVIDENCE: DBL-13-COM-leave attempt1 retained-C",
+        "EVIDENCE: DBL-13-COM-leave attempt1 restored-layout",
+        "EVIDENCE: DBL-13-COM-leave attempt1 restored-settings",
         "EVIDENCE: DBL-13-COM-leave attempt1 ending"
       ],
-      "identity_checks": "固定 app 路径，PID 95460。Comfortable 中 tabStripTab Description 为 New Tab，内部 text、窗口标题及屏幕标签为本项 TC-A；正文编号无法核对。收尾 Balanced 原生树显示本项 TC-A selected row。",
-      "language_observed": "System Default，原生界面英文；全程未切换语言。",
-      "layout_observed": "本项 Comfortable 外部横向标签再次确认；收尾通过 General 恢复 Balanced 并截图。",
-      "not_executed_reason": "本项 A 在 100910ms 的读取中正文仍为空白，无法建立可核对的 A/B/C 和已输入 unsaved B。未执行双击、确认离开及存活检查。",
+      "identity_checks": "PID 97109；run=TC-PHI507-r2-DBL-13-COM-leave。A=109f94d8-203a-4c3a-bcef-63ab72e655b7；B=4bea5a08-06fe-417b-9720-20532da52519；C=22959e99-6f0b-45b2-93ec-5c566c472996。A/C KEEP-DBL-13-COM-leave-A/C 与原编号逐页复读不变；B 关闭后无草稿可读。导航后 AX 标签旧名在切页后更新，核心前准确 A/B/C。",
+      "language_observed": "英文；General 显示 System Default，收尾仍相同。",
+      "layout_observed": "核心动作使用 Comfortable 外部横向；同布局未重复切换。批次收尾在 General 恢复 Balanced，已截图确认选中及实际纵向 chrome。",
+      "not_executed_reason": "",
       "operator_errors": [],
-      "precondition_actual": "仅本项 A 屏幕标签和窗口标题；未见正文、批次、编号及输入框，未创建 B/C 或草稿。",
-      "settings_observed": "本项使用已实读 doubleClick=on、directional=on。收尾仅将 doubleClick 改回 off，即时读取 directional 仍为 on、Restore last session=on；快捷键未修改。",
+      "precondition_actual": "清理上一专用窗口并单独处理 setup 确认；独立新窗口准确建立 A/B/C。A/C normal 与 KEEP；B unsaved 与 DRAFT，离开确认已启用。",
+      "settings_observed": "核心使用双击关闭 on、按位置关闭 on。批次收尾只点击双击关闭一次恢复 off，即时原生树显示按位置仍 on；Restore last session 仍 on。未修改快捷键。",
       "steps_executed": [
-        "从实际 chrome 再次核对 Comfortable。",
-        "本专用窗口新建 New Tab → Close Other Tabs，再经地址栏导航本项 normal A。",
-        "分段读取至 100910ms，正文仍空白；保存本项结束证据。",
-        "会话收尾：Advanced 仅将 doubleClick on→off，并读取两个开关即时值及 Restore last session；General 恢复 Balanced，保留 System Default。",
-        "关闭 Settings；Window 菜单列出本项 A 与旧 TC-X 窗口，调用原生 Cancel 后读取正常窗口并保存 ending 图。"
+        "File→Close Window 清理上一专用窗口，setup 确认点击 Leave。",
+        "独立新窗口重建准确 A/B/C，实读正文、类型、编号及标记。",
+        "B 实际 tabStripTab button 请求 click_count:2，核心确认点击 Leave。",
+        "逐页核对 A/C 标记与原编号，输出 OBSERVATION。",
+        "统一恢复 Balanced、双击关闭 off，逐次核对另一开关仍 on，关闭 Settings。",
+        "实读最后窗口 [A,C]、活动/选中 C，补充输出收尾 OBSERVATION。"
       ],
       "unit_id": "DBL-13-COM-leave"
     },
-    "notes": "Ripley已审阅20张关键、初始空白、退出确认、重开及最终截图；114次实际MCP均为CU。六变体均未构造完整A/B/C及unsaved B输入，双击/取消/离开全部未执行，不能判通过。各项等待约91–132秒仍只有对应A标题和空白正文。一次原生Quit/重开使PID92816→95460，旧A正文及编号曾出现，换新tag重建又空白；重开先显示X的图与随后实际A图单独注明，不混淆或宣称原文档跨重启存活。原因未定，正做独立原生恢复与准备路径对照；本条是当前未执行记录，后续若可恢复须另tag重跑保留此尝试。",
+    "notes": "Ripley 已逐一核阅六个核心分支及结束状态截图：取消保留 ABC 和 B 草稿，离开仅关闭 B，A/C 文档身份与 KEEP 保留。COM-cancel 首次准备因 CU 元素过期无效，独立第二次准备和核心动作完成；旧无效尝试原样保留。PER 选中布局的 General 截图遗漏，以实际切换回执和独特布局界面佐证，未宣称存在该截图。",
     "reviewed_by": "Ripley",
-    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列",
-    "not_run_reason": "本项 A 在 100910ms 的读取中正文仍为空白，无法建立可核对的 A/B/C 和已输入 unsaved B。未执行双击、确认离开及存活检查。"
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-14",

@@ -1,0 +1,159 @@
+我会仅通过 computer use 操作原生界面，在当前 New Tab 的地址栏打开指定文件地址，并在回车后 20 秒内观察页面、返回真实截图。
+
+Computer Use state (CUA App Version: 1001425)
+<app_specific_instructions>
+## Browser Computer Use
+
+When navigating to a new website or starting a separate web task, prefer opening a new tab instead of reusing the current tab; reuse the current tab only when the user explicitly asks to continue there or when the current page is clearly the right place to continue the existing workflow.
+</app_specific_instructions>
+<app_state>
+App=/Users/e2e02/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 32935)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: phi default favicon, Value: New Tab
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Refresh
+			22 button Extensions
+	23 close button
+	24 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	25 minimize button
+26 menu bar
+	27 Phi
+	28 File
+	29 Edit
+	30 View
+	31 Spaces
+	32 History
+	33 Bookmarks
+	34 Tab
+	35 Window
+	36 Help
+	37 *DEBUG*
+
+</app_state>
+
+App=com.phibrowser.opensource.Mac (pid 32935)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: phi default favicon, Value: New Tab
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Refresh
+			22 button Extensions
+	23 image Search
+	24 text field (settable) Value: file:///Users/e2e02/lane/test-site/index.html?tab=A&run=TC-PHI507-r1&kind=normal, Placeholder: Search or Enter URL
+	25 scroll area
+		26 table
+			27 row (selected)
+				28 cell (selected)
+					29 image Globe
+					30 text file:///Users/e2e02/lane/test-site/index.html?tab=A&run=TC-PHI507-r1&kind=normal
+			31 row (selectable)
+				32 cell
+					33 image Search
+					34 text file:///Users/e2e02/lane/test-site/index.html?tab=A&run=TC-PHI507-r1&kind=normal - Google Search
+	35 close button
+	36 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	37 minimize button
+38 menu bar
+	39 Phi
+	40 File
+	41 Edit
+	42 View
+	43 Spaces
+	44 History
+	45 Bookmarks
+	46 Tab
+	47 Window
+	48 Help
+	49 *DEBUG*
+
+The focused UI element is 24 text field (settable) Value: file:///Users/e2e02/lane/test-site/index.html?tab=A&run=TC-PHI507-r1&kind=normal, Placeholder: Search or Enter URL
+
+App=com.phibrowser.opensource.Mac (pid 32935)
+Window: "TC-A · TC-PHI507-r1", App: Phi Tab Close QA.
+0 standard window TC-A · TC-PHI507-r1, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: Website, Value: TC-A · TC-PHI507-r1
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Refresh
+			22 text file:///Users/e2e02/lane/test-site/index.html?tab=A&run=TC-PHI507-r1&kind=normal
+			23 button Extensions
+	24 close button
+	25 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	26 minimize button
+27 menu bar
+	28 Phi
+	29 File
+	30 Edit
+	31 View
+	32 Spaces
+	33 History
+	34 Bookmarks
+	35 Tab
+	36 Window
+	37 Help
+	38 *DEBUG*
+
+
+RESULT: 已在 Phi Tab Close QA 当前 TC-QA-PHI507 Space 的 New Tab 中，通过原生地址栏打开指定地址。回车后约 1 秒内已显示页面，真实 screenshot image 已返回。
+
+- **页面标题／主标题**：`TC-A · TC-PHI507-r1` ／ `TC-A`
+- **批次**：`TC-PHI507-r1`
+- **本次打开编号**：`33168d93-245c-4d8d-bf2c-7b26e2301599`
+- **页面类型**：`普通页`，显示“普通页面：输入不会阻止离开。”
+- **存活标记／临时草稿输入框**：空白，显示占位文字“输入可丢弃的测试标记”。
+- **实际地址**：`file:///Users/e2e02/lane/test-site/index.html?tab=A&run=TC-PHI507-r1&kind=normal`
+- **加载状态**：页面内容已正常呈现，工具栏显示刷新按钮，未见加载中指示或错误页面。

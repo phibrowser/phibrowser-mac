@@ -1,0 +1,17 @@
+[
+  {
+    "result": {
+      "type": "object",
+      "value": {
+        "title": "TC-CONTROL · TC-PHI507-r1",
+        "url": "http://127.0.0.1:18210/?tab=CONTROL&run=TC-PHI507-r1&kind=normal",
+        "ready": "complete",
+        "instance": "a06e421a-53c2-4691-b672-19516a7e8394",
+        "fixturePresent": true
+      }
+    }
+  },
+  {
+    "path": "qa-evidence/CONTROL-HTTP-01.png"
+  }
+]

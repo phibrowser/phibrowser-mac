@@ -1,0 +1,8 @@
+{
+  "lease_id": "79785efb-9979-4356-993e-758924b1b81c",
+  "lane": "e2e02",
+  "release_exit_code": 0,
+  "observed_result": "released; the lane is being reset",
+  "lease_file_absent": true,
+  "recorded_at": "2026-10-30T08:20:38.811882+00:00"
+}

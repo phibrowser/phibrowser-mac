@@ -1,0 +1,11 @@
+RESULT: 在 **TC-QA-PHI507 Space 的 New Tab** 中，通过原生地址栏输入指定网址并回车后，等待约 **19.2 秒**，目标测试页面仍未显示，画面保留 New Tab 首页内容，浏览器仍处于加载状态。
+
+- **TC-A 标题：**未出现。
+- **批次：**未出现。
+- **打开编号：**未出现。
+- **存活标记输入框：**未出现。
+- **地址栏：**已核实为 `https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal`。
+- **页面可见原文：**`Web Store`、`Add shortcut`；展开地址栏记录时，首页搜索框显示 `Search Google or type a URL`。未见错误提示。
+- **加载图标状态：**工具栏显示 **×（Stop）**，域名下方仍有紫色加载进度线。
+
+已通过截图工具返回真实页面截图及完整地址栏截图。全程未修改设置，未进入其他 Space。

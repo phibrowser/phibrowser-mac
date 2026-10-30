@@ -1,0 +1,8 @@
+RESULT: POS-03-BAL 第3次（run=TC-PHI507-r1，attempt=3）
+
+- 实际初始原生顺序：TC-A → TC-B → TC-C → TC-D → TC-E → TC-F；活动页为 TC-F。
+- 右键对象：TC-C · TC-PHI507-r1。首次使用最新 `element_index=16`、`mouse_button:right` 后未显示菜单；重新获取状态后，使用最新 `element_index=15` 右键 TC-C，菜单显示。未先单击 C，未使用坐标点击或拖动。
+- 菜单：已返回右键菜单 screenshot image；随后按最新 `element_index=34` 点击 **Close Tabs Above**。
+- 最终集合及原生顺序：TC-C → TC-D → TC-E → TC-F；TC-A、TC-B 已关闭。
+- 最终活动页：TC-F · TC-PHI507-r1。
+- 已返回结束 screenshot image，并停止所有 UI 操作。未判断 pass，未写入文件或 base64。

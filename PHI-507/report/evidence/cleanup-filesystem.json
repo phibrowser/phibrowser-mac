@@ -1,0 +1,12 @@
+{
+  "test_app_removed": true,
+  "dmg": {
+    "exit_code": 0,
+    "output": "\"disk7\" ejected.\n"
+  },
+  "smb": {
+    "exit_code": 0,
+    "output": ""
+  },
+  "opensource_profile": "Retained; only TC-QA-PHI507 was deleted via native UI. Unknown data was not removed."
+}

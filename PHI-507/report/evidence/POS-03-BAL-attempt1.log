@@ -1,0 +1,480 @@
+我会先截取当前界面，然后保持 F 活动，直接右键非活动的 TC-C 标题并选择 Close Tabs Above。操作后会截图，再逐个查看剩余页并记录实际顺序、编号、标记和活动页。
+
+
+Computer Use state (CUA App Version: 1001425)
+<app_specific_instructions>
+## Browser Computer Use
+
+When navigating to a new website or starting a separate web task, prefer opening a new tab instead of reusing the current tab; reuse the current tab only when the user explicitly asks to continue there or when the current page is clearly the right place to continue the existing workflow.
+</app_specific_instructions>
+<app_state>
+App=/Users/e2e02/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 32935)
+Window: "TC-F · TC-PHI507-r1", App: Phi Tab Close QA.
+0 standard window TC-F · TC-PHI507-r1, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selectable) Description: Website, Value: TC-A · TC-PHI507-r1
+				14 row (selectable) Description: Website, Value: TC-B · TC-PHI507-r1
+				15 row (selectable) Description: Website, Value: TC-C · TC-PHI507-r1
+				16 row (selectable) Description: Website, Value: TC-D · TC-PHI507-r1
+				17 row (selectable) Description: Website, Value: TC-E · TC-PHI507-r1
+				18 row (selected) Description: Website, Value: TC-F · TC-PHI507-r1
+		19 container sidebar.footer
+			20 button Description: Profile menu, ID: profile.menuButton
+			21 button
+		22 splitter (disabled, settable, float) 193
+		23 container
+			24 button (disabled) Description: Back, ID: chevron.left
+			25 button (disabled) Description: Forward, ID: chevron.right
+			26 button Refresh
+			27 text file:///Users/e2e02/lane/test-site/index.html?tab=F&run=TC-PHI507-r1&kind=normal
+			28 button Extensions
+	29 close button
+	30 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	31 minimize button
+32 menu bar
+	33 Phi
+	34 File
+	35 Edit
+	36 View
+	37 Spaces
+	38 History
+	39 Bookmarks
+	40 Tab
+	41 Window
+	42 Help
+	43 *DEBUG*
+
+</app_state>
+
+App=com.phibrowser.opensource.Mac (pid 32935)
+Window: "TC-F · TC-PHI507-r1", App: Phi Tab Close QA.
+0 standard window TC-F · TC-PHI507-r1, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selectable) Description: Website, Value: TC-A · TC-PHI507-r1
+				14 row (selectable) Description: Website, Value: TC-B · TC-PHI507-r1
+				15 row (selectable) Description: Website, Value: TC-C · TC-PHI507-r1
+				16 row (selectable) Description: Website, Value: TC-D · TC-PHI507-r1
+				17 row (selectable) Description: Website, Value: TC-E · TC-PHI507-r1
+				18 row (selected) Description: Website, Value: TC-F · TC-PHI507-r1
+				19 menu Secondary Actions: Cancel
+					20 Pin, ID: togglePin:
+					21 Duplicate, ID: duplicateTab
+					22 Copy Link, ID: myCopyLink:
+					23 Split with Current, ID: splitWithCurrent
+					24 Add to Bookmark, ID: addTabToRootBookmarks
+					25 Add to Folder
+						26 menu Secondary Actions: Cancel
+							27 New Folder, ID: createFolderAndBookmarkTab
+					28 New Tab Group, ID: addToNewTabGroup
+					29 Move to Space
+						30 menu Secondary Actions: Cancel
+							31 Default, ID: moveTabToSpace:
+					32 Close, ID: closeTab:
+					33 Close Other Tabs, ID: closeOther:
+					34 (selected) Close Tabs Above, ID: closeTabsInDirection:
+					35 Close Tabs Below, ID: closeTabsInDirection:
+		36 container sidebar.footer
+			37 button Description: Profile menu, ID: profile.menuButton
+			38 button
+		39 splitter (disabled, settable, float) 193
+		40 container
+			41 button (disabled) Description: Back, ID: chevron.left
+			42 button (disabled) Description: Forward, ID: chevron.right
+			43 button Refresh
+			44 text file:///Users/e2e02/lane/test-site/index.html?tab=F&run=TC-PHI507-r1&kind=normal
+			45 button Extensions
+	46 close button
+	47 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	48 minimize button
+49 menu bar
+	50 Phi
+	51 File
+	52 Edit
+	53 View
+	54 Spaces
+	55 History
+	56 Bookmarks
+	57 Tab
+	58 Window
+	59 Help
+	60 *DEBUG*
+
+
+Computer Use state (CUA App Version: 1001425)
+<app_state>
+App=/Users/e2e02/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 32935)
+Window: "TC-F · TC-PHI507-r1", App: Phi Tab Close QA.
+0 standard window TC-F · TC-PHI507-r1, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selectable) Description: Website, Value: TC-B · TC-PHI507-r1
+				14 row (selectable) Description: Website, Value: TC-C · TC-PHI507-r1
+				15 row (selectable) Description: Website, Value: TC-D · TC-PHI507-r1
+				16 row (selectable) Description: Website, Value: TC-E · TC-PHI507-r1
+				17 row (selected) Description: Website, Value: TC-F · TC-PHI507-r1
+		18 container sidebar.footer
+			19 button Description: Profile menu, ID: profile.menuButton
+			20 button
+		21 splitter (disabled, settable, float) 193
+		22 container
+			23 button (disabled) Description: Back, ID: chevron.left
+			24 button (disabled) Description: Forward, ID: chevron.right
+			25 button Refresh
+			26 text file:///Users/e2e02/lane/test-site/index.html?tab=F&run=TC-PHI507-r1&kind=normal
+			27 button Extensions
+	28 close button
+	29 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	30 minimize button
+31 menu bar
+	32 Phi
+	33 File
+	34 Edit
+	35 View
+	36 Spaces
+	37 History
+	38 Bookmarks
+	39 Tab
+	40 Window
+	41 Help
+	42 *DEBUG*
+
+</app_state>
+
+App=com.phibrowser.opensource.Mac (pid 32935)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selectable) Description: Website, Value: TC-B · TC-PHI507-r1
+				14 row (selectable) Description: Website, Value: TC-C · TC-PHI507-r1
+				15 row (selectable) Description: Website, Value: TC-D · TC-PHI507-r1
+				16 row (selectable) Description: Website, Value: TC-E · TC-PHI507-r1
+				17 row (selectable) Description: Website, Value: TC-F · TC-PHI507-r1
+				18 row (selected) Description: phi default favicon, Value: New Tab
+		19 container sidebar.footer
+			20 button Description: Profile menu, ID: profile.menuButton
+			21 button
+		22 splitter (disabled, settable, float) 193
+		23 container
+			24 button (disabled) Description: Back, ID: chevron.left
+			25 button (disabled) Description: Forward, ID: chevron.right
+			26 button Refresh
+			27 button Extensions
+	28 close button
+	29 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	30 minimize button
+31 menu bar
+	32 Phi
+	33 File
+	34 Edit
+	35 View
+	36 Spaces
+	37 History
+	38 Bookmarks
+	39 Tab
+	40 Window
+	41 Help
+	42 *DEBUG*
+
+
+菜单操作后，实际看到 TC-A 消失，剩余测试页顺序为 B→C→D→E→F，F 当时仍活动。随后查看时一次坐标点击误触了 New Tab，新增了空白页。我会保留这个实际状态，不再关闭任何页，并使用标签元素逐个查看，最后回到 F。
+
+
+App=com.phibrowser.opensource.Mac (pid 32935)
+Window: "TC-B · TC-PHI507-r1", App: Phi Tab Close QA.
+0 standard window TC-B · TC-PHI507-r1, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: Website, Value: TC-B · TC-PHI507-r1
+				14 row (selectable) Description: Website, Value: TC-C · TC-PHI507-r1
+				15 row (selectable) Description: Website, Value: TC-D · TC-PHI507-r1
+				16 row (selectable) Description: Website, Value: TC-E · TC-PHI507-r1
+				17 row (selectable) Description: Website, Value: TC-F · TC-PHI507-r1
+				18 row (selectable) Description: phi default favicon, Value: New Tab
+		19 container sidebar.footer
+			20 button Description: Profile menu, ID: profile.menuButton
+			21 button
+		22 splitter (disabled, settable, float) 193
+		23 container
+			24 button (disabled) Description: Back, ID: chevron.left
+			25 button (disabled) Description: Forward, ID: chevron.right
+			26 button Refresh
+			27 text file:///Users/e2e02/lane/test-site/index.html?tab=B&run=TC-PHI507-r1&kind=normal
+			28 button Extensions
+	29 close button
+	30 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	31 minimize button
+32 menu bar
+	33 Phi
+	34 File
+	35 Edit
+	36 View
+	37 Spaces
+	38 History
+	39 Bookmarks
+	40 Tab
+	41 Window
+	42 Help
+	43 *DEBUG*
+
+
+App=com.phibrowser.opensource.Mac (pid 32935)
+Window: "TC-C · TC-PHI507-r1", App: Phi Tab Close QA.
+0 standard window TC-C · TC-PHI507-r1, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selectable) Description: Website, Value: TC-B · TC-PHI507-r1
+				14 row (selected) Description: Website, Value: TC-C · TC-PHI507-r1
+				15 row (selectable) Description: Website, Value: TC-D · TC-PHI507-r1
+				16 row (selectable) Description: Website, Value: TC-E · TC-PHI507-r1
+				17 row (selectable) Description: Website, Value: TC-F · TC-PHI507-r1
+				18 row (selectable) Description: phi default favicon, Value: New Tab
+		19 container sidebar.footer
+			20 button Description: Profile menu, ID: profile.menuButton
+			21 button
+		22 splitter (disabled, settable, float) 193
+		23 container
+			24 button (disabled) Description: Back, ID: chevron.left
+			25 button (disabled) Description: Forward, ID: chevron.right
+			26 button Refresh
+			27 text file:///Users/e2e02/lane/test-site/index.html?tab=C&run=TC-PHI507-r1&kind=normal
+			28 button Extensions
+	29 close button
+	30 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	31 minimize button
+32 menu bar
+	33 Phi
+	34 File
+	35 Edit
+	36 View
+	37 Spaces
+	38 History
+	39 Bookmarks
+	40 Tab
+	41 Window
+	42 Help
+	43 *DEBUG*
+
+
+App=com.phibrowser.opensource.Mac (pid 32935)
+Window: "TC-D · TC-PHI507-r1", App: Phi Tab Close QA.
+0 standard window TC-D · TC-PHI507-r1, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selectable) Description: Website, Value: TC-B · TC-PHI507-r1
+				14 row (selectable) Description: Website, Value: TC-C · TC-PHI507-r1
+				15 row (selected) Description: Website, Value: TC-D · TC-PHI507-r1
+				16 row (selectable) Description: Website, Value: TC-E · TC-PHI507-r1
+				17 row (selectable) Description: Website, Value: TC-F · TC-PHI507-r1
+				18 row (selectable) Description: phi default favicon, Value: New Tab
+		19 container sidebar.footer
+			20 button Description: Profile menu, ID: profile.menuButton
+			21 button
+		22 splitter (disabled, settable, float) 193
+		23 container
+			24 button (disabled) Description: Back, ID: chevron.left
+			25 button (disabled) Description: Forward, ID: chevron.right
+			26 button Refresh
+			27 text file:///Users/e2e02/lane/test-site/index.html?tab=D&run=TC-PHI507-r1&kind=normal
+			28 button Extensions
+	29 close button
+	30 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	31 minimize button
+32 menu bar
+	33 Phi
+	34 File
+	35 Edit
+	36 View
+	37 Spaces
+	38 History
+	39 Bookmarks
+	40 Tab
+	41 Window
+	42 Help
+	43 *DEBUG*
+
+
+App=com.phibrowser.opensource.Mac (pid 32935)
+Window: "TC-E · TC-PHI507-r1", App: Phi Tab Close QA.
+0 standard window TC-E · TC-PHI507-r1, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selectable) Description: Website, Value: TC-B · TC-PHI507-r1
+				14 row (selectable) Description: Website, Value: TC-C · TC-PHI507-r1
+				15 row (selectable) Description: Website, Value: TC-D · TC-PHI507-r1
+				16 row (selected) Description: Website, Value: TC-E · TC-PHI507-r1
+				17 row (selectable) Description: Website, Value: TC-F · TC-PHI507-r1
+				18 row (selectable) Description: phi default favicon, Value: New Tab
+		19 container sidebar.footer
+			20 button Description: Profile menu, ID: profile.menuButton
+			21 button
+		22 splitter (disabled, settable, float) 193
+		23 container
+			24 button (disabled) Description: Back, ID: chevron.left
+			25 button (disabled) Description: Forward, ID: chevron.right
+			26 button Refresh
+			27 text file:///Users/e2e02/lane/test-site/index.html?tab=E&run=TC-PHI507-r1&kind=normal
+			28 button Extensions
+	29 close button
+	30 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	31 minimize button
+32 menu bar
+	33 Phi
+	34 File
+	35 Edit
+	36 View
+	37 Spaces
+	38 History
+	39 Bookmarks
+	40 Tab
+	41 Window
+	42 Help
+	43 *DEBUG*
+
+
+App=com.phibrowser.opensource.Mac (pid 32935)
+Window: "TC-F · TC-PHI507-r1", App: Phi Tab Close QA.
+0 standard window TC-F · TC-PHI507-r1, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selectable) Description: Website, Value: TC-B · TC-PHI507-r1
+				14 row (selectable) Description: Website, Value: TC-C · TC-PHI507-r1
+				15 row (selectable) Description: Website, Value: TC-D · TC-PHI507-r1
+				16 row (selectable) Description: Website, Value: TC-E · TC-PHI507-r1
+				17 row (selected) Description: Website, Value: TC-F · TC-PHI507-r1
+				18 row (selectable) Description: phi default favicon, Value: New Tab
+		19 container sidebar.footer
+			20 button Description: Profile menu, ID: profile.menuButton
+			21 button
+		22 splitter (disabled, settable, float) 193
+		23 container
+			24 button (disabled) Description: Back, ID: chevron.left
+			25 button (disabled) Description: Forward, ID: chevron.right
+			26 button Refresh
+			27 text file:///Users/e2e02/lane/test-site/index.html?tab=F&run=TC-PHI507-r1&kind=normal
+			28 button Extensions
+	29 close button
+	30 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	31 minimize button
+32 menu bar
+	33 Phi
+	34 File
+	35 Edit
+	36 View
+	37 Spaces
+	38 History
+	39 Bookmarks
+	40 Tab
+	41 Window
+	42 Help
+	43 *DEBUG*
+
+
+RESULT: 实际关闭后，原生标签顺序为 **TC-B → TC-C → TC-D → TC-E → TC-F**，TC-A 不再显示；菜单操作前后 **TC-F 均为活动页**。
+
+本次操作存在偏差：右键使用了坐标点击，未可靠命中指定的 TC-C，不能将此次记录视为已完成“在 TC-C 上执行 Close Tabs Above”。之后查看剩余页时，又误触 New Tab，新增了一个空白页。没有再执行任何关闭；逐页查看完毕后已回到 **TC-F 活动**。抱歉这次误操作。
+
+最终原生顺序及逐页实际观察如下：
+
+| 顺序 | 标签标题 | 本次打开编号 | 页面标记 |
+|---|---|---|---|
+| 1 | TC-B · TC-PHI507-r1 | `a4546728-5a9f-4fbd-9dac-a799e054a493` | `KEEP-B-507` |
+| 2 | TC-C · TC-PHI507-r1 | `1c75f9de-7ff1-4e81-9ca5-c7285d5a77b7` | `KEEP-C-507` |
+| 3 | TC-D · TC-PHI507-r1 | `40d5d0a8-b5d6-4292-bd65-96bf18266406` | `KEEP-D-507` |
+| 4 | TC-E · TC-PHI507-r1 | `6491eace-80d8-495c-b669-0a3bbf22edb7` | `KEEP-E-507` |
+| 5 | TC-F · TC-PHI507-r1 | `fa715f89-fec6-468a-897e-44a15878305a` | `KEEP-F-507` |
+| 6 | New Tab | 页面未显示测试编号 | 页面未显示 KEEP 标记 |
+
+**实际最终集合：{TC-B, TC-C, TC-D, TC-E, TC-F, New Tab}；最终活动页：TC-F。** 操作前、关闭后及逐页查看的 screenshot image 已返回。

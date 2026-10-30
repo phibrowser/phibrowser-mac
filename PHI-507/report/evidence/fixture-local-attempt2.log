@@ -1,0 +1,10 @@
+RESULT: 未成功显示 fixture 测试页。已在 TC-QA-PHI507 当前测试页，通过原生地址栏输入指定 URL 并回车。
+
+- **地址栏**：确认完整地址为 `http://127.0.0.1:18210/?tab=A&run=TC-PHI507-r1&kind=normal`。
+- **页面内容**：仍显示 New Tab 的 Phi 标志、搜索框、Web Store 和 Add shortcut。
+- **检查结果**：未看到 TC-A、批次、打开编号或存活标记输入框。
+- **加载状态**：工具栏仍显示 Stop（×），地址下方有紫色加载进度线。
+- **计时偏差**：主动等待 17 秒，检查截图实际于回车后约 28 秒返回，超出要求的最多 20 秒；因此不能作为严格的 20 秒内检查结果。
+- **操作范围**：未更改设置，未切换或修改其他 Space。
+
+真实截图已以 image 返回，并保存为 [加载现场截图](/Users/e2e02/lane/artifacts/TC-PHI507-r1/TC-PHI507-r1-loading.jpg) 和 [完整地址栏截图](/Users/e2e02/lane/artifacts/TC-PHI507-r1/TC-PHI507-r1-address.jpg)。

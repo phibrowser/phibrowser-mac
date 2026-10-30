@@ -1,0 +1,5 @@
+COMMAND: codesign --verify --deep --strict /Users/e2e02/Applications/Phi Tab Close QA.app
+exit_code=0
+
+COMMAND: spctl --assess --type execute /Users/e2e02/Applications/Phi Tab Close QA.app
+exit_code=0

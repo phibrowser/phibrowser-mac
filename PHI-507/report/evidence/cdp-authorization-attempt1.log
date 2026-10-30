@@ -1,0 +1,1 @@
+RESULT: 实际看见“cdp-qa” wants to control Phi Browser 的 CDP 授权弹窗，身份显示 unsigned；已勾选 Apply to all agents 并点击 Always Allow。授权弹窗已消失，最终前台为 Settings 的 Advanced 窗口；未手动改动测试开关，未操作页面。

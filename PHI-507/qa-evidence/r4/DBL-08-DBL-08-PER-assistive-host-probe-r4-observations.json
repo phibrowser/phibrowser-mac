@@ -1,0 +1,46 @@
+{
+  "base_case": "DBL-08；本轮依额外操作约束仅执行辅助键盘真实宿主与输入诊断，不执行单击、拖动或关闭验收，不作判定。",
+  "ending_state": "QA /Applications/Phi Tab Close QA.app 的 PID 为97109，保留TC-PHI507-r2-DBL-08-PER-DIAG窗口；普通标签顺序A/B/C，B单选且活动。B正文及原打开编号可见，输入框为空。QA最终实读Balanced、System Default（英文界面）、双击关闭off、按位置关闭on、Restore last session on，未改浏览器偏好。Accessibility Keyboard已通过确认框Turn off恢复off，Full Keyboard Access、Sticky Keys、Slow Keys、Mouse Keys均复读off。System Settings PID 4617，返回Accessibility→Keyboard并保留原窗口。仅关闭本轮为读取偏好打开的QA Settings窗口；未关闭浏览窗口或页面，未新建、导航、拖动或改保存项。未发现可确认的新虚拟键盘面板，未另行关闭未知窗口。",
+  "observations": [
+    {
+      "active_after": "B，单选集{B}。",
+      "active_before": "B，单选集{B}。",
+      "after": "A/B/C普通标签保持原顺序；无组或split。宿主返回无标题window、全白截图，无可操作虚拟键盘。未建立或观察到B/C多选。",
+      "before": "沿用TC-PHI507-r2-DBL-08-PER-DIAG窗口的A/B/C普通标签，原顺序A/B/C，B单选且正文可见。",
+      "confirmation_choices": "恢复Accessibility Keyboard时出现“Are you sure you want to turn off the Accessibility Keyboard?”，选择Turn off；随后原生开关实读off。无浏览器关闭或离开确认。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-08-PER attempt1 assistive-host-before",
+        "EVIDENCE: DBL-08-PER attempt1 assistive-host-after",
+        "EVIDENCE: DBL-08-PER attempt1 virtual-modifier-before",
+        "EVIDENCE: DBL-08-PER attempt1 selection-before",
+        "EVIDENCE: DBL-08-PER attempt1 selection-after",
+        "EVIDENCE: DBL-08-PER attempt1 system-restore-after",
+        "EVIDENCE: DBL-08-PER attempt1 system-mouse-restore-after",
+        "EVIDENCE: DBL-08-PER attempt1 browser-general-after",
+        "EVIDENCE: DBL-08-PER attempt1 browser-settings-after",
+        "EVIDENCE: DBL-08-PER attempt1 browser-after"
+      ],
+      "identity_checks": "QA起止PID 97109；System Settings PID 4617。精确宿主路径/System/Library/Input Methods/Assistive Control.app两次返回bundleID com.apple.inputmethod.AssistiveControl、PID 6399、Window为空、仅0 window及Raise动作，没有Invalid app或其他CU错误。CU list_apps仅列QA、Finder、System Settings，未列出另一键盘面板。B起止截图均显示TC-B、批次TC-PHI507-r2-DBL-08-PER-DIAG、普通页、本次打开编号d318e0ac-87f2-43aa-ad23-54554aa1d53a及空输入框。A/C仅核对原生标签，未逐页激活或读取正文编号。",
+      "language_observed": "QA起止System Default，实际英文界面；未切换语言或重启。",
+      "layout_observed": "QA General截图起止均显示Balanced选中；未切换为Performance。",
+      "not_executed_reason": "DBL-08的单击B、拖动B及点击C关闭按钮验收按本轮额外约束未执行。真实宿主已实际读取，但两次均为全白无标题window，无真实Command按钮或明确锁存动作，因此未尝试modifier点击、锁存或依赖该状态的B/C多选点击；未发送纯modifier press_key。virtual-modifier-after未生成，因为没有可执行的虚拟键动作；selection-before/after是未执行选择动作的状态证据。未锁存任何虚拟修饰键，无键可释放；没有可确认的新键盘面板可单独关闭。未打开或编辑Panel Editor。",
+      "operator_errors": [],
+      "precondition_actual": "仅输入诊断，沿用当前最小TC诊断A/B/C，不重建验收前置。QA为Balanced、System Default、双击关闭off、按位置关闭on。System Settings起始实读Full Keyboard Access、Sticky Keys、Slow Keys、Accessibility Keyboard、Mouse Keys均off。",
+      "settings_observed": "QA起止双击关闭off、按位置关闭on、Restore last session on，全部只读。Accessibility Keyboard单独off→on，立即读取FKA/Sticky/Slow仍off；随后on→off并确认。结束复读FKA、Sticky、Slow、Accessibility Keyboard、Mouse Keys五项均off，未点击其他开关。",
+      "steps_executed": [
+        "CU读取固定QA应用，确认PID、A/B/C顺序、B单选及可见正文身份。",
+        "通过原生快捷键打开QA Settings，读取General和Advanced；未改偏好，仅关闭本轮打开的Settings窗口。",
+        "CU读取System Settings的Accessibility→Keyboard及Pointer Control，核实五项输入开关原值均off。",
+        "仅点击最新原生Accessibility Keyboard开关使其on，立即读取该值及FKA/Sticky/Slow的off值。",
+        "两次以精确路径/System/Library/Input Methods/Assistive Control.app执行CU get_app_state并保存真实截图、窗口和PID；均仅见全白无标题window，无虚拟键盘按钮。",
+        "调用CU list_apps核实实际应用列表，未发现其他键盘面板；未尝试不存在的Command按钮。",
+        "回QA读取选择状态，仍为B单选；未执行B/C多选点击。",
+        "在System Settings点击Accessibility Keyboard恢复开关，并在确认框选择Turn off；实读Keyboard内四项均off，再到Pointer Control复读Mouse Keys off，返回Keyboard。",
+        "再次只读QA General和Advanced，确认Balanced、System Default、双击关闭off、按位置关闭on；关闭本轮打开的QA Settings窗口。",
+        "最终CU截图核对A/B/C顺序和B单选、活动页及原打开编号；原选择一直保持，无需额外点击恢复。"
+      ],
+      "unit_id": "DBL-08-PER"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

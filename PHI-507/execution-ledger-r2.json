@@ -6700,7 +6700,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": [],
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "variants": [
       {
         "id": "command",
@@ -6732,7 +6746,31 @@
     "attempts": [],
     "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
     "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
-    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。 只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "capability_checks": [
+      {
+        "id": "CU-LIMIT-R4",
+        "round": 4,
+        "scope": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+        "reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+        "evidence": [
+          "qa-evidence/r4/input-capability-limits.json",
+          "qa-evidence/r4/input-focus-probe-review.json",
+          "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+          "qa-evidence/r4/mouse-click-confirm-review.json",
+          "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+          "qa-evidence/r4/assistive-host-probe-review.json",
+          "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+          "qa-evidence/r4/DBL-08-PER-05.png",
+          "qa-evidence/r4/DBL-08-PER-18.png",
+          "qa-evidence/r4/DBL-08-PER-26.png",
+          "qa-evidence/r4/DBL-08-PER-29.png",
+          "qa-evidence/r2/computer-use-tool-contract.json",
+          "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+        ],
+        "reviewed_at": "2026-10-30T20:41:16.138761+00:00"
+      }
+    ]
   },
   {
     "id": "DBL-07",
@@ -6754,7 +6792,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": [],
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "variants": [
       {
         "id": "command",
@@ -6786,7 +6838,31 @@
     "attempts": [],
     "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
     "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
-    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。 只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "capability_checks": [
+      {
+        "id": "CU-LIMIT-R4",
+        "round": 4,
+        "scope": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+        "reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+        "evidence": [
+          "qa-evidence/r4/input-capability-limits.json",
+          "qa-evidence/r4/input-focus-probe-review.json",
+          "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+          "qa-evidence/r4/mouse-click-confirm-review.json",
+          "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+          "qa-evidence/r4/assistive-host-probe-review.json",
+          "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+          "qa-evidence/r4/DBL-08-PER-05.png",
+          "qa-evidence/r4/DBL-08-PER-18.png",
+          "qa-evidence/r4/DBL-08-PER-26.png",
+          "qa-evidence/r4/DBL-08-PER-29.png",
+          "qa-evidence/r2/computer-use-tool-contract.json",
+          "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+        ],
+        "reviewed_at": "2026-10-30T20:41:16.138961+00:00"
+      }
+    ]
   },
   {
     "id": "DBL-07",
@@ -6808,7 +6884,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": [],
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "variants": [
       {
         "id": "command",
@@ -6840,7 +6930,31 @@
     "attempts": [],
     "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
     "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
-    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。 只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "capability_checks": [
+      {
+        "id": "CU-LIMIT-R4",
+        "round": 4,
+        "scope": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+        "reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+        "evidence": [
+          "qa-evidence/r4/input-capability-limits.json",
+          "qa-evidence/r4/input-focus-probe-review.json",
+          "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+          "qa-evidence/r4/mouse-click-confirm-review.json",
+          "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+          "qa-evidence/r4/assistive-host-probe-review.json",
+          "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+          "qa-evidence/r4/DBL-08-PER-05.png",
+          "qa-evidence/r4/DBL-08-PER-18.png",
+          "qa-evidence/r4/DBL-08-PER-26.png",
+          "qa-evidence/r4/DBL-08-PER-29.png",
+          "qa-evidence/r2/computer-use-tool-contract.json",
+          "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+        ],
+        "reviewed_at": "2026-10-30T20:41:16.138966+00:00"
+      }
+    ]
   },
   {
     "id": "DBL-07",
@@ -6862,7 +6976,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": [],
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "variants": [
       {
         "id": "command",
@@ -6894,7 +7022,31 @@
     "attempts": [],
     "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
     "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
-    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。 只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "capability_checks": [
+      {
+        "id": "CU-LIMIT-R4",
+        "round": 4,
+        "scope": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+        "reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+        "evidence": [
+          "qa-evidence/r4/input-capability-limits.json",
+          "qa-evidence/r4/input-focus-probe-review.json",
+          "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+          "qa-evidence/r4/mouse-click-confirm-review.json",
+          "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+          "qa-evidence/r4/assistive-host-probe-review.json",
+          "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+          "qa-evidence/r4/DBL-08-PER-05.png",
+          "qa-evidence/r4/DBL-08-PER-18.png",
+          "qa-evidence/r4/DBL-08-PER-26.png",
+          "qa-evidence/r4/DBL-08-PER-29.png",
+          "qa-evidence/r2/computer-use-tool-contract.json",
+          "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+        ],
+        "reviewed_at": "2026-10-30T20:41:16.138969+00:00"
+      }
+    ]
   },
   {
     "id": "DBL-07",
@@ -6916,7 +7068,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": [],
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "variants": [
       {
         "id": "command",
@@ -6948,7 +7114,31 @@
     "attempts": [],
     "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
     "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
-    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。 只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "capability_checks": [
+      {
+        "id": "CU-LIMIT-R4",
+        "round": 4,
+        "scope": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+        "reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+        "evidence": [
+          "qa-evidence/r4/input-capability-limits.json",
+          "qa-evidence/r4/input-focus-probe-review.json",
+          "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+          "qa-evidence/r4/mouse-click-confirm-review.json",
+          "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+          "qa-evidence/r4/assistive-host-probe-review.json",
+          "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+          "qa-evidence/r4/DBL-08-PER-05.png",
+          "qa-evidence/r4/DBL-08-PER-18.png",
+          "qa-evidence/r4/DBL-08-PER-26.png",
+          "qa-evidence/r4/DBL-08-PER-29.png",
+          "qa-evidence/r2/computer-use-tool-contract.json",
+          "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+        ],
+        "reviewed_at": "2026-10-30T20:41:16.138973+00:00"
+      }
+    ]
   },
   {
     "id": "DBL-07",
@@ -6970,7 +7160,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": [],
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "variants": [
       {
         "id": "command",
@@ -7002,7 +7206,31 @@
     "attempts": [],
     "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
     "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
-    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。 只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "capability_checks": [
+      {
+        "id": "CU-LIMIT-R4",
+        "round": 4,
+        "scope": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+        "reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+        "evidence": [
+          "qa-evidence/r4/input-capability-limits.json",
+          "qa-evidence/r4/input-focus-probe-review.json",
+          "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+          "qa-evidence/r4/mouse-click-confirm-review.json",
+          "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+          "qa-evidence/r4/assistive-host-probe-review.json",
+          "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+          "qa-evidence/r4/DBL-08-PER-05.png",
+          "qa-evidence/r4/DBL-08-PER-18.png",
+          "qa-evidence/r4/DBL-08-PER-26.png",
+          "qa-evidence/r4/DBL-08-PER-29.png",
+          "qa-evidence/r2/computer-use-tool-contract.json",
+          "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+        ],
+        "reviewed_at": "2026-10-30T20:41:16.138976+00:00"
+      }
+    ]
   },
   {
     "id": "DBL-07",
@@ -7024,7 +7252,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": [],
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "variants": [
       {
         "id": "command",
@@ -7056,7 +7298,31 @@
     "attempts": [],
     "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
     "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
-    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。 只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "capability_checks": [
+      {
+        "id": "CU-LIMIT-R4",
+        "round": 4,
+        "scope": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+        "reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+        "evidence": [
+          "qa-evidence/r4/input-capability-limits.json",
+          "qa-evidence/r4/input-focus-probe-review.json",
+          "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+          "qa-evidence/r4/mouse-click-confirm-review.json",
+          "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+          "qa-evidence/r4/assistive-host-probe-review.json",
+          "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+          "qa-evidence/r4/DBL-08-PER-05.png",
+          "qa-evidence/r4/DBL-08-PER-18.png",
+          "qa-evidence/r4/DBL-08-PER-26.png",
+          "qa-evidence/r4/DBL-08-PER-29.png",
+          "qa-evidence/r2/computer-use-tool-contract.json",
+          "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+        ],
+        "reviewed_at": "2026-10-30T20:41:16.138979+00:00"
+      }
+    ]
   },
   {
     "id": "DBL-07",
@@ -7078,7 +7344,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": [],
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "variants": [
       {
         "id": "command",
@@ -7110,7 +7390,31 @@
     "attempts": [],
     "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
     "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
-    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。 只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "capability_checks": [
+      {
+        "id": "CU-LIMIT-R4",
+        "round": 4,
+        "scope": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+        "reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+        "evidence": [
+          "qa-evidence/r4/input-capability-limits.json",
+          "qa-evidence/r4/input-focus-probe-review.json",
+          "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+          "qa-evidence/r4/mouse-click-confirm-review.json",
+          "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+          "qa-evidence/r4/assistive-host-probe-review.json",
+          "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+          "qa-evidence/r4/DBL-08-PER-05.png",
+          "qa-evidence/r4/DBL-08-PER-18.png",
+          "qa-evidence/r4/DBL-08-PER-26.png",
+          "qa-evidence/r4/DBL-08-PER-29.png",
+          "qa-evidence/r2/computer-use-tool-contract.json",
+          "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+        ],
+        "reviewed_at": "2026-10-30T20:41:16.138982+00:00"
+      }
+    ]
   },
   {
     "id": "DBL-07",
@@ -7132,7 +7436,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": [],
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "variants": [
       {
         "id": "command",
@@ -7164,7 +7482,31 @@
     "attempts": [],
     "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
     "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
-    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。 只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "capability_checks": [
+      {
+        "id": "CU-LIMIT-R4",
+        "round": 4,
+        "scope": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+        "reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+        "evidence": [
+          "qa-evidence/r4/input-capability-limits.json",
+          "qa-evidence/r4/input-focus-probe-review.json",
+          "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+          "qa-evidence/r4/mouse-click-confirm-review.json",
+          "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+          "qa-evidence/r4/assistive-host-probe-review.json",
+          "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+          "qa-evidence/r4/DBL-08-PER-05.png",
+          "qa-evidence/r4/DBL-08-PER-18.png",
+          "qa-evidence/r4/DBL-08-PER-26.png",
+          "qa-evidence/r4/DBL-08-PER-29.png",
+          "qa-evidence/r2/computer-use-tool-contract.json",
+          "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+        ],
+        "reviewed_at": "2026-10-30T20:41:16.138985+00:00"
+      }
+    ]
   },
   {
     "id": "DBL-07",
@@ -7186,7 +7528,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": [],
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "variants": [
       {
         "id": "command",
@@ -7218,7 +7574,31 @@
     "attempts": [],
     "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
     "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
-    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。 只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "capability_checks": [
+      {
+        "id": "CU-LIMIT-R4",
+        "round": 4,
+        "scope": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+        "reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+        "evidence": [
+          "qa-evidence/r4/input-capability-limits.json",
+          "qa-evidence/r4/input-focus-probe-review.json",
+          "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+          "qa-evidence/r4/mouse-click-confirm-review.json",
+          "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+          "qa-evidence/r4/assistive-host-probe-review.json",
+          "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+          "qa-evidence/r4/DBL-08-PER-05.png",
+          "qa-evidence/r4/DBL-08-PER-18.png",
+          "qa-evidence/r4/DBL-08-PER-26.png",
+          "qa-evidence/r4/DBL-08-PER-29.png",
+          "qa-evidence/r2/computer-use-tool-contract.json",
+          "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+        ],
+        "reviewed_at": "2026-10-30T20:41:16.138988+00:00"
+      }
+    ]
   },
   {
     "id": "DBL-07",
@@ -7240,7 +7620,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": [],
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "variants": [
       {
         "id": "command",
@@ -7272,7 +7666,31 @@
     "attempts": [],
     "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
     "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
-    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。 只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "capability_checks": [
+      {
+        "id": "CU-LIMIT-R4",
+        "round": 4,
+        "scope": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+        "reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+        "evidence": [
+          "qa-evidence/r4/input-capability-limits.json",
+          "qa-evidence/r4/input-focus-probe-review.json",
+          "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+          "qa-evidence/r4/mouse-click-confirm-review.json",
+          "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+          "qa-evidence/r4/assistive-host-probe-review.json",
+          "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+          "qa-evidence/r4/DBL-08-PER-05.png",
+          "qa-evidence/r4/DBL-08-PER-18.png",
+          "qa-evidence/r4/DBL-08-PER-26.png",
+          "qa-evidence/r4/DBL-08-PER-29.png",
+          "qa-evidence/r2/computer-use-tool-contract.json",
+          "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+        ],
+        "reviewed_at": "2026-10-30T20:41:16.138991+00:00"
+      }
+    ]
   },
   {
     "id": "DBL-07",
@@ -7294,7 +7712,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": [],
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "variants": [
       {
         "id": "command",
@@ -7326,7 +7758,31 @@
     "attempts": [],
     "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
     "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
-    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。 只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "capability_checks": [
+      {
+        "id": "CU-LIMIT-R4",
+        "round": 4,
+        "scope": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+        "reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+        "evidence": [
+          "qa-evidence/r4/input-capability-limits.json",
+          "qa-evidence/r4/input-focus-probe-review.json",
+          "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+          "qa-evidence/r4/mouse-click-confirm-review.json",
+          "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+          "qa-evidence/r4/assistive-host-probe-review.json",
+          "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+          "qa-evidence/r4/DBL-08-PER-05.png",
+          "qa-evidence/r4/DBL-08-PER-18.png",
+          "qa-evidence/r4/DBL-08-PER-26.png",
+          "qa-evidence/r4/DBL-08-PER-29.png",
+          "qa-evidence/r2/computer-use-tool-contract.json",
+          "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+        ],
+        "reviewed_at": "2026-10-30T20:41:16.138994+00:00"
+      }
+    ]
   },
   {
     "id": "DBL-08",
@@ -7826,6 +8282,69 @@
         ],
         "evidence_metadata": "qa-evidence/r4/DBL-08-DBL-08-PER-mouse-click-confirm-r4-evidence.json",
         "notes": "指针定位到Use Mouse Keys后，实际发送一次KP_5及一次i，均无工具错误，但每次读取确认框均保留。Escape取消后Mouse Keys实读off，其余四项输入开关off；未取得启用后的移动或hover能力。QA仍Balanced/off/on，ABC顺序和B原文档保持。"
+      },
+      {
+        "job": "DBL-08-DBL-08-PER-assistive-host-probe-r4",
+        "round": 4,
+        "scope": "Balanced上的真实辅助键盘宿主诊断；不是Performance或DBL-08验收",
+        "observation": {
+          "active_after": "B，单选集{B}。",
+          "active_before": "B，单选集{B}。",
+          "after": "A/B/C普通标签保持原顺序；无组或split。宿主返回无标题window、全白截图，无可操作虚拟键盘。未建立或观察到B/C多选。",
+          "before": "沿用TC-PHI507-r2-DBL-08-PER-DIAG窗口的A/B/C普通标签，原顺序A/B/C，B单选且正文可见。",
+          "confirmation_choices": "恢复Accessibility Keyboard时出现“Are you sure you want to turn off the Accessibility Keyboard?”，选择Turn off；随后原生开关实读off。无浏览器关闭或离开确认。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-08-PER attempt1 assistive-host-before",
+            "EVIDENCE: DBL-08-PER attempt1 assistive-host-after",
+            "EVIDENCE: DBL-08-PER attempt1 virtual-modifier-before",
+            "EVIDENCE: DBL-08-PER attempt1 selection-before",
+            "EVIDENCE: DBL-08-PER attempt1 selection-after",
+            "EVIDENCE: DBL-08-PER attempt1 system-restore-after",
+            "EVIDENCE: DBL-08-PER attempt1 system-mouse-restore-after",
+            "EVIDENCE: DBL-08-PER attempt1 browser-general-after",
+            "EVIDENCE: DBL-08-PER attempt1 browser-settings-after",
+            "EVIDENCE: DBL-08-PER attempt1 browser-after"
+          ],
+          "identity_checks": "QA起止PID 97109；System Settings PID 4617。精确宿主路径/System/Library/Input Methods/Assistive Control.app两次返回bundleID com.apple.inputmethod.AssistiveControl、PID 6399、Window为空、仅0 window及Raise动作，没有Invalid app或其他CU错误。CU list_apps仅列QA、Finder、System Settings，未列出另一键盘面板。B起止截图均显示TC-B、批次TC-PHI507-r2-DBL-08-PER-DIAG、普通页、本次打开编号d318e0ac-87f2-43aa-ad23-54554aa1d53a及空输入框。A/C仅核对原生标签，未逐页激活或读取正文编号。",
+          "language_observed": "QA起止System Default，实际英文界面；未切换语言或重启。",
+          "layout_observed": "QA General截图起止均显示Balanced选中；未切换为Performance。",
+          "not_executed_reason": "DBL-08的单击B、拖动B及点击C关闭按钮验收按本轮额外约束未执行。真实宿主已实际读取，但两次均为全白无标题window，无真实Command按钮或明确锁存动作，因此未尝试modifier点击、锁存或依赖该状态的B/C多选点击；未发送纯modifier press_key。virtual-modifier-after未生成，因为没有可执行的虚拟键动作；selection-before/after是未执行选择动作的状态证据。未锁存任何虚拟修饰键，无键可释放；没有可确认的新键盘面板可单独关闭。未打开或编辑Panel Editor。",
+          "operator_errors": [],
+          "precondition_actual": "仅输入诊断，沿用当前最小TC诊断A/B/C，不重建验收前置。QA为Balanced、System Default、双击关闭off、按位置关闭on。System Settings起始实读Full Keyboard Access、Sticky Keys、Slow Keys、Accessibility Keyboard、Mouse Keys均off。",
+          "settings_observed": "QA起止双击关闭off、按位置关闭on、Restore last session on，全部只读。Accessibility Keyboard单独off→on，立即读取FKA/Sticky/Slow仍off；随后on→off并确认。结束复读FKA、Sticky、Slow、Accessibility Keyboard、Mouse Keys五项均off，未点击其他开关。",
+          "steps_executed": [
+            "CU读取固定QA应用，确认PID、A/B/C顺序、B单选及可见正文身份。",
+            "通过原生快捷键打开QA Settings，读取General和Advanced；未改偏好，仅关闭本轮打开的Settings窗口。",
+            "CU读取System Settings的Accessibility→Keyboard及Pointer Control，核实五项输入开关原值均off。",
+            "仅点击最新原生Accessibility Keyboard开关使其on，立即读取该值及FKA/Sticky/Slow的off值。",
+            "两次以精确路径/System/Library/Input Methods/Assistive Control.app执行CU get_app_state并保存真实截图、窗口和PID；均仅见全白无标题window，无虚拟键盘按钮。",
+            "调用CU list_apps核实实际应用列表，未发现其他键盘面板；未尝试不存在的Command按钮。",
+            "回QA读取选择状态，仍为B单选；未执行B/C多选点击。",
+            "在System Settings点击Accessibility Keyboard恢复开关，并在确认框选择Turn off；实读Keyboard内四项均off，再到Pointer Control复读Mouse Keys off，返回Keyboard。",
+            "再次只读QA General和Advanced，确认Balanced、System Default、双击关闭off、按位置关闭on；关闭本轮打开的QA Settings窗口。",
+            "最终CU截图核对A/B/C顺序和B单选、活动页及原打开编号；原选择一直保持，无需额外点击恢复。"
+          ],
+          "unit_id": "DBL-08-PER"
+        },
+        "evidence": [
+          "qa-evidence/r4/DBL-08-DBL-08-PER-assistive-host-probe-r4-observations.json",
+          "qa-evidence/r4/DBL-08-DBL-08-PER-assistive-host-probe-r4-run.json",
+          "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+          "qa-evidence/r4/assistive-host-probe-review.json",
+          "qa-evidence/r4/DBL-08-PER-25.png",
+          "qa-evidence/r4/DBL-08-PER-26.png",
+          "qa-evidence/r4/DBL-08-PER-27.png",
+          "qa-evidence/r4/DBL-08-PER-28.png",
+          "qa-evidence/r4/DBL-08-PER-29.png",
+          "qa-evidence/r4/DBL-08-PER-30.png",
+          "qa-evidence/r4/DBL-08-PER-31.png",
+          "qa-evidence/r4/DBL-08-PER-32.png",
+          "qa-evidence/r4/DBL-08-PER-33.png",
+          "qa-evidence/r4/DBL-08-PER-34.png",
+          "qa-evidence/r4/DBL-08-PER-35.png"
+        ],
+        "evidence_metadata": "qa-evidence/r4/DBL-08-DBL-08-PER-assistive-host-probe-r4-evidence.json",
+        "notes": "实际Accessibility Keyboard从off开启on；精确宿主/System/Library/Input Methods/Assistive Control.app两次读取成功，PID6399、原生树仅无标题window及Raise，截图全白，没有可操作的Command键。未执行不存在的虚拟键或依赖其状态的多选点击。经Turn off确认恢复，最终五项输入开关均off，QA偏好和ABC/B单选原状态保留。"
       }
     ]
   },
@@ -12681,7 +13200,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -12708,9 +13241,16 @@
       "id": "command",
       "label": "Command"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "not_run_reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-17",
@@ -12732,7 +13272,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -12759,9 +13313,16 @@
       "id": "shift",
       "label": "Shift"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "not_run_reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-17",
@@ -12783,7 +13344,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -12810,9 +13385,16 @@
       "id": "option",
       "label": "Option"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "not_run_reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-17",
@@ -12834,7 +13416,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -12861,9 +13457,16 @@
       "id": "control",
       "label": "Control"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "not_run_reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-17",
@@ -12885,7 +13488,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -12912,9 +13529,16 @@
       "id": "command",
       "label": "Command"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "not_run_reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-17",
@@ -12936,7 +13560,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -12963,9 +13601,16 @@
       "id": "shift",
       "label": "Shift"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "not_run_reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-17",
@@ -12987,7 +13632,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -13014,9 +13673,16 @@
       "id": "option",
       "label": "Option"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "not_run_reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-17",
@@ -13038,7 +13704,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -13065,9 +13745,16 @@
       "id": "control",
       "label": "Control"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "not_run_reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-17",
@@ -13089,7 +13776,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -13116,9 +13817,16 @@
       "id": "command",
       "label": "Command"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "not_run_reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-17",
@@ -13140,7 +13848,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -13167,9 +13889,16 @@
       "id": "shift",
       "label": "Shift"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "not_run_reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-17",
@@ -13191,7 +13920,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -13218,9 +13961,16 @@
       "id": "option",
       "label": "Option"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "not_run_reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-17",
@@ -13242,7 +13992,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "variants": [
       {
@@ -13269,9 +14033,16 @@
       "id": "control",
       "label": "Control"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "not_run_reason": "当前CU click未提供修饰键参数，纯modifier press_key在既有诊断中被拒绝；本轮已核实FKA、真实辅助键盘宿主和Mouse Keys，仍未取得可观察的修饰键锁存加鼠标点击能力，无法忠实执行要求的修饰键双击。未用其他手势替代。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-18",
@@ -13293,7 +14064,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "DBL-18-PER",
     "layout": "performance",
@@ -13302,9 +14087,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-18",
@@ -13326,7 +14118,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "DBL-18-BAL",
     "layout": "balanced",
@@ -13335,9 +14141,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-18",
@@ -13359,7 +14172,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "DBL-18-COM",
     "layout": "comfortable",
@@ -13368,9 +14195,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "DBL-19",
@@ -21416,7 +22250,21 @@
       "performance"
     ],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-02-PER",
     "layout": "performance",
@@ -21425,9 +22273,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-02",
@@ -21452,7 +22307,21 @@
       "performance"
     ],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-02-BAL",
     "layout": "balanced",
@@ -21461,9 +22330,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-02",
@@ -21488,7 +22364,21 @@
       "performance"
     ],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-02-COM",
     "layout": "comfortable",
@@ -21497,9 +22387,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-03",
@@ -21521,7 +22418,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-03-PER",
     "layout": "performance",
@@ -21530,9 +22441,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-03",
@@ -21554,7 +22472,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-03-BAL",
     "layout": "balanced",
@@ -21563,9 +22495,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-03",
@@ -21587,7 +22526,21 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-03-COM",
     "layout": "comfortable",
@@ -21596,9 +22549,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-04",
@@ -21622,7 +22582,21 @@
       "performance"
     ],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-04-PER",
     "layout": "performance",
@@ -21631,9 +22605,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-04",
@@ -21657,7 +22638,21 @@
       "performance"
     ],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-04-BAL",
     "layout": "balanced",
@@ -21666,9 +22661,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-04",
@@ -21692,7 +22694,21 @@
       "performance"
     ],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-04-COM",
     "layout": "comfortable",
@@ -21701,9 +22717,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-05",
@@ -21757,7 +22780,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-06-PER",
     "layout": "performance",
@@ -21766,9 +22803,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-06",
@@ -21791,7 +22835,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-06-BAL",
     "layout": "balanced",
@@ -21800,9 +22858,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-06",
@@ -21825,7 +22890,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-06-COM",
     "layout": "comfortable",
@@ -21834,9 +22913,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-07",
@@ -21859,7 +22945,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-07-PER",
     "layout": "performance",
@@ -21868,9 +22968,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-07",
@@ -21893,7 +23000,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-07-BAL",
     "layout": "balanced",
@@ -21902,9 +23023,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-07",
@@ -21927,7 +23055,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-07-COM",
     "layout": "comfortable",
@@ -21936,9 +23078,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-08",
@@ -21961,7 +23110,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-08-PER",
     "layout": "performance",
@@ -21970,9 +23133,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-08",
@@ -21995,7 +23165,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-08-BAL",
     "layout": "balanced",
@@ -22004,9 +23188,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-08",
@@ -22029,7 +23220,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-08-COM",
     "layout": "comfortable",
@@ -22038,9 +23243,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-09",
@@ -22062,7 +23274,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-09-PER",
     "layout": "performance",
@@ -22071,9 +23297,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。没有据此认定产品不支持混合选择，未触发手册按产品入口不支持而跳过的条件；这里只记录测试输入前置受限。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "SEL-09",
@@ -22095,7 +23328,21 @@
     "smoke": false,
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
-    "evidence": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "evidence": [
+      "qa-evidence/r4/input-capability-limits.json",
+      "qa-evidence/r4/input-focus-probe-review.json",
+      "qa-evidence/r4/input-focus-probe-actual-tool-returns.json",
+      "qa-evidence/r4/mouse-click-confirm-review.json",
+      "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+      "qa-evidence/r4/assistive-host-probe-review.json",
+      "qa-evidence/r4/assistive-host-actual-tool-returns.json",
+      "qa-evidence/r4/DBL-08-PER-05.png",
+      "qa-evidence/r4/DBL-08-PER-18.png",
+      "qa-evidence/r4/DBL-08-PER-26.png",
+      "qa-evidence/r4/DBL-08-PER-29.png",
+      "qa-evidence/r2/computer-use-tool-contract.json",
+      "qa-evidence/r3/DBL-08-sticky-mouse-key-returns.json"
+    ],
     "kind": "acceptance",
     "key": "SEL-09-BAL",
     "layout": "balanced",
@@ -22104,9 +23351,16 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "source_evidence_requirement": "记录构建、布局、变体、初始顺序、活动页、操作对象、确认选择及最终剩余集合；保护项对照输入标记和打开编号。",
+    "actual": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "not_run_reason": "要求的Command单击、Shift范围或多对象选择未能用允许的CU输入建立。FKA实际开启后焦点落在网页链接，Shift+Down未形成B/C多选；真实辅助键盘宿主为空白且无修饰键按钮。不能把未取得的多选集合当作已满足前置。",
+    "notes": "只标记必需输入前置未能建立的执行点，核心产品动作未执行；其他用例继续。没有据此认定产品不支持混合选择，未触发手册按产品入口不支持而跳过的条件；这里只记录测试输入前置受限。",
+    "reviewed_by": "Ripley",
+    "review_basis": "CU-LIMIT-R4",
+    "capability_review": "CU-LIMIT-R4"
   },
   {
     "id": "LIFE-01",

@@ -1,0 +1,25 @@
+{
+  "job": "DBL-08-DBL-08-PER-assistive-host-probe-r4",
+  "exit_code": 0,
+  "session_id": "01a18e84-7c63-7ac2-9d0e-85f3f6619651",
+  "round": 4,
+  "lease_id": "cfcec3e6-9abd-43e8-87c4-779d0c5cf732",
+  "started_at": "2026-10-30T20:33:29.405360+00:00",
+  "ended_at": "2026-10-30T20:36:45.805658+00:00",
+  "units": [
+    "DBL-08-PER"
+  ],
+  "observed_units": [
+    "DBL-08-PER"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "95b38e6e20465cd4d21f4499c4c104698e8e8200faeb516f453229e4320890f2",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 29,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

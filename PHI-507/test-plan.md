@@ -7170,3 +7170,9 @@ mode: gui；对应手册：EXP-04；优先级：P2；布局：once；语言：�
 DBL-13首次尝试的六变体均因正文前置未具备而未执行核心动作，原记录与截图保留。两组维护诊断见 `qa-evidence/r4/VIS-05-render-recovery-r4-observations.json`、`qa-evidence/r4/VIS-05-render-path-controls-r4-observations.json`，不算VIS-05验收。Balanced中的C1不执行关闭其他，仅Command-T新建页并导航仍出现正文空白；C2已有真实页面内导航可显示normal及unsaved；C3正常页面新开链接获得三页可见正文，并核对了原编号及KEEP。观察F4-01仍单列待归因，未宣称已修复。
 
 后续普通fixture前置使用独立TC专用新窗口直接打开首个A；通过页面正常“在新标签页打开另一测试页”链接建立下一真实页面，再用原生地址栏导航为用例要求的准确tab、run和kind。链接会生成A-away等临时名称，必须完成准确URL导航，不能把临时页冒充B/C。每页最终正文、类型、编号及原生顺序实际确认后，才输入标记并执行核心动作；unsaved必须看到“离开确认已启用”。这条路径仅在Balanced的维护对照中确认；其他布局在对应用例准备时独立核对。要求Command-T、新标签页空状态或关闭其他的源步骤仍按原步骤执行，不能以此入口替代验收。旧阻断尝试与新tag重跑分组保存。
+
+## r4 输入能力与不可执行前置
+
+三组原生输入诊断保留在 `qa-evidence/r4/`：`input-focus-probe-review.json`、`mouse-click-confirm-review.json`、`assistive-host-probe-review.json`，汇总为 `input-capability-limits.json`。这三组均在 Balanced 上维护输入能力，不是 DBL-08 的 Performance 验收。FKA 实际开启后未建立标签行焦点或 B/C 多选；Mouse Keys 在确认按钮处实际发送 KP_5 和 i 后仍未启用；从真实 Panel Editor 路径定位的 Assistive Control 宿主读取成功，但两次均全白、无可操作的虚拟修饰键。所有系统输入开关已复读恢复 off，浏览器偏好保持原值。
+
+因此 DBL-17、DBL-18、SEL-02/03/04/06/07/08/09 共35个执行点的必需输入前置未能建立，核心动作未执行，台账标 blocked 并引用共享诊断。此前 DBL-07 的12个阻断结果保留并补充该证据。这些是当前执行手段的限制，不是已确认产品缺陷；SEL-09 也未被认定为产品不支持混选。不能以普通双击、替代选择集合或内部状态写入冒充源步骤。其他用例及正常带字母的 app 快捷键继续逐条执行，实际可见且前置满足的关闭或静音按钮仍按原步骤测试。

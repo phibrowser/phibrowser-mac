@@ -1,0 +1,8 @@
+本次只补验证launcher链接的真实插入顺序，不执行ENV-06原用例，不判产品通过。前一维护批已证明左键链接能打开真实fixture、独立UUID及最终KEEP，但按A再B点击的实际序列为[B,A]，不得假设链接顺序就是标签顺序。
+
+1. 只读当前QA app窗口和PID；保留原报告及未知对象。当前已实读偏好不变，本次不再打开Settings、不输入KEEP、不重跑上一完整维护批。
+2. 原生File→New Window，地址栏打开 http://127.0.0.1:18211/launch/?run=TC-PHI507-r5-launcher-order&pages=A:normal,B:normal 。实见入口后，先单击第二个B普通链接，实读B正文/批次/普通页类型/完整编号；返回真正LAUNCH，再单击第一个A普通链接，同样实读A。
+3. 回到LAUNCH，通过原生File→Close Tab仅关闭入口。记录全部本批普通条目的实际顺序、选中页及两个页面编号。实际若不是[A,B]也照实记录，不用重排修成预期。
+4. 保存入口、每个新页面、关闭入口后的最终顺序及结束状态截图。File→Close Window仅关闭本次两个普通TC页面的专用窗口，返回原报告窗口；不改偏好，不动其他窗口或保存项。
+
+最终unit_id=ENV-06-COMMON，not_executed_reason写“仅launcher倒序点击的准备路径验证，ENV-06原用例未执行”；JSON记录真实动作、编号、顺序和任何操作无效情况。

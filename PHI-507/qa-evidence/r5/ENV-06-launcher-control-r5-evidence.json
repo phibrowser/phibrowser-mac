@@ -1,0 +1,352 @@
+[
+  {
+    "unit_id": "ENV-06-COMMON",
+    "attempt": 1,
+    "phase": "before",
+    "file": "ENV-06-COMMON-01.png",
+    "original_marker": "ENV-06-COMMON attempt1 before",
+    "source_file": "ENV-06-launcher-control-r5-005.jpg",
+    "source_sha256": "c0885dd3067a6532be633b092001122db87cde7f39f8bbfcfccc23183daa5624",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-06-COMMON",
+    "attempt": 1,
+    "phase": "new-A-after",
+    "file": "ENV-06-COMMON-02.png",
+    "original_marker": "ENV-06-COMMON attempt1 new-A-after",
+    "source_file": "ENV-06-launcher-control-r5-007.jpg",
+    "source_sha256": "3de6fa05afb586843e196ab6769ef3b585c0bf1fc583115236239cf2355f7338",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-06-COMMON",
+    "attempt": 1,
+    "phase": "A-input-failure",
+    "file": "ENV-06-COMMON-03.png",
+    "original_marker": "ENV-06-COMMON attempt1 A-input-failure",
+    "source_file": "ENV-06-launcher-control-r5-013.jpg",
+    "source_sha256": "471ca08fad2e954c1d2bab823daf43a550bac662605db01738af5a0e51cef78d",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-06-COMMON",
+    "attempt": 1,
+    "phase": "new-B-before",
+    "file": "ENV-06-COMMON-04.png",
+    "original_marker": "ENV-06-COMMON attempt1 new-B-before",
+    "source_file": "ENV-06-launcher-control-r5-014.jpg",
+    "source_sha256": "034392b33144c654f9a362fa36239db40dc5198f9c188651b981085340d4419b",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-06-COMMON",
+    "attempt": 1,
+    "phase": "new-B-after",
+    "file": "ENV-06-COMMON-05.png",
+    "original_marker": "ENV-06-COMMON attempt1 new-B-after",
+    "source_file": "ENV-06-launcher-control-r5-015.jpg",
+    "source_sha256": "fdc88720be4724c7fc2854587b4510db68d8e629fc4e57914a89b4aaac3309e6",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-06-COMMON",
+    "attempt": 1,
+    "phase": "close-launch-before",
+    "file": "ENV-06-COMMON-06.png",
+    "original_marker": "ENV-06-COMMON attempt1 close-launch-before",
+    "source_file": "ENV-06-launcher-control-r5-019.jpg",
+    "source_sha256": "1588da8f84f42093ba29a48e7ff9a038bbf3bf499581d517ecf56a46849fb50d",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-06-COMMON",
+    "attempt": 1,
+    "phase": "close-launch-after",
+    "file": "ENV-06-COMMON-07.png",
+    "original_marker": "ENV-06-COMMON attempt1 close-launch-after",
+    "source_file": "ENV-06-launcher-control-r5-020.jpg",
+    "source_sha256": "19987584ef3a6079b391098afcac00705a39094a19666d7154bba1846fa00ab0",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-06-COMMON",
+    "attempt": 1,
+    "phase": "close-window-before",
+    "file": "ENV-06-COMMON-08.png",
+    "original_marker": "ENV-06-COMMON attempt1 close-window-before",
+    "source_file": "ENV-06-launcher-control-r5-028.jpg",
+    "source_sha256": "b27f7b4ddd9df4a09c2650354206f7d98bb389a9e2bb9bb310041067a22f3feb",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-06-COMMON",
+    "attempt": 1,
+    "phase": "after",
+    "file": "ENV-06-COMMON-09.png",
+    "original_marker": "ENV-06-COMMON attempt1 after",
+    "source_file": "ENV-06-launcher-control-r5-029.jpg",
+    "source_sha256": "ae31e818cc163e87d6233c83c89dedeceb4b907610195a39fdc67bd340564dda",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-06-COMMON",
+    "attempt": 1,
+    "phase": "B-input-result",
+    "file": "ENV-06-COMMON-10.png",
+    "original_marker": "ENV-06-COMMON attempt1 B-input-result",
+    "source_file": "ENV-06-launcher-control-r5-018.jpg",
+    "source_sha256": "3b8de2629840fb9e95c60ae3cb4f64c3f46e46e52a4548ff9946ed9340ac6070",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-06-COMMON",
+    "attempt": 1,
+    "phase": "A-recheck",
+    "file": "ENV-06-COMMON-11.png",
+    "original_marker": "ENV-06-COMMON attempt1 A-recheck",
+    "source_file": "ENV-06-launcher-control-r5-021.jpg",
+    "source_sha256": "97ca9eee3e0199bf0d1a89a86eaab93c0eea5702ed2f92285412cea9296d9faf",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-06-COMMON",
+    "attempt": 1,
+    "phase": "B-input-second-result",
+    "file": "ENV-06-COMMON-12.png",
+    "original_marker": "ENV-06-COMMON attempt1 B-input-second-result",
+    "source_file": "ENV-06-launcher-control-r5-025.jpg",
+    "source_sha256": "f03dc59c293994685d81d92b89affcd14aa5b42179f0da9d3e4ac9c7e04a0038",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-06-COMMON",
+    "attempt": 1,
+    "phase": "B-input-observe",
+    "file": "ENV-06-COMMON-13.png",
+    "original_marker": "ENV-06-COMMON attempt1 B-input-observe",
+    "source_file": "ENV-06-launcher-control-r5-026.jpg",
+    "source_sha256": "a66a99659e40e824e1a85baeda7e82cd158828add49655d57e9b390fa81a3dda",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "ENV-06-COMMON",
+    "attempt": 1,
+    "phase": "B-final-recheck",
+    "file": "ENV-06-COMMON-14.png",
+    "original_marker": "ENV-06-COMMON attempt1 B-final-recheck",
+    "source_file": "ENV-06-launcher-control-r5-027.jpg",
+    "source_sha256": "d5eff41b419990788efdcca9ce24a957c590e3988307e709fdc8e49c4b416ec5",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

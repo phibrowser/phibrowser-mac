@@ -1,0 +1,56 @@
+{
+  "base_case": "ENV-06-COMMON；本次仅执行辅助测试站 launcher 两个普通链接入口的准备路径验证，不作ENV-06验收结论。",
+  "ending_state": "/Applications/Phi Tab Close QA.app 保持运行，PID 10708。本次专用窗口已通过File→Close Window关闭；关闭前本批普通页实际顺序为[B,A]，最后单选B。已返回原报告窗口，活动页为file:///Users/e2e02/lane/qa-preview-r4/PHI-507/r4/index.html，报告仍在顶部。原有TC-P pin、TC-M保存行、无名行、New Tab条目及其他窗口未关闭或修改。偏好未更改，保持Balanced / System Default / 双击关闭off / 按位置关闭on，恢复会话on；快捷键未修改。Settings、菜单和确认框均已关闭。",
+  "observations": [
+    {
+      "active_after": "关闭LAUNCH后活动B；逐页回看A、B；关闭专用窗口后，原报告页恢复为活动页并保持单选。",
+      "active_before": "初始活动页为原报告页；两个链接动作前均为TC-LAUNCH；关闭入口前单选LAUNCH。",
+      "after": "关闭入口后本批普通集合为[B,A]，未重排。逐页回看确认A/B原打开编号及完整KEEP标记；关闭专用窗口后本批普通页无残留，原报告窗口及既有项目仍在。",
+      "before": "本批普通集合变化：[LAUNCH] → [LAUNCH,A] → [LAUNCH,B,A]。各阶段仅活动页单选；本批未创建split或组。既有共享pin、保存行、无名行及New Tab入口不计入本批普通页。",
+      "confirmation_choices": "未出现离开或关闭确认框。LAUNCH右键菜单通过其明确Cancel动作取消，未选择命令；实际关闭入口选择File→Close Tab，最终关闭专用窗口选择File→Close Window。",
+      "evidence_markers": [
+        "EVIDENCE: ENV-06-COMMON attempt1 settings",
+        "EVIDENCE: ENV-06-COMMON attempt1 settings-advanced",
+        "EVIDENCE: ENV-06-COMMON attempt1 before",
+        "EVIDENCE: ENV-06-COMMON attempt1 new-A-after",
+        "EVIDENCE: ENV-06-COMMON attempt1 A-marked",
+        "EVIDENCE: ENV-06-COMMON attempt1 A-input-failure",
+        "EVIDENCE: ENV-06-COMMON attempt1 new-B-before",
+        "EVIDENCE: ENV-06-COMMON attempt1 new-B-after",
+        "EVIDENCE: ENV-06-COMMON attempt1 B-input-result",
+        "EVIDENCE: ENV-06-COMMON attempt1 close-launch-before",
+        "EVIDENCE: ENV-06-COMMON attempt1 close-launch-after",
+        "EVIDENCE: ENV-06-COMMON attempt1 A-recheck",
+        "EVIDENCE: ENV-06-COMMON attempt1 B-recheck",
+        "EVIDENCE: ENV-06-COMMON attempt1 B-input-second-result",
+        "EVIDENCE: ENV-06-COMMON attempt1 B-input-observe",
+        "EVIDENCE: ENV-06-COMMON attempt1 B-final-recheck",
+        "EVIDENCE: ENV-06-COMMON attempt1 close-window-before",
+        "EVIDENCE: ENV-06-COMMON attempt1 after"
+      ],
+      "identity_checks": "固定app=/Applications/Phi Tab Close QA.app，初始、各关键动作及结束PID均10708。入口批次实见TC-PHI507-r5-launcher-control。A：TC-A，普通页，打开编号36cf1ddf-be10-4294-8f2a-ed91a8abc1bb，最终回看实见KEEP-A-LAUNCHER-CONTROL。B：TC-B，普通页，打开编号12f3094b-08c2-489c-b2fa-942b7492e854，最终回看实见单份KEEP-B-LAUNCHER-CONTROL。两页批次均与入口一致，关闭LAUNCH后编号未变。目标均由入口链接单击新开，未用地址栏重写目标URL。未遇到仅标题无正文的导航，未Reload或重启。",
+      "language_observed": "原生菜单和设置为英文；Display language实读System Default。测试页正文为中文，未切换语言。",
+      "layout_observed": "General截图显示Balanced选中；浏览器chrome为外部纵向标签列表，全程未切换布局。",
+      "not_executed_reason": "仅辅助launcher准备路径验证；ENV-06原用例尚未执行。未构造A–F或执行同URL不同页、同标题不同页的原用例验收。",
+      "operator_errors": [
+        "输入前未取得明确焦点边框仍发送文字，输入调用返回不能作为输入成功证据。A输入后的初期截图仍为占位文字，之后回看才实见KEEP及绿色边框；此前现场保留。",
+        "B第一次输入及初次回看未见标记；按当前已滚动截图重新定位框内并使用Tab/Shift+Tab后再次发送。直接截图及10秒观察仍显示占位文字，切换A再回B后才实见单份完整KEEP和绿色边框。两次发送及中间现场均保留，未推定原因。",
+        "额外打开了LAUNCH右键菜单，仅查看后Cancel；实际关闭仍使用File→Close Tab。"
+      ],
+      "precondition_actual": "先实读固定QA app、原报告窗口及偏好，保留未知对象。通过File→New Window建立本次专用普通窗口，并访问指定launch URL；入口正文实见正确批次和1.TC-A·normal、2.TC-B·normal两个链接。",
+      "settings_observed": "General：Balanced、System Default。Advanced：settings.tabs.doubleClickToClose=off，settings.tabs.directionalClosing=on，Restore last session=on。只读检查，未点击开关；布局、语言和快捷键均未修改。",
+      "steps_executed": [
+        "get_app_state实读固定app和原窗口；打开Settings，只读General与Advanced并截图，再关闭Settings。",
+        "File→New Window；通过原生地址栏访问http://127.0.0.1:18211/launch/?run=TC-PHI507-r5-launcher-control&pages=A:normal,B:normal。",
+        "实读入口批次及两个普通链接；在无控件内容区校准截图坐标。",
+        "单击1.TC-A链接，实读新开A正文、批次、普通页类型及完整打开编号；发送KEEP-A-LAUNCHER-CONTROL，保留输入后未立即显示标记的现场。",
+        "通过原生TC-LAUNCH行返回入口，单击2.TC-B链接；实读新开B正文、批次、普通页类型及完整编号；记录两次KEEP-B-LAUNCHER-CONTROL发送和各次屏幕结果。",
+        "回到TC-LAUNCH，取消仅查看的右键菜单，通过File→Close Tab关闭入口。",
+        "读取稳定列表，实际本批顺序为B、A；分别回看A/B原打开编号和完整KEEP标记，未为调整顺序添加操作。",
+        "通过File→Close Window仅关闭本次专用窗口；get_app_state取结束截图，核对PID10708及原报告窗口、既有项目。"
+      ],
+      "unit_id": "ENV-06-COMMON"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

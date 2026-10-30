@@ -11,5 +11,13 @@
   "local_preview_result": "标题、r4轮次、未完成状态、512/100/0/71/341计数、ENV-04沿用说明及缩略图、DBL-23详情及放大图实见。没有实见单独新增23项统计；该数仅来自结构化数据核对。",
   "deviation": "预览时初始误打开Default的Rename对话框后立即Cancel；未提交修改。原生Find中文type_text曾未完整输入，保留实际返回，改用CU原生可设置控件后核对。",
   "publication_result": "固定报告脚本publish退出0，已提交推送并返回URL；Pages HTTP可访问性尚未单独检查。",
-  "product_acceptance": false
+  "product_acceptance": false,
+  "http_readiness": {
+    "url": "https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r4/",
+    "status": 200,
+    "bytes": 1444201,
+    "sha256": "00aa3a863e2abb922e35f9e29ed430ccbfb930dbb3150d603710cde1b5574170",
+    "checked_at": "2026-10-30T21:40:57.309103+00:00",
+    "scope": "Published report HTTP readiness only; not browser or product state"
+  }
 }

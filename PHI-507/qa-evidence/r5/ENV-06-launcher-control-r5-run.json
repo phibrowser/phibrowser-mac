@@ -1,0 +1,25 @@
+{
+  "job": "ENV-06-launcher-control-r5",
+  "exit_code": 0,
+  "session_id": "01a18ebb-deb6-7e63-9bf0-a283fbf99e51",
+  "round": 5,
+  "lease_id": "52a943f0-2b80-4fdf-9258-ff0ac91c8040",
+  "started_at": "2026-10-30T21:33:59.065903+00:00",
+  "ended_at": "2026-10-30T21:41:03.920932+00:00",
+  "units": [
+    "ENV-06-COMMON"
+  ],
+  "observed_units": [
+    "ENV-06-COMMON"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "f7ffb7f4f58d43bf8cd47a01a0be0d5d10889cdc9b763e4e8d532b6caef68925",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 67,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

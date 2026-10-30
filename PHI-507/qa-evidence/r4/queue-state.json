@@ -1,7 +1,9 @@
 {
-  "current": "DBL-13",
-  "index": 2,
-  "total": 6,
-  "state": "running",
-  "time": "2026-10-30T18:28:12.574881+00:00"
+  "state": "stopped_before_next",
+  "next": "DBL-14",
+  "remaining": [
+    "DBL-14",
+    "DBL-15",
+    "DBL-16"
+  ]
 }

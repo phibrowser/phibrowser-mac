@@ -1,0 +1,502 @@
+[
+  {
+    "unit_id": "DBL-13-PER-cancel",
+    "attempt": 2,
+    "phase": "after",
+    "file": "DBL-13-PER-cancel-01.png",
+    "original_marker": "DBL-13-PER-cancel attempt2 after",
+    "source_file": "DBL-13-014.jpg",
+    "source_sha256": "51c42d243c1a235c03ccbfd0db9dc2ff8fd2163bab756025325062611d61fe83",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-PER-leave",
+    "attempt": 1,
+    "phase": "after",
+    "file": "DBL-13-PER-leave-01.png",
+    "original_marker": "DBL-13-PER-leave attempt1 after",
+    "source_file": "DBL-13-016.jpg",
+    "source_sha256": "349763d8f27024ca4c41a52a5bacbaa4f59c07cfe7f75851ff9f73a514780f66",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-BAL-cancel",
+    "attempt": 1,
+    "phase": "after",
+    "file": "DBL-13-BAL-cancel-01.png",
+    "original_marker": "DBL-13-BAL-cancel attempt1 after",
+    "source_file": "DBL-13-019.jpg",
+    "source_sha256": "bb4317278186b788ba1f28546c98a08b4ece6bea0d2a1da7d502ff4fc4355c35",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-BAL-leave",
+    "attempt": 1,
+    "phase": "after",
+    "file": "DBL-13-BAL-leave-01.png",
+    "original_marker": "DBL-13-BAL-leave attempt1 after",
+    "source_file": "DBL-13-021.jpg",
+    "source_sha256": "61fb85859e15c9a061d099b50b697a38e6cd43430446e1c9d69635c99ee7e0d0",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-COM-cancel",
+    "attempt": 1,
+    "phase": "after",
+    "file": "DBL-13-COM-cancel-01.png",
+    "original_marker": "DBL-13-COM-cancel attempt1 after",
+    "source_file": "DBL-13-024.jpg",
+    "source_sha256": "c668caa940f6d7c5f6df7ae0e4776ea2108adedb86a96eee1cf3411fa4a16e07",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-COM-leave",
+    "attempt": 1,
+    "phase": "after",
+    "file": "DBL-13-COM-leave-01.png",
+    "original_marker": "DBL-13-COM-leave attempt1 after",
+    "source_file": "DBL-13-026.jpg",
+    "source_sha256": "fab124de713e550126f09a995f75ade85ee69b2cc38672d3b8638138adba7fa3",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-PER-cancel",
+    "attempt": 1,
+    "phase": "setup-A",
+    "file": "DBL-13-PER-cancel-02.png",
+    "original_marker": "DBL-13-PER-cancel attempt1 setup-A",
+    "source_file": "DBL-13-004.jpg",
+    "source_sha256": "2e21348c58b505d3ddb766e43ee7af6b9d372c134695e923cb352ec46d36123f",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-PER-cancel",
+    "attempt": 1,
+    "phase": "setup-A-wait",
+    "file": "DBL-13-PER-cancel-03.png",
+    "original_marker": "DBL-13-PER-cancel attempt1 setup-A-wait",
+    "source_file": "DBL-13-005.jpg",
+    "source_sha256": "dee547326dec4132ef10dde275ee79c43905182cc79737e3fdef2caeb19ea92f",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-PER-cancel",
+    "attempt": 1,
+    "phase": "quit-result",
+    "file": "DBL-13-PER-cancel-04.png",
+    "original_marker": "DBL-13-PER-cancel attempt1 quit-result",
+    "source_file": "DBL-13-006.jpg",
+    "source_sha256": "4cc2ab5e1dfc7ebb778b4041e529739608be136f2ad9913040376275d28369a9",
+    "original_size": [
+      930,
+      444
+    ],
+    "crop_box": [
+      0,
+      0,
+      930,
+      444
+    ],
+    "output_size": [
+      930,
+      444
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-PER-cancel",
+    "attempt": 2,
+    "phase": "restart-result",
+    "file": "DBL-13-PER-cancel-05.png",
+    "original_marker": "DBL-13-PER-cancel attempt2 restart-result",
+    "source_file": "DBL-13-007.jpg",
+    "source_sha256": "156e1259c951a9bc2b591b4c583a28b1a4a3a3f8613982931407ed9782a63c5a",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "正常重开后先显示旧工作窗口X；这不是A恢复图，也不据此声称重启前文档身份不变。"
+  },
+  {
+    "unit_id": "DBL-13-PER-cancel",
+    "attempt": 2,
+    "phase": "setup-A",
+    "file": "DBL-13-PER-cancel-06.png",
+    "original_marker": "DBL-13-PER-cancel attempt2 setup-A",
+    "source_file": "DBL-13-009.jpg",
+    "source_sha256": "b77b773ed193b3c6d513b127b475ce4847fed0870a8eb3c499b9bb3db3dbfc54",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-PER-cancel",
+    "attempt": 2,
+    "phase": "setup-A-stage",
+    "file": "DBL-13-PER-cancel-07.png",
+    "original_marker": "DBL-13-PER-cancel attempt2 setup-A-stage",
+    "source_file": "DBL-13-010.jpg",
+    "source_sha256": "aceae8c519262129210e464c4209e5f500f5faa7ecafc97674fd356cb235ccaa",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-PER-cancel",
+    "attempt": 2,
+    "phase": "setup-A-focus-return",
+    "file": "DBL-13-PER-cancel-08.png",
+    "original_marker": "DBL-13-PER-cancel attempt2 setup-A-focus-return",
+    "source_file": "DBL-13-013.jpg",
+    "source_sha256": "b74d55a00283922384d436edd652559a150fd0df0f6075aebc71d148c798818a",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-PER-leave",
+    "attempt": 1,
+    "phase": "setup-A",
+    "file": "DBL-13-PER-leave-02.png",
+    "original_marker": "DBL-13-PER-leave attempt1 setup-A",
+    "source_file": "DBL-13-015.jpg",
+    "source_sha256": "a8102a100c2d50a1ecb4b1314161ff9f3271cbd72820f8fa759f81b63fae6828",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-BAL-cancel",
+    "attempt": 1,
+    "phase": "setup-A",
+    "file": "DBL-13-BAL-cancel-02.png",
+    "original_marker": "DBL-13-BAL-cancel attempt1 setup-A",
+    "source_file": "DBL-13-018.jpg",
+    "source_sha256": "f2b02d7133f7b4817cc353bcf8070a32dbe33a3aa497b659cb21dc2308ab1173",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-BAL-leave",
+    "attempt": 1,
+    "phase": "setup-A",
+    "file": "DBL-13-BAL-leave-02.png",
+    "original_marker": "DBL-13-BAL-leave attempt1 setup-A",
+    "source_file": "DBL-13-020.jpg",
+    "source_sha256": "46a81ed72d86444e4c7ba2e74df703b607374a924238b44596fa289b90072d4c",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-COM-cancel",
+    "attempt": 1,
+    "phase": "setup-A",
+    "file": "DBL-13-COM-cancel-02.png",
+    "original_marker": "DBL-13-COM-cancel attempt1 setup-A",
+    "source_file": "DBL-13-023.jpg",
+    "source_sha256": "97e486170060f0eb577c597f77373e88d5fdebe3084641d2f8ffdbcb72738299",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-COM-leave",
+    "attempt": 1,
+    "phase": "setup-A",
+    "file": "DBL-13-COM-leave-02.png",
+    "original_marker": "DBL-13-COM-leave attempt1 setup-A",
+    "source_file": "DBL-13-025.jpg",
+    "source_sha256": "65ac6d4e55bd7d9c34833119eb6aaabd60083c36000a8e8f6c9dcbe1d4f5429a",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-COM-leave",
+    "attempt": 1,
+    "phase": "ending",
+    "file": "DBL-13-COM-leave-03.png",
+    "original_marker": "DBL-13-COM-leave attempt1 ending",
+    "source_file": "DBL-13-029.jpg",
+    "source_sha256": "d2bcd8f6aa8707b22a64f5b0bc7d42584fe6e1e4afc58d0c14b7073719744a54",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-13-PER-cancel",
+    "attempt": 2,
+    "phase": "restored-old-A",
+    "file": "DBL-13-PER-cancel-09.png",
+    "original_marker": "",
+    "source_file": "DBL-13-008.jpg",
+    "source_sha256": "4dfa82e337c055db41e95b04bce3d3b699d27a3d5541e8af39079e0823d81eee",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "128 adaptive colors",
+    "caption": "正常重开后切回旧A实际显示正文与编号2bd29006-72f7-44ae-a424-158330efb997；CU原始未标记帧，仅缩放压缩，不声称与重启前文档相同。"
+  }
+]

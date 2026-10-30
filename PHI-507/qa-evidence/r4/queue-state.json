@@ -1,7 +1,8 @@
 {
-  "current": "DBL-16",
-  "index": 2,
-  "total": 3,
-  "state": "running",
-  "time": "2026-10-30T20:03:35.966977+00:00"
+  "state": "finished",
+  "jobs": [
+    "DBL-14",
+    "DBL-15",
+    "DBL-16"
+  ]
 }

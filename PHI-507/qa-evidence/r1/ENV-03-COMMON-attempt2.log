@@ -1,0 +1,353 @@
+我会只操作 TC-QA-PHI507 当前测试页：通过原生地址栏打开指定地址，等待最多 20 秒，检查四个输入框并保存真实截图。
+
+Computer Use state (CUA App Version: 1001425)
+<app_specific_instructions>
+## Browser Computer Use
+
+When navigating to a new website or starting a separate web task, prefer opening a new tab instead of reusing the current tab; reuse the current tab only when the user explicitly asks to continue there or when the current page is clearly the right place to continue the existing workflow.
+</app_specific_instructions>
+<app_state>
+App=/Users/e2e02/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 30213)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: Website, Value: woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Description: Stop, ID: xmark
+			22 text woodnotfound.github.io
+			23 button Extensions
+	24 image Search
+	25 text field (settable) Placeholder: Search or Enter URL, Value: https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal
+	26 close button
+	27 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	28 minimize button
+29 menu bar
+	30 Phi
+	31 File
+	32 Edit
+	33 View
+	34 Spaces
+	35 History
+	36 Bookmarks
+	37 Tab
+	38 Window
+	39 Help
+	40 *DEBUG*
+
+Selected text: ```
+https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal
+```
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).
+</app_state>
+
+Computer Use state (CUA App Version: 1001425)
+<app_state>
+App=/Users/e2e02/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 30213)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: Website, Value: woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Description: Stop, ID: xmark
+			22 text woodnotfound.github.io
+			23 button Extensions
+	24 close button
+	25 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	26 minimize button
+27 menu bar
+	28 Phi
+	29 File
+	30 Edit
+	31 View
+	32 Spaces
+	33 History
+	34 Bookmarks
+	35 Tab
+	36 Window
+	37 Help
+	38 *DEBUG*
+
+The focused UI element is 0 standard window New Tab, Secondary Actions: Raise
+</app_state>
+
+App=com.phibrowser.opensource.Mac (pid 30213)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: Website, Value: woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Description: Stop, ID: xmark
+			22 text woodnotfound.github.io
+			23 button Extensions
+	24 image Search
+	25 text field (settable) Placeholder: Search or Enter URL, Value: https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal
+	26 close button
+	27 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	28 minimize button
+29 menu bar
+	30 Phi
+	31 File
+	32 Edit
+	33 View
+	34 Spaces
+	35 History
+	36 Bookmarks
+	37 Tab
+	38 Window
+	39 Help
+	40 *DEBUG*
+
+Selected text: ```
+https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal
+```
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).
+
+App=com.phibrowser.opensource.Mac (pid 30213)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: Website, Value: woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Description: Stop, ID: xmark
+			22 text woodnotfound.github.io
+			23 button Extensions
+	24 image Search
+	25 text field (settable) Value: http://127.0.0.1:18210/?tab=A&run=TC-PHI507-r1&kind=normal, Placeholder: Search or Enter URL
+	26 scroll area
+		27 table
+			28 row (selected)
+				29 cell (selected)
+					30 image Globe
+					31 text http://127.0.0.1:18210/?tab=A&run=TC-PHI507-r1&kind=normal
+			32 row (selectable)
+				33 cell
+					34 image Search
+					35 text http://127.0.0.1:18210/?tab=A&run=TC-PHI507-r1&kind=normal - Google Search
+	36 close button
+	37 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	38 minimize button
+39 menu bar
+	40 Phi
+	41 File
+	42 Edit
+	43 View
+	44 Spaces
+	45 History
+	46 Bookmarks
+	47 Tab
+	48 Window
+	49 Help
+	50 *DEBUG*
+
+The focused UI element is 25 text field (settable) Value: http://127.0.0.1:18210/?tab=A&run=TC-PHI507-r1&kind=normal, Placeholder: Search or Enter URL
+
+App=com.phibrowser.opensource.Mac (pid 30213)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: Website, Value: 127.0.0.1:18210/?tab=A&run=TC-PHI507-r1&kind=normal
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Description: Stop, ID: xmark
+			22 text 127.0.0.1
+			23 button Extensions
+	24 close button
+	25 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	26 minimize button
+27 menu bar
+	28 Phi
+	29 File
+	30 Edit
+	31 View
+	32 Spaces
+	33 History
+	34 Bookmarks
+	35 Tab
+	36 Window
+	37 Help
+	38 *DEBUG*
+
+
+Computer Use state (CUA App Version: 1001425)
+<app_state>
+App=/Users/e2e02/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 30213)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: Website, Value: 127.0.0.1:18210/?tab=A&run=TC-PHI507-r1&kind=normal
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Description: Stop, ID: xmark
+			22 text 127.0.0.1
+			23 button Extensions
+	24 close button
+	25 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	26 minimize button
+27 menu bar
+	28 Phi
+	29 File
+	30 Edit
+	31 View
+	32 Spaces
+	33 History
+	34 Bookmarks
+	35 Tab
+	36 Window
+	37 Help
+	38 *DEBUG*
+
+</app_state>
+
+地址已通过原生地址栏提交，当前内容仍是 New Tab，未看到 TC-A、批次、打开编号或存活标记输入框；工具栏仍显示 Stop（×）和紫色加载进度线。主动等待了 17 秒，但截图检查实际在回车后约 28 秒返回，超出了要求的 20 秒上限。我会保存现场截图并如实记录这一偏差。
+
+App=com.phibrowser.opensource.Mac (pid 30213)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: Website, Value: 127.0.0.1:18210/?tab=A&run=TC-PHI507-r1&kind=normal
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Description: Stop, ID: xmark
+			22 text 127.0.0.1
+			23 button Extensions
+	24 image Search
+	25 text field (settable) Value: http://127.0.0.1:18210/?tab=A&run=TC-PHI507-r1&kind=normal, Placeholder: Search or Enter URL
+	26 close button
+	27 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	28 minimize button
+29 menu bar
+	30 Phi
+	31 File
+	32 Edit
+	33 View
+	34 Spaces
+	35 History
+	36 Bookmarks
+	37 Tab
+	38 Window
+	39 Help
+	40 *DEBUG*
+
+Selected text: ```
+http://127.0.0.1:18210/?tab=A&run=TC-PHI507-r1&kind=normal
+```
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

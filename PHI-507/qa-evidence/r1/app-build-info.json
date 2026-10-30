@@ -1,0 +1,21 @@
+{
+  "name": "Phi Tab Close QA",
+  "version": "0.0.0",
+  "build": "1030.1",
+  "buildTime": "2026-10-30T15:09:48.733358+08:00",
+  "branch": "feature/tab-close-improvements",
+  "baseCommit": "d390230615c172c3a3f94132e0b36ce081dac0be",
+  "sourceDiffSHA256": "6865cc137ce00f136bbf6ce303a7bbd2380a659dfb460b06b7e238948fc16d92",
+  "sourceStatus": "Includes uncommitted tab-closing worktree changes",
+  "architecture": "arm64",
+  "minimumMacOS": "14.0",
+  "bundleIdentifier": "com.phibrowser.opensource.Mac",
+  "frameworkVersion": "156.0.8078.52",
+  "capabilities": "OpenSource: no Phi login, cloud sync, AI, Sentinel or automatic updates",
+  "handbook": "https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/",
+  "defaults": {
+    "doubleClickToCloseTabs": false,
+    "directionalTabClosingEnabled": true
+  },
+  "configuration": "OpenSource, unoptimized QA build; native debug launch dylib disabled"
+}

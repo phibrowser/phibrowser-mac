@@ -1,5 +1,5 @@
 issue: PHI-507
-based_on: handbook-snapshot.md@sha256:de59213c1ae4d25532394db6caa205aad716a90534bda5d2fb0a416709570ac5, qa-evidence/r1/package-README.txt@TC-QA-20261030.1
+based_on: handbook-snapshot.md@sha256:de59213c1ae4d25532394db6caa205aad716a90534bda5d2fb0a416709570ac5, Phi-TabClose.zip@sha256:205e51fd09427beeb9a24d813888f780efb1f5d16d4a8c63f280e34386575470
 
 # 独立包完整测试计划
 
@@ -20,6 +20,14 @@ based_on: handbook-snapshot.md@sha256:de59213c1ae4d25532394db6caa205aad716a90534
 ## 手测方案
 
 Fixture：https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal 。需要未保存确认时 kind=unsaved，真正输入后看到“离开确认已启用”才执行；预期集合按各项明确列出。普通 A–F 顺序通过原生 UI 确认，不能依据 CDP 目标排列推断。失败表现包括集合不符、受保护页打开编号变化、取消文档消失、误关其他 Space、文案/开关不符、卡死/崩溃。截图与日志应同时保留关键步骤和结束状态。只能人工判断或缺设备项目明确 blocked/skipped。
+
+## 本轮实际环境补充
+
+会话中的原手册 HTTP/HTTPS fixture 导航不提交；已用同一 HTML 的文件副本做有限诊断：`file:///Users/e2e02/lane/test-site/index.html?tab=A&run=TC-PHI507-r1&kind=normal`。原文件快照 SHA-256 为 `d2b6a75d142a7c2624836557e90c07d0a15c8dd9ed0adb60f5fe2e152c951627`。文件用例的结果只覆盖该协议和实际布局，不能代表 HTTP、三布局或全量通过。公开 CDP 的创建/关闭标签仅用于重新建立测试前置；被测方向关闭通过原生菜单执行。
+
+增加诊断项 `DIAG-NET-01`：从原生地址栏分别导航公网 HTTPS fixture、本会话端口段内 HTTP 镜像，记录提交状态；正常重启后重试，核对文件文档的打开编号；退出被测 app 后在同一会话的 Canary 加载同一 HTTP fixture 作环境对照。Canary 对照不属于被测包的通过结果，也不是配套旧版功能基线。
+
+本轮因正常网页导航异常中止完整验收；仍保留全部 512 项，不因文件冒烟成功放宽手册验收条件。语言布局 27 项均需以后逐项实测；本轮未覆盖必须写明。此节记录实际环境和执行偏差，不改变各用例的预期结果。
 
 ## 完整执行清单
 

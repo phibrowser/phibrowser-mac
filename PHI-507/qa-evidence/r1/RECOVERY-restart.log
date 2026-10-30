@@ -1,0 +1,224 @@
+我会通过原生菜单正常退出 Phi Tab Close QA，确认退出后重新打开同一应用，再检查当前 Space 和页面加载状态并返回截图。
+
+Computer Use state (CUA App Version: 1001425)
+<app_specific_instructions>
+## Browser Computer Use
+
+When navigating to a new website or starting a separate web task, prefer opening a new tab instead of reusing the current tab; reuse the current tab only when the user explicitly asks to continue there or when the current page is clearly the right place to continue the existing workflow.
+</app_specific_instructions>
+<app_state>
+App=/Users/e2e02/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 30213)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: Website, Value: 127.0.0.1:18210/?tab=A&run=TC-PHI507-r1&kind=normal
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Description: Stop, ID: xmark
+			22 text 127.0.0.1
+			23 button Extensions
+	24 image Search
+	25 text field (settable) Value: http://127.0.0.1:18210/?tab=A&run=TC-PHI507-r1&kind=normal, Placeholder: Search or Enter URL
+	26 close button
+	27 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	28 minimize button
+29 menu bar
+	30 Phi
+	31 File
+	32 Edit
+	33 View
+	34 Spaces
+	35 History
+	36 Bookmarks
+	37 Tab
+	38 Window
+	39 Help
+	40 *DEBUG*
+
+Selected text: ```
+http://127.0.0.1:18210/?tab=A&run=TC-PHI507-r1&kind=normal
+```
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).
+</app_state>
+
+App=com.phibrowser.opensource.Mac (pid 30213)
+Window: "New Tab", App: Phi Tab Close QA.
+0 Phi, Secondary Actions: Cancel, Pick
+	1 menu Secondary Actions: Cancel
+		2 About Phi, ID: orderFrontStandardAboutPanel:
+		3 Settings…, ID: showPreferences:
+		4 Delete Browsing Data…, ID: commandDispatch:
+		5 Import from Another Browser..., ID: showImportDataWindowFromMenu:
+		6 (disabled) Migrate from Another Browser…, ID: showBrowserMigrationWizard:
+		7 Services
+			8 menu Secondary Actions: Cancel
+				9 (disabled) No Services Apply
+				10 Services Settings…
+		11 Hide Phi, ID: hide:
+		12 Hide Others, ID: hideOtherApplications:
+		13 (disabled) Show All, ID: unhideAllApplications:
+		14 Warn Before Quitting (⌘Q), ID: toggleConfirmToQuit:
+		15 Quit Phi, ID: terminate:
+		16 Quit and Keep Windows
+
+
+Computer Use state (CUA App Version: 1001425)
+<app_state>
+App=/Users/e2e02/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 32935)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: phi default favicon, Value: New Tab
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Refresh
+			22 button Extensions
+	23 close button
+	24 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	25 minimize button
+26 menu bar
+	27 Phi
+	28 File
+	29 Edit
+	30 View
+	31 Spaces
+	32 History
+	33 Bookmarks
+	34 Tab
+	35 Window
+	36 Help
+	37 *DEBUG*
+
+</app_state>
+
+App=com.phibrowser.opensource.Mac (pid 32935)
+Window: "New Tab", App: Phi Tab Close QA.
+0 Spaces, Secondary Actions: Cancel, Pick
+	1 menu ID: phi.spaces.menu, Secondary Actions: Cancel
+		2 New Space…, ID: newSpaceFromMenu:
+		3 Rename Space…, ID: renameActiveSpace:
+		4 Change Icon…, ID: requestActiveSpaceIconPicker:
+		5 Edit Theme, ID: requestActiveSpaceThemeEditor:
+		6 Change Profile
+			7 menu Secondary Actions: Cancel
+				8 Your Phi, ID: selectSpaceProfile:
+		9 Delete Space…, ID: deleteActiveSpace:
+		10 Next Space, ID: activateNextSpace:
+		11 Previous Space, ID: activatePreviousSpace:
+		12 Default, ID: activateSpaceFromMenu:
+		13 TC-QA-PHI507, ID: activateSpaceFromMenu:
+		14 URL Rules…, ID: openURLRulesEditor:
+		15 New Profile…, ID: newProfile:
+		16 Delete Profile
+			17 menu ID: phi.spaces.deleteProfile, Secondary Actions: Cancel
+				18 (disabled) No Profiles to Delete
+
+
+Computer Use state (CUA App Version: 1001425)
+<app_state>
+App=/Users/e2e02/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 32935)
+Window: "New Tab", App: Phi Tab Close QA.
+0 Spaces, Secondary Actions: Cancel, Pick
+	1 menu ID: phi.spaces.menu, Secondary Actions: Cancel
+		2 New Space…, ID: newSpaceFromMenu:
+		3 Rename Space…, ID: renameActiveSpace:
+		4 Change Icon…, ID: requestActiveSpaceIconPicker:
+		5 Edit Theme, ID: requestActiveSpaceThemeEditor:
+		6 Change Profile
+			7 menu Secondary Actions: Cancel
+				8 Your Phi, ID: selectSpaceProfile:
+		9 Delete Space…, ID: deleteActiveSpace:
+		10 Next Space, ID: activateNextSpace:
+		11 Previous Space, ID: activatePreviousSpace:
+		12 Default, ID: activateSpaceFromMenu:
+		13 TC-QA-PHI507, ID: activateSpaceFromMenu:
+		14 URL Rules…, ID: openURLRulesEditor:
+		15 New Profile…, ID: newProfile:
+		16 Delete Profile
+			17 menu ID: phi.spaces.deleteProfile, Secondary Actions: Cancel
+				18 (disabled) No Profiles to Delete
+
+</app_state>
+
+App=com.phibrowser.opensource.Mac (pid 32935)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: phi default favicon, Value: New Tab
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Refresh
+			22 button Extensions
+	23 close button
+	24 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	25 minimize button
+26 menu bar
+	27 Phi
+	28 File
+	29 Edit
+	30 View
+	31 Spaces
+	32 History
+	33 Bookmarks
+	34 Tab
+	35 Window
+	36 Help
+	37 *DEBUG*
+
+
+RESULT: 重新启动成功。
+
+- 已通过原生菜单 **Phi → Quit Phi** 正常退出，确认原进程结束后，重新打开同一应用。
+- 当前 Space：**TC-QA-PHI507**（Spaces 菜单勾选确认）。
+- 加载页状态：当前为 **New Tab**，首页已显示，工具栏为 **Refresh**，无正在加载指示；退出前的本地测试页未恢复。
+
+截图已以 image 返回。

@@ -1,0 +1,169 @@
+App=com.phibrowser.opensource.Mac (pid 30213)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+	1 scroll area Secondary Actions: Scroll Up, Scroll Down
+		2 text Always show full URL
+		3 toggle button off
+		4 text Show a preview card when hovering over a tab
+		5 toggle button on
+		6 text Show open tab indicators
+		7 toggle button off
+		8 text Show a dot on inactive pinned tabs and bookmarks that are currently open. Show unloaded tab indicators
+		9 toggle button on
+		10 text Show a dashed outline around tab icons when their pages are unloaded from memory. Double-click to close tabs Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions.
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		12 text Close tabs by position Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar.
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+		14 text Restore last session
+		15 toggle button on
+		16 text Reopen your windows and tabs the next time you open Phi. Shorten links to selected text
+		17 toggle button on
+		18 text Applies to “Copy Link to Highlight” in the right-click menu. Turn off to copy the full link. Mini Player Control media playing in background tabs from the sidebar.
+		19 pop up button Description: Mini Player, Value: Auto, ID: settings.sidebarMedia.presentation
+		20 text Auto picture-in-picture Pop out playing video when you switch tabs or apps
+		21 pop up button Normal
+		22 text Developer mode Turning developer mode off turns off agent access and the agent password manager, and revokes every allowed agent and credential approval. An agent that connects later can ask you to turn it back on.
+		23 toggle button off
+		24 button Additional browser settings
+		25 scroll bar (settable, float) 0
+			26 value indicator (settable, float) 0
+			27 increment arrow button
+			28 decrement arrow button
+			29 increment page button
+			30 decrement page button
+	31 toolbar
+		32 button Guest, Secondary Actions: Move next, Remove from toolbar
+		33 button General, Secondary Actions: Move previous, Move next, Remove from toolbar
+		34 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar
+		35 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar
+		36 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar
+		37 button Phi & AI, Secondary Actions: Move previous, Move next, Remove from toolbar
+		38 button Sync, Secondary Actions: Move previous, Move next, Remove from toolbar
+		39 button Shortcuts, Secondary Actions: Move previous, Move next, Remove from toolbar
+		40 button Advanced, Secondary Actions: Move previous, Remove from toolbar
+	41 close button
+	42 zoom button (disabled)
+	43 text Advanced
+44 menu bar
+	45 Phi
+	46 File
+	47 Edit
+	48 View
+	49 Spaces
+	50 History
+	51 Bookmarks
+	52 Tab
+	53 Window
+	54 Help
+	55 *DEBUG*
+
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise
+
+App=com.phibrowser.opensource.Mac (pid 30213)
+Window: "Advanced", App: Phi Tab Close QA.
+0 Phi, Secondary Actions: Cancel, Pick
+	1 menu Secondary Actions: Cancel
+		2 About Phi, ID: orderFrontStandardAboutPanel:
+		3 Settings…, ID: showPreferences:
+		4 Delete Browsing Data…, ID: commandDispatch:
+		5 Import from Another Browser..., ID: showImportDataWindowFromMenu:
+		6 (disabled) Migrate from Another Browser…, ID: showBrowserMigrationWizard:
+		7 Services
+			8 menu Secondary Actions: Cancel
+				9 (disabled) No Services Apply
+				10 Services Settings…
+		11 Hide Phi, ID: hide:
+		12 Hide Others, ID: hideOtherApplications:
+		13 (disabled) Show All, ID: unhideAllApplications:
+		14 Warn Before Quitting (⌘Q), ID: toggleConfirmToQuit:
+		15 Quit Phi, ID: terminate:
+		16 Quit and Keep Windows
+
+
+App=com.phibrowser.opensource.Mac (pid 30213)
+Window: "", App: Phi Tab Close QA.
+0 standard window ID: About Phi Browser, Secondary Actions: Raise
+	1 container
+		2 image
+		3 text Phi Tab Close QA Version 0.0.0 (1030.1) Chromium Engine Version 156.0.8078.52 © 2026 Phinomenon. All rights reserved.
+		4 text entry area Phi is made possible by the <u>[Chromium](chromium.org/Home/)</u> open source project, Chromium's <u>[open source software](chrome://credits)</u>, as well as other <u>[open source software](file:///Users/e2e02/Applications/Phi%20Tab%20Close%20QA.app/Contents/Resources/credits.html)</u>.
+			5 link Chromium, Value: chromium.org/Home/
+			6 link open source software, Value: chrome://credits
+			7 link open source software, Value: file:///Users/e2e02/Applications/Phi%20Tab%20Close%20QA.app/Contents/Resources/credits.html
+	8 close button
+	9 zoom button (disabled)
+10 menu bar
+	11 Phi
+	12 File
+	13 Edit
+	14 View
+	15 Spaces
+	16 History
+	17 Bookmarks
+	18 Tab
+	19 Window
+	20 Help
+	21 *DEBUG*
+
+The focused UI element is 4 text entry area Phi is made possible by the <u>[Chromium](chromium.org/Home/)</u> open source project, Chromium's <u>[open source software](chrome://credits)</u>, as well as other <u>[open source software](file:///Users/e2e02/Applications/Phi%20Tab%20Close%20QA.app/Contents/Resources/credits.html)</u>.
+
+App=com.phibrowser.opensource.Mac (pid 30213)
+Window: "Advanced", App: Phi Tab Close QA.
+0 standard window Advanced, Secondary Actions: Raise
+	1 scroll area Secondary Actions: Scroll Up, Scroll Down
+		2 text Always show full URL
+		3 toggle button off
+		4 text Show a preview card when hovering over a tab
+		5 toggle button on
+		6 text Show open tab indicators
+		7 toggle button off
+		8 text Show a dot on inactive pinned tabs and bookmarks that are currently open. Show unloaded tab indicators
+		9 toggle button on
+		10 text Show a dashed outline around tab icons when their pages are unloaded from memory. Double-click to close tabs Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions.
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		12 text Close tabs by position Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar.
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+		14 text Restore last session
+		15 toggle button on
+		16 text Reopen your windows and tabs the next time you open Phi. Shorten links to selected text
+		17 toggle button on
+		18 text Applies to “Copy Link to Highlight” in the right-click menu. Turn off to copy the full link. Mini Player Control media playing in background tabs from the sidebar.
+		19 pop up button Description: Mini Player, Value: Auto, ID: settings.sidebarMedia.presentation
+		20 text Auto picture-in-picture Pop out playing video when you switch tabs or apps
+		21 pop up button Normal
+		22 text Developer mode Turning developer mode off turns off agent access and the agent password manager, and revokes every allowed agent and credential approval. An agent that connects later can ask you to turn it back on.
+		23 toggle button off
+		24 button Additional browser settings
+		25 scroll bar (settable, float) 0
+			26 value indicator (settable, float) 0
+			27 increment arrow button
+			28 decrement arrow button
+			29 increment page button
+			30 decrement page button
+	31 toolbar
+		32 button Guest, Secondary Actions: Move next, Remove from toolbar
+		33 button General, Secondary Actions: Move previous, Move next, Remove from toolbar
+		34 button Profiles, Secondary Actions: Move previous, Move next, Remove from toolbar
+		35 button Spaces, Secondary Actions: Move previous, Move next, Remove from toolbar
+		36 button Navigation, Secondary Actions: Move previous, Move next, Remove from toolbar
+		37 button Phi & AI, Secondary Actions: Move previous, Move next, Remove from toolbar
+		38 button Sync, Secondary Actions: Move previous, Move next, Remove from toolbar
+		39 button Shortcuts, Secondary Actions: Move previous, Move next, Remove from toolbar
+		40 button Advanced, Secondary Actions: Move previous, Remove from toolbar
+	41 close button
+	42 zoom button (disabled)
+	43 text Advanced
+44 menu bar
+	45 Phi
+	46 File
+	47 Edit
+	48 View
+	49 Spaces
+	50 History
+	51 Bookmarks
+	52 Tab
+	53 Window
+	54 Help
+	55 *DEBUG*
+
+The focused UI element is 0 standard window Advanced, Secondary Actions: Raise

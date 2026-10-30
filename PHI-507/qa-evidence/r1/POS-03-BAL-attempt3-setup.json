@@ -1,0 +1,37 @@
+[
+  {
+    "success": true
+  },
+  {
+    "success": true
+  },
+  {
+    "success": true
+  },
+  {
+    "success": true
+  },
+  {
+    "success": true
+  },
+  {
+    "frameId": "5D3CB81F3F9AE7C8592C022039B623D5",
+    "loaderId": "E4A3D086061D15772145FDA6A1C607BE",
+    "isDownload": false
+  },
+  {
+    "targetId": "762A062713A17DDF7D6821C8606A3807"
+  },
+  {
+    "targetId": "46F1030071E7539DAB2CB4AF681F09BE"
+  },
+  {
+    "targetId": "04462FE3BBFAC4168DCDF6B12EBF26A0"
+  },
+  {
+    "targetId": "DEF6172EDE03A41E63742A31A95255DD"
+  },
+  {
+    "targetId": "2800B93BC147F12A14CFB3E9CEA78E12"
+  }
+]

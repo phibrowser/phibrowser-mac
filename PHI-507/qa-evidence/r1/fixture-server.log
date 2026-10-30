@@ -1,0 +1,5 @@
+127.0.0.1 - - [30/Oct/2026 15:45:31] "HEAD /?tab=A&run=TC-PHI507-r1 HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 15:48:48] "GET /?tab=A&run=TC-PHI507-r1 HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 16:11:02] "GET /?tab=CONTROL&run=TC-PHI507-r1&kind=normal HTTP/1.1" 200 -
+127.0.0.1 - - [30/Oct/2026 16:11:02] code 404, message File not found
+127.0.0.1 - - [30/Oct/2026 16:11:02] "GET /favicon.ico HTTP/1.1" 404 -

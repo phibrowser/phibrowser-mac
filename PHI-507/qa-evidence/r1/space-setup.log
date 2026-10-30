@@ -1,0 +1,9 @@
+RESULT: 已成功通过原生 UI 创建并切换到可丢弃 Space `TC-QA-PHI507`。
+
+- **当前 Space：** `TC-QA-PHI507`
+- **当前布局：** `Balanced`（Settings → General 中蓝色边框选中）
+- **当前原生标签顺序（从上到下）：** `New Tab`（唯一标签，已选中）。上方的 `+ New Tab` 是新建入口，不计为标签。
+- **可见的 TC- 页面：** 当前 Space 无。创建前的 `Default` 中有一个测试地址，包含 `tab=A&run=TC-PHI507-r1&kind=normal`，但原生标签显示为 `woodnotfound.github.io`，并未显示 `TC-` 标题。
+- **创建前 Default 的原生标签顺序：** `New Tab` → `woodnotfound.github.io`（当时选中）。
+
+Settings 窗口已关闭并回到主窗；没有关闭现有页面、没有登录、没有修改开关。已使用 computer use 获取实际屏幕，并将布局及创建后的截图以 image 传出。

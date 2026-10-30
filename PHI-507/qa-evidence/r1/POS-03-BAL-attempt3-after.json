@@ -1,0 +1,86 @@
+[
+  {
+    "targetInfos": [
+      {
+        "targetId": "04462FE3BBFAC4168DCDF6B12EBF26A0",
+        "type": "page",
+        "title": "TC-D · TC-PHI507-r1",
+        "url": "file:///Users/e2e02/lane/test-site/index.html?tab=D&run=TC-PHI507-r1&kind=normal&attempt=3",
+        "attached": false,
+        "canAccessOpener": false,
+        "browserContextId": "E23BC66E5670DA3EBCB8E27D6DDAF446"
+      },
+      {
+        "targetId": "46F1030071E7539DAB2CB4AF681F09BE",
+        "type": "page",
+        "title": "TC-C · TC-PHI507-r1",
+        "url": "file:///Users/e2e02/lane/test-site/index.html?tab=C&run=TC-PHI507-r1&kind=normal&attempt=3",
+        "attached": false,
+        "canAccessOpener": false,
+        "browserContextId": "E23BC66E5670DA3EBCB8E27D6DDAF446"
+      },
+      {
+        "targetId": "DEF6172EDE03A41E63742A31A95255DD",
+        "type": "page",
+        "title": "TC-E · TC-PHI507-r1",
+        "url": "file:///Users/e2e02/lane/test-site/index.html?tab=E&run=TC-PHI507-r1&kind=normal&attempt=3",
+        "attached": false,
+        "canAccessOpener": false,
+        "browserContextId": "E23BC66E5670DA3EBCB8E27D6DDAF446"
+      },
+      {
+        "targetId": "2800B93BC147F12A14CFB3E9CEA78E12",
+        "type": "page",
+        "title": "TC-F · TC-PHI507-r1",
+        "url": "file:///Users/e2e02/lane/test-site/index.html?tab=F&run=TC-PHI507-r1&kind=normal&attempt=3",
+        "attached": false,
+        "canAccessOpener": false,
+        "browserContextId": "E23BC66E5670DA3EBCB8E27D6DDAF446"
+      }
+    ]
+  },
+  {
+    "result": {
+      "type": "object",
+      "value": {
+        "title": "TC-C · TC-PHI507-r1",
+        "url": "file:///Users/e2e02/lane/test-site/index.html?tab=C&run=TC-PHI507-r1&kind=normal&attempt=3",
+        "instance": "786ac11d-d35c-4e6f-9ca0-8f9e7e9b4f56",
+        "marker": ""
+      }
+    }
+  },
+  {
+    "result": {
+      "type": "object",
+      "value": {
+        "title": "TC-D · TC-PHI507-r1",
+        "url": "file:///Users/e2e02/lane/test-site/index.html?tab=D&run=TC-PHI507-r1&kind=normal&attempt=3",
+        "instance": "c45b32cd-fee2-4a4f-9a6a-096bc157cd9a",
+        "marker": ""
+      }
+    }
+  },
+  {
+    "result": {
+      "type": "object",
+      "value": {
+        "title": "TC-E · TC-PHI507-r1",
+        "url": "file:///Users/e2e02/lane/test-site/index.html?tab=E&run=TC-PHI507-r1&kind=normal&attempt=3",
+        "instance": "4439fb87-d562-4316-925c-b8ac622c17f6",
+        "marker": ""
+      }
+    }
+  },
+  {
+    "result": {
+      "type": "object",
+      "value": {
+        "title": "TC-F · TC-PHI507-r1",
+        "url": "file:///Users/e2e02/lane/test-site/index.html?tab=F&run=TC-PHI507-r1&kind=normal&attempt=3",
+        "instance": "0cc7ff47-965d-4f38-b044-89e24fadf63f",
+        "marker": ""
+      }
+    }
+  }
+]

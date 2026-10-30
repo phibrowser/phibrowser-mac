@@ -1,0 +1,208 @@
+我会只在 TC-QA-PHI507 Space 的 New Tab 中用原生地址栏打开指定网址，等待最多 20 秒后检查页面，并用截图工具记录实际状态。
+
+Computer Use state (CUA App Version: 1001425)
+<app_specific_instructions>
+## Browser Computer Use
+
+When navigating to a new website or starting a separate web task, prefer opening a new tab instead of reusing the current tab; reuse the current tab only when the user explicitly asks to continue there or when the current page is clearly the right place to continue the existing workflow.
+</app_specific_instructions>
+<app_state>
+App=/Users/e2e02/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 30213)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: phi default favicon, Value: New Tab
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Refresh
+			22 button Extensions
+	23 close button
+	24 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	25 minimize button
+26 menu bar
+	27 Phi
+	28 File
+	29 Edit
+	30 View
+	31 Spaces
+	32 History
+	33 Bookmarks
+	34 Tab
+	35 Window
+	36 Help
+	37 *DEBUG*
+
+</app_state>
+
+Computer Use state (CUA App Version: 1001425)
+<app_state>
+App=/Users/e2e02/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 30213)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: Website, Value: woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Description: Stop, ID: xmark
+			22 text woodnotfound.github.io
+			23 button Extensions
+	24 close button
+	25 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	26 minimize button
+27 menu bar
+	28 Phi
+	29 File
+	30 Edit
+	31 View
+	32 Spaces
+	33 History
+	34 Bookmarks
+	35 Tab
+	36 Window
+	37 Help
+	38 *DEBUG*
+
+</app_state>
+
+Computer Use state (CUA App Version: 1001425)
+<app_state>
+App=/Users/e2e02/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 30213)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: Website, Value: woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Description: Stop, ID: xmark
+			22 text woodnotfound.github.io
+			23 button Extensions
+	24 close button
+	25 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	26 minimize button
+27 menu bar
+	28 Phi
+	29 File
+	30 Edit
+	31 View
+	32 Spaces
+	33 History
+	34 Bookmarks
+	35 Tab
+	36 Window
+	37 Help
+	38 *DEBUG*
+
+</app_state>
+
+Computer Use state (CUA App Version: 1001425)
+<app_state>
+App=/Users/e2e02/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 30213)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button Description: Search Tabs, ID: sidebarHeader.searchTabsButton
+			5 button left sidebar search tab
+		6 container
+			7 button Default
+			8 button TC-QA-PHI507
+		9 collection
+		10 scroll area
+			11 outline sidebarTabList
+				12 row (selectable) New Tab
+				13 row (selected) Description: Website, Value: woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal
+		14 container sidebar.footer
+			15 button Description: Profile menu, ID: profile.menuButton
+			16 button
+		17 splitter (disabled, settable, float) 193
+		18 container
+			19 button (disabled) Description: Back, ID: chevron.left
+			20 button (disabled) Description: Forward, ID: chevron.right
+			21 button Description: Stop, ID: xmark
+			22 text woodnotfound.github.io
+			23 button Extensions
+	24 image Search
+	25 text field (settable) Placeholder: Search or Enter URL, Value: https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal
+	26 close button
+	27 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	28 minimize button
+29 menu bar
+	30 Phi
+	31 File
+	32 Edit
+	33 View
+	34 Spaces
+	35 History
+	36 Bookmarks
+	37 Tab
+	38 Window
+	39 Help
+	40 *DEBUG*
+
+Selected text: ```
+https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal
+```
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).
+</app_state>
+
+RESULT: 在 **TC-QA-PHI507 Space 的 New Tab** 中，通过原生地址栏输入指定网址并回车后，等待约 **19.2 秒**，目标测试页面仍未显示，画面保留 New Tab 首页内容，浏览器仍处于加载状态。
+
+- **TC-A 标题：**未出现。
+- **批次：**未出现。
+- **打开编号：**未出现。
+- **存活标记输入框：**未出现。
+- **地址栏：**已核实为 `https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r1&kind=normal`。
+- **页面可见原文：**`Web Store`、`Add shortcut`；展开地址栏记录时，首页搜索框显示 `Search Google or type a URL`。未见错误提示。
+- **加载图标状态：**工具栏显示 **×（Stop）**，域名下方仍有紫色加载进度线。
+
+已通过截图工具返回真实页面截图及完整地址栏截图。全程未修改设置，未进入其他 Space。

@@ -579,11 +579,14 @@ class SideAddressBar: NSView {
     }
     
     private func copyCurrentURL() {
-        guard var urlString = currentTab?.url, !urlString.isEmpty else { return }
-        urlString = ReaderExtensionBridge.sourceURLString(fromReaderPageURL: urlString) ?? urlString
-        let branded = URLProcessor.phiBrandEnsuredUrlString(urlString)
+        // The page in front of the bar: a presented peek's, not the opener
+        // hidden behind the panel — the same answer the Copy URL command
+        // gives, so the button and ⌘⇧C cannot disagree.
+        let urlString = sessionBrowserState?.addressBarCopyURLString(for: currentTab)
+            ?? BrowserState.copyURLString(forAddressBarShowing: currentTab)
+        guard let urlString else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(branded, forType: .string)
+        NSPasteboard.general.setString(urlString, forType: .string)
     }
 
     private func toggleReaderView() {

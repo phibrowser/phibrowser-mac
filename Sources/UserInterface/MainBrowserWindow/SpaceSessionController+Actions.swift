@@ -115,6 +115,19 @@ extension SpaceSessionController {
         toggleOmniBox(fromAddressBar: true, addressView: addressView)
     }
     
+    /// The omnibox that picks the pane of `BrowserState.pendingSplitPreview`.
+    /// Without it nothing could end the preview, so it ends here instead.
+    func presentSplitPreviewOmniBox() {
+        if omniBoxContainerViewController?.hasShown == true {
+            omniBoxContainerViewController?.representAsSplitPanePicker()
+        } else {
+            toggleOmniBox(fromAddressBar: false)
+        }
+        if omniBoxContainerViewController?.hasShown != true {
+            browserState.endSplitPreview()
+        }
+    }
+
     @IBAction func selectTabWithIndex(_ index: Int) {
         browserState.selectTabWithIndex(index)
     }
@@ -167,6 +180,12 @@ extension SpaceSessionController {
                 omnibackgroundView.clickedThroughOutside = nil
             }
             if let hostView {
+                // Resolve the shell and address-bar geometry before mounting
+                // the overlay or asking its text field to become first responder.
+                hostView.layoutSubtreeIfNeeded()
+                if omniBoxOverlayClicksThrough {
+                    omnibackgroundView.frame = hostView.bounds
+                }
                 hostView.addSubview(omnibackgroundView)
                 if omniBoxOverlayClicksThrough {
                     omnibackgroundView.snp.remakeConstraints { make in
@@ -184,11 +203,16 @@ extension SpaceSessionController {
 
                 // Add omniBox container to background view
                 if let containerView = omniBoxContainerViewController?.view {
+                    containerView.frame = omnibackgroundView.bounds
                     omnibackgroundView.addSubview(containerView)
                     containerView.snp.remakeConstraints { make in
                         make.edges.equalToSuperview()
                     }
                 }
+                hostView.layoutSubtreeIfNeeded()
+            } else {
+                AppLogWarn("[Omnibox] cannot present without a host for window \(windowId)")
+                return
             }
             if fromAddressBar {
                 if browserState.groupOverviewState != nil {

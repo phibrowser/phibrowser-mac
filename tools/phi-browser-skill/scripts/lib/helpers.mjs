@@ -26,16 +26,18 @@ import { discoverOpenclawTranscript } from './mirror-openclaw.mjs'
 import { discoverCursorTranscript } from './mirror-cursor.mjs'
 
 // Default viewport for the hidden agent window: both dimensions follow the
-// REAL window's web-content panel — window minus sidebar/header, reported by
-// the app itself via agentSpace.panelSize (see resolveBaseViewport) — so the
-// agent renders exactly what the user sees when surfacing the Space, and
-// user window resizes are followed per action (see maybeTrackWindowResize).
+// Agent Space's own PAGE AREA — its window minus Sidebar, Content Header,
+// bookmark bar and AI Chat panel, reported by the app itself via
+// agentSpace.panelSize (see agentPageArea) — so the agent renders exactly
+// what the user sees when surfacing the Space. The page area is re-measured
+// before each action, so a Sidebar toggle, a bar, a panel or a window resize
+// is picked up at the next action (see maybeTrackPageArea).
 // Browser.getWindowForTarget bounds (which include the chrome) are only a
 // fallback, and FALLBACK_VIEWPORT the last resort when nothing can be
 // measured. On normal sites the viewport is never changed; setViewport()
 // exists for exceptional cases (responsive testing, an explicit user ask).
 // Whatever size is chosen, the compositor scales the whole viewport to fit
-// the real window for a watching user (never a clipped slice).
+// the page area for a watching user (never a clipped slice).
 const FALLBACK_VIEWPORT = { width: 1280, height: 900 }
 const VIEWPORT_MIN = 320
 const VIEWPORT_MAX = 4096
@@ -78,8 +80,9 @@ const state = {
   // navigation, a confirmed clear page, closeTab/complete, or the persisted
   // gate's TTL expiring.
   challengeGate: null,
-  windowBounds: null,        // last seen agent-window OS size ("WxH"), and
-  windowBoundsCheckedAt: 0,  // when it was checked — see maybeTrackWindowResize
+  pageArea: null,            // the page-area answer ("WxH") the current agent
+                             // viewport was sized from — see agentPageArea
+  pageAreaCheckedAt: 0,      // when it was last re-checked — see maybeTrackPageArea
   lastPingAt: 0,             // epoch ms of the last keep-alive ping (see maybePing)
   pingTimer: null,           // round-long heartbeat interval (see ensureAgentSpace)
   explicitTtl: null,         // {taskId, deadline} bought by ping(ttlSeconds) —
@@ -346,9 +349,9 @@ async function guardAgentControl() {
   if (contextKind() === 'user') return
   // A shadow window has no ownership either, for the opposite reason: it is
   // invisible, so there is no "Take control" button and no user to honor.
-  // Nothing mirrors its size either (see resolveBaseViewport). Keep-alive
-  // still matters — more than for a Space, since a leaked shadow window is
-  // one the user cannot see to close.
+  // Its viewport is its own real frame, never a measured page area (see
+  // resolveBaseViewport). Keep-alive still matters — more than for a Space,
+  // since a leaked shadow window is one the user cannot see to close.
   if (contextKind() === 'shadow') {
     await maybePing()
     return
@@ -375,9 +378,9 @@ async function guardAgentControl() {
   // landed mid-round) — finish the bind's deferred attach before acting, or
   // every session-needing helper below would die on "No tab attached".
   await ensureSessionAttached()
-  // Agent is driving — keep the emulated viewport in step with the user's
-  // window before acting, and nudge the Space's keep-alive (both throttled).
-  await maybeTrackWindowResize()
+  // Agent is driving — keep the emulated viewport in step with the Space's
+  // page area before acting, and nudge the Space's keep-alive (both throttled).
+  await maybeTrackPageArea()
   await maybePing()
 }
 
@@ -830,14 +833,15 @@ export async function listTabs() {
 }
 
 /**
- * The size a tab in one of the USER's windows renders at — the real content
- * panel (window minus sidebar/header). The agent window can't be asked while
- * hidden (its view size is 0×0 — the reason the override exists at all), but
- * sibling frame mirroring keeps it at the user's window size, so a user-tab's
- * panel is exactly what this page would get there. http(s) pages first: a
- * WebUI tab (Phi's NTP) is a native view whose backing WebContents is a
- * near-window-sized shell, not the panel. Tabs of agent windows are skipped
- * implicitly: their metrics read 0×0 and fail the >0 check. Passive — a flat
+ * The size a tab in one of the USER's windows renders at — the real page
+ * area (window minus Sidebar and Content Header). The agent window can't be
+ * asked while hidden (its view size is 0×0 — the reason the override exists
+ * at all), but sibling frame mirroring keeps it at the user's window size, so
+ * a user-tab's page area is what this page would get there. http(s) pages
+ * first: a WebUI tab (Phi's NTP) is a native view whose backing WebContents
+ * is a near-window-sized shell, not the page area. Tabs of agent windows are
+ * skipped implicitly: their metrics read 0×0 and fail the >0 check. Passive —
+ * a flat
  * attach + one Page.getLayoutMetrics, no activation, no overrides.
  */
 async function userWindowPanelSize(client) {
@@ -872,13 +876,34 @@ async function userWindowPanelSize(client) {
 }
 
 /**
- * The real content-panel size for a tab — what the page would render at in a
+ * The one "how big is the page area?" question to the app: the size the
+ * agent's page renders at in its Agent Space — the window minus Sidebar,
+ * Content Header, bookmark bar and AI Chat panel — as {width, height}, or
+ * null when the app cannot answer (no visible window, an app too old for the
+ * message). Names the agent's hidden window so the app can measure that
+ * Space's own instance rather than whatever the key window presents; an app
+ * that ignores the field still answers for the key window. Shared by the
+ * base viewport (resolveBaseViewport) and the per-action re-check
+ * (maybeTrackPageArea) so the two can never disagree.
+ */
+async function agentPageArea() {
+  try {
+    const windowId = state.task?.windowId
+    const { width, height } = await phiSend('agentSpace.panelSize',
+                                            windowId ? { windowId } : {})
+    if (width > 0 && height > 0) return { width, height }
+  } catch {}
+  return null
+}
+
+/**
+ * The real page-area size for a tab — what the page would render at in a
  * regular tab, so the agent's layout matches what the user sees when
  * surfacing the Space exactly. Measured in order:
- *  1. the app itself (`agentSpace.panelSize`): the visible window's
- *     web-content panel straight from the window layout — authoritative,
- *     works for NTP-only windows and covers watch mode (the visible window
- *     is then this very Space);
+ *  1. the app itself (`agentPageArea`): the Agent Space's own page area
+ *     straight from the window layout — authoritative, works for NTP-only
+ *     windows and covers watch mode (the visible window is then this very
+ *     Space);
  *  2. this tab's own Page.getLayoutMetrics with the override cleared —
  *     correct whenever the agent window is actually on screen; 0×0 while it
  *     is hidden, which falls through;
@@ -888,15 +913,14 @@ async function userWindowPanelSize(client) {
  *  5. FALLBACK_VIEWPORT.
  */
 async function resolveBaseViewport(client, sessionId, targetId) {
-  // Step 1 mirrors the user's window so a WATCHING user sees the page at the
-  // size their own window renders it. Nobody watches a shadow window, and
+  // Step 1 measures the Space's page area so a WATCHING user sees the page
+  // at the size their window presents it. Nobody watches a shadow window, and
   // unlike a hidden Space window it is Show()n off-screen at its own real
   // frame — so its layout metrics (step 2) are genuine and win here.
   if (contextKind() !== 'shadow') {
-    try {
-      const { width, height } = await phiSend('agentSpace.panelSize', {})
-      if (width > 0 && height > 0) return { width, height }
-    } catch {}
+    const area = await agentPageArea()
+    state.pageArea = area ? `${area.width}x${area.height}` : null
+    if (area) return area
   }
   if (sessionId) {
     try {
@@ -925,16 +949,17 @@ async function resolveBaseViewport(client, sessionId, targetId) {
  * reliably without an explicit device-metrics override — its hidden view size
  * is literally 0×0, so "no override" and CDP's width/height:0 tracking mode
  * both collapse the page (measured). Impose a SIZED override — by default the
- * real window's CONTENT PANEL (see resolveBaseViewport), so the layout is
- * identical to a regular tab and screenshots/getBoundingClientRect match what
- * the user sees when surfacing. User window resizes are followed by
- * `maybeTrackWindowResize` re-applying this per action. Cleared on handOff so
- * a user taking over sees the real window size, and re-applied on takeOver.
+ * Space's PAGE AREA (see resolveBaseViewport), so the layout is identical to
+ * a regular tab and screenshots/getBoundingClientRect match what the user
+ * sees when surfacing. Page-area changes (a Sidebar toggle, a bar, a panel,
+ * a window resize) are followed by `maybeTrackPageArea` re-applying this per
+ * action. Cleared on handOff so a user taking over sees the real page area,
+ * and re-applied on takeOver.
  *
  * `request` ({width?, height?}, from setViewport) overrides either dimension;
- * omitted dimensions track the real content panel. When the chosen viewport exceeds
- * the window in either axis, the emulation also sets `scale` so the WHOLE
- * viewport renders scaled-to-fit inside the real window — a user surfacing the
+ * omitted dimensions track the page area. When the chosen viewport exceeds
+ * the page area in either axis, the emulation also sets `scale` so the WHOLE
+ * viewport renders scaled-to-fit inside the page area — a user surfacing the
  * Space sees the full page context, never a clipped slice. Scale only affects
  * compositing, not layout: innerWidth/innerHeight, coordinates and refs are
  * unchanged — but Input.dispatchMouseEvent coords are widget-space, so input
@@ -957,37 +982,34 @@ async function applyAgentViewport(client, sessionId, targetId, request = null) {
 }
 
 /**
- * Keeps the emulated viewport in step with the user's window while a round
- * drives. Sibling frame mirroring resizes the hidden agent window whenever
- * the user resizes theirs, so compare the agent window's OS bounds — one
- * cheap CDP call, throttled to one check per second — and re-apply the
- * current tab's viewport when they changed: an explicit setViewport request
- * is preserved (its fit-to-window scale recomputed), the default re-measures
- * the content panel. Called from guardAgentControl (every mutating helper)
- * and the observation entry points, so the agent always acts on a layout
- * matching the window the user actually has. No-op while the user drives —
- * their takeover cleared the override and nothing may shift under them.
+ * Keeps the emulated viewport in step with the Space's page area while a
+ * round drives. Ask the app for the page area again — one message, throttled
+ * to one check per second — and re-apply the current tab's viewport when the
+ * answer differs from the one it was sized from: an explicit setViewport
+ * request is preserved (its fit-to-page-area scale recomputed), the default
+ * re-measures. Catches whatever changes the page area — a Sidebar toggle, a
+ * bookmark bar, a panel, an infobar, a window resize — at the agent's next
+ * action. Called from guardAgentControl (every mutating helper) and the
+ * observation entry points, so the agent always acts on a layout matching
+ * what the user actually sees. No-op while the user drives — their takeover
+ * cleared the override and nothing may shift under them — and for a shadow
+ * window, whose viewport is its own real frame.
  */
-async function maybeTrackWindowResize() {
+async function maybeTrackPageArea() {
   if (!state.sessionId || !state.targetId) return
-  // Agent-window emulation only: a user-Space tab is visible and sized for
-  // real — never impose device metrics on it.
-  if (!state.task || state.task.ownership === 'user') return
+  // Agent-Space emulation only: a user-Space tab is visible and sized for
+  // real — never impose device metrics on it — and a shadow window is never
+  // measured by the app.
+  if (contextKind() !== 'agent' || state.task.ownership === 'user') return
   const now = Date.now()
-  if (now - state.windowBoundsCheckedAt < 1000) return
-  state.windowBoundsCheckedAt = now
+  if (now - state.pageAreaCheckedAt < 1000) return
+  state.pageAreaCheckedAt = now
+  const area = await agentPageArea()
+  if (!area || `${area.width}x${area.height}` === state.pageArea) return
   try {
-    const client = await cdpClient()
-    const { bounds } = await client.send('Browser.getWindowForTarget',
-                                         { targetId: state.targetId })
-    if (!bounds || !bounds.width) return
-    const key = `${bounds.width}x${bounds.height}`
-    if (state.windowBounds && state.windowBounds !== key) {
-      await applyAgentViewport(
-        client, state.sessionId, state.targetId,
-        state.viewportByTarget.get(state.targetId)?.request ?? null)
-    }
-    state.windowBounds = key
+    await applyAgentViewport(
+      await cdpClient(), state.sessionId, state.targetId,
+      state.viewportByTarget.get(state.targetId)?.request ?? null)
   } catch {}
 }
 
@@ -1537,7 +1559,7 @@ async function attachTabNow(targetId) {
   })
   await client.send('Network.enable', NETWORK_CAPTURE_PARAMS, sessionId).catch(() => {})
   // Restore this tab's viewport override if one was set earlier this round
-  // (switching back keeps it); default = the real window size. Agent-window
+  // (switching back keeps it); default = the Space's page area. Agent-window
   // tabs only — a user-Space tab is visible and needs no emulation.
   if (!userDriving && state.task) {
     await applyAgentViewport(client, sessionId, targetId,
@@ -3399,7 +3421,7 @@ export async function observe({ maxElements = 500, within = null,
                                 showHidden = false, diff = false } = {}) {
   if (state.openDialog) return { dialog: state.openDialog }
   logAction('scan page elements')
-  await maybeTrackWindowResize()
+  await maybeTrackPageArea()
   await maybePing()
   const { data, prev } = await pageScanCached({ within, showHidden })
   const { url, title, headings } = data
@@ -3438,7 +3460,7 @@ export async function snapshotText({ maxChars = 60000, within = null,
     return wrapUntrusted(`[dialog open: ${JSON.stringify(state.openDialog)}]`)
   }
   logAction('read page text')
-  await maybeTrackWindowResize()
+  await maybeTrackPageArea()
   await maybePing()
   const { data, prev } = await pageScanCached({ within, showHidden })
   let text
@@ -3939,7 +3961,7 @@ export async function screenshot(path) {
                     'call handleDialog(accept) first')
   }
   await ensureSessionAttached()
-  await maybeTrackWindowResize()
+  await maybeTrackPageArea()
   await maybePing()
   logAction('screenshot')
   const client = await cdpClient()
@@ -3963,7 +3985,7 @@ export async function screenshotBrowser(path) {
   // native capture returns an empty frame. screenshot() still works — it
   // captures the page through the renderer, not the screen.
   refuseInShadow('screenshotBrowser')
-  await maybeTrackWindowResize()
+  await maybeTrackPageArea()
   await maybePing()
   logAction('screenshot browser window')
   const task = requireTask()
@@ -4403,16 +4425,16 @@ export async function scrapeMedia({ types = ['image'], within = null, dir,
 
 /**
  * Sets the CURRENT tab's emulated viewport. Do NOT use this on normal sites:
- * the default already tracks the real window's content panel, which is the
- * size the page would render at in a regular tab — change it only for
- * exceptional cases (testing responsive layouts at an explicit width, or when
- * the user asks for a specific size). Omitted dimensions track the real
- * content panel, so `setViewport()` resets. Both dimensions are clamped to
+ * the default already tracks the Space's page area, which is the size the
+ * page would render at in a regular tab — change it only for exceptional
+ * cases (testing responsive layouts at an explicit width, or when the user
+ * asks for a specific size). Omitted dimensions track the page area, so
+ * `setViewport()` resets. Both dimensions are clamped to
  * [320, 4096]. Isolated to this tab (rides the per-session device-metrics
  * override, NOT Chrome's per-origin zoom, so other tabs of the same site are
  * unaffected). Lasts for this heredoc round and is restored when switching back
  * to the tab; re-call after ensureAgentSpace in a later round. A watching user
- * always sees the whole viewport scaled to fit their window. Returns the
+ * always sees the whole viewport scaled to fit the page area. Returns the
  * applied {width, height, scale}.
  */
 export async function setViewport({ width, height } = {}) {
@@ -6015,8 +6037,8 @@ export async function handOff(message) {
   task.ownership = 'user'
   state.ownerCheckedAt = Date.now()
   // Drop the agent's device-metrics override so the user, taking over, sees
-  // the page laid out for the window's real size (the override normally
-  // tracks the window, but a setViewport() growth would linger otherwise).
+  // the page laid out for the real page area (the override normally tracks
+  // the page area, but a setViewport() growth would linger otherwise).
   if (state.sessionId) {
     await (await cdpClient())
       .send('Emulation.clearDeviceMetricsOverride', {}, state.sessionId)
@@ -6213,7 +6235,7 @@ export async function complete({ success = true, message = undefined,
     stopSessionMirror(task.taskId)
   }
   // Drop any persisted viewport so a later session reusing this name starts
-  // at the real window size (the task record itself is ephemeral).
+  // at the page area (the task record itself is ephemeral).
   if (!deferred) writeStoredViewport(task.taskId, null)
   state.task = null
   state.sessionId = null

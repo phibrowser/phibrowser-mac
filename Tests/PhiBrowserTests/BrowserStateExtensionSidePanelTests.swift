@@ -524,6 +524,122 @@ final class WebContentPanelSeparationStyleTests: XCTestCase {
     }
 }
 
+/// The AI Chat ↔ panel mutex at the page controller, where the chat split
+/// item's collapse KVO and the tab model mirror each other a turn late.
+@MainActor
+final class WebContentAIChatPanelMutexTests: XCTestCase {
+
+    private var tempDirectories: [URL] = []
+    private var originalPhiAIEnabled: Any?
+    private var cancellables: Set<AnyCancellable> = []
+
+    override func setUpWithError() throws {
+        let key = PhiPreferences.AISettings.phiAIEnabled.rawValue
+        originalPhiAIEnabled = UserDefaults.standard.object(forKey: key)
+        UserDefaults.standard.set(true, forKey: key)
+    }
+
+    override func tearDownWithError() throws {
+        cancellables.removeAll()
+        let key = PhiPreferences.AISettings.phiAIEnabled.rawValue
+        if let originalPhiAIEnabled {
+            UserDefaults.standard.set(originalPhiAIEnabled, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        originalPhiAIEnabled = nil
+        for directory in tempDirectories {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        tempDirectories.removeAll()
+    }
+
+    private func makePanel() -> BrowserState.ExtensionSidePanelState {
+        BrowserState.ExtensionSidePanelState(
+            extensionId: "test-extension",
+            displayName: "Test Extension",
+            iconPNG: nil,
+            wrapper: ExtensionSidePanelTestWebContentWrapper())
+    }
+
+    private func makeController() throws -> (BrowserState, Tab, WebContentViewController) {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory,
+                                                withIntermediateDirectories: true)
+        tempDirectories.append(directory)
+        let store = LocalStore(account: Account(userID: UUID().uuidString),
+                               storeDirectoryURL: directory)
+        // The hosted test process runs a live Chromium: keep chat panel
+        // records and panel tabs away from it.
+        let state = BrowserState(windowId: 13, localStore: store, profileId: "Default",
+                                 aiChatPanelBridge: FakeAIChatPanelBridge())
+        let tab = Tab(guid: 700, url: "https://example.com/", isActive: true, index: 0)
+        tab.aiChatEnabled = true
+        state.tabs = [tab]
+        state.updateNormalTabs()
+        state.focuseTab(tab)
+        let controller = WebContentViewController(state: state, tab: tab)
+        controller.view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        controller.viewWillAppear()
+        return (state, tab, controller)
+    }
+
+    /// Toggle Chatbar and an extension icon click a few ms apart while the
+    /// panel is open: the expand closes the panel, and the click's toggle
+    /// reopens it before the expand reaches the chat split item. The two
+    /// late mirrors used to chase each other for good, flipping the chat
+    /// hundreds of times a second and closing every panel opened afterwards.
+    func testPanelReopenBeforeAIChatExpandLandsSettles() throws {
+        let (state, tab, controller) = try makeController()
+        // No container: the reopen lands while the chat item is still
+        // collapsed, so its slide-in collapse (`collapseAIChatForPanelTransition`)
+        // has nothing to do, and the state's sweep alone starts the race.
+        // Chromium pushes the close back synchronously.
+        state.extensionSidePanelCloseRequestOverrideForTesting = { [weak state] in
+            state?.updateExtensionSidePanel(nil)
+        }
+        state.updateExtensionSidePanel(makePanel())
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+
+        // Same turn, as when the click lands before the main queue drains.
+        state.toggleAIChat(trigger: .shortcut)
+        state.updateExtensionSidePanel(makePanel())
+
+        var flips = 0
+        tab.$aiChatCollapsed
+            .dropFirst()
+            .sink { _ in flips += 1 }
+            .store(in: &cancellables)
+        RunLoop.main.run(until: Date().addingTimeInterval(1))
+
+        XCTAssertLessThan(flips, 4)
+        XCTAssertNotNil(state.extensionSidePanel)
+        XCTAssertTrue(tab.aiChatCollapsed)
+        XCTAssertEqual(controller.isAIChatCollapsedForTesting, true)
+        // The panel cancelled the shortcut's open before it showed; the
+        // next, unrelated open must not be reported as a shortcut open.
+        XCTAssertEqual(state.consumeAIChatSidebarOpenTrigger(), .restore)
+    }
+
+    /// AI Chat goes off and back on within one turn (two quick commits):
+    /// the late "disabled" delivery is stale by then and must not autohide
+    /// the chat the user has open.
+    func testStaleAIChatDisableKeepsChatOpen() throws {
+        let (state, tab, controller) = try makeController()
+        state.toggleAIChat(trigger: .button)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        XCTAssertEqual(controller.isAIChatCollapsedForTesting, false)
+
+        tab.aiChatEnabled = false
+        tab.aiChatEnabled = true
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+
+        XCTAssertFalse(tab.aiChatCollapsed)
+        XCTAssertEqual(controller.isAIChatCollapsedForTesting, false)
+    }
+}
+
 /// Minimal `WebContentWrapper` conformance for panel-state tests (same
 /// pattern as `BookmarkLayoutTestWebContentWrapper`). `nativeView` is weak,
 /// matching the protocol — tests must hold the NSView strongly themselves.

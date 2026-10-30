@@ -7,7 +7,7 @@ import XCTest
 @testable import Phi
 
 /// Records what `BrowserState` hands the Chromium bridge for the AI Chat panel.
-private final class FakeAIChatPanelBridge: AIChatPanelBridging {
+final class FakeAIChatPanelBridge: AIChatPanelBridging {
     var pushes: [(record: String?, tabId: Int)] = []
     var panelRequests: [(url: String, customGuid: String, windowId: Int)] = []
 
@@ -739,5 +739,23 @@ final class BrowserStateAIChatPanelRecordTests: XCTestCase {
         state.closeTab(1)
 
         XCTAssertTrue(state.aiChatTabs.isEmpty)
+    }
+
+    // MARK: - The AI switch
+
+    /// Feedback 254: with the switch off, showing a page whose chat pane was
+    /// open while it sat in the background asked for its panel again, on the
+    /// disabled sidecar that Chromium then blocks. Nothing may ask for a
+    /// panel while the switch is off.
+    func testNoPanelIsAskedForWhileAIIsOff() throws {
+        let bridge = FakeAIChatPanelBridge()
+        let state = try makeState(bridge: bridge)
+        state.aiChatTabCreationGateOverrideForTesting = true
+        let tab = seed(state, guids: [1])[0]
+        setAIEnabled(false)
+
+        state.createAIChatTab(for: state.chatIdentifier(for: tab), chromeTabId: tab.guid)
+
+        XCTAssertTrue(bridge.panelRequests.isEmpty)
     }
 }

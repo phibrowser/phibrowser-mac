@@ -10,14 +10,36 @@ import SwiftUI
 class SetNameViewController: OnboardingBaseViewController {
     var newNameSettled: ((String) -> Void)?
     private var originalUserName: String?
+    private var prefilledEmailLocalPart: String?
     var credentials: Credentials? {
         didSet {
-            if let credentials {
+            if originalUserName == nil, let credentials {
                 let userInfo = AuthManager.retriveUserInfo(from: credentials)
-                originalUserName = userInfo.name
-                textField.stringValue = "\(userInfo.name ?? "")"
+                let account = LoginController.shared.accountForOnboarding
+                let profile: Profile? = account?.userDefaults.codableValue(
+                    forKey: AccountUserDefaults.DefaultsKey.cachedProfile.rawValue
+                )
+                let name = profile?.auth0_id == userInfo.sub ? profile?.name : userInfo.name
+                originalUserName = name
+                if textField.stringValue.isEmpty {
+                    // Keep the original email as the baseline for the profile update.
+                    if let name,
+                       name.range(of: #"^[^@\s]+@[^@\s]+\.[^@\s]+$"#, options: .regularExpression) != nil,
+                       let separator = name.firstIndex(of: "@") {
+                        let localPart = String(name[..<separator])
+                        prefilledEmailLocalPart = localPart
+                        textField.stringValue = localPart
+                    } else {
+                        textField.stringValue = name ?? ""
+                    }
+                }
             }
         }
+    }
+
+    func applySavedName(_ name: String) {
+        originalUserName = name
+        textField.stringValue = name
     }
     
     lazy var titleView: NSView = {
@@ -112,7 +134,7 @@ class SetNameViewController: OnboardingBaseViewController {
     
     override func viewDidAppear() {
         super.viewDidAppear()
-        if credentials == nil {
+        if credentials == nil, originalUserName == nil {
             Task {
                 credentials = await AuthManager.shared.getActiveCredentials()
             }
@@ -147,7 +169,7 @@ class SetNameViewController: OnboardingBaseViewController {
                 }
                 let response = try await APIClient.shared
                     .updateOnboardingProfile(
-                        updates: .init(name: textField.stringValue),
+                        updates: .init(name: newUserName),
                         accountUserID: account.userID
                     )
                 if response.code == 0,
@@ -159,16 +181,30 @@ class SetNameViewController: OnboardingBaseViewController {
                         response.data,
                         forCodableKey: AccountUserDefaults.DefaultsKey.cachedProfile.rawValue
                     )
+                    if await AuthManager.shared.renewStagedOnboardingCredentials(
+                        expectedUserID: account.userID
+                    ) == nil {
+                        AppLogWarn("[OOBESetName] Failed to refresh credentials after updating name")
+                    }
                 }
                 await MainActor.run {
                     isLoading = false
-                    UserDefaults.standard.set(textField.stringValue, forKey: PhiPreferences.preferedUserName.rawValue)
-                    newNameSettled?(textField.stringValue)
+                    applySavedName(newUserName)
+                    UserDefaults.standard.set(newUserName, forKey: PhiPreferences.preferedUserName.rawValue)
+                    newNameSettled?(newUserName)
                 }
             } catch {
                 await MainActor.run {
                     isLoading = false
-                    showError(error.localizedDescription)
+                    // The prefilled email local part was not chosen by the user,
+                    // so a failed update should not block onboarding.
+                    if newUserName == prefilledEmailLocalPart {
+                        AppLogWarn("[OOBESetName] Continuing with prefilled name after profile update failed")
+                        UserDefaults.standard.set(newUserName, forKey: PhiPreferences.preferedUserName.rawValue)
+                        newNameSettled?(newUserName)
+                    } else {
+                        showError(error.localizedDescription)
+                    }
                 }
                 AppLogError("update user profile failed: \(error.localizedDescription)")
             }

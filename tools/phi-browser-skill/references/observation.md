@@ -25,9 +25,11 @@ page's console/network health, or exporting PDFs/MHTML/media.
 
 ## Viewport
 
-The tab renders at the real window's **content panel** size — the same size a
-regular tab would use — reported by the app and re-checked before each action,
-so it also follows the user resizing their window mid-task.
+The tab renders at the Agent Space's own **page area** — the window minus
+Sidebar, Content Header, bookmark bar and AI Chat panel, the same size a
+regular tab there would use — reported by the app and re-checked before each
+action, so a Sidebar toggle, a bar, a panel or a window resize mid-task is
+picked up at your next action.
 **Do not change the viewport on normal sites.** To read more of a long page
 (an article, a feed, search results), scroll and re-observe —
 `observe({diff: true})` keeps that cheap — instead of growing the viewport.
@@ -38,7 +40,7 @@ so it also follows the user resizing their window mid-task.
 - A size the user explicitly asked for (e.g. capture a page at a given
   resolution).
 
-Omitted dimensions keep tracking the content panel, and `setViewport()` with
+Omitted dimensions keep tracking the page area, and `setViewport()` with
 no args resets to it. Both dimensions clamp to 320–4096.
 
 Notes:
@@ -46,7 +48,7 @@ Notes:
   Ctrl± zoom). Restored when you `switchTab` back; reset between heredoc
   rounds — re-apply after `enterContext` if still needed.
 - A user surfacing the Space always sees the WHOLE viewport scaled to fit
-  their window, never a clipped slice.
+  the page area, never a clipped slice.
 - Screenshots capture the full viewport at full resolution; refs and
   click/hover/scroll coordinates keep working (the widget-space transform is
   handled internally).

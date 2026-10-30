@@ -196,7 +196,7 @@ final class SearchTabsResultCellView: NSTableCellView {
     private func updateAppearance() {
         let backgroundColor: NSColor
         if isSelected {
-            backgroundColor = ThemedColor.themeColor.resolve(in: self).withAlphaComponent(0.32)
+            backgroundColor = ThemedColor.themeColor.resolve(in: self)
         } else if isHovered {
             backgroundColor = ThemedColor.themeColor.resolve(in: self).withAlphaComponent(0.16)
         } else {
@@ -226,10 +226,12 @@ final class SearchTabsResultCellView: NSTableCellView {
     }
 
     private func updateTextAppearance() {
-        let textColor = isSelected ? NSColor.white : ThemedColor.textPrimary.resolve(in: self)
-        let highlightColor = ThemedColor.themeColor
-            .resolve(in: self)
-            .withAlphaComponent(isSelected ? 0.45 : 0.32)
+        let textColor = isSelected
+            ? NSColor.white.withAlphaComponent(0.85)
+            : ThemedColor.textPrimary.resolve(in: self)
+        let highlightColor = isSelected
+            ? NSColor.white.withAlphaComponent(0.16)
+            : ThemedColor.themeColor.resolve(in: self).withAlphaComponent(0.32)
         titleLabel.attributedStringValue = Self.highlightedString(
             titleText,
             query: query,
@@ -238,7 +240,7 @@ final class SearchTabsResultCellView: NSTableCellView {
             highlightColor: highlightColor
         )
         activeTimeLabel.textColor = isSelected
-            ? .white
+            ? .white.withAlphaComponent(currentAppearance == .light ? 0.4 : 0.3)
             : ThemedColor.textTertiary.resolve(in: self)
     }
 

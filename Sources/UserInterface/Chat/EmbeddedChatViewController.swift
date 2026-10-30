@@ -446,29 +446,157 @@ class EmbeddedChatViewController: NSViewController {
     }
 }
 
+// MARK: - Native sidebar menu
+
+struct SidebarNativeMenuItem: Decodable {
+    let id: String?
+    let title: String?
+    let separator: Bool?
+    let enabled: Bool?
+    let checked: Bool?
+    let icon: String?
+    let items: [SidebarNativeMenuItem]?
+}
+
+@MainActor
+final class SidebarNativeMenuSelection: NSObject {
+    private(set) var selectedId: String?
+
+    func makeMenu(_ items: [SidebarNativeMenuItem]) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for item in items {
+            if item.separator == true {
+                menu.addItem(.separator())
+                continue
+            }
+            guard let title = item.title else { continue }
+            let entry = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            entry.isEnabled = item.enabled ?? true
+            entry.state = item.checked == true ? .on : .off
+            if let icon = item.icon {
+                entry.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)
+            }
+            if let children = item.items {
+                entry.submenu = makeMenu(children)
+            } else if let id = item.id {
+                entry.representedObject = id
+                entry.target = self
+                entry.action = #selector(selectItem(_:))
+            }
+            menu.addItem(entry)
+        }
+        return menu
+    }
+
+    @objc func selectItem(_ sender: NSMenuItem) {
+        guard sender.isEnabled else { return }
+        selectedId = sender.representedObject as? String
+    }
+}
+
+/// AppKit owns the menu window, material, positioning, and tracking lifecycle.
+@MainActor
+enum SidebarNativeMenu {
+    private struct Request: Decodable {
+        struct Anchor: Decodable {
+            let x: CGFloat
+            let y: CGFloat
+            let width: CGFloat
+            let height: CGFloat
+            let viewportWidth: CGFloat
+            let viewportHeight: CGFloat
+        }
+        let windowId: Int
+        let tabId: Int
+        let dark: Bool
+        let anchor: Anchor
+        let items: [SidebarNativeMenuItem]
+    }
+
+    static func handle(_ context: ExtensionMessageContext) -> String? {
+        guard context.senderId == SidecarAIOutputStateStore.extensionId,
+              ApplicationState.shared.isAuthenticated,
+              PhiPreferences.AISettings.phiAIEnabled.loadValue(),
+              let data = context.payload.data(using: .utf8),
+              let request = try? JSONDecoder().decode(Request.self, from: data),
+              request.items.count <= 128,
+              [request.anchor.x, request.anchor.y, request.anchor.width,
+               request.anchor.height, request.anchor.viewportWidth,
+               request.anchor.viewportHeight].allSatisfy(\.isFinite),
+              request.anchor.viewportWidth > 0, request.anchor.viewportHeight > 0 else {
+            return #"{"error":"invalid_native_menu"}"#
+        }
+        guard let controller = SpaceSessionControllersManager.shared.getAllWindows().first(where: {
+            $0.browserState.windowId == request.windowId
+        }), controller.isPresentedOrLegacy,
+              let chat = controller.browserState.aiChatTabs.values.first(where: { tab in
+                  guard let url = tab.webContentWrapper?.urlString,
+                        let parts = URLComponents(string: url) else { return false }
+                  return parts.queryItems?.contains(where: {
+                      $0.name == "tabId" && $0.value == String(request.tabId)
+                  }) == true
+              }), let view = chat.webContentView, view.window?.isVisible == true,
+              view.bounds.width > 0, view.bounds.height > 0 else {
+            return #"{"error":"native_menu_anchor_unavailable"}"#
+        }
+
+        // Enter AppKit's menu tracking from the run loop, rather than nesting
+        // it inside a main-dispatch callback that the bridge needs to finish.
+        RunLoop.main.perform(inModes: [.default]) {
+            MainActor.assumeIsolated {
+                let selection = SidebarNativeMenuSelection()
+                let menu = selection.makeMenu(request.items)
+                menu.appearance = request.dark ? NSAppearance(named: .darkAqua) : view.effectiveAppearance
+                let x = min(max(0, request.anchor.x), request.anchor.viewportWidth)
+                    * view.bounds.width / request.anchor.viewportWidth
+                let y = min(max(0, request.anchor.y + request.anchor.height), request.anchor.viewportHeight)
+                    * view.bounds.height / request.anchor.viewportHeight
+                let point = NSPoint(x: x, y: view.isFlipped ? y : view.bounds.height - y)
+                menu.popUp(positioning: nil, at: point, in: view)
+                let reply: [String: Any] = ["selectedId": selection.selectedId as Any? ?? NSNull()]
+                guard let result = try? JSONSerialization.data(withJSONObject: reply),
+                      let json = String(data: result, encoding: .utf8) else { return }
+                ExtensionMessaging.shared.sendResponse(json, requestId: context.requestId)
+            }
+        }
+        return nil
+    }
+}
+
 /// CSS transparency reveals Chromium's default canvas unless the compositor
-/// canvas is also clear. Keep the app-owned session alive with the Chat tab;
-/// Chromium restores emulation state when a DevTools session disconnects.
+/// canvas is also clear. Keep the app-owned session alive with the Chat tab
+/// and reapply its override after another DevTools session disconnects.
 @MainActor
 final class EmbeddedChatCanvas {
     private let targetId: String
     private var session: AppDevToolsPageSession?
     private var applyTask: Task<Void, Never>?
+    private var disconnectObserver: AnyCancellable?
 
     init?(wrapper: WebContentWrapper & NSObject) {
         guard wrapper.responds(to: #selector(getter: WebContentWrapper.devToolsTargetId)),
               let targetId = wrapper.devToolsTargetId, !targetId.isEmpty else { return nil }
         self.targetId = targetId
+        disconnectObserver = NotificationCenter.default.publisher(for: .agentCDPPeerDidDisconnect)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.apply() }
+            }
     }
 
     func apply() {
-        guard session == nil, applyTask == nil else { return }
+        guard applyTask == nil else { return }
         let targetId = targetId
         applyTask = Task { @MainActor [weak self] in
             var connection: AppDevToolsPageSession?
             defer { self?.applyTask = nil }
             do {
-                let opened = try await AppDevToolsPageSession.open(targetId: targetId)
+                let opened: AppDevToolsPageSession
+                if let existing = self?.session {
+                    opened = existing
+                } else {
+                    opened = try await AppDevToolsPageSession.open(targetId: targetId)
+                }
                 connection = opened
                 guard !Task.isCancelled, self != nil else {
                     opened.close()
@@ -485,6 +613,7 @@ final class EmbeddedChatCanvas {
                 AppLogDebug("[ChatCanvas] transparent compositor canvas applied")
             } catch {
                 connection?.close()
+                self?.session = nil
                 if !Task.isCancelled {
                     AppLogWarn("[ChatCanvas] transparent compositor canvas unavailable: \(error)")
                 }

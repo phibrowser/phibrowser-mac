@@ -25,8 +25,14 @@ class LayoutSelectionViewController: OnboardingBaseViewController {
         return container
     }()
 
-    private lazy var optionsStackView: NSStackView = {
-        let stackView = NSStackView()
+    private lazy var optionsStackView: OnboardingOptionStackView = {
+        let stackView = OnboardingOptionStackView()
+        stackView.onMoveSelection = { [weak self] offset in
+            guard let self else { return }
+            let modes: [LayoutMode] = [.balanced, .performance, .comfortable]
+            guard let index = modes.firstIndex(of: selectedMode) else { return }
+            selectMode(modes[(index + offset + modes.count) % modes.count])
+        }
         stackView.orientation = .vertical
         stackView.spacing = optionSpacing
         stackView.alignment = .centerX
@@ -77,7 +83,14 @@ class LayoutSelectionViewController: OnboardingBaseViewController {
         setTitle(NSLocalizedString("oobe.layoutSelection.title", value: "Layout selection",
             comment: "Onboarding layout selection - Page title"
         ))
-        skipButton.isHidden = true
+        configureFooterButtons(.init(
+            leftTitle: NSLocalizedString(
+                "oobe.navigation.backButton",
+                value: "Back",
+                comment: "OOBE navigation - Button to return to the previous step"
+            ),
+            rightTitle: nextButton.title
+        ))
         setupLayoutOptions()
     }
 
@@ -119,6 +132,37 @@ class LayoutSelectionViewController: OnboardingBaseViewController {
     override func nextButtonTapped(_ sender: NSButton? = nil) {
         PhiPreferences.GeneralSettings.saveLayoutMode(selectedMode)
         nextClosure?(true)
+    }
+}
+
+/// Handles selection shortcuts within the active onboarding page's view tree.
+final class OnboardingOptionStackView: NSStackView {
+    var onMoveSelection: ((Int) -> Void)?
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        let offset: Int
+        switch event.keyCode {
+        case 48 where modifiers.isEmpty || modifiers == .shift:
+            offset = modifiers == .shift ? -1 : 1
+        case 125 where modifiers.isEmpty:
+            offset = 1
+        case 126 where modifiers.isEmpty:
+            offset = -1
+        default:
+            return super.performKeyEquivalent(with: event)
+        }
+
+        guard event.type == .keyDown,
+              let window, window.isKeyWindow, window.attachedSheet == nil,
+              !isHiddenOrHasHiddenAncestor, let onMoveSelection else {
+            return super.performKeyEquivalent(with: event)
+        }
+        if let input = window.firstResponder as? NSTextInputClient, input.hasMarkedText() {
+            return false
+        }
+        onMoveSelection(offset)
+        return true
     }
 }
 

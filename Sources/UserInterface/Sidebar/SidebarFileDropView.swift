@@ -5,17 +5,16 @@
 
 import Cocoa
 
-final class SidebarFileDropView: ColoredVisualEffectView {
+final class SidebarFileDropView: BackdropContainerView {
     var onOpenFiles: (([URL]) -> Bool)?
 
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
+    init(paintsBackdrop: Bool) {
+        super.init(paintsBackdrop: paintsBackdrop)
         registerForDraggedTypes([.fileURL])
     }
 
     required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        registerForDraggedTypes([.fileURL])
+        fatalError("init(coder:) has not been implemented")
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {

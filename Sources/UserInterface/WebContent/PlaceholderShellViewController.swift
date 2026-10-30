@@ -28,7 +28,7 @@ import SnapKit
 ///
 /// Empty subclass kept so future view-level overrides (e.g. drag handling,
 /// background tweaks) can land here without changing the view type.
-private final class PlaceholderShellRootView: ColoredVisualEffectView {}
+private final class PlaceholderShellRootView: BackdropContainerView {}
 
 final class PlaceholderShellViewController: NSViewController {
     private weak var browserState: BrowserState?
@@ -59,7 +59,7 @@ final class PlaceholderShellViewController: NSViewController {
     var paintsOwnBackdrop = true {
         didSet {
             guard isViewLoaded else { return }
-            (view as? ColoredVisualEffectView)?.suppressesBackdrop = !paintsOwnBackdrop
+            (view as? BackdropContainerView)?.paintsBackdrop = paintsOwnBackdrop
         }
     }
 
@@ -77,13 +77,7 @@ final class PlaceholderShellViewController: NSViewController {
     }
 
     override func loadView() {
-        let root = PlaceholderShellRootView()
-        root.themedBackgroundColor = .windowOverlayBackground
-        root.usesThemePalette = true
-        root.material = .fullScreenUI
-        root.wantsLayer = true
-        root.suppressesBackdrop = !paintsOwnBackdrop
-        self.view = root
+        self.view = PlaceholderShellRootView(paintsBackdrop: paintsOwnBackdrop)
         setupView()
         observeLayoutMode()
     }

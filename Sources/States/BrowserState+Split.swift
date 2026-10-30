@@ -456,6 +456,10 @@ extension BrowserState {
         if !tabsAwaitingSplit.isDisjoint(with: pair) {
             tabsAwaitingSplit.subtract(pair)
         }
+        if let preview = pendingSplitPreview, preview.isCommitted,
+           pair.contains(preview.partnerTabId) {
+            pendingSplitPreview = nil
+        }
 
         // `consumePendingSplitPartner` already called `placeTabAdjacent`,
         // but a Chromium `tabIndicesUpdated` echo for the just-created
@@ -1291,6 +1295,84 @@ extension BrowserState {
                                  layout: layout)
     }
 
+    var canSplitFocusedTabWithNewTab: Bool {
+        guard !isKioskWindow, !isInPlaceholderMode, groupOverviewState == nil,
+              pendingSplitPreview == nil, let tab = focusingTab else { return false }
+        return splitGroup(forTabId: tab.guid) == nil
+    }
+
+    /// Tab menu / shortcut "Split with New Tab": keeps the focused tab on the
+    /// left. Under the New Tab Page behavior the right pane is a new-tab page;
+    /// under Omnibox it is previewed blank and the omnibox's submission
+    /// becomes the pane (`commitSplitPreview`).
+    @discardableResult
+    func splitFocusedTabWithNewTab() -> Bool {
+        guard canSplitFocusedTabWithNewTab, let tab = focusingTab else { return false }
+        if PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.loadValue() {
+            makeTabNormalOpened(tabId: tab.guid)
+            return openNewTabAsSplit(partnerTabId: tab.guid)
+        }
+        guard let windowController else { return false }
+        pendingSplitPreview = PendingSplitPreview(partnerTabId: tab.guid)
+        // Next turn, after the page container has mounted the preview.
+        DispatchQueue.main.async { [weak self, weak windowController] in
+            guard self?.pendingSplitPreview?.isCommitted == false else { return }
+            windowController?.presentSplitPreviewOmniBox()
+        }
+        return true
+    }
+
+    /// Opens the omnibox submission `url` as the previewed pane. Returns false
+    /// when no preview is waiting for one.
+    func commitSplitPreview(url: String) -> Bool {
+        guard var preview = pendingSplitPreview, !preview.isCommitted else { return false }
+        preview.isCommitted = true
+        pendingSplitPreview = preview
+        // Keep the bookmark binding while previewing; release it only on submission.
+        makeTabNormalOpened(tabId: preview.partnerTabId)
+        guard openNewTabAsSplit(partnerTabId: preview.partnerTabId,
+                                partnerNavigateURL: url) else {
+            pendingSplitPreview = nil
+            return false
+        }
+        expireCommittedSplitPreview(preview)
+        return true
+    }
+
+    /// Hold-⌘ on an open-tab suggestion: pairs that tab as the previewed pane,
+    /// as "Split with Current" does. Returns false when this window has no
+    /// such tab outside a split, so the caller opens the URL instead.
+    func commitSplitPreview(pairingTabWithURL url: String) -> Bool {
+        guard var preview = pendingSplitPreview, !preview.isCommitted,
+              let match = tabs.first(where: {
+                  $0.guid != preview.partnerTabId && $0.url == url
+                      && splitGroup(forTabId: $0.guid) == nil
+              }) else { return false }
+        makeTabNormalOpened(tabId: match.guid)
+        makeTabNormalOpened(tabId: preview.partnerTabId)
+        guard createSplit(leftTabId: preview.partnerTabId, rightTabId: match.guid,
+                          layout: .vertical) != nil else { return false }
+        preview.isCommitted = true
+        pendingSplitPreview = preview
+        expireCommittedSplitPreview(preview)
+        return true
+    }
+
+    /// The preview stays up until the real split replaces it
+    /// (`handleSplitCreated`); this covers a split that never arrives.
+    private func expireCommittedSplitPreview(_ preview: PendingSplitPreview) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, self.pendingSplitPreview == preview else { return }
+            self.pendingSplitPreview = nil
+        }
+    }
+
+    /// The omnibox closed. An uncommitted preview returns to the single tab.
+    func endSplitPreview() {
+        guard pendingSplitPreview?.isCommitted == false else { return }
+        pendingSplitPreview = nil
+    }
+
     /// Opens a fresh tab (on `partnerNavigateURL` when given, else a
     /// new-tab page) and, once Chromium echoes it back, pairs it with
     /// `partnerTabId` into a split.
@@ -1703,6 +1785,13 @@ enum SplitSlot {
     case left
     /// Secondary slot (bottom for `.horizontal`, right for `.vertical`).
     case right
+}
+
+struct PendingSplitPreview: Equatable {
+    /// The focused tab shown beside the blank pane.
+    let partnerTabId: Int
+    /// The omnibox submitted; the real split is on its way.
+    var isCommitted = false
 }
 
 /// Stored alongside a pending new-tab request so `consumePendingSplitPartner`

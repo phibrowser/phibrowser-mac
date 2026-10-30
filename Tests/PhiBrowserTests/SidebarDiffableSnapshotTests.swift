@@ -342,6 +342,55 @@ final class SidebarTabSectionFastPathTests: XCTestCase {
         XCTAssertFalse(controller.view.isHidden)
     }
 
+    func testCreateSpaceOverlaySuppressionHidesFloatingNewTabAcrossLayoutAndRecreation() throws {
+        let state = try makeState()
+        state.tabs = (0..<40).map { index in
+            Tab(guid: 1000 + index, url: "https://tab.example/\(index)",
+                isActive: false, index: index, title: "Tab \(index)")
+        }
+        state.updateNormalTabs()
+        let (controller, outlineView) = try makeActiveSidebar(for: state)
+        defer { controller.setActive(false) }
+        let scrollView = try XCTUnwrap(outlineView.enclosingScrollView)
+        guard waitUntil({ outlineView.numberOfRows >= 41 }) else { return }
+        controller.view.layoutSubtreeIfNeeded()
+        let newTabRow = try XCTUnwrap((0..<outlineView.numberOfRows).first {
+            (outlineView.item(atRow: $0) as? SidebarItem)?.itemType == .newTabButton
+        })
+        let floatingOffset = outlineView.rect(ofRow: newTabRow).maxY + 1
+
+        func scroll(to offset: CGFloat) {
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: offset))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            controller.viewDidLayout()
+        }
+
+        scroll(to: floatingOffset)
+        let floatingView = try XCTUnwrap(
+            controller.view.subviews.compactMap { $0 as? FloatingNewTabView }.first
+        )
+        XCTAssertFalse(floatingView.isHidden)
+
+        controller.setCreateSpaceOverlayInteractionSuppressed(true)
+        XCTAssertTrue(floatingView.isHidden)
+        XCTAssertFalse(controller.view.isHidden)
+        controller.viewDidLayout()
+        XCTAssertTrue(floatingView.isHidden)
+
+        scroll(to: 0)
+        XCTAssertNil(floatingView.superview)
+        scroll(to: floatingOffset)
+        let recreatedView = try XCTUnwrap(
+            controller.view.subviews.compactMap { $0 as? FloatingNewTabView }.first
+        )
+        XCTAssertTrue(recreatedView.isHidden)
+        XCTAssertTrue(recreatedView.cellView.isHiddenOrHasHiddenAncestor)
+
+        controller.setCreateSpaceOverlayInteractionSuppressed(false)
+        XCTAssertFalse(recreatedView.isHidden)
+        XCTAssertFalse(scrollView.isHidden)
+    }
+
     func testCreateSpaceOverlaySuppressionHidesBottomBarHostingContentOnly() throws {
         let bottomBar = SidebarBottomBarSwiftUIView()
         let hostingView = try XCTUnwrap(bottomBar.subviews.first)

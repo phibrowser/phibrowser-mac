@@ -7,231 +7,6 @@ import AppKit
 import CoreImage
 import SwiftUI
 
-// Theme slider shared by the General and Spaces panes.
-
-func normalizedThemeSliderTrackColor(from color: NSColor) -> NSColor {
-    let resolvedColor = color.usingColorSpace(.extendedSRGB) ?? color
-    return resolvedColor.withAlphaComponent(1)
-}
-
-enum ThemeSliderTrackStyle {
-    case saturation
-    case pureBrightness(Appearance)
-}
-
-struct ThemeOpacitySliderView: NSViewRepresentable {
-    @Binding var value: Double
-    let trackColor: NSColor
-    let borderColor: NSColor
-    var trackStyle: ThemeSliderTrackStyle = .saturation
-    /// Control width; the track image is generated at this width so the
-    /// gradient is never stretched. Callers must match their `.frame` width.
-    var width: CGFloat = 324
-    var knobDiameter: CGFloat = 18
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(value: $value)
-    }
-
-    func makeNSView(context: Context) -> CustomSlider {
-        let slider = ThemeOpacityCustomSlider(frame: NSRect(origin: .zero, size: NSSize(width: width, height: 20)))
-        slider.minValue = 0
-        slider.maxValue = 100
-        slider.doubleValue = value
-        slider.isContinuous = true
-        slider.barSize = NSSize(width: width, height: 10)
-        slider.knobSize = NSSize(width: knobDiameter, height: knobDiameter)
-        slider.knobView = ThemeOpacitySliderKnobView(
-            frame: NSRect(origin: .zero, size: NSSize(width: knobDiameter, height: knobDiameter)),
-            borderColor: borderColor
-        )
-        slider.trackImage = makeTrackImage(color: trackColor, borderColor: borderColor)
-        slider.target = context.coordinator
-        slider.action = #selector(Coordinator.sliderValueChanged(_:))
-        return slider
-    }
-
-    func updateNSView(_ slider: CustomSlider, context: Context) {
-        context.coordinator.value = $value
-        slider.barSize = NSSize(width: width, height: 10)
-        slider.knobSize = NSSize(width: knobDiameter, height: knobDiameter)
-        slider.knobView?.frame.size = NSSize(width: knobDiameter, height: knobDiameter)
-        slider.trackImage = makeTrackImage(color: trackColor, borderColor: borderColor)
-        if let knobView = slider.knobView as? ThemeOpacitySliderKnobView {
-            knobView.borderColor = borderColor
-        }
-        if slider.doubleValue != value {
-            AppLogDebug("[ThemeSlider] updateNSView push slider \(slider.doubleValue) → \(value)")
-            slider.doubleValue = value
-        }
-    }
-
-    private func makeTrackImage(color: NSColor, borderColor: NSColor) -> NSImage {
-        let size = NSSize(width: width, height: 10)
-        let image = NSImage(size: size)
-        image.lockFocus()
-
-        let rect = NSRect(origin: .zero, size: size)
-        let path = NSBezierPath(roundedRect: rect, xRadius: size.height / 2, yRadius: size.height / 2)
-        path.addClip()
-
-        let baseColor = normalizedThemeSliderTrackColor(from: color)
-        let startColor: NSColor
-        let endColor: NSColor
-        switch trackStyle {
-        case .saturation:
-            startColor = baseColor.withHSBSaturation(
-                CGFloat(OverlaySaturationScale.minSaturation),
-                alpha: 1
-            )
-            endColor = baseColor.withHSBSaturation(
-                CGFloat(OverlaySaturationScale.maxSaturation),
-                alpha: 1
-            )
-        case .pureBrightness(let appearance):
-            startColor = baseColor.withHSBBrightness(
-                CGFloat(
-                    PureThemeBrightnessScale.brightness(
-                        forSlider: 0,
-                        appearance: appearance
-                    )
-                ),
-                alpha: 1
-            )
-            endColor = baseColor.withHSBBrightness(
-                CGFloat(
-                    PureThemeBrightnessScale.brightness(
-                        forSlider: 100,
-                        appearance: appearance
-                    )
-                ),
-                alpha: 1
-            )
-        }
-        let gradient = NSGradient(starting: startColor, ending: endColor)
-        gradient?.draw(in: path, angle: 0)
-
-        borderColor.setStroke()
-        path.lineWidth = 1
-        path.stroke()
-
-        image.unlockFocus()
-        return image
-    }
-
-    final class Coordinator: NSObject {
-        var value: Binding<Double>
-
-        init(value: Binding<Double>) {
-            self.value = value
-        }
-
-        @objc func sliderValueChanged(_ sender: NSSlider) {
-            AppLogDebug("[ThemeSlider] NSSlider action value=\(sender.doubleValue)")
-            value.wrappedValue = sender.doubleValue
-        }
-    }
-}
-
-private final class ThemeOpacitySliderKnobView: NSView {
-    var borderColor: NSColor {
-        didSet {
-            needsDisplay = true
-        }
-    }
-
-    override init(frame frameRect: NSRect) {
-        self.borderColor = ThemedColor.border.resolved()
-        super.init(frame: frameRect)
-        wantsLayer = true
-    }
-
-    init(frame frameRect: NSRect, borderColor: NSColor) {
-        self.borderColor = borderColor
-        super.init(frame: frameRect)
-        wantsLayer = true
-    }
-
-    required init?(coder: NSCoder) {
-        self.borderColor = ThemedColor.border.resolved()
-        super.init(coder: coder)
-        wantsLayer = true
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-
-        // Inset by half the stroke width so the 1pt border sits exactly on the
-        // view edge, leaving no visible gap when the knob rests at the bar end.
-        let strokeWidth: CGFloat = 1
-        let circleRect = bounds.insetBy(dx: strokeWidth / 2, dy: strokeWidth / 2)
-        let shadow = NSShadow()
-        shadow.shadowBlurRadius = 2
-        shadow.shadowOffset = NSSize(width: 0, height: -1)
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.16)
-        shadow.set()
-
-        let fillPath = NSBezierPath(ovalIn: circleRect)
-        NSColor.white.setFill()
-        fillPath.fill()
-
-        NSGraphicsContext.current?.saveGraphicsState()
-        NSShadow().set()
-        borderColor.setStroke()
-        fillPath.lineWidth = strokeWidth
-        fillPath.stroke()
-        NSGraphicsContext.current?.restoreGraphicsState()
-    }
-}
-
-/// Slider variant whose cell positions the knob using the configured `knobSize`
-/// instead of AppKit's default `knobThickness` (~21pt). Other CustomSlider
-/// callers use a 20pt knob, where the resulting ~0.5pt gap is invisible; our
-/// 16pt knob produces a ~2.5pt visible gap, so we take over the layout.
-private final class ThemeOpacityCustomSlider: CustomSlider {
-    override class var cellClass: AnyClass? {
-        get { ThemeOpacitySliderCell.self }
-        set { _ = newValue }
-    }
-}
-
-private final class ThemeOpacitySliderCell: ImageSliderCell {
-    override var knobThickness: CGFloat {
-        knobSize?.width ?? super.knobThickness
-    }
-
-    /// Span the whole control width so the gradient track image (also generated
-    /// at full width) is not squeezed into AppKit's default knob padding.
-    override func barRect(flipped: Bool) -> NSRect {
-        guard let controlView else {
-            return super.barRect(flipped: flipped)
-        }
-        let bounds = controlView.bounds
-        let drawHeight = barSize?.height ?? bounds.height
-        return NSRect(
-            x: 0,
-            y: (bounds.height - drawHeight) / 2.0,
-            width: bounds.width,
-            height: drawHeight
-        )
-    }
-
-    override func knobRect(flipped: Bool) -> NSRect {
-        guard let controlView else {
-            return super.knobRect(flipped: flipped)
-        }
-        let bounds = controlView.bounds
-        let knobWidth = knobSize?.width ?? super.knobThickness
-        let knobHeight = knobSize?.height ?? bounds.height
-        let denominator = maxValue - minValue
-        let ratio: CGFloat = denominator > 0 ? CGFloat((doubleValue - minValue) / denominator) : 0
-        let travel = max(0, bounds.width - knobWidth)
-        let x = ratio * travel
-        let y = (bounds.height - knobHeight) / 2.0
-        return NSRect(x: x, y: y, width: knobWidth, height: knobHeight)
-    }
-}
-
 private struct SpaceThemeEditorGlassBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
@@ -297,6 +72,58 @@ enum ThemeEditorPaletteRenderer {
         let context = CIContext(options: [.workingFormat: CIFormat.RGBAh])
         return context.createCGImage(softened, from: source.extent, format: .RGBA16, colorSpace: colorSpace)
     }
+
+    /// The field depends on brightness and appearance only, so a few entries
+    /// cover every Space. NSCache drops them under memory pressure.
+    private static let renderedFields: NSCache<NSString, CGImage> = {
+        let cache = NSCache<NSString, CGImage>()
+        cache.countLimit = 4
+        return cache
+    }()
+    @MainActor private static var waitingFieldHandlers: [NSString: [(CGImage) -> Void]] = [:]
+
+    private static func fieldKey(brightness: Double, appearance: Appearance) -> NSString {
+        "\(appearance.rawValue):\(brightness)" as NSString
+    }
+
+    /// Renders the fields a palette opens with, so the first editor does not
+    /// wait for them.
+    @MainActor static func prewarmFields() {
+        for appearance in [Appearance.light, .dark] {
+            field(brightness: 1, appearance: appearance, qos: .utility) { _ in }
+        }
+    }
+
+    /// Delivers a cached field synchronously. Otherwise renders it once off
+    /// the main thread and delivers it to every caller waiting for that key.
+    @MainActor static func field(
+        brightness: Double,
+        appearance: Appearance,
+        qos: DispatchQoS.QoSClass = .userInitiated,
+        completion: @escaping (CGImage) -> Void
+    ) {
+        let key = fieldKey(brightness: brightness, appearance: appearance)
+        if let image = renderedFields.object(forKey: key) {
+            completion(image)
+            return
+        }
+        guard waitingFieldHandlers[key] == nil else {
+            waitingFieldHandlers[key]?.append(completion)
+            return
+        }
+        waitingFieldHandlers[key] = [completion]
+        DispatchQueue.global(qos: qos).async {
+            let rendered = Self.image(brightness: brightness, appearance: appearance)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    let handlers = waitingFieldHandlers.removeValue(forKey: key) ?? []
+                    guard let rendered else { return }
+                    renderedFields.setObject(rendered, forKey: key)
+                    handlers.forEach { $0(rendered) }
+                }
+            }
+        }
+    }
 }
 
 private struct ThemeEditorPaletteField: NSViewRepresentable {
@@ -314,16 +141,18 @@ private struct ThemeEditorPaletteField: NSViewRepresentable {
     func updateNSView(_ view: FieldView, context: Context) {
         // Hue, saturation and harmony edits only move handles; the field stays
         // cached. Legacy brightness changes are the only reason to regenerate it.
-        guard view.renderedBrightness != brightness || view.renderedAppearance != appearance else { return }
-        guard let image = ThemeEditorPaletteRenderer.image(brightness: brightness, appearance: appearance) else { return }
-        view.image = NSImage(cgImage: image, size: NSSize(width: 244, height: 244))
-        view.renderedBrightness = brightness
-        view.renderedAppearance = appearance
+        guard view.requestedBrightness != brightness || view.requestedAppearance != appearance else { return }
+        view.requestedBrightness = brightness
+        view.requestedAppearance = appearance
+        ThemeEditorPaletteRenderer.field(brightness: brightness, appearance: appearance) { [weak view] image in
+            guard let view, view.requestedBrightness == brightness, view.requestedAppearance == appearance else { return }
+            view.image = NSImage(cgImage: image, size: NSSize(width: 244, height: 244))
+        }
     }
 
     final class FieldView: NSImageView {
-        var renderedBrightness: Double?
-        var renderedAppearance: Appearance?
+        var requestedBrightness: Double?
+        var requestedAppearance: Appearance?
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
@@ -400,13 +229,51 @@ private struct ThemeEditorWindowDragSurface: NSViewRepresentable {
     }
 }
 
+/// Lands the latest pointer preview once per display frame. A slow main
+/// thread drops intermediate palettes instead of queueing a window re-theme
+/// for every mouse event.
+@MainActor
+private final class ThemeEditorPreviewThrottle: NSObject {
+    private var pendingPreview: (() -> Void)?
+    private var displayLink: CADisplayLink?
+
+    func schedule(_ preview: @escaping () -> Void) {
+        pendingPreview = preview
+        guard displayLink == nil else { return }
+        guard let link = NSScreen.main?.displayLink(target: self, selector: #selector(displayLinkFired(_:))) else {
+            flush()
+            return
+        }
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+    }
+
+    func flush() {
+        let preview = pendingPreview
+        pendingPreview = nil
+        preview?()
+    }
+
+    func cancel() {
+        pendingPreview = nil
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
+    @objc private func displayLinkFired(_ link: CADisplayLink) {
+        guard pendingPreview != nil else {
+            cancel()
+            return
+        }
+        flush()
+    }
+}
+
 /// The existing Space theme editor, with a linked palette and live window updates.
 struct SpaceThemeEditorView: View {
     static let contentSize = NSSize(width: 260, height: 296)
-    static let menuContentSize = contentSize
 
     let spaceId: String?
-    let isEmbeddedInMenu: Bool
     let allowsWindowDragging: Bool
     let onDismiss: () -> Void
 
@@ -416,14 +283,14 @@ struct SpaceThemeEditorView: View {
     @State private var palette: ThemePalette
     @State private var draggedHandle: Int?
     @State private var hoveredHarmony: ThemePalette.Harmony?
+    @State private var previewThrottle = ThemeEditorPreviewThrottle()
     private let storeIdentifier: UUID?
     /// New Spaces edit the form's draft until creation commits it.
     private let draftPalette: Binding<ThemePalette>?
 
-    init(spaceId: String, isEmbeddedInMenu: Bool = false, allowsWindowDragging: Bool = false, onDismiss: @escaping () -> Void) {
+    init(spaceId: String, allowsWindowDragging: Bool = false, onDismiss: @escaping () -> Void) {
         self.spaceId = spaceId
         draftPalette = nil
-        self.isEmbeddedInMenu = isEmbeddedInMenu
         self.allowsWindowDragging = allowsWindowDragging
         self.onDismiss = onDismiss
         let manager = SpaceManager.shared
@@ -437,7 +304,6 @@ struct SpaceThemeEditorView: View {
 
     init(palette: Binding<ThemePalette>, onDismiss: @escaping () -> Void) {
         spaceId = nil
-        isEmbeddedInMenu = false
         allowsWindowDragging = false
         self.onDismiss = onDismiss
         storeIdentifier = nil
@@ -471,6 +337,7 @@ struct SpaceThemeEditorView: View {
         .onAppear(perform: syncControls)
         .onDisappear {
             if draggedHandle != nil { update(palette) }
+            previewThrottle.cancel()
         }
         .onReceive(NotificationCenter.default.publisher(for: .spaceThemeDidChange)) { notification in
             guard let spaceId,
@@ -662,23 +529,38 @@ struct SpaceThemeEditorView: View {
             onDismiss()
             return
         }
-        guard !preview || newPalette != palette else { return }
+        if preview {
+            guard newPalette != palette else { return }
+            palette = newPalette
+            previewThrottle.schedule { publish(newPalette, preview: true) }
+            return
+        }
+        // Land the pending preview first so windows see the same sequence as
+        // an unthrottled drag before the commit.
+        previewThrottle.flush()
         withAnimation(animated && !reduceMotion ? .timingCurve(0.22, 1, 0.36, 1, duration: 0.3) : nil) {
             palette = newPalette
-            if let draftPalette {
-                draftPalette.wrappedValue = newPalette
-            } else if let spaceId {
-                if preview {
-                    spaceManager.previewThemePalette(newPalette, forSpaceId: spaceId, expectedStoreIdentifier: storeIdentifier)
-                } else {
-                    spaceManager.setThemePalette(newPalette, forSpaceId: spaceId, expectedStoreIdentifier: storeIdentifier)
-                }
+            publish(newPalette, preview: false)
+        }
+    }
+
+    private func publish(_ newPalette: ThemePalette, preview: Bool) {
+        if let draftPalette {
+            draftPalette.wrappedValue = newPalette
+        } else if let spaceId {
+            if preview {
+                spaceManager.previewThemePalette(newPalette, forSpaceId: spaceId, expectedStoreIdentifier: storeIdentifier)
+            } else {
+                spaceManager.setThemePalette(newPalette, forSpaceId: spaceId, expectedStoreIdentifier: storeIdentifier)
             }
         }
     }
 
     private func syncControls() {
         if let draftPalette {
+            // Throttled previews reach the draft up to a frame late; keep the
+            // handle on the pointer until the drag ends.
+            guard draggedHandle == nil else { return }
             palette = draftPalette.wrappedValue
             return
         }

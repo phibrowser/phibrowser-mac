@@ -289,24 +289,8 @@ private struct PhiSentinelSectionView: View {
         }
     }
 
-    /// Opens the Private AI page of Phi Chat's settings (PHI-1778). Falls back
-    /// to the Sentinel Dashboard while it still ships: on a Chromium framework
-    /// without `openPhiChatAtPath:` (before phi-r156), or when Phi Chat fails
-    /// to open. Remove the fallback together with the Dashboard.
     private func openPrivateAI() {
-        guard let bridge = ChromiumLauncher.sharedInstance().bridge,
-              bridge.responds(to: #selector(PhiChromiumBridgeProtocol.openPhiChat(atPath:completion:))) else {
-            SentinelHelper.openDashboard(section: "experimental")
-            return
-        }
-        // The page manages Sentinel through the service broker, so it needs
-        // Sentinel running, as the Dashboard did.
-        SentinelHelper.launch()
-        bridge.openPhiChat(atPath: "/settings/private-ai") { success, error in
-            guard !success else { return }
-            AppLogError("[AISettings] Phi Chat did not open its Private AI page (\(error ?? "no error")); opening the Sentinel Dashboard")
-            SentinelHelper.openDashboard(section: "experimental")
-        }
+        SentinelHelper.openDashboard(section: "experimental")
     }
 
     private func setPhiChatHotkeyEnabled(_ isEnabled: Bool) {

@@ -207,6 +207,9 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
                 self?.selectFolderIcon(icon)
             }
         ))
+        // The outline supplies the row size and folder indentation; the
+        // edge constraints size the content without SwiftUI measurements.
+        hostingView.sizingOptions = []
         hostingView.wantsLayer = true
         hostingView.layer?.masksToBounds = false
         addSubview(hostingView)
@@ -381,9 +384,12 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             updateFolderIcon(bookmark: bookmark)
         }
 
+        // The initial state was applied above. Skip publisher replays before
+        // scheduling on main so reuse does not queue duplicate image/layout work.
         Publishers.CombineLatest3(bookmark.$title,
                                   bookmark.$secondaryUrl,
                                   bookmark.$secondaryTitle)
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self, weak bookmark] primaryTitle, secondaryUrl, secondaryTitle in
                 guard let self, let bookmark else { return }
@@ -397,6 +403,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
         bookmark.$url
             .removeDuplicates()
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self, weak bookmark] url in
                 guard let self, let bookmark else { return }
@@ -406,6 +413,8 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             .store(in: &cancellables)
 
         bookmark.$liveFaviconData
+            .removeDuplicates()
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self, weak bookmark] _ in
                 guard let self, let bookmark else { return }
@@ -414,6 +423,8 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             .store(in: &cancellables)
 
         bookmark.$cachedFaviconData
+            .removeDuplicates()
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self, weak bookmark] _ in
                 guard let self, let bookmark else { return }
@@ -461,6 +472,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
         bookmark.$isOpened
             .removeDuplicates()
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self, weak bookmark] _ in
                 guard let self, let bookmark else { return }
@@ -672,11 +684,11 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         )
 
         faviconLoadHandle = ProfileScopedFaviconRepository.shared.loadFavicon(for: request) { [weak self, weak bookmark] result in
-            DispatchQueue.main.async {
-                self?.viewState.primaryFaviconImage = result.image
-                if result.source == .chromium, let data = result.data {
-                    bookmark?.updateCachedFaviconData(data)
-                }
+            // The repository delivers on main and checks cancellation before
+            // asynchronous results. Do not enqueue another write past cell reuse.
+            self?.viewState.primaryFaviconImage = result.image
+            if result.source == .chromium, let data = result.data {
+                bookmark?.updateCachedFaviconData(data)
             }
         }
     }
@@ -749,9 +761,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             snapshotData: nil
         )
         secondaryFaviconLoadHandle = ProfileScopedFaviconRepository.shared.loadFavicon(for: request) { [weak self] result in
-            DispatchQueue.main.async {
-                self?.viewState.secondaryFaviconImage = result.image
-            }
+            self?.viewState.secondaryFaviconImage = result.image
         }
     }
 
@@ -1066,7 +1076,7 @@ private struct SidebarBookmarkCellContentView: View {
             }
 
             if showCloseButton {
-                UnifiedTabCloseButton(action: onClose)
+                UnifiedTabCloseButton(systemImage: "minus", action: onClose)
             }
         }
         .help(state.showsTabPreview ? "" : state.title)

@@ -509,15 +509,26 @@ enum AgentSpaceRouter {
         return ok()
     }
 
-    /// `agentSpace.panelSize` — the size a page renders at in the user's
-    /// visible window: the web-content panel, sidebar/header excluded. A CDP
-    /// client sizes its hidden agent window's emulated viewport with this so
-    /// the agent lays pages out exactly as the user's window would — the
-    /// hidden window's own view size reads 0×0 over CDP, and measuring user
-    /// tabs is unreliable (native-NTP shells). Informational, so not
-    /// origin-scoped — same class as `agentSpace.listProfiles`.
+    /// `agentSpace.panelSize` — the size a page renders at in a Space's page
+    /// area: the web-content panel, sidebar/header/bookmark bar/AI Chat panel
+    /// excluded. A CDP client sizes its hidden agent window's emulated
+    /// viewport with this so the agent lays pages out exactly as the window
+    /// presents them — the hidden window's own view size reads 0×0 over CDP,
+    /// and measuring user tabs is unreliable (native-NTP shells). With a
+    /// `windowId` (the agent's hidden Chromium window) the answer is the page
+    /// area of the Space instance behind that window, as its window presents
+    /// it or would (`pageAreaSize`); without one, or when nothing is
+    /// measurable there (no shell yet), it is the key window's presented
+    /// instance, as before. Informational, so not origin-scoped — same class
+    /// as `agentSpace.listProfiles`.
     static func handlePanelSize(context: ExtensionMessageContext) -> String? {
+        let windowId = json(context.payload)?["windowId"] as? Int
         let size = MainActor.assumeIsolated { () -> CGSize? in
+            if let windowId, windowId != 0,
+               let controller = SpaceSessionControllersManager.shared.controller(for: windowId),
+               let size = pageAreaSize(of: controller) {
+                return size
+            }
             let slot = SpaceManager.shared.keySlot ?? SpaceManager.shared.slots.first
             return slot?.visibleController?.mainSplitViewController
                 .webContentContainerViewController.currentWebPanelSize

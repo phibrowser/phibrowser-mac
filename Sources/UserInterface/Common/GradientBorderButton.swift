@@ -11,6 +11,10 @@ class GradientBorderButtonState: ObservableObject {
     @Published var title: String = ""
     @Published var titleColor: Color = .white
     @Published var backgroundColor: Color = .clear
+    @Published var hoverBackgroundColor: Color?
+    @Published var hoverBorderColor: Color?
+    @Published var titleFont: NSFont = GradientBorderButtonView.titleFont
+    @Published var keyboardShortcut: GradientBorderButton.KeyboardShortcut?
     @Published var isEnabled: Bool = true
     /// Border colors for gradient. Use single color array for solid border.
     @Published var borderColors: [Color] = GradientBorderButtonState.defaultGradientColors
@@ -67,6 +71,11 @@ struct GradientBorderButtonView: View {
     static let titleFont = NSFont.systemFont(ofSize: 16, weight: .medium)
 
     @ObservedObject var state: GradientBorderButtonState
+    @State private var isHovered = false
+
+    private var showsHover: Bool {
+        isHovered && state.isEnabled && state.hoverBackgroundColor != nil
+    }
     
     /// Primary initializer with state object for dynamic updates
     init(state: GradientBorderButtonState) {
@@ -130,7 +139,9 @@ struct GradientBorderButtonView: View {
     }
     
     private var borderStyle: some ShapeStyle {
-        if state.borderColors.count == 1 {
+        if showsHover, let color = state.hoverBorderColor {
+            return AnyShapeStyle(color)
+        } else if state.borderColors.count == 1 {
             return AnyShapeStyle(state.borderColors[0])
         } else {
             return AnyShapeStyle(
@@ -145,7 +156,7 @@ struct GradientBorderButtonView: View {
     var body: some View {
         Button(action: { state.clickAction?() }) {
             Text(state.title)
-                .font(Font(Self.titleFont))
+                .font(Font(state.titleFont))
                 .foregroundColor(state.titleColor)
                 .frame(
                     minWidth: state.width,
@@ -159,12 +170,16 @@ struct GradientBorderButtonView: View {
         .disabled(!state.isEnabled)
         .background(
             RoundedRectangle(cornerRadius: state.cornerRadius)
-                .fill(state.backgroundColor)
+                .fill(showsHover ? (state.hoverBackgroundColor ?? state.backgroundColor) : state.backgroundColor)
+                .animation(.easeOut(duration: 0.12), value: showsHover)
         )
         .overlay(
             RoundedRectangle(cornerRadius: state.cornerRadius)
                 .stroke(borderStyle, lineWidth: state.borderWidth)
+                .animation(.easeOut(duration: 0.12), value: showsHover)
         )
+        .onHover { isHovered = $0 }
+        .onDisappear { isHovered = false }
     }
 }
 
@@ -208,8 +223,47 @@ struct GradientBorderButtonView: View {
 
 // MARK: - NSView Wrapper for AppKit
 class GradientBorderButton: NSView {
+    enum KeyboardShortcut {
+        case enter
+        case escape
+
+        func matches(_ event: NSEvent) -> Bool {
+            guard event.type == .keyDown,
+                  event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty else {
+                return false
+            }
+            switch self {
+            case .enter: return event.keyCode == 36 || event.keyCode == 76
+            case .escape: return event.keyCode == 53
+            }
+        }
+    }
+
     private let state = GradientBorderButtonState()
     private var hostingView: NSHostingView<GradientBorderButtonView>?
+
+    /// AppKit dispatches equivalents through the active window's view tree.
+    var keyboardShortcut: KeyboardShortcut? {
+        get { state.keyboardShortcut }
+        set { state.keyboardShortcut = newValue }
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard let keyboardShortcut, keyboardShortcut.matches(event),
+              let window, window.isKeyWindow, window.attachedSheet == nil,
+              !isHiddenOrHasHiddenAncestor, isEnabled,
+              clickAction != nil else {
+            return super.performKeyEquivalent(with: event)
+        }
+        // Let input methods commit or cancel their composition first.
+        if let input = window.firstResponder as? NSTextInputClient, input.hasMarkedText() {
+            return false
+        }
+        if !event.isARepeat {
+            clickAction?()
+        }
+        return true
+    }
     
     var title: String {
         get { state.title }
@@ -225,7 +279,22 @@ class GradientBorderButton: NSView {
         get { state.backgroundColor }
         set { state.backgroundColor = newValue }
     }
+
+    var hoverBackgroundColor: Color? {
+        get { state.hoverBackgroundColor }
+        set { state.hoverBackgroundColor = newValue }
+    }
     
+    var hoverBorderColor: Color? {
+        get { state.hoverBorderColor }
+        set { state.hoverBorderColor = newValue }
+    }
+
+    var titleFont: NSFont {
+        get { state.titleFont }
+        set { state.titleFont = newValue }
+    }
+
     var isEnabled: Bool {
         get { state.isEnabled }
         set { state.isEnabled = newValue }

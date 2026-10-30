@@ -21,7 +21,7 @@ class OmniBoxViewController: NSViewController {
     private lazy var backgroundContainer: NSView = {
         let view = NSView()
         view.wantsLayer = true
-        view.phiLayer?.setBackgroundColor(.contentOverlayBackground)
+        view.phiLayer?.setBackgroundColor(.searchPanelBackground)
         view.layer?.cornerRadius = 14
         view.layer?.cornerCurve = .continuous
         view.layer?.borderWidth = 1
@@ -93,6 +93,7 @@ class OmniBoxViewController: NSViewController {
     
     var openningFromCurrenTab: Bool { viewModel.opennedFromCurrentTab }
     var showsSwitchToTabHintForTesting: Bool { showsSwitchToTabHint }
+    var switchToTabAddsSplitForTesting: Bool { suggestionView.switchToTabAddsSplit }
     
     private weak var browserState: BrowserState?
     private let showsSwitchToTabHint: Bool
@@ -110,7 +111,9 @@ class OmniBoxViewController: NSViewController {
     // MARK: - Lifecycle
     
     override func loadView() {
-        view = NSView()
+        // The box is frame-sized by its host. Give its required input-row
+        // constraints room before the first attachment/layout pass.
+        view = NSView(frame: NSRect(origin: .zero, size: contentSize))
     }
     
     override func viewDidLoad() {
@@ -302,6 +305,7 @@ class OmniBoxViewController: NSViewController {
 
     func prepareForPresentation() {
         viewModel.refreshSearchEngineSpaceShortcut()
+        suggestionView.switchToTabAddsSplit = viewModel.isChoosingSplitPane
     }
 
     func handleKeywordSearchSpaceKeyDown(_ event: NSEvent) -> Bool {
@@ -325,6 +329,7 @@ class OmniBoxViewController: NSViewController {
     }
     
     func focusTextField() {
+        view.layoutSubtreeIfNeeded()
         view.window?.makeFirstResponder(textField)
     }
     

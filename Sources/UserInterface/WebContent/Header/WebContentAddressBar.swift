@@ -444,6 +444,7 @@ struct WebContentAddressBarView: View {
     @ViewBuilder
     private var copyURLButton: some View {
         CopyURLButtonView(
+            browserState: browserState,
             currentTab: currentTab,
             showCopyConfirmation: $showCopyConfirmation,
             isAddressBarHovering: isHovering,
@@ -646,6 +647,7 @@ private struct ReaderButtonView: View {
 }
 
 private struct CopyURLButtonView: View {
+    let browserState: BrowserState?
     let currentTab: Tab?
     @Binding var showCopyConfirmation: Bool
     let isAddressBarHovering: Bool
@@ -656,6 +658,13 @@ private struct CopyURLButtonView: View {
     @Environment(\.phiTheme) private var theme
     @Environment(\.phiAppearance) private var appearance
 
+    /// The page in front of this bar: a presented peek's, not the opener
+    /// hidden behind the panel, so the button agrees with ⌘⇧C (`PHI_COPY_URL`).
+    private var copyURLString: String? {
+        browserState?.addressBarCopyURLString(for: currentTab)
+            ?? BrowserState.copyURLString(forAddressBarShowing: currentTab)
+    }
+
     var body: some View {
         let iconName = showCopyConfirmation ? "checkmark" : "link"
         let iconColor = showCopyConfirmation
@@ -664,11 +673,9 @@ private struct CopyURLButtonView: View {
 
         Button {
             dismissTooltip()
-            guard var urlString = currentTab?.url, !urlString.isEmpty else { return }
-            urlString = ReaderExtensionBridge.sourceURLString(fromReaderPageURL: urlString) ?? urlString
-            let branded = URLProcessor.phiBrandEnsuredUrlString(urlString)
+            guard let urlString = copyURLString else { return }
             NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(branded, forType: .string)
+            NSPasteboard.general.setString(urlString, forType: .string)
             showCopyConfirmation = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 showCopyConfirmation = false

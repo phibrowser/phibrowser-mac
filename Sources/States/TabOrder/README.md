@@ -51,6 +51,31 @@ The core challenge: when the user reorders tabs via drag-and-drop in the native 
 
 ## 3. Chromium-Side Modifications
 
+### Bulk tab changes
+
+Chromium separates pre-removal lifetime work from the actual model delta.
+`tabWillDetach` runs synchronously before recently-closed history is written:
+Phi detaches hosted views and transfers split AI Chat records there. The later
+`tabsRemovedSnapshot` payload contains the actual removals, final indices and optional
+active tab. `BrowserState.applyTabsRemoved` performs source-window cleanup,
+then publishes `tabs` and its visible projection once. A move out of a window
+also removes its source-side state; Chromium retains ownership of the moved
+WebContents. Tabs awaiting or cancelling beforeunload are absent from the delta.
+Group-membership callbacks for tabs already detached from the source model are
+not forwarded to Phi: the removal snapshot updates membership through the
+surviving tab list. In-model ungrouping and group moves still emit membership
+events, and closing the last member still emits the group-closed event.
+The snapshot uses its own selector; both native and Swift declarations require
+a dictionary. Rebuild the app and native framework together after bridge changes.
+
+Explicit multi-tab duplication reuses the bridge's restored-window insertion
+buffer and the Mac insertion transaction. Native duplication preserves history,
+pinning, groups and split visual data, inserts clones in the background, then
+activates the final clone once. `tabsInsertedSnapshot` carries the new tabs,
+split events, full-strip indices and final relationships/selection. Unlike
+session restoration, it applies through EventBus after Chromium's stack unwinds.
+Neither path defers Chromium's WebContents destruction to a worker thread.
+
 ### 3.1 `NativeTabCreationContext` (via bridge)
 
 When Chromium creates a new tab, `buildCreationContextForWebContents` in `PhiChromiumBridge.mm` constructs a dictionary carrying:

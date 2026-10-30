@@ -273,7 +273,7 @@ extension SearchTabsResultsView: NSTableViewDelegate {
                 left: Self.horizontalInset,
                 bottom: 0,
                 right: Self.horizontalInset
-            ), backgroundColor: .contentOverlayBackground)
+            ), backgroundColor: .searchPanelBackground)
         case .item:
             return SearchTabsInsetRowView(insets: .init(
                 top: Self.rowVerticalInset,

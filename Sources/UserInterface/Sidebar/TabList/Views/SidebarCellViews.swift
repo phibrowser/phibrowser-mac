@@ -329,7 +329,7 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     func setHovered(_ hovered: Bool) {
         viewModel.setHovered(hovered)
-        tabPreviewRegistration.setHovering(hovered)
+        tabPreviewRegistration.setHovering(hovered && !viewModel.isHoverSuppressed)
     }
 
     func cancelTabPreviewForInteraction() {
@@ -563,6 +563,7 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
             updateHoverChrome()
         }
     }
+    private var isHoverSuppressed = false
     /// Controller that owns the outline view. Routed through so a click
     /// on either half triggers the same selection flow as a normal tab
     /// click (clears group overview, updates lastSelectedItem, etc.).
@@ -925,13 +926,24 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     }
 
     override func mouseEntered(with event: NSEvent) {
-        isCellHovered = true
-        splitTabPreviewRegistration.setHovering(true)
+        setHovered(true)
     }
 
     override func mouseExited(with event: NSEvent) {
-        isCellHovered = false
-        splitTabPreviewRegistration.setHovering(false)
+        setHovered(false)
+    }
+
+    func setHoverSuppressed(_ suppressed: Bool) {
+        isHoverSuppressed = suppressed
+        outerBackground.isHoverSuppressed = suppressed
+        if suppressed {
+            setHovered(false)
+        }
+    }
+
+    func setHovered(_ hovered: Bool) {
+        isCellHovered = hovered && !isHoverSuppressed
+        splitTabPreviewRegistration.setHovering(isCellHovered)
     }
 
     private func leftCloseTapped() {

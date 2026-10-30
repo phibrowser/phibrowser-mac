@@ -3088,6 +3088,32 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     /// through EventBus (T3A amendment decision 1). The applied transaction
     /// must never call back into Chromium synchronously; BrowserState's
     /// snapshot transaction owns that discipline.
+    @objc(tabsInsertedSnapshot:windowId:)
+    func tabsInsertedSnapshot(_ snapshot: [String: Any], windowId: Int64) {
+        let infos = (snapshot["tabs"] as? [[AnyHashable: Any]]) ?? []
+        let items = infos.map { makeTab(fromBridgeInfo: $0, windowId: windowId) }
+        guard !items.isEmpty else { return }
+        var payload = BrowserState.RestoredWindowSnapshot(
+            tabs: items,
+            activeTabId: NativeTabCreationContext.intValue(snapshot["activeTabId"]),
+            splitActions: parseSplitActions(fromBridgeEvents: snapshot["splitEvents"]))
+        if let indices = snapshot["indices"] as? [NSNumber: NSNumber] {
+            payload.indices = Dictionary(uniqueKeysWithValues: indices.map { ($0.key.intValue, $0.value.intValue) })
+        }
+        if let info = snapshot["relationships"] as? [AnyHashable: Any],
+           let version = snapshot["relationshipVersion"] {
+            payload.relationships = NativeTabRelationshipSnapshot(dictionary: [
+                "windowId": windowId, "version": version,
+                "openerByTabId": info["openerByTabId"] ?? info,
+                "resetOnActiveChangeTabIds": info["resetOnActiveChangeTabIds"] ?? [],
+            ], fallbackWindowId: windowId.intValue)
+        }
+        // Duplicate commands may still be on Chromium's mutation stack. Apply
+        // the owned payload after it unwinds, just like ordinary tab events.
+        EventBus.shared.send(TabEvent(browserId: windowId.intValue,
+                                      action: .tabsInserted(payload)))
+    }
+
     @objc(restoredWindowSnapshot:windowId:)
     func restoredWindowSnapshot(_ snapshot: [String: Any], windowId: Int64) {
         let tabInfos = (snapshot["tabs"] as? [[AnyHashable: Any]]) ?? []
@@ -3224,7 +3250,15 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         )
     }
     
+    // Legacy frameworks still send one removal event from this callback.
     func tabWillBeRemove(_ tabId: Int64, windowId: Int64) {
+        tabWillDetach(tabId, windowId: windowId)
+        EventBus.shared.send(TabEvent(browserId: windowId.intValue,
+                                      action: .closeTab(tabId.intValue)))
+    }
+
+    @objc(tabWillDetach:windowId:)
+    func tabWillDetach(_ tabId: Int64, windowId: Int64) {
         AppLogDebug("tabWillBeRemove: \(tabId)")
         // Detach the closing tab's native view from Peek or Reader SYNCHRONOUSLY,
         // before the async EventBus close dispatch. This bridge callback runs on
@@ -3265,11 +3299,26 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                     .splitPaneWillBeRemoved(tabId.intValue)
             }
         }
-        EventBus.shared
-            .send(TabEvent(browserId: windowId.intValue,
-                           action: .closeTab(tabId.intValue)))
     }
-    
+
+    @objc(tabsRemovedSnapshot:windowId:)
+    func tabsRemovedSnapshot(_ snapshot: [String: Any], windowId: Int64) {
+        let action = Self.decodeTabRemovalSnapshot(snapshot)
+        EventBus.shared.send(TabEvent(browserId: windowId.intValue, action: action))
+    }
+
+    static func decodeTabRemovalSnapshot(_ snapshot: [String: Any]) -> TabEvent.TabAction {
+        let removals = (snapshot["removals"] as? [[String: Any]]) ?? []
+        let nativeIndices = (snapshot["indices"] as? [NSNumber: NSNumber]) ?? [:]
+        let indices = Dictionary(uniqueKeysWithValues: nativeIndices.map {
+            ($0.key.intValue, $0.value.intValue)
+        })
+        let activeTabId = NativeTabCreationContext.intValue(snapshot["activeTabId"])
+        // Moves also remove source-window state; Chromium owns destination contents.
+        let ids = removals.compactMap { NativeTabCreationContext.intValue($0["id"]) }
+        return .tabsRemoved(ids, indices: indices, activeTabId: activeTabId)
+    }
+
     func getWebContentSuperView() -> NSView? {
         return nil
     }

@@ -444,7 +444,7 @@ class WebContentHeader: NSView {
         let provider = headerThemeProvider
         let theme = provider.currentTheme
         let fallbackAppearance = provider.currentAppearance
-        let fallback = ThemedColor.windowBackground.resolve(theme: theme, appearance: fallbackAppearance)
+        let fallback = theme.extensionSurfaceBackground(for: fallbackAppearance)
         let tab = currentTab
         let canApplyPageStyle = tab?.hasWebContent == true
             && tab?.crashState == nil
@@ -463,17 +463,15 @@ class WebContentHeader: NSView {
         let pageBackground = canApplyPageStyle && !usesExtensionSurface
             ? tab?.pageColor.map { Self.compositePageColor($0, over: fallback) }
             : nil
-        // Internal-page chrome meets the top of the shared NTP/Chat surface.
-        // Web pages retain their own reported color and original fallback.
-        let background = usesExtensionSurface
-            ? theme.extensionSurfaceBackground(for: fallbackAppearance)
-            : pageBackground
+        // Share the NTP/Chat surface when page colors are unavailable, including
+        // the address bar and adjacent chrome that consume this presentation.
+        let background = pageBackground ?? fallback
         let pageAppearance: Appearance? = pageBackground.map {
             $0.isLight() ? .light : .dark
         }
 
         // Own both layer colors here so a theme binding cannot overwrite the page override.
-        layer?.backgroundColor = (background ?? fallback).cgColor
+        layer?.backgroundColor = background.cgColor
         bottomSeparator.layer?.backgroundColor = ThemedColor.separator.resolve(
             theme: theme, appearance: pageAppearance ?? fallbackAppearance
         ).cgColor

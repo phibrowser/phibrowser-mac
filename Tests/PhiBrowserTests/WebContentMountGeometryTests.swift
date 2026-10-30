@@ -102,9 +102,7 @@ final class WebContentMountGeometryTests: XCTestCase {
         fixture.state.toggleAIChat(true)
         RunLoop.main.run(until: Date().addingTimeInterval(0.7))
         XCTAssertFalse(controller.isPageCardSeparated)
-        assertFill(ThemedColor.contentOverlayBackground.resolve(
-            theme: context.currentTheme, appearance: .dark
-        ))
+        assertFill(context.currentTheme.extensionSurfaceBackground(for: .dark))
     }
 
     override func tearDownWithError() throws {

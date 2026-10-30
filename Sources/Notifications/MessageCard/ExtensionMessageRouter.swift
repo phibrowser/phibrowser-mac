@@ -155,6 +155,10 @@ final class ExtensionMessageRouter {
             return nil
         }
 
+        register(type: "sidecar.nativeMenu") { context in
+            MainActor.assumeIsolated { SidebarNativeMenu.handle(context) }
+        }
+
         register(type: SiteMemoryMessageRouter.queryType) { context in
             SiteMemoryMessageRouter.handle(context)
             return nil

@@ -132,26 +132,19 @@ private extension PinnedTabLayout {
         tabMetrics = metrics(for: input.tabCount, itemHeight: Constants.tabHeight, minimumWidth: Constants.tabMinimumWidth, contentWidth: input.contentWidth, columnLimit: tabMaxColumns)
 
         var yOffset: CGFloat = 0
-        let hasContent = (extensionMetrics.numberOfItems > 0 || tabMetrics.numberOfItems > 0)
-        if hasContent {
+        if extensionMetrics.numberOfItems > 0 {
+            // No top inset: the shelf only shows with the address bar in the
+            // sidebar, where the header's bottom padding and the 5 pt spacer
+            // above this band already put it `spacing` below the bar.
+            layout(section: .extensions, metrics: extensionMetrics, yOffset: &yOffset)
+            yOffset += Constants.spacing
+        } else if tabMetrics.numberOfItems > 0 {
             yOffset = Constants.insets.top
         }
 
-        if extensionMetrics.numberOfItems > 0 {
-            layout(section: .extensions, metrics: extensionMetrics, yOffset: &yOffset)
-        }
-
         if tabMetrics.numberOfItems > 0 {
-            if extensionMetrics.numberOfItems > 0 {
-                yOffset += Constants.spacing
-            }
             layout(section: .tabs, metrics: tabMetrics, yOffset: &yOffset)
-        }
-
-        if hasContent {
             yOffset += Constants.insets.bottom
-        } else {
-            yOffset = 0
         }
 
         contentSize = NSSize(width: input.contentWidth, height: yOffset)

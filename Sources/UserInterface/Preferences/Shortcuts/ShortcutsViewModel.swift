@@ -358,6 +358,11 @@ class ShortcutsViewModel: ObservableObject {
                 characters: "]",
                 modifiers: key.modifiers
             )
+        case .PHI_SPLIT_WITH_NEW_TAB:
+            return ShortcutsKey(
+                characters: "=",
+                modifiers: key.modifiers
+            )
         default:
             return key
         }
@@ -649,6 +654,8 @@ private extension CommandWrapper {
             return NSLocalizedString("settings.shortcuts.command.toggleReaderView", value: "Toggle Reader View", comment: "Shortcuts settings - Command title for switching the current page between Reader View and the normal page")
         case .PHI_SAVE_FOR_LATER:
             return NSLocalizedString("settings.shortcuts.command.saveToFolio", value: "Save to Folio", comment: "Shortcuts settings - Command title for saving the current page for later as markdown plus a webpage copy")
+        case .PHI_SPLIT_WITH_NEW_TAB:
+            return NSLocalizedString("settings.shortcuts.command.splitWithNewTab", value: "Split with New Tab", comment: "Shortcuts settings - Command title for opening a new tab in Split View next to the current tab")
         case .IDC_FIND:
             return NSLocalizedString("settings.shortcuts.command.findOnPage", value: "Find", comment: "Shortcuts settings - Command title for finding text on the current page")
         case .IDC_FIND_NEXT:

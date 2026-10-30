@@ -39,6 +39,11 @@ final class ShortcutMenuPresentation {
         guard let command = CommandWrapper(rawValue: item.tag),
               let original = Shortcuts.key(for: command),
               original.menuKeyEquivalent == key else { return key }
+        // AppKit reports Ctrl-Shift-= as "+", and "+" alone hides the Shift.
+        if command == .PHI_SPLIT_WITH_NEW_TAB, original == Shortcuts.DefaultShortcuts[command] {
+            return ShortcutsKey(characters: "=", modifiers: original.modifiers,
+                                preservesShift: true).menuKeyEquivalent
+        }
         let display = original.displayKey
         return display == original ? key : display.menuKeyEquivalent
     }
@@ -287,6 +292,7 @@ extension Shortcuts {
                 return [.PHI_TAB_SWITCHER_FORWARD,
                         .PHI_TAB_SWITCHER_BACKWARD,
                         .IDC_NEW_TAB_TO_RIGHT,
+                        .PHI_SPLIT_WITH_NEW_TAB,
                         .IDC_SELECT_NEXT_TAB,
                         .IDC_SELECT_PREVIOUS_TAB,
                         .IDC_MOVE_TAB_PREVIOUS,
@@ -679,7 +685,7 @@ extension CommandWrapper {
         if spaceSelectionIndex != nil { return true }
         switch self {
         case .IDC_OPEN_FILE, .IDC_SHOW_BOOKMARK_BAR, .PHI_TOGGLE_SIDEBAR,
-             .PHI_FARRINGDON_TOGGLE,
+             .PHI_FARRINGDON_TOGGLE, .PHI_SPLIT_WITH_NEW_TAB,
              .IDC_TAB_SEARCH, .IDC_DUPLICATE_TAB, .IDC_WINDOW_PIN_TAB,
              .IDC_DEV_TOOLS, .IDC_DEV_TOOLS_INSPECT, .IDC_DEV_TOOLS_CONSOLE,
              .PHI_TOGGLE_CHATBAR, .PHI_NEW_CONVERSATION,
@@ -756,6 +762,7 @@ extension CommandWrapper {
         .PHI_KIOSK_OPEN_IN_SPACE: .init(title: "Open Kiosk or Peek in current Space", keywords: ["kiosk", "peek", "open as tab", "open in space", "current space", "move"]),
         .PHI_KIOSK_CHOOSE_SPACE: .init(title: "Show Kiosk \"Open in\" Menu", keywords: ["kiosk", "choose space", "open in", "menu"]),
         .PHI_SAVE_FOR_LATER: .init(title: "Save to Folio", keywords: ["save", "save to folio", "folio", "read later", "markdown", "archive"]),
+        .PHI_SPLIT_WITH_NEW_TAB: .init(title: "Split with New Tab", keywords: ["split", "split view", "new tab", "pane"]),
         .PHI_SELECT_NEXT_SPACE: .init(title: "Next Space", keywords: ["space", "next space", "forward"]),
         .PHI_SELECT_PREVIOUS_SPACE: .init(title: "Previous Space", keywords: ["space", "previous space", "backward"]),
         .PHI_SELECT_SPACE_0: .init(title: "Go to Space 1", keywords: ["space", "space1"]),

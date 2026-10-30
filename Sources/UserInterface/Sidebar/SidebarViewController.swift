@@ -43,7 +43,7 @@ final class SpacesStripHostingView: ThemedHostingView {
     /// and SwiftUI declined it. `SpacesStripReorderSurface` owns the reorder
     /// drag for that reason, and carries its own veto for the pip slots it
     /// claims. The hit view's answer is the one that decides: every ancestor
-    /// here — `ColoredVisualEffectView`, `_NSSplitViewItemViewWrapper`,
+    /// here — `BackdropContainerView`, `_NSSplitViewItemViewWrapper`,
     /// `NSThemeFrame` — returns true, and the window still stayed put.
     override var mouseDownCanMoveWindow: Bool { false }
 
@@ -555,7 +555,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     // MARK: - Lifecycle
     
     override func loadView() {
-        let view = SidebarFileDropView()
+        let view = SidebarFileDropView(paintsBackdrop: paintsOwnBackdrop)
         view.onOpenFiles = { [weak self] urls in
             guard let self else { return false }
             for (index, url) in urls.enumerated() {
@@ -563,9 +563,6 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
             }
             return true
         }
-        view.themedBackgroundColor = .windowOverlayBackground
-        view.usesThemePalette = true
-        view.material = .fullScreenUI
         let trackingArea = NSTrackingArea(
             rect: .zero,
             options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
@@ -750,8 +747,9 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         // In top-navigation layouts, 42.5pt leaves the Space strip exactly
         // 8pt above the next sidebar band once the 5pt header spacer below is
         // included. The half point follows the legacy header controls' 15.5pt
-        // top alignment.
-        let base: CGFloat = addressInSidebar ? 80 : 42.5
+        // top alignment. With the address bar in the sidebar, 79pt leaves 3pt
+        // under it, so the band below starts 8pt under the bar.
+        let base: CGFloat = addressInSidebar ? 79 : 42.5
         let spacesBandHeight = SpacesStripView.sidebarHeight + 8
         let headerHeight = base + (spacesEnabled ? spacesBandHeight : 0)
         headerHeightConstraint?.update(offset: headerHeight)
@@ -790,9 +788,9 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     
     private func setupStackView() {
         // Added before mainStackView so it stays behind every stack item.
-        // The ColoredVisualEffectView's own `colorView` is already pinned
-        // at the back by NSVisualEffectView.commonInit, so the tint sits
-        // between the theme fill (below) and the content stack (above).
+        // The root's backdrop always sits at the very back
+        // (`BackdropContainerView`), so the tint sits between the theme
+        // fill (below) and the content stack (above).
         view.addSubview(spaceTintBackgroundView)
         spaceTintBackgroundView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
@@ -1883,7 +1881,7 @@ extension SidebarViewController: SpaceSwitchBandSurface {
     }
 
     func setSpaceSwitchBackdropHidden(_ hidden: Bool) {
-        (view as? ColoredVisualEffectView)?.suppressesBackdrop = hidden || !paintsOwnBackdrop
+        (view as? BackdropContainerView)?.paintsBackdrop = !hidden && paintsOwnBackdrop
         spaceTintBackgroundView.isHidden = hidden || !paintsOwnBackdrop
     }
 }

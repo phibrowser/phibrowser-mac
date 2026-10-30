@@ -153,8 +153,9 @@ final class ProfileScopedFaviconRepository {
         }
 
         if FaviconConfiguration.shouldUseDefaultFavicon(for: url) {
-            let defaultImage = NSImage.phiDefaultFavicon
-            completion(.init(image: defaultImage, data: defaultImage.pngData(), source: .placeholder))
+            // Consumers display the default image directly. Placeholder bytes
+            // are not persisted, so avoid synchronous TIFF/PNG encoding here.
+            completion(.init(image: .phiDefaultFavicon, data: nil, source: .placeholder))
             return nil
         }
 

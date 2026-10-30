@@ -1388,6 +1388,23 @@ class AuthManager {
         return nil
     }
 
+    /// Refreshes staged onboarding credentials so the ID token picks up profile changes.
+    /// Staged credentials are never published, so this skips the shared-store renew path.
+    @MainActor
+    func renewStagedOnboardingCredentials(expectedUserID: String) async -> Credentials? {
+        guard !isRenewing,
+              stagedOnboardingAccessToken(expectedUserID: expectedUserID) != nil,
+              let credentialSnapshot = storedAuth0CredentialData() else {
+            return nil
+        }
+        isRenewing = true
+        return await callAuth0Renew(
+            operation: "refresh onboarding profile claims",
+            session: authSessionGeneration.capture(),
+            credentialSnapshot: credentialSnapshot
+        )
+    }
+
     /// Returns the locally staged bearer token only for account-profile calls
     /// made by an active onboarding page. This deliberately does not renew,
     /// consult the shared store, or relax the committed-session token getter.

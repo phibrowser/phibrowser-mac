@@ -156,6 +156,7 @@ enum CommandWrapper: Int, Equatable {
     case PHI_SAVE_FOR_LATER          = 90027
     case PHI_CAPTURE_FULL_PAGE       = 90028
     case PHI_CAPTURE_AREA            = 90029
+    case PHI_SPLIT_WITH_NEW_TAB      = 90030
 
     // System Preserved
     case IDS_HIDE_OTHERS_MAC         = 110
@@ -727,6 +728,7 @@ extension Shortcuts {
         // Cmd-S is the sidebar and Cmd-Shift-S the chatbar; Cmd-Opt-S keeps
         // the save family together without displacing either.
         .PHI_SAVE_FOR_LATER: .init(characters: "s", modifiers: [.command, .option]),
+        .PHI_SPLIT_WITH_NEW_TAB: .init(characters: "+", modifiers: [.control, .shift]),
 
         // System Preserved Shortcuts
         .IDS_HIDE_OTHERS_MAC: .init(characters: "h", modifiers: [.command, .option]),

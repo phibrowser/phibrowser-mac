@@ -83,6 +83,11 @@ Feature scripts under [build-scripts](../build-scripts) exercise selected native
 code with controlled dependencies. Read the script or suite README before use;
 these scripts are not interchangeable with application-hosted tests.
 
+`bash build-scripts/test-sidebar-native-menu.sh` checks the toolbar menu's actual
+AppKit item builder: standard item views, submenu checkmarks, symbols, separators,
+disabled actions, and selected IDs. It does not open a live menu; visual material,
+anchor placement and tracking still need the running browser and matching Sidecar.
+
 The [sync convergence harness](../Tests/SyncConvergence/README.md) models replicas
 and reports documented expected failures separately. It does not use the live
 service or real two-device UI.

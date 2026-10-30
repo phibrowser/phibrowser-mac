@@ -160,3 +160,31 @@ enum PageOverlayDevToolsDock {
                                height: bounds.size.height)
     }
 }
+
+/// Vibrancy suppression for the views a page overlay hosts its tab in (the
+/// page, docked DevTools). Chromium's web views allow vibrancy, so under the
+/// window's visual-effect views AppKit composites them with its Plus Lighter
+/// filter, which adds the overlay's backing onto every pixel and washes a
+/// dark page and its images out. The host view forwards its subview changes
+/// here, and each hosted view has the filter stripped as `WebContentHostView`
+/// does for a tab's page; that view itself is not reused because its frame
+/// sync would undo the page frame `PageOverlayDevToolsDock` lays out.
+final class PageOverlayVibrancySuppressor {
+    private var filterObservers: [ObjectIdentifier: NSKeyValueObservation] = [:]
+
+    deinit {
+        filterObservers.values.forEach { $0.invalidate() }
+    }
+
+    func didAddSubview(_ subview: NSView) {
+        let key = ObjectIdentifier(subview)
+        guard filterObservers[key] == nil else { return }
+        subview.wantsLayer = true
+        guard let layer = subview.layer else { return }
+        filterObservers[key] = WebContentHostView.observeVibrancyFilter(on: layer)
+    }
+
+    func willRemoveSubview(_ subview: NSView) {
+        filterObservers.removeValue(forKey: ObjectIdentifier(subview))?.invalidate()
+    }
+}

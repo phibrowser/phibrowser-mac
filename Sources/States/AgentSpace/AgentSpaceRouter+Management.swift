@@ -344,14 +344,18 @@ extension AgentSpaceRouter {
     /// with no open window gets one first (a closed window is not a closed
     /// Space; this is the one way to reach a Space when the user has no
     /// browser window at all), surfaced when `activate` is set and opened
-    /// behind the user's windows otherwise, and the reply then carries
-    /// `windowOpened: true`; that path answers asynchronously, once the
-    /// window exists. A fresh window always seeds one New Tab, so asking a
-    /// windowless Space for a New Tab is satisfied by that seed rather than
-    /// doubled — "open a New Tab there" and "open the Space" are the same
-    /// ask. An optional `windowId` targets one specific window
-    /// instead of the key-window default and never opens one
-    /// (`window_not_open` when it does not show the Space). Returns nil
+    /// behind the user's windows otherwise; that path answers asynchronously,
+    /// once the window exists. While windowless, `activate` restores the
+    /// session first, and the Space may then land in a restored window. The
+    /// reply carries `windowOpened`, true only when this request opened the
+    /// window fresh: the caller closes the New Tabs it has not seen in such a
+    /// window, which in a restored one would close the user's. Asking a
+    /// windowless Space for a New Tab is satisfied by the window this opens
+    /// (seeded with one) or restores rather than doubled — "open a New Tab
+    /// there" and "open the Space" are the same ask, and phi-cdp's
+    /// `openSpaceWindow` relies on it. An optional `windowId` targets
+    /// one specific window instead of the key-window default and never opens
+    /// one (`window_not_open` when it does not show the Space). Returns nil
     /// when the reply is sent asynchronously.
     static func handleSpacesOpenTab(context: ExtensionMessageContext) -> String? {
         guard let obj = json(context.payload),
@@ -372,7 +376,7 @@ extension AgentSpaceRouter {
                   !space.isAgentSpace, !SpaceManager.isIncognitoSpaceId(spaceId) else {
                 return failure("unknown_space")
             }
-            manager.openWindow(forSpaceId: spaceId, activate: activate) { openedWindowId, error in
+            manager.openWindow(forSpaceId: spaceId, activate: activate) { openedWindowId, windowOpened, error in
                 MainActor.assumeIsolated {
                     guard let openedWindowId else {
                         ExtensionMessaging.shared.sendResponse(
@@ -384,7 +388,8 @@ extension AgentSpaceRouter {
                                            activate: activate, context: context)
                     }
                     ExtensionMessaging.shared.sendResponse(
-                        encode(["ok": true, "windowId": openedWindowId, "windowOpened": true]),
+                        encode(["ok": true, "windowId": openedWindowId,
+                                "windowOpened": windowOpened]),
                         requestId: requestId)
                 }
             }

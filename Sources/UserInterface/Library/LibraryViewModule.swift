@@ -235,7 +235,6 @@ private struct LibraryContentView: View {
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
         .background {
             color(.contentOverlayBackground)
-                .overlay(color(.themeColor).opacity(0.025))
         }
         .clipped()
     }

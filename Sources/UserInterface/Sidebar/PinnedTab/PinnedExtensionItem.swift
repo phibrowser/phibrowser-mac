@@ -176,7 +176,7 @@ private extension PinnedExtensionItem {
         backgroundView.addSubview(iconImageView)
 
         backgroundView.snp.makeConstraints { make in
-            make.edges.equalToSuperview().inset(2)
+            make.edges.equalToSuperview()
         }
 
         iconImageView.snp.makeConstraints { make in

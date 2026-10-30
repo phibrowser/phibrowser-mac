@@ -121,7 +121,7 @@ final class TabItemViewCollapsedLayoutTests: XCTestCase {
         )
         let fallbackFill = try XCTUnwrap(fallbackFillColor.usingColorSpace(.sRGB))
         let expectedFallback = try XCTUnwrap(
-            ThemedColor.windowBackground.resolve(in: view).usingColorSpace(.sRGB)
+            ThemedColor.extensionSurfaceBackground.resolve(in: view).usingColorSpace(.sRGB)
         )
         XCTAssertEqual(fallbackFill.redComponent, expectedFallback.redComponent, accuracy: 0.001)
         XCTAssertEqual(fallbackFill.greenComponent, expectedFallback.greenComponent, accuracy: 0.001)

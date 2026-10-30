@@ -84,6 +84,22 @@ final class PeekPanelController {
         }
     }
 
+    /// Hosts the peek's page and its docked DevTools, without the vibrancy
+    /// filter that would wash them out (`PageOverlayVibrancySuppressor`).
+    private final class PeekWebHostView: NSView {
+        private let vibrancySuppressor = PageOverlayVibrancySuppressor()
+
+        override func didAddSubview(_ subview: NSView) {
+            super.didAddSubview(subview)
+            vibrancySuppressor.didAddSubview(subview)
+        }
+
+        override func willRemoveSubview(_ subview: NSView) {
+            vibrancySuppressor.willRemoveSubview(subview)
+            super.willRemoveSubview(subview)
+        }
+    }
+
     /// Control button: a white glyph in dark appearance, otherwise accent-tinted.
     /// The chip is what makes it readable — the strip it sits in is
     /// transparent, so a bare glyph competes with whatever the page behind
@@ -328,7 +344,7 @@ final class PeekPanelController {
     private let rootView = PageOverlayView()
     private let containerView = PeekContainerView()
     private let controlColumn = PeekControlColumnView()
-    private let webHostView = NSView()
+    private let webHostView = PeekWebHostView()
     // Peek shares its parent's window ID but owns its visible toast lifecycle.
     private let toastCenter = OverlayToastCenter()
     private let toastViewController: OverlayToastViewController

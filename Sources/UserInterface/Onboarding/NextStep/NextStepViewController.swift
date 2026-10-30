@@ -61,62 +61,13 @@ enum NextStepFinishButtonLayout {
     }
 }
 
-enum NextStepLinkGradient {
-    private static let startComponents = (red: 148.0, green: 82.0, blue: 249.0)
-    private static let endComponents = (red: 232.0, green: 192.0, blue: 255.0)
-
+enum NextStepLinkStyle {
     static func apply(to attributedString: NSMutableAttributedString, range: NSRange) {
-        let string = attributedString.string
-        guard let stringRange = Range(range, in: string) else { return }
-
-        var characterRanges: [Range<String.Index>] = []
-        var lowerBound = stringRange.lowerBound
-        while lowerBound < stringRange.upperBound {
-            let upperBound = string.index(after: lowerBound)
-            characterRanges.append(lowerBound..<upperBound)
-            lowerBound = upperBound
-        }
-
-        for (index, characterRange) in characterRanges.enumerated() {
-            let progress = characterRanges.count > 1
-                ? CGFloat(index) / CGFloat(characterRanges.count - 1)
-                : 0
-            attributedString.addAttribute(
-                .foregroundColor,
-                value: color(at: progress),
-                range: NSRange(characterRange, in: string)
-            )
-        }
-    }
-
-    static func color(at progress: CGFloat) -> NSColor {
-        let progress = min(max(progress, 0), 1)
-        return NSColor(
-            srgbRed: interpolatedComponent(
-                from: startComponents.red,
-                to: endComponents.red,
-                progress: progress
-            ),
-            green: interpolatedComponent(
-                from: startComponents.green,
-                to: endComponents.green,
-                progress: progress
-            ),
-            blue: interpolatedComponent(
-                from: startComponents.blue,
-                to: endComponents.blue,
-                progress: progress
-            ),
-            alpha: 1
+        attributedString.addAttribute(
+            .foregroundColor,
+            value: NSColor(srgbRed: 184 / 255, green: 154 / 255, blue: 1, alpha: 1),
+            range: range
         )
-    }
-
-    private static func interpolatedComponent(
-        from start: Double,
-        to end: Double,
-        progress: CGFloat
-    ) -> CGFloat {
-        CGFloat((start + ((end - start) * Double(progress))) / 255)
     }
 }
 
@@ -241,12 +192,12 @@ final class NextStepViewController: OnboardingBaseViewController {
     private var legalAgreementTitle: NSAttributedString {
         let privacyTitle = NSLocalizedString(
             "oobe.nextSteps.privacyLink",
-            value: "Privacy",
+            value: "Privacy Policy",
             comment: "Onboarding next steps - Link title for the Phi privacy policy"
         )
         let termsTitle = NSLocalizedString(
             "oobe.nextSteps.termsLink",
-            value: "Terms",
+            value: "Terms of Use",
             comment: "Onboarding next steps - Link title for the Phi terms of service"
         )
         let format = NSLocalizedString(
@@ -294,20 +245,28 @@ final class NextStepViewController: OnboardingBaseViewController {
             comment: "Onboarding next steps - Page title"
         ))
 
-        skipButton.isHidden = true
         let beginButtonTitle = NSLocalizedString(
             "oobe.nextSteps.beginButton",
-            value: "Let's Begin",
+            value: "Let's begin",
             comment: "Onboarding next steps - Final button that completes onboarding"
         )
-        nextButton.title = beginButtonTitle
-        nextButton.snp.updateConstraints { make in
-            make.width.equalTo(NextStepFinishButtonLayout.width(for: beginButtonTitle))
-        }
+        configureFooterButtons(.init(
+            leftTitle: NSLocalizedString(
+                "oobe.navigation.backButton",
+                value: "Back",
+                comment: "OOBE navigation - Button to return to the previous step"
+            ),
+            rightTitle: beginButtonTitle
+        ))
 
         setupContent()
         setupActions()
         updateBeginButton()
+    }
+
+    override func leftButtonTapped() {
+        guard !isSavingMetricsConsent else { return }
+        super.leftButtonTapped()
     }
 
     override func nextButtonTapped(_ sender: NSButton? = nil) {
@@ -378,6 +337,8 @@ final class NextStepViewController: OnboardingBaseViewController {
 
     private func updateBeginButton() {
         let isEnabled = consentState.canBegin && !isSavingMetricsConsent
+        leftButton.isEnabled = !isSavingMetricsConsent
+        leftButton.alphaValue = isSavingMetricsConsent ? 0.5 : 1
         nextButton.isEnabled = isEnabled
         nextButton.alphaValue = isEnabled ? 1 : 0.5
     }
@@ -404,7 +365,7 @@ final class NextStepViewController: OnboardingBaseViewController {
             ],
             range: range
         )
-        NextStepLinkGradient.apply(to: attributedTitle, range: range)
+        NextStepLinkStyle.apply(to: attributedTitle, range: range)
     }
 }
 
@@ -645,6 +606,16 @@ final class OnboardingCheckboxRow: NSView {
         }
         super.init(frame: .zero)
 
+        if let linkTextView = titleView as? NextStepLinkTextView {
+            linkTextView.onNonLinkClick = { [weak self] in
+                self?.toggleCheckbox()
+            }
+        } else {
+            titleView.addGestureRecognizer(
+                NSClickGestureRecognizer(target: self, action: #selector(toggleCheckbox))
+            )
+        }
+
         checkboxButton.setAccessibilityLabel(accessibilityTitle)
         addSubview(checkboxButton)
         addSubview(titleView)
@@ -685,6 +656,8 @@ final class OnboardingCheckboxRow: NSView {
 }
 
 final class NextStepLinkTextView: NSTextView {
+    var onNonLinkClick: (() -> Void)?
+
     private let preferredLayoutWidth: CGFloat
     private let backingTextStorage: NSTextStorage
 
@@ -748,6 +721,32 @@ final class NextStepLinkTextView: NSTextView {
         let usedRect = layoutManager.usedRect(for: textContainer)
         let height = ceil(usedRect.height + (textContainerInset.height * 2) + 2)
         return NSSize(width: NSView.noIntrinsicMetric, height: max(height, 18))
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let onNonLinkClick else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        let point = convert(event.locationInWindow, from: nil)
+        let textPoint = NSPoint(
+            x: point.x - textContainerOrigin.x,
+            y: point.y - textContainerOrigin.y
+        )
+        if let layoutManager, let textContainer, layoutManager.numberOfGlyphs > 0 {
+            let glyphIndex = layoutManager.glyphIndex(for: textPoint, in: textContainer)
+            let glyphRange = NSRange(location: glyphIndex, length: 1)
+            let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+            if layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                .contains(textPoint),
+                backingTextStorage.attribute(.link, at: characterIndex, effectiveRange: nil) != nil {
+                super.mouseDown(with: event)
+                return
+            }
+        }
+
+        onNonLinkClick()
     }
 
     override func setFrameSize(_ newSize: NSSize) {

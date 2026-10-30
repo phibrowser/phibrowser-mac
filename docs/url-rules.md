@@ -88,8 +88,16 @@ browser access while every window is closed and none is coming back goes out
 at once, unless earlier opens are still queued: it then joins them. Otherwise
 a batch holding a Phi Chat link also waits for Phi to be active (step 1).
 
-When an external ask has no window to host the chooser, the URL opens in the
-rule's default destination: a new Kiosk for a Kiosk default, otherwise that
+While every window is closed and the restore switch is on, an open that a rule
+sends to a Space (an App rule's Space or Incognito target, or, with the Kiosk
+preference on, a host or URL rule's Incognito target) and every external ask
+first restore the session, as a Dock click does, and go on once it settles
+(`SpaceManager.runAfterWindowlessRestore`, chromium ADR 0020). The ask's
+chooser then shows on a restored window. With the Kiosk preference off this
+changes nothing: the batch already waited for that restore.
+
+When an external ask still has no window to host the chooser, the URL opens in
+the rule's default destination: a new Kiosk for a Kiosk default, otherwise that
 Space.
 
 Ask prompts queue per source window in the order the URLs arrived and are

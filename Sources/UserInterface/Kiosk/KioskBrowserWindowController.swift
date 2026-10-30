@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import AppKit
+import Combine
 import PostHog
 
 enum KioskWindowFramePersistence {
@@ -315,6 +316,12 @@ final class KioskBrowserWindowController: SpaceSessionController {
     private var presentationOriginalIgnoresMouseEvents: Bool?
     private var shouldCaptureKioskOpened = true
 
+    /// The application whose link opened this Kiosk, brought back when the
+    /// Kiosk closes. Cleared once focus leaves the Kiosk, so closing returns
+    /// there only if the user stayed in it.
+    var returnApplication: NSRunningApplication?
+    private var returnApplicationClaim: AnyCancellable?
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
@@ -348,6 +355,8 @@ final class KioskBrowserWindowController: SpaceSessionController {
             presentationRequest: presentationRequest
         )
         configureKioskActions()
+        claimReturnApplicationForFirstTab()
+        observeFocusForReturnApplication(of: window)
     }
 
     @MainActor
@@ -513,6 +522,7 @@ final class KioskBrowserWindowController: SpaceSessionController {
         replacementWindow: NSWindow
     ) {
         shouldCaptureKioskOpened = false
+        returnApplication = source.returnApplication
         (browserState as? KioskBrowserState)?.preferredSpaceId =
             (source.browserState as? KioskBrowserState)?.preferredSpaceId
         profileReplacementSource = source
@@ -970,14 +980,115 @@ final class KioskBrowserWindowController: SpaceSessionController {
         presentationOriginalIgnoresMouseEvents = nil
     }
 
+    /// Chromium adds the first tab after creating this controller, carrying
+    /// the URL of the external open that asked for the Kiosk.
+    private func claimReturnApplicationForFirstTab() {
+        returnApplicationClaim = browserState.$focusingTab
+            .compactMap { $0 }
+            .first()
+            .flatMap { $0.$url.compactMap { $0 }.filter { !$0.isEmpty } }
+            .first()
+            .sink { [weak self] url in
+                MainActor.assumeIsolated {
+                    guard let self, self.returnApplication == nil,
+                          self.profileReplacementSourceWindowId == nil,
+                          let application = AppController.shared?
+                            .claimKioskReturnApplication(forTabURL: url) else { return }
+                    AppLogDebug(
+                        "[ExternalLinks] Kiosk \(self.windowId) returns to "
+                            + "\(application.bundleIdentifier ?? "unknown")"
+                    )
+                    self.returnApplication = application
+                }
+            }
+    }
+
+    private func observeFocusForReturnApplication(of window: NSWindow) {
+        let center = NotificationCenter.default
+        center.addObserver(
+            self, selector: #selector(kioskWindowDidResignKeyForReturn(_:)),
+            name: NSWindow.didResignKeyNotification, object: window
+        )
+        center.addObserver(
+            self, selector: #selector(applicationDidResignActiveForReturn(_:)),
+            name: NSApplication.didResignActiveNotification, object: nil
+        )
+        // The manager's own willClose observer runs first and drops this
+        // controller, which would silence a selector observer. The block keeps
+        // the controller alive until the handoff has run, then lets it go.
+        var closeObserver: NSObjectProtocol?
+        closeObserver = center.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: nil
+        ) { _ in
+            if let closeObserver {
+                NotificationCenter.default.removeObserver(closeObserver)
+            }
+            closeObserver = nil
+            MainActor.assumeIsolated {
+                self.returnToSourceApplicationOnClose()
+            }
+        }
+    }
+
+    /// Chromium orders a closing window out before it closes it, which also
+    /// resigns key. Judge on the next turn, once AppKit has picked the new key
+    /// window: only a Kiosk still on screen lost focus to another window.
+    /// Bubbles and popups are child windows and keep the Kiosk focused.
+    @objc private func kioskWindowDidResignKeyForReturn(_ notification: Notification) {
+        guard returnApplication != nil else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+            let focusMovedToAnotherWindow = window.isVisible
+                && NSApp.keyWindow.map { !Self.isWindow($0, ownedBy: window) } == true
+            if window.isMiniaturized || focusMovedToAnotherWindow {
+                AppLogDebug("[ExternalLinks] Kiosk return dropped: focus left the Kiosk")
+                self.returnApplication = nil
+            }
+        }
+    }
+
+    @objc private func applicationDidResignActiveForReturn(_ notification: Notification) {
+        guard returnApplication != nil else { return }
+        AppLogDebug("[ExternalLinks] Kiosk return dropped: Phi resigned active")
+        returnApplication = nil
+    }
+
+    private func returnToSourceApplicationOnClose() {
+        guard let returnApplication else { return }
+        self.returnApplication = nil
+        AppLogDebug(
+            "[ExternalLinks] Kiosk closing; return to "
+                + "\(returnApplication.bundleIdentifier ?? "unknown") "
+                + "appActive=\(NSApp.isActive) "
+                + "terminated=\(returnApplication.isTerminated) "
+                + "switchingProfile=\(pendingProfileId != nil)"
+        )
+        guard NSApp.isActive,
+              !returnApplication.isTerminated,
+              pendingProfileId == nil,
+              !SpaceManager.shared.isTerminating else { return }
+        if !returnApplication.activate(from: .current, options: []) {
+            AppLogWarn(
+                "[ExternalLinks] Kiosk closed; failed to return to "
+                    + "\(returnApplication.bundleIdentifier ?? "unknown")"
+            )
+        }
+    }
+
+    private static func isWindow(_ window: NSWindow, ownedBy owner: NSWindow) -> Bool {
+        var current: NSWindow? = window
+        while let candidate = current {
+            if candidate === owner { return true }
+            current = candidate.parent ?? candidate.sheetParent
+        }
+        return false
+    }
+
     @MainActor
     @objc private func openFocusedTabInDefaultSpace(_ sender: Any?) {
         guard !browserState.isIncognito,
               let tab = browserState.focusingTab else { return }
-        SpaceManager.shared.moveTab(
-            tab,
-            toSpaceId: SpaceManager.shared.currentDefaultSpaceId
-        )
+        moveTabToSpace(tab, spaceId: SpaceManager.shared.currentDefaultSpaceId)
     }
 
     @MainActor
@@ -991,7 +1102,15 @@ final class KioskBrowserWindowController: SpaceSessionController {
             preferredSpaceId: (browserState as? KioskBrowserState)?.preferredSpaceId,
             activeSpaceId: spaceManager.activeSpaceId
         ) else { return }
-        spaceManager.moveTab(tab, toSpaceId: space.spaceId)
+        moveTabToSpace(tab, spaceId: space.spaceId)
+    }
+
+    /// The page continues in the Space's window, which this Kiosk's close
+    /// must not hand focus away from.
+    @MainActor
+    private func moveTabToSpace(_ tab: Tab, spaceId: String) {
+        returnApplication = nil
+        SpaceManager.shared.moveTab(tab, toSpaceId: spaceId)
     }
 
     @MainActor
@@ -1007,7 +1126,7 @@ final class KioskBrowserWindowController: SpaceSessionController {
                           let tab = self.browserState.focusingTab else {
                         return
                     }
-                    SpaceManager.shared.moveTab(tab, toSpaceId: spaceId)
+                    self.moveTabToSpace(tab, spaceId: spaceId)
                 },
                 onOmniBoxRequest: { [weak self] in
                     self?.presentCurrentTabOmniBoxCentered()

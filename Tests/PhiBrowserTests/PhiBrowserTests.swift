@@ -1559,10 +1559,9 @@ final class PhiBrowserTests: XCTestCase {
             saturation: 0.40,
             alpha: 0.8
         )
-        assertHSB(
+        assertColor(
             restoredTheme.color(for: .windowBackground, appearance: .dark),
-            saturation: 0.40,
-            alpha: 1
+            equals: NSColor(hex: 0x212121)
         )
         assertColor(
             restoredTheme.color(for: .themeColor, appearance: .light),
@@ -1603,10 +1602,9 @@ final class PhiBrowserTests: XCTestCase {
             brightness: 0.20,
             alpha: 0.8
         )
-        assertHSB(
+        assertColor(
             restoredTheme.color(for: .windowBackground, appearance: .dark),
-            brightness: 0.25,
-            alpha: 1
+            equals: NSColor(hex: 0x212121)
         )
         XCTAssertEqual(
             Theme.pure
@@ -1734,7 +1732,7 @@ final class PhiBrowserTests: XCTestCase {
         )
         assertColor(
             restoredTheme.color(for: .windowBackground, appearance: .dark),
-            equals: NSColor(hex: 0x302010, alpha: 1)
+            equals: NSColor(hex: 0x212121)
         )
     }
 
@@ -1790,17 +1788,6 @@ final class PhiBrowserTests: XCTestCase {
             adjusted.color(for: .windowBackground, appearance: .light).alphaComponent,
             1,
             accuracy: 0.0001
-        )
-    }
-
-    func testNormalizedThemeSliderTrackColorKeepsRgbAndForcesFullOpacity() {
-        let sourceColor = NSColor(calibratedRed: 0.21, green: 0.42, blue: 0.63, alpha: 0.37)
-
-        let normalizedColor = normalizedThemeSliderTrackColor(from: sourceColor)
-
-        assertColor(
-            normalizedColor,
-            equals: NSColor(calibratedRed: 0.21, green: 0.42, blue: 0.63, alpha: 1.0)
         )
     }
 
@@ -2938,6 +2925,259 @@ final class PhiBrowserTests: XCTestCase {
     }
 
     @MainActor
+    func testOnboardingFooterConfigurationBeforeLoadingMatchesDesignGeometry() {
+        let controller = OnboardingBaseViewController()
+        controller.configureFooterButtons(.init(leftTitle: "Back", rightTitle: "Next"))
+        XCTAssertFalse(controller.isViewLoaded)
+        controller.loadView()
+        controller.view.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(controller.leftButton.title, "Back")
+        XCTAssertEqual(controller.nextButton.title, "Next")
+        XCTAssertFalse(controller.leftButton.isHidden)
+        XCTAssertFalse(controller.nextButton.isHidden)
+        XCTAssertTrue(controller.skipButton.isHidden)
+        XCTAssertEqual(controller.leftButton.frame, NSRect(x: 112, y: 96, width: 200, height: 40))
+        XCTAssertEqual(controller.nextButton.frame, NSRect(x: 328, y: 96, width: 200, height: 40))
+    }
+
+    @MainActor
+    func testOnboardingFooterCanSwitchVisibleButtonsAfterLoading() {
+        let controller = OnboardingBaseViewController()
+        controller.loadView()
+        let configurations: [(String?, String?)] = [("Back", nil), (nil, "Continue"), (nil, nil), ("Cancel", "Finish")]
+        for titles in configurations {
+            controller.configureFooterButtons(.init(leftTitle: titles.0, rightTitle: titles.1))
+            controller.view.layoutSubtreeIfNeeded()
+            XCTAssertEqual(controller.leftButton.isHidden, titles.0 == nil)
+            XCTAssertEqual(controller.nextButton.isHidden, titles.1 == nil)
+            XCTAssertTrue(controller.skipButton.isHidden)
+            if titles.0 == nil || titles.1 == nil {
+                XCTAssertEqual(controller.leftButton.frame.midX, 320, accuracy: 0.001)
+                XCTAssertEqual(controller.nextButton.frame.midX, 320, accuracy: 0.001)
+            } else {
+                XCTAssertEqual(controller.nextButton.frame.minX - controller.leftButton.frame.maxX, 16, accuracy: 0.001)
+            }
+        }
+        XCTAssertEqual(controller.leftButton.title, "Cancel")
+        XCTAssertEqual(controller.nextButton.title, "Finish")
+    }
+
+    @MainActor
+    func testOnboardingFooterKeepsActionsIndependent() {
+        let controller = OnboardingBaseViewController()
+        controller.configureFooterButtons(.init(leftTitle: "Back", rightTitle: "Next"))
+        controller.loadView()
+        var leftCount = 0
+        var nextResults: [Bool] = []
+        controller.leftButtonClosure = { leftCount += 1 }
+        controller.nextClosure = { nextResults.append($0) }
+        controller.leftButton.clickAction?()
+        XCTAssertEqual(leftCount, 1)
+        XCTAssertTrue(nextResults.isEmpty)
+        controller.nextButton.clickAction?()
+        XCTAssertEqual(leftCount, 1)
+        XCTAssertEqual(nextResults, [true])
+    }
+
+    @MainActor
+    func testOnboardingFooterDefaultsToExistingNextAndSkipLayout() {
+        let controller = OnboardingBaseViewController()
+        controller.loadView()
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertNil(controller.footerButtonConfiguration)
+        XCTAssertFalse(controller.nextButton.isHidden)
+        XCTAssertFalse(controller.skipButton.isHidden)
+        XCTAssertEqual(controller.nextButton.frame, NSRect(x: 260, y: 96, width: 120, height: 40))
+    }
+
+    @MainActor
+    func testOnboardingStepsShowBackAlongsideTheirPrimaryAction() {
+        let controllers: [OnboardingBaseViewController] = [
+            OnboardingWelcomeViewController(), LayoutSelectionViewController(),
+            PasswordManagerViewController(), NextStepViewController()
+        ]
+        for controller in controllers {
+            _ = controller.view
+            controller.view.layoutSubtreeIfNeeded()
+            XCTAssertFalse(controller.leftButton.isHidden)
+            XCTAssertTrue(controller.leftButton.isEnabled)
+            XCTAssertFalse(controller.nextButton.isHidden)
+            XCTAssertTrue(controller.skipButton.isHidden)
+            XCTAssertEqual(controller.leftButton.frame, NSRect(x: 112, y: 96, width: 200, height: 40))
+            XCTAssertEqual(controller.nextButton.frame, NSRect(x: 328, y: 96, width: 200, height: 40))
+            var backCount = 0
+            var nextCount = 0
+            controller.leftButtonClosure = { backCount += 1 }
+            controller.nextClosure = { _ in nextCount += 1 }
+            controller.leftButton.clickAction?()
+            XCTAssertEqual(backCount, 1)
+            XCTAssertEqual(nextCount, 0)
+        }
+    }
+
+    @MainActor
+    func testNextStepBackIsAvailableWithoutLegalConsent() {
+        let controller = NextStepViewController()
+        controller.loadView()
+        var backCount = 0
+        controller.leftButtonClosure = { backCount += 1 }
+        XCTAssertFalse(controller.nextButton.isEnabled)
+        XCTAssertTrue(controller.leftButton.isEnabled)
+        controller.leftButtonTapped()
+        XCTAssertEqual(backCount, 1)
+    }
+
+    @MainActor
+    func testOnboardingOptionPagesSupportKeyboardSelection() throws {
+        class SelectionWindow: NSWindow {
+            var acceptsShortcuts = true
+            var hasSheet = false
+            override var isKeyWindow: Bool { acceptsShortcuts }
+            override var attachedSheet: NSWindow? { hasSheet ? self : nil }
+        }
+        let window = SelectionWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 800),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        func optionStack(in view: NSView) -> OnboardingOptionStackView? {
+            if let stack = view as? OnboardingOptionStackView { return stack }
+            return view.subviews.lazy.compactMap { optionStack(in: $0) }.first
+        }
+        func event(_ code: UInt16, modifiers: NSEvent.ModifierFlags = []) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: modifiers,
+                timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                characters: "", charactersIgnoringModifiers: "",
+                isARepeat: false, keyCode: code
+            ))
+        }
+        let controllers: [OnboardingBaseViewController] = [
+            LayoutSelectionViewController(), PasswordManagerViewController()
+        ]
+        for controller in controllers {
+            window.contentViewController = controller
+            let stack = try XCTUnwrap(optionStack(in: controller.view))
+            let rows = stack.arrangedSubviews
+            func assertSelection(_ index: Int, line: UInt = #line) {
+                for (rowIndex, row) in rows.enumerated() {
+                    XCTAssertEqual(
+                        row.layer?.backgroundColor,
+                        (rowIndex == index ? NSColor.white.withAlphaComponent(0.1) : NSColor.clear).cgColor,
+                        line: line
+                    )
+                }
+            }
+            assertSelection(0)
+            XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(125)))
+            assertSelection(1)
+            XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(48)))
+            assertSelection(2 % rows.count)
+            XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(48, modifiers: .shift)))
+            assertSelection(1)
+            XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(126)))
+            assertSelection(0)
+            XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(126)))
+            assertSelection(rows.count - 1)
+            XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(125)))
+            assertSelection(0)
+
+            let excludedModifiers: [NSEvent.ModifierFlags] = [.command, .control, .option]
+            for modifiers in excludedModifiers {
+                _ = controller.view.performKeyEquivalent(with: try event(48, modifiers: modifiers))
+                _ = controller.view.performKeyEquivalent(with: try event(125, modifiers: modifiers))
+                assertSelection(0)
+            }
+            window.hasSheet = true
+            _ = controller.view.performKeyEquivalent(with: try event(125))
+            assertSelection(0)
+            window.hasSheet = false
+            window.acceptsShortcuts = false
+            _ = controller.view.performKeyEquivalent(with: try event(125))
+            assertSelection(0)
+            window.acceptsShortcuts = true
+            stack.isHidden = true
+            _ = controller.view.performKeyEquivalent(with: try event(125))
+            assertSelection(0)
+        }
+    }
+
+    @MainActor
+    func testOnboardingFooterKeyboardShortcutsRespectButtonAndWindowState() throws {
+        class ShortcutWindow: NSWindow {
+            var acceptsShortcuts = true
+            var hasSheet = false
+            override var isKeyWindow: Bool { acceptsShortcuts }
+            override var attachedSheet: NSWindow? { hasSheet ? self : nil }
+        }
+        class ComposingTextView: NSTextView {
+            override func hasMarkedText() -> Bool { true }
+        }
+        let window = ShortcutWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 800),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        let controller = OnboardingBaseViewController()
+        controller.configureFooterButtons(.init(leftTitle: "Back", rightTitle: "Next"))
+        window.contentViewController = controller
+        var nextCount = 0
+        var backCount = 0
+        controller.nextClosure = { _ in nextCount += 1 }
+        controller.leftButtonClosure = { backCount += 1 }
+
+        func event(_ code: UInt16, modifiers: NSEvent.ModifierFlags = [], repeats: Bool = false) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: modifiers,
+                timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                characters: code == 53 ? "\u{1b}" : "\r",
+                charactersIgnoringModifiers: code == 53 ? "\u{1b}" : "\r",
+                isARepeat: repeats, keyCode: code
+            ))
+        }
+
+        XCTAssertEqual(controller.nextButton.keyboardShortcut, .enter)
+        XCTAssertEqual(controller.leftButton.keyboardShortcut, .escape)
+        XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(36)))
+        XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(76)))
+        XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(53)))
+        XCTAssertEqual(nextCount, 2)
+        XCTAssertEqual(backCount, 1)
+
+        let modifiers: [NSEvent.ModifierFlags] = [.command, .control, .option, .shift]
+        for modifier in modifiers {
+            _ = controller.view.performKeyEquivalent(with: try event(36, modifiers: modifier))
+            _ = controller.view.performKeyEquivalent(with: try event(53, modifiers: modifier))
+        }
+        _ = controller.view.performKeyEquivalent(with: try event(36, repeats: true))
+        _ = controller.view.performKeyEquivalent(with: try event(53, repeats: true))
+        controller.nextButton.isEnabled = false
+        controller.leftButton.isEnabled = false
+        _ = controller.view.performKeyEquivalent(with: try event(36))
+        _ = controller.view.performKeyEquivalent(with: try event(53))
+        controller.nextButton.isEnabled = true
+        controller.leftButton.isEnabled = true
+        controller.configureFooterButtons(.init(leftTitle: nil, rightTitle: nil))
+        _ = controller.view.performKeyEquivalent(with: try event(36))
+        _ = controller.view.performKeyEquivalent(with: try event(53))
+        controller.configureFooterButtons(.init(leftTitle: "Back", rightTitle: "Next"))
+        window.acceptsShortcuts = false
+        _ = controller.view.performKeyEquivalent(with: try event(36))
+        _ = controller.view.performKeyEquivalent(with: try event(53))
+        window.acceptsShortcuts = true
+        window.hasSheet = true
+        _ = controller.view.performKeyEquivalent(with: try event(36))
+        _ = controller.view.performKeyEquivalent(with: try event(53))
+        window.hasSheet = false
+        let textView = ComposingTextView(frame: .zero)
+        controller.view.addSubview(textView)
+        XCTAssertTrue(window.makeFirstResponder(textView))
+        _ = controller.view.performKeyEquivalent(with: try event(36))
+        _ = controller.view.performKeyEquivalent(with: try event(53))
+        XCTAssertEqual(nextCount, 2)
+        XCTAssertEqual(backCount, 1)
+    }
+
+    @MainActor
     func testNextStepTitleUsesBaseOnboardingLayout() {
         let controller = NextStepViewController()
 
@@ -2974,11 +3214,11 @@ final class PhiBrowserTests: XCTestCase {
     }
 
     @MainActor
-    func testNextStepLinkGradientUsesSpecifiedEndpointColors() throws {
+    func testNextStepLinkStyleUsesUniformPurple() throws {
         let title = NSMutableAttributedString(string: "Privacy")
         let range = NSRange(location: 0, length: title.length)
 
-        NextStepLinkGradient.apply(to: title, range: range)
+        NextStepLinkStyle.apply(to: title, range: range)
 
         let startColor = try XCTUnwrap(
             title.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
@@ -2989,16 +3229,16 @@ final class PhiBrowserTests: XCTestCase {
         let resolvedStartColor = try XCTUnwrap(startColor)
         let resolvedEndColor = try XCTUnwrap(endColor)
 
-        XCTAssertEqual(resolvedStartColor.redComponent, 148.0 / 255.0, accuracy: 0.001)
-        XCTAssertEqual(resolvedStartColor.greenComponent, 82.0 / 255.0, accuracy: 0.001)
-        XCTAssertEqual(resolvedStartColor.blueComponent, 249.0 / 255.0, accuracy: 0.001)
-        XCTAssertEqual(resolvedEndColor.redComponent, 232.0 / 255.0, accuracy: 0.001)
-        XCTAssertEqual(resolvedEndColor.greenComponent, 192.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(resolvedStartColor.redComponent, 184.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(resolvedStartColor.greenComponent, 154.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(resolvedStartColor.blueComponent, 255.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(resolvedEndColor.redComponent, 184.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(resolvedEndColor.greenComponent, 154.0 / 255.0, accuracy: 0.001)
         XCTAssertEqual(resolvedEndColor.blueComponent, 255.0 / 255.0, accuracy: 0.001)
     }
 
     @MainActor
-    func testNextStepLinkTextViewDoesNotOverrideGradientForegroundColors() throws {
+    func testNextStepLinkTextViewDoesNotOverridePurpleForegroundColor() throws {
         let title = NSMutableAttributedString(
             string: "Privacy",
             attributes: [.font: NSFont.systemFont(ofSize: 15)]
@@ -3009,7 +3249,7 @@ final class PhiBrowserTests: XCTestCase {
             value: try XCTUnwrap(URL(string: "https://phibrowser.com/privacy/")),
             range: range
         )
-        NextStepLinkGradient.apply(to: title, range: range)
+        NextStepLinkStyle.apply(to: title, range: range)
 
         let textView = NextStepLinkTextView(
             attributedString: title,
@@ -3056,15 +3296,15 @@ final class PhiBrowserTests: XCTestCase {
     @MainActor
     func testGuestPrivacyLegalAgreementUsesRequestedLinkTitlesAndURLs() throws {
         let agreement = GuestPrivacyLegalAgreement.makeAttributedTitle(
-            format: "I agree to the %1$@ and %2$@",
+            format: "I agree to the %2$@ and %1$@",
             privacyTitle: "Privacy Policy",
-            termsTitle: "Terms of Service"
+            termsTitle: "Terms of Use"
         )
         let privacyRange = try XCTUnwrap(
             agreement.string.range(of: "Privacy Policy")
         )
         let termsRange = try XCTUnwrap(
-            agreement.string.range(of: "Terms of Service")
+            agreement.string.range(of: "Terms of Use")
         )
         let privacyLocation = NSRange(
             privacyRange,
@@ -3077,7 +3317,7 @@ final class PhiBrowserTests: XCTestCase {
 
         XCTAssertEqual(
             agreement.string,
-            "I agree to the Privacy Policy and Terms of Service"
+            "I agree to the Terms of Use and Privacy Policy"
         )
         XCTAssertEqual(
             agreement.attribute(
@@ -3098,22 +3338,14 @@ final class PhiBrowserTests: XCTestCase {
     }
 
     @MainActor
-    func testGuestPrivacyGuideUsesPlainLargerNoticeText() {
-        let titles = [
-            "No AI features until you sign in",
-            "No Browser Memory either",
-            "Sign in whenever you're ready"
-        ]
-        let fittingSize = CGSize(
-            width: NextStepGuideLayout.contentWidth,
-            height: .greatestFiniteMagnitude
-        )
+    func testGuestPrivacyGuideFitsTheFeatureCard() {
         let guestGuide = NSHostingController(
-            rootView: GuestPrivacyGuideView(noticeTitles: titles)
-                .frame(width: NextStepGuideLayout.contentWidth, height: 260)
+            rootView: GuestPrivacyGuideView()
+                .frame(width: NextStepGuideLayout.contentWidth, height: 312)
         )
-
-        XCTAssertGreaterThan(guestGuide.sizeThatFits(in: fittingSize).height, 0)
+        let size = guestGuide.sizeThatFits(in: CGSize(width: 472, height: 312))
+        XCTAssertEqual(size.width, 472, accuracy: 1)
+        XCTAssertEqual(size.height, 312, accuracy: 1)
     }
 
     @MainActor
@@ -3126,7 +3358,7 @@ final class PhiBrowserTests: XCTestCase {
             controller.titleLabel.stringValue,
             NSLocalizedString(
                 "oobe.guestPrivacy.title",
-                value: "Before we begin.",
+                value: "Before we begin",
                 comment: "Guest privacy confirmation - Page title shown before entering Guest Mode"
             )
         )
@@ -3134,7 +3366,7 @@ final class PhiBrowserTests: XCTestCase {
             controller.nextButton.title,
             NSLocalizedString(
                 "oobe.guestPrivacy.beginButton",
-                value: "Let's Begin",
+                value: "Let’s begin",
                 comment: "Guest privacy confirmation - Button that confirms the choices and enters Guest Mode"
             )
         )
@@ -3165,6 +3397,53 @@ final class PhiBrowserTests: XCTestCase {
     }
 
     @MainActor
+    func testReturningFromWelcomeRestoresSavedNameAndSkipsUnchangedUpdate() throws {
+        let preferenceKey = PhiPreferences.preferedUserName.rawValue
+        let previousName = UserDefaults.standard.object(forKey: preferenceKey)
+        defer { UserDefaults.standard.set(previousName, forKey: preferenceKey) }
+
+        let windowController = OnboardingWindowController(window: nil)
+        let setName = try XCTUnwrap(windowController.viewController(
+            for: .setName, credentials: nil, isFirstPage: true
+        ) as? SetNameViewController)
+        setName.applySavedName("Old Name")
+        let welcome = try XCTUnwrap(windowController.viewController(
+            for: .setTheme, credentials: nil, isFirstPage: false
+        ) as? OnboardingWelcomeViewController)
+        welcome.userName = "Updated Name"
+
+        let returnedSetName = try XCTUnwrap(windowController.viewController(
+            for: .setName, credentials: nil, isFirstPage: false
+        ) as? SetNameViewController)
+        XCTAssertTrue(returnedSetName === setName)
+        XCTAssertEqual(returnedSetName.textField.stringValue, "Updated Name")
+
+        var settledName: String?
+        returnedSetName.newNameSettled = { settledName = $0 }
+        returnedSetName.nextButtonTapped()
+        XCTAssertEqual(settledName, "Updated Name")
+    }
+
+    @MainActor
+    func testReturningToOnboardingWelcomePreservesSettledName() throws {
+        let windowController = OnboardingWindowController(window: nil)
+        let welcome = try XCTUnwrap(windowController.viewController(
+            for: .setTheme, credentials: nil, isFirstPage: true
+        ) as? OnboardingWelcomeViewController)
+        welcome.userName = "Updated Name"
+
+        _ = windowController.viewController(
+            for: .layoutSelection, credentials: nil, isFirstPage: false
+        )
+        let returnedWelcome = try XCTUnwrap(windowController.viewController(
+            for: .setTheme, credentials: nil, isFirstPage: false
+        ) as? OnboardingWelcomeViewController)
+
+        XCTAssertTrue(returnedWelcome === welcome)
+        XCTAssertEqual(returnedWelcome.userName, "Updated Name")
+    }
+
+    @MainActor
     func testOnboardingRoutesGuestIntentToPrivacyConfirmation() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 640, height: 800),
@@ -3179,10 +3458,13 @@ final class PhiBrowserTests: XCTestCase {
 
         loginViewController.continueAsGuestAction()
 
-        XCTAssertTrue(
-            window.contentViewController
-                is GuestPrivacyConfirmationViewController
-        )
+        let guestController = window.contentViewController as? GuestPrivacyConfirmationViewController
+        XCTAssertNotNil(guestController)
+        XCTAssertFalse(guestController?.nextButton.isEnabled ?? true)
+        guestController?.skipButton.performClick(nil)
+        XCTAssertTrue(window.contentViewController === loginViewController)
+        loginViewController.continueAsGuestAction()
+        XCTAssertTrue(window.contentViewController === guestController)
     }
 
     func testSkipOnboardingLaunchPolicyChoosesGuestModeAtTheOnboardingGate() {
@@ -3647,6 +3929,14 @@ final class AuthLogoutRecoveryTests: XCTestCase {
         XCTAssertNil(renewed)
         XCTAssertNil(auth.currentCredentials)
         XCTAssertTrue(auth.blocksAutomaticCredentialRecovery)
+    }
+
+    @MainActor
+    func testStagedOnboardingRenewalRequiresStagedCredentials() async {
+        let auth = AuthManager(defaults: defaults)
+        let renewed = await auth.renewStagedOnboardingCredentials(expectedUserID: "auth0|onboarding-test")
+        XCTAssertNil(renewed)
+        XCTAssertNil(auth.currentCredentials)
     }
 
     @MainActor

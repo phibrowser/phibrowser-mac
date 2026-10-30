@@ -20,7 +20,7 @@ final class OmniBoxThemeTests: XCTestCase {
         try await super.tearDown()
     }
 
-    func testOmniBoxTracksWindowThemeWhileVisibleAndAfterReopening() throws {
+    func testOmniBoxKeepsNeutralBackgroundWhileTrackingWindowAppearance() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         self.directory = directory
@@ -55,12 +55,12 @@ final class OmniBoxThemeTests: XCTestCase {
         XCTAssertTrue(panel.themeStateProvider === context)
         XCTAssertTrue(background.themeStateProvider === context)
         XCTAssertEqual(panel.effectiveAppearance.phiAppearance, .dark)
-        assertBackground(background, .red)
+        assertBackground(background, NSColor(hex: 0x383838))
 
-        // Updating the active Space's window context must refresh an already mounted overlay.
+        // Changing the active Space's theme must preserve the neutral background.
         context.setTheme(yellow)
         drainThemeUpdates()
-        assertBackground(background, .yellow)
+        assertBackground(background, NSColor(hex: 0x383838))
 
         // Reuse the same panel and views, as the production dismiss/show path does.
         omnibox.view.removeFromSuperview()
@@ -71,7 +71,7 @@ final class OmniBoxThemeTests: XCTestCase {
         XCTAssertTrue(controller.attachAndShowOmniBoxHostPanel() === panel)
         panel.contentView?.addSubview(omnibox.view)
         XCTAssertEqual(panel.effectiveAppearance.phiAppearance, .dark)
-        assertBackground(background, .red)
+        assertBackground(background, NSColor(hex: 0x383838))
 
         context.setUserAppearanceChoice(.light)
         drainThemeUpdates()
@@ -80,7 +80,7 @@ final class OmniBoxThemeTests: XCTestCase {
         context.setUserAppearanceChoice(.dark)
         drainThemeUpdates()
         XCTAssertEqual(panel.effectiveAppearance.phiAppearance, .dark)
-        assertBackground(background, .red)
+        assertBackground(background, NSColor(hex: 0x383838))
     }
 
     func testIncognitoOmniBoxUsesLightInputTextWhenAppAppearanceIsLight() throws {

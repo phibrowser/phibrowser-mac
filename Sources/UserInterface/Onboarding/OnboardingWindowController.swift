@@ -31,6 +31,10 @@ class OnboardingWindowController: NSWindowController {
 
     private lazy var guestPrivacyConfirmationViewController: GuestPrivacyConfirmationViewController = {
         let vc = GuestPrivacyConfirmationViewController()
+        vc.onSignIn = { [weak self] in
+            guard let self else { return }
+            self.setContent(self.loginViewController, completesCurrentStep: false)
+        }
         vc.onConfirm = { [weak self, weak vc] sharesUsageMetrics in
             Task { @MainActor [weak self, weak vc] in
                 guard ChromiumLauncher.sharedInstance().bridge != nil else {
@@ -63,6 +67,9 @@ class OnboardingWindowController: NSWindowController {
     
     private lazy var welcomeViewController: OnboardingWelcomeViewController = {
         let vc = OnboardingWelcomeViewController()
+        vc.leftButtonClosure = { [weak self] in
+            self?.showPreviousStep(.setName)
+        }
         vc.nextClosure = { [weak self] _ in
             guard let self else { return }
             LoginController.shared.phase = .layoutSelection
@@ -74,6 +81,9 @@ class OnboardingWindowController: NSWindowController {
 
     private lazy var layoutSelectionViewController: LayoutSelectionViewController = {
         let vc = LayoutSelectionViewController()
+        vc.leftButtonClosure = { [weak self] in
+            self?.showPreviousStep(.setTheme)
+        }
         vc.nextClosure = { [weak self] _ in
             guard let self else { return }
             self.showPasswordManagerPage()
@@ -83,6 +93,9 @@ class OnboardingWindowController: NSWindowController {
 
     private lazy var passwordManagerViewController: PasswordManagerViewController = {
         let vc = PasswordManagerViewController()
+        vc.leftButtonClosure = { [weak self] in
+            self?.showPreviousStep(.layoutSelection)
+        }
         vc.nextClosure = { [weak self] _ in
             self?.showNextStepPage()
         }
@@ -91,6 +104,9 @@ class OnboardingWindowController: NSWindowController {
 
     private lazy var nextStepViewController: NextStepViewController = {
         let vc = NextStepViewController()
+        vc.leftButtonClosure = { [weak self] in
+            self?.showPreviousStep(.passwordManager)
+        }
         vc.nextClosure = { [weak self] _ in
             self?.finish()
         }
@@ -186,6 +202,7 @@ class OnboardingWindowController: NSWindowController {
 
     func completeGuestOOBE() {
         PhiPreferences.GeneralSettings.saveLayoutMode(.comfortable)
+        UserDefaults.standard.set(false, forKey: PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.rawValue)
         analyticsSession.finish(isGuest: true, stepsCompleted: 2)
     }
 
@@ -234,7 +251,7 @@ class OnboardingWindowController: NSWindowController {
         setContent(viewController(for: loginPhase, credentials: credentials, isFirstPage: false))
     }
 
-    private func viewController(for phase: LoginController.Phase, credentials: Credentials?, isFirstPage: Bool) -> NSViewController {
+    func viewController(for phase: LoginController.Phase, credentials: Credentials?, isFirstPage: Bool) -> NSViewController {
         setNameViewController.isFisrtPage = false
         welcomeViewController.isFisrtPage = false
         passwordManagerViewController.isFisrtPage = false
@@ -244,15 +261,29 @@ class OnboardingWindowController: NSWindowController {
         case .login:
             return loginViewController
         case .setName:
-            setNameViewController.credentials = credentials
+            if let name = welcomeViewController.userName {
+                setNameViewController.applySavedName(name)
+            }
+            if let credentials {
+                setNameViewController.credentials = credentials
+            }
             setNameViewController.isFisrtPage = isFirstPage
             return setNameViewController
         case .setTheme:
-            if let credentials {
-                let user = AuthManager.retriveUserInfo(from: credentials)
-                welcomeViewController.userName = user.name
-            } else {
-                welcomeViewController.userName = LoginController.shared.accountForOnboarding?.userInfo?.name
+            // Preserve the name supplied by SetName when navigating back here.
+            // On resume, prefer the saved profile over stale ID-token claims.
+            if welcomeViewController.userName == nil {
+                let account = LoginController.shared.accountForOnboarding
+                let profile: Profile? = account?.userDefaults.codableValue(
+                    forKey: AccountUserDefaults.DefaultsKey.cachedProfile.rawValue
+                )
+                if let profile, profile.auth0_id == account?.userID {
+                    welcomeViewController.userName = profile.name
+                } else if let credentials {
+                    welcomeViewController.userName = AuthManager.retriveUserInfo(from: credentials).name
+                } else {
+                    welcomeViewController.userName = account?.userInfo?.name
+                }
             }
             welcomeViewController.isFisrtPage = isFirstPage
             return welcomeViewController
@@ -267,6 +298,14 @@ class OnboardingWindowController: NSWindowController {
         case .done:
             return loginViewController
         }
+    }
+
+    private func showPreviousStep(_ phase: LoginController.Phase) {
+        LoginController.shared.phase = phase
+        setContent(
+            viewController(for: phase, credentials: nil, isFirstPage: false),
+            completesCurrentStep: false
+        )
     }
 
     private func showPasswordManagerPage() {

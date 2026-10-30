@@ -3,15 +3,21 @@
 //
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
-    
+
 
 import Cocoa
 
-class FloatingNewTabView: ColoredVisualEffectView {
+/// Paints no backdrop of its own: the owner masks the list content beneath
+/// it, so whatever the sidebar host paints (palette gradient, glass panel,
+/// Space-switch ramp) shows through.
+class FloatingNewTabView: NSView {
     let cellView = NewTabButtonCellView(frame: .zero)
     private let separatorView = NSView()
     private var trackingArea: NSTrackingArea?
     var hoverStateChanged: ((Bool) -> Void)?
+    /// The row sits above the scroll view rather than inside it, so wheel
+    /// events are handed back to the list explicitly.
+    weak var scrollView: NSScrollView?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -60,9 +66,9 @@ class FloatingNewTabView: ColoredVisualEffectView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard bounds.contains(point) else { return nil }
-        let cellPoint = cellView.convert(point, from: self)
-        return cellView.hitTest(cellPoint) ?? self
+        let localPoint = convert(point, from: superview)
+        guard bounds.contains(localPoint) else { return nil }
+        return cellView.hitTest(localPoint) ?? self
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -74,9 +80,15 @@ class FloatingNewTabView: ColoredVisualEffectView {
         cellView.clickAction?()
     }
 
+    override func scrollWheel(with event: NSEvent) {
+        guard let scrollView else {
+            super.scrollWheel(with: event)
+            return
+        }
+        scrollView.scrollWheel(with: event)
+    }
+
     private func setupViews() {
-        themedBackgroundColor = .windowOverlayBackground
-        material = .fullScreenUI
         addSubview(cellView)
 
         separatorView.wantsLayer = true

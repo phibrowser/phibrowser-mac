@@ -469,4 +469,149 @@ final class BrowserStateRestoredSnapshotTransactionTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(publishCount, 1)
         XCTAssertEqual(state.normalTabs.map(\.guid), [95, 96])
     }
+    func testRemovedBatchPublishesSurvivorsOnceAndIgnoresRepeatedIDs() throws {
+        let state = try makeBrowserState()
+        state.handleRestoredWindowSnapshot(.init(
+            tabs: makeItems((1...6).map { RestoreTabSpec(guid: $0) }),
+            activeTabId: nil, splitActions: []))
+        var tabPublications = [[Int]]()
+        var normalPublications = [[Int]]()
+        state.$tabs.dropFirst().sink { tabPublications.append($0.map(\.guid)) }
+            .store(in: &cancellables)
+        state.$normalTabs.dropFirst().sink { normalPublications.append($0.map(\.guid)) }
+            .store(in: &cancellables)
+
+        state.applyTabsRemoved([2, 3, 2, 5, 999])
+        state.reorderTabs([1: 0, 4: 1, 6: 2])
+
+        XCTAssertEqual(tabPublications, [[1, 4, 6]])
+        XCTAssertEqual(normalPublications, [[1, 4, 6]])
+        state.closeTab(4)
+        XCTAssertEqual(state.tabs.map(\.guid), [1, 6], "The removal transaction must end synchronously")
+    }
+
+    func testRemovedBatchSelectionDoesNotTargetAnotherRemovedTab() throws {
+        let state = try makeBrowserState()
+        state.handleRestoredWindowSnapshot(.init(
+            tabs: makeItems((1...4).map { RestoreTabSpec(guid: $0) }),
+            activeTabId: 2, splitActions: []))
+        state.applyTabsRemoved([2, 3], indices: [1: 0, 4: 1], activeTabId: 4)
+        XCTAssertEqual(state.focusingTab?.guid, 4)
+    }
+
+    func testPartialGroupRemovalPublishesOnceWithoutMembershipEvents() throws {
+        let state = try makeBrowserState()
+        state.handleRestoredWindowSnapshot(.init(
+            tabs: makeItems((1...22).map { RestoreTabSpec(guid: $0) }),
+            activeTabId: 22, splitActions: []))
+        state.handleTabGroupCreated(token: "A", title: "Group", color: .blue,
+                                    isCollapsed: false, initialTabIds: Array(1...21))
+        state.showGroupOverview(token: "A")
+        let group = try XCTUnwrap(state.groups["A"])
+        var publications = [[Int]]()
+        var groupNotifications = 0
+        state.$normalTabs.dropFirst().sink { publications.append($0.map(\.guid)) }
+            .store(in: &cancellables)
+        group.objectWillChange.sink { groupNotifications += 1 }.store(in: &cancellables)
+
+        // Chromium omits tabLeftGroup for members already detached from its model.
+        state.applyTabsRemoved(Array(1...20), indices: [21: 0, 22: 1])
+
+        XCTAssertEqual(publications, [[21, 22]])
+        XCTAssertEqual(groupNotifications, 0)
+        XCTAssertTrue(state.groups["A"] === group)
+        XCTAssertEqual(state.normalTabs.filter { $0.groupToken == "A" }.map(\.guid), [21])
+        XCTAssertEqual(state.activeGroupOverviewToken, "A")
+    }
+
+    func testWholeGroupRemovalClearsOverviewWithoutMembershipEvents() throws {
+        let state = try makeBrowserState()
+        state.handleRestoredWindowSnapshot(.init(
+            tabs: makeItems((1...21).map { RestoreTabSpec(guid: $0) }),
+            activeTabId: 21, splitActions: []))
+        state.handleTabGroupCreated(token: "A", title: "Group", color: .blue,
+                                    isCollapsed: false, initialTabIds: Array(1...20))
+        state.showGroupOverview(token: "A")
+        var publications = [[Int]]()
+        state.$normalTabs.dropFirst().sink { publications.append($0.map(\.guid)) }
+            .store(in: &cancellables)
+
+        // The group-closed event precedes the final removal snapshot.
+        state.handleTabGroupClosed(token: "A")
+        state.applyTabsRemoved(Array(1...20), indices: [21: 0])
+
+        XCTAssertEqual(publications, [[21]])
+        XCTAssertNil(state.groups["A"])
+        XCTAssertNil(state.activeGroupOverviewToken)
+        XCTAssertTrue(state.tabs.allSatisfy { $0.groupToken == nil })
+    }
+
+    func testUngroupingMiddleTabKeepsTabAndRemainingGroupContiguous() throws {
+        let state = try makeBrowserState()
+        state.handleRestoredWindowSnapshot(.init(
+            tabs: makeItems((1...4).map { RestoreTabSpec(guid: $0) }),
+            activeTabId: 4, splitActions: []))
+        state.handleTabGroupCreated(token: "A", title: "Group", color: .blue,
+                                    isCollapsed: false, initialTabIds: [1, 2, 3])
+        var notifications = 0
+        let group = try XCTUnwrap(state.groups["A"])
+        group.objectWillChange.sink { notifications += 1 }.store(in: &cancellables)
+
+        state.handleTabLeftGroup(tabId: 2, token: "A")
+
+        XCTAssertEqual(state.normalTabs.map(\.guid), [1, 3, 2, 4])
+        XCTAssertNil(state.tabs.first { $0.guid == 2 }?.groupToken)
+        XCTAssertEqual(state.normalTabs.filter { $0.groupToken == "A" }.map(\.guid), [1, 3])
+        XCTAssertEqual(notifications, 1)
+    }
+
+    func testInsertedBatchKeepsExistingTabsAndPublishesFinalOrderOnce() throws {
+        let state = try makeBrowserState()
+        state.handleRestoredWindowSnapshot(.init(
+            tabs: makeItems([RestoreTabSpec(guid: 1), RestoreTabSpec(guid: 2)]),
+            activeTabId: nil, splitActions: []))
+        var tabPublications = [[Int]]()
+        var normalPublications = [[Int]]()
+        state.$tabs.dropFirst().sink { tabPublications.append($0.map(\.guid)) }
+            .store(in: &cancellables)
+        state.$normalTabs.dropFirst().sink { normalPublications.append($0.map(\.guid)) }
+            .store(in: &cancellables)
+        let items = [
+            (Tab(guid: 3, url: "https://first.test", isActive: false, index: 1),
+             NativeTabCreationContext(isActiveAtCreation: false, insertAfterTabId: 1)),
+            (Tab(guid: 4, url: "https://second.test", isActive: false, index: 3),
+             NativeTabCreationContext(isActiveAtCreation: true, insertAfterTabId: 2)),
+        ]
+        var payload = BrowserState.RestoredWindowSnapshot(tabs: items, activeTabId: 4, splitActions: [])
+        payload.indices = [1: 0, 3: 1, 2: 2, 4: 3]
+        state.handleInsertedTabsSnapshot(payload)
+
+        XCTAssertEqual(tabPublications, [[1, 3, 2, 4]])
+        XCTAssertEqual(normalPublications, [[1, 3, 2, 4]])
+        XCTAssertEqual(state.focusingTab?.guid, 4)
+    }
+
+    func testRemovalSnapshotCrossesObjectiveCBridgeWithFinalState() throws {
+        let payload = NSMutableDictionary(dictionary: [
+            "removals": NSMutableArray(array: [["id": 2]]),
+            "indices": NSDictionary(dictionary: [NSNumber(value: 1): NSNumber(value: 0)]),
+            "activeTabId": NSNumber(value: 1),
+        ])
+        let action = PhiChromiumCoordinator.decodeTabRemovalSnapshot(payload as! [String: Any])
+        guard case let .tabsRemoved(ids, indices, activeTabId) = action else {
+            return XCTFail("Expected a removal event")
+        }
+        XCTAssertEqual(ids, [2])
+        XCTAssertEqual(indices, [1: 0])
+        XCTAssertEqual(activeTabId, 1)
+
+        // Exercise the ObjC-to-Swift thunk used by the native framework.
+        let receiver = PhiChromiumCoordinator.shared
+        let selector = NSSelectorFromString("tabsRemovedSnapshot:windowId:")
+        typealias Callback = @convention(c) (AnyObject, Selector, AnyObject, Int64) -> Void
+        let callback = unsafeBitCast(try XCTUnwrap(receiver.method(for: selector)), to: Callback.self)
+        callback(receiver, selector, payload, -1)
+        XCTAssertFalse(receiver.responds(to: NSSelectorFromString("tabsRemoved:windowId:")))
+    }
+
 }

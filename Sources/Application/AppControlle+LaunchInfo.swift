@@ -372,6 +372,7 @@ extension AppController {
             "is_phi_default_browser": defaultBrowser.isPhiDefault,
             "proactive_suggestions_enabled": PhiPreferences.AISettings.enableProactiveSuggestionsOnNTP.loadValue(),
             "automatically_add_context_enabled": PhiPreferences.AISettings.enableChatWithTabs.loadValue(),
+            "email_protection_enabled": PhiPreferences.AISettings.enableEmailProtection.loadValue(),
             "peek_view_enabled": PhiPreferences.GeneralSettings.peekViewEnabled.loadValue(),
             "always_show_full_url": PhiPreferences.GeneralSettings.alwaysShowURLPath.loadValue(),
             "show_tab_previews": PhiPreferences.GeneralSettings.showTabPreviews.loadValue(),

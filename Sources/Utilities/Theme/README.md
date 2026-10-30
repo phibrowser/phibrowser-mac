@@ -24,8 +24,15 @@ white in light appearance, or the primary navigation color under a black scrim
 in dark appearance. `Theme.extensionSurfaceScrimOpacity` is the shared strength
 (currently 80%). `WindowThemeMessageRouter` forwards it as `surfaceScrimOpacity`
 so extension NTP and browser Chat surfaces use the same value. Ordinary page headers continue to follow Chromium's
-page color, compositing translucent colors over the original theme background;
-palettes do not replace the shared `windowBackground` role. Palette records are
+page color, compositing translucent colors over `extensionSurfaceBackground` and
+using that same surface when page colors are unavailable or disabled in split view.
+The resolved header background also reaches the address bar and adjacent chrome.
+Default page backings and split-pane gaps use the same extension surface through
+`ThemedColor.extensionSurfaceBackground`, including content-surface windows.
+The separate `windowBackground` role
+always resolves to opaque white in light appearance and `#212121` in dark
+appearance, regardless of presets, saved snapshots, or per-Space adjustments.
+Palette records are
 local and are not part of the existing Space sync payload or global theme snapshots.
 Navigation gradients use 513 samples of a continuous Oklab blend and a floating
 point gradient layer. Three colors use a quadratic blend with squared progress:

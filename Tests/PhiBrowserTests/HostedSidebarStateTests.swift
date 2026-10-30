@@ -17,6 +17,8 @@ final class HostedSidebarStateTests: XCTestCase {
     private var previousLayout: Any?
     private var slots: [SpaceWindowSlot] = []
     private var subscriptions = Set<AnyCancellable>()
+    /// Stand-in web views of `mountPage`, held here: a wrapper's `nativeView` is weak.
+    private var webViews: [NSView] = []
     private let manager = SpaceManager(observeAccountChanges: false)
     private var nextWindowId = 123456789
 
@@ -33,6 +35,7 @@ final class HostedSidebarStateTests: XCTestCase {
 
     override func tearDown() async throws {
         subscriptions.removeAll()
+        webViews.removeAll()
         manager.discardSpacePrewarm()
         for slot in slots { slot.closeShellIfPresent() }
         slots.removeAll()
@@ -361,8 +364,9 @@ final class HostedSidebarStateTests: XCTestCase {
         let container = session.mainSplitViewController.webContentContainerViewController
         let tab = Tab(url: "https://example.com", isActive: true, index: 0)
         let page = try XCTUnwrap(container.splitPaneCompanionController(for: tab))
-        let backdrop = try XCTUnwrap(page.view as? ColoredVisualEffectView)
-        XCTAssertTrue(backdrop.suppressesBackdrop)
+        let root = try XCTUnwrap(page.view as? BackdropContainerView)
+        XCTAssertFalse(root.paintsBackdrop)
+        XCTAssertNil(root.backdrop)
     }
 
     func testConcealingASessionDropsItsLiftedFullscreenPage() async throws {
@@ -411,6 +415,146 @@ final class HostedSidebarStateTests: XCTestCase {
         XCTAssertLessThan(second.mainSplitViewController.view.frame.width, canvas.bounds.width)
         XCTAssertEqual(second.mainSplitViewController.view.frame.width,
                        split.contentHost.view.frame.width)
+    }
+
+    /// `agentSpace.panelSize` for a background Space: the page area that
+    /// instance renders at once presented, not the key window's.
+    func testBackgroundSessionPageAreaIsTheSizeItPresentsAt() throws {
+        let slot = makeSlot()
+        let first = makeSession(in: slot, spaceId: UUID().uuidString)
+        let second = makeSession(in: slot, spaceId: UUID().uuidString)
+        first.warmUpDormantTree()
+        second.warmUpDormantTree()
+        first.presentInShell(completing: false, deferringChromium: true)
+        let shell = try XCTUnwrap(slot.shell)
+        let split = try XCTUnwrap(shell.split)
+        split.setSidebarCollapsed(false, animated: false)
+        let canvas = try XCTUnwrap(shell.window.contentView)
+        canvas.layoutSubtreeIfNeeded()
+        mountPage(in: second)
+        XCTAssertFalse(second.isPresented)
+        // No page mounted: nothing to measure.
+        XCTAssertNil(AgentSpaceRouter.pageAreaSize(of: first))
+
+        // The sidebar column changes while the Space is in the background.
+        split.setSidebarGeometry(width: 300, collapsed: false)
+        canvas.layoutSubtreeIfNeeded()
+        let background = try XCTUnwrap(AgentSpaceRouter.pageAreaSize(of: second))
+
+        first.concealFromShell(removingView: false, deferringChromium: true)
+        first.removeSessionViewFromShell()
+        second.presentInShell(completing: false, deferringChromium: true)
+        canvas.layoutSubtreeIfNeeded()
+        XCTAssertTrue(second.isPresented)
+        let presented = try XCTUnwrap(second.mainSplitViewController
+            .webContentContainerViewController.currentWebPanelSize)
+        // Precondition: a page area, not the window.
+        XCTAssertLessThan(presented.width, canvas.bounds.width)
+        XCTAssertEqual(background, presented)
+        XCTAssertEqual(AgentSpaceRouter.pageAreaSize(of: second), presented)
+    }
+
+    /// A background Space never presented has no page mounted (its container
+    /// mounts on first presentation): it answers for the window it lives in,
+    /// through the Space presented there.
+    func testBackgroundSessionWithNothingMountedAnswersForItsOwnWindow() throws {
+        let slot = makeSlot()
+        let first = makeSession(in: slot, spaceId: UUID().uuidString)
+        // The slot presents its first registered session, as a shell's slot
+        // knows which Space it shows.
+        slot.registerWindow(first, for: first.spaceId)
+        let second = makeSession(in: slot, spaceId: UUID().uuidString)
+        second.warmUpDormantTree()
+        XCTAssertTrue(slot.visibleController === first)
+        try XCTUnwrap(slot.shell?.window.contentView).layoutSubtreeIfNeeded()
+        XCTAssertNil(AgentSpaceRouter.pageAreaSize(of: second), "nothing mounted anywhere")
+
+        mountPage(in: first)
+
+        let presented = try XCTUnwrap(first.mainSplitViewController
+            .webContentContainerViewController.currentWebPanelSize)
+        XCTAssertNil(second.mainSplitViewController.webContentContainerViewController.currentWebPanelSize)
+        XCTAssertEqual(AgentSpaceRouter.pageAreaSize(of: second), presented)
+    }
+
+    /// The presented sibling's own chrome (its AI Chat panel) narrows its
+    /// page area, not the background Space's.
+    func testPresentedSiblingAIChatDoesNotChangeTheBackgroundPageArea() throws {
+        let aiKey = PhiPreferences.AISettings.phiAIEnabled.rawValue
+        let previousAI = UserDefaults.standard.object(forKey: aiKey)
+        UserDefaults.standard.set(true, forKey: aiKey)
+        defer { UserDefaults.standard.set(previousAI, forKey: aiKey) }
+        let slot = makeSlot()
+        let first = makeSession(in: slot, spaceId: UUID().uuidString)
+        let second = makeSession(in: slot, spaceId: UUID().uuidString)
+        first.warmUpDormantTree()
+        second.warmUpDormantTree()
+        first.presentInShell(completing: false, deferringChromium: true)
+        let shell = try XCTUnwrap(slot.shell)
+        try XCTUnwrap(shell.split).setSidebarCollapsed(false, animated: false)
+        let canvas = try XCTUnwrap(shell.window.contentView)
+        canvas.layoutSubtreeIfNeeded()
+        // The chat expands by animation, which runs for a window on screen.
+        shell.window.orderFront(nil)
+        first.browserState.aiChatTabCreationGateOverrideForTesting = false
+        let siblingTab = mountPage(in: first)
+        mountPage(in: second)
+        let siblingContainer = first.mainSplitViewController.webContentContainerViewController
+        let siblingBefore = try XCTUnwrap(siblingContainer.currentWebPanelSize)
+        let before = try XCTUnwrap(AgentSpaceRouter.pageAreaSize(of: second))
+
+        first.browserState.setAIChatCollapsed(for: siblingTab, collapsed: false)
+        let deadline = Date().addingTimeInterval(2)
+        while siblingContainer.currentWebPanelSize?.width == siblingBefore.width, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            canvas.layoutSubtreeIfNeeded()
+        }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        canvas.layoutSubtreeIfNeeded()
+
+        // Precondition: the chat narrowed the sibling.
+        let siblingAfter = try XCTUnwrap(siblingContainer.currentWebPanelSize)
+        XCTAssertLessThan(siblingAfter.width, siblingBefore.width)
+        XCTAssertEqual(AgentSpaceRouter.pageAreaSize(of: second), before)
+    }
+
+    /// The handler: a `windowId` names the Space instance to measure; without
+    /// one, or for an instance with nothing mounted, the answer is the key
+    /// window's presented instance, as before.
+    func testPanelSizeAnswersTheNamedInstanceAndFallsBackToTheKeyWindow() throws {
+        let slot = makeSlot()
+        let first = makeSession(in: slot, spaceId: UUID().uuidString)
+        let second = makeSession(in: slot, spaceId: UUID().uuidString)
+        first.warmUpDormantTree()
+        second.warmUpDormantTree()
+        first.presentInShell(completing: false, deferringChromium: true)
+        try XCTUnwrap(slot.shell?.window.contentView).layoutSubtreeIfNeeded()
+        mountPage(in: second)
+        let keyWindowAnswer: String = {
+            let slot = SpaceManager.shared.keySlot ?? SpaceManager.shared.slots.first
+            guard let size = slot?.visibleController?.mainSplitViewController
+                    .webContentContainerViewController.currentWebPanelSize,
+                  size.width > 0, size.height > 0 else {
+                return "{\"ok\":false,\"error\":\"no_visible_panel\"}"
+            }
+            return "{\"width\":\(Int(size.width)),\"height\":\(Int(size.height))}"
+        }()
+        func answer(_ payload: String) -> String? {
+            AgentSpaceRouter.handlePanelSize(context: ExtensionMessageContext(
+                type: "agentSpace.panelSize", payload: payload,
+                requestId: "panel-size", senderId: "cdp"))
+        }
+
+        // The named instance is measured, in the background.
+        let size = try XCTUnwrap(AgentSpaceRouter.pageAreaSize(of: second))
+        XCTAssertEqual(answer("{\"windowId\":\(second.windowId)}"),
+                       "{\"width\":\(Int(size.width)),\"height\":\(Int(size.height))}")
+        // No id, an unknown id, and a presented instance with nothing mounted:
+        // as before.
+        XCTAssertEqual(answer("{}"), keyWindowAnswer)
+        XCTAssertEqual(answer(""), keyWindowAnswer)
+        XCTAssertEqual(answer("{\"windowId\":\(Int.max)}"), keyWindowAnswer)
+        XCTAssertEqual(answer("{\"windowId\":\(first.windowId)}"), keyWindowAnswer)
     }
 
     func testFloatingBandSlideUsesSharedPanelForIncomingContent() throws {
@@ -1408,6 +1552,24 @@ final class HostedSidebarStateTests: XCTestCase {
         SpaceSessionController(window: slot.shell!.window, windowId: state.windowId,
             profileId: state.profileId, spaceId: state.spaceId, account: store.account,
             slot: slot, browserState: state, dormant: true)
+    }
+
+    /// Mounts a page in `session`'s page container, on a stand-in web view
+    /// the fixture holds (a wrapper's `nativeView` is weak). Returns its tab.
+    @discardableResult
+    private func mountPage(in session: SpaceSessionController) -> Tab {
+        let webView = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+        webViews.append(webView)
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://example.test/")
+        wrapper.nativeView = webView
+        let tab = Tab(guid: 900 + webViews.count, url: wrapper.urlString, isActive: true,
+                      index: 0, webContentView: wrapper)
+        let state = session.browserState
+        state.tabs = [tab]
+        state.updateNormalTabs()
+        state.focusingTab = tab
+        session.mainSplitViewController.webContentContainerViewController.mountActiveTabForRestore()
+        return tab
     }
 
     private func drainPresentationUpdates() async {

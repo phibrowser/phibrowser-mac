@@ -79,6 +79,9 @@ final class KioskBrowserContentViewController: NSViewController {
     func handleTabReadyToDisplay(tabId: Int) {
         guard state.focusingTab?.guid == tabId else { return }
         mountFocusedTab()
+        // Chromium activates a new Kiosk window before the page is mounted,
+        // so the page could not take focus then.
+        focusPageIfUnclaimed()
     }
 
     func captureProfileReplacementSnapshot() -> NSImage? {
@@ -282,18 +285,21 @@ final class KioskBrowserContentViewController: NSViewController {
         // synchronous Chromium callback, so restore page focus on the next turn
         // and only when no other native control has claimed it.
         DispatchQueue.main.async { [weak self] in
-            guard let self,
-                  self.extensionSidePanelView == nil,
-                  let window = self.view.window,
-                  window.firstResponder == nil || window.firstResponder === window,
-                  let tab = self.state.focusingTab,
-                  let focusedView = tab.webContentView,
-                  window.makeFirstResponder(focusedView) else { return }
-            if tab.isNTP {
-                tab.webContentWrapper?.focus()
-            } else {
-                tab.webContentWrapper?.restoreFocus()
-            }
+            guard let self, self.extensionSidePanelView == nil else { return }
+            self.focusPageIfUnclaimed()
+        }
+    }
+
+    private func focusPageIfUnclaimed() {
+        guard let window = view.window,
+              window.firstResponder == nil || window.firstResponder === window,
+              let tab = state.focusingTab,
+              let focusedView = tab.webContentView,
+              window.makeFirstResponder(focusedView) else { return }
+        if tab.isNTP {
+            tab.webContentWrapper?.focus()
+        } else {
+            tab.webContentWrapper?.restoreFocus()
         }
     }
 

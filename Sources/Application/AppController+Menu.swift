@@ -658,7 +658,8 @@ extension AppController {
                     CommandWrapper.IDC_WINDOW_GROUP_TAB.rawValue,
                     CommandWrapper.IDC_MOVE_TAB_TO_NEW_WINDOW.rawValue,
                     CommandWrapper.IDC_WINDOW_CLOSE_OTHER_TABS.rawValue,
-                    CommandWrapper.IDC_WINDOW_CLOSE_TABS_TO_RIGHT.rawValue
+                    CommandWrapper.IDC_WINDOW_CLOSE_TABS_TO_RIGHT.rawValue,
+                    CommandWrapper.IDC_NEW_SPLIT_TAB.rawValue
                 ]
                 subMenu.items.forEach { item in
                     if hiddenCommandTags.contains(item.tag) {
@@ -666,6 +667,7 @@ extension AppController {
                     }
                 }
                 Self.applyNewTabOrientation(in: subMenu)
+                installOrUpdateSplitWithNewTabMenuItem(in: subMenu)
             } else
             
             if menuRole == .help, let subMenu = menuItem.submenu {
@@ -1275,6 +1277,26 @@ extension AppController {
         }
     }
 
+    private func installOrUpdateSplitWithNewTabMenuItem(in menu: NSMenu) {
+        menu.items.removeAll { $0.tag == CommandWrapper.PHI_SPLIT_WITH_NEW_TAB.rawValue }
+
+        let item = NSMenuItem(
+            title: NSLocalizedString("app.tabMenu.splitWithNewTab", value: "Split with New Tab", comment: "Tab menu - Open a new tab in Split View next to the current tab"),
+            action: #selector(splitWithNewTabFromMenu(_:)),
+            keyEquivalent: ""
+        )
+        applyEffectiveShortcut(.PHI_SPLIT_WITH_NEW_TAB, to: item)
+        item.target = self
+
+        if let splitIndex = menu.items.firstIndex(where: {
+            $0.tag == CommandWrapper.IDC_NEW_SPLIT_TAB.rawValue
+        }) {
+            menu.insertItem(item, at: splitIndex + 1)
+        } else {
+            menu.addItem(item)
+        }
+    }
+
     private func installOrUpdateCopyURLMenuItem(in menu: NSMenu) {
         menu.items.removeAll { $0.tag == CommandWrapper.PHI_COPY_URL.rawValue }
 
@@ -1397,6 +1419,11 @@ extension AppController {
     @objc func capturePageAreaFromMenu(_ sender: Any?) {
         guard let state = SpaceSessionControllersManager.shared.getActiveWindowState() else { return }
         PageScreenshotService.shared.capture(in: state, area: true)
+    }
+
+    @MainActor
+    @objc func splitWithNewTabFromMenu(_ sender: Any?) {
+        SpaceSessionControllersManager.shared.getActiveWindowState()?.splitFocusedTabWithNewTab()
     }
 
     @MainActor
@@ -2759,7 +2786,8 @@ extension AppController {
         url: String = "about:blank",
         bringToFront: Bool,
         profileId: String? = nil,
-        preferredSpaceId: String? = nil
+        preferredSpaceId: String? = nil,
+        returnApplication: NSRunningApplication? = nil
     ) -> Bool {
         let manager = SpaceSessionControllersManager.shared
         let bridge = ChromiumLauncher.sharedInstance().bridge
@@ -2818,6 +2846,7 @@ extension AppController {
             return false
         }
 
+        kioskController.returnApplication = returnApplication
         let windowId = kioskController.windowId
         if let state = kioskController.browserState as? KioskBrowserState {
             state.preferredSpaceId = preferredSpaceId
@@ -3499,6 +3528,13 @@ extension AppController {
                       let state = SpaceSessionControllersManager.shared.getActiveWindowState() else { return false }
                 return PageScreenshotService.shared.canCapture(in: state, area: item.action == #selector(capturePageAreaFromMenu(_:)))
             }
+        }
+        if item.action == #selector(splitWithNewTabFromMenu(_:)) {
+            guard ApplicationState.shared.canUseBrowser,
+                  let state = SpaceSessionControllersManager.shared.getActiveWindowState() else {
+                return false
+            }
+            return MainActor.assumeIsolated { state.canSplitFocusedTabWithNewTab }
         }
         if item.action == #selector(sharePageFromMenu(_:)) {
             guard let state = SpaceSessionControllersManager.shared.getActiveWindowState() else {

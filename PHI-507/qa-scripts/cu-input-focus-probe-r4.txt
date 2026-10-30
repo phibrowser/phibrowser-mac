@@ -1,0 +1,12 @@
+本批次只是DBL-08关联的Computer Use输入能力诊断，不执行DBL-08验收，也不判通过。输出指定unit但not_executed_reason明确说明诊断范围。不要重复r3已失败的原样操作。
+
+前序已实际记录：CU click没有modifier参数；press_key纯Super_L/Shift_L返回keyPressIncludedNoNonModifierKeys；Accessibility Keyboard切到on但本app截图/list_apps中未见键盘面板；Sticky Keys能切换，但此前纯修饰键拒绝；Mouse Keys确认框明确要求用键盘模拟鼠标去点击Use Mouse Keys，此前直接mouse click与Return未完成启用。CU drag加实际列表插入间隙click曾完成Performance重排，只说明该输入能力，不等于本项关闭控件通过。
+
+只做下列有新增信息的自救，不操作浏览器内部数据：
+1. 开始读取QA浏览器与System Settings当前状态，记录原值。先用Computer Use get_app_state(app='/System/Library/Input Methods/KeyboardViewer.app')正常打开系统键盘查看器，若有实际虚拟键按钮，观察是否能通过原生点击锁存Shift/Command，再回到QA测试页观察修饰状态。若该路径不存在或未出现可操作键盘，如实记录，不猜AX动作或路径。不输入系统密码。
+2. 必要时用Computer Use get_app_state(app='/System/Library/CoreServices/AssistiveControl.app')查看实际辅助键盘面板（若不存在立即记录并停止该路径）。仅使用原生公开控件，不做shell或AX脚本。
+3. 可以在系统设置Keyboard/Accessibility原生界面临时启用Full Keyboard Access（实际读原始值），在本轮最小A/B/C普通页面集合上尝试用正常键盘焦点导航到tab行后Shift+Down构造B/C选择。必须从CU原生树和屏幕确认实际selection，不能把Shift+Down已发送当作多选。若系统焦点拦截常用快捷键，先恢复再继续。不得删除未知对象。
+4. 若以上均无效，允许重新进入Mouse Keys原生确认框，用工具明确支持的KP_5或i（依当前系统说明）进行键盘模拟鼠标点击，而不是重复普通mouse click/Return。先读完整当前提示及指针实际位置。若当前系统提示已允许键盘模拟指针，正常使用Computer Use press_key发送KP_2/4/6/8（或本系统说明的对应字母）向Use Mouse Keys移动，每小组后截图核对真实位置；不要盲发大串按键。按系统说明定位后KP_5点击，并实读开关是否on。若尚未允许键盘移动，不能假定按键有效；如实保存结果。不存在纯移动工具时不猜mouse_move字段，也不能用drag绕过按钮危险动作。最多一次有新信息的正确键盘确认尝试。
+5. 记录每次CU返回的原文错误、实际是否激活、能否获得虚拟修饰状态/前置多选，不尝试有风险的永久系统配置。诊断结束恢复所有本项改动的系统输入设置并从CU实读；退出仅本次打开的键盘查看器/辅助面板。QA偏好恢复起始值。保留最小TC页面的真实结束状态，不额外重建。
+
+所有路径的成功/失败关键图都保留，marker使用DBL-08-PER attempt1 keyboardviewer-before/after、assistive-before/after、focus-before/after、mouse-confirm-before/after、restore-after等。所有浏览器、系统设置、辅助应用操作仍只能Computer Use。若某路径已经提供足够能力，不继续多余系统修改；仅证明能力，后续独立验收重建前置再执行。

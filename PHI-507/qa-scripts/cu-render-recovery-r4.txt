@@ -1,0 +1,12 @@
+本批次是导航/渲染前置恢复维护，不是VIS-05验收，不判通过。当前已有很多前轮TC临时Space/页面，证据已经收齐保存。本次只允许清理明确以TC-PHI507-r2、TC-QA-PHI507-r2开头的可丢弃对象；保留Default、Chrome Web Store、Recovery及所有未知保存项/窗口。记录实际清理对象，不删除未确认名称的数据。
+
+1. 先通过Computer Use实读固定QA app当前PID、窗口及页面/菜单状态；保存原始before图，检查是否有尚待处理的TC关闭提示。只对TC数据正常确认离开/删除，不能勾不再询问；未知对话框立即保存并停止清理该对象。
+1a. 清理前先做一个有限的原生对照，不能预设原因：File → New Window 建立纯TC专用窗口，直接从它的新标签页导航普通本地A（run=TC-PHI507-r2-render-fresh-r4），不要先运行Close Other Tabs，分段观察至120秒，保存标题/正文/编号。若直接新窗口的A成功显示，则在该窗口新建原生New Tab N，右键N执行Close Other Tabs，确认只剩N，再导航普通本地B（run=TC-PHI507-r2-render-closeothers-r4），按同样时限观察并保存真实画面/原生集合。比较“直接新窗口导航”与“新建N→关闭其他→导航”两条路径，不把一次差异当作因果。如果直接新窗口就空白，停止此对照转下方清理恢复；若只有后一条空白，记录完整动作和等待时间，后续在清理恢复后最多重复一次同样对照，不扩展其他探索。
+2. 从原生Spaces/Window菜单列出明确的本轮TC对象；逐一按公开UI删除已经收齐证据的TC测试Space、关闭其专用测试窗口。保留至少一个干净TC-QA-PHI507-r2-Recovery-R4作为下一测试的普通环境。不要操作Default或Chrome Web Store，也不要清profile、历史/网站数据或偏好文件。仅当菜单明确提供原生Delete Space入口才用它；没有入口时只正常关闭该TC窗口/页，不猜内部动作。删除TC组时按原生确认处理。
+3. 实读并记录起始偏好，统一恢复Balanced/System Default/双击关闭off/按位置关闭on，Restore last session原值保持。不改键盘或系统输入设置。正常Command-Q退出，通过CU返回确认App quit后，再用CU get_app_state完整路径重开并读新PID。若未实际退出，不声称重启成功，不用shell终止。
+4. 新建干净TC普通测试页，以原生地址栏访问 http://127.0.0.1:18211/fixture/?tab=A&run=TC-PHI507-r2-render-recovery-r4&kind=normal ，分段观察至120秒。只有实见标题、批次、打开编号和输入框才算前置具备。仍空白时保留现场，再做一次正常原生Reload并分段观察至120秒；不重复循环重启。可以用公开Window菜单的原生Zoom/Return to Previous Size做一次窗口重绘对照，保留实际前后；不能用DevTools或内部API。
+5. 若正文具备，在输入框键入KEEP-RENDER-RECOVERY-R4，离开到另一个新建本地普通B再切回A，核对原编号和输入是否仍可见。B用同批次tab=B，截图记录；没有正文则不输入/不伪造成功。
+6. 若新导航持续只有标题/空白、但正常重开后原有页面可显示，明确按此现象做一次受控对照：在干净TC窗口分别建立A/B两个普通本地fixture，两个标签标题都已更新后，仅正常Quit并重开一次，不再改变它们的URL，也不额外换tag重建。逐页实读原生顺序、实际正文/编号；若正文恢复，此时才分别输入KEEP-PRELOAD-A/B，再切页核对原编号/输入。退出前尚未输入任何未保存草稿，因此不得用重启结果证明草稿持久化。仅验证“先建立普通页再重启是否提供可用前置”。最多这一次额外受控对照，不无限重启。若成功，保留A/B作为后续准备背景，不执行验收关闭动作；若失败原样记录。所有原始空白及恢复后画面都保留，不能把恢复后的新文档说成重启前原文档。
+7. 若仍无法建立可见正文，在同一明确TC窗口通过原生Window菜单进入全屏、读取真实画面后退出全屏一次，核对同一页面是否显示；记录前后编号是否实际可见，不能据标题猜测。如所有恢复路径仍失败，只检查原生Profile菜单是否允许无需账号创建本地TC-QA-PHI507-r2-Recovery-R4-Profile。若有该正常入口，允许创建一个临时本地Profile并直接导航同一普通本地A做一次对照，完整记录当前Profile和状态，不登录、不填写真实账号、不删原Profile。若入口需要登录或不支持本地Profile，立即停下该路径并写明。不要将新的Profile当作新的macOS用户或全新app偏好默认环境。
+
+完整记录原空白现场、清理对象清单、原生确认、真实退出返回/新PID、每次导航等待时间、A/B身份及输入、恢复后是否仍空白。每个关键阶段截图，marker为VIS-05-COMMON attempt1 recovery-before/cleanup-after/restart-after/A-before/A-after/B-after/final-after或failure。not_executed_reason说明本次是维护而不是VIS05完整手册导出/清理验收。禁止任何非Computer Use浏览器操作。

@@ -58,7 +58,7 @@ for r in rows:
   if provenance:item['provenance']=provenance
   evidence.append(item)
  attempts=list(r.get('attempts',[]))
- for d in r.get('diagnostics',[]):attempts.append({**d,'outcome':'partial','scope':d['scope'],'evidence':[]})
+ for d in r.get('diagnostics',[]):attempts.append({**d,'outcome':'partial','scope':d['scope'],'evidence':d.get('evidence',[])})
  if not attempts and r.get('observation'):
   attempts=[{'job':r['id'],'outcome':r['result'],'observation':r['observation'],'evidence':r.get('evidence',[])}]
  for raw_record in attempts:

@@ -1,0 +1,13 @@
+本次仅继续输入能力诊断，不是DBL-08完整验收，不判pass/fail。只返回DBL-08-PER的诊断观察，not_executed_reason明确写“仅原生键盘输入适配诊断，不是完整DBL-08”。浏览器、系统UI操作和状态读取仍全部只用Computer Use，禁止shell/脚本/API/直接AX。
+
+上一次Control-Option-F5未能显示可识别的Accessibility Shortcuts面板，不能据此认定所有原生辅助键盘入口都不可用。本次只尝试一个不同的正常系统路径，不反复调用无效快捷键：用CU打开系统自带 /System/Applications/System Settings.app，通过Accessibility → Keyboard查找Accessibility Keyboard与Sticky Keys。必要时用其实际搜索栏查找功能名称，不猜控件索引。先截图并记录两者及关联选项的原值，不改其他系统设置。
+
+若确实提供Accessibility Keyboard，正常临时开启，遵循清楚的确认，再用CU list_apps/get_app_state识别实际屏幕键盘所属应用。若有Sticky Keys选项，可临时启用，但必须从真实控件确认值。所有变化必须结束前恢复原值，不能因入口难找就放弃恢复。若未成功启用，不能假称存在虚拟键盘或修饰键保持。
+
+QA app固定 /Applications/Phi Tab Close QA.app；实读当前TC Space和偏好。保留当前已核实的本轮A/B/C/D页面；不操作Default或未知数据。本次普通多选能力探测不需要改变双击关闭开关。若上次对象已不满足，用原生UI建立本轮四个普通fixture并逐页核对编号/标记。
+
+若屏幕键盘确实可用，按其正常UI的单击锁存/双击锁定规则真实保持Command键；必须观察屏幕上保持状态，再回到QA对B、C两个真实tab容器执行单击，读取实际选中集合。选中不能只按两个标题仍存在来判断，要从实际高亮/原生选择状态确认。必要时分别试一次坐标点击和正常原生tab容器点击，记录哪种输入会继承修饰键；不盲目重复。然后用同样真实键盘保持Shift做一次B到C范围选择探测。不要声称一个press_key组合会跨后续click保持修饰键，也不要用网页选择替代tab多选。
+
+如果屏幕键盘不暴露可操作键、Command/Shift不保持或点击后无实际多选，保存当前图和具体限制，停止该分支。成功也仅记录可用输入配方，不执行额外关闭操作，不冒充真实物理设备覆盖。
+
+结束时释放锁定/锁存键，关闭屏幕键盘，恢复Accessibility Keyboard、Sticky Keys及改动选项的原始值，逐项实读确认。恢复QA原始布局/语言/两个开关（如果本次没有改就只读核对），关闭Settings，保存最终截图。关键阶段marker使用DBL-08-PER attempt1 system-keyboard-before/system-keyboard-enabled/modifier-before/modifier-after/system-keyboard-restored/after；异常保留failure。最终说明实际能力、全部改动与恢复值，以及未完成动作的具体原因。

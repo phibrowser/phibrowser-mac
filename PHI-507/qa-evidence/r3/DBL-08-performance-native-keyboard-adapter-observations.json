@@ -1,0 +1,43 @@
+{
+  "base_case": "DBL-08；本次限定为 DBL-08-PER 原生键盘输入适配诊断。",
+  "ending_state": "QA 固定应用 /Applications/Phi Tab Close QA.app，最终 PID 87230；当前 Space 为 TC-QA-PHI507-r2，顺序 New Tab、A、B、C、D，活动及单选页为 B，无组或 split。未新增、拖动或关闭测试页。QA 保持 Balanced、System Default（英文）、双击关闭 off／按位置关闭 on，Settings 已关闭，无可见菜单或确认框。Accessibility Keyboard 已从临时 on 恢复 off，Sticky Keys 始终 off，关联选项未改且已复读。未操作任何屏幕键盘修饰键。系统设置最终关闭返回 -10005: App quit，随后 list_apps 仅列 QA 与 Finder。未操作 Default、Chrome Web Store 或未知数据。",
+  "observations": [
+    {
+      "active_after": "B；原生 row (selected)，截图仅 B 高亮。",
+      "active_before": "B；原生 row (selected)，截图仅 B 高亮。",
+      "after": "New Tab、A、B、C、D；selected={B}。未执行标签多选、拖动或关闭。系统键盘面板及可操作键位未出现，未取得可用的 Command／Shift 保持输入配方。",
+      "before": "New Tab、A、B、C、D；selected={B}，无组或 split。",
+      "confirmation_choices": "Sticky Keys 详情只读后 Cancel；Accessibility Keyboard 详情只读后 Done。关闭辅助键盘时在明确确认框选择 Turn off。通过 Rename Space 对话框只读当前名称后 Cancel，未提交改名。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-08-PER attempt1 system-keyboard-before",
+        "EVIDENCE: DBL-08-PER attempt1 system-keyboard-enabled",
+        "EVIDENCE: DBL-08-PER attempt1 modifier-before",
+        "EVIDENCE: DBL-08-PER attempt1 system-keyboard-restored",
+        "EVIDENCE: DBL-08-PER attempt1 failure",
+        "EVIDENCE: DBL-08-PER attempt1 after"
+      ],
+      "identity_checks": "QA 使用固定完整应用路径，起止 PID 均为 87230，Window 为 TC-B · TC-PHI507-r2-DBL-08-PER-INPUT-KEYBOARD。当前 Space 由 Rename Space 输入框原值实读为 TC-QA-PHI507-r2。B 正文显示 TC-B、批次 TC-PHI507-r2-DBL-08-PER-INPUT-KEYBOARD、普通页及打开编号 b173157d-2466-41c2-9222-4ef0d83e4746，输入框为空。A/C/D 本次仅核对原生标签标题，未逐页读取编号，未声称完成逐页存活核验。",
+      "language_observed": "QA General 为 System Default，界面为英文；本次未改语言。",
+      "layout_observed": "QA General 截图显示 Balanced 有选中边框，浏览器为纵向标签；本次诊断未切换 Performance。",
+      "not_executed_reason": "仅原生键盘输入适配诊断，不是完整DBL-08。Accessibility Keyboard 开关可设为 on，但系统设置与 QA 的 CU 截图均无屏幕键盘面板，原生树无可操作键位；两次 list_apps 仅列 QA、Finder、System Settings，未识别键盘所属应用。因此无法观察 Command／Shift 锁存或锁定，按约束停止该分支，未执行坐标／原生 tab 容器多选探测、B 到 C 范围选择或完整 DBL-08 的拖动及关闭动作。",
+      "operator_errors": [
+        "首次 system-keyboard-restored 标记落在 Turn off 确认框中间态；已明确更正，并保留确认后实际 off 的同名证据图。",
+        "首次点击系统设置原生 close button 返回 isError=true，输出过滤器未保留其错误原文；立即停止并重新读取 failure 现场。重新读取时系统设置 PID 从 88198 变为 88376，未推断原因。随后重新核对恢复值；第二次正常关闭完整记录 Computer Use server error -10005: App quit，最终 list_apps 无 System Settings。"
+      ],
+      "precondition_actual": "沿用并保留当前四个普通 TC fixture，未重建完整 DBL-08 前置。QA 当前 Space、页序和 B 单选状态已实读；双击关闭保持原始 off。本次仅检查系统 Accessibility → Keyboard 正常入口。",
+      "settings_observed": "唯一设置改动为 Accessibility Keyboard off→on→off；每次点击后均读取该开关与 Sticky Keys 即时值，Sticky Keys 始终 off。最终两个开关均 off，Full Keyboard Access／Slow Keys 也为 off。Sticky 关联选项前后相同：五次 Shift 切换 off、提示音 on、屏幕显示 on、位置 Top Right。Accessibility Keyboard 详情前后相同：Dark、Mouse down；淡出、声音、右键选键、自动空格、自动大写均 off；四角均 Hide/Show Home Panel，面板跟随 on；dwell toolbar、menu bar、always dwell、zoom、隐藏指示器均 off；Default 颜色、Pause Dwell、Auto revert on；时间 3.00／2.00 秒、容差 20.00／20.00。上述关联选项均未改。QA 双击关闭 off／按位置关闭 on，均未点击。",
+      "steps_executed": [
+        "通过 CU 实读 QA 起始窗口、页序、B 选择状态和正文身份。",
+        "用 CU 打开 /System/Applications/System Settings.app，进入 Accessibility → Keyboard，读取两个开关及关联详情原值。",
+        "临时开启 Accessibility Keyboard，实读 on，未出现启用确认框；Sticky Keys 保持 off。",
+        "两次 list_apps，并读取系统设置及 QA 的截图和原生树；未发现屏幕键盘面板、键位或所属应用，停止修饰键分支。",
+        "关闭 Accessibility Keyboard，在确认框选择 Turn off；实读恢复 off，并复读未改的关联选项。",
+        "关闭系统设置后遇错误标志，保存现场；重新读取新 PID 的系统设置并核对两个开关均 off，再正常关闭，保留 App quit 返回。",
+        "只读核对 QA General 的语言／布局与 Advanced 两个开关，关闭 QA Settings。",
+        "通过原生 Rename Space 对话框读取当前 Space 名称后 Cancel，保存最终 QA 截图与原生选择状态。"
+      ],
+      "unit_id": "DBL-08-PER"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

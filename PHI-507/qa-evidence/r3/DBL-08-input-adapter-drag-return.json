@@ -1,0 +1,37 @@
+{
+  "session_id": "01a18dc5-a8e0-7802-a3dc-5b28549edab8",
+  "scope": "Saved item_completed MCP events only; no live browser operation or state read",
+  "recovered_at": "2026-10-30T17:12:49.745918+00:00",
+  "mcp_call_count": 79,
+  "calls_by_server_tool": {
+    "computer-use/get_app_state": 23,
+    "computer-use/click": 16,
+    "computer-use/press_key": 29,
+    "computer-use/type_text": 8,
+    "computer-use/drag": 1,
+    "computer-use/list_apps": 2
+  },
+  "non_computer_use_events": [],
+  "selected_events": [
+    {
+      "server": "computer-use",
+      "tool": "drag",
+      "status": "completed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "from_x": 180,
+        "from_y": 500,
+        "to_x": 180,
+        "to_y": 610
+      },
+      "duration": {
+        "secs": 1,
+        "nanos": 597760750
+      },
+      "error": null,
+      "returned_text": [
+        "App=com.phibrowser.opensource.Mac (pid 87230)\nWindow: \"TC-B · TC-PHI507-r2-DBL-08-PER-INPUT-ADAPTER\", App: Phi Tab Close QA.\n0 standard window TC-B · TC-PHI507-r2-DBL-08-PER-INPUT-ADAPTER, Secondary Actions: Raise\n\t1 split group\n\t\t2 button sidebarHeader.sidebarButton\n\t\t\t3 button left sidebar toggle\n\t\t4 button sidebarHeader.backButton\n\t\t\t5 button sidebar backward\n\t\t6 button sidebarHeader.forwardButton\n\t\t\t7 button (disabled) sidebar forward\n\t\t8 button sidebarHeader.refreshButton\n\t\t\t9 button\n\t\t10 text Value: woodnotfound.github.io, Placeholder: Search or Enter URL, ID: sidebarHeader.addressView\n\t\t11 container\n\t\t\t12 button Default\n\t\t\t13 button TC-QA-PHI507-r2\n\t\t\t14 button TC-QA-PHI507-r2-SET-08-COMMON-S1\n\t\t\t15 button TC-QA-PHI507-r2-SET-08-COMMON-S2\n\t\t\t16 button TC-PHI507-r2-Recovery\n\t\t17 image favorite\n\t\t18 text Drag tabs here or pin them from the tab list\n\t\t19 scroll area\n\t\t\t20 outline sidebarTabList\n\t\t\t\t21 row (selectable) New Tab\n\t\t\t\t22 row (selectable) Description: phi default favicon, Value: New Tab\n\t\t\t\t23 row (selectable) Description: Website, Value: TC-A · TC-PHI507-r2-DBL-08-PER-INPUT-ADAPTER\n\t\t\t\t24 row (selected) Description: Website, Value: TC-B · TC-PHI507-r2-DBL-08-PER-INPUT-ADAPTER\n\t\t\t\t25 row (selectable) Description: Website, Value: TC-C · TC-PHI507-r2-DBL-08-PER-INPUT-ADAPTER\n\t\t26 container sidebar.footer\n\t\t\t27 button Description: Profile menu, ID: profile.menuButton\n\t\t\t28 button\n\t\t29 splitter (disabled, settable, float) 193\n\t30 close button\n\t31 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window\n\t32 minimize button\n33 menu bar\n\t34 Phi\n\t35 File\n\t36 Edit\n\t37 View\n\t38 Spaces\n\t39 History\n\t40 Bookmarks\n\t41 Tab\n\t42 Window\n\t43 Help\n\t44 *DEBUG*\n"
+      ]
+    }
+  ]
+}

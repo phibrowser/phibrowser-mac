@@ -1,0 +1,227 @@
+[
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "post-enable-marker-mismatch",
+    "file": "DBL-08-PER-12.png",
+    "original_marker": "DBL-08-PER attempt1 system-keyboard-before",
+    "source_file": "DBL-08-performance-native-keyboard-adapter-008.jpg",
+    "source_sha256": "3e5a826cf4b0f1d1e90c3ca6aebccb4ea60cec91555450f1f14f9b409cbc9964",
+    "original_size": [
+      1446,
+      1250
+    ],
+    "crop_box": [
+      0,
+      0,
+      1446,
+      1250
+    ],
+    "output_size": [
+      1280,
+      1107
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。 原marker为before，但实际画面已on；不作原值证据。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "system-keyboard-enabled",
+    "file": "DBL-08-PER-13.png",
+    "original_marker": "DBL-08-PER attempt1 system-keyboard-enabled",
+    "source_file": "DBL-08-performance-native-keyboard-adapter-009.jpg",
+    "source_sha256": "a9b573e489b3ab2d5aa23e5f2b1e647f31d7aff599e6d3ccedf9f39564406570",
+    "original_size": [
+      1446,
+      1250
+    ],
+    "crop_box": [
+      0,
+      0,
+      1446,
+      1250
+    ],
+    "output_size": [
+      1280,
+      1107
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "modifier-before",
+    "file": "DBL-08-PER-14.png",
+    "original_marker": "DBL-08-PER attempt1 modifier-before",
+    "source_file": "DBL-08-performance-native-keyboard-adapter-010.jpg",
+    "source_sha256": "c7c04d7ee830a5a644ccfc442b09d37aa451eaca43c02f73e7e1a7bb721ba34a",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "system-keyboard-restored",
+    "file": "DBL-08-PER-15.png",
+    "original_marker": "DBL-08-PER attempt1 system-keyboard-restored",
+    "source_file": "DBL-08-performance-native-keyboard-adapter-018.jpg",
+    "source_sha256": "061694bebee140f8ae4252e068df7916092a7c07faa9e51969d7d0213cd77b4b",
+    "original_size": [
+      1446,
+      1250
+    ],
+    "crop_box": [
+      0,
+      0,
+      1446,
+      1250
+    ],
+    "output_size": [
+      1280,
+      1107
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "failure",
+    "file": "DBL-08-PER-16.png",
+    "original_marker": "DBL-08-PER attempt1 failure",
+    "source_file": "DBL-08-performance-native-keyboard-adapter-017.jpg",
+    "source_sha256": "b918a18dee0da8fb7a86f28b6387f6462dce9b90fbdde4ab76eb13ff73289ea2",
+    "original_size": [
+      1446,
+      1250
+    ],
+    "crop_box": [
+      0,
+      0,
+      1446,
+      1250
+    ],
+    "output_size": [
+      1280,
+      1107
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "after",
+    "file": "DBL-08-PER-17.png",
+    "original_marker": "DBL-08-PER attempt1 after",
+    "source_file": "DBL-08-performance-native-keyboard-adapter-021.jpg",
+    "source_sha256": "33b7c1635bdfbb3e8357a408d50d8a3c125f681edd093d6b6361c7de642dd692",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "system-keyboard-original-off",
+    "file": "DBL-08-PER-18.png",
+    "original_marker": "DBL-08-PER attempt1 system-keyboard-before",
+    "source_file": "DBL-08-performance-native-keyboard-adapter-007.jpg",
+    "source_sha256": "83330d66e9f5856fd77b31c85ecac9562531906b002f870cb3e7b6f19ac32d48",
+    "original_size": [
+      1446,
+      1250
+    ],
+    "crop_box": [
+      0,
+      0,
+      1446,
+      1250
+    ],
+    "output_size": [
+      1280,
+      1107
+    ],
+    "palette_colors": null,
+    "caption": "实际CU原图，仅缩放；保留真实原值，不沿用错时marker作为原值。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "sticky-options-original",
+    "file": "DBL-08-PER-19.png",
+    "original_marker": "",
+    "source_file": "DBL-08-performance-native-keyboard-adapter-005.jpg",
+    "source_sha256": "a764f94979926602b85f7af2af83494839ae2e2c115185c62645ab8f2d48ca42",
+    "original_size": [
+      940,
+      534
+    ],
+    "crop_box": [
+      0,
+      0,
+      940,
+      534
+    ],
+    "output_size": [
+      940,
+      534
+    ],
+    "palette_colors": null,
+    "caption": "实际CU原图，仅缩放；保留真实原值，不沿用错时marker作为原值。"
+  },
+  {
+    "unit_id": "DBL-08-PER",
+    "attempt": 1,
+    "phase": "keyboard-options-original",
+    "file": "DBL-08-PER-20.png",
+    "original_marker": "",
+    "source_file": "DBL-08-performance-native-keyboard-adapter-006.jpg",
+    "source_sha256": "efa6be880b5bab568e570618616bb77fa82595fd79bd2705ce6cc15f43296785",
+    "original_size": [
+      1050,
+      1066
+    ],
+    "crop_box": [
+      0,
+      0,
+      1050,
+      1066
+    ],
+    "output_size": [
+      1050,
+      1066
+    ],
+    "palette_colors": null,
+    "caption": "实际CU原图，仅缩放；保留真实原值，不沿用错时marker作为原值。"
+  }
+]

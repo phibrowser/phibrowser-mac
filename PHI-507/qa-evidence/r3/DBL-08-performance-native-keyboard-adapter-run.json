@@ -1,0 +1,25 @@
+{
+  "job": "DBL-08-performance-native-keyboard-adapter",
+  "exit_code": 0,
+  "session_id": "01a18dcb-9b67-71e2-a59e-a4979a02bd37",
+  "round": 3,
+  "lease_id": "e4359d36-d212-4361-be64-5adbf18f0762",
+  "started_at": "2026-10-30T17:11:33.174407+00:00",
+  "ended_at": "2026-10-30T17:15:50.733111+00:00",
+  "units": [
+    "DBL-08-PER"
+  ],
+  "observed_units": [
+    "DBL-08-PER"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "a7c2a81ca25c1fd0fb74bced65a34e11cf829b380131e8226663e4ef8f905679",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 42,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

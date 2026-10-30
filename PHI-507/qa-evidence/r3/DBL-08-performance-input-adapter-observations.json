@@ -1,0 +1,56 @@
+{
+  "base_case": "DBL-08；本次仅执行 DBL-08-PER 的 Computer Use 输入适配诊断，不执行完整用例验收，不作通过或失败判定。",
+  "ending_state": "指定应用 /Applications/Phi Tab Close QA.app 最终实读 PID 87230，Window 为 TC-B · TC-PHI507-r2-DBL-08-PER-INPUT-KEYBOARD。当前为 TC-QA-PHI507-r2 Space，保留既存 New Tab 及本次重建的普通 A/B/C/D，真实顺序为 New Tab、A、B、C、D，活动及单选页为 B，无分组或 split。第一部分的 A/C/B 已在第三部分重建前通过原生快捷键关闭。最终已截图确认恢复 Balanced、System Default（英文）、双击关闭 off／按位置关闭 on，Settings 已关闭，无可见菜单或确认框。Mouse Keys、Sticky Keys、Accessibility Keyboard 均未取得可操作入口或原值，未更改这些系统选项，不能声称已实读其恢复值；未启用或锁定屏幕键盘修饰键。未操作 Default、其 Chrome Web Store、未知保存项或其他浏览器窗口。",
+  "observations": [
+    {
+      "active_after": "INPUT-KEYBOARD 批次 B，单选。",
+      "active_before": "拖动诊断关键动作前为 INPUT-ADAPTER 批次 B，单选。",
+      "after": "拖动分支最终顺序 A/C/B，B 原编号及 KEEP 标记仍在；第三部分重建后及会话结束顺序为既存 New Tab、A、B、C、D，仅 B 选中。未执行 C 关闭按钮动作。",
+      "before": "TC-QA-PHI507-r2 Space 内既存 New Tab 后新建 A/B/C；普通页真实顺序 A/B/C，无组、无 split。B 已显示 KEEP-INPUT-ADAPTER-B 及输入框焦点边框。",
+      "confirmation_choices": "未出现 Use、系统确认或离开确认；未选择“不再询问”。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-08-PER attempt1 drag-before",
+        "EVIDENCE: DBL-08-PER attempt1 drag-after",
+        "EVIDENCE: DBL-08-PER attempt1 drag-after-wait",
+        "EVIDENCE: DBL-08-PER attempt1 drag-drop-after",
+        "EVIDENCE: DBL-08-PER attempt1 mousekeys-before",
+        "EVIDENCE: DBL-08-PER attempt1 mousekeys-after",
+        "EVIDENCE: DBL-08-PER attempt1 mousekeys-restored",
+        "EVIDENCE: DBL-08-PER attempt1 keyboard-before",
+        "EVIDENCE: DBL-08-PER attempt1 keyboard-after",
+        "EVIDENCE: DBL-08-PER attempt1 keyboard-shortcuts",
+        "EVIDENCE: DBL-08-PER attempt1 keyboard-restored",
+        "EVIDENCE: DBL-08-PER attempt1 settings-restored-switches",
+        "EVIDENCE: DBL-08-PER attempt1 settings-restored-layout",
+        "EVIDENCE: DBL-08-PER attempt1 after"
+      ],
+      "identity_checks": "所有 fixture 均通过原生地址栏输入 HTTPS URL，逐页实见 TC 标题、批次、普通页说明、打开编号和输入框。INPUT-ADAPTER：A=d6647a8e-7988-4810-9b78-211625d1b4dd；B=10988cf7-09f4-4d6b-a053-7ece38d4fe70；C=6c78fbd8-c86c-4fab-908c-e37bfed6726c。独立投放点击后 B 的同一编号和 KEEP-INPUT-ADAPTER-B 仍可见。INPUT-KEYBOARD：A=1dc682d5-bbd2-4dbb-a9d7-cb53555ae1cf；B=b173157d-2466-41c2-9222-4ef0d83e4746；C=01ae6734-f5c2-473b-a509-73002a271bee；D=e4017ef1-9e8d-4a01-ae55-1f2c4f4b8d8b。最终 B 编号仍与重建时一致。",
+      "language_observed": "起始及最终 General 均为 System Default，界面英文；未切换语言或重启。",
+      "layout_observed": "起始 General 截图为 Balanced；诊断时真实选择 Performance，并观察纵向普通标签列表；最终 General 截图确认 Balanced 已恢复。",
+      "not_executed_reason": "仅输入适配诊断，不是完整DBL-08。第二部分 Control-Option-F5 后未出现 Accessibility Shortcuts 面板，list_apps 仅列出 QA 与 Finder，无法读取各选项原值或确认 Mouse Keys enabled，因此未执行 KP_6、hover 能力观察及 C 关闭按钮点击。第三部分再次调用该入口仍未取得 Sticky Keys 或 Accessibility Keyboard 控件和原值，未执行临时开启、虚拟 Command 保持／锁定及 Command 多选点击。系统选项未改动，无法提供其原值与恢复值的控件实读。上述能力均未据此记为可用。",
+      "operator_errors": [
+        "单次 CU drag 后未完成投放：pin 区展开、指针留在起点、页序未变；未将工具返回原生状态视为重排完成，未进行第二次盲拖。",
+        "点击 B 标签容器后，原生树未报告键盘焦点；Shift+Down 后仍仅 B 选中，截图未见明显网页滚动，不能记为范围多选可用。",
+        "drag、独立投放 click 和诊断按键返回均未出现 isError=true；其中 drag 的 isError 字段实际未提供，已输出为 undefined。"
+      ],
+      "precondition_actual": "先实读指定 QA app PID 87230，随后点击明确命名的 TC-QA-PHI507-r2 Space。起始偏好实读 Balanced、System Default、双击关闭 off／按位置关闭 on；诊断前通过正常设置 UI 切为 Performance，仅点击双击关闭开关，使两开关为 on/on。第一部分新建普通 A/B/C，B 写入 KEEP-INPUT-ADAPTER-B；第三部分独立重建普通 A/B/C/D。",
+      "settings_observed": "双击关闭 off→on 后，未点击的按位置关闭即时仍 on；收尾双击关闭 on→off 后，按位置关闭即时仍 on。最终恢复起始 off/on。Mouse Keys、Sticky Keys、Accessibility Keyboard 原值未取得，均未操作；未改变系统双击速度。",
+      "steps_executed": [
+        "读取指定应用及原生 Space 控件，选择 TC-QA-PHI507-r2；读取并记录起始语言、布局及两个开关，设置诊断所需 Performance、on/on。",
+        "新建 INPUT-ADAPTER 批次 A/B/C，逐页读取正文和编号；首次 A 在提交后约 21.5 秒的读取中已实见正文。单击 B 原生 row，B 仍存在。",
+        "在安全空白内容处请求 click(1800,800)，原图指针约位于(1800,800)，按本轮该尺寸约 1:1 校准；点击 B 输入框并输入 KEEP-INPUT-ADAPTER-B，实见焦点边框和文字。",
+        "保存 drag-before；调用一次 drag，实际请求 from(180,500) to(180,610)，原样输出全部文字返回及 isError=undefined。",
+        "立即 get_app_state，并等待 2 秒后再次读取：均为 A/B/C，pin 投放区展开，指针约在起点(180,500)，未到达请求终点。",
+        "按最新截图独立 click(180,816)，命中 C 行下方普通列表插入间隙；输出该调用文字及 isError。随后实读 pin 区收起，顺序变为 A/C/B，B 原编号和 KEEP 仍在。本次真实重排需要 drag 加一次独立 click 两个 CU 输入；无第二次 drag。",
+        "通过 CU press_key(ctrl+alt+F5) 请求 Accessibility Shortcuts，随后 list_apps、get_app_state，并检查 Finder 原生状态；未见该面板，未更改系统选项，未发送 KP_6。",
+        "在第三部分 setup 中仅关闭本次第一组 B、C、A，保留既存 New Tab；新建 INPUT-KEYBOARD 批次 A/B/C/D，逐页确认正文及编号。",
+        "点击 B 原生 row，保存 keyboard-before；发送一次 shift+Down 并输出返回；keyboard-after 原生选中集仍仅 B。",
+        "第三部分再次通过 ctrl+alt+F5、list_apps、get_app_state 检查入口，仍未见辅助功能面板；未操作 Sticky Keys、Accessibility Keyboard 或屏幕 Command。",
+        "记录未更改系统选项的现场；通过原生设置 UI 恢复双击关闭 off、按位置关闭 on、Balanced，实读 System Default；关闭 Settings，保存最终原生树和截图。",
+        "已输出一条 OBSERVATION，保留本 unit 的实际动作、身份、集合、限制与证据标记。"
+      ],
+      "unit_id": "DBL-08-PER"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

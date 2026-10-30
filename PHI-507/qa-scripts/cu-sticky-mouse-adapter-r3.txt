@@ -1,0 +1,19 @@
+本次仅做最后两个独立的系统输入适配诊断，不是DBL-08验收，不判pass/fail。仅返回DBL-08-PER观察，not_executed_reason写“仅Sticky Keys/Mouse Keys输入适配诊断，不是完整DBL-08”。浏览器与系统UI全部只用Computer Use，不用shell/API/直接AX。
+
+上次正常System Settings → Accessibility → Keyboard已经确认Sticky Keys原值off、Show pressed keys on screen为on、位置Top Right；仅试过Accessibility Keyboard开关，未实际启用Sticky Keys。虚拟键盘未出现不能证明Sticky Keys功能不可用，本次不再开启或寻找虚拟键盘。
+
+第一部分：使用独立的Sticky Keys系统功能。
+
+1. CU打开/System/Applications/System Settings.app，正常进入Accessibility → Keyboard，实读Sticky Keys与详情原值；临时开启Sticky Keys，并确认返回的实际值为on。保持Accessibility Keyboard原off，不改其他选项。
+2. 回到固定QA app /Applications/Phi Tab Close QA.app，核对当前TC Space中A/B/C/D及B实际单选状态。不要创建无关对象、不要关闭页面、不要改双击开关。
+3. 用CU press_key发送一次真正的单独Super_L（工具若不接受该xdotool键名则记录错误后停止，不猜参数），检查原生屏幕的Command保持指示；必要时再按一次使锁定，但必须实见保持/锁定状态。不能把组合快捷键后无指示当作已保持。
+4. 仅在Command保持状态可证实时，分别尝试一次准确坐标单击C和一次最新原生tab容器单击C（每次先重新确定B单选、重新真实保持Command），读取实际标签选中集合。记录是否CU点击继承系统Sticky Keys；未出现多选也照实记录，不能用“页面仍在”冒充选择证明。使用同样独立Shift_L做一次B到C范围选择检查，前置和保持状态均须实读。
+5. 释放所有保持/锁定键，回原系统入口把Sticky Keys及任何改动选项恢复原值，并截图实读off。无可证实指示或实际选择时不重复盲试；最多每种修饰键两次独立尝试。
+
+第二部分：只检查一个明确的正常Mouse Keys开关路径。
+
+6. 同一System Settings中进入Accessibility → Pointer Control，查找Mouse Keys实际开关/详情（如果当前版本把它放在别处，使用原生设置搜索Mouse Keys）。读取原值及确认选项，临时开启后必须实读on/勾选；若正确原生点击未改变值，最多基于最新控件再做一次，不反复点击或猜坐标。
+7. 仅在确证Mouse Keys开启时，在QA的本轮C标题安全区域定位后，用CU press_key KP_6一次，核对指针真实移动及C关闭控件是否因hover出现；打印按键文字返回/错误。若无效果，不伪称hover成功。此诊断不点击关闭按钮，不执行产品关闭验收。
+8. 用同一实际系统UI恢复Mouse Keys及改动选项到原值，实读确认；不要改系统双击间隔。若系统设置关闭返回App quit，如实记录预期关闭返回，不为此反复启动系统设置。
+
+结束时QA应保持原始Balanced、System Default、双击off/位置on（均实读），所有临时系统选项恢复。保留A/B/C/D，最终明确活动页与选中集；不触碰Default、Chrome Web Store或未知数据。关键前后与恢复截图marker：DBL-08-PER attempt1 sticky-before/sticky-enabled/command-held/command-selection/shift-held/shift-selection/sticky-restored/mouse-before/mouse-enabled/mouse-motion/mouse-restored/after。失败或不满足前置时留failure图，未执行分支逐项说明。这里提供的是明确诊断步骤，不要求任何预定成功结果。

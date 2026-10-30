@@ -1,10 +1,8 @@
 {
-  "job": "DBL-10",
-  "started_at": "2026-10-30T17:27:34.270342+00:00",
+  "job": "VIS-05-checkpoint-cleanup-r3",
+  "started_at": "2026-10-30T17:48:46.974456+00:00",
   "state": "running",
   "units": [
-    "DBL-10-PER",
-    "DBL-10-BAL",
-    "DBL-10-COM"
+    "VIS-05-COMMON"
   ]
 }

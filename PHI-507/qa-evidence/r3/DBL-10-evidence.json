@@ -1,0 +1,852 @@
+[
+  {
+    "unit_id": "DBL-10-PER",
+    "attempt": 1,
+    "phase": "setup-native-operator-failure",
+    "file": "DBL-10-PER-01.png",
+    "original_marker": "DBL-10-PER attempt1 failure",
+    "source_file": "DBL-10-006.jpg",
+    "source_sha256": "ddaef92ce5d425d59be3cb5f3814e48d7efba00a6492b0ef4222684a79f4cdfe",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-PER",
+    "attempt": 1,
+    "phase": "active-before",
+    "file": "DBL-10-PER-02.png",
+    "original_marker": "DBL-10-PER attempt1 active-before",
+    "source_file": "DBL-10-015.jpg",
+    "source_sha256": "cb624c14c5c6e952913ba46bebd560ef8424b31278495c6c5462b09b0c8fd73e",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-PER",
+    "attempt": 1,
+    "phase": "active-after",
+    "file": "DBL-10-PER-03.png",
+    "original_marker": "DBL-10-PER attempt1 active-after",
+    "source_file": "DBL-10-016.jpg",
+    "source_sha256": "f97d6164d3bf72011750f41fbab533e42bd3fe87fd13f5d02ab611dfa131763e",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-PER",
+    "attempt": 1,
+    "phase": "active-survivor-A",
+    "file": "DBL-10-PER-04.png",
+    "original_marker": "DBL-10-PER attempt1 active-survivor-A",
+    "source_file": "DBL-10-017.jpg",
+    "source_sha256": "87d6a24c3518a306bb8fe4a62c79e1800c32fd5846e1e0c399b08a2111836881",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-PER",
+    "attempt": 1,
+    "phase": "active-survivor-B",
+    "file": "DBL-10-PER-05.png",
+    "original_marker": "DBL-10-PER attempt1 active-survivor-B",
+    "source_file": "DBL-10-018.jpg",
+    "source_sha256": "843afe33361e34c51c02b1862ed48e38e266e2360d2026bba3f8802640b43f46",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-PER",
+    "attempt": 1,
+    "phase": "active-survivor-E",
+    "file": "DBL-10-PER-06.png",
+    "original_marker": "DBL-10-PER attempt1 active-survivor-E",
+    "source_file": "DBL-10-019.jpg",
+    "source_sha256": "1541e51c3502c8f3515eafd89bd5d37dd5b4bdd1af01ca311733da9395c815dc",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-PER",
+    "attempt": 1,
+    "phase": "inactive-before",
+    "file": "DBL-10-PER-07.png",
+    "original_marker": "DBL-10-PER attempt1 inactive-before",
+    "source_file": "DBL-10-026.jpg",
+    "source_sha256": "7efde45632af4672bb964a72291982c77ed8f3d3afbc03fd18fe802967c46475",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-PER",
+    "attempt": 1,
+    "phase": "inactive-after",
+    "file": "DBL-10-PER-08.png",
+    "original_marker": "DBL-10-PER attempt1 inactive-after",
+    "source_file": "DBL-10-027.jpg",
+    "source_sha256": "6b2987fab2c5448c5f1c18b0a01f7c692d6c003d70ca2936f32c7408521f0a66",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-PER",
+    "attempt": 1,
+    "phase": "inactive-survivor-A",
+    "file": "DBL-10-PER-09.png",
+    "original_marker": "DBL-10-PER attempt1 inactive-survivor-A",
+    "source_file": "DBL-10-028.jpg",
+    "source_sha256": "43546bf1e1433a7fdf047d8aa577d3d9a79f57532ec1d9ecadd890dc898faab3",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-PER",
+    "attempt": 1,
+    "phase": "inactive-survivor-B",
+    "file": "DBL-10-PER-10.png",
+    "original_marker": "DBL-10-PER attempt1 inactive-survivor-B",
+    "source_file": "DBL-10-029.jpg",
+    "source_sha256": "887e9070850da01795fb0ad1df743555a501ac590c8ed33d00f4c68669b0172f",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-PER",
+    "attempt": 1,
+    "phase": "inactive-survivor-D",
+    "file": "DBL-10-PER-11.png",
+    "original_marker": "DBL-10-PER attempt1 inactive-survivor-D",
+    "source_file": "DBL-10-030.jpg",
+    "source_sha256": "2970ebaff7f805b93393ee1d5b36359a960ba6b5e65b4852c97267feac91b4f3",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-PER",
+    "attempt": 1,
+    "phase": "after",
+    "file": "DBL-10-PER-12.png",
+    "original_marker": "DBL-10-PER attempt1 after",
+    "source_file": "DBL-10-031.jpg",
+    "source_sha256": "4ae393cf3a97bfce3415d3692beead3f8097544d832b16cec39ea7e69f0822de",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-BAL",
+    "attempt": 1,
+    "phase": "active-before",
+    "file": "DBL-10-BAL-01.png",
+    "original_marker": "DBL-10-BAL attempt1 active-before",
+    "source_file": "DBL-10-039.jpg",
+    "source_sha256": "d2143d8a01bf9ae716fecce8b1c1f4a2a45636c9882cbb922a1fa8387595e1a8",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-BAL",
+    "attempt": 1,
+    "phase": "active-after",
+    "file": "DBL-10-BAL-02.png",
+    "original_marker": "DBL-10-BAL attempt1 active-after",
+    "source_file": "DBL-10-040.jpg",
+    "source_sha256": "fe3da1859d473b68566c4d21b1a0eedba7240bf79c5c16cfb07e223f3ee6d0b1",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-BAL",
+    "attempt": 1,
+    "phase": "active-survivor-A",
+    "file": "DBL-10-BAL-03.png",
+    "original_marker": "DBL-10-BAL attempt1 active-survivor-A",
+    "source_file": "DBL-10-041.jpg",
+    "source_sha256": "3d1b1e12f5237e5695d1692c670638573133ca4e18b47df24963867aa84706bf",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-BAL",
+    "attempt": 1,
+    "phase": "active-survivor-B",
+    "file": "DBL-10-BAL-04.png",
+    "original_marker": "DBL-10-BAL attempt1 active-survivor-B",
+    "source_file": "DBL-10-042.jpg",
+    "source_sha256": "eabf1bf6a142ffe025437fff0406f8e3c05d9a17467dd3e887b039e07e091aab",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-BAL",
+    "attempt": 1,
+    "phase": "active-survivor-E",
+    "file": "DBL-10-BAL-05.png",
+    "original_marker": "DBL-10-BAL attempt1 active-survivor-E",
+    "source_file": "DBL-10-043.jpg",
+    "source_sha256": "4f9203c1aad50f5e0779754470cd6f02dff4600ecf60b5872790a437ce7c1dd9",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-BAL",
+    "attempt": 1,
+    "phase": "inactive-before",
+    "file": "DBL-10-BAL-06.png",
+    "original_marker": "DBL-10-BAL attempt1 inactive-before",
+    "source_file": "DBL-10-050.jpg",
+    "source_sha256": "c127b2ec8084edb4d39b0fe397eb29c1107920c4e78c0159e1972d72afcc75c9",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-BAL",
+    "attempt": 1,
+    "phase": "inactive-after",
+    "file": "DBL-10-BAL-07.png",
+    "original_marker": "DBL-10-BAL attempt1 inactive-after",
+    "source_file": "DBL-10-051.jpg",
+    "source_sha256": "b145bb8c312a7605062a12708455628f330ecb9bb92d2b6aa76a6de6f111f931",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-BAL",
+    "attempt": 1,
+    "phase": "inactive-survivor-A",
+    "file": "DBL-10-BAL-08.png",
+    "original_marker": "DBL-10-BAL attempt1 inactive-survivor-A",
+    "source_file": "DBL-10-052.jpg",
+    "source_sha256": "866e388fcfddd8fb591f476df6e6a0eb4efced41dceba23eb56e0831a752eab6",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-BAL",
+    "attempt": 1,
+    "phase": "inactive-survivor-B",
+    "file": "DBL-10-BAL-09.png",
+    "original_marker": "DBL-10-BAL attempt1 inactive-survivor-B",
+    "source_file": "DBL-10-053.jpg",
+    "source_sha256": "8443f5ab0dd8f64eda2097c2fa0581aa4b705d3ba4bfd4b04d0f3110e89dec28",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-BAL",
+    "attempt": 1,
+    "phase": "inactive-survivor-E",
+    "file": "DBL-10-BAL-10.png",
+    "original_marker": "DBL-10-BAL attempt1 inactive-survivor-E",
+    "source_file": "DBL-10-054.jpg",
+    "source_sha256": "2f3ef9d57b029743f8c6aa1720f6469ac61bcb088e8a5629379afc38ccd25d71",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-COM",
+    "attempt": 1,
+    "phase": "setup-native-operator-failure",
+    "file": "DBL-10-COM-01.png",
+    "original_marker": "DBL-10-COM attempt1 failure",
+    "source_file": "DBL-10-064.jpg",
+    "source_sha256": "66a52d8d41ca5a350a9b791de05889bffaa0a19aa040f1a4aee2dceaf3034ba2",
+    "original_size": [
+      584,
+      516
+    ],
+    "crop_box": [
+      0,
+      0,
+      584,
+      516
+    ],
+    "output_size": [
+      584,
+      516
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-COM",
+    "attempt": 1,
+    "phase": "active-before",
+    "file": "DBL-10-COM-02.png",
+    "original_marker": "DBL-10-COM attempt1 active-before",
+    "source_file": "DBL-10-066.jpg",
+    "source_sha256": "a5df7f23d769ac5d7e4fc6545c2711bfc81f95c5261ecbcb9883eecd8bd3494f",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-COM",
+    "attempt": 1,
+    "phase": "active-after",
+    "file": "DBL-10-COM-03.png",
+    "original_marker": "DBL-10-COM attempt1 active-after",
+    "source_file": "DBL-10-067.jpg",
+    "source_sha256": "c06f763b35c2fb042035c57bf5e022618b37497cc5a997dd0799661d40e1bc2c",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-COM",
+    "attempt": 1,
+    "phase": "active-survivor-A",
+    "file": "DBL-10-COM-04.png",
+    "original_marker": "DBL-10-COM attempt1 active-survivor-A",
+    "source_file": "DBL-10-068.jpg",
+    "source_sha256": "53f5f8f8b3d3c1825782f568795fdf41a62bfc1e90ba032ad1842beeff454e92",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-COM",
+    "attempt": 1,
+    "phase": "active-survivor-B",
+    "file": "DBL-10-COM-05.png",
+    "original_marker": "DBL-10-COM attempt1 active-survivor-B",
+    "source_file": "DBL-10-069.jpg",
+    "source_sha256": "430fcd9eae34c8327c8fdc78827b6bc9712d80f851679f96fc82a9bca7f885fa",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-COM",
+    "attempt": 1,
+    "phase": "active-survivor-E",
+    "file": "DBL-10-COM-06.png",
+    "original_marker": "DBL-10-COM attempt1 active-survivor-E",
+    "source_file": "DBL-10-070.jpg",
+    "source_sha256": "6d9624578068cce83c128d7aa8044da630cd8f424f32e677c191133d9723ad2c",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-COM",
+    "attempt": 1,
+    "phase": "inactive-before",
+    "file": "DBL-10-COM-07.png",
+    "original_marker": "DBL-10-COM attempt1 inactive-before",
+    "source_file": "DBL-10-077.jpg",
+    "source_sha256": "39d847e61ba83fb2a80db17d91e34c1707dcae6db1561e7fe09bbe4d7a86910a",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-COM",
+    "attempt": 1,
+    "phase": "inactive-after",
+    "file": "DBL-10-COM-08.png",
+    "original_marker": "DBL-10-COM attempt1 inactive-after",
+    "source_file": "DBL-10-078.jpg",
+    "source_sha256": "018b22f9753dbabfce63cbe3765dd9a749ad5c68e51e8a3c3cd7f00731cafebf",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-COM",
+    "attempt": 1,
+    "phase": "inactive-survivor-A",
+    "file": "DBL-10-COM-09.png",
+    "original_marker": "DBL-10-COM attempt1 inactive-survivor-A",
+    "source_file": "DBL-10-079.jpg",
+    "source_sha256": "f50bacfc0d96841a62b5ad571d2549eadb49e32af343c71141430cc11c3c4e6a",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-COM",
+    "attempt": 1,
+    "phase": "inactive-survivor-B",
+    "file": "DBL-10-COM-10.png",
+    "original_marker": "DBL-10-COM attempt1 inactive-survivor-B",
+    "source_file": "DBL-10-080.jpg",
+    "source_sha256": "aac81352e544da9a3a671a18509dbaa6165c05c09d385a46bef2814cce296d91",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-COM",
+    "attempt": 1,
+    "phase": "inactive-survivor-E",
+    "file": "DBL-10-COM-11.png",
+    "original_marker": "DBL-10-COM attempt1 inactive-survivor-E",
+    "source_file": "DBL-10-081.jpg",
+    "source_sha256": "cc1683faf8a0f55df01884e736c1789566e9b86291bd8ab5597e205398ff660f",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-10-COM",
+    "attempt": 1,
+    "phase": "ending",
+    "file": "DBL-10-COM-12.png",
+    "original_marker": "DBL-10-COM attempt1 ending",
+    "source_file": "DBL-10-084.jpg",
+    "source_sha256": "2c2dd6eff8220ed518d4d7b519423a9ce2b5b8609ceb8ddcdf85e7e5023d7c21",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

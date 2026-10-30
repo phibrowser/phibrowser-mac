@@ -1,0 +1,134 @@
+{
+  "base_case": "DBL-10：按 Performance、Balanced、Comfortable 顺序，各独立重建活动 C 和非活动 C 两套 A | TC-G[B,C,D] | E，仅执行组内普通 C 的双击。固定应用 /Applications/Phi Tab Close QA.app，实读 PID 87230；当前 Space 为 TC-QA-PHI507-r2。会话起始偏好实读为 Balanced、System Default（英文界面）、双击关闭 off／按位置关闭 on。",
+  "ending_state": "最后一套 TC-PHI507-r2-DBL-10-COM-INACTIVE 保留 A | TC-PHI507-r2-DBL-10-COM-INACTIVE-TC-G[B,D] | E；C 已不在标签集合，活动页及原生选中集为 E／{E}，E 打开编号 a9c81660-ef15-4283-ac27-7af8e73281e0。无可见 split、菜单或确认框，Settings 已关闭。已统一恢复 Balanced、双击关闭 off／按位置关闭 on，单独关闭双击开关后即时读取两值为 off/on；语言保持 System Default，未改快捷键。最后未额外重建页面序列。Default、Chrome Web Store、其他 Space、未知保存项及其他窗口未打开或操作。",
+  "observations": [
+    {
+      "active_after": "活动与非活动两个被测双击后均为 D。逐页核对存活页后最终停在 E。组内 row 未暴露 selected 值，活动身份由窗口标题和画面高亮确认；未进行多选。",
+      "active_before": "ACTIVE 分支为 C／单页高亮；INACTIVE 分支为 E／{E}，C 未活动。",
+      "after": "两套均为 A | 原 TC-G[B,D] | E；C 不再列出，未见其他成员消失。B、D 仍显示在各自原 TC 组的内层表格中，无 split。",
+      "before": "两套均实见 A | TC-G[B,C,D] | E，组展开，成员顺序 B、C、D。页面批次分别为 TC-PHI507-r2-DBL-10-PER-ACTIVE、TC-PHI507-r2-DBL-10-PER-INACTIVE。",
+      "confirmation_choices": "INACTIVE setup 关闭上一套资料时出现 Close Tabs and Delete Group?，选择 Delete Group；Don't Ask Again 保持未勾。两次被测双击均未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-10-PER attempt1 settings",
+        "EVIDENCE: DBL-10-PER attempt1 switches",
+        "EVIDENCE: DBL-10-PER attempt1 failure",
+        "EVIDENCE: DBL-10-PER attempt1 active-before",
+        "EVIDENCE: DBL-10-PER attempt1 active-after",
+        "EVIDENCE: DBL-10-PER attempt1 active-survivor-A",
+        "EVIDENCE: DBL-10-PER attempt1 active-survivor-B",
+        "EVIDENCE: DBL-10-PER attempt1 active-survivor-E",
+        "EVIDENCE: DBL-10-PER attempt1 inactive-before",
+        "EVIDENCE: DBL-10-PER attempt1 inactive-after",
+        "EVIDENCE: DBL-10-PER attempt1 inactive-survivor-A",
+        "EVIDENCE: DBL-10-PER attempt1 inactive-survivor-B",
+        "EVIDENCE: DBL-10-PER attempt1 inactive-survivor-D",
+        "EVIDENCE: DBL-10-PER attempt1 after"
+      ],
+      "identity_checks": "PID 87230。ACTIVE 打开编号：A=5a4231cf-74ca-4c84-8447-345699ac529f；B=5d3ac242-4596-4f4f-9abe-a8ace1485725；C=c4d2bd53-9609-409b-9a29-bae0583226a7；D=26b47d35-4b91-448f-b320-ec17ea117668；E=428d62ae-6e17-40d3-b1b1-97f4007fcbdf。INACTIVE：A=8f665757-abcb-46b1-b7f4-a0cbc5b6dd6d；B=d115921a-e4e2-469e-9795-2a627b87358e；C=602ab2db-1cf1-4ce1-8fea-12b23938438f；D=b3523dac-9c74-48f6-9a7f-7389d30d66b5；E=f29c65a3-1d22-441d-adaa-efa8eafe8748。每页创建时实见 TC 标题、批次、编号、普通页正文及输入框；两次双击后逐页查看 A/B/D/E，编号与创建时相同，输入框仍为空，未输入 KEEP 标记。",
+      "language_observed": "General 显示 System Default；浏览器和设置界面为英文，未切换语言。",
+      "layout_observed": "由起始 Balanced 在 General 原生 UI 选择 Performance，并截图确认选中边框；浏览器左侧纵向标签及侧栏地址栏。第二套保持同一布局，由实际 chrome 再确认。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "初始 setup 对新建 New Tab row 右键时，CU 返回 -10005：元素失效且重新匹配发现多个元素。立即停止并保存 failure 图；导航提交为唯一 TC-A 后继续 setup。该次未执行被测双击。",
+        "第二套 setup 的辅助匹配发现新旧 A 多义，在发出 CU 前停止；随后使用最新树中明确属于 INACTIVE 批次的 A row。"
+      ],
+      "precondition_actual": "两套各自新建普通 fixture A–E；通过 New Tab Group、Rename Group、Add to Group 建立独立 TC 组。关键动作前真实顺序均满足 A | TC-G[B,C,D] | E，无 split、菜单或确认框。",
+      "settings_observed": "起始双击关闭 off、按位置关闭 on。仅点击双击关闭一次，CU 返回即时读取两值为 on/on；两个分支均在此设置下执行。按位置关闭未点击。",
+      "steps_executed": [
+        "通过原生地址栏创建 ACTIVE 批次 A–E，逐页读取正文和编号；原生菜单建立 TC-PHI507-r2-DBL-10-PER-ACTIVE-TC-G[B,C,D]。",
+        "单击 C 对应的最内层 selectable row，实见 C 活动；保存 active-before，再对最新树同一 C row 请求 click_count:2。",
+        "保存 active-after；逐页查看 A/B/D/E，核对正文、空输入框和原打开编号。",
+        "开始非活动分支时清理上一套普通测试页和 TC 组，独立创建 INACTIVE 批次 A–E，建立对应 TC-G[B,C,D]。",
+        "保持 E 活动，保存 inactive-before；对 C 最内层 selectable row 请求 click_count:2。",
+        "保存 inactive-after，逐页核对存活页身份，最后保存 E 活动的结束画面。"
+      ],
+      "unit_id": "DBL-10-PER"
+    },
+    {
+      "active_after": "两个被测动作后均为 D；逐页取证后停在 E。组内 row 未暴露 selected，活动由窗口标题和画面高亮核对；未进行多选。",
+      "active_before": "ACTIVE 分支 C／单页高亮；INACTIVE 分支 E／{E}，C 未活动。",
+      "after": "两套均为 A | 原 TC-G[B,D] | E；C 不再列出，未见其他成员消失。B、D 保持在各自原 TC 组中，无 split。",
+      "before": "两套均为 A | TC-G[B,C,D] | E，成员真实顺序 B、C、D；批次分别为 TC-PHI507-r2-DBL-10-BAL-ACTIVE、TC-PHI507-r2-DBL-10-BAL-INACTIVE。",
+      "confirmation_choices": "两次 setup 清理上一 TC 组时均选择 Delete Group，Don't Ask Again 未勾；被测双击无确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-10-BAL attempt1 settings",
+        "EVIDENCE: DBL-10-BAL attempt1 setup-confirm",
+        "EVIDENCE: DBL-10-BAL attempt1 active-before",
+        "EVIDENCE: DBL-10-BAL attempt1 active-after",
+        "EVIDENCE: DBL-10-BAL attempt1 active-survivor-A",
+        "EVIDENCE: DBL-10-BAL attempt1 active-survivor-B",
+        "EVIDENCE: DBL-10-BAL attempt1 active-survivor-E",
+        "EVIDENCE: DBL-10-BAL attempt1 inactive-before",
+        "EVIDENCE: DBL-10-BAL attempt1 inactive-after",
+        "EVIDENCE: DBL-10-BAL attempt1 inactive-survivor-A",
+        "EVIDENCE: DBL-10-BAL attempt1 inactive-survivor-B",
+        "EVIDENCE: DBL-10-BAL attempt1 inactive-survivor-E"
+      ],
+      "identity_checks": "PID 87230。ACTIVE 打开编号：A=29b89514-f6af-43c2-bc99-286a004c1af2；B=a9c11957-ca4b-4d39-969b-40f674608024；C=c8d0c066-9667-4326-9303-baa99790de0e；D=e8597819-63f2-40a8-82b3-c84f39307be5；E=d4a15d69-e997-43b0-9819-24be8712b7ef。INACTIVE：A=8828992a-d558-42ad-9b92-5bd23db43529；B=e93a8f6d-5821-4c22-8cf8-9e98a8550405；C=bd83f8d9-4828-4394-9a14-a06042d79c4f；D=3979ccdc-e301-4680-9d9c-c6b20d05ec77；E=04b61466-10ff-47fe-95ce-32c5b994887b。创建时逐页实见标题、批次、编号、普通页正文和输入框；双击后逐页查看 A/B/D/E，编号前后相同，输入框为空，未输入 KEEP 标记。",
+      "language_observed": "General 实读 System Default，界面英文，未切换。",
+      "layout_observed": "General 原生 UI 选择 Balanced 并截图确认；浏览器左侧纵向标签、上方地址栏。第二套从实际 chrome 再确认，未重复点击布局。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "ACTIVE 和 INACTIVE 各独立重建 A–E，通过原生菜单创建并命名各自 TC-G，再依次加入 C、D。关键动作前均实见所需顺序、组成员及活动页，无 split 或待处理确认。",
+      "settings_observed": "Advanced 实读双击关闭 on、按位置关闭 on；本 unit 未点击开关。",
+      "steps_executed": [
+        "切换到 Balanced，原生清理上一套 TC 资料，创建 ACTIVE 批次 A–E 并建立 TC-G[B,C,D]。",
+        "单击最内层 C row 激活，保存 active-before；对最新树的 C row 请求 click_count:2，保存 active-after。",
+        "逐页核对存活 A/B/D/E 的正文、空输入框和原编号。",
+        "在非活动分支开始时清理并独立重建 INACTIVE 批次 A–E 及 TC-G[B,C,D]。",
+        "E 活动时保存 inactive-before，对最内层 C row 请求 click_count:2，保存 inactive-after。",
+        "逐页核对 A/B/D/E 身份，结束停在 E。"
+      ],
+      "unit_id": "DBL-10-BAL"
+    },
+    {
+      "active_after": "两个被测双击后均为 D；逐页取证后为 E。横向容器未暴露 selected，活动由窗口标题和画面高亮确认；未进行多选。偏好恢复后原生选中集为 {E}。",
+      "active_before": "ACTIVE 分支 C／单页高亮；INACTIVE 分支 E／单页高亮，C 未活动。",
+      "after": "两套均为 A | 原 TC-G[B,D] | E；组计数由 3 变为 2，组下划线仍覆盖 B/D，C 不再列出，未见其他成员消失。最终保留 INACTIVE 结束集合，无 split。",
+      "before": "两套均实见顶部横向 A | TC-G[B,C,D] | E，组计数 3、下划线覆盖 B/C/D；批次分别为 TC-PHI507-r2-DBL-10-COM-ACTIVE、TC-PHI507-r2-DBL-10-COM-INACTIVE。",
+      "confirmation_choices": "两次 setup 清理上一 TC 组时均选择 Delete Group，Don't Ask Again 未勾；被测双击无确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-10-COM attempt1 settings",
+        "EVIDENCE: DBL-10-COM attempt1 setup-start",
+        "EVIDENCE: DBL-10-COM attempt1 active-setup-confirm",
+        "EVIDENCE: DBL-10-COM attempt1 failure",
+        "EVIDENCE: DBL-10-COM attempt1 group-setup",
+        "EVIDENCE: DBL-10-COM attempt1 active-before",
+        "EVIDENCE: DBL-10-COM attempt1 active-after",
+        "EVIDENCE: DBL-10-COM attempt1 active-survivor-A",
+        "EVIDENCE: DBL-10-COM attempt1 active-survivor-B",
+        "EVIDENCE: DBL-10-COM attempt1 active-survivor-E",
+        "EVIDENCE: DBL-10-COM attempt1 setup-confirm",
+        "EVIDENCE: DBL-10-COM attempt1 inactive-before",
+        "EVIDENCE: DBL-10-COM attempt1 inactive-after",
+        "EVIDENCE: DBL-10-COM attempt1 inactive-survivor-A",
+        "EVIDENCE: DBL-10-COM attempt1 inactive-survivor-B",
+        "EVIDENCE: DBL-10-COM attempt1 inactive-survivor-E",
+        "EVIDENCE: DBL-10-COM attempt1 restore-switches",
+        "EVIDENCE: DBL-10-COM attempt1 restore-layout",
+        "EVIDENCE: DBL-10-COM attempt1 ending"
+      ],
+      "identity_checks": "PID 87230。ACTIVE 打开编号：A=bd608b96-de35-46d2-ab43-d882dfcb4c78；B=e5ec706f-f307-4df5-bbf9-e93311e30e6f；C=45b5930d-652e-4ac2-b602-f9fed9d04496；D=f8626884-fec2-4461-9222-1ce51cd702d7；E=f5d8a912-58ac-4f09-a49a-acbbabb9a7bf。INACTIVE：A=f59e4879-45b7-4962-a7d2-51ec2eb84faf；B=754317b0-1eac-4dc5-9b90-8b55de7c4668；C=d7704475-e70d-4fd9-9cee-28405319e0e9；D=05f44a59-dc96-4460-a586-30cc24bbf6b9；E=a9c81660-ef15-4283-ac27-7af8e73281e0。创建时逐页实见标题、批次、编号、普通页正文及输入框；双击后逐页查看 A/B/D/E，原编号相同，输入框为空，未输入 KEEP 标记。实际点击使用只包含对应 TC 文本的 tabStripTab button。",
+      "language_observed": "General 实读 System Default，界面英文；全程未切换语言。",
+      "layout_observed": "General 原生 UI 选择 Comfortable 并截图确认；两分支均显示顶部横向标签。完成最后分支后统一恢复起始 Balanced，并保存设置及浏览器结束画面。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "第一套 setup 的辅助匹配按 button Description 查找新 A 未找到，在发出 CU 前停止；该容器 Description 仍显示 New Tab，而其唯一 TC-A 文本子元素和屏幕均对应新 A。随后按最新树确认父 tabStripTab 容器操作。",
+        "第一套 Rename Group 后一次 get_app_state 返回 isError，辅助函数立即停止，但该次错误原文未转发留存。随后重新 get_app_state，保存 failure 图，实见重命名对话框并继续原 setup；未重试被测双击。"
+      ],
+      "precondition_actual": "ACTIVE、INACTIVE 两套各独立重建 A–E，以 New Tab Group、Rename Group、Add to Group 建立对应 TC-G[B,C,D]。关键动作前逐次核对真实横向顺序、组计数、成员下划线和活动页，无 split、菜单或确认框。",
+      "settings_observed": "执行前 Advanced 实读 on/on，本 unit setup 未点击开关。全部动作结束后仅点击双击关闭恢复为 off，即时读取双击关闭 off、按位置关闭 on；按位置关闭未点击。快捷键未修改。",
+      "steps_executed": [
+        "切换 Comfortable，清理上一套 TC 资料，原生地址栏创建 ACTIVE 批次 A–E，建立 TC-G[B,C,D]。",
+        "单击 C 的实际 tabStripTab button 激活，保存 active-before；对最新树同一 C button 请求 click_count:2，保存 active-after。",
+        "逐页核对存活 A/B/D/E 的正文、空输入框和原打开编号。",
+        "非活动分支开始时清理并独立重建 INACTIVE 批次 A–E 与 TC-G[B,C,D]。",
+        "保持 E 活动，保存 inactive-before；对 C 的实际 tabStripTab button 请求 click_count:2，保存 inactive-after。",
+        "逐页核对 A/B/D/E，停在 E；不再重建序列。",
+        "通过原生 Settings 恢复双击关闭 off／按位置关闭 on 和 Balanced，保持 System Default；关闭 Settings，保存 ending 画面。"
+      ],
+      "unit_id": "DBL-10-COM"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

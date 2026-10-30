@@ -1,0 +1,20 @@
+414: 		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+416: 		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+2112: 		24 Always Show Bookmark Bar, ID: toggleBookmarkBar:
+3669: 		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+3671: 		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+3732: 		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+3734: 		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+3797: 		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+3799: 		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+6872: 		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+6873: 		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+6880: 		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+6881: 		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+6888: 		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+6889: 		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+8199: 		24 Always Show Bookmark Bar, ID: toggleBookmarkBar:
+8279: 		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+8280: 		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+8285: 		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+8286: 		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing

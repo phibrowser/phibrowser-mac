@@ -1,0 +1,27 @@
+{
+  "job": "DBL-09_DBL-23-comfortable-protected-complete-r5",
+  "exit_code": 0,
+  "session_id": "01a18ed4-3dca-7aa0-9d26-a0231215bed1",
+  "round": 5,
+  "lease_id": "52a943f0-2b80-4fdf-9258-ff0ac91c8040",
+  "started_at": "2026-10-30T22:00:36.255729+00:00",
+  "ended_at": "2026-10-30T22:29:35.060421+00:00",
+  "units": [
+    "DBL-09-COM",
+    "DBL-23-COM"
+  ],
+  "observed_units": [
+    "DBL-09-COM",
+    "DBL-23-COM"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "077b690e70ef8d99d62f3664e9682ea6b01dafd580cdc942944d1554c2704604",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 342,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

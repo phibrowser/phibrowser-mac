@@ -1,0 +1,2905 @@
+[
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "layout",
+    "file": "DBL-09-COM-01.png",
+    "original_marker": "DBL-09-COM attempt1 layout",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-002.jpg",
+    "source_sha256": "3995408029837a609412721411eae5647b96a37a88fdbfef356bd50a0c231b06",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "N-KEEP-confirmed",
+    "file": "DBL-09-COM-02.png",
+    "original_marker": "DBL-09-COM attempt1 N-KEEP-confirmed",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-016.jpg",
+    "source_sha256": "bf97c1b30af5e7f8bd3d53f5798c72e0bd53042d97bf9a08158bb8b6316a20b8",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "M-live-KEEP",
+    "file": "DBL-09-COM-03.png",
+    "original_marker": "DBL-09-COM attempt1 M-live-KEEP",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-022.jpg",
+    "source_sha256": "38cc595017e2b806a1b75a5904b8a64185fe6e270a3db745b5523df48385d6af",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "P-KEEP",
+    "file": "DBL-09-COM-04.png",
+    "original_marker": "DBL-09-COM attempt1 P-KEEP",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-027.jpg",
+    "source_sha256": "af9d1dc45a48dab2e9f724d9f5c98c171bdb74458c2f974d8f0a6734cd2a258b",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "capture-failure",
+    "file": "DBL-09-COM-05.png",
+    "original_marker": "DBL-09-COM attempt1 off-P-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-028.jpg",
+    "source_sha256": "30d9f9d64e01b0be5a5e7b4db8dd9bcf2c38650135489804fd26b0d54baf702e",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "采集标记偏差：实际为普通M副本空框，不作为P前置；真正P前置见off-P-live-before。",
+    "original_phase": "off-P-before"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "off-P-live-before",
+    "file": "DBL-09-COM-06.png",
+    "original_marker": "DBL-09-COM attempt1 off-P-live-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-029.jpg",
+    "source_sha256": "aea3d4a087e6a3e05dda1c78fc73044469b473e5a9b7705844be520d29280b60",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "off-P-after",
+    "file": "DBL-09-COM-07.png",
+    "original_marker": "DBL-09-COM attempt1 off-P-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-030.jpg",
+    "source_sha256": "aea3d4a087e6a3e05dda1c78fc73044469b473e5a9b7705844be520d29280b60",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "off-M-extra-single-click-before",
+    "file": "DBL-09-COM-08.png",
+    "original_marker": "DBL-09-COM attempt1 off-M-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-031.jpg",
+    "source_sha256": "f8b9d42f1de0301a510ea1cc474ac721f51db81790101ad81b29c1587e664400",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "额外单击入口后新开的未标记M，不是最初带KEEP的20ef91e3文档。原M证据见M-live-KEEP和off-M-original-live-after。",
+    "original_phase": "off-M-before"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "off-M-after",
+    "file": "DBL-09-COM-09.png",
+    "original_marker": "DBL-09-COM attempt1 off-M-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-032.jpg",
+    "source_sha256": "d88b8afc8c7c716f09be90690e6a87749a5daebe81cd27410d767102d32a9272",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "off-M-original-live-after",
+    "file": "DBL-09-COM-10.png",
+    "original_marker": "DBL-09-COM attempt1 off-M-original-live-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-033.jpg",
+    "source_sha256": "57360f8ca451b885f453d0caba1f8c9e8759bbfea759e6847235ec60762e41fd",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "off-control-after",
+    "file": "DBL-09-COM-11.png",
+    "original_marker": "DBL-09-COM attempt1 off-control-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-034.jpg",
+    "source_sha256": "85466a7cb3e4f73948b0ecf5edd885f0601854be1ccc1f3ef4bc54c83a9bcc5b",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "on-settings",
+    "file": "DBL-09-COM-12.png",
+    "original_marker": "DBL-09-COM attempt1 on-settings",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-035.jpg",
+    "source_sha256": "232fdf00bb1760744063405ebc5d2d596d5ed7eb278bbe23425ca2168f142926",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "on-P-before",
+    "file": "DBL-09-COM-13.png",
+    "original_marker": "DBL-09-COM attempt1 on-P-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-036.jpg",
+    "source_sha256": "035c675daa66cf24a04c742c67bb799e27e15ef11c2ce0b3518ab221f7fd3d7e",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "on-P-after",
+    "file": "DBL-09-COM-14.png",
+    "original_marker": "DBL-09-COM attempt1 on-P-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-037.jpg",
+    "source_sha256": "a8fd9ae9a24400a85840b7277c6feeea889a6ff4a1e0a7d288ab6b900a6244cf",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "on-M-before",
+    "file": "DBL-09-COM-15.png",
+    "original_marker": "DBL-09-COM attempt1 on-M-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-038.jpg",
+    "source_sha256": "57360f8ca451b885f453d0caba1f8c9e8759bbfea759e6847235ec60762e41fd",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "on-M-after",
+    "file": "DBL-09-COM-16.png",
+    "original_marker": "DBL-09-COM attempt1 on-M-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-039.jpg",
+    "source_sha256": "65c8f3d7f0d8b2e81027887f4ddeb4e6c0b030ab74f4ef85ab57d630b581f1e3",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "on-M-original-live-after",
+    "file": "DBL-09-COM-17.png",
+    "original_marker": "DBL-09-COM attempt1 on-M-original-live-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-040.jpg",
+    "source_sha256": "19d3aec50bf84cc1982f1652d3451a38ce18253b6671f270b6dbdea9c7062987",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "on-control-after",
+    "file": "DBL-09-COM-18.png",
+    "original_marker": "DBL-09-COM attempt1 on-control-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-041.jpg",
+    "source_sha256": "12c90a1d3d7bb984b71981d742a1499ad07f643baf16d53c3166b5c5aa8eca1d",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "prior-unit-cleanup",
+    "file": "DBL-23-COM-01.png",
+    "original_marker": "DBL-23-COM attempt1 prior-unit-cleanup",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-042.jpg",
+    "source_sha256": "74cc75d17dd1a7c8854dbccb9935ab64e71615f6e38cee8e91ef0dada1b83173",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "control-right-blank-capture-failure",
+    "file": "DBL-23-COM-02.png",
+    "original_marker": "DBL-23-COM attempt1 control-KEEP",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-054.jpg",
+    "source_sha256": "9ebe846d00b50be5f013775278fe90bce3994e723761c28a73243e91767f6bdb",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "当时右D正文空白，仅左C有KEEP，不是完整对照前置；control-KEEP-recheck才实见C/D原编号和KEEP。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-PS-left-open-before",
+    "file": "DBL-23-COM-03.png",
+    "original_marker": "DBL-23-COM attempt1 on-PS-left-open-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-058.jpg",
+    "source_sha256": "9773c09ed875f2541339513805b6fe6baa59597ac83e8662a6b9789591256346",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-PS-left-open-after",
+    "file": "DBL-23-COM-04.png",
+    "original_marker": "DBL-23-COM attempt1 on-PS-left-open-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-059.jpg",
+    "source_sha256": "02ae8d9f1f105d7840823eae9f7b0e9131383e5eb815aa7ab685ece2e3c73f9d",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-PS-right-open-before",
+    "file": "DBL-23-COM-05.png",
+    "original_marker": "DBL-23-COM attempt1 on-PS-right-open-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-060.jpg",
+    "source_sha256": "030118f60c6b2f1c500a5ddbf02ae691e89adff1a2829a7a33fde2efe9b86e65",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-PS-right-open-after",
+    "file": "DBL-23-COM-06.png",
+    "original_marker": "DBL-23-COM attempt1 on-PS-right-open-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-061.jpg",
+    "source_sha256": "99dfcbb9127b21e5da86954be21fe94ea22c17471f23d2d7a25df182052edf77",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-PS-left-setup-close-before",
+    "file": "DBL-23-COM-07.png",
+    "original_marker": "DBL-23-COM attempt1 on-PS-left-setup-close-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-062.jpg",
+    "source_sha256": "32a236bd2797a2d2f1bb5b83949b191710dfcdc887c276b272fcf0dff7a840e2",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-PS-left-setup-close-after",
+    "file": "DBL-23-COM-08.png",
+    "original_marker": "DBL-23-COM attempt1 on-PS-left-setup-close-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-063.jpg",
+    "source_sha256": "87135ed1434a13b9937162afc31ab7d467a7c70501362addb2cbacc36e0db7c8",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-PS-left-closed-before",
+    "file": "DBL-23-COM-09.png",
+    "original_marker": "DBL-23-COM attempt1 on-PS-left-closed-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-064.jpg",
+    "source_sha256": "c7bb7d01c757f010e7fa40bfdbc751193329cd3cae1bcd517f4f6fafa64091a9",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-PS-left-closed-after",
+    "file": "DBL-23-COM-10.png",
+    "original_marker": "DBL-23-COM attempt1 on-PS-left-closed-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-065.jpg",
+    "source_sha256": "4e4482525cd2500869f9f71349186952b81a971f2c01817b56a9d3a819b88244",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-PS-right-setup-close-before",
+    "file": "DBL-23-COM-11.png",
+    "original_marker": "DBL-23-COM attempt1 on-PS-right-setup-close-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-066.jpg",
+    "source_sha256": "d70511fb7471996a90b1851967f87ae818bd5acc5df3981f892b152cfc2d1bb8",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-PS-right-setup-close-after",
+    "file": "DBL-23-COM-12.png",
+    "original_marker": "DBL-23-COM attempt1 on-PS-right-setup-close-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-067.jpg",
+    "source_sha256": "5faccdb3f341d76ea7f3bf81b438fa8cbdcb3e6550f23b47ca079d26a55b3947",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-PS-right-closed-before",
+    "file": "DBL-23-COM-13.png",
+    "original_marker": "DBL-23-COM attempt1 on-PS-right-closed-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-068.jpg",
+    "source_sha256": "cb3d78cf5be3a4373053a449dadf09f9827aabfc3455a546888b466aadf621f0",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-PS-right-closed-after",
+    "file": "DBL-23-COM-14.png",
+    "original_marker": "DBL-23-COM attempt1 on-PS-right-closed-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-069.jpg",
+    "source_sha256": "507b0b80602d8d5bc6c0f54e487298a949a484ff716fcb0952484c866f999226",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-MS-closed-before",
+    "file": "DBL-23-COM-15.png",
+    "original_marker": "DBL-23-COM attempt1 on-MS-closed-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-070.jpg",
+    "source_sha256": "6fe8b4a1c3df79960670dd78b28c002dbdbe7514055b208535fe17f9bc923a91",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-MS-closed-after",
+    "file": "DBL-23-COM-16.png",
+    "original_marker": "DBL-23-COM attempt1 on-MS-closed-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-071.jpg",
+    "source_sha256": "67ab705bfd127f51bbd6755cf6af84d978b0fd5c4a496d6e512e71e712e26502",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-MS-control-before",
+    "file": "DBL-23-COM-17.png",
+    "original_marker": "DBL-23-COM attempt1 on-MS-control-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-074.jpg",
+    "source_sha256": "848232f343e2b6710e50814a1551894dcd410f513e5505b51761271f5f1e3410",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-MS-open-before",
+    "file": "DBL-23-COM-18.png",
+    "original_marker": "DBL-23-COM attempt1 on-MS-open-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-075.jpg",
+    "source_sha256": "26a9027c4f72c957f0976c3f8fb146429697aa8bab902237bccc995a86ec9a73",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-MS-open-after",
+    "file": "DBL-23-COM-19.png",
+    "original_marker": "DBL-23-COM attempt1 on-MS-open-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-076.jpg",
+    "source_sha256": "6e7b0e5e3b99b864d356851e113837bb5573f22c4031e5de6da40826ba46de64",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-MS-original-live-after",
+    "file": "DBL-23-COM-20.png",
+    "original_marker": "DBL-23-COM attempt1 on-MS-original-live-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-077.jpg",
+    "source_sha256": "61d5b58531411748b39bc7e3cae8e64cd1fec6c0b217437c5d7bf073320341e0",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-control-after",
+    "file": "DBL-23-COM-21.png",
+    "original_marker": "DBL-23-COM attempt1 on-control-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-078.jpg",
+    "source_sha256": "8e15645e9dffa8050790eba0715168bd42be70f1957a60f24ba180b845481aaf",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-settings",
+    "file": "DBL-23-COM-22.png",
+    "original_marker": "DBL-23-COM attempt1 off-settings",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-079.jpg",
+    "source_sha256": "e0dabea0252eafa53fff2733e151bea7b1549885bb8c529450b172075ac3c85c",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-PS-left-open-before",
+    "file": "DBL-23-COM-23.png",
+    "original_marker": "DBL-23-COM attempt1 off-PS-left-open-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-080.jpg",
+    "source_sha256": "e829b0a62efe0c1930c4ac95f83c16c2f433d3a7e38bd7a16c71ec7f960b099b",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-PS-left-open-after",
+    "file": "DBL-23-COM-24.png",
+    "original_marker": "DBL-23-COM attempt1 off-PS-left-open-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-081.jpg",
+    "source_sha256": "d801a53096675da02f1135c285db89239aca265a8056870418737f21b961f5fd",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-PS-right-open-before",
+    "file": "DBL-23-COM-25.png",
+    "original_marker": "DBL-23-COM attempt1 off-PS-right-open-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-082.jpg",
+    "source_sha256": "5c49428e0bc9fe8adba28765bfce4411cc3dfad6cb11d224a7eb8e8eb23f2ab3",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-PS-right-open-after",
+    "file": "DBL-23-COM-26.png",
+    "original_marker": "DBL-23-COM attempt1 off-PS-right-open-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-083.jpg",
+    "source_sha256": "0eb8436d964cbc3f49c96719755e68f7cc14dc70f2d327dfd80b5fde4794270a",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-PS-left-setup-close-before",
+    "file": "DBL-23-COM-27.png",
+    "original_marker": "DBL-23-COM attempt1 off-PS-left-setup-close-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-084.jpg",
+    "source_sha256": "28aa73c48539d0382bce5fad4021a99aeb5fad121c1ef5b11698768aa7dc7278",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-PS-left-setup-close-after",
+    "file": "DBL-23-COM-28.png",
+    "original_marker": "DBL-23-COM attempt1 off-PS-left-setup-close-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-085.jpg",
+    "source_sha256": "963bc4ee6181416e00e8abb928aa1728bdef080dc439a502ef9795c03ee984f8",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-PS-left-closed-before",
+    "file": "DBL-23-COM-29.png",
+    "original_marker": "DBL-23-COM attempt1 off-PS-left-closed-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-086.jpg",
+    "source_sha256": "50803d6888870c5193cca519068d8731931f50a58e6244fd861285cc042dd10e",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-PS-left-closed-after",
+    "file": "DBL-23-COM-30.png",
+    "original_marker": "DBL-23-COM attempt1 off-PS-left-closed-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-087.jpg",
+    "source_sha256": "896ac7f0bd5cc3c9fa1022d5405d7cdd8554d1dcf849c561d9dbfcc4785414d5",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-PS-right-setup-close-before",
+    "file": "DBL-23-COM-31.png",
+    "original_marker": "DBL-23-COM attempt1 off-PS-right-setup-close-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-088.jpg",
+    "source_sha256": "4d4bc65a57aab6573b7774bd49494be09da62347d7b1088122f4d55a4b129e5b",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-PS-right-setup-close-after",
+    "file": "DBL-23-COM-32.png",
+    "original_marker": "DBL-23-COM attempt1 off-PS-right-setup-close-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-089.jpg",
+    "source_sha256": "a0b8f81787d7d7dc5d967e95df7117906737ca618c433aac25488c57ed45b413",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-PS-right-closed-before",
+    "file": "DBL-23-COM-33.png",
+    "original_marker": "DBL-23-COM attempt1 off-PS-right-closed-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-090.jpg",
+    "source_sha256": "043a7001b40b28f00a616b66d4d28638f355294f0b3ce6121eb7fd63775fcc99",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-PS-right-closed-after",
+    "file": "DBL-23-COM-34.png",
+    "original_marker": "DBL-23-COM attempt1 off-PS-right-closed-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-091.jpg",
+    "source_sha256": "3bc27f14f6f76f8c6b363e3023ecbd2ab232029b07f449d34797c937dba00d8e",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-setup-close-1-before",
+    "file": "DBL-23-COM-35.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-setup-close-1-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-092.jpg",
+    "source_sha256": "26fa65384c6b5ab2ca5995bfab2c113de9a027d011bbcae33e2baee41e6f8222",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-setup-close-1-after",
+    "file": "DBL-23-COM-36.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-setup-close-1-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-093.jpg",
+    "source_sha256": "ca7a4011fbde80dc63d655ee3aa9889f82d5203e151b4a80a49a860fe950ca80",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-setup-close-2-before",
+    "file": "DBL-23-COM-37.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-setup-close-2-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-094.jpg",
+    "source_sha256": "353e05a4ac3b71dfc1ea7c59b990de00724f59eef1a9cd9d659b9eabffdc90ba",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-setup-close-2-after",
+    "file": "DBL-23-COM-38.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-setup-close-2-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-095.jpg",
+    "source_sha256": "b3c644ff449be1a1566094ac34be2984d923a600b197fd1808bc2e5737cdc566",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-setup-close-3-before",
+    "file": "DBL-23-COM-39.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-setup-close-3-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-096.jpg",
+    "source_sha256": "a9f34c01bf6320d42310e87ccc069969eeeb6ec694f3f9609729a69661a19be6",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-setup-close-3-after",
+    "file": "DBL-23-COM-40.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-setup-close-3-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-097.jpg",
+    "source_sha256": "5a86f16a9b3fdb8951e6175b9c8acba1ffcad6e031f51a522c137bbf70b7c3d2",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-setup-close-4-before",
+    "file": "DBL-23-COM-41.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-setup-close-4-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-098.jpg",
+    "source_sha256": "bd660f15029a5455d101a71888c3b3cc873105aa9b4aeb1bfff84b226c2b2146",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-setup-close-4-after",
+    "file": "DBL-23-COM-42.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-setup-close-4-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-099.jpg",
+    "source_sha256": "4d95e409cab1db12982dcc87b101f0e3fd75ae69f8a2f8a1e1c50e64d6bd315a",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-setup-close-5-before",
+    "file": "DBL-23-COM-43.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-setup-close-5-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-100.jpg",
+    "source_sha256": "b4678707e205170422288743be3ee3cbf68b73145fddabf96ad4672c70969863",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-setup-close-5-after",
+    "file": "DBL-23-COM-44.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-setup-close-5-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-101.jpg",
+    "source_sha256": "5b95d13351c58d68fd4ccac8ebb586144bdb2c6915ad978ab4d9ce3296b239c9",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-setup-close-6-before",
+    "file": "DBL-23-COM-45.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-setup-close-6-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-102.jpg",
+    "source_sha256": "91652c9bab04ec6c5bf9978385eb4cd956e000a578863c8945a855c4e20d0f28",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-setup-close-6-after",
+    "file": "DBL-23-COM-46.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-setup-close-6-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-103.jpg",
+    "source_sha256": "1550158a47ed2e0527cbd125edeeee080a912cfde501b30d508f845d14483a68",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-closed-before",
+    "file": "DBL-23-COM-47.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-closed-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-104.jpg",
+    "source_sha256": "46afce4e8d35bf9cc55666f9d548d85409e45b6829eebcb3bf33a9aa8316e012",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-closed-after",
+    "file": "DBL-23-COM-48.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-closed-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-105.jpg",
+    "source_sha256": "218ea42d1550d8384864b0d646ca757ba7e56d539fe784ce501f2d5af22b9af5",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-control-before",
+    "file": "DBL-23-COM-49.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-control-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-106.jpg",
+    "source_sha256": "dee4eb0a82bb4e1a1d5a597a52dd602b17faff703a11354c229ec22c1bc2697d",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-open-before",
+    "file": "DBL-23-COM-50.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-open-before",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-107.jpg",
+    "source_sha256": "c9ba2b386dee93934ef7c776093d336cd0ea653d3e0bc392806f855be7e63aa7",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-open-after",
+    "file": "DBL-23-COM-51.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-open-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-108.jpg",
+    "source_sha256": "47c58211f21ec73ad6a1b0af6f8448289e2b10fb9471c4e2023230f32336565c",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-MS-original-live-after",
+    "file": "DBL-23-COM-52.png",
+    "original_marker": "DBL-23-COM attempt1 off-MS-original-live-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-109.jpg",
+    "source_sha256": "e94e4d1bb186333ba8860ec85508d020f339d7ae2b1f166c2b1682ce9bf03466",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "off-control-after",
+    "file": "DBL-23-COM-53.png",
+    "original_marker": "DBL-23-COM attempt1 off-control-after",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-110.jpg",
+    "source_sha256": "250ee96ec0583114f4b09ea67325b400c97db9bab1fa81acd65b98db4945e2fe",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "bookmark-bar-restored",
+    "file": "DBL-23-COM-54.png",
+    "original_marker": "DBL-23-COM attempt1 bookmark-bar-restored",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-113.jpg",
+    "source_sha256": "1655a13878429edbd92804e80a742387abbd65d96890c818976bb333eb852d5c",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "initial",
+    "file": "DBL-09-COM-19.png",
+    "original_marker": "DBL-09-COM attempt1 initial",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-001.jpg",
+    "source_sha256": "0ee4a32c16badfa7d3997466a78543b0c2ab7d0be7d45a546c8b837d9b573de6",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "launch",
+    "file": "DBL-09-COM-20.png",
+    "original_marker": "DBL-09-COM attempt1 launch",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-003.jpg",
+    "source_sha256": "dccbb744d61486936ccb44f554137b66754681034cf849910e66968a0e90daff",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "coordinate-calibration",
+    "file": "DBL-09-COM-21.png",
+    "original_marker": "DBL-09-COM attempt1 coordinate-calibration",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-004.jpg",
+    "source_sha256": "5af8468c74ba7c218a78beee195a816aff8e316b08fa41c4fd845ed1b2d9562d",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "N-created",
+    "file": "DBL-09-COM-22.png",
+    "original_marker": "DBL-09-COM attempt1 N-created",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-005.jpg",
+    "source_sha256": "395fbfb1c5d76315630bfafdf17efcecff7b39a82caa506235ee61a86e08a1f9",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "N-focus",
+    "file": "DBL-09-COM-23.png",
+    "original_marker": "DBL-09-COM attempt1 N-focus",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-006.jpg",
+    "source_sha256": "613b101cd6b3a6a29cd2488c67ac3621faf31ac62907c166accbc733103860fd",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "N-input-focus",
+    "file": "DBL-09-COM-24.png",
+    "original_marker": "DBL-09-COM attempt1 N-input-focus",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-007.jpg",
+    "source_sha256": "79d5a875db743448ee1d6a5490af402cc0e638483f813f5b05494a4b9da7d92b",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "N-focus-recheck",
+    "file": "DBL-09-COM-25.png",
+    "original_marker": "DBL-09-COM attempt1 N-focus-recheck",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-008.jpg",
+    "source_sha256": "49d00d0493affeb4011c96e8ab87f2964488a7cf773f7762740d77d26592bdb1",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "N-tab-focus",
+    "file": "DBL-09-COM-26.png",
+    "original_marker": "DBL-09-COM attempt1 N-tab-focus",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-009.jpg",
+    "source_sha256": "2450d49fba385713c7dbb0cfb07f44168152d4df24a7282a1e4ef1de9c6c9c6a",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "N-original-coordinate",
+    "file": "DBL-09-COM-27.png",
+    "original_marker": "DBL-09-COM attempt1 N-original-coordinate",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-010.jpg",
+    "source_sha256": "ca184d168b73f0e5f62d333a631f31043cefdd6b065e98cc9fd9aed03027a0c9",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "N-input-not-visible-failure",
+    "file": "DBL-09-COM-28.png",
+    "original_marker": "DBL-09-COM attempt1 N-input-result",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-011.jpg",
+    "source_sha256": "8c1e3b612906c7fc8b008d8f945412613675326a61f9799b7ee03422f9b36163",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "准备输入未即时显示KEEP，未作为有效前置；后续N-KEEP-confirmed才证实标记。",
+    "original_phase": "N-input-result"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "N-keyboard-focus",
+    "file": "DBL-09-COM-29.png",
+    "original_marker": "DBL-09-COM attempt1 N-keyboard-focus",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-012.jpg",
+    "source_sha256": "8c1e3b612906c7fc8b008d8f945412613675326a61f9799b7ee03422f9b36163",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "N-return-input-check",
+    "file": "DBL-09-COM-30.png",
+    "original_marker": "DBL-09-COM attempt1 N-return-input-check",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-013.jpg",
+    "source_sha256": "52a767eda2345174604fb48808d61ac07f7bd5c692ebab47cb794d764477f4a7",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "N-textarea-focus",
+    "file": "DBL-09-COM-31.png",
+    "original_marker": "DBL-09-COM attempt1 N-textarea-focus",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-014.jpg",
+    "source_sha256": "2ce4af8fe8c245934dfe85b2a608e1f2c6a24e43b0303ad6b12e70df71f3e5b9",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "N-focus-visible",
+    "file": "DBL-09-COM-32.png",
+    "original_marker": "DBL-09-COM attempt1 N-focus-visible",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-015.jpg",
+    "source_sha256": "a8943bafb3c24f33fbcddbc85c89ce7dd27bbca2310b1320ef1addd2e0cc6929",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "M-created",
+    "file": "DBL-09-COM-33.png",
+    "original_marker": "DBL-09-COM attempt1 M-created",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-017.jpg",
+    "source_sha256": "9163a107a8d8dcebbe9e37d91a03ae5d0270e0d06342f63406fabe40b3b91ef0",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "M-bookmark-created",
+    "file": "DBL-09-COM-34.png",
+    "original_marker": "DBL-09-COM attempt1 M-bookmark-created",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-018.jpg",
+    "source_sha256": "ac28743fd005285f7def964f59011223db8fb74e4b7ccae895122a4b139fa218",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "saved-entry-visible",
+    "file": "DBL-09-COM-35.png",
+    "original_marker": "DBL-09-COM attempt1 saved-entry-visible",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-019.jpg",
+    "source_sha256": "4fed06268d382d807f4e8efcb6ec2315a6a280ea05a8353f3aca3288f3473605",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "M-saved-live-open",
+    "file": "DBL-09-COM-36.png",
+    "original_marker": "DBL-09-COM attempt1 M-saved-live-open",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-020.jpg",
+    "source_sha256": "cb99864daa30975cdf52ab15ce91d8fdf3033940fa507dbc963b6f296df6b800",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "M-live-focus",
+    "file": "DBL-09-COM-37.png",
+    "original_marker": "DBL-09-COM attempt1 M-live-focus",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-021.jpg",
+    "source_sha256": "0af050576a3fe5c977d8d8b1ca4538dd4c28fac59cb2e64604d2cba1b3d6ec1b",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "P-link-setup",
+    "file": "DBL-09-COM-38.png",
+    "original_marker": "DBL-09-COM attempt1 P-link-setup",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-023.jpg",
+    "source_sha256": "f128574c4aaa39d7a810ec5e749818e693de471d25a0a64a32b0417d5bdf2b67",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "P-created",
+    "file": "DBL-09-COM-39.png",
+    "original_marker": "DBL-09-COM attempt1 P-created",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-024.jpg",
+    "source_sha256": "34eae652909e74c7edd0ce7100c7eb37f85c8165ebc616f6871e18b4e516c5bf",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "P-pinned",
+    "file": "DBL-09-COM-40.png",
+    "original_marker": "DBL-09-COM attempt1 P-pinned",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-025.jpg",
+    "source_sha256": "001f393bfa7a2c2539bc24e7cb2cd918ca320077696bd5828e5c20283d4041e5",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-09-COM",
+    "attempt": 1,
+    "phase": "P-focus",
+    "file": "DBL-09-COM-41.png",
+    "original_marker": "DBL-09-COM attempt1 P-focus",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-026.jpg",
+    "source_sha256": "c22c9bf110a5c35acf65b10305ac2b2d0a07e14ef67323da9521cc7f95cff9e0",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "launch",
+    "file": "DBL-23-COM-55.png",
+    "original_marker": "DBL-23-COM attempt1 launch",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-043.jpg",
+    "source_sha256": "35e604f8c39a9056823d6225bb76069b32c7ceac234b2641dfcd0abb245c96f0",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "D-created",
+    "file": "DBL-23-COM-56.png",
+    "original_marker": "DBL-23-COM attempt1 D-created",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-044.jpg",
+    "source_sha256": "f02817dc62f9d0e247a0c0cae358528064bca94bc3fa96ea790b09690bde8cfb",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "C-created",
+    "file": "DBL-23-COM-57.png",
+    "original_marker": "DBL-23-COM attempt1 C-created",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-045.jpg",
+    "source_sha256": "2d18058a3d5d71607cc61b200ec4660f7babd3385c12f30c8226f2e05beadb7d",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "B-created",
+    "file": "DBL-23-COM-58.png",
+    "original_marker": "DBL-23-COM attempt1 B-created",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-046.jpg",
+    "source_sha256": "3ad53670e51bf60002e701dd76922671b4931fd93f40109a73d54609de7fba9d",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "A-created",
+    "file": "DBL-23-COM-59.png",
+    "original_marker": "DBL-23-COM attempt1 A-created",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-047.jpg",
+    "source_sha256": "17fe8d19876dbe1af374b3ea6a9f711c9bb12aa893257c8f09dd2abe3ae08a40",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "AB-split",
+    "file": "DBL-23-COM-60.png",
+    "original_marker": "DBL-23-COM attempt1 AB-split",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-048.jpg",
+    "source_sha256": "e15da2d4763f3742d945256db30625d7057bf7c8e401b76ee3e0f39543dee4ce",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "PS-created",
+    "file": "DBL-23-COM-61.png",
+    "original_marker": "DBL-23-COM attempt1 PS-created",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-049.jpg",
+    "source_sha256": "257d6e08c5517bd8b1984cf05323c666a8d6834f3a0e4dac87d5c6e9970b15cc",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "MS-created-control",
+    "file": "DBL-23-COM-62.png",
+    "original_marker": "DBL-23-COM attempt1 MS-created-control",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-050.jpg",
+    "source_sha256": "b6c0a06cbc4e8ac05b4defd95c5afb0ece57edd1f88d5aa3b4e93117b5c20ed1",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "control-C-focus",
+    "file": "DBL-23-COM-63.png",
+    "original_marker": "DBL-23-COM attempt1 control-C-focus",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-051.jpg",
+    "source_sha256": "2ea2a01ab13e347e2903b4aec3dee773313b766c83e7a6c48dfa7921e36e0fc6",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "control-C-KEEP-D-focus",
+    "file": "DBL-23-COM-64.png",
+    "original_marker": "DBL-23-COM attempt1 control-C-KEEP-D-focus",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-052.jpg",
+    "source_sha256": "0f08256eb5bde854dee34ad34dc7b4bb21873675c04db52b63ad35457cdba2ae",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "control-D-focus-actual",
+    "file": "DBL-23-COM-65.png",
+    "original_marker": "DBL-23-COM attempt1 control-D-focus-actual",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-053.jpg",
+    "source_sha256": "62d23e26e2fb62c14d615288e7eeaf13860f875f06ba94def3eecb3070177bc7",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "PS-A-focus",
+    "file": "DBL-23-COM-66.png",
+    "original_marker": "DBL-23-COM attempt1 PS-A-focus",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-055.jpg",
+    "source_sha256": "212689c6eae823e547482b8bce38afc3bd518cbd13f14727eac59996975fb485",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "PS-A-KEEP-B-focus",
+    "file": "DBL-23-COM-67.png",
+    "original_marker": "DBL-23-COM attempt1 PS-A-KEEP-B-focus",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-056.jpg",
+    "source_sha256": "4e31e881df0b69149b36a2635cee943fb1ae258c0fafc8a8bad077478f3e704f",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "control-KEEP-recheck",
+    "file": "DBL-23-COM-68.png",
+    "original_marker": "DBL-23-COM attempt1 control-KEEP-recheck",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-057.jpg",
+    "source_sha256": "12a27b47e826255b9e7fb3e8ae8a551976dc1985506a28c4a2ce943902e5b65e",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-MS-live-C-focus",
+    "file": "DBL-23-COM-69.png",
+    "original_marker": "DBL-23-COM attempt1 on-MS-live-C-focus",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-072.jpg",
+    "source_sha256": "7b7caf8ad88ed5564cc5f9ec9f8a0d572800f26aa5033c25e6ec6ef854133d58",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "on-MS-live-C-KEEP-D-focus",
+    "file": "DBL-23-COM-70.png",
+    "original_marker": "DBL-23-COM attempt1 on-MS-live-C-KEEP-D-focus",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-073.jpg",
+    "source_sha256": "1d55d16804617b1af2e2d814d407c9810cdf9bb390098176eedf5988f3d92949",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "cleanup-save-removed",
+    "file": "DBL-23-COM-71.png",
+    "original_marker": "DBL-23-COM attempt1 cleanup-save-removed",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-111.jpg",
+    "source_sha256": "320fbd000ccef6606217c2f57979b7fd42a8d66fa62a9e647fda9d65dc9e6510",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "cleanup-window-closed",
+    "file": "DBL-23-COM-72.png",
+    "original_marker": "DBL-23-COM attempt1 cleanup-window-closed",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-112.jpg",
+    "source_sha256": "0c87f6c79ccc6cf02f7782a1a564c04b868573cbb0b7eae529d6442e8f5f691d",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "restored-general",
+    "file": "DBL-23-COM-73.png",
+    "original_marker": "DBL-23-COM attempt1 restored-general",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-114.jpg",
+    "source_sha256": "2d8c275c4fef989f4b0c75001bd09e5840862d12b5d5cc559c545fc90c923021",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "restored-advanced",
+    "file": "DBL-23-COM-74.png",
+    "original_marker": "DBL-23-COM attempt1 restored-advanced",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-115.jpg",
+    "source_sha256": "0d338d27342f532fa724d4907b917527ba6c198d75844b78536e0da119da6543",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-23-COM",
+    "attempt": 1,
+    "phase": "ending-state",
+    "file": "DBL-23-COM-75.png",
+    "original_marker": "DBL-23-COM attempt1 ending-state",
+    "source_file": "DBL-09_DBL-23-comfortable-protected-complete-r5-116.jpg",
+    "source_sha256": "7f4c78d2a0efc87e47eb6c2af5a96059ac6fd384d68152d4cd61017d18a66d07",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

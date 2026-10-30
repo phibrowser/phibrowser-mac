@@ -1,0 +1,242 @@
+[
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "fresh-A-before",
+    "file": "SET-10-PER-31.png",
+    "source_file": "SET-10-fresh-surfaces-015.jpg",
+    "source_sha256": "da870af40cd3b8fc4b3a1f940624caca991b6a42dbbd63f9bc7394043caef92f",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "fresh-A-after",
+    "file": "SET-10-PER-32.png",
+    "source_file": "SET-10-fresh-surfaces-016.jpg",
+    "source_sha256": "a5d7afff9f15e723a7176654c241f1fc99497a304206d4fc72fb05a7f8a107e3",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "fresh-D-before",
+    "file": "SET-10-PER-33.png",
+    "source_file": "SET-10-fresh-surfaces-017.jpg",
+    "source_sha256": "62cc29a1088a42435b7eeb9e4cf8e4bb9c58761b283ad70f280d2965b80e5072",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "fresh-D-after",
+    "file": "SET-10-PER-34.png",
+    "source_file": "SET-10-fresh-surfaces-018.jpg",
+    "source_sha256": "62cc29a1088a42435b7eeb9e4cf8e4bb9c58761b283ad70f280d2965b80e5072",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "fresh-A-before",
+    "file": "SET-10-BAL-16.png",
+    "source_file": "SET-10-fresh-surfaces-028.jpg",
+    "source_sha256": "de7247fe95feb31d4e34fd97a76bb44726bdf48d944c6ab3ec42cd67c4278317",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "fresh-A-after",
+    "file": "SET-10-BAL-17.png",
+    "source_file": "SET-10-fresh-surfaces-029.jpg",
+    "source_sha256": "19ea9a486d900abc42a53f0a948f009f37e4e5e46d2f181b377c5cad4956cc7c",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "fresh-D-before",
+    "file": "SET-10-BAL-18.png",
+    "source_file": "SET-10-fresh-surfaces-030.jpg",
+    "source_sha256": "c6ddd134f748f451ed0ecbe54202276d3aea3d529f2b509122483fe35993cd15",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "fresh-D-after",
+    "file": "SET-10-BAL-19.png",
+    "source_file": "SET-10-fresh-surfaces-031.jpg",
+    "source_sha256": "c6ddd134f748f451ed0ecbe54202276d3aea3d529f2b509122483fe35993cd15",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "fresh-A-before",
+    "file": "SET-10-COM-16.png",
+    "source_file": "SET-10-fresh-surfaces-043.jpg",
+    "source_sha256": "0edf16b2d027868aaefb77014effd74f9817c51ed1b472c45e1368b26ebfb4b4",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "fresh-A-after",
+    "file": "SET-10-COM-17.png",
+    "source_file": "SET-10-fresh-surfaces-044.jpg",
+    "source_sha256": "148fad0768d9088415d38ad30f2ed80c4d4a1bb619f7e60ad48bca8fa159f6ab",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

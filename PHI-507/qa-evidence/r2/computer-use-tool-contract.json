@@ -1,0 +1,17 @@
+{
+  "source": "已公开的Computer Use工具参数声明（只读元数据，未调用管理用户屏幕）",
+  "click": {
+    "app": "string",
+    "element_index": "string",
+    "x": "screenshot pixel coordinate",
+    "y": "screenshot pixel coordinate",
+    "click_count": "integer",
+    "mouse_button": [
+      "left",
+      "right",
+      "middle"
+    ]
+  },
+  "modifier_hold_argument": false,
+  "note": "press_key支持xdotool key组合，但单次按键后不据此声称持续按住修饰键跨越click。实际物理设备覆盖不由注入点击代替。"
+}

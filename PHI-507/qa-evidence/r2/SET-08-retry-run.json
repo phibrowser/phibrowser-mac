@@ -1,0 +1,15 @@
+{
+  "job": "SET-08-retry",
+  "exit_code": 0,
+  "session_id": "01a18c59-ccda-73a1-90a8-35b8fd666626",
+  "started_at": "2026-10-30T10:27:37.531537+00:00",
+  "ended_at": "2026-10-30T10:36:06.127763+00:00",
+  "units": [
+    "SET-08-COMMON"
+  ],
+  "observed_units": [
+    "SET-08-COMMON"
+  ],
+  "missing_units": [],
+  "duplicate_units": false
+}

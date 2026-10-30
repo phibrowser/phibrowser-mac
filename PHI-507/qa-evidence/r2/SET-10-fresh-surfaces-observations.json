@@ -1,0 +1,117 @@
+{
+  "base_case": "SET-10；本次仅补执行关闭双击开关后新建普通 A 与新建组内普通 D 的指定子步骤，不判定 pass/fail。",
+  "ending_state": "/Applications/Phi Tab Close QA.app 保持运行，最终 CU 实读 PID 57596；当前 Space 仍为 TC-QA-PHI507-r2-SET-08-COMMON-S1。最终真实顺序为普通 A、展开组 TC-PHI507-r2-SET10-fresh-COM[D,E]，批次均为 TC-PHI507-r2-SET-10-COM-fresh；活动页 E，无多选、无 split。未在最后重新创建序列。已通过原生 Settings 恢复并实读 Balanced、System Default、双击关闭 off／位置关闭 on；恢复位置开关后，双击关闭仍为 off。Settings、菜单、确认框均已关闭。此前 PER、BAL 的当前 TC 页面与组在下一布局准备时通过 Close Group、New Tab 的 Close Other Tabs 清理。未操作其他 Space/窗口中的页面、Default 的 Chrome Web Store、pin、书签或未知保存项。",
+  "observations": [
+    {
+      "active_after": "A 双击后仍为 A；D 双击后仍为 D；随后逐页核对 E，单元结束活动页 E。",
+      "active_before": "普通 A 子步骤为 A；组内 D 子步骤为 D。",
+      "after": "两次双击后，真实集合均仍为普通 A、展开组 TC-PHI507-r2-SET10-fresh-PER[D,E]；无多选、无 split。A、D 的打开编号及输入标记前后一致；随后实见 E 原编号和标记。",
+      "before": "普通 A、展开组 TC-PHI507-r2-SET10-fresh-PER[D,E]，顺序 A、D、E。三页均为本次关闭双击开关后新建的 normal fixture。",
+      "confirmation_choices": "测试动作未出现确认框。准备时对旧 TC 组使用 Close Group，未出现删除确认；新组重命名选择 Save。未勾选任何“不再询问”。",
+      "evidence_markers": [
+        "SET-10-PER fresh layout",
+        "SET-10-PER fresh settings-off",
+        "SET-10-PER fresh D created",
+        "SET-10-PER fresh E created",
+        "SET-10-PER fresh-A attempt1 before",
+        "SET-10-PER fresh-A attempt1 after",
+        "SET-10-PER fresh-D attempt1 before",
+        "SET-10-PER fresh-D attempt1 after",
+        "SET-10-PER fresh-E identity-after"
+      ],
+      "identity_checks": "正文批次 TC-PHI507-r2-SET-10-PER-fresh。A：1eb912cc-cca6-4657-a6ad-54bd171fe10d，KEEP-SET10-PER-A；D：9a84e480-333e-47fb-8472-d1b0d73d91e8，KEEP-SET10-PER-D；E：f8bc8b46-9692-4793-ba76-e108176561ff，KEEP-SET10-PER-E。均实见 TC 标题、批次、普通页类型、打开编号及输入框；输入前以四次 Tab 后的绿色焦点边框确认 textarea。A、D 在关键动作前后同号同标记；E 在结束逐页复核时同号同标记，没有重建。",
+      "language_observed": "General 为 System Default，浏览器菜单与设置实际显示英文；本项未切换语言或重启。",
+      "layout_observed": "从起始 Balanced 经 General 原生 button 选择 Performance，截图显示 Performance 选中；浏览器 chrome 为左侧纵向标签栏。",
+      "not_executed_reason": "此前其余子步骤已在SET-10-retry保存，本次仅补关闭后新建普通与组内普通子步骤",
+      "operator_errors": [
+        "准备清理旧组时，先右击父 row、再按截图坐标右击，均打开了普通标签菜单；均 Escape 取消，未选择菜单动作。随后用最新树的旧组标题原生 text 打开组菜单并 Close Group。此过程发生于新对象创建和被测双击之前；取消后的现场及随后正确组菜单截图已输出，前两次菜单未单独添加 failure 标记。"
+      ],
+      "precondition_actual": "先实读起始双击 off／位置 on；单独关闭位置后为 off/off，再单独切换双击 on→off，每次即时读取两个开关。随后仅在当前测试 Space 清理旧 TC 对象，新建 A、D、E，并在 off/off 下组成新组；未创建 B/C 或 split。",
+      "settings_observed": "时间均为 Date.now 的 Unix 毫秒：1793358325451，单独关闭位置后双击 off／位置 off；1793358326031，单独开启双击后 on/off；1793358326620，反向关闭双击后 off/off。未点击项未观察到联动变化。快捷键未修改。",
+      "steps_executed": [
+        "双击关闭设 off（1793358326620）后关闭 Settings，清理当前旧 TC 组与普通页；通过 Cmd+T 创建新的 New Tab，再 Close Other Tabs。该新页于 1793358406734 开始通过原生地址栏输入本项 A fixture URL，随后实见 A 正文与编号。",
+        "确认 A 输入焦点并输入 KEEP-SET10-PER-A；1793358434139 通过 Cmd+T 开始创建 D，1793358438097 已实见 D 正文；确认焦点后输入 KEEP-SET10-PER-D。",
+        "1793358455775 通过 Cmd+T 开始创建 E，1793358459626 已实见 E 正文；确认焦点后输入 KEEP-SET10-PER-E。",
+        "通过 D 的原生右键 New Tab Group、Rename Group/Save 创建 TC-PHI507-r2-SET10-fresh-PER，再将 E 通过 Add to Group 加入；1793358509982 实读组内 D/E。",
+        "选中 A，get_app_state 保存 before；对最新树 A 的原生安全 row（21）执行 click_count:2，再 get_app_state 保存 after。",
+        "从最新树核对 D 文本所属最内层 row，单击选中 D 并保存 before；对该最内层 row（28）执行 click_count:2，保存 after；再单击 E 逐页核对原编号和标记。"
+      ],
+      "unit_id": "SET-10-PER"
+    },
+    {
+      "active_after": "A 双击后仍为 A；D 双击后仍为 D；随后逐页核对 E，单元结束活动页 E。",
+      "active_before": "普通 A 子步骤为 A；组内 D 子步骤为 D。",
+      "after": "两次双击后均保留普通 A、展开组 TC-PHI507-r2-SET10-fresh-BAL[D,E]，顺序及成员未变；无多选、无 split。A、D 打开编号和输入标记前后一致，E 结束复核时也保持原身份。",
+      "before": "普通 A、展开组 TC-PHI507-r2-SET10-fresh-BAL[D,E]，真实顺序 A、D、E；均为本项双击反向关闭后新建的普通 fixture。",
+      "confirmation_choices": "被测动作未出现确认框。准备时 Close Group、Close Other Tabs 未出现删除确认；组重命名选择 Save，未勾选“不再询问”。",
+      "evidence_markers": [
+        "SET-10-BAL fresh layout",
+        "SET-10-BAL fresh settings-off",
+        "SET-10-BAL fresh A created",
+        "SET-10-BAL fresh D created",
+        "SET-10-BAL fresh E created",
+        "SET-10-BAL fresh-A attempt1 before",
+        "SET-10-BAL fresh-A attempt1 after",
+        "SET-10-BAL fresh-D attempt1 before",
+        "SET-10-BAL fresh-D attempt1 after",
+        "SET-10-BAL fresh-E identity-after"
+      ],
+      "identity_checks": "正文批次 TC-PHI507-r2-SET-10-BAL-fresh。A：db177c4e-f6cf-44b1-a792-2a6cb515e295，KEEP-SET10-BAL-A；D：e3c6c5b3-7598-49e3-8302-1920bc9f429c，KEEP-SET10-BAL-D；E：3baf7bd0-54d4-4a7d-833e-f8bbd56156e7，KEEP-SET10-BAL-E。逐页实见标题、批次、编号、普通页类型与输入框；输入前均以 Tab 后绿色焦点边框确认。关键动作前后 A、D 同号同标记，结束逐页核对 E 同号同标记，没有重建。",
+      "language_observed": "System Default，浏览器设置与菜单英文；未切换语言或重启。",
+      "layout_observed": "General 原生选择 Balanced 并截图显示选中；浏览器 chrome 为左侧纵向标签栏和顶部地址栏。",
+      "not_executed_reason": "此前其余子步骤已在SET-10-retry保存，本次仅补关闭后新建普通与组内普通子步骤",
+      "operator_errors": [],
+      "precondition_actual": "本项重新实读初始 off/off；单独切换双击 on→off，并逐次读取双击与位置值。清理 PER 当前 TC 对象后，才通过新 New Tab 创建 BAL 的 A、D、E，并在 off/off 状态原生分组。",
+      "settings_observed": "Unix 毫秒：1793358565997 初始 off/off；1793358576288 单独开启双击后 on/off；1793358576910 单独关闭双击后 off/off。位置全程 off，未观察到联动。快捷键未修改。",
+      "steps_executed": [
+        "双击关闭设 off（1793358576910）后，Close Group 清理 PER 组；Cmd+T 新建 New Tab，再 Close Other Tabs 清理 PER 普通 A。1793358591980 开始在该新页原生地址栏导航 BAL A，1793358594961 已实见正文与编号。",
+        "确认焦点并输入 A 标记；1793358617573 通过 Cmd+T 开始创建 D，1793358621439 已实见 D 正文；确认焦点后输入 D 标记。",
+        "1793358645854 通过 Cmd+T 开始创建 E，1793358649958 已实见 E 正文；确认焦点后输入 E 标记。",
+        "通过 D 的 New Tab Group、Rename Group/Save 创建 TC-PHI507-r2-SET10-fresh-BAL，再 Add to Group 加入 E；1793358698709 实读组内 D/E。",
+        "选中 A 并 get_app_state 保存 before；对最新 A 安全 row（16）双击，再 get_app_state 保存 after。",
+        "核对 D 所属最内层原生 row（23），单击选中并保存 before；对该 row 双击，保存 after；随后单击 E 核对原编号和输入标记。"
+      ],
+      "unit_id": "SET-10-BAL"
+    },
+    {
+      "active_after": "普通 A 双击后仍为 A；之后仅单击 D 核对其原生控件与身份，再单击 E 复核，单元及全会话结束活动页 E。",
+      "active_before": "普通 A 双击前为 A；组内 D 仅单击选中进行界面核对，未双击。",
+      "after": "普通 A 双击后仍保留相同编号和标记；当前集合为普通 A、展开组 TC-PHI507-r2-SET10-fresh-COM[D,E]，无多选、无 split。D/E 已逐页实见原编号和标记，但没有本项 D row 双击后的观察结果。",
+      "before": "普通 A、原生组 TC-PHI507-r2-SET10-fresh-COM[D,E]，横向实际顺序 A、组头、D、E。均为本项 off 后创建。A 安全主体可用原生 tabStripTab button；D 在 Comfortable 当前树中也仅暴露 tabStripTab button，没有指定的 selectable row。",
+      "confirmation_choices": "普通 A 双击未出现确认框。准备时清理 BAL 组和普通页未出现删除确认；组重命名选择 Save。没有勾选“不再询问”。",
+      "evidence_markers": [
+        "SET-10-COM fresh layout",
+        "SET-10-COM fresh settings-off",
+        "SET-10-COM fresh A created",
+        "SET-10-COM fresh D created",
+        "SET-10-COM fresh E created",
+        "SET-10-COM fresh-A attempt1 before",
+        "SET-10-COM fresh-A attempt1 after",
+        "SET-10-COM fresh-D native-surface",
+        "SET-10-COM fresh-D not-executed after",
+        "SET-10-COM fresh-E identity-after",
+        "SET-10 session restore-switches",
+        "SET-10 session restore-layout-language",
+        "SET-10 session ending-state"
+      ],
+      "identity_checks": "正文批次 TC-PHI507-r2-SET-10-COM-fresh。A：f12a2de1-40f5-4410-a7be-450cfc6a06cc，KEEP-SET10-COM-A；D：dec4344e-3f66-451e-a837-4bd1ad4de195，KEEP-SET10-COM-D；E：3c211369-f344-4385-9a65-d59648143501，KEEP-SET10-COM-E。三页均实见标题、批次、打开编号、普通页类型和输入框，输入前实见 Tab 聚焦边框。A 双击前后同号同标记；D/E 单击复核时同号同标记，没有重建。",
+      "language_observed": "General 实读 System Default，浏览器 UI 英文；未切换语言或重启。会话收尾再次实读 System Default。",
+      "layout_observed": "General 原生选择 Comfortable 并截图确认，浏览器 chrome 为顶部横向标签栏。D 对应最新原生控件为 button Description: TC-D · TC-PHI507-r2-SET-10-COM-fresh, ID: tabStripTab；当前树无 selectable row。收尾才恢复 Balanced，未用恢复后的纵向 row 补做 Comfortable 动作。",
+      "not_executed_reason": "此前其余子步骤已在SET-10-retry保存，本次仅补关闭后新建普通与组内普通子步骤；其中 Comfortable 组内 D 的指定最内层 selectable row 在该布局原生树中不存在，仅暴露 tabStripTab button，因此未执行 D row 双击，未将按钮动作替代记为已执行。",
+      "operator_errors": [],
+      "precondition_actual": "重新实读 off/off，单独切换双击 on→off 后再清理 BAL 当前 TC 对象，通过 Cmd+T 创建新 A、D、E，并在 off/off 状态原生组成 COM 组。普通 A 子步骤前置已满足；D 的指定原生 row 控件前置未能在 Comfortable 界面构造。",
+      "settings_observed": "Unix 毫秒：1793358746179 初始 off/off；1793358757040 单独开启双击后 on/off；1793358757612 反向关闭后 off/off。位置未联动。收尾先实读 off/off，再单独开启位置，实读双击 off／位置 on；随后 General 恢复 Balanced，System Default 保持。快捷键未修改。",
+      "steps_executed": [
+        "双击关闭设 off（1793358757612）后，Close Group 清理 BAL 组，Cmd+T 新建 New Tab，再 Close Other Tabs 清理 BAL 普通 A；1793358814545 开始在新页原生地址栏导航 COM A，1793358817509 已实见 A 正文与编号。",
+        "确认输入焦点并输入 A 标记；1793358840912 通过 Cmd+T 开始创建 D，1793358844869 已实见 D 正文，确认焦点后输入 D 标记。",
+        "1793358871395 通过 Cmd+T 开始创建 E，1793358875427 已实见 E 正文，确认焦点后输入 E 标记。",
+        "通过 D 的原生 New Tab Group、Rename Group/Save 创建 TC-PHI507-r2-SET10-fresh-COM，再经 Add to Group 加入 E；1793358935233 实读组名及成员数 2，截图实见组头后的 D、E。",
+        "选中 A，get_app_state 保存 before；对最新 A 的安全 tabStripTab button（13）执行 click_count:2，再 get_app_state 保存 after。",
+        "仅单击 D，get_app_state 保存 native-surface，实读 D 对应 button（16）及原编号标记；未执行指定 row 双击。再次 get_app_state 保存未执行结束现场，再单击 E 核对原身份。",
+        "保留实际 A、组[D,E]；通过 Settings 单独恢复位置关闭 on，并确认双击仍 off；General 恢复 Balanced、实读 System Default，关闭 Settings 后保存最终窗口图与原生顺序。"
+      ],
+      "unit_id": "SET-10-COM"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

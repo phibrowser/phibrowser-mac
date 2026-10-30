@@ -1,0 +1,45 @@
+这是 SET-10-COM 同一补执行中漏掉的最后一个动作。此前额外指令把目标限定row是操作指令错误；Comfortable横向原生标签由tabStripTab button表示，允许使用实际正确的button。不要因没有row而跳过，也不要据此改用不安全的text中心。
+只用Computer Use读取当前窗口和TC组，切Comfortable，核对双击关闭off。优先继续本轮已经在off后新建并保存编号/KEEP标记的TC-PHI507-r2-SET10-fresh-COM组[D,E]；逐页实读编号/标记必须与下方记录相同。新operator可能先激活其他窗口，必须通过Window/Space原生菜单定位实际该批次。
+若这些文档仍保留相同编号和标记，不重复重建；这是一项尚未结束的源执行点续做。选择含TC-D的真实tabStripTab button父容器（源记录button16只是历史，必须从最新树重新定位），确认不含相邻E和组标题、中心不在关闭控件；保存before，发click_count:2，保存after。逐页核对D/E编号/标记与组计数、实际活动页；源步骤为off时双击组内普通D，不能只单击。
+若原文档已丢失/编号改变，保留该现场；在双击off之后才新建本轮新批次D/E并原生组好，输入新标记、核验新编号，再执行上述动作。真实地记录使用了继续旧文档还是重新新建，不假冒旧文档存活。
+其余SET-10子步骤都已执行，不再复测。本次not_executed_reason说明仅续做COM组内普通最后双击，不判pass/fail。结束恢复Balanced、System Default、双击off/位置on，保留实际对象，不另重建。
+此前本执行点真实记录（待实际重读，不是当前事实）：
+{
+  "active_after": "普通 A 双击后仍为 A；之后仅单击 D 核对其原生控件与身份，再单击 E 复核，单元及全会话结束活动页 E。",
+  "active_before": "普通 A 双击前为 A；组内 D 仅单击选中进行界面核对，未双击。",
+  "after": "普通 A 双击后仍保留相同编号和标记；当前集合为普通 A、展开组 TC-PHI507-r2-SET10-fresh-COM[D,E]，无多选、无 split。D/E 已逐页实见原编号和标记，但没有本项 D row 双击后的观察结果。",
+  "before": "普通 A、原生组 TC-PHI507-r2-SET10-fresh-COM[D,E]，横向实际顺序 A、组头、D、E。均为本项 off 后创建。A 安全主体可用原生 tabStripTab button；D 在 Comfortable 当前树中也仅暴露 tabStripTab button，没有指定的 selectable row。",
+  "confirmation_choices": "普通 A 双击未出现确认框。准备时清理 BAL 组和普通页未出现删除确认；组重命名选择 Save。没有勾选“不再询问”。",
+  "evidence_markers": [
+    "SET-10-COM fresh layout",
+    "SET-10-COM fresh settings-off",
+    "SET-10-COM fresh A created",
+    "SET-10-COM fresh D created",
+    "SET-10-COM fresh E created",
+    "SET-10-COM fresh-A attempt1 before",
+    "SET-10-COM fresh-A attempt1 after",
+    "SET-10-COM fresh-D native-surface",
+    "SET-10-COM fresh-D not-executed after",
+    "SET-10-COM fresh-E identity-after",
+    "SET-10 session restore-switches",
+    "SET-10 session restore-layout-language",
+    "SET-10 session ending-state"
+  ],
+  "identity_checks": "正文批次 TC-PHI507-r2-SET-10-COM-fresh。A：f12a2de1-40f5-4410-a7be-450cfc6a06cc，KEEP-SET10-COM-A；D：dec4344e-3f66-451e-a837-4bd1ad4de195，KEEP-SET10-COM-D；E：3c211369-f344-4385-9a65-d59648143501，KEEP-SET10-COM-E。三页均实见标题、批次、打开编号、普通页类型和输入框，输入前实见 Tab 聚焦边框。A 双击前后同号同标记；D/E 单击复核时同号同标记，没有重建。",
+  "language_observed": "General 实读 System Default，浏览器 UI 英文；未切换语言或重启。会话收尾再次实读 System Default。",
+  "layout_observed": "General 原生选择 Comfortable 并截图确认，浏览器 chrome 为顶部横向标签栏。D 对应最新原生控件为 button Description: TC-D · TC-PHI507-r2-SET-10-COM-fresh, ID: tabStripTab；当前树无 selectable row。收尾才恢复 Balanced，未用恢复后的纵向 row 补做 Comfortable 动作。",
+  "not_executed_reason": "此前其余子步骤已在SET-10-retry保存，本次仅补关闭后新建普通与组内普通子步骤；其中 Comfortable 组内 D 的指定最内层 selectable row 在该布局原生树中不存在，仅暴露 tabStripTab button，因此未执行 D row 双击，未将按钮动作替代记为已执行。",
+  "operator_errors": [],
+  "precondition_actual": "重新实读 off/off，单独切换双击 on→off 后再清理 BAL 当前 TC 对象，通过 Cmd+T 创建新 A、D、E，并在 off/off 状态原生组成 COM 组。普通 A 子步骤前置已满足；D 的指定原生 row 控件前置未能在 Comfortable 界面构造。",
+  "settings_observed": "Unix 毫秒：1793358746179 初始 off/off；1793358757040 单独开启双击后 on/off；1793358757612 反向关闭后 off/off。位置未联动。收尾先实读 off/off，再单独开启位置，实读双击 off／位置 on；随后 General 恢复 Balanced，System Default 保持。快捷键未修改。",
+  "steps_executed": [
+    "双击关闭设 off（1793358757612）后，Close Group 清理 BAL 组，Cmd+T 新建 New Tab，再 Close Other Tabs 清理 BAL 普通 A；1793358814545 开始在新页原生地址栏导航 COM A，1793358817509 已实见 A 正文与编号。",
+    "确认输入焦点并输入 A 标记；1793358840912 通过 Cmd+T 开始创建 D，1793358844869 已实见 D 正文，确认焦点后输入 D 标记。",
+    "1793358871395 通过 Cmd+T 开始创建 E，1793358875427 已实见 E 正文，确认焦点后输入 E 标记。",
+    "通过 D 的原生 New Tab Group、Rename Group/Save 创建 TC-PHI507-r2-SET10-fresh-COM，再经 Add to Group 加入 E；1793358935233 实读组名及成员数 2，截图实见组头后的 D、E。",
+    "选中 A，get_app_state 保存 before；对最新 A 的安全 tabStripTab button（13）执行 click_count:2，再 get_app_state 保存 after。",
+    "仅单击 D，get_app_state 保存 native-surface，实读 D 对应 button（16）及原编号标记；未执行指定 row 双击。再次 get_app_state 保存未执行结束现场，再单击 E 核对原身份。",
+    "保留实际 A、组[D,E]；通过 Settings 单独恢复位置关闭 on，并确认双击仍 off；General 恢复 Balanced、实读 System Default，关闭 Settings 后保存最终窗口图与原生顺序。"
+  ],
+  "unit_id": "SET-10-COM"
+}

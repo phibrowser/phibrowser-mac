@@ -1,0 +1,157 @@
+EVIDENCE: initial-language-layout and SET-06-PER-off-off layout
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: off, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-PER-off-off settings
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: off, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-PER-off-off identity-A
+EVIDENCE: SET-06-PER-off-off identity-B
+EVIDENCE: SET-06-PER-off-off identity-C
+EVIDENCE: SET-06-PER-off-off attempt1 before
+EVIDENCE: SET-06-PER-off-off attempt1 after
+EVIDENCE: SET-06-PER-on-off layout
+EVIDENCE: SET-06-PER-on-off settings
+		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: off, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-PER-on-off identity-A
+EVIDENCE: SET-06-PER-on-off identity-B
+EVIDENCE: SET-06-PER-on-off identity-C attempt1 before
+EVIDENCE: SET-06-PER-on-off attempt1 after
+EVIDENCE: SET-06-PER-off-on layout
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: off, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-PER-off-on settings
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-PER-off-on identity-A
+EVIDENCE: SET-06-PER-off-on identity-B
+EVIDENCE: SET-06-PER-off-on identity-C attempt1 before
+EVIDENCE: SET-06-PER-off-on attempt1 after
+EVIDENCE: SET-06-PER-on-on layout
+EVIDENCE: SET-06-PER-on-on settings
+		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-PER-on-on identity-A
+EVIDENCE: SET-06-PER-on-on identity-B
+EVIDENCE: SET-06-PER-on-on identity-C attempt1 before
+EVIDENCE: SET-06-PER-on-on attempt1 after
+EVIDENCE: SET-06-BAL-off-off layout
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-BAL-off-off settings
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: off, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-BAL-off-off identity-A
+EVIDENCE: SET-06-BAL-off-off identity-B
+EVIDENCE: SET-06-BAL-off-off identity-C attempt1 before
+EVIDENCE: SET-06-BAL-off-off attempt1 after
+EVIDENCE: SET-06-BAL-on-off layout
+EVIDENCE: SET-06-BAL-on-off settings
+		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: off, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-BAL-on-off identity-A
+EVIDENCE: SET-06-BAL-on-off identity-B
+EVIDENCE: SET-06-BAL-on-off identity-C attempt1 before
+EVIDENCE: SET-06-BAL-on-off attempt1 after
+EVIDENCE: SET-06-BAL-off-on layout
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: off, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-BAL-off-on settings
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-BAL-off-on identity-A
+EVIDENCE: SET-06-BAL-off-on identity-B
+EVIDENCE: SET-06-BAL-off-on identity-C attempt1 before
+EVIDENCE: SET-06-BAL-off-on attempt1 after
+EVIDENCE: SET-06-BAL-on-on layout
+EVIDENCE: SET-06-BAL-on-on settings
+		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-BAL-on-on identity-A
+EVIDENCE: SET-06-BAL-on-on identity-B
+EVIDENCE: SET-06-BAL-on-on identity-C attempt1 before
+EVIDENCE: SET-06-BAL-on-on attempt1 after
+EVIDENCE: SET-06-COM-off-off layout
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-COM-off-off settings
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: off, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-COM-off-off identity-A
+EVIDENCE: SET-06-COM-off-off identity-B
+EVIDENCE: SET-06-COM-off-off identity-C attempt1 before
+EVIDENCE: SET-06-COM-off-off attempt1 before
+Script error:
+Error: missing C
+EVIDENCE: SET-06-COM-off-off attempt1 native-tree-title-mismatch
+EVIDENCE: SET-06-COM-off-off attempt1 after
+EVIDENCE: SET-06-COM-on-off layout
+EVIDENCE: SET-06-COM-on-off settings
+		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: off, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-COM-on-off identity-A
+EVIDENCE: SET-06-COM-on-off identity-B
+EVIDENCE: SET-06-COM-on-off identity-C attempt1 before
+EVIDENCE: SET-06-COM-on-off attempt1 before
+Script error:
+Error: missing B
+EVIDENCE: SET-06-COM-on-off attempt1 failure
+EVIDENCE: SET-06-COM-off-off attempt2 layout
+EVIDENCE: SET-06-COM-off-off attempt2 settings
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: off, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-COM-off-off attempt2 identity-A
+EVIDENCE: SET-06-COM-off-off attempt2 identity-B
+EVIDENCE: SET-06-COM-off-off attempt2 identity-C before
+EVIDENCE: SET-06-COM-off-off attempt2 before
+EVIDENCE: SET-06-COM-off-off attempt2 after
+EVIDENCE: SET-06-COM-on-off attempt2 layout
+EVIDENCE: SET-06-COM-on-off attempt2 settings
+		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: off, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-COM-on-off attempt2 identity-A
+EVIDENCE: SET-06-COM-on-off attempt2 identity-B
+EVIDENCE: SET-06-COM-on-off attempt2 identity-C before
+EVIDENCE: SET-06-COM-on-off attempt2 before
+EVIDENCE: SET-06-COM-on-off attempt2 after
+EVIDENCE: SET-06-COM-off-on layout
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: off, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-COM-off-on settings
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-COM-off-on identity-A
+EVIDENCE: SET-06-COM-off-on identity-B
+EVIDENCE: SET-06-COM-off-on identity-C attempt1 before
+EVIDENCE: SET-06-COM-off-on attempt1 before
+EVIDENCE: SET-06-COM-off-on attempt1 after
+EVIDENCE: SET-06-COM-on-on layout
+EVIDENCE: SET-06-COM-on-on settings
+		11 toggle button Description: Double-click to close tabs, Value: on, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06-COM-on-on identity-A
+EVIDENCE: SET-06-COM-on-on identity-B
+EVIDENCE: SET-06-COM-on-on identity-C attempt1 before
+EVIDENCE: SET-06-COM-on-on attempt1 before
+EVIDENCE: SET-06-COM-on-on attempt1 after
+Script error:
+Error: native target missing
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: on, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06 session-restore switches
+		11 toggle button Description: Double-click to close tabs, Value: off, ID: settings.tabs.doubleClickToClose
+		13 toggle button Description: Close tabs by position, Value: off, ID: settings.tabs.directionalClosing
+EVIDENCE: SET-06 session-restore language-layout
+EVIDENCE: SET-06 ending-state
+      "operator_errors": [],
+      "operator_errors": [],
+      "operator_errors": [],
+      "operator_errors": [],
+      "operator_errors": [],
+      "operator_errors": [],
+      "operator_errors": [],
+      "operator_errors": [],
+      "operator_errors": [
+      "operator_errors": [
+      "operator_errors": [],
+      "operator_errors": [

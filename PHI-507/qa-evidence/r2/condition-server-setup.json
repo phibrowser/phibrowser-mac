@@ -1,0 +1,11 @@
+{
+  "fixture_sha256": "d2b6a75d142a7c2624836557e90c07d0a15c8dd9ed0adb60f5fe2e152c951627",
+  "origin": "http://127.0.0.1:18211",
+  "ready_http_status": 200,
+  "slow_control_status": 200,
+  "slow_control_prefix_bytes": 512,
+  "download_control_status": 200,
+  "download_header": "attachment; filename=\"TC-PHI507-r2-TC-PHI507-r2-server-control.txt\"",
+  "control_clients_closed_early": true,
+  "note": "仅CLI检查测试站可用性/真实传输响应，未据此判任何浏览器用例通过；等待后续Computer Use实际访问。"
+}

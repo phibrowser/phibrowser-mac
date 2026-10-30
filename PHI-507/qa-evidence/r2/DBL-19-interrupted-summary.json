@@ -1,0 +1,9 @@
+{
+  "session_id": "01a18ca6-5318-70c2-90c8-e6af4e3bb85e",
+  "saved_images": 77,
+  "scope": "读取已保存的上轮CU响应；未操作已释放旧会话",
+  "last_console_state": "准备收尾停止测试音及恢复设置，随后多次model reconnect；未返回正式结构化结果",
+  "tools_outside_computer_use": [],
+  "acceptance_verdict": "not_assigned",
+  "recovery": "从新租约重新建立前置，重跑DBL-19；已确认静音图标可见但原任务把关闭/静音共同要求导致没有发被测双击，后续按独立分支补执行。"
+}

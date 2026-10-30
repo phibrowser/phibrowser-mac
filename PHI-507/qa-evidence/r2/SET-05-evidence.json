@@ -4,8 +4,8 @@
     "attempt": 1,
     "phase": "setup-failure",
     "file": "SET-05-PER-01.png",
-    "source_file": "SET-05-008.jpg",
-    "source_sha256": "f83a232abd89b73006a5dc6d5fe1f6c17a2ba9e3465cf4016969637773707d5d",
+    "source_file": "SET-05-007.jpg",
+    "source_sha256": "a5e1cb962e4a4321a2d32b6379054bff7d44b95fe2e80b0beef03cfd4467a9f6",
     "original_size": [
       1802,
       1376
@@ -44,7 +44,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -68,7 +68,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -116,7 +116,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -140,7 +140,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -164,7 +164,7 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -188,7 +188,7 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   }
 ]

@@ -1,0 +1,8 @@
+{
+  "cause": "平台系统评论记录上轮运行因模型HTTP522中断；旧租约task_ended自动归还",
+  "previous_lease": "e619fb28-bbd8-4e7f-a356-aaf26a387735",
+  "released_at": "2026-10-30T12:48:12.386801Z",
+  "unfinished_job": "DBL-19",
+  "raw_console_preserved": "scratch-PHI507-r2/DBL-19/DBL-19-console.log",
+  "result_policy": "已审查的前轮执行点保留；未返回完整结构化结果的DBL-19不判通过，恢复后重建前置续测。"
+}

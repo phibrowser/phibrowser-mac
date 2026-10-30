@@ -112,7 +112,8 @@
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
     "evidence": [
       "qa-evidence/r2/ENV-03-COMMON-initial-initial-F.png",
-      "qa-evidence/r2/ENV-03-COMMON.log"
+      "qa-evidence/r2/ENV-03-COMMON.log",
+      "qa-evidence/r2/ENV-03-navigation-recovery-observations.json"
     ],
     "kind": "acceptance",
     "key": "ENV-03-COMMON",
@@ -187,8 +188,62 @@
         "evidence_metadata": "qa-evidence/r2/ENV-03-navigation-recovery-evidence.json"
       }
     ],
-    "actual": "本轮纯Computer Use原生地址栏逐一打开A-F的HTTPS fixture；每页实见TC标题、批次、编号与输入框，最终原生顺序A→F、F活动；未复现r1导航现象。",
-    "notes": "最初A–F实际成功；后因重启出现较长首次加载，再经CU诊断恢复，六页逐页读取身份。无手册SLA，不把约75秒延迟判作永久导航缺陷。"
+    "actual": "TC-PHI507-r2-Recovery 内实际原生顺序 A → B → C → D → E → F；六页均实见相应 TC 标题、相同批次、各自打开编号、普通页说明和空输入框。A 位于最上。无需拖动；无多选、split 配对或组成员。",
+    "notes": "最初A–F实际成功；后因重启出现较长首次加载，再经CU诊断恢复，六页逐页读取身份。无手册SLA，不把约75秒延迟判作永久导航缺陷。",
+    "observation": {
+      "active_after": "F；唯一选中 TC-F · TC-PHI507-r2-ENV-03-COMMON。",
+      "active_before": "窗口 TC-QA-PHI507-r2-SET-08-COMMON-W2 中唯一的 New Tab；地址已指向旧批次 fixture A，内容仍为 New Tab。",
+      "after": "TC-PHI507-r2-Recovery 内实际原生顺序 A → B → C → D → E → F；六页均实见相应 TC 标题、相同批次、各自打开编号、普通页说明和空输入框。A 位于最上。无需拖动；无多选、split 配对或组成员。",
+      "before": "当前窗口原生树仅列一个测试标签。完整地址为 https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/fixtures/?tab=A&run=TC-PHI507-r2-SET-10-COM&kind=normal；工具栏为 Refresh，内容为 New Tab，未见 fixture 身份信息。",
+      "confirmation_choices": "Cmd+Q 后出现“Are you sure you want to quit Phi?”及“Any unsaved changes may be lost.”，点击 Quit；工具返回 -10005: App quit。未出现或选择“不再询问”。创建 Space 时保留现有 Your Phi Profile，输入 TC-PHI507-r2-Recovery 后点击 Create Space；未创建新 Profile、未登录。未出现系统权限或安全确认框。",
+      "evidence_markers": [
+        "ENV-03-COMMON attempt1 before",
+        "ENV-03-COMMON https-initial",
+        "ENV-03-COMMON stop",
+        "ENV-03-COMMON http-failure",
+        "ENV-03-COMMON fixture-before-restart",
+        "ENV-03-COMMON quit",
+        "ENV-03-COMMON launch-path",
+        "ENV-03-COMMON finder-open",
+        "ENV-03-COMMON finder-cmd-open",
+        "ENV-03-COMMON restarted",
+        "ENV-03-COMMON restart-fixture-failure",
+        "ENV-03-COMMON recovery-space",
+        "ENV-03-COMMON recovery-https-failure",
+        "ENV-03-COMMON balanced-restored",
+        "ENV-03-COMMON switches-restored",
+        "ENV-03-COMMON recovery-fixture-failure（59.1秒时的加载现场）",
+        "ENV-03-COMMON final-url（随后已出现真实 A 页）",
+        "ENV-03-COMMON attempt1 after（恢复阶段 A 页，75.4秒）",
+        "ENV-03-COMMON sequence before（A 身份；同次调用随后包含 B 身份截图）",
+        "ENV-03-COMMON identity-C",
+        "ENV-03-COMMON identity-D",
+        "ENV-03-COMMON identity-E",
+        "ENV-03-COMMON sequence after（最终 A–F 顺序及 F 身份）"
+      ],
+      "identity_checks": "六页批次均为 TC-PHI507-r2-ENV-03-COMMON，页面类型均为普通页，输入框均为空，未输入保护标记。屏幕读取本次打开编号：A=9ebfab65-318e-424e-ace9-768c3c3ede57；B=d8a28247-9925-415c-866a-ae9682140cb6；C=86bc2633-c399-4c94-a2fb-e7c092b016d2；D=3eff0d7b-c8f2-4a74-9024-2738fb4aff1e；E=82190188-37fd-48ad-9d3b-11d8b07ebb38；F=fe96f352-1e9a-4d4e-834a-bd2e971e12e5。未用 URL 或标签变化代替提交确认。",
+      "language_observed": "General 原生控件实读 System Default，浏览器菜单及 Settings 为英文；fixture 正文为中文。未切换语言，未出现语言重启提示。",
+      "layout_observed": "恢复诊断起始 chrome 为顶部横向标签，随后 General 截图确认 Comfortable 处于选中状态。收尾通过 General 原生 Balanced button 切换，截图确认 Balanced 已选；最终 chrome 为左侧纵向标签，方向为上/下。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "Finder 对已确认的 /Applications/Phi Tab Close QA.app 先后执行原生 secondary action“open”和“Open Finder item”后，返回仍是 Finder，未据此认定启动。随后在同一完整路径选中项上使用 Cmd+O，再由 Computer Use 核实测试 app 已运行且 PID 已变化；未操作 Canary。"
+      ],
+      "precondition_actual": "先按额外约束保留并诊断现有失败现场。恢复后使用本轮新建 Recovery Space 的 A 作为新序列首项，再逐一新建 B–F；未沿用其他用例的 A–F 残留。",
+      "settings_observed": "Advanced 首次实读 doubleClickToClose=off、directionalClosing=off。仅点击 directionalClosing 一次，返回树立即实读 off/on；未点击的 doubleClickToClose 保持 off。General 选择 Balanced，System Default 保持原值。未修改快捷键、默认浏览器或其他设置。",
+      "steps_executed": [
+        "使用 get_app_state 读取起始截图及原生树；Cmd+L 读取完整旧 fixture URL并保存 before 图片。",
+        "点击原生 Refresh 后标签回到 New Tab，约7.6秒后仍未显示 fixture。地址栏输入 https://example.com/；约8.0秒仍为 Stop 和 New Tab 内容，约15.0秒点击原生 Stop，返回 Refresh。",
+        "地址栏输入 http://example.com/；约12.6秒读取时实际地址为 https://example.com/，屏幕出现“This site can’t be reached”“example.com took too long to respond.”及 ERR_TIMED_OUT。仅记录错误页，未执行其中连接、代理或防火墙建议。",
+        "地址栏输入本项 fixture A URL；约10.6秒仍显示先前 example.com 错误页，工具栏为 Stop；约20.4秒执行 Cmd+Q，并明确点击 Quit。",
+        "通过 Finder 的 Cmd+Shift+G 输入 /Applications/Phi Tab Close QA.app，核实 Applications 中的选中项及完整原生文件 URL后执行原生打开。重新读取测试 app，PID由53002变为54426，页面为 example.com 空白加载状态。",
+        "重启后在地址栏正常导航本项 fixture A；约20.9秒仍是空白加载画面及 Stop，未见身份。",
+        "通过 Spaces → New Space 创建 TC-PHI507-r2-Recovery，沿用现有 Your Phi Profile。在新 Space 地址栏输入 https://example.com/；约15.2秒仍为 Stop 和 New Tab 内容，未见 Example Domain HTML。",
+        "在 Recovery Space 地址栏输入同批次 fixture A。观察期间恢复 Balanced、System Default及两个开关off/on；约59.1秒仍为 Stop 和 New Tab 内容，保存加载现场。随后约73–75秒间实见 TC-A、批次、打开编号及输入框，停止恢复操作。",
+        "保留新 Space 的真实 A，依次通过 Cmd+T、Cmd+L、输入 fixture URL、Return 建立 B、C、D、E、F；每页分别 get_app_state 并目视核对标题、批次、打开编号及输入框。",
+        "最终 get_app_state 记录原生顺序 A → F、F唯一选中及实际 HTML。未拖动、未关闭序列、未再次重建。"
+      ],
+      "unit_id": "ENV-03-COMMON"
+    }
   },
   {
     "id": "ENV-04",
@@ -1138,7 +1193,8 @@
       "qa-evidence/r2/SET-06-evidence.json",
       "qa-evidence/r2/SET-06-PER-off-off-03.png",
       "qa-evidence/r2/SET-06-PER-off-off-01.png",
-      "qa-evidence/r2/SET-06-PER-off-off-02.png"
+      "qa-evidence/r2/SET-06-PER-off-off-02.png",
+      "qa-evidence/r2/SET-06-toggle-transitions.log"
     ],
     "variants": [
       {
@@ -1231,7 +1287,8 @@
       "qa-evidence/r2/SET-06-evidence.json",
       "qa-evidence/r2/SET-06-PER-on-off-03.png",
       "qa-evidence/r2/SET-06-PER-on-off-02.png",
-      "qa-evidence/r2/SET-06-PER-on-off-01.png"
+      "qa-evidence/r2/SET-06-PER-on-off-01.png",
+      "qa-evidence/r2/SET-06-toggle-transitions.log"
     ],
     "variants": [
       {
@@ -1323,7 +1380,8 @@
       "qa-evidence/r2/SET-06-evidence.json",
       "qa-evidence/r2/SET-06-PER-off-on-03.png",
       "qa-evidence/r2/SET-06-PER-off-on-02.png",
-      "qa-evidence/r2/SET-06-PER-off-on-01.png"
+      "qa-evidence/r2/SET-06-PER-off-on-01.png",
+      "qa-evidence/r2/SET-06-toggle-transitions.log"
     ],
     "variants": [
       {
@@ -1415,7 +1473,8 @@
       "qa-evidence/r2/SET-06-evidence.json",
       "qa-evidence/r2/SET-06-PER-on-on-03.png",
       "qa-evidence/r2/SET-06-PER-on-on-02.png",
-      "qa-evidence/r2/SET-06-PER-on-on-01.png"
+      "qa-evidence/r2/SET-06-PER-on-on-01.png",
+      "qa-evidence/r2/SET-06-toggle-transitions.log"
     ],
     "variants": [
       {
@@ -1507,7 +1566,8 @@
       "qa-evidence/r2/SET-06-evidence.json",
       "qa-evidence/r2/SET-06-BAL-off-off-03.png",
       "qa-evidence/r2/SET-06-BAL-off-off-02.png",
-      "qa-evidence/r2/SET-06-BAL-off-off-01.png"
+      "qa-evidence/r2/SET-06-BAL-off-off-01.png",
+      "qa-evidence/r2/SET-06-toggle-transitions.log"
     ],
     "variants": [
       {
@@ -1599,7 +1659,8 @@
       "qa-evidence/r2/SET-06-evidence.json",
       "qa-evidence/r2/SET-06-BAL-on-off-03.png",
       "qa-evidence/r2/SET-06-BAL-on-off-02.png",
-      "qa-evidence/r2/SET-06-BAL-on-off-01.png"
+      "qa-evidence/r2/SET-06-BAL-on-off-01.png",
+      "qa-evidence/r2/SET-06-toggle-transitions.log"
     ],
     "variants": [
       {
@@ -1691,7 +1752,8 @@
       "qa-evidence/r2/SET-06-evidence.json",
       "qa-evidence/r2/SET-06-BAL-off-on-03.png",
       "qa-evidence/r2/SET-06-BAL-off-on-02.png",
-      "qa-evidence/r2/SET-06-BAL-off-on-01.png"
+      "qa-evidence/r2/SET-06-BAL-off-on-01.png",
+      "qa-evidence/r2/SET-06-toggle-transitions.log"
     ],
     "variants": [
       {
@@ -1783,7 +1845,8 @@
       "qa-evidence/r2/SET-06-evidence.json",
       "qa-evidence/r2/SET-06-BAL-on-on-03.png",
       "qa-evidence/r2/SET-06-BAL-on-on-02.png",
-      "qa-evidence/r2/SET-06-BAL-on-on-01.png"
+      "qa-evidence/r2/SET-06-BAL-on-on-01.png",
+      "qa-evidence/r2/SET-06-toggle-transitions.log"
     ],
     "variants": [
       {
@@ -1877,7 +1940,8 @@
       "qa-evidence/r2/SET-06-COM-off-off-02.png",
       "qa-evidence/r2/SET-06-COM-off-off-05.png",
       "qa-evidence/r2/SET-06-COM-off-off-03.png",
-      "qa-evidence/r2/SET-06-COM-off-off-04.png"
+      "qa-evidence/r2/SET-06-COM-off-off-04.png",
+      "qa-evidence/r2/SET-06-toggle-transitions.log"
     ],
     "variants": [
       {
@@ -1986,7 +2050,8 @@
       "qa-evidence/r2/SET-06-COM-on-off-02.png",
       "qa-evidence/r2/SET-06-COM-on-off-05.png",
       "qa-evidence/r2/SET-06-COM-on-off-03.png",
-      "qa-evidence/r2/SET-06-COM-on-off-04.png"
+      "qa-evidence/r2/SET-06-COM-on-off-04.png",
+      "qa-evidence/r2/SET-06-toggle-transitions.log"
     ],
     "variants": [
       {
@@ -2090,7 +2155,8 @@
       "qa-evidence/r2/SET-06-evidence.json",
       "qa-evidence/r2/SET-06-COM-off-on-03.png",
       "qa-evidence/r2/SET-06-COM-off-on-01.png",
-      "qa-evidence/r2/SET-06-COM-off-on-02.png"
+      "qa-evidence/r2/SET-06-COM-off-on-02.png",
+      "qa-evidence/r2/SET-06-toggle-transitions.log"
     ],
     "variants": [
       {
@@ -2183,7 +2249,8 @@
       "qa-evidence/r2/SET-06-evidence.json",
       "qa-evidence/r2/SET-06-COM-on-on-03.png",
       "qa-evidence/r2/SET-06-COM-on-on-01.png",
-      "qa-evidence/r2/SET-06-COM-on-on-02.png"
+      "qa-evidence/r2/SET-06-COM-on-on-02.png",
+      "qa-evidence/r2/SET-06-toggle-transitions.log"
     ],
     "variants": [
       {
@@ -2368,11 +2435,15 @@
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
     "evidence": [
-      "qa-evidence/r2/SET-08-observations.json",
-      "qa-evidence/r2/SET-08-evidence.json",
-      "qa-evidence/r2/SET-08-COMMON-01.png",
-      "qa-evidence/r2/SET-08-COMMON-02.png",
-      "qa-evidence/r2/SET-08-COMMON-03.png"
+      "qa-evidence/r2/SET-08-retry-observations.json",
+      "qa-evidence/r2/SET-08-COMMON-04.png",
+      "qa-evidence/r2/SET-08-COMMON-05.png",
+      "qa-evidence/r2/SET-08-COMMON-06.png",
+      "qa-evidence/r2/SET-08-COMMON-07.png",
+      "qa-evidence/r2/SET-08-COMMON-08.png",
+      "qa-evidence/r2/SET-08-COMMON-09.png",
+      "qa-evidence/r2/SET-08-COMMON-10.png",
+      "qa-evidence/r2/SET-08-COMMON-11.png"
     ],
     "kind": "acceptance",
     "key": "SET-08-COMMON",
@@ -2382,45 +2453,173 @@
       "id": "",
       "label": ""
     },
-    "result": "blocked",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": [],
-    "actual": "未执行偏好切换及切换后的菜单读取。W1/S1、W2/S2 各保留一个导航未获页面身份确认的标签；均无多选、无 split、无组。结束图为 W2/S2，显示新标签页内容与 Stop。",
+    "attempts": [
+      {
+        "job": "SET-08",
+        "outcome": "blocked",
+        "actual": "未执行偏好切换及切换后的菜单读取。W1/S1、W2/S2 各保留一个导航未获页面身份确认的标签；均无多选、无 split、无组。结束图为 W2/S2，显示新标签页内容与 Stop。",
+        "observation": {
+          "active_after": "前台为 W2/S2 的唯一标签，原生名称仍为 New Tab；未形成已核实的 TC-B 页面。",
+          "active_before": "本项 setup 结束、被测动作尚未执行时，前台为 W1/S1 的唯一标签，原生名称仍为 New Tab。",
+          "after": "未执行偏好切换及切换后的菜单读取。W1/S1、W2/S2 各保留一个导航未获页面身份确认的标签；均无多选、无 split、无组。结束图为 W2/S2，显示新标签页内容与 Stop。",
+          "before": "已在同一 app 内建立 W1/S1 和 W2/S2；每处仅一个标签，分别从原生地址栏输入本项 normal fixture A、B URL。未见 fixture 正文，不能记为已加载的 A/B。",
+          "confirmation_choices": "原生 Name Window 对话框输入本轮 W1/W2 名称并确认；没有删除、离开页面或“不再询问”确认。",
+          "evidence_markers": [
+            "EVIDENCE: SET-08-COMMON attempt1 before",
+            "EVIDENCE: SET-08-COMMON attempt1 failure",
+            "EVIDENCE: SET-08-COMMON attempt1 after"
+          ],
+          "identity_checks": "固定路径 /Applications/Phi Tab Close QA.app，CU 实读 pid 53002。Window 菜单同时列出本轮 W1/W2，Spaces 菜单列出本轮 S1/S2；创建 Space 时 Profile 为 Your Phi。A/B 地址包含 run=TC-PHI507-r2-SET-08-COMMON，但截图未出现 TC 标题、批次、打开编号或 fixture 输入框，未以 URL 代替页面提交及身份核对。",
+          "language_observed": "General 实读 System Default；实际设置、菜单和浏览器界面为英文，未切换语言。",
+          "layout_observed": "General 截图中 Comfortable 为选中边框；浏览器外部标签栏为水平方向，未切换布局。",
+          "not_executed_reason": "窗口与 Space 已建立，但 fixture A/B 导航后持续显示原 New Tab 内容，缺少要求实见的 TC 标题、批次、打开编号和输入框，页面身份前置未能核实。因此未执行“在 W1/S1 关闭位置功能”“在 W2 和 S2 重新打开菜单读取变更”“再开启”，没有生成偏好共用的观察结论。",
+          "operator_errors": [
+            "核对 Spaces 菜单后按 Escape 未关闭菜单；随后通过该原生菜单明确暴露的 Cancel 动作关闭。未触发被测动作或重试偏好切换。"
+          ],
+          "precondition_actual": "复读原 SET-07 现场后，新建 TC-QA-PHI507-r2-SET-08-COMMON-S1；在原窗口进入 S1，并将该窗口原生命名为同前缀 W1。通过 File > New Window 新建 W2，再新建 S2，原生命名 W2。窗口／Space 对象已具备，fixture 正文身份未具备。",
+          "settings_observed": "Advanced 起始和收尾均实读 settings.tabs.doubleClickToClose=off、settings.tabs.directionalClosing=off；本项未点击任何目标开关。",
+          "steps_executed": [
+            "get_app_state 复读原窗口：SET-07 普通 A、B、展开组 G[C]；C 活动，内容空白且显示 Stop。",
+            "原生打开 Settings，读取 General 的语言、布局及 Advanced 两个开关，关闭 Settings。",
+            "通过 Spaces > New Space 创建本轮 S1；在唯一 New Tab 用地址栏输入 fixture A URL 并回车。",
+            "通过 File > New Window 创建第二窗口，在其中创建本轮 S2；用地址栏输入 fixture B URL 并回车。",
+            "通过 Window > Name Window 分别命名 W2、W1；通过 Window 和 Spaces 菜单核对对象。",
+            "保存 W1 前置图和 W2 未显示 fixture 正文的现场图；未重新导航或重建掩盖现场。",
+            "收尾重读两个开关仍为 off/off，关闭 Settings，保存 W2 结束图。"
+          ],
+          "unit_id": "SET-08-COMMON"
+        },
+        "evidence": [
+          "qa-evidence/r2/SET-08-observations.json",
+          "qa-evidence/r2/SET-08-evidence.json",
+          "qa-evidence/r2/SET-08-COMMON-01.png",
+          "qa-evidence/r2/SET-08-COMMON-02.png",
+          "qa-evidence/r2/SET-08-COMMON-03.png"
+        ],
+        "notes": "核对 Spaces 菜单后按 Escape 未关闭菜单；随后通过该原生菜单明确暴露的 Cancel 动作关闭。未触发被测动作或重试偏好切换。"
+      },
+      {
+        "job": "SET-08-retry",
+        "outcome": "pass",
+        "actual": "页签集合未被关闭或重排。重新开启位置功能后，S2 与 W2 的单页菜单均重新出现 disabled 的 Close Tabs Above/Below；W1/S1 的 F 菜单出现可用的 Close Tabs Above 和 disabled 的 Close Tabs Below。最终从 W2 打开的 Advanced 读到双击关闭 off、位置关闭 on。",
+        "observation": {
+          "active_after": "前台 W1/S1：F，选中集 {F}。W1/S2 最后活动及唯一选中页为 A；W2/S1 最后活动及唯一选中页为其独立 A。",
+          "active_before": "关键关闭动作前为 W1/S1，活动页 F，选中集 {F}；Advanced 打开于该窗口。",
+          "after": "页签集合未被关闭或重排。重新开启位置功能后，S2 与 W2 的单页菜单均重新出现 disabled 的 Close Tabs Above/Below；W1/S1 的 F 菜单出现可用的 Close Tabs Above 和 disabled 的 Close Tabs Below。最终从 W2 打开的 Advanced 读到双击关闭 off、位置关闭 on。",
+          "before": "W1/S1 为新建批次的 A→B→C→D→E→F；W1/S2 为独立 A；W2/S1 为独立 A。各测试页为普通页、输入框为空，无组、无分屏。位置关闭 on、双击关闭 off；W2 单页菜单最初可见 disabled 的 Close Tabs Above/Below。",
+          "confirmation_choices": "仅在 Name Window 对话框输入 TC-QA-PHI507-r2-SET-08-COMMON-W2 并按 Return 确认。没有出现关闭、删除或离开页面确认；未勾选“不再询问”。",
+          "evidence_markers": [
+            "SET-08-COMMON attempt1 setup-S1-A start",
+            "SET-08-COMMON attempt1 setup-S1-B",
+            "SET-08-COMMON attempt1 setup-S1-C",
+            "SET-08-COMMON attempt1 setup-S1-D",
+            "SET-08-COMMON attempt1 setup-S1-E",
+            "SET-08-COMMON attempt1 setup-S1-F",
+            "SET-08-COMMON attempt1 setup-S2-A",
+            "SET-08-COMMON attempt1 setup-W2",
+            "SET-08-COMMON attempt1 before",
+            "SET-08-COMMON attempt1 W1-S1-toggle-off",
+            "SET-08-COMMON attempt1 W2-menu-off",
+            "SET-08-COMMON attempt1 W2-settings-off",
+            "SET-08-COMMON attempt1 S2-menu-off",
+            "SET-08-COMMON attempt1 S2-before-on",
+            "SET-08-COMMON attempt1 S2-toggle-on",
+            "SET-08-COMMON attempt1 S2-menu-on",
+            "SET-08-COMMON attempt1 W1-S1-menu-on",
+            "SET-08-COMMON attempt1 W2-menu-on",
+            "SET-08-COMMON attempt1 final-settings",
+            "SET-08-COMMON attempt1 after"
+          ],
+          "identity_checks": "全部通过固定 app 路径调用 CU，同一 PID 54426；Window 菜单实见原 Recovery 窗口、W1、W2 三个窗口。S1/S2 通过各自完整命名的原生按钮切换，Move to Space 菜单亦提供当前 Space 的辅助核对。新页面逐页实见 TC 标题、批次、普通页类型、打开编号及空输入框。S1 批次 TC-PHI507-r2-SET-08-COMMON，编号 A=0b051f32-f625-4a32-8b90-b915aac75ce0；B=1d9e63cc-a551-47bd-9d0f-7cfcb3de0af7；C=4d71bd5b-78b4-4ea4-9960-a19c7fbb378b；D=55f2c621-60c7-4cef-90e9-8e3d61b5c56c；E=7546dc48-d4dc-442a-a43b-79c4b6b88bcc；F=d972a94f-9a61-42a2-bd8b-210e205230cf。S2 A 批次后缀 -S2，编号 c07dee11-bb96-41ea-8ee2-76303e95b051；W2 A 批次后缀 -W2，编号 5a882b4c-160a-430b-b884-530c1e34e618。回看 S2 A、W2 A 和最终 S1 F 时编号仍与初次截图一致。未建立其他 Profile 或检查其他安装渠道。",
+          "language_observed": "General 的 Display language 实读为 System Default；设置、窗口菜单和页签菜单实际为英文。本项未切换语言或重启。",
+          "layout_observed": "General 截图中 Balanced 有选中边框；浏览器 chrome 为左侧纵向页签，菜单使用 Above/Below。本项 layout=once，未改变外部布局。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "先重新读取当前应用。复用本轮已命名且仅有 New Tab 的测试 W1/S1、W1/S2，通过地址栏重新建立普通测试页；在 S1 顺序新建 A 至 F，在 S2 建立独立 A。随后用 Cmd+N 创建窗口，通过 Window > Name Window 命名 W2，切到 S1 并建立独立 A。执行被测动作前已实见两个窗口和两个测试 Space。",
+          "settings_observed": "开始：双击关闭 off、位置关闭 on。在 W1/S1 只点击位置开关一次后，即时原生树为 off/off，未点击的双击关闭未变化。之后从 W2 重新打开 Advanced，读到 off/off；从 S2 打开 Advanced 也读到 off/off。在 S2 只点击位置开关一次后，即时读到双击关闭 off、位置关闭 on。最终从 W2 再次打开 Advanced，仍为 off/on；无需额外恢复点击。",
+          "steps_executed": [
+            "通过 CU 读取应用、Window 菜单、General 和 Advanced，核实原始设置与当前英文界面。",
+            "原生重建 W1/S1 的 A→B→C→D→E→F，建立 W1/S2 独立 A，并创建、命名 W2 及其 S1 独立 A；逐页保存正文身份截图。",
+            "查看 W2 初始页签右键菜单，记录位置菜单项存在且因单页禁用；关闭菜单并通过 Window 菜单切回 W1/S1。",
+            "保存 before 图，在 W1/S1 的 Advanced 只点击 Close tabs by position，记录即时双开关值为 off/off。",
+            "关闭 Settings，切到 W2 重新打开 A 的右键菜单：菜单止于 Close Other Tabs，没有 Close Tabs Above/Below；重新打开 Advanced 读到 off/off。",
+            "关闭 Settings，切回 W1 并选择 S2，重新打开其 A 的右键菜单：没有 Close Tabs Above/Below。",
+            "从 S2 打开 Advanced，保存开启前截图，只点击位置开关，记录即时值为双击关闭 off、位置关闭 on。",
+            "分别重新打开 S2、W1/S1 和 W2 的页签菜单，记录 Above/Below 项重新出现及各自可用状态；未执行任何关闭命令。",
+            "从 W2 最后读取 Advanced 的 off/on，关闭 Settings，切回 W1/S1 保存 after 图，保留实际结束序列。"
+          ],
+          "unit_id": "SET-08-COMMON"
+        },
+        "evidence": [
+          "qa-evidence/r2/SET-08-retry-observations.json",
+          "qa-evidence/r2/SET-08-COMMON-04.png",
+          "qa-evidence/r2/SET-08-COMMON-05.png",
+          "qa-evidence/r2/SET-08-COMMON-06.png",
+          "qa-evidence/r2/SET-08-COMMON-07.png",
+          "qa-evidence/r2/SET-08-COMMON-08.png",
+          "qa-evidence/r2/SET-08-COMMON-09.png",
+          "qa-evidence/r2/SET-08-COMMON-10.png",
+          "qa-evidence/r2/SET-08-COMMON-11.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/SET-08-retry-evidence.json",
+        "notes": "复核关闭后W2/S2菜单均隐藏方向项，S2开启后各窗口重新显示；双击开关始终off。此前短时加载中止的尝试保留，未作为最终结果。",
+        "reviewed_at": "2026-10-30T10:37:49.300715+00:00"
+      }
+    ],
+    "actual": "页签集合未被关闭或重排。重新开启位置功能后，S2 与 W2 的单页菜单均重新出现 disabled 的 Close Tabs Above/Below；W1/S1 的 F 菜单出现可用的 Close Tabs Above 和 disabled 的 Close Tabs Below。最终从 W2 打开的 Advanced 读到双击关闭 off、位置关闭 on。",
     "observation": {
-      "active_after": "前台为 W2/S2 的唯一标签，原生名称仍为 New Tab；未形成已核实的 TC-B 页面。",
-      "active_before": "本项 setup 结束、被测动作尚未执行时，前台为 W1/S1 的唯一标签，原生名称仍为 New Tab。",
-      "after": "未执行偏好切换及切换后的菜单读取。W1/S1、W2/S2 各保留一个导航未获页面身份确认的标签；均无多选、无 split、无组。结束图为 W2/S2，显示新标签页内容与 Stop。",
-      "before": "已在同一 app 内建立 W1/S1 和 W2/S2；每处仅一个标签，分别从原生地址栏输入本项 normal fixture A、B URL。未见 fixture 正文，不能记为已加载的 A/B。",
-      "confirmation_choices": "原生 Name Window 对话框输入本轮 W1/W2 名称并确认；没有删除、离开页面或“不再询问”确认。",
+      "active_after": "前台 W1/S1：F，选中集 {F}。W1/S2 最后活动及唯一选中页为 A；W2/S1 最后活动及唯一选中页为其独立 A。",
+      "active_before": "关键关闭动作前为 W1/S1，活动页 F，选中集 {F}；Advanced 打开于该窗口。",
+      "after": "页签集合未被关闭或重排。重新开启位置功能后，S2 与 W2 的单页菜单均重新出现 disabled 的 Close Tabs Above/Below；W1/S1 的 F 菜单出现可用的 Close Tabs Above 和 disabled 的 Close Tabs Below。最终从 W2 打开的 Advanced 读到双击关闭 off、位置关闭 on。",
+      "before": "W1/S1 为新建批次的 A→B→C→D→E→F；W1/S2 为独立 A；W2/S1 为独立 A。各测试页为普通页、输入框为空，无组、无分屏。位置关闭 on、双击关闭 off；W2 单页菜单最初可见 disabled 的 Close Tabs Above/Below。",
+      "confirmation_choices": "仅在 Name Window 对话框输入 TC-QA-PHI507-r2-SET-08-COMMON-W2 并按 Return 确认。没有出现关闭、删除或离开页面确认；未勾选“不再询问”。",
       "evidence_markers": [
-        "EVIDENCE: SET-08-COMMON attempt1 before",
-        "EVIDENCE: SET-08-COMMON attempt1 failure",
-        "EVIDENCE: SET-08-COMMON attempt1 after"
+        "SET-08-COMMON attempt1 setup-S1-A start",
+        "SET-08-COMMON attempt1 setup-S1-B",
+        "SET-08-COMMON attempt1 setup-S1-C",
+        "SET-08-COMMON attempt1 setup-S1-D",
+        "SET-08-COMMON attempt1 setup-S1-E",
+        "SET-08-COMMON attempt1 setup-S1-F",
+        "SET-08-COMMON attempt1 setup-S2-A",
+        "SET-08-COMMON attempt1 setup-W2",
+        "SET-08-COMMON attempt1 before",
+        "SET-08-COMMON attempt1 W1-S1-toggle-off",
+        "SET-08-COMMON attempt1 W2-menu-off",
+        "SET-08-COMMON attempt1 W2-settings-off",
+        "SET-08-COMMON attempt1 S2-menu-off",
+        "SET-08-COMMON attempt1 S2-before-on",
+        "SET-08-COMMON attempt1 S2-toggle-on",
+        "SET-08-COMMON attempt1 S2-menu-on",
+        "SET-08-COMMON attempt1 W1-S1-menu-on",
+        "SET-08-COMMON attempt1 W2-menu-on",
+        "SET-08-COMMON attempt1 final-settings",
+        "SET-08-COMMON attempt1 after"
       ],
-      "identity_checks": "固定路径 /Applications/Phi Tab Close QA.app，CU 实读 pid 53002。Window 菜单同时列出本轮 W1/W2，Spaces 菜单列出本轮 S1/S2；创建 Space 时 Profile 为 Your Phi。A/B 地址包含 run=TC-PHI507-r2-SET-08-COMMON，但截图未出现 TC 标题、批次、打开编号或 fixture 输入框，未以 URL 代替页面提交及身份核对。",
-      "language_observed": "General 实读 System Default；实际设置、菜单和浏览器界面为英文，未切换语言。",
-      "layout_observed": "General 截图中 Comfortable 为选中边框；浏览器外部标签栏为水平方向，未切换布局。",
-      "not_executed_reason": "窗口与 Space 已建立，但 fixture A/B 导航后持续显示原 New Tab 内容，缺少要求实见的 TC 标题、批次、打开编号和输入框，页面身份前置未能核实。因此未执行“在 W1/S1 关闭位置功能”“在 W2 和 S2 重新打开菜单读取变更”“再开启”，没有生成偏好共用的观察结论。",
-      "operator_errors": [
-        "核对 Spaces 菜单后按 Escape 未关闭菜单；随后通过该原生菜单明确暴露的 Cancel 动作关闭。未触发被测动作或重试偏好切换。"
-      ],
-      "precondition_actual": "复读原 SET-07 现场后，新建 TC-QA-PHI507-r2-SET-08-COMMON-S1；在原窗口进入 S1，并将该窗口原生命名为同前缀 W1。通过 File > New Window 新建 W2，再新建 S2，原生命名 W2。窗口／Space 对象已具备，fixture 正文身份未具备。",
-      "settings_observed": "Advanced 起始和收尾均实读 settings.tabs.doubleClickToClose=off、settings.tabs.directionalClosing=off；本项未点击任何目标开关。",
+      "identity_checks": "全部通过固定 app 路径调用 CU，同一 PID 54426；Window 菜单实见原 Recovery 窗口、W1、W2 三个窗口。S1/S2 通过各自完整命名的原生按钮切换，Move to Space 菜单亦提供当前 Space 的辅助核对。新页面逐页实见 TC 标题、批次、普通页类型、打开编号及空输入框。S1 批次 TC-PHI507-r2-SET-08-COMMON，编号 A=0b051f32-f625-4a32-8b90-b915aac75ce0；B=1d9e63cc-a551-47bd-9d0f-7cfcb3de0af7；C=4d71bd5b-78b4-4ea4-9960-a19c7fbb378b；D=55f2c621-60c7-4cef-90e9-8e3d61b5c56c；E=7546dc48-d4dc-442a-a43b-79c4b6b88bcc；F=d972a94f-9a61-42a2-bd8b-210e205230cf。S2 A 批次后缀 -S2，编号 c07dee11-bb96-41ea-8ee2-76303e95b051；W2 A 批次后缀 -W2，编号 5a882b4c-160a-430b-b884-530c1e34e618。回看 S2 A、W2 A 和最终 S1 F 时编号仍与初次截图一致。未建立其他 Profile 或检查其他安装渠道。",
+      "language_observed": "General 的 Display language 实读为 System Default；设置、窗口菜单和页签菜单实际为英文。本项未切换语言或重启。",
+      "layout_observed": "General 截图中 Balanced 有选中边框；浏览器 chrome 为左侧纵向页签，菜单使用 Above/Below。本项 layout=once，未改变外部布局。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "先重新读取当前应用。复用本轮已命名且仅有 New Tab 的测试 W1/S1、W1/S2，通过地址栏重新建立普通测试页；在 S1 顺序新建 A 至 F，在 S2 建立独立 A。随后用 Cmd+N 创建窗口，通过 Window > Name Window 命名 W2，切到 S1 并建立独立 A。执行被测动作前已实见两个窗口和两个测试 Space。",
+      "settings_observed": "开始：双击关闭 off、位置关闭 on。在 W1/S1 只点击位置开关一次后，即时原生树为 off/off，未点击的双击关闭未变化。之后从 W2 重新打开 Advanced，读到 off/off；从 S2 打开 Advanced 也读到 off/off。在 S2 只点击位置开关一次后，即时读到双击关闭 off、位置关闭 on。最终从 W2 再次打开 Advanced，仍为 off/on；无需额外恢复点击。",
       "steps_executed": [
-        "get_app_state 复读原窗口：SET-07 普通 A、B、展开组 G[C]；C 活动，内容空白且显示 Stop。",
-        "原生打开 Settings，读取 General 的语言、布局及 Advanced 两个开关，关闭 Settings。",
-        "通过 Spaces > New Space 创建本轮 S1；在唯一 New Tab 用地址栏输入 fixture A URL 并回车。",
-        "通过 File > New Window 创建第二窗口，在其中创建本轮 S2；用地址栏输入 fixture B URL 并回车。",
-        "通过 Window > Name Window 分别命名 W2、W1；通过 Window 和 Spaces 菜单核对对象。",
-        "保存 W1 前置图和 W2 未显示 fixture 正文的现场图；未重新导航或重建掩盖现场。",
-        "收尾重读两个开关仍为 off/off，关闭 Settings，保存 W2 结束图。"
+        "通过 CU 读取应用、Window 菜单、General 和 Advanced，核实原始设置与当前英文界面。",
+        "原生重建 W1/S1 的 A→B→C→D→E→F，建立 W1/S2 独立 A，并创建、命名 W2 及其 S1 独立 A；逐页保存正文身份截图。",
+        "查看 W2 初始页签右键菜单，记录位置菜单项存在且因单页禁用；关闭菜单并通过 Window 菜单切回 W1/S1。",
+        "保存 before 图，在 W1/S1 的 Advanced 只点击 Close tabs by position，记录即时双开关值为 off/off。",
+        "关闭 Settings，切到 W2 重新打开 A 的右键菜单：菜单止于 Close Other Tabs，没有 Close Tabs Above/Below；重新打开 Advanced 读到 off/off。",
+        "关闭 Settings，切回 W1 并选择 S2，重新打开其 A 的右键菜单：没有 Close Tabs Above/Below。",
+        "从 S2 打开 Advanced，保存开启前截图，只点击位置开关，记录即时值为双击关闭 off、位置关闭 on。",
+        "分别重新打开 S2、W1/S1 和 W2 的页签菜单，记录 Above/Below 项重新出现及各自可用状态；未执行任何关闭命令。",
+        "从 W2 最后读取 Advanced 的 off/on，关闭 Settings，切回 W1/S1 保存 after 图，保留实际结束序列。"
       ],
       "unit_id": "SET-08-COMMON"
     },
-    "notes": "核对 Spaces 菜单后按 Escape 未关闭菜单；随后通过该原生菜单明确暴露的 Cancel 动作关闭。未触发被测动作或重试偏好切换。",
-    "not_run_reason": "窗口与 Space 已建立，但 fixture A/B 导航后持续显示原 New Tab 内容，缺少要求实见的 TC 标题、批次、打开编号和输入框，页面身份前置未能核实。因此未执行“在 W1/S1 关闭位置功能”“在 W2 和 S2 重新打开菜单读取变更”“再开启”，没有生成偏好共用的观察结论。",
+    "notes": "复核关闭后W2/S2菜单均隐藏方向项，S2开启后各窗口重新显示；双击开关始终off。此前短时加载中止的尝试保留，未作为最终结果。",
     "reviewed_by": "Ripley",
-    "review_basis": "原始 CU 观察、工具审计与关键前后截图；无效尝试不计产品结果"
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "SET-09",
@@ -2532,9 +2731,28 @@
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
     "evidence": [
-      "qa-evidence/r2/SET-10-observations.json",
-      "qa-evidence/r2/SET-10-evidence.json",
-      "qa-evidence/r2/SET-10-PER-01.png"
+      "qa-evidence/r2/SET-10-PER-02.png",
+      "qa-evidence/r2/SET-10-PER-03.png",
+      "qa-evidence/r2/SET-10-PER-04.png",
+      "qa-evidence/r2/SET-10-PER-05.png",
+      "qa-evidence/r2/SET-10-PER-06.png",
+      "qa-evidence/r2/SET-10-PER-07.png",
+      "qa-evidence/r2/SET-10-PER-08.png",
+      "qa-evidence/r2/SET-10-PER-09.png",
+      "qa-evidence/r2/SET-10-PER-10.png",
+      "qa-evidence/r2/SET-10-PER-11.png",
+      "qa-evidence/r2/SET-10-PER-12.png",
+      "qa-evidence/r2/SET-10-PER-13.png",
+      "qa-evidence/r2/SET-10-PER-14.png",
+      "qa-evidence/r2/SET-10-PER-15.png",
+      "qa-evidence/r2/SET-10-PER-16.png",
+      "qa-evidence/r2/SET-10-PER-17.png",
+      "qa-evidence/r2/SET-10-PER-31.png",
+      "qa-evidence/r2/SET-10-PER-32.png",
+      "qa-evidence/r2/SET-10-PER-33.png",
+      "qa-evidence/r2/SET-10-PER-34.png",
+      "qa-evidence/r2/SET-10-fresh-surfaces-observations.json",
+      "qa-evidence/r2/SET-10-retry-observations.json"
     ],
     "kind": "acceptance",
     "key": "SET-10-PER",
@@ -2544,44 +2762,297 @@
       "id": "",
       "label": ""
     },
-    "result": "blocked",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": [],
-    "actual": "当前 Space 实际标签顺序：[A（SET-10-PER，未见 fixture 内容）]；单选 A，无组、无 split。工具栏仍显示 Stop。",
+    "attempts": [
+      {
+        "job": "SET-10",
+        "outcome": "blocked",
+        "actual": "当前 Space 实际标签顺序：[A（SET-10-PER，未见 fixture 内容）]；单选 A，无组、无 split。工具栏仍显示 Stop。",
+        "observation": {
+          "active_after": "唯一选中的 SET-10-PER A 导航标签；内容仍为 New Tab。",
+          "active_before": "前置核对时唯一选中的 SET-10-PER A 导航标签。",
+          "after": "当前 Space 实际标签顺序：[A（SET-10-PER，未见 fixture 内容）]；单选 A，无组、无 split。工具栏仍显示 Stop。",
+          "before": "清理后实际标签顺序：[A（SET-10-PER，未见 fixture 内容）]；B/C/D/E 和 TC-G 尚未创建，无 split。",
+          "confirmation_choices": "原生 Close Other Tabs 未出现确认对话框；未勾选任何“不再询问”。",
+          "evidence_markers": [
+            "SET-10-PER attempt1 layout",
+            "SET-10-PER attempt1 setup-navigation",
+            "SET-10-PER attempt1 before",
+            "SET-10-PER attempt1 failure",
+            "SET-10-PER attempt1 after"
+          ],
+          "identity_checks": "原生标签值包含 tab=A、run=TC-PHI507-r2-SET-10-PER、kind=normal；屏幕为 New Tab，未见 TC 标题、批次、本次打开编号或 fixture 输入框，不能据 URL 确认页面已提交。",
+          "language_observed": "General 的 Display language 为 System Default；实际界面英文，未切换语言。",
+          "layout_observed": "开始实读 Comfortable；通过 General 原生 Performance button 切换并截图确认蓝框选中；浏览器外部标签栏为纵向。",
+          "not_executed_reason": "A 导航后多次读取仍为 New Tab，无法建立并核实普通 A/B/C、TC-G[D,E] 的完整前置；因此未执行开启后双击已有 B、新建普通页双击、反向关闭及四种表面的双击动作。",
+          "operator_errors": [],
+          "precondition_actual": "两个开关实读 off/off；仅建立了一个尝试导航本项 A 的标签，页面身份未能确认，完整前置未满足。",
+          "settings_observed": "settings.tabs.doubleClickToClose=off；settings.tabs.directionalClosing=off；均未点击。快捷键未更改。",
+          "steps_executed": [
+            "get_app_state 实读 W2 当前状态。",
+            "以 Cmd+, 打开 Settings，读取 General 的原始语言和 Comfortable 布局。",
+            "选择 Performance，进入 Advanced 读取两个开关 off/off，关闭 Settings。",
+            "在当前测试 Space 新建标签，经原生地址栏输入 SET-10-PER 的 A fixture URL 并 Return。",
+            "对新标签使用原生 Close Other Tabs，关闭该 Space 原有的 SET-08-COMMON B 尝试导航标签。",
+            "重新读取唯一 A 的原生状态和截图；因页面身份缺失停止被测动作，保留现场至下一项开始。"
+          ],
+          "unit_id": "SET-10-PER"
+        },
+        "evidence": [
+          "qa-evidence/r2/SET-10-observations.json",
+          "qa-evidence/r2/SET-10-evidence.json",
+          "qa-evidence/r2/SET-10-PER-01.png"
+        ],
+        "notes": ""
+      },
+      {
+        "job": "SET-10-retry",
+        "outcome": "partial",
+        "actual": "开启后：已有 B 消失，活动页转 C；新建普通 N 双击后消失，活动页转 C。关闭后：普通 A 保留并被选中；有效重试的组内 D 保留并高亮；新建 split[A,C] 双击 C 后两页仍在，焦点转 C；新建组内 split[D,E] 双击 E 后两页仍在，焦点转 E。最终顺序 split[A,C] → TC-G 内 split[D,E]，B/N 不在。",
+        "observation": {
+          "active_after": "有效组内普通操作后为 D；普通 split 操作后焦点为 C；最终显示组内 split[D,E]，E 侧有活动焦点边框。组内子行未在原生树标 selected，依据截图高亮和焦点边框记录，无多选。",
+          "active_before": "E，截图高亮组内 E；原生组内子行未标 selected。",
+          "after": "开启后：已有 B 消失，活动页转 C；新建普通 N 双击后消失，活动页转 C。关闭后：普通 A 保留并被选中；有效重试的组内 D 保留并高亮；新建 split[A,C] 双击 C 后两页仍在，焦点转 C；新建组内 split[D,E] 双击 E 后两页仍在，焦点转 E。最终顺序 split[A,C] → TC-G 内 split[D,E]，B/N 不在。",
+          "before": "自上而下 A → B → C → TC-PHI507-r2-SET-10-PER-TC-G[D,E]；无 split，无多选；两个开关均 off。",
+          "confirmation_choices": "组重命名使用 Save。普通页关闭无离开确认。未勾选任何“不再询问”。",
+          "evidence_markers": [
+            "SET-10-PER attempt1 before",
+            "SET-10-PER existing-B before",
+            "SET-10-PER existing-B after",
+            "SET-10-PER new-N before",
+            "SET-10-PER new-N after",
+            "SET-10-PER off-normal before",
+            "SET-10-PER off-normal after",
+            "SET-10-PER off-group before",
+            "SET-10-PER off-group after",
+            "SET-10-PER off-group attempt1 failure",
+            "SET-10-PER off-group attempt2 before",
+            "SET-10-PER off-group attempt2 after",
+            "SET-10-PER off-normal-split before",
+            "SET-10-PER off-normal-split after",
+            "SET-10-PER off-group-split before",
+            "SET-10-PER attempt1 after"
+          ],
+          "identity_checks": "逐页实见 TC 标题、批次、普通页说明、打开编号及空输入框。批次 TC-PHI507-r2-SET-10-PER：A=136c0b5e-c7c3-46c8-8c4f-498e08385049；B=fd3f0cde-2996-45c4-9719-8b057514f019；C=4265a9d0-ca81-498f-8d21-1d93dd971871；初始 D=86d02f09-13ec-40f6-a837-93daf6e69c64；初始 E=98618df0-9daa-43a2-b52f-927bd302ae72；N=8842f57c-5682-4bb3-9f2b-fed85f73aebe。误操作后仅重建 D/E，批次 TC-PHI507-r2-SET-10-PER-retry-group：D=fcc2d840-872d-44a0-bf4f-3887bbd40887；E=d06b77d8-d3ae-4315-8bc0-f4e8c8b2a14a。有效组内及最终 split 使用重建后的编号；A/C split 中编号与初始一致。",
+          "language_observed": "General 为 System Default；浏览器与设置界面英文，未切换语言。",
+          "layout_observed": "起始实读 Balanced；通过 General 原生 Performance 按钮切换，截图实见 Performance 选中边框；浏览器外部页签上下排列。",
+          "not_executed_reason": "关闭后的普通及组内普通表面未另行新建 cell：普通使用既有 A；组内有效操作使用误点后重新建立的 D/E。两个 split 均在关闭开关后原生新建。故不记录“关闭后四种表面全部分别新建 cell”的完整覆盖。",
+          "operator_errors": [
+            "前置组菜单定位时，对聚合组 row 右击曾打开子页菜单；另一次坐标右击落在 B，均以 Escape 退出，未选择菜单动作。",
+            "关闭开关后的组内普通首次双击使用 TC-D 文本索引 33，点击位置落在页签右侧区域，D/E 随后均消失；不能确认是所要求的页签主体双击，保留 failure 现场，不作为有效组内行为记录。随后仅重建缺失 D/E，改用真实子 row 29 重试，D/E 保留。",
+            "辅助匹配函数曾把焦点说明行和控件行重复计数，停在 Rename Group 对话框；未执行错误点击，改为只匹配带数字索引的控件行后继续。"
+          ],
+          "precondition_actual": "在本轮 S1 新建 New Tab，原生 Close Other Tabs 清理 SET-08 普通测试页，再按 A/B/C/D/E 顺序地址栏导航；原生建立并命名 TC-G，把 E 加入 D 所在组。执行开启动作前已确认 A/B/C、组[D,E] 和双 off。",
+          "settings_observed": "会话起始双击 off、位置 on。单独点击位置开关后即时读取双击 off/位置 off；开启双击后即时读取 on/off；反向关闭双击后即时读取 off/off。未点击项在这些读取中未变化；无重启或快捷键改动。",
+          "steps_executed": [
+            "原生切换 Performance，单独关闭位置关闭并读取两个开关；重建五页及 TC-G[D,E]。",
+            "开启双击关闭，立即双击既有 B；实读 B 消失。",
+            "新建普通 N，实见正文与编号后双击；实读 N 消失。",
+            "关闭双击关闭并读取双 off，双击普通 A；A 保留并选中。",
+            "组内首次操作无效，保存现场；以 retry-group 批次重建 D/E 及组，双击 D 子 row；D/E 保留。",
+            "原生 Split with Current 建立普通 split[A,C]，双击 C 标签；配对保留、焦点转 C。",
+            "原生建立组内 split[D,E]，双击 E 标签；配对与组成员保留、焦点转 E，保存结束图。"
+          ],
+          "unit_id": "SET-10-PER"
+        },
+        "evidence": [
+          "qa-evidence/r2/SET-10-retry-observations.json",
+          "qa-evidence/r2/SET-10-PER-02.png",
+          "qa-evidence/r2/SET-10-PER-03.png",
+          "qa-evidence/r2/SET-10-PER-04.png",
+          "qa-evidence/r2/SET-10-PER-05.png",
+          "qa-evidence/r2/SET-10-PER-06.png",
+          "qa-evidence/r2/SET-10-PER-07.png",
+          "qa-evidence/r2/SET-10-PER-08.png",
+          "qa-evidence/r2/SET-10-PER-09.png",
+          "qa-evidence/r2/SET-10-PER-10.png",
+          "qa-evidence/r2/SET-10-PER-11.png",
+          "qa-evidence/r2/SET-10-PER-12.png",
+          "qa-evidence/r2/SET-10-PER-13.png",
+          "qa-evidence/r2/SET-10-PER-14.png",
+          "qa-evidence/r2/SET-10-PER-15.png",
+          "qa-evidence/r2/SET-10-PER-16.png",
+          "qa-evidence/r2/SET-10-PER-17.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/SET-10-retry-evidence.json",
+        "notes": "已完成开启后已有/新建普通页，以及关闭后四种表面观察；关闭后普通/组内普通未新建，按源步骤另补；PER长text命中异常待单击诊断。",
+        "reviewed_at": "2026-10-30T10:54:44.856773+00:00"
+      },
+      {
+        "job": "SET-10-fresh-surfaces",
+        "outcome": "pass",
+        "actual": "两次双击后，真实集合均仍为普通 A、展开组 TC-PHI507-r2-SET10-fresh-PER[D,E]；无多选、无 split。A、D 的打开编号及输入标记前后一致；随后实见 E 原编号和标记。",
+        "observation": {
+          "active_after": "A 双击后仍为 A；D 双击后仍为 D；随后逐页核对 E，单元结束活动页 E。",
+          "active_before": "普通 A 子步骤为 A；组内 D 子步骤为 D。",
+          "after": "两次双击后，真实集合均仍为普通 A、展开组 TC-PHI507-r2-SET10-fresh-PER[D,E]；无多选、无 split。A、D 的打开编号及输入标记前后一致；随后实见 E 原编号和标记。",
+          "before": "普通 A、展开组 TC-PHI507-r2-SET10-fresh-PER[D,E]，顺序 A、D、E。三页均为本次关闭双击开关后新建的 normal fixture。",
+          "confirmation_choices": "测试动作未出现确认框。准备时对旧 TC 组使用 Close Group，未出现删除确认；新组重命名选择 Save。未勾选任何“不再询问”。",
+          "evidence_markers": [
+            "SET-10-PER fresh layout",
+            "SET-10-PER fresh settings-off",
+            "SET-10-PER fresh D created",
+            "SET-10-PER fresh E created",
+            "SET-10-PER fresh-A attempt1 before",
+            "SET-10-PER fresh-A attempt1 after",
+            "SET-10-PER fresh-D attempt1 before",
+            "SET-10-PER fresh-D attempt1 after",
+            "SET-10-PER fresh-E identity-after"
+          ],
+          "identity_checks": "正文批次 TC-PHI507-r2-SET-10-PER-fresh。A：1eb912cc-cca6-4657-a6ad-54bd171fe10d，KEEP-SET10-PER-A；D：9a84e480-333e-47fb-8472-d1b0d73d91e8，KEEP-SET10-PER-D；E：f8bc8b46-9692-4793-ba76-e108176561ff，KEEP-SET10-PER-E。均实见 TC 标题、批次、普通页类型、打开编号及输入框；输入前以四次 Tab 后的绿色焦点边框确认 textarea。A、D 在关键动作前后同号同标记；E 在结束逐页复核时同号同标记，没有重建。",
+          "language_observed": "General 为 System Default，浏览器菜单与设置实际显示英文；本项未切换语言或重启。",
+          "layout_observed": "从起始 Balanced 经 General 原生 button 选择 Performance，截图显示 Performance 选中；浏览器 chrome 为左侧纵向标签栏。",
+          "not_executed_reason": "此前其余子步骤已在SET-10-retry保存，本次仅补关闭后新建普通与组内普通子步骤",
+          "operator_errors": [
+            "准备清理旧组时，先右击父 row、再按截图坐标右击，均打开了普通标签菜单；均 Escape 取消，未选择菜单动作。随后用最新树的旧组标题原生 text 打开组菜单并 Close Group。此过程发生于新对象创建和被测双击之前；取消后的现场及随后正确组菜单截图已输出，前两次菜单未单独添加 failure 标记。"
+          ],
+          "precondition_actual": "先实读起始双击 off／位置 on；单独关闭位置后为 off/off，再单独切换双击 on→off，每次即时读取两个开关。随后仅在当前测试 Space 清理旧 TC 对象，新建 A、D、E，并在 off/off 下组成新组；未创建 B/C 或 split。",
+          "settings_observed": "时间均为 Date.now 的 Unix 毫秒：1793358325451，单独关闭位置后双击 off／位置 off；1793358326031，单独开启双击后 on/off；1793358326620，反向关闭双击后 off/off。未点击项未观察到联动变化。快捷键未修改。",
+          "steps_executed": [
+            "双击关闭设 off（1793358326620）后关闭 Settings，清理当前旧 TC 组与普通页；通过 Cmd+T 创建新的 New Tab，再 Close Other Tabs。该新页于 1793358406734 开始通过原生地址栏输入本项 A fixture URL，随后实见 A 正文与编号。",
+            "确认 A 输入焦点并输入 KEEP-SET10-PER-A；1793358434139 通过 Cmd+T 开始创建 D，1793358438097 已实见 D 正文；确认焦点后输入 KEEP-SET10-PER-D。",
+            "1793358455775 通过 Cmd+T 开始创建 E，1793358459626 已实见 E 正文；确认焦点后输入 KEEP-SET10-PER-E。",
+            "通过 D 的原生右键 New Tab Group、Rename Group/Save 创建 TC-PHI507-r2-SET10-fresh-PER，再将 E 通过 Add to Group 加入；1793358509982 实读组内 D/E。",
+            "选中 A，get_app_state 保存 before；对最新树 A 的原生安全 row（21）执行 click_count:2，再 get_app_state 保存 after。",
+            "从最新树核对 D 文本所属最内层 row，单击选中 D 并保存 before；对该最内层 row（28）执行 click_count:2，保存 after；再单击 E 逐页核对原编号和标记。"
+          ],
+          "unit_id": "SET-10-PER"
+        },
+        "evidence": [
+          "qa-evidence/r2/SET-10-fresh-surfaces-observations.json",
+          "qa-evidence/r2/SET-10-PER-31.png",
+          "qa-evidence/r2/SET-10-PER-32.png",
+          "qa-evidence/r2/SET-10-PER-33.png",
+          "qa-evidence/r2/SET-10-PER-34.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/SET-10-fresh-surfaces-evidence.json",
+        "notes": "补执行关闭后新建普通/组内普通子步骤；PER/BAL两种表面已完成，COM仅普通A完成，组内D因错误限定row未执行，另续做实际tabStripTab button。",
+        "reviewed_at": "2026-10-30T11:23:44.382876+00:00",
+        "scope": "补执行关闭后新建普通与组内普通"
+      }
+    ],
+    "actual": "本轮分段完成。原步骤：开启后：已有 B 消失，活动页转 C；新建普通 N 双击后消失，活动页转 C。关闭后：普通 A 保留并被选中；有效重试的组内 D 保留并高亮；新建 split[A,C] 双击 C 后两页仍在，焦点转 C；新建组内 split[D,E] 双击 E 后两页仍在，焦点转 E。最终顺序 split[A,C] → TC-G 内 split[D,E]，B/N 不在。；关闭后新建普通/组内普通补执行：两次双击后，真实集合均仍为普通 A、展开组 TC-PHI507-r2-SET10-fresh-PER[D,E]；无多选、无 split。A、D 的打开编号及输入标记前后一致；随后实见 E 原编号和标记。",
     "observation": {
-      "active_after": "唯一选中的 SET-10-PER A 导航标签；内容仍为 New Tab。",
-      "active_before": "前置核对时唯一选中的 SET-10-PER A 导航标签。",
-      "after": "当前 Space 实际标签顺序：[A（SET-10-PER，未见 fixture 内容）]；单选 A，无组、无 split。工具栏仍显示 Stop。",
-      "before": "清理后实际标签顺序：[A（SET-10-PER，未见 fixture 内容）]；B/C/D/E 和 TC-G 尚未创建，无 split。",
-      "confirmation_choices": "原生 Close Other Tabs 未出现确认对话框；未勾选任何“不再询问”。",
+      "active_after": "A 双击后仍为 A；D 双击后仍为 D；随后逐页核对 E，单元结束活动页 E。",
+      "active_before": "普通 A 子步骤为 A；组内 D 子步骤为 D。",
+      "after": "本轮分段完成。原步骤：开启后：已有 B 消失，活动页转 C；新建普通 N 双击后消失，活动页转 C。关闭后：普通 A 保留并被选中；有效重试的组内 D 保留并高亮；新建 split[A,C] 双击 C 后两页仍在，焦点转 C；新建组内 split[D,E] 双击 E 后两页仍在，焦点转 E。最终顺序 split[A,C] → TC-G 内 split[D,E]，B/N 不在。；关闭后新建普通/组内普通补执行：两次双击后，真实集合均仍为普通 A、展开组 TC-PHI507-r2-SET10-fresh-PER[D,E]；无多选、无 split。A、D 的打开编号及输入标记前后一致；随后实见 E 原编号和标记。",
+      "before": "自上而下 A → B → C → TC-PHI507-r2-SET-10-PER-TC-G[D,E]；无 split，无多选；两个开关均 off。",
+      "confirmation_choices": "测试动作未出现确认框。准备时对旧 TC 组使用 Close Group，未出现删除确认；新组重命名选择 Save。未勾选任何“不再询问”。",
       "evidence_markers": [
-        "SET-10-PER attempt1 layout",
-        "SET-10-PER attempt1 setup-navigation",
-        "SET-10-PER attempt1 before",
-        "SET-10-PER attempt1 failure",
-        "SET-10-PER attempt1 after"
+        "SET-10-PER fresh layout",
+        "SET-10-PER fresh settings-off",
+        "SET-10-PER fresh D created",
+        "SET-10-PER fresh E created",
+        "SET-10-PER fresh-A attempt1 before",
+        "SET-10-PER fresh-A attempt1 after",
+        "SET-10-PER fresh-D attempt1 before",
+        "SET-10-PER fresh-D attempt1 after",
+        "SET-10-PER fresh-E identity-after"
       ],
-      "identity_checks": "原生标签值包含 tab=A、run=TC-PHI507-r2-SET-10-PER、kind=normal；屏幕为 New Tab，未见 TC 标题、批次、本次打开编号或 fixture 输入框，不能据 URL 确认页面已提交。",
-      "language_observed": "General 的 Display language 为 System Default；实际界面英文，未切换语言。",
-      "layout_observed": "开始实读 Comfortable；通过 General 原生 Performance button 切换并截图确认蓝框选中；浏览器外部标签栏为纵向。",
-      "not_executed_reason": "A 导航后多次读取仍为 New Tab，无法建立并核实普通 A/B/C、TC-G[D,E] 的完整前置；因此未执行开启后双击已有 B、新建普通页双击、反向关闭及四种表面的双击动作。",
-      "operator_errors": [],
-      "precondition_actual": "两个开关实读 off/off；仅建立了一个尝试导航本项 A 的标签，页面身份未能确认，完整前置未满足。",
-      "settings_observed": "settings.tabs.doubleClickToClose=off；settings.tabs.directionalClosing=off；均未点击。快捷键未更改。",
+      "identity_checks": "逐页实见 TC 标题、批次、普通页说明、打开编号及空输入框。批次 TC-PHI507-r2-SET-10-PER：A=136c0b5e-c7c3-46c8-8c4f-498e08385049；B=fd3f0cde-2996-45c4-9719-8b057514f019；C=4265a9d0-ca81-498f-8d21-1d93dd971871；初始 D=86d02f09-13ec-40f6-a837-93daf6e69c64；初始 E=98618df0-9daa-43a2-b52f-927bd302ae72；N=8842f57c-5682-4bb3-9f2b-fed85f73aebe。误操作后仅重建 D/E，批次 TC-PHI507-r2-SET-10-PER-retry-group：D=fcc2d840-872d-44a0-bf4f-3887bbd40887；E=d06b77d8-d3ae-4315-8bc0-f4e8c8b2a14a。有效组内及最终 split 使用重建后的编号；A/C split 中编号与初始一致。；新建表面：正文批次 TC-PHI507-r2-SET-10-PER-fresh。A：1eb912cc-cca6-4657-a6ad-54bd171fe10d，KEEP-SET10-PER-A；D：9a84e480-333e-47fb-8472-d1b0d73d91e8，KEEP-SET10-PER-D；E：f8bc8b46-9692-4793-ba76-e108176561ff，KEEP-SET10-PER-E。均实见 TC 标题、批次、普通页类型、打开编号及输入框；输入前以四次 Tab 后的绿色焦点边框确认 textarea。A、D 在关键动作前后同号同标记；E 在结束逐页复核时同号同标记，没有重建。",
+      "language_observed": "General 为 System Default，浏览器菜单与设置实际显示英文；本项未切换语言或重启。",
+      "layout_observed": "从起始 Balanced 经 General 原生 button 选择 Performance，截图显示 Performance 选中；浏览器 chrome 为左侧纵向标签栏。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "前置组菜单定位时，对聚合组 row 右击曾打开子页菜单；另一次坐标右击落在 B，均以 Escape 退出，未选择菜单动作。",
+        "关闭开关后的组内普通首次双击使用 TC-D 文本索引 33，点击位置落在页签右侧区域，D/E 随后均消失；不能确认是所要求的页签主体双击，保留 failure 现场，不作为有效组内行为记录。随后仅重建缺失 D/E，改用真实子 row 29 重试，D/E 保留。",
+        "辅助匹配函数曾把焦点说明行和控件行重复计数，停在 Rename Group 对话框；未执行错误点击，改为只匹配带数字索引的控件行后继续。",
+        "准备清理旧组时，先右击父 row、再按截图坐标右击，均打开了普通标签菜单；均 Escape 取消，未选择菜单动作。随后用最新树的旧组标题原生 text 打开组菜单并 Close Group。此过程发生于新对象创建和被测双击之前；取消后的现场及随后正确组菜单截图已输出，前两次菜单未单独添加 failure 标记。"
+      ],
+      "precondition_actual": "在本轮 S1 新建 New Tab，原生 Close Other Tabs 清理 SET-08 普通测试页，再按 A/B/C/D/E 顺序地址栏导航；原生建立并命名 TC-G，把 E 加入 D 所在组。执行开启动作前已确认 A/B/C、组[D,E] 和双 off。；补执行前置：先实读起始双击 off／位置 on；单独关闭位置后为 off/off，再单独切换双击 on→off，每次即时读取两个开关。随后仅在当前测试 Space 清理旧 TC 对象，新建 A、D、E，并在 off/off 下组成新组；未创建 B/C 或 split。",
+      "settings_observed": "会话起始双击 off、位置 on。单独点击位置开关后即时读取双击 off/位置 off；开启双击后即时读取 on/off；反向关闭双击后即时读取 off/off。未点击项在这些读取中未变化；无重启或快捷键改动。；补执行：时间均为 Date.now 的 Unix 毫秒：1793358325451，单独关闭位置后双击 off／位置 off；1793358326031，单独开启双击后 on/off；1793358326620，反向关闭双击后 off/off。未点击项未观察到联动变化。快捷键未修改。",
       "steps_executed": [
-        "get_app_state 实读 W2 当前状态。",
-        "以 Cmd+, 打开 Settings，读取 General 的原始语言和 Comfortable 布局。",
-        "选择 Performance，进入 Advanced 读取两个开关 off/off，关闭 Settings。",
-        "在当前测试 Space 新建标签，经原生地址栏输入 SET-10-PER 的 A fixture URL 并 Return。",
-        "对新标签使用原生 Close Other Tabs，关闭该 Space 原有的 SET-08-COMMON B 尝试导航标签。",
-        "重新读取唯一 A 的原生状态和截图；因页面身份缺失停止被测动作，保留现场至下一项开始。"
+        "SET-10-retry分段：",
+        "原生切换 Performance，单独关闭位置关闭并读取两个开关；重建五页及 TC-G[D,E]。",
+        "开启双击关闭，立即双击既有 B；实读 B 消失。",
+        "新建普通 N，实见正文与编号后双击；实读 N 消失。",
+        "关闭双击关闭并读取双 off，双击普通 A；A 保留并选中。",
+        "组内首次操作无效，保存现场；以 retry-group 批次重建 D/E 及组，双击 D 子 row；D/E 保留。",
+        "原生 Split with Current 建立普通 split[A,C]，双击 C 标签；配对保留、焦点转 C。",
+        "原生建立组内 split[D,E]，双击 E 标签；配对与组成员保留、焦点转 E，保存结束图。",
+        "SET-10-fresh-surfaces补执行分段：",
+        "双击关闭设 off（1793358326620）后关闭 Settings，清理当前旧 TC 组与普通页；通过 Cmd+T 创建新的 New Tab，再 Close Other Tabs。该新页于 1793358406734 开始通过原生地址栏输入本项 A fixture URL，随后实见 A 正文与编号。",
+        "确认 A 输入焦点并输入 KEEP-SET10-PER-A；1793358434139 通过 Cmd+T 开始创建 D，1793358438097 已实见 D 正文；确认焦点后输入 KEEP-SET10-PER-D。",
+        "1793358455775 通过 Cmd+T 开始创建 E，1793358459626 已实见 E 正文；确认焦点后输入 KEEP-SET10-PER-E。",
+        "通过 D 的原生右键 New Tab Group、Rename Group/Save 创建 TC-PHI507-r2-SET10-fresh-PER，再将 E 通过 Add to Group 加入；1793358509982 实读组内 D/E。",
+        "选中 A，get_app_state 保存 before；对最新树 A 的原生安全 row（21）执行 click_count:2，再 get_app_state 保存 after。",
+        "从最新树核对 D 文本所属最内层 row，单击选中 D 并保存 before；对该最内层 row（28）执行 click_count:2，保存 after；再单击 E 逐页核对原编号和标记。"
       ],
       "unit_id": "SET-10-PER"
     },
-    "notes": "",
-    "not_run_reason": "A 导航后多次读取仍为 New Tab，无法建立并核实普通 A/B/C、TC-G[D,E] 的完整前置；因此未执行开启后双击已有 B、新建普通页双击、反向关闭及四种表面的双击动作。",
+    "notes": "本轮分段完成全部源步骤；既有B/新建N开启后关闭、关闭后两种新split见retry，关闭后新建普通和组内普通见fresh-surfaces。源执行点不是一次连续重跑；原无效尝试和补执行各自保留。",
     "reviewed_by": "Ripley",
-    "review_basis": "原始 CU 观察、工具审计与关键前后截图；无效尝试不计产品结果"
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列",
+    "diagnostics": [
+      {
+        "job": "SET-10-SET-10-PER-hit-diagnostic",
+        "scope": "补充输入定位；不计为基础用例重新执行",
+        "observation": {
+          "active_after": "诊断结束为 DIAG2 D；身份核对与偏好恢复后仍为同一 D。",
+          "active_before": "text 诊断前为 DIAG1 E；重建 D/E 后、row 单击前为 DIAG2 E。",
+          "after": "DIAG1：D text 单击后集合为 A、C、组[E]，活动 E；E text 单击出现删除组确认，确认后仅 A/C，活动 C。DIAG2：D row 单击选择 D；修正比例后的标题左半区域单击及真正双击均保留 A、C、组[D,E]，活动 D。text 单击已实见触发关闭路径；原生树未暴露 text 矩形边界或独立关闭按钮，无法进一步确定文本边界与可见关闭控件的准确覆盖关系，不据此归因于双击关闭功能。",
+          "before": "完整初始诊断图显示普通 A、C，展开组 TC-PHI507-r2-SET-10-PER-DIAG1-TC-G[D,E]；D 最内层 row=29、text=33，E row=34、text=38；正文为 E。重建对照组后顺序仍为 A、C、组[D,E]，D row=29/text=33、E row=34/text=38；均非 split，无多选。",
+          "confirmation_choices": "DIAG1 E text 单击后出现“Close Tab and Delete Group?”；Don't Ask Again 值为 0，未勾选；单击 Delete Group（最新索引10，click_count=1），只删除本轮 DIAG1 测试组及其最后一页。",
+          "evidence_markers": [
+            "首次 get_app_state：完整起始图，未加显式 EVIDENCE 标记",
+            "SET-10-PER diagnostic setup layout",
+            "SET-10-PER diagnostic setup off-off",
+            "SET-10-PER DIAG1 A load-stage elapsed-ms=32032",
+            "SET-10-PER DIAG1 identity A",
+            "SET-10-PER DIAG1 identity C",
+            "SET-10-PER DIAG1 identity D",
+            "SET-10-PER DIAG1 identity E",
+            "SET-10-PER text-D attempt1 before",
+            "SET-10-PER text-D attempt1 after",
+            "SET-10-PER text-E attempt1 before",
+            "SET-10-PER text-E attempt1 after",
+            "SET-10-PER text-E deletion after",
+            "SET-10-PER DIAG2 identity D",
+            "SET-10-PER DIAG2 identity E",
+            "SET-10-PER row-D attempt1 before",
+            "SET-10-PER row-D attempt1 after",
+            "SET-10-PER title-single attempt1 before",
+            "SET-10-PER title-single attempt1 after",
+            "SET-10-PER title-single attempt1 failure coordinate-scale",
+            "SET-10-PER title-single attempt2 before",
+            "SET-10-PER title-single attempt2 after",
+            "SET-10-PER title-double attempt1 before",
+            "SET-10-PER title-double attempt1 after",
+            "SET-10-PER preserved identity A",
+            "SET-10-PER preserved identity C",
+            "SET-10-PER preserved identity E",
+            "SET-10-PER preserved identity D",
+            "SET-10-PER session-restore switches",
+            "SET-10-PER session-restore layout",
+            "SET-10-PER ending_state"
+          ],
+          "identity_checks": "所有页面均经原生地址栏输入 fixture URL，并实见 TC 标题、批次、普通页说明、打开编号及输入框。DIAG1 批次 TC-PHI507-r2-SET-10-PER-DIAG1：A=e6131a49-bfdb-4f80-89dc-aa15667cbdfa，标记 KEEP-A-DIAG1；C=bb88005c-4287-4c7c-bda1-4d259fc53380，标记 KEEP-C-DIAG1；D=6dd574fc-5ae6-4195-a86d-deb1a52dd812，标记 KEEP-D-DIAG1；E=9e923fe4-ffbe-429f-a39b-08f1949308c7，标记 KEEP-E-DIAG1。输入前均截图看见焦点边框；输入框点击参数为 x800/y950、click_count=1。DIAG2 批次 TC-PHI507-r2-SET-10-PER-DIAG2：D=806c0c5f-5161-4f5b-af5f-705f8c2120c1；E=9f2e0595-4ab5-4b90-85da-e728d55cf625，二者输入框保持空。结束前通过最新 row 逐页核对 A21、C22、E34、D29，均 click_count=1；A/C 编号与输入标记保留，DIAG2 D/E 编号保留。首次 A 在导航后约32秒的观察时已提交，未测定更早的准确提交时间。",
+          "language_observed": "General 实读 System Default，界面英文；全程未切换语言或主动重启。",
+          "layout_observed": "起始 General 截图选中 Balanced；诊断前单击 Performance 原生 button12，并截图确认其选中边框及外部上下布局。诊断均在 Performance 下执行。收尾单击 Balanced button11，截图确认恢复；未执行其他布局诊断。",
+          "not_executed_reason": "指定定向诊断已执行。真正标题区 off 时未出现关闭，因此未执行“标题区仍关闭时另重建并重复一次”的条件分支。按额外范围约束，未执行基础用例中的开启双击、已有 B、新建普通页及四种表面扩展测试。",
+          "operator_errors": [
+            "首次 get_app_state 后另一次编排中的 click9 和 super+comma 均返回“Computer Use is not active”，未执行；随后每次编排先 get_app_state。再次实读 PID 从54426变为57596，未主动执行退出或重启，变化原因未确定。",
+            "标题单击 attempt1 使用 x110/y432、click_count=1，实际指针约落在显示图 x83/y324，活动页切到 C；D/E 未关闭。已保存完整无效现场，不作为 D 标题输入结果。重新核实同一对象集合并以 D row29 单击恢复活动 D，按实测0.75显示比例换算为 CU x147/y576，等待超过1秒后重试。"
+          ],
+          "precondition_actual": "起始实读窗口为 ENV-03-COMMON 的 F 页面，非背景所述 split 状态；切入已存在的本轮 S1 后仅有一个 New Tab。未沿用旧页面序列，在该页输入 A，再顺序新建 C、D、E，以原生 New Tab Group、Rename Group、Add to Group 建立 DIAG1 组。诊断时双击关闭 off、位置关闭 off，Performance，System Default 英文。text 诊断删除 DIAG1 D/E 后，保留已正确的 A/C，只用新批次 DIAG2 原生重建 D/E 组。",
+          "settings_observed": "起始实读：双击关闭 off、位置关闭 on。setup 只单击位置关闭 toggle13 一次，CU 即时树为双击 off、位置 off，未点击项未联动。诊断后再次实读仍为 off/off。收尾只单击位置关闭 toggle13 一次，CU 即时树为双击 off、位置 on。布局恢复 Balanced；未改快捷键、默认浏览器或其他偏好。",
+          "steps_executed": [
+            "建立并逐页核对 DIAG1 普通 A/C、TC-G[D,E]；保存完整 text-D before 图，最新 D row29、text33。",
+            "对 D text33 发 left click_count=1；随后 get_app_state 显示 D 消失，E 保留，指针位于组内第一行右端附近。",
+            "重新从最新树精确匹配剩余 E text33，发 left click_count=1；出现删除组确认。保留确认图，未勾 Don't Ask Again，选择 Delete Group。",
+            "保留 A/C，只重建 DIAG2 D/E，原生分组并命名 TC-PHI507-r2-SET-10-PER-DIAG2-TC-G；核实顺序和正文编号。",
+            "对包含 D text33 的最内层 row29 发 left click_count=1；活动页从 E 切为 D，集合未减少。",
+            "等待超过1秒后尝试标题单击 x110/y432、click_count=1；实际选择 C，按操作器比例错误保存现场。重新以最新 D row29 单击恢复前置。",
+            "等待1500毫秒后，在已核实显示图约 x110/y432 的 D 标题左半区域发 CU x147/y576、left click_count=1；避开图标、右端和组标题，D/E 保留，活动 D。",
+            "保存完整 double before 图，再在相同 CU x147/y576 发 left click_count=2；D/E 均保留，活动 D，保存完整 after 图。",
+            "逐页复核 A/C 标记和编号及 DIAG2 D/E 编号；恢复起始位置关闭和布局，关闭 Settings，保存实际 ending_state，未再创建页面。"
+          ],
+          "unit_id": "SET-10-PER"
+        },
+        "evidence_metadata": "qa-evidence/r2/SET-10-SET-10-PER-hit-diagnostic-evidence.json"
+      }
+    ]
   },
   {
     "id": "SET-10",
@@ -2605,10 +3076,25 @@
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
     "evidence": [
-      "qa-evidence/r2/SET-10-observations.json",
-      "qa-evidence/r2/SET-10-evidence.json",
-      "qa-evidence/r2/SET-10-BAL-01.png",
-      "qa-evidence/r2/SET-10-BAL-02.png"
+      "qa-evidence/r2/SET-10-BAL-03.png",
+      "qa-evidence/r2/SET-10-BAL-04.png",
+      "qa-evidence/r2/SET-10-BAL-05.png",
+      "qa-evidence/r2/SET-10-BAL-06.png",
+      "qa-evidence/r2/SET-10-BAL-07.png",
+      "qa-evidence/r2/SET-10-BAL-08.png",
+      "qa-evidence/r2/SET-10-BAL-09.png",
+      "qa-evidence/r2/SET-10-BAL-10.png",
+      "qa-evidence/r2/SET-10-BAL-11.png",
+      "qa-evidence/r2/SET-10-BAL-12.png",
+      "qa-evidence/r2/SET-10-BAL-13.png",
+      "qa-evidence/r2/SET-10-BAL-14.png",
+      "qa-evidence/r2/SET-10-BAL-15.png",
+      "qa-evidence/r2/SET-10-BAL-16.png",
+      "qa-evidence/r2/SET-10-BAL-17.png",
+      "qa-evidence/r2/SET-10-BAL-18.png",
+      "qa-evidence/r2/SET-10-BAL-19.png",
+      "qa-evidence/r2/SET-10-fresh-surfaces-observations.json",
+      "qa-evidence/r2/SET-10-retry-observations.json"
     ],
     "kind": "acceptance",
     "key": "SET-10-BAL",
@@ -2618,43 +3104,218 @@
       "id": "",
       "label": ""
     },
-    "result": "blocked",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": [],
-    "actual": "当前 Space 实际标签顺序：[A（SET-10-BAL，未见 fixture 内容）]；单选 A，无组、无 split，工具栏显示 Stop。",
+    "attempts": [
+      {
+        "job": "SET-10",
+        "outcome": "blocked",
+        "actual": "当前 Space 实际标签顺序：[A（SET-10-BAL，未见 fixture 内容）]；单选 A，无组、无 split，工具栏显示 Stop。",
+        "observation": {
+          "active_after": "唯一选中的 SET-10-BAL A 导航标签；内容仍为 New Tab。",
+          "active_before": "前置核对时唯一选中的 SET-10-BAL A 导航标签。",
+          "after": "当前 Space 实际标签顺序：[A（SET-10-BAL，未见 fixture 内容）]；单选 A，无组、无 split，工具栏显示 Stop。",
+          "before": "独立清理重建后顺序：[A（SET-10-BAL，未见 fixture 内容）]；未创建后续 B/C/D/E。",
+          "confirmation_choices": "Close Other Tabs 未出现确认对话框；无其他确认选择。",
+          "evidence_markers": [
+            "SET-10-BAL attempt1 layout",
+            "SET-10-BAL attempt1 setup-navigation",
+            "SET-10-BAL attempt1 before",
+            "SET-10-BAL attempt1 failure",
+            "SET-10-BAL attempt1 after"
+          ],
+          "identity_checks": "原生选中行包含 tab=A、run=TC-PHI507-r2-SET-10-BAL、kind=normal；屏幕仍为 New Tab，未见 TC 标题、批次、本次打开编号或 fixture 输入框。",
+          "language_observed": "本项 General 再读为 System Default，实际界面英文；未切换语言。",
+          "layout_observed": "通过 General 原生 Balanced button 切换并截图确认蓝框选中；浏览器外部标签栏为纵向，内容工具栏位于上方。",
+          "not_executed_reason": "本项独立新建的 A 未显示 fixture 内容，完整序列及身份无法核实；未执行任何开关切换或指定双击动作。",
+          "operator_errors": [],
+          "precondition_actual": "Advanced 再读两个开关 off/off；仅有一个本项 A 尝试导航标签，普通 A/B/C、TC-G[D,E] 前置未完成。",
+          "settings_observed": "doubleClickToClose=off、directionalClosing=off；全程未点击，快捷键未更改。",
+          "steps_executed": [
+            "打开 General，选择 Balanced 并保存布局截图。",
+            "进入 Advanced，分别读取两个控件均为 off，关闭 Settings。",
+            "新建 New Tab，通过其原生 Close Other Tabs 清理上一项 A。",
+            "经原生地址栏输入 SET-10-BAL 的 A fixture URL 并 Return。",
+            "多次 get_app_state 核实唯一选中 A、Stop 和 New Tab 内容；未继续构造组或 split，保留结束现场。"
+          ],
+          "unit_id": "SET-10-BAL"
+        },
+        "evidence": [
+          "qa-evidence/r2/SET-10-observations.json",
+          "qa-evidence/r2/SET-10-evidence.json",
+          "qa-evidence/r2/SET-10-BAL-01.png",
+          "qa-evidence/r2/SET-10-BAL-02.png"
+        ],
+        "notes": ""
+      },
+      {
+        "job": "SET-10-retry",
+        "outcome": "partial",
+        "actual": "已有 B、新建 N 在开启后双击均从列表消失，活动页均转 C。关闭后双击 A、组内 D 均保留并切换高亮；原生建立普通 split[A,C] 后双击 C，两页保留、焦点转 C；建立组内 split[D,E] 后双击 E，两页和组保留、焦点转 E。最终顺序 split[A,C] → TC-G 内 split[D,E]。",
+        "observation": {
+          "active_after": "最终显示组内 split[D,E]，E 侧活动焦点边框；此前普通 A、组内 D 分别高亮，普通 split 操作后 C 侧有焦点边框，无多选。",
+          "active_before": "E，截图高亮组内 E；原生子行未标 selected。",
+          "after": "已有 B、新建 N 在开启后双击均从列表消失，活动页均转 C。关闭后双击 A、组内 D 均保留并切换高亮；原生建立普通 split[A,C] 后双击 C，两页保留、焦点转 C；建立组内 split[D,E] 后双击 E，两页和组保留、焦点转 E。最终顺序 split[A,C] → TC-G 内 split[D,E]。",
+          "before": "自上而下 A → B → C → TC-PHI507-r2-SET-10-BAL-TC-G[D,E]；无 split，无多选；双击关闭 off、位置关闭 off。",
+          "confirmation_choices": "组重命名使用 Save；普通页被测关闭无离开确认。下一执行点清理本项组时出现 Close Tabs and Delete Group?，当时 Don't Ask Again=0，随后键盘序列中的 Return 使该本轮组删除，未勾选复选框。",
+          "evidence_markers": [
+            "SET-10-BAL layout",
+            "SET-10-BAL attempt1 before",
+            "SET-10-BAL existing-B before",
+            "SET-10-BAL existing-B after",
+            "SET-10-BAL new-N before",
+            "SET-10-BAL new-N after",
+            "SET-10-BAL off-normal before",
+            "SET-10-BAL off-normal after",
+            "SET-10-BAL off-group before",
+            "SET-10-BAL off-group after",
+            "SET-10-BAL off-normal-split before",
+            "SET-10-BAL off-normal-split after",
+            "SET-10-BAL off-group-split before",
+            "SET-10-BAL attempt1 after"
+          ],
+          "identity_checks": "逐页实见 TC 标题、TC-PHI507-r2-SET-10-BAL 批次、普通页说明、打开编号及空输入框：A=0477fe8d-94ff-4b8f-b0e2-60341da768ff；B=52c4b365-f423-454f-9d6d-233b3d17fe2b；C=3c81430e-6d57-4c2c-b372-405a89840f59；D=883d9ffc-ce7a-4a33-9367-df6962734e2a；E=d999cf2d-2f24-4ac0-8cb4-ec971e448a8c；N=ae85ecf9-5dad-4684-b7ee-f7d87865be33。A/C、D/E split 截图编号与建立时一致。",
+          "language_observed": "General 实读 System Default；浏览器与设置界面英文，未改语言。",
+          "layout_observed": "通过 General 原生 Balanced 按钮切换，保存选中边框截图；外部页签上下排列。",
+          "not_executed_reason": "关闭后的普通和组内普通操作使用既有 A、D，未分别新建 cell；关闭后两个 split 已原生新建。因此新建 cell 的四表面覆盖不完整。",
+          "operator_errors": [
+            "清理 Performance 对象后的首组地址栏键盘序列未产生导航，随后两次实读仍为 New Tab、无 Stop；重新原生输入同一 A URL 后真实提交，再继续建页。",
+            "进入 Comfortable 清理本项组时，编排未在新出现的删除确认处暂停，后续键盘 Return 接受了删除；对象仅为本项已确认的 TC-G，Don't Ask Again 未勾选。"
+          ],
+          "precondition_actual": "本项开始后切换 Balanced，在 S1 新建 New Tab 并原生关闭其他本轮测试对象；重新导航 A/B/C/D/E，建立本项 TC-G[D,E]。开启前 Advanced 实读双 off。",
+          "settings_observed": "本项开启前 off/off；仅点击双击开关后即时读取 on/off；反向点击后读取 off/off，位置关闭始终 off。未重启，未修改快捷键。",
+          "steps_executed": [
+            "切换 Balanced、清理并重建 A/B/C 和 TC-G[D,E]。",
+            "开启双击关闭，立即双击既有 B；B 消失。",
+            "新建并核对普通 N 后双击；N 消失。",
+            "关闭双击关闭，读取双 off，分别双击普通 A、组内 D；均保留并高亮。",
+            "原生建立普通 split[A,C]，双击 C 标签；配对保留，焦点转 C。",
+            "原生建立组内 split[D,E]，双击 E 标签；配对与组保留，焦点转 E，保存结束图。"
+          ],
+          "unit_id": "SET-10-BAL"
+        },
+        "evidence": [
+          "qa-evidence/r2/SET-10-retry-observations.json",
+          "qa-evidence/r2/SET-10-BAL-03.png",
+          "qa-evidence/r2/SET-10-BAL-04.png",
+          "qa-evidence/r2/SET-10-BAL-05.png",
+          "qa-evidence/r2/SET-10-BAL-06.png",
+          "qa-evidence/r2/SET-10-BAL-07.png",
+          "qa-evidence/r2/SET-10-BAL-08.png",
+          "qa-evidence/r2/SET-10-BAL-09.png",
+          "qa-evidence/r2/SET-10-BAL-10.png",
+          "qa-evidence/r2/SET-10-BAL-11.png",
+          "qa-evidence/r2/SET-10-BAL-12.png",
+          "qa-evidence/r2/SET-10-BAL-13.png",
+          "qa-evidence/r2/SET-10-BAL-14.png",
+          "qa-evidence/r2/SET-10-BAL-15.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/SET-10-retry-evidence.json",
+        "notes": "已完成开启后已有/新建普通页，以及关闭后四种表面观察；关闭后普通/组内普通未新建，按源步骤另补；PER长text命中异常待单击诊断。",
+        "reviewed_at": "2026-10-30T10:54:44.856927+00:00"
+      },
+      {
+        "job": "SET-10-fresh-surfaces",
+        "outcome": "pass",
+        "actual": "两次双击后均保留普通 A、展开组 TC-PHI507-r2-SET10-fresh-BAL[D,E]，顺序及成员未变；无多选、无 split。A、D 打开编号和输入标记前后一致，E 结束复核时也保持原身份。",
+        "observation": {
+          "active_after": "A 双击后仍为 A；D 双击后仍为 D；随后逐页核对 E，单元结束活动页 E。",
+          "active_before": "普通 A 子步骤为 A；组内 D 子步骤为 D。",
+          "after": "两次双击后均保留普通 A、展开组 TC-PHI507-r2-SET10-fresh-BAL[D,E]，顺序及成员未变；无多选、无 split。A、D 打开编号和输入标记前后一致，E 结束复核时也保持原身份。",
+          "before": "普通 A、展开组 TC-PHI507-r2-SET10-fresh-BAL[D,E]，真实顺序 A、D、E；均为本项双击反向关闭后新建的普通 fixture。",
+          "confirmation_choices": "被测动作未出现确认框。准备时 Close Group、Close Other Tabs 未出现删除确认；组重命名选择 Save，未勾选“不再询问”。",
+          "evidence_markers": [
+            "SET-10-BAL fresh layout",
+            "SET-10-BAL fresh settings-off",
+            "SET-10-BAL fresh A created",
+            "SET-10-BAL fresh D created",
+            "SET-10-BAL fresh E created",
+            "SET-10-BAL fresh-A attempt1 before",
+            "SET-10-BAL fresh-A attempt1 after",
+            "SET-10-BAL fresh-D attempt1 before",
+            "SET-10-BAL fresh-D attempt1 after",
+            "SET-10-BAL fresh-E identity-after"
+          ],
+          "identity_checks": "正文批次 TC-PHI507-r2-SET-10-BAL-fresh。A：db177c4e-f6cf-44b1-a792-2a6cb515e295，KEEP-SET10-BAL-A；D：e3c6c5b3-7598-49e3-8302-1920bc9f429c，KEEP-SET10-BAL-D；E：3baf7bd0-54d4-4a7d-833e-f8bbd56156e7，KEEP-SET10-BAL-E。逐页实见标题、批次、编号、普通页类型与输入框；输入前均以 Tab 后绿色焦点边框确认。关键动作前后 A、D 同号同标记，结束逐页核对 E 同号同标记，没有重建。",
+          "language_observed": "System Default，浏览器设置与菜单英文；未切换语言或重启。",
+          "layout_observed": "General 原生选择 Balanced 并截图显示选中；浏览器 chrome 为左侧纵向标签栏和顶部地址栏。",
+          "not_executed_reason": "此前其余子步骤已在SET-10-retry保存，本次仅补关闭后新建普通与组内普通子步骤",
+          "operator_errors": [],
+          "precondition_actual": "本项重新实读初始 off/off；单独切换双击 on→off，并逐次读取双击与位置值。清理 PER 当前 TC 对象后，才通过新 New Tab 创建 BAL 的 A、D、E，并在 off/off 状态原生分组。",
+          "settings_observed": "Unix 毫秒：1793358565997 初始 off/off；1793358576288 单独开启双击后 on/off；1793358576910 单独关闭双击后 off/off。位置全程 off，未观察到联动。快捷键未修改。",
+          "steps_executed": [
+            "双击关闭设 off（1793358576910）后，Close Group 清理 PER 组；Cmd+T 新建 New Tab，再 Close Other Tabs 清理 PER 普通 A。1793358591980 开始在该新页原生地址栏导航 BAL A，1793358594961 已实见正文与编号。",
+            "确认焦点并输入 A 标记；1793358617573 通过 Cmd+T 开始创建 D，1793358621439 已实见 D 正文；确认焦点后输入 D 标记。",
+            "1793358645854 通过 Cmd+T 开始创建 E，1793358649958 已实见 E 正文；确认焦点后输入 E 标记。",
+            "通过 D 的 New Tab Group、Rename Group/Save 创建 TC-PHI507-r2-SET10-fresh-BAL，再 Add to Group 加入 E；1793358698709 实读组内 D/E。",
+            "选中 A 并 get_app_state 保存 before；对最新 A 安全 row（16）双击，再 get_app_state 保存 after。",
+            "核对 D 所属最内层原生 row（23），单击选中并保存 before；对该 row 双击，保存 after；随后单击 E 核对原编号和输入标记。"
+          ],
+          "unit_id": "SET-10-BAL"
+        },
+        "evidence": [
+          "qa-evidence/r2/SET-10-fresh-surfaces-observations.json",
+          "qa-evidence/r2/SET-10-BAL-16.png",
+          "qa-evidence/r2/SET-10-BAL-17.png",
+          "qa-evidence/r2/SET-10-BAL-18.png",
+          "qa-evidence/r2/SET-10-BAL-19.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/SET-10-fresh-surfaces-evidence.json",
+        "notes": "补执行关闭后新建普通/组内普通子步骤；PER/BAL两种表面已完成，COM仅普通A完成，组内D因错误限定row未执行，另续做实际tabStripTab button。",
+        "reviewed_at": "2026-10-30T11:23:44.383047+00:00",
+        "scope": "补执行关闭后新建普通与组内普通"
+      }
+    ],
+    "actual": "本轮分段完成。原步骤：已有 B、新建 N 在开启后双击均从列表消失，活动页均转 C。关闭后双击 A、组内 D 均保留并切换高亮；原生建立普通 split[A,C] 后双击 C，两页保留、焦点转 C；建立组内 split[D,E] 后双击 E，两页和组保留、焦点转 E。最终顺序 split[A,C] → TC-G 内 split[D,E]。；关闭后新建普通/组内普通补执行：两次双击后均保留普通 A、展开组 TC-PHI507-r2-SET10-fresh-BAL[D,E]，顺序及成员未变；无多选、无 split。A、D 打开编号和输入标记前后一致，E 结束复核时也保持原身份。",
     "observation": {
-      "active_after": "唯一选中的 SET-10-BAL A 导航标签；内容仍为 New Tab。",
-      "active_before": "前置核对时唯一选中的 SET-10-BAL A 导航标签。",
-      "after": "当前 Space 实际标签顺序：[A（SET-10-BAL，未见 fixture 内容）]；单选 A，无组、无 split，工具栏显示 Stop。",
-      "before": "独立清理重建后顺序：[A（SET-10-BAL，未见 fixture 内容）]；未创建后续 B/C/D/E。",
-      "confirmation_choices": "Close Other Tabs 未出现确认对话框；无其他确认选择。",
+      "active_after": "A 双击后仍为 A；D 双击后仍为 D；随后逐页核对 E，单元结束活动页 E。",
+      "active_before": "普通 A 子步骤为 A；组内 D 子步骤为 D。",
+      "after": "本轮分段完成。原步骤：已有 B、新建 N 在开启后双击均从列表消失，活动页均转 C。关闭后双击 A、组内 D 均保留并切换高亮；原生建立普通 split[A,C] 后双击 C，两页保留、焦点转 C；建立组内 split[D,E] 后双击 E，两页和组保留、焦点转 E。最终顺序 split[A,C] → TC-G 内 split[D,E]。；关闭后新建普通/组内普通补执行：两次双击后均保留普通 A、展开组 TC-PHI507-r2-SET10-fresh-BAL[D,E]，顺序及成员未变；无多选、无 split。A、D 打开编号和输入标记前后一致，E 结束复核时也保持原身份。",
+      "before": "自上而下 A → B → C → TC-PHI507-r2-SET-10-BAL-TC-G[D,E]；无 split，无多选；双击关闭 off、位置关闭 off。",
+      "confirmation_choices": "被测动作未出现确认框。准备时 Close Group、Close Other Tabs 未出现删除确认；组重命名选择 Save，未勾选“不再询问”。",
       "evidence_markers": [
-        "SET-10-BAL attempt1 layout",
-        "SET-10-BAL attempt1 setup-navigation",
-        "SET-10-BAL attempt1 before",
-        "SET-10-BAL attempt1 failure",
-        "SET-10-BAL attempt1 after"
+        "SET-10-BAL fresh layout",
+        "SET-10-BAL fresh settings-off",
+        "SET-10-BAL fresh A created",
+        "SET-10-BAL fresh D created",
+        "SET-10-BAL fresh E created",
+        "SET-10-BAL fresh-A attempt1 before",
+        "SET-10-BAL fresh-A attempt1 after",
+        "SET-10-BAL fresh-D attempt1 before",
+        "SET-10-BAL fresh-D attempt1 after",
+        "SET-10-BAL fresh-E identity-after"
       ],
-      "identity_checks": "原生选中行包含 tab=A、run=TC-PHI507-r2-SET-10-BAL、kind=normal；屏幕仍为 New Tab，未见 TC 标题、批次、本次打开编号或 fixture 输入框。",
-      "language_observed": "本项 General 再读为 System Default，实际界面英文；未切换语言。",
-      "layout_observed": "通过 General 原生 Balanced button 切换并截图确认蓝框选中；浏览器外部标签栏为纵向，内容工具栏位于上方。",
-      "not_executed_reason": "本项独立新建的 A 未显示 fixture 内容，完整序列及身份无法核实；未执行任何开关切换或指定双击动作。",
-      "operator_errors": [],
-      "precondition_actual": "Advanced 再读两个开关 off/off；仅有一个本项 A 尝试导航标签，普通 A/B/C、TC-G[D,E] 前置未完成。",
-      "settings_observed": "doubleClickToClose=off、directionalClosing=off；全程未点击，快捷键未更改。",
+      "identity_checks": "逐页实见 TC 标题、TC-PHI507-r2-SET-10-BAL 批次、普通页说明、打开编号及空输入框：A=0477fe8d-94ff-4b8f-b0e2-60341da768ff；B=52c4b365-f423-454f-9d6d-233b3d17fe2b；C=3c81430e-6d57-4c2c-b372-405a89840f59；D=883d9ffc-ce7a-4a33-9367-df6962734e2a；E=d999cf2d-2f24-4ac0-8cb4-ec971e448a8c；N=ae85ecf9-5dad-4684-b7ee-f7d87865be33。A/C、D/E split 截图编号与建立时一致。；新建表面：正文批次 TC-PHI507-r2-SET-10-BAL-fresh。A：db177c4e-f6cf-44b1-a792-2a6cb515e295，KEEP-SET10-BAL-A；D：e3c6c5b3-7598-49e3-8302-1920bc9f429c，KEEP-SET10-BAL-D；E：3baf7bd0-54d4-4a7d-833e-f8bbd56156e7，KEEP-SET10-BAL-E。逐页实见标题、批次、编号、普通页类型与输入框；输入前均以 Tab 后绿色焦点边框确认。关键动作前后 A、D 同号同标记，结束逐页核对 E 同号同标记，没有重建。",
+      "language_observed": "System Default，浏览器设置与菜单英文；未切换语言或重启。",
+      "layout_observed": "General 原生选择 Balanced 并截图显示选中；浏览器 chrome 为左侧纵向标签栏和顶部地址栏。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "清理 Performance 对象后的首组地址栏键盘序列未产生导航，随后两次实读仍为 New Tab、无 Stop；重新原生输入同一 A URL 后真实提交，再继续建页。",
+        "进入 Comfortable 清理本项组时，编排未在新出现的删除确认处暂停，后续键盘 Return 接受了删除；对象仅为本项已确认的 TC-G，Don't Ask Again 未勾选。"
+      ],
+      "precondition_actual": "本项开始后切换 Balanced，在 S1 新建 New Tab 并原生关闭其他本轮测试对象；重新导航 A/B/C/D/E，建立本项 TC-G[D,E]。开启前 Advanced 实读双 off。；补执行前置：本项重新实读初始 off/off；单独切换双击 on→off，并逐次读取双击与位置值。清理 PER 当前 TC 对象后，才通过新 New Tab 创建 BAL 的 A、D、E，并在 off/off 状态原生分组。",
+      "settings_observed": "本项开启前 off/off；仅点击双击开关后即时读取 on/off；反向点击后读取 off/off，位置关闭始终 off。未重启，未修改快捷键。；补执行：Unix 毫秒：1793358565997 初始 off/off；1793358576288 单独开启双击后 on/off；1793358576910 单独关闭双击后 off/off。位置全程 off，未观察到联动。快捷键未修改。",
       "steps_executed": [
-        "打开 General，选择 Balanced 并保存布局截图。",
-        "进入 Advanced，分别读取两个控件均为 off，关闭 Settings。",
-        "新建 New Tab，通过其原生 Close Other Tabs 清理上一项 A。",
-        "经原生地址栏输入 SET-10-BAL 的 A fixture URL 并 Return。",
-        "多次 get_app_state 核实唯一选中 A、Stop 和 New Tab 内容；未继续构造组或 split，保留结束现场。"
+        "SET-10-retry分段：",
+        "切换 Balanced、清理并重建 A/B/C 和 TC-G[D,E]。",
+        "开启双击关闭，立即双击既有 B；B 消失。",
+        "新建并核对普通 N 后双击；N 消失。",
+        "关闭双击关闭，读取双 off，分别双击普通 A、组内 D；均保留并高亮。",
+        "原生建立普通 split[A,C]，双击 C 标签；配对保留，焦点转 C。",
+        "原生建立组内 split[D,E]，双击 E 标签；配对与组保留，焦点转 E，保存结束图。",
+        "SET-10-fresh-surfaces补执行分段：",
+        "双击关闭设 off（1793358576910）后，Close Group 清理 PER 组；Cmd+T 新建 New Tab，再 Close Other Tabs 清理 PER 普通 A。1793358591980 开始在该新页原生地址栏导航 BAL A，1793358594961 已实见正文与编号。",
+        "确认焦点并输入 A 标记；1793358617573 通过 Cmd+T 开始创建 D，1793358621439 已实见 D 正文；确认焦点后输入 D 标记。",
+        "1793358645854 通过 Cmd+T 开始创建 E，1793358649958 已实见 E 正文；确认焦点后输入 E 标记。",
+        "通过 D 的 New Tab Group、Rename Group/Save 创建 TC-PHI507-r2-SET10-fresh-BAL，再 Add to Group 加入 E；1793358698709 实读组内 D/E。",
+        "选中 A 并 get_app_state 保存 before；对最新 A 安全 row（16）双击，再 get_app_state 保存 after。",
+        "核对 D 所属最内层原生 row（23），单击选中并保存 before；对该 row 双击，保存 after；随后单击 E 核对原编号和输入标记。"
       ],
       "unit_id": "SET-10-BAL"
     },
-    "notes": "",
-    "not_run_reason": "本项独立新建的 A 未显示 fixture 内容，完整序列及身份无法核实；未执行任何开关切换或指定双击动作。",
+    "notes": "本轮分段完成全部源步骤；既有B/新建N开启后关闭、关闭后两种新split见retry，关闭后新建普通和组内普通见fresh-surfaces。源执行点不是一次连续重跑；原无效尝试和补执行各自保留。",
     "reviewed_by": "Ripley",
-    "review_basis": "原始 CU 观察、工具审计与关键前后截图；无效尝试不计产品结果"
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "SET-10",
@@ -2678,10 +3339,14 @@
     "observed": [],
     "reset": "恢复本项改动的开关、布局和快捷键；重建指定序列。只清理本轮 TC- 测试资料，保留真实 pin、书签、组和其他窗口。",
     "evidence": [
-      "qa-evidence/r2/SET-10-observations.json",
-      "qa-evidence/r2/SET-10-evidence.json",
-      "qa-evidence/r2/SET-10-COM-01.png",
-      "qa-evidence/r2/SET-10-COM-02.png"
+      "qa-evidence/r2/SET-10-COM-16.png",
+      "qa-evidence/r2/SET-10-COM-17.png",
+      "qa-evidence/r2/SET-10-COM-23.png",
+      "qa-evidence/r2/SET-10-COM-24.png",
+      "qa-evidence/r2/SET-10-COM-25.png",
+      "qa-evidence/r2/SET-10-COM-26.png",
+      "qa-evidence/r2/SET-10-SET-10-COM-both-off-observations.json",
+      "qa-evidence/r2/SET-10-fresh-surfaces-observations.json"
     ],
     "kind": "acceptance",
     "key": "SET-10-COM",
@@ -2691,48 +3356,335 @@
       "id": "",
       "label": ""
     },
-    "result": "blocked",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": [],
-    "actual": "当前 Space 实际标签顺序：[A（SET-10-COM，未见 fixture 内容）]；无多选、组或 split；最终工具栏显示 Refresh，Settings 和菜单已关闭。",
+    "attempts": [
+      {
+        "job": "SET-10",
+        "outcome": "blocked",
+        "actual": "当前 Space 实际标签顺序：[A（SET-10-COM，未见 fixture 内容）]；无多选、组或 split；最终工具栏显示 Refresh，Settings 和菜单已关闭。",
+        "observation": {
+          "active_after": "唯一的 SET-10-COM A 导航标签；内容仍为 New Tab。",
+          "active_before": "前置核对时唯一的 SET-10-COM A 导航标签，工具栏显示 Stop。",
+          "after": "当前 Space 实际标签顺序：[A（SET-10-COM，未见 fixture 内容）]；无多选、组或 split；最终工具栏显示 Refresh，Settings 和菜单已关闭。",
+          "before": "独立清理重建后仅一个 SET-10-COM A 导航标签；未创建 B/C/D/E 或 TC-G。",
+          "confirmation_choices": "Close Other Tabs 未出现确认；收尾使用 Spaces 菜单明确暴露的 Cancel 动作关闭菜单，未选择任何 Space 或资料操作。",
+          "evidence_markers": [
+            "SET-10-COM attempt1 layout",
+            "SET-10-COM attempt1 settings",
+            "SET-10-COM attempt1 before",
+            "SET-10-COM attempt1 operator-menu-state",
+            "SET-10-COM attempt1 final-settings",
+            "SET-10-COM attempt1 failure",
+            "SET-10-COM attempt1 after"
+          ],
+          "identity_checks": "原生标签文本包含 tab=A、run=TC-PHI507-r2-SET-10-COM、kind=normal；最终按钮 Description 仍为 New Tab，屏幕未见 TC 标题、批次、本次打开编号或 fixture 输入框。Stop 消失后仍不能确认 fixture 已提交。",
+          "language_observed": "General 实读 System Default，实际界面英文；语言未改。",
+          "layout_observed": "选择 General 原生 Comfortable button 并截图确认；浏览器恢复外部横向标签栏，与本轮原始布局一致。",
+          "not_executed_reason": "独立重建 A 后直到最终 Refresh 状态，页面仍未展示 fixture 身份及输入框，无法完成完整前置；未执行开启、关闭开关及任何四种表面的双击动作。",
+          "operator_errors": [
+            "收尾读取 Spaces 菜单后，Escape 未使返回树中的菜单消失；随后 Cmd+, 已打开 Guest 设置窗口，但返回树仍被菜单占用。已停止依索引继续操作，get_app_state 保存 operator-menu-state 原生文本（该次 CU 未返回 image），再用菜单明确暴露的 Cancel 动作解除；未改变 Space 或测试对象。"
+          ],
+          "precondition_actual": "两个开关本项开始及最终均实读 off/off；只有一个 A 尝试导航标签，完整 A/B/C、TC-G[D,E] 前置未满足。",
+          "settings_observed": "本项开始及收尾读取 doubleClickToClose=off、directionalClosing=off；均未点击。布局恢复 Comfortable；快捷键未更改。",
+          "steps_executed": [
+            "打开 General，选择 Comfortable 并保存截图；进入 Advanced 读取 off/off 后关闭 Settings。",
+            "新建 New Tab，以原生 Close Other Tabs 清理上一项 A。",
+            "通过原生地址栏输入 SET-10-COM 的 A fixture URL 并 Return，get_app_state 保存前置现场。",
+            "读取 Spaces 菜单但未选择任何项目；处理菜单未关闭的操作状态。",
+            "重新进入 Advanced 核实最终 off/off，使用已确认的 Settings close button 关闭设置。",
+            "最终 get_app_state 显示唯一 A、Refresh 和 New Tab 内容，保存结束证据；未额外重建。"
+          ],
+          "unit_id": "SET-10-COM"
+        },
+        "evidence": [
+          "qa-evidence/r2/SET-10-observations.json",
+          "qa-evidence/r2/SET-10-evidence.json",
+          "qa-evidence/r2/SET-10-COM-01.png",
+          "qa-evidence/r2/SET-10-COM-02.png"
+        ],
+        "notes": "收尾读取 Spaces 菜单后，Escape 未使返回树中的菜单消失；随后 Cmd+, 已打开 Guest 设置窗口，但返回树仍被菜单占用。已停止依索引继续操作，get_app_state 保存 operator-menu-state 原生文本（该次 CU 未返回 image），再用菜单明确暴露的 Cancel 动作解除；未改变 Space 或测试对象。"
+      },
+      {
+        "job": "SET-10-retry",
+        "outcome": "partial",
+        "actual": "开启后已有 B 消失并转 C；新建 N 双击后消失并转 C。关闭后普通 A、组内 D 双击均保留并被选中；新建普通 split[A,C] 双击 C 后配对保留、焦点转 C；新建组内 split[D,E] 双击 E 后配对和组保留、焦点转 E。结束集合为 split[A,C] → TC-G 内 split[D,E]。",
+        "observation": {
+          "active_after": "执行点结束显示组内 split[D,E]，E 侧有活动焦点边框；统一恢复偏好后仍为同一配对及 E 焦点，无多选。",
+          "active_before": "E，顶部组内 E 标签高亮。",
+          "after": "开启后已有 B 消失并转 C；新建 N 双击后消失并转 C。关闭后普通 A、组内 D 双击均保留并被选中；新建普通 split[A,C] 双击 C 后配对保留、焦点转 C；新建组内 split[D,E] 双击 E 后配对和组保留、焦点转 E。结束集合为 split[A,C] → TC-G 内 split[D,E]。",
+          "before": "从左至右 A → B → C → TC-PHI507-r2-SET-10-COM-TC-G[D,E]；组计数 2，无 split、无多选；两个开关均 off。",
+          "confirmation_choices": "建立本项前清理 Balanced 的 TC-G 时，删除确认 Don't Ask Again=0，经键盘 Return 删除，见操作错误记录；本项重命名组用 Save。被测普通页关闭无离开确认。",
+          "evidence_markers": [
+            "SET-10-COM layout",
+            "SET-10-COM attempt1 before",
+            "SET-10-COM existing-B before",
+            "SET-10-COM existing-B after",
+            "SET-10-COM new-N before",
+            "SET-10-COM new-N after",
+            "SET-10-COM off-normal before",
+            "SET-10-COM off-normal after",
+            "SET-10-COM off-group before",
+            "SET-10-COM off-group after",
+            "SET-10-COM off-normal-split before",
+            "SET-10-COM off-normal-split after",
+            "SET-10-COM off-group-split before",
+            "SET-10-COM attempt1 after",
+            "SET-10 session-restore switches",
+            "SET-10 session-restore layout",
+            "SET-10 ending_state"
+          ],
+          "identity_checks": "逐页实见 TC 标题、TC-PHI507-r2-SET-10-COM 批次、普通页说明、打开编号及空输入框：A=12dc896b-0548-417d-be73-3495980729eb；B=6bd6b208-b84b-4052-9c2c-234144c85c30；C=fe745e1b-afc4-447f-93a7-d1d6c001b074；D=d8a9d5c9-8d64-414e-9ff5-72eb4b402901；E=8dd2a19a-57ed-4899-913e-6ff1bdce0d1f；N=8202e47a-9399-4f6f-aae6-d9b209517f57。N 正文已提交时原生按钮 Description 仍为 New Tab，子文本为 TC-N；按最新父子关系定位该按钮。两组 split 及最终截图中的编号未变化。",
+          "language_observed": "General 实读 System Default；浏览器与设置界面英文，未切语言、未重启。",
+          "layout_observed": "General 原生 Comfortable 按钮切换并截图确认选中，实际外部页签从左至右排列。执行点结束取证后统一恢复 Balanced 并截图确认。",
+          "not_executed_reason": "关闭后的普通及组内普通表面使用既有 A、D，未分别新建 cell；关闭后普通 split 与组内 split 均原生新建。未记录四种表面全部新建 cell 的完整覆盖。",
+          "operator_errors": [
+            "本项 setup 清理前项组时，编排在读取到 Close Tabs and Delete Group? 后仍继续地址栏键盘序列；Return 接受删除，本项 A 未导航。重新实读仅 New Tab 后，再次通过地址栏输入 A 才真实提交。未勾选 Don't Ask Again。",
+            "定位新建 N 时仅按按钮 Description 匹配未找到，辅助函数停止且未点击；重读原生树后按 TC-N 子文本的唯一父按钮定位，随后执行双击。"
+          ],
+          "precondition_actual": "切换 Comfortable，在同一 S1 清理前项测试对象和组后重新导航 A/B/C/D/E；原生建立本项 TC-G 并加入 E，组计数 2。开启前 Advanced 实读双 off。",
+          "settings_observed": "开启前 off/off；单独点击双击开关后即时读取 on/off；反向关闭后即时读取 off/off。收尾单独点击位置关闭后即时读取双击 off、位置 on；未点击项未联动变化。最终 Balanced，快捷键未修改。",
+          "steps_executed": [
+            "切换 Comfortable，原生清理并重建五页及 TC-G[D,E]，核对真实顺序。",
+            "开启双击关闭，立即双击已有 B；B 消失。",
+            "新建普通 N，实见正文、批次、编号后双击其父 tab 按钮；N 消失。",
+            "关闭双击关闭并读取双 off，双击普通 A、组内 D；均保留并切换选中。",
+            "原生建立普通 split[A,C]，双击右侧 C 标签；配对保留，焦点转 C。",
+            "原生建立组内 split[D,E]，双击右侧 E 标签；配对和组保留，焦点转 E，保存本项结束图。",
+            "统一恢复位置关闭 on 与 Balanced，读取两个开关并保存设置和最终浏览器截图；未重建页面。"
+          ],
+          "unit_id": "SET-10-COM"
+        },
+        "evidence": [
+          "qa-evidence/r2/SET-10-retry-observations.json",
+          "qa-evidence/r2/SET-10-COM-03.png",
+          "qa-evidence/r2/SET-10-COM-04.png",
+          "qa-evidence/r2/SET-10-COM-05.png",
+          "qa-evidence/r2/SET-10-COM-06.png",
+          "qa-evidence/r2/SET-10-COM-07.png",
+          "qa-evidence/r2/SET-10-COM-08.png",
+          "qa-evidence/r2/SET-10-COM-09.png",
+          "qa-evidence/r2/SET-10-COM-10.png",
+          "qa-evidence/r2/SET-10-COM-11.png",
+          "qa-evidence/r2/SET-10-COM-12.png",
+          "qa-evidence/r2/SET-10-COM-13.png",
+          "qa-evidence/r2/SET-10-COM-14.png",
+          "qa-evidence/r2/SET-10-COM-15.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/SET-10-retry-evidence.json",
+        "notes": "已完成开启后已有/新建普通页，以及关闭后四种表面观察；关闭后普通/组内普通未新建，按源步骤另补；PER长text命中异常待单击诊断。",
+        "reviewed_at": "2026-10-30T10:54:44.856937+00:00"
+      },
+      {
+        "job": "SET-10-fresh-surfaces",
+        "outcome": "partial",
+        "actual": "普通 A 双击后仍保留相同编号和标记；当前集合为普通 A、展开组 TC-PHI507-r2-SET10-fresh-COM[D,E]，无多选、无 split。D/E 已逐页实见原编号和标记，但没有本项 D row 双击后的观察结果。",
+        "observation": {
+          "active_after": "普通 A 双击后仍为 A；之后仅单击 D 核对其原生控件与身份，再单击 E 复核，单元及全会话结束活动页 E。",
+          "active_before": "普通 A 双击前为 A；组内 D 仅单击选中进行界面核对，未双击。",
+          "after": "普通 A 双击后仍保留相同编号和标记；当前集合为普通 A、展开组 TC-PHI507-r2-SET10-fresh-COM[D,E]，无多选、无 split。D/E 已逐页实见原编号和标记，但没有本项 D row 双击后的观察结果。",
+          "before": "普通 A、原生组 TC-PHI507-r2-SET10-fresh-COM[D,E]，横向实际顺序 A、组头、D、E。均为本项 off 后创建。A 安全主体可用原生 tabStripTab button；D 在 Comfortable 当前树中也仅暴露 tabStripTab button，没有指定的 selectable row。",
+          "confirmation_choices": "普通 A 双击未出现确认框。准备时清理 BAL 组和普通页未出现删除确认；组重命名选择 Save。没有勾选“不再询问”。",
+          "evidence_markers": [
+            "SET-10-COM fresh layout",
+            "SET-10-COM fresh settings-off",
+            "SET-10-COM fresh A created",
+            "SET-10-COM fresh D created",
+            "SET-10-COM fresh E created",
+            "SET-10-COM fresh-A attempt1 before",
+            "SET-10-COM fresh-A attempt1 after",
+            "SET-10-COM fresh-D native-surface",
+            "SET-10-COM fresh-D not-executed after",
+            "SET-10-COM fresh-E identity-after",
+            "SET-10 session restore-switches",
+            "SET-10 session restore-layout-language",
+            "SET-10 session ending-state"
+          ],
+          "identity_checks": "正文批次 TC-PHI507-r2-SET-10-COM-fresh。A：f12a2de1-40f5-4410-a7be-450cfc6a06cc，KEEP-SET10-COM-A；D：dec4344e-3f66-451e-a837-4bd1ad4de195，KEEP-SET10-COM-D；E：3c211369-f344-4385-9a65-d59648143501，KEEP-SET10-COM-E。三页均实见标题、批次、打开编号、普通页类型和输入框，输入前实见 Tab 聚焦边框。A 双击前后同号同标记；D/E 单击复核时同号同标记，没有重建。",
+          "language_observed": "General 实读 System Default，浏览器 UI 英文；未切换语言或重启。会话收尾再次实读 System Default。",
+          "layout_observed": "General 原生选择 Comfortable 并截图确认，浏览器 chrome 为顶部横向标签栏。D 对应最新原生控件为 button Description: TC-D · TC-PHI507-r2-SET-10-COM-fresh, ID: tabStripTab；当前树无 selectable row。收尾才恢复 Balanced，未用恢复后的纵向 row 补做 Comfortable 动作。",
+          "not_executed_reason": "此前其余子步骤已在SET-10-retry保存，本次仅补关闭后新建普通与组内普通子步骤；其中 Comfortable 组内 D 的指定最内层 selectable row 在该布局原生树中不存在，仅暴露 tabStripTab button，因此未执行 D row 双击，未将按钮动作替代记为已执行。",
+          "operator_errors": [],
+          "precondition_actual": "重新实读 off/off，单独切换双击 on→off 后再清理 BAL 当前 TC 对象，通过 Cmd+T 创建新 A、D、E，并在 off/off 状态原生组成 COM 组。普通 A 子步骤前置已满足；D 的指定原生 row 控件前置未能在 Comfortable 界面构造。",
+          "settings_observed": "Unix 毫秒：1793358746179 初始 off/off；1793358757040 单独开启双击后 on/off；1793358757612 反向关闭后 off/off。位置未联动。收尾先实读 off/off，再单独开启位置，实读双击 off／位置 on；随后 General 恢复 Balanced，System Default 保持。快捷键未修改。",
+          "steps_executed": [
+            "双击关闭设 off（1793358757612）后，Close Group 清理 BAL 组，Cmd+T 新建 New Tab，再 Close Other Tabs 清理 BAL 普通 A；1793358814545 开始在新页原生地址栏导航 COM A，1793358817509 已实见 A 正文与编号。",
+            "确认输入焦点并输入 A 标记；1793358840912 通过 Cmd+T 开始创建 D，1793358844869 已实见 D 正文，确认焦点后输入 D 标记。",
+            "1793358871395 通过 Cmd+T 开始创建 E，1793358875427 已实见 E 正文，确认焦点后输入 E 标记。",
+            "通过 D 的原生 New Tab Group、Rename Group/Save 创建 TC-PHI507-r2-SET10-fresh-COM，再经 Add to Group 加入 E；1793358935233 实读组名及成员数 2，截图实见组头后的 D、E。",
+            "选中 A，get_app_state 保存 before；对最新 A 的安全 tabStripTab button（13）执行 click_count:2，再 get_app_state 保存 after。",
+            "仅单击 D，get_app_state 保存 native-surface，实读 D 对应 button（16）及原编号标记；未执行指定 row 双击。再次 get_app_state 保存未执行结束现场，再单击 E 核对原身份。",
+            "保留实际 A、组[D,E]；通过 Settings 单独恢复位置关闭 on，并确认双击仍 off；General 恢复 Balanced、实读 System Default，关闭 Settings 后保存最终窗口图与原生顺序。"
+          ],
+          "unit_id": "SET-10-COM"
+        },
+        "evidence": [
+          "qa-evidence/r2/SET-10-fresh-surfaces-observations.json",
+          "qa-evidence/r2/SET-10-COM-16.png",
+          "qa-evidence/r2/SET-10-COM-17.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/SET-10-fresh-surfaces-evidence.json",
+        "notes": "补执行关闭后新建普通/组内普通子步骤；PER/BAL两种表面已完成，COM仅普通A完成，组内D因错误限定row未执行，另续做实际tabStripTab button。",
+        "reviewed_at": "2026-10-30T11:23:44.383059+00:00"
+      },
+      {
+        "job": "SET-10-SET-10-COM-complete",
+        "scope": "Comfortable组内D补动作；本次实测off/on，严格off/off条件仍待补",
+        "outcome": "partial",
+        "observation": {
+          "active_after": "双击动作后仍为 D；随后单击 E 核对身份，最终活动页 E。",
+          "active_before": "D，单一活动标签，无多选。",
+          "after": "D 双击后仍存在，正文编号及 KEEP 标记不变；随后逐页实见 E 原编号及标记。A、组[D,E] 的顺序未变，组计数仍为 2，无 split，未出现确认框。",
+          "before": "Comfortable 顶部横向标签顺序 A、组头 TC-PHI507-r2-SET10-fresh-COM（计数 2）、D、E。D 的最新原生 tabStripTab button 为索引 18，只包含 Website 图标及 D 文本，不含 E 或组标题；截图中按钮中心位于 D 标签主体，远离右侧边缘控件。",
+          "confirmation_choices": "本次未出现确认框，无确认选项操作。",
+          "evidence_markers": [
+            "SET-10-COM continuation D initial-identity",
+            "SET-10-COM continuation Comfortable",
+            "SET-10-COM continuation switches-before",
+            "SET-10-COM continuation E identity-before",
+            "SET-10-COM continuation D attempt1 before",
+            "SET-10-COM continuation D attempt1 after",
+            "SET-10-COM continuation E identity-after",
+            "SET-10-COM continuation restore-switches",
+            "SET-10-COM continuation restore-layout-language",
+            "SET-10-COM continuation ending-state"
+          ],
+          "identity_checks": "继续原有文档，未重建。批次均为 TC-PHI507-r2-SET-10-COM-fresh。D：dec4344e-3f66-451e-a837-4bd1ad4de195，KEEP-SET10-COM-D；E：3c211369-f344-4385-9a65-d59648143501，KEEP-SET10-COM-E。动作前后均通过屏幕实见标题、批次、本次打开编号、普通页类型和输入框标记，与源记录相同。A 仅核对标签仍在，未重复其子步骤或读取正文身份。",
+          "language_observed": "General 实读 System Default，浏览器 UI 为英文；未切换语言或重启。",
+          "layout_observed": "初始实见 Balanced 纵向栏；通过 General 原生 Comfortable button 切换并截图确认选中边框，动作前后实见顶部横向标签栏。完成身份复核后通过 General 恢复 Balanced，并截图确认。",
+          "not_executed_reason": "本次仅续做 SET-10-COM 在双击关闭 off 时对组内普通 D 的最后一次双击，其余 SET-10 子步骤按要求不复测；本次指定双击已实际执行。",
+          "operator_errors": [],
+          "precondition_actual": "首次 CU 已定位到保留原批次的窗口，PID 57596，初始活动 E；逐页核对 D/E 均为原编号和原 KEEP 标记，因此沿用原有组。Advanced 实读双击关闭 off、位置关闭 on；只切换所需布局，未改动两个开关。",
+          "settings_observed": "动作前及收尾 Advanced 均实读 settings.tabs.doubleClickToClose=off、settings.tabs.directionalClosing=on；本次未点击任一开关。System Default 保持，布局 Balanced→Comfortable→Balanced，快捷键未修改。",
+          "steps_executed": [
+            "先 get_app_state，实见原批次 E、普通 A 及展开组 D/E；单击 D 核对原编号与标记。",
+            "通过 Cmd+, 打开 Settings，General 原生选择 Comfortable，get_app_state 保存布局截图；Advanced 实读双击 off／位置 on 并保存截图，关闭已确认的 Settings close button。",
+            "在 Comfortable 单击 E，逐页实见原编号及 KEEP 标记和组计数 2；再单击 D，get_app_state 保存 attempt1 before，确认 D 的独立 tabStripTab button。",
+            "Unix 毫秒 1793359297294，对最新 D tabStripTab button 索引 18 发送 click_count:2、mouse_button:left；随后 get_app_state 保存 attempt1 after，活动页仍为 D，实见原编号与标记，组计数仍为 2。",
+            "单击 E 并 get_app_state 保存 identity-after，实见 E 原编号和标记；未重建或补改对象。",
+            "重新打开 Settings，Advanced 复读 off／on；General 恢复 Balanced 并实读 System Default，关闭 Settings，get_app_state 保存最终活动 E 及 A、组[D,E] 的结束现场。"
+          ],
+          "unit_id": "SET-10-COM"
+        },
+        "actual": "D 双击后仍存在，正文编号及 KEEP 标记不变；随后逐页实见 E 原编号及标记。A、组[D,E] 的顺序未变，组计数仍为 2，无 split，未出现确认框。",
+        "evidence_metadata": "qa-evidence/r2/SET-10-SET-10-COM-complete-evidence.json",
+        "evidence": [
+          "qa-evidence/r2/SET-10-SET-10-COM-complete-observations.json"
+        ]
+      },
+      {
+        "job": "SET-10-SET-10-COM-both-off",
+        "scope": "仅补严格off/off下新建组内D双击，沿用同编号/标记文档",
+        "outcome": "pass",
+        "observation": {
+          "active_after": "双击后仍为 D，单一活动标签；随后单击 E 核对身份，最终活动页 E。",
+          "active_before": "D，单一活动标签，无多选。",
+          "after": "D 双击后仍存在，原编号及 KEEP 标记不变；随后逐页实见 E 原编号及标记。横向顺序仍为 A、组头、D、E，组计数仍为 2，无 split，未出现确认框。",
+          "before": "Comfortable 顶部横向标签顺序 A、组头 TC-PHI507-r2-SET10-fresh-COM（计数 2）、D、E。最新原生索引 18 为 D 的独立 tabStripTab button，其子元素仅为 Website 图标和 D 文本，不包含 E 或组标题；截图核对按钮主体位于 D 标签区域。",
+          "confirmation_choices": "被测动作及设置恢复均未出现确认框，无确认选项操作。",
+          "evidence_markers": [
+            "SET-10-COM off-off E initial-identity",
+            "SET-10-COM off-off D initial-identity",
+            "SET-10-COM off-off Comfortable",
+            "SET-10-COM off-off switches-before",
+            "SET-10-COM off-off D attempt1 before",
+            "SET-10-COM off-off D attempt1 after",
+            "SET-10-COM off-off E identity-after",
+            "SET-10-COM off-off restore-switches",
+            "SET-10-COM off-off restore-layout-language",
+            "SET-10-COM off-off ending-state-final"
+          ],
+          "identity_checks": "沿用原对象，未新建。批次均为 TC-PHI507-r2-SET-10-COM-fresh。D：dec4344e-3f66-451e-a837-4bd1ad4de195，KEEP-SET10-COM-D；E：3c211369-f344-4385-9a65-d59648143501，KEEP-SET10-COM-E。动作前后均从屏幕实见各自 TC 标题、批次、本次打开编号、普通页类型及输入框标记，与提供记录一致。A 仅核对标签仍在，未读取其正文或重做其子步骤。",
+          "language_observed": "General 前后均实读 System Default，浏览器设置 UI 为英文；未切换语言、未重启。",
+          "layout_observed": "初始实见 Balanced 纵向栏；通过 General 原生 Comfortable button 切换，get_app_state 截图确认 Comfortable 选中边框。被测动作前后实见顶部横向标签栏；收尾通过 General 恢复 Balanced 并截图确认。",
+          "not_executed_reason": "本次仅补 SET-10-COM 严格 off/off 条件下对原有组内普通 D 的一次双击，该动作已实际执行。其余 SET-10 子步骤按本次限定不复测，未将此前全用例视为本次重跑。",
+          "operator_errors": [],
+          "precondition_actual": "首次 CU 实读 PID 57596 的原测试窗口，活动 E，普通 A 和展开组 D/E 均在；逐页核对 D/E 原编号与标记一致，因此按续做要求不重建。当前 W Space 图标选中，原生列表包含 TC-QA-PHI507-r2-SET-08-COMMON-S1，期间未切换 Space。Advanced 初始实读双击 off／位置 on；仅单击位置开关关闭，返回原生树即时显示双击仍 off、位置已 off，然后关闭 Settings 执行动作。",
+          "settings_observed": "动作前 settings.tabs.doubleClickToClose=off、settings.tabs.directionalClosing=off。关闭位置开关后即时读取两个值，未点击的双击开关保持 off。动作及身份复核后重新打开 Advanced，仍实读 off/off；只单击位置开关恢复 on，返回原生树即时显示 off/on。布局 Balanced→Comfortable→Balanced；System Default 保持，快捷键未修改。",
+          "steps_executed": [
+            "先 get_app_state，保存 E 身份截图；用最新组内 D selectable row 单击 D，保存 D 身份截图，核对两页原编号及 KEEP 标记。",
+            "Cmd+, 打开 Settings；General 实读 System Default 和 Balanced，单击 Comfortable，get_app_state 保存选中布局截图。",
+            "Advanced 实读双击 off／位置 on；只单击位置开关，立即从返回原生树核对双击 off／位置 off，再 get_app_state 保存开关截图。",
+            "单击已确认的 Settings close button；get_app_state 保存 attempt1 before，核对 D 正文、组计数 2、横向顺序及仅包含 D 的独立 tabStripTab button 索引 18。",
+            "Unix 毫秒 1793359560930，对最新 D button 索引 18 发送 click_count:2、mouse_button:left；仅此一次被测双击。get_app_state 保存 attempt1 after，实见 D 原编号及标记、组计数 2，活动页仍 D。",
+            "单击最新 E tabStripTab button，get_app_state 保存 identity-after，实见 E 原编号与标记，组计数和顺序未变。",
+            "重新打开 Settings，Advanced 复读 off/off；仅恢复位置开关为 on，立即核对双击仍 off 并截图。General 恢复 Balanced，实读 System Default 并截图，关闭 Settings。",
+            "收尾查看 Spaces 原生菜单，未选择或修改 Space；Escape 后原生树仍为菜单，随后调用菜单明确暴露的 Cancel 动作关闭。最后 get_app_state 保存 ending-state-final 真实截图，活动 E，保留 A、组[D,E]。"
+          ],
+          "unit_id": "SET-10-COM"
+        },
+        "actual": "D 双击后仍存在，原编号及 KEEP 标记不变；随后逐页实见 E 原编号及标记。横向顺序仍为 A、组头、D、E，组计数仍为 2，无 split，未出现确认框。",
+        "evidence_metadata": "qa-evidence/r2/SET-10-SET-10-COM-both-off-evidence.json",
+        "evidence": [
+          "qa-evidence/r2/SET-10-SET-10-COM-both-off-observations.json",
+          "qa-evidence/r2/SET-10-COM-23.png",
+          "qa-evidence/r2/SET-10-COM-24.png",
+          "qa-evidence/r2/SET-10-COM-25.png",
+          "qa-evidence/r2/SET-10-COM-26.png"
+        ]
+      }
+    ],
+    "actual": "本轮分段完成。原步骤：开启后已有 B 消失并转 C；新建 N 双击后消失并转 C。关闭后普通 A、组内 D 双击均保留并被选中；新建普通 split[A,C] 双击 C 后配对保留、焦点转 C；新建组内 split[D,E] 双击 E 后配对和组保留、焦点转 E。结束集合为 split[A,C] → TC-G 内 split[D,E]。；关闭后新建普通A：普通 A 双击后仍保留相同编号和标记；当前集合为普通 A、展开组 TC-PHI507-r2-SET10-fresh-COM[D,E]，无多选、无 split。D/E 已逐页实见原编号和标记，但没有本项 D row 双击后的观察结果。；最后严格off/off的新建组内D续做：D 双击后仍存在，原编号及 KEEP 标记不变；随后逐页实见 E 原编号及标记。横向顺序仍为 A、组头、D、E，组计数仍为 2，无 split，未出现确认框。",
     "observation": {
-      "active_after": "唯一的 SET-10-COM A 导航标签；内容仍为 New Tab。",
-      "active_before": "前置核对时唯一的 SET-10-COM A 导航标签，工具栏显示 Stop。",
-      "after": "当前 Space 实际标签顺序：[A（SET-10-COM，未见 fixture 内容）]；无多选、组或 split；最终工具栏显示 Refresh，Settings 和菜单已关闭。",
-      "before": "独立清理重建后仅一个 SET-10-COM A 导航标签；未创建 B/C/D/E 或 TC-G。",
-      "confirmation_choices": "Close Other Tabs 未出现确认；收尾使用 Spaces 菜单明确暴露的 Cancel 动作关闭菜单，未选择任何 Space 或资料操作。",
+      "active_after": "双击后仍为 D，单一活动标签；随后单击 E 核对身份，最终活动页 E。",
+      "active_before": "D，单一活动标签，无多选。",
+      "after": "本轮分段完成。原步骤：开启后已有 B 消失并转 C；新建 N 双击后消失并转 C。关闭后普通 A、组内 D 双击均保留并被选中；新建普通 split[A,C] 双击 C 后配对保留、焦点转 C；新建组内 split[D,E] 双击 E 后配对和组保留、焦点转 E。结束集合为 split[A,C] → TC-G 内 split[D,E]。；关闭后新建普通A：普通 A 双击后仍保留相同编号和标记；当前集合为普通 A、展开组 TC-PHI507-r2-SET10-fresh-COM[D,E]，无多选、无 split。D/E 已逐页实见原编号和标记，但没有本项 D row 双击后的观察结果。；最后严格off/off的新建组内D续做：D 双击后仍存在，原编号及 KEEP 标记不变；随后逐页实见 E 原编号及标记。横向顺序仍为 A、组头、D、E，组计数仍为 2，无 split，未出现确认框。",
+      "before": "从左至右 A → B → C → TC-PHI507-r2-SET-10-COM-TC-G[D,E]；组计数 2，无 split、无多选；两个开关均 off。",
+      "confirmation_choices": "被测动作及设置恢复均未出现确认框，无确认选项操作。",
       "evidence_markers": [
-        "SET-10-COM attempt1 layout",
-        "SET-10-COM attempt1 settings",
-        "SET-10-COM attempt1 before",
-        "SET-10-COM attempt1 operator-menu-state",
-        "SET-10-COM attempt1 final-settings",
-        "SET-10-COM attempt1 failure",
-        "SET-10-COM attempt1 after"
+        "SET-10-COM off-off E initial-identity",
+        "SET-10-COM off-off D initial-identity",
+        "SET-10-COM off-off Comfortable",
+        "SET-10-COM off-off switches-before",
+        "SET-10-COM off-off D attempt1 before",
+        "SET-10-COM off-off D attempt1 after",
+        "SET-10-COM off-off E identity-after",
+        "SET-10-COM off-off restore-switches",
+        "SET-10-COM off-off restore-layout-language",
+        "SET-10-COM off-off ending-state-final"
       ],
-      "identity_checks": "原生标签文本包含 tab=A、run=TC-PHI507-r2-SET-10-COM、kind=normal；最终按钮 Description 仍为 New Tab，屏幕未见 TC 标题、批次、本次打开编号或 fixture 输入框。Stop 消失后仍不能确认 fixture 已提交。",
-      "language_observed": "General 实读 System Default，实际界面英文；语言未改。",
-      "layout_observed": "选择 General 原生 Comfortable button 并截图确认；浏览器恢复外部横向标签栏，与本轮原始布局一致。",
-      "not_executed_reason": "独立重建 A 后直到最终 Refresh 状态，页面仍未展示 fixture 身份及输入框，无法完成完整前置；未执行开启、关闭开关及任何四种表面的双击动作。",
+      "identity_checks": "逐页实见 TC 标题、TC-PHI507-r2-SET-10-COM 批次、普通页说明、打开编号及空输入框：A=12dc896b-0548-417d-be73-3495980729eb；B=6bd6b208-b84b-4052-9c2c-234144c85c30；C=fe745e1b-afc4-447f-93a7-d1d6c001b074；D=d8a9d5c9-8d64-414e-9ff5-72eb4b402901；E=8dd2a19a-57ed-4899-913e-6ff1bdce0d1f；N=8202e47a-9399-4f6f-aae6-d9b209517f57。N 正文已提交时原生按钮 Description 仍为 New Tab，子文本为 TC-N；按最新父子关系定位该按钮。两组 split 及最终截图中的编号未变化。；新建表面：正文批次 TC-PHI507-r2-SET-10-COM-fresh。A：f12a2de1-40f5-4410-a7be-450cfc6a06cc，KEEP-SET10-COM-A；D：dec4344e-3f66-451e-a837-4bd1ad4de195，KEEP-SET10-COM-D；E：3c211369-f344-4385-9a65-d59648143501，KEEP-SET10-COM-E。三页均实见标题、批次、打开编号、普通页类型和输入框，输入前实见 Tab 聚焦边框。A 双击前后同号同标记；D/E 单击复核时同号同标记，没有重建。；正确条件续做：沿用原对象，未新建。批次均为 TC-PHI507-r2-SET-10-COM-fresh。D：dec4344e-3f66-451e-a837-4bd1ad4de195，KEEP-SET10-COM-D；E：3c211369-f344-4385-9a65-d59648143501，KEEP-SET10-COM-E。动作前后均从屏幕实见各自 TC 标题、批次、本次打开编号、普通页类型及输入框标记，与提供记录一致。A 仅核对标签仍在，未读取其正文或重做其子步骤。",
+      "language_observed": "General 前后均实读 System Default，浏览器设置 UI 为英文；未切换语言、未重启。",
+      "layout_observed": "初始实见 Balanced 纵向栏；通过 General 原生 Comfortable button 切换，get_app_state 截图确认 Comfortable 选中边框。被测动作前后实见顶部横向标签栏；收尾通过 General 恢复 Balanced 并截图确认。",
+      "not_executed_reason": "",
       "operator_errors": [
-        "收尾读取 Spaces 菜单后，Escape 未使返回树中的菜单消失；随后 Cmd+, 已打开 Guest 设置窗口，但返回树仍被菜单占用。已停止依索引继续操作，get_app_state 保存 operator-menu-state 原生文本（该次 CU 未返回 image），再用菜单明确暴露的 Cancel 动作解除；未改变 Space 或测试对象。"
+        "本项 setup 清理前项组时，编排在读取到 Close Tabs and Delete Group? 后仍继续地址栏键盘序列；Return 接受删除，本项 A 未导航。重新实读仅 New Tab 后，再次通过地址栏输入 A 才真实提交。未勾选 Don't Ask Again。",
+        "定位新建 N 时仅按按钮 Description 匹配未找到，辅助函数停止且未点击；重读原生树后按 TC-N 子文本的唯一父按钮定位，随后执行双击。"
       ],
-      "precondition_actual": "两个开关本项开始及最终均实读 off/off；只有一个 A 尝试导航标签，完整 A/B/C、TC-G[D,E] 前置未满足。",
-      "settings_observed": "本项开始及收尾读取 doubleClickToClose=off、directionalClosing=off；均未点击。布局恢复 Comfortable；快捷键未更改。",
+      "precondition_actual": "切换 Comfortable，在同一 S1 清理前项测试对象和组后重新导航 A/B/C/D/E；原生建立本项 TC-G 并加入 E，组计数 2。开启前 Advanced 实读双 off。；新对象创建：重新实读 off/off，单独切换双击 on→off 后再清理 BAL 当前 TC 对象，通过 Cmd+T 创建新 A、D、E，并在 off/off 状态原生组成 COM 组。普通 A 子步骤前置已满足；D 的指定原生 row 控件前置未能在 Comfortable 界面构造。；续做：首次 CU 实读 PID 57596 的原测试窗口，活动 E，普通 A 和展开组 D/E 均在；逐页核对 D/E 原编号与标记一致，因此按续做要求不重建。当前 W Space 图标选中，原生列表包含 TC-QA-PHI507-r2-SET-08-COMMON-S1，期间未切换 Space。Advanced 初始实读双击 off／位置 on；仅单击位置开关关闭，返回原生树即时显示双击仍 off、位置已 off，然后关闭 Settings 执行动作。",
+      "settings_observed": "开启前 off/off；单独点击双击开关后即时读取 on/off；反向关闭后即时读取 off/off。收尾单独点击位置关闭后即时读取双击 off、位置 on；未点击项未联动变化。最终 Balanced，快捷键未修改。；新建表面：Unix 毫秒：1793358746179 初始 off/off；1793358757040 单独开启双击后 on/off；1793358757612 反向关闭后 off/off。位置未联动。收尾先实读 off/off，再单独开启位置，实读双击 off／位置 on；随后 General 恢复 Balanced，System Default 保持。快捷键未修改。；正确条件续做：动作前 settings.tabs.doubleClickToClose=off、settings.tabs.directionalClosing=off。关闭位置开关后即时读取两个值，未点击的双击开关保持 off。动作及身份复核后重新打开 Advanced，仍实读 off/off；只单击位置开关恢复 on，返回原生树即时显示 off/on。布局 Balanced→Comfortable→Balanced；System Default 保持，快捷键未修改。",
       "steps_executed": [
-        "打开 General，选择 Comfortable 并保存截图；进入 Advanced 读取 off/off 后关闭 Settings。",
-        "新建 New Tab，以原生 Close Other Tabs 清理上一项 A。",
-        "通过原生地址栏输入 SET-10-COM 的 A fixture URL 并 Return，get_app_state 保存前置现场。",
-        "读取 Spaces 菜单但未选择任何项目；处理菜单未关闭的操作状态。",
-        "重新进入 Advanced 核实最终 off/off，使用已确认的 Settings close button 关闭设置。",
-        "最终 get_app_state 显示唯一 A、Refresh 和 New Tab 内容，保存结束证据；未额外重建。"
+        "原步骤分段：",
+        "切换 Comfortable，原生清理并重建五页及 TC-G[D,E]，核对真实顺序。",
+        "开启双击关闭，立即双击已有 B；B 消失。",
+        "新建普通 N，实见正文、批次、编号后双击其父 tab 按钮；N 消失。",
+        "关闭双击关闭并读取双 off，双击普通 A、组内 D；均保留并切换选中。",
+        "原生建立普通 split[A,C]，双击右侧 C 标签；配对保留，焦点转 C。",
+        "原生建立组内 split[D,E]，双击右侧 E 标签；配对和组保留，焦点转 E，保存本项结束图。",
+        "统一恢复位置关闭 on 与 Balanced，读取两个开关并保存设置和最终浏览器截图；未重建页面。",
+        "关闭后新建表面分段：",
+        "双击关闭设 off（1793358757612）后，Close Group 清理 BAL 组，Cmd+T 新建 New Tab，再 Close Other Tabs 清理 BAL 普通 A；1793358814545 开始在新页原生地址栏导航 COM A，1793358817509 已实见 A 正文与编号。",
+        "确认输入焦点并输入 A 标记；1793358840912 通过 Cmd+T 开始创建 D，1793358844869 已实见 D 正文，确认焦点后输入 D 标记。",
+        "1793358871395 通过 Cmd+T 开始创建 E，1793358875427 已实见 E 正文，确认焦点后输入 E 标记。",
+        "通过 D 的原生 New Tab Group、Rename Group/Save 创建 TC-PHI507-r2-SET10-fresh-COM，再经 Add to Group 加入 E；1793358935233 实读组名及成员数 2，截图实见组头后的 D、E。",
+        "选中 A，get_app_state 保存 before；对最新 A 的安全 tabStripTab button（13）执行 click_count:2，再 get_app_state 保存 after。",
+        "仅单击 D，get_app_state 保存 native-surface，实读 D 对应 button（16）及原编号标记；未执行指定 row 双击。再次 get_app_state 保存未执行结束现场，再单击 E 核对原身份。",
+        "保留实际 A、组[D,E]；通过 Settings 单独恢复位置关闭 on，并确认双击仍 off；General 恢复 Balanced、实读 System Default，关闭 Settings 后保存最终窗口图与原生顺序。",
+        "off/off组内D续做：",
+        "先 get_app_state，保存 E 身份截图；用最新组内 D selectable row 单击 D，保存 D 身份截图，核对两页原编号及 KEEP 标记。",
+        "Cmd+, 打开 Settings；General 实读 System Default 和 Balanced，单击 Comfortable，get_app_state 保存选中布局截图。",
+        "Advanced 实读双击 off／位置 on；只单击位置开关，立即从返回原生树核对双击 off／位置 off，再 get_app_state 保存开关截图。",
+        "单击已确认的 Settings close button；get_app_state 保存 attempt1 before，核对 D 正文、组计数 2、横向顺序及仅包含 D 的独立 tabStripTab button 索引 18。",
+        "Unix 毫秒 1793359560930，对最新 D button 索引 18 发送 click_count:2、mouse_button:left；仅此一次被测双击。get_app_state 保存 attempt1 after，实见 D 原编号及标记、组计数 2，活动页仍 D。",
+        "单击最新 E tabStripTab button，get_app_state 保存 identity-after，实见 E 原编号与标记，组计数和顺序未变。",
+        "重新打开 Settings，Advanced 复读 off/off；仅恢复位置开关为 on，立即核对双击仍 off 并截图。General 恢复 Balanced，实读 System Default 并截图，关闭 Settings。",
+        "收尾查看 Spaces 原生菜单，未选择或修改 Space；Escape 后原生树仍为菜单，随后调用菜单明确暴露的 Cancel 动作关闭。最后 get_app_state 保存 ending-state-final 真实截图，活动 E，保留 A、组[D,E]。"
       ],
       "unit_id": "SET-10-COM"
     },
-    "notes": "收尾读取 Spaces 菜单后，Escape 未使返回树中的菜单消失；随后 Cmd+, 已打开 Guest 设置窗口，但返回树仍被菜单占用。已停止依索引继续操作，get_app_state 保存 operator-menu-state 原生文本（该次 CU 未返回 image），再用菜单明确暴露的 Cancel 动作解除；未改变 Space 或测试对象。",
-    "not_run_reason": "独立重建 A 后直到最终 Refresh 状态，页面仍未展示 fixture 身份及输入框，无法完成完整前置；未执行开启、关闭开关及任何四种表面的双击动作。",
+    "notes": "源步骤在本轮分段完成，不是一次连续全例重跑。原步骤已完成既有B/新建N及关闭后新split；fresh完成关闭后新建普通A；两次COM续做分别为off/on条件偏差（不计严格条件通过）和正确off/off条件（已复核）。所有原记录保留。",
     "reviewed_by": "Ripley",
-    "review_basis": "原始 CU 观察、工具审计与关键前后截图；无效尝试不计产品结果"
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-01",
@@ -2757,7 +3709,16 @@
       "performance"
     ],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/DBL-01-observations.json",
+      "qa-evidence/r2/DBL-01-PER-01.png",
+      "qa-evidence/r2/DBL-01-PER-02.png",
+      "qa-evidence/r2/DBL-01-PER-03.png",
+      "qa-evidence/r2/DBL-01-PER-04.png",
+      "qa-evidence/r2/DBL-01-PER-05.png",
+      "qa-evidence/r2/DBL-01-PER-06.png",
+      "qa-evidence/r2/DBL-01-PER-07.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-01-PER",
     "layout": "performance",
@@ -2766,9 +3727,116 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-01",
+        "outcome": "pass",
+        "actual": "attempt2 两步结束均为 A、B、C，B 单选且活动，无标签消失，无组或 split。attempt1 误操作后为 A 活动，A/B/C 仍在。",
+        "observation": {
+          "active_after": "attempt2：标题区双击后 B；图标区双击后 B。",
+          "active_before": "attempt1、attempt2 的标题区动作前均为 C；attempt2 图标区动作前为 B。",
+          "after": "attempt2 两步结束均为 A、B、C，B 单选且活动，无标签消失，无组或 split。attempt1 误操作后为 A 活动，A/B/C 仍在。",
+          "before": "attempt2：普通 A、B、C 自上而下排列，仅 C 选中，无组、多选或 split。",
+          "confirmation_choices": "初次清理旧测试对象时出现 Close Tabs and Delete Group?，选择 Delete Group；Don't Ask Again 保持未勾选。被测双击未出现确认框。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-01-PER attempt1 settings",
+            "EVIDENCE: DBL-01-PER attempt1 setup-A",
+            "EVIDENCE: DBL-01-PER attempt1 setup-A-loaded",
+            "EVIDENCE: DBL-01-PER attempt1 setup-B",
+            "EVIDENCE: DBL-01-PER attempt1 title-before",
+            "EVIDENCE: DBL-01-PER attempt1 title-after",
+            "EVIDENCE: DBL-01-PER attempt1 failure",
+            "EVIDENCE: DBL-01-PER attempt2 setup-A",
+            "EVIDENCE: DBL-01-PER attempt2 setup-B",
+            "EVIDENCE: DBL-01-PER attempt2 setup-C",
+            "EVIDENCE: DBL-01-PER attempt2 title-before",
+            "EVIDENCE: DBL-01-PER attempt2 title-after",
+            "EVIDENCE: DBL-01-PER attempt2 icon-before",
+            "EVIDENCE: DBL-01-PER attempt2 icon-after"
+          ],
+          "identity_checks": "逐页实见 TC-A/B/C、对应批次、普通页正文、本次打开编号及空输入框，未输入额外标记。attempt2 批次 TC-PHI507-r2-DBL-01-PER-retry2：A=46b47f5c-408b-4a32-b081-35ad00f13056，B=c84b12e1-d171-495f-919d-bf08a6ef0e64，C=82be21ee-f0b7-417b-9e12-14c3075c33b7；双击后 B 编号不变。attempt1 批次 TC-PHI507-r2-DBL-01-PER：A=0681ac5b-426a-44a5-b224-2b9105ba100c，B=541e4c88-d459-44b1-aa00-fb3770ced02f，C=85988348-30ef-42e7-9bf0-60bc774679f7。",
+          "language_observed": "General 实读 System Default，Settings 与浏览器菜单为英文；未切换语言。",
+          "layout_observed": "General 原生选择并截图确认 Performance；实际 chrome 为左侧纵向标签、地址及导航位于侧栏。",
+          "not_executed_reason": "无最终未执行步骤。attempt1 未命中 B，因此未继续其图标区步骤；保存现场后重建并以 attempt2 执行两步。",
+          "operator_errors": [
+            "attempt1 使用 click(110,321,click_count=2) 时，截图指针实际约落在展示图 (83,241)，激活 A，未命中 B；该现场不作为 B 双击结果。",
+            "根据原图展示与实际指针的 3:4 比例校正后，重建前置；attempt2 标题区 click(147,429) 对应展示图约 (110,322)，图标区 click(44,429) 对应约 (33,322)，前后截图核对指针分别位于 B 标题与图标。"
+          ],
+          "precondition_actual": "通过新建 New Tab、原生 Close Other Tabs 清理旧测试页及 TC-PHI507-r2-SET10-fresh-COM 组后，地址栏顺序建立 A/B/C；误操作后再次清理并用 retry2 批次独立重建。Advanced 实读双击关闭 off、位置关闭 on，未点击两个开关。",
+          "settings_observed": "起始偏好实读 Balanced、System Default、双击关闭 off／位置关闭 on。本项仅修改布局为 Performance。",
+          "steps_executed": [
+            "实读应用、General 与 Advanced，选择 Performance。",
+            "清理本轮旧测试对象，地址栏顺序创建普通 A/B/C并核对正文及编号。",
+            "attempt1 坐标双击误命中 A，保存 failure 现场。",
+            "用 TC-PHI507-r2-DBL-01-PER-retry2 重新建立 A/B/C，确认 C 活动。",
+            "双击 B 标题区，get_app_state 保存前后截图：B 活动，A/B/C 均在。",
+            "继续双击 B 图标区，get_app_state 保存前后截图：B 活动，A/B/C 均在。"
+          ],
+          "unit_id": "DBL-01-PER"
+        },
+        "evidence": [
+          "qa-evidence/r2/DBL-01-observations.json",
+          "qa-evidence/r2/DBL-01-PER-01.png",
+          "qa-evidence/r2/DBL-01-PER-02.png",
+          "qa-evidence/r2/DBL-01-PER-03.png",
+          "qa-evidence/r2/DBL-01-PER-04.png",
+          "qa-evidence/r2/DBL-01-PER-05.png",
+          "qa-evidence/r2/DBL-01-PER-06.png",
+          "qa-evidence/r2/DBL-01-PER-07.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/DBL-01-evidence.json",
+        "notes": "已核对三布局标题区与图标区真实前后截图及完整动作；PER的not_executed_reason只是说明第一次误命中后已重建重试、无最终遗漏，不是缺步骤。未关闭任何标签，B按预期活动；无效首次尝试独立保留。",
+        "reviewed_at": "2026-10-30T11:39:17.220968+00:00"
+      }
+    ],
+    "actual": "attempt2 两步结束均为 A、B、C，B 单选且活动，无标签消失，无组或 split。attempt1 误操作后为 A 活动，A/B/C 仍在。",
+    "observation": {
+      "active_after": "attempt2：标题区双击后 B；图标区双击后 B。",
+      "active_before": "attempt1、attempt2 的标题区动作前均为 C；attempt2 图标区动作前为 B。",
+      "after": "attempt2 两步结束均为 A、B、C，B 单选且活动，无标签消失，无组或 split。attempt1 误操作后为 A 活动，A/B/C 仍在。",
+      "before": "attempt2：普通 A、B、C 自上而下排列，仅 C 选中，无组、多选或 split。",
+      "confirmation_choices": "初次清理旧测试对象时出现 Close Tabs and Delete Group?，选择 Delete Group；Don't Ask Again 保持未勾选。被测双击未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-01-PER attempt1 settings",
+        "EVIDENCE: DBL-01-PER attempt1 setup-A",
+        "EVIDENCE: DBL-01-PER attempt1 setup-A-loaded",
+        "EVIDENCE: DBL-01-PER attempt1 setup-B",
+        "EVIDENCE: DBL-01-PER attempt1 title-before",
+        "EVIDENCE: DBL-01-PER attempt1 title-after",
+        "EVIDENCE: DBL-01-PER attempt1 failure",
+        "EVIDENCE: DBL-01-PER attempt2 setup-A",
+        "EVIDENCE: DBL-01-PER attempt2 setup-B",
+        "EVIDENCE: DBL-01-PER attempt2 setup-C",
+        "EVIDENCE: DBL-01-PER attempt2 title-before",
+        "EVIDENCE: DBL-01-PER attempt2 title-after",
+        "EVIDENCE: DBL-01-PER attempt2 icon-before",
+        "EVIDENCE: DBL-01-PER attempt2 icon-after"
+      ],
+      "identity_checks": "逐页实见 TC-A/B/C、对应批次、普通页正文、本次打开编号及空输入框，未输入额外标记。attempt2 批次 TC-PHI507-r2-DBL-01-PER-retry2：A=46b47f5c-408b-4a32-b081-35ad00f13056，B=c84b12e1-d171-495f-919d-bf08a6ef0e64，C=82be21ee-f0b7-417b-9e12-14c3075c33b7；双击后 B 编号不变。attempt1 批次 TC-PHI507-r2-DBL-01-PER：A=0681ac5b-426a-44a5-b224-2b9105ba100c，B=541e4c88-d459-44b1-aa00-fb3770ced02f，C=85988348-30ef-42e7-9bf0-60bc774679f7。",
+      "language_observed": "General 实读 System Default，Settings 与浏览器菜单为英文；未切换语言。",
+      "layout_observed": "General 原生选择并截图确认 Performance；实际 chrome 为左侧纵向标签、地址及导航位于侧栏。",
+      "not_executed_reason": "无最终未执行步骤。attempt1 未命中 B，因此未继续其图标区步骤；保存现场后重建并以 attempt2 执行两步。",
+      "operator_errors": [
+        "attempt1 使用 click(110,321,click_count=2) 时，截图指针实际约落在展示图 (83,241)，激活 A，未命中 B；该现场不作为 B 双击结果。",
+        "根据原图展示与实际指针的 3:4 比例校正后，重建前置；attempt2 标题区 click(147,429) 对应展示图约 (110,322)，图标区 click(44,429) 对应约 (33,322)，前后截图核对指针分别位于 B 标题与图标。"
+      ],
+      "precondition_actual": "通过新建 New Tab、原生 Close Other Tabs 清理旧测试页及 TC-PHI507-r2-SET10-fresh-COM 组后，地址栏顺序建立 A/B/C；误操作后再次清理并用 retry2 批次独立重建。Advanced 实读双击关闭 off、位置关闭 on，未点击两个开关。",
+      "settings_observed": "起始偏好实读 Balanced、System Default、双击关闭 off／位置关闭 on。本项仅修改布局为 Performance。",
+      "steps_executed": [
+        "实读应用、General 与 Advanced，选择 Performance。",
+        "清理本轮旧测试对象，地址栏顺序创建普通 A/B/C并核对正文及编号。",
+        "attempt1 坐标双击误命中 A，保存 failure 现场。",
+        "用 TC-PHI507-r2-DBL-01-PER-retry2 重新建立 A/B/C，确认 C 活动。",
+        "双击 B 标题区，get_app_state 保存前后截图：B 活动，A/B/C 均在。",
+        "继续双击 B 图标区，get_app_state 保存前后截图：B 活动，A/B/C 均在。"
+      ],
+      "unit_id": "DBL-01-PER"
+    },
+    "notes": "已核对三布局标题区与图标区真实前后截图及完整动作；PER的not_executed_reason只是说明第一次误命中后已重建重试、无最终遗漏，不是缺步骤。未关闭任何标签，B按预期活动；无效首次尝试独立保留。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-01",
@@ -2793,7 +3861,13 @@
       "performance"
     ],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/DBL-01-observations.json",
+      "qa-evidence/r2/DBL-01-BAL-01.png",
+      "qa-evidence/r2/DBL-01-BAL-02.png",
+      "qa-evidence/r2/DBL-01-BAL-03.png",
+      "qa-evidence/r2/DBL-01-BAL-04.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-01-BAL",
     "layout": "balanced",
@@ -2802,9 +3876,93 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-01",
+        "outcome": "pass",
+        "actual": "两步后实际顺序均为 A、B、C，B 单选且活动，未见标签消失；无组、多选或 split。",
+        "observation": {
+          "active_after": "标题区双击后 B；图标区双击后 B。",
+          "active_before": "标题区动作前 C；图标区动作前 B。",
+          "after": "两步后实际顺序均为 A、B、C，B 单选且活动，未见标签消失；无组、多选或 split。",
+          "before": "普通 A、B、C 自上而下排列，仅 C 选中，无组、多选或 split。",
+          "confirmation_choices": "本项清理及两次被测双击未出现确认框。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-01-BAL attempt1 settings",
+            "EVIDENCE: DBL-01-BAL attempt1 setup-A",
+            "EVIDENCE: DBL-01-BAL attempt1 switches",
+            "EVIDENCE: DBL-01-BAL attempt1 setup-B",
+            "EVIDENCE: DBL-01-BAL attempt1 setup-C",
+            "EVIDENCE: DBL-01-BAL attempt1 title-before",
+            "EVIDENCE: DBL-01-BAL attempt1 title-after",
+            "EVIDENCE: DBL-01-BAL attempt1 icon-before",
+            "EVIDENCE: DBL-01-BAL attempt1 icon-after"
+          ],
+          "identity_checks": "逐页实见 TC-A/B/C、批次 TC-PHI507-r2-DBL-01-BAL、普通页正文、本次打开编号及空输入框。A=4063abc9-fc7b-4613-9482-cde4da013641，B=7b1e5bb8-355b-4fe5-8359-822d67a55589，C=f449eeea-e3a0-4538-8c2e-e5358fd78a85；两次双击后 B 编号不变。",
+          "language_observed": "General 实读 System Default，界面英文，未切换语言。",
+          "layout_observed": "General 原生选择并截图确认 Balanced；实际 chrome 为左侧纵向标签、顶部地址与导航。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "新建 New Tab 并原生 Close Other Tabs 清理上一项测试页，再通过地址栏顺序建立本项 A/B/C。Advanced 重新实读双击关闭 off、位置关闭 on，未点击开关。",
+          "settings_observed": "本项布局为 Balanced；双击关闭 off／位置关闭 on。",
+          "steps_executed": [
+            "原生切换 Balanced并截图确认。",
+            "清理上一项测试页，地址栏创建本项普通 A/B/C，逐页核对身份，确认 C 活动。",
+            "按已核对比例双击 B 标题区：CU 坐标 (147,355)，展示图约 (110,266)。保存前后截图，B 活动且 A/B/C 均在。",
+            "继续双击 B 图标区：CU 坐标 (44,355)，展示图约 (33,266)。保存前后截图，B 活动且 A/B/C 均在。"
+          ],
+          "unit_id": "DBL-01-BAL"
+        },
+        "evidence": [
+          "qa-evidence/r2/DBL-01-observations.json",
+          "qa-evidence/r2/DBL-01-BAL-01.png",
+          "qa-evidence/r2/DBL-01-BAL-02.png",
+          "qa-evidence/r2/DBL-01-BAL-03.png",
+          "qa-evidence/r2/DBL-01-BAL-04.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/DBL-01-evidence.json",
+        "notes": "已核对三布局标题区与图标区真实前后截图及完整动作；PER的not_executed_reason只是说明第一次误命中后已重建重试、无最终遗漏，不是缺步骤。未关闭任何标签，B按预期活动；无效首次尝试独立保留。",
+        "reviewed_at": "2026-10-30T11:39:17.221175+00:00"
+      }
+    ],
+    "actual": "两步后实际顺序均为 A、B、C，B 单选且活动，未见标签消失；无组、多选或 split。",
+    "observation": {
+      "active_after": "标题区双击后 B；图标区双击后 B。",
+      "active_before": "标题区动作前 C；图标区动作前 B。",
+      "after": "两步后实际顺序均为 A、B、C，B 单选且活动，未见标签消失；无组、多选或 split。",
+      "before": "普通 A、B、C 自上而下排列，仅 C 选中，无组、多选或 split。",
+      "confirmation_choices": "本项清理及两次被测双击未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-01-BAL attempt1 settings",
+        "EVIDENCE: DBL-01-BAL attempt1 setup-A",
+        "EVIDENCE: DBL-01-BAL attempt1 switches",
+        "EVIDENCE: DBL-01-BAL attempt1 setup-B",
+        "EVIDENCE: DBL-01-BAL attempt1 setup-C",
+        "EVIDENCE: DBL-01-BAL attempt1 title-before",
+        "EVIDENCE: DBL-01-BAL attempt1 title-after",
+        "EVIDENCE: DBL-01-BAL attempt1 icon-before",
+        "EVIDENCE: DBL-01-BAL attempt1 icon-after"
+      ],
+      "identity_checks": "逐页实见 TC-A/B/C、批次 TC-PHI507-r2-DBL-01-BAL、普通页正文、本次打开编号及空输入框。A=4063abc9-fc7b-4613-9482-cde4da013641，B=7b1e5bb8-355b-4fe5-8359-822d67a55589，C=f449eeea-e3a0-4538-8c2e-e5358fd78a85；两次双击后 B 编号不变。",
+      "language_observed": "General 实读 System Default，界面英文，未切换语言。",
+      "layout_observed": "General 原生选择并截图确认 Balanced；实际 chrome 为左侧纵向标签、顶部地址与导航。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "新建 New Tab 并原生 Close Other Tabs 清理上一项测试页，再通过地址栏顺序建立本项 A/B/C。Advanced 重新实读双击关闭 off、位置关闭 on，未点击开关。",
+      "settings_observed": "本项布局为 Balanced；双击关闭 off／位置关闭 on。",
+      "steps_executed": [
+        "原生切换 Balanced并截图确认。",
+        "清理上一项测试页，地址栏创建本项普通 A/B/C，逐页核对身份，确认 C 活动。",
+        "按已核对比例双击 B 标题区：CU 坐标 (147,355)，展示图约 (110,266)。保存前后截图，B 活动且 A/B/C 均在。",
+        "继续双击 B 图标区：CU 坐标 (44,355)，展示图约 (33,266)。保存前后截图，B 活动且 A/B/C 均在。"
+      ],
+      "unit_id": "DBL-01-BAL"
+    },
+    "notes": "已核对三布局标题区与图标区真实前后截图及完整动作；PER的not_executed_reason只是说明第一次误命中后已重建重试、无最终遗漏，不是缺步骤。未关闭任何标签，B按预期活动；无效首次尝试独立保留。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-01",
@@ -2829,7 +3987,13 @@
       "performance"
     ],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/DBL-01-observations.json",
+      "qa-evidence/r2/DBL-01-COM-01.png",
+      "qa-evidence/r2/DBL-01-COM-02.png",
+      "qa-evidence/r2/DBL-01-COM-03.png",
+      "qa-evidence/r2/DBL-01-COM-04.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-01-COM",
     "layout": "comfortable",
@@ -2838,9 +4002,101 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-01",
+        "outcome": "pass",
+        "actual": "Comfortable 下两步后实际横向顺序均为 A、B、C，B 活动，无标签消失，无组、多选或 split。收尾恢复 Balanced 后同一 A/B/C 保留，B 单选。",
+        "observation": {
+          "active_after": "标题区双击后 B；图标区双击后 B；恢复起始偏好后仍为 B。",
+          "active_before": "标题区动作前 C；图标区动作前 B。",
+          "after": "Comfortable 下两步后实际横向顺序均为 A、B、C，B 活动，无标签消失，无组、多选或 split。收尾恢复 Balanced 后同一 A/B/C 保留，B 单选。",
+          "before": "普通 A、B、C 从左至右排列，C 活动，无组、多选或 split。",
+          "confirmation_choices": "本项清理及两次被测双击未出现确认框。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-01-COM attempt1 settings",
+            "EVIDENCE: DBL-01-COM attempt1 switches",
+            "EVIDENCE: DBL-01-COM attempt1 setup-A",
+            "EVIDENCE: DBL-01-COM attempt1 setup-B",
+            "EVIDENCE: DBL-01-COM attempt1 setup-C",
+            "EVIDENCE: DBL-01-COM attempt1 title-before",
+            "EVIDENCE: DBL-01-COM attempt1 title-after",
+            "EVIDENCE: DBL-01-COM attempt1 icon-before",
+            "EVIDENCE: DBL-01-COM attempt1 icon-after",
+            "EVIDENCE: DBL-01-COM attempt1 restore-settings",
+            "EVIDENCE: DBL-01-COM attempt1 restore-switches",
+            "EVIDENCE: DBL-01-COM attempt1 ending"
+          ],
+          "identity_checks": "逐页实见 TC-A/B/C、批次 TC-PHI507-r2-DBL-01-COM、普通页正文、本次打开编号及空输入框。A=7c429bc9-2765-4b9e-8972-b76fcac2253f，B=9b5ebc7a-c973-465c-a010-ba7912019456，C=1bfc8ef4-67d5-48fb-a642-212bd85f818c；两次双击及收尾后 B 编号不变。横向原生 tabStripTab 容器分别对应 A、B、C。",
+          "language_observed": "General 实读 System Default，界面英文，未切换语言；收尾值相同。",
+          "layout_observed": "General 原生选择并截图确认 Comfortable，实际标签从左至右排列；结束证据保存后统一恢复起始 Balanced。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "切换 Comfortable，Advanced 实读双击关闭 off、位置关闭 on。新建 New Tab并原生 Close Other Tabs 清理上一项，再通过地址栏独立创建本项 A/B/C，确认 C 活动。",
+          "settings_observed": "动作时 Comfortable、双击关闭 off／位置关闭 on；收尾截图确认 Balanced、System Default、双击关闭 off／位置关闭 on，两个开关全程未点击。",
+          "steps_executed": [
+            "原生切换 Comfortable并截图确认，重读 Advanced 两个开关。",
+            "清理上一项测试页，地址栏创建本项普通 A/B/C，逐页核对身份及真实顺序。",
+            "C 活动时双击 B 标题区：CU 坐标 (733,44)，展示图约 (550,33)。保存前后截图，B 活动且 A/B/C 均在。",
+            "继续双击 B 图标区：CU 坐标 (645,44)，展示图约 (484,33)。保存前后截图，B 活动且 A/B/C 均在。",
+            "保留实际结束页面，统一恢复起始 Balanced；重读 System Default及双击关闭 off／位置关闭 on，关闭 Settings并保存最终截图。"
+          ],
+          "unit_id": "DBL-01-COM"
+        },
+        "evidence": [
+          "qa-evidence/r2/DBL-01-observations.json",
+          "qa-evidence/r2/DBL-01-COM-01.png",
+          "qa-evidence/r2/DBL-01-COM-02.png",
+          "qa-evidence/r2/DBL-01-COM-03.png",
+          "qa-evidence/r2/DBL-01-COM-04.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/DBL-01-evidence.json",
+        "notes": "已核对三布局标题区与图标区真实前后截图及完整动作；PER的not_executed_reason只是说明第一次误命中后已重建重试、无最终遗漏，不是缺步骤。未关闭任何标签，B按预期活动；无效首次尝试独立保留。",
+        "reviewed_at": "2026-10-30T11:39:17.221186+00:00"
+      }
+    ],
+    "actual": "Comfortable 下两步后实际横向顺序均为 A、B、C，B 活动，无标签消失，无组、多选或 split。收尾恢复 Balanced 后同一 A/B/C 保留，B 单选。",
+    "observation": {
+      "active_after": "标题区双击后 B；图标区双击后 B；恢复起始偏好后仍为 B。",
+      "active_before": "标题区动作前 C；图标区动作前 B。",
+      "after": "Comfortable 下两步后实际横向顺序均为 A、B、C，B 活动，无标签消失，无组、多选或 split。收尾恢复 Balanced 后同一 A/B/C 保留，B 单选。",
+      "before": "普通 A、B、C 从左至右排列，C 活动，无组、多选或 split。",
+      "confirmation_choices": "本项清理及两次被测双击未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-01-COM attempt1 settings",
+        "EVIDENCE: DBL-01-COM attempt1 switches",
+        "EVIDENCE: DBL-01-COM attempt1 setup-A",
+        "EVIDENCE: DBL-01-COM attempt1 setup-B",
+        "EVIDENCE: DBL-01-COM attempt1 setup-C",
+        "EVIDENCE: DBL-01-COM attempt1 title-before",
+        "EVIDENCE: DBL-01-COM attempt1 title-after",
+        "EVIDENCE: DBL-01-COM attempt1 icon-before",
+        "EVIDENCE: DBL-01-COM attempt1 icon-after",
+        "EVIDENCE: DBL-01-COM attempt1 restore-settings",
+        "EVIDENCE: DBL-01-COM attempt1 restore-switches",
+        "EVIDENCE: DBL-01-COM attempt1 ending"
+      ],
+      "identity_checks": "逐页实见 TC-A/B/C、批次 TC-PHI507-r2-DBL-01-COM、普通页正文、本次打开编号及空输入框。A=7c429bc9-2765-4b9e-8972-b76fcac2253f，B=9b5ebc7a-c973-465c-a010-ba7912019456，C=1bfc8ef4-67d5-48fb-a642-212bd85f818c；两次双击及收尾后 B 编号不变。横向原生 tabStripTab 容器分别对应 A、B、C。",
+      "language_observed": "General 实读 System Default，界面英文，未切换语言；收尾值相同。",
+      "layout_observed": "General 原生选择并截图确认 Comfortable，实际标签从左至右排列；结束证据保存后统一恢复起始 Balanced。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "切换 Comfortable，Advanced 实读双击关闭 off、位置关闭 on。新建 New Tab并原生 Close Other Tabs 清理上一项，再通过地址栏独立创建本项 A/B/C，确认 C 活动。",
+      "settings_observed": "动作时 Comfortable、双击关闭 off／位置关闭 on；收尾截图确认 Balanced、System Default、双击关闭 off／位置关闭 on，两个开关全程未点击。",
+      "steps_executed": [
+        "原生切换 Comfortable并截图确认，重读 Advanced 两个开关。",
+        "清理上一项测试页，地址栏创建本项普通 A/B/C，逐页核对身份及真实顺序。",
+        "C 活动时双击 B 标题区：CU 坐标 (733,44)，展示图约 (550,33)。保存前后截图，B 活动且 A/B/C 均在。",
+        "继续双击 B 图标区：CU 坐标 (645,44)，展示图约 (484,33)。保存前后截图，B 活动且 A/B/C 均在。",
+        "保留实际结束页面，统一恢复起始 Balanced；重读 System Default及双击关闭 off／位置关闭 on，关闭 Settings并保存最终截图。"
+      ],
+      "unit_id": "DBL-01-COM"
+    },
+    "notes": "已核对三布局标题区与图标区真实前后截图及完整动作；PER的not_executed_reason只是说明第一次误命中后已重建重试、无最终遗漏，不是缺步骤。未关闭任何标签，B按预期活动；无效首次尝试独立保留。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-02",
@@ -2865,7 +4121,11 @@
       "performance"
     ],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/DBL-02-observations.json",
+      "qa-evidence/r2/DBL-02-PER-01.png",
+      "qa-evidence/r2/DBL-02-PER-02.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-02-PER",
     "layout": "performance",
@@ -2874,9 +4134,87 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-02",
+        "outcome": "pass",
+        "actual": "稳定后的普通页顺序 A→C；B 标签行和容器不再出现。活动正文为 TC-C，编号与动作前相同；随后逐页核对 A 的编号也相同。无组、多选或 split。",
+        "observation": {
+          "active_after": "动作后为 C，单选；随后为核对 A 的保留身份单击 A，下一项 setup 前实际活动页为 A。",
+          "active_before": "B，单选。",
+          "after": "稳定后的普通页顺序 A→C；B 标签行和容器不再出现。活动正文为 TC-C，编号与动作前相同；随后逐页核对 A 的编号也相同。无组、多选或 split。",
+          "before": "普通页顺序 A→B→C；批次均为 TC-PHI507-r2-DBL-02-PER，B 活动；无组、多选或 split。",
+          "confirmation_choices": "未出现确认对话框。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-02-PER attempt1 settings-layout",
+            "EVIDENCE: DBL-02-PER attempt1 settings",
+            "EVIDENCE: DBL-02-PER attempt1 identity-B",
+            "EVIDENCE: DBL-02-PER attempt1 identity-C",
+            "EVIDENCE: DBL-02-PER attempt1 before",
+            "EVIDENCE: DBL-02-PER attempt1 after",
+            "EVIDENCE: DBL-02-PER attempt1 retained-A"
+          ],
+          "identity_checks": "关键前后 CU 均为固定 app、PID 57596，Window 从 TC-B 转为 TC-C。逐页实见 TC 标题、批次、普通页类型及空输入框。本次打开编号：A=289c4f89-98a2-461f-a361-031b9749f177；B=9bd81e14-ec6a-4da7-885e-d98f1907f181；C=aa4cdcdb-27fa-4ebe-aabf-1c2f462544ea。动作后 A/C 编号保持。",
+          "language_observed": "General 实读 System Default，浏览器及设置界面为英文。",
+          "layout_observed": "通过 General 原生 button 从 Balanced 切为 Performance，截图显示 Performance 选中；浏览器 chrome 为纵向标签列表。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "在本轮测试 Space 新建 New Tab，以原生 Close Other Tabs 清除旧测试页，再通过地址栏依次建立本项 A/B/C；正文全部真实提交后选中 B。双击关闭 on。",
+          "settings_observed": "起始实读双击关闭 off／位置关闭 on；仅点击双击关闭一次后，即时原生树为 on／on，未点击的位置关闭仍为 on。",
+          "steps_executed": [
+            "完成本项独立清理、原生布局及开关设置、A/B/C 建立和身份核对。",
+            "get_app_state 保存 before 图，确认 B 活动与 A→B→C 顺序。",
+            "对仅对应 B 的 selectable row 标签容器执行一次 click_count=2；命中位于标题文字区。",
+            "get_app_state 读取稳定列表并保存 after 图；核对 C 正文和编号，再单击 A 核对保留身份。"
+          ],
+          "unit_id": "DBL-02-PER"
+        },
+        "evidence": [
+          "qa-evidence/r2/DBL-02-observations.json",
+          "qa-evidence/r2/DBL-02-PER-01.png",
+          "qa-evidence/r2/DBL-02-PER-02.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/DBL-02-evidence.json",
+        "notes": "三布局均已核对B活动的前置、B双击后仅A/C的真实集合及TC-C正文；A/C逐页编号保持，PID57596前后相同，无残留B容器。",
+        "reviewed_at": "2026-10-30T11:47:13.096409+00:00"
+      }
+    ],
+    "actual": "稳定后的普通页顺序 A→C；B 标签行和容器不再出现。活动正文为 TC-C，编号与动作前相同；随后逐页核对 A 的编号也相同。无组、多选或 split。",
+    "observation": {
+      "active_after": "动作后为 C，单选；随后为核对 A 的保留身份单击 A，下一项 setup 前实际活动页为 A。",
+      "active_before": "B，单选。",
+      "after": "稳定后的普通页顺序 A→C；B 标签行和容器不再出现。活动正文为 TC-C，编号与动作前相同；随后逐页核对 A 的编号也相同。无组、多选或 split。",
+      "before": "普通页顺序 A→B→C；批次均为 TC-PHI507-r2-DBL-02-PER，B 活动；无组、多选或 split。",
+      "confirmation_choices": "未出现确认对话框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-02-PER attempt1 settings-layout",
+        "EVIDENCE: DBL-02-PER attempt1 settings",
+        "EVIDENCE: DBL-02-PER attempt1 identity-B",
+        "EVIDENCE: DBL-02-PER attempt1 identity-C",
+        "EVIDENCE: DBL-02-PER attempt1 before",
+        "EVIDENCE: DBL-02-PER attempt1 after",
+        "EVIDENCE: DBL-02-PER attempt1 retained-A"
+      ],
+      "identity_checks": "关键前后 CU 均为固定 app、PID 57596，Window 从 TC-B 转为 TC-C。逐页实见 TC 标题、批次、普通页类型及空输入框。本次打开编号：A=289c4f89-98a2-461f-a361-031b9749f177；B=9bd81e14-ec6a-4da7-885e-d98f1907f181；C=aa4cdcdb-27fa-4ebe-aabf-1c2f462544ea。动作后 A/C 编号保持。",
+      "language_observed": "General 实读 System Default，浏览器及设置界面为英文。",
+      "layout_observed": "通过 General 原生 button 从 Balanced 切为 Performance，截图显示 Performance 选中；浏览器 chrome 为纵向标签列表。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "在本轮测试 Space 新建 New Tab，以原生 Close Other Tabs 清除旧测试页，再通过地址栏依次建立本项 A/B/C；正文全部真实提交后选中 B。双击关闭 on。",
+      "settings_observed": "起始实读双击关闭 off／位置关闭 on；仅点击双击关闭一次后，即时原生树为 on／on，未点击的位置关闭仍为 on。",
+      "steps_executed": [
+        "完成本项独立清理、原生布局及开关设置、A/B/C 建立和身份核对。",
+        "get_app_state 保存 before 图，确认 B 活动与 A→B→C 顺序。",
+        "对仅对应 B 的 selectable row 标签容器执行一次 click_count=2；命中位于标题文字区。",
+        "get_app_state 读取稳定列表并保存 after 图；核对 C 正文和编号，再单击 A 核对保留身份。"
+      ],
+      "unit_id": "DBL-02-PER"
+    },
+    "notes": "三布局均已核对B活动的前置、B双击后仅A/C的真实集合及TC-C正文；A/C逐页编号保持，PID57596前后相同，无残留B容器。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-02",
@@ -2901,7 +4239,11 @@
       "performance"
     ],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/DBL-02-observations.json",
+      "qa-evidence/r2/DBL-02-BAL-01.png",
+      "qa-evidence/r2/DBL-02-BAL-02.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-02-BAL",
     "layout": "balanced",
@@ -2910,9 +4252,89 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-02",
+        "outcome": "pass",
+        "actual": "稳定后的普通页顺序 A→C；B 标签行和容器不再出现。活动正文为 TC-C，编号与动作前相同；随后 A 的正文及编号也保持。无组、多选或 split。",
+        "observation": {
+          "active_after": "动作后为 C，单选；随后核对 A 时切为 A，下一项 setup 前实际活动页为 A。",
+          "active_before": "B，单选。",
+          "after": "稳定后的普通页顺序 A→C；B 标签行和容器不再出现。活动正文为 TC-C，编号与动作前相同；随后 A 的正文及编号也保持。无组、多选或 split。",
+          "before": "普通页顺序 A→B→C；批次均为 TC-PHI507-r2-DBL-02-BAL，B 活动；无组、多选或 split。",
+          "confirmation_choices": "未出现确认对话框。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-02-BAL attempt1 settings-layout",
+            "EVIDENCE: DBL-02-BAL attempt1 settings",
+            "EVIDENCE: DBL-02-BAL attempt1 identity-A",
+            "EVIDENCE: DBL-02-BAL attempt1 identity-B",
+            "EVIDENCE: DBL-02-BAL attempt1 identity-C",
+            "EVIDENCE: DBL-02-BAL attempt1 before",
+            "EVIDENCE: DBL-02-BAL attempt1 after",
+            "EVIDENCE: DBL-02-BAL attempt1 retained-A"
+          ],
+          "identity_checks": "关键前后 CU 均为固定 app、PID 57596，Window 从 TC-B 转为 TC-C。逐页实见 TC 标题、批次、普通页类型及空输入框。本次打开编号：A=573c17a5-4150-4415-a864-b8341936e74e；B=346743e6-d05e-4405-91d2-afd6b34b582f；C=78520cff-f340-40e4-bb82-7f9713463214。动作后 A/C 编号保持。",
+          "language_observed": "General 再读 System Default，界面为英文。",
+          "layout_observed": "通过 General 原生 button 从 Performance 切为 Balanced，截图显示 Balanced 选中；浏览器 chrome 为纵向标签列表。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "本项开始时新建 New Tab 并原生 Close Other Tabs 清理上一项 A/C；通过地址栏重新建立本项 A/B/C，逐页核对正文后选中 B。",
+          "settings_observed": "Advanced 实读双击关闭 on／位置关闭 on；本项未点击任何开关。",
+          "steps_executed": [
+            "切换 Balanced，实读语言和两个开关，再独立清理并建立本项 A/B/C。",
+            "get_app_state 保存 before 图，确认 B 活动与 A→B→C 顺序。",
+            "对仅对应 B 的 selectable row 标签容器执行一次 click_count=2；命中位于标题文字区。",
+            "get_app_state 读取稳定列表并保存 after 图；核对 C 正文和编号，再单击 A 核对保留身份。"
+          ],
+          "unit_id": "DBL-02-BAL"
+        },
+        "evidence": [
+          "qa-evidence/r2/DBL-02-observations.json",
+          "qa-evidence/r2/DBL-02-BAL-01.png",
+          "qa-evidence/r2/DBL-02-BAL-02.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/DBL-02-evidence.json",
+        "notes": "三布局均已核对B活动的前置、B双击后仅A/C的真实集合及TC-C正文；A/C逐页编号保持，PID57596前后相同，无残留B容器。",
+        "reviewed_at": "2026-10-30T11:47:13.096553+00:00"
+      }
+    ],
+    "actual": "稳定后的普通页顺序 A→C；B 标签行和容器不再出现。活动正文为 TC-C，编号与动作前相同；随后 A 的正文及编号也保持。无组、多选或 split。",
+    "observation": {
+      "active_after": "动作后为 C，单选；随后核对 A 时切为 A，下一项 setup 前实际活动页为 A。",
+      "active_before": "B，单选。",
+      "after": "稳定后的普通页顺序 A→C；B 标签行和容器不再出现。活动正文为 TC-C，编号与动作前相同；随后 A 的正文及编号也保持。无组、多选或 split。",
+      "before": "普通页顺序 A→B→C；批次均为 TC-PHI507-r2-DBL-02-BAL，B 活动；无组、多选或 split。",
+      "confirmation_choices": "未出现确认对话框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-02-BAL attempt1 settings-layout",
+        "EVIDENCE: DBL-02-BAL attempt1 settings",
+        "EVIDENCE: DBL-02-BAL attempt1 identity-A",
+        "EVIDENCE: DBL-02-BAL attempt1 identity-B",
+        "EVIDENCE: DBL-02-BAL attempt1 identity-C",
+        "EVIDENCE: DBL-02-BAL attempt1 before",
+        "EVIDENCE: DBL-02-BAL attempt1 after",
+        "EVIDENCE: DBL-02-BAL attempt1 retained-A"
+      ],
+      "identity_checks": "关键前后 CU 均为固定 app、PID 57596，Window 从 TC-B 转为 TC-C。逐页实见 TC 标题、批次、普通页类型及空输入框。本次打开编号：A=573c17a5-4150-4415-a864-b8341936e74e；B=346743e6-d05e-4405-91d2-afd6b34b582f；C=78520cff-f340-40e4-bb82-7f9713463214。动作后 A/C 编号保持。",
+      "language_observed": "General 再读 System Default，界面为英文。",
+      "layout_observed": "通过 General 原生 button 从 Performance 切为 Balanced，截图显示 Balanced 选中；浏览器 chrome 为纵向标签列表。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项开始时新建 New Tab 并原生 Close Other Tabs 清理上一项 A/C；通过地址栏重新建立本项 A/B/C，逐页核对正文后选中 B。",
+      "settings_observed": "Advanced 实读双击关闭 on／位置关闭 on；本项未点击任何开关。",
+      "steps_executed": [
+        "切换 Balanced，实读语言和两个开关，再独立清理并建立本项 A/B/C。",
+        "get_app_state 保存 before 图，确认 B 活动与 A→B→C 顺序。",
+        "对仅对应 B 的 selectable row 标签容器执行一次 click_count=2；命中位于标题文字区。",
+        "get_app_state 读取稳定列表并保存 after 图；核对 C 正文和编号，再单击 A 核对保留身份。"
+      ],
+      "unit_id": "DBL-02-BAL"
+    },
+    "notes": "三布局均已核对B活动的前置、B双击后仅A/C的真实集合及TC-C正文；A/C逐页编号保持，PID57596前后相同，无残留B容器。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-02",
@@ -2937,7 +4359,11 @@
       "performance"
     ],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/DBL-02-observations.json",
+      "qa-evidence/r2/DBL-02-COM-01.png",
+      "qa-evidence/r2/DBL-02-COM-02.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-02-COM",
     "layout": "comfortable",
@@ -2946,9 +4372,99 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-02",
+        "outcome": "pass",
+        "actual": "稳定后的普通页顺序 A→C；B 的 tabStripTab 容器及标题不再出现。活动正文为 TC-C，A/C 的打开编号均与动作前相同。最终保留此两页，无组、多选或 split。",
+        "observation": {
+          "active_after": "动作后为 C；身份核对时短暂切至 A，随后返回 C。收尾恢复偏好后 C 仍活动且单选。",
+          "active_before": "B，单选。",
+          "after": "稳定后的普通页顺序 A→C；B 的 tabStripTab 容器及标题不再出现。活动正文为 TC-C，A/C 的打开编号均与动作前相同。最终保留此两页，无组、多选或 split。",
+          "before": "横向普通标签顺序 A→B→C；批次均为 TC-PHI507-r2-DBL-02-COM，B 活动；无组、多选或 split。",
+          "confirmation_choices": "未出现确认对话框。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-02-COM attempt1 settings-layout",
+            "EVIDENCE: DBL-02-COM attempt1 settings",
+            "EVIDENCE: DBL-02-COM attempt1 identity-A",
+            "EVIDENCE: DBL-02-COM attempt1 identity-B",
+            "EVIDENCE: DBL-02-COM attempt1 identity-C",
+            "EVIDENCE: DBL-02-COM attempt1 before",
+            "EVIDENCE: DBL-02-COM attempt1 after",
+            "EVIDENCE: DBL-02-COM attempt1 retained-A",
+            "EVIDENCE: DBL-02-COM attempt1 final-pages",
+            "EVIDENCE: DBL-02-COM attempt1 restored-switches",
+            "EVIDENCE: DBL-02-COM attempt1 restored-layout",
+            "EVIDENCE: DBL-02-COM attempt1 ending-state"
+          ],
+          "identity_checks": "关键前后 CU 均为固定 app、PID 57596，Window 从 TC-B 转为 TC-C。逐页实见 TC 标题、批次、普通页类型及空输入框。本次打开编号：A=d7b276f7-2640-4068-a0cd-0e7a9448c8d5；B=311a1ad7-5084-4c5a-9850-2cbaf5e1d7e6；C=88a5454a-5a2d-45c9-b12b-151cd1a54dcb。动作后 A/C 编号保持。",
+          "language_observed": "General 再读 System Default，界面为英文；收尾仍为该值。",
+          "layout_observed": "通过 General 原生 button 从 Balanced 切为 Comfortable，截图显示 Comfortable 选中；动作前后 chrome 为横向标签条。收尾恢复 Balanced 并截图确认。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "本项开始时新建 New Tab 并原生 Close Other Tabs 清理上一项 A/C；通过地址栏重新建立本项 A/B/C，确认真实横向顺序后选中 B。",
+          "settings_observed": "动作前 Advanced 实读双击关闭 on／位置关闭 on。本轮收尾仅点击双击关闭一次，即时原生树为 off／on，未点击的位置关闭仍为 on。",
+          "steps_executed": [
+            "切换 Comfortable，实读语言和两个开关，再独立清理并建立本项 A/B/C。",
+            "get_app_state 保存 before 图，确认 B 活动；最新树中 B 的 tabStripTab 仅含 B 图标和标题。",
+            "对 B 的实际 tabStripTab button 执行一次 click_count=2；命中位于标题文字区。",
+            "get_app_state 读取稳定列表并保存 after 图，核对 C 的正文和编号；单击 A 核对身份后返回 C。",
+            "保留 A/C 实际结束集合；统一恢复起始开关及 Balanced，关闭 Settings，再 get_app_state 保存最终状态。"
+          ],
+          "unit_id": "DBL-02-COM"
+        },
+        "evidence": [
+          "qa-evidence/r2/DBL-02-observations.json",
+          "qa-evidence/r2/DBL-02-COM-01.png",
+          "qa-evidence/r2/DBL-02-COM-02.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/DBL-02-evidence.json",
+        "notes": "三布局均已核对B活动的前置、B双击后仅A/C的真实集合及TC-C正文；A/C逐页编号保持，PID57596前后相同，无残留B容器。",
+        "reviewed_at": "2026-10-30T11:47:13.096562+00:00"
+      }
+    ],
+    "actual": "稳定后的普通页顺序 A→C；B 的 tabStripTab 容器及标题不再出现。活动正文为 TC-C，A/C 的打开编号均与动作前相同。最终保留此两页，无组、多选或 split。",
+    "observation": {
+      "active_after": "动作后为 C；身份核对时短暂切至 A，随后返回 C。收尾恢复偏好后 C 仍活动且单选。",
+      "active_before": "B，单选。",
+      "after": "稳定后的普通页顺序 A→C；B 的 tabStripTab 容器及标题不再出现。活动正文为 TC-C，A/C 的打开编号均与动作前相同。最终保留此两页，无组、多选或 split。",
+      "before": "横向普通标签顺序 A→B→C；批次均为 TC-PHI507-r2-DBL-02-COM，B 活动；无组、多选或 split。",
+      "confirmation_choices": "未出现确认对话框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-02-COM attempt1 settings-layout",
+        "EVIDENCE: DBL-02-COM attempt1 settings",
+        "EVIDENCE: DBL-02-COM attempt1 identity-A",
+        "EVIDENCE: DBL-02-COM attempt1 identity-B",
+        "EVIDENCE: DBL-02-COM attempt1 identity-C",
+        "EVIDENCE: DBL-02-COM attempt1 before",
+        "EVIDENCE: DBL-02-COM attempt1 after",
+        "EVIDENCE: DBL-02-COM attempt1 retained-A",
+        "EVIDENCE: DBL-02-COM attempt1 final-pages",
+        "EVIDENCE: DBL-02-COM attempt1 restored-switches",
+        "EVIDENCE: DBL-02-COM attempt1 restored-layout",
+        "EVIDENCE: DBL-02-COM attempt1 ending-state"
+      ],
+      "identity_checks": "关键前后 CU 均为固定 app、PID 57596，Window 从 TC-B 转为 TC-C。逐页实见 TC 标题、批次、普通页类型及空输入框。本次打开编号：A=d7b276f7-2640-4068-a0cd-0e7a9448c8d5；B=311a1ad7-5084-4c5a-9850-2cbaf5e1d7e6；C=88a5454a-5a2d-45c9-b12b-151cd1a54dcb。动作后 A/C 编号保持。",
+      "language_observed": "General 再读 System Default，界面为英文；收尾仍为该值。",
+      "layout_observed": "通过 General 原生 button 从 Balanced 切为 Comfortable，截图显示 Comfortable 选中；动作前后 chrome 为横向标签条。收尾恢复 Balanced 并截图确认。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项开始时新建 New Tab 并原生 Close Other Tabs 清理上一项 A/C；通过地址栏重新建立本项 A/B/C，确认真实横向顺序后选中 B。",
+      "settings_observed": "动作前 Advanced 实读双击关闭 on／位置关闭 on。本轮收尾仅点击双击关闭一次，即时原生树为 off／on，未点击的位置关闭仍为 on。",
+      "steps_executed": [
+        "切换 Comfortable，实读语言和两个开关，再独立清理并建立本项 A/B/C。",
+        "get_app_state 保存 before 图，确认 B 活动；最新树中 B 的 tabStripTab 仅含 B 图标和标题。",
+        "对 B 的实际 tabStripTab button 执行一次 click_count=2；命中位于标题文字区。",
+        "get_app_state 读取稳定列表并保存 after 图，核对 C 的正文和编号；单击 A 核对身份后返回 C。",
+        "保留 A/C 实际结束集合；统一恢复起始开关及 Balanced，关闭 Settings，再 get_app_state 保存最终状态。"
+      ],
+      "unit_id": "DBL-02-COM"
+    },
+    "notes": "三布局均已核对B活动的前置、B双击后仅A/C的真实集合及TC-C正文；A/C逐页编号保持，PID57596前后相同，无残留B容器。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-03",
@@ -2971,7 +4487,13 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/DBL-03-observations.json",
+      "qa-evidence/r2/DBL-03-PER-01.png",
+      "qa-evidence/r2/DBL-03-PER-02.png",
+      "qa-evidence/r2/DBL-03-PER-03.png",
+      "qa-evidence/r2/DBL-03-PER-04.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-03-PER",
     "layout": "performance",
@@ -2980,9 +4502,107 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-03",
+        "outcome": "pass",
+        "actual": "两个变体的原生列表均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。",
+        "observation": {
+          "active_after": "标题区和图标区双击结束时均为 C 单选；随后单击 A 核对存活身份，图标区变体核对完后单击 C 返回。",
+          "active_before": "两个变体均为 C 活动且单选，B 非活动。",
+          "after": "两个变体的原生列表均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。",
+          "before": "标题区批次 TC-PHI507-r2-DBL-03-PER-title；图标区批次 TC-PHI507-r2-DBL-03-PER-icon。每次均为普通页 A→B→C，无组、多选或 split。",
+          "confirmation_choices": "未出现关闭确认或离开确认；未选择“不再询问”。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-03-PER attempt1 settings",
+            "EVIDENCE: DBL-03-PER attempt1 switches",
+            "EVIDENCE: DBL-03-PER attempt1 coordinate-calibration",
+            "EVIDENCE: DBL-03-PER attempt1 title-A-identity",
+            "EVIDENCE: DBL-03-PER attempt1 title-B-identity",
+            "EVIDENCE: DBL-03-PER attempt1 title-C-identity",
+            "EVIDENCE: DBL-03-PER attempt1 title-before",
+            "EVIDENCE: DBL-03-PER attempt1 title-after",
+            "EVIDENCE: DBL-03-PER attempt1 title-A-retained",
+            "EVIDENCE: DBL-03-PER attempt1 icon-A-identity",
+            "EVIDENCE: DBL-03-PER attempt1 icon-B-identity",
+            "EVIDENCE: DBL-03-PER attempt1 icon-C-identity",
+            "EVIDENCE: DBL-03-PER attempt1 icon-before",
+            "EVIDENCE: DBL-03-PER attempt1 icon-after",
+            "EVIDENCE: DBL-03-PER attempt1 icon-A-retained"
+          ],
+          "identity_checks": "全程本应用 PID 57596。逐页实见 TC 标题、对应批次、普通页说明、打开编号及空输入框。title：A=8ff526f5-486f-4cb7-8859-62a6451b735a，B=6461b5d0-3f78-4fa5-87bf-5292bd86e533，C=c8df655e-4746-4984-a432-e535f0c5c40a；icon：A=1dbd6a7d-f79e-4d76-b02a-6bff20f5e995，B=2f5aebfa-3071-4e75-aa1c-32652d1e0c85，C=6a800935-f924-4cb6-8a51-32be0ed06c84。两次动作后均逐页核对 A/C 原编号。",
+          "language_observed": "General 实读 System Default；浏览器和设置界面为英文，未切换语言。",
+          "layout_observed": "General 原生选择 Performance 并截图确认；实际浏览器 chrome 为纵向标签栏，A/B/C 自上而下排列。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "本项开始先实读前轮 A/C，再原生清理并重建两个独立的 A/B/C 序列；两次关键动作前均确认 C 活动、B 非活动、双击关闭 on。",
+          "settings_observed": "会话初始实读 Balanced、双击关闭 off／位置关闭 on。本项只点击双击关闭开关一次，返回原生树即时值为双击关闭 on／位置关闭 on；未点击位置关闭。",
+          "steps_executed": [
+            "用新建 New Tab 的原生 Close Other Tabs 清理本轮普通测试页，再经地址栏顺序建立 title 批次 A/B/C。",
+            "在无控件内容区单击 (1000,440)，截图指针位置与输入坐标一致，按本次原图比例定位。",
+            "关键动作前 get_app_state 留图；对 B 标题区 (150,428) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。",
+            "重新新建 New Tab、关闭其他普通测试页，经地址栏顺序建立 icon 批次 A/B/C，实读 C 活动。",
+            "关键动作前 get_app_state 留图；对 B 地球图标中心 (44,428) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。"
+          ],
+          "unit_id": "DBL-03-PER"
+        },
+        "evidence": [
+          "qa-evidence/r2/DBL-03-observations.json",
+          "qa-evidence/r2/DBL-03-PER-01.png",
+          "qa-evidence/r2/DBL-03-PER-02.png",
+          "qa-evidence/r2/DBL-03-PER-03.png",
+          "qa-evidence/r2/DBL-03-PER-04.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/DBL-03-evidence.json",
+        "notes": "三布局标题与图标两个变体均重建前置；B为非活动页，六次双击均仅移除B，逐页A/C编号保持，原图正文为仍存在的TC-C。COM收尾打开Guest后的定位守卫错误发生在被测动作之后，已保留现场且未点击错误开关。",
+        "reviewed_at": "2026-10-30T12:08:07.580447+00:00"
+      }
+    ],
+    "actual": "两个变体的原生列表均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。",
+    "observation": {
+      "active_after": "标题区和图标区双击结束时均为 C 单选；随后单击 A 核对存活身份，图标区变体核对完后单击 C 返回。",
+      "active_before": "两个变体均为 C 活动且单选，B 非活动。",
+      "after": "两个变体的原生列表均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。",
+      "before": "标题区批次 TC-PHI507-r2-DBL-03-PER-title；图标区批次 TC-PHI507-r2-DBL-03-PER-icon。每次均为普通页 A→B→C，无组、多选或 split。",
+      "confirmation_choices": "未出现关闭确认或离开确认；未选择“不再询问”。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-03-PER attempt1 settings",
+        "EVIDENCE: DBL-03-PER attempt1 switches",
+        "EVIDENCE: DBL-03-PER attempt1 coordinate-calibration",
+        "EVIDENCE: DBL-03-PER attempt1 title-A-identity",
+        "EVIDENCE: DBL-03-PER attempt1 title-B-identity",
+        "EVIDENCE: DBL-03-PER attempt1 title-C-identity",
+        "EVIDENCE: DBL-03-PER attempt1 title-before",
+        "EVIDENCE: DBL-03-PER attempt1 title-after",
+        "EVIDENCE: DBL-03-PER attempt1 title-A-retained",
+        "EVIDENCE: DBL-03-PER attempt1 icon-A-identity",
+        "EVIDENCE: DBL-03-PER attempt1 icon-B-identity",
+        "EVIDENCE: DBL-03-PER attempt1 icon-C-identity",
+        "EVIDENCE: DBL-03-PER attempt1 icon-before",
+        "EVIDENCE: DBL-03-PER attempt1 icon-after",
+        "EVIDENCE: DBL-03-PER attempt1 icon-A-retained"
+      ],
+      "identity_checks": "全程本应用 PID 57596。逐页实见 TC 标题、对应批次、普通页说明、打开编号及空输入框。title：A=8ff526f5-486f-4cb7-8859-62a6451b735a，B=6461b5d0-3f78-4fa5-87bf-5292bd86e533，C=c8df655e-4746-4984-a432-e535f0c5c40a；icon：A=1dbd6a7d-f79e-4d76-b02a-6bff20f5e995，B=2f5aebfa-3071-4e75-aa1c-32652d1e0c85，C=6a800935-f924-4cb6-8a51-32be0ed06c84。两次动作后均逐页核对 A/C 原编号。",
+      "language_observed": "General 实读 System Default；浏览器和设置界面为英文，未切换语言。",
+      "layout_observed": "General 原生选择 Performance 并截图确认；实际浏览器 chrome 为纵向标签栏，A/B/C 自上而下排列。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项开始先实读前轮 A/C，再原生清理并重建两个独立的 A/B/C 序列；两次关键动作前均确认 C 活动、B 非活动、双击关闭 on。",
+      "settings_observed": "会话初始实读 Balanced、双击关闭 off／位置关闭 on。本项只点击双击关闭开关一次，返回原生树即时值为双击关闭 on／位置关闭 on；未点击位置关闭。",
+      "steps_executed": [
+        "用新建 New Tab 的原生 Close Other Tabs 清理本轮普通测试页，再经地址栏顺序建立 title 批次 A/B/C。",
+        "在无控件内容区单击 (1000,440)，截图指针位置与输入坐标一致，按本次原图比例定位。",
+        "关键动作前 get_app_state 留图；对 B 标题区 (150,428) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。",
+        "重新新建 New Tab、关闭其他普通测试页，经地址栏顺序建立 icon 批次 A/B/C，实读 C 活动。",
+        "关键动作前 get_app_state 留图；对 B 地球图标中心 (44,428) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。"
+      ],
+      "unit_id": "DBL-03-PER"
+    },
+    "notes": "三布局标题与图标两个变体均重建前置；B为非活动页，六次双击均仅移除B，逐页A/C编号保持，原图正文为仍存在的TC-C。COM收尾打开Guest后的定位守卫错误发生在被测动作之后，已保留现场且未点击错误开关。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-03",
@@ -3005,7 +4625,13 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/DBL-03-observations.json",
+      "qa-evidence/r2/DBL-03-BAL-01.png",
+      "qa-evidence/r2/DBL-03-BAL-02.png",
+      "qa-evidence/r2/DBL-03-BAL-03.png",
+      "qa-evidence/r2/DBL-03-BAL-04.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-03-BAL",
     "layout": "balanced",
@@ -3014,9 +4640,103 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-03",
+        "outcome": "pass",
+        "actual": "两个变体的原生列表均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。",
+        "observation": {
+          "active_after": "标题区和图标区双击结束时均为 C 单选；随后单击 A 核对存活身份，图标区变体核对完后单击 C 返回。",
+          "active_before": "两个变体均为 C 活动且单选，B 非活动。",
+          "after": "两个变体的原生列表均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。",
+          "before": "标题区批次 TC-PHI507-r2-DBL-03-BAL-title；图标区批次 TC-PHI507-r2-DBL-03-BAL-icon。每次均为普通页 A→B→C，无组、多选或 split。",
+          "confirmation_choices": "未出现关闭确认或离开确认；未选择“不再询问”。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-03-BAL attempt1 settings",
+            "EVIDENCE: DBL-03-BAL attempt1 title-A-identity",
+            "EVIDENCE: DBL-03-BAL attempt1 title-B-identity",
+            "EVIDENCE: DBL-03-BAL attempt1 title-C-identity",
+            "EVIDENCE: DBL-03-BAL attempt1 title-before",
+            "EVIDENCE: DBL-03-BAL attempt1 title-after",
+            "EVIDENCE: DBL-03-BAL attempt1 title-A-retained",
+            "EVIDENCE: DBL-03-BAL attempt1 icon-A-identity",
+            "EVIDENCE: DBL-03-BAL attempt1 icon-B-identity",
+            "EVIDENCE: DBL-03-BAL attempt1 icon-C-identity",
+            "EVIDENCE: DBL-03-BAL attempt1 icon-before",
+            "EVIDENCE: DBL-03-BAL attempt1 icon-after",
+            "EVIDENCE: DBL-03-BAL attempt1 icon-A-retained"
+          ],
+          "identity_checks": "本应用 PID 57596。逐页实见 TC 标题、对应批次、普通页说明、打开编号及空输入框。title：A=0305eb93-fb2a-4247-ade4-3998afa597ea，B=6c848078-aa31-454b-ac3f-5c3533f49e8f，C=69baa12d-6842-4181-934a-d9b004c0899d；icon：A=b659c965-7c4c-4d53-9b99-97bbce194021，B=2d3058c3-c35c-42b3-b6b6-256198a70ac4，C=e49fbafc-d6e5-4e5e-bd6c-3c88c59659fa。两次动作后均逐页核对 A/C 原编号。",
+          "language_observed": "General 实读 System Default；浏览器和设置界面为英文。",
+          "layout_observed": "General 原生选择 Balanced 并截图确认；实际浏览器 chrome 为纵向标签栏，A/B/C 自上而下排列。",
+          "not_executed_reason": "",
+          "operator_errors": [],
+          "precondition_actual": "本项开始才清理 Performance 残留页并重建；标题区与图标区动作各使用新序列，均确认 A→B→C、C 单选、B 非活动。",
+          "settings_observed": "Advanced 重新实读双击关闭 on／位置关闭 on；本项未点击任何关闭开关。",
+          "steps_executed": [
+            "原生切换到 Balanced，读取语言及两个关闭开关。",
+            "新建 New Tab 后原生 Close Other Tabs，经地址栏顺序建立 title 批次 A/B/C。",
+            "关键动作前 get_app_state 留图；按当前原图对 B 标题区 (150,355) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。",
+            "重新清理并经地址栏顺序建立 icon 批次 A/B/C，确认 C 活动。",
+            "关键动作前 get_app_state 留图；对 B 地球图标中心 (44,355) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。"
+          ],
+          "unit_id": "DBL-03-BAL"
+        },
+        "evidence": [
+          "qa-evidence/r2/DBL-03-observations.json",
+          "qa-evidence/r2/DBL-03-BAL-01.png",
+          "qa-evidence/r2/DBL-03-BAL-02.png",
+          "qa-evidence/r2/DBL-03-BAL-03.png",
+          "qa-evidence/r2/DBL-03-BAL-04.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/DBL-03-evidence.json",
+        "notes": "三布局标题与图标两个变体均重建前置；B为非活动页，六次双击均仅移除B，逐页A/C编号保持，原图正文为仍存在的TC-C。COM收尾打开Guest后的定位守卫错误发生在被测动作之后，已保留现场且未点击错误开关。",
+        "reviewed_at": "2026-10-30T12:08:07.582767+00:00"
+      }
+    ],
+    "actual": "两个变体的原生列表均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。",
+    "observation": {
+      "active_after": "标题区和图标区双击结束时均为 C 单选；随后单击 A 核对存活身份，图标区变体核对完后单击 C 返回。",
+      "active_before": "两个变体均为 C 活动且单选，B 非活动。",
+      "after": "两个变体的原生列表均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。",
+      "before": "标题区批次 TC-PHI507-r2-DBL-03-BAL-title；图标区批次 TC-PHI507-r2-DBL-03-BAL-icon。每次均为普通页 A→B→C，无组、多选或 split。",
+      "confirmation_choices": "未出现关闭确认或离开确认；未选择“不再询问”。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-03-BAL attempt1 settings",
+        "EVIDENCE: DBL-03-BAL attempt1 title-A-identity",
+        "EVIDENCE: DBL-03-BAL attempt1 title-B-identity",
+        "EVIDENCE: DBL-03-BAL attempt1 title-C-identity",
+        "EVIDENCE: DBL-03-BAL attempt1 title-before",
+        "EVIDENCE: DBL-03-BAL attempt1 title-after",
+        "EVIDENCE: DBL-03-BAL attempt1 title-A-retained",
+        "EVIDENCE: DBL-03-BAL attempt1 icon-A-identity",
+        "EVIDENCE: DBL-03-BAL attempt1 icon-B-identity",
+        "EVIDENCE: DBL-03-BAL attempt1 icon-C-identity",
+        "EVIDENCE: DBL-03-BAL attempt1 icon-before",
+        "EVIDENCE: DBL-03-BAL attempt1 icon-after",
+        "EVIDENCE: DBL-03-BAL attempt1 icon-A-retained"
+      ],
+      "identity_checks": "本应用 PID 57596。逐页实见 TC 标题、对应批次、普通页说明、打开编号及空输入框。title：A=0305eb93-fb2a-4247-ade4-3998afa597ea，B=6c848078-aa31-454b-ac3f-5c3533f49e8f，C=69baa12d-6842-4181-934a-d9b004c0899d；icon：A=b659c965-7c4c-4d53-9b99-97bbce194021，B=2d3058c3-c35c-42b3-b6b6-256198a70ac4，C=e49fbafc-d6e5-4e5e-bd6c-3c88c59659fa。两次动作后均逐页核对 A/C 原编号。",
+      "language_observed": "General 实读 System Default；浏览器和设置界面为英文。",
+      "layout_observed": "General 原生选择 Balanced 并截图确认；实际浏览器 chrome 为纵向标签栏，A/B/C 自上而下排列。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项开始才清理 Performance 残留页并重建；标题区与图标区动作各使用新序列，均确认 A→B→C、C 单选、B 非活动。",
+      "settings_observed": "Advanced 重新实读双击关闭 on／位置关闭 on；本项未点击任何关闭开关。",
+      "steps_executed": [
+        "原生切换到 Balanced，读取语言及两个关闭开关。",
+        "新建 New Tab 后原生 Close Other Tabs，经地址栏顺序建立 title 批次 A/B/C。",
+        "关键动作前 get_app_state 留图；按当前原图对 B 标题区 (150,355) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。",
+        "重新清理并经地址栏顺序建立 icon 批次 A/B/C，确认 C 活动。",
+        "关键动作前 get_app_state 留图；对 B 地球图标中心 (44,355) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。"
+      ],
+      "unit_id": "DBL-03-BAL"
+    },
+    "notes": "三布局标题与图标两个变体均重建前置；B为非活动页，六次双击均仅移除B，逐页A/C编号保持，原图正文为仍存在的TC-C。COM收尾打开Guest后的定位守卫错误发生在被测动作之后，已保留现场且未点击错误开关。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-03",
@@ -3039,7 +4759,14 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [
+      "qa-evidence/r2/DBL-03-observations.json",
+      "qa-evidence/r2/DBL-03-COM-01.png",
+      "qa-evidence/r2/DBL-03-COM-02.png",
+      "qa-evidence/r2/DBL-03-COM-03.png",
+      "qa-evidence/r2/DBL-03-COM-04.png",
+      "qa-evidence/r2/DBL-03-COM-05.png"
+    ],
     "kind": "acceptance",
     "key": "DBL-03-COM",
     "layout": "comfortable",
@@ -3048,9 +4775,120 @@
       "id": "",
       "label": ""
     },
-    "result": "pending",
+    "result": "pass",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [
+      {
+        "job": "DBL-03",
+        "outcome": "pass",
+        "actual": "两个变体的横向标签集合均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。最后保留 icon 批次 A/C。",
+        "observation": {
+          "active_after": "两次双击结束时均为 C 活动且单选；逐页核对时单击 A，再返回 C。恢复偏好后的最终活动页仍为 C。",
+          "active_before": "两个变体均为 C 活动且单选，B 非活动。",
+          "after": "两个变体的横向标签集合均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。最后保留 icon 批次 A/C。",
+          "before": "标题区批次 TC-PHI507-r2-DBL-03-COM-title；图标区批次 TC-PHI507-r2-DBL-03-COM-icon。每次均为普通页 A→B→C，无组、多选或 split。",
+          "confirmation_choices": "未出现关闭确认或离开确认；未选择“不再询问”。",
+          "evidence_markers": [
+            "EVIDENCE: DBL-03-COM attempt1 settings",
+            "EVIDENCE: DBL-03-COM attempt1 title-A-identity",
+            "EVIDENCE: DBL-03-COM attempt1 title-B-identity",
+            "EVIDENCE: DBL-03-COM attempt1 title-C-identity",
+            "EVIDENCE: DBL-03-COM attempt1 coordinate-calibration",
+            "EVIDENCE: DBL-03-COM attempt1 title-before",
+            "EVIDENCE: DBL-03-COM attempt1 title-after",
+            "EVIDENCE: DBL-03-COM attempt1 title-A-retained",
+            "EVIDENCE: DBL-03-COM attempt1 icon-A-identity",
+            "EVIDENCE: DBL-03-COM attempt1 icon-B-identity",
+            "EVIDENCE: DBL-03-COM attempt1 icon-C-identity",
+            "EVIDENCE: DBL-03-COM attempt1 icon-before",
+            "EVIDENCE: DBL-03-COM attempt1 icon-after",
+            "EVIDENCE: DBL-03-COM attempt1 icon-A-retained",
+            "EVIDENCE: DBL-03-COM attempt1 failure",
+            "EVIDENCE: DBL-03-COM attempt1 restore-switches",
+            "EVIDENCE: DBL-03-COM attempt1 restore-layout",
+            "EVIDENCE: DBL-03-COM attempt1 ending-state"
+          ],
+          "identity_checks": "本应用 PID 57596。逐页实见 TC 标题、对应批次、普通页说明、打开编号及空输入框。title：A=77115699-90d8-4f3a-8d83-47fa0b413db3，B=e122e748-bb2a-4a55-9778-2402a617d5ae，C=1223811d-5d24-49f7-9615-6a4cbc0d4c04；icon：A=9fe174d8-f2c7-4535-8aa0-a388e98b19b5，B=7c5672a6-f45c-443b-b531-8dedb5dd3478，C=e06a4e88-dcc3-4103-9ed2-68c77bec85a3。两次动作后均逐页核对 A/C 原编号。新导航后活动标签容器 Description 曾仍显示 New Tab，其子 text、窗口标题及屏幕正文已显示对应 TC 身份；未以该滞后 Description 单独判断身份。",
+          "language_observed": "本项及收尾 General 均实读 System Default，界面为英文；未切换语言。",
+          "layout_observed": "General 原生选择 Comfortable 并截图确认；实际 chrome 为横向标签栏，A/B/C 从左到右排列。收尾恢复 Balanced 并截图确认。",
+          "not_executed_reason": "",
+          "operator_errors": [
+            "收尾恢复偏好时，Cmd+, 实际打开 Guest，编排辅助函数直接查找双击关闭控件，因无匹配报 not unique 并在点击前停止。已保存 failure 原图，随后原生点击 Advanced 继续恢复；未重试或更改任何被测双击动作。"
+          ],
+          "precondition_actual": "本项开始才清理 Balanced 残留页并重建；两个动作各有独立 A/B/C 序列，实见横向顺序、C 活动、B 非活动及双击关闭 on。",
+          "settings_observed": "执行前 Advanced 实读双击关闭 on／位置关闭 on。本项动作完成后只点击双击关闭开关一次，返回原生树即时值为 off／on；位置关闭未被点击。随后恢复 Balanced，语言仍为 System Default。",
+          "steps_executed": [
+            "原生切换 Comfortable，读取语言及两个关闭开关；新建 New Tab 后原生 Close Other Tabs，经地址栏顺序建立 title 批次 A/B/C。",
+            "在安全内容区单击 (1000,580)，原图指针位置与输入坐标一致。",
+            "关键动作前 get_app_state 留图；对 B 标题区 (750,44) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。",
+            "重新清理并经地址栏顺序建立 icon 批次 A/B/C，确认 C 活动。",
+            "关键动作前 get_app_state 留图；对 B 地球图标中心 (644,44) 执行 click_count=2；结束 get_app_state 留图，核对 A/C 后返回 C。",
+            "统一恢复起始关闭开关与 Balanced 布局，关闭 Settings，最终 get_app_state 保存真实结束状态；未再创建序列。"
+          ],
+          "unit_id": "DBL-03-COM"
+        },
+        "evidence": [
+          "qa-evidence/r2/DBL-03-observations.json",
+          "qa-evidence/r2/DBL-03-COM-01.png",
+          "qa-evidence/r2/DBL-03-COM-02.png",
+          "qa-evidence/r2/DBL-03-COM-03.png",
+          "qa-evidence/r2/DBL-03-COM-04.png",
+          "qa-evidence/r2/DBL-03-COM-05.png"
+        ],
+        "evidence_metadata": "qa-evidence/r2/DBL-03-evidence.json",
+        "notes": "三布局标题与图标两个变体均重建前置；B为非活动页，六次双击均仅移除B，逐页A/C编号保持，原图正文为仍存在的TC-C。COM收尾打开Guest后的定位守卫错误发生在被测动作之后，已保留现场且未点击错误开关。",
+        "reviewed_at": "2026-10-30T12:08:07.582776+00:00"
+      }
+    ],
+    "actual": "两个变体的横向标签集合均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。最后保留 icon 批次 A/C。",
+    "observation": {
+      "active_after": "两次双击结束时均为 C 活动且单选；逐页核对时单击 A，再返回 C。恢复偏好后的最终活动页仍为 C。",
+      "active_before": "两个变体均为 C 活动且单选，B 非活动。",
+      "after": "两个变体的横向标签集合均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。最后保留 icon 批次 A/C。",
+      "before": "标题区批次 TC-PHI507-r2-DBL-03-COM-title；图标区批次 TC-PHI507-r2-DBL-03-COM-icon。每次均为普通页 A→B→C，无组、多选或 split。",
+      "confirmation_choices": "未出现关闭确认或离开确认；未选择“不再询问”。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-03-COM attempt1 settings",
+        "EVIDENCE: DBL-03-COM attempt1 title-A-identity",
+        "EVIDENCE: DBL-03-COM attempt1 title-B-identity",
+        "EVIDENCE: DBL-03-COM attempt1 title-C-identity",
+        "EVIDENCE: DBL-03-COM attempt1 coordinate-calibration",
+        "EVIDENCE: DBL-03-COM attempt1 title-before",
+        "EVIDENCE: DBL-03-COM attempt1 title-after",
+        "EVIDENCE: DBL-03-COM attempt1 title-A-retained",
+        "EVIDENCE: DBL-03-COM attempt1 icon-A-identity",
+        "EVIDENCE: DBL-03-COM attempt1 icon-B-identity",
+        "EVIDENCE: DBL-03-COM attempt1 icon-C-identity",
+        "EVIDENCE: DBL-03-COM attempt1 icon-before",
+        "EVIDENCE: DBL-03-COM attempt1 icon-after",
+        "EVIDENCE: DBL-03-COM attempt1 icon-A-retained",
+        "EVIDENCE: DBL-03-COM attempt1 failure",
+        "EVIDENCE: DBL-03-COM attempt1 restore-switches",
+        "EVIDENCE: DBL-03-COM attempt1 restore-layout",
+        "EVIDENCE: DBL-03-COM attempt1 ending-state"
+      ],
+      "identity_checks": "本应用 PID 57596。逐页实见 TC 标题、对应批次、普通页说明、打开编号及空输入框。title：A=77115699-90d8-4f3a-8d83-47fa0b413db3，B=e122e748-bb2a-4a55-9778-2402a617d5ae，C=1223811d-5d24-49f7-9615-6a4cbc0d4c04；icon：A=9fe174d8-f2c7-4535-8aa0-a388e98b19b5，B=7c5672a6-f45c-443b-b531-8dedb5dd3478，C=e06a4e88-dcc3-4103-9ed2-68c77bec85a3。两次动作后均逐页核对 A/C 原编号。新导航后活动标签容器 Description 曾仍显示 New Tab，其子 text、窗口标题及屏幕正文已显示对应 TC 身份；未以该滞后 Description 单独判断身份。",
+      "language_observed": "本项及收尾 General 均实读 System Default，界面为英文；未切换语言。",
+      "layout_observed": "General 原生选择 Comfortable 并截图确认；实际 chrome 为横向标签栏，A/B/C 从左到右排列。收尾恢复 Balanced 并截图确认。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "收尾恢复偏好时，Cmd+, 实际打开 Guest，编排辅助函数直接查找双击关闭控件，因无匹配报 not unique 并在点击前停止。已保存 failure 原图，随后原生点击 Advanced 继续恢复；未重试或更改任何被测双击动作。"
+      ],
+      "precondition_actual": "本项开始才清理 Balanced 残留页并重建；两个动作各有独立 A/B/C 序列，实见横向顺序、C 活动、B 非活动及双击关闭 on。",
+      "settings_observed": "执行前 Advanced 实读双击关闭 on／位置关闭 on。本项动作完成后只点击双击关闭开关一次，返回原生树即时值为 off／on；位置关闭未被点击。随后恢复 Balanced，语言仍为 System Default。",
+      "steps_executed": [
+        "原生切换 Comfortable，读取语言及两个关闭开关；新建 New Tab 后原生 Close Other Tabs，经地址栏顺序建立 title 批次 A/B/C。",
+        "在安全内容区单击 (1000,580)，原图指针位置与输入坐标一致。",
+        "关键动作前 get_app_state 留图；对 B 标题区 (750,44) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。",
+        "重新清理并经地址栏顺序建立 icon 批次 A/B/C，确认 C 活动。",
+        "关键动作前 get_app_state 留图；对 B 地球图标中心 (644,44) 执行 click_count=2；结束 get_app_state 留图，核对 A/C 后返回 C。",
+        "统一恢复起始关闭开关与 Balanced 布局，关闭 Settings，最终 get_app_state 保存真实结束状态；未再创建序列。"
+      ],
+      "unit_id": "DBL-03-COM"
+    },
+    "notes": "三布局标题与图标两个变体均重建前置；B为非活动页，六次双击均仅移除B，逐页A/C编号保持，原图正文为仍存在的TC-C。COM收尾打开Guest后的定位守卫错误发生在被测动作之后，已保留现场且未点击错误开关。",
+    "reviewed_by": "Ripley",
+    "review_basis": "原始CU观察、工具审计与关键前后截图；自动化无效尝试单列"
   },
   {
     "id": "DBL-04",
@@ -3396,7 +5234,7 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [],
     "variants": [
       {
         "id": "command",
@@ -3423,9 +5261,12 @@
       "id": "command",
       "label": "Command"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
+    "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
   },
   {
     "id": "DBL-07",
@@ -3447,7 +5288,7 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [],
     "variants": [
       {
         "id": "command",
@@ -3474,9 +5315,12 @@
       "id": "shift",
       "label": "Shift"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
+    "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
   },
   {
     "id": "DBL-07",
@@ -3498,7 +5342,7 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [],
     "variants": [
       {
         "id": "command",
@@ -3525,9 +5369,12 @@
       "id": "option",
       "label": "Option"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
+    "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
   },
   {
     "id": "DBL-07",
@@ -3549,7 +5396,7 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [],
     "variants": [
       {
         "id": "command",
@@ -3576,9 +5423,12 @@
       "id": "control",
       "label": "Control"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
+    "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
   },
   {
     "id": "DBL-07",
@@ -3600,7 +5450,7 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [],
     "variants": [
       {
         "id": "command",
@@ -3627,9 +5477,12 @@
       "id": "command",
       "label": "Command"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
+    "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
   },
   {
     "id": "DBL-07",
@@ -3651,7 +5504,7 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [],
     "variants": [
       {
         "id": "command",
@@ -3678,9 +5531,12 @@
       "id": "shift",
       "label": "Shift"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
+    "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
   },
   {
     "id": "DBL-07",
@@ -3702,7 +5558,7 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [],
     "variants": [
       {
         "id": "command",
@@ -3729,9 +5585,12 @@
       "id": "option",
       "label": "Option"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
+    "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
   },
   {
     "id": "DBL-07",
@@ -3753,7 +5612,7 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [],
     "variants": [
       {
         "id": "command",
@@ -3780,9 +5639,12 @@
       "id": "control",
       "label": "Control"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
+    "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
   },
   {
     "id": "DBL-07",
@@ -3804,7 +5666,7 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [],
     "variants": [
       {
         "id": "command",
@@ -3831,9 +5693,12 @@
       "id": "command",
       "label": "Command"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
+    "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
   },
   {
     "id": "DBL-07",
@@ -3855,7 +5720,7 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [],
     "variants": [
       {
         "id": "command",
@@ -3882,9 +5747,12 @@
       "id": "shift",
       "label": "Shift"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
+    "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
   },
   {
     "id": "DBL-07",
@@ -3906,7 +5774,7 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [],
     "variants": [
       {
         "id": "command",
@@ -3933,9 +5801,12 @@
       "id": "option",
       "label": "Option"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
+    "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
   },
   {
     "id": "DBL-07",
@@ -3957,7 +5828,7 @@
     "smoke": false,
     "observed": [],
     "reset": "重新建立该用例的初始序列；保留原有 pin、书签和其他窗口。",
-    "evidence": "记录操作前后标签顺序、活动页和截图；若与预期不同，写出实际剩余集合。",
+    "evidence": [],
     "variants": [
       {
         "id": "command",
@@ -3984,9 +5855,12 @@
       "id": "control",
       "label": "Control"
     },
-    "result": "pending",
+    "result": "blocked",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "actual": "源步骤明确要求按住修饰键并使用真实鼠标/触控板。本轮只能使用Computer Use，其click接口没有modifier-hold字段，未取得真实设备事件；没有用按下再松开修饰键后双击伪造覆盖。",
+    "not_run_reason": "本变体缺手册要求的真实修饰键+物理设备双击输入能力。",
+    "notes": "仅记录工具接口和环境能力限制，未实际执行本执行点动作；不把它记成产品失败。"
   },
   {
     "id": "DBL-08",

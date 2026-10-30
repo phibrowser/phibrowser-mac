@@ -1,0 +1,117 @@
+{
+  "base_case": "DBL-01",
+  "ending_state": "/Applications/Phi Tab Close QA.app 保持运行，CU 实读 PID 57596。保留最后一项 TC-PHI507-r2-DBL-01-COM 的普通 A/B/C，实际顺序 A、B、C，活动及单选页 B，无组、无多选、无 split。最后一项结束后未重建页面；仅统一恢复并截图确认 Balanced、System Default（界面英文）、双击关闭 off／位置关闭 on，Settings 已关闭。未操作 Canary、Default 的 Chrome Web Store、pin、书签、其他窗口或未知保存项。",
+  "observations": [
+    {
+      "active_after": "attempt2：标题区双击后 B；图标区双击后 B。",
+      "active_before": "attempt1、attempt2 的标题区动作前均为 C；attempt2 图标区动作前为 B。",
+      "after": "attempt2 两步结束均为 A、B、C，B 单选且活动，无标签消失，无组或 split。attempt1 误操作后为 A 活动，A/B/C 仍在。",
+      "before": "attempt2：普通 A、B、C 自上而下排列，仅 C 选中，无组、多选或 split。",
+      "confirmation_choices": "初次清理旧测试对象时出现 Close Tabs and Delete Group?，选择 Delete Group；Don't Ask Again 保持未勾选。被测双击未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-01-PER attempt1 settings",
+        "EVIDENCE: DBL-01-PER attempt1 setup-A",
+        "EVIDENCE: DBL-01-PER attempt1 setup-A-loaded",
+        "EVIDENCE: DBL-01-PER attempt1 setup-B",
+        "EVIDENCE: DBL-01-PER attempt1 title-before",
+        "EVIDENCE: DBL-01-PER attempt1 title-after",
+        "EVIDENCE: DBL-01-PER attempt1 failure",
+        "EVIDENCE: DBL-01-PER attempt2 setup-A",
+        "EVIDENCE: DBL-01-PER attempt2 setup-B",
+        "EVIDENCE: DBL-01-PER attempt2 setup-C",
+        "EVIDENCE: DBL-01-PER attempt2 title-before",
+        "EVIDENCE: DBL-01-PER attempt2 title-after",
+        "EVIDENCE: DBL-01-PER attempt2 icon-before",
+        "EVIDENCE: DBL-01-PER attempt2 icon-after"
+      ],
+      "identity_checks": "逐页实见 TC-A/B/C、对应批次、普通页正文、本次打开编号及空输入框，未输入额外标记。attempt2 批次 TC-PHI507-r2-DBL-01-PER-retry2：A=46b47f5c-408b-4a32-b081-35ad00f13056，B=c84b12e1-d171-495f-919d-bf08a6ef0e64，C=82be21ee-f0b7-417b-9e12-14c3075c33b7；双击后 B 编号不变。attempt1 批次 TC-PHI507-r2-DBL-01-PER：A=0681ac5b-426a-44a5-b224-2b9105ba100c，B=541e4c88-d459-44b1-aa00-fb3770ced02f，C=85988348-30ef-42e7-9bf0-60bc774679f7。",
+      "language_observed": "General 实读 System Default，Settings 与浏览器菜单为英文；未切换语言。",
+      "layout_observed": "General 原生选择并截图确认 Performance；实际 chrome 为左侧纵向标签、地址及导航位于侧栏。",
+      "not_executed_reason": "无最终未执行步骤。attempt1 未命中 B，因此未继续其图标区步骤；保存现场后重建并以 attempt2 执行两步。",
+      "operator_errors": [
+        "attempt1 使用 click(110,321,click_count=2) 时，截图指针实际约落在展示图 (83,241)，激活 A，未命中 B；该现场不作为 B 双击结果。",
+        "根据原图展示与实际指针的 3:4 比例校正后，重建前置；attempt2 标题区 click(147,429) 对应展示图约 (110,322)，图标区 click(44,429) 对应约 (33,322)，前后截图核对指针分别位于 B 标题与图标。"
+      ],
+      "precondition_actual": "通过新建 New Tab、原生 Close Other Tabs 清理旧测试页及 TC-PHI507-r2-SET10-fresh-COM 组后，地址栏顺序建立 A/B/C；误操作后再次清理并用 retry2 批次独立重建。Advanced 实读双击关闭 off、位置关闭 on，未点击两个开关。",
+      "settings_observed": "起始偏好实读 Balanced、System Default、双击关闭 off／位置关闭 on。本项仅修改布局为 Performance。",
+      "steps_executed": [
+        "实读应用、General 与 Advanced，选择 Performance。",
+        "清理本轮旧测试对象，地址栏顺序创建普通 A/B/C并核对正文及编号。",
+        "attempt1 坐标双击误命中 A，保存 failure 现场。",
+        "用 TC-PHI507-r2-DBL-01-PER-retry2 重新建立 A/B/C，确认 C 活动。",
+        "双击 B 标题区，get_app_state 保存前后截图：B 活动，A/B/C 均在。",
+        "继续双击 B 图标区，get_app_state 保存前后截图：B 活动，A/B/C 均在。"
+      ],
+      "unit_id": "DBL-01-PER"
+    },
+    {
+      "active_after": "标题区双击后 B；图标区双击后 B。",
+      "active_before": "标题区动作前 C；图标区动作前 B。",
+      "after": "两步后实际顺序均为 A、B、C，B 单选且活动，未见标签消失；无组、多选或 split。",
+      "before": "普通 A、B、C 自上而下排列，仅 C 选中，无组、多选或 split。",
+      "confirmation_choices": "本项清理及两次被测双击未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-01-BAL attempt1 settings",
+        "EVIDENCE: DBL-01-BAL attempt1 setup-A",
+        "EVIDENCE: DBL-01-BAL attempt1 switches",
+        "EVIDENCE: DBL-01-BAL attempt1 setup-B",
+        "EVIDENCE: DBL-01-BAL attempt1 setup-C",
+        "EVIDENCE: DBL-01-BAL attempt1 title-before",
+        "EVIDENCE: DBL-01-BAL attempt1 title-after",
+        "EVIDENCE: DBL-01-BAL attempt1 icon-before",
+        "EVIDENCE: DBL-01-BAL attempt1 icon-after"
+      ],
+      "identity_checks": "逐页实见 TC-A/B/C、批次 TC-PHI507-r2-DBL-01-BAL、普通页正文、本次打开编号及空输入框。A=4063abc9-fc7b-4613-9482-cde4da013641，B=7b1e5bb8-355b-4fe5-8359-822d67a55589，C=f449eeea-e3a0-4538-8c2e-e5358fd78a85；两次双击后 B 编号不变。",
+      "language_observed": "General 实读 System Default，界面英文，未切换语言。",
+      "layout_observed": "General 原生选择并截图确认 Balanced；实际 chrome 为左侧纵向标签、顶部地址与导航。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "新建 New Tab 并原生 Close Other Tabs 清理上一项测试页，再通过地址栏顺序建立本项 A/B/C。Advanced 重新实读双击关闭 off、位置关闭 on，未点击开关。",
+      "settings_observed": "本项布局为 Balanced；双击关闭 off／位置关闭 on。",
+      "steps_executed": [
+        "原生切换 Balanced并截图确认。",
+        "清理上一项测试页，地址栏创建本项普通 A/B/C，逐页核对身份，确认 C 活动。",
+        "按已核对比例双击 B 标题区：CU 坐标 (147,355)，展示图约 (110,266)。保存前后截图，B 活动且 A/B/C 均在。",
+        "继续双击 B 图标区：CU 坐标 (44,355)，展示图约 (33,266)。保存前后截图，B 活动且 A/B/C 均在。"
+      ],
+      "unit_id": "DBL-01-BAL"
+    },
+    {
+      "active_after": "标题区双击后 B；图标区双击后 B；恢复起始偏好后仍为 B。",
+      "active_before": "标题区动作前 C；图标区动作前 B。",
+      "after": "Comfortable 下两步后实际横向顺序均为 A、B、C，B 活动，无标签消失，无组、多选或 split。收尾恢复 Balanced 后同一 A/B/C 保留，B 单选。",
+      "before": "普通 A、B、C 从左至右排列，C 活动，无组、多选或 split。",
+      "confirmation_choices": "本项清理及两次被测双击未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-01-COM attempt1 settings",
+        "EVIDENCE: DBL-01-COM attempt1 switches",
+        "EVIDENCE: DBL-01-COM attempt1 setup-A",
+        "EVIDENCE: DBL-01-COM attempt1 setup-B",
+        "EVIDENCE: DBL-01-COM attempt1 setup-C",
+        "EVIDENCE: DBL-01-COM attempt1 title-before",
+        "EVIDENCE: DBL-01-COM attempt1 title-after",
+        "EVIDENCE: DBL-01-COM attempt1 icon-before",
+        "EVIDENCE: DBL-01-COM attempt1 icon-after",
+        "EVIDENCE: DBL-01-COM attempt1 restore-settings",
+        "EVIDENCE: DBL-01-COM attempt1 restore-switches",
+        "EVIDENCE: DBL-01-COM attempt1 ending"
+      ],
+      "identity_checks": "逐页实见 TC-A/B/C、批次 TC-PHI507-r2-DBL-01-COM、普通页正文、本次打开编号及空输入框。A=7c429bc9-2765-4b9e-8972-b76fcac2253f，B=9b5ebc7a-c973-465c-a010-ba7912019456，C=1bfc8ef4-67d5-48fb-a642-212bd85f818c；两次双击及收尾后 B 编号不变。横向原生 tabStripTab 容器分别对应 A、B、C。",
+      "language_observed": "General 实读 System Default，界面英文，未切换语言；收尾值相同。",
+      "layout_observed": "General 原生选择并截图确认 Comfortable，实际标签从左至右排列；结束证据保存后统一恢复起始 Balanced。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "切换 Comfortable，Advanced 实读双击关闭 off、位置关闭 on。新建 New Tab并原生 Close Other Tabs 清理上一项，再通过地址栏独立创建本项 A/B/C，确认 C 活动。",
+      "settings_observed": "动作时 Comfortable、双击关闭 off／位置关闭 on；收尾截图确认 Balanced、System Default、双击关闭 off／位置关闭 on，两个开关全程未点击。",
+      "steps_executed": [
+        "原生切换 Comfortable并截图确认，重读 Advanced 两个开关。",
+        "清理上一项测试页，地址栏创建本项普通 A/B/C，逐页核对身份及真实顺序。",
+        "C 活动时双击 B 标题区：CU 坐标 (733,44)，展示图约 (550,33)。保存前后截图，B 活动且 A/B/C 均在。",
+        "继续双击 B 图标区：CU 坐标 (645,44)，展示图约 (484,33)。保存前后截图，B 活动且 A/B/C 均在。",
+        "保留实际结束页面，统一恢复起始 Balanced；重读 System Default及双击关闭 off／位置关闭 on，关闭 Settings并保存最终截图。"
+      ],
+      "unit_id": "DBL-01-COM"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

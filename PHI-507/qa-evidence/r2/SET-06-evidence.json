@@ -20,7 +20,7 @@
       1280,
       977
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   },
   {
@@ -44,7 +44,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -68,7 +68,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -92,7 +92,7 @@
       1280,
       1222
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   },
   {
@@ -116,7 +116,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -140,7 +140,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -164,7 +164,7 @@
       1280,
       1222
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   },
   {
@@ -188,7 +188,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -212,7 +212,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -236,7 +236,7 @@
       1280,
       1222
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   },
   {
@@ -260,7 +260,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -284,7 +284,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -308,7 +308,7 @@
       1280,
       1222
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   },
   {
@@ -332,7 +332,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -356,7 +356,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -380,7 +380,7 @@
       1280,
       1222
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   },
   {
@@ -404,7 +404,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -428,7 +428,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -452,7 +452,7 @@
       1280,
       1222
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   },
   {
@@ -476,7 +476,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -500,7 +500,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -524,7 +524,7 @@
       1280,
       1222
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   },
   {
@@ -548,7 +548,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -572,7 +572,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -596,7 +596,7 @@
       1280,
       977
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   },
   {
@@ -620,7 +620,7 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -644,7 +644,7 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -668,7 +668,7 @@
       1280,
       1222
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   },
   {
@@ -692,7 +692,7 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -740,7 +740,7 @@
       1280,
       1222
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   },
   {
@@ -764,7 +764,7 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -788,7 +788,7 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -812,7 +812,7 @@
       1280,
       1222
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   },
   {
@@ -836,7 +836,7 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -860,7 +860,7 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -884,7 +884,7 @@
       1280,
       1222
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   },
   {
@@ -908,7 +908,7 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -932,7 +932,7 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -956,7 +956,7 @@
       1280,
       1222
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   },
   {
@@ -980,7 +980,7 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -1004,7 +1004,7 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   }
 ]

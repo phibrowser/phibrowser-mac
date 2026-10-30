@@ -1,0 +1,377 @@
+[
+  {
+    "unit_id": "DBL-01-PER",
+    "attempt": 1,
+    "phase": "title-before",
+    "file": "DBL-01-PER-01.png",
+    "original_marker": "DBL-01-PER attempt1 title-before",
+    "source_file": "DBL-01-012.jpg",
+    "source_sha256": "5d157cce81109d893b5002fac5ece2dfb8335712992595b0cc623b67ae02c2b7",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      500
+    ],
+    "output_size": [
+      1280,
+      355
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "DBL-01-PER",
+    "attempt": 1,
+    "phase": "title-after",
+    "file": "DBL-01-PER-02.png",
+    "original_marker": "DBL-01-PER attempt1 title-after",
+    "source_file": "DBL-01-013.jpg",
+    "source_sha256": "ad7f475419f4f557cda44289a2fe5da7446783bffe2af4ce0b15a2c9cbdc8236",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      500
+    ],
+    "output_size": [
+      1280,
+      355
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "DBL-01-PER",
+    "attempt": 1,
+    "phase": "failure",
+    "file": "DBL-01-PER-03.png",
+    "original_marker": "DBL-01-PER attempt1 failure",
+    "source_file": "DBL-01-014.jpg",
+    "source_sha256": "6ef6779274cc920a97a83ff800cf9cae6466054b54cda6cdabb0213b582d942b",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-01-PER",
+    "attempt": 2,
+    "phase": "title-before",
+    "file": "DBL-01-PER-04.png",
+    "original_marker": "DBL-01-PER attempt2 title-before",
+    "source_file": "DBL-01-018.jpg",
+    "source_sha256": "dee4c9d0db777bdebe6f40fbac486b9494545ac9a552546d48dc2afbe5cd206e",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      500
+    ],
+    "output_size": [
+      1280,
+      355
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "DBL-01-PER",
+    "attempt": 2,
+    "phase": "title-after",
+    "file": "DBL-01-PER-05.png",
+    "original_marker": "DBL-01-PER attempt2 title-after",
+    "source_file": "DBL-01-019.jpg",
+    "source_sha256": "967d5d6fbca15789d76a1e8892a54f7b9c2776c03b773e48763f09c916871b5a",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      500
+    ],
+    "output_size": [
+      1280,
+      355
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "DBL-01-PER",
+    "attempt": 2,
+    "phase": "icon-before",
+    "file": "DBL-01-PER-06.png",
+    "original_marker": "DBL-01-PER attempt2 icon-before",
+    "source_file": "DBL-01-020.jpg",
+    "source_sha256": "0ab718637d1f5e903b220a6b89be6ab643a3bcb19c06527037cd2543fa7e9693",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      500
+    ],
+    "output_size": [
+      1280,
+      355
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "DBL-01-PER",
+    "attempt": 2,
+    "phase": "icon-after",
+    "file": "DBL-01-PER-07.png",
+    "original_marker": "DBL-01-PER attempt2 icon-after",
+    "source_file": "DBL-01-021.jpg",
+    "source_sha256": "e2795e3277b2df880e8856a53319758f5ec3ce3d152bb6c0d7419ab4873cd97b",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      500
+    ],
+    "output_size": [
+      1280,
+      355
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "DBL-01-BAL",
+    "attempt": 1,
+    "phase": "title-before",
+    "file": "DBL-01-BAL-01.png",
+    "original_marker": "DBL-01-BAL attempt1 title-before",
+    "source_file": "DBL-01-027.jpg",
+    "source_sha256": "225846696fb89bd644731e01b9d0c058c5277f0dc68084b59eeaf0e789c4c5c2",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      500
+    ],
+    "output_size": [
+      1280,
+      355
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "DBL-01-BAL",
+    "attempt": 1,
+    "phase": "title-after",
+    "file": "DBL-01-BAL-02.png",
+    "original_marker": "DBL-01-BAL attempt1 title-after",
+    "source_file": "DBL-01-028.jpg",
+    "source_sha256": "2db640c301242d811bd67bd26e6f515402d079d76cae4b4c6ff97c0caa299226",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      500
+    ],
+    "output_size": [
+      1280,
+      355
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "DBL-01-BAL",
+    "attempt": 1,
+    "phase": "icon-before",
+    "file": "DBL-01-BAL-03.png",
+    "original_marker": "DBL-01-BAL attempt1 icon-before",
+    "source_file": "DBL-01-029.jpg",
+    "source_sha256": "d022035880848a4ca14f690bb4630cc0483e2677a0af2c52f98a9c6111a53a32",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      500
+    ],
+    "output_size": [
+      1280,
+      355
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "DBL-01-BAL",
+    "attempt": 1,
+    "phase": "icon-after",
+    "file": "DBL-01-BAL-04.png",
+    "original_marker": "DBL-01-BAL attempt1 icon-after",
+    "source_file": "DBL-01-030.jpg",
+    "source_sha256": "1fc41e497be201ea2f1d92d84666c6c6d602fc6845e579eb3b914dbc42b91d86",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      500
+    ],
+    "output_size": [
+      1280,
+      355
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "DBL-01-COM",
+    "attempt": 1,
+    "phase": "title-before",
+    "file": "DBL-01-COM-01.png",
+    "original_marker": "DBL-01-COM attempt1 title-before",
+    "source_file": "DBL-01-037.jpg",
+    "source_sha256": "202b0dedbadf70cb1e803db504408991e15e4d63418e0b39747fd82c26c24eae",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      500
+    ],
+    "output_size": [
+      1280,
+      355
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "DBL-01-COM",
+    "attempt": 1,
+    "phase": "title-after",
+    "file": "DBL-01-COM-02.png",
+    "original_marker": "DBL-01-COM attempt1 title-after",
+    "source_file": "DBL-01-038.jpg",
+    "source_sha256": "c9fcbd45d50e29978f5c7650bb461322265869ea84436e1132b72528ecc48e8e",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      500
+    ],
+    "output_size": [
+      1280,
+      355
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "DBL-01-COM",
+    "attempt": 1,
+    "phase": "icon-before",
+    "file": "DBL-01-COM-03.png",
+    "original_marker": "DBL-01-COM attempt1 icon-before",
+    "source_file": "DBL-01-039.jpg",
+    "source_sha256": "22328f409c5a8e31d3a4b8cfda50ce020bb7a586ddd7e4c491ead97938346cd0",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      500
+    ],
+    "output_size": [
+      1280,
+      355
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "DBL-01-COM",
+    "attempt": 1,
+    "phase": "icon-after",
+    "file": "DBL-01-COM-04.png",
+    "original_marker": "DBL-01-COM attempt1 icon-after",
+    "source_file": "DBL-01-040.jpg",
+    "source_sha256": "8828e5d03e5b0d7dfcb20f90a3e2a3311139c6e93674f90a08b629cf38eb0e9f",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      500
+    ],
+    "output_size": [
+      1280,
+      355
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  }
+]

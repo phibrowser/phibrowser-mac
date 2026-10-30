@@ -1,0 +1,19 @@
+{
+  "SET-10-PER-off-group": {
+    "status": "input_diagnostic_completed",
+    "facts": [
+      "off/off下最新原生树33为text TC-D，row为29",
+      "click_count:2在text33后D/E均消失",
+      "画面指针在组行右侧；重建后双击row29成员保留"
+    ],
+    "uncertainty": "text元素中心是否命中关闭控件尚待单击与标题区定向复核；不能仅凭操作器解释归为产品缺陷或忽略",
+    "planned_diagnostic": "qa-scripts/set10-hit-diagnostic-r2.txt",
+    "actual": "D/E的text索引单击即可进入关闭路径；行单击只选择，校准后的真正标题区域双击在off时保留D/E。",
+    "attribution": "原双击文本输入不作标题功能失败证据；text边界与关闭控件精确重叠关系未证明。DBL-19仍需单独验证真正关闭控件。",
+    "evidence": "SET-10-SET-10-PER-hit-diagnostic-observations.json"
+  },
+  "unexplained_process_change": {
+    "observed": "诊断开头Computer Use not active错误后，CU实读PID由54426变57596，操作器未主动退出/重启。",
+    "conclusion": "原因未知，未确认产品崩溃；不宣称全轮无重启/无崩溃。后续从新实读状态重建前置。"
+  }
+}

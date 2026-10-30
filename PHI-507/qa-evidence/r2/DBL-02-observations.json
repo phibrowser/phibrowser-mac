@@ -1,0 +1,104 @@
+{
+  "base_case": "DBL-02：开启时双击活动普通页。仅执行指定的 PER、BAL、COM 三个执行点，记录实际观察，不判定 pass/fail。",
+  "ending_state": "/Applications/Phi Tab Close QA.app 保持运行，最终 CU 实读 PID 57596，Window=\"TC-C · TC-PHI507-r2-DBL-02-COM\"。当前测试 Space 内保留最后一项普通页 A、C，实际顺序 A→C，C 活动且单选；B 已关闭，无组、无多选、无 split。未额外重建序列。已原生恢复并截图确认起始偏好：Balanced、System Default（英文界面）、双击关闭 off／位置关闭 on，Settings 已关闭。未操作 Canary、Default 的 Chrome Web Store、pin、书签、其他窗口或未知保存项。",
+  "observations": [
+    {
+      "active_after": "动作后为 C，单选；随后为核对 A 的保留身份单击 A，下一项 setup 前实际活动页为 A。",
+      "active_before": "B，单选。",
+      "after": "稳定后的普通页顺序 A→C；B 标签行和容器不再出现。活动正文为 TC-C，编号与动作前相同；随后逐页核对 A 的编号也相同。无组、多选或 split。",
+      "before": "普通页顺序 A→B→C；批次均为 TC-PHI507-r2-DBL-02-PER，B 活动；无组、多选或 split。",
+      "confirmation_choices": "未出现确认对话框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-02-PER attempt1 settings-layout",
+        "EVIDENCE: DBL-02-PER attempt1 settings",
+        "EVIDENCE: DBL-02-PER attempt1 identity-B",
+        "EVIDENCE: DBL-02-PER attempt1 identity-C",
+        "EVIDENCE: DBL-02-PER attempt1 before",
+        "EVIDENCE: DBL-02-PER attempt1 after",
+        "EVIDENCE: DBL-02-PER attempt1 retained-A"
+      ],
+      "identity_checks": "关键前后 CU 均为固定 app、PID 57596，Window 从 TC-B 转为 TC-C。逐页实见 TC 标题、批次、普通页类型及空输入框。本次打开编号：A=289c4f89-98a2-461f-a361-031b9749f177；B=9bd81e14-ec6a-4da7-885e-d98f1907f181；C=aa4cdcdb-27fa-4ebe-aabf-1c2f462544ea。动作后 A/C 编号保持。",
+      "language_observed": "General 实读 System Default，浏览器及设置界面为英文。",
+      "layout_observed": "通过 General 原生 button 从 Balanced 切为 Performance，截图显示 Performance 选中；浏览器 chrome 为纵向标签列表。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "在本轮测试 Space 新建 New Tab，以原生 Close Other Tabs 清除旧测试页，再通过地址栏依次建立本项 A/B/C；正文全部真实提交后选中 B。双击关闭 on。",
+      "settings_observed": "起始实读双击关闭 off／位置关闭 on；仅点击双击关闭一次后，即时原生树为 on／on，未点击的位置关闭仍为 on。",
+      "steps_executed": [
+        "完成本项独立清理、原生布局及开关设置、A/B/C 建立和身份核对。",
+        "get_app_state 保存 before 图，确认 B 活动与 A→B→C 顺序。",
+        "对仅对应 B 的 selectable row 标签容器执行一次 click_count=2；命中位于标题文字区。",
+        "get_app_state 读取稳定列表并保存 after 图；核对 C 正文和编号，再单击 A 核对保留身份。"
+      ],
+      "unit_id": "DBL-02-PER"
+    },
+    {
+      "active_after": "动作后为 C，单选；随后核对 A 时切为 A，下一项 setup 前实际活动页为 A。",
+      "active_before": "B，单选。",
+      "after": "稳定后的普通页顺序 A→C；B 标签行和容器不再出现。活动正文为 TC-C，编号与动作前相同；随后 A 的正文及编号也保持。无组、多选或 split。",
+      "before": "普通页顺序 A→B→C；批次均为 TC-PHI507-r2-DBL-02-BAL，B 活动；无组、多选或 split。",
+      "confirmation_choices": "未出现确认对话框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-02-BAL attempt1 settings-layout",
+        "EVIDENCE: DBL-02-BAL attempt1 settings",
+        "EVIDENCE: DBL-02-BAL attempt1 identity-A",
+        "EVIDENCE: DBL-02-BAL attempt1 identity-B",
+        "EVIDENCE: DBL-02-BAL attempt1 identity-C",
+        "EVIDENCE: DBL-02-BAL attempt1 before",
+        "EVIDENCE: DBL-02-BAL attempt1 after",
+        "EVIDENCE: DBL-02-BAL attempt1 retained-A"
+      ],
+      "identity_checks": "关键前后 CU 均为固定 app、PID 57596，Window 从 TC-B 转为 TC-C。逐页实见 TC 标题、批次、普通页类型及空输入框。本次打开编号：A=573c17a5-4150-4415-a864-b8341936e74e；B=346743e6-d05e-4405-91d2-afd6b34b582f；C=78520cff-f340-40e4-bb82-7f9713463214。动作后 A/C 编号保持。",
+      "language_observed": "General 再读 System Default，界面为英文。",
+      "layout_observed": "通过 General 原生 button 从 Performance 切为 Balanced，截图显示 Balanced 选中；浏览器 chrome 为纵向标签列表。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项开始时新建 New Tab 并原生 Close Other Tabs 清理上一项 A/C；通过地址栏重新建立本项 A/B/C，逐页核对正文后选中 B。",
+      "settings_observed": "Advanced 实读双击关闭 on／位置关闭 on；本项未点击任何开关。",
+      "steps_executed": [
+        "切换 Balanced，实读语言和两个开关，再独立清理并建立本项 A/B/C。",
+        "get_app_state 保存 before 图，确认 B 活动与 A→B→C 顺序。",
+        "对仅对应 B 的 selectable row 标签容器执行一次 click_count=2；命中位于标题文字区。",
+        "get_app_state 读取稳定列表并保存 after 图；核对 C 正文和编号，再单击 A 核对保留身份。"
+      ],
+      "unit_id": "DBL-02-BAL"
+    },
+    {
+      "active_after": "动作后为 C；身份核对时短暂切至 A，随后返回 C。收尾恢复偏好后 C 仍活动且单选。",
+      "active_before": "B，单选。",
+      "after": "稳定后的普通页顺序 A→C；B 的 tabStripTab 容器及标题不再出现。活动正文为 TC-C，A/C 的打开编号均与动作前相同。最终保留此两页，无组、多选或 split。",
+      "before": "横向普通标签顺序 A→B→C；批次均为 TC-PHI507-r2-DBL-02-COM，B 活动；无组、多选或 split。",
+      "confirmation_choices": "未出现确认对话框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-02-COM attempt1 settings-layout",
+        "EVIDENCE: DBL-02-COM attempt1 settings",
+        "EVIDENCE: DBL-02-COM attempt1 identity-A",
+        "EVIDENCE: DBL-02-COM attempt1 identity-B",
+        "EVIDENCE: DBL-02-COM attempt1 identity-C",
+        "EVIDENCE: DBL-02-COM attempt1 before",
+        "EVIDENCE: DBL-02-COM attempt1 after",
+        "EVIDENCE: DBL-02-COM attempt1 retained-A",
+        "EVIDENCE: DBL-02-COM attempt1 final-pages",
+        "EVIDENCE: DBL-02-COM attempt1 restored-switches",
+        "EVIDENCE: DBL-02-COM attempt1 restored-layout",
+        "EVIDENCE: DBL-02-COM attempt1 ending-state"
+      ],
+      "identity_checks": "关键前后 CU 均为固定 app、PID 57596，Window 从 TC-B 转为 TC-C。逐页实见 TC 标题、批次、普通页类型及空输入框。本次打开编号：A=d7b276f7-2640-4068-a0cd-0e7a9448c8d5；B=311a1ad7-5084-4c5a-9850-2cbaf5e1d7e6；C=88a5454a-5a2d-45c9-b12b-151cd1a54dcb。动作后 A/C 编号保持。",
+      "language_observed": "General 再读 System Default，界面为英文；收尾仍为该值。",
+      "layout_observed": "通过 General 原生 button 从 Balanced 切为 Comfortable，截图显示 Comfortable 选中；动作前后 chrome 为横向标签条。收尾恢复 Balanced 并截图确认。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项开始时新建 New Tab 并原生 Close Other Tabs 清理上一项 A/C；通过地址栏重新建立本项 A/B/C，确认真实横向顺序后选中 B。",
+      "settings_observed": "动作前 Advanced 实读双击关闭 on／位置关闭 on。本轮收尾仅点击双击关闭一次，即时原生树为 off／on，未点击的位置关闭仍为 on。",
+      "steps_executed": [
+        "切换 Comfortable，实读语言和两个开关，再独立清理并建立本项 A/B/C。",
+        "get_app_state 保存 before 图，确认 B 活动；最新树中 B 的 tabStripTab 仅含 B 图标和标题。",
+        "对 B 的实际 tabStripTab button 执行一次 click_count=2；命中位于标题文字区。",
+        "get_app_state 读取稳定列表并保存 after 图，核对 C 的正文和编号；单击 A 核对身份后返回 C。",
+        "保留 A/C 实际结束集合；统一恢复起始开关及 Balanced，关闭 Settings，再 get_app_state 保存最终状态。"
+      ],
+      "unit_id": "DBL-02-COM"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

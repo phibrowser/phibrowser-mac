@@ -1,0 +1,127 @@
+[
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "continuation-switches-before",
+    "file": "SET-10-COM-18.png",
+    "original_marker": "SET-10-COM continuation switches-before",
+    "source_file": "SET-10-SET-10-COM-complete-008.jpg",
+    "source_sha256": "2e82569962cdea6bbe4de6a9d08f916c11d97c059d909732c77e6c18a8178a4a",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "continuation-E-identity-before",
+    "file": "SET-10-COM-19.png",
+    "original_marker": "SET-10-COM continuation E identity-before",
+    "source_file": "SET-10-SET-10-COM-complete-009.jpg",
+    "source_sha256": "ca3d7f61aa53a03c8e24b5c9c0cd083b8a778676b5f2db3fbcafeec55e2cc2eb",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "continuation-D-before",
+    "file": "SET-10-COM-20.png",
+    "original_marker": "SET-10-COM continuation D attempt1 before",
+    "source_file": "SET-10-SET-10-COM-complete-010.jpg",
+    "source_sha256": "dcad3236a0c4dce7d2c9966abf59aaf97355a0eea27e05c125aa0ac1cf0714e5",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "continuation-D-after",
+    "file": "SET-10-COM-21.png",
+    "original_marker": "SET-10-COM continuation D attempt1 after",
+    "source_file": "SET-10-SET-10-COM-complete-011.jpg",
+    "source_sha256": "d8430f3106192a5382a01a3d776a362344e87c096421810cc3529e35a49e851c",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "continuation-E-identity-after",
+    "file": "SET-10-COM-22.png",
+    "original_marker": "SET-10-COM continuation E identity-after",
+    "source_file": "SET-10-SET-10-COM-complete-012.jpg",
+    "source_sha256": "3fde5438d3d9f165f22e3e13f33ef6bef0833b80684778468001647cc7128528",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

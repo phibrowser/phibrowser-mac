@@ -20,7 +20,55 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-03-PER",
+    "attempt": 1,
+    "phase": "setting-before",
+    "file": "SET-03-PER-04.png",
+    "source_file": "SET-03-011.jpg",
+    "source_sha256": "aa9b596f649f5748ba24e25f41577e011373c6b426bef150b4ac8a70cb3104d1",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1298
+    ],
+    "output_size": [
+      660,
+      1298
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-03-PER",
+    "attempt": 1,
+    "phase": "setting-after",
+    "file": "SET-03-PER-05.png",
+    "source_file": "SET-03-012.jpg",
+    "source_sha256": "e1a734484d433f39e7002bcbe6fc143f4f224f85e33063ee02818e12e3d17dde",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1298
+    ],
+    "output_size": [
+      660,
+      1298
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -44,7 +92,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -68,7 +116,55 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-03-BAL",
+    "attempt": 1,
+    "phase": "setting-before",
+    "file": "SET-03-BAL-04.png",
+    "source_file": "SET-03-019.jpg",
+    "source_sha256": "ec3a43a72f0db97e8dcc8a91e3eb15636ecd10667b10400ebfe7120e4728006a",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1298
+    ],
+    "output_size": [
+      660,
+      1298
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-03-BAL",
+    "attempt": 1,
+    "phase": "setting-after",
+    "file": "SET-03-BAL-05.png",
+    "source_file": "SET-03-020.jpg",
+    "source_sha256": "cf6f30eb10e8fb3196b2f232e9fbe03d22dfe6dd12cdff28fa89d4f2ddaf6bfe",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1298
+    ],
+    "output_size": [
+      660,
+      1298
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -92,7 +188,7 @@
       660,
       1376
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -116,7 +212,55 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-03-COM",
+    "attempt": 1,
+    "phase": "setting-before",
+    "file": "SET-03-COM-04.png",
+    "source_file": "SET-03-028.jpg",
+    "source_sha256": "4c5c4b65f3941f7e33dad733488c91570a75316d20f5e14b3d8c166d54525bdd",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      750
+    ],
+    "output_size": [
+      1280,
+      706
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-03-COM",
+    "attempt": 1,
+    "phase": "setting-after",
+    "file": "SET-03-COM-05.png",
+    "source_file": "SET-03-029.jpg",
+    "source_sha256": "be5fccc25542bdc38f89ff19f05031912c47985559e8a3a40bb1ed613622b573",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      750
+    ],
+    "output_size": [
+      1280,
+      706
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   },
   {
@@ -140,7 +284,7 @@
       1280,
       533
     ],
-    "palette_colors": "fixed grayscale and basic accent palette; no adaptive removal of black/white",
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
   }
 ]

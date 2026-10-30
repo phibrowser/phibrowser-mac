@@ -1,0 +1,128 @@
+{
+  "base_case": "DBL-03：开启双击关闭时，分别双击非活动普通页 B 的标题区、图标区。仅记录实际操作与界面变化。",
+  "ending_state": "/Applications/Phi Tab Close QA.app 保持运行，最终 CU 实读 PID 57596，Window=\"TC-C · TC-PHI507-r2-DBL-03-COM-icon\"。当前测试 Space 保留最后一组普通页 A→C，C 活动且单选，B 已关闭；无组、无多选、无 split。A/C 输入框为空，最后核对编号分别为 9fe174d8-f2c7-4535-8aa0-a388e98b19b5、e06a4e88-dcc3-4103-9ed2-68c77bec85a3。已原生恢复并截图确认 Balanced、System Default（英文界面）、双击关闭 off／位置关闭 on，Settings 已关闭。最后未重建序列。未操作 Canary、Default 的 Chrome Web Store、pin、书签、其他窗口或未知保存项。",
+  "observations": [
+    {
+      "active_after": "标题区和图标区双击结束时均为 C 单选；随后单击 A 核对存活身份，图标区变体核对完后单击 C 返回。",
+      "active_before": "两个变体均为 C 活动且单选，B 非活动。",
+      "after": "两个变体的原生列表均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。",
+      "before": "标题区批次 TC-PHI507-r2-DBL-03-PER-title；图标区批次 TC-PHI507-r2-DBL-03-PER-icon。每次均为普通页 A→B→C，无组、多选或 split。",
+      "confirmation_choices": "未出现关闭确认或离开确认；未选择“不再询问”。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-03-PER attempt1 settings",
+        "EVIDENCE: DBL-03-PER attempt1 switches",
+        "EVIDENCE: DBL-03-PER attempt1 coordinate-calibration",
+        "EVIDENCE: DBL-03-PER attempt1 title-A-identity",
+        "EVIDENCE: DBL-03-PER attempt1 title-B-identity",
+        "EVIDENCE: DBL-03-PER attempt1 title-C-identity",
+        "EVIDENCE: DBL-03-PER attempt1 title-before",
+        "EVIDENCE: DBL-03-PER attempt1 title-after",
+        "EVIDENCE: DBL-03-PER attempt1 title-A-retained",
+        "EVIDENCE: DBL-03-PER attempt1 icon-A-identity",
+        "EVIDENCE: DBL-03-PER attempt1 icon-B-identity",
+        "EVIDENCE: DBL-03-PER attempt1 icon-C-identity",
+        "EVIDENCE: DBL-03-PER attempt1 icon-before",
+        "EVIDENCE: DBL-03-PER attempt1 icon-after",
+        "EVIDENCE: DBL-03-PER attempt1 icon-A-retained"
+      ],
+      "identity_checks": "全程本应用 PID 57596。逐页实见 TC 标题、对应批次、普通页说明、打开编号及空输入框。title：A=8ff526f5-486f-4cb7-8859-62a6451b735a，B=6461b5d0-3f78-4fa5-87bf-5292bd86e533，C=c8df655e-4746-4984-a432-e535f0c5c40a；icon：A=1dbd6a7d-f79e-4d76-b02a-6bff20f5e995，B=2f5aebfa-3071-4e75-aa1c-32652d1e0c85，C=6a800935-f924-4cb6-8a51-32be0ed06c84。两次动作后均逐页核对 A/C 原编号。",
+      "language_observed": "General 实读 System Default；浏览器和设置界面为英文，未切换语言。",
+      "layout_observed": "General 原生选择 Performance 并截图确认；实际浏览器 chrome 为纵向标签栏，A/B/C 自上而下排列。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项开始先实读前轮 A/C，再原生清理并重建两个独立的 A/B/C 序列；两次关键动作前均确认 C 活动、B 非活动、双击关闭 on。",
+      "settings_observed": "会话初始实读 Balanced、双击关闭 off／位置关闭 on。本项只点击双击关闭开关一次，返回原生树即时值为双击关闭 on／位置关闭 on；未点击位置关闭。",
+      "steps_executed": [
+        "用新建 New Tab 的原生 Close Other Tabs 清理本轮普通测试页，再经地址栏顺序建立 title 批次 A/B/C。",
+        "在无控件内容区单击 (1000,440)，截图指针位置与输入坐标一致，按本次原图比例定位。",
+        "关键动作前 get_app_state 留图；对 B 标题区 (150,428) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。",
+        "重新新建 New Tab、关闭其他普通测试页，经地址栏顺序建立 icon 批次 A/B/C，实读 C 活动。",
+        "关键动作前 get_app_state 留图；对 B 地球图标中心 (44,428) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。"
+      ],
+      "unit_id": "DBL-03-PER"
+    },
+    {
+      "active_after": "标题区和图标区双击结束时均为 C 单选；随后单击 A 核对存活身份，图标区变体核对完后单击 C 返回。",
+      "active_before": "两个变体均为 C 活动且单选，B 非活动。",
+      "after": "两个变体的原生列表均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。",
+      "before": "标题区批次 TC-PHI507-r2-DBL-03-BAL-title；图标区批次 TC-PHI507-r2-DBL-03-BAL-icon。每次均为普通页 A→B→C，无组、多选或 split。",
+      "confirmation_choices": "未出现关闭确认或离开确认；未选择“不再询问”。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-03-BAL attempt1 settings",
+        "EVIDENCE: DBL-03-BAL attempt1 title-A-identity",
+        "EVIDENCE: DBL-03-BAL attempt1 title-B-identity",
+        "EVIDENCE: DBL-03-BAL attempt1 title-C-identity",
+        "EVIDENCE: DBL-03-BAL attempt1 title-before",
+        "EVIDENCE: DBL-03-BAL attempt1 title-after",
+        "EVIDENCE: DBL-03-BAL attempt1 title-A-retained",
+        "EVIDENCE: DBL-03-BAL attempt1 icon-A-identity",
+        "EVIDENCE: DBL-03-BAL attempt1 icon-B-identity",
+        "EVIDENCE: DBL-03-BAL attempt1 icon-C-identity",
+        "EVIDENCE: DBL-03-BAL attempt1 icon-before",
+        "EVIDENCE: DBL-03-BAL attempt1 icon-after",
+        "EVIDENCE: DBL-03-BAL attempt1 icon-A-retained"
+      ],
+      "identity_checks": "本应用 PID 57596。逐页实见 TC 标题、对应批次、普通页说明、打开编号及空输入框。title：A=0305eb93-fb2a-4247-ade4-3998afa597ea，B=6c848078-aa31-454b-ac3f-5c3533f49e8f，C=69baa12d-6842-4181-934a-d9b004c0899d；icon：A=b659c965-7c4c-4d53-9b99-97bbce194021，B=2d3058c3-c35c-42b3-b6b6-256198a70ac4，C=e49fbafc-d6e5-4e5e-bd6c-3c88c59659fa。两次动作后均逐页核对 A/C 原编号。",
+      "language_observed": "General 实读 System Default；浏览器和设置界面为英文。",
+      "layout_observed": "General 原生选择 Balanced 并截图确认；实际浏览器 chrome 为纵向标签栏，A/B/C 自上而下排列。",
+      "not_executed_reason": "",
+      "operator_errors": [],
+      "precondition_actual": "本项开始才清理 Performance 残留页并重建；标题区与图标区动作各使用新序列，均确认 A→B→C、C 单选、B 非活动。",
+      "settings_observed": "Advanced 重新实读双击关闭 on／位置关闭 on；本项未点击任何关闭开关。",
+      "steps_executed": [
+        "原生切换到 Balanced，读取语言及两个关闭开关。",
+        "新建 New Tab 后原生 Close Other Tabs，经地址栏顺序建立 title 批次 A/B/C。",
+        "关键动作前 get_app_state 留图；按当前原图对 B 标题区 (150,355) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。",
+        "重新清理并经地址栏顺序建立 icon 批次 A/B/C，确认 C 活动。",
+        "关键动作前 get_app_state 留图；对 B 地球图标中心 (44,355) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。"
+      ],
+      "unit_id": "DBL-03-BAL"
+    },
+    {
+      "active_after": "两次双击结束时均为 C 活动且单选；逐页核对时单击 A，再返回 C。恢复偏好后的最终活动页仍为 C。",
+      "active_before": "两个变体均为 C 活动且单选，B 非活动。",
+      "after": "两个变体的横向标签集合均为 A→C，B 不再出现；A/C 的打开编号与动作前一致，输入框仍为空。最后保留 icon 批次 A/C。",
+      "before": "标题区批次 TC-PHI507-r2-DBL-03-COM-title；图标区批次 TC-PHI507-r2-DBL-03-COM-icon。每次均为普通页 A→B→C，无组、多选或 split。",
+      "confirmation_choices": "未出现关闭确认或离开确认；未选择“不再询问”。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-03-COM attempt1 settings",
+        "EVIDENCE: DBL-03-COM attempt1 title-A-identity",
+        "EVIDENCE: DBL-03-COM attempt1 title-B-identity",
+        "EVIDENCE: DBL-03-COM attempt1 title-C-identity",
+        "EVIDENCE: DBL-03-COM attempt1 coordinate-calibration",
+        "EVIDENCE: DBL-03-COM attempt1 title-before",
+        "EVIDENCE: DBL-03-COM attempt1 title-after",
+        "EVIDENCE: DBL-03-COM attempt1 title-A-retained",
+        "EVIDENCE: DBL-03-COM attempt1 icon-A-identity",
+        "EVIDENCE: DBL-03-COM attempt1 icon-B-identity",
+        "EVIDENCE: DBL-03-COM attempt1 icon-C-identity",
+        "EVIDENCE: DBL-03-COM attempt1 icon-before",
+        "EVIDENCE: DBL-03-COM attempt1 icon-after",
+        "EVIDENCE: DBL-03-COM attempt1 icon-A-retained",
+        "EVIDENCE: DBL-03-COM attempt1 failure",
+        "EVIDENCE: DBL-03-COM attempt1 restore-switches",
+        "EVIDENCE: DBL-03-COM attempt1 restore-layout",
+        "EVIDENCE: DBL-03-COM attempt1 ending-state"
+      ],
+      "identity_checks": "本应用 PID 57596。逐页实见 TC 标题、对应批次、普通页说明、打开编号及空输入框。title：A=77115699-90d8-4f3a-8d83-47fa0b413db3，B=e122e748-bb2a-4a55-9778-2402a617d5ae，C=1223811d-5d24-49f7-9615-6a4cbc0d4c04；icon：A=9fe174d8-f2c7-4535-8aa0-a388e98b19b5，B=7c5672a6-f45c-443b-b531-8dedb5dd3478，C=e06a4e88-dcc3-4103-9ed2-68c77bec85a3。两次动作后均逐页核对 A/C 原编号。新导航后活动标签容器 Description 曾仍显示 New Tab，其子 text、窗口标题及屏幕正文已显示对应 TC 身份；未以该滞后 Description 单独判断身份。",
+      "language_observed": "本项及收尾 General 均实读 System Default，界面为英文；未切换语言。",
+      "layout_observed": "General 原生选择 Comfortable 并截图确认；实际 chrome 为横向标签栏，A/B/C 从左到右排列。收尾恢复 Balanced 并截图确认。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "收尾恢复偏好时，Cmd+, 实际打开 Guest，编排辅助函数直接查找双击关闭控件，因无匹配报 not unique 并在点击前停止。已保存 failure 原图，随后原生点击 Advanced 继续恢复；未重试或更改任何被测双击动作。"
+      ],
+      "precondition_actual": "本项开始才清理 Balanced 残留页并重建；两个动作各有独立 A/B/C 序列，实见横向顺序、C 活动、B 非活动及双击关闭 on。",
+      "settings_observed": "执行前 Advanced 实读双击关闭 on／位置关闭 on。本项动作完成后只点击双击关闭开关一次，返回原生树即时值为 off／on；位置关闭未被点击。随后恢复 Balanced，语言仍为 System Default。",
+      "steps_executed": [
+        "原生切换 Comfortable，读取语言及两个关闭开关；新建 New Tab 后原生 Close Other Tabs，经地址栏顺序建立 title 批次 A/B/C。",
+        "在安全内容区单击 (1000,580)，原图指针位置与输入坐标一致。",
+        "关键动作前 get_app_state 留图；对 B 标题区 (750,44) 执行 click_count=2；结束 get_app_state 留图并核对 A/C 身份。",
+        "重新清理并经地址栏顺序建立 icon 批次 A/B/C，确认 C 活动。",
+        "关键动作前 get_app_state 留图；对 B 地球图标中心 (644,44) 执行 click_count=2；结束 get_app_state 留图，核对 A/C 后返回 C。",
+        "统一恢复起始关闭开关与 Balanced 布局，关闭 Settings，最终 get_app_state 保存真实结束状态；未再创建序列。"
+      ],
+      "unit_id": "DBL-03-COM"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

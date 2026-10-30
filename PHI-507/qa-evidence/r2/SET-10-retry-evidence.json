@@ -1,0 +1,1010 @@
+[
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "before",
+    "file": "SET-10-PER-02.png",
+    "source_file": "SET-10-retry-015.jpg",
+    "source_sha256": "122fe3d4cd12f1de5f7c3139ffff8206b45b1b1b05874a5ed21472ed24c5a5d8",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "existing-B-before",
+    "file": "SET-10-PER-03.png",
+    "source_file": "SET-10-retry-016.jpg",
+    "source_sha256": "2155c34252d3734a3fad2f9267f5e5ad41bc98607c2f899a2cc36a56e8b7a49d",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "existing-B-after",
+    "file": "SET-10-PER-04.png",
+    "source_file": "SET-10-retry-017.jpg",
+    "source_sha256": "6c1dba70a149811e4c546496f4ef73d7cbda4be74af6d66106e361d1ef1fd084",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "new-N-before",
+    "file": "SET-10-PER-05.png",
+    "source_file": "SET-10-retry-018.jpg",
+    "source_sha256": "8fabf2ae95fd99444cbb905826dd8506e57f1c0f466e79c2770011cf97c860fc",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "new-N-after",
+    "file": "SET-10-PER-06.png",
+    "source_file": "SET-10-retry-019.jpg",
+    "source_sha256": "c3989ae84fd2cec95c00e7474c43f0bc9d6e65693b84f91a719a005dba68906b",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "off-normal-before",
+    "file": "SET-10-PER-07.png",
+    "source_file": "SET-10-retry-020.jpg",
+    "source_sha256": "94ab6434b436ccd168aed7f2447ad4e14af490d5a91c676d6f091c8506127488",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "off-normal-after",
+    "file": "SET-10-PER-08.png",
+    "source_file": "SET-10-retry-021.jpg",
+    "source_sha256": "d5127c165f0424d804495f4b9b4fdf73fe3c9675572798909028c8adfd69be4b",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "off-group-before",
+    "file": "SET-10-PER-09.png",
+    "source_file": "SET-10-retry-022.jpg",
+    "source_sha256": "2a661186c634ddf7aadc0f872b7df86cd893c675e0d2407bfb9eee3b4fa97369",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "off-group-after",
+    "file": "SET-10-PER-10.png",
+    "source_file": "SET-10-retry-023.jpg",
+    "source_sha256": "547a438bffb6564c7a2e17e29804dc46b2b53addec08fed84958e9fe84935449",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "off-group-failure",
+    "file": "SET-10-PER-11.png",
+    "source_file": "SET-10-retry-024.jpg",
+    "source_sha256": "624715ae37da90b51b1cefb36e42e0152aa87664dcc774da728979b9820b9e9b",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": null,
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 2,
+    "phase": "off-group-before",
+    "file": "SET-10-PER-12.png",
+    "source_file": "SET-10-retry-027.jpg",
+    "source_sha256": "512c61028a246b990d053279ec1e32d0333ee54ce90b901450b09a665063137d",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 2,
+    "phase": "off-group-after",
+    "file": "SET-10-PER-13.png",
+    "source_file": "SET-10-retry-028.jpg",
+    "source_sha256": "d1c9cc0d8e8a1388f58b73ad9c0d92ade1b03b63b178df538c6fb2ad42dc49c5",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "off-normal-split-before",
+    "file": "SET-10-PER-14.png",
+    "source_file": "SET-10-retry-029.jpg",
+    "source_sha256": "d970d067ff35c743e3cfd146e7a79a7de6c8b7367bf2081ec6f938192bb71daa",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "off-normal-split-after",
+    "file": "SET-10-PER-15.png",
+    "source_file": "SET-10-retry-030.jpg",
+    "source_sha256": "f69b73591adcbabbb1fc28088811e94fbff9ab2337d74e8fbdd073629b4fc682",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "off-group-split-before",
+    "file": "SET-10-PER-16.png",
+    "source_file": "SET-10-retry-031.jpg",
+    "source_sha256": "c29f879d39fdc85276e6df0a36a425bf4010565cf521efea851bf30e95a79472",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-PER",
+    "attempt": 1,
+    "phase": "after",
+    "file": "SET-10-PER-17.png",
+    "source_file": "SET-10-retry-032.jpg",
+    "source_sha256": "8d6147811c7b06543bedd97de089473315bf46b5d91064ac2ab119f4f0f4056a",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "before",
+    "file": "SET-10-BAL-03.png",
+    "source_file": "SET-10-retry-041.jpg",
+    "source_sha256": "80551652c72bf7a14dca7366793ace2cade24319aebf1c641f866f90c1f81b0c",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "existing-B-before",
+    "file": "SET-10-BAL-04.png",
+    "source_file": "SET-10-retry-042.jpg",
+    "source_sha256": "a873db6a934884aab663710ba50c016bce60b74bccbf200113d12efa0ac938e0",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "existing-B-after",
+    "file": "SET-10-BAL-05.png",
+    "source_file": "SET-10-retry-043.jpg",
+    "source_sha256": "86df4bccb880952e8d222bf47f3475d157a59d376cf58bdf9fc9c616707c2f76",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "new-N-before",
+    "file": "SET-10-BAL-06.png",
+    "source_file": "SET-10-retry-044.jpg",
+    "source_sha256": "716b742bf053d3a6e0d51a992abb1131b500ada928f8e34d8f703082f471125c",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "new-N-after",
+    "file": "SET-10-BAL-07.png",
+    "source_file": "SET-10-retry-045.jpg",
+    "source_sha256": "3c06ccc2f62311c3e1e07ec81098f088167e8e1d7dd97bc03424554744e7bc26",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "off-normal-before",
+    "file": "SET-10-BAL-08.png",
+    "source_file": "SET-10-retry-046.jpg",
+    "source_sha256": "dca3fdb9dcdc369ca10d09341cd0ce63df59582f35675319444f8c7d337ac403",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "off-normal-after",
+    "file": "SET-10-BAL-09.png",
+    "source_file": "SET-10-retry-047.jpg",
+    "source_sha256": "3f1e32e3f31c1a177303124616350d882c0a137c39a88e8d92bf750fe7d0908b",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "off-group-before",
+    "file": "SET-10-BAL-10.png",
+    "source_file": "SET-10-retry-048.jpg",
+    "source_sha256": "9ea9db58daa56c4075cfe4ee80a2d6ac627f9cd8b9839e13a5bc1c8685b6c87e",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "off-group-after",
+    "file": "SET-10-BAL-11.png",
+    "source_file": "SET-10-retry-049.jpg",
+    "source_sha256": "7710077d81d82eb4212ca9e619fa12046b395ee4102bf156e28536b2f3ac874c",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "off-normal-split-before",
+    "file": "SET-10-BAL-12.png",
+    "source_file": "SET-10-retry-050.jpg",
+    "source_sha256": "eddf38bab221c6159ddbcaa515612367f1bd8146c934d615bf2d2995b17cc03f",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "off-normal-split-after",
+    "file": "SET-10-BAL-13.png",
+    "source_file": "SET-10-retry-051.jpg",
+    "source_sha256": "b85a59cb269c96255501321fb6e43e7bb2a88583105eb27b689b75ab9a55b865",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "off-group-split-before",
+    "file": "SET-10-BAL-14.png",
+    "source_file": "SET-10-retry-052.jpg",
+    "source_sha256": "1deda4ea09f47adb24b082d1aa2d862bae80097dfc978e528070f9f9a177d783",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      660,
+      1376
+    ],
+    "output_size": [
+      660,
+      1376
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-BAL",
+    "attempt": 1,
+    "phase": "after",
+    "file": "SET-10-BAL-15.png",
+    "source_file": "SET-10-retry-053.jpg",
+    "source_sha256": "9295394af6a5a37b59c3abb0ecb7f05a18d43f7ae80233b7514d81fd0d9e6ebd",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "before",
+    "file": "SET-10-COM-03.png",
+    "source_file": "SET-10-retry-062.jpg",
+    "source_sha256": "b421805eb78cecaf4110adfb0728e228d7ab5c005f60123e56551cf9053b9f20",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      750
+    ],
+    "output_size": [
+      1280,
+      533
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "existing-B-before",
+    "file": "SET-10-COM-04.png",
+    "source_file": "SET-10-retry-063.jpg",
+    "source_sha256": "05b5e01d51916b217d6c6fada8c24b498923f165024bc873517c608e6e561608",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      750
+    ],
+    "output_size": [
+      1280,
+      533
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "existing-B-after",
+    "file": "SET-10-COM-05.png",
+    "source_file": "SET-10-retry-064.jpg",
+    "source_sha256": "a69df08c407674fb5f3e62ca3d422976760e5259c99cd1432de056c34ab9be25",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      750
+    ],
+    "output_size": [
+      1280,
+      533
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "new-N-before",
+    "file": "SET-10-COM-06.png",
+    "source_file": "SET-10-retry-065.jpg",
+    "source_sha256": "1aa49eac9f222a63f030ccf1276e98fedd27a72159cd6b7b62d9b36fe1012e9d",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      750
+    ],
+    "output_size": [
+      1280,
+      533
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "new-N-after",
+    "file": "SET-10-COM-07.png",
+    "source_file": "SET-10-retry-066.jpg",
+    "source_sha256": "b8c9f3a83adc3edee0a31f757188943836b9464a2be8f14936db2490cbdb5f1e",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      750
+    ],
+    "output_size": [
+      1280,
+      533
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "off-normal-before",
+    "file": "SET-10-COM-08.png",
+    "source_file": "SET-10-retry-067.jpg",
+    "source_sha256": "acd8d2303c111b22f3a3d26924416e06453bbce8c091477135d86be518375ceb",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      750
+    ],
+    "output_size": [
+      1280,
+      533
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "off-normal-after",
+    "file": "SET-10-COM-09.png",
+    "source_file": "SET-10-retry-068.jpg",
+    "source_sha256": "852b5645bc6bfda2c6f4d5fcf4b11d015acb21ef673144e00dc1e016da19db20",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      750
+    ],
+    "output_size": [
+      1280,
+      533
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "off-group-before",
+    "file": "SET-10-COM-10.png",
+    "source_file": "SET-10-retry-069.jpg",
+    "source_sha256": "26ff091e0c982362aed92e620f7256e5e87a534db312ebbb8576a3101b878ba7",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      750
+    ],
+    "output_size": [
+      1280,
+      533
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "off-group-after",
+    "file": "SET-10-COM-11.png",
+    "source_file": "SET-10-retry-070.jpg",
+    "source_sha256": "63558a1942883406c3ae9747c05e988f9616c103d5aa577fd1cc5a03c03d99af",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      750
+    ],
+    "output_size": [
+      1280,
+      533
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "off-normal-split-before",
+    "file": "SET-10-COM-12.png",
+    "source_file": "SET-10-retry-071.jpg",
+    "source_sha256": "a929b0c6b784524cb72c77f837b356e8d408a73cfd5054b836dc82ccf2cffe13",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      750
+    ],
+    "output_size": [
+      1280,
+      533
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "off-normal-split-after",
+    "file": "SET-10-COM-13.png",
+    "source_file": "SET-10-retry-072.jpg",
+    "source_sha256": "5b30fed0fe1296311a8a18fd60c49a02440c740ea2546ca43e2eaf29840dbd9c",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      750
+    ],
+    "output_size": [
+      1280,
+      533
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "off-group-split-before",
+    "file": "SET-10-COM-14.png",
+    "source_file": "SET-10-retry-073.jpg",
+    "source_sha256": "3b8f65f3b3a996eb7d9d92c134d806310c91570db27ef5dfda3235443f4f33ec",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      750
+    ],
+    "output_size": [
+      1280,
+      533
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始同屏关键区域裁切；未重绘、拼接或移动元素。"
+  },
+  {
+    "unit_id": "SET-10-COM",
+    "attempt": 1,
+    "phase": "after",
+    "file": "SET-10-COM-15.png",
+    "source_file": "SET-10-retry-074.jpg",
+    "source_sha256": "8dc92c9a48ed139809ed88f4714db42548ceef004fa834d79a9e1e6b75d18b7f",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

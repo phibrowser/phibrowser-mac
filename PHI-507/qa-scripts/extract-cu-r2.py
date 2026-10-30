@@ -1,6 +1,6 @@
 """Export only evidence emitted by the native Computer Use session; never inspect the browser."""
 import base64,json,pathlib,re,sys,collections
-session,prefix=sys.argv[1:];folder=pathlib.Path('qa-raw-r2')/prefix;folder.mkdir(parents=True,exist_ok=True)
+session,prefix=sys.argv[1:3];round_no=int(sys.argv[3]) if len(sys.argv)>3 else 2;folder=pathlib.Path(f'qa-raw-r{round_no}')/prefix;folder.mkdir(parents=True,exist_ok=True)
 f=next(pathlib.Path.home().glob('.codex/sessions/**/rollout-*'+session+'*.jsonl'));texts=[];index=[];i=0;calls=[];actions=[];warnings=[]
 for line in f.open():
  d=json.loads(line);p=d.get('payload',{})

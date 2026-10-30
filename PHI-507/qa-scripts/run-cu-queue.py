@@ -1,9 +1,9 @@
 """Run independent exact UI-operation jobs sequentially; never grade their results."""
 from pathlib import Path
 import datetime,json,subprocess,sys
-qa=Path('PHI-507');jobs=sys.argv[1:];state=qa/'qa-evidence/r2/queue-state.json'
+qa=Path('PHI-507');round_state=qa/'active-qa-round.json';round_no=json.loads(round_state.read_text())['round'] if round_state.exists() else 2;assert isinstance(round_no,int) and round_no>=2;evdir=qa/'qa-evidence'/f'r{round_no}';evdir.mkdir(parents=True,exist_ok=True);jobs=sys.argv[1:];state=evdir/'queue-state.json'
 for i,job in enumerate(jobs):
- if (qa/'qa-evidence/r2/stop-after-current').exists():
+ if (evdir/'stop-after-current').exists():
   state.write_text(json.dumps({'state':'stopped_before_next','next':job,'remaining':jobs[i:]},indent=2));break
  state.write_text(json.dumps({'current':job,'index':i,'total':len(jobs),'state':'running','time':datetime.datetime.now(datetime.timezone.utc).isoformat()},indent=2))
  args=job.split(':');cmd=['python3',str(qa/'qa-scripts/run-cu-case.py'),args[0]]

@@ -1,0 +1,15 @@
+{
+  "url": "https://woodnotfound.github.io/phi-qa-handbooks/tab-closing/",
+  "bytes": 248210,
+  "sha256": "d33a6437b5c8e5ffaef0d53deebf1db5c0f809f69219402c07fd524f0e355978",
+  "static_source_revision": "2026-10-30-r2",
+  "scope": "仅只读静态页面源检查可用控件；不是浏览器当前状态或GUI导出用例通过证据",
+  "observed_static_controls": [
+    "data-meta tester/run/build/app/os/framework",
+    "search",
+    "copy-report",
+    "download-report",
+    "export-json"
+  ],
+  "test_basis_unchanged": "本轮仍以已保存的2026-10-30-r2手册512项为验收依据"
+}

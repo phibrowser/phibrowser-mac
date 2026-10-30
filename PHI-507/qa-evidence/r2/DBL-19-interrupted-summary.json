@@ -5,5 +5,10 @@
   "last_console_state": "准备收尾停止测试音及恢复设置，随后多次model reconnect；未返回正式结构化结果",
   "tools_outside_computer_use": [],
   "acceptance_verdict": "not_assigned",
-  "recovery": "从新租约重新建立前置，重跑DBL-19；已确认静音图标可见但原任务把关闭/静音共同要求导致没有发被测双击，后续按独立分支补执行。"
+  "recovery": "从新租约重新建立前置，重跑DBL-19；已确认静音图标可见但原任务把关闭/静音共同要求导致没有发被测双击，后续按独立分支补执行。",
+  "review_of_recorded_input": {
+    "orchestration_entries": 71,
+    "double_or_triple_click_count_arguments": 0,
+    "note": "只读检查已保存CU编排文本，未发现click_count2/3请求；准备/定位/播放停止观察保留，不作为静音或关闭控件双击验收。未读取浏览器内部状态。"
+  }
 }

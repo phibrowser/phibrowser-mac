@@ -1,0 +1,131 @@
+{
+  "base_case": "DBL-06：组内分屏接收真实双击。仅操作 /Applications/Phi Tab Close QA.app；各布局分别独立建立 G[A,S[B,C],D]，依次双击 B 半格、重建后双击 C 半格。S 为 B 左/C 右的实际分屏；未作 pass/fail 判定。",
+  "ending_state": "最终 CU 实读 app=/Applications/Phi Tab Close QA.app，pid 71817，窗口“TC-D · TC-PHI507-r2-DBL-06-COM-C”。保留组 TC-PHI507-r2-DBL-06-COM-C-G，横向顺序 A/B/D，三页均为组内独立普通页，无 split、无多选，活动页 D。A/B/D 的打开编号与 KEEP-COM-C-A/B/D 均已逐页核对。最后未重建页面。General 实读 Comfortable、System Default，界面英文；Advanced 实读双击关闭 on、方向关闭 on，与本轮起始偏好一致。Settings 已通过其原生 close button 关闭。未操作其他 Space 内容、未知窗口、原有 pin、书签或 Default 的 Chrome Web Store。",
+  "observations": [
+    {
+      "active_after": "B 分支：双击后 C，逐页核对后 D。C 分支：双击后 D，逐页核对后 B。",
+      "active_before": "B 分支 C；C 分支 B。均无多选。",
+      "after": "B 分支：G[A,C,D]，B 消失，B/C 分屏解除，A/C/D 仍在原组。C 分支：G[A,B,D]，C 消失，分屏解除，A/B/D 仍在原组。两次双击后的首次状态读取均只少一个目标页。",
+      "before": "B 分支组 TC-PHI507-r2-DBL-06-PER-B-G；C 分支重建为 TC-PHI507-r2-DBL-06-PER-C-G。两次原生顺序均为 A、包含 B/C 的分屏行、D；B 左/C 右，无组外测试页、无多选。",
+      "confirmation_choices": "两次组重命名选择 Save。关闭本轮测试组及普通页时未出现关闭确认；双击时无确认框。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-06-PER attempt1 settings",
+        "EVIDENCE: DBL-06-PER attempt1 setup-drag-failure",
+        "EVIDENCE: DBL-06-PER attempt1 new-B-before",
+        "EVIDENCE: DBL-06-PER attempt1 new-B-after",
+        "EVIDENCE: DBL-06-PER attempt1 new-B-identity-A",
+        "EVIDENCE: DBL-06-PER attempt1 new-B-identity-D",
+        "EVIDENCE: DBL-06-PER attempt1 new-C-before",
+        "EVIDENCE: DBL-06-PER attempt1 new-C-after",
+        "EVIDENCE: DBL-06-PER attempt1 new-C-after-A",
+        "EVIDENCE: DBL-06-PER attempt1 new-C-after-D",
+        "EVIDENCE: DBL-06-PER attempt1 new-C-after-B"
+      ],
+      "identity_checks": "固定 app，关键前后 CU 均读到 pid 71817 及对应 TC 窗口。B 分支批次 TC-PHI507-r2-DBL-06-PER-B：A=3a6aa845-5ecc-46b4-8f7c-dc189b974771，B=3a3e1158-1850-4885-a5fe-7df341dbbfd2，C=a78f69e0-0222-4ab5-98d3-0bee44664541，D=f403f23f-bdc8-4c55-aea1-c343accb3a3e；A/C/D 的 KEEP-PER-B-A/C/D 与编号在动作后逐页可见且一致。C 分支批次 TC-PHI507-r2-DBL-06-PER-C：A=8882f44a-da49-4b65-8371-803cfad5182a，B=11c654e7-2cf6-4c29-b845-3691b988f839，C=0d1adcf5-9fe0-4e27-b765-a4a29ccd5fa1，D=22f0699d-2bd9-468e-af74-cac38375b154；A/B/D 的 KEEP-PER-C-A/B/D 与编号在动作后逐页可见且一致。各页建立时均实见 TC 标题、批次、编号和输入框。",
+      "language_observed": "System Default；浏览器设置与菜单为英文，未切换语言。",
+      "layout_observed": "General 原生选择 Performance 并截图确认；外部标签区为纵向。C 分支沿用并从实际 chrome 再次确认。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "建立 B 分支时两次拖动 B 入组均未形成组关系；第一次还显示临时 pin 放置区域。保留现场，未将这些拖动计为被测动作。随后关闭组外本轮 B/C/D，通过 New Tab in Group 重建，满足前置后才双击。"
+      ],
+      "precondition_actual": "两个分支各自原生重建并核实 G[A,S[B,C],D]；双击关闭 on，方向关闭 on。保护页先确认输入焦点，再写入并实见存活标记。",
+      "settings_observed": "Advanced 实读 settings.tabs.doubleClickToClose=on、settings.tabs.directionalClosing=on；本 unit 未点击两个开关。",
+      "steps_executed": [
+        "在 General 切换 Performance；清理本轮旧普通测试页，建立 A 及测试组，经 New Tab in Group 创建 B/C/D。",
+        "激活 B，在 C 的原生菜单选择 Split with Current；核对组成员、分屏配对、页面正文和存活标记。",
+        "保存 new-B-before；按原图坐标 (110,504) 对分屏标签行的 B 半格执行一次 click_count=2；保存 new-B-after，再逐页核对 C/A/D。",
+        "下一分支开始时关闭本轮前一组，以新批次重建 A/B/C/D、组和 B/C 分屏。",
+        "保存 new-C-before；按原图坐标 (270,504) 对 C 半格执行一次 click_count=2；保存 new-C-after，再逐页核对 A/D/B，保留该结束状态至下一 unit setup。"
+      ],
+      "unit_id": "DBL-06-PER"
+    },
+    {
+      "active_after": "B 分支：双击后 C，逐页核对后 D。C 分支：双击后 D，逐页核对后 D。",
+      "active_before": "B 分支 C；C 分支 B。均无多选。",
+      "after": "B 分支：G[A,C,D]，B 消失，分屏解除，A/C/D 保留组关系。C 分支：G[A,B,D]，C 消失，分屏解除，A/B/D 保留组关系。两次双击后的首次状态读取均只少一个目标页。",
+      "before": "分别为组 TC-PHI507-r2-DBL-06-BAL-B-G 和独立重建的 TC-PHI507-r2-DBL-06-BAL-C-G；顺序均为 A、B/C 分屏行、D，B 左/C 右，无多选。",
+      "confirmation_choices": "组重命名选择 Save。关闭前一测试组及被测双击均未出现关闭确认。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-06-BAL attempt1 settings",
+        "EVIDENCE: DBL-06-BAL attempt1 new-B-before",
+        "EVIDENCE: DBL-06-BAL attempt1 new-B-after",
+        "EVIDENCE: DBL-06-BAL attempt1 new-B-after-A",
+        "EVIDENCE: DBL-06-BAL attempt1 new-B-after-D",
+        "EVIDENCE: DBL-06-BAL attempt1 new-C-split",
+        "EVIDENCE: DBL-06-BAL attempt1 new-C-before",
+        "EVIDENCE: DBL-06-BAL attempt1 new-C-after",
+        "EVIDENCE: DBL-06-BAL attempt1 new-C-after-A",
+        "EVIDENCE: DBL-06-BAL attempt1 new-C-after-B",
+        "EVIDENCE: DBL-06-BAL attempt1 new-C-after-D"
+      ],
+      "identity_checks": "固定 app，关键前后 CU 实读 pid 71817。B 分支批次 TC-PHI507-r2-DBL-06-BAL-B：A=7462961d-4324-4d4d-9e04-bf7250b575e3，B=f8a4a716-1e20-4343-8556-d2e20ea11716，C=06b48cf3-46a1-4447-bbae-9265cb0bac27，D=2fc7cd68-1a88-4867-9eaf-9f78bb0e36a6；动作后逐页确认 A/C/D 的编号及 KEEP-BAL-B-A/C/D。C 分支批次 TC-PHI507-r2-DBL-06-BAL-C：A=84ed4326-48ea-400e-bbd9-528a88d19b46，B=77c5ae84-88dd-48cf-afc8-b2393db79a9d，C=a9a1ca5c-5834-487e-87b4-778d38ee6f69，D=2cd768b6-2a5a-4245-b7dc-adf6d0685ae9；动作后逐页确认 A/B/D 的编号及 KEEP-BAL-C-A/B/D。建立时均实见正文、批次、编号、输入框。",
+      "language_observed": "System Default，实际英文 chrome；未切换语言。",
+      "layout_observed": "General 原生选择 Balanced 并截图确认，外部标签区纵向；同布局 C 分支未重复切换。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "C 分支 setup 关闭最后一个测试组后，实际为空 Space，未自动产生 New Tab；编排守卫停止了后续地址栏输入。随后通过 Cmd+T 创建 New Tab 再重建，未发生无效双击。",
+        "空 Space 画面出现“Press spacebar to start game”；只记录其位置及原文，未按该页面提示操作。"
+      ],
+      "precondition_actual": "各分支均关闭上一测试组后独立建立 G[A,S[B,C],D]；原生组顺序、实际分屏和页面身份均核实，双击关闭 on。",
+      "settings_observed": "Advanced 实读双击关闭 on、方向关闭 on；未点击两个开关。",
+      "steps_executed": [
+        "切换 Balanced，关闭前一 Performance 测试组，通过组菜单创建并命名本分支 A/B/C/D。",
+        "写入保护页标记；激活 B，在 C 原生菜单选择 Split with Current。",
+        "保存 new-B-before；按原图坐标 (110,430) 对 B 半格执行一次 click_count=2，保存结束图，逐页核对 C/A/D。",
+        "关闭本轮 B 分支组，以新批次重新创建 A/B/C/D、组和分屏。",
+        "保存 new-C-before；按原图坐标 (270,430) 对 C 半格执行一次 click_count=2，保存结束图，逐页核对 A/B/D；未在结束后额外重建。"
+      ],
+      "unit_id": "DBL-06-BAL"
+    },
+    {
+      "active_after": "B 分支：双击后 C，逐页核对后 D。C 分支：双击后 D，逐页核对及最终 Settings 关闭后仍为 D。",
+      "active_before": "B、C 两分支均为 B；无多选。",
+      "after": "B 分支：组 TC-PHI507-r2-DBL-06-COM-B-G 中顺序 A/C/D，B 消失，splitPair 解除。C 分支：组 TC-PHI507-r2-DBL-06-COM-C-G 中顺序 A/B/D，C 消失，splitPair 解除。两次首次结束读取均只少一个目标页，余下三页仍在原组。",
+      "before": "B、C 分支分别独立建立同名批次后缀的测试组；横向 chrome 实见组标签、A、S[B,C]、D。原生 splitPair 容器内有 B/C 两个标题，页面 B 左/C 右；无其他测试页、无多选。",
+      "confirmation_choices": "两次 Rename Group 均选择 Save。关闭前一测试组、清理本次多余 New Tab 及双击动作均未出现关闭确认。没有勾选“不再询问”。",
+      "evidence_markers": [
+        "EVIDENCE: DBL-06-COM attempt1 settings",
+        "EVIDENCE: DBL-06-COM attempt1 identity-A",
+        "EVIDENCE: DBL-06-COM attempt1 identity-C",
+        "EVIDENCE: DBL-06-COM attempt1 identity-D",
+        "EVIDENCE: DBL-06-COM attempt1 new-B-before",
+        "EVIDENCE: DBL-06-COM attempt1 new-B-after",
+        "EVIDENCE: DBL-06-COM attempt1 new-B-after-A",
+        "EVIDENCE: DBL-06-COM attempt1 new-B-after-D",
+        "EVIDENCE: DBL-06-COM attempt1 setup-match-failure",
+        "EVIDENCE: DBL-06-COM attempt1 new-C-identity-A",
+        "EVIDENCE: DBL-06-COM attempt1 new-C-identity-B",
+        "EVIDENCE: DBL-06-COM attempt1 new-C-identity-D",
+        "EVIDENCE: DBL-06-COM attempt1 new-C-before",
+        "EVIDENCE: DBL-06-COM attempt1 new-C-after",
+        "EVIDENCE: DBL-06-COM attempt1 new-C-after-A",
+        "EVIDENCE: DBL-06-COM attempt1 new-C-after-B",
+        "EVIDENCE: DBL-06-COM attempt1 new-C-after-D",
+        "EVIDENCE: DBL-06-COM attempt1 final-general",
+        "EVIDENCE: DBL-06-COM attempt1 final-advanced",
+        "EVIDENCE: DBL-06-COM attempt1 ending-state"
+      ],
+      "identity_checks": "固定 app，关键前后及最终 CU 均为 pid 71817。B 分支批次 TC-PHI507-r2-DBL-06-COM-B：A=e54bb3dd-8a06-4420-8ba6-9dce54cbf4fd，B=4918cec6-f0f8-42fb-b5c6-b8f853c86822，C=219fc26f-9ac5-4112-9edd-24dd8a8bfa7b，D=2b19f5e6-da95-48b6-9dc3-5a9fd09c1dca；动作后逐页确认 A/C/D 的编号及 KEEP-COM-B-A/C/D。C 分支批次 TC-PHI507-r2-DBL-06-COM-C：A=2d02feeb-2c04-4c24-a4bc-79a7822b6841，B=c23760ac-c26e-4946-95e1-8df9eeeb71f5，C=af6c4468-0e76-4189-ad09-b8be14bf1509，D=d1be3da8-ef5f-4a1a-9103-41b7f06751be；动作后逐页确认 A/B/D 的编号及 KEEP-COM-C-A/B/D。各页均实见 TC 正文、批次、打开编号、输入框；输入前看见绿色焦点边框。",
+      "language_observed": "General 起始及最终实读 System Default，实际界面英文；未切换语言、未触发重启。",
+      "layout_observed": "General 原生选择 Comfortable 并截图确认，外部标签条横向；两个分支均从实际 chrome 核对。最终 General 的 Comfortable 仍为选中态。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "B 分支 setup 关闭旧组后已有自动 New Tab，又按 Cmd+T 多建一页；在已核对 A 的原生容器菜单使用 Close Other Tabs 清理本次多余 New Tab，之后才建立组。",
+        "B 分支匹配标签按钮 Description 时遇到 Description 仍为 New Tab、子 text 已为 TC-A，辅助匹配停止且未点击；重新读取并依据唯一 TC-A 子 text 核对其 tabStripTab 父容器后继续。",
+        "C 分支重命名对话框中，辅助匹配同时命中控件行与 focused 描述行而停止；已保存 setup-match-failure 现场。随后使用新读取的原生 text field 和 Save 完成命名，未发生被测动作。"
+      ],
+      "precondition_actual": "每个分支分别通过本轮测试组菜单重建 G[A,S[B,C],D]；B/C 经 Split with Current 实际配对，组计数 4。保护页标记及编号已核对，双击关闭 on。",
+      "settings_observed": "双击关闭 on、方向关闭 on；两个开关全程未点击。最终 General/Advanced 重读 Comfortable、System Default、on/on，与会话起始值一致；随后关闭 Settings。",
+      "steps_executed": [
+        "切换 Comfortable；关闭 Balanced 测试组，清理本次多余 New Tab，建立 COM-B 批次 A/B/C/D 和测试组。",
+        "写入 A/C/D 标记；激活 B，对 C 的原生菜单选择 Split with Current；核对横向分屏标签 B 半格约 x986–1166、C 半格约 x1166–1345。",
+        "保存 new-B-before；按 CU 原图 1:1 坐标 (1090,44) 对 B 半格执行一次 click_count=2；保存 new-B-after，再逐页核对 C/A/D。",
+        "下一分支开始时关闭 COM-B 组，复用自动 New Tab，以 COM-C 新批次重新创建四页、测试组及 B/C 分屏；写入 A/B/D 标记。",
+        "保存 new-C-before；按最新原图坐标 (1260,44) 对 C 半格执行一次 click_count=2；保存 new-C-after，逐页核对 A/B/D。",
+        "读取最终 General 和 Advanced 偏好，关闭已确认的 Settings 原生 close button；保存 ending-state，保留实际 A/B/D 结束状态。"
+      ],
+      "unit_id": "DBL-06-COM"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

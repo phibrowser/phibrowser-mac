@@ -2,7 +2,7 @@
 from pathlib import Path
 from PIL import Image
 import argparse,hashlib,json,re
-p=argparse.ArgumentParser();p.add_argument('job');p.add_argument('--phases',default='before,after,failure');p.add_argument('--full',action='store_true');p.add_argument('--compact-ui',action='store_true');p.add_argument('--full-phases',default='');a=p.parse_args();phases=set(a.phases.split(','));root=Path.cwd();qa=root/'PHI-507';raw=root/'scratch-PHI507-r2'/a.job/'raw';index=json.loads((raw/'index.json').read_text());records=[];out=qa/'qa-evidence/r2';out.mkdir(exist_ok=True)
+p=argparse.ArgumentParser();p.add_argument('job');p.add_argument('--phases',default='before,after,failure');p.add_argument('--full',action='store_true');p.add_argument('--compact-ui',action='store_true');p.add_argument('--full-phases',default='');a=p.parse_args();phases=set(a.phases.split(','));root=Path.cwd();qa=root/'PHI-507';round_state=qa/'active-qa-round.json';round_no=json.loads(round_state.read_text())['round'] if round_state.exists() else 2;assert isinstance(round_no,int) and round_no>=2;raw=root/f'scratch-PHI507-r{round_no}'/a.job/'raw';index=json.loads((raw/'index.json').read_text());records=[];out=qa/'qa-evidence'/f'r{round_no}';out.mkdir(exist_ok=True)
 previous_path=out/(a.job+'-evidence.json');previous=json.loads(previous_path.read_text()) if previous_path.exists() else []
 old_names={(x['unit_id'],x['attempt'],x['phase']):x['file'] for x in previous}
 selected={}

@@ -101,14 +101,21 @@ class PasswordManagerViewController: OnboardingBaseViewController {
             iconsStack.addArrangedSubview(iv)
         }
 
+        let title = NSLocalizedString("oobe.passwordManager.manualSetupOption", value: "I'll setup my own",
+            comment: "Onboarding password manager - Manual setup option"
+        )
         let view = PasswordManagerOptionView(
             trailingIconView: iconsStack,
-            title: NSLocalizedString("oobe.passwordManager.manualSetupOption", value: "I'll setup my own",
-                comment: "Onboarding password manager - Manual setup option"
-            ),
+            title: title,
             subtitle: nil,
             isSelected: selectedManager == .manual
         )
+        // The icons are hidden from VoiceOver, so name the managers they show.
+        let accessibilityFormat = NSLocalizedString("oobe.passwordManager.manualSetupOptionVoiceOverDescription",
+            value: "%@, supports 1Password, Bitwarden, LastPass, Enpass",
+            comment: "Onboarding password manager - VoiceOver description of the manual setup option; the placeholder is the option title, followed by the password managers whose icons are shown"
+        )
+        view.setAccessibilityLabel(String(format: accessibilityFormat, title))
         view.onTap = { [weak self] in
             self?.selectManager(.manual)
         }
@@ -255,6 +262,8 @@ class PasswordManagerOptionView: NSView {
 
         setupUI()
         updateSelection()
+        // Use the raw subtitle; the visible label wraps it in parentheses.
+        setAccessibilityLabel([title, subtitle].compactMap { $0 }.joined(separator: ", "))
     }
 
     required init?(coder: NSCoder) {
@@ -310,6 +319,9 @@ class PasswordManagerOptionView: NSView {
 
         let click = NSClickGestureRecognizer(target: self, action: #selector(handleTap))
         addGestureRecognizer(click)
+
+        setAccessibilityElement(true)
+        setAccessibilityRole(.radioButton)
     }
 
     func setSelected(_ selected: Bool) {
@@ -325,9 +337,19 @@ class PasswordManagerOptionView: NSView {
             layer?.backgroundColor = deselectedColor.cgColor
             checkmarkImageView.image = NSImage(resource: .uncheck)
         }
+        setAccessibilityValue(isSelected ? 1 : 0)
     }
 
     @objc private func handleTap() {
         onTap?()
+    }
+
+    // VoiceOver reads the option as a single radio button; the labels, icons
+    // and checkmark are not exposed separately.
+    override func accessibilityChildren() -> [Any]? { [] }
+
+    override func accessibilityPerformPress() -> Bool {
+        onTap?()
+        return true
     }
 }

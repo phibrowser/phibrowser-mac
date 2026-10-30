@@ -1,6 +1,90 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "oobe.accessibility.headingRoleDescription" : {
+      "comment" : "Onboarding - VoiceOver role spoken after each page title, e.g. \"What should I call you?, heading\"",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "heading"
+          }
+        }
+      }
+    },
+    "oobe.nextSteps.guideVoiceOverDescription" : {
+      "comment" : "Onboarding next steps - VoiceOver name of the scrollable area listing the steps; the placeholder is the number of steps",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Next steps, %lld step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Next steps, %lld steps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "oobe.nextSteps.stepVoiceOverDescription" : {
+      "comment" : "Onboarding next steps - VoiceOver description of one step; first placeholder is the step number, second is the step text",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld, %2$@"
+          }
+        }
+      }
+    },
+    "oobe.passwordManager.manualSetupOptionVoiceOverDescription" : {
+      "comment" : "Onboarding password manager - VoiceOver description of the manual setup option; the placeholder is the option title, followed by the password managers whose icons are shown",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, supports 1Password, Bitwarden, LastPass, Enpass"
+          }
+        }
+      }
+    },
+    "profile.card.accessibilitySummary" : {
+      "comment" : "Profile membership card - VoiceOver description; first placeholder is the member's name, second is the month and year they joined",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi member card, %1$@, joined %2$@"
+          }
+        }
+      }
+    },
+    "profile.card.accessibilitySummaryWithoutDate" : {
+      "comment" : "Profile membership card - VoiceOver description when the join date is unknown; the placeholder is the member's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi member card, %@"
+          }
+        }
+      }
+    },
     "" : {
 
     },

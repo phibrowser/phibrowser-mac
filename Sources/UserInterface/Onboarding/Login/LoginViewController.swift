@@ -48,6 +48,8 @@ class LoginViewController: NSViewController {
         imageView.wantsLayer = true
         imageView.alphaValue = 0
         imageView.isHidden = true
+        imageView.setAccessibilityElement(false)
+        imageView.cell?.setAccessibilityElement(false)
         return imageView
     }()
     
@@ -85,7 +87,14 @@ class LoginViewController: NSViewController {
         return bg
     }()
     
-    private let loginImage: NSImageView = NSImageView(image: .brand)
+    /// The wordmark is this screen's title. It is the first subview of the
+    /// first accessible container, so VoiceOver lands on it first.
+    private let loginImage: NSImageView = {
+        let imageView = NSImageView(image: .brand)
+        // Brand name; intentionally not localized.
+        imageView.setOnboardingAccessibilityHeading("Phi")
+        return imageView
+    }()
     
     private lazy var loginButton: GradientBorderButton = {
         let button = GradientBorderButton()
@@ -172,6 +181,7 @@ class LoginViewController: NSViewController {
             .paragraphStyle: paragraphStyle
         ]
         label.attributedStringValue = NSAttributedString(string: label.stringValue, attributes: attributes)
+        label.setOnboardingAccessibilityHeading(title)
         return label
     }()
     
@@ -204,7 +214,7 @@ class LoginViewController: NSViewController {
     }()
 
     override func loadView() {
-        self.view = NSView()
+        self.view = OnboardingAccessibilityRootView()
         self.view.wantsLayer = true
     }
     
@@ -224,6 +234,7 @@ class LoginViewController: NSViewController {
         view.layoutSubtreeIfNeeded()
         view.window?.center()
         startPlaybackOnce()
+        OnboardingBaseViewController.moveVoiceOverFocus(to: loginImage)
     }
     
     
@@ -552,12 +563,14 @@ extension LoginViewController {
                 self?.blurOverlayView.isHidden = true
                 self?.blurOverlayView.image = nil
                 self?.controlContainer.isHidden = false
+                OnboardingBaseViewController.moveVoiceOverFocus(to: self?.loginImage)
             }
             
         case .waiting:
             loginButton.isEnabled = false
             updateGuestButtonHover(false)
             captureAndBlurVideoFrame()
+            OnboardingBaseViewController.moveVoiceOverFocus(to: waitingTitleLabel)
             
             waitingView.isHidden = false
             blurOverlayView.isHidden = false

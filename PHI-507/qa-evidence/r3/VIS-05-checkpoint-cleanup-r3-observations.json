@@ -1,0 +1,44 @@
+{
+  "base_case": "VIS-05-COMMON；本次仅执行 r3 证据容量检查点的偏好恢复、系统辅助选项核对和正常退出。",
+  "ending_state": "最后实读 QA 偏好为 Balanced、System Default（实际英文）、Double-click to close tabs=off、Close tabs by position=on；这些值原本已正确，本次未修改。Restore last session=on；快捷键未修改。系统 Sticky Keys、Accessibility Keyboard、Mouse Keys 均实读为 off，未修改系统选项。退出前当前 Space 为 TC-QA-PHI507-r2，页面顺序保留 A | TC-PHI507-r2-DBL-10-COM-INACTIVE-TC-G[B,D] | E，活动页及原生选中集为 E／{E}，无可见 split，QA Settings 已关闭。未删除 Space、页面、组、pin、书签或未知资料，未打开 Default 或其 Chrome Web Store。System Settings 关闭操作返回 App quit。随后对 /Applications/Phi Tab Close QA.app（退出前 PID 87230）执行 Command-Q，并在核对窗口后选择原生 Quit，工具最终返回“Computer Use server error -10005: App quit”；退出后未再次 get_app_state 或重启。退出后的会话恢复状态未验证。",
+  "observations": [
+    {
+      "active_after": "退出前为 E／选中集 {E}；最终正常退出操作返回 App quit。",
+      "active_before": "E／原生选中集 {E}。",
+      "after": "退出前标签及组成员顺序未变，Settings 已关闭；最终 Quit 返回 App quit。",
+      "before": "当前 Space 的原生页面顺序为 A | TC-PHI507-r2-DBL-10-COM-INACTIVE-TC-G[B,D] | E；无可见 split、菜单或确认框。",
+      "confirmation_choices": "为只读核对当前 Space 打开 Rename Space，对预填值 TC-QA-PHI507-r2 读取后选择 Cancel，未改名。首次 Command-Q 出现“Are you sure you want to quit Phi?”及“Any unsaved changes may be lost.”，先选择 Cancel；只读核对 Window 菜单仅列当前 TC-E 测试窗口后，再次 Command-Q 并选择 Quit。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-general-after",
+        "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-advanced-after",
+        "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-ending-after",
+        "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-system-keyboard-after",
+        "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-system-mouse-after",
+        "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-quit-before",
+        "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-quit-result",
+        "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-quit-confirmed-result"
+      ],
+      "identity_checks": "固定完整路径 /Applications/Phi Tab Close QA.app；退出前各次实读 PID 均为 87230。窗口为“TC-E · TC-PHI507-r2-DBL-10-COM-INACTIVE”；Window 菜单仅列该测试窗口。当前 Space 由 Rename Space 原生预填值核实。E 正文实见 TC-E、批次 TC-PHI507-r2-DBL-10-COM-INACTIVE、本次打开编号 a9c81660-ef15-4283-ac27-7af8e73281e0、普通页说明及空输入框。A/B/D 仅按原生标签容器与组成员核对，未逐页打开或复核编号。System Settings 路径 /System/Applications/System Settings.app，PID 91476。",
+      "language_observed": "General 为 System Default，设置及浏览器菜单实际为英文；本次未改变语言，无重启提示。",
+      "layout_observed": "General 截图中 Balanced 有金色选框；浏览器为外部纵向标签排列。本次未切换布局。",
+      "not_executed_reason": "仅检查点偏好恢复；本轮任务仍继续，VIS-05 导出与最终清理尚未执行",
+      "operator_errors": [],
+      "precondition_actual": "本次为维护检查点，未按 VIS-05 验收前置重建或清理页面。首次 CU 实读 QA 正在显示本轮 TC 测试对象；指定浏览器偏好和三个系统辅助选项均已处于要求值。",
+      "settings_observed": "General：Balanced、System Default。Advanced：Double-click to close tabs=off、Close tabs by position=on，两个值同时实读；无需点击开关。Restore last session=on。快捷键本次未修改，未执行完整快捷键配置审查。Accessibility→Keyboard：Sticky Keys=off、Accessibility Keyboard=off；Pointer Control：Mouse Keys=off。未修改双击间隔或其他系统选项。",
+      "steps_executed": [
+        "先用 Computer Use get_app_state 读取固定 QA app 的窗口、PID、标签集合及活动页。",
+        "通过 Command-comma 打开原生 Settings，读取 General；目标布局和语言已正确，输出 checkpoint-general-after 真实截图。",
+        "读取 Advanced 的两个指定开关，均已正确，输出 checkpoint-advanced-after 真实截图；关闭已确认的 Settings close button。",
+        "通过 Spaces→Rename Space 只读核对当前 Space 名称后 Cancel，输出 checkpoint-ending-after 真实截图。",
+        "通过 Computer Use 打开 System Settings，进入 Accessibility→Keyboard，读取 Sticky Keys 与 Accessibility Keyboard 均为 off，输出 checkpoint-system-keyboard-after 真实截图。",
+        "进入 Accessibility→Pointer Control，读取 Mouse Keys=off，输出 checkpoint-system-mouse-after 真实截图。",
+        "点击 System Settings 原生 close button，工具返回“Computer Use server error -10005: App quit”；未重新打开 System Settings。",
+        "回读同一 QA app，PID 仍为 87230，集合与活动页未变，输出 checkpoint-quit-before 真实截图。",
+        "Command-Q 出现退出确认；Cancel 后只读核对 Window 菜单仅列当前 TC-E 测试窗口，通过菜单暴露的 Cancel 动作关闭菜单并重读正常窗口。",
+        "再次 Command-Q，在同一原生退出确认中选择 Quit；最终工具返回“Computer Use server error -10005: App quit”。该返回作为所请求正常退出的生命周期结果保留，之后未再读取 QA。"
+      ],
+      "unit_id": "VIS-05-COMMON"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

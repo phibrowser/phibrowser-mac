@@ -29,7 +29,8 @@
       "qa-evidence/r3/ENV-01-COMMON-05.png",
       "qa-evidence/r3/ENV-01-COMMON-06.png",
       "qa-evidence/r3/ENV-01-COMMON-07.png",
-      "qa-evidence/r3/ENV-01-COMMON-08.png"
+      "qa-evidence/r3/ENV-01-COMMON-08.png",
+      "qa-evidence/r3/installed-identity-end.json"
     ],
     "kind": "acceptance",
     "key": "ENV-01-COMMON",
@@ -108,7 +109,8 @@
           "qa-evidence/r3/ENV-01-COMMON-05.png",
           "qa-evidence/r3/ENV-01-COMMON-06.png",
           "qa-evidence/r3/ENV-01-COMMON-07.png",
-          "qa-evidence/r3/ENV-01-COMMON-08.png"
+          "qa-evidence/r3/ENV-01-COMMON-08.png",
+          "qa-evidence/r3/installed-identity-end.json"
         ],
         "evidence_metadata": "qa-evidence/r3/ENV-01-metadata-complete-evidence.json",
         "notes": "r3 已重新用CU读取实际PID78892、About版本/引擎、Advanced卡片与开关；Ripley已逐张复核六张关键图，手册填写前512项全未测且环境字段为空，填写后测试人、构建、渠道、macOS/芯片、Framework均已实读，结果状态未改动。漏执行的源步骤已补齐；r2原始身份记录、过早pass修正记录、自动补全误导航现场全部保留。额外核对的r2报告确实呈现512/46/34/432与未完成结论，不算产品验收。",
@@ -26721,6 +26723,65 @@
           ],
           "unit_id": "VIS-05-COMMON"
         }
+      },
+      {
+        "job": "VIS-05-checkpoint-cleanup-r3",
+        "round": 3,
+        "scope": "r3容量检查点维护：浏览器与系统偏好核对、正常退出；未执行VIS-05结果导出和最终清理，任务继续。",
+        "actual": "退出前标签及组成员顺序未变，Settings 已关闭；最终 Quit 返回 App quit。",
+        "outcome": "partial",
+        "observation": {
+          "active_after": "退出前为 E／选中集 {E}；最终正常退出操作返回 App quit。",
+          "active_before": "E／原生选中集 {E}。",
+          "after": "退出前标签及组成员顺序未变，Settings 已关闭；最终 Quit 返回 App quit。",
+          "before": "当前 Space 的原生页面顺序为 A | TC-PHI507-r2-DBL-10-COM-INACTIVE-TC-G[B,D] | E；无可见 split、菜单或确认框。",
+          "confirmation_choices": "为只读核对当前 Space 打开 Rename Space，对预填值 TC-QA-PHI507-r2 读取后选择 Cancel，未改名。首次 Command-Q 出现“Are you sure you want to quit Phi?”及“Any unsaved changes may be lost.”，先选择 Cancel；只读核对 Window 菜单仅列当前 TC-E 测试窗口后，再次 Command-Q 并选择 Quit。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-general-after",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-advanced-after",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-ending-after",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-system-keyboard-after",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-system-mouse-after",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-quit-before",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-quit-result",
+            "EVIDENCE: VIS-05-COMMON attempt1 checkpoint-quit-confirmed-result"
+          ],
+          "identity_checks": "固定完整路径 /Applications/Phi Tab Close QA.app；退出前各次实读 PID 均为 87230。窗口为“TC-E · TC-PHI507-r2-DBL-10-COM-INACTIVE”；Window 菜单仅列该测试窗口。当前 Space 由 Rename Space 原生预填值核实。E 正文实见 TC-E、批次 TC-PHI507-r2-DBL-10-COM-INACTIVE、本次打开编号 a9c81660-ef15-4283-ac27-7af8e73281e0、普通页说明及空输入框。A/B/D 仅按原生标签容器与组成员核对，未逐页打开或复核编号。System Settings 路径 /System/Applications/System Settings.app，PID 91476。",
+          "language_observed": "General 为 System Default，设置及浏览器菜单实际为英文；本次未改变语言，无重启提示。",
+          "layout_observed": "General 截图中 Balanced 有金色选框；浏览器为外部纵向标签排列。本次未切换布局。",
+          "not_executed_reason": "仅检查点偏好恢复；本轮任务仍继续，VIS-05 导出与最终清理尚未执行",
+          "operator_errors": [],
+          "precondition_actual": "本次为维护检查点，未按 VIS-05 验收前置重建或清理页面。首次 CU 实读 QA 正在显示本轮 TC 测试对象；指定浏览器偏好和三个系统辅助选项均已处于要求值。",
+          "settings_observed": "General：Balanced、System Default。Advanced：Double-click to close tabs=off、Close tabs by position=on，两个值同时实读；无需点击开关。Restore last session=on。快捷键本次未修改，未执行完整快捷键配置审查。Accessibility→Keyboard：Sticky Keys=off、Accessibility Keyboard=off；Pointer Control：Mouse Keys=off。未修改双击间隔或其他系统选项。",
+          "steps_executed": [
+            "先用 Computer Use get_app_state 读取固定 QA app 的窗口、PID、标签集合及活动页。",
+            "通过 Command-comma 打开原生 Settings，读取 General；目标布局和语言已正确，输出 checkpoint-general-after 真实截图。",
+            "读取 Advanced 的两个指定开关，均已正确，输出 checkpoint-advanced-after 真实截图；关闭已确认的 Settings close button。",
+            "通过 Spaces→Rename Space 只读核对当前 Space 名称后 Cancel，输出 checkpoint-ending-after 真实截图。",
+            "通过 Computer Use 打开 System Settings，进入 Accessibility→Keyboard，读取 Sticky Keys 与 Accessibility Keyboard 均为 off，输出 checkpoint-system-keyboard-after 真实截图。",
+            "进入 Accessibility→Pointer Control，读取 Mouse Keys=off，输出 checkpoint-system-mouse-after 真实截图。",
+            "点击 System Settings 原生 close button，工具返回“Computer Use server error -10005: App quit”；未重新打开 System Settings。",
+            "回读同一 QA app，PID 仍为 87230，集合与活动页未变，输出 checkpoint-quit-before 真实截图。",
+            "Command-Q 出现退出确认；Cancel 后只读核对 Window 菜单仅列当前 TC-E 测试窗口，通过菜单暴露的 Cancel 动作关闭菜单并重读正常窗口。",
+            "再次 Command-Q，在同一原生退出确认中选择 Quit；最终工具返回“Computer Use server error -10005: App quit”。该返回作为所请求正常退出的生命周期结果保留，之后未再读取 QA。"
+          ],
+          "unit_id": "VIS-05-COMMON"
+        },
+        "evidence": [
+          "qa-evidence/r3/VIS-05-checkpoint-cleanup-r3-observations.json",
+          "qa-evidence/r3/VIS-05-checkpoint-cleanup-r3-run.json",
+          "qa-evidence/r3/checkpoint-app-quit-returns.json",
+          "qa-evidence/r3/VIS-05-COMMON-01.png",
+          "qa-evidence/r3/VIS-05-COMMON-02.png",
+          "qa-evidence/r3/VIS-05-COMMON-03.png",
+          "qa-evidence/r3/VIS-05-COMMON-04.png",
+          "qa-evidence/r3/VIS-05-COMMON-05.png",
+          "qa-evidence/r3/VIS-05-COMMON-06.png",
+          "qa-evidence/r3/VIS-05-COMMON-07.png",
+          "qa-evidence/r3/lane-release.json"
+        ],
+        "evidence_metadata": "qa-evidence/r3/VIS-05-checkpoint-cleanup-r3-evidence.json",
+        "reviewed_by": "Ripley"
       }
     ]
   },

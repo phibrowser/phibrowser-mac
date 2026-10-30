@@ -1,8 +1,26 @@
 {
   "job": "VIS-05-checkpoint-cleanup-r3",
+  "exit_code": 0,
+  "session_id": "01a18ded-b124-7900-b763-49016c4cb636",
+  "round": 3,
+  "lease_id": "e4359d36-d212-4361-be64-5adbf18f0762",
   "started_at": "2026-10-30T17:48:46.974456+00:00",
-  "state": "running",
+  "ended_at": "2026-10-30T17:52:38.469811+00:00",
   "units": [
     "VIS-05-COMMON"
-  ]
+  ],
+  "observed_units": [
+    "VIS-05-COMMON"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "27d52f4b8714476af7f7ae6626fa5be4eb651ac5184629cf376cfdb09e4db489",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 28,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  },
+  "state": "finished"
 }

@@ -1,0 +1,43 @@
+{
+  "session_id": "01a18ded-b124-7900-b763-49016c4cb636",
+  "scope": "Saved item_completed MCP events only; no live browser operation or state read",
+  "recovered_at": "2026-10-30T17:53:40.184344+00:00",
+  "mcp_call_count": 28,
+  "non_computer_use_events": [],
+  "requested_app_exit_events": [
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "failed",
+      "arguments": {
+        "app": "/System/Applications/System Settings.app",
+        "element_index": "78"
+      },
+      "duration": {
+        "secs": 5,
+        "nanos": 171176417
+      },
+      "error": null,
+      "returned_text": [
+        "Computer Use server error -10005: App quit"
+      ]
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "failed",
+      "arguments": {
+        "app": "/Applications/Phi Tab Close QA.app",
+        "element_index": "7"
+      },
+      "duration": {
+        "secs": 6,
+        "nanos": 171545666
+      },
+      "error": null,
+      "returned_text": [
+        "Computer Use server error -10005: App quit"
+      ]
+    }
+  ]
+}

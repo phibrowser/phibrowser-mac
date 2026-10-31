@@ -1,0 +1,202 @@
+{
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T07:15:38.919052+00:00",
+  "job": "POS-01_POS-02-performance-basic-r6",
+  "decisions": {
+    "POS-01-PER": "pass",
+    "POS-02-PER": "pass"
+  },
+  "basis": "实际查看23张完整窗口缩放图，原图SHA与索引核对；110个实际CU事件，零非CU调用；完整观察及实际索引错误原日志。",
+  "findings": [
+    "Performance蓝框及on/on确认；POS01活动D，上方关闭后D/E/F和D活动，三个存活编号与前置逐一相同。",
+    "POS02活动C，下方关闭后A/B/C和C活动，三个存活编号与前置逐一相同。",
+    "本批按当时指令恢复Balanced/SystemDefault/off-on，清理专用窗口；未复用下一批的连续收尾调整。",
+    "POS02准备NewWindow菜单索引失效，CU没有image返回，错误日志独立失败组保留；没有虚构失败截图或重复核心。"
+  ],
+  "sources": [
+    {
+      "raw_number": 4,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-004.jpg",
+      "raw_sha256": "61cedfccd2d7efd430472375161f05b675c4436d32805619798125b4a1014ed6",
+      "viewed_file": "POS-01-PER-04.png",
+      "viewed_sha256": "e50e471d4c8dd57707495e24220baea94bf15255c3353dc522daa684bdcc0f70",
+      "marker": "POS-01-PER attempt1 layout-performance"
+    },
+    {
+      "raw_number": 5,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-005.jpg",
+      "raw_sha256": "303a701a719e7c1fb680e6800efedfb54f666fe869fecb30149aa641d3e855ab",
+      "viewed_file": "POS-01-PER-05.png",
+      "viewed_sha256": "67e85f1535f564a8b7d26d552d1bea0c71d04334cc9a2332824a0a693dcd7a04",
+      "marker": "POS-01-PER attempt1 settings"
+    },
+    {
+      "raw_number": 8,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-008.jpg",
+      "raw_sha256": "853987949733c82711f4fce1a1255ce37bcdb185df76600b8a9f9913f1a3e4e8",
+      "viewed_file": "POS-01-PER-08.png",
+      "viewed_sha256": "6d5ba89f1b811b063aa2e23dbce8809af153ac000bd67ce19fed1f8325e09079",
+      "marker": "POS-01-PER attempt1 fixture-F"
+    },
+    {
+      "raw_number": 9,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-009.jpg",
+      "raw_sha256": "eab87fe8ec9642f8da36ca82e21a5620ae8ce0bbdbfe56ca570c1bb8f063823b",
+      "viewed_file": "POS-01-PER-09.png",
+      "viewed_sha256": "cd15d6e0b7441faf24b9a85074c4cdefa9bce332d7904110171d12e8719c1bfe",
+      "marker": "POS-01-PER attempt1 fixture-E"
+    },
+    {
+      "raw_number": 10,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-010.jpg",
+      "raw_sha256": "67f332556f32835593c1a6af7fa8be00e5b24d92b84d2987395b914626a9501e",
+      "viewed_file": "POS-01-PER-10.png",
+      "viewed_sha256": "fc2e4bbea579a16bcbbab3aff7b26959c6a779e0318c237a375885f185c7bfb6",
+      "marker": "POS-01-PER attempt1 fixture-D"
+    },
+    {
+      "raw_number": 14,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-014.jpg",
+      "raw_sha256": "2c14ea777489a07e0708620fb4a383064e58dfa11c2291bf78c9dae2a7903003",
+      "viewed_file": "POS-01-PER-14.png",
+      "viewed_sha256": "8ea0ae9288810c5a40a785b10a4afb9e6c1fb143a5923900285d07ec42338c82",
+      "marker": "POS-01-PER attempt1 before"
+    },
+    {
+      "raw_number": 15,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-015.jpg",
+      "raw_sha256": "37e21fb9bebac0f8dc965a3e252a6c1b6948f089492a541b009a9e257d197c3b",
+      "viewed_file": "POS-01-PER-15.png",
+      "viewed_sha256": "cf90714ec1ee9bccba05a0ea7720aeb2709b85e55739a0be3874c91059119385",
+      "marker": "POS-01-PER attempt1 menu"
+    },
+    {
+      "raw_number": 16,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-016.jpg",
+      "raw_sha256": "d8c662a007e92e8d9b21871039c567fa0ab4c6a384cc11127bf4b3f8578fc7a1",
+      "viewed_file": "POS-01-PER-16.png",
+      "viewed_sha256": "d83f2ba5562d80067c23d1d65f92ead84ddf711e08faad8e920cc24b17dda78a",
+      "marker": "POS-01-PER attempt1 after"
+    },
+    {
+      "raw_number": 17,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-017.jpg",
+      "raw_sha256": "9ffe196ed43533b49140085230fdd98d51eba9ccb84c84b43430fcff29a2bd0f",
+      "viewed_file": "POS-01-PER-17.png",
+      "viewed_sha256": "d5c6d243b935ae2bec32af2c1f71e6c94c779748b2636c972102ba140fb4d29e",
+      "marker": "POS-01-PER attempt1 identity-E"
+    },
+    {
+      "raw_number": 18,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-018.jpg",
+      "raw_sha256": "1e2f22f5e4a714e4253322735b437591a24265f9beb01748ff08cab4fceb4be6",
+      "viewed_file": "POS-01-PER-18.png",
+      "viewed_sha256": "8545d4aaffc340de1258181b9127e026d97413a22243a5f094d550a714cecaf0",
+      "marker": "POS-01-PER attempt1 identity-F"
+    },
+    {
+      "raw_number": 19,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-019.jpg",
+      "raw_sha256": "812907fe351b114b6928bcaffa3192281ef4232e11d1cf4b537d2c9976cd13de",
+      "viewed_file": "POS-01-PER-19.png",
+      "viewed_sha256": "4857df2fa2fc224e3d06aac59b0dab43c6657efdf125e4a0d272b9b3eb84dce6",
+      "marker": "POS-01-PER attempt1 identity-D"
+    },
+    {
+      "raw_number": 26,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-026.jpg",
+      "raw_sha256": "049c0fd9303fd8c6aa19c4294cb3fe0a5135e41c32c42392c0c6a473bbb561da",
+      "viewed_file": "POS-02-PER-07.png",
+      "viewed_sha256": "d44cd4c74b8c31543a6afb6edaaa79de8767a3b829e99f4fef2ef5dd29957ff1",
+      "marker": "POS-02-PER attempt1 fixture-C"
+    },
+    {
+      "raw_number": 27,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-027.jpg",
+      "raw_sha256": "85f26b026f8322e44488f1969aedf02d075d933780e8d11fc8d173232e3a3a58",
+      "viewed_file": "POS-02-PER-08.png",
+      "viewed_sha256": "7a55e684cc9a64da3c0dbda91924d0419fda2810bfa9ef58b8860a36f1c8d266",
+      "marker": "POS-02-PER attempt1 fixture-B"
+    },
+    {
+      "raw_number": 28,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-028.jpg",
+      "raw_sha256": "b3c48b1d5e24be01387b4c2ce9bae75253d316942c1159951c9ff24fe5076d29",
+      "viewed_file": "POS-02-PER-09.png",
+      "viewed_sha256": "b0dd181e49d29e4cf787b27c8036b77541edc9e7c2c052404c0825aca31108bf",
+      "marker": "POS-02-PER attempt1 fixture-A"
+    },
+    {
+      "raw_number": 29,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-029.jpg",
+      "raw_sha256": "8425bf5ae240657127698c77b1ac7e3f3dbd146f868dfae9d9ba4369485075a1",
+      "viewed_file": "POS-02-PER-10.png",
+      "viewed_sha256": "72e2064c78bce727060b345ec8dcc89036da46c26479fade2120957dbb200b5f",
+      "marker": "POS-02-PER attempt1 before"
+    },
+    {
+      "raw_number": 30,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-030.jpg",
+      "raw_sha256": "e3509c4dbc8d7cf8905a5fc122621ad148f8d0dca2e6e054feea722367e42154",
+      "viewed_file": "POS-02-PER-11.png",
+      "viewed_sha256": "ef4873f12915c0e9ca07dd38a6c3557c5d8b70fcf1afb22c13e026d8c1ab93c1",
+      "marker": "POS-02-PER attempt1 menu"
+    },
+    {
+      "raw_number": 31,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-031.jpg",
+      "raw_sha256": "313240a7c546c43a15c815fc2107393b97b3347f6d6f026a209817ab919717ba",
+      "viewed_file": "POS-02-PER-12.png",
+      "viewed_sha256": "a5104a81b214f888c243c8cdbcea8e7cfa50f38c581fbc95355c088710b81ea6",
+      "marker": "POS-02-PER attempt1 after"
+    },
+    {
+      "raw_number": 32,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-032.jpg",
+      "raw_sha256": "8bc6f511043c1573e45b359537bd26239314ad16cb340f0c7bd64be223a164b3",
+      "viewed_file": "POS-02-PER-13.png",
+      "viewed_sha256": "7db0cc5784b276947566a3c6be4734fdfd671af5ff15081e6f159d080970ffdf",
+      "marker": "POS-02-PER attempt1 identity-A"
+    },
+    {
+      "raw_number": 33,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-033.jpg",
+      "raw_sha256": "45e03d91d55f3e2c2e2060793871948a12f6f4dd27fa46c644d00ef3fd51b507",
+      "viewed_file": "POS-02-PER-14.png",
+      "viewed_sha256": "00794a19744046125edf12e230c8f5cc889ab34d398654a6fce3e5b7fb45e797",
+      "marker": "POS-02-PER attempt1 identity-B"
+    },
+    {
+      "raw_number": 34,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-034.jpg",
+      "raw_sha256": "2f8d8b2da4cb1141c076e394b8ca1b518c420907b1c2880093dbfc1150b1b20c",
+      "viewed_file": "POS-02-PER-15.png",
+      "viewed_sha256": "2d933479b12e7a4bfd687afed529180a69d3c775cf2a3591b2c5c2c62b755207",
+      "marker": "POS-02-PER attempt1 identity-C"
+    },
+    {
+      "raw_number": 36,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-036.jpg",
+      "raw_sha256": "00b996f8629eed7c9f0df6a41e9b5ba2d43c989955528579a301d7a0230fa60d",
+      "viewed_file": "POS-02-PER-17.png",
+      "viewed_sha256": "27e588bb480eeca1057115cf164c69f83d80123527b69d66e6fd2d457250c598",
+      "marker": "POS-02-PER attempt1 settings-restored"
+    },
+    {
+      "raw_number": 37,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-037.jpg",
+      "raw_sha256": "4dd9b03c939bac595d42243e578c897cf2f068453c74527e37f8a88f10dfefa8",
+      "viewed_file": "POS-02-PER-18.png",
+      "viewed_sha256": "55c606dca13a3b1d192667f6ab7f351037c810f8c9671401467ee678f0d47754",
+      "marker": "POS-02-PER attempt1 layout-restored"
+    },
+    {
+      "raw_number": 38,
+      "raw_file": "POS-01_POS-02-performance-basic-r6-038.jpg",
+      "raw_sha256": "cdedb405fc4bb14d7f0f55de514391ed5282670b0e4471d72c822221d38d1ac3",
+      "viewed_file": "POS-02-PER-19.png",
+      "viewed_sha256": "195ab4ed93b89a1223700792c860b2abb49eff799d4e639f2e0ba2d164f09e92",
+      "marker": "POS-02-PER attempt1 ending"
+    }
+  ]
+}

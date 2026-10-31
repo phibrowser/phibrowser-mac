@@ -1,9 +1,9 @@
 {
   "state": "running",
-  "index": 1,
+  "index": 2,
   "total": 7,
   "args": [
-    "POS-01,POS-02",
+    "POS-03,POS-04",
     "--layout",
     "performance",
     "--tag",
@@ -13,5 +13,5 @@
     "--timeout",
     "3600"
   ],
-  "started_at": "2026-10-31T06:33:28.683914+00:00"
+  "started_at": "2026-10-31T07:05:01.251296+00:00"
 }

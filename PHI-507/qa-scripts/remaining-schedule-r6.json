@@ -1,0 +1,3343 @@
+{
+  "based_on_counts": {
+    "pass": 116,
+    "partial": 8,
+    "blocked": 85,
+    "pending": 303
+  },
+  "scheduled_pending": [
+    {
+      "unit_id": "DBL-19-PER",
+      "base": "DBL-19",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "DBL-20-PER",
+      "base": "DBL-20",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "DBL-21-PER",
+      "base": "DBL-21",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "DBL-22-PER",
+      "base": "DBL-22",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "DBL-19-BAL",
+      "base": "DBL-19",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "DBL-20-BAL",
+      "base": "DBL-20",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "DBL-21-BAL",
+      "base": "DBL-21",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "DBL-22-BAL",
+      "base": "DBL-22",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "DBL-19-COM",
+      "base": "DBL-19",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "DBL-20-COM",
+      "base": "DBL-20",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "DBL-21-COM",
+      "base": "DBL-21",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "DBL-22-COM",
+      "base": "DBL-22",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-06-PER",
+      "base": "POS-06",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-08-PER",
+      "base": "POS-08",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-09-PER",
+      "base": "POS-09",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-10-PER",
+      "base": "POS-10",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-11-PER",
+      "base": "POS-11",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-12-PER",
+      "base": "POS-12",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-13-PER",
+      "base": "POS-13",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-14-PER",
+      "base": "POS-14",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-15-PER",
+      "base": "POS-15",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-06-BAL",
+      "base": "POS-06",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-08-BAL",
+      "base": "POS-08",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-09-BAL",
+      "base": "POS-09",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-10-BAL",
+      "base": "POS-10",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-11-BAL",
+      "base": "POS-11",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-12-BAL",
+      "base": "POS-12",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-13-BAL",
+      "base": "POS-13",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-14-BAL",
+      "base": "POS-14",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-15-BAL",
+      "base": "POS-15",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-03-COM",
+      "base": "POS-03",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-04-COM",
+      "base": "POS-04",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-05-COM",
+      "base": "POS-05",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-06-COM",
+      "base": "POS-06",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-08-COM",
+      "base": "POS-08",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-09-COM",
+      "base": "POS-09",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-10-COM",
+      "base": "POS-10",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-11-COM",
+      "base": "POS-11",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-12-COM",
+      "base": "POS-12",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-13-COM",
+      "base": "POS-13",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-14-COM",
+      "base": "POS-14",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-15-COM",
+      "base": "POS-15",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "POS-07-COMMON",
+      "base": "POS-07",
+      "layout": "once",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-01-PER",
+      "base": "SPL-01",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-02-PER",
+      "base": "SPL-02",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-03-PER",
+      "base": "SPL-03",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-04-PER",
+      "base": "SPL-04",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-05-PER",
+      "base": "SPL-05",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-06-PER",
+      "base": "SPL-06",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-07-PER",
+      "base": "SPL-07",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-08-PER",
+      "base": "SPL-08",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-09-PER",
+      "base": "SPL-09",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-10-PER",
+      "base": "SPL-10",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-11-PER-cancel",
+      "base": "SPL-11",
+      "layout": "performance",
+      "variant": {
+        "id": "cancel",
+        "label": "取消"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-11-PER-leave",
+      "base": "SPL-11",
+      "layout": "performance",
+      "variant": {
+        "id": "leave",
+        "label": "确认离开"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-12-PER",
+      "base": "SPL-12",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-13-PER",
+      "base": "SPL-13",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-14-PER",
+      "base": "SPL-14",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-15-PER",
+      "base": "SPL-15",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-16-PER",
+      "base": "SPL-16",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-01-BAL",
+      "base": "SPL-01",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-02-BAL",
+      "base": "SPL-02",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-03-BAL",
+      "base": "SPL-03",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-04-BAL",
+      "base": "SPL-04",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-05-BAL",
+      "base": "SPL-05",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-06-BAL",
+      "base": "SPL-06",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-07-BAL",
+      "base": "SPL-07",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-08-BAL",
+      "base": "SPL-08",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-09-BAL",
+      "base": "SPL-09",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-10-BAL",
+      "base": "SPL-10",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-11-BAL-cancel",
+      "base": "SPL-11",
+      "layout": "balanced",
+      "variant": {
+        "id": "cancel",
+        "label": "取消"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-11-BAL-leave",
+      "base": "SPL-11",
+      "layout": "balanced",
+      "variant": {
+        "id": "leave",
+        "label": "确认离开"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-12-BAL",
+      "base": "SPL-12",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-13-BAL",
+      "base": "SPL-13",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-14-BAL",
+      "base": "SPL-14",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-15-BAL",
+      "base": "SPL-15",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-16-BAL",
+      "base": "SPL-16",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-01-COM",
+      "base": "SPL-01",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-02-COM",
+      "base": "SPL-02",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-03-COM",
+      "base": "SPL-03",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-04-COM",
+      "base": "SPL-04",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-05-COM",
+      "base": "SPL-05",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-06-COM",
+      "base": "SPL-06",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-07-COM",
+      "base": "SPL-07",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-08-COM",
+      "base": "SPL-08",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-09-COM",
+      "base": "SPL-09",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-10-COM",
+      "base": "SPL-10",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-11-COM-cancel",
+      "base": "SPL-11",
+      "layout": "comfortable",
+      "variant": {
+        "id": "cancel",
+        "label": "取消"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-11-COM-leave",
+      "base": "SPL-11",
+      "layout": "comfortable",
+      "variant": {
+        "id": "leave",
+        "label": "确认离开"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-12-COM",
+      "base": "SPL-12",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-13-COM",
+      "base": "SPL-13",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-14-COM",
+      "base": "SPL-14",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-15-COM",
+      "base": "SPL-15",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SPL-16-COM",
+      "base": "SPL-16",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-01-PER",
+      "base": "PIN-01",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-02-PER",
+      "base": "PIN-02",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-03-PER",
+      "base": "PIN-03",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-04-PER",
+      "base": "PIN-04",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-05-PER",
+      "base": "PIN-05",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-06-PER",
+      "base": "PIN-06",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-07-PER",
+      "base": "PIN-07",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-08-PER",
+      "base": "PIN-08",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-09-PER",
+      "base": "PIN-09",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-10-PER",
+      "base": "PIN-10",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-11-PER",
+      "base": "PIN-11",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-01-BAL",
+      "base": "PIN-01",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-02-BAL",
+      "base": "PIN-02",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-03-BAL",
+      "base": "PIN-03",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-04-BAL",
+      "base": "PIN-04",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-05-BAL",
+      "base": "PIN-05",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-07-BAL",
+      "base": "PIN-07",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-08-BAL",
+      "base": "PIN-08",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-09-BAL",
+      "base": "PIN-09",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-10-BAL",
+      "base": "PIN-10",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-11-BAL",
+      "base": "PIN-11",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-01-COM",
+      "base": "PIN-01",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-02-COM",
+      "base": "PIN-02",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-03-COM",
+      "base": "PIN-03",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-04-COM",
+      "base": "PIN-04",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-05-COM",
+      "base": "PIN-05",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-06-COM",
+      "base": "PIN-06",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-07-COM",
+      "base": "PIN-07",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-08-COM",
+      "base": "PIN-08",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-09-COM",
+      "base": "PIN-09",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-10-COM",
+      "base": "PIN-10",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "PIN-11-COM",
+      "base": "PIN-11",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-01-PER",
+      "base": "GRP-01",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-02-PER",
+      "base": "GRP-02",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-03-PER",
+      "base": "GRP-03",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-04-PER",
+      "base": "GRP-04",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-05-PER",
+      "base": "GRP-05",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-06-PER",
+      "base": "GRP-06",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-07-PER",
+      "base": "GRP-07",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-08-PER",
+      "base": "GRP-08",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-10-PER",
+      "base": "GRP-10",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-11-PER",
+      "base": "GRP-11",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-12-PER",
+      "base": "GRP-12",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-13-PER-cancel",
+      "base": "GRP-13",
+      "layout": "performance",
+      "variant": {
+        "id": "cancel",
+        "label": "取消"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-13-PER-leave",
+      "base": "GRP-13",
+      "layout": "performance",
+      "variant": {
+        "id": "leave",
+        "label": "确认离开"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-14-PER-cancel",
+      "base": "GRP-14",
+      "layout": "performance",
+      "variant": {
+        "id": "cancel",
+        "label": "取消"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-14-PER-leave",
+      "base": "GRP-14",
+      "layout": "performance",
+      "variant": {
+        "id": "leave",
+        "label": "确认离开"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-15-PER",
+      "base": "GRP-15",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-16-PER",
+      "base": "GRP-16",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-17-PER",
+      "base": "GRP-17",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-18-PER",
+      "base": "GRP-18",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-01-BAL",
+      "base": "GRP-01",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-02-BAL",
+      "base": "GRP-02",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-03-BAL",
+      "base": "GRP-03",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-04-BAL",
+      "base": "GRP-04",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-05-BAL",
+      "base": "GRP-05",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-06-BAL",
+      "base": "GRP-06",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-07-BAL",
+      "base": "GRP-07",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-10-BAL",
+      "base": "GRP-10",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-11-BAL",
+      "base": "GRP-11",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-12-BAL",
+      "base": "GRP-12",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-13-BAL-cancel",
+      "base": "GRP-13",
+      "layout": "balanced",
+      "variant": {
+        "id": "cancel",
+        "label": "取消"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-13-BAL-leave",
+      "base": "GRP-13",
+      "layout": "balanced",
+      "variant": {
+        "id": "leave",
+        "label": "确认离开"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-14-BAL-cancel",
+      "base": "GRP-14",
+      "layout": "balanced",
+      "variant": {
+        "id": "cancel",
+        "label": "取消"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-14-BAL-leave",
+      "base": "GRP-14",
+      "layout": "balanced",
+      "variant": {
+        "id": "leave",
+        "label": "确认离开"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-15-BAL",
+      "base": "GRP-15",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-16-BAL",
+      "base": "GRP-16",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-17-BAL",
+      "base": "GRP-17",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-18-BAL",
+      "base": "GRP-18",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-01-COM",
+      "base": "GRP-01",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-02-COM",
+      "base": "GRP-02",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-03-COM",
+      "base": "GRP-03",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-04-COM",
+      "base": "GRP-04",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-05-COM",
+      "base": "GRP-05",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-06-COM",
+      "base": "GRP-06",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-07-COM",
+      "base": "GRP-07",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-08-COM",
+      "base": "GRP-08",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-10-COM",
+      "base": "GRP-10",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-11-COM",
+      "base": "GRP-11",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-12-COM",
+      "base": "GRP-12",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-13-COM-cancel",
+      "base": "GRP-13",
+      "layout": "comfortable",
+      "variant": {
+        "id": "cancel",
+        "label": "取消"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-13-COM-leave",
+      "base": "GRP-13",
+      "layout": "comfortable",
+      "variant": {
+        "id": "leave",
+        "label": "确认离开"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-14-COM-cancel",
+      "base": "GRP-14",
+      "layout": "comfortable",
+      "variant": {
+        "id": "cancel",
+        "label": "取消"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-14-COM-leave",
+      "base": "GRP-14",
+      "layout": "comfortable",
+      "variant": {
+        "id": "leave",
+        "label": "确认离开"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-15-COM",
+      "base": "GRP-15",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-16-COM",
+      "base": "GRP-16",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-17-COM",
+      "base": "GRP-17",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-18-COM",
+      "base": "GRP-18",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "GRP-09-COMMON",
+      "base": "GRP-09",
+      "layout": "once",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-01-PER",
+      "base": "BMK-01",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-02-PER",
+      "base": "BMK-02",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-03-PER",
+      "base": "BMK-03",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-06-PER",
+      "base": "BMK-06",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-07-PER",
+      "base": "BMK-07",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-08-PER",
+      "base": "BMK-08",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-09-PER",
+      "base": "BMK-09",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-10-PER",
+      "base": "BMK-10",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-11-PER",
+      "base": "BMK-11",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-12-PER",
+      "base": "BMK-12",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-01-BAL",
+      "base": "BMK-01",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-02-BAL",
+      "base": "BMK-02",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-03-BAL",
+      "base": "BMK-03",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-06-BAL",
+      "base": "BMK-06",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-07-BAL",
+      "base": "BMK-07",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-08-BAL",
+      "base": "BMK-08",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-09-BAL",
+      "base": "BMK-09",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-10-BAL",
+      "base": "BMK-10",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-11-BAL",
+      "base": "BMK-11",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-12-BAL",
+      "base": "BMK-12",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-03-COM",
+      "base": "BMK-03",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-04-COM",
+      "base": "BMK-04",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-06-COM",
+      "base": "BMK-06",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-09-COM",
+      "base": "BMK-09",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-12-COM",
+      "base": "BMK-12",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "BMK-05-COMMON",
+      "base": "BMK-05",
+      "layout": "once",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SEL-01-PER",
+      "base": "SEL-01",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SEL-01-BAL",
+      "base": "SEL-01",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SEL-01-COM",
+      "base": "SEL-01",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SEL-05-COMMON",
+      "base": "SEL-05",
+      "layout": "once",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-01-PER",
+      "base": "LIFE-01",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-02-PER",
+      "base": "LIFE-02",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-03-PER",
+      "base": "LIFE-03",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-04-PER",
+      "base": "LIFE-04",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-05-PER",
+      "base": "LIFE-05",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-06-PER",
+      "base": "LIFE-06",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-07-PER",
+      "base": "LIFE-07",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-08-PER",
+      "base": "LIFE-08",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-09-PER",
+      "base": "LIFE-09",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-11-PER",
+      "base": "LIFE-11",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-12-PER",
+      "base": "LIFE-12",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-13-PER-reader",
+      "base": "LIFE-13",
+      "layout": "performance",
+      "variant": {
+        "id": "reader",
+        "label": "Reader"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-13-PER-peek",
+      "base": "LIFE-13",
+      "layout": "performance",
+      "variant": {
+        "id": "peek",
+        "label": "Peek"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-13-PER-sidecar",
+      "base": "LIFE-13",
+      "layout": "performance",
+      "variant": {
+        "id": "sidecar",
+        "label": "Sidecar"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-14-PER-audio",
+      "base": "LIFE-14",
+      "layout": "performance",
+      "variant": {
+        "id": "audio",
+        "label": "测试音频"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-14-PER-download",
+      "base": "LIFE-14",
+      "layout": "performance",
+      "variant": {
+        "id": "download",
+        "label": "测试下载"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-01-BAL",
+      "base": "LIFE-01",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-02-BAL",
+      "base": "LIFE-02",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-04-BAL",
+      "base": "LIFE-04",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-05-BAL",
+      "base": "LIFE-05",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-09-BAL",
+      "base": "LIFE-09",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-11-BAL",
+      "base": "LIFE-11",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-12-BAL",
+      "base": "LIFE-12",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-13-BAL-reader",
+      "base": "LIFE-13",
+      "layout": "balanced",
+      "variant": {
+        "id": "reader",
+        "label": "Reader"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-13-BAL-peek",
+      "base": "LIFE-13",
+      "layout": "balanced",
+      "variant": {
+        "id": "peek",
+        "label": "Peek"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-13-BAL-sidecar",
+      "base": "LIFE-13",
+      "layout": "balanced",
+      "variant": {
+        "id": "sidecar",
+        "label": "Sidecar"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-14-BAL-audio",
+      "base": "LIFE-14",
+      "layout": "balanced",
+      "variant": {
+        "id": "audio",
+        "label": "测试音频"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-14-BAL-download",
+      "base": "LIFE-14",
+      "layout": "balanced",
+      "variant": {
+        "id": "download",
+        "label": "测试下载"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-01-COM",
+      "base": "LIFE-01",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-02-COM",
+      "base": "LIFE-02",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-03-COM",
+      "base": "LIFE-03",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-04-COM",
+      "base": "LIFE-04",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-05-COM",
+      "base": "LIFE-05",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-06-COM",
+      "base": "LIFE-06",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-07-COM",
+      "base": "LIFE-07",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-08-COM",
+      "base": "LIFE-08",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-09-COM",
+      "base": "LIFE-09",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-11-COM",
+      "base": "LIFE-11",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-12-COM",
+      "base": "LIFE-12",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-13-COM-reader",
+      "base": "LIFE-13",
+      "layout": "comfortable",
+      "variant": {
+        "id": "reader",
+        "label": "Reader"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-13-COM-peek",
+      "base": "LIFE-13",
+      "layout": "comfortable",
+      "variant": {
+        "id": "peek",
+        "label": "Peek"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-13-COM-sidecar",
+      "base": "LIFE-13",
+      "layout": "comfortable",
+      "variant": {
+        "id": "sidecar",
+        "label": "Sidecar"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-14-COM-audio",
+      "base": "LIFE-14",
+      "layout": "comfortable",
+      "variant": {
+        "id": "audio",
+        "label": "测试音频"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "LIFE-14-COM-download",
+      "base": "LIFE-14",
+      "layout": "comfortable",
+      "variant": {
+        "id": "download",
+        "label": "测试下载"
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-01-PER",
+      "base": "SCOPE-01",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-02-PER",
+      "base": "SCOPE-02",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-09-PER",
+      "base": "SCOPE-09",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-10-PER",
+      "base": "SCOPE-10",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-11-PER",
+      "base": "SCOPE-11",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-12-PER",
+      "base": "SCOPE-12",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-15-PER",
+      "base": "SCOPE-15",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-18-PER-cancel",
+      "base": "SCOPE-18",
+      "layout": "performance",
+      "variant": {
+        "id": "cancel",
+        "label": "取消"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-18-PER-leave",
+      "base": "SCOPE-18",
+      "layout": "performance",
+      "variant": {
+        "id": "leave",
+        "label": "确认离开"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-01-BAL",
+      "base": "SCOPE-01",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-02-BAL",
+      "base": "SCOPE-02",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-09-BAL",
+      "base": "SCOPE-09",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-10-BAL",
+      "base": "SCOPE-10",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-11-BAL",
+      "base": "SCOPE-11",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-12-BAL",
+      "base": "SCOPE-12",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-15-BAL",
+      "base": "SCOPE-15",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-18-BAL-cancel",
+      "base": "SCOPE-18",
+      "layout": "balanced",
+      "variant": {
+        "id": "cancel",
+        "label": "取消"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-18-BAL-leave",
+      "base": "SCOPE-18",
+      "layout": "balanced",
+      "variant": {
+        "id": "leave",
+        "label": "确认离开"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-01-COM",
+      "base": "SCOPE-01",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-02-COM",
+      "base": "SCOPE-02",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-09-COM",
+      "base": "SCOPE-09",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-10-COM",
+      "base": "SCOPE-10",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-11-COM",
+      "base": "SCOPE-11",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-12-COM",
+      "base": "SCOPE-12",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-15-COM",
+      "base": "SCOPE-15",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-18-COM-cancel",
+      "base": "SCOPE-18",
+      "layout": "comfortable",
+      "variant": {
+        "id": "cancel",
+        "label": "取消"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-18-COM-leave",
+      "base": "SCOPE-18",
+      "layout": "comfortable",
+      "variant": {
+        "id": "leave",
+        "label": "确认离开"
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-03-COMMON",
+      "base": "SCOPE-03",
+      "layout": "once",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-04-COMMON",
+      "base": "SCOPE-04",
+      "layout": "once",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-05-COMMON",
+      "base": "SCOPE-05",
+      "layout": "once",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "SCOPE-20-COMMON",
+      "base": "SCOPE-20",
+      "layout": "once",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "VIS-03-PER",
+      "base": "VIS-03",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "VIS-06-PER",
+      "base": "VIS-06",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "VIS-08-PER",
+      "base": "VIS-08",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "VIS-06-BAL",
+      "base": "VIS-06",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "VIS-08-BAL",
+      "base": "VIS-08",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "VIS-03-COM",
+      "base": "VIS-03",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "VIS-06-COM",
+      "base": "VIS-06",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "VIS-08-COM",
+      "base": "VIS-08",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "VIS-04-COMMON",
+      "base": "VIS-04",
+      "layout": "once",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P1",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "VIS-05-COMMON",
+      "base": "VIS-05",
+      "layout": "once",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "EXP-02-PER",
+      "base": "EXP-02",
+      "layout": "performance",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "EXP-02-BAL",
+      "base": "EXP-02",
+      "layout": "balanced",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "EXP-02-COM",
+      "base": "EXP-02",
+      "layout": "comfortable",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "EXP-03-COMMON",
+      "base": "EXP-03",
+      "layout": "once",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P2",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    },
+    {
+      "unit_id": "ENV-06-COMMON",
+      "base": "ENV-06",
+      "layout": "once",
+      "variant": {
+        "id": "",
+        "label": ""
+      },
+      "priority": "P0",
+      "scope": "Exact source execution point; schedule only, no result implied"
+    }
+  ]
+}

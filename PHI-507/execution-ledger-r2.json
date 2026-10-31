@@ -15527,7 +15527,29 @@
     },
     "result": "pending",
     "method": "Computer Use",
-    "attempts": []
+    "attempts": [],
+    "diagnostics": [
+      {
+        "job": "DBL-19-balanced-controls-r7-progress",
+        "round": 7,
+        "scope": "活动长批次中断保险：三个mute步骤的实际CU前后图；关闭分支待测，不是整例通过。",
+        "evidence_metadata": "qa-evidence/r7/DBL-19-balanced-controls-r7-progress-evidence.json",
+        "evidence": [
+          "qa-evidence/r7/DBL-19-BAL-01.png",
+          "qa-evidence/r7/DBL-19-BAL-02.png",
+          "qa-evidence/r7/DBL-19-BAL-03.png",
+          "qa-evidence/r7/DBL-19-BAL-04.png",
+          "qa-evidence/r7/DBL-19-BAL-05.png",
+          "qa-evidence/r7/DBL-19-BAL-06.png",
+          "qa-evidence/r7/DBL-19-BAL-07.png",
+          "qa-evidence/r7/DBL-19-BAL-08.png",
+          "qa-evidence/r7/DBL-19-BAL-09.png",
+          "qa-evidence/r7/DBL-19-BAL-10.png",
+          "qa-evidence/r7/dbl19-balanced-progress-review.json",
+          "qa-evidence/r7/dbl19-balanced-progress-audit.json"
+        ]
+      }
+    ]
   },
   {
     "id": "DBL-19",

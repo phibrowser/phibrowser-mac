@@ -1,0 +1,73 @@
+{
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T13:02:34.623035+00:00",
+  "scope": "10实际查看的进度原图；三个mute子步骤已发送，关闭分支与正式输出仍待完成，不判整例。",
+  "viewed_original_progress_frames": [
+    {
+      "raw_number": 6,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-006.jpg",
+      "sha256": "ffc14529520d787034fd736fc18cff91c57c4d3f6a7b4235a6e7ab03447cfa20",
+      "marker": "DBL-19-BAL attempt1 settings-on-on"
+    },
+    {
+      "raw_number": 19,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-019.jpg",
+      "sha256": "e18fc9b45d808d45a4ff48dab9fb7de5c2ab419aedcc88a25afc411a3df640cb",
+      "marker": "DBL-19-BAL attempt1 normal-mute-before"
+    },
+    {
+      "raw_number": 20,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-020.jpg",
+      "sha256": "23ab92d6bdcf0bf6c9c25f31059a0d4a54341c80e36bdbe553347d694ec44c89",
+      "marker": "DBL-19-BAL attempt1 normal-mute-after"
+    },
+    {
+      "raw_number": 21,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-021.jpg",
+      "sha256": "5336519d4647da46dae9297b83a273e26790d39d891057ac7bf32bb88c49441c",
+      "marker": "DBL-19-BAL attempt1 normal-mute-A-identity"
+    },
+    {
+      "raw_number": 28,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-028.jpg",
+      "sha256": "5d849d8d42009e2fbe982fac193b0ab68675904572804896485a2298bdcbfdf0",
+      "marker": "DBL-19-BAL attempt1 split-mute-before"
+    },
+    {
+      "raw_number": 29,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-029.jpg",
+      "sha256": "226008adc517cc2347957a71e0d4b15a8c830804920bdde17c9b10c050e7d5bf",
+      "marker": "DBL-19-BAL attempt1 split-mute-after"
+    },
+    {
+      "raw_number": 30,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-030.jpg",
+      "sha256": "2d597da7c224a123bd3115b90f28c209e8dde864356b75088b5cbae75127f939",
+      "marker": "DBL-19-BAL attempt1 split-mute-identities"
+    },
+    {
+      "raw_number": 33,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-033.jpg",
+      "sha256": "82dc0625299991479588d3682a4ed5a6619f2e79ddd99a738c03be3eb15482da",
+      "marker": "DBL-19-BAL attempt1 group-mute-before"
+    },
+    {
+      "raw_number": 34,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-034.jpg",
+      "sha256": "7086c6cf6cb787753ef39628ce539ca85644cd3210e10bf0dbc3e0e432fb1c9e",
+      "marker": "DBL-19-BAL attempt1 group-mute-after"
+    },
+    {
+      "raw_number": 36,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-036.jpg",
+      "sha256": "5749873ea73c52dfd577a2f78bd5f31cff0eeb86aca5a50160f15c4951a897df",
+      "marker": "DBL-19-BAL attempt1 group-mute-C-identity-top"
+    }
+  ],
+  "findings": [
+    "双击on/位置on实见；普通A、普通B/C split、组内B/C split静音双击前后均仍列出目标/伙伴，净speaker-wave。",
+    "KEEP-A-m1、KEEP-B-m1、KEEP-C-m1及真实B/C配对可见；组前后为同一对文档，没有冒充重建。",
+    "实见编号A=5d4724b1-b406-49be-a9c4-860cd28b9a10，B=71e3b6fa-d1ad-4794-a8e6-90b924919779，C=6b191e78-d346-434f-8fed-49cd0077abb3；正式输出后再核对初始与最终完整记录。",
+    "NewTab及旧TC保存项也列出，不描述为仅ABC；3个Close控件源动作尚未审阅。"
+  ]
+}

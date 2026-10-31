@@ -26,6 +26,8 @@ if a.language or a.base=='VIS-01':
  labels=json.loads((qa/'handbook-data.json').read_text())['labels'].get(a.language or 'zh-Hans',{})
  prompt+='\n本语言手册规定的确切文案（仅作观察对照，不代替实读）：\n'+json.dumps(labels,ensure_ascii=False,indent=2)
 if a.instructions:prompt+='\n本任务额外操作约束：\n'+Path(a.instructions).read_text()
+deadline=datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(seconds=a.timeout)
+prompt+='\n执行时限：本次GUI硬时限'+str(a.timeout)+'秒，预计UTC截止'+deadline.isoformat()+'。可用functions.exec中的Date.now核对剩余时间，不调用其他工具读时钟。最终结构化JSON和安全收尾预留至少180秒；未完成的独立子步骤具体写明，不在时限将尽时重复准备或丢弃已完成观察。时限不改变源预期，不能把未执行动作写成完成。'
 subprocess.run(['python3',str(lane),'run','--','mkdir','-p',lease['env']['LANE_WORKDIR']+f'/qa-evidence/r{round_no}/observations'],check=True)
 scratch=root/f'scratch-PHI507-r{round_no}'/job;scratch.mkdir(parents=True,exist_ok=True);log=scratch/(job+'-console.log');started=datetime.datetime.now(datetime.timezone.utc).isoformat();(evidence_dir/'runner-state.json').write_text(json.dumps({'job':job,'started_at':started,'state':'running','units':[u['key'] for u in units]},indent=2))
 cmd=['python3',str(lane),'gui','--timeout',str(a.timeout),'--','codex','exec','--skip-git-repo-check','--output-schema',lease['env']['LANE_WORKDIR']+'/qa-tools/cu-observation.schema.json','--output-last-message',remote,prompt]

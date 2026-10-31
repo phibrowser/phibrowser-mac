@@ -1,0 +1,35 @@
+[
+  [
+    "DBL-20",
+    "--layout",
+    "performance",
+    "--tag",
+    "surfaces-r7",
+    "--instructions",
+    "PHI-507/qa-scripts/double-click-edges-r6.txt",
+    "--timeout",
+    "5400"
+  ],
+  [
+    "DBL-20",
+    "--layout",
+    "balanced",
+    "--tag",
+    "surfaces-r7",
+    "--instructions",
+    "PHI-507/qa-scripts/double-click-edges-r6.txt",
+    "--timeout",
+    "5400"
+  ],
+  [
+    "DBL-20",
+    "--layout",
+    "comfortable",
+    "--tag",
+    "surfaces-r7",
+    "--instructions",
+    "PHI-507/qa-scripts/double-click-edges-r6.txt",
+    "--timeout",
+    "5400"
+  ]
+]

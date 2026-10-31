@@ -7210,3 +7210,5 @@ r5悬停前置范围说明：LIFE-10三布局的核心动作尚未执行。其�
 - 基础位置用例仍按`qa-scripts/position-basic-r5.txt`；本轮仅运行`position-pending-r6.json`明确列出的待测项，前轮已通过项不覆盖。
 - 后续POS06、08至15按`qa-scripts/position-remaining-r6.txt`补足允许的原生输入路径，仍遵循原手册步骤；同URL用例通过相同普通链接打开独立文档，再用原编号与可见KEEP区别，不改URL或标题伪造前置。
 - r5报告预览首次Command-T路径正文空白的证据单独保留；File→New Window路径另行实测。报告维护不计VIS05验收或产品通过。
+
+原始fixture的`run`显示上限为48字符，本轮通用准备从起始即使用短且唯一的批次ID；此前过长ID截断的setup现场保留，不作为产品缺陷。

@@ -73,3 +73,6 @@ r5通用fixture准备更新（替代前文逐页A-away再地址栏导航的通�
 截图标记补充：每一张输出的image前都重新输出该图自己的EVIDENCE；不要在一次functions.exec中只标记第一张，然后无新标记输出已切换页面的第二张图。root已见M-KEEP标记之后实际输出P空框、control-setup标记之后实际输出普通M副本的情况；这些原图保留但不作为标记所称对象的证明。每张图应当与当时实际页面和阶段对应；中间只检查工具文字的已知输入返回无需额外输出无标记图片。
 
 Settings定位补充：Command-comma可能打开Guest页，而非上次Advanced页。每次先读真实窗口与工具栏，在Guest/General等页时，先经CU点击Advanced并确认目标控件出现，才查找或操作两个开关。helper报toggle missing只表示本次定位未成立，保留返回、正常切到正确页面，不认定产品缺开关，不根据旧索引或预期页猜测。
+
+
+fixture批次长度约束：原始fixture明确对run取前48字符，这是测试夹具约定，不是产品缺陷。所有新准备run均用不超过48个ASCII字符的唯一值，例如TC-PHI507-r6-POS-01-PER-a1b2c3。不要在短ID外叠加完整时间戳、job标签和重复轮次。LAUNCH显示完整run而fixture正文截到48，因此必须从一开始使用短run，避免无必要的地址栏纠正与导航。此前过长run的原图保留，不把截断归因产品。

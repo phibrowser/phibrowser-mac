@@ -1,0 +1,7 @@
+{
+  "scope": "OS input timing metadata only; no browser state read or modification",
+  "checked_at": "2026-10-31T05:59:21.524014+00:00",
+  "exit_code": 1,
+  "value": "",
+  "stderr": "2026-10-31 13:59:21.523 defaults[46707:8973120] \nThe domain/default pair of (kCFPreferencesAnyApplication, com.apple.mouse.doubleClickThreshold) does not exist"
+}

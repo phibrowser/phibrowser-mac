@@ -1,0 +1,62 @@
+{
+  "reviewer": "Ripley",
+  "job": "POS-04_POS-05-balanced-basic-r6",
+  "scope": "中途证据核对；尚未录入用例结论，待正式批次收齐后SHA比对",
+  "observed": "实际查看F前置、C/A/B前置和完整A-F活动F；直接右键C菜单仍活动F；Below后只余A/B/C，活动C；回读A/B原编号不变。",
+  "sources": [
+    {
+      "number": 15,
+      "file": "position-start-progress2-015.jpg",
+      "marker": "POS-04-BAL attempt2 identity-F",
+      "sha256": "6b6a7cdea16a68987bcd8488fa30aacb9a547fb6cbed5de4d3351ea0372cf701"
+    },
+    {
+      "number": 18,
+      "file": "position-start-progress2-018.jpg",
+      "marker": "POS-04-BAL attempt2 identity-C",
+      "sha256": "1721bf46e44cf42022f5d3c8b5d7e2378430506b700554767d03efbed9368b3e"
+    },
+    {
+      "number": 19,
+      "file": "position-start-progress2-019.jpg",
+      "marker": "POS-04-BAL attempt2 identity-B",
+      "sha256": "129e2c42dd329552909ac9670e807b63580f9268ba92cabf70d6c22e1e69f84e"
+    },
+    {
+      "number": 20,
+      "file": "position-start-progress2-020.jpg",
+      "marker": "POS-04-BAL attempt2 identity-A",
+      "sha256": "cdd3321a2aed8b5d4ff19c39ee03715724ccff0caafcb965764d99fe0ee13f85"
+    },
+    {
+      "number": 21,
+      "file": "position-start-progress2-021.jpg",
+      "marker": "POS-04-BAL attempt2 before",
+      "sha256": "d27d8f5f89b3942ab026646eeb95da41d7bd92f480c602ab7c0b4862339acec7"
+    },
+    {
+      "number": 22,
+      "file": "position-start-progress2-022.jpg",
+      "marker": "POS-04-BAL attempt2 menu",
+      "sha256": "6b6a2d2f8bd7fbdbde0461eea720a07e93b7d98c2bafd107fe17171dd5eddf20"
+    },
+    {
+      "number": 23,
+      "file": "position-start-progress2-023.jpg",
+      "marker": "POS-04-BAL attempt2 after",
+      "sha256": "fd5c52e179f5e11000786c8e8277474824cdb1e0ce6174054bcb4070d8c3a413"
+    },
+    {
+      "number": 24,
+      "file": "position-start-progress2-024.jpg",
+      "marker": "POS-04-BAL attempt2 retained-A",
+      "sha256": "1076b43b5e18a16a8583c956dd15ce0be1c2d41add5d3a76c8f5117411bee2fc"
+    },
+    {
+      "number": 25,
+      "file": "position-start-progress2-025.jpg",
+      "marker": "POS-04-BAL attempt2 retained-B",
+      "sha256": "7934ff3aa1501c74f23b770c111d2c662834928830551ee8e66cc67bdf707c35"
+    }
+  ]
+}

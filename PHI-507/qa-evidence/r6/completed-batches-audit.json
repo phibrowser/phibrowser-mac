@@ -1,0 +1,77 @@
+{
+  "checked_at": "2026-10-31T09:05:05.380656+00:00",
+  "scope": "Completed collected r6 runs only; active DBL19 excluded, not a completion claim",
+  "runs": [
+    {
+      "job": "POS-01_POS-02-comfortable-basic-r6",
+      "session_id": "01a190e4-3d76-7ec0-842e-a3d2a4d75576",
+      "exit_code": 0,
+      "CU_calls": 101,
+      "warnings": []
+    },
+    {
+      "job": "POS-01_POS-02-performance-basic-r6",
+      "session_id": "01a190a9-cb76-7111-9d43-ba5f8afe902c",
+      "exit_code": 0,
+      "CU_calls": 110,
+      "warnings": []
+    },
+    {
+      "job": "POS-03_POS-04-comfortable-basic-r6",
+      "session_id": "01a19104-a451-72e2-a8b4-48f00a68c9bc",
+      "exit_code": 0,
+      "CU_calls": 93,
+      "warnings": []
+    },
+    {
+      "job": "POS-03_POS-04-performance-basic-r6",
+      "session_id": "01a190c6-ac56-7a93-95a7-6273807b695c",
+      "exit_code": 0,
+      "CU_calls": 103,
+      "warnings": []
+    },
+    {
+      "job": "POS-04_POS-05-balanced-basic-r6",
+      "session_id": "01a19086-36e2-7593-98cd-55fa5d49455b",
+      "exit_code": 0,
+      "CU_calls": 134,
+      "warnings": []
+    },
+    {
+      "job": "POS-05-comfortable-basic-r6",
+      "session_id": "01a19118-2476-7712-a2cf-77d13d0b7d80",
+      "exit_code": 0,
+      "CU_calls": 55,
+      "warnings": []
+    },
+    {
+      "job": "POS-05-performance-basic-r6",
+      "session_id": "01a190db-cb91-7471-8e82-191e2ed5dc62",
+      "exit_code": 0,
+      "CU_calls": 57,
+      "warnings": []
+    },
+    {
+      "job": "VIS-05-VIS-05-COMMON-report-r5-preview",
+      "session_id": "01a19073-de42-7b42-851e-6851a6a259e7",
+      "exit_code": 0,
+      "CU_calls": 21,
+      "warnings": []
+    },
+    {
+      "job": "VIS-05-VIS-05-COMMON-report-r5-window-preview",
+      "session_id": "01a1907b-0a65-7963-9459-789d42e357d8",
+      "exit_code": 0,
+      "CU_calls": 51,
+      "warnings": []
+    }
+  ],
+  "ledger_counts": {
+    "pass": 119,
+    "partial": 8,
+    "blocked": 85,
+    "pending": 300
+  },
+  "all_512_unique": true,
+  "evidence_bytes_before_this_file": 12102731
+}

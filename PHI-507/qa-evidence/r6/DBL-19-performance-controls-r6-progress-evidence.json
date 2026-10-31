@@ -173,5 +173,80 @@
     ],
     "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
     "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "tab-close-before",
+    "file": "DBL-19-PER-08.png",
+    "original_marker": "DBL-19-PER attempt1 tab-close-before",
+    "source_file": "DBL-19-performance-controls-r6-progress3-045.jpg",
+    "source_sha256": "7371868d99e17b075b345e646080cf9c2d05b96a54e07796ebca8f6e8a681d79",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "tab-close-control-search",
+    "file": "DBL-19-PER-09.png",
+    "original_marker": "DBL-19-PER attempt1 tab-close-control-search",
+    "source_file": "DBL-19-performance-controls-r6-progress3-046.jpg",
+    "source_sha256": "92d31531000c083a574b7af3a270e72993ef2975b74baf966b4a5fe171bbfcae",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "tab-close-after",
+    "file": "DBL-19-PER-10.png",
+    "original_marker": "DBL-19-PER attempt1 tab-close-after",
+    "source_file": "DBL-19-performance-controls-r6-progress3-047.jpg",
+    "source_sha256": "c3ad304fbfec4e8b709556856cca85ca093178f68421756b30a76fef6b001a3c",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
   }
 ]

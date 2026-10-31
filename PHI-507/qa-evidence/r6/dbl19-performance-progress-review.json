@@ -1,7 +1,7 @@
 {
   "reviewer": "Ripley",
   "reviewed_at": "2026-10-31T09:34:47.343091+00:00",
-  "scope": "7实际查看的进度原图之中断保险副本；仍非整例完成或通过。正式输出需核对对应SHA，不能覆盖原始进度。",
+  "scope": "10实际查看进度原图的保险副本；仅3个静音子步骤执行。普通tab关闭控件未见，未发其核心双击；其余关闭分支尚未完成。",
   "viewed_original_progress_frames": [
     {
       "raw_number": 18,
@@ -44,6 +44,24 @@
       "progress_file": "DBL-19-performance-controls-r6-progress-031.jpg",
       "sha256": "177baaedec397745cf132d89d4ada7b5521f0a6df5f8bf1ffb5e8bb87463ccca",
       "marker": "DBL-19-PER attempt1 group-mute-after"
+    },
+    {
+      "raw_number": 45,
+      "progress_file": "DBL-19-performance-controls-r6-progress3-045.jpg",
+      "sha256": "7371868d99e17b075b345e646080cf9c2d05b96a54e07796ebca8f6e8a681d79",
+      "marker": "DBL-19-PER attempt1 tab-close-before"
+    },
+    {
+      "raw_number": 46,
+      "progress_file": "DBL-19-performance-controls-r6-progress3-046.jpg",
+      "sha256": "92d31531000c083a574b7af3a270e72993ef2975b74baf966b4a5fe171bbfcae",
+      "marker": "DBL-19-PER attempt1 tab-close-control-search"
+    },
+    {
+      "raw_number": 47,
+      "progress_file": "DBL-19-performance-controls-r6-progress3-047.jpg",
+      "sha256": "c3ad304fbfec4e8b709556856cca85ca093178f68421756b30a76fef6b001a3c",
+      "marker": "DBL-19-PER attempt1 tab-close-after"
     }
   ],
   "findings": [
@@ -52,6 +70,7 @@
     "该窗口还可见NewTab和旧保存项；不能描述为仅有A/B/C。后续分屏/关闭控件分支尚未审阅。",
     "28→29普通split B静音图标双击，30→31组内split B button speaker-wave索引37双击，均保留B/C原配对、编号与KEEP-B-m1/KEEP-C-m1；净图标仍wave，不声称观察到中间mute切换。",
     "B编号ff56bcee-c383-457e-8988-4f91d45616d8；C编号6ea6d17d-e3e8-40d0-b6e5-a252fdcfbbfd。普通A仍列在组外，NewTab和旧保存项也可见。",
-    "源要求重建的是mute→close分支；同一B/C在静音分支中正常入组后复测，不冒充独立新文档。关闭分支还待完整观察。"
+    "源要求重建的是mute→close分支；同一B/C在静音分支中正常入组后复测，不冒充独立新文档。关闭分支还待完整观察。",
+    "45/46/47真实图均仍为新c1文档A，099181e3-6699-44ff-9230-a6070f922345和KEEP-A-c1保持，音频已停止，未见标签关闭x。此处after是控件查找结束，不是已发关闭动作。"
   ]
 }

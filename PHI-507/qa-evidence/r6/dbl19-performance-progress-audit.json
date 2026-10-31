@@ -10,7 +10,7 @@
   ],
   "extraction_warnings": [],
   "non_computer_use_calls": [],
-  "mcp_event_count": 114,
+  "mcp_event_count": 181,
   "mcp_events": [
     {
       "server": "computer-use",
@@ -1036,6 +1036,609 @@
       "duration": {
         "secs": 0,
         "nanos": 616947375
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 910547625
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 803668917
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 977285541
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 116104125
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 722468833
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 785567084
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 765583042
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 314628167
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 434655417
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 649401000
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 313035958
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 654807334
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 357240750
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 813354375
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "type_text",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 70784167
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 850756416
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 335255208
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 37633000
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 450435750
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 654362417
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "type_text",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 841188500
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 794180875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 154095166
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 506212416
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 614043875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "type_text",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 913779083
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 831459958
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 156486125
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 583655250
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 778592458
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "type_text",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 905216500
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 977349584
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 477116000
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 918623125
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 523629500
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 986801208
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 479919459
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 787270792
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 637524541
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 883535292
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "scroll",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 624014916
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 979274250
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 967319125
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 456523833
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 100832375
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 985360875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 21992084
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 522973625
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 753805250
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 997723667
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 195138083
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 473225000
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "drag",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 94203083
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 476971500
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 7258291
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 417417167
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 917581666
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "scroll",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 602177333
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 910698250
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 922800792
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 436905500
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 3048917
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 922107541
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "scroll",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 509031667
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 974646292
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 980782875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 469839833
       }
     }
   ],

@@ -1,0 +1,9 @@
+[
+  ["POS-04,POS-05","--layout","balanced","--tag","basic-r6","--instructions","PHI-507/qa-scripts/position-basic-r5.txt","--timeout","3600"],
+  ["POS-01,POS-02","--layout","performance","--tag","basic-r6","--instructions","PHI-507/qa-scripts/position-basic-r5.txt","--timeout","3600"],
+  ["POS-03,POS-04","--layout","performance","--tag","basic-r6","--instructions","PHI-507/qa-scripts/position-basic-r5.txt","--timeout","3600"],
+  ["POS-05","--layout","performance","--tag","basic-r6","--instructions","PHI-507/qa-scripts/position-basic-r5.txt","--timeout","3600"],
+  ["POS-01,POS-02","--layout","comfortable","--tag","basic-r6","--instructions","PHI-507/qa-scripts/position-basic-r5.txt","--timeout","3600"],
+  ["POS-03,POS-04","--layout","comfortable","--tag","basic-r6","--instructions","PHI-507/qa-scripts/position-basic-r5.txt","--timeout","3600"],
+  ["POS-05","--layout","comfortable","--tag","basic-r6","--instructions","PHI-507/qa-scripts/position-basic-r5.txt","--timeout","3600"]
+]

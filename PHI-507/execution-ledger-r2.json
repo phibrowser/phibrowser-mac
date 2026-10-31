@@ -34442,6 +34442,110 @@
           "qa-evidence/r5/VIS-05-COMMON-05.png"
         ],
         "evidence_metadata": "qa-evidence/r5/VIS-05-report-preview-r4-evidence.json"
+      },
+      {
+        "job": "VIS-05-VIS-05-COMMON-report-r5-preview",
+        "round": 6,
+        "scope": "r5报告本地预览维护，非VIS05验收；本次报告tab正文空白，待独立窗口路径复核",
+        "observation": {
+          "active_after": "本次新建的本地报告预览tab，单独选中。",
+          "active_before": "进入具名测试Space后的既有New Tab。",
+          "after": "原有集合加一个本次明确新建的报告预览tab；指定URL及报告窗口标题可见，正文持续空白。",
+          "before": "测试Space内原有TC-P · TC-PHI507-r2-DBL-09-PER pin、TC-M · TC-PHI507-r2-DBL-09-PER条目、无名行及既有New Tab；未将未知条目视为本次创建对象。",
+          "confirmation_choices": "未出现确认框；未选择删除、离开、导出或清理操作。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-05-COMMON attempt1 initial",
+            "EVIDENCE: VIS-05-COMMON attempt1 space",
+            "EVIDENCE: VIS-05-COMMON attempt1 settings",
+            "EVIDENCE: VIS-05-COMMON attempt1 general",
+            "EVIDENCE: VIS-05-COMMON attempt1 advanced",
+            "EVIDENCE: VIS-05-COMMON attempt1 new-tab",
+            "EVIDENCE: VIS-05-COMMON attempt1 report-top",
+            "EVIDENCE: VIS-05-COMMON attempt1 after"
+          ],
+          "identity_checks": "本轮CU实读PID为44628，后续状态读取保持该PID。点击原生具名按钮进入TC-QA-PHI507-r2-Recovery-R4；Command-T后实见新增的选中普通行，再通过地址栏导航到准确的报告文件URL。报告标题已显示，但未实见第r5轮、未完成状态、512总数、107通过、0失败、93阻塞、312未执行、本轮新增7项及历史沿用说明；这些数字未作为已观察事实记录。未读取构建标识或推断本地fixture服务状态。",
+          "language_observed": "General显示语言为System Default；本轮原生界面为英文，未切换语言。",
+          "layout_observed": "General中Balanced卡片有蓝色选中边框；未切换布局。",
+          "not_executed_reason": "仅r5报告本地预览，不是VIS-05验收；完整手册测试继续。指定报告URL和标题出现后，分段显式等待累计120秒，正文始终空白。未见页面搜索或折叠控件，因此未展开ENV-04-COMMON，未查看「沿用r2，本轮未重跑」及旧截图；也未展开POS-03-BAL或查看其前置、步骤、结果、图像，未放大缩略图。保留空白现场，未以空白图冒充report-carried或report-new-case证据。VIS-05结果填写、JSON导出、Markdown复制及最终环境清理均按本次限定不执行。",
+          "operator_errors": [
+            "首次get_app_state返回Computer Use server error -10005: timeoutReached；重试读取成功，期间未执行界面变更。",
+            "super+comma调用后仍显示浏览器窗口；随后通过Phi→Settings正常进入设置，未修改偏好。"
+          ],
+          "precondition_actual": "新租约中重新读取固定QA app及PID；通过已存在的具名TC测试Space按钮进入。只读核实当前布局、语言与两个关闭相关开关后关闭Settings，再新建一个报告预览普通tab。",
+          "settings_observed": "settings.tabs.doubleClickToClose=on；settings.tabs.directionalClosing=on。仅只读查看，未点击任何开关，未修改快捷键或其他偏好。",
+          "steps_executed": [
+            "通过Computer Use重新读取固定app，取得PID 44628及当前窗口。",
+            "点击TC-QA-PHI507-r2-Recovery-R4原生按钮进入测试Space，读取原有条目。",
+            "通过Phi→Settings查看General和Advanced：Balanced、System Default、两个关闭相关开关均on；关闭已确认的Settings窗口。",
+            "Command-T新建一个普通tab，实读新增选中行。",
+            "通过原生地址栏输入file:///Users/e2e02/lane/qa-preview-r5/PHI-507/r5/index.html并按Return。",
+            "读取准确URL及报告窗口标题；保存report-top实际空白截图。",
+            "按12、35、35、38秒分段等待并通过CU重读，累计显式等待120秒；正文均为空白。",
+            "保存after现场，保留本次报告tab及原有TC对象，无菜单或确认框。"
+          ],
+          "unit_id": "VIS-05-COMMON"
+        },
+        "evidence_metadata": "qa-evidence/r6/VIS-05-VIS-05-COMMON-report-r5-preview-evidence.json",
+        "evidence": [
+          "qa-evidence/r6/VIS-05-VIS-05-COMMON-report-r5-preview-observations.json",
+          "qa-evidence/r6/VIS-05-VIS-05-COMMON-report-r5-preview-run.json"
+        ]
+      },
+      {
+        "job": "VIS-05-VIS-05-COMMON-report-r5-window-preview",
+        "round": 6,
+        "scope": "独立窗口显示r5检查点报告的维护预览；非VIS05导出/环境清理验收",
+        "observation": {
+          "active_after": "本次专用窗口的可读r5报告tab，停在POS-03-BAL备注附近。",
+          "active_before": "先前普通报告tab；地址正确、标题存在，正文空白。",
+          "after": "本次窗口普通列表实际列出TC-M、无名行、New Tab、活动报告；TC-P pin仍列出。旧窗口及未知对象未关闭，Default未操作。",
+          "before": "原窗口普通列表实际列出TC-M、无名行、两个New Tab条目及活动的旧空白报告；另有TC-P pin。",
+          "confirmation_choices": "未出现删除或离开确认。关闭了原生Find栏和已确认的Settings窗口；结束无菜单弹窗。",
+          "evidence_markers": [
+            "EVIDENCE: VIS-05-COMMON attempt1 before",
+            "EVIDENCE: VIS-05-COMMON attempt1 report-navigation",
+            "EVIDENCE: VIS-05-COMMON attempt1 report-top",
+            "EVIDENCE: VIS-05-COMMON attempt1 coordinate-calibration",
+            "EVIDENCE: VIS-05-COMMON attempt1 report-controls",
+            "EVIDENCE: VIS-05-COMMON attempt1 report-carried-search",
+            "EVIDENCE: VIS-05-COMMON attempt1 report-carried-located",
+            "EVIDENCE: VIS-05-COMMON attempt1 report-carried",
+            "EVIDENCE: VIS-05-COMMON attempt1 report-carried-preview",
+            "EVIDENCE: VIS-05-COMMON attempt1 report-new-case-located",
+            "EVIDENCE: VIS-05-COMMON attempt1 report-new-case",
+            "EVIDENCE: VIS-05-COMMON attempt1 interruption-search",
+            "EVIDENCE: VIS-05-COMMON attempt1 interruption-search-native",
+            "EVIDENCE: VIS-05-COMMON attempt1 report-new-case-interruption",
+            "EVIDENCE: VIS-05-COMMON attempt1 settings-read",
+            "EVIDENCE: VIS-05-COMMON attempt1 settings-general",
+            "EVIDENCE: VIS-05-COMMON attempt1 settings-advanced",
+            "EVIDENCE: VIS-05-COMMON attempt1 after"
+          ],
+          "identity_checks": "初始和结束均从CU实读固定app路径及PID 44628。点击已有具名TC-QA-PHI507-r2-Recovery-R4，再通过真正File→New Window建立专用窗口，未用Command-T准备。新窗口地址为指定file URL，正文与标题“Phi TabClose 独立安装包完整手册测试 需求测试文档 - PHI-507”一致。页面顶部构建文字为feature/tab-close-improvements @b30ef8b3acbc；仅转录报告内容，未独立验证二进制构建。",
+          "language_observed": "浏览器原生界面英文；General的Display language实读System Default；报告正文中文。",
+          "layout_observed": "Balanced；General截图可见选中边框，浏览器外部为纵向sidebar。本次未切换布局。",
+          "not_executed_reason": "仅报告预览维护，完整VIS05验收未执行",
+          "operator_errors": [
+            "原生Find内两次type_text“中断”后，字段实际仍为POS-03-BAL，未视为搜索成功；保留搜索现场。随后对该原生settable字段使用set_value并按Return，实际读到“中断”搜索3/3并定位备注。"
+          ],
+          "precondition_actual": "本次为预览维护。初始旧报告tab仍为空白；独立新窗口直接导航后实际显示报告正文。报告自身标为r5、未完成，不据此认定完整VIS-05前置或验收已完成。",
+          "settings_observed": "只读General：Balanced、System Default。只读Advanced：settings.tabs.doubleClickToClose=on、settings.tabs.directionalClosing=on。未点击开关，未改快捷键；Settings已关闭。",
+          "steps_executed": [
+            "先get_app_state读取固定QA app身份及旧空白报告现场；点击已有具名TC测试Space，通过File→New Window建立本次专用窗口，再由原生地址栏直接导航指定报告URL。",
+            "实际读取报告顶部：r5、未完成、用例总数512、通过107、失败0、阻塞93、未执行312，保存report-top图。这些数字均为既有报告显示内容。",
+            "通过原生Find定位ENV-04-COMMON，关闭Find并点击页面行展开。读取“沿用r2的本次Computer Use测试活动结果，本轮未重跑”，其说明含B输入KEEP-B-507-r2、切到C再回B，以及编号2a6e95cf-8074-4e05-b2ad-30972ab29ec8和标记不变。旧截图缩略图实际显示，另有r2完整证据链接及“先前有效结果保留，非本轮新增执行；完整证据来自r2”备注；保存report-carried及report-carried-preview图。",
+            "通过原生Find定位POS-03-BAL，关闭Find并展开。实际读到前置为普通A/B/C/D/E/F、F活动；步骤为右键C选择关闭上方标签页；实际观察为普通C/D/E/F、A/B不再列出、旧保存条目仍列出、无组/分屏。该项页面当前结果显示“通过”，本次仅转录，不作新的测试判定。",
+            "实际看到POS-03-BAL多张截图，包括initial、settings及identity-F缩略图；保存report-new-case图。通过原生Find定位并读取备注：“真实日志恢复POS03核心和四页身份核对；Ripley查看19关键原图。整批中断、POS04未执行和偏好未恢复分别保留，不把批次当完成。”保存report-new-case-interruption图。",
+            "只读查看General和Advanced的当前语言、布局及两个开关后，点击已确认的Settings原生close button返回报告，保存after图。未填写或更改报告结果，未导出JSON、未复制Markdown、未取消pin、未删除组或清理窗口／Space。"
+          ],
+          "unit_id": "VIS-05-COMMON"
+        },
+        "evidence_metadata": "qa-evidence/r6/VIS-05-VIS-05-COMMON-report-r5-window-preview-evidence.json",
+        "evidence": [
+          "qa-evidence/r6/VIS-05-VIS-05-COMMON-report-r5-window-preview-observations.json",
+          "qa-evidence/r6/VIS-05-VIS-05-COMMON-report-r5-window-preview-run.json",
+          "qa-evidence/r6/report-preview-window-review.json"
+        ]
       }
     ]
   },

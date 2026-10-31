@@ -1,0 +1,8 @@
+{
+  "url": "https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r5/",
+  "site_commit": "99762b952c1e6107113b68dc725493f7c30719e7",
+  "http_status": 200,
+  "bytes": 1815101,
+  "checked_at": "2026-10-31T05:56:57.322091+00:00",
+  "preview": "r6中通过Computer Use完成独立窗口真实预览，首次CmdT空白尝试另保留；不作为产品验收。"
+}

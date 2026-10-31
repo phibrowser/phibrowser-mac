@@ -1,0 +1,19 @@
+{
+  "reviewer": "Ripley",
+  "job": "VIS-05-VIS-05-COMMON-report-r5-preview",
+  "actual": "根实际查看原图004General、005Advanced、008正文空白；确认on/on、Balanced/SystemDefault。失败预览独立保留，不计VIS05或任何产品通过。",
+  "sources": [
+    {
+      "file": "VIS-05-VIS-05-COMMON-report-r5-preview-004.jpg",
+      "sha256": "a16bb06fc5e8f98546597796774caa0a49a7f1bf4e24d05f1a12fc1ea1d9e6ea"
+    },
+    {
+      "file": "VIS-05-VIS-05-COMMON-report-r5-preview-005.jpg",
+      "sha256": "a8e984649e32bd23694b15abe2576c11e7a69ad86c0190abe7781bb046e1268c"
+    },
+    {
+      "file": "VIS-05-VIS-05-COMMON-report-r5-preview-008.jpg",
+      "sha256": "b08a04c6978de250f4134a4071a916def57f64e8971aeb64ac348f6eaf607995"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "state": "running",
+  "index": 0,
+  "total": 7,
+  "args": [
+    "POS-04,POS-05",
+    "--layout",
+    "balanced",
+    "--tag",
+    "basic-r6",
+    "--instructions",
+    "PHI-507/qa-scripts/position-basic-r5.txt",
+    "--timeout",
+    "3600"
+  ],
+  "started_at": "2026-10-31T05:54:36.886654+00:00"
+}

@@ -1,1 +1,1 @@
-新租约r6；上一租约已归还，PID、偏好和服务均须通过本轮CU重新核实，不能沿用。可进入具名TC-QA-PHI507-r2或Recovery-R4测试Space，未知/Default不动。
+固定QA app=/Applications/Phi Tab Close QA.app，PID 44628。本次File→New Window建立的报告专用窗口保持活动，地址为file:///Users/e2e02/lane/qa-preview-r5/PHI-507/r5/index.html，停在POS-03-BAL截图及中断备注附近。Settings和Find均已关闭，无菜单或弹窗。原旧空白报告tab未重载、未关闭，未作为文档存活证据。当前实读Balanced、System Default、doubleClickToClose=on、directionalClosing=on；本次未更改偏好、快捷键或手册结果，未导出、复制或执行最终清理。

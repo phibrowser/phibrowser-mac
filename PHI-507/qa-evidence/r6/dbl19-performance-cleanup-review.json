@@ -1,0 +1,50 @@
+{
+  "round": 6,
+  "job": "DBL-19-performance-interruption-cleanup-r6",
+  "decision": "maintenance_completed_not_acceptance",
+  "basis": "Ripley实际查看4关键完整窗口图并核对原图SHA/原生记录；15CU/非CU0。",
+  "findings": [
+    "c1 B/C原编号及KEEP实见，两个测试音停止；A编号与停止状态由实际cleanup观察记录核对。",
+    "纯TC专用窗口正常Close Window，无确认；旧TC-P/M仍列出。",
+    "Balanced/SystemDefault/off-on真实恢复，未改位置开关；无菜单/弹窗。",
+    "只完成中断后的清理，不补写或替代DBL19源关闭按钮核心动作。"
+  ],
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T11:33:49.722180+00:00",
+  "computer_use_completed": 15,
+  "non_computer_use_calls": 0,
+  "sources": [
+    {
+      "raw_number": 2,
+      "raw_file": "DBL-19-performance-interruption-cleanup-r6-002.jpg",
+      "raw_sha256": "ac67c439daeb1443df63832771f3e0d57b3c027cadf31ef1ae4ae29f7c9ff0b4",
+      "viewed_file": "DBL-19-PER-69.png",
+      "viewed_sha256": "eb1f70f4219dd32763a893714b89db5165abc12a55de7885605957b5a8aac6fc",
+      "marker": "DBL-19-PER attempt2 cleanup-split"
+    },
+    {
+      "raw_number": 5,
+      "raw_file": "DBL-19-performance-interruption-cleanup-r6-005.jpg",
+      "raw_sha256": "17af513d7d8733156639fbb8d3d3f5002bcbd7b3b88f5028bac70a04a7f8c96f",
+      "viewed_file": "DBL-19-PER-72.png",
+      "viewed_sha256": "15943b0d41c6648a6988c16909ca847132d786adf325ef6746eb0781bf095b6a",
+      "marker": "DBL-19-PER attempt2 restore-layout"
+    },
+    {
+      "raw_number": 7,
+      "raw_file": "DBL-19-performance-interruption-cleanup-r6-007.jpg",
+      "raw_sha256": "b76b1e0c550d2611651962f2ca4e0faf4b93b1f0874af4af9c5d07a4f91b4ff1",
+      "viewed_file": "DBL-19-PER-74.png",
+      "viewed_sha256": "5baeb5bf12acc9889648e904625e736c93ac0f76af9d63374fa6b027f1dd247c",
+      "marker": "DBL-19-PER attempt2 restore-toggles"
+    },
+    {
+      "raw_number": 8,
+      "raw_file": "DBL-19-performance-interruption-cleanup-r6-008.jpg",
+      "raw_sha256": "cdb71396e6c35622a5f9fca7ca41cd5e4ec4a649b1fb195e1b84e97696466bc4",
+      "viewed_file": "DBL-19-PER-75.png",
+      "viewed_sha256": "f96ac65fc4d779714715b17b1a058af27d9dcde7049a1888434fe872e0b18255",
+      "marker": "DBL-19-PER attempt2 cleanup-ending"
+    }
+  ]
+}

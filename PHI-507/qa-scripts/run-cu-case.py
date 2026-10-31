@@ -31,15 +31,25 @@ scratch=root/f'scratch-PHI507-r{round_no}'/job;scratch.mkdir(parents=True,exist_
 cmd=['python3',str(lane),'gui','--timeout',str(a.timeout),'--','codex','exec','--skip-git-repo-check','--output-schema',lease['env']['LANE_WORKDIR']+'/qa-tools/cu-observation.schema.json','--output-last-message',remote,prompt]
 with log.open('w') as f:r=subprocess.run(cmd,stdout=f,stderr=subprocess.STDOUT)
 text=log.read_text();m=re.search(r'session id: ([a-f0-9-]+)',text);sid=m[1] if m else None
-result={'job':job,'exit_code':r.returncode,'session_id':sid,'round':round_no,'lease_id':lease['lease_id'],'started_at':started,'ended_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'units':[u['key'] for u in units]}
+result={'job':job,'exit_code':r.returncode,'gui_exit_code':r.returncode,'session_id':sid,'round':round_no,'lease_id':lease['lease_id'],'started_at':started,'ended_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'units':[u['key'] for u in units]}
+collection_errors=[]
+result['gui_reported_timeout']='lane-runner: timeout after' in text
 if sid:
- subprocess.run(['python3',str(lane),'run','--timeout','60','--','python3','qa-tools/extract.py',sid,job,str(round_no)],check=True)
-if r.returncode==0:
- subprocess.run(['python3',str(lane),'pull',remote,str(evidence_dir/(job+'-observations.json'))],check=True)
- data=json.loads((evidence_dir/(job+'-observations.json')).read_text());seen=[v['unit_id'] for v in data['observations']]
- result['observed_units']=seen;result['missing_units']=sorted(set(result['units'])-set(seen));result['duplicate_units']=len(seen)!=len(set(seen));state.write_text(data['ending_state'])
-subprocess.run(['python3',str(lane),'pull',f'qa-raw-r{round_no}/'+job+'/',str(scratch/'raw/')],check=True)
+ try:subprocess.run(['python3',str(lane),'run','--timeout','60','--','python3','qa-tools/extract.py',sid,job,str(round_no)],check=True)
+ except subprocess.CalledProcessError as error:collection_errors.append({'step':'extract_saved_CU_session','exit_code':error.returncode})
+if r.returncode==0 and not result['gui_reported_timeout']:
+ try:
+  subprocess.run(['python3',str(lane),'pull',remote,str(evidence_dir/(job+'-observations.json'))],check=True)
+  data=json.loads((evidence_dir/(job+'-observations.json')).read_text());seen=[v['unit_id'] for v in data['observations']]
+  result['observed_units']=seen;result['missing_units']=sorted(set(result['units'])-set(seen));result['duplicate_units']=len(seen)!=len(set(seen));state.write_text(data['ending_state'])
+ except (subprocess.CalledProcessError,OSError,ValueError,KeyError) as error:
+  collection_errors.append({'step':'collect_final_observations','error_type':type(error).__name__,'exit_code':getattr(error,'returncode',None)})
+try:subprocess.run(['python3',str(lane),'pull',f'qa-raw-r{round_no}/'+job+'/',str(scratch/'raw/')],check=True)
+except subprocess.CalledProcessError as error:collection_errors.append({'step':'pull_saved_evidence','exit_code':error.returncode})
 audit_path=scratch/'raw/audit.json'
 if audit_path.exists():
  audit=json.loads(audit_path.read_text());result['computer_use_audit']={'source_sha256':hashlib.sha256(audit_path.read_bytes()).hexdigest(),'scope':audit.get('audit_scope'),'completed_mcp_event_count':audit.get('mcp_event_count'),'non_computer_use_calls':audit.get('non_computer_use_calls',[]),'non_computer_use_mcp_events':audit.get('non_computer_use_mcp_events',[]),'extraction_warnings':audit.get('extraction_warnings',[])}
-(evidence_dir/(job+'-run.json')).write_text(json.dumps(result,ensure_ascii=False,indent=2));(evidence_dir/'runner-state.json').write_text(json.dumps({**result,'state':'finished'},ensure_ascii=False,indent=2));print(json.dumps(result,ensure_ascii=False,indent=2));sys.exit(r.returncode)
+result['collection_errors']=collection_errors
+incomplete=bool(collection_errors or result['gui_reported_timeout'] or 'observed_units' not in result or result.get('missing_units') or result.get('duplicate_units'))
+if incomplete and result['exit_code']==0:result['exit_code']=1
+(evidence_dir/(job+'-run.json')).write_text(json.dumps(result,ensure_ascii=False,indent=2));(evidence_dir/'runner-state.json').write_text(json.dumps({**result,'state':'incomplete' if incomplete else 'finished'},ensure_ascii=False,indent=2));print(json.dumps(result,ensure_ascii=False,indent=2));sys.exit(result['exit_code'])

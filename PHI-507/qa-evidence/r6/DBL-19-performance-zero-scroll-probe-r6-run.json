@@ -1,0 +1,28 @@
+{
+  "job": "DBL-19-performance-zero-scroll-probe-r6",
+  "exit_code": 0,
+  "gui_exit_code": 0,
+  "session_id": "01a191b3-c5e9-7e81-bfd8-df137a84d9de",
+  "round": 6,
+  "lease_id": "8c1d8779-4eeb-4400-a591-7ecd2585843f",
+  "started_at": "2026-10-31T11:24:00.066156+00:00",
+  "ended_at": "2026-10-31T11:34:51.944284+00:00",
+  "units": [
+    "DBL-19-PER"
+  ],
+  "gui_reported_timeout": false,
+  "observed_units": [
+    "DBL-19-PER"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "49fedac492a4c0512c45ab43734cce02b7a97acb5eebf337ad8b0549aaab6581",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 47,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  },
+  "collection_errors": []
+}

@@ -1,0 +1,9 @@
+只做本轮DBL19PER中断后的现场收尾，不重新执行任何核心双击，不判通过。前批GUI在5400秒时限被终止，正式最终JSON未生成；原始图片已由父层收齐。三个mute子步骤已实际执行，三个close控件核心未发送，不要凭这些背景推定当前状态。
+
+先通过Computer Use get_app_state重读固定app/PID/窗口。浏览器所有操作、读取和截图仍仅CU。当前最后证据为c1专用窗口A+本项组内B/C split，设置定位失败后仍是浏览器正常窗口；不能按旧索引点击。只允许操作实际看到的本项run TC-PHI507-r6-DBL19-PER-m1/c1窗口/组；Default、旧TC-P/M和未知对象保留。
+
+1. 从真实图核实是否还有菜单、拖放或设置；正常取消/关闭它们，并保留错误返回。确认该专用窗口全部是上述本项TC文档后，正常File→Close Window清理；若它已经关闭，记录事实，不操作其他窗口。停止本项测试音；不要添加新的测试页。
+2. 用原生设置路径恢复General Balanced、System Default；Advanced双击关闭off、位置关闭on。只改需改变的项，每次单独点击后即时读两个开关；窗口转换后更新树/索引。Command-comma未打开Settings时可用Phi菜单真实Settings入口，不在浏览器树里猜General。
+3. 关闭Settings，真实get_app_state确认无菜单/弹窗和本项窗口已清理、旧TC保存项仍列出；不打开旧保存项核对其正文。
+
+每个关键阶段真实截图，marker用DBL-19-PER attempt2 cleanup-initial/cleanup-window/restore-layout/restore-toggles/cleanup-ending等。最后OBSERVATION和完整JSON仅写本次实际收尾；not_executed_reason明确本次没有重跑源核心动作，不把收尾当DBL19验收通过。

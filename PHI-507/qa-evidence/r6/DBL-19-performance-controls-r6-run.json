@@ -1,0 +1,44 @@
+{
+  "job": "DBL-19-performance-controls-r6",
+  "exit_code": 1,
+  "gui_exit_code": 0,
+  "gui_reported_timeout": true,
+  "session_id": "01a19129-7dab-7411-a1e3-fe3ca3c11275",
+  "round": 6,
+  "lease_id": "8c1d8779-4eeb-4400-a591-7ecd2585843f",
+  "started_at": "2026-10-31T08:52:57.365413+00:00",
+  "timeout_seconds": 5400,
+  "recovered_at": "2026-10-31T11:28:28.355366+00:00",
+  "units": [
+    "DBL-19-PER"
+  ],
+  "observed_units": [
+    "DBL-19-PER"
+  ],
+  "observed_units_source": "parent reconstruction of partial steps; no original final output",
+  "original_final_output_missing": true,
+  "provenance": {
+    "reconstructed_by": "Ripley",
+    "not_original_final_output": true,
+    "source_session": "01a19129-7dab-7411-a1e3-fe3ca3c11275",
+    "source_log_sha256": "7af8e7cef03982d897a19fe0a4cd7eaadad7a0b2b87f38d975525fd480971d00",
+    "source_actions_sha256": "4acec088e75ba3f3157eb5ec0dc473cede4fd2698fe16cfa0f4de434cb30029c",
+    "source_console_sha256": "8930cb04d011087a4dd63caeb0c86ff56a85a9c38e4b98df047c1370513d1a29",
+    "reason": "GUI timeout; final structured file absent. Only actual saved CU steps and reviewed images reconstructed."
+  },
+  "collection_errors": [
+    {
+      "step": "original_final_observations_pull",
+      "exit_code": 23,
+      "reason": "No final file after GUI timeout; raw evidence subsequently pulled separately"
+    }
+  ],
+  "computer_use_audit": {
+    "source_sha256": "bdd57effdef12548139d7975611b6419166c825ee6c76432781d461ebc442050",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 210,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

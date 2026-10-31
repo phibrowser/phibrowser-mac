@@ -1,0 +1,45 @@
+
+
+REQUEST: 普通tab A静音图标 x=100 y=588 click_count=2
+
+App=com.phibrowser.opensource.Mac (pid 47109)
+Window: "TC-A · TC-PHI507-r6-DBL19-PER-m1 🔊", App: Phi Tab Close QA.
+EVIDENCE: DBL-19-PER attempt1 split-mute-before
+
+REQUEST: 普通split B静音图标 x=84 y=660 click_count=2
+
+App=com.phibrowser.opensource.Mac (pid 47109)
+Window: "TC-B · TC-PHI507-r6-DBL19-PER-m1 🔊", App: Phi Tab Close QA.
+
+
+REQUEST: 组内split B button speaker-wave index37 click_count=2
+
+App=com.phibrowser.opensource.Mac (pid 47109)
+Window: "TC-B · TC-PHI507-r6-DBL19-PER-m1 🔊", App: Phi Tab Close QA.
+EVIDENCE: DBL-19-PER attempt1 split-close-before
+
+REQUEST: 限定指针尝试 drag (2200,500)->(172,660)；不是关闭动作
+
+App=com.phibrowser.opensource.Mac (pid 47109)
+Window: "TC-C · TC-PHI507-r6-DBL19-PER-c1", App: Phi Tab Close QA.
+EVIDENCE: DBL-19-PER attempt1 group-close-before
+
+关闭分支中，普通 tab 和普通 split 在停止测试音后都未显示可明确命中的 Close 控件。两次限定 drag 尝试均保留了返回和原图：指针仍在内容区起点，split 那次还选中了页面说明文字，不能算有效悬停；未发送关闭按钮双击。组内 split 现已建立，当前原生树和截图同样未显示 Close 控件。接下来记录该子步骤的未执行原因并恢复原偏好。
+
+
+Script completed
+
+
+Missing required argument: x
+
+Script completed
+Wall time 0.6 seconds
+GUI console tail (original):
+mcp: computer-use/press_key started
+mcp: computer-use/press_key (completed)
+mcp: computer-use/click started
+mcp: computer-use/click (failed)
+**Checking current window state**
+mcp: computer-use/get_app_state started
+mcp: computer-use/get_app_state (completed)
+lane-runner: timeout after 5400.0s, killed

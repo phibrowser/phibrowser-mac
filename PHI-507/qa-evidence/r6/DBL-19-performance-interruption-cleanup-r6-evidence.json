@@ -1,0 +1,202 @@
+[
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 2,
+    "phase": "cleanup-initial",
+    "file": "DBL-19-PER-68.png",
+    "original_marker": "DBL-19-PER attempt2 cleanup-initial",
+    "source_file": "DBL-19-performance-interruption-cleanup-r6-001.jpg",
+    "source_sha256": "f09bc86dd318a5594bac21f8b808090b93dc49d3aa8ddb722aef0595edcf70a6",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 2,
+    "phase": "cleanup-split",
+    "file": "DBL-19-PER-69.png",
+    "original_marker": "DBL-19-PER attempt2 cleanup-split",
+    "source_file": "DBL-19-performance-interruption-cleanup-r6-002.jpg",
+    "source_sha256": "ac67c439daeb1443df63832771f3e0d57b3c027cadf31ef1ae4ae29f7c9ff0b4",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 2,
+    "phase": "cleanup-window",
+    "file": "DBL-19-PER-70.png",
+    "original_marker": "DBL-19-PER attempt2 cleanup-window",
+    "source_file": "DBL-19-performance-interruption-cleanup-r6-003.jpg",
+    "source_sha256": "0641baa6167fac6120027be61185c8f63c9f46a4b1cfd1db46f46c68c5d23bff",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 2,
+    "phase": "restore-layout-before",
+    "file": "DBL-19-PER-71.png",
+    "original_marker": "DBL-19-PER attempt2 restore-layout-before",
+    "source_file": "DBL-19-performance-interruption-cleanup-r6-004.jpg",
+    "source_sha256": "aa7e22b6c28e58e854f1ccf6525959f0997220b3a92268a990ced4a9c7ce7aa6",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 2,
+    "phase": "restore-layout",
+    "file": "DBL-19-PER-72.png",
+    "original_marker": "DBL-19-PER attempt2 restore-layout",
+    "source_file": "DBL-19-performance-interruption-cleanup-r6-005.jpg",
+    "source_sha256": "17af513d7d8733156639fbb8d3d3f5002bcbd7b3b88f5028bac70a04a7f8c96f",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 2,
+    "phase": "restore-toggles-before",
+    "file": "DBL-19-PER-73.png",
+    "original_marker": "DBL-19-PER attempt2 restore-toggles-before",
+    "source_file": "DBL-19-performance-interruption-cleanup-r6-006.jpg",
+    "source_sha256": "a8e984649e32bd23694b15abe2576c11e7a69ad86c0190abe7781bb046e1268c",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 2,
+    "phase": "restore-toggles",
+    "file": "DBL-19-PER-74.png",
+    "original_marker": "DBL-19-PER attempt2 restore-toggles",
+    "source_file": "DBL-19-performance-interruption-cleanup-r6-007.jpg",
+    "source_sha256": "b76b1e0c550d2611651962f2ca4e0faf4b93b1f0874af4af9c5d07a4f91b4ff1",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 2,
+    "phase": "cleanup-ending",
+    "file": "DBL-19-PER-75.png",
+    "original_marker": "DBL-19-PER attempt2 cleanup-ending",
+    "source_file": "DBL-19-performance-interruption-cleanup-r6-008.jpg",
+    "source_sha256": "cdb71396e6c35622a5f9fca7ca41cd5e4ec4a649b1fb195e1b84e97696466bc4",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

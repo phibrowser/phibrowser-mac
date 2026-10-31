@@ -1,0 +1,144 @@
+{
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T11:28:28.353818+00:00",
+  "job": "DBL-19-performance-controls-r6",
+  "decision": "partial",
+  "basis": "实际查看17张关键原图；10张进度原图均SHA匹配正式原图；210CU/零非CU。",
+  "sources": [
+    {
+      "raw_number": 18,
+      "progress_file": "DBL-19-performance-controls-r6-progress-018.jpg",
+      "sha256": "c420f2a362a5afc90c4ae9c273ddaf816b6ad6a10d39a1252f00d404b6fc5209",
+      "marker": "DBL-19-PER attempt1 tab-mute-preparation",
+      "canonical_file": "DBL-19-performance-controls-r6-018.jpg",
+      "canonical_sha256": "c420f2a362a5afc90c4ae9c273ddaf816b6ad6a10d39a1252f00d404b6fc5209"
+    },
+    {
+      "raw_number": 19,
+      "progress_file": "DBL-19-performance-controls-r6-progress-019.jpg",
+      "sha256": "d5e95b9e35368e853e6fc349867eee4057225608859a2de7a59e7b6d3f9ebd85",
+      "marker": "DBL-19-PER attempt1 tab-mute-before",
+      "canonical_file": "DBL-19-performance-controls-r6-019.jpg",
+      "canonical_sha256": "d5e95b9e35368e853e6fc349867eee4057225608859a2de7a59e7b6d3f9ebd85"
+    },
+    {
+      "raw_number": 20,
+      "progress_file": "DBL-19-performance-controls-r6-progress-020.jpg",
+      "sha256": "b9097864b0bfa05d03d2aa74a1041b7724ccca8d8187a17e8546439618326eb5",
+      "marker": "DBL-19-PER attempt1 tab-mute-after",
+      "canonical_file": "DBL-19-performance-controls-r6-020.jpg",
+      "canonical_sha256": "b9097864b0bfa05d03d2aa74a1041b7724ccca8d8187a17e8546439618326eb5"
+    },
+    {
+      "raw_number": 28,
+      "progress_file": "DBL-19-performance-controls-r6-progress-028.jpg",
+      "sha256": "dd8cde59160082a0cf08c19781fbc40012c18ac21b2aef1c16af20e120126c41",
+      "marker": "DBL-19-PER attempt1 split-mute-before",
+      "canonical_file": "DBL-19-performance-controls-r6-028.jpg",
+      "canonical_sha256": "dd8cde59160082a0cf08c19781fbc40012c18ac21b2aef1c16af20e120126c41"
+    },
+    {
+      "raw_number": 29,
+      "progress_file": "DBL-19-performance-controls-r6-progress-029.jpg",
+      "sha256": "0293d4fad91bf945612b6238db6f8b10597aac26eecc1bbc06465508e6d64ad2",
+      "marker": "DBL-19-PER attempt1 split-mute-after",
+      "canonical_file": "DBL-19-performance-controls-r6-029.jpg",
+      "canonical_sha256": "0293d4fad91bf945612b6238db6f8b10597aac26eecc1bbc06465508e6d64ad2"
+    },
+    {
+      "raw_number": 30,
+      "progress_file": "DBL-19-performance-controls-r6-progress-030.jpg",
+      "sha256": "a9bf97371cb70f9a3315928c85cdf14d1e77c600ca290fa75ba1034b12eefd05",
+      "marker": "DBL-19-PER attempt1 group-mute-before",
+      "canonical_file": "DBL-19-performance-controls-r6-030.jpg",
+      "canonical_sha256": "a9bf97371cb70f9a3315928c85cdf14d1e77c600ca290fa75ba1034b12eefd05"
+    },
+    {
+      "raw_number": 31,
+      "progress_file": "DBL-19-performance-controls-r6-progress-031.jpg",
+      "sha256": "177baaedec397745cf132d89d4ada7b5521f0a6df5f8bf1ffb5e8bb87463ccca",
+      "marker": "DBL-19-PER attempt1 group-mute-after",
+      "canonical_file": "DBL-19-performance-controls-r6-031.jpg",
+      "canonical_sha256": "177baaedec397745cf132d89d4ada7b5521f0a6df5f8bf1ffb5e8bb87463ccca"
+    },
+    {
+      "raw_number": 45,
+      "progress_file": "DBL-19-performance-controls-r6-progress3-045.jpg",
+      "sha256": "7371868d99e17b075b345e646080cf9c2d05b96a54e07796ebca8f6e8a681d79",
+      "marker": "DBL-19-PER attempt1 tab-close-before",
+      "canonical_file": "DBL-19-performance-controls-r6-045.jpg",
+      "canonical_sha256": "7371868d99e17b075b345e646080cf9c2d05b96a54e07796ebca8f6e8a681d79"
+    },
+    {
+      "raw_number": 46,
+      "progress_file": "DBL-19-performance-controls-r6-progress3-046.jpg",
+      "sha256": "92d31531000c083a574b7af3a270e72993ef2975b74baf966b4a5fe171bbfcae",
+      "marker": "DBL-19-PER attempt1 tab-close-control-search",
+      "canonical_file": "DBL-19-performance-controls-r6-046.jpg",
+      "canonical_sha256": "92d31531000c083a574b7af3a270e72993ef2975b74baf966b4a5fe171bbfcae"
+    },
+    {
+      "raw_number": 47,
+      "progress_file": "DBL-19-performance-controls-r6-progress3-047.jpg",
+      "sha256": "c3ad304fbfec4e8b709556856cca85ca093178f68421756b30a76fef6b001a3c",
+      "marker": "DBL-19-PER attempt1 tab-close-after",
+      "canonical_file": "DBL-19-performance-controls-r6-047.jpg",
+      "canonical_sha256": "c3ad304fbfec4e8b709556856cca85ca093178f68421756b30a76fef6b001a3c"
+    },
+    {
+      "raw_number": 2,
+      "canonical_file": "DBL-19-performance-controls-r6-002.jpg",
+      "canonical_sha256": "e5d8037f5b5e2e5b90d4482e964c1da1b9feb77bb3810f0da89df2a920e35aa7",
+      "marker": "DBL-19-PER attempt1 original-settings",
+      "viewed_as": "canonical original"
+    },
+    {
+      "raw_number": 3,
+      "canonical_file": "DBL-19-performance-controls-r6-003.jpg",
+      "canonical_sha256": "c56346e5870371327961b0fa79bd27ab9a8deb3f5759a9309afabbab10e1839e",
+      "marker": "DBL-19-PER attempt1 performance-settings",
+      "viewed_as": "canonical original"
+    },
+    {
+      "raw_number": 51,
+      "canonical_file": "DBL-19-performance-controls-r6-051.jpg",
+      "canonical_sha256": "84fa44d92d0609c90d5edd02c62540ce11c6184de8624dc0fcf56dc3bc253474",
+      "marker": "DBL-19-PER attempt1 split-close-before",
+      "viewed_as": "canonical original"
+    },
+    {
+      "raw_number": 52,
+      "canonical_file": "DBL-19-performance-controls-r6-052.jpg",
+      "canonical_sha256": "a5072d5f6f0f6b40fd184434ad14e90923844b302e84685e0173019077068b02",
+      "marker": "DBL-19-PER attempt1 split-close-control-search",
+      "viewed_as": "canonical original"
+    },
+    {
+      "raw_number": 54,
+      "canonical_file": "DBL-19-performance-controls-r6-054.jpg",
+      "canonical_sha256": "168b20eeb29e1133c3117f7d14d28a207b833728290a076022208e908d96dc6b",
+      "marker": "DBL-19-PER attempt1 group-close-before",
+      "viewed_as": "canonical original"
+    },
+    {
+      "raw_number": 55,
+      "canonical_file": "DBL-19-performance-controls-r6-055.jpg",
+      "canonical_sha256": "e4859c85728ebe760449ba04482f85bbeb4abcf7838c793a0e931ff257d622f1",
+      "marker": "DBL-19-PER attempt1 group-close-after",
+      "viewed_as": "canonical original"
+    },
+    {
+      "raw_number": 57,
+      "canonical_file": "DBL-19-performance-controls-r6-057.jpg",
+      "canonical_sha256": "6f89332afe372750b5d51e51bb60203de61bb6e0bd425db575584576d9da7d40",
+      "marker": "DBL-19-PER attempt1 settings-location-error",
+      "viewed_as": "canonical original"
+    }
+  ],
+  "findings": [
+    "普通tab、普通split、组内split的静音图标各实际双击一次；各自目标、伙伴/邻页、原编号和KEEP未见新增关闭。净图标仍wave，不声称看见中间切换。",
+    "close分支重建为新c1文档；三个结构都未显示明确Close控件，未发送其核心双击。查找结束的after不代表关闭动作已完成。",
+    "两次有限drag未产生可用悬停；普通split尝试选中了页面文字，原图保留，不算产品关闭动作。",
+    "最后Settings定位失败：Missing required argument: x，图仍是c1浏览器窗口；90分钟到点中断，未生成最终JSON，偏好/窗口收尾未在该运行完成。另有独立cleanup运行。"
+  ]
+}

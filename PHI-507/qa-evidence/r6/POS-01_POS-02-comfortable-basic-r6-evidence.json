@@ -1,0 +1,927 @@
+[
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "initial",
+    "file": "POS-01-COM-01.png",
+    "original_marker": "POS-01-COM attempt1 initial",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-001.jpg",
+    "source_sha256": "03266873baee6d1437b15c7c75766a7b45f98d838544b1e9b40c7466dc029728",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "settings-layout",
+    "file": "POS-01-COM-02.png",
+    "original_marker": "POS-01-COM attempt1 settings-layout",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-002.jpg",
+    "source_sha256": "c1f09ec431d5ce5c285a80ef7506d79f08842371323072cc2e9d725e2a81bde0",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "settings-toggles",
+    "file": "POS-01-COM-03.png",
+    "original_marker": "POS-01-COM attempt1 settings-toggles",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-003.jpg",
+    "source_sha256": "d1f649797e738dff0bc7cc4b37d934b9fbd52c7d34e9e38b3c8fac205d0052b9",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "launch",
+    "file": "POS-01-COM-04.png",
+    "original_marker": "POS-01-COM attempt1 launch",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-004.jpg",
+    "source_sha256": "d657e1082e11199282738596b55f13e1d23175cf10ec039c8f01d1b9b01b603d",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "coordinate-calibration",
+    "file": "POS-01-COM-05.png",
+    "original_marker": "POS-01-COM attempt1 coordinate-calibration",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-005.jpg",
+    "source_sha256": "6cbc0f04d888e77795a26b04e1b5e0fc6657290701121af286cc5b249df6ff48",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "setup-F",
+    "file": "POS-01-COM-06.png",
+    "original_marker": "POS-01-COM attempt1 setup-F",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-006.jpg",
+    "source_sha256": "c6a13a36c00c786f365eb91a00a5beb6d14af2fcb9f247acfb286eca723fd24a",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "setup-E",
+    "file": "POS-01-COM-07.png",
+    "original_marker": "POS-01-COM attempt1 setup-E",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-007.jpg",
+    "source_sha256": "03699509514029c990f4239fb98fb8b6dc2e7b872e72a1e5977170f93d50bd62",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "setup-D",
+    "file": "POS-01-COM-08.png",
+    "original_marker": "POS-01-COM attempt1 setup-D",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-008.jpg",
+    "source_sha256": "b0aa24f0f99166e9007c77205ccec0c4bce50fc8ef00b8cc0810f5f538100008",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "setup-C",
+    "file": "POS-01-COM-09.png",
+    "original_marker": "POS-01-COM attempt1 setup-C",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-009.jpg",
+    "source_sha256": "fd74a557101a93a832a569d44a7e3ee240552e81536b7439433c6fed5314cf16",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "setup-B",
+    "file": "POS-01-COM-10.png",
+    "original_marker": "POS-01-COM attempt1 setup-B",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-010.jpg",
+    "source_sha256": "91024529afa1ad093a7f997e8511468a4b637fd97dd5879d4f8ee461d062af61",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "setup-A",
+    "file": "POS-01-COM-11.png",
+    "original_marker": "POS-01-COM attempt1 setup-A",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-011.jpg",
+    "source_sha256": "89dc8da74b2be00e4ed524501eb89f09a5e666a0f4981a309ea7a405a25ac8fa",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "setup-order",
+    "file": "POS-01-COM-12.png",
+    "original_marker": "POS-01-COM attempt1 setup-order",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-012.jpg",
+    "source_sha256": "c24852ab2b1fad3affdc3b753820f5068d1a79906d4889ee1b50f7d6eb86ae40",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "before",
+    "file": "POS-01-COM-13.png",
+    "original_marker": "POS-01-COM attempt1 before",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-013.jpg",
+    "source_sha256": "462eaf6fc537ae2900dda75d9c5b5561d9115d46c22e78caf37afe02590fab3c",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "menu",
+    "file": "POS-01-COM-14.png",
+    "original_marker": "POS-01-COM attempt1 menu",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-014.jpg",
+    "source_sha256": "a2f997052b14bcafcf800bc20727a11626a2cb40dcc312cd3b17d8760e488dff",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "after",
+    "file": "POS-01-COM-15.png",
+    "original_marker": "POS-01-COM attempt1 after",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-015.jpg",
+    "source_sha256": "eaf1ae84be68c27dd9b3490a378b9f58ad9876b670de22ffe0b4666a5d11d75a",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "identity-E",
+    "file": "POS-01-COM-16.png",
+    "original_marker": "POS-01-COM attempt1 identity-E",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-016.jpg",
+    "source_sha256": "2a67047598dcb02c1649353a16cbf90a6bd77a2e24fbc66b32912f8b5c7b964d",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "identity-F",
+    "file": "POS-01-COM-17.png",
+    "original_marker": "POS-01-COM attempt1 identity-F",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-017.jpg",
+    "source_sha256": "ea0be03dd1dcea4f0c927aa64b533ec13b99cf20009732a55077752f2c9b847d",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-COM",
+    "attempt": 1,
+    "phase": "identity-D",
+    "file": "POS-01-COM-18.png",
+    "original_marker": "POS-01-COM attempt1 identity-D",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-018.jpg",
+    "source_sha256": "1ef01fc3d3bd6d8b785182a51e86a01800888a75db92267b74e8aa38450274c2",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "setup-cleanup",
+    "file": "POS-02-COM-01.png",
+    "original_marker": "POS-02-COM attempt1 setup-cleanup",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-019.jpg",
+    "source_sha256": "06a90151643527186c0c2e6de963eeb48372be0b5c54aa744af5c4ab56526419",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "launch",
+    "file": "POS-02-COM-02.png",
+    "original_marker": "POS-02-COM attempt1 launch",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-020.jpg",
+    "source_sha256": "ae081d5dc4a6eb0c87d484016b8526944021d29c3b30d00be677351a8806d699",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "setup-F",
+    "file": "POS-02-COM-03.png",
+    "original_marker": "POS-02-COM attempt1 setup-F",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-021.jpg",
+    "source_sha256": "4ac562a2f37875efae15bc9f248675339d73017d9f34770a688de7acf327abe0",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "setup-E",
+    "file": "POS-02-COM-04.png",
+    "original_marker": "POS-02-COM attempt1 setup-E",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-022.jpg",
+    "source_sha256": "9c3a4d7e19cab741cac382aa22bde345591ab44f16e0d2c243dbb3daf5132f8d",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "setup-D",
+    "file": "POS-02-COM-05.png",
+    "original_marker": "POS-02-COM attempt1 setup-D",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-023.jpg",
+    "source_sha256": "4e5a61e207c3337718e1f899b141c2d7a72ac5c44a25826ebd45ae916743e0c1",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "setup-C",
+    "file": "POS-02-COM-06.png",
+    "original_marker": "POS-02-COM attempt1 setup-C",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-024.jpg",
+    "source_sha256": "3c0a2e58142599382bb49a99a15fb39a7d4a26bb2390337f0cfdd83a566c964c",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "setup-B",
+    "file": "POS-02-COM-07.png",
+    "original_marker": "POS-02-COM attempt1 setup-B",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-025.jpg",
+    "source_sha256": "1493f76e303bd4682c42a32cf30ef84b8d87d460d0fc6b4e73f78fb55685bb17",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "setup-A",
+    "file": "POS-02-COM-08.png",
+    "original_marker": "POS-02-COM attempt1 setup-A",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-026.jpg",
+    "source_sha256": "ec7594b70a58255512db87a9cc7d63b1e0bbecf263465847a4a0035f9662a5fa",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "setup-order",
+    "file": "POS-02-COM-09.png",
+    "original_marker": "POS-02-COM attempt1 setup-order",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-027.jpg",
+    "source_sha256": "ba6f7b5128e1925ec3cb8632d524c014477593dabd50c9414f2ba0f55a71b4cd",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "before",
+    "file": "POS-02-COM-10.png",
+    "original_marker": "POS-02-COM attempt1 before",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-028.jpg",
+    "source_sha256": "d8a6af10842e16841d871af811dceef055667f262672eda862ab471ebb4252a7",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "menu",
+    "file": "POS-02-COM-11.png",
+    "original_marker": "POS-02-COM attempt1 menu",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-029.jpg",
+    "source_sha256": "1fd9ea10fe87a74189ac441c2c945b87d42791c7bc18a491b7676b5ee0dd131c",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "after",
+    "file": "POS-02-COM-12.png",
+    "original_marker": "POS-02-COM attempt1 after",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-030.jpg",
+    "source_sha256": "bccd95ceeb8d119c244e032dd5bc93807602c3f10c21fe421511ac448e97d678",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "identity-A",
+    "file": "POS-02-COM-13.png",
+    "original_marker": "POS-02-COM attempt1 identity-A",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-031.jpg",
+    "source_sha256": "3b3a361aad977063a879f42a917b703cabe7a2080d356231662b7cb99ebe3662",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "identity-B",
+    "file": "POS-02-COM-14.png",
+    "original_marker": "POS-02-COM attempt1 identity-B",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-032.jpg",
+    "source_sha256": "78d55b1f6db1a6c192f3497b0bf92b465a65d69a3e0109c0ef7ca0f58c60fa5c",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "identity-C",
+    "file": "POS-02-COM-15.png",
+    "original_marker": "POS-02-COM attempt1 identity-C",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-033.jpg",
+    "source_sha256": "7babcc7e8da037ef4ed0bd3aca39565bc9d3e78155c3146fd48b21676d31ee6f",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "cleanup",
+    "file": "POS-02-COM-16.png",
+    "original_marker": "POS-02-COM attempt1 cleanup",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-034.jpg",
+    "source_sha256": "ebf43b782fa07cc1f89e67c9cf82ff35cce85197f5fc71f099ca5b62d52f77cc",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "ending-layout",
+    "file": "POS-02-COM-17.png",
+    "original_marker": "POS-02-COM attempt1 ending-layout",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-035.jpg",
+    "source_sha256": "863b564078a1abd1fb11876a8ec34480735f855a71d52371e91bd79aac2fd9c6",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "ending-toggles",
+    "file": "POS-02-COM-18.png",
+    "original_marker": "POS-02-COM attempt1 ending-toggles",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-036.jpg",
+    "source_sha256": "acf8e7a39047639759a9514f6534fcb32f1ec55729670b9b1c47f7446a26b5b6",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-COM",
+    "attempt": 1,
+    "phase": "ending",
+    "file": "POS-02-COM-19.png",
+    "original_marker": "POS-02-COM attempt1 ending",
+    "source_file": "POS-01_POS-02-comfortable-basic-r6-037.jpg",
+    "source_sha256": "a53d53f99ac6ee9ce3d9bc778b183e5ffa237072d4fb6cf9712446bac7b51ffc",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

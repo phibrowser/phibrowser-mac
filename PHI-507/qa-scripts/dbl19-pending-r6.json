@@ -1,0 +1,35 @@
+[
+  [
+    "DBL-19",
+    "--layout",
+    "performance",
+    "--tag",
+    "controls-r6",
+    "--instructions",
+    "PHI-507/qa-scripts/dbl19-controls-r6.txt",
+    "--timeout",
+    "5400"
+  ],
+  [
+    "DBL-19",
+    "--layout",
+    "balanced",
+    "--tag",
+    "controls-r6",
+    "--instructions",
+    "PHI-507/qa-scripts/dbl19-controls-r6.txt",
+    "--timeout",
+    "5400"
+  ],
+  [
+    "DBL-19",
+    "--layout",
+    "comfortable",
+    "--tag",
+    "controls-r6",
+    "--instructions",
+    "PHI-507/qa-scripts/dbl19-controls-r6.txt",
+    "--timeout",
+    "5400"
+  ]
+]

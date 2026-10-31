@@ -1,0 +1,852 @@
+[
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "initial",
+    "file": "POS-01-BAL-01.png",
+    "original_marker": "POS-01-BAL attempt1 initial",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-001.jpg",
+    "source_sha256": "d9c18f9200b2a850007be8682720f29111d20f6cea7568e585d996ac87684eea",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "general-settings",
+    "file": "POS-01-BAL-02.png",
+    "original_marker": "POS-01-BAL attempt1 general-settings",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-002.jpg",
+    "source_sha256": "7e338cbf53efed4b5b5eb6705fabafb5909c79d496771c4c48944ad67f790681",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "settings",
+    "file": "POS-01-BAL-03.png",
+    "original_marker": "POS-01-BAL attempt1 settings",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-003.jpg",
+    "source_sha256": "9a6eae83a4829adeda57548ace5512e310634716ddbfa3bdec28f252b0ad9b22",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "launch",
+    "file": "POS-01-BAL-04.png",
+    "original_marker": "POS-01-BAL attempt1 launch",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-004.jpg",
+    "source_sha256": "4263957b1ebb49459468ce516def5ebfbf035a633304eac259ee0286f88b866a",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "coordinate-calibration",
+    "file": "POS-01-BAL-05.png",
+    "original_marker": "POS-01-BAL attempt1 coordinate-calibration",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-005.jpg",
+    "source_sha256": "106fea3be42e80c944fb203fb7da4f2d4dff7762acbf1199f02fcfbf6d39f0c9",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "setup-F",
+    "file": "POS-01-BAL-06.png",
+    "original_marker": "POS-01-BAL attempt1 setup-F",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-006.jpg",
+    "source_sha256": "be2cfbc19acf212b45736a7e18be5d7053cae46a708b56aca4a639d801ae3d8b",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "setup-E",
+    "file": "POS-01-BAL-07.png",
+    "original_marker": "POS-01-BAL attempt1 setup-E",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-007.jpg",
+    "source_sha256": "d70d3080b734053e3104ec2860c51ba8eae0af236b2f2110ef3be78db4d7ffd5",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "setup-D",
+    "file": "POS-01-BAL-08.png",
+    "original_marker": "POS-01-BAL attempt1 setup-D",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-008.jpg",
+    "source_sha256": "a21bb6c40896aa7b8a98415df5189c0fb117e154e76618cccf06e133daf45286",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "setup-C",
+    "file": "POS-01-BAL-09.png",
+    "original_marker": "POS-01-BAL attempt1 setup-C",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-009.jpg",
+    "source_sha256": "af23802ea61bf2179cc996ede6160e6dc135cfc8b5387592ed27f6a612e47f56",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "setup-B",
+    "file": "POS-01-BAL-10.png",
+    "original_marker": "POS-01-BAL attempt1 setup-B",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-010.jpg",
+    "source_sha256": "032c5403ec76b097fcc15cd11c65e480f169460f7197e1c4c4aa3a40e34d62d8",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "setup-A",
+    "file": "POS-01-BAL-11.png",
+    "original_marker": "POS-01-BAL attempt1 setup-A",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-011.jpg",
+    "source_sha256": "08e723fc4b7155cbae5640e9c456b12e378d61500298a7c7ef7f71856ab12032",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "before",
+    "file": "POS-01-BAL-12.png",
+    "original_marker": "POS-01-BAL attempt1 before",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-012.jpg",
+    "source_sha256": "69858f2cd84e76ca7884dc7b493c3617714d87cff20cd7f61a21d6f76692ea95",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "menu",
+    "file": "POS-01-BAL-13.png",
+    "original_marker": "POS-01-BAL attempt1 menu",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-013.jpg",
+    "source_sha256": "1ed4201743bdbbc876e04b8b89833bd76ef11505ac015f229c4d9030ab58ce86",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "after",
+    "file": "POS-01-BAL-14.png",
+    "original_marker": "POS-01-BAL attempt1 after",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-014.jpg",
+    "source_sha256": "3fc18c8de2e12fb13a81b85735a42a7cdf58e5ec3982ba67b48e0f2c4e57560f",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "identity-E",
+    "file": "POS-01-BAL-15.png",
+    "original_marker": "POS-01-BAL attempt1 identity-E",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-015.jpg",
+    "source_sha256": "710808ebb12d817d281f4fbd3aee736bf4e0eb9bcf05b06d3577f67f323f4256",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "identity-F",
+    "file": "POS-01-BAL-16.png",
+    "original_marker": "POS-01-BAL attempt1 identity-F",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-016.jpg",
+    "source_sha256": "56205b46a9d7ea1744c6aadaed6c75e0e468b6f377ea3c829f33916c4396c649",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-01-BAL",
+    "attempt": 1,
+    "phase": "identity-D",
+    "file": "POS-01-BAL-17.png",
+    "original_marker": "POS-01-BAL attempt1 identity-D",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-017.jpg",
+    "source_sha256": "02971c64e412a7a1d6f1b9297890d0b9e6daed1807a8c2da792499c667f13cb7",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "setup-cleanup",
+    "file": "POS-02-BAL-01.png",
+    "original_marker": "POS-02-BAL attempt1 setup-cleanup",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-018.jpg",
+    "source_sha256": "d661d385eb813853a32f7f1c8659e616599892e3fc97bc7dbe2bb8506b0ff019",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "launch",
+    "file": "POS-02-BAL-02.png",
+    "original_marker": "POS-02-BAL attempt1 launch",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-019.jpg",
+    "source_sha256": "feb2ab0bdec823db609d92320861bbb781496a50e95a8fca22371a826ddc548e",
+    "original_size": [
+      3840,
+      1920
+    ],
+    "crop_box": [
+      0,
+      0,
+      3840,
+      1920
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "setup-F",
+    "file": "POS-02-BAL-03.png",
+    "original_marker": "POS-02-BAL attempt1 setup-F",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-020.jpg",
+    "source_sha256": "5d7b33e1a4de76d1c7342e7ebee55342c9c57499d34e38370763985bd4353550",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "setup-E",
+    "file": "POS-02-BAL-04.png",
+    "original_marker": "POS-02-BAL attempt1 setup-E",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-021.jpg",
+    "source_sha256": "a3b6f1e7ccf90726fd05d5fe27abdb6aa0e140523fceb35aab62fe08e2ce9dfc",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "setup-D",
+    "file": "POS-02-BAL-05.png",
+    "original_marker": "POS-02-BAL attempt1 setup-D",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-022.jpg",
+    "source_sha256": "e0413add21839728e68dacff1d3b33d24d9a1853cb5c96a9edc73970cc5034e6",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "setup-C",
+    "file": "POS-02-BAL-06.png",
+    "original_marker": "POS-02-BAL attempt1 setup-C",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-023.jpg",
+    "source_sha256": "0932b48315e64711bc611e5cbd6e96a52ae6598adce3a63dc0366463a4470e24",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "setup-B",
+    "file": "POS-02-BAL-07.png",
+    "original_marker": "POS-02-BAL attempt1 setup-B",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-024.jpg",
+    "source_sha256": "f7b9ecf6d1988f61fd61fa039bb8bf265ff42ef963b8eff53667d8d810397bfb",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "setup-A",
+    "file": "POS-02-BAL-08.png",
+    "original_marker": "POS-02-BAL attempt1 setup-A",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-025.jpg",
+    "source_sha256": "4165688c66eddcf286dc8faa3697650254ba84fd8bc869b72553fcc5cc045c15",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "before",
+    "file": "POS-02-BAL-09.png",
+    "original_marker": "POS-02-BAL attempt1 before",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-026.jpg",
+    "source_sha256": "1f0aed8d9e1b656a6703301071cb864d8a4f1460418efcfea0d6aa36af3c25eb",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "menu",
+    "file": "POS-02-BAL-10.png",
+    "original_marker": "POS-02-BAL attempt1 menu",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-027.jpg",
+    "source_sha256": "ee1a3fb927d683c348fd2b2baf81037bb2a486406fc054b574762f54df16174d",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "after",
+    "file": "POS-02-BAL-11.png",
+    "original_marker": "POS-02-BAL attempt1 after",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-028.jpg",
+    "source_sha256": "75ca7b9db60f554c8fc8abc16a168f88feb73492eba1b712c3f30bf39977220c",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "identity-A",
+    "file": "POS-02-BAL-12.png",
+    "original_marker": "POS-02-BAL attempt1 identity-A",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-029.jpg",
+    "source_sha256": "966d65e06406594c291e14194aa3e8e533721964e70034ce1136e36852b6f883",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "identity-B",
+    "file": "POS-02-BAL-13.png",
+    "original_marker": "POS-02-BAL attempt1 identity-B",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-030.jpg",
+    "source_sha256": "c71431deb7047d2c30c178e593f5a99623e78b0aaebf8c928da0c671445b679c",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "identity-C",
+    "file": "POS-02-BAL-14.png",
+    "original_marker": "POS-02-BAL attempt1 identity-C",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-031.jpg",
+    "source_sha256": "2753a4b4cd8fef5609629d72194afca073097b9af3354fb47610558916e2d374",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "restored-settings",
+    "file": "POS-02-BAL-15.png",
+    "original_marker": "POS-02-BAL attempt1 restored-settings",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-032.jpg",
+    "source_sha256": "0d055b582b963ed07080ec0a6adf3309c80483eb8fa732da79eb9bcb0562d269",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "restored-general",
+    "file": "POS-02-BAL-16.png",
+    "original_marker": "POS-02-BAL attempt1 restored-general",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-033.jpg",
+    "source_sha256": "0ffce024b777f1260320aa17b6deabe75faf77b70a62a7b29e6edfc816c9080b",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-02-BAL",
+    "attempt": 1,
+    "phase": "batch-end",
+    "file": "POS-02-BAL-17.png",
+    "original_marker": "POS-02-BAL attempt1 batch-end",
+    "source_file": "POS-01_POS-02-balanced-basic-r5-034.jpg",
+    "source_sha256": "968b9757a8a21b4e65377ba548f2936229d1174ae64b019adae282bb10206fc9",
+    "original_size": [
+      2048,
+      1024
+    ],
+    "crop_box": [
+      0,
+      0,
+      2048,
+      1024
+    ],
+    "output_size": [
+      1280,
+      640
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

@@ -71,3 +71,5 @@ Space边界补充：初始Space不明确时，不得打开未知Space或Default�
 r5通用fixture准备更新（替代前文逐页A-away再地址栏导航的通用准备；不替代源用例明确的原生动作）：新的普通HTML链接入口已经过CU两页实测。独立File→New Window后，原生地址栏访问 http://127.0.0.1:18211/launch/?run=TC-PHI507-r5-本执行点ID&pages=A:normal,B:normal,C:normal （只列本项真实需要的页，unsaved/long按本项改kind，唯一run加本次后缀）。入口页面只有普通target=_blank链接；必须逐个通过CU左键单击，不能执行网页JS、脚本创建或API。Balanced实测每个新子页插在LAUNCH之后，所以为取得A/B/C，先点C，再从最新原生行回LAUNCH点B，再回LAUNCH点A；每页新开后实读最终准确正文、批次、类型和独立编号。全部目标建好后，仅用LAUNCH的明确File→Close Tab关闭入口，实际读取全部本项普通顺序；不同布局仍以实际列表为准，前置顺序不符就正常原生修复并记录，不能按假设进入核心动作。分组/分屏/固定/收藏仍走真实原生UI并核对关系。保护标记只按本用例需要输入，必须实见标记及编号才算前置成立；输入后当前图未显示时，保留该现场，允许一次正常切到本项另一页再回来看实际值，不能盲目重复输入或宣称输入已成功。source明确Command-T、新标签页、原生新建入口、特殊网络/Reader/下载的步骤仍原样执行。必要时仍可用已验证的fixture普通新开链接路径，原始fixture内容不变。整个入口只用于准备，不算任何源用例通过。
 
 截图标记补充：每一张输出的image前都重新输出该图自己的EVIDENCE；不要在一次functions.exec中只标记第一张，然后无新标记输出已切换页面的第二张图。root已见M-KEEP标记之后实际输出P空框、control-setup标记之后实际输出普通M副本的情况；这些原图保留但不作为标记所称对象的证明。每张图应当与当时实际页面和阶段对应；中间只检查工具文字的已知输入返回无需额外输出无标记图片。
+
+Settings定位补充：Command-comma可能打开Guest页，而非上次Advanced页。每次先读真实窗口与工具栏，在Guest/General等页时，先经CU点击Advanced并确认目标控件出现，才查找或操作两个开关。helper报toggle missing只表示本次定位未成立，保留返回、正常切到正确页面，不认定产品缺开关，不根据旧索引或预期页猜测。

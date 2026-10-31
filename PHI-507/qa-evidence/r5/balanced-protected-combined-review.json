@@ -1,0 +1,166 @@
+{
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-30T23:58:29.999691+00:00",
+  "unit_id": "DBL-23-BAL",
+  "decision": "pass",
+  "scope": "同一用例的两次真实执行分段合并评定：on六动作来自中断记录，off六动作及清理来自续做。没有新增或伪造一个CU运行，两次原始attempt都保持partial。",
+  "sources": [
+    "DBL-23-DBL-23-BAL-input-retry-r5",
+    "DBL-23-DBL-23-BAL-off-continuation-r5"
+  ],
+  "on_review": "qa-evidence/r5/balanced-on-interruption-review.json",
+  "off_audit": {
+    "CU_events": 115,
+    "non_CU_events": 0,
+    "raw_images": 39,
+    "retained_images": 39
+  },
+  "off_raw_images_actually_viewed": [
+    {
+      "number": 2,
+      "source_sha256": "0d055b582b963ed07080ec0a6adf3309c80483eb8fa732da79eb9bcb0562d269"
+    },
+    {
+      "number": 3,
+      "source_sha256": "a16bb06fc5e8f98546597796774caa0a49a7f1bf4e24d05f1a12fc1ea1d9e6ea"
+    },
+    {
+      "number": 4,
+      "source_sha256": "abbc58b3d6bb5d6b7d4e5837aa45976de9c3e0474a108313b0be75ee5a9b4c26"
+    },
+    {
+      "number": 6,
+      "source_sha256": "d5e39acf659f4064c980f6447f4287bd1f9e2adc1dc472c9c4e6cd609d620ed2"
+    },
+    {
+      "number": 7,
+      "source_sha256": "bdf586c72f2d626f31e298c651e56ab3ef302ca01f3d4b3ae4f900e375460306"
+    },
+    {
+      "number": 13,
+      "source_sha256": "73715e58131438ba0751b4c8e5f3e7083853239270f33bbe2d2cd94c00375ba9"
+    },
+    {
+      "number": 14,
+      "source_sha256": "00c9511c3a73341ce3cfacefdf0e0e91aa7a6922c4e370af013837b96ca2b54b"
+    },
+    {
+      "number": 15,
+      "source_sha256": "f6884bc61728b0107b2a02c5dd554a2df72eebdfb07dd30323051b0afe44f122"
+    },
+    {
+      "number": 16,
+      "source_sha256": "3ffbdf144808f81d8da8c38272356cbb2f828bd91bdf4bac8656ef06a06626db"
+    },
+    {
+      "number": 17,
+      "source_sha256": "793a6ec87212cfeff18e6ab73d25b53b0b237cf293e0f82a75217838f158b000"
+    },
+    {
+      "number": 18,
+      "source_sha256": "6bf0334c28b773450ca2689ae8c317f318c41781872e7576f71cb36f166bef8d"
+    },
+    {
+      "number": 19,
+      "source_sha256": "8b4aad7745ca174a6a613c22247ab821c26e86280674fa1476b60a8e9c6caa44"
+    },
+    {
+      "number": 20,
+      "source_sha256": "98108beaedf87c9b4ae8ea61ed7a9c1e36b510a0afdf59f53a3aff98c4718754"
+    },
+    {
+      "number": 21,
+      "source_sha256": "55ba3a461d677e867f1eee046ac90f4e9bcc16757f5c32b82fb134117961b87c"
+    },
+    {
+      "number": 22,
+      "source_sha256": "ac7fa09c5192af85da97e8fdd071584f6b54a0a24e2d7e36e80985e6d6354422"
+    },
+    {
+      "number": 23,
+      "source_sha256": "f8c924dac535a61fd633a94b1ffdb6c5ca9974958de06834f2b7193cabacc32d"
+    },
+    {
+      "number": 24,
+      "source_sha256": "31f22e961a4a5c1e84e1545104eed3cb71bb635fb8b879ae5f17d94890c88033"
+    },
+    {
+      "number": 25,
+      "source_sha256": "03196b0ede3d3b14937a02f16afa4b18758823316308fd56189a6b888e93e57d"
+    },
+    {
+      "number": 26,
+      "source_sha256": "e7a8123df8bdbb1257c2a0a1fb49ec762a37cbff79846a63a8f9efc9d84711b7"
+    },
+    {
+      "number": 27,
+      "source_sha256": "44b768e75518faad101715b196709e4283601f5c03cf219c58536403a7d9fa07"
+    },
+    {
+      "number": 29,
+      "source_sha256": "d0218736f6ab343c77632c313622baca0d4c101bb6c3ef302121d34b133bf8d1"
+    },
+    {
+      "number": 31,
+      "source_sha256": "09f70152e32313390dee6bc290dcd5b11abb8797cd0099a812599f74fcc4e02c"
+    },
+    {
+      "number": 32,
+      "source_sha256": "1cb49a1e44eb35f3827366095ba5ad726e0fe8f34c67aa8eba6df1ac8040ce87"
+    },
+    {
+      "number": 33,
+      "source_sha256": "060b5eed859b137a6e2a990e15dc6478b11a8792e390d8e65005d616c509ae67"
+    },
+    {
+      "number": 34,
+      "source_sha256": "83bb7b46c7f7884b44f1530e0a1c2805fcb4d1925cc1b7cfba29fec8df0ce5d0"
+    },
+    {
+      "number": 35,
+      "source_sha256": "68d7e8fc5d2fb5e5c4d22a26040dae2cbb7997dea7f28f8c17d6cb964bcd5108"
+    },
+    {
+      "number": 36,
+      "source_sha256": "14653ef4f4f0afaed14395080614fbbd5f9f23a688e0cc82ae7775a584956358"
+    },
+    {
+      "number": 37,
+      "source_sha256": "712792604f8695f8e6fb4f0e133f8c48ee75b0a2440765c666b3f63aa92c06ab"
+    },
+    {
+      "number": 38,
+      "source_sha256": "e71718935f21e2302916e5d70d071690ba833606e9200abe86eb6fe910f62e03"
+    },
+    {
+      "number": 39,
+      "source_sha256": "6d1df8c28966ce18b01916f37a8d7da2ecf6009c43eace0b00903529b716e768"
+    }
+  ],
+  "completed_on": [
+    "on-PS-left-open",
+    "on-PS-right-open",
+    "on-PS-left-closed",
+    "on-PS-right-closed",
+    "on-MS-closed",
+    "on-MS-open"
+  ],
+  "completed_off": [
+    "off-PS-left-open",
+    "off-PS-right-open",
+    "off-PS-left-closed",
+    "off-PS-right-closed",
+    "off-MS-closed",
+    "off-MS-open"
+  ],
+  "basis": [
+    "on/off各六动作的真实CU前后图均已复核。各已打开PS左右双击后两页原编号/KEEP保留；真正MS入口已打开双击后绑定两页原编号/KEEP保留，普通C/D对照原编号/KEEP保持。",
+    "PS关闭前置由自身Close建立，真实关闭菜单无Close且出现closed项；重新打开均为新编号/空框，只记保存结构和打开动作保留。MS用File Close Tab先后关闭两侧，保存行和普通对照保留，再执行未打开分支。",
+    "off续做以新CU现场读取确认同一run、已有保存项、普通对照，再操作；没有用中断前假设代替现场，也没有重跑或丢弃已有效on六动作。",
+    "两次CU坐标输入返回noWindowsAvailable时窗口随后仍可读取，失败返回和图留档；用原生菜单与键盘定位输入后才实际执行核心动作，不将其记作产品崩溃。",
+    "off末34/35清理本run的PS/MS，36关闭纯TC窗口，37/38完整图确认off/on、Balanced/System Default，39原报告页；旧/未知对象保留。",
+    "on根实际查看30张关键原图；off根实际查看30张关键原图，其中24张进度图SHA与规范原图一致。on全部38张、off全部39张均保留；未声称逐张查看其余准备图。"
+  ],
+  "transcription_correction": "进度便笺对off3重开B编号的手工转录有笔误，完整规范观察与原图为c5fba7e4-38aa-4346-96a0-c22e963762e6；不据进度便笺定位或判定对象。",
+  "product_bugs_confirmed": []
+}

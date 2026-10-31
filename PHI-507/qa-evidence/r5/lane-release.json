@@ -1,0 +1,11 @@
+{
+  "round": 5,
+  "old_lease": "52a943f0-2b80-4fdf-9258-ff0ac91c8040",
+  "old_release_at": "2026-10-31T00:28:12Z",
+  "old_release_reason": "task_ended after top-level HTTP524",
+  "recovery_lease": "5a0a831c-7db6-47fa-b521-77ad0be904dd",
+  "recovery_activity": "仅恢复本任务持久化CU会话日志，无浏览器操作",
+  "recovery_release_verified": true,
+  "recorded_at": "2026-10-31T05:28:41.756172+00:00",
+  "cleanup_limit": "r5中断前POS03未恢复偏好或关闭专用窗口；平台归还重置，不能声称手动清理完成。"
+}

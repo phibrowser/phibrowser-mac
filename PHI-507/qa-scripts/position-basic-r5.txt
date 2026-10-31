@@ -1,4 +1,4 @@
-本批次只执行指定布局的POS-01至POS-05，逐unit独立建立准确前置，不判结果。所有浏览器操作/读取/截图仍仅Computer Use。实际英文界面中读到Close Tabs Above/Below或Left/Right时记录其原文，对应手册方向，不切语言。
+本批次只执行payload列出的指定unit；以下是POS-01至POS-05的共用操作说明，没有列入本次payload的unit不执行。逐unit独立建立准确前置，不判结果。所有浏览器操作/读取/截图仍仅Computer Use。实际英文界面中读到Close Tabs Above/Below或Left/Right时记录其原文，对应手册方向，不切语言。
 
 普通A-F准备可采用已验证的/launch/普通HTML链接入口，run加入本unit和唯一后缀-position-r5。只点击真实链接；每个最终文档都实际读正文、批次、类型和编号，关闭LAUNCH后核对原生完整顺序。POS-01至04明确要求六页，不能缩为三页；不需要添加组、分屏或保存项。每项独立窗口，上一项纯TC窗口可作为下一项setup清理。原有pin/书签和未知窗口保留。
 

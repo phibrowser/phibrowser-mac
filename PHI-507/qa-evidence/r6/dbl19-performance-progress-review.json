@@ -1,0 +1,57 @@
+{
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T09:34:47.343091+00:00",
+  "scope": "7实际查看的进度原图之中断保险副本；仍非整例完成或通过。正式输出需核对对应SHA，不能覆盖原始进度。",
+  "viewed_original_progress_frames": [
+    {
+      "raw_number": 18,
+      "progress_file": "DBL-19-performance-controls-r6-progress-018.jpg",
+      "sha256": "c420f2a362a5afc90c4ae9c273ddaf816b6ad6a10d39a1252f00d404b6fc5209",
+      "marker": "DBL-19-PER attempt1 tab-mute-preparation"
+    },
+    {
+      "raw_number": 19,
+      "progress_file": "DBL-19-performance-controls-r6-progress-019.jpg",
+      "sha256": "d5e95b9e35368e853e6fc349867eee4057225608859a2de7a59e7b6d3f9ebd85",
+      "marker": "DBL-19-PER attempt1 tab-mute-before"
+    },
+    {
+      "raw_number": 20,
+      "progress_file": "DBL-19-performance-controls-r6-progress-020.jpg",
+      "sha256": "b9097864b0bfa05d03d2aa74a1041b7724ccca8d8187a17e8546439618326eb5",
+      "marker": "DBL-19-PER attempt1 tab-mute-after"
+    },
+    {
+      "raw_number": 28,
+      "progress_file": "DBL-19-performance-controls-r6-progress-028.jpg",
+      "sha256": "dd8cde59160082a0cf08c19781fbc40012c18ac21b2aef1c16af20e120126c41",
+      "marker": "DBL-19-PER attempt1 split-mute-before"
+    },
+    {
+      "raw_number": 29,
+      "progress_file": "DBL-19-performance-controls-r6-progress-029.jpg",
+      "sha256": "0293d4fad91bf945612b6238db6f8b10597aac26eecc1bbc06465508e6d64ad2",
+      "marker": "DBL-19-PER attempt1 split-mute-after"
+    },
+    {
+      "raw_number": 30,
+      "progress_file": "DBL-19-performance-controls-r6-progress-030.jpg",
+      "sha256": "a9bf97371cb70f9a3315928c85cdf14d1e77c600ca290fa75ba1034b12eefd05",
+      "marker": "DBL-19-PER attempt1 group-mute-before"
+    },
+    {
+      "raw_number": 31,
+      "progress_file": "DBL-19-performance-controls-r6-progress-031.jpg",
+      "sha256": "177baaedec397745cf132d89d4ada7b5521f0a6df5f8bf1ffb5e8bb87463ccca",
+      "marker": "DBL-19-PER attempt1 group-mute-after"
+    }
+  ],
+  "findings": [
+    "18图是准备阶段：原生A已显示音频图标，但网页仍显示未启动；19图实际显示停止按钮/播放文案、A原编号与KEEP。两图不混作同一时刻状态。",
+    "19→20普通tab A静音控件请求click_count2后A/B/C均保留、A原编号39bee8cc-b7a0-49a9-a72d-e1477db0a8aa和KEEP-A-m1保留，图标仍speaker-wave；只记录实际净状态，不声称看见两次中间切换。",
+    "该窗口还可见NewTab和旧保存项；不能描述为仅有A/B/C。后续分屏/关闭控件分支尚未审阅。",
+    "28→29普通split B静音图标双击，30→31组内split B button speaker-wave索引37双击，均保留B/C原配对、编号与KEEP-B-m1/KEEP-C-m1；净图标仍wave，不声称观察到中间mute切换。",
+    "B编号ff56bcee-c383-457e-8988-4f91d45616d8；C编号6ea6d17d-e3e8-40d0-b6e5-a252fdcfbbfd。普通A仍列在组外，NewTab和旧保存项也可见。",
+    "源要求重建的是mute→close分支；同一B/C在静音分支中正常入组后复测，不冒充独立新文档。关闭分支还待完整观察。"
+  ]
+}

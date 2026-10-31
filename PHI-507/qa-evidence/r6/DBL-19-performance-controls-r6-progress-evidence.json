@@ -1,0 +1,177 @@
+[
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "tab-mute-preparation",
+    "file": "DBL-19-PER-01.png",
+    "original_marker": "DBL-19-PER attempt1 tab-mute-preparation",
+    "source_file": "DBL-19-performance-controls-r6-progress-018.jpg",
+    "source_sha256": "c420f2a362a5afc90c4ae9c273ddaf816b6ad6a10d39a1252f00d404b6fc5209",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "tab-mute-before",
+    "file": "DBL-19-PER-02.png",
+    "original_marker": "DBL-19-PER attempt1 tab-mute-before",
+    "source_file": "DBL-19-performance-controls-r6-progress-019.jpg",
+    "source_sha256": "d5e95b9e35368e853e6fc349867eee4057225608859a2de7a59e7b6d3f9ebd85",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "tab-mute-after",
+    "file": "DBL-19-PER-03.png",
+    "original_marker": "DBL-19-PER attempt1 tab-mute-after",
+    "source_file": "DBL-19-performance-controls-r6-progress-020.jpg",
+    "source_sha256": "b9097864b0bfa05d03d2aa74a1041b7724ccca8d8187a17e8546439618326eb5",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "split-mute-before",
+    "file": "DBL-19-PER-04.png",
+    "original_marker": "DBL-19-PER attempt1 split-mute-before",
+    "source_file": "DBL-19-performance-controls-r6-progress-028.jpg",
+    "source_sha256": "dd8cde59160082a0cf08c19781fbc40012c18ac21b2aef1c16af20e120126c41",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "split-mute-after",
+    "file": "DBL-19-PER-05.png",
+    "original_marker": "DBL-19-PER attempt1 split-mute-after",
+    "source_file": "DBL-19-performance-controls-r6-progress-029.jpg",
+    "source_sha256": "0293d4fad91bf945612b6238db6f8b10597aac26eecc1bbc06465508e6d64ad2",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "group-mute-before",
+    "file": "DBL-19-PER-06.png",
+    "original_marker": "DBL-19-PER attempt1 group-mute-before",
+    "source_file": "DBL-19-performance-controls-r6-progress-030.jpg",
+    "source_sha256": "a9bf97371cb70f9a3315928c85cdf14d1e77c600ca290fa75ba1034b12eefd05",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-PER",
+    "attempt": 1,
+    "phase": "group-mute-after",
+    "file": "DBL-19-PER-07.png",
+    "original_marker": "DBL-19-PER attempt1 group-mute-after",
+    "source_file": "DBL-19-performance-controls-r6-progress-031.jpg",
+    "source_sha256": "177baaedec397745cf132d89d4ada7b5521f0a6df5f8bf1ffb5e8bb87463ccca",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

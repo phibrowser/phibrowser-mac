@@ -15015,6 +15015,24 @@
           "unit_id": "DBL-19-PER"
         },
         "evidence_metadata": "qa-evidence/r2/DBL-19-DBL-19-PER-visibility-probe-evidence.json"
+      },
+      {
+        "job": "DBL-19-performance-controls-r6-progress",
+        "round": 6,
+        "scope": "活动长批次的中断保险：普通tab、普通split、组内split静音子步骤的实际CU前后图；3个关闭控件子步骤尚未完成，不替代整例验收。",
+        "reviewed_at": "2026-10-31T09:44:40.389390+00:00",
+        "evidence_metadata": "qa-evidence/r6/DBL-19-performance-controls-r6-progress-evidence.json",
+        "evidence": [
+          "qa-evidence/r6/DBL-19-PER-01.png",
+          "qa-evidence/r6/DBL-19-PER-02.png",
+          "qa-evidence/r6/DBL-19-PER-03.png",
+          "qa-evidence/r6/DBL-19-PER-04.png",
+          "qa-evidence/r6/DBL-19-PER-05.png",
+          "qa-evidence/r6/DBL-19-PER-06.png",
+          "qa-evidence/r6/DBL-19-PER-07.png",
+          "qa-evidence/r6/dbl19-performance-progress-review.json",
+          "qa-evidence/r6/dbl19-performance-progress-audit.json"
+        ]
       }
     ],
     "actual": "验收双击尚未完成。上次中断前做过普通/分屏/组内分屏准备和音频控件定位，未发现保存动作中的click_count2/3请求；恢复后补做CU悬停能力诊断，仍未确认Close控件。该诊断不计源用例通过，后续独立分支继续执行。",

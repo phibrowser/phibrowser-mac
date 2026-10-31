@@ -1,0 +1,86 @@
+{
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T08:00:44.967326+00:00",
+  "job": "POS-05-performance-basic-r6",
+  "decision": "pass",
+  "basis": "实际查看9关键完整窗口缩放图/原图SHA；57次CU、零非CU；完整原生观察核对。",
+  "findings": [
+    "Performance/SystemDefault/on-on实见；普通A/B/C时首A Above禁用、末C Below禁用，对侧可用；唯一A两个方向及CloseOther均禁用，保存pin/书签未计入候选。",
+    "核心结束A原编号与前置相同；正常清理专用窗口，继续保留Performance/on-on供队列，不声称整轮最终恢复。",
+    "本批未记录操作错误或确认框，未点击禁用命令。"
+  ],
+  "sources": [
+    {
+      "raw_number": 2,
+      "raw_file": "POS-05-performance-basic-r6-002.jpg",
+      "raw_sha256": "1df6aa9711a04271c1b3db9469fb14519d100d1b4cc971c86701a6daed0bd759",
+      "viewed_file": "POS-05-PER-02.png",
+      "viewed_sha256": "66706cf8eb2b8ec9c1be558a000b1eef5da693cadc381b05d5ded8afe0582f61",
+      "marker": "POS-05-PER attempt1 settings"
+    },
+    {
+      "raw_number": 3,
+      "raw_file": "POS-05-performance-basic-r6-003.jpg",
+      "raw_sha256": "2fe9440f703b5a6713f3f9a60d201131c0cd3b04694cd472de26ce2571ddafe5",
+      "viewed_file": "POS-05-PER-03.png",
+      "viewed_sha256": "39352f2e346d660fc0e67ff8a49a57605f951d6973d5296a2666807d33b50022",
+      "marker": "POS-05-PER attempt1 layout"
+    },
+    {
+      "raw_number": 9,
+      "raw_file": "POS-05-performance-basic-r6-009.jpg",
+      "raw_sha256": "099ccebc14e726fb3f1507e5a1ec3d8f74339c98176d408d450625dfab8c4225",
+      "viewed_file": "POS-05-PER-09.png",
+      "viewed_sha256": "d19084fb93c7b2e79a821c08abe48d6b9099b4a311957376adde2e62f920ca16",
+      "marker": "POS-05-PER attempt1 before"
+    },
+    {
+      "raw_number": 10,
+      "raw_file": "POS-05-performance-basic-r6-010.jpg",
+      "raw_sha256": "fc5b98fb3a314a1c4de084d886e5051c7863bf89568556b6ab9f6c5e90cf6252",
+      "viewed_file": "POS-05-PER-10.png",
+      "viewed_sha256": "35a71e40cf0241491e7fb2ec3e122c0d1a06f77515ba50a7e7305743eaa45cfe",
+      "marker": "POS-05-PER attempt1 first-A-menu"
+    },
+    {
+      "raw_number": 12,
+      "raw_file": "POS-05-performance-basic-r6-012.jpg",
+      "raw_sha256": "4ee358339536e4eb7a823ecf227c0c60c8ab362e01d6c00f8f9e1035501a192e",
+      "viewed_file": "POS-05-PER-12.png",
+      "viewed_sha256": "bcc18ff3f2008bbce1c657856588dc176179c2660ccd75d6ca298d78cbdd5a7b",
+      "marker": "POS-05-PER attempt1 last-C-menu"
+    },
+    {
+      "raw_number": 14,
+      "raw_file": "POS-05-performance-basic-r6-014.jpg",
+      "raw_sha256": "205a6d88f3fec4f8dbad70fcf2b5558fafed1ce7dec17badee10f1b940452b28",
+      "viewed_file": "POS-05-PER-14.png",
+      "viewed_sha256": "5bb86726d3d8f16bfda74c575f61a882a91087c87f886002f05d32fab6fc9841",
+      "marker": "POS-05-PER attempt1 close-C-after"
+    },
+    {
+      "raw_number": 15,
+      "raw_file": "POS-05-performance-basic-r6-015.jpg",
+      "raw_sha256": "a8c47c8d1ce7b442542077c30868112bc2bbc88d46266ff6b97afeaff82fafe3",
+      "viewed_file": "POS-05-PER-15.png",
+      "viewed_sha256": "6c772ff3167ba0242ccacbda076bebaac2e4975246f9b5bbdb5889d6b8eacfa0",
+      "marker": "POS-05-PER attempt1 only-A-menu"
+    },
+    {
+      "raw_number": 16,
+      "raw_file": "POS-05-performance-basic-r6-016.jpg",
+      "raw_sha256": "c8f8346eae8339e09a9529b496f89b6168aaf543793f27192f5752944737b53c",
+      "viewed_file": "POS-05-PER-16.png",
+      "viewed_sha256": "8c5ab8a0b51274a381d70603299856977b64e0b69d677a50ed2a2dca1693ec00",
+      "marker": "POS-05-PER attempt1 after"
+    },
+    {
+      "raw_number": 17,
+      "raw_file": "POS-05-performance-basic-r6-017.jpg",
+      "raw_sha256": "787f2db3fbbffacf7ec1fc981b168180b2b2b79eb1829c0a9eba99c671cb31df",
+      "viewed_file": "POS-05-PER-17.png",
+      "viewed_sha256": "a2983bb801ba1179681c67579f0ab4674575f79c8bbf5e7529598cce5989825a",
+      "marker": "POS-05-PER attempt1 cleanup"
+    }
+  ]
+}

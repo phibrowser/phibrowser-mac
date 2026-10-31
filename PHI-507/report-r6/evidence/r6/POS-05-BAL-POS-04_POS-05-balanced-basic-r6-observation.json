@@ -1,0 +1,49 @@
+{
+  "unit_id": "POS-05-BAL",
+  "job": "POS-04_POS-05-balanced-basic-r6",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r6/POS-04_POS-05-balanced-basic-r6-observations.json",
+  "observation": {
+    "active_after": "首项 A 菜单、末项 C 菜单、普通关闭 C/B、唯一 A 菜单及菜单取消后的活动页均为 A。",
+    "active_before": "A 单选活动。",
+    "after": "通过 C、B 各自菜单的普通 Close 留下唯一普通页 A。唯一 A 菜单中 Close Tabs Above、Close Tabs Below 均存在且显示 disabled。原有 pin P、书签 M 条目仍可见。",
+    "before": "独立普通区顺序 A/B/C；LAUNCH 已关闭。原有 pin P、书签 M 位于普通区之外；无组、无 split。",
+    "confirmation_choices": "无确认框。首项与唯一项观察后使用原生菜单 Cancel；未点击任何禁用菜单项。",
+    "evidence_markers": [
+      "EVIDENCE: POS-05-BAL attempt1 launch",
+      "EVIDENCE: POS-05-BAL attempt1 identity-C",
+      "EVIDENCE: POS-05-BAL attempt1 identity-B",
+      "EVIDENCE: POS-05-BAL attempt1 identity-A",
+      "EVIDENCE: POS-05-BAL attempt1 before",
+      "EVIDENCE: POS-05-BAL attempt1 first-A-menu",
+      "EVIDENCE: POS-05-BAL attempt1 last-C-menu",
+      "EVIDENCE: POS-05-BAL attempt1 only-A-before",
+      "EVIDENCE: POS-05-BAL attempt1 only-A-menu",
+      "EVIDENCE: POS-05-BAL attempt1 after",
+      "EVIDENCE: POS-05-BAL attempt1 restore-advanced",
+      "EVIDENCE: POS-05-BAL attempt1 restore-general",
+      "EVIDENCE: POS-05-BAL attempt1 cleanup"
+    ],
+    "identity_checks": "run=TC-PHI507-r5-POS-05-BAL-63133-position-r5。A/B/C 均逐页实际看见准确批次、普通页类型、输入框及打开编号：A=01254c82-30d0-4ac3-8e4d-057920c64ff4；B=417b406b-81a6-4388-9287-9daedf27cf44；C=5af9eaf6-6cbe-4574-a7fa-bd7509cf851e。唯一 A 及结束画面仍显示原 A 编号、普通页正文和空输入框。",
+    "language_observed": "英文浏览器界面；System Default 未改变，收尾再次实读。菜单原文 Close Tabs Above、Close Tabs Below。",
+    "layout_observed": "Balanced，当前 chrome 外部纵向列表再次确认；收尾 General 中 Balanced 蓝框选中。未重复切换布局。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "setup 清理 POS-04 窗口后，首次点击 File→New Window 返回 The element ID is no longer valid。立即停止并 get_app_state；该次返回 File 菜单文字但无 image。使用重新读取的索引点击 New Window 后建立准确前置。"
+    ],
+    "precondition_actual": "通过独立 File→New Window、launch 真实链接逆序建立 C/B/A；每页正文和编号实际可见。关闭 LAUNCH 后实读准确 A/B/C。沿用本批已实读的 on/on，核心步骤期间未改设置。",
+    "settings_observed": "核心步骤使用 doubleClickToClose=on、directionalClosing=on。批次收尾仅点击双击开关一次；即时原生树读取 doubleClickToClose=off、directionalClosing=on，未点击的位置开关未联动改变。随后完整读取 Advanced 与 General 确认。",
+    "steps_executed": [
+      "独立建立 A/B/C，关闭 LAUNCH 并保留 before 截图。",
+      "右键首项 A：Close Tabs Above 存在且 disabled，Close Tabs Below 可用；保留菜单截图后执行原生 Cancel。",
+      "右键末项 C：Close Tabs Below 存在且 disabled，Close Tabs Above 可用；活动页仍为 A，保留菜单截图。",
+      "从 C 菜单点击普通 Close；重新读取仅 A/B。",
+      "右键 B 并点击普通 Close；重新读取仅 A，保留唯一项动作前截图。",
+      "右键唯一 A：两个方向项均存在且 disabled；保留菜单截图，未点击禁用项。",
+      "执行原生 Cancel，保留结束截图。",
+      "按批次要求恢复双击 off／位置 on，实读 Balanced、System Default，关闭 Settings。",
+      "确认清理目标仍为本项 A 后，File→Close Window 清理本批窗口；最终 get_app_state 取证。"
+    ],
+    "unit_id": "POS-05-BAL"
+  }
+}

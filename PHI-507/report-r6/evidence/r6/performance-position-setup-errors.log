@@ -1,0 +1,51 @@
+原始CU日志片段；不是产品关闭失败。该错误发生于POS02准备，新窗口核心未开始；CU此处无图返回。
+source: scratch-PHI507-r6/POS-01_POS-02-performance-basic-r6/raw/POS-01_POS-02-performance-basic-r6.log
+
+Last CU text preserved:
+
+Computer Use server error -10005: The element ID is no longer valid. Try to get the on-screen content again and see if that resolves the issue.
+
+Computer Use state (CUA App Version: 1001425)
+<app_state>
+App=/Applications/Phi Tab Close QA.app/ (bundleID com.phibrowser.opensource.Mac, pid 47109)
+Window: "New Tab", App: Phi Tab Close QA.
+0 File, Secondary Actions: Cancel, Pick
+	1 menu Secondary Actions: Cancel
+		2 New Tab, ID: commandDispatch:
+		3 New Window, ID: commandDispatch:
+		4 New Incognito Window, ID: commandDispatch:
+		5 New Kiosk Window, ID: newKioskWindowFromMenu:
+		6 New Incognito Space, ID: newIncognitoSpaceFromMenu:
+		7 Reopen Closed Tab, ID: commandDispatch:
+		8 Open File…, ID: commandDispatch:
+		9 Open Location…, ID: commandDispatch:
+		10 Open Folio, ID: openSaveForLaterLibrary:
+		11 Close Window, ID: phi.closeWindow
+		12 Close All, ID: closeAll:
+		13 Close Tab, ID: phi.closeTab
+		14 Save Page As…, ID: commandDispatch:
+		15 (disabled) Save to Folio, ID: saveTabForLater:
+		16 Capture Full Page, ID: copyFullPageScreenshotFromMenu:
+		17 Capture Area…, ID: capturePageAreaFromMenu:
+		18 Share…, ID: sharePageFromMenu:
+		19 Print…, ID: commandDispatch:
+		20 Print Using System Dialog…, ID: commandDispatch:
+
+</app_state>
+
+Script completed
+Wall time 2.6 seconds
+Output:
+
+
+App=com.phibrowser.opensource.Mac (pid 47109)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button sidebarHeader.backButton
+			5 button (disabled) sidebar backward
+		6 button sidebarHeader.forwardButton
+			7 button (disabled) sidebar forward
+

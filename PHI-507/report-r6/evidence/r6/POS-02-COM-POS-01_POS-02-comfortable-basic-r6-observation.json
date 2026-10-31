@@ -1,0 +1,53 @@
+{
+  "unit_id": "POS-02-COM",
+  "job": "POS-01_POS-02-comfortable-basic-r6",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r6/POS-01_POS-02-comfortable-basic-r6-observations.json",
+  "observation": {
+    "active_after": "核心动作后仍为 C；随后身份核对切换 A→B→C，核对结束为 C。清理本项窗口后，活动窗口为原有 New Tab。",
+    "active_before": "C；右键 C 弹出菜单后仍为 C。无多选。",
+    "after": "屏幕普通标签左至右为 A/B/C，原生树枚举为 C/B/A；D/E/F 不再出现在标签栏及普通标签条目中。旧 pin TC-P 仍可见。未创建组或分屏。",
+    "before": "屏幕普通标签左至右为 A/B/C/D/E/F；原生树枚举为 F/E/D/C/B/A。C 活动，旧 pin TC-P 可见；LAUNCH 已关闭。",
+    "confirmation_choices": "setup 清理上一项窗口、核心关闭动作和本项最终窗口清理均未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: POS-02-COM attempt1 setup-cleanup",
+      "EVIDENCE: POS-02-COM attempt1 launch",
+      "EVIDENCE: POS-02-COM attempt1 setup-F",
+      "EVIDENCE: POS-02-COM attempt1 setup-E",
+      "EVIDENCE: POS-02-COM attempt1 setup-D",
+      "EVIDENCE: POS-02-COM attempt1 setup-C",
+      "EVIDENCE: POS-02-COM attempt1 setup-B",
+      "EVIDENCE: POS-02-COM attempt1 setup-A",
+      "EVIDENCE: POS-02-COM attempt1 setup-order",
+      "EVIDENCE: POS-02-COM attempt1 before",
+      "EVIDENCE: POS-02-COM attempt1 menu",
+      "EVIDENCE: POS-02-COM attempt1 after",
+      "EVIDENCE: POS-02-COM attempt1 identity-A",
+      "EVIDENCE: POS-02-COM attempt1 identity-B",
+      "EVIDENCE: POS-02-COM attempt1 identity-C",
+      "EVIDENCE: POS-02-COM attempt1 cleanup",
+      "EVIDENCE: POS-02-COM attempt1 ending-layout",
+      "EVIDENCE: POS-02-COM attempt1 ending-toggles",
+      "EVIDENCE: POS-02-COM attempt1 ending"
+    ],
+    "identity_checks": "全部普通文档实见批次 TC-PHI507-r6-POS-02-COM-b72d93、对应 TC 标题、普通页类型和输入框。打开编号：A=e3795df5-9a83-404e-bc31-f1875b96eee0；B=30c571e1-fbd2-4d5f-b596-b0c4087e7033；C=a7c8e7bf-5ee7-467a-bcfd-5f101b2b821d；D=b41d8ee5-3630-4515-9da8-c2cc64bf2091；E=46484232-21a9-4ada-b969-a95163919cf4；F=6a320fdb-10a0-465b-aeba-d8ee31cf11f1。动作后逐页实见 A/B/C 的原编号，输入框均为空。关键前后及结束状态均为固定应用、PID 47109。",
+    "language_observed": "原生界面为英文，未切换语言；本批开头及结束 General 均显示 System Default。",
+    "layout_observed": "从本项真实横向 chrome 再次确认 Comfortable，未重复切换布局；结束 General 截图实见 Comfortable 蓝色选中框。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "前置开始未执行点击具名 TC 测试 Space 入口，沿用初始窗口所属 Space；本批未独立确认当前 Space 名称。"
+    ],
+    "precondition_actual": "先通过 File→Close Window 正常清理 POS-01 专用窗口。再通过 File→New Window 独立建立本项窗口，地址栏访问新的短批次 LAUNCH，点击真实普通链接 F/E/D/C/B/A 建立六页；逐页读取正文、批次、类型、编号及输入框。随后选中 LAUNCH，通过 File→Close Tab 关闭入口，实见 A/B/C/D/E/F 顺序，再激活 C。未复用上一项页面，未输入标记；未创建组、分屏或保存项。",
+    "settings_observed": "沿用本批已实读的 on/on；未点击开关。结束时再次通过 Advanced 实读 settings.tabs.doubleClickToClose=on、settings.tabs.directionalClosing=on。",
+    "steps_executed": [
+      "正常清理 POS-01 专用窗口，获取 setup-cleanup 图，读取原有 New Tab 和旧 TC 保存项。",
+      "独立准备本项六个普通 fixture 文档并关闭 LAUNCH，核对实际屏幕顺序及各页编号。",
+      "左键 C 对应的 tabStripTab 容器使 C 活动，获取 before 图。",
+      "右键同一 C 容器，获取 menu 图；实读菜单原文 Close Tabs to the Left 和 Close Tabs to the Right。",
+      "点击 Close Tabs to the Right，获取 after 图，先记录动作后活动页 C 与剩余集合。",
+      "依次切换 A、B、C，逐页核对原打开编号并取图。",
+      "通过 File→Close Window 清理本项专用窗口；只读 General 与 Advanced 确认 Comfortable、System Default、on/on，关闭 Settings，获取最终 New Tab 图。"
+    ],
+    "unit_id": "POS-02-COM"
+  }
+}

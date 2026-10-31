@@ -1,0 +1,27 @@
+{
+  "job": "POS-01_POS-02-performance-basic-r6",
+  "exit_code": 0,
+  "session_id": "01a190a9-cb76-7111-9d43-ba5f8afe902c",
+  "round": 6,
+  "lease_id": "8c1d8779-4eeb-4400-a591-7ecd2585843f",
+  "started_at": "2026-10-31T06:33:28.920745+00:00",
+  "ended_at": "2026-10-31T07:05:00.189185+00:00",
+  "units": [
+    "POS-01-PER",
+    "POS-02-PER"
+  ],
+  "observed_units": [
+    "POS-01-PER",
+    "POS-02-PER"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "7e4262c85b39461a399abac8619b0255e270001061b3dfb22007571b7a7a4532",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 110,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

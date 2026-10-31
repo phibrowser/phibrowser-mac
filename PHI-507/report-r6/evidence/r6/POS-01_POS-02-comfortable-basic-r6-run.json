@@ -1,0 +1,27 @@
+{
+  "job": "POS-01_POS-02-comfortable-basic-r6",
+  "exit_code": 0,
+  "session_id": "01a190e4-3d76-7ec0-842e-a3d2a4d75576",
+  "round": 6,
+  "lease_id": "8c1d8779-4eeb-4400-a591-7ecd2585843f",
+  "started_at": "2026-10-31T07:37:19.197006+00:00",
+  "ended_at": "2026-10-31T08:12:41.414573+00:00",
+  "units": [
+    "POS-01-COM",
+    "POS-02-COM"
+  ],
+  "observed_units": [
+    "POS-01-COM",
+    "POS-02-COM"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "4eed41554e7ee2aca59884e1b9386e20bc3f8b399552599543b656a4fff7e422",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 101,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

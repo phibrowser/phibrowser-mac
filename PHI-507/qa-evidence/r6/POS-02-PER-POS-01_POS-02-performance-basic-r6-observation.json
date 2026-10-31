@@ -1,0 +1,52 @@
+{
+  "unit_id": "POS-02-PER",
+  "job": "POS-01_POS-02-performance-basic-r6",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r6/POS-01_POS-02-performance-basic-r6-observations.json",
+  "observation": {
+    "active_after": "核心动作后仍为 C；随后按 A→B→C 切页核对身份，核对结束回到 C。各阶段仅一个 selected row。",
+    "active_before": "C；右键 C 后仍为 C。",
+    "after": "普通标签完整顺序为 A/B/C；D/E/F 从原生列表消失。无组、split 或多选。原 pin TC-P、书签 TC-M 仍可见。",
+    "before": "独立新建的普通标签完整顺序为 A/B/C/D/E/F；C 为唯一 selected row。原 pin TC-P、书签 TC-M 可见。",
+    "confirmation_choices": "核心动作、上一项 setup 清理及本项收尾清理均未出现确认。",
+    "evidence_markers": [
+      "EVIDENCE: POS-02-PER attempt1 setup-cleanup",
+      "EVIDENCE: POS-02-PER attempt1 new-window",
+      "EVIDENCE: POS-02-PER attempt1 launch",
+      "EVIDENCE: POS-02-PER attempt1 fixture-F",
+      "EVIDENCE: POS-02-PER attempt1 fixture-E",
+      "EVIDENCE: POS-02-PER attempt1 fixture-D",
+      "EVIDENCE: POS-02-PER attempt1 fixture-C",
+      "EVIDENCE: POS-02-PER attempt1 fixture-B",
+      "EVIDENCE: POS-02-PER attempt1 fixture-A",
+      "EVIDENCE: POS-02-PER attempt1 before",
+      "EVIDENCE: POS-02-PER attempt1 menu",
+      "EVIDENCE: POS-02-PER attempt1 after",
+      "EVIDENCE: POS-02-PER attempt1 identity-A",
+      "EVIDENCE: POS-02-PER attempt1 identity-B",
+      "EVIDENCE: POS-02-PER attempt1 identity-C",
+      "EVIDENCE: POS-02-PER attempt1 cleanup",
+      "EVIDENCE: POS-02-PER attempt1 settings-restored",
+      "EVIDENCE: POS-02-PER attempt1 layout-restored",
+      "EVIDENCE: POS-02-PER attempt1 ending"
+    ],
+    "identity_checks": "run=TC-PHI507-r6-POS-02-PER-w1ds8i。准备时逐页实见标题、完整批次、普通页正文、独立打开编号和空输入框：A=74002ab9-db8c-43ab-a62c-32ef4e218b4a；B=a789fd08-335e-465c-8d28-f3b72e48e4f4；C=7bca6b29-622a-4f36-966c-7b145ffa3a80；D=53580751-6e03-471d-8442-810984c05738；E=1a361495-3032-46a7-9d87-e7a5eb9ed908；F=a4bae5fd-4c7f-4657-a23d-77df466c89fb。动作后逐页实见 A/B/C 的原编号不变、普通正文和空输入框。关键前后原生文字保留 App、PID 47109、Window 和相关标签行。",
+    "language_observed": "实际菜单为英文，未切换语言；批次收尾 General 再次实读 System Default。",
+    "layout_observed": "当前浏览器 chrome 再次显示 Performance 外部纵向标签栏；连续同布局项未重复切换。收尾恢复 Balanced 并截图确认蓝框。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "setup 首次点击 File→New Window 返回 Computer Use server error -10005: The element ID is no longer valid. Try to get the on-screen content again and see if that resolves the issue. 已立即停止后续序列并保留错误文字；get_app_state 重读仍为 File 菜单，返回只有原生菜单文字、没有 image，因此未取得该异常现场图。随后使用最新菜单索引 3 成功新建窗口，再独立建立本项前置；核心动作未重试。",
+      "逐项 OBSERVATION 曾将 setup-failure 列入 evidence_markers；该次 CU 未返回 image，实际没有对应截图。本最终清单已排除该无图标记，异常证据以原始错误文字和紧接的 File 菜单原生状态为准。"
+    ],
+    "precondition_actual": "先通过 File→Close Window 清理 POS-01 纯 TC 窗口，再独立 File→New Window。地址栏访问本地 /launch/，run 长度小于 48 个 ASCII 字符；仅点击真实普通 HTML 链接，按 F/E/D/C/B/A 建立六个 normal 页。每页提交后均通过 get_app_state 实见正文和编号。通过 File→Close Tab 关闭 LAUNCH，实读 A/B/C/D/E/F 顺序，再单击 C 行使其活动。",
+    "settings_observed": "核心动作沿用本批已实读的双击 on／位置 on，未再次切换。收尾 Advanced 再读仍为 on/on；仅点击双击开关一次，点击后的即时原生树及最终读取均为双击 off／位置 on。",
+    "steps_executed": [
+      "保存 C 活动、A/B/C/D/E/F 完整顺序的 before 截图。",
+      "右键 C 对应的 selected row；原生菜单显示 Close Tabs Above、Close Tabs Below 均可用，右键后 C 仍活动；保存 menu 截图。",
+      "点击原生菜单 Close Tabs Below；检查调用返回，随后 get_app_state 保存 after 截图及完整剩余集合。",
+      "依次切到 A、B、C，逐页核对本次打开编号并分别保存截图；未重载或重建动作后的页面。",
+      "输出本项 OBSERVATION 后，通过 File→Close Window 清理本项窗口；恢复偏好并关闭 Settings，保存收尾截图。"
+    ],
+    "unit_id": "POS-02-PER"
+  }
+}

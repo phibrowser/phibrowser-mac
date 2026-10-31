@@ -3,7 +3,7 @@ from pathlib import Path
 from collections import Counter
 from datetime import datetime,timezone
 import argparse,json,shutil,re
-p=argparse.ArgumentParser();p.add_argument('--plan-sha',required=True);p.add_argument('--verdict',choices=['pass','fail','blocked'],required=True);p.add_argument('--summary',required=True);p.add_argument('--round',type=int,default=2);p.add_argument('--checkpoint',action='store_true');p.add_argument('--webp',action='store_true');a=p.parse_args();assert a.round>=2
+p=argparse.ArgumentParser();p.add_argument('--plan-sha',required=True);p.add_argument('--verdict',choices=['pass','fail','blocked'],required=True);p.add_argument('--summary',required=True);p.add_argument('--round',type=int,default=2);p.add_argument('--checkpoint',action='store_true');p.add_argument('--webp',action='store_true');p.add_argument('--carried-preview-width',type=int,default=640);a=p.parse_args();assert a.round>=2;assert 320<=a.carried_preview_width<=640
 qa=Path('PHI-507');assert not Path('.lane/current.json').exists(),'Release the leased UI session before writing the report'
 rows=json.loads((qa/'execution-ledger-r2.json').read_text());assert len(rows)==512 and len({r['key'] for r in rows})==512
 assert a.checkpoint or not any(r['result']=='pending' for r in rows),'Resolve every pending item explicitly, preserving not-run reasons'
@@ -38,7 +38,7 @@ for r in rows:
     from PIL import Image
     dest=evroot/source_round/(r['key']+'-prior-preview.webp');dest.parent.mkdir(exist_ok=True)
     with Image.open(source) as im:
-     preview=im.convert('RGB');preview.thumbnail((640,10000),Image.Resampling.LANCZOS);preview.save(dest,'WEBP',lossless=True,method=6)
+     preview=im.convert('RGB');preview.thumbnail((a.carried_preview_width,10000),Image.Resampling.LANCZOS);preview.save(dest,'WEBP',lossless=True,method=6)
     preview_item={'type':'image','path':str(dest.relative_to(out)),'caption':f'沿用{source_round}的实际截图缩略图；完整尺寸及全部尝试见同组先前证据链接，本轮未重跑。','carried_preview':True,'source_path':path}
     if attempt is not None:preview_item['attempt']=attempt
     if outcome is not None:preview_item['outcome']=outcome

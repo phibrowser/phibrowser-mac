@@ -1,0 +1,107 @@
+{
+  "round": 6,
+  "job": "POS-05-comfortable-basic-r6",
+  "decision": "pass",
+  "basis": "Ripley实际查看11关键完整窗口缩放图，并核对原图SHA/原生观察。",
+  "findings": [
+    "Comfortable/SystemDefault/on-on实见；首A左方向禁用，末C右方向禁用，唯一A左右及CloseOther禁用；旧pin不算普通候选。",
+    "A原打开编号502f8b21-88de-4e36-ab56-c2ddb44806cd在普通序列及唯一项前后相同。",
+    "正常清理专用窗口，恢复Balanced/SystemDefault/off-on；单独关闭双击开关后位置开关仍on，无确认框。",
+    "前置遗漏：本批未重新选择具名TC Space或独立核实名称，继承此前同一专属租约/PID的已确认TC环境。核心仅操作独立纯TC窗口，不声称本批完成Space隔离前置重验。",
+    "not_executed_reason为已完成三个边界分支的说明，无缺失核心动作；未点击禁用项符合源步骤。"
+  ],
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T08:58:10.098114+00:00",
+  "computer_use_completed": 55,
+  "non_computer_use_calls": 0,
+  "sources": [
+    {
+      "raw_number": 2,
+      "raw_file": "POS-05-comfortable-basic-r6-002.jpg",
+      "raw_sha256": "5115482f9ad946c3d03c9400679dffcfce13f902ba490c187a8720c5fc2e3754",
+      "viewed_file": "POS-05-COM-02.png",
+      "viewed_sha256": "a07d7cb1539721b27dc5e2ab72648adc9a4aac0fa08bf91fff4ab616095e2154",
+      "marker": "POS-05-COM attempt1 settings-general"
+    },
+    {
+      "raw_number": 3,
+      "raw_file": "POS-05-comfortable-basic-r6-003.jpg",
+      "raw_sha256": "1999a69409528abb24034ce89685369b91eb4d03f46d8faf6c49991903540d1e",
+      "viewed_file": "POS-05-COM-03.png",
+      "viewed_sha256": "02abfd98a8b80c7c59aa11cb989c3581b54dcf64cf6fc1910bf60ad74ac1abe9",
+      "marker": "POS-05-COM attempt1 settings-advanced"
+    },
+    {
+      "raw_number": 9,
+      "raw_file": "POS-05-comfortable-basic-r6-009.jpg",
+      "raw_sha256": "b3a7f64ea835af5cd18c28d5b15334d2dfc16dee12880f7f3acdf633b6de7ced",
+      "viewed_file": "POS-05-COM-09.png",
+      "viewed_sha256": "f6b691dc719e2613e039e0c0fd01679d3529ca6231f57b8c2b7496b5c411966c",
+      "marker": "POS-05-COM attempt1 before"
+    },
+    {
+      "raw_number": 10,
+      "raw_file": "POS-05-comfortable-basic-r6-010.jpg",
+      "raw_sha256": "181226124f3299370c2677d6781a6f0191ddd278be21e0e31496ae3ce2a7dd5c",
+      "viewed_file": "POS-05-COM-10.png",
+      "viewed_sha256": "154b06586c77d0e43ca52c84a9ff10e6275af496d630cd58b6480ad6d0f4df05",
+      "marker": "POS-05-COM attempt1 first-A-menu"
+    },
+    {
+      "raw_number": 11,
+      "raw_file": "POS-05-comfortable-basic-r6-011.jpg",
+      "raw_sha256": "a38b89f979018cc851cbe8ba2806af3fb208bf21004b8e92418d69d9cdac3cf8",
+      "viewed_file": "POS-05-COM-11.png",
+      "viewed_sha256": "8bae920a787b73a0150e3c1c7f5ba067172f5e2e286f9f2ddd38143613f0c869",
+      "marker": "POS-05-COM attempt1 last-C-menu"
+    },
+    {
+      "raw_number": 12,
+      "raw_file": "POS-05-comfortable-basic-r6-012.jpg",
+      "raw_sha256": "f78b29a6e31895a66ea26dd955b01afbf98e1753e22787ae09e8a4e833f40b02",
+      "viewed_file": "POS-05-COM-12.png",
+      "viewed_sha256": "294b6e5cde2783e27979915a25f31e68a834503d10a26b5577d6580237c3290d",
+      "marker": "POS-05-COM attempt1 only-A-before"
+    },
+    {
+      "raw_number": 13,
+      "raw_file": "POS-05-comfortable-basic-r6-013.jpg",
+      "raw_sha256": "940277d534fff6104745e39ee3093c5d79d51f089b902bc14ad81a48f8eed651",
+      "viewed_file": "POS-05-COM-13.png",
+      "viewed_sha256": "33a660cc0bf826eaf7e8ad87fb8b75eb1a41d6d0e3bb652560444a0a4af2add7",
+      "marker": "POS-05-COM attempt1 only-A-menu"
+    },
+    {
+      "raw_number": 14,
+      "raw_file": "POS-05-comfortable-basic-r6-014.jpg",
+      "raw_sha256": "834020fa9caf69357c4333be2202f43f9187ae2173b798dc02e2db57f9e0afa6",
+      "viewed_file": "POS-05-COM-14.png",
+      "viewed_sha256": "38d9fd3df7b16a5d61222ac2baf33b7d975d7e03fcaa3123d60f940b524ce095",
+      "marker": "POS-05-COM attempt1 after"
+    },
+    {
+      "raw_number": 16,
+      "raw_file": "POS-05-comfortable-basic-r6-016.jpg",
+      "raw_sha256": "2d8c275c4fef989f4b0c75001bd09e5840862d12b5d5cc559c545fc90c923021",
+      "viewed_file": "POS-05-COM-16.png",
+      "viewed_sha256": "7d3656fa5a6dbaa91ec7bb2d02301ba9be86fdd952b1992c04236ccabf10126e",
+      "marker": "POS-05-COM attempt1 restore-general"
+    },
+    {
+      "raw_number": 17,
+      "raw_file": "POS-05-comfortable-basic-r6-017.jpg",
+      "raw_sha256": "4bae0645ffb383b819d1b425d2085c43ce0d2dfa80ff30ed73729c4d2787ae7e",
+      "viewed_file": "POS-05-COM-17.png",
+      "viewed_sha256": "6d5a5691c349f3bbd8d0a9d6f3a1073cd285e8c9329ed7f7f0ba8e134a2dff8d",
+      "marker": "POS-05-COM attempt1 restore-advanced"
+    },
+    {
+      "raw_number": 18,
+      "raw_file": "POS-05-comfortable-basic-r6-018.jpg",
+      "raw_sha256": "92734f76843c1278a3ef54b4a4b5950b9fc611726253921f1dc66cede2d6239a",
+      "viewed_file": "POS-05-COM-18.png",
+      "viewed_sha256": "a94f5516102b37304c1f8b6d075bbd776b6aeffe96e513d2feb809fb8b77ad4f",
+      "marker": "POS-05-COM attempt1 ending"
+    }
+  ]
+}

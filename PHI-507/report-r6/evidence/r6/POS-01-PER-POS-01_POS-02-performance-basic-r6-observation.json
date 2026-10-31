@@ -1,0 +1,48 @@
+{
+  "unit_id": "POS-01-PER",
+  "job": "POS-01_POS-02-performance-basic-r6",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r6/POS-01_POS-02-performance-basic-r6-observations.json",
+  "observation": {
+    "active_after": "核心动作后仍为 D；随后按 E→F→D 切页核对身份，核对结束回到 D。各阶段仅一个 selected row。",
+    "active_before": "D；右键 D 后仍为 D。",
+    "after": "普通标签完整顺序为 D/E/F；A/B/C 从原生列表消失。无组、split 或多选。原 pin TC-P、书签 TC-M 仍可见。",
+    "before": "普通标签完整顺序为 A/B/C/D/E/F；D 为唯一 selected row。原 pin TC-P、书签 TC-M 可见。",
+    "confirmation_choices": "核心动作未出现关闭确认。",
+    "evidence_markers": [
+      "EVIDENCE: POS-01-PER attempt1 initial",
+      "EVIDENCE: POS-01-PER attempt1 settings-initial",
+      "EVIDENCE: POS-01-PER attempt1 general-initial",
+      "EVIDENCE: POS-01-PER attempt1 layout-performance",
+      "EVIDENCE: POS-01-PER attempt1 settings",
+      "EVIDENCE: POS-01-PER attempt1 launch",
+      "EVIDENCE: POS-01-PER attempt1 coordinate-calibration",
+      "EVIDENCE: POS-01-PER attempt1 fixture-F",
+      "EVIDENCE: POS-01-PER attempt1 fixture-E",
+      "EVIDENCE: POS-01-PER attempt1 fixture-D",
+      "EVIDENCE: POS-01-PER attempt1 fixture-C",
+      "EVIDENCE: POS-01-PER attempt1 fixture-B",
+      "EVIDENCE: POS-01-PER attempt1 fixture-A",
+      "EVIDENCE: POS-01-PER attempt1 before",
+      "EVIDENCE: POS-01-PER attempt1 menu",
+      "EVIDENCE: POS-01-PER attempt1 after",
+      "EVIDENCE: POS-01-PER attempt1 identity-E",
+      "EVIDENCE: POS-01-PER attempt1 identity-F",
+      "EVIDENCE: POS-01-PER attempt1 identity-D"
+    ],
+    "identity_checks": "run=TC-PHI507-r6-POS-01-PER-w10sej。准备时逐页实见标题、完整批次、普通页正文、独立打开编号和空输入框：A=28fe9d72-9f01-478f-b5d2-74586cf6e739；B=0ef6be1f-7879-4bd9-a5ff-076c0fabbb46；C=6580e847-9fec-4324-a44b-94259c2bb37e；D=f6a784a2-4d16-49a0-ac05-4da3720493c4；E=6ce87089-6b86-4ebd-9ee1-63ef5fe785f8；F=46bccec0-8f4f-478e-854c-aa2d7e849b6b。动作后逐页实见 D/E/F 的原编号不变、普通正文和空输入框。关键前后原生文字保留 App、PID 47109、Window 和相关标签行。",
+    "language_observed": "原生界面为英文；General 实读 System Default，未切换语言。",
+    "layout_observed": "起始 General 截图为 Balanced 蓝框选中；点击 Performance 后截图确认其蓝框选中。核心操作时为外部纵向标签栏。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "进入具名 TC-QA-PHI507-r2-Recovery-R4 Space 后，经 File→New Window 独立准备。地址栏访问本地 /launch/，run 长度小于 48 个 ASCII 字符；仅点击真实普通 HTML 链接，按 F/E/D/C/B/A 建立六个 normal 页。每页提交后均通过 get_app_state 实见正文和编号。通过 File→Close Tab 关闭 LAUNCH，实读 A/B/C/D/E/F 顺序，再单击 D 行使其活动。",
+    "settings_observed": "起始 Advanced 实读双击关闭 off／位置关闭 on。仅点击双击关闭一次改为 on，点击后的即时原生树同时显示双击 on／位置 on。本项核心动作使用 on/on。",
+    "steps_executed": [
+      "保存 D 活动、A/B/C/D/E/F 完整顺序的 before 截图。",
+      "右键 D 对应的 selected row；原生菜单显示 Close Tabs Above、Close Tabs Below 均可用，右键后 D 仍活动；保存 menu 截图。",
+      "点击原生菜单 Close Tabs Above；检查调用返回，随后 get_app_state 保存 after 截图及完整剩余集合。",
+      "依次切到 E、F、D，逐页核对本次打开编号并分别保存截图；未重载或重建动作后的页面。"
+    ],
+    "unit_id": "POS-01-PER"
+  }
+}

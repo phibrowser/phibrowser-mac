@@ -1,0 +1,202 @@
+{
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T07:46:23.200208+00:00",
+  "job": "POS-03_POS-04-performance-basic-r6",
+  "decisions": {
+    "POS-03-PER": "pass",
+    "POS-04-PER": "pass"
+  },
+  "basis": "实际查看23张完整窗口缩放图，并核对原图SHA；103个CU事件/零非CU调用；核对准备误点的原生树与原始动作。",
+  "findings": [
+    "POS03直接右键非活动C时F仍活动，Above后C/D/E/F且F仍活动，四个原编号/正文保持。",
+    "POS04独立六页，直接右键C时F仍活动，Below后A/B/C且C活动，三个原编号/正文保持。",
+    "本批TC专用窗口已清理，按连续队列保留Performance/SystemDefault/on-on，尚未声称整轮最终恢复。",
+    "POS03准备误用旧索引8刷新原NewTab已如实保留；不是产品缺陷，不能声称全程未操作旧页；后续A-F独立建立，核心结果未受该准备动作覆盖。"
+  ],
+  "sources": [
+    {
+      "raw_number": 3,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-003.jpg",
+      "raw_sha256": "3bb142e340a6f390249a5e9eecd5b80e33a78ccf20e4bade992ec6485c142e08",
+      "viewed_file": "POS-03-PER-03.png",
+      "viewed_sha256": "d0f1ca6cc03b9e2c607d2de02fe4345c741e0a18f0ac4f0743e7040a0f0bc330",
+      "marker": "POS-03-PER attempt1 layout"
+    },
+    {
+      "raw_number": 4,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-004.jpg",
+      "raw_sha256": "8e315857c079d398a20a4736b76f3d43500dc225d9702e56c9a389d4ce4aebfa",
+      "viewed_file": "POS-03-PER-04.png",
+      "viewed_sha256": "3c10c95fb8ab95e965f89dd6bc924199806da0af4abedc41e30e59dc2fdc34cd",
+      "marker": "POS-03-PER attempt1 settings"
+    },
+    {
+      "raw_number": 7,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-007.jpg",
+      "raw_sha256": "22a5ccdcfb17a27f73ca4f79d588c7032bed1989e9b984bc1297212f47f17571",
+      "viewed_file": "POS-03-PER-07.png",
+      "viewed_sha256": "64cafc685661f170dc23dea66ccf334793b10370d2bf3c385e9341cd97035824",
+      "marker": "POS-03-PER attempt1 new-F-identity"
+    },
+    {
+      "raw_number": 8,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-008.jpg",
+      "raw_sha256": "8769412172c1b9f2e617880cf7ca61c80760c270263e2326449287b115c900ff",
+      "viewed_file": "POS-03-PER-08.png",
+      "viewed_sha256": "867094c9e77392fb5d9e4789d4167e2a5f846acd33609909f70bc5c6b29eb8a9",
+      "marker": "POS-03-PER attempt1 new-E-identity"
+    },
+    {
+      "raw_number": 9,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-009.jpg",
+      "raw_sha256": "cf1acd01d918c8a1decad98a3479b7190b14d561a31160823cd1c3f98258070a",
+      "viewed_file": "POS-03-PER-09.png",
+      "viewed_sha256": "164fb21a35fc6a07c00737b73c4fda87d4ddd014e16d1407c391936f30e06b9d",
+      "marker": "POS-03-PER attempt1 new-D-identity"
+    },
+    {
+      "raw_number": 10,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-010.jpg",
+      "raw_sha256": "34fa8155a37ad5dcb6b3558dca7494fe46645a186fb3cdb35963607de69e2029",
+      "viewed_file": "POS-03-PER-10.png",
+      "viewed_sha256": "f2e9bf2adf7d42869c91c58ab6f0fda6bd4bcfab4775e22ee1fdd7837fcaedfb",
+      "marker": "POS-03-PER attempt1 new-C-identity"
+    },
+    {
+      "raw_number": 13,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-013.jpg",
+      "raw_sha256": "8e649a1b4f5fbb93cb8142ea7e803dde1cbe394181947db4c7f03dcb429f6b22",
+      "viewed_file": "POS-03-PER-13.png",
+      "viewed_sha256": "be3324f34538cc27ed6e8b120efc3b0760a41bdc6b5968cdbcaf293d2d027a10",
+      "marker": "POS-03-PER attempt1 before"
+    },
+    {
+      "raw_number": 14,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-014.jpg",
+      "raw_sha256": "f739d5c97775f856997fa992ff669e750b995f56329ce9a011928994df5c7e85",
+      "viewed_file": "POS-03-PER-14.png",
+      "viewed_sha256": "27262b5b984c7a0a237b82c17ce67f005c0d57280911309712850447722c5461",
+      "marker": "POS-03-PER attempt1 menu"
+    },
+    {
+      "raw_number": 15,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-015.jpg",
+      "raw_sha256": "086c4155e08e255a8249f1e76cd6d56ac4567ba354bc8af3de47206a371e33d7",
+      "viewed_file": "POS-03-PER-15.png",
+      "viewed_sha256": "97971d3027676a1d835dfd01eefbd6d4110b334e103f44cf0938de8995af0cb9",
+      "marker": "POS-03-PER attempt1 after"
+    },
+    {
+      "raw_number": 16,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-016.jpg",
+      "raw_sha256": "0205ba1dedc5deb5ab8eb5d3d2c662aa0f2ef0ef1834e698732bf0bc624531cc",
+      "viewed_file": "POS-03-PER-16.png",
+      "viewed_sha256": "cb34951e483b295644ac3c5a883ed82af651e82ea7fe49d2ed6c6c0d1b807a29",
+      "marker": "POS-03-PER attempt1 remaining-C-identity"
+    },
+    {
+      "raw_number": 17,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-017.jpg",
+      "raw_sha256": "b31d4df76546593114a65f435a2242441681fe5f98911b83689d49b0dce1660c",
+      "viewed_file": "POS-03-PER-17.png",
+      "viewed_sha256": "7579cec364dc254352a5d733da46f0dad9ca268d683e5b864fd411398db3d92e",
+      "marker": "POS-03-PER attempt1 remaining-D-identity"
+    },
+    {
+      "raw_number": 18,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-018.jpg",
+      "raw_sha256": "427da2edb83accaaae6d811d373bcda70030764dfd643bb62facc75e372120ba",
+      "viewed_file": "POS-03-PER-18.png",
+      "viewed_sha256": "2a42fdb57b350c3e9c5c7f0536618682b1df88c6e4d83217f285a1e3f6778f29",
+      "marker": "POS-03-PER attempt1 remaining-E-identity"
+    },
+    {
+      "raw_number": 24,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-024.jpg",
+      "raw_sha256": "12a002f8be212cbb4f48cbc43efe40ef9dbb1a6351b81f0798565cd59048f278",
+      "viewed_file": "POS-04-PER-06.png",
+      "viewed_sha256": "51456abae20db7579b07149a447255806c876929ea1fb215821e2d58e4a3f5cb",
+      "marker": "POS-04-PER attempt1 new-C-identity"
+    },
+    {
+      "raw_number": 25,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-025.jpg",
+      "raw_sha256": "a66462e97f23e9fa227304f3ddb95b8c9a80f3f28b366de2fc49b1c46414a1d2",
+      "viewed_file": "POS-04-PER-07.png",
+      "viewed_sha256": "301ede8bf22a9f102ec4b680653a6062a14f96a116c38cae7486872afc4ff225",
+      "marker": "POS-04-PER attempt1 new-B-identity"
+    },
+    {
+      "raw_number": 26,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-026.jpg",
+      "raw_sha256": "cd5eb03649a12a91a31805965a04d28aff10853734febb769d34e98ae548cf66",
+      "viewed_file": "POS-04-PER-08.png",
+      "viewed_sha256": "370da2033e8d1c5cdab53eb167c06abaa22dc6b1831261b0736d021f489f9cb9",
+      "marker": "POS-04-PER attempt1 new-A-identity"
+    },
+    {
+      "raw_number": 27,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-027.jpg",
+      "raw_sha256": "9e7ee70607396a1d4bd15c1e215afc6b61d6f26e150a5164bea5328c611e01a5",
+      "viewed_file": "POS-04-PER-09.png",
+      "viewed_sha256": "ce69ea240634a6f5b32312bf9b7bcb180503e943104a8b4831ab38aa59796a6c",
+      "marker": "POS-04-PER attempt1 before"
+    },
+    {
+      "raw_number": 28,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-028.jpg",
+      "raw_sha256": "cef40d8f412178ec9e320233b25d3794131e3ddb0f2e99a2c9b770d82b7cb712",
+      "viewed_file": "POS-04-PER-10.png",
+      "viewed_sha256": "a64dae6db6da192944caf701ded592575e9ed9f62c38e891e938f4e9d5df83a0",
+      "marker": "POS-04-PER attempt1 menu"
+    },
+    {
+      "raw_number": 29,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-029.jpg",
+      "raw_sha256": "cd02290a0ed444809706ace35e6cc11b820bf3a06928b11df8dcb27dcf320e8f",
+      "viewed_file": "POS-04-PER-11.png",
+      "viewed_sha256": "7dc7cc9110db533d21c6c5cf5fbf60e3f2288febd142b16eef7db8a800a76f12",
+      "marker": "POS-04-PER attempt1 after"
+    },
+    {
+      "raw_number": 30,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-030.jpg",
+      "raw_sha256": "16688ea9ad7efb5a6ca54623fa9a670afe44d2e577f7606c8a44d116d96c696a",
+      "viewed_file": "POS-04-PER-12.png",
+      "viewed_sha256": "1f1acefbea35825c4bbbc601a7329fb07828fe9365d9341199ebe195997c8bcc",
+      "marker": "POS-04-PER attempt1 remaining-A-identity"
+    },
+    {
+      "raw_number": 31,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-031.jpg",
+      "raw_sha256": "d48d25874920032ccfd49828a16f2afb7ef3813e7baa748c3fa262f5edbe1965",
+      "viewed_file": "POS-04-PER-13.png",
+      "viewed_sha256": "052f0446e32fe449732776829b4f6405e166d55aa51354f6dca3e9e3ace0fb1b",
+      "marker": "POS-04-PER attempt1 remaining-B-identity"
+    },
+    {
+      "raw_number": 33,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-033.jpg",
+      "raw_sha256": "551c52b988c0c441f380cc8b420d9afa4f5c0c48cfd45a22da3499bedf391d55",
+      "viewed_file": "POS-04-PER-15.png",
+      "viewed_sha256": "1bf8c9b866e1f7968106a399ef81aaecdc0244037765966b83fc20a4ca0f74d0",
+      "marker": "POS-04-PER attempt1 settings-retained"
+    },
+    {
+      "raw_number": 34,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-034.jpg",
+      "raw_sha256": "d84e455e89be101506f3d40d2c546a8f699ccec082a9a4389f9e56df95b467b3",
+      "viewed_file": "POS-04-PER-16.png",
+      "viewed_sha256": "29ded7e8d61855922652e4d16f7a1fd9fa7690521b9580fb023218e7620da27f",
+      "marker": "POS-04-PER attempt1 layout-retained"
+    },
+    {
+      "raw_number": 35,
+      "raw_file": "POS-03_POS-04-performance-basic-r6-035.jpg",
+      "raw_sha256": "3f75065c3c89912b50a77ec96c0268184e287d59b4c5501555061c2f414b9dfa",
+      "viewed_file": "POS-04-PER-17.png",
+      "viewed_sha256": "289f68a6e5c7c502de0b9b79d1c19f14c73adce479b9916bb94639d7f220cc81",
+      "marker": "POS-04-PER attempt1 ending"
+    }
+  ]
+}

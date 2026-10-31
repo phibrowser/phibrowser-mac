@@ -1,0 +1,63 @@
+准备误用旧索引，实际刷新原有NewTab；不声称完全未操作旧页。无该时刻图像输出，以真实CU动作与返回文字保留，不伪造截图。此后才独立建立本项A-F，核心没有重试。
+
+CU input timestamp: 2026-10-31T07:06:47.432Z
+const app="/Applications/Phi Tab Close QA.app";
+for(const args of [{element_index:"43"},{element_index:"8"}]){const r=await tools.mcp__computer_use__click({app,...args});for(const c of r.content??[])if(c.type==="text")text(c.text);if(r.isError)throw Error("CU error");store("s",r);}
+
+
+实际CU返回：
+App=com.phibrowser.opensource.Mac (pid 47109)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sidebarButton
+			3 button left sidebar toggle
+		4 button sidebarHeader.backButton
+			5 button (disabled) sidebar backward
+		6 button sidebarHeader.forwardButton
+			7 button (disabled) sidebar forward
+		8 button sidebarHeader.refreshButton
+			9 button
+		10 text Placeholder: Search or Enter URL, ID: sidebarHeader.addressView
+		11 container
+			12 button Default
+			13 button TC-QA-PHI507-r2-Recovery-R4
+			14 button TC-PHI507-r2-Recovery
+		15 collection
+			16 section (disabled)
+				17 button Description: TC-P · TC-PHI507-r2-DBL-09-PER, ID: sidebarPinnedTab, Help: TC-P · TC-PHI507-r2-DBL-09-PER
+http://127.0.0.1:18211/fixture/?tab=P&run=TC-PHI507-r2-DBL-09-PER&kind=normal
+					18 image Website
+		19 scroll area
+			20 outline sidebarTabList
+				21 row (selectable) Value: TC-M · TC-PHI507-r2-DBL-09-PER, Description: TC-M · TC-PHI507-r2-DBL-09-PER
+TC-M · TC-PHI507-r2-DBL-09-PER
+				22 row (selectable)
+				23 row (selectable) New Tab
+				24 row (selected) Description: phi default favicon, Value: New Tab
+		25 container sidebar.footer
+			26 button Description: Profile menu, ID: profile.menuButton
+			27 button
+		28 splitter (disabled, settable, float) 193
+	29 close button
+	30 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	31 minimize button
+32 menu bar
+	33 Phi
+	34 File
+	35 Edit
+	36 View
+	37 Spaces
+	38 History
+	39 Bookmarks
+	40 Tab
+	41 Window
+	42 Help
+	43 *DEBUG*
+
+
+App=com.phibrowser.opensource.Mac (pid 47109)
+Window: "New Tab", App: Phi Tab Close QA.
+0 standard window New Tab, Secondary Actions: Raise
+	1 split group
+		2 button sidebarHeader.sid

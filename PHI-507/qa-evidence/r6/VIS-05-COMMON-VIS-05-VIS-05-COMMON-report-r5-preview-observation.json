@@ -1,0 +1,44 @@
+{
+  "unit_id": "VIS-05-COMMON",
+  "job": "VIS-05-VIS-05-COMMON-report-r5-preview",
+  "scope": "r5报告本地预览维护，非VIS05验收；本次报告tab正文空白，待独立窗口路径复核",
+  "source": "qa-evidence/r6/VIS-05-VIS-05-COMMON-report-r5-preview-observations.json",
+  "observation": {
+    "active_after": "本次新建的本地报告预览tab，单独选中。",
+    "active_before": "进入具名测试Space后的既有New Tab。",
+    "after": "原有集合加一个本次明确新建的报告预览tab；指定URL及报告窗口标题可见，正文持续空白。",
+    "before": "测试Space内原有TC-P · TC-PHI507-r2-DBL-09-PER pin、TC-M · TC-PHI507-r2-DBL-09-PER条目、无名行及既有New Tab；未将未知条目视为本次创建对象。",
+    "confirmation_choices": "未出现确认框；未选择删除、离开、导出或清理操作。",
+    "evidence_markers": [
+      "EVIDENCE: VIS-05-COMMON attempt1 initial",
+      "EVIDENCE: VIS-05-COMMON attempt1 space",
+      "EVIDENCE: VIS-05-COMMON attempt1 settings",
+      "EVIDENCE: VIS-05-COMMON attempt1 general",
+      "EVIDENCE: VIS-05-COMMON attempt1 advanced",
+      "EVIDENCE: VIS-05-COMMON attempt1 new-tab",
+      "EVIDENCE: VIS-05-COMMON attempt1 report-top",
+      "EVIDENCE: VIS-05-COMMON attempt1 after"
+    ],
+    "identity_checks": "本轮CU实读PID为44628，后续状态读取保持该PID。点击原生具名按钮进入TC-QA-PHI507-r2-Recovery-R4；Command-T后实见新增的选中普通行，再通过地址栏导航到准确的报告文件URL。报告标题已显示，但未实见第r5轮、未完成状态、512总数、107通过、0失败、93阻塞、312未执行、本轮新增7项及历史沿用说明；这些数字未作为已观察事实记录。未读取构建标识或推断本地fixture服务状态。",
+    "language_observed": "General显示语言为System Default；本轮原生界面为英文，未切换语言。",
+    "layout_observed": "General中Balanced卡片有蓝色选中边框；未切换布局。",
+    "not_executed_reason": "仅r5报告本地预览，不是VIS-05验收；完整手册测试继续。指定报告URL和标题出现后，分段显式等待累计120秒，正文始终空白。未见页面搜索或折叠控件，因此未展开ENV-04-COMMON，未查看「沿用r2，本轮未重跑」及旧截图；也未展开POS-03-BAL或查看其前置、步骤、结果、图像，未放大缩略图。保留空白现场，未以空白图冒充report-carried或report-new-case证据。VIS-05结果填写、JSON导出、Markdown复制及最终环境清理均按本次限定不执行。",
+    "operator_errors": [
+      "首次get_app_state返回Computer Use server error -10005: timeoutReached；重试读取成功，期间未执行界面变更。",
+      "super+comma调用后仍显示浏览器窗口；随后通过Phi→Settings正常进入设置，未修改偏好。"
+    ],
+    "precondition_actual": "新租约中重新读取固定QA app及PID；通过已存在的具名TC测试Space按钮进入。只读核实当前布局、语言与两个关闭相关开关后关闭Settings，再新建一个报告预览普通tab。",
+    "settings_observed": "settings.tabs.doubleClickToClose=on；settings.tabs.directionalClosing=on。仅只读查看，未点击任何开关，未修改快捷键或其他偏好。",
+    "steps_executed": [
+      "通过Computer Use重新读取固定app，取得PID 44628及当前窗口。",
+      "点击TC-QA-PHI507-r2-Recovery-R4原生按钮进入测试Space，读取原有条目。",
+      "通过Phi→Settings查看General和Advanced：Balanced、System Default、两个关闭相关开关均on；关闭已确认的Settings窗口。",
+      "Command-T新建一个普通tab，实读新增选中行。",
+      "通过原生地址栏输入file:///Users/e2e02/lane/qa-preview-r5/PHI-507/r5/index.html并按Return。",
+      "读取准确URL及报告窗口标题；保存report-top实际空白截图。",
+      "按12、35、35、38秒分段等待并通过CU重读，累计显式等待120秒；正文均为空白。",
+      "保存after现场，保留本次报告tab及原有TC对象，无菜单或确认框。"
+    ],
+    "unit_id": "VIS-05-COMMON"
+  }
+}

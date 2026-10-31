@@ -1,0 +1,41 @@
+{
+  "unit_id": "DBL-19-PER",
+  "job": "DBL-19-performance-interruption-cleanup-r6",
+  "scope": "中断后现场清理已实际完成；非源用例验收，不改变partial结果。",
+  "source": "qa-evidence/r6/DBL-19-performance-interruption-cleanup-r6-observations.json",
+  "observation": {
+    "active_after": "New Tab",
+    "active_before": "TC-A · TC-PHI507-r6-DBL19-PER-c1；收尾核对B/C split后，TC-B为活动pane。",
+    "after": "c1专用窗口已关闭；当前New Tab窗口普通列表仅见New Tab，本项A和B/C组不再列出。旧TC-P、TC-M仍列出。",
+    "before": "PID=47109，窗口标题TC-A · TC-PHI507-r6-DBL19-PER-c1。普通A在本项c1组之前，组内为B/C split；旧TC-P、TC-M同时列出。无菜单、Settings或拖放提示。",
+    "confirmation_choices": "File→Close Window后未出现确认框；未选择任何离开、删除或不再询问选项。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-19-PER attempt2 cleanup-initial",
+      "EVIDENCE: DBL-19-PER attempt2 cleanup-split",
+      "EVIDENCE: DBL-19-PER attempt2 cleanup-window",
+      "EVIDENCE: DBL-19-PER attempt2 restore-layout-before",
+      "EVIDENCE: DBL-19-PER attempt2 restore-layout",
+      "EVIDENCE: DBL-19-PER attempt2 restore-toggles-before",
+      "EVIDENCE: DBL-19-PER attempt2 restore-toggles",
+      "EVIDENCE: DBL-19-PER attempt2 cleanup-ending"
+    ],
+    "identity_checks": "屏幕实见A/B/C均属TC-PHI507-r6-DBL19-PER-c1批次且为普通页。A打开编号099181e3-6699-44ff-9230-a6070f922345，标记KEEP-A-c1；B打开编号8939dea5-9b24-45a0-ac89-4f3772e13383，标记KEEP-B-c1；C打开编号505c34d9-5634-4e9d-bf39-79a5c3416a4c，标记KEEP-C-c1。A/B/C均实见“测试音已停止”。全部返回中的PID均为47109。旧保存项仅核对列表名称，未打开正文。",
+    "language_observed": "原生界面为英文；General的Display language实读System Default，保持原值，未触发语言重启。",
+    "layout_observed": "General初始截图实见Performance选中；单击Balanced一次后截图实见Balanced选中。最终浏览器chrome为Balanced纵向侧栏。",
+    "not_executed_reason": "遵照本次额外操作约束，仅进行中断后现场收尾；没有重跑源用例的任何静音或关闭控件核心双击，没有新增测试页。前批核心动作的背景信息未作为本次观察结果补写，收尾不构成DBL-19验收结论。",
+    "operator_errors": [],
+    "precondition_actual": "本次从固定app的get_app_state重新核实现场，实见c1窗口及普通A、组内B/C split。当前A及随后显示的B/C正文、编号、标记均可辨认，三个页面测试音均已停止，无需再发送停止音频操作。",
+    "settings_observed": "Command-comma实际打开Guest设置，随后通过原生General和Advanced工具栏定位。General：System Default保持，Performance→Balanced。Advanced初读doubleClickToClose=on、directionalClosing=on；仅单击doubleClickToClose一次，点击返回即时显示off/on，随后get_app_state再次确认off/on。未点击directionalClosing或其他开关，未改快捷键。",
+    "steps_executed": [
+      "get_app_state读取固定app、PID、当前窗口并保存cleanup-initial截图。",
+      "单击本项B/C split对应原生row一次，读取最新状态并保存cleanup-split截图，核对B/C批次、编号、标记与测试音停止状态。",
+      "通过原生File菜单选择Close Window，读取返回并get_app_state保存cleanup-window截图；未出现确认框。",
+      "使用Command-comma打开设置，实际进入Guest后单击General；记录System Default和Performance选中现场。",
+      "单击General中的Balanced一次，get_app_state并保存restore-layout截图。",
+      "单击Advanced，实读两个目标开关均为on；保存restore-toggles-before截图。",
+      "仅单击双击关闭开关一次，即时读取两个开关为off/on，再get_app_state保存restore-toggles截图。",
+      "单击已确认的Settings原生close button；get_app_state保存cleanup-ending截图，确认New Tab、Balanced侧栏、旧TC-P/TC-M仍列出且无菜单或弹窗。"
+    ],
+    "unit_id": "DBL-19-PER"
+  }
+}

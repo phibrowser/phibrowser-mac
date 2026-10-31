@@ -1,0 +1,1646 @@
+{
+  "session_id": "01a19129-7dab-7411-a1e3-fe3ca3c11275",
+  "audit_scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+  "tools_called": [
+    "mcp__computer_use__",
+    "mcp__computer_use__click",
+    "mcp__computer_use__get_app_state",
+    "mcp__computer_use__press_key",
+    "mcp__computer_use__scroll"
+  ],
+  "extraction_warnings": [],
+  "non_computer_use_calls": [],
+  "mcp_event_count": 181,
+  "mcp_events": [
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 714691250
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 657776458
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 201845709
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 294073542
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 51479958
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 324430584
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 872338875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 812960916
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 58885709
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 609919125
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 56107792
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 22325875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "type_text",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 356286792
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 794324334
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 313179125
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 577179167
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 343646625
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 934691917
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 472104459
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 800427834
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "type_text",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 862629917
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 498985541
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 792958917
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 158819834
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 478961375
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 608037291
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "type_text",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 806047791
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 530533917
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 829914209
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 61507833
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 487693417
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 696011958
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "type_text",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 872431917
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 463145208
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 925925000
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 494444416
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 6804583
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 485362834
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 11067166
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 460834875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 889839375
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 608561250
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 944163250
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "scroll",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 571235709
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 427776875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 639029375
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 887712583
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 528950750
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 46920667
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 4054792
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 527620583
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 792625459
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 501848667
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 28876875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 959967750
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 400991791
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 449328208
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 484836500
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 846654625
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 33665292
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 727400625
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 849358041
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 910468375
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 11196708
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 439720166
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 896475791
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 934397541
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 927933208
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 944761125
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 518585750
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 16041625
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 920961458
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 690342958
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 829670541
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 11856708
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 947163458
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 517797250
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 785943084
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 884373333
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 28080250
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 866817709
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 473193834
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 794908500
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 899528750
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 492413875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "scroll",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 276072208
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 950265334
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 928327083
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 474235416
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 974242833
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 963592958
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 111459500
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 452720584
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 652939916
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 691036333
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 608407042
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 694296209
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 366015250
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 427063125
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 726887666
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 231207750
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 940164708
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "type_text",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 686027916
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 309463667
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 647786875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 347878042
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 622874459
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 928100292
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 106545708
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 597434125
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 997329834
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 488362291
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 304049792
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 616947375
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 910547625
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 803668917
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 977285541
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 116104125
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 722468833
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 785567084
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 765583042
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 314628167
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 434655417
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 649401000
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 313035958
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 654807334
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 357240750
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 813354375
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "type_text",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 70784167
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 850756416
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 335255208
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 37633000
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 450435750
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 654362417
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "type_text",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 841188500
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 794180875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 154095166
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 506212416
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 614043875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "type_text",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 913779083
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 831459958
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 156486125
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 583655250
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 778592458
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "type_text",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 905216500
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 977349584
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 477116000
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 918623125
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 523629500
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 986801208
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 479919459
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 787270792
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 637524541
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 883535292
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "scroll",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 624014916
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 979274250
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 967319125
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 456523833
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 100832375
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 985360875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 21992084
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 522973625
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 753805250
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 997723667
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 195138083
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 473225000
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "drag",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 94203083
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 476971500
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "press_key",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 7258291
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 417417167
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 917581666
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "scroll",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 602177333
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 910698250
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 922800792
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 436905500
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 2,
+        "nanos": 3048917
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 922107541
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "scroll",
+      "status": "completed",
+      "duration": {
+        "secs": 1,
+        "nanos": 509031667
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 974646292
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "click",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 980782875
+      }
+    },
+    {
+      "server": "computer-use",
+      "tool": "get_app_state",
+      "status": "completed",
+      "duration": {
+        "secs": 0,
+        "nanos": 469839833
+      }
+    }
+  ],
+  "non_computer_use_mcp_events": []
+}

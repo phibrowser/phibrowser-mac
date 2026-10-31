@@ -1,0 +1,168 @@
+{
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T08:36:46.234041+00:00",
+  "job": "POS-03_POS-04-comfortable-basic-r6",
+  "decision": "pass",
+  "basis": "实际查看21张原始完整窗口进度图，逐张SHA匹配正式原图；另查看最终清理完整窗口缩放图。93CU/零非CU，原生观察与动作核对。",
+  "findings": [
+    "Comfortable/SystemDefault/on-on实见。",
+    "POS03 F活动右键C/关闭左侧，只剩CDEF，活动F；CDEF原编号与前置相同。",
+    "POS04 F活动右键C/关闭右侧，只剩ABC，活动C；ABC原编号相同。",
+    "每项都通过具名TC Space入口；无操作错误或确认框。",
+    "31号图确认专用窗口清理后原有NewTab、旧TC保存项仍在，无菜单或弹窗。Comfortable/SystemDefault/on-on按队列保留；本批未重复终测恢复。"
+  ],
+  "sources": [
+    {
+      "raw_number": 2,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-002.jpg",
+      "sha256": "e0505019e839e783c626b8833e8cc02e39d2ef978cf560f14081204f64190b19",
+      "marker": "POS-03-COM attempt1 general",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-002.jpg"
+    },
+    {
+      "raw_number": 3,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-003.jpg",
+      "sha256": "acf8e7a39047639759a9514f6534fcb32f1ec55729670b9b1c47f7446a26b5b6",
+      "marker": "POS-03-COM attempt1 settings",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-003.jpg"
+    },
+    {
+      "raw_number": 6,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-006.jpg",
+      "sha256": "3d757b2d61fcec8faf0cb49f8f3feaf67948de1e28fe4cdd76e7bc43cb7c8ebe",
+      "marker": "POS-03-COM attempt1 setup-F",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-006.jpg"
+    },
+    {
+      "raw_number": 7,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-007.jpg",
+      "sha256": "087fe86f94b1bc73315cd39de208493d1e8654a55eba67f2cbe40fd42b42a09b",
+      "marker": "POS-03-COM attempt1 setup-E",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-007.jpg"
+    },
+    {
+      "raw_number": 8,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-008.jpg",
+      "sha256": "45a6412e46a08b2be20cea9330d81fe80b490343f27988f8d263d66f9767e6aa",
+      "marker": "POS-03-COM attempt1 setup-D",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-008.jpg"
+    },
+    {
+      "raw_number": 9,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-009.jpg",
+      "sha256": "d35b317004bd7eed0e8506046c3e38f8ad5bcd332efec066f2e33501384a3921",
+      "marker": "POS-03-COM attempt1 setup-C",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-009.jpg"
+    },
+    {
+      "raw_number": 12,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-012.jpg",
+      "sha256": "cd26127f84c1eeebfd687a1f25953452860f00ef32681b4879e72632e1c73d00",
+      "marker": "POS-03-COM attempt1 before",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-012.jpg"
+    },
+    {
+      "raw_number": 13,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-013.jpg",
+      "sha256": "1a033066a357bc31f9728345d3a825453760bf9cca3c52694248bf0265479841",
+      "marker": "POS-03-COM attempt1 menu",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-013.jpg"
+    },
+    {
+      "raw_number": 14,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-014.jpg",
+      "sha256": "6d223b96f0ce18a715ce9cb9b9af78bf86ae1bcb692f0dfac9c113807260d2b8",
+      "marker": "POS-03-COM attempt1 after",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-014.jpg"
+    },
+    {
+      "raw_number": 15,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-015.jpg",
+      "sha256": "785c2c889239e8a282b3b98a65f5311bf9c9153a6e320557274f9a3a709d19f8",
+      "marker": "POS-03-COM attempt1 identity-C",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-015.jpg"
+    },
+    {
+      "raw_number": 16,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-016.jpg",
+      "sha256": "5958c630b17bbbb5bed6b00fa392e95b99db8a5f5f12fdc87e1cdd8124b43aa7",
+      "marker": "POS-03-COM attempt1 identity-D",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-016.jpg"
+    },
+    {
+      "raw_number": 17,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-017.jpg",
+      "sha256": "8633820d25abfc2c3e8f6e69fd9514d2feaae50ac7f552a5491abf225a252f9b",
+      "marker": "POS-03-COM attempt1 identity-E",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-017.jpg"
+    },
+    {
+      "raw_number": 20,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-020.jpg",
+      "sha256": "9461abe6ebcafb9177b9ad3ae2a9f617b969ef4e3a4c47c327c1d08bac1f3ea5",
+      "marker": "POS-04-COM attempt1 setup-F",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-020.jpg"
+    },
+    {
+      "raw_number": 23,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-023.jpg",
+      "sha256": "ce6013f986c7b3b4fbb33e2cf245d790319a70af6ab876819f511d277323819a",
+      "marker": "POS-04-COM attempt1 setup-C",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-023.jpg"
+    },
+    {
+      "raw_number": 24,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-024.jpg",
+      "sha256": "3c7ac15aebd0a95e940e9be8a321ba63c2a1bd57d22b8ff9aa840c5db5202d54",
+      "marker": "POS-04-COM attempt1 setup-B",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-024.jpg"
+    },
+    {
+      "raw_number": 25,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-025.jpg",
+      "sha256": "9c1dc3a81b48821bc13bb2ce4d3d6103070dd13a3d8e7e7a6edb44597855bff2",
+      "marker": "POS-04-COM attempt1 setup-A",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-025.jpg"
+    },
+    {
+      "raw_number": 26,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-026.jpg",
+      "sha256": "42e90060113f22b6dbaa0fb890ad53ffdca10ff922c42a684ca5719164258cb5",
+      "marker": "POS-04-COM attempt1 before",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-026.jpg"
+    },
+    {
+      "raw_number": 27,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-027.jpg",
+      "sha256": "d4216dfb7a769da330054160922b981f2d1ef4bcc5cfa072505f32afeb1d51ce",
+      "marker": "POS-04-COM attempt1 menu",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-027.jpg"
+    },
+    {
+      "raw_number": 28,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-028.jpg",
+      "sha256": "c2c26044a73ce119a7fe2bfd63f31d75a86a9781696039c77d352847a9b26f4d",
+      "marker": "POS-04-COM attempt1 after",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-028.jpg"
+    },
+    {
+      "raw_number": 29,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-029.jpg",
+      "sha256": "098a2ba2cad45cf4d73f1cbe7084cd92bba9dac91b961b249d77b699c65881d5",
+      "marker": "POS-04-COM attempt1 identity-A",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-029.jpg"
+    },
+    {
+      "raw_number": 30,
+      "progress_file": "POS-03_POS-04-comfortable-basic-r6-progress-030.jpg",
+      "sha256": "9e550ac86921e97fabccb75c1f401ce8f8cbb7ca77bc64f98a7861699b7a029c",
+      "marker": "POS-04-COM attempt1 identity-B",
+      "canonical_file": "POS-03_POS-04-comfortable-basic-r6-030.jpg"
+    }
+  ],
+  "ending_viewed": {
+    "file": "POS-04-COM-14.png",
+    "sha256": "d01091a69519a0689a59dbdf48fd225216fc20fd80a1f92eafcff0927f39290b",
+    "raw_number": 31
+  }
+}

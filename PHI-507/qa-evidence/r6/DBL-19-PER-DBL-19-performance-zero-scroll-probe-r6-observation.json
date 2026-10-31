@@ -1,0 +1,61 @@
+{
+  "unit_id": "DBL-19-PER",
+  "job": "DBL-19-performance-zero-scroll-probe-r6",
+  "scope": "有限输入能力诊断：pages0返回错误，不构成hover或源验收通过；诊断清理已完成。",
+  "source": "qa-evidence/r6/DBL-19-performance-zero-scroll-probe-r6-observations.json",
+  "observation": {
+    "active_after": "零页请求后仍为TC-A；清理前为身份复核切到TC-B；最终为原New Tab窗口。",
+    "active_before": "TC-A · TC-PHI507-r6-DBL19-diag-d1，单选活动；目标TC-B非活动。",
+    "after": "scroll返回isError=true，完整错误文字为“pages must be > 0”。即时及延后截图均显示A/B顺序和选择未变，指针仍在A行附近；未见B的关闭x或预览卡。随后复读B，原打开编号与KEEP标记仍可见。该请求不能记录为受支持的hover或可用定位。",
+    "before": "诊断普通页顺序A/B，无组、无split；旧TC-P固定项、TC-M保存项仍列出。A正文及编号可见，B已逐页实见正文、普通页类型、编号和KEEP标记；无菜单、弹窗或投放提示。",
+    "confirmation_choices": "未出现确认框；清理普通诊断窗口时无离开确认。",
+    "evidence_markers": [
+      "EVIDENCE: DBL-19-PER attempt1 initial",
+      "EVIDENCE: DBL-19-PER attempt1 settings-open",
+      "EVIDENCE: DBL-19-PER attempt1 general-before",
+      "EVIDENCE: DBL-19-PER attempt1 performance",
+      "EVIDENCE: DBL-19-PER attempt1 advanced-before",
+      "EVIDENCE: DBL-19-PER attempt1 launch",
+      "EVIDENCE: DBL-19-PER attempt1 coordinate-calibration",
+      "EVIDENCE: DBL-19-PER attempt1 B-created",
+      "EVIDENCE: DBL-19-PER attempt1 B-keep",
+      "EVIDENCE: DBL-19-PER attempt1 A-created",
+      "EVIDENCE: DBL-19-PER attempt1 B-keep-recheck",
+      "EVIDENCE: DBL-19-PER attempt1 B-audio-state",
+      "EVIDENCE: DBL-19-PER attempt1 launch-closed",
+      "EVIDENCE: DBL-19-PER attempt1 before",
+      "EVIDENCE: DBL-19-PER attempt1 after",
+      "EVIDENCE: DBL-19-PER attempt1 failure",
+      "EVIDENCE: DBL-19-PER attempt1 B-final-identity",
+      "EVIDENCE: DBL-19-PER attempt1 cleanup-window",
+      "EVIDENCE: DBL-19-PER attempt1 general-restored",
+      "EVIDENCE: DBL-19-PER attempt1 advanced-final",
+      "EVIDENCE: DBL-19-PER attempt1 ending"
+    ],
+    "identity_checks": "固定app=/Applications/Phi Tab Close QA.app，各关键状态所读PID均为47109。经具名TC-QA-PHI507-r2-Recovery-R4按钮进入本活动Space。批次TC-PHI507-r6-DBL19-diag-d1；A普通页编号c9eaf9a0-62c5-4e1d-bcdb-fb111c92628a；B普通页编号414d054b-8a9e-4c51-9f3f-fc3a797aa969。B探测前及清理前均实见KEEP-B-DBL19-diag-d1及同一编号。零页请求使用最新原生树中唯一对应B的非活动普通标签row索引字符串“27”。",
+    "language_observed": "Display language=System Default，原生UI为英文；未切换语言或执行语言重启。",
+    "layout_observed": "起始Balanced；通过General原生button选择Performance用于诊断；收尾恢复Balanced。两次选择均有真实截图确认。",
+    "not_executed_reason": "按本任务额外约束，普通及组内split的静音按钮双击、重建后关闭按钮双击、普通tab相同控件复测均未执行；未构造组或split。指定pages=0请求被CU拒绝后停止探测，未循环、未尝试其他零值，也未将诊断当作源用例结果。",
+    "operator_errors": [
+      "指定诊断输入被工具拒绝：scroll({element_index:\"27\",direction:\"down\",pages:0})，isError=true，文字“pages must be > 0”；这是输入能力诊断返回，未归因产品行为。",
+      "B输入后的首张图仍显示空框；保留该图，正常切到A再返回一次后才实见KEEP，未重复输入。",
+      "准备中为查看页面下方点击内容空白并发送End，未观察到页面滚动；未据此确认音频状态或增加输入探测。"
+    ],
+    "precondition_actual": "使用File→New Window新建独立TC诊断窗口，从本地LAUNCH普通链接依次建立B、A，关闭LAUNCH后取得A/B顺序。只构造本次指针定位诊断所需两页。新建页未启动测试音，未见播放指示；未执行停止音频按钮，未另行确认页面下方音频状态。",
+    "settings_observed": "起始及最终doubleClickToClose=off、directionalClosing=on，两个开关全程未点击。Show a preview card when hovering over a tab=on，未改。未修改快捷键或其他设置。",
+    "steps_executed": [
+      "get_app_state核实固定app、PID和当前New Tab；点击已具名TC Space。",
+      "打开Settings，实读General的Balanced/System Default和Advanced的双击off、位置on、预览on；仅将布局切换Performance。",
+      "File→New Window后通过原生地址栏访问http://127.0.0.1:18211/launch/?run=TC-PHI507-r6-DBL19-diag-d1&pages=A:normal,B:normal。",
+      "在本轮安全内容空白单击校准坐标，原图指针位置与输入(1600,1000)一致；随后普通左键链接建立B和A，逐页读取正文、批次、类型及编号。",
+      "B输入一次KEEP-B-DBL19-diag-d1；首图未显示，切到A再返回一次后确认标记和原编号。",
+      "准备中点击安全内容空白并发送End，截图未见页面滚动；未启动测试音。",
+      "File→Close Tab关闭LAUNCH，实读A活动、B非活动及A/B顺序。",
+      "关键动作前get_app_state取证；仅一次调用scroll({app:\"/Applications/Phi Tab Close QA.app\",element_index:\"27\",direction:\"down\",pages:0})，完整保存错误文字并停止探测。",
+      "立即get_app_state；等待2秒后再次get_app_state，记录选择、顺序、指针及关闭x/预览卡未出现。",
+      "仅为结束身份核对切到B，get_app_state实见原编号及KEEP标记。",
+      "File→Close Window关闭诊断窗口，回到原New Tab；恢复Balanced，复读System Default及双击off/位置on，关闭Settings并取最终状态图。"
+    ],
+    "unit_id": "DBL-19-PER"
+  }
+}

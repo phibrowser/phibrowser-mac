@@ -1,0 +1,25 @@
+{
+  "job": "VIS-05-VIS-05-COMMON-report-r5-preview",
+  "exit_code": 0,
+  "session_id": "01a19073-de42-7b42-851e-6851a6a259e7",
+  "round": 6,
+  "lease_id": "8c1d8779-4eeb-4400-a591-7ecd2585843f",
+  "started_at": "2026-10-31T05:34:34.395660+00:00",
+  "ended_at": "2026-10-31T05:41:44.009652+00:00",
+  "units": [
+    "VIS-05-COMMON"
+  ],
+  "observed_units": [
+    "VIS-05-COMMON"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "58ac01183ae87e8b3cb8482a073b6b56f7d1a33bf72d0e40248393e4da3955c5",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 21,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

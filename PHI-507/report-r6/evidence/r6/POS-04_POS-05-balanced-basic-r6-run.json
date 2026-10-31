@@ -1,0 +1,27 @@
+{
+  "job": "POS-04_POS-05-balanced-basic-r6",
+  "exit_code": 0,
+  "session_id": "01a19086-36e2-7593-98cd-55fa5d49455b",
+  "round": 6,
+  "lease_id": "8c1d8779-4eeb-4400-a591-7ecd2585843f",
+  "started_at": "2026-10-31T05:54:37.123776+00:00",
+  "ended_at": "2026-10-31T06:33:27.675041+00:00",
+  "units": [
+    "POS-04-BAL",
+    "POS-05-BAL"
+  ],
+  "observed_units": [
+    "POS-04-BAL",
+    "POS-05-BAL"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "f7a1574ad8ca993989adf8d4445ce52463aa7d77e54c29047a5648713e42e70a",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 134,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  }
+}

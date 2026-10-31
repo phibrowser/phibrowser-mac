@@ -1,0 +1,49 @@
+{
+  "reviewer": "Ripley",
+  "scope": "仅报告维护；不改变VIS05验收待测结果",
+  "actual": "实际查看r5顶部、ENV04沿用说明与旧截图、POS03详情/中断备注和最终偏好及报告状态；全部来自CU。首次空白预览另存，不删除。",
+  "sources": [
+    {
+      "number": 3,
+      "file": "VIS-05-VIS-05-COMMON-report-r5-window-preview-003.jpg",
+      "marker": "VIS-05-COMMON attempt1 report-top",
+      "sha256": "22d8b07e62e676e42ad54608545ebdc27cbfb3998d6a3ccfba064f3a9227e921"
+    },
+    {
+      "number": 8,
+      "file": "VIS-05-VIS-05-COMMON-report-r5-window-preview-008.jpg",
+      "marker": "VIS-05-COMMON attempt1 report-carried",
+      "sha256": "9658805854b8a03f5699457a96d262c4f155056e657a6b6ee037f473c4a0b59b"
+    },
+    {
+      "number": 9,
+      "file": "VIS-05-VIS-05-COMMON-report-r5-window-preview-009.jpg",
+      "marker": "VIS-05-COMMON attempt1 report-carried-preview",
+      "sha256": "06bf4155226949583513ad78b20f070846f0ebaff4848e390af4601766914642"
+    },
+    {
+      "number": 11,
+      "file": "VIS-05-VIS-05-COMMON-report-r5-window-preview-011.jpg",
+      "marker": "VIS-05-COMMON attempt1 report-new-case",
+      "sha256": "adcf2e7663c5aa3737951889db920add950f73ac7582aa7e61f122f65db57833"
+    },
+    {
+      "number": 14,
+      "file": "VIS-05-VIS-05-COMMON-report-r5-window-preview-014.jpg",
+      "marker": "VIS-05-COMMON attempt1 report-new-case-interruption",
+      "sha256": "3cbe361161690e6a6a052449529fc4e042b715678ead76e1b71a4044ec9fc9bd"
+    },
+    {
+      "number": 17,
+      "file": "VIS-05-VIS-05-COMMON-report-r5-window-preview-017.jpg",
+      "marker": "VIS-05-COMMON attempt1 settings-advanced",
+      "sha256": "ddc7fe2c8dafeb1e64398d40d4e0a7cdb1c60b6516347a00d022ac35f43380cd"
+    },
+    {
+      "number": 18,
+      "file": "VIS-05-VIS-05-COMMON-report-r5-window-preview-018.jpg",
+      "marker": "VIS-05-COMMON attempt1 after",
+      "sha256": "ed12ca09371685bfbeb90cf836d37a74b32ebdcb8a138658fc267d588d261815"
+    }
+  ]
+}

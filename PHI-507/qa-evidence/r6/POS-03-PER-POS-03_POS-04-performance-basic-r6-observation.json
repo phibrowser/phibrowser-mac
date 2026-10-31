@@ -1,0 +1,51 @@
+{
+  "unit_id": "POS-03-PER",
+  "job": "POS-03_POS-04-performance-basic-r6",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r6/POS-03_POS-04-performance-basic-r6-observations.json",
+  "observation": {
+    "active_after": "核心动作后 F 仍活动且单选；随后为身份核对切到 C、D、E，核对末尾为 E。",
+    "active_before": "F 活动且单选；直接右键非活动 C 后，原生选中行和正文仍为 F。",
+    "after": "普通页面完整顺序 C/D/E/F；A/B 条目消失。旧 pin TC-P 和书签 TC-M 仍在。无组、split 或多选集合。",
+    "before": "普通页面完整顺序 A/B/C/D/E/F；F 单选活动。LAUNCH 已通过 File→Close Tab 关闭。",
+    "confirmation_choices": "核心动作未出现确认框。后续 POS-04 setup 清理此专用窗口时也未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: POS-03-PER attempt1 initial",
+      "EVIDENCE: POS-03-PER attempt1 initial-layout",
+      "EVIDENCE: POS-03-PER attempt1 layout",
+      "EVIDENCE: POS-03-PER attempt1 settings",
+      "EVIDENCE: POS-03-PER attempt1 launch",
+      "EVIDENCE: POS-03-PER attempt1 coordinate-calibration",
+      "EVIDENCE: POS-03-PER attempt1 new-F-identity",
+      "EVIDENCE: POS-03-PER attempt1 new-E-identity",
+      "EVIDENCE: POS-03-PER attempt1 new-D-identity",
+      "EVIDENCE: POS-03-PER attempt1 new-C-identity",
+      "EVIDENCE: POS-03-PER attempt1 new-B-identity",
+      "EVIDENCE: POS-03-PER attempt1 new-A-identity",
+      "EVIDENCE: POS-03-PER attempt1 before",
+      "EVIDENCE: POS-03-PER attempt1 menu",
+      "EVIDENCE: POS-03-PER attempt1 after",
+      "EVIDENCE: POS-03-PER attempt1 remaining-C-identity",
+      "EVIDENCE: POS-03-PER attempt1 remaining-D-identity",
+      "EVIDENCE: POS-03-PER attempt1 remaining-E-identity"
+    ],
+    "identity_checks": "run=TC-PHI507-r6-POS-03-PER-w26jr3。逐页实见 TC 字母标题、准确批次、普通页类型、正文、输入框和本次打开编号：A=72f255a5-3295-4d28-84e2-df6991a8740c；B=32820be2-a097-420c-8c22-810d9ea3d4f1；C=4084e4ad-c3f6-4518-a4c4-de7e3fd93e18；D=cb7a1a3a-1fc3-4000-a05e-573f086bd9df；E=7de4e1e5-3e80-42fe-845b-2169b58bdfeb；F=66e25f55-7d32-42a1-825a-2f9549c41a5f。动作后 F 在 after 图中显示原编号；随后逐页切换 C/D/E，正文及原编号均实见保持。固定应用路径，pid=47109。",
+    "language_observed": "界面及原生菜单为英文；General 实读 Display language=System Default。C 菜单原文为 Close Tabs Above、Close Tabs Below。",
+    "layout_observed": "起始截图为 Balanced 蓝框；经 General 点击 Performance 后截图确认 Performance 蓝框选中，浏览器外部为纵向标签列表。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "setup 关闭 Settings 后误用先前索引 8，实际点击原有 New Tab 的 Refresh；CU 返回已读取。之后使用最新索引 13 点击具名 TC-QA-PHI507-r2-Recovery-R4，再独立建立本项窗口和 A–F。未影响随后建立的被测文档；该误点当时仅保留文字返回，未另输出 failure 截图。"
+    ],
+    "precondition_actual": "File→New Window 独立窗口，地址栏导航至本地 /launch/，通过真实普通 HTML 链接依次建立 F/E/D/C/B/A，每页最终正文、批次、类型及编号均实见；关闭 LAUNCH 后实读顺序 A/B/C/D/E/F，再单击 F 使其活动。所有页面均为 normal，输入框为空，未添加组、split、pin 或书签。",
+    "settings_observed": "doubleClickToClose 起始 off，setup 仅点击此开关一次后即时为 on；未点击的 directionalClosing 始终实读 on。核心动作时 on/on。",
+    "steps_executed": [
+      "读取起始界面、General 和 Advanced；设置 Performance、doubleClickToClose=on，并逐次读取 directionalClosing=on。",
+      "独立建立准确 A–F，关闭 LAUNCH，核对普通顺序并活动 F。",
+      "关键动作前 get_app_state 留图；直接右键非活动 C 的 row，未先左键激活 C。",
+      "菜单 get_app_state 留图，确认 F 仍活动及 Close Tabs Above 原文；点击 Close Tabs Above。",
+      "结束 get_app_state 留图，先记录 C/D/E/F 和 F 活动，再逐页核对剩余文档原编号。",
+      "已输出本 unit 的 OBSERVATION；其专用窗口随后作为 POS-04 setup 清理。"
+    ],
+    "unit_id": "POS-03-PER"
+  }
+}

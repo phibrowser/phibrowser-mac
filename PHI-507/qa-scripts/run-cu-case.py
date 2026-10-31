@@ -21,7 +21,7 @@ for u in units:
  direct=lambda s:s.replace('{before}','关闭左侧标签页' if u['layout']=='comfortable' else '关闭上方标签页').replace('{after}','关闭右侧标签页' if u['layout']=='comfortable' else '关闭下方标签页')
  payload.append({'unit_id':u['key'],'title':u['title'],'layout':u['layout'],'language':u['language'] or ('zh-Hans' if a.base=='VIS-01' else '当前en'),'variant':u['variant'],'precondition':direct(u['pre']),'steps':[direct(s) for s in u['steps']],'expected_for_recording_only':[direct(s) for s in u['expected']],'reset':u['reset']})
 state=evidence_dir/'ending-state.txt';background=state.read_text() if state.exists() else '当前TC-QA-PHI507-r2，六个HTTPS测试A-F，B活动且有KEEP-B-507-r2；Balanced。旧窗口Default Chrome Web Store保留。Settings已关闭；本次仍需重新读取。'
-prompt=(qa/'qa-scripts/cu-operator-prefix.txt').read_text()+'\n\n本次限定执行批次：'+a.base+'。只执行下面列出的精确动作，不规划或添加其他用例。每个unit独立重建前置，按给定次序执行；同布局内不重复切换布局，最后统一恢复偏好。\n前次结束背景（不是当前事实，须实际重读）：'+background+'\n指定执行点数据：\n'+json.dumps(payload,ensure_ascii=False,indent=2)
+prompt=(qa/'qa-scripts/cu-operator-compact-r7.txt').read_text()+'\n\n本次限定执行批次：'+a.base+'。只执行下面列出的精确动作，不规划或添加其他用例。每个unit独立重建前置，按给定次序执行；同布局内不重复切换布局，最后统一恢复偏好。\n前次结束背景（不是当前事实，须实际重读）：'+background+'\n指定执行点数据：\n'+json.dumps(payload,ensure_ascii=False,indent=2)
 if a.language or a.base=='VIS-01':
  labels=json.loads((qa/'handbook-data.json').read_text())['labels'].get(a.language or 'zh-Hans',{})
  prompt+='\n本语言手册规定的确切文案（仅作观察对照，不代替实读）：\n'+json.dumps(labels,ensure_ascii=False,indent=2)

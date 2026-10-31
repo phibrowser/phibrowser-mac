@@ -1,0 +1,129 @@
+{
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T06:37:57.471708+00:00",
+  "job": "POS-04_POS-05-balanced-basic-r6",
+  "decisions": {
+    "POS-04-BAL": "pass",
+    "POS-05-BAL": "pass"
+  },
+  "basis": "实际查看17张关键原图；前9张中途原图与正式收回原图逐一SHA相同。原始观察与134个CU事件审计、零非CU调用同时核对。",
+  "findings": [
+    "POS04：F活动直接右键C，Below后仅A/B/C，活动C；A/B/C原编号与前置一致，正文可见。",
+    "POS05：A前方、C后方及唯一A的两方向均存在且禁用；唯一A的Close Other Tabs也禁用。",
+    "收尾只将doubleClick on→off，directional保持on；General为Balanced/SystemDefault；专用窗口清理后回旧NewTab。",
+    "首次过长run截断、之后既有LAUNCH导航空白、一次正常重开、过期菜单索引与s2编排ReferenceError均分别保留，不认定产品缺陷或正常核心。"
+  ],
+  "sources": [
+    {
+      "number": 15,
+      "file": "POS-04_POS-05-balanced-basic-r6-015.jpg",
+      "marker": "POS-04-BAL attempt2 identity-F",
+      "sha256": "6b6a7cdea16a68987bcd8488fa30aacb9a547fb6cbed5de4d3351ea0372cf701",
+      "canonical_sha_match": true
+    },
+    {
+      "number": 18,
+      "file": "POS-04_POS-05-balanced-basic-r6-018.jpg",
+      "marker": "POS-04-BAL attempt2 identity-C",
+      "sha256": "1721bf46e44cf42022f5d3c8b5d7e2378430506b700554767d03efbed9368b3e",
+      "canonical_sha_match": true
+    },
+    {
+      "number": 19,
+      "file": "POS-04_POS-05-balanced-basic-r6-019.jpg",
+      "marker": "POS-04-BAL attempt2 identity-B",
+      "sha256": "129e2c42dd329552909ac9670e807b63580f9268ba92cabf70d6c22e1e69f84e",
+      "canonical_sha_match": true
+    },
+    {
+      "number": 20,
+      "file": "POS-04_POS-05-balanced-basic-r6-020.jpg",
+      "marker": "POS-04-BAL attempt2 identity-A",
+      "sha256": "cdd3321a2aed8b5d4ff19c39ee03715724ccff0caafcb965764d99fe0ee13f85",
+      "canonical_sha_match": true
+    },
+    {
+      "number": 21,
+      "file": "POS-04_POS-05-balanced-basic-r6-021.jpg",
+      "marker": "POS-04-BAL attempt2 before",
+      "sha256": "d27d8f5f89b3942ab026646eeb95da41d7bd92f480c602ab7c0b4862339acec7",
+      "canonical_sha_match": true
+    },
+    {
+      "number": 22,
+      "file": "POS-04_POS-05-balanced-basic-r6-022.jpg",
+      "marker": "POS-04-BAL attempt2 menu",
+      "sha256": "6b6a2d2f8bd7fbdbde0461eea720a07e93b7d98c2bafd107fe17171dd5eddf20",
+      "canonical_sha_match": true
+    },
+    {
+      "number": 23,
+      "file": "POS-04_POS-05-balanced-basic-r6-023.jpg",
+      "marker": "POS-04-BAL attempt2 after",
+      "sha256": "fd5c52e179f5e11000786c8e8277474824cdb1e0ce6174054bcb4070d8c3a413",
+      "canonical_sha_match": true
+    },
+    {
+      "number": 24,
+      "file": "POS-04_POS-05-balanced-basic-r6-024.jpg",
+      "marker": "POS-04-BAL attempt2 retained-A",
+      "sha256": "1076b43b5e18a16a8583c956dd15ce0be1c2d41add5d3a76c8f5117411bee2fc",
+      "canonical_sha_match": true
+    },
+    {
+      "number": 25,
+      "file": "POS-04_POS-05-balanced-basic-r6-025.jpg",
+      "marker": "POS-04-BAL attempt2 retained-B",
+      "sha256": "7934ff3aa1501c74f23b770c111d2c662834928830551ee8e66cc67bdf707c35",
+      "canonical_sha_match": true
+    },
+    {
+      "number": 30,
+      "file": "POS-04_POS-05-balanced-basic-r6-030.jpg",
+      "marker": "POS-05-BAL attempt1 before",
+      "sha256": "cb91d66c7a5e992349f4c59051f9fccd3486b91daf5224381c84231771ed1331"
+    },
+    {
+      "number": 31,
+      "file": "POS-04_POS-05-balanced-basic-r6-031.jpg",
+      "marker": "POS-05-BAL attempt1 first-A-menu",
+      "sha256": "0fc85fdf8aff7b8f52ab14e5af3965e32cbbcc6332540fbd76e361bd50bf10ac"
+    },
+    {
+      "number": 32,
+      "file": "POS-04_POS-05-balanced-basic-r6-032.jpg",
+      "marker": "POS-05-BAL attempt1 last-C-menu",
+      "sha256": "e3fd05c58353f93e4a655769a3ee884a56a42d96ec00c3085a1ebbbc960cce56"
+    },
+    {
+      "number": 34,
+      "file": "POS-04_POS-05-balanced-basic-r6-034.jpg",
+      "marker": "POS-05-BAL attempt1 only-A-menu",
+      "sha256": "350209b7e8ba5c2da3ff00a6fe730a1d4646429268bb5964b0f0a9f2d435d5b0"
+    },
+    {
+      "number": 35,
+      "file": "POS-04_POS-05-balanced-basic-r6-035.jpg",
+      "marker": "POS-05-BAL attempt1 after",
+      "sha256": "fe1c392fb0fe556769ae6b1284ff69c87491ddba5301a0b7d07d62d61f322b2d"
+    },
+    {
+      "number": 36,
+      "file": "POS-04_POS-05-balanced-basic-r6-036.jpg",
+      "marker": "POS-05-BAL attempt1 restore-advanced",
+      "sha256": "6416d7e50233704731733690cd866933c872b6d8728ae6d5b71c1e13c99b62a4"
+    },
+    {
+      "number": 37,
+      "file": "POS-04_POS-05-balanced-basic-r6-037.jpg",
+      "marker": "POS-05-BAL attempt1 restore-general",
+      "sha256": "62d4519142ef43c9e5d6d911ad4e8caab4e258dedabceaaf229bb14b70d87645"
+    },
+    {
+      "number": 38,
+      "file": "POS-04_POS-05-balanced-basic-r6-038.jpg",
+      "marker": "POS-05-BAL attempt1 cleanup",
+      "sha256": "77a6e09310dffefa8500c2ec789ff8d0318bc4ab79c08975892c70ea12da5937"
+    }
+  ]
+}

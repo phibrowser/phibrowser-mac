@@ -1,0 +1,107 @@
+{
+  "base_case": "仅执行 POS-04-BAL、POS-05-BAL；固定 app=/Applications/Phi Tab Close QA.app。所有浏览器操作、状态读取和截图均使用 mcp__computer_use。初始实读 PID 44628、Balanced、System Default、doubleClickToClose=on、directionalClosing=on。",
+  "ending_state": "已完成两个指定 unit 的实际动作与逐项 OBSERVATION 记录。收尾仅点击 doubleClickToClose 一次，由 on 改为 off；即时原生树同时读得 directionalClosing 仍为 on。最终完整读取确认 Balanced 蓝框选中、System Default、双击 off／位置 on；Settings 已关闭。本批 POS-04、POS-05 专用窗口均通过 File→Close Window 清理，未重建收尾前置。当前 PID 47109，活动窗口为恢复后原有的 New Tab，无菜单或弹窗，旧 pin TC-P 与书签 TC-M 条目仍可见，未打开或修改。POS-04 前置恢复中执行过唯一一次授权正常 Quit；重开后未重新导航旧报告，也未将旧报告或 New Tab 作为文档存活证据。未切换到 Default、未操作 Chrome Web Store、未删除保存项。",
+  "observations": [
+    {
+      "active_after": "核心动作后为 C；随后身份核对切换 A、B，unit 记录结束时为 B。",
+      "active_before": "F 单选活动；直接右键非活动 C 后仍为 F。",
+      "after": "普通区完整顺序为 A/B/C，D/E/F 条目消失；C 正文立即可见，随后 A、B 正文也实际可见。原有 pin P、书签 M 条目仍可见。",
+      "before": "普通区完整顺序 A/B/C/D/E/F；F 为唯一选中页。无组、无 split；LAUNCH 已通过 File→Close Tab 关闭。",
+      "confirmation_choices": "核心关闭未出现确认框。",
+      "evidence_markers": [
+        "EVIDENCE: POS-04-BAL attempt1 initial",
+        "EVIDENCE: POS-04-BAL attempt1 settings-general",
+        "EVIDENCE: POS-04-BAL attempt1 settings-advanced",
+        "EVIDENCE: POS-04-BAL attempt1 launch",
+        "EVIDENCE: POS-04-BAL attempt1 coordinate-calibration",
+        "EVIDENCE: POS-04-BAL attempt1 identity-F",
+        "EVIDENCE: POS-04-BAL attempt1 launch-corrected",
+        "EVIDENCE: POS-04-BAL attempt1 launch-ready",
+        "EVIDENCE: POS-04-BAL attempt1 launch-wait",
+        "EVIDENCE: POS-04-BAL attempt1 launch-wait-second",
+        "EVIDENCE: POS-04-BAL attempt1 loading-failure",
+        "EVIDENCE: POS-04-BAL attempt1 reload-result",
+        "EVIDENCE: POS-04-BAL attempt1 quit-result",
+        "EVIDENCE: POS-04-BAL attempt1 restart-window",
+        "EVIDENCE: POS-04-BAL attempt1 restart-general",
+        "EVIDENCE: POS-04-BAL attempt1 restart-advanced",
+        "EVIDENCE: POS-04-BAL attempt2 launch",
+        "EVIDENCE: POS-04-BAL attempt2 identity-F",
+        "EVIDENCE: POS-04-BAL attempt2 identity-E",
+        "EVIDENCE: POS-04-BAL attempt2 identity-D",
+        "EVIDENCE: POS-04-BAL attempt2 identity-C",
+        "EVIDENCE: POS-04-BAL attempt2 identity-B",
+        "EVIDENCE: POS-04-BAL attempt2 identity-A",
+        "EVIDENCE: POS-04-BAL attempt2 before",
+        "EVIDENCE: POS-04-BAL attempt2 menu",
+        "EVIDENCE: POS-04-BAL attempt2 after",
+        "EVIDENCE: POS-04-BAL attempt2 retained-A",
+        "EVIDENCE: POS-04-BAL attempt2 retained-B"
+      ],
+      "identity_checks": "有效前置 run=TC-PHI507-r5-POS-04-BAL-63132-position-r5。六页均实际看见 TC 标题、准确批次、普通页类型及输入框。打开编号：A=72070a2b-d89e-4ac2-9dd1-ca811e6bafce；B=6b0558bb-d3d4-4f9d-8095-da9766422689；C=ca195f2a-42d4-4ad7-8c35-dd7aa7c05817；D=9fb94d6b-3df7-4acd-afed-54b20c38b4f0；E=6872c364-7b58-4534-913c-8418725106b8；F=828e690c-8620-44e2-a779-d5834c474cc0。核心动作后 A/B/C 均显示原编号及正文，输入框为空；未重载这些剩余页。",
+      "language_observed": "英文浏览器界面，General 为 System Default；菜单原文 Close Tabs Above、Close Tabs Below。",
+      "layout_observed": "General 中 Balanced 蓝框选中；浏览器 chrome 为外部纵向列表。未切换布局。",
+      "not_executed_reason": "无最终未执行步骤。attempt1 尚未执行核心动作即因准备正文空白中断，保留原记录；恢复后 attempt2 独立重建前置并执行指定动作。",
+      "operator_errors": [
+        "首次准备使用较长批次名，F 正文批次末尾显示 position-r；已在核心动作前用普通 File→Close Tab 关闭该 F，缩短 run。",
+        "Settings 正常关闭后，编排末尾出现 ReferenceError: s2 is not defined；该错误未触发额外浏览器动作。"
+      ],
+      "precondition_actual": "attempt2 通过独立 File→New Window 与 launch 真实链接建立六个普通页；按 F/E/D/C/B/A 顺序打开，关闭入口后实读 A/B/C/D/E/F，再选中 F。准备恢复记录：缩短 run 后 LAUNCH 只有正确标题而正文空白；分段观察计时 30.323 秒、86.584 秒、163.783 秒仍空白。执行一次 super+r，187.663 秒后再读仍空白。随后执行唯一一次授权正常 Quit，工具返回 App quit；第一次重开读取返回 timeoutReached，下一次 get_app_state 实读新 PID 47109、New Tab。重读 Balanced、System Default、on/on 后，以新 run 独立建立 attempt2。",
+      "settings_observed": "核心动作前 doubleClickToClose=on、directionalClosing=on；授权重启后再次实读两项均为 on。此 unit 未点击开关。",
+      "steps_executed": [
+        "逐页通过 launch 普通链接建立并读取 F/E/D/C/B/A 的正文、批次、类型和编号；File→Close Tab 关闭 LAUNCH。",
+        "确认原生完整顺序 A/B/C/D/E/F、活动 F，保留 before 截图。",
+        "直接右键非活动 C 的原生 row；保留菜单截图，实读活动页仍为 F。",
+        "点击菜单 Close Tabs Below。",
+        "立即读取完整剩余集合 A/B/C、活动 C 与 C 原编号并截图。",
+        "正常切换 A、B，分别读取正文和原编号并截图；未重载或重建动作后页面。",
+        "下一项 setup 时通过 File→Close Window 清理该本批专用窗口。"
+      ],
+      "unit_id": "POS-04-BAL"
+    },
+    {
+      "active_after": "首项 A 菜单、末项 C 菜单、普通关闭 C/B、唯一 A 菜单及菜单取消后的活动页均为 A。",
+      "active_before": "A 单选活动。",
+      "after": "通过 C、B 各自菜单的普通 Close 留下唯一普通页 A。唯一 A 菜单中 Close Tabs Above、Close Tabs Below 均存在且显示 disabled。原有 pin P、书签 M 条目仍可见。",
+      "before": "独立普通区顺序 A/B/C；LAUNCH 已关闭。原有 pin P、书签 M 位于普通区之外；无组、无 split。",
+      "confirmation_choices": "无确认框。首项与唯一项观察后使用原生菜单 Cancel；未点击任何禁用菜单项。",
+      "evidence_markers": [
+        "EVIDENCE: POS-05-BAL attempt1 launch",
+        "EVIDENCE: POS-05-BAL attempt1 identity-C",
+        "EVIDENCE: POS-05-BAL attempt1 identity-B",
+        "EVIDENCE: POS-05-BAL attempt1 identity-A",
+        "EVIDENCE: POS-05-BAL attempt1 before",
+        "EVIDENCE: POS-05-BAL attempt1 first-A-menu",
+        "EVIDENCE: POS-05-BAL attempt1 last-C-menu",
+        "EVIDENCE: POS-05-BAL attempt1 only-A-before",
+        "EVIDENCE: POS-05-BAL attempt1 only-A-menu",
+        "EVIDENCE: POS-05-BAL attempt1 after",
+        "EVIDENCE: POS-05-BAL attempt1 restore-advanced",
+        "EVIDENCE: POS-05-BAL attempt1 restore-general",
+        "EVIDENCE: POS-05-BAL attempt1 cleanup"
+      ],
+      "identity_checks": "run=TC-PHI507-r5-POS-05-BAL-63133-position-r5。A/B/C 均逐页实际看见准确批次、普通页类型、输入框及打开编号：A=01254c82-30d0-4ac3-8e4d-057920c64ff4；B=417b406b-81a6-4388-9287-9daedf27cf44；C=5af9eaf6-6cbe-4574-a7fa-bd7509cf851e。唯一 A 及结束画面仍显示原 A 编号、普通页正文和空输入框。",
+      "language_observed": "英文浏览器界面；System Default 未改变，收尾再次实读。菜单原文 Close Tabs Above、Close Tabs Below。",
+      "layout_observed": "Balanced，当前 chrome 外部纵向列表再次确认；收尾 General 中 Balanced 蓝框选中。未重复切换布局。",
+      "not_executed_reason": "",
+      "operator_errors": [
+        "setup 清理 POS-04 窗口后，首次点击 File→New Window 返回 The element ID is no longer valid。立即停止并 get_app_state；该次返回 File 菜单文字但无 image。使用重新读取的索引点击 New Window 后建立准确前置。"
+      ],
+      "precondition_actual": "通过独立 File→New Window、launch 真实链接逆序建立 C/B/A；每页正文和编号实际可见。关闭 LAUNCH 后实读准确 A/B/C。沿用本批已实读的 on/on，核心步骤期间未改设置。",
+      "settings_observed": "核心步骤使用 doubleClickToClose=on、directionalClosing=on。批次收尾仅点击双击开关一次；即时原生树读取 doubleClickToClose=off、directionalClosing=on，未点击的位置开关未联动改变。随后完整读取 Advanced 与 General 确认。",
+      "steps_executed": [
+        "独立建立 A/B/C，关闭 LAUNCH 并保留 before 截图。",
+        "右键首项 A：Close Tabs Above 存在且 disabled，Close Tabs Below 可用；保留菜单截图后执行原生 Cancel。",
+        "右键末项 C：Close Tabs Below 存在且 disabled，Close Tabs Above 可用；活动页仍为 A，保留菜单截图。",
+        "从 C 菜单点击普通 Close；重新读取仅 A/B。",
+        "右键 B 并点击普通 Close；重新读取仅 A，保留唯一项动作前截图。",
+        "右键唯一 A：两个方向项均存在且 disabled；保留菜单截图，未点击禁用项。",
+        "执行原生 Cancel，保留结束截图。",
+        "按批次要求恢复双击 off／位置 on，实读 Balanced、System Default，关闭 Settings。",
+        "确认清理目标仍为本项 A 后，File→Close Window 清理本批窗口；最终 get_app_state 取证。"
+      ],
+      "unit_id": "POS-05-BAL"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

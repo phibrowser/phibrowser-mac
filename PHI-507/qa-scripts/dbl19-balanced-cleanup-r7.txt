@@ -1,0 +1,5 @@
+这是中断后的收尾维护，替代payload核心测试步骤；不要重跑DBL19、不要创建新文档、不判验收。只对固定QAapp通过CU读取当前窗口，核对是否仍有TC-PHI507-r7-DBL19-BAL-m1或c1窗口、组及音频。上次最终图只列NewTab和旧TC-P/M；这只是历史，重新读取。
+
+当前仍有本次m1/c1时只正常清理明确属于这两批的测试窗口/组；若音频确实仍播放，停止后清理。只有NewTab/旧TC-P/M就不要为清理反复开窗口或删除旧保存项。未知对象保留。然后General确认Balanced/System Default；Advanced恢复双击off/位置on，每次只改需要改变的值并立即读两个开关，关闭Settings后取新树/图。
+
+记录清理前/后窗口、保留的旧TC保存项和实际偏好；每张图marker用DBL-19-BAL attempt1 cleanup-before、cleanup-general、cleanup-switches、cleanup-after等。偏好截图要真实返回图。最多这一次维护，不查新控件、不做关闭双击，不改系统输入设置。最终schema记录该维护真实动作，不冒充DBL19源用例全部完成。

@@ -1,8 +1,8 @@
 {
-  "job": "DBL-19-balanced-controls-r7",
-  "started_at": "2026-10-31T12:22:17.869749+00:00",
+  "job": "DBL-19-comfortable-controls-r7",
+  "started_at": "2026-10-31T13:56:39.479049+00:00",
   "state": "running",
   "units": [
-    "DBL-19-BAL"
+    "DBL-19-COM"
   ]
 }

@@ -1,0 +1,46 @@
+{
+  "base_case": "DBL-19-BAL。本轮仅执行用户明确指定的中断后收尾维护，替代payload核心测试步骤；未重跑DBL-19，未判pass/fail或验收。",
+  "ending_state": "固定/Applications/Phi Tab Close QA.app仍为PID 71724。Settings已正常关闭，最终get_app_state显示当前窗口及活动条目为New Tab；具名TC-QA-PHI507-r2-Recovery-R4 Space的旧TC-P pin、旧TC-M行、无名行及New Tab条目仍列出。General实读Balanced已选中、Display language为System Default；Advanced最终实读双击关闭off、按位置关闭on。未创建文档，未删除保存项，未关闭旧测试或未知窗口，未修改系统输入设置。",
+  "observations": [
+    {
+      "active_after": "New Tab单行selected；Settings已关闭。",
+      "active_before": "New Tab单行selected。",
+      "after": "最终窗口为New Tab，PID仍为71724。侧栏继续列出旧TC-P · TC-PHI507-r2-DBL-09-PER pin、旧TC-M · TC-PHI507-r2-DBL-09-PER、无名行、New Tab条目。未执行窗口、组或保存项删除。",
+      "before": "首次实读固定QA app为PID 71724、窗口New Tab。当前侧栏列出旧TC-P pin、旧TC-M行、无名行和New Tab条目；没有明确显示TC-PHI507-r7-DBL19-BAL-m1或c1对象。",
+      "confirmation_choices": "未出现确认对话框，未选择任何确认选项。",
+      "evidence_markers": [
+        "DBL-19-BAL attempt1 cleanup-before",
+        "DBL-19-BAL attempt1 cleanup-space",
+        "DBL-19-BAL attempt1 cleanup-menu-cancel",
+        "DBL-19-BAL attempt1 cleanup-general",
+        "DBL-19-BAL attempt1 cleanup-switches-before",
+        "DBL-19-BAL attempt1 cleanup-switches",
+        "DBL-19-BAL attempt1 cleanup-settings-closed",
+        "DBL-19-BAL attempt1 cleanup-after"
+      ],
+      "identity_checks": "所有浏览器操作及状态读取均通过Computer Use，目标始终为/Applications/Phi Tab Close QA.app；PID全程71724。点击了明确命名的TC-QA-PHI507-r2-Recovery-R4 Space。Window菜单未列出m1/c1批次窗口，但列有其他旧测试及报告窗口，均未进入或关闭。未打开旧TC-P/M正文，仅记录其原生侧栏身份继续存在，不据此宣称正文标记存活。",
+      "language_observed": "原生设置界面为英文；General的Display language实读为System Default，未改动。",
+      "layout_observed": "General真实截图中Balanced呈蓝框选中；本轮未切换布局。",
+      "not_executed_reason": "用户额外约束明确要求只做一次收尾维护，因此未执行普通tab、普通split或组内split的静音及关闭按钮双击，未创建或重建测试文档。当前侧栏和Window菜单未发现明确属于m1/c1的清理目标，也未见本次音频播放指示，故未停止音频、删除组或关闭测试窗口；未对应用全局音频状态作超出画面证据的断言。",
+      "operator_errors": [
+        "在Window菜单中按Escape后，返回原生树仍显示该菜单；随后Command-comma已打开Guest设置，但返回树仍显示Window菜单。使用当前菜单明确暴露的Cancel动作退出后取得Guest设置真实树及图。未据Escape返回宣称菜单已关闭。",
+        "CU调用未返回工具错误。"
+      ],
+      "precondition_actual": "本轮执行维护替代步骤。重新读取的当前窗口未显示m1/c1测试组或本次音频控件；Window菜单也未列出m1/c1批次窗口。General初始已为Balanced/System Default；Advanced初始为双击on、位置on。",
+      "settings_observed": "General：Balanced已选中，Display language=System Default，两项均未改动。Advanced：settings.tabs.doubleClickToClose初始on，仅单击一次恢复为off；同次返回树立即实读settings.tabs.doubleClickToClose=off、settings.tabs.directionalClosing=on。位置开关初始和结束均为on，未点击。偏好前后均有真实返回图。",
+      "steps_executed": [
+        "通过get_app_state核对固定app路径、PID 71724和New Tab窗口，取得cleanup-before真实图。",
+        "点击具名TC-QA-PHI507-r2-Recovery-R4 Space；实读侧栏旧TC-P pin、旧TC-M行、无名行和New Tab条目，未改动这些对象。",
+        "打开Window菜单读取窗口列表；未见TC-PHI507-r7-DBL19-BAL-m1或c1批次窗口，保留全部其他窗口。",
+        "未发现明确清理目标或本次音频播放指示，未执行删除、停止音频或关闭测试窗口。",
+        "Command-comma打开Guest设置；使用当前Window菜单明确暴露的Cancel动作退出菜单。",
+        "进入General，实读System Default，并从真实截图确认Balanced蓝框选中；未重复设置已有值。",
+        "进入Advanced，实读双击on、位置on。",
+        "仅单击Double-click to close tabs开关一次；立即从返回树读取双击off、位置on，并取得cleanup-switches真实图。",
+        "单击Settings原生关闭按钮；重新get_app_state核对PID、New Tab活动行和保留的旧侧栏对象，取得cleanup-after真实图。"
+      ],
+      "unit_id": "DBL-19-BAL"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

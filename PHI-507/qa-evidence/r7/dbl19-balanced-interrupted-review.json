@@ -1,0 +1,153 @@
+{
+  "round": 7,
+  "job": "DBL-19-balanced-controls-r7",
+  "decision": "partial",
+  "findings": [
+    "实际查看17张关键原图，3个mute前后文档与split/组仍在；净图标speaker-wave，不补述中间切换。",
+    "普通/普通split/组内split三处Close均没有明确可命中控件，三个核心双击未发送。",
+    "c1 split前图59左B暂空，60同原编号/KEEP可见；准备异常保留，不算关闭测试或已确认产品缺陷。",
+    "末图66为NewTab与旧TC-P/M，偏好恢复未完成；原运行5400秒中断，最终JSON缺失，恢复记录明确来源。"
+  ],
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T13:55:29.646481+00:00",
+  "computer_use_completed": 214,
+  "non_computer_use_calls": 0,
+  "sources": [
+    {
+      "raw_number": 6,
+      "raw_file": "DBL-19-balanced-controls-r7-006.jpg",
+      "raw_sha256": "ffc14529520d787034fd736fc18cff91c57c4d3f6a7b4235a6e7ab03447cfa20",
+      "viewed_file": "DBL-19-BAL-16.png",
+      "viewed_sha256": "864568e0ba1637507593457329589a45aeb4e710737b26e93f4bea6100015a09",
+      "marker": "DBL-19-BAL attempt1 settings-on-on"
+    },
+    {
+      "raw_number": 19,
+      "raw_file": "DBL-19-balanced-controls-r7-019.jpg",
+      "raw_sha256": "e18fc9b45d808d45a4ff48dab9fb7de5c2ab419aedcc88a25afc411a3df640cb",
+      "viewed_file": "DBL-19-BAL-29.png",
+      "viewed_sha256": "ea28b1ba9bb8175d4dbb98ff5b833d25eac95d2bf8914f751281667efff13718",
+      "marker": "DBL-19-BAL attempt1 normal-mute-before"
+    },
+    {
+      "raw_number": 20,
+      "raw_file": "DBL-19-balanced-controls-r7-020.jpg",
+      "raw_sha256": "23ab92d6bdcf0bf6c9c25f31059a0d4a54341c80e36bdbe553347d694ec44c89",
+      "viewed_file": "DBL-19-BAL-30.png",
+      "viewed_sha256": "3d672159f72996cc9f1d1a29ad60c2640ae7fc56460bd97afc5e33e9cf3ef855",
+      "marker": "DBL-19-BAL attempt1 normal-mute-after"
+    },
+    {
+      "raw_number": 21,
+      "raw_file": "DBL-19-balanced-controls-r7-021.jpg",
+      "raw_sha256": "5336519d4647da46dae9297b83a273e26790d39d891057ac7bf32bb88c49441c",
+      "viewed_file": "DBL-19-BAL-31.png",
+      "viewed_sha256": "2b31b3857ec1a207f2eaafa86b844e6ccc973f8daca0d7fecd0078349d4a2b95",
+      "marker": "DBL-19-BAL attempt1 normal-mute-A-identity"
+    },
+    {
+      "raw_number": 28,
+      "raw_file": "DBL-19-balanced-controls-r7-028.jpg",
+      "raw_sha256": "5d849d8d42009e2fbe982fac193b0ab68675904572804896485a2298bdcbfdf0",
+      "viewed_file": "DBL-19-BAL-38.png",
+      "viewed_sha256": "4b7d55924b5d53c54de41b79c033c056bd78ef09dcdaef20606d0588a795efce",
+      "marker": "DBL-19-BAL attempt1 split-mute-before"
+    },
+    {
+      "raw_number": 29,
+      "raw_file": "DBL-19-balanced-controls-r7-029.jpg",
+      "raw_sha256": "226008adc517cc2347957a71e0d4b15a8c830804920bdde17c9b10c050e7d5bf",
+      "viewed_file": "DBL-19-BAL-39.png",
+      "viewed_sha256": "be5a1d9bd180a9fe1ff1eba1fde5fa34206ce61b325304cecc11259350f51b77",
+      "marker": "DBL-19-BAL attempt1 split-mute-after"
+    },
+    {
+      "raw_number": 30,
+      "raw_file": "DBL-19-balanced-controls-r7-030.jpg",
+      "raw_sha256": "2d597da7c224a123bd3115b90f28c209e8dde864356b75088b5cbae75127f939",
+      "viewed_file": "DBL-19-BAL-40.png",
+      "viewed_sha256": "329900d1b2d020f5b15dd32b12921abcf538c7aefafc24decac12c725d939639",
+      "marker": "DBL-19-BAL attempt1 split-mute-identities"
+    },
+    {
+      "raw_number": 33,
+      "raw_file": "DBL-19-balanced-controls-r7-033.jpg",
+      "raw_sha256": "82dc0625299991479588d3682a4ed5a6619f2e79ddd99a738c03be3eb15482da",
+      "viewed_file": "DBL-19-BAL-43.png",
+      "viewed_sha256": "2c2c64c3a38888554d0d16b58b794b9e49b9715a104cc063f260d71d539fc984",
+      "marker": "DBL-19-BAL attempt1 group-mute-before"
+    },
+    {
+      "raw_number": 34,
+      "raw_file": "DBL-19-balanced-controls-r7-034.jpg",
+      "raw_sha256": "7086c6cf6cb787753ef39628ce539ca85644cd3210e10bf0dbc3e0e432fb1c9e",
+      "viewed_file": "DBL-19-BAL-44.png",
+      "viewed_sha256": "eaa978369923e29469e71c60a3a5addc849956ac7b24fd001dba6954f5c786f4",
+      "marker": "DBL-19-BAL attempt1 group-mute-after"
+    },
+    {
+      "raw_number": 36,
+      "raw_file": "DBL-19-balanced-controls-r7-036.jpg",
+      "raw_sha256": "5749873ea73c52dfd577a2f78bd5f31cff0eeb86aca5a50160f15c4951a897df",
+      "viewed_file": "DBL-19-BAL-46.png",
+      "viewed_sha256": "353f989e50368b7cf8d18db127cd2d83673d84ffe76415b5d3ec82e9c2903790",
+      "marker": "DBL-19-BAL attempt1 group-mute-C-identity-top"
+    },
+    {
+      "raw_number": 51,
+      "raw_file": "DBL-19-balanced-controls-r7-051.jpg",
+      "raw_sha256": "b93258c81e7fbde431fce966a636eadc24ebd8ece8273f32645fe93391c6a858",
+      "viewed_file": "DBL-19-BAL-61.png",
+      "viewed_sha256": "776be9b3c0c6aff2d96620a1e1105524cf9870c67356093038ef4c3ff9d32675",
+      "marker": "DBL-19-BAL attempt1 normal-close-before"
+    },
+    {
+      "raw_number": 52,
+      "raw_file": "DBL-19-balanced-controls-r7-052.jpg",
+      "raw_sha256": "31b31a78af241f78ca812ae2d0c1041d482df3243e084e3a9302f3b3b0edf133",
+      "viewed_file": "DBL-19-BAL-62.png",
+      "viewed_sha256": "2532c4736f10c45d727ef96a55472809351e625fdc7d45a9dcdbb384e088609c",
+      "marker": "DBL-19-BAL attempt1 normal-close-control-unavailable"
+    },
+    {
+      "raw_number": 59,
+      "raw_file": "DBL-19-balanced-controls-r7-059.jpg",
+      "raw_sha256": "a5c145872eb2696fd80ebd83efdeab65812bab27f9d6fe044e165e220382557f",
+      "viewed_file": "DBL-19-BAL-69.png",
+      "viewed_sha256": "f50b488be500d83ea74090b995612af2e1418a480d7b358bae6761fc5e3593b7",
+      "marker": "DBL-19-BAL attempt1 split-close-before"
+    },
+    {
+      "raw_number": 60,
+      "raw_file": "DBL-19-balanced-controls-r7-060.jpg",
+      "raw_sha256": "fd5d9879131c0d988282379bb3189a47a6e475ba492a019d31ef84c2c57963c3",
+      "viewed_file": "DBL-19-BAL-70.png",
+      "viewed_sha256": "203a22e534855880f7f823171a84232df6479d69a05207004e9ee63ef2b05b7a",
+      "marker": "DBL-19-BAL attempt1 split-close-control-unavailable"
+    },
+    {
+      "raw_number": 63,
+      "raw_file": "DBL-19-balanced-controls-r7-063.jpg",
+      "raw_sha256": "8b8fa549337d6240af0edff8c9c247c10f66dd5f44c2f12550e23fc6320d3013",
+      "viewed_file": "DBL-19-BAL-73.png",
+      "viewed_sha256": "da39d2098c9a55dedd338a889e57c23a822c61f0195df95d62fd67cc278f45c3",
+      "marker": "DBL-19-BAL attempt1 group-close-before"
+    },
+    {
+      "raw_number": 64,
+      "raw_file": "DBL-19-balanced-controls-r7-064.jpg",
+      "raw_sha256": "e94d1ccf9af8032fedeb031bbb00b334f970b33be9d2812bfca926cbeaaaaf1a",
+      "viewed_file": "DBL-19-BAL-74.png",
+      "viewed_sha256": "8b627e98718500a114f67f7ac16fed3fa8bd9ad6ff88880d7e3c648c751e0ec3",
+      "marker": "DBL-19-BAL attempt1 group-close-control-unavailable"
+    },
+    {
+      "raw_number": 66,
+      "raw_file": "DBL-19-balanced-controls-r7-066.jpg",
+      "raw_sha256": "88a7f84881cd78d5f975fd3306ffd566bea814e9b006520dc6266642aaf398bf",
+      "viewed_file": "DBL-19-BAL-76.png",
+      "viewed_sha256": "de2fa6ff3e19168757588881ad2cfec5e3f55cf2ea7cdb17d7ea2ff4a344a351",
+      "marker": "DBL-19-BAL attempt1 cleanup-windows"
+    }
+  ]
+}

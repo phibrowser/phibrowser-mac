@@ -1,5 +1,5 @@
 {
-  "state": "running",
+  "state": "operator_error",
   "index": 0,
   "total": 2,
   "args": [
@@ -13,5 +13,19 @@
     "--timeout",
     "5400"
   ],
-  "started_at": "2026-10-31T12:22:17.621852+00:00"
+  "started_at": "2026-10-31T12:22:17.621852+00:00",
+  "exit_code": 1,
+  "remaining": [
+    [
+      "DBL-19",
+      "--layout",
+      "comfortable",
+      "--tag",
+      "controls-r7",
+      "--instructions",
+      "PHI-507/qa-scripts/dbl19-controls-r7.txt",
+      "--timeout",
+      "5400"
+    ]
+  ]
 }

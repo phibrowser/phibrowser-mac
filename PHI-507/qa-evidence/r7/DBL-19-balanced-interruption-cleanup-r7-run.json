@@ -1,0 +1,28 @@
+{
+  "job": "DBL-19-balanced-interruption-cleanup-r7",
+  "exit_code": 0,
+  "gui_exit_code": 0,
+  "session_id": "01a1923c-04b6-7960-9622-4b974f1a819d",
+  "round": 7,
+  "lease_id": "796b3eb5-cd64-4ff8-8ac2-1efb10b97af4",
+  "started_at": "2026-10-31T13:52:49.041006+00:00",
+  "ended_at": "2026-10-31T13:55:02.401776+00:00",
+  "units": [
+    "DBL-19-BAL"
+  ],
+  "gui_reported_timeout": false,
+  "observed_units": [
+    "DBL-19-BAL"
+  ],
+  "missing_units": [],
+  "duplicate_units": false,
+  "computer_use_audit": {
+    "source_sha256": "8277f61eb6f1c87d769609d4aa264ec88f9e7bbb4b7058cca725372203568988",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 12,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  },
+  "collection_errors": []
+}

@@ -1,1 +1,1 @@
-已通过 File→Close Window 关闭本次报告专用窗口。结束 get_app_state 显示固定 QA app 仍为 pid 71724，当前窗口和活动条目均为 New Tab；原有 TC-P pin、TC-M 行、无名 row 及 New Tab 条目仍列出。未修改报告结果、偏好、pin、组或 Space，未操作未知窗口或保存项。
+固定/Applications/Phi Tab Close QA.app仍为PID 71724。Settings已正常关闭，最终get_app_state显示当前窗口及活动条目为New Tab；具名TC-QA-PHI507-r2-Recovery-R4 Space的旧TC-P pin、旧TC-M行、无名行及New Tab条目仍列出。General实读Balanced已选中、Display language为System Default；Advanced最终实读双击关闭off、按位置关闭on。未创建文档，未删除保存项，未关闭旧测试或未知窗口，未修改系统输入设置。

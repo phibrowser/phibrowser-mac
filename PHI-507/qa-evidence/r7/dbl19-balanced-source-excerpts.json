@@ -1,0 +1,191 @@
+{
+  "scope": "Saved CU events and parent-reviewed source excerpt only; no live browser read",
+  "job": "DBL-19-balanced-controls-r7",
+  "checked_at": "2026-10-31T13:58:17.984729+00:00",
+  "progress_canonical_matches": [
+    {
+      "raw_number": 6,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-006.jpg",
+      "sha256": "ffc14529520d787034fd736fc18cff91c57c4d3f6a7b4235a6e7ab03447cfa20",
+      "marker": "DBL-19-BAL attempt1 settings-on-on",
+      "canonical_file": "DBL-19-balanced-controls-r7-006.jpg",
+      "canonical_sha256": "ffc14529520d787034fd736fc18cff91c57c4d3f6a7b4235a6e7ab03447cfa20"
+    },
+    {
+      "raw_number": 19,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-019.jpg",
+      "sha256": "e18fc9b45d808d45a4ff48dab9fb7de5c2ab419aedcc88a25afc411a3df640cb",
+      "marker": "DBL-19-BAL attempt1 normal-mute-before",
+      "canonical_file": "DBL-19-balanced-controls-r7-019.jpg",
+      "canonical_sha256": "e18fc9b45d808d45a4ff48dab9fb7de5c2ab419aedcc88a25afc411a3df640cb"
+    },
+    {
+      "raw_number": 20,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-020.jpg",
+      "sha256": "23ab92d6bdcf0bf6c9c25f31059a0d4a54341c80e36bdbe553347d694ec44c89",
+      "marker": "DBL-19-BAL attempt1 normal-mute-after",
+      "canonical_file": "DBL-19-balanced-controls-r7-020.jpg",
+      "canonical_sha256": "23ab92d6bdcf0bf6c9c25f31059a0d4a54341c80e36bdbe553347d694ec44c89"
+    },
+    {
+      "raw_number": 21,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-021.jpg",
+      "sha256": "5336519d4647da46dae9297b83a273e26790d39d891057ac7bf32bb88c49441c",
+      "marker": "DBL-19-BAL attempt1 normal-mute-A-identity",
+      "canonical_file": "DBL-19-balanced-controls-r7-021.jpg",
+      "canonical_sha256": "5336519d4647da46dae9297b83a273e26790d39d891057ac7bf32bb88c49441c"
+    },
+    {
+      "raw_number": 28,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-028.jpg",
+      "sha256": "5d849d8d42009e2fbe982fac193b0ab68675904572804896485a2298bdcbfdf0",
+      "marker": "DBL-19-BAL attempt1 split-mute-before",
+      "canonical_file": "DBL-19-balanced-controls-r7-028.jpg",
+      "canonical_sha256": "5d849d8d42009e2fbe982fac193b0ab68675904572804896485a2298bdcbfdf0"
+    },
+    {
+      "raw_number": 29,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-029.jpg",
+      "sha256": "226008adc517cc2347957a71e0d4b15a8c830804920bdde17c9b10c050e7d5bf",
+      "marker": "DBL-19-BAL attempt1 split-mute-after",
+      "canonical_file": "DBL-19-balanced-controls-r7-029.jpg",
+      "canonical_sha256": "226008adc517cc2347957a71e0d4b15a8c830804920bdde17c9b10c050e7d5bf"
+    },
+    {
+      "raw_number": 30,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-030.jpg",
+      "sha256": "2d597da7c224a123bd3115b90f28c209e8dde864356b75088b5cbae75127f939",
+      "marker": "DBL-19-BAL attempt1 split-mute-identities",
+      "canonical_file": "DBL-19-balanced-controls-r7-030.jpg",
+      "canonical_sha256": "2d597da7c224a123bd3115b90f28c209e8dde864356b75088b5cbae75127f939"
+    },
+    {
+      "raw_number": 33,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-033.jpg",
+      "sha256": "82dc0625299991479588d3682a4ed5a6619f2e79ddd99a738c03be3eb15482da",
+      "marker": "DBL-19-BAL attempt1 group-mute-before",
+      "canonical_file": "DBL-19-balanced-controls-r7-033.jpg",
+      "canonical_sha256": "82dc0625299991479588d3682a4ed5a6619f2e79ddd99a738c03be3eb15482da"
+    },
+    {
+      "raw_number": 34,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-034.jpg",
+      "sha256": "7086c6cf6cb787753ef39628ce539ca85644cd3210e10bf0dbc3e0e432fb1c9e",
+      "marker": "DBL-19-BAL attempt1 group-mute-after",
+      "canonical_file": "DBL-19-balanced-controls-r7-034.jpg",
+      "canonical_sha256": "7086c6cf6cb787753ef39628ce539ca85644cd3210e10bf0dbc3e0e432fb1c9e"
+    },
+    {
+      "raw_number": 36,
+      "progress_file": "DBL-19-balanced-controls-r7-progress-036.jpg",
+      "sha256": "5749873ea73c52dfd577a2f78bd5f31cff0eeb86aca5a50160f15c4951a897df",
+      "marker": "DBL-19-BAL attempt1 group-mute-C-identity-top",
+      "canonical_file": "DBL-19-balanced-controls-r7-036.jpg",
+      "canonical_sha256": "5749873ea73c52dfd577a2f78bd5f31cff0eeb86aca5a50160f15c4951a897df"
+    }
+  ],
+  "substep_observations": [
+    {
+      "unit_id": "DBL-19-BAL",
+      "substep": "普通tab mute",
+      "steps_executed": [
+        "A开始测试音；看到正在播放文案及A speaker图标",
+        "仅对A speaker坐标(100,515)发送一次click_count:2",
+        "先保留核心后图，再逐页核对A/B/C"
+      ],
+      "before": "本项A/B/C顺序；A活动，无split/组；另有旧TC-P pin、TC-M、无名行、New Tab",
+      "after": "本项A/B/C仍在，A speaker净图标仍为未加斜线的扬声器；未观察中间切换",
+      "identity_checks": "A 5d4724b1-b406-49be-a9c4-860cd28b9a10 KEEP-A-m1；B 71e3b6fa-d1ad-4794-a8e6-90b924919779 KEEP-B-m1；C 6b191e78-d346-434f-8fed-49cd0077abb3 KEEP-C-m1，动作后逐页实见原编号/标记",
+      "settings_observed": "doubleClickToClose on；directionalClosing on",
+      "language_observed": "English；System Default",
+      "layout_observed": "Balanced，外部纵向列表",
+      "evidence_markers": [
+        "EVIDENCE: DBL-19-BAL attempt1 normal-mute-before",
+        "EVIDENCE: DBL-19-BAL attempt1 normal-mute-after",
+        "EVIDENCE: DBL-19-BAL attempt1 normal-mute-A-identity",
+        "EVIDENCE: DBL-19-BAL attempt1 normal-mute-B-identity",
+        "EVIDENCE: DBL-19-BAL attempt1 normal-mute-C-identity"
+      ]
+    },
+    {
+      "unit_id": "DBL-19-BAL",
+      "substep": "普通split mute",
+      "steps_executed": [
+        "B/C分别开始测试音，实见正在播放文案及两个speaker",
+        "B当前，对C右键Split with Current，形成左B/右C",
+        "仅B speaker(84,587)发送一次click_count:2；先拍后图再查身份"
+      ],
+      "before": "A；普通split B/C，B活动；两页KEEP-B-m1/KEEP-C-m1",
+      "after": "A及B/C split均仍在；B/C净图标speaker-wave；B原编号和KEEP实见，C该阶段图实见KEEP和编号尾段，随后组内复核见完整原编号",
+      "identity_checks": "B 71e3b6fa-d1ad-4794-a8e6-90b924919779；C 6b191e78-d346-434f-8fed-49cd0077abb3；A KEEP-A-m1，完整编号在组内分支后复核",
+      "settings_observed": "on/on；Balanced；English/System Default",
+      "not_executed_reason": "",
+      "evidence_markers": [
+        "EVIDENCE: DBL-19-BAL attempt1 split-B-playing",
+        "EVIDENCE: DBL-19-BAL attempt1 split-C-playing",
+        "EVIDENCE: DBL-19-BAL attempt1 split-mute-before",
+        "EVIDENCE: DBL-19-BAL attempt1 split-mute-after",
+        "EVIDENCE: DBL-19-BAL attempt1 split-mute-identities",
+        "EVIDENCE: DBL-19-BAL attempt1 split-mute-C-identity",
+        "EVIDENCE: DBL-19-BAL attempt1 split-mute-A-identity"
+      ]
+    },
+    {
+      "unit_id": "DBL-19-BAL",
+      "substep": "组内split mute",
+      "steps_executed": [
+        "同一B/C split经New Tab Group，Grey · 2 tabs，再Rename Group为TC-PHI507-r7-DBL19-BAL-m1",
+        "仅B对应原生button speaker-wave索引30发送一次click_count:2",
+        "先核心后图，再查B/C及A；停止A/B/C测试音"
+      ],
+      "before": "组内左B/右C，两speaker-wave，B活动；邻页A",
+      "after": "组及B/C配对仍在，两个净图标speaker-wave；B/C完整原编号、各自KEEP实见；A完整原编号和KEEP不变；停止后B/C文案均测试音已停止",
+      "identity_checks": "A 5d4724b1-b406-49be-a9c4-860cd28b9a10 KEEP-A-m1；B 71e3b6fa-d1ad-4794-a8e6-90b924919779 KEEP-B-m1；C 6b191e78-d346-434f-8fed-49cd0077abb3 KEEP-C-m1",
+      "settings_observed": "on/on；Balanced；English/System Default",
+      "not_executed_reason": "",
+      "evidence_markers": [
+        "EVIDENCE: DBL-19-BAL attempt1 group-mute-before",
+        "EVIDENCE: DBL-19-BAL attempt1 group-mute-after",
+        "EVIDENCE: DBL-19-BAL attempt1 group-mute-C-identity-top",
+        "EVIDENCE: DBL-19-BAL attempt1 group-mute-A-identity",
+        "EVIDENCE: DBL-19-BAL attempt1 mute-all-stopped"
+      ]
+    }
+  ],
+  "core_and_control_calls": [
+    {
+      "timestamp": "2026-10-31T12:32:12.722Z",
+      "input": "await eval(`(async()=>{${load(\"helper\")} await call(\"mcp__computer_use__click\",{x:100,y:515,click_count:2});await snap(\"normal-mute-after\");await call(\"mcp__computer_use__scroll\",{element_index:\"0\",direction:\"up\",pages:0.7});await snap(\"normal-mute-A-identity\");})()`);\n"
+    },
+    {
+      "timestamp": "2026-10-31T12:38:21.126Z",
+      "input": "await eval(`(async()=>{${load(\"helper\")}await call(\"mcp__computer_use__click\",{x:84,y:587,click_count:2});await snap(\"split-mute-after\");await call(\"mcp__computer_use__scroll\",{element_index:\"0\",direction:\"up\",pages:0.7});await snap(\"split-mute-identities\");})()`);\n"
+    },
+    {
+      "timestamp": "2026-10-31T12:48:32.459Z",
+      "input": "await eval(`(async()=>{${load(\"helper\")}await call(\"mcp__computer_use__click\",{element_index:\"30\",click_count:2});await snap(\"group-mute-after\");await call(\"mcp__computer_use__click\",{x:2340,y:1000});await call(\"mcp__computer_use__press_key\",{key:\"super+Home\"});await snap(\"group-mute-C-identity\");})()`);\n"
+    },
+    {
+      "timestamp": "2026-10-31T13:13:21.953Z",
+      "input": "await eval(`(async()=>{${load(\"helper\")}await call(\"mcp__computer_use__perform_secondary_action\",{element_index:\"22\",action:\"Cancel\"});await snap(\"normal-close-control-unavailable\");})()`);\n"
+    },
+    {
+      "timestamp": "2026-10-31T13:32:36.215Z",
+      "input": "await eval(`(async()=>{${load(\"helper\")}await call(\"mcp__computer_use__perform_secondary_action\",{element_index:\"21\",action:\"Cancel\"});await snap(\"split-close-control-unavailable\");})()`);\n"
+    },
+    {
+      "timestamp": "2026-10-31T13:46:18.059Z",
+      "input": "await eval(`(async()=>{${load(\"helper\")}await call(\"mcp__computer_use__click\",{element_index:\"26\",mouse_button:\"right\"});text(load(\"tree\"));const m=load(\"tree\").match(/^\\\\s*(\\\\d+) menu Secondary Actions: Cancel$/m);if(!m)throw Error(\"Cancel missing\");await call(\"mcp__computer_use__perform_secondary_action\",{element_index:m[1],action:\"Cancel\"});await snap(\"group-close-control-unavailable\");})()`);\n"
+    }
+  ],
+  "console_tail": [
+    "mcp: computer-use/click (completed)",
+    "mcp: computer-use/get_app_state started",
+    "mcp: computer-use/get_app_state (completed)",
+    "mcp: computer-use/press_key started",
+    "mcp: computer-use/press_key (completed)",
+    "mcp: computer-use/get_app_state started",
+    "mcp: computer-use/get_app_state (completed)",
+    "lane-runner: timeout after 5400.0s, killed"
+  ]
+}

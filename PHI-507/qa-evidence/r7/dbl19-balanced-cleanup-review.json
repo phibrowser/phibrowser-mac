@@ -1,0 +1,38 @@
+{
+  "round": 7,
+  "job": "DBL-19-balanced-interruption-cleanup-r7",
+  "findings": [
+    "General截图Balanced蓝框/System Default；Advanced最终双击off位置on；末图NewTab和旧TC保存项。",
+    "维护没有重跑核心，不覆盖源部分执行。"
+  ],
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T13:56:39.240427+00:00",
+  "computer_use_completed": 12,
+  "non_computer_use_calls": 0,
+  "sources": [
+    {
+      "raw_number": 4,
+      "raw_file": "DBL-19-balanced-interruption-cleanup-r7-004.jpg",
+      "raw_sha256": "a16bb06fc5e8f98546597796774caa0a49a7f1bf4e24d05f1a12fc1ea1d9e6ea",
+      "viewed_file": "DBL-19-BAL-78.png",
+      "viewed_sha256": "6a9b889587722c7efa4fb5ef29488d24e91c96d522145a55e40eaefe2f3c73e2",
+      "marker": "DBL-19-BAL attempt1 cleanup-general"
+    },
+    {
+      "raw_number": 6,
+      "raw_file": "DBL-19-balanced-interruption-cleanup-r7-006.jpg",
+      "raw_sha256": "86a04f148fe595ea9732699577593b74558f31518a561ebcec2002af678f9822",
+      "viewed_file": "DBL-19-BAL-80.png",
+      "viewed_sha256": "9eabffb54d73e11cac0e52021c669c5546efac9a3d260f3a71b52ad139a94580",
+      "marker": "DBL-19-BAL attempt1 cleanup-switches"
+    },
+    {
+      "raw_number": 8,
+      "raw_file": "DBL-19-balanced-interruption-cleanup-r7-008.jpg",
+      "raw_sha256": "f1917be60af6076e181eb250fadca226aa8ea4a4b9dadffc46c63dcc73950f67",
+      "viewed_file": "DBL-19-BAL-81.png",
+      "viewed_sha256": "843e6e3745ca53dcf430d9a5cf077a176f00caf76c0e03c7e6ce213534afb510",
+      "marker": "DBL-19-BAL attempt1 cleanup-after"
+    }
+  ]
+}

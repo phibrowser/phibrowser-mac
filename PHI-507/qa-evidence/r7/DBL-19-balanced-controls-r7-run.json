@@ -1,0 +1,34 @@
+{
+  "job": "DBL-19-balanced-controls-r7",
+  "exit_code": 1,
+  "gui_exit_code": 0,
+  "session_id": "01a191e9-252f-7a52-9d14-c57fc7f9095b",
+  "round": 7,
+  "lease_id": "796b3eb5-cd64-4ff8-8ac2-1efb10b97af4",
+  "started_at": "2026-10-31T12:22:17.869749+00:00",
+  "ended_at": "2026-10-31T13:52:18.256037+00:00",
+  "units": [
+    "DBL-19-BAL"
+  ],
+  "gui_reported_timeout": true,
+  "computer_use_audit": {
+    "source_sha256": "e9b24b87d3437d6b1f847c7046c5ae7bcec28638a47927557b2e488a7157c90c",
+    "scope": "tool references and completed MCP events in saved CU session; no browser introspection",
+    "completed_mcp_event_count": 214,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "extraction_warnings": []
+  },
+  "collection_errors": [],
+  "original_final_output_missing": true,
+  "provenance": {
+    "reconstructed_by": "Ripley",
+    "not_original_final_output": true,
+    "source_session": "01a191e9-252f-7a52-9d14-c57fc7f9095b",
+    "reason": "GUI timed out at 5400 seconds; final structured message absent.",
+    "source_log_sha256": "0de0c09aa2945bff48f0ec0c94ba564f61f397ccc2508f2023651f03cf818c04",
+    "source_actions_sha256": "2b4fe5f43b67045369acfc755cdc29f0487578e3c4c61c5dd7454b3fa6128db6",
+    "source_console_sha256": "152f9516efbe2b9607cd49b3e2c1f238020f618717f62fbfdc5996f8ef03410c"
+  },
+  "observed_units_source": "Parent reconstruction of partial steps; no operator final message"
+}

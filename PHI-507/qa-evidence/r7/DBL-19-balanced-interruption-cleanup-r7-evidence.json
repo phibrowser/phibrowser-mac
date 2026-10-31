@@ -1,0 +1,202 @@
+[
+  {
+    "unit_id": "DBL-19-BAL",
+    "attempt": 1,
+    "phase": "cleanup-before",
+    "file": "DBL-19-BAL-77.png",
+    "original_marker": "DBL-19-BAL attempt1 cleanup-before",
+    "source_file": "DBL-19-balanced-interruption-cleanup-r7-001.jpg",
+    "source_sha256": "e72d4efdf7b88335ffb3710cb9cd19ecbac8c44e259cf401b7f171fbdca55821",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-BAL",
+    "attempt": 1,
+    "phase": "cleanup-general",
+    "file": "DBL-19-BAL-78.png",
+    "original_marker": "DBL-19-BAL attempt1 cleanup-general",
+    "source_file": "DBL-19-balanced-interruption-cleanup-r7-004.jpg",
+    "source_sha256": "a16bb06fc5e8f98546597796774caa0a49a7f1bf4e24d05f1a12fc1ea1d9e6ea",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-BAL",
+    "attempt": 1,
+    "phase": "cleanup-switches-before",
+    "file": "DBL-19-BAL-79.png",
+    "original_marker": "DBL-19-BAL attempt1 cleanup-switches-before",
+    "source_file": "DBL-19-balanced-interruption-cleanup-r7-005.jpg",
+    "source_sha256": "a8e984649e32bd23694b15abe2576c11e7a69ad86c0190abe7781bb046e1268c",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-BAL",
+    "attempt": 1,
+    "phase": "cleanup-switches",
+    "file": "DBL-19-BAL-80.png",
+    "original_marker": "DBL-19-BAL attempt1 cleanup-switches",
+    "source_file": "DBL-19-balanced-interruption-cleanup-r7-006.jpg",
+    "source_sha256": "86a04f148fe595ea9732699577593b74558f31518a561ebcec2002af678f9822",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-BAL",
+    "attempt": 1,
+    "phase": "cleanup-after",
+    "file": "DBL-19-BAL-81.png",
+    "original_marker": "DBL-19-BAL attempt1 cleanup-after",
+    "source_file": "DBL-19-balanced-interruption-cleanup-r7-008.jpg",
+    "source_sha256": "f1917be60af6076e181eb250fadca226aa8ea4a4b9dadffc46c63dcc73950f67",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-BAL",
+    "attempt": 1,
+    "phase": "cleanup-space",
+    "file": "DBL-19-BAL-82.png",
+    "original_marker": "DBL-19-BAL attempt1 cleanup-space",
+    "source_file": "DBL-19-balanced-interruption-cleanup-r7-002.jpg",
+    "source_sha256": "cda65d4a413d795d8a95cd5064ae92736d9ce213e049d64e7923a356e6dea22b",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-BAL",
+    "attempt": 1,
+    "phase": "cleanup-menu-cancel",
+    "file": "DBL-19-BAL-83.png",
+    "original_marker": "DBL-19-BAL attempt1 cleanup-menu-cancel",
+    "source_file": "DBL-19-balanced-interruption-cleanup-r7-003.jpg",
+    "source_sha256": "6129a13b45229b5392d083c7ab5b198136c0f8125baa7982e00d693c05deecb3",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "DBL-19-BAL",
+    "attempt": 1,
+    "phase": "cleanup-settings-closed",
+    "file": "DBL-19-BAL-84.png",
+    "original_marker": "DBL-19-BAL attempt1 cleanup-settings-closed",
+    "source_file": "DBL-19-balanced-interruption-cleanup-r7-007.jpg",
+    "source_sha256": "83b9140dbea711bef0650bc104b60fdd24fb348c2f2d347c84f1d71f3eff0a7f",
+    "original_size": [
+      1802,
+      1376
+    ],
+    "crop_box": [
+      0,
+      0,
+      1802,
+      1376
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  }
+]

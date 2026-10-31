@@ -6,7 +6,7 @@
     "--tag",
     "surfaces-r7",
     "--instructions",
-    "PHI-507/qa-scripts/double-click-edges-r6.txt",
+    "PHI-507/qa-scripts/double-click-edges-r7.txt",
     "--timeout",
     "5400"
   ],
@@ -17,7 +17,7 @@
     "--tag",
     "surfaces-r7",
     "--instructions",
-    "PHI-507/qa-scripts/double-click-edges-r6.txt",
+    "PHI-507/qa-scripts/double-click-edges-r7.txt",
     "--timeout",
     "5400"
   ],
@@ -28,7 +28,7 @@
     "--tag",
     "surfaces-r7",
     "--instructions",
-    "PHI-507/qa-scripts/double-click-edges-r6.txt",
+    "PHI-507/qa-scripts/double-click-edges-r7.txt",
     "--timeout",
     "5400"
   ]

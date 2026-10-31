@@ -1,0 +1,60 @@
+{
+  "base_case": "VIS-05；本次按额外限定仅执行 r6 固定模板报告的可读性预览与报告窗口关闭，未执行完整导出或最终环境清理验收，未作测试结论判定。",
+  "ending_state": "已通过 File→Close Window 关闭本次报告专用窗口。结束 get_app_state 显示固定 QA app 仍为 pid 71724，当前窗口和活动条目均为 New Tab；原有 TC-P pin、TC-M 行、无名 row 及 New Tab 条目仍列出。未修改报告结果、偏好、pin、组或 Space，未操作未知窗口或保存项。",
+  "observations": [
+    {
+      "active_after": "New Tab",
+      "active_before": "New Tab",
+      "after": "报告专用窗口关闭，返回原有 New Tab 窗口；既有 TC-P pin、TC-M 行、无名 row、New Tab 条目仍列出。",
+      "before": "固定 QA app 的 New Tab 窗口；侧栏显示既有 TC-P pin、TC-M 行、无名 row、New Tab 条目，以及 Default、TC-QA-PHI507-r2-Recovery-R4、TC-PHI507-r2-Recovery 按钮。",
+      "confirmation_choices": "没有出现确认弹窗；未删除组、Space 或保存项，未取消既有 pin。",
+      "evidence_markers": [
+        "EVIDENCE: VIS-05-COMMON attempt1 identity",
+        "EVIDENCE: VIS-05-COMMON attempt1 report-loading",
+        "EVIDENCE: VIS-05-COMMON attempt1 report-top",
+        "EVIDENCE: VIS-05-COMMON attempt1 carried-search",
+        "EVIDENCE: VIS-05-COMMON attempt1 carried-found",
+        "EVIDENCE: VIS-05-COMMON attempt1 coordinate-check",
+        "EVIDENCE: VIS-05-COMMON attempt1 carried-expanded",
+        "EVIDENCE: VIS-05-COMMON attempt1 report-carried",
+        "EVIDENCE: VIS-05-COMMON attempt1 carried-thumbnail",
+        "EVIDENCE: VIS-05-COMMON attempt1 partial-found",
+        "EVIDENCE: VIS-05-COMMON attempt1 partial-expanded",
+        "EVIDENCE: VIS-05-COMMON attempt1 partial-evidence-scroll",
+        "EVIDENCE: VIS-05-COMMON attempt1 report-partial",
+        "EVIDENCE: VIS-05-COMMON attempt1 partial-json-search",
+        "EVIDENCE: VIS-05-COMMON attempt1 report-failure",
+        "EVIDENCE: VIS-05-COMMON attempt1 partial-note-find",
+        "EVIDENCE: VIS-05-COMMON attempt1 report-partial-notes",
+        "EVIDENCE: VIS-05-COMMON attempt1 split-mute-find",
+        "EVIDENCE: VIS-05-COMMON attempt1 report-partial-split",
+        "EVIDENCE: VIS-05-COMMON attempt1 split-mute-enlarged",
+        "EVIDENCE: VIS-05-COMMON attempt1 ending"
+      ],
+      "identity_checks": "固定 app 路径为 /Applications/Phi Tab Close QA.app，原生状态给出 bundleID com.phibrowser.opensource.Mac；首次成功读取至结束 pid 均为 71724。报告窗口标题和准确 file URL 均实际可见。报告内构建文字为 feature/tab-close-improvements @b30ef8b3acbc，并注明指定二进制、含未提交修改；这只是本次读到的报告信息，未另行核验当前二进制构建。ENV-04 缩略图明确标为旧轮证据；已实见缩略图，未核验其 CSS 宽度是否为 400。",
+      "language_observed": "当前原生菜单为英文，报告正文为中文；未打开设置读取语言偏好值。",
+      "layout_observed": "当前浏览器 chrome 为左侧纵向标签列表；未打开 General 读取具体布局名称。报告内旧 Settings 截图不作为本次布局或偏好的证据。",
+      "not_executed_reason": "本次授权范围仅为 r6 报告可读性预览。完整 VIS-05 的 JSON 导出、Markdown 报告复制、原布局／开关／快捷键恢复、取消新增 pin 及最终窗口／Space 清理验收均未执行。",
+      "operator_errors": [
+        "首次 get_app_state 返回 Computer Use server error -10005: timeoutReached，没有图片；随后再次只读调用取得现场，未据此解释产品状态。",
+        "type_text 搜索“父层”后，原生 Find 值仍为 DBL-19-PER，未按搜索成功记录；之后通过该原生 settable Find 控件 set_value 并按 Return，实读 1/4 后定位备注。",
+        "report-partial 标记下的图片实际仍为证据区 original-settings 旧图；部分执行备注由后续 report-partial-notes 图片证明，未用前者冒充备注证据。"
+      ],
+      "precondition_actual": "在 r7 租约重新读取固定 QA app 身份；点击实际具名的 TC-QA-PHI507-r2-Recovery-R4，再通过 File→New Window 建立本次报告专用窗口。指定 file 页面首次导航即实际显示正文，无需 Reload 或重启恢复。",
+      "settings_observed": "未打开 Settings，未实读两个关闭开关或快捷键值；没有修改偏好或手册结果。",
+      "steps_executed": [
+        "通过原生地址栏访问 file:///Users/e2e02/lane/qa-preview-r6/PHI-507/r6/index.html，实见报告标题和正文。",
+        "读取报告顶部：第 r6 轮、“未完成”；统计卡片为总数 512、通过 119、失败 0、阻塞 94、未执行 299。保留 report-top 真实图；这些数值为页面已有统计。",
+        "通过浏览器查找定位并点击展开 ENV-04-COMMON。实读“沿用 r2”“本轮未重跑”，以及 KEEP-B-507-r2 和旧打开编号 2a6e95cf-8074-4e05-b2ad-30972ab29ec8 的说明。",
+        "滚动查看 ENV-04 旧图缩略图及完整旧证据链接：initial-B-before.webp、initial-B-after.webp 和 ENV-04-COMMON.log。未打开这些链接，未把旧图记作本轮重跑。",
+        "查找并展开 DBL-19-PER。备注实际写明：父层依据保存的 CU 事件和 17 张实际查看原图恢复部分事实，并非操作器最终 JSON；3 个 mute 分支实际执行且文档保持；3 个 Close 按钮分支未取得命中前置，核心双击未发送。",
+        "读取同一备注中的 90 分钟／5400 秒 GUI 时限、收尾定位错误、最终结构化输出缺失、独立 cleanup 另证及“部分执行”说明。保留 report-partial-notes 图。",
+        "实际查看第 50 次单列红色 settings-location-failure 组，图注写明准备／操作无效与产品缺陷分开；保留 report-failure 图。未打开或下载整份事件日志。",
+        "查找 split-mute 后实际滚动查看 split-mute-before／after 与 group-mute-before／after 图。正常点击 split-mute-after 后出现放大图，可读 KEEP-B-m1、KEEP-C-m1，及编号 ff56bcee-c383-457e-8988-4f91d45616d8、6ea6d17d-e3e8-40d0-b6e5-a252fdcfbbfd；这是报告内 r6 证据图的内容。",
+        "通过 File→Close Window 正常关闭仅本次报告窗口，再 get_app_state 输出 ending 真实图。"
+      ],
+      "unit_id": "VIS-05-COMMON"
+    }
+  ],
+  "tools_outside_computer_use": []
+}

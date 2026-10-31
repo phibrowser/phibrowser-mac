@@ -5,6 +5,8 @@ based_on: PHI-507/test-plan.md@a4f6637dd1bece032a8fd5c4fdc84c650ce09cf8
 
 报告站：https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r6/
 
+发布提交：`9c5c8a9c5e886d5a328ef7bbd72be8df4d473f16`。r7中已通过Computer Use完成真实报告预览，计数、沿用证据、部分执行与失败准备分组可读；预览为维护，不算VIS05验收。HTTP验证见`qa-evidence/r6/publication-http.json`。
+
 结论：`blocked`。继续保留此前Computer Use工作。本轮新增12个基础位置关闭执行点通过，POS01至05的三布局共15项现已全部通过；累计512项为119通过、94阻断（含9部分执行）、299未执行待续。DBL19PER实际完成普通tab、普通split、组内split三个静音子步骤，三个关闭控件核心未取得明确命中前置；90分钟时限中断及最终JSON缺失按原图/事件显式恢复，独立CU清理完成。唯一零页滚动诊断被工具拒绝，不冒充hover。空白导航待确认观察及所有准备失败均保留；无已确认产品缺陷。本轮是未完成检查点，非完整手册通过，不作PR放行；后续继续其余用例。
 
 ## 构建与执行边界

@@ -81,7 +81,11 @@ for r in rows:
    add(frame_prefix+'/'+frame['file'],f"{job}：{frame['phase']}（原生marker attempt{native}；子步骤观察不等于整例通过，准备/操作无效与产品缺陷分开）",mapping[(family(frame['phase']),native,outcome)],outcome,frame)
   if record.get('observation'):
    part=f"{frame_prefix}/{r['key']}-{job}-observation.json";original=qa/f'{frame_prefix}/{job}-observations.json'
-   (qa/part).write_text(json.dumps({'unit_id':r['key'],'job':job,'scope':record.get('scope','本执行点的实际步骤'),'source':str(original.relative_to(qa)),'observation':record['observation']},ensure_ascii=False,indent=2)+'\n')
+   payload={'unit_id':r['key'],'job':job,'scope':record.get('scope','本执行点的实际步骤'),'source':str(original.relative_to(qa)),'observation':record['observation']}
+   if original.is_file():
+    provenance=json.loads(original.read_text()).get('provenance')
+    if provenance:payload['provenance']=provenance
+   (qa/part).write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n')
    add(part,record.get('scope','本执行点')+' 原始观察',sequence,'pass' if record['outcome']=='pass' else ('fail' if record['outcome']=='fail' else None))
   for path in record.get('evidence',[]):
    if not isinstance(path,str) or path.endswith(('-observations.json','-evidence.json')) or path.endswith('.png') and frames:continue

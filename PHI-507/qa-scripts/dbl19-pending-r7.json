@@ -1,0 +1,24 @@
+[
+  [
+    "DBL-19",
+    "--layout",
+    "balanced",
+    "--tag",
+    "controls-r7",
+    "--instructions",
+    "PHI-507/qa-scripts/dbl19-controls-r7.txt",
+    "--timeout",
+    "5400"
+  ],
+  [
+    "DBL-19",
+    "--layout",
+    "comfortable",
+    "--tag",
+    "controls-r7",
+    "--instructions",
+    "PHI-507/qa-scripts/dbl19-controls-r7.txt",
+    "--timeout",
+    "5400"
+  ]
+]

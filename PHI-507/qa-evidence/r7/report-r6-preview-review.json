@@ -1,0 +1,76 @@
+{
+  "round": 7,
+  "job": "VIS-05-VIS-05-COMMON-report-r6-preview",
+  "decision": "report_preview_completed_not_VIS05_acceptance",
+  "basis": "Ripley实际查看7关键完整窗口缩放图，原图SHA匹配；62CU/非CU0，完整原生观察与错误记录核对。",
+  "findings": [
+    "r6顶部实际显示未完成，512/119/0/94/299及不作PR放行。",
+    "ENV04沿用r2/本轮未重跑、旧截图缩略图及完整旧链接可见。",
+    "DBL19PER父层恢复/非原始最终JSON、3mute实测/3Close未执行、5400秒时限及独立清理说明可读。",
+    "红色settings-location-failure准备失败组单列，split mute前后图与正常放大显示原编号和KEEP。",
+    "报告专用窗口正常清理，当前NewTab；本次未读取或修改偏好。VIS05完整导出验收仍未执行。",
+    "原report-partial图误标已明确修正为original-settings证据图；首次CU超时无图，真实错误日志另留，不归因产品。"
+  ],
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T12:32:33.280277+00:00",
+  "computer_use_completed": 62,
+  "non_computer_use_calls": 0,
+  "sources": [
+    {
+      "raw_number": 3,
+      "raw_file": "VIS-05-VIS-05-COMMON-report-r6-preview-003.jpg",
+      "raw_sha256": "aa72c54d5cf3a4e128c1f69446408051ba59a6c0885cbb694065170824a0ff5a",
+      "viewed_file": "VIS-05-COMMON-03.png",
+      "viewed_sha256": "ec730c80171b56b3fc354c1ac37060457ce738baeb302c3336dea6c07f88f044",
+      "marker": "VIS-05-COMMON attempt1 report-top"
+    },
+    {
+      "raw_number": 9,
+      "raw_file": "VIS-05-VIS-05-COMMON-report-r6-preview-009.jpg",
+      "raw_sha256": "c133fac5e6d0d73779545899cdc3667f057239d6cd43bbf3794bc6082354c447",
+      "viewed_file": "VIS-05-COMMON-09.png",
+      "viewed_sha256": "2e4b2d34121291679999b5ca188c8e8d49cf24769d62f73663201b1eb0a8fd82",
+      "marker": "VIS-05-COMMON attempt1 carried-thumbnail"
+    },
+    {
+      "raw_number": 15,
+      "raw_file": "VIS-05-VIS-05-COMMON-report-r6-preview-015.jpg",
+      "raw_sha256": "6e683b28a1cd16ce2af508e9459804ce1408b641fd1b595e431d315ae2cdc0bb",
+      "viewed_file": "VIS-05-COMMON-15.png",
+      "viewed_sha256": "7db35fbbd48dab4175f2597e5dfd0519761bed56fa30c30ddefc85fb28e15e8e",
+      "marker": "VIS-05-COMMON attempt1 report-failure"
+    },
+    {
+      "raw_number": 17,
+      "raw_file": "VIS-05-VIS-05-COMMON-report-r6-preview-017.jpg",
+      "raw_sha256": "087c4ddabcb67e63d626003ed340abc0b344c1aa0e5b9590281e2078cae6e54f",
+      "viewed_file": "VIS-05-COMMON-17.png",
+      "viewed_sha256": "972a80b151856fa53a0eaded2c876de49bea451c17e0f38f6d8ce9b8fe4c1eb9",
+      "marker": "VIS-05-COMMON attempt1 report-partial-notes"
+    },
+    {
+      "raw_number": 19,
+      "raw_file": "VIS-05-VIS-05-COMMON-report-r6-preview-019.jpg",
+      "raw_sha256": "4d5e2f7c4762ec8bcb76acd96773d9f0213a4a346d68f4f7ef7be1f6f6c74575",
+      "viewed_file": "VIS-05-COMMON-19.png",
+      "viewed_sha256": "6afc9b9f2fa0700fdba1609a5ff7ad45d1e1d5f335f7c94a4495f5e15139fb29",
+      "marker": "VIS-05-COMMON attempt1 report-partial-split"
+    },
+    {
+      "raw_number": 20,
+      "raw_file": "VIS-05-VIS-05-COMMON-report-r6-preview-020.jpg",
+      "raw_sha256": "6eac1bf8e0c948f8fa179582ec5995f7a55a8768d21cea4bb33f86f8b35d2723",
+      "viewed_file": "VIS-05-COMMON-20.png",
+      "viewed_sha256": "3e60ce1139daf6fd47f6f1fcc1d8b3729c14b28a29abf7ba8ef367bbca049e5b",
+      "marker": "VIS-05-COMMON attempt1 split-mute-enlarged"
+    },
+    {
+      "raw_number": 21,
+      "raw_file": "VIS-05-VIS-05-COMMON-report-r6-preview-021.jpg",
+      "raw_sha256": "ceecfe720da8f99727bb8d7b67fe496107105595dfac47664c41013b9b04a545",
+      "viewed_file": "VIS-05-COMMON-21.png",
+      "viewed_sha256": "a8cd9a7f02b9c1a935fbba7c9e221b7c19ee66a82249119571e19207fc5637e9",
+      "marker": "VIS-05-COMMON attempt1 ending"
+    }
+  ]
+}

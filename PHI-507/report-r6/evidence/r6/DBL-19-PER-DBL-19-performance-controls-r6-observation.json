@@ -89,5 +89,14 @@
       "EVIDENCE: DBL-19-PER attempt1 close-A-end",
       "EVIDENCE: DBL-19-PER attempt1 settings-location-error"
     ]
+  },
+  "provenance": {
+    "reconstructed_by": "Ripley",
+    "not_original_final_output": true,
+    "source_session": "01a19129-7dab-7411-a1e3-fe3ca3c11275",
+    "source_log_sha256": "7af8e7cef03982d897a19fe0a4cd7eaadad7a0b2b87f38d975525fd480971d00",
+    "source_actions_sha256": "4acec088e75ba3f3157eb5ec0dc473cede4fd2698fe16cfa0f4de434cb30029c",
+    "source_console_sha256": "8930cb04d011087a4dd63caeb0c86ff56a85a9c38e4b98df047c1370513d1a29",
+    "reason": "GUI timeout; final structured file absent. Only actual saved CU steps and reviewed images reconstructed."
   }
 }

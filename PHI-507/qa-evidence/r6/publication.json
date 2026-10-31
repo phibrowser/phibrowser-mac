@@ -1,0 +1,18 @@
+{
+  "url": "https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r6/",
+  "http_status": 200,
+  "bytes": 2008463,
+  "checked_at": "2026-10-31T12:37:58.641660+00:00",
+  "scope": "Published generated report artifact only; not a browser/product-state read",
+  "expected_summary_present": true,
+  "site_commit": "9c5c8a9c5e886d5a328ef7bbd72be8df4d473f16",
+  "preview_round": 7,
+  "preview_job": "VIS-05-VIS-05-COMMON-report-r6-preview",
+  "preview_review": "qa-evidence/r7/report-r6-preview-review.json",
+  "frozen_counts": {
+    "pass": 119,
+    "blocked": 94,
+    "skipped": 299
+  },
+  "copied_evidence_bytes": 19012446
+}

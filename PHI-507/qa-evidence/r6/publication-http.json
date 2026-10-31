@@ -1,0 +1,8 @@
+{
+  "url": "https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r6/",
+  "http_status": 200,
+  "bytes": 2008463,
+  "checked_at": "2026-10-31T12:37:58.641660+00:00",
+  "scope": "Published generated report artifact only; not a browser/product-state read",
+  "expected_summary_present": true
+}

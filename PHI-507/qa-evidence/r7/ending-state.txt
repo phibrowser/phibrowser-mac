@@ -1,0 +1,1 @@
+已通过 File→Close Window 关闭本次报告专用窗口。结束 get_app_state 显示固定 QA app 仍为 pid 71724，当前窗口和活动条目均为 New Tab；原有 TC-P pin、TC-M 行、无名 row 及 New Tab 条目仍列出。未修改报告结果、偏好、pin、组或 Space，未操作未知窗口或保存项。

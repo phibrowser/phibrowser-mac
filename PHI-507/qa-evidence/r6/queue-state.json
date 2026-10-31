@@ -1,11 +1,11 @@
 {
   "state": "running",
-  "index": 2,
+  "index": 4,
   "total": 7,
   "args": [
-    "POS-03,POS-04",
+    "POS-01,POS-02",
     "--layout",
-    "performance",
+    "comfortable",
     "--tag",
     "basic-r6",
     "--instructions",
@@ -13,5 +13,5 @@
     "--timeout",
     "3600"
   ],
-  "started_at": "2026-10-31T07:05:01.251296+00:00"
+  "started_at": "2026-10-31T07:37:18.965361+00:00"
 }

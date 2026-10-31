@@ -1,9 +1,9 @@
 {
-  "job": "POS-03_POS-04-performance-basic-r6",
-  "started_at": "2026-10-31T07:05:01.491471+00:00",
+  "job": "POS-01_POS-02-comfortable-basic-r6",
+  "started_at": "2026-10-31T07:37:19.197006+00:00",
   "state": "running",
   "units": [
-    "POS-03-PER",
-    "POS-04-PER"
+    "POS-01-COM",
+    "POS-02-COM"
   ]
 }

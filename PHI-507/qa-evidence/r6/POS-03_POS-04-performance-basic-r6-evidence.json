@@ -1,0 +1,889 @@
+[
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "initial",
+    "file": "POS-03-PER-01.png",
+    "original_marker": "POS-03-PER attempt1 initial",
+    "source_file": "POS-03_POS-04-performance-basic-r6-001.jpg",
+    "source_sha256": "64eacb909254001b31c2b8839f42bb00213fc02000f96ae5bb949fcac3a0e72e",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "initial-layout",
+    "file": "POS-03-PER-02.png",
+    "original_marker": "POS-03-PER attempt1 initial-layout",
+    "source_file": "POS-03_POS-04-performance-basic-r6-002.jpg",
+    "source_sha256": "f7a9373a1e7c96e3f69252af6c621c8d094aefe22744330e472b46f23313aca9",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "layout",
+    "file": "POS-03-PER-03.png",
+    "original_marker": "POS-03-PER attempt1 layout",
+    "source_file": "POS-03_POS-04-performance-basic-r6-003.jpg",
+    "source_sha256": "3bb142e340a6f390249a5e9eecd5b80e33a78ccf20e4bade992ec6485c142e08",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "settings",
+    "file": "POS-03-PER-04.png",
+    "original_marker": "POS-03-PER attempt1 settings",
+    "source_file": "POS-03_POS-04-performance-basic-r6-004.jpg",
+    "source_sha256": "8e315857c079d398a20a4736b76f3d43500dc225d9702e56c9a389d4ce4aebfa",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "launch",
+    "file": "POS-03-PER-05.png",
+    "original_marker": "POS-03-PER attempt1 launch",
+    "source_file": "POS-03_POS-04-performance-basic-r6-005.jpg",
+    "source_sha256": "dc721e56460cdec4e08c0acac596a7ddd9ed01231a0a437fccb424f32b98491e",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "coordinate-calibration",
+    "file": "POS-03-PER-06.png",
+    "original_marker": "POS-03-PER attempt1 coordinate-calibration",
+    "source_file": "POS-03_POS-04-performance-basic-r6-006.jpg",
+    "source_sha256": "a91cf2e389ed0082d7750cadb1ac0c0560550d602379b6de84ca46ac8cd09803",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "new-F-identity",
+    "file": "POS-03-PER-07.png",
+    "original_marker": "POS-03-PER attempt1 new-F-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-007.jpg",
+    "source_sha256": "22a5ccdcfb17a27f73ca4f79d588c7032bed1989e9b984bc1297212f47f17571",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "new-E-identity",
+    "file": "POS-03-PER-08.png",
+    "original_marker": "POS-03-PER attempt1 new-E-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-008.jpg",
+    "source_sha256": "8769412172c1b9f2e617880cf7ca61c80760c270263e2326449287b115c900ff",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "new-D-identity",
+    "file": "POS-03-PER-09.png",
+    "original_marker": "POS-03-PER attempt1 new-D-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-009.jpg",
+    "source_sha256": "cf1acd01d918c8a1decad98a3479b7190b14d561a31160823cd1c3f98258070a",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "new-C-identity",
+    "file": "POS-03-PER-10.png",
+    "original_marker": "POS-03-PER attempt1 new-C-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-010.jpg",
+    "source_sha256": "34fa8155a37ad5dcb6b3558dca7494fe46645a186fb3cdb35963607de69e2029",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "new-B-identity",
+    "file": "POS-03-PER-11.png",
+    "original_marker": "POS-03-PER attempt1 new-B-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-011.jpg",
+    "source_sha256": "cfb4d6935d7c5054b5d30c2cee7ac6553cb45c818f2b946b8ee46d445a9d9ff9",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "new-A-identity",
+    "file": "POS-03-PER-12.png",
+    "original_marker": "POS-03-PER attempt1 new-A-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-012.jpg",
+    "source_sha256": "75c5a5687986290c994e7a5f27754599394eca82b6db55c8e9f00985d5695d1c",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "before",
+    "file": "POS-03-PER-13.png",
+    "original_marker": "POS-03-PER attempt1 before",
+    "source_file": "POS-03_POS-04-performance-basic-r6-013.jpg",
+    "source_sha256": "8e649a1b4f5fbb93cb8142ea7e803dde1cbe394181947db4c7f03dcb429f6b22",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "menu",
+    "file": "POS-03-PER-14.png",
+    "original_marker": "POS-03-PER attempt1 menu",
+    "source_file": "POS-03_POS-04-performance-basic-r6-014.jpg",
+    "source_sha256": "f739d5c97775f856997fa992ff669e750b995f56329ce9a011928994df5c7e85",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "after",
+    "file": "POS-03-PER-15.png",
+    "original_marker": "POS-03-PER attempt1 after",
+    "source_file": "POS-03_POS-04-performance-basic-r6-015.jpg",
+    "source_sha256": "086c4155e08e255a8249f1e76cd6d56ac4567ba354bc8af3de47206a371e33d7",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "remaining-C-identity",
+    "file": "POS-03-PER-16.png",
+    "original_marker": "POS-03-PER attempt1 remaining-C-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-016.jpg",
+    "source_sha256": "0205ba1dedc5deb5ab8eb5d3d2c662aa0f2ef0ef1834e698732bf0bc624531cc",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "remaining-D-identity",
+    "file": "POS-03-PER-17.png",
+    "original_marker": "POS-03-PER attempt1 remaining-D-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-017.jpg",
+    "source_sha256": "b31d4df76546593114a65f435a2242441681fe5f98911b83689d49b0dce1660c",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "remaining-E-identity",
+    "file": "POS-03-PER-18.png",
+    "original_marker": "POS-03-PER attempt1 remaining-E-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-018.jpg",
+    "source_sha256": "427da2edb83accaaae6d811d373bcda70030764dfd643bb62facc75e372120ba",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "setup-cleanup",
+    "file": "POS-04-PER-01.png",
+    "original_marker": "POS-04-PER attempt1 setup-cleanup",
+    "source_file": "POS-03_POS-04-performance-basic-r6-019.jpg",
+    "source_sha256": "2b6618ef4369fff0aa1c2695dbccc15bce5b1fb43c34053325dd0e37d336f8d9",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "launch",
+    "file": "POS-04-PER-02.png",
+    "original_marker": "POS-04-PER attempt1 launch",
+    "source_file": "POS-03_POS-04-performance-basic-r6-020.jpg",
+    "source_sha256": "8f5d75ad4b41544b447809b0b207c04dc7dbb7ffdb132e9d2431a3d3415c60e5",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "new-F-identity",
+    "file": "POS-04-PER-03.png",
+    "original_marker": "POS-04-PER attempt1 new-F-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-021.jpg",
+    "source_sha256": "a3ee108067f5e74324b6f672c1934006aec072e719b27785a47ab6bccc1f489c",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "new-E-identity",
+    "file": "POS-04-PER-04.png",
+    "original_marker": "POS-04-PER attempt1 new-E-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-022.jpg",
+    "source_sha256": "46f440e274afe61468b85a4c6febe3cc235ead055733d70fcf74d3de83857f9a",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "new-D-identity",
+    "file": "POS-04-PER-05.png",
+    "original_marker": "POS-04-PER attempt1 new-D-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-023.jpg",
+    "source_sha256": "33fa0e51d4f59219928992f92f308934c692aa0ed716be0b0c9724e6bb1c6e8a",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "new-C-identity",
+    "file": "POS-04-PER-06.png",
+    "original_marker": "POS-04-PER attempt1 new-C-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-024.jpg",
+    "source_sha256": "12a002f8be212cbb4f48cbc43efe40ef9dbb1a6351b81f0798565cd59048f278",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "new-B-identity",
+    "file": "POS-04-PER-07.png",
+    "original_marker": "POS-04-PER attempt1 new-B-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-025.jpg",
+    "source_sha256": "a66462e97f23e9fa227304f3ddb95b8c9a80f3f28b366de2fc49b1c46414a1d2",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "new-A-identity",
+    "file": "POS-04-PER-08.png",
+    "original_marker": "POS-04-PER attempt1 new-A-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-026.jpg",
+    "source_sha256": "cd5eb03649a12a91a31805965a04d28aff10853734febb769d34e98ae548cf66",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "before",
+    "file": "POS-04-PER-09.png",
+    "original_marker": "POS-04-PER attempt1 before",
+    "source_file": "POS-03_POS-04-performance-basic-r6-027.jpg",
+    "source_sha256": "9e7ee70607396a1d4bd15c1e215afc6b61d6f26e150a5164bea5328c611e01a5",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "menu",
+    "file": "POS-04-PER-10.png",
+    "original_marker": "POS-04-PER attempt1 menu",
+    "source_file": "POS-03_POS-04-performance-basic-r6-028.jpg",
+    "source_sha256": "cef40d8f412178ec9e320233b25d3794131e3ddb0f2e99a2c9b770d82b7cb712",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "after",
+    "file": "POS-04-PER-11.png",
+    "original_marker": "POS-04-PER attempt1 after",
+    "source_file": "POS-03_POS-04-performance-basic-r6-029.jpg",
+    "source_sha256": "cd02290a0ed444809706ace35e6cc11b820bf3a06928b11df8dcb27dcf320e8f",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "remaining-A-identity",
+    "file": "POS-04-PER-12.png",
+    "original_marker": "POS-04-PER attempt1 remaining-A-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-030.jpg",
+    "source_sha256": "16688ea9ad7efb5a6ca54623fa9a670afe44d2e577f7606c8a44d116d96c696a",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "remaining-B-identity",
+    "file": "POS-04-PER-13.png",
+    "original_marker": "POS-04-PER attempt1 remaining-B-identity",
+    "source_file": "POS-03_POS-04-performance-basic-r6-031.jpg",
+    "source_sha256": "d48d25874920032ccfd49828a16f2afb7ef3813e7baa748c3fa262f5edbe1965",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "cleanup",
+    "file": "POS-04-PER-14.png",
+    "original_marker": "POS-04-PER attempt1 cleanup",
+    "source_file": "POS-03_POS-04-performance-basic-r6-032.jpg",
+    "source_sha256": "11116d509b84b9b53710e94f08ea4addc6e91f7d6ff39085b0d9c281fa636796",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "settings-retained",
+    "file": "POS-04-PER-15.png",
+    "original_marker": "POS-04-PER attempt1 settings-retained",
+    "source_file": "POS-03_POS-04-performance-basic-r6-033.jpg",
+    "source_sha256": "551c52b988c0c441f380cc8b420d9afa4f5c0c48cfd45a22da3499bedf391d55",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "layout-retained",
+    "file": "POS-04-PER-16.png",
+    "original_marker": "POS-04-PER attempt1 layout-retained",
+    "source_file": "POS-03_POS-04-performance-basic-r6-034.jpg",
+    "source_sha256": "d84e455e89be101506f3d40d2c546a8f699ccec082a9a4389f9e56df95b467b3",
+    "original_size": [
+      1360,
+      1298
+    ],
+    "crop_box": [
+      0,
+      0,
+      1360,
+      1298
+    ],
+    "output_size": [
+      1280,
+      1222
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-04-PER",
+    "attempt": 1,
+    "phase": "ending",
+    "file": "POS-04-PER-17.png",
+    "original_marker": "POS-04-PER attempt1 ending",
+    "source_file": "POS-03_POS-04-performance-basic-r6-035.jpg",
+    "source_sha256": "3f75065c3c89912b50a77ec96c0268184e287d59b4c5501555061c2f414b9dfa",
+    "original_size": [
+      2400,
+      1832
+    ],
+    "crop_box": [
+      0,
+      0,
+      2400,
+      1832
+    ],
+    "output_size": [
+      1280,
+      977
+    ],
+    "palette_colors": "24 image dominant colors plus reserved black/white, grayscale and native accent colors",
+    "caption": "Computer Use原始完整窗口；仅缩放与调色板压缩。"
+  },
+  {
+    "unit_id": "POS-03-PER",
+    "attempt": 1,
+    "phase": "setup-stale-index-misclick-failure",
+    "file": "performance-noncurrent-preparation-misclick.log",
+    "source_file": "POS-03_POS-04-performance-basic-r6.log",
+    "source_sha256": "2ebde64320ef2fc433f2d138c08273a12249582b91fbdd2c872552b4a4f2b5c3",
+    "evidence_kind": "tool-input-and-return-log",
+    "caption": "实际准备误点旧NewTab Refresh，独立失败组保留；无图不伪造；后续本项有效前置与核心另有真实截图。",
+    "actions_source_file": "actions.json",
+    "actions_source_sha256": "b05587c2f2d887ea24fe53862aedbaa6eb909c6d459eac3ef5cc8a1b32b0f991"
+  }
+]

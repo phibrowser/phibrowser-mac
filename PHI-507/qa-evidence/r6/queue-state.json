@@ -1,17 +1,17 @@
 {
   "state": "running",
-  "index": 6,
-  "total": 7,
+  "index": 0,
+  "total": 1,
   "args": [
-    "POS-05",
+    "DBL-19",
     "--layout",
-    "comfortable",
+    "performance",
     "--tag",
-    "basic-r6",
+    "controls-r6",
     "--instructions",
-    "PHI-507/qa-scripts/position-basic-r5.txt",
+    "PHI-507/qa-scripts/dbl19-controls-r6.txt",
     "--timeout",
-    "3600"
+    "5400"
   ],
-  "started_at": "2026-10-31T08:34:00.426962+00:00"
+  "started_at": "2026-10-31T08:52:57.365413+00:00"
 }

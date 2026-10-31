@@ -1,0 +1,74 @@
+{
+  "round": 6,
+  "job": "DBL-19-performance-zero-scroll-probe-r6",
+  "decision": "capability_unavailable_not_acceptance",
+  "basis": "Ripley实看6关键完整窗口图并校验原图SHA/实际工具错误；47CU/非CU0。",
+  "findings": [
+    "唯一一次scroll pages0返回isError/pages must be > 0；没有将错误调用后的可能指针状态当有效hover。",
+    "A仍活动，A/B原顺序保持，未见B关闭x或预览；结束回读B原编号414d054b-8a9e-4c51-9f3f-fc3a797aa969和KEEP-B-DBL19-diag-d1。",
+    "诊断窗口正常清理，Advanced off/on及最终Balanced chrome实见；不是DBL19源核心动作复验。"
+  ],
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T11:40:44.879289+00:00",
+  "computer_use_completed": 47,
+  "non_computer_use_calls": 0,
+  "sources": [
+    {
+      "raw_number": 14,
+      "raw_file": "DBL-19-performance-zero-scroll-probe-r6-014.jpg",
+      "raw_sha256": "e5806215bf42f23e2f1ea868e8dce574e8ddcd5412322aa470c049a47c770df3",
+      "viewed_file": "DBL-19-PER-89.png",
+      "viewed_sha256": "05baa18619a8331ffcf0ef55da4112892262c427481049cce50bf7cbec175927",
+      "marker": "DBL-19-PER attempt1 before"
+    },
+    {
+      "raw_number": 15,
+      "raw_file": "DBL-19-performance-zero-scroll-probe-r6-015.jpg",
+      "raw_sha256": "e486d7f65d20adcda824026c5bd9c5277ed7aaeaf2eb8b5f7cdd47bf9e0a59db",
+      "viewed_file": "DBL-19-PER-90.png",
+      "viewed_sha256": "b61230fedc6927917c2bd3fd1bb5b661dee98c168be089109d7ef81385d94dcf",
+      "marker": "DBL-19-PER attempt1 after"
+    },
+    {
+      "raw_number": 16,
+      "raw_file": "DBL-19-performance-zero-scroll-probe-r6-016.jpg",
+      "raw_sha256": "c128df42ab9c0eee34edca3aa164f66ced305ed449896c41c71ed609ea7156f2",
+      "viewed_file": "DBL-19-PER-91.png",
+      "viewed_sha256": "d1ba00bbebb5fae39844aaa05c6c5fe420d518ed74d897cab2c97f2bf2938323",
+      "marker": "DBL-19-PER attempt1 failure"
+    },
+    {
+      "raw_number": 17,
+      "raw_file": "DBL-19-performance-zero-scroll-probe-r6-017.jpg",
+      "raw_sha256": "9f9de7b4b61133d185b613820810a547de6aee9ff580264e8be2381009aa51cb",
+      "viewed_file": "DBL-19-PER-92.png",
+      "viewed_sha256": "e84e5483cb8519ee6774d5298fe15667004e1e2adf07ec186e27a11b98135918",
+      "marker": "DBL-19-PER attempt1 B-final-identity"
+    },
+    {
+      "raw_number": 20,
+      "raw_file": "DBL-19-performance-zero-scroll-probe-r6-020.jpg",
+      "raw_sha256": "7fd7a87a31559a47d30e1f37a86f828980d91a5b77900a9c22352567a30109bf",
+      "viewed_file": "DBL-19-PER-95.png",
+      "viewed_sha256": "f924aaf600fbd0f873ba1a247bf5a50057c493e0e21eae14f7d054c451003350",
+      "marker": "DBL-19-PER attempt1 advanced-final"
+    },
+    {
+      "raw_number": 21,
+      "raw_file": "DBL-19-performance-zero-scroll-probe-r6-021.jpg",
+      "raw_sha256": "6ede75d73daab30a22722ccce53037c4094177174060cf14bd05d265e17b85ad",
+      "viewed_file": "DBL-19-PER-96.png",
+      "viewed_sha256": "bd7c96ef627eaf8c112b3afd7013a376860eafb09ccc785fb6c617a6548181e9",
+      "marker": "DBL-19-PER attempt1 ending"
+    }
+  ],
+  "corrections": [
+    {
+      "field": "findings B identifier",
+      "previous": "414d054b-8a9e-4c51-9f3f-ca3797aaa969",
+      "corrected": "414d054b-8a9e-4c51-9f3f-fc3a797aa969",
+      "source": "原始CU最终观察identity_checks及已查看B-final-identity原图；父层抄录错误，不改原始证据",
+      "corrected_at": "2026-10-31T11:42:22.992470+00:00"
+    }
+  ]
+}

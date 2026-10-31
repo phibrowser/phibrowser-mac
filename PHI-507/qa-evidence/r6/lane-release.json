@@ -1,0 +1,9 @@
+{
+  "lease_id": "8c1d8779-4eeb-4400-a591-7ecd2585843f",
+  "lane": "e2e02",
+  "release_exit_code": 0,
+  "checked_at": "2026-10-31T11:42:22.992872+00:00",
+  "cli_result": "released lease; lane is being reset",
+  "local_lease_file_absent": true,
+  "cleanup": "独立CU cleanup及zero-scroll诊断结尾均实读Balanced/SystemDefault/off-on、专用窗口已清理；不声称池重置已完成"
+}

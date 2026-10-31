@@ -1,0 +1,9 @@
+本次只做r5报告的本地预览，不是VIS-05验收，不执行上方VIS-05的结果填写、导出或最终清理，不判产品测试通过。所有浏览器操作和截图仍只使用Computer Use。
+
+1. 对固定QA app重新实读，记录新租约中的真实PID、实际当前Space和偏好。不要沿用上一租约的PID、网页编号或服务状态。不要操作Default、Chrome Web Store或未知资料；仅在已实读的TC测试Space中新建一个本轮报告预览普通tab。
+2. 用原生地址栏访问 file:///Users/e2e02/lane/qa-preview-r5/PHI-507/r5/index.html 。这是报告生成器输出的实际HTML。等待正常显示，检查标题、第r5轮、未完成状态、512总数、107通过、0失败、93阻塞、312未执行，以及本轮新增7项和历史沿用说明。保存report-top截图。
+3. 通过页面正常搜索或折叠控件找到ENV-04-COMMON，展开并查看“沿用r2，本轮未重跑”说明及实际旧截图预览能否加载，不访问需要账号的计划文档。保存report-carried截图。
+4. 用正常页面控件找到POS-03-BAL并展开，查看前置、步骤、结果与图像能否显示；可正常点击一张缩略图放大后关闭。保存report-new-case截图。如文字或图像没有正常显示，保留错误现场，不猜通过。
+5. 仅浏览与记录，不改手册结果、不执行关闭用例、不改偏好。结束保留本次明确新建的报告预览tab及原TC对象，无菜单或确认框。本次明确创建且地址为上述报告文件的tab属于本轮可丢弃测试对象，不把未知同名tab算作自己的。
+
+unit_id=VIS-05-COMMON，not_executed_reason明确“仅r5报告本地预览，不是VIS-05验收；完整手册测试继续”。图像marker用VIS-05-COMMON attempt1 report-top/report-carried/report-new-case/after。不写pass/fail结论，ending_state记录真实新建tab、偏好和集合。

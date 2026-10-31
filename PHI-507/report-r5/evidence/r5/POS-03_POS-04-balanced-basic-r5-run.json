@@ -1,0 +1,22 @@
+{
+  "job": "POS-03_POS-04-balanced-basic-r5",
+  "session_id": "01a18f3e-95c8-7373-afff-69b33593c892",
+  "round": 5,
+  "lease_id": "52a943f0-2b80-4fdf-9258-ff0ac91c8040",
+  "state": "interrupted",
+  "exit_code": null,
+  "observed_units": [
+    "POS-03-BAL"
+  ],
+  "missing_units": [
+    "POS-04-BAL"
+  ],
+  "recovered": true,
+  "interruption": "顶层模型HTTP524；原前台driver结果未返回，不声称正常收尾。",
+  "computer_use_audit": {
+    "completed_mcp_event_count": 67,
+    "non_computer_use_calls": [],
+    "non_computer_use_mcp_events": [],
+    "source_sha256": "e186d5529e9855f9bb670aab667c5996a9ae013339df86afa16e8a0896df3f8b"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "reviewer": "Ripley",
+  "job": "ENV-06-launcher-order-r5",
+  "audit": {"session_id": "01a18ec3-4e39-7903-bdec-6766a09573e8", "computer_use_events": 23, "non_computer_use_events": 0},
+  "reviewed_images": 7,
+  "result": "实际先点B再点A，序列LAUNCH/B→LAUNCH/A/B，关闭入口后为A/B。B、A正文、批次和独立完整编号实见；无重排。仅关闭本次专用窗口，返回原报告。",
+  "adoption": "允许作为普通fixture准备入口；按目标顺序倒序点击，每个实际用例仍独立核对完整顺序及文档身份，不把两页控制推定为任何后续用例已经完成。",
+  "limits": "没有输入KEEP，没有执行ENV-06原用例；其他布局的插入规则仍须逐次从实际列表核对。源步骤明确要求Command-T、原生新标签页、特殊网络条件时继续原步骤。"
+}

@@ -1,0 +1,11 @@
+{
+  "issue": "PHI-507",
+  "id": "F5-01",
+  "classification": "investigation",
+  "status": "open",
+  "title": "Computer Use输入后截图仍见占位符，切页回看后才见KEEP",
+  "repro": ["用launcher普通链接建立TC测试A/B，确认真实正文与打开编号。", "在输入框发送KEEP，直接读取画面；本次A初期未见输入，B两次发送后的直接截图及10秒观察仍为占位符。", "切换A再回B，实见单份完整KEEP及绿色焦点边框；文档编号未变。"],
+  "comparisons": ["同一QA PID10708和相同文档编号，前后画面不同；A最终同样实见KEEP。", "两次B输入请求与中间空框图均保留，没有把早期未显示输入的返回当作成功。"],
+  "limits": ["未确定是输入焦点、输入发送、内容呈现或Computer Use取证刷新原因。", "没有旧构建对照，未认定产品缺陷、回归或已修复；不把此观察扩展到其他用例。", "后续仍须实际看见标记和文档编号才建立存活前置，必要的切页核对单独记录，不盲目重复输入。"],
+  "evidence": ["PHI-507/qa-evidence/r5/ENV-06-launcher-control-r5-observations.json", "PHI-507/qa-evidence/r5/ENV-06-launcher-control-r5-run.json", "PHI-507/qa-evidence/r5/launcher-control-review.json"]
+}

@@ -1,0 +1,21 @@
+{
+  "issue": "PHI-507",
+  "reviewer": "Ripley",
+  "classification": "environment_input_capability",
+  "blocked_case_ids": ["LIFE-10-PER", "LIFE-10-BAL", "LIFE-10-COM"],
+  "scope": "三项核心关闭动作未执行；没有新建测试尝试或声称本轮观察到了预览行为。引用本活动已经实际完成的CU输入能力诊断，避免重复修改系统辅助设置。",
+  "reason": "源步骤必须先悬停目标使tab预览出现。允许的CU工具没有move/hover能力；click_count=0实际返回invalidParameter，不能当作受支持悬停；Mouse Keys经有限CU自救仍未实际启用移动。没有取得可忠实发出该必需输入的方式，未用激活点击、拖动或其他工具冒充悬停。",
+  "limits": [
+    "未证明产品没有预览功能，也未证明所有真实鼠标路径失败。",
+    "本限制仅对应要求悬停预览的前置，不用于跳过可以实际显示和点击的关闭或静音控件。",
+    "DBL-19各独立控件分支仍继续实际尝试；普通键盘快捷键也不受本限制推定。"
+  ],
+  "based_on": [
+    "qa-evidence/r2/computer-use-tool-contract.json",
+    "qa-evidence/r4/input-capability-limits.json",
+    "qa-evidence/r4/mouse-click-confirm-review.json",
+    "qa-evidence/r4/mouse-click-confirm-actual-tool-returns.json",
+    "qa-evidence/r4/DBL-08-PER-19.png",
+    "qa-evidence/r4/DBL-08-PER-24.png"
+  ]
+}

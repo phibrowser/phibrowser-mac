@@ -1,0 +1,1 @@
+新租约r6；上一租约已归还，PID、偏好和服务均须通过本轮CU重新核实，不能沿用。可进入具名TC-QA-PHI507-r2或Recovery-R4测试Space，未知/Default不动。

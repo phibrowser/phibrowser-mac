@@ -1,0 +1,13 @@
+{
+  "reviewer": "Ripley",
+  "job": "ENV-06-launcher-control-r5",
+  "reviewed_images": 14,
+  "audit": {"session_id": "01a18ebb-deb6-7e63-9bf0-a283fbf99e51", "computer_use_events": 67, "non_computer_use_events": 0},
+  "observed": [
+    "入口普通链接实际建立两份正常fixture，A编号36cf1ddf-be10-4294-8f2a-ed91a8abc1bb、B编号12f3094b-08c2-489c-b2fa-942b7492e854均在初开与最终回看保持。最终A/B各有单份完整KEEP。",
+    "按照A再B点击，普通列表实际从LAUNCH/A变为LAUNCH/B/A；关闭入口后B/A，没有重排。不得把它当作A/B有序准备完成。倒序点击正在独立验证，未提前采用。",
+    "A早期输入后图仍为占位符，最终回看才见标记；B两次发送后直接图和10秒观察仍见占位符，切换A再回B后才见单份KEEP。不能仅凭输入调用返回宣称输入已成功，也不能确定是产品、输入或取证刷新原因。",
+    "本次专用窗口已关闭，返回原报告；偏好不变，未知对象保留。"
+  ],
+  "source_case_grade": "ENV-06原用例仍pending；这是辅助准备路径验证，不增加通过计数。"
+}

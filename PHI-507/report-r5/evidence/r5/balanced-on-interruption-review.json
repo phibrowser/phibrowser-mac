@@ -1,0 +1,158 @@
+{
+  "reviewer": "Ripley",
+  "job": "DBL-23-DBL-23-BAL-input-retry-r5",
+  "decision": "partial",
+  "scope": "操作器没有返回最终结构化JSON；此记录由Ripley依据已取回的真实CU原图、原生返回和动作日志重建，不伪称操作器完成整例。",
+  "audit": {
+    "CU_events": 109,
+    "non_CU_events": 0,
+    "raw_images": 38,
+    "retained_images": 38
+  },
+  "viewed_raw_images": [
+    {
+      "number": 5,
+      "source_sha256": "f79fd582b3f26e187393db0c8460a7399c77c3e9dc3839c485534b4bad87cab8"
+    },
+    {
+      "number": 7,
+      "source_sha256": "ad1bea3c0090d06760d8a7d247e2e0a1142824fe4d90d549cdf4376f760d1a94"
+    },
+    {
+      "number": 8,
+      "source_sha256": "d424c5a80a6ae3cbfc342a5440c7fe87d35e6974ea7943a7abcf10fa4fe71f73"
+    },
+    {
+      "number": 10,
+      "source_sha256": "da3ed806067ee16cc514903abf748855a916671f864bf0edfcf286391596ac8d"
+    },
+    {
+      "number": 12,
+      "source_sha256": "add9aac587f3343502e0c87331d65291f03f5595a129a6bb27f3e01c39d247e9"
+    },
+    {
+      "number": 14,
+      "source_sha256": "d69485ede8cfc230f0557c30be96ebd83af38d74c614a40d4042ea99f02bcc3f"
+    },
+    {
+      "number": 15,
+      "source_sha256": "7f85218008549c93bf249a38ab00221bdfba122480c3cede9df4fe0dc90b7d4c"
+    },
+    {
+      "number": 16,
+      "source_sha256": "100a7b2e565ab43a3276d302b70455bfc61d1a4475c4fcb0dcbd8e31a1c0e0a5"
+    },
+    {
+      "number": 17,
+      "source_sha256": "9fea85540a50869a76d992088527bbba151848c3f99deb5deb5ecd069f590491"
+    },
+    {
+      "number": 18,
+      "source_sha256": "ed8ed7691c732b91e404c8d8dca135de3013f342b3b651e97d12e280b8ca67aa"
+    },
+    {
+      "number": 19,
+      "source_sha256": "88cd0cd8eb401c0ca208cf68152af68a7b641db13360fbb7dc9e60d42d330939"
+    },
+    {
+      "number": 20,
+      "source_sha256": "77441ccf7cca7a7686877def6a3bdfdd0b91b58270193e7e670ce76492f4fe44"
+    },
+    {
+      "number": 21,
+      "source_sha256": "e769da1e39f0bfb0a93b662e5c896d3af6eeac57fe1112cb47ed060b8bbe9cfe"
+    },
+    {
+      "number": 22,
+      "source_sha256": "d38f8157cb47a66dd67df58ca5287a9d1417e196ab24f64eb33174d6a85225cb"
+    },
+    {
+      "number": 23,
+      "source_sha256": "38ae0234fbe6f766a5f490a254651408f6fc9cd94a1852c3e70d6527e9b6f580"
+    },
+    {
+      "number": 24,
+      "source_sha256": "0cb94abf5ac75f763b60298f6950803b6208b2a5e8a7b60df1fbcbfa54a9dee2"
+    },
+    {
+      "number": 25,
+      "source_sha256": "a2690c709c7283cde4da6d55d0a8a6ba6ddf425a024effb9f0e845ed4e13917b"
+    },
+    {
+      "number": 26,
+      "source_sha256": "f4de2cd84838bad2cf624e0de4e9cecef370f3ed705c8c5264cfb0fa9510abe5"
+    },
+    {
+      "number": 27,
+      "source_sha256": "a1d6050200a0b1bd596cb71b987681aeaf217c9dd83e6a7bba991b9d65659430"
+    },
+    {
+      "number": 28,
+      "source_sha256": "51bdc7a31f892c97b725a3874f33ea0c43cae655c9265d7cce2db7dc1e768dc9"
+    },
+    {
+      "number": 29,
+      "source_sha256": "073b3c9deef94c0d093f44d55bc70a121549fa42da1d4fafc9decd9f6911a2f7"
+    },
+    {
+      "number": 30,
+      "source_sha256": "3220b2ace3ed6f2cc30d512f0143c33ade2bf13a39567620d4f8e4dd59b07e99"
+    },
+    {
+      "number": 31,
+      "source_sha256": "fb82ebf35d55c1cadd3346fa4d26248bb9fa48be166aa93bc8b31e458304c9a0"
+    },
+    {
+      "number": 32,
+      "source_sha256": "20a9ebbe075c38358fc814dd568bf88e2095f6d1b778364c775eed2ecd741642"
+    },
+    {
+      "number": 33,
+      "source_sha256": "69e0d91c01fca29fd7329e628d5af28cfdbc07d1fd00f69f2b498edc4a8e97b6"
+    },
+    {
+      "number": 34,
+      "source_sha256": "671a63cc21e03fb3da497e8770032d1e8749a97de7ff9b8ae33d7d7db47c29c7"
+    },
+    {
+      "number": 35,
+      "source_sha256": "2ce32d4fe71d8a0de2ffaa6d6e7a445ab95d940222458b0a75795299e498769e"
+    },
+    {
+      "number": 36,
+      "source_sha256": "9c411d297f2091d335ae87f33d1844db6ab53b33d099c84883719326a548f929"
+    },
+    {
+      "number": 37,
+      "source_sha256": "ccd8c79e8cd1dddc5b53a8444fb43e6267a7649902f98f0bd689f0887ac1061e"
+    },
+    {
+      "number": 38,
+      "source_sha256": "c48734f948111a12d0883e8d80bedf71c8181d266e1dfb99eece6c7839778f70"
+    }
+  ],
+  "completed_substeps": [
+    "on-PS-left-open",
+    "on-PS-right-open",
+    "on-PS-left-closed",
+    "on-PS-right-closed",
+    "on-MS-closed",
+    "on-MS-open"
+  ],
+  "remaining_substeps": [
+    "off-PS-left-open",
+    "off-PS-right-open",
+    "off-PS-left-closed",
+    "off-PS-right-closed",
+    "off-MS-closed",
+    "off-MS-open",
+    "cleanup-and-restore"
+  ],
+  "basis": [
+    "on已打开PS两次双击后A/B原编号和KEEP仍实见；普通C/D对照原编号及KEEP实见。",
+    "两次PS自身Close后保留保存块，再双击左右分别重开为新编号及空框；真实关闭菜单包含unpinClosedPinnedSplit/convertClosedPinnedSplitLayout且无Close。",
+    "真正MS保存入口首次双击打开独立绑定C/D，输入专属KEEP后再次双击，绑定编号及KEEP仍实见；原普通对照另行回读保持。",
+    "之后Command-comma实际打开Guest设置页，辅助函数在该页查开关报toggle missing；尚未点击off。随后嵌套模型服务5次重连后HTTP502退出，属于执行环境中断及操作定位错误，不是产品缺陷。",
+    "未执行off六动作或本批清理恢复；当前状态仅记录最后CU返回，不假设仍在前台。"
+  ]
+}

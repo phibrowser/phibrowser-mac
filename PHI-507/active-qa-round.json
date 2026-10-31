@@ -1,8 +1,8 @@
 {
-  "round": 5,
-  "started_at": "2026-10-30T21:22:30.830600+00:00",
-  "lease_id": "52a943f0-2b80-4fdf-9258-ff0ac91c8040",
-  "previous_round": 4,
-  "previous_report": "https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r4/",
-  "note": "Same Computer Use campaign; all prior results preserved. r4 released and rendered; local preview and publication follow in this lease."
+  "round": 6,
+  "started_at": "2026-10-31T05:33:06.404711+00:00",
+  "lease_id": "8c1d8779-4eeb-4400-a591-7ecd2585843f",
+  "previous_round": 5,
+  "previous_report": "https://argus-phi.github.io/phi-ai-test-reports/PHI-507/r5/",
+  "note": "保留全部前轮证据及有效结果；r5中断已恢复，r6继续尚未执行项。"
 }

@@ -1,0 +1,355 @@
+{
+  "reviewer": "Ripley",
+  "reviewed_at": "2026-10-31T05:27:48.467730+00:00",
+  "basis": "POS01/02关键29原图已于前一上下文实际查看；POS03所列19原图本上下文实际查看。编号逐页核对；没有声称查看其余进度图。",
+  "decisions": {
+    "POS-01-BAL": "pass",
+    "POS-02-BAL": "pass",
+    "POS-03-BAL": "pass",
+    "POS-04-BAL": "pending"
+  },
+  "findings": [
+    "POS01：D活动，Above后D/E/F，D仍活动，三个原编号相同。",
+    "POS02：C活动，Below后A/B/C，C仍活动，三个原编号相同。",
+    "POS03：F活动，直接右键C，Above后C/D/E/F，F仍活动，四个原编号相同。",
+    "POS03旧长run及空白setup原图保留；短run F返回后完成前置。批次中断没有执行POS04或恢复偏好，不能把整批判完成。"
+  ],
+  "sources": [
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 2,
+      "file": "POS-01_POS-02-balanced-basic-r5-002.jpg",
+      "marker": "POS-01-BAL attempt1 general-settings",
+      "sha256": "7e338cbf53efed4b5b5eb6705fabafb5909c79d496771c4c48944ad67f790681"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 3,
+      "file": "POS-01_POS-02-balanced-basic-r5-003.jpg",
+      "marker": "POS-01-BAL attempt1 settings",
+      "sha256": "9a6eae83a4829adeda57548ace5512e310634716ddbfa3bdec28f252b0ad9b22"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 6,
+      "file": "POS-01_POS-02-balanced-basic-r5-006.jpg",
+      "marker": "POS-01-BAL attempt1 setup-F",
+      "sha256": "be2cfbc19acf212b45736a7e18be5d7053cae46a708b56aca4a639d801ae3d8b"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 7,
+      "file": "POS-01_POS-02-balanced-basic-r5-007.jpg",
+      "marker": "POS-01-BAL attempt1 setup-E",
+      "sha256": "d70d3080b734053e3104ec2860c51ba8eae0af236b2f2110ef3be78db4d7ffd5"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 8,
+      "file": "POS-01_POS-02-balanced-basic-r5-008.jpg",
+      "marker": "POS-01-BAL attempt1 setup-D",
+      "sha256": "a21bb6c40896aa7b8a98415df5189c0fb117e154e76618cccf06e133daf45286"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 9,
+      "file": "POS-01_POS-02-balanced-basic-r5-009.jpg",
+      "marker": "POS-01-BAL attempt1 setup-C",
+      "sha256": "af23802ea61bf2179cc996ede6160e6dc135cfc8b5387592ed27f6a612e47f56"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 10,
+      "file": "POS-01_POS-02-balanced-basic-r5-010.jpg",
+      "marker": "POS-01-BAL attempt1 setup-B",
+      "sha256": "032c5403ec76b097fcc15cd11c65e480f169460f7197e1c4c4aa3a40e34d62d8"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 11,
+      "file": "POS-01_POS-02-balanced-basic-r5-011.jpg",
+      "marker": "POS-01-BAL attempt1 setup-A",
+      "sha256": "08e723fc4b7155cbae5640e9c456b12e378d61500298a7c7ef7f71856ab12032"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 12,
+      "file": "POS-01_POS-02-balanced-basic-r5-012.jpg",
+      "marker": "POS-01-BAL attempt1 before",
+      "sha256": "69858f2cd84e76ca7884dc7b493c3617714d87cff20cd7f61a21d6f76692ea95"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 13,
+      "file": "POS-01_POS-02-balanced-basic-r5-013.jpg",
+      "marker": "POS-01-BAL attempt1 menu",
+      "sha256": "1ed4201743bdbbc876e04b8b89833bd76ef11505ac015f229c4d9030ab58ce86"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 14,
+      "file": "POS-01_POS-02-balanced-basic-r5-014.jpg",
+      "marker": "POS-01-BAL attempt1 after",
+      "sha256": "3fc18c8de2e12fb13a81b85735a42a7cdf58e5ec3982ba67b48e0f2c4e57560f"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 15,
+      "file": "POS-01_POS-02-balanced-basic-r5-015.jpg",
+      "marker": "POS-01-BAL attempt1 identity-E",
+      "sha256": "710808ebb12d817d281f4fbd3aee736bf4e0eb9bcf05b06d3577f67f323f4256"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 16,
+      "file": "POS-01_POS-02-balanced-basic-r5-016.jpg",
+      "marker": "POS-01-BAL attempt1 identity-F",
+      "sha256": "56205b46a9d7ea1744c6aadaed6c75e0e468b6f377ea3c829f33916c4396c649"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 17,
+      "file": "POS-01_POS-02-balanced-basic-r5-017.jpg",
+      "marker": "POS-01-BAL attempt1 identity-D",
+      "sha256": "02971c64e412a7a1d6f1b9297890d0b9e6daed1807a8c2da792499c667f13cb7"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 20,
+      "file": "POS-01_POS-02-balanced-basic-r5-020.jpg",
+      "marker": "POS-02-BAL attempt1 setup-F",
+      "sha256": "5d7b33e1a4de76d1c7342e7ebee55342c9c57499d34e38370763985bd4353550"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 21,
+      "file": "POS-01_POS-02-balanced-basic-r5-021.jpg",
+      "marker": "POS-02-BAL attempt1 setup-E",
+      "sha256": "a3b6f1e7ccf90726fd05d5fe27abdb6aa0e140523fceb35aab62fe08e2ce9dfc"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 22,
+      "file": "POS-01_POS-02-balanced-basic-r5-022.jpg",
+      "marker": "POS-02-BAL attempt1 setup-D",
+      "sha256": "e0413add21839728e68dacff1d3b33d24d9a1853cb5c96a9edc73970cc5034e6"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 23,
+      "file": "POS-01_POS-02-balanced-basic-r5-023.jpg",
+      "marker": "POS-02-BAL attempt1 setup-C",
+      "sha256": "0932b48315e64711bc611e5cbd6e96a52ae6598adce3a63dc0366463a4470e24"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 24,
+      "file": "POS-01_POS-02-balanced-basic-r5-024.jpg",
+      "marker": "POS-02-BAL attempt1 setup-B",
+      "sha256": "f7b9ecf6d1988f61fd61fa039bb8bf265ff42ef963b8eff53667d8d810397bfb"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 25,
+      "file": "POS-01_POS-02-balanced-basic-r5-025.jpg",
+      "marker": "POS-02-BAL attempt1 setup-A",
+      "sha256": "4165688c66eddcf286dc8faa3697650254ba84fd8bc869b72553fcc5cc045c15"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 26,
+      "file": "POS-01_POS-02-balanced-basic-r5-026.jpg",
+      "marker": "POS-02-BAL attempt1 before",
+      "sha256": "1f0aed8d9e1b656a6703301071cb864d8a4f1460418efcfea0d6aa36af3c25eb"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 27,
+      "file": "POS-01_POS-02-balanced-basic-r5-027.jpg",
+      "marker": "POS-02-BAL attempt1 menu",
+      "sha256": "ee1a3fb927d683c348fd2b2baf81037bb2a486406fc054b574762f54df16174d"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 28,
+      "file": "POS-01_POS-02-balanced-basic-r5-028.jpg",
+      "marker": "POS-02-BAL attempt1 after",
+      "sha256": "75ca7b9db60f554c8fc8abc16a168f88feb73492eba1b712c3f30bf39977220c"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 29,
+      "file": "POS-01_POS-02-balanced-basic-r5-029.jpg",
+      "marker": "POS-02-BAL attempt1 identity-A",
+      "sha256": "966d65e06406594c291e14194aa3e8e533721964e70034ce1136e36852b6f883"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 30,
+      "file": "POS-01_POS-02-balanced-basic-r5-030.jpg",
+      "marker": "POS-02-BAL attempt1 identity-B",
+      "sha256": "c71431deb7047d2c30c178e593f5a99623e78b0aaebf8c928da0c671445b679c"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 31,
+      "file": "POS-01_POS-02-balanced-basic-r5-031.jpg",
+      "marker": "POS-02-BAL attempt1 identity-C",
+      "sha256": "2753a4b4cd8fef5609629d72194afca073097b9af3354fb47610558916e2d374"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 32,
+      "file": "POS-01_POS-02-balanced-basic-r5-032.jpg",
+      "marker": "POS-02-BAL attempt1 restored-settings",
+      "sha256": "0d055b582b963ed07080ec0a6adf3309c80483eb8fa732da79eb9bcb0562d269"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 33,
+      "file": "POS-01_POS-02-balanced-basic-r5-033.jpg",
+      "marker": "POS-02-BAL attempt1 restored-general",
+      "sha256": "0ffce024b777f1260320aa17b6deabe75faf77b70a62a7b29e6edfc816c9080b"
+    },
+    {
+      "job": "POS-01_POS-02-balanced-basic-r5",
+      "number": 34,
+      "file": "POS-01_POS-02-balanced-basic-r5-034.jpg",
+      "marker": "POS-02-BAL attempt1 batch-end",
+      "sha256": "968b9757a8a21b4e65377ba548f2936229d1174ae64b019adae282bb10206fc9"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 2,
+      "file": "POS-03_POS-04-balanced-basic-r5-002.jpg",
+      "marker": "POS-03-BAL attempt1 initial-general",
+      "sha256": "a16bb06fc5e8f98546597796774caa0a49a7f1bf4e24d05f1a12fc1ea1d9e6ea"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 3,
+      "file": "POS-03_POS-04-balanced-basic-r5-003.jpg",
+      "marker": "POS-03-BAL attempt1 settings",
+      "sha256": "b92293a6c5a83f69ed8b2e2399506ddd5fed6d82c8d4e553e3b33d8083b07d27"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 8,
+      "file": "POS-03_POS-04-balanced-basic-r5-008.jpg",
+      "marker": "POS-03-BAL attempt1 setup-F",
+      "sha256": "cdcbd393505111df81f937ae0f70f043633e8d49d9ef17af7554cb6460c9d6bf"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 9,
+      "file": "POS-03_POS-04-balanced-basic-r5-009.jpg",
+      "marker": "POS-03-BAL attempt1 setup-F-corrected",
+      "sha256": "7fe0948ac96f299eeb9fdbeeaa1d6ae9d935c9347a9e6150fc5d3bf34e14a441"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 10,
+      "file": "POS-03_POS-04-balanced-basic-r5-010.jpg",
+      "marker": "POS-03-BAL attempt1 setup-F-committed",
+      "sha256": "6455588bd08b2decc43dc1774aa5d3e2914cc52fbddd5f01f31bdf51de813a9b"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 11,
+      "file": "POS-03_POS-04-balanced-basic-r5-011.jpg",
+      "marker": "POS-03-BAL attempt1 setup-F-wait",
+      "sha256": "c00558667265eae87d5c9a2ebe3c1dad20b89c23eff85ab8dc74536d024c7bdb"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 12,
+      "file": "POS-03_POS-04-balanced-basic-r5-012.jpg",
+      "marker": "POS-03-BAL attempt1 setup-F-return",
+      "sha256": "0dc75537b55e8083d2538f8262f99cd56f00b5404b44e2903b53381dce22267b"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 15,
+      "file": "POS-03_POS-04-balanced-basic-r5-015.jpg",
+      "marker": "POS-03-BAL attempt1 setup-E",
+      "sha256": "e6409314cd0533b95e9241e58060681f1332fd3331c9f56b4c9e2e2edc9919a5"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 16,
+      "file": "POS-03_POS-04-balanced-basic-r5-016.jpg",
+      "marker": "POS-03-BAL attempt1 setup-D",
+      "sha256": "3568a9673e7c6e782d885e45c75a59b25d6e9a55f1558bf4318d8d8bcb54757d"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 17,
+      "file": "POS-03_POS-04-balanced-basic-r5-017.jpg",
+      "marker": "POS-03-BAL attempt1 setup-C",
+      "sha256": "cfc78f178076afdba97b9e08e288615dacade22818beecd4981547d9940884e3"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 18,
+      "file": "POS-03_POS-04-balanced-basic-r5-018.jpg",
+      "marker": "POS-03-BAL attempt1 setup-B",
+      "sha256": "dd169e76558917af8a76a9839277dcfb2349e975bffdd8f45408d1359dce2ebd"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 19,
+      "file": "POS-03_POS-04-balanced-basic-r5-019.jpg",
+      "marker": "POS-03-BAL attempt1 setup-A",
+      "sha256": "339440190b642945eec723d9db3167ec46646cd93252c8fa9a378180295b2a11"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 20,
+      "file": "POS-03_POS-04-balanced-basic-r5-020.jpg",
+      "marker": "POS-03-BAL attempt1 before",
+      "sha256": "747bf9e2697629634189f6038960aae01329b07b053ed08e1b7972318b732a24"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 21,
+      "file": "POS-03_POS-04-balanced-basic-r5-021.jpg",
+      "marker": "POS-03-BAL attempt1 menu",
+      "sha256": "41e8a303f39bd17c2c3d8230bb7a57308d6e6ad9b65c90bd2e2b39047fcabf97"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 22,
+      "file": "POS-03_POS-04-balanced-basic-r5-022.jpg",
+      "marker": "POS-03-BAL attempt1 after",
+      "sha256": "5c922e37d3036a001ab154b191395f0cd184a7a9fb1cbd62c6f0d98a763bb849"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 23,
+      "file": "POS-03_POS-04-balanced-basic-r5-023.jpg",
+      "marker": "POS-03-BAL attempt1 identity-C",
+      "sha256": "c403aa5497a1a08e017332b106941d18f5c95931c83ff79c3d0d9842adfa7e3f"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 24,
+      "file": "POS-03_POS-04-balanced-basic-r5-024.jpg",
+      "marker": "POS-03-BAL attempt1 identity-D",
+      "sha256": "dd1893c5dcf7a8074a4bdc0ab691b2a11b734d5fc665e4965ed2f6d71aa9835c"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 25,
+      "file": "POS-03_POS-04-balanced-basic-r5-025.jpg",
+      "marker": "POS-03-BAL attempt1 identity-E",
+      "sha256": "72f750c2161c99af30927d5cd666e4f0e199f112a2a3475fc6a22fabf0a6b78d"
+    },
+    {
+      "job": "POS-03_POS-04-balanced-basic-r5",
+      "number": 26,
+      "file": "POS-03_POS-04-balanced-basic-r5-026.jpg",
+      "marker": "POS-03-BAL attempt1 identity-F",
+      "sha256": "6c17716e2af2de0c88a77e97f5535466b05e1143a97a08814625bca632b52989"
+    }
+  ]
+}

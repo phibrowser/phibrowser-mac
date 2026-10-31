@@ -1,0 +1,18 @@
+{
+  "reviewer": "Ripley",
+  "job": "DBL-09_DBL-23-balanced-protected-complete-r5",
+  "session_id": "01a18ec6-49d4-7e52-871b-e50c386843b6",
+  "audit": {"computer_use_events": 202, "non_computer_use_events": 0, "raw_images": 64},
+  "decisions": {"DBL-09-BAL": "pass", "DBL-23-BAL": "blocked"},
+  "reviewed_evidence": [
+    "DBL-09的24张原始图已实际查看，并逐张SHA确认与完整执行结束后取回的原始图字节一致；复核完整观察和初始off/on原生返回，查看新增整理的K及绑定M前置图。",
+    "DBL-23的12张整理图全部实际查看，含第一次分屏准备、拆分后输入焦点检查、第二次独立D准备、失败现场及完整偏好恢复图。"
+  ],
+  "basis": [
+    "DBL-09四次核心双击均有有效P/真正绑定M前后图，原编号及KEEP保持；普通K在首次核心前已标记，每次动作后原编号与KEEP保持。M两次名称编辑以Return结束且未改名；可选pin另页导航未执行。",
+    "修正标记关联时保留所有原图：control-setup最后一张实际为普通M空框；M-KEEP最后一张实际为普通P空框。两张均明示采集标记偏差，另附真正K和绑定M原始前置图。General上部裁切不用于证明布局，另附完整图。",
+    "DBL-23两次仅执行准备；没有发送KEEP，也没有执行任何核心双击。无法确认焦点不等于已验证产品拒绝输入。该阻塞限定本次准备方式，不能扩展到全部输入或布局。",
+    "原始偏好Balanced/System Default/off/on已恢复，旧保存项和未知对象保留。本次未确认产品缺陷。"
+  ],
+  "next_step": "继续使用Computer Use，在明确TC输入框内点击后进行一次可丢弃文字输入作为焦点验证；实际见到标记和原编号才建立前置，保留早期无效现场，不反复盲打。准备方式修正后另开唯一run重验DBL-23，不覆盖本次未执行记录。"
+}

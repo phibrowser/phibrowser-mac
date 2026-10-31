@@ -1,0 +1,312 @@
+{
+  "reviewer": "Ripley",
+  "job": "DBL-09_DBL-23-comfortable-protected-complete-r5",
+  "reviewed_at": "2026-10-30T22:32:33.504305+00:00",
+  "audit": {
+    "CU_events": 342,
+    "non_CU_events": 0,
+    "raw_images": 116,
+    "retained_images": 116
+  },
+  "raw_images_actually_viewed": [
+    {
+      "number": 1,
+      "source_sha256": "0ee4a32c16badfa7d3997466a78543b0c2ab7d0be7d45a546c8b837d9b573de6"
+    },
+    {
+      "number": 2,
+      "source_sha256": "3995408029837a609412721411eae5647b96a37a88fdbfef356bd50a0c231b06"
+    },
+    {
+      "number": 16,
+      "source_sha256": "bf97c1b30af5e7f8bd3d53f5798c72e0bd53042d97bf9a08158bb8b6316a20b8"
+    },
+    {
+      "number": 19,
+      "source_sha256": "4fed06268d382d807f4e8efcb6ec2315a6a280ea05a8353f3aca3288f3473605"
+    },
+    {
+      "number": 20,
+      "source_sha256": "cb99864daa30975cdf52ab15ce91d8fdf3033940fa507dbc963b6f296df6b800"
+    },
+    {
+      "number": 22,
+      "source_sha256": "38cc595017e2b806a1b75a5904b8a64185fe6e270a3db745b5523df48385d6af"
+    },
+    {
+      "number": 27,
+      "source_sha256": "af9d1dc45a48dab2e9f724d9f5c98c171bdb74458c2f974d8f0a6734cd2a258b"
+    },
+    {
+      "number": 28,
+      "source_sha256": "30d9f9d64e01b0be5a5e7b4db8dd9bcf2c38650135489804fd26b0d54baf702e"
+    },
+    {
+      "number": 29,
+      "source_sha256": "aea3d4a087e6a3e05dda1c78fc73044469b473e5a9b7705844be520d29280b60"
+    },
+    {
+      "number": 30,
+      "source_sha256": "aea3d4a087e6a3e05dda1c78fc73044469b473e5a9b7705844be520d29280b60"
+    },
+    {
+      "number": 31,
+      "source_sha256": "f8b9d42f1de0301a510ea1cc474ac721f51db81790101ad81b29c1587e664400"
+    },
+    {
+      "number": 32,
+      "source_sha256": "d88b8afc8c7c716f09be90690e6a87749a5daebe81cd27410d767102d32a9272"
+    },
+    {
+      "number": 33,
+      "source_sha256": "57360f8ca451b885f453d0caba1f8c9e8759bbfea759e6847235ec60762e41fd"
+    },
+    {
+      "number": 34,
+      "source_sha256": "85466a7cb3e4f73948b0ecf5edd885f0601854be1ccc1f3ef4bc54c83a9bcc5b"
+    },
+    {
+      "number": 35,
+      "source_sha256": "232fdf00bb1760744063405ebc5d2d596d5ed7eb278bbe23425ca2168f142926"
+    },
+    {
+      "number": 36,
+      "source_sha256": "035c675daa66cf24a04c742c67bb799e27e15ef11c2ce0b3518ab221f7fd3d7e"
+    },
+    {
+      "number": 37,
+      "source_sha256": "a8fd9ae9a24400a85840b7277c6feeea889a6ff4a1e0a7d288ab6b900a6244cf"
+    },
+    {
+      "number": 38,
+      "source_sha256": "57360f8ca451b885f453d0caba1f8c9e8759bbfea759e6847235ec60762e41fd"
+    },
+    {
+      "number": 39,
+      "source_sha256": "65c8f3d7f0d8b2e81027887f4ddeb4e6c0b030ab74f4ef85ab57d630b581f1e3"
+    },
+    {
+      "number": 40,
+      "source_sha256": "19d3aec50bf84cc1982f1652d3451a38ce18253b6671f270b6dbdea9c7062987"
+    },
+    {
+      "number": 41,
+      "source_sha256": "12c90a1d3d7bb984b71981d742a1499ad07f643baf16d53c3166b5c5aa8eca1d"
+    },
+    {
+      "number": 42,
+      "source_sha256": "74cc75d17dd1a7c8854dbccb9935ab64e71615f6e38cee8e91ef0dada1b83173"
+    },
+    {
+      "number": 54,
+      "source_sha256": "9ebe846d00b50be5f013775278fe90bce3994e723761c28a73243e91767f6bdb"
+    },
+    {
+      "number": 56,
+      "source_sha256": "4e31e881df0b69149b36a2635cee943fb1ae258c0fafc8a8bad077478f3e704f"
+    },
+    {
+      "number": 57,
+      "source_sha256": "12a27b47e826255b9e7fb3e8ae8a551976dc1985506a28c4a2ce943902e5b65e"
+    },
+    {
+      "number": 58,
+      "source_sha256": "9773c09ed875f2541339513805b6fe6baa59597ac83e8662a6b9789591256346"
+    },
+    {
+      "number": 59,
+      "source_sha256": "02ae8d9f1f105d7840823eae9f7b0e9131383e5eb815aa7ab685ece2e3c73f9d"
+    },
+    {
+      "number": 60,
+      "source_sha256": "030118f60c6b2f1c500a5ddbf02ae691e89adff1a2829a7a33fde2efe9b86e65"
+    },
+    {
+      "number": 61,
+      "source_sha256": "99dfcbb9127b21e5da86954be21fe94ea22c17471f23d2d7a25df182052edf77"
+    },
+    {
+      "number": 62,
+      "source_sha256": "32a236bd2797a2d2f1bb5b83949b191710dfcdc887c276b272fcf0dff7a840e2"
+    },
+    {
+      "number": 63,
+      "source_sha256": "87135ed1434a13b9937162afc31ab7d467a7c70501362addb2cbacc36e0db7c8"
+    },
+    {
+      "number": 64,
+      "source_sha256": "c7bb7d01c757f010e7fa40bfdbc751193329cd3cae1bcd517f4f6fafa64091a9"
+    },
+    {
+      "number": 65,
+      "source_sha256": "4e4482525cd2500869f9f71349186952b81a971f2c01817b56a9d3a819b88244"
+    },
+    {
+      "number": 66,
+      "source_sha256": "d70511fb7471996a90b1851967f87ae818bd5acc5df3981f892b152cfc2d1bb8"
+    },
+    {
+      "number": 67,
+      "source_sha256": "5faccdb3f341d76ea7f3bf81b438fa8cbdcb3e6550f23b47ca079d26a55b3947"
+    },
+    {
+      "number": 68,
+      "source_sha256": "cb3d78cf5be3a4373053a449dadf09f9827aabfc3455a546888b466aadf621f0"
+    },
+    {
+      "number": 69,
+      "source_sha256": "507b0b80602d8d5bc6c0f54e487298a949a484ff716fcb0952484c866f999226"
+    },
+    {
+      "number": 70,
+      "source_sha256": "6fe8b4a1c3df79960670dd78b28c002dbdbe7514055b208535fe17f9bc923a91"
+    },
+    {
+      "number": 71,
+      "source_sha256": "67ab705bfd127f51bbd6755cf6af84d978b0fd5c4a496d6e512e71e712e26502"
+    },
+    {
+      "number": 74,
+      "source_sha256": "848232f343e2b6710e50814a1551894dcd410f513e5505b51761271f5f1e3410"
+    },
+    {
+      "number": 75,
+      "source_sha256": "26a9027c4f72c957f0976c3f8fb146429697aa8bab902237bccc995a86ec9a73"
+    },
+    {
+      "number": 76,
+      "source_sha256": "6e7b0e5e3b99b864d356851e113837bb5573f22c4031e5de6da40826ba46de64"
+    },
+    {
+      "number": 77,
+      "source_sha256": "61d5b58531411748b39bc7e3cae8e64cd1fec6c0b217437c5d7bf073320341e0"
+    },
+    {
+      "number": 78,
+      "source_sha256": "8e15645e9dffa8050790eba0715168bd42be70f1957a60f24ba180b845481aaf"
+    },
+    {
+      "number": 79,
+      "source_sha256": "e0dabea0252eafa53fff2733e151bea7b1549885bb8c529450b172075ac3c85c"
+    },
+    {
+      "number": 80,
+      "source_sha256": "e829b0a62efe0c1930c4ac95f83c16c2f433d3a7e38bd7a16c71ec7f960b099b"
+    },
+    {
+      "number": 81,
+      "source_sha256": "d801a53096675da02f1135c285db89239aca265a8056870418737f21b961f5fd"
+    },
+    {
+      "number": 82,
+      "source_sha256": "5c49428e0bc9fe8adba28765bfce4411cc3dfad6cb11d224a7eb8e8eb23f2ab3"
+    },
+    {
+      "number": 83,
+      "source_sha256": "0eb8436d964cbc3f49c96719755e68f7cc14dc70f2d327dfd80b5fde4794270a"
+    },
+    {
+      "number": 84,
+      "source_sha256": "28aa73c48539d0382bce5fad4021a99aeb5fad121c1ef5b11698768aa7dc7278"
+    },
+    {
+      "number": 85,
+      "source_sha256": "963bc4ee6181416e00e8abb928aa1728bdef080dc439a502ef9795c03ee984f8"
+    },
+    {
+      "number": 86,
+      "source_sha256": "50803d6888870c5193cca519068d8731931f50a58e6244fd861285cc042dd10e"
+    },
+    {
+      "number": 87,
+      "source_sha256": "896ac7f0bd5cc3c9fa1022d5405d7cdd8554d1dcf849c561d9dbfcc4785414d5"
+    },
+    {
+      "number": 88,
+      "source_sha256": "4d4bc65a57aab6573b7774bd49494be09da62347d7b1088122f4d55a4b129e5b"
+    },
+    {
+      "number": 89,
+      "source_sha256": "a0b8f81787d7d7dc5d967e95df7117906737ca618c433aac25488c57ed45b413"
+    },
+    {
+      "number": 90,
+      "source_sha256": "043a7001b40b28f00a616b66d4d28638f355294f0b3ce6121eb7fd63775fcc99"
+    },
+    {
+      "number": 91,
+      "source_sha256": "3bc27f14f6f76f8c6b363e3023ecbd2ab232029b07f449d34797c937dba00d8e"
+    },
+    {
+      "number": 103,
+      "source_sha256": "1550158a47ed2e0527cbd125edeeee080a912cfde501b30d508f845d14483a68"
+    },
+    {
+      "number": 104,
+      "source_sha256": "46afce4e8d35bf9cc55666f9d548d85409e45b6829eebcb3bf33a9aa8316e012"
+    },
+    {
+      "number": 105,
+      "source_sha256": "218ea42d1550d8384864b0d646ca757ba7e56d539fe784ce501f2d5af22b9af5"
+    },
+    {
+      "number": 106,
+      "source_sha256": "dee4eb0a82bb4e1a1d5a597a52dd602b17faff703a11354c229ec22c1bc2697d"
+    },
+    {
+      "number": 107,
+      "source_sha256": "c9ba2b386dee93934ef7c776093d336cd0ea653d3e0bc392806f855be7e63aa7"
+    },
+    {
+      "number": 108,
+      "source_sha256": "47c58211f21ec73ad6a1b0af6f8448289e2b10fb9471c4e2023230f32336565c"
+    },
+    {
+      "number": 109,
+      "source_sha256": "e94e4d1bb186333ba8860ec85508d020f339d7ae2b1f166c2b1682ce9bf03466"
+    },
+    {
+      "number": 110,
+      "source_sha256": "250ee96ec0583114f4b09ea67325b400c97db9bab1fa81acd65b98db4945e2fe"
+    },
+    {
+      "number": 111,
+      "source_sha256": "320fbd000ccef6606217c2f57979b7fd42a8d66fa62a9e647fda9d65dc9e6510"
+    },
+    {
+      "number": 112,
+      "source_sha256": "0c87f6c79ccc6cf02f7782a1a564c04b868573cbb0b7eae529d6442e8f5f691d"
+    },
+    {
+      "number": 113,
+      "source_sha256": "1655a13878429edbd92804e80a742387abbd65d96890c818976bb333eb852d5c"
+    },
+    {
+      "number": 114,
+      "source_sha256": "2d8c275c4fef989f4b0c75001bd09e5840862d12b5d5cc559c545fc90c923021"
+    },
+    {
+      "number": 115,
+      "source_sha256": "0d338d27342f532fa724d4907b917527ba6c198d75844b78536e0da119da6543"
+    },
+    {
+      "number": 116,
+      "source_sha256": "7f4c78d2a0efc87e47eb6c2af5a96059ac6fd384d68152d4cd61017d18a66d07"
+    }
+  ],
+  "decisions": {
+    "DBL-09-COM": "pass",
+    "DBL-23-COM": "pass"
+  },
+  "basis": [
+    "DBL-09四个核心动作实见P与真正bookmarkBarItem入口。P原编号/KEEP不变；off/on书签双击均打开普通副本，最初入口文档20ef91e3与N1908a29a原编号/KEEP仍在。Comfortable书签打开普通页，不宣称纵向绑定。额外单击与错标before完整保留并更正。",
+    "DBL-23十二核心动作均有前后CU图和实际返回。on/off已打开PS左右双击保持A/B原编号与KEEP；Close建立关闭前置后重开为新编号与空框，只记保存结构及打开动作保留，不声称跨显式Close保留草稿。",
+    "MS四次真正保存入口双击均产生一个配对及额外单独C/D条目；on/off行为一致。原实时配对与普通C/D对照的编号/KEEP另行回读保持。额外单页未修掉或隐瞒；没有旧构建，不归因新回归。",
+    "初始off/on和中途on/on、off/on有实际原生返回。收尾113在水平布局中确认书签栏隐藏；114/115完整图确认Balanced、System Default、off/on；116回原报告页。新保存项及专用窗口清理，旧/未知对象保留。",
+    "根实际查看71张关键原图，先前55张进度图SHA匹配完整收取的原图。全部116张CU图整理保留；未声称逐张查看其余45张准备或中间图。"
+  ],
+  "limits": [
+    "可选pin内另页导航未做，不属必需核心动作。",
+    "没有逐个核对所有新增普通副本的每个编号；已核对保护对象的原文档、普通对照及各核心新配对。"
+  ]
+}

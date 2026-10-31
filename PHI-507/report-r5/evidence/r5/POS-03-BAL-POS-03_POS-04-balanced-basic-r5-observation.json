@@ -1,0 +1,58 @@
+{
+  "unit_id": "POS-03-BAL",
+  "job": "POS-03_POS-04-balanced-basic-r5",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r5/POS-03_POS-04-balanced-basic-r5-observations.json",
+  "observation": {
+    "unit_id": "POS-03-BAL",
+    "precondition_actual": "独立File→New Window；run=TC-PHI507-r5-POS-03-BAL-823617-position-r5；六个normal正文、批次、编号和输入框均实见；LAUNCH经File→Close Tab关闭后顺序A/B/C/D/E/F，F单选活动；无组/分屏。",
+    "steps_executed": [
+      "通过LAUNCH真实链接按F/E/D/C/B/A准备；首个过长run在F正文截短，核心动作前用较短run修正F及LAUNCH。",
+      "F活动时直接右键C的原生row；未先左键C。",
+      "菜单中点击Close Tabs Above。",
+      "记录动作后活动F，再依次切C/D/E/F核对原编号。"
+    ],
+    "before": "普通A/B/C/D/E/F；旧TC-P pin、TC-M保存行、无名行和New Tab入口仍列出。",
+    "active_before": "F单选；右键C后仍为F单选，正文仍为F。",
+    "after": "普通C/D/E/F；A/B不再列出；旧保存条目仍列出；无组/分屏。",
+    "active_after": "动作后立即为F；身份核对依次C/D/E/F后停F。",
+    "settings_observed": "起始doubleClickToClose=off、directionalClosing=on；只点击前者改on，立即读两者on/on；核心on/on。",
+    "language_observed": "英文UI；General=System Default，未切语言。",
+    "layout_observed": "General截图Balanced选中；核心chrome为纵向普通列表。",
+    "identity_checks": "前置编号：A=81a07b7c-2ab5-4a9b-89f5-dc6c6b5f8c61；B=c400bb16-26be-4b2b-be52-79db3198bb86；C=ccc380f7-d52e-4cae-bc97-43ed98afc996；D=0244fabd-ff9d-4f94-936d-654d114fe55c；E=8a1882f0-41c3-420e-80b6-3648b3c97df2；F=2e7e197b-526c-4942-93ab-16455cb197ab。动作后C/D/E/F逐页正文、normal类型及编号与前置相同。初次长run F编号15c14c08-289b-4963-8baa-894605283ac9只属setup旧文档。App pid始终实读10708。",
+    "confirmation_choices": "核心未出现确认框；菜单原文Close Tabs Above/Close Tabs Below，点击Above。",
+    "not_executed_reason": "",
+    "operator_errors": [
+      "setup首个run过长，F正文批次末尾截短；已保留setup-F等原图，核心前改短run重新读到F编号。",
+      "首个安全内容坐标校准未看见指针；后续(1000,700)在转发2048图约(535,375)实见指针，再按该比例命中真实链接；无工具isError。"
+    ],
+    "evidence_markers": [
+      "EVIDENCE: POS-03-BAL attempt1 initial",
+      "EVIDENCE: POS-03-BAL attempt1 initial-general",
+      "EVIDENCE: POS-03-BAL attempt1 settings",
+      "EVIDENCE: POS-03-BAL attempt1 launch",
+      "EVIDENCE: POS-03-BAL attempt1 coordinate-calibration",
+      "EVIDENCE: POS-03-BAL attempt1 calibration-read",
+      "EVIDENCE: POS-03-BAL attempt1 coordinate-calibration-visible",
+      "EVIDENCE: POS-03-BAL attempt1 setup-F",
+      "EVIDENCE: POS-03-BAL attempt1 setup-F-corrected",
+      "EVIDENCE: POS-03-BAL attempt1 setup-F-committed",
+      "EVIDENCE: POS-03-BAL attempt1 setup-F-wait",
+      "EVIDENCE: POS-03-BAL attempt1 setup-F-return",
+      "EVIDENCE: POS-03-BAL attempt1 launch-corrected",
+      "EVIDENCE: POS-03-BAL attempt1 launch-ready",
+      "EVIDENCE: POS-03-BAL attempt1 setup-E",
+      "EVIDENCE: POS-03-BAL attempt1 setup-D",
+      "EVIDENCE: POS-03-BAL attempt1 setup-C",
+      "EVIDENCE: POS-03-BAL attempt1 setup-B",
+      "EVIDENCE: POS-03-BAL attempt1 setup-A",
+      "EVIDENCE: POS-03-BAL attempt1 before",
+      "EVIDENCE: POS-03-BAL attempt1 menu",
+      "EVIDENCE: POS-03-BAL attempt1 after",
+      "EVIDENCE: POS-03-BAL attempt1 identity-C",
+      "EVIDENCE: POS-03-BAL attempt1 identity-D",
+      "EVIDENCE: POS-03-BAL attempt1 identity-E",
+      "EVIDENCE: POS-03-BAL attempt1 identity-F"
+    ]
+  }
+}

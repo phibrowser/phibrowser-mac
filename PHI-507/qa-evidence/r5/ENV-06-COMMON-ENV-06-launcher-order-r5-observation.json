@@ -1,0 +1,40 @@
+{
+  "unit_id": "ENV-06-COMMON",
+  "job": "ENV-06-launcher-order-r5",
+  "scope": "Reverse-link preparation control only; real A/B order verified. Ripley reviewed all7 images and observations. Source ENV-06 remains not executed.",
+  "source": "qa-evidence/r5/ENV-06-launcher-order-r5-observations.json",
+  "observation": {
+    "active_after": "关闭LAUNCH后活动页及唯一选中项为A；关闭专用窗口后活动页及唯一选中项为原报告页。",
+    "active_before": "开始为原报告页单选；本次入口建立后为LAUNCH单选。",
+    "after": "本批原生顺序依次为[LAUNCH]→[LAUNCH,B]→[LAUNCH,A,B]→[A,B]。关闭入口后的稳定顺序为[A,B]，未重排。最后关闭本次专用窗口，本次页面残留集合为空；返回报告窗口后可见条目与开始一致。",
+    "before": "PID 10708，窗口为“Phi TabClose 独立安装包完整手册测试 需求测试文档 - PHI-507”。原生项目包括TC-P pin；列表依次为TC-M保存行、无名行、New Tab入口、普通New Tab条目、选中的报告页。本次launcher-order对象尚未建立。",
+    "confirmation_choices": "File→Close Tab关闭入口及File→Close Window关闭本次窗口时均未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: ENV-06-COMMON attempt1 before",
+      "EVIDENCE: ENV-06-COMMON attempt1 launcher",
+      "EVIDENCE: ENV-06-COMMON attempt1 coordinate-calibration",
+      "EVIDENCE: ENV-06-COMMON attempt1 new-B-after",
+      "EVIDENCE: ENV-06-COMMON attempt1 new-A-before",
+      "EVIDENCE: ENV-06-COMMON attempt1 new-A-after",
+      "EVIDENCE: ENV-06-COMMON attempt1 close-launcher-before",
+      "EVIDENCE: ENV-06-COMMON attempt1 final-order",
+      "EVIDENCE: ENV-06-COMMON attempt1 after"
+    ],
+    "identity_checks": "B、A均实际显示对应TC标题、批次TC-PHI507-r5-launcher-order、页面类型“普通页”和空输入框。B完整打开编号为f814432d-434d-460a-863d-ed2933715593；A完整打开编号为244843bc-dd13-49da-9c98-2d5e1d82f10a。关闭LAUNCH后的A正文仍显示相同编号。本批无组成员关系或split配对，未建立多选集合。",
+    "language_observed": "本轮原生File菜单为英文，fixture正文为中文；未切换语言，未打开语言设置。",
+    "layout_observed": "本轮chrome实际为左侧纵向标签列表。未切换布局；按额外约束未打开Settings重新读取Balanced选项。",
+    "not_executed_reason": "仅launcher倒序点击的准备路径验证，ENV-06原用例未执行",
+    "operator_errors": [],
+    "precondition_actual": "通过File→New Window独立建立本次专用窗口，地址栏导航指定launch URL，实见“TC测试页入口”、准确批次及第一个A normal、第二个B normal链接。仅建立本次要求的两个普通页，未构造A–F，未输入KEEP。",
+    "settings_observed": "本次未打开Settings，未修改偏好或快捷键；未将前次背景中的开关数值作为本轮重新实读结果。",
+    "steps_executed": [
+      "get_app_state只读固定app，确认PID 10708及原报告窗口顶部。",
+      "原生File→New Window，使用地址栏输入http://127.0.0.1:18211/launch/?run=TC-PHI507-r5-launcher-order&pages=A:normal,B:normal并提交；截图确认真实入口。",
+      "在入口安全空白区单击(2200,1000)校准，截图中指针约位于同一坐标；据本图1:1比例，以click_count:1、left单击第二个B链接(1430,684)。读取并截图B正文、批次、普通页类型和完整编号；列表为[LAUNCH,B]，B单选。",
+      "单击最新原生树中的LAUNCH行，截图确认返回真实入口；以click_count:1、left单击第一个A链接(1430,597)。读取并截图A正文、批次、普通页类型和完整编号；列表为[LAUNCH,A,B]，A单选。",
+      "再次单击LAUNCH行，截图后通过原生File→Close Tab仅关闭入口。get_app_state确认稳定顺序[A,B]、A单选及A原打开编号。",
+      "通过原生File→Close Window关闭本次专用窗口。get_app_state截图确认返回原报告顶部，PID仍为10708，原有可见项目保留。"
+    ],
+    "unit_id": "ENV-06-COMMON"
+  }
+}

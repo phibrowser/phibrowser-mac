@@ -1,0 +1,48 @@
+{
+  "scope": "本次相同二进制的前置能力台账复核；没有新增浏览器操作，没有执行受影响用例的快捷键核心动作。",
+  "basis_case": "ENV-02-COMMON",
+  "basis_round": 3,
+  "installed_executable_sha256": "b30ef8b3acbc832ee3f1aaa8ce682ebb28289654ff3fdb84fbdf04151bb59d0b",
+  "reviewer": "Ripley",
+  "reviewed_images": [
+    "qa-evidence/r3/ENV-02-COMMON-03.png",
+    "qa-evidence/r3/ENV-02-COMMON-04.png",
+    "qa-evidence/r3/ENV-02-COMMON-05.png",
+    "qa-evidence/r3/ENV-02-COMMON-06.png",
+    "qa-evidence/r3/ENV-02-COMMON-08.png",
+    "qa-evidence/r3/ENV-02-COMMON-09.png"
+  ],
+  "observation": "ENV-02已通过CU查验Shortcuts：Customized空搜索为No Results；All Shortcuts搜索Close，完整列表和滚动后仅见Reopen Closed Tab、Close Window、Close Tab、Close Tab Group；完整Tab分类实际滚动至末端，未见Close Other Tabs或Close Tabs to the Right。",
+  "reason": "原步骤要求先记录旧Close Tabs to the Right／Close Other Tabs绑定，并通过原生设置临时指定无冲突组合。本活动尚未在已查验的原生设置UI取得这两项的可核实绑定或配置入口，必需前置未成立，快捷键核心动作未执行。没有猜测组合或改内部偏好；此记录不证明功能全局不存在或产品行为失败。",
+  "affected_base_cases": [
+    "SCOPE-07",
+    "SCOPE-08",
+    "SCOPE-13",
+    "SCOPE-14",
+    "SCOPE-16",
+    "SCOPE-19"
+  ],
+  "independent_work_retained": "SCOPE-15仍待执行其独立的原生新标签页菜单及双击分支；其他普通键盘快捷键、菜单方向关闭和来源不要求绑定的用例不受此限制。",
+  "resume_condition": "发现可由Computer Use实际访问的原生配置入口或得到可从界面核实的现有绑定后，重新建立本项前置并执行，不改写历史未执行记录。",
+  "affected_units": [
+    "SCOPE-07-PER",
+    "SCOPE-07-COM",
+    "SCOPE-08-COMMON",
+    "SCOPE-13-PER-pin",
+    "SCOPE-13-PER-pin-split",
+    "SCOPE-13-PER-bookmark",
+    "SCOPE-13-PER-bookmark-split",
+    "SCOPE-13-BAL-pin",
+    "SCOPE-13-BAL-pin-split",
+    "SCOPE-13-BAL-bookmark",
+    "SCOPE-13-BAL-bookmark-split",
+    "SCOPE-14-PER",
+    "SCOPE-14-BAL",
+    "SCOPE-14-COM",
+    "SCOPE-16-PER",
+    "SCOPE-16-BAL",
+    "SCOPE-16-COM",
+    "SCOPE-19-COM-pin",
+    "SCOPE-19-COM-pin-split"
+  ]
+}

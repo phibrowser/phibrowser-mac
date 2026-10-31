@@ -1,0 +1,50 @@
+{
+  "unit_id": "POS-02-BAL",
+  "job": "POS-01_POS-02-balanced-basic-r5",
+  "scope": "本次指定执行点的实际动作；见observation中的未执行说明",
+  "source": "qa-evidence/r5/POS-01_POS-02-balanced-basic-r5-observations.json",
+  "observation": {
+    "active_after": "核心动作后为 C，单选；随后为身份核对切到 A、B，再返回 C。",
+    "active_before": "C，单选；右键 C 弹出菜单后活动页仍为 C。",
+    "after": "本项普通列表为 A/B/C，顺序不变；D/E/F 不再列出。旧 pin、保存行、无名行及 New Tab 入口仍列出。",
+    "before": "本项普通列表准确为 A/B/C/D/E/F；C 单选活动；无组或 split。旧 pin、保存行、无名行及 New Tab 入口另列。",
+    "confirmation_choices": "核心动作、setup 清理及本项收尾窗口清理均未出现确认框。",
+    "evidence_markers": [
+      "EVIDENCE: POS-02-BAL attempt1 setup-cleanup",
+      "EVIDENCE: POS-02-BAL attempt1 launch",
+      "EVIDENCE: POS-02-BAL attempt1 setup-F",
+      "EVIDENCE: POS-02-BAL attempt1 setup-E",
+      "EVIDENCE: POS-02-BAL attempt1 setup-D",
+      "EVIDENCE: POS-02-BAL attempt1 setup-C",
+      "EVIDENCE: POS-02-BAL attempt1 setup-B",
+      "EVIDENCE: POS-02-BAL attempt1 setup-A",
+      "EVIDENCE: POS-02-BAL attempt1 before",
+      "EVIDENCE: POS-02-BAL attempt1 menu",
+      "EVIDENCE: POS-02-BAL attempt1 after",
+      "EVIDENCE: POS-02-BAL attempt1 identity-A",
+      "EVIDENCE: POS-02-BAL attempt1 identity-B",
+      "EVIDENCE: POS-02-BAL attempt1 identity-C",
+      "EVIDENCE: POS-02-BAL attempt1 restored-settings",
+      "EVIDENCE: POS-02-BAL attempt1 restored-general",
+      "EVIDENCE: POS-02-BAL attempt1 batch-end"
+    ],
+    "identity_checks": "固定 app，PID 10708；run=TC-PHI507-r5-POS-02-BAL-1031a-position-r5。逐页打开编号：A 675c470d-a716-4026-935a-cfdb2bd2e928；B 4717d985-cd3f-46a4-8188-4e3e529dd1a1；C de917f3b-bf33-4f26-b98a-ce3d526c7f9c；D b41ccd4e-e2be-479c-8627-9f53fc690275；E 4def7922-b9f6-4bd1-a654-527cd13d10ff；F 92c0bfc8-c836-4e84-b8e4-3689fff4b16d。动作后逐页实见 A/B/C 正文及相同原编号，输入框为空。",
+    "language_observed": "System Default 未改；实际英文菜单原文为 Close Tabs Above、Close Tabs Below。收尾 General 再次读到 System Default。",
+    "layout_observed": "Balanced 未切换；本项从真实 chrome 再次确认外部纵向标签列表。收尾 General 截图仍为 Balanced 蓝框选中。",
+    "not_executed_reason": "",
+    "operator_errors": [],
+    "precondition_actual": "先通过 File→Close Window 清理 POS-01 专用实时页窗口，再独立 File→New Window 导航本项 LAUNCH。按 F/E/D/C/B/A 逐个点击真实链接，逐页实见正确正文、批次、普通页类型、编号及空输入框。通过 LAUNCH 的 File→Close Tab 关闭入口，核对 A/B/C/D/E/F 完整顺序，再单击 C 的原生 row。核心使用本批已实读的 on/on。",
+    "settings_observed": "核心沿用双击关闭 on、按位置关闭 on，未切换设置。收尾 Advanced 实读 on/on 后，仅点击双击关闭改为 off；即时树及后续 get_app_state 均读到 off/on。General 再次确认 Balanced、System Default。",
+    "steps_executed": [
+      "在 setup 中清理 POS-01 专用窗口，返回原报告窗口，再建立本项独立窗口。",
+      "通过 LAUNCH 真实链接建立六页，关闭 LAUNCH，核对 A/B/C/D/E/F 顺序并激活 C。",
+      "对 C 的原生 row 右键，读取菜单及仍为 C 的活动页，保存菜单截图。",
+      "点击原文 Close Tabs Below。",
+      "立即 get_app_state，记录普通集合 A/B/C、活动 C 及真实结束截图。",
+      "依次切 A、B、C，逐页核对正文和原打开编号。",
+      "输出本项 OBSERVATION；通过 File→Close Window 清理本项专用窗口。",
+      "经 Advanced 恢复双击关闭 off、核对位置关闭仍 on；经 General 确认 Balanced 和 System Default，关闭 Settings，读取最终报告窗口。"
+    ],
+    "unit_id": "POS-02-BAL"
+  }
+}

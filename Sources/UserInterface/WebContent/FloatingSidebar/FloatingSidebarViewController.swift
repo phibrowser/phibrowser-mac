@@ -491,6 +491,13 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         guard hasSetupObservers == false else { return }
         hasSetupObservers = true
 
+        // Folders toggled in the main sidebar while this list was already active.
+        state.sidebarCollapsedPublisher
+            .receive(on: DispatchQueue.main)
+            .filter { $0 }
+            .sink { [weak self] _ in self?.tabList.applyBookmarkExpandedFlags() }
+            .store(in: &cancellables)
+
         state.$layoutMode
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in

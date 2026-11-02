@@ -946,7 +946,11 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     private func setupObservers(_ state: BrowserState) {
         state.sidebarCollapsedPublisher
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.updateMediaActivation() }
+            .sink { [weak self] collapsed in
+                self?.updateMediaActivation()
+                // Folders toggled in the floating sidebar while this one was collapsed.
+                if !collapsed { self?.tabList.applyBookmarkExpandedFlags() }
+            }
             .store(in: &cancellables)
 
         state.$layoutMode

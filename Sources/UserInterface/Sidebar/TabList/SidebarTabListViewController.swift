@@ -1442,7 +1442,28 @@ class SidebarTabListViewController: NSViewController {
         }
         traverse(allItems)
     }
-    
+
+    /// Apply `bookmark.isExpanded` to the outline view, the reverse of `syncBookmarkExpandedFlags`.
+    /// The main and floating sidebars share the bookmark model but each owns an outline, so a
+    /// folder toggled in one is stale in the other until it is reconciled here.
+    func applyBookmarkExpandedFlags() {
+        guard isActive else { return }
+        func traverse(_ items: [SidebarItem]) {
+            for item in items {
+                guard let bookmark = item as? Bookmark, bookmark.isFolder else { continue }
+                if bookmark.isExpanded {
+                    if !outlineView.isItemExpanded(bookmark) {
+                        outlineView.expandItem(bookmark)
+                    }
+                    traverse(bookmark.children)
+                } else if outlineView.isItemExpanded(bookmark) {
+                    outlineView.collapseItem(bookmark)
+                }
+            }
+        }
+        traverse(allItems)
+    }
+
     func tearDown() {
         deactivate()
         cancellables.forEach { $0.cancel() }
@@ -4142,7 +4163,12 @@ extension SidebarTabListViewController: BookmarkSectionDelegate {
     
     func bookmarkSectionInitialDataDidLoad() {
         guard isActive else { return }
-        guard outlineView.autosaveName == nil else { return }
+        // Autosave restores only once per outline, and deactivation empties the
+        // outline, so a re-activation takes its expansion from the model.
+        guard outlineView.autosaveName == nil else {
+            applyBookmarkExpandedFlags()
+            return
+        }
         outlineView.autosaveExpandedItems = true
         outlineView.autosaveName = "SidebarTabList"
         syncBookmarkExpandedFlags()

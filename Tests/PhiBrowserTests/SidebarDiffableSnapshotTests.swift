@@ -360,6 +360,35 @@ final class SidebarTabSectionFastPathTests: XCTestCase {
         }
     }
 
+    func testFastSecondClickOnSpaceRootTogglesAgain() throws {
+        let state = try makeState()
+        state.bookmarkManager.addFolder(title: "Folder", guid: "space-root-double-click")
+        let (controller, outline) = try makeActiveSidebar(for: state)
+        let window = NSWindow(contentRect: controller.view.frame, styleMask: [], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(controller.view)
+        defer { controller.setActive(false); window.close() }
+        guard waitUntil({ outline.item(atRow: 0) is SpaceRootSidebarItem }) else { return }
+        let rect = outline.rect(ofRow: 0)
+        let point = outline.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil)
+        func click(count: Int) throws {
+            func event(_ type: NSEvent.EventType) throws -> NSEvent {
+                try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                                                timestamp: 0, windowNumber: window.windowNumber,
+                                                context: nil, eventNumber: 0, clickCount: count, pressure: 1))
+            }
+            // The outline's tracking loop consumes the queued mouseUp.
+            NSApp.postEvent(try event(.leftMouseUp), atStart: false)
+            outline.mouseDown(with: try event(.leftMouseDown))
+        }
+        XCTAssertTrue(state.isBookmarkRootExpanded)
+        try click(count: 1)
+        XCTAssertFalse(state.isBookmarkRootExpanded)
+        // AppKit routes the second click of a double-click to `doubleAction`.
+        try click(count: 2)
+        XCTAssertTrue(state.isBookmarkRootExpanded)
+    }
+
     func testSpaceRootIndentsBookmarksAndSharesCollapseAcrossSidebarSurfaces() throws {
         let state = try makeState()
         state.bookmarkManager.addFolder(title: "Folder", guid: "space-root-folder")

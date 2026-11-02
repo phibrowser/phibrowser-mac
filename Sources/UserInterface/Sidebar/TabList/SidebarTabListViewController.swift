@@ -1309,13 +1309,14 @@ class SidebarTabListViewController: NSViewController {
            cell.handleDoubleClick(with: event) {
             return
         }
-        guard let bookmark = bookmarkForRow(clickedRow) else { return }
-        // A fast second click arrives here instead of `action`; folders toggle
-        // on every click.
-        guard !bookmark.isFolder else {
+        let bookmark = bookmarkForRow(clickedRow)
+        // A fast second click arrives here instead of `action`; folders and the
+        // Space root toggle on every click.
+        if bookmark?.isFolder == true || sender.item(atRow: clickedRow) is SpaceRootSidebarItem {
             outlineViewClicked(sender)
             return
         }
+        guard let bookmark else { return }
         guard !isSplitBookmark(bookmark) else { return }
         guard !bookmark.isEditing else { return }
         requestBookmarkRename(bookmark)

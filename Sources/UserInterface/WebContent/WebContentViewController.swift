@@ -2492,7 +2492,11 @@ class WebContentViewController: NSViewController {
             // up here, as before.
             contentSurfaceLender = parent as? WebContentContainerViewController
             contentSurfaceLender?.lendContentSurface(to: overlay)
-            hostView.removeFromSuperview()
+            // Moved within the window, not removed first: a web view that
+            // leaves the window loses AppKit's mark that the pointer is over
+            // it, which only the pointer crossing its edge sets again. In a
+            // window already fullscreen the page fills the screen, so that
+            // never happens and AppKit drops every mouse move to the page.
             overlay.addSubview(hostView, positioned: .above, relativeTo: nil)
             hostView.snp.remakeConstraints { make in
                 make.edges.equalToSuperview()
@@ -2500,11 +2504,11 @@ class WebContentViewController: NSViewController {
             // The floating sidebar is the overlay's sibling and draws over
             // the page; it has to take the clicks it draws over.
             contentSurfaceLender?.floatingSidebarHost.bringToFront(over: overlay)
-            // Re-parent transiently detaches webContentView from the window,
-            // which causes NSWindow to clear first responder. Without this,
-            // keyboard events (including ESC to exit fullscreen) never reach
-            // Chromium and the "Press Esc to exit full screen" toast is
-            // inert until the user clicks into the video area.
+            // The page may have entered fullscreen without the keyboard.
+            // Without this, keyboard events (including ESC to exit
+            // fullscreen) never reach Chromium and the "Press Esc to exit
+            // full screen" toast is inert until the user clicks into the
+            // video area.
             restoreWebContentFirstResponder()
         } else {
             guard let original = savedHostViewSuperview else { return }
@@ -2513,7 +2517,7 @@ class WebContentViewController: NSViewController {
             // page-area backdrop.
             contentSurfaceLender?.reclaimContentSurface()
             contentSurfaceLender = nil
-            hostView.removeFromSuperview()
+            // Within the window, as on entry.
             original.addSubview(hostView)
             hostView.snp.remakeConstraints { make in
                 make.leading.trailing.bottom.equalToSuperview()
@@ -2544,8 +2548,7 @@ class WebContentViewController: NSViewController {
                browserState?.splitGroup(forTabId: tab.guid) != nil {
                 updateContentForTab(tab)
             }
-            // Same first-responder recovery as on entry (removeFromSuperview
-            // resets responder chain in both directions).
+            // As on entry, give the keyboard to the page.
             restoreWebContentFirstResponder()
         }
     }
@@ -2562,7 +2565,7 @@ class WebContentViewController: NSViewController {
         // "Press Esc to exit full screen" toast doesn't reach the fullscreen
         // handler until the user clicks inside the video area. Use
         // restoreFocus() (not focus()) so the page's previously focused
-        // element survives the fullscreen detach/reattach: on macOS,
+        // element survives the fullscreen move: on macOS,
         // WebContentsViewMac::Focus() clears the stored focus target.
         guard let wrapper = tab.webContentWrapper,
               wrapper.responds(to: #selector(WebContentWrapper.restoreFocus)) else {

@@ -100,6 +100,21 @@ final class ContentFullscreenSurfaceTests: XCTestCase {
         XCTAssertEqual(lastSent(), rounded, "the page has its corners back")
     }
 
+    /// A web view that leaves the window, even for a moment, has AppKit drop
+    /// its mouse moves until the pointer crosses its edge, which it cannot
+    /// over a page filling a fullscreen window.
+    func testTheLiftedPageNeverLeavesTheWindow() throws {
+        let fixture = try makeFixture()
+        _ = adoptSurface(fixture)
+        let page = try XCTUnwrap(fixture.webViews[0] as? WindowDepartureCountingView)
+        let departures = page.windowDepartures
+
+        enterFullscreen(fixture)
+        exitFullscreen(fixture)
+
+        XCTAssertEqual(page.windowDepartures, departures, "the page left the window")
+    }
+
     /// Chromium's exit never reaches a tab that closes in fullscreen: the
     /// controller is torn down with its page still lifted.
     func testTheOverlayGoesWithItsPageAndTheSurfaceComesHomeWhenTheTabCloses() throws {
@@ -184,8 +199,8 @@ final class ContentFullscreenSurfaceTests: XCTestCase {
                                storeDirectoryURL: directory)
         let state = BrowserState(windowId: 14, localStore: store, profileId: "Default")
 
-        let webViews = (0..<2).map { _ in
-            NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+        let webViews: [NSView] = (0..<2).map { _ in
+            WindowDepartureCountingView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
         }
         let wrappers = webViews.enumerated().map { index, webView in
             let wrapper = PageColorTestWebContentWrapper(urlString: "https://tab\(index).example/")
@@ -253,5 +268,17 @@ final class ContentFullscreenSurfaceTests: XCTestCase {
         }
         _ = try XCTUnwrap(webView.window, "the view was never mounted", file: file, line: line)
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+    }
+}
+
+/// Counts the times it leaves a window.
+private final class WindowDepartureCountingView: NSView {
+    private(set) var windowDepartures = 0
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if window != nil, newWindow == nil {
+            windowDepartures += 1
+        }
+        super.viewWillMove(toWindow: newWindow)
     }
 }

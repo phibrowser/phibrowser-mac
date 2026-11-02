@@ -11137,30 +11137,41 @@ final class SpaceWindowSlot: ObservableObject {
 
     func shellFullScreenDidSettle() {
         shellFullScreenTransitionTarget = nil
-        if releasesShellFullscreenAfterTransition {
+        let deferred = deferredShellFullscreen
+        deferredShellFullscreen = nil
+        // An exit held for the settle: the owner's from the background, or
+        // the presented session's own when its page left fullscreen while
+        // the enter ran (a video entering picture-in-picture, a script).
+        if releasesShellFullscreenAfterTransition || deferred == false {
             releasesShellFullscreenAfterTransition = false
+            // The presented session's exit keeps its request pending until
+            // the exit's settle, as a real window would: completing it here
+            // would report an enter Chromium has already left (a round of
+            // browser fullscreen, its bubble and its notifications). A page
+            // asking for fullscreen again in the meantime completes it at
+            // once (no transition to wait for), which stands the exit down.
+            let holdsRequest = deferred == false
             // AppKit drops a toggle sent from inside its did-enter callback,
-            // which is where this runs; the next turn's lands. Leaving that
-            // early, AppKit can bring the window back at the screen's visible
-            // frame instead of where it was, so the exit's settle puts it
-            // back (unless a display move already holds a return frame).
+            // which is where this runs (a failed enter lands here too); the
+            // next turn's lands. Leaving that early, AppKit can bring the
+            // window back at the screen's visible frame instead of where it
+            // was, so the exit's settle puts it back (unless a display move
+            // already holds a return frame).
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.shellFullScreenTransitionTarget == nil,
                       self.fullscreenTargetDisplayId == nil,
-                      self.shellIsOrWillBeFullScreen else { return }
+                      self.shellIsOrWillBeFullScreen,
+                      !holdsRequest || self.fullscreenRequestSession != nil else { return }
                 AppLogInfo("[SpaceWindowSlot] owner requested shell fullscreen=false: leaving after the transition")
                 if self.fullscreenReturnFrame == nil {
                     self.fullscreenReturnFrame = self.windowedFrameBeforeFullscreen
                 }
                 self.toggleShellFullScreen()
             }
-        }
-        if let requested = deferredShellFullscreen {
-            deferredShellFullscreen = nil
-            if requested != shell?.window.styleMask.contains(.fullScreen) {
-                shell?.window.toggleFullScreen(nil)
-                return
-            }
+            if holdsRequest { return }
+        } else if deferred == true, shell?.window.styleMask.contains(.fullScreen) == false {
+            shell?.window.toggleFullScreen(nil)
+            return
         }
         if continueFullscreenDisplayMove() { return }
         if shell?.window.styleMask.contains(.fullScreen) == false,
@@ -11205,8 +11216,8 @@ final class SpaceWindowSlot: ObservableObject {
     /// in fullscreen outside a real transition: `toggleShellFullScreen` (a
     /// presented session's request, an owner's release) calls the closure
     /// instead of the shell window, and `shellIsOrWillBeFullScreen` reads
-    /// the flag in place of the mask. The settle's replay and a display move
-    /// still toggle the window directly.
+    /// the flag in place of the mask. The settle's replay of a deferred enter
+    /// and a display move still toggle the window directly.
     var toggleShellFullScreenForTesting: (() -> Void)?
     var shellIsFullScreenForTesting: Bool?
 
@@ -11337,6 +11348,7 @@ final class SpaceWindowSlot: ObservableObject {
         }
         if fullscreenTargetDisplayId != nil { return }
         if let transition = shellFullScreenTransitionTarget {
+            AppLogInfo("[SpaceWindowSlot] session \(controller.windowId) requested shell fullscreen=\(fullscreen) during a transition to \(transition)")
             deferredShellFullscreen = fullscreen != transition ? fullscreen : nil
             return
         }

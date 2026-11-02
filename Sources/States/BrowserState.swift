@@ -3213,11 +3213,36 @@ class BrowserState {
             }
         }
 
+        // Chromium's own pick after a close can be a floating surface's tab:
+        // nothing marks it unselectable in the strip, and no override is set
+        // when no normal tab remains (a pinned or bookmark opener is not one).
+        // It is not in `tabs` and has no view in the page area, so staying on
+        // it would leave the page area blank.
+        if let anchorTab = stripActiveTab(forSurfaceTabId: tabId),
+           let wrapper = anchorTab.webContentWrapper {
+            AppLogDebug("[NativeTab] handleChromiumActiveTabChanged surface tab=\(tabId) activating anchor=\(anchorTab.guid)")
+            wrapper.setAsActiveTab()
+            let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+            AppLogDebug("[NativeTab] ⏱ handleChromiumActiveTabChanged tabId=\(tabId) took \(String(format: "%.2f", elapsed))ms")
+            return
+        }
+
         focusTabWithTabId(tabId)
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         AppLogDebug("[NativeTab] ⏱ handleChromiumActiveTabChanged tabId=\(tabId) took \(String(format: "%.2f", elapsed))ms")
     }
-    
+
+    /// The strip tab holding strip-active for a floating surface: a peek's
+    /// opener, a reader's origin, or for a reader over a peek, that peek's
+    /// opener. nil when `tabId` is no presented surface (a candidate is not
+    /// one yet) or the anchor tab is gone.
+    private func stripActiveTab(forSurfaceTabId tabId: Int) -> Tab? {
+        let readerOriginTabId = readerOverlayState.originTabId(forReaderTabId: tabId)
+        let openerTabId = peekState.openerTabId(forPeekTabId: readerOriginTabId ?? tabId)
+        guard let anchorTabId = openerTabId ?? readerOriginTabId else { return nil }
+        return tabs.first(where: { $0.guid == anchorTabId })
+    }
+
     /// Find a tab by its identifier (either guidInLocalDB or chromium guid as string)
     func tab(forChatIdentifier identifier: String) -> Tab? {
         if let tab = tabs.first(where: { $0.guidInLocalDB == identifier }) {

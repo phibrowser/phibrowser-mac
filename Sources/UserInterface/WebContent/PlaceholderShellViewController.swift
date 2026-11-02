@@ -3,11 +3,12 @@
 //  PhiBrowser
 //
 //  Hosts the placeholder WebContents NSView (chrome://dino) when the window
-//  enters placeholder mode after closing the last tab. Mirrors the relevant
-//  parts of WebContentViewController so the layout's address bar (in
-//  .balanced / .comfortable) stays visible during placeholder mode. Skips
-//  the splitView / AI chat / bookmark bar / progress bar — placeholder
-//  doesn't use any of them.
+//  enters placeholder mode after closing the last tab. A window with no tab
+//  to lose gets the shell with nothing mounted in it, an empty page area
+//  (`BrowserState.showsPlaceholderPage`). Mirrors the relevant parts of
+//  WebContentViewController so the layout's address bar (in .balanced /
+//  .comfortable) stays visible during placeholder mode. Skips the splitView /
+//  AI chat / bookmark bar / progress bar — placeholder doesn't use any of them.
 //
 
 import AppKit

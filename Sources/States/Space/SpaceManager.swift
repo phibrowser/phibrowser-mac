@@ -10340,6 +10340,9 @@ final class SpaceWindowSlot: ObservableObject {
                 if let bridge = ChromiumLauncher.sharedInstance().bridge,
                    Self.emptyWindowOpensOmniBox(bridge: bridge, windowId: Int64(target.windowId)) {
                     emptyLiveSpaceOpensOmniBox = true
+                    MainActor.assumeIsolated {
+                        target.browserState.hidePlaceholderPage()
+                    }
                     AppLogInfo("[SpaceWindowSlot] activate(\(spaceId)): empty live Space opens the omnibox, no seed tab")
                 } else {
                     target.browserState.createQuickLookupTab()

@@ -1628,8 +1628,10 @@ class WebContentContainerViewController: NSViewController {
     // MARK: - Placeholder Shell
 
     /// Mount the placeholder shell inside `contentContainer` and ask it to
-    /// host the placeholder WebContents NSView. Idempotent: re-mounts the
-    /// nativeView on the existing shell if one is already attached.
+    /// host the placeholder WebContents NSView, unless the window shows no
+    /// placeholder page (`BrowserState.showsPlaceholderPage`). Idempotent:
+    /// re-mounts the nativeView on the existing shell if one is already
+    /// attached.
     @MainActor
     private func attachPlaceholderShell() {
         guard let wrapper = browserState?.placeholderWrapper,
@@ -1651,6 +1653,10 @@ class WebContentContainerViewController: NSViewController {
                 make.edges.equalToSuperview()
             }
             placeholderShell = shell
+        }
+        guard browserState?.showsPlaceholderPage == true else {
+            AppLogInfo("🦖 [Container] attached placeholder shell, no page")
+            return
         }
         shell.mountPlaceholderNativeView(nativeView)
 

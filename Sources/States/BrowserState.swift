@@ -381,7 +381,8 @@ class BrowserState {
     @Published var isInFullScreenMode = false
     @Published var targetURL: String = ""
 
-    /// True while this window is showing the chrome://dino placeholder.
+    /// True while this window has no tabs and the placeholder shell holds its
+    /// page area, with or without the chrome://dino page (`showsPlaceholderPage`).
     /// Drives every UI binding that hides sub-elements during placeholder mode.
     @Published private(set) var isInPlaceholderMode: Bool = false
 
@@ -391,6 +392,14 @@ class BrowserState {
     /// Chromium — wrapper.nativeView is invalid after exitPlaceholderMode
     /// returns.
     private(set) var placeholderWrapper: (WebContentWrapper & NSObject)? = nil
+
+    /// Whether placeholder mode shows the chrome://dino page. Set on every
+    /// entry: only a window that just lost its last tab shows it. A window
+    /// that had no tab to lose (a new window or a Space opened empty under the
+    /// Omnibox "New tab behavior") leaves its page area empty beneath the
+    /// omnibox, and so does an empty Space the user switches to
+    /// (`hidePlaceholderPage`).
+    private(set) var showsPlaceholderPage = false
 
     /// The extension side panel currently shown in this window, nil when
     /// closed. Driven by PhiChromiumCoordinator.extensionSidePanelChanged;
@@ -1395,6 +1404,10 @@ class BrowserState {
     func enterPlaceholderMode(wrapper: WebContentWrapper & NSObject) {
         guard placeholderWrapper == nil else { return }  // Idempotent
         placeholderWrapper = wrapper
+        // The tab that just left is still in `focusingTab`, and in `tabs` until
+        // its queued close event applies. A window that never had a tab holds
+        // nothing in either. Read before the clear below.
+        showsPlaceholderPage = focusingTab != nil || !tabs.isEmpty
         // Clear stale focused tab. The just-closed tab is already gone from
         // `tabs`, but `focusingTab` still references it because nothing on the
         // close path nils it. Selectors that read `focusingTab` (e.g.
@@ -1419,6 +1432,16 @@ class BrowserState {
         // The new real tab's activeTabChanged event arrives shortly and sets
         // focusingTab. Until then, nil is correct.
         AppLogInfo("🦖 [BrowserState] exited placeholder mode windowId=\(windowId)")
+    }
+
+    /// Empties the page area of a window in placeholder mode, for a Space
+    /// parked there by a last-tab close that the user switches back to. The
+    /// mount is what puts a page on screen (chromium ADR 0015), so the web view
+    /// leaves the hierarchy rather than being hidden in place.
+    @MainActor
+    func hidePlaceholderPage() {
+        showsPlaceholderPage = false
+        placeholderWrapper?.nativeView?.removeFromSuperview()
     }
 
     deinit {

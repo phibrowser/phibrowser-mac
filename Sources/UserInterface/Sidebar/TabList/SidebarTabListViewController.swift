@@ -4172,6 +4172,9 @@ extension SidebarTabListViewController: BookmarkSectionDelegate {
         outlineView.autosaveExpandedItems = true
         outlineView.autosaveName = "SidebarTabList"
         syncBookmarkExpandedFlags()
+        // The restore posts no expand notifications, and the folders it expanded may no
+        // longer hide the focusing bookmark, so recompute its proxy.
+        refreshAllItems(animated: false)
     }
 
     func bookmarkSectionDidApplyFirstStoreDelivery() {
@@ -4307,19 +4310,39 @@ extension SidebarTabListViewController: TabSectionDelegate {
     }
     
     private func expandParents(of bookmark: Bookmark) {
+        for parent in ancestors(of: bookmark) {
+            if !outlineView.isItemExpanded(parent) {
+                outlineView.expandItem(parent)
+                parent.isExpanded = true
+            }
+        }
+    }
+
+    /// `bookmark`'s folders, outermost first.
+    private func ancestors(of bookmark: Bookmark) -> [Bookmark] {
         var parents: [Bookmark] = []
         var current = bookmark.parent
         while let parent = current {
             parents.insert(parent, at: 0)
             current = parent.parent
         }
-        
-        for parent in parents {
-            if !outlineView.isItemExpanded(parent) {
-                outlineView.expandItem(parent)
-                parent.isExpanded = true
-            }
-        }
+        return parents
+    }
+
+    /// Whether `bookmark` is under a folder collapsed in the model (the user's choice) and is not
+    /// shown by the outline. Such a bookmark is shown as a floating proxy instead of having the
+    /// folder expanded for it, as `toggleItemExpanded` does.
+    private func isHiddenUnderCollapsedFolder(_ bookmark: Bookmark) -> Bool {
+        let parents = ancestors(of: bookmark)
+        return parents.contains { !$0.isExpanded }
+            && parents.contains { !outlineView.isItemExpanded($0) }
+    }
+
+    private var focusingBookmarkHiddenUnderCollapsedFolder: Bookmark? {
+        guard let localGuid = browserState.focusingTab?.guidInLocalDB,
+              let bookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid),
+              isHiddenUnderCollapsedFolder(bookmark) else { return nil }
+        return bookmark
     }
 }
 
@@ -4354,19 +4377,14 @@ extension SidebarTabListViewController {
         rootItems: [SidebarItem],
         hiddenBookmarkGuid: String? = nil
     ) -> FloatingBookmarkPresentationState {
-        guard let bookmarkGuid = floatingBookmarkGuid,
+        // Without a proxy from a user collapse, a focusing bookmark hidden under a collapsed
+        // folder still gets one, so a freshly built outline (e.g. a re-activated list) shows it.
+        guard let bookmarkGuid = floatingBookmarkGuid ?? focusingBookmarkHiddenUnderCollapsedFolder?.guid,
               let bookmark = browserState.bookmarkManager.bookmark(withGuid: bookmarkGuid) else {
             return .cleared
         }
-        
-        var parents: [Bookmark] = []
-        var current = bookmark.parent
-        while let p = current {
-            parents.insert(p, at: 0)
-            current = p.parent
-        }
-        
-        guard let firstCollapsed = parents.first(where: { $0.isFolder && !outlineView.isItemExpanded($0) }) else {
+
+        guard let firstCollapsed = ancestors(of: bookmark).first(where: { $0.isFolder && !outlineView.isItemExpanded($0) }) else {
             return .cleared
         }
         
@@ -4867,6 +4885,13 @@ extension SidebarTabListViewController {
         }
         var row = outlineView.row(forItem: bookmark)
         if row < 0 {
+            // Focus moved into a folder the user collapsed: show the bookmark as a proxy instead
+            // of expanding the folder. The refresh selects it once the proxy is in place.
+            if isHiddenUnderCollapsedFolder(bookmark) {
+                floatingBookmarkGuid = bookmark.guid
+                refreshAllItems(animated: false)
+                return
+            }
             expandParents(of: bookmark)
             row = outlineView.row(forItem: bookmark)
         }
@@ -5618,6 +5643,9 @@ extension SidebarTabListViewController: NSDraggingSource {
 ///   - **User collapses a folder**: if the focusing bookmark is a descendant, record the floating
 ///     state, compute insertion position, and insert proxy.
 ///   - **User expands a folder**: enters the rebuild/evaluate flow (see section 3).
+///   - **Focusing bookmark under a folder collapsed in the model** (`Bookmark.isExpanded == false`):
+///     floats instead of having the folder expanded. Covers focus moving into a collapsed folder
+///     and an outline rebuilt without the proxy (e.g. the floating sidebar re-activating).
 ///   - **focusingTabChanged / tabSectionDidUpdate**: removes proxy if the bookmark's tab is closed.
 ///
 /// #### 3) How the proxy moves/disappears (example: F1 -> F2 -> Tab1)
@@ -5627,7 +5655,8 @@ extension SidebarTabListViewController: NSDraggingSource {
 /// - Both expanded: Tab1 visible at its real position, proxy removed
 ///
 /// Implemented by `nextFloatingBookmarkPresentationState(rootItems:)` during `refreshAllItems`:
-/// - Walks the parent chain from `floatingBookmarkGuid` to find the first collapsed folder.
+/// - Walks the parent chain from `floatingBookmarkGuid` (or, without one, a focusing bookmark
+///   hidden under a model-collapsed folder) to find the first collapsed folder.
 /// - If none found: clear floating state + remove proxy.
 /// - If found: update `floatingAnchorFolderGuid` and reposition proxy after that folder.
 ///

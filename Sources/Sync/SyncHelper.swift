@@ -105,6 +105,8 @@ final class SyncHelper {
     private var pollTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private(set) var report = Report()
+    /// False once stopped; a stopped helper's reporter describes nothing live.
+    var isRunning: Bool { !retired }
     /// Receives every report an observation leaves behind (docs/sync.md, "Sync status contract");
     /// the feedback form reads its metadata through the coordinator's helper.
     let attentionReporter: SyncAttentionReporter?

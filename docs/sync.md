@@ -1010,11 +1010,18 @@ problem names that kind (unreadable settings) yields only the category problem. 
    `persistenceFailure` and `pinScopeMigrationFailed` reach Sentry
    (`SentryService.captureSyncAttention`, fingerprint `sync-attention`, context, kind, reason), once
    per entry and at most once per 7 days per problem, also across clear and re-entry. By design
-   these events carry no user (the global scope's user is removed) and no log attachment.
+   these events carry no user and no log attachment: the event scope removes the global user
+   and attachments, and `beforeSend` (`SentryService.stripSyncAttentionIdentity`) removes the
+   installation id the client fills in for an event without a user, recognized by the
+   `sync_attention` tag.
 6. **Sync off.** A Not started summary (ineligible: signed out, unpaired, locked or disabled, and
    briefly at every launch before unlock) neither confirms nor denies any problem; on leaving it,
    debounce and grace restart. Only 10 minutes of continuous Not started
-   (`sync.attention.notStartedSince`) drops all state, without cleared events.
+   (`sync.attention.notStartedSince`) drops all state, without cleared events. Sign-out and this
+   device leaving sync (`invalidateSyncKeyController` with no account, or a native cleanup) call
+   `SyncAttentionReporter.reset()`, which removes the tracked problems and the Not started run but
+   keeps `sync.attention.sentryHistory`; engine rebuilds and the account assignment at launch do
+   not. Feedback reports problem keys only while a helper is running.
 
 Every property, tag, context, log field and feedback key is an enum raw value or an integer; no
 identifier, name, URL or email. Feedback V2 adds `sync_phase` (the summary, `notStarted` without
@@ -1153,7 +1160,9 @@ are telemetry only: no sync decision reads them.
 A paired pass that lists the Profiles also reads at most three envelopes whose flag was never
 read (`defaultFlagFillPerPass`), in uuid order, skipping envelopes that do not open, so an old
 install converges over a few passes. The default-flag count is reported only once every listed
-Profile's flag is known. Sign-out and this device leaving sync (`invalidateSyncKeyController`
+Profile's flag is known. Observer calls are dropped once the owning `SyncKeyController` retires
+(`ProfileKeyManager.retireTelemetry()`, checked after each await), so a response still in flight
+for the previous account cannot overwrite the next one's caches. Sign-out and this device leaving sync (`invalidateSyncKeyController`
 with no account, or a native cleanup) reset every key and set `enabled` to false; an account
 assignment at launch keeps them. The uuid keys never leave the device; the snapshot carries one
 bool and three counts.

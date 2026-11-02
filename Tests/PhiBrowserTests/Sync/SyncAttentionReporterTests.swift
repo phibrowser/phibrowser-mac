@@ -258,7 +258,40 @@ final class SyncAttentionReporterTests: XCTestCase {
         XCTAssertNil(subject.feedbackMetadata(now: at(183))["sync_attention_problems"])
     }
 
+    // MARK: - Reset
+
+    /// Sign-out resets the tracked problems: the next account's same problem is new, after the debounce.
+    /// The Sentry history survives, so a re-entered unexpected problem stays within the 7-day cap.
+    func testResetForgetsProblemsButKeepsTheSentryHistory() {
+        let lineage = report(kinds: [.pinnedTabs: SyncKindStatus(held: 1, heldByReason: [.lineageExists: 1])])
+        poll(reporter(), lineage, from: 0, to: 120)
+        XCTAssertEqual(sentry.count, 1)
+        SyncAttentionReporter.reset(defaults: defaults)
+        XCTAssertNotNil(defaults.data(forKey: SyncAttentionReporter.sentryHistoryDefaultsKey))
+
+        let next = reporter()
+        XCTAssertEqual(next.feedbackMetadata(now: at(200)).keys.sorted(), ["sync_phase"])
+        poll(next, lineage, from: 200, to: 257)
+        XCTAssertEqual(names(), ["sync_attention_entered"], "Debounce applies again")
+        poll(next, lineage, from: 260, to: 300)
+        XCTAssertEqual(names(), ["sync_attention_entered", "sync_attention_entered"])
+        XCTAssertEqual(sentry.count, 1, "The 7-day Sentry cap survives the reset")
+    }
+
     // MARK: - Sentry scope
+
+    func testBeforeSendStripsTheUserOfSyncAttentionEventsOnly() {
+        let ours = Event(level: .warning)
+        ours.tags = ["area": "sync", "sync_attention": "1"]
+        ours.user = User(userId: "installation-id")
+        XCTAssertNil(SentryService.stripSyncAttentionIdentity(ours).user)
+
+        let other = Event(level: .warning)
+        other.tags = ["area": "sync"]
+        other.user = User(userId: "installation-id")
+        XCTAssertEqual(SentryService.stripSyncAttentionIdentity(other).user?.userId, "installation-id")
+        XCTAssertNil(SentryService.stripSyncAttentionIdentity(Event(level: .error)).user)
+    }
 
     /// The event drops the global user and carries only the expected tags, context and fingerprint.
     /// Sentry Cocoa keeps the scope's attachments private and out of `serialize()`, so
@@ -273,7 +306,7 @@ final class SyncAttentionReporterTests: XCTestCase {
         XCTAssertNil(serialized["user"])
         let tags = try XCTUnwrap(serialized["tags"] as? [String: String])
         XCTAssertEqual(tags, ["area": "sync", "sync_kind": "pinnedTabs", "sync_reason": "heldLineageExists",
-                              "sync_context": "phi"])
+                              "sync_context": "phi", "sync_attention": "1"])
         let contexts = try XCTUnwrap(serialized["context"] as? [String: Any])
         XCTAssertEqual(Set(contexts.keys), ["sync_attention"])
         XCTAssertEqual(serialized["fingerprint"] as? [String], ["sync-attention", "phi", "pinnedTabs", "heldLineageExists"])

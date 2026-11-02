@@ -192,7 +192,7 @@ struct TimeMachineSentryTraceStore {
                     return nil
                 }
                 
-                return event
+                return stripSyncAttentionIdentity(event)
             }
             
             options.initialScope = { scope in
@@ -497,7 +497,19 @@ struct TimeMachineSentryTraceStore {
         scope.setTag(value: kind, key: "sync_kind")
         scope.setTag(value: reason, key: "sync_reason")
         scope.setTag(value: context, key: "sync_context")
+        scope.setTag(value: "1", key: syncAttentionMarkerTag)
         scope.setContext(value: details, key: "sync_attention")
+    }
+
+    /// Marks a `captureSyncAttention` event for `stripSyncAttentionIdentity(_:)`.
+    static let syncAttentionMarkerTag = "sync_attention"
+
+    /// Runs in `beforeSend`. The client gives an event without a user the installation id as
+    /// `user.userId` after the scope is applied, so clearing the scope's user is not enough: a sync
+    /// attention event loses its user here. Every other event is returned unchanged.
+    static func stripSyncAttentionIdentity(_ event: Event) -> Event {
+        if event.tags?[syncAttentionMarkerTag] == "1" { event.user = nil }
+        return event
     }
 
     static func captureSentinelVersionGuardWarning(_ warning: SentinelVersionGuardWarning) {

@@ -1546,6 +1546,7 @@ import SwiftUI
         // An account assignment (every launch included) keeps them; the rebuild refreshes them.
         if AccountController.shared.account == nil || nativeSyncCleanupInProgress {
             SyncLaunchAnalytics.reset()
+            SyncAttentionReporter.reset()
         }
         // The facade's seams are bound to the account that has just gone away: the store
         // writes ITS plist and `localSpaceProfileIds` holds ITS `Account`. Leaving them

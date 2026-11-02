@@ -83,6 +83,28 @@ final class ProfileKeyManager {
     /// Nil in tests; the coordinator sets both. Never consulted by sync logic.
     var onAccountListing: ((Set<String>) -> Void)?
     var onDefaultFlag: ((_ uuid: String, _ isDefault: Bool) -> Void)?
+    /// Set once by the owning controller's `retire()`. Every observer call checks it after its
+    /// await, under the lock, so a response that arrives for a retired account never writes the
+    /// next account's caches.
+    private let telemetryLock = NSLock()
+    private var telemetryRetired = false
+
+    func retireTelemetry() {
+        telemetryLock.lock(); defer { telemetryLock.unlock() }
+        telemetryRetired = true
+    }
+
+    private func noteListing(_ uuids: Set<String>) {
+        telemetryLock.lock(); defer { telemetryLock.unlock() }
+        guard !telemetryRetired else { return }
+        onAccountListing?(uuids)
+    }
+
+    private func noteDefaultFlag(_ uuid: String, _ isDefault: Bool) {
+        telemetryLock.lock(); defer { telemetryLock.unlock() }
+        guard !telemetryRetired else { return }
+        onDefaultFlag?(uuid, isDefault)
+    }
 
     init(api: KeyEnvelopeAPI, keyManager: AccountKeyManager, mappingStore: ProfileSyncMappingStore) {
         self.api = api
@@ -158,7 +180,7 @@ final class ProfileKeyManager {
             guard let dto else { return false }
             let opened = try Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark)
             if opened.isDefault == true || opened.isDefault == isDefault {
-                onDefaultFlag?(uuid, opened.isDefault == true)
+                noteDefaultFlag(uuid, opened.isDefault == true)
                 return true
             }
             let plain = try PhiKeyCrypto.openWithSymmetric(dto.profileKeyEnvelope, key: ark)
@@ -170,7 +192,7 @@ final class ProfileKeyManager {
                 JSONSerialization.data(withJSONObject: payload), key: ark)
             if try await api.replaceProfileKeyEnvelope(uuid: uuid, expected: dto.profileKeyEnvelope,
                                                        envelope: envelope) {
-                onDefaultFlag?(uuid, isDefault)
+                noteDefaultFlag(uuid, isDefault)
                 return true
             }
         }
@@ -221,7 +243,7 @@ final class ProfileKeyManager {
         // throwing would change mintProfileKey failure behavior and SyncKeyController call order, outside
         // M3-4a.
         _ = mappingStore.setGlobalUuid(uuid, forProfileId: profileId)
-        onDefaultFlag?(uuid, isDefault)
+        noteDefaultFlag(uuid, isDefault)
         return ProfileKeyRecord(uuid: uuid, passphrase: Self.passphrase(fromKey: key), name: displayName,
                                 isDefault: isDefault)
     }
@@ -235,7 +257,7 @@ final class ProfileKeyManager {
         guard let ark = keyManager.currentARK else { throw ProfileKeyManagerError.notUnlocked }
         guard let dto = try await api.getProfileKey(uuid: uuid) else { throw ProfileKeyManagerError.badEnvelope }
         let (key, name, remoteIsDefault) = try Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark)
-        onDefaultFlag?(uuid, remoteIsDefault == true)
+        noteDefaultFlag(uuid, remoteIsDefault == true)
         guard !(isDefault && remoteIsDefault == false) else {
             throw ProfileKeyManagerError.defaultMismatch
         }
@@ -251,7 +273,7 @@ final class ProfileKeyManager {
         guard let ark = keyManager.currentARK else { throw ProfileKeyManagerError.notUnlocked }
         guard let dto = try await api.getProfileKey(uuid: uuid) else { return nil }
         let (key, name, isDefault) = try Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark)
-        onDefaultFlag?(uuid, isDefault == true)
+        noteDefaultFlag(uuid, isDefault == true)
         return ProfileKeyRecord(uuid: uuid, passphrase: Self.passphrase(fromKey: key), name: name, isDefault: isDefault)
     }
 
@@ -278,7 +300,7 @@ final class ProfileKeyManager {
     func accountProfiles() async throws -> [RemoteProfile] {
         guard let ark = keyManager.currentARK else { throw ProfileKeyManagerError.notUnlocked }
         let summaries = try await api.listProfiles()
-        onAccountListing?(Set(summaries.map(\.profileUuid)))
+        noteListing(Set(summaries.map(\.profileUuid)))
         guard !summaries.isEmpty else { return [] }
         let api = self.api
         let profiles = try await withThrowingTaskGroup(of: (Int, RemoteProfile).self) { group in
@@ -297,7 +319,7 @@ final class ProfileKeyManager {
             return out.compactMap { $0 }
         }
         for profile in profiles where profile.name != nil {
-            onDefaultFlag?(profile.uuid, profile.isDefault == true)
+            noteDefaultFlag(profile.uuid, profile.isDefault == true)
         }
         return profiles
     }
@@ -336,7 +358,7 @@ final class ProfileKeyManager {
     func accountProfileUuids() async throws -> Set<String> {
         guard keyManager.currentARK != nil else { throw ProfileKeyManagerError.notUnlocked }
         let uuids = Set(try await api.listProfiles().map(\.profileUuid))
-        onAccountListing?(uuids)
+        noteListing(uuids)
         return uuids
     }
 
@@ -351,7 +373,7 @@ final class ProfileKeyManager {
         guard let (_, name, isDefault) = try? Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark) else {
             return RemoteProfile(uuid: uuid, name: nil)
         }
-        onDefaultFlag?(uuid, isDefault == true)
+        noteDefaultFlag(uuid, isDefault == true)
         return RemoteProfile(uuid: uuid, name: name, isDefault: isDefault)
     }
 

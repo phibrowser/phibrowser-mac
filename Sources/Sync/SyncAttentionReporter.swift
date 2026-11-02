@@ -141,6 +141,14 @@ final class SyncAttentionReporter {
         sentryHistory = Self.load([String: Date].self, defaults, Self.sentryHistoryDefaultsKey) ?? [:]
     }
 
+    /// Sign-out or this device leaving sync: forgets the tracked problems and the Not started run,
+    /// so the next account starts clean. `sentryHistory` stays: the 7-day cap is a volume guard,
+    /// not account state. Called only from that teardown, never on a rebuild or at launch.
+    static func reset(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: activeDefaultsKey)
+        defaults.removeObject(forKey: notStartedSinceDefaultsKey)
+    }
+
     /// The production reporter for an account's defaults.
     static func live(defaults: UserDefaults) -> SyncAttentionReporter {
         SyncAttentionReporter(

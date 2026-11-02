@@ -843,6 +843,9 @@ final class SyncKeyController {
     /// cannot be cancelled mid-request still writes nothing once it resumes.
     func retire() {
         isRetired = true
+        // Before anything else: a launch-snapshot write from a response still in flight for this
+        // account must not land after the caches are reset for the next one.
+        profileKeys.retireTelemetry()
         resolveTask?.cancel()
         silentUnlockTask?.cancel()
         cancelUnlockRetry()

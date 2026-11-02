@@ -1237,8 +1237,11 @@ enum FeedbackOutbox {
     /// is not running. Enum raw values and counts only.
     @MainActor
     static func currentSyncStatusMetadata(now: Date = Date()) -> [String: String] {
-        PhiChromiumCoordinator.shared.syncHelper?.attentionReporter?.feedbackMetadata(now: now)
-            ?? ["sync_phase": SyncSummaryPhase.notStarted.rawValue]
+        guard let helper = PhiChromiumCoordinator.shared.syncHelper, helper.isRunning,
+              let reporter = helper.attentionReporter else {
+            return ["sync_phase": SyncSummaryPhase.notStarted.rawValue]
+        }
+        return reporter.feedbackMetadata(now: now)
     }
 
     @MainActor

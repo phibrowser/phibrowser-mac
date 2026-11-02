@@ -314,6 +314,141 @@ final class SidebarDiffableSnapshotTests: XCTestCase {
 
 @MainActor
 final class SidebarTabSectionFastPathTests: XCTestCase {
+    func testSpaceRootAppearsForFirstItemAndDisappearsAfterLastItemIsRemoved() throws {
+        let state = try makeState()
+        let tab = seedActiveTab(in: state, guid: 713)
+        let (controller, outline) = try makeActiveSidebar(for: state)
+        let (floating, floatingOutline) = try makeActiveSidebar(for: state)
+        defer { controller.setActive(false); floating.setActive(false) }
+        guard waitUntil({ state.bookmarkManager.didApplyFirstStoreDelivery && outline.row(forItem: tab) >= 0 }) else { return }
+
+        func hasRoot(_ view: NSOutlineView) -> Bool {
+            (0..<view.numberOfRows).contains { view.item(atRow: $0) is SpaceRootSidebarItem }
+        }
+        func hasSeparator(_ view: NSOutlineView) -> Bool {
+            (0..<view.numberOfRows).contains { view.item(atRow: $0) is SeparatorItem }
+        }
+        XCTAssertFalse(hasRoot(outline))
+        XCTAssertFalse(hasRoot(floatingOutline))
+        XCTAssertFalse(hasSeparator(outline))
+        XCTAssertNil(controller.spaceRootDropIndex(item: nil, index: 0))
+
+        for isFolder in [true, false] {
+            let guid = UUID().uuidString
+            if isFolder {
+                state.bookmarkManager.addFolder(title: "Folder", guid: guid)
+            } else {
+                state.localStore.createBookmark(url: "https://bookmark.example", title: "Bookmark",
+                                                profileId: state.profileId, parentId: nil,
+                                                guid: guid, spaceId: state.spaceId)
+            }
+            guard waitUntil({ hasRoot(outline) && hasRoot(floatingOutline) }) else { return }
+            let item = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: guid))
+            XCTAssertTrue(hasSeparator(outline))
+            let root = try XCTUnwrap(outline.item(atRow: 0) as? SpaceRootSidebarItem)
+            if state.isBookmarkRootExpanded {
+                controller.toggleItemExpanded(root)
+                guard waitUntil({ !outline.isItemExpanded(root) }) else { return }
+            }
+            XCTAssertTrue(hasRoot(outline), "A collapsed root still represents existing items")
+            state.bookmarkManager.removeBookmark(item)
+            guard waitUntil({ !hasRoot(outline) && !hasRoot(floatingOutline) }) else { return }
+            XCTAssertFalse(hasSeparator(outline))
+            XCTAssertFalse(hasSeparator(floatingOutline))
+            XCTAssertGreaterThanOrEqual(outline.row(forItem: tab), 0)
+            XCTAssertNil(controller.spaceRootDropIndex(item: root, index: 0))
+        }
+    }
+
+    func testSpaceRootIndentsBookmarksAndSharesCollapseAcrossSidebarSurfaces() throws {
+        let state = try makeState()
+        state.bookmarkManager.addFolder(title: "Folder", guid: "space-root-folder")
+        guard waitUntil({ state.bookmarkManager.bookmark(withGuid: "space-root-folder") != nil }) else { return }
+        let folder = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: "space-root-folder"))
+        state.bookmarkManager.addBookmark(title: "Child", url: "https://child.example", to: folder)
+        guard waitUntil({ !folder.children.isEmpty }) else { return }
+        let child = try XCTUnwrap(folder.children.first)
+        let (controller, outline) = try makeActiveSidebar(for: state)
+        let (floating, floatingOutline) = try makeActiveSidebar(for: state)
+        defer { controller.setActive(false); floating.setActive(false) }
+        guard waitUntil({ outline.row(forItem: folder) >= 0 && floatingOutline.row(forItem: folder) >= 0 }) else { return }
+        let root = try XCTUnwrap(outline.item(atRow: 0) as? SpaceRootSidebarItem)
+        let cell = try XCTUnwrap(outline.view(atColumn: 0, row: 0, makeIfNecessary: true) as? SpaceRootCellView)
+        cell.layoutSubtreeIfNeeded()
+        let chevron = try XCTUnwrap(cell.backgoundView.subviews.compactMap { $0 as? SpaceRootChevronView }.first)
+        XCTAssertEqual(cos(chevron.rotationAngle), 0, accuracy: 0.001,
+                       "The expanded chevron must remain vertical after AppKit layout")
+        XCTAssertEqual(chevron.layer?.sublayers?.first?.transform.m11 ?? 1, 0, accuracy: 0.001)
+        XCTAssertNil(controller.outlineView(outline, pasteboardWriterForItem: root))
+        XCTAssertNil(folder.parent, "The presentation root must not change persisted bookmark ownership")
+        XCTAssertEqual(outline.level(forItem: folder), 1)
+        controller.toggleItemExpanded(folder)
+        guard waitUntil({ outline.isItemExpanded(folder) && folder.isExpanded }) else { return }
+        controller.toggleItemExpanded(root)
+        guard waitUntil({ !outline.isItemExpanded(root) && floatingOutline.row(forItem: folder) == -1 }) else { return }
+        XCTAssertTrue(folder.isExpanded)
+        cell.layoutSubtreeIfNeeded()
+        XCTAssertEqual(chevron.rotationAngle, 0)
+        XCTAssertEqual(outline.row(forItem: child), -1)
+        XCTAssertNotNil((0..<outline.numberOfRows).first { (outline.item(atRow: $0) as? SidebarItem)?.itemType == .newTabButton })
+        controller.toggleItemExpanded(root)
+        guard waitUntil({ outline.row(forItem: child) >= 0 && floatingOutline.row(forItem: folder) >= 0 }) else { return }
+        XCTAssertEqual(outline.level(forItem: child), 2)
+        XCTAssertTrue(folder.isExpanded)
+    }
+
+    func testCollapsedSpaceRootKeepsFocusedBookmarkBelowHeaderAndRestoresAfterReactivation() throws {
+        let state = try makeState()
+        let guid = "space-root-active"
+        state.localStore.createBookmark(url: "https://active.example", title: "Active", profileId: state.profileId,
+                                        parentId: nil, guid: guid, spaceId: state.spaceId)
+        guard waitUntil({ state.bookmarkManager.bookmark(withGuid: guid) != nil }) else { return }
+        let bookmark = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: guid))
+        let tab = seedActiveTab(in: state, guid: 712)
+        tab.guidInLocalDB = guid
+        bookmark.isOpened = true
+        let (controller, outline) = try makeActiveSidebar(for: state)
+        defer { controller.setActive(false) }
+        guard waitUntil({ outline.row(forItem: bookmark) >= 0 }) else { return }
+        let root = try XCTUnwrap(outline.item(atRow: 0) as? SpaceRootSidebarItem)
+        controller.toggleItemExpanded(root)
+        guard waitUntil({ !outline.isItemExpanded(root) && outline.item(atRow: 1) is SidebarTabListViewController.FocusedBookmarkSidebarItem }) else { return }
+        let proxy = try XCTUnwrap(outline.item(atRow: 1) as? SidebarTabListViewController.FocusedBookmarkSidebarItem)
+        XCTAssertTrue(proxy.underlyingBookmark === bookmark)
+        XCTAssertEqual(proxy.indentationLevelOverride, 1)
+        XCTAssertEqual(state.visibleBookmarkTabs.map(\.guid), [guid])
+        XCTAssertEqual(outline.row(forItem: bookmark), -1)
+        controller.setActive(false)
+        controller.setActive(true)
+        guard waitUntil({ outline.item(atRow: 1) is SidebarTabListViewController.FocusedBookmarkSidebarItem }) else { return }
+        XCTAssertFalse(state.isBookmarkRootExpanded)
+        controller.toggleItemExpanded(root)
+        guard waitUntil({ outline.row(forItem: bookmark) >= 0 }) else { return }
+        XCTAssertFalse((0..<outline.numberOfRows).contains { outline.item(atRow: $0) is SidebarTabListViewController.FocusedBookmarkSidebarItem })
+    }
+
+    func testSpaceRootDropCoordinatesDoNotUseBookmarkCountAsTabOffset() throws {
+        let state = try makeState()
+        for index in 0..<5 {
+            state.localStore.createBookmark(url: "https://example.test/\(index)", title: "Bookmark \(index)",
+                                            profileId: state.profileId, parentId: nil, guid: "root-drop-\(index)", spaceId: state.spaceId)
+        }
+        guard waitUntil({ state.bookmarkManager.rootFolder.children.count == 5 }) else { return }
+        let (controller, outline) = try makeActiveSidebar(for: state)
+        defer { controller.setActive(false) }
+        guard waitUntil({ outline.item(atRow: 0) is SpaceRootSidebarItem }) else { return }
+        let root = try XCTUnwrap(outline.item(atRow: 0) as? SpaceRootSidebarItem)
+        XCTAssertEqual(controller.spaceRootDropIndex(item: root, index: 4), 4)
+        XCTAssertEqual(controller.spaceRootDropIndex(item: nil, index: 1), 5)
+        XCTAssertNil(controller.spaceRootDropIndex(item: nil, index: 2), "New Tab belongs to the normal-tab section")
+        let fourth = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: "root-drop-3"))
+        XCTAssertEqual(controller.spaceRootDropIndex(item: fourth, index: NSOutlineViewDropOnItemIndex), 3)
+        controller.toggleItemExpanded(root)
+        guard waitUntil({ !outline.isItemExpanded(root) }) else { return }
+        XCTAssertNil(controller.spaceRootDropIndex(item: nil, index: 2))
+    }
+
+
     func testCreateSpaceOverlaySuppressionHidesOutlineTrackingSubtreeWithoutHidingLayoutRoot() throws {
         let state = try makeState()
         let (controller, _) = try makeActiveSidebar(for: state)

@@ -198,6 +198,7 @@ class SidebarTabListViewController: NSViewController {
     
     private let tabSectionController = TabSectionController()
     private let separatorItem = SeparatorItem()
+    private lazy var spaceRootItem = SpaceRootSidebarItem(browserState: browserState)
     private var lastSelectedItem: SidebarItem?
     
     private lazy var bookmarkSectionController: BookmarkSectionController = {
@@ -498,6 +499,13 @@ class SidebarTabListViewController: NSViewController {
         }
         .store(in: &cancellables)
 
+        browserState.$isBookmarkRootExpanded
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.applySpaceRootExpansion(animated: true) }
+            .store(in: &cancellables)
+
         browserState.$groupOverviewState
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -634,6 +642,7 @@ class SidebarTabListViewController: NSViewController {
         presentationState: FloatingBookmarkPresentationState? = nil,
         animated: Bool = true,
         allowsInsertedRootTabLayoutRepair: Bool = false,
+        animateSpaceRootExpansion: Bool = false,
         afterReload: ((_ outlineStructureChanged: Bool) -> Void)? = nil
     ) -> Bool {
         guard isActive else { return false }
@@ -743,6 +752,7 @@ class SidebarTabListViewController: NSViewController {
                             "originDelta=\(String(format: "%.1f", repair.originDelta))"
                     )
                 }
+                self.restoreSpaceRootExpansion(animated: animateSpaceRootExpansion)
                 self.selectActiveTab()
                 self.applyFocusingSelection(for: self.browserState.focusingTab)
 
@@ -884,8 +894,9 @@ class SidebarTabListViewController: NSViewController {
     private func makeAllItems() -> [SidebarItem] {
         var items: [SidebarItem] = []
 
-        if showBookmarks {
-            items.append(contentsOf: bookmarkSectionController.bookmarkItems)
+        spaceRootItem.childrenItems = bookmarkSectionController.bookmarkItems
+        if showBookmarks && !browserState.isIncognito && spaceRootItem.hasChildren {
+            items.append(spaceRootItem)
         }
         if !tabSectionController.tabItems.isEmpty {
             items.append(separatorItem)
@@ -1431,15 +1442,16 @@ class SidebarTabListViewController: NSViewController {
                 traverse(bookmark.children)
             }
         }
-        traverse(allItems)
+        traverse(bookmarkSectionController.bookmarkItems)
     }
 
     /// Apply `bookmark.isExpanded` to the outline view, the reverse of `syncBookmarkExpandedFlags`.
     /// The main and floating sidebars share the bookmark model but each owns an outline, so a
     /// folder toggled in one is stale in the other until it is reconciled here.
     func applyBookmarkExpandedFlags() {
-        guard isActive else { return }
-        applyBookmarkExpandedFlags(to: allItems)
+        // A collapsed Space root reapplies the flags when it expands.
+        guard isActive, outlineView.isItemExpanded(spaceRootItem) else { return }
+        applyBookmarkExpandedFlags(to: spaceRootItem.childrenItems)
     }
 
     private func applyBookmarkExpandedFlags(to items: [SidebarItem]) {
@@ -1851,6 +1863,13 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             return []
         }
 
+        if let rootIndex = spaceRootDropIndex(item: originalResolvedItem, index: index) {
+            clearDropFeedback()
+            guard canDropIntoSpaceRoot(pasteboard) else { return [] }
+            outlineView.setDropItem(spaceRootItem, dropChildIndex: originalResolvedItem is SpaceRootSidebarItem ? index : rootIndex)
+            return pasteboard.string(forType: .normalTab) != nil || pasteboard.string(forType: .pinnedTab) != nil ? .copy : .move
+        }
+
         // Whole-group drag: validate before falling into the per-tab
         // resolver. Same-window: root reorder (`moveNormalTabSlice`) or
         // bookmark folder (convert-to-bookmarks). Cross-window onto
@@ -1977,6 +1996,10 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             resolvedIndex = remapped.childIndex
         }
 
+        if resolvedItem is SpaceRootSidebarItem {
+            clearDropFeedback()
+            return canDropIntoSpaceRoot(pasteboard) ? .move : []
+        }
         updateDropFeedbackFolder(in: outlineView, with: resolvedItem, childIndex: resolvedIndex, pasteboard: pasteboardItem)
         
         let maxRootDropIndex = maxRootDropChildIndex()
@@ -2050,7 +2073,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                         outlineView.setDropItem(parent, dropChildIndex: targetIndex)
                     }
                 } else if let targetIndex = bookmarkSectionController.bookmarkItems.firstIndex(where: { ($0 as? Bookmark)?.guid == targetBookmark.guid }) {
-                    outlineView.setDropItem(nil, dropChildIndex: targetIndex)
+                    outlineView.setDropItem(spaceRootItem, dropChildIndex: targetIndex)
                 }
                 return .copy
             }
@@ -2070,7 +2093,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
 
             if let targetBookmark = resolvedItem as? Bookmark,
                let insertion = bookmarkInsertionTarget(before: targetBookmark) {
-                outlineView.setDropItem(insertion.parent, dropChildIndex: insertion.index)
+                outlineView.setDropItem(insertion.parent as SidebarItem? ?? spaceRootItem, dropChildIndex: insertion.index)
                 return .copy
             }
             
@@ -2124,7 +2147,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                 } else {
                     if let targetIndex = bookmarkSectionController.bookmarkItems.firstIndex(where: { ($0 as? Bookmark)?.guid == targetBookmark.guid }) {
                         AppLogDebug("[validateDrop] -> Redirect to root level, index: \(targetIndex)")
-                        outlineView.setDropItem(nil, dropChildIndex: targetIndex)
+                        outlineView.setDropItem(spaceRootItem, dropChildIndex: targetIndex)
                     }
                 }
                 let canAccept = bookmarkSectionController.canAcceptDrop(of: draggedBookmark, to: parentFolder)
@@ -2133,7 +2156,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             }
             
             if resolvedItem == nil {
-                let bookmarkSectionEnd = bookmarkSectionController.bookmarkItems.count
+                let bookmarkSectionEnd = bookmarkSectionEnd()
 
                 AppLogDebug("[validateDrop] -> Root level drop, index: \(resolvedIndex), bookmarkSectionEnd: \(bookmarkSectionEnd)")
 
@@ -2210,7 +2233,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                 setDropFeedback(.none)
                 return []
             }
-            outlineView.setDropItem(insertion.parent, dropChildIndex: insertion.index)
+            outlineView.setDropItem(insertion.parent as SidebarItem? ?? spaceRootItem, dropChildIndex: insertion.index)
             let canAccept = browserState.canMoveSelectedBookmarks(bookmarkGuids: bookmarkGuids,
                                                                   to: insertion.parent)
             setDropFeedback(.none)
@@ -2531,6 +2554,15 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             return item
         }()
         let resolvedIndex = index
+
+        if let rootIndex = spaceRootDropIndex(item: resolvedItem, index: index) {
+            defer {
+                clearDropFeedback()
+                restoreTemporarilyCollapsedGroupAfterDragIfNeeded()
+                browserState.tabDraggingSession.end()
+            }
+            return acceptSpaceRootDrop(info.draggingPasteboard, index: rootIndex)
+        }
         
         defer {
             clearDropFeedback()
@@ -2948,7 +2980,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             }
             
             else if resolvedItem == nil {
-                let bookmarkSectionEnd = bookmarkSectionController.bookmarkItems.count
+                let bookmarkSectionEnd = bookmarkSectionEnd()
                 AppLogDebug("[acceptDrop] -> Root level, index: \(resolvedIndex), bookmarkSectionEnd: \(bookmarkSectionEnd)")
                 
                 if resolvedIndex <= bookmarkSectionEnd {
@@ -3205,19 +3237,18 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         return dragY < lastRowRect.minY
     }
     
+    /// Last root child index that inserts into bookmarks. Without bookmarks the
+    /// Space root row is hidden, so index 0 still targets the empty bookmark section.
+    private func bookmarkSectionEnd() -> Int {
+        max(0, currentTabSectionStart() - 1)
+    }
+
     private func isRowInBookmarkSection(_ row: Int) -> Bool {
-        guard showBookmarks else { return false }
-        let bookmarkSectionEnd = bookmarkSectionController.bookmarkItems.count
-        return row <= bookmarkSectionEnd
+        showBookmarks && !browserState.isIncognito && row <= bookmarkSectionEnd()
     }
     
     private func isRowInTabSection(_ row: Int) -> Bool {
-        if !showBookmarks {
-            return true
-        }
-        let bookmarkSectionEnd = bookmarkSectionController.bookmarkItems.count
-        let separatorOffset = tabSectionController.tabItems.isEmpty ? 0 : 1
-        return row > bookmarkSectionEnd + separatorOffset
+        !isRowInBookmarkSection(row)
     }
 
     /// Whether a proposed drop targets the bookmark section — a bookmark
@@ -3227,7 +3258,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     /// (tab→bookmark conversion, group conversion, reorder) would surface
     /// in the default Space. Tab-section drops are unaffected.
     private func isBookmarkTargetedDrop(item: Any?, childIndex: Int, in outlineView: NSOutlineView) -> Bool {
-        if item is Bookmark { return true }
+        if item is Bookmark || item is SpaceRootSidebarItem { return true }
         guard item == nil else { return false }
         let proposedRow = childIndex == NSOutlineViewDropOnItemIndex ? outlineView.numberOfRows : childIndex
         return isRowInBookmarkSection(proposedRow)
@@ -3660,7 +3691,9 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         
         return SidebarBookmarkFolderDropResolver.remappedTarget(
             folder: folder, outlineView: outlineView, locationInWindow: info.draggingLocation,
-            proposedChildIndex: proposedChildIndex, siblings: dataSourceChildren(of: folder.parent))
+            proposedChildIndex: proposedChildIndex, siblings: dataSourceChildren(of: folder.parent as SidebarItem? ?? spaceRootItem)).map {
+                ($0.item ?? spaceRootItem, $0.childIndex)
+            }
     }
     
 
@@ -3766,7 +3799,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
             // Group rows animate their height. Keep the cell attached to all
             // four edges so its header stays at the top throughout the animation.
             return InsetTableRowView(insets: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0))
-        case .tab, .newTabButton, .separator, .splitPair:
+        case .spaceRoot, .tab, .newTabButton, .separator, .splitPair:
             let identifier = NSUserInterfaceItemIdentifier("SidebarRow")
             if let rowView = outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableRowView {
                 return rowView
@@ -3793,6 +3826,16 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         let cellView: SidebarCellView
         
         switch sidebarItem.itemType {
+        case .spaceRoot:
+            let identifier = NSUserInterfaceItemIdentifier("SpaceRootCell")
+            let rootCell = outlineView.makeView(withIdentifier: identifier, owner: self) as? SpaceRootCellView
+                ?? SpaceRootCellView()
+            rootCell.identifier = identifier
+            rootCell.onToggle = { [weak self] in
+                guard let self else { return }
+                self.toggleItemExpanded(self.spaceRootItem)
+            }
+            cellView = rootCell
         case .bookmark, .bookmarkFolder:
             let identifier = NSUserInterfaceItemIdentifier("BookmarkCell")
             var bookmarkCell = outlineView.makeView(withIdentifier: identifier, owner: self) as? BookmarkCellView
@@ -3965,6 +4008,10 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
     }
     
     func outlineViewItemDidExpand(_ notification: Notification) {
+        if notification.userInfo?["NSObject"] is SpaceRootSidebarItem {
+            if !browserState.isBookmarkRootExpanded { browserState.isBookmarkRootExpanded = true }
+            return
+        }
         guard let bookmark = notification.userInfo?["NSObject"] as? Bookmark else { return }
         if userInitiatedToggleFolderGuid == bookmark.guid {
             bookmark.isExpanded = true
@@ -3980,6 +4027,10 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
     }
     
     func outlineViewItemDidCollapse(_ notification: Notification) {
+        if notification.userInfo?["NSObject"] is SpaceRootSidebarItem {
+            if browserState.isBookmarkRootExpanded { browserState.isBookmarkRootExpanded = false }
+            return
+        }
         guard let bookmark = notification.userInfo?["NSObject"] as? Bookmark else { return }
         // Only update isExpanded for the folder the user explicitly toggled; descendant collapses
         // triggered by NSOutlineView should preserve their original expanded state for restoration.
@@ -4007,6 +4058,10 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
 
 extension SidebarTabListViewController: SidebarTabListItemOwner {
     func toggleItemExpanded(_ item: any SidebarItem) {
+        if item is SpaceRootSidebarItem {
+            browserState.isBookmarkRootExpanded.toggle()
+            return
+        }
         if let folder = item as? Bookmark, folder.isFolder {
             userInitiatedToggleFolderGuid = folder.guid
         }
@@ -4163,7 +4218,8 @@ extension SidebarTabListViewController: BookmarkSectionDelegate {
         }
         outlineView.autosaveExpandedItems = true
         outlineView.autosaveName = "SidebarTabList"
-        syncBookmarkExpandedFlags()
+        restoreSpaceRootExpansion()
+        if browserState.isBookmarkRootExpanded { syncBookmarkExpandedFlags() }
         // The restore posts no expand notifications, and the folders it expanded may no
         // longer hide the focusing bookmark, so recompute its proxy.
         refreshAllItems(animated: false)
@@ -4176,29 +4232,14 @@ extension SidebarTabListViewController: BookmarkSectionDelegate {
 }
 
 extension SidebarTabListViewController: TabSectionDelegate {
-    /// Tab section start index in root-level dataSource children. Accounts for the floating proxy
-    /// which may shift separator / tab indices by +1 when inserted at root level.
-    private func tabSectionStartIndexInRootChildren(bookmarkCount: Int, separatorCount: Int) -> Int {
-        var start = bookmarkCount + separatorCount
-        if let presentation = focusedBookmarkPresentation,
-           presentation.insertionParent == nil,
-           presentation.insertionIndex <= start {
-            start += 1
-        }
-        return start
-    }
-
     /// Convenience: root-child index where the tab section begins, given
     /// the current visible state. All three drop-redirect call sites need
     /// this in root-child space (the same coordinate `setDropItem(_:dropChildIndex:)`
     /// expects), so they share one helper instead of recomputing inline.
     private func currentTabSectionStart() -> Int {
-        guard showBookmarks else { return tabSectionController.tabItems.isEmpty ? 0 : 1 }
-        let bookmarkCount = bookmarkSectionController.bookmarkItems.count
-        let separatorCount = tabSectionController.tabItems.isEmpty ? 0 : 1
-        return tabSectionStartIndexInRootChildren(
-            bookmarkCount: bookmarkCount,
-            separatorCount: separatorCount)
+        let roots = dataSourceChildren(of: nil)
+        guard let firstTabItem = tabSectionController.tabItems.first else { return roots.count }
+        return roots.firstIndex { $0.id == firstTabItem.id } ?? roots.count
     }
     
     func tabSectionDidUpdate(with change: TabSectionChange) {
@@ -4302,6 +4343,8 @@ extension SidebarTabListViewController: TabSectionDelegate {
     }
     
     private func expandParents(of bookmark: Bookmark) {
+        browserState.isBookmarkRootExpanded = true
+        restoreSpaceRootExpansion()
         for parent in ancestors(of: bookmark) {
             if !outlineView.isItemExpanded(parent) {
                 outlineView.expandItem(parent)
@@ -4338,6 +4381,124 @@ extension SidebarTabListViewController: TabSectionDelegate {
     }
 }
 
+extension SidebarTabListViewController {
+    private func restoreSpaceRootExpansion(animated: Bool = false) {
+        guard allItems.contains(where: { $0 === spaceRootItem }) else { return }
+        if browserState.isBookmarkRootExpanded {
+            guard !outlineView.isItemExpanded(spaceRootItem) else { return }
+            animateSpaceRootChange(expanded: true, animated: animated)
+            applyBookmarkExpandedFlags(to: spaceRootItem.childrenItems)
+        } else {
+            if outlineView.isItemExpanded(spaceRootItem) {
+                animateSpaceRootChange(expanded: false, animated: animated)
+            }
+        }
+    }
+
+    private func animateSpaceRootChange(expanded: Bool, animated: Bool) {
+        let animate = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = animate ? SpaceRootCellView.disclosureAnimationDuration : 0
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1)
+            if expanded {
+                if animate { outlineView.animator().expandItem(spaceRootItem) }
+                else { outlineView.expandItem(spaceRootItem) }
+            } else {
+                if animate { outlineView.animator().collapseItem(spaceRootItem) }
+                else { outlineView.collapseItem(spaceRootItem) }
+            }
+        }
+    }
+
+    private func rootFloatingPresentation(for bookmark: Bookmark, hiddenBookmarkGuid: String? = nil) -> FloatingBookmarkPresentationState {
+        FloatingBookmarkPresentationState(
+            focusedPresentation: (FocusedBookmarkSidebarItem(bookmark: bookmark, indentationLevelOverride: 1), nil, 1),
+            floatingBookmarkGuid: bookmark.guid,
+            floatingAnchorFolderGuid: nil,
+            hiddenBookmarkGuid: hiddenBookmarkGuid
+        )
+    }
+
+    private func applySpaceRootExpansion(animated: Bool) {
+        guard isActive else { return }
+        if browserState.isBookmarkRootExpanded {
+            restoreSpaceRootExpansion(animated: animated)
+            refreshAllItems(animated: animated)
+        } else {
+            let bookmark = browserState.focusingTab?.guidInLocalDB
+                .flatMap { browserState.bookmarkManager.bookmark(withGuid: $0) }
+                ?? floatingBookmarkGuid.flatMap { browserState.bookmarkManager.bookmark(withGuid: $0) }
+            let presentation = bookmark.map { rootFloatingPresentation(for: $0, hiddenBookmarkGuid: $0.guid) }
+                ?? .cleared
+            refreshAllItems(presentationState: presentation, animated: animated, animateSpaceRootExpansion: animated)
+        }
+        updateVisibleBookmarkTabs()
+    }
+
+    /// Convert only presentation coordinates; bookmark parent GUIDs remain unchanged.
+    func spaceRootDropIndex(item: Any?, index: Int) -> Int? {
+        guard showBookmarks, !browserState.isIncognito, spaceRootItem.hasChildren else { return nil }
+        if item is SpaceRootSidebarItem {
+            if let presentation = focusedBookmarkPresentation,
+               presentation.insertionParent === spaceRootItem,
+               index > presentation.insertionIndex {
+                return index - 1
+            }
+            return index
+        }
+        if let bookmark = item as? Bookmark, !bookmark.isFolder, bookmark.parent == nil {
+            return spaceRootItem.childrenItems.firstIndex { $0.id == bookmark.id }
+        }
+        if item == nil, index >= 0, index < currentTabSectionStart() {
+            return index == 0 ? 0 : spaceRootItem.childrenItems.count
+        }
+        return nil
+    }
+
+    private func canDropIntoSpaceRoot(_ pasteboard: NSPasteboard) -> Bool {
+        guard !browserState.isIncognito else { return false }
+        if isCrossWindowDrag(pasteboard) {
+            guard let source = sourceBrowserState(for: pasteboard),
+                  browserState.canAcceptCrossWindowDrag(from: source) else { return false }
+            // Match the existing cross-window group/multi-selection restrictions.
+            if pasteboard.string(forType: .tabGroup) != nil || pasteboard.phiNormalTabIds().count > 1
+                || pasteboard.phiBookmarkGuids().count > 1 { return false }
+        }
+        return [NSPasteboard.PasteboardType.normalTab, .pinnedTab, .phiBookmark, .bookmarks, .tabGroup]
+            .contains { pasteboard.string(forType: $0) != nil }
+    }
+
+    private func acceptSpaceRootDrop(_ pasteboard: NSPasteboard, index: Int) -> Bool {
+        guard canDropIntoSpaceRoot(pasteboard) else { return false }
+        let insertion = index == NSOutlineViewDropOnItemIndex ? nil : index
+        let source = sourceBrowserState(for: pasteboard) ?? browserState
+        if let token = pasteboard.string(forType: .tabGroup) {
+            browserState.convertGroupToBookmarks(token: token, parentFolder: nil, at: insertion)
+            return true
+        }
+        if let pinnedGuid = pasteboard.string(forType: .pinnedTab) {
+            source.movePinnedTabOut(pinnedGuid: pinnedGuid, toBookmark: nil, index: insertion ?? 0)
+            return true
+        }
+        let bookmarks = draggedBookmarkBatch(from: pasteboard)
+        let tabIds = pasteboard.phiNormalTabIds()
+        if !isCrossWindowDrag(pasteboard), !bookmarks.isEmpty || tabIds.count > 1 {
+            return acceptBookmarkBatchToBookmarkArea(bookmarks: bookmarks, tabIds: tabIds, parent: nil, index: insertion)
+        }
+        if let value = pasteboard.string(forType: .normalTab), let tabId = Int(value),
+           let tab = source.tabs.first(where: { $0.guid == tabId }) {
+            if !source.addSplitBookmarkFromTab(tab, toFolder: nil, targetIndex: insertion) {
+                source.moveNormalTab(tabId: tabId, toBookmark: nil, index: insertion ?? 0)
+            }
+            return true
+        }
+        if let guid = pasteboard.string(forType: .phiBookmark), let bookmark = findBookmark(withId: guid) {
+            return bookmarkSectionController.handleDrop(of: bookmark, to: nil, at: insertion)
+        }
+        return false
+    }
+}
+
 // MARK: - Focusing bookmark visibility (temporary UI-only reparenting)
 extension SidebarTabListViewController {
     @discardableResult
@@ -4353,13 +4514,20 @@ extension SidebarTabListViewController {
         rootItems: [SidebarItem],
         hiddenBookmarkGuid: String? = nil
     ) -> FloatingBookmarkPresentationState {
+        guard rootItems.contains(where: { $0 === spaceRootItem }) else { return .cleared }
         // Without a proxy from a user collapse, a focusing bookmark hidden under a collapsed
         // folder still gets one, so a freshly built outline (e.g. a re-activated list) shows it.
-        guard let bookmarkGuid = floatingBookmarkGuid ?? focusingBookmarkHiddenUnderCollapsedFolder?.guid,
+        let hiddenFocusingGuid = browserState.isBookmarkRootExpanded
+            ? focusingBookmarkHiddenUnderCollapsedFolder?.guid
+            : browserState.focusingTab?.guidInLocalDB
+        guard let bookmarkGuid = floatingBookmarkGuid ?? hiddenFocusingGuid,
               let bookmark = browserState.bookmarkManager.bookmark(withGuid: bookmarkGuid) else {
             return .cleared
         }
 
+        if !browserState.isBookmarkRootExpanded {
+            return rootFloatingPresentation(for: bookmark, hiddenBookmarkGuid: hiddenBookmarkGuid)
+        }
         guard let firstCollapsed = ancestors(of: bookmark).first(where: { $0.isFolder && !outlineView.isItemExpanded($0) }) else {
             return .cleared
         }
@@ -4368,7 +4536,7 @@ extension SidebarTabListViewController {
             return .cleared
         }
         
-        let indentationLevel = max(0, firstCollapsed.depth) + 1
+        let indentationLevel = max(0, firstCollapsed.depth) + 2
         let proxy = FocusedBookmarkSidebarItem(bookmark: bookmark, indentationLevelOverride: indentationLevel)
         return FloatingBookmarkPresentationState(
             focusedPresentation: (
@@ -4455,9 +4623,9 @@ extension SidebarTabListViewController {
             let idx = siblings.firstIndex(where: { $0.id == folder.id }) ?? siblings.count
             return (insertionParent: parent, insertionIndex: min(idx + 1, siblings.count))
         } else {
-            let effectiveRootItems = rootItems ?? allItems
-            let idx = effectiveRootItems.firstIndex(where: { $0.id == folder.id }) ?? 0
-            return (insertionParent: nil, insertionIndex: min(idx + 1, effectiveRootItems.count))
+            let siblings = visibleChildren(for: spaceRootItem)
+            let index = siblings.firstIndex { $0.id == folder.id } ?? 0
+            return (spaceRootItem, min(index + 1, siblings.count))
         }
     }
     
@@ -4527,7 +4695,7 @@ extension SidebarTabListViewController {
             return nil
         }
         
-        let visualIndentationLevel = max(0, firstCollapsed.depth) + 1
+        let visualIndentationLevel = max(0, firstCollapsed.depth) + 2
         let proxy = FocusedBookmarkSidebarItem(bookmark: bookmark, indentationLevelOverride: visualIndentationLevel)
         
         if let insertionParent = firstCollapsed.parent {
@@ -4535,8 +4703,9 @@ extension SidebarTabListViewController {
             let idx = children.firstIndex(where: { $0.id == firstCollapsed.id }) ?? children.count
             return (proxy: proxy, insertionParent: insertionParent, insertionIndex: min(idx + 1, children.count))
         } else {
-            let idx = allItems.firstIndex(where: { $0.id == firstCollapsed.id }) ?? 0
-            return (proxy: proxy, insertionParent: nil, insertionIndex: min(idx + 1, allItems.count))
+            let siblings = visibleChildren(for: spaceRootItem)
+            let idx = siblings.firstIndex(where: { $0.id == firstCollapsed.id }) ?? 0
+            return (proxy: proxy, insertionParent: spaceRootItem, insertionIndex: min(idx + 1, siblings.count))
         }
     }
 

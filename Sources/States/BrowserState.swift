@@ -494,6 +494,9 @@ class BrowserState {
     let windowId: Int
     let localStore: LocalStore
     @Published private(set) var profileId: String
+    /// Shared by the docked and floating sidebars of this Space session.
+    @Published var isBookmarkRootExpanded = true
+
     /// Identifies which Space this window renders. Persisted pinned tabs and
     /// bookmarks under the same Space share this id; see `Space`.
     let spaceId: String

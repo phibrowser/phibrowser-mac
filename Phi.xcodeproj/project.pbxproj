@@ -605,6 +605,7 @@
 		CCBF8F4C2E6543E800B9A99E /* BookmarkSectionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F492E6543E800B9A99E /* BookmarkSectionController.swift */; };
 		CCBF8F4D2E6543E800B9A99E /* TabSectionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F4B2E6543E800B9A99E /* TabSectionController.swift */; };
 		CCBF8F4E2E6543E800B9A99E /* SidebarCellViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F4A2E6543E800B9A99E /* SidebarCellViews.swift */; };
+		8E5A0C122FB0000100A1B2C3 /* SpaceRootCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E5A0C112FB0000100A1B2C3 /* SpaceRootCellView.swift */; };
 		CCBF8F502E65445800B9A99E /* SidebarTabListViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F4F2E65445800B9A99E /* SidebarTabListViewController.swift */; };
 		CCBF8F592E656DC000B9A99E /* Tab+Sidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F582E656DC000B9A99E /* Tab+Sidebar.swift */; };
 		CCBF8F622E65719600B9A99E /* SideBarOutlineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F612E65719600B9A99E /* SideBarOutlineView.swift */; };
@@ -1456,6 +1457,7 @@
 		CCBF8F452E653F6900B9A99E /* BookmarkModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkModel.swift; sourceTree = "<group>"; };
 		CCBF8F492E6543E800B9A99E /* BookmarkSectionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkSectionController.swift; sourceTree = "<group>"; };
 		CCBF8F4A2E6543E800B9A99E /* SidebarCellViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarCellViews.swift; sourceTree = "<group>"; };
+		8E5A0C112FB0000100A1B2C3 /* SpaceRootCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceRootCellView.swift; sourceTree = "<group>"; };
 		CCBF8F4B2E6543E800B9A99E /* TabSectionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSectionController.swift; sourceTree = "<group>"; };
 		CCBF8F4F2E65445800B9A99E /* SidebarTabListViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarTabListViewController.swift; sourceTree = "<group>"; };
 		CCBF8F582E656DC000B9A99E /* Tab+Sidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tab+Sidebar.swift"; sourceTree = "<group>"; };
@@ -3137,6 +3139,7 @@
 				8EF36C072F4EA95B00FCC91E /* SideTabView.swift */,
 				CCEB64CA2E98DD520036C763 /* InsetTableRowView.swift */,
 				CCBF8F4A2E6543E800B9A99E /* SidebarCellViews.swift */,
+				8E5A0C112FB0000100A1B2C3 /* SpaceRootCellView.swift */,
 				F02B00110000000000000001 /* BookmarkFolderIcon.swift */,
 				376581F82EEA9BB200D3E031 /* BookmarkCellView.swift */,
 				376581FA2EEA9D6200D3E031 /* BookmarkRowView.swift */,
@@ -3789,6 +3792,7 @@
 				CC5025FE2E702603004223DC /* NSFont+Extension.swift in Sources */,
 				37C9E68C2F3F322D00353A03 /* Shimmer.swift in Sources */,
 				CCBF8F4E2E6543E800B9A99E /* SidebarCellViews.swift in Sources */,
+				8E5A0C122FB0000100A1B2C3 /* SpaceRootCellView.swift in Sources */,
 				CD4F3A012E56000100FACC01 /* FloatingTrafficLightsView.swift in Sources */,
 				CC288A6B2E4F12EC004A6C1C /* SidebarHeaderView.swift in Sources */,
 				CC6336032E4EE43200A176DA /* PhiLogging.m in Sources */,

@@ -34,6 +34,8 @@ extension CommandWrapper {
             return NSLocalizedString("settings.shortcuts.description.focusLocation", value: "Focus the address bar to enter a URL or search.", comment: "Shortcuts settings - Description of the focusLocation command")
         case .IDC_CLOSE_WINDOW:
             return NSLocalizedString("settings.shortcuts.description.closeWindow", value: "Close the current window.", comment: "Shortcuts settings - Description of the closeWindow command")
+        case .PHI_CLEAR_ALL_TABS:
+            return NSLocalizedString("settings.shortcuts.description.clearAllTabs", value: "Close ordinary tabs that are not currently displayed. Supports Undo and Redo.", comment: "Shortcuts settings - Description of clearing background tabs")
         case .IDC_CLOSE_TAB:
             return NSLocalizedString("settings.shortcuts.description.closeTab", value: "Close the current tab.", comment: "Shortcuts settings - Description of the closeTab command")
         case .IDC_SAVE_PAGE:

@@ -1404,17 +1404,23 @@ enum BroomAnimation {
         )?.duration ?? 1.5
 }
 
-// MARK: - Broom Button
+// MARK: - Sidebar Cleanup Button
 
-/// The "organize tabs with AI" (Farringdon) button shown at the trailing edge of
-/// the New Tab row. Owns its own hover feedback (tint + subtle fill) and a
-/// looping Lottie animation that plays while a run is in progress.
-final class BroomButton: NSButton {
+/// Both separator actions share AppKit hover rendering. Lottie only draws the
+/// icon: organizing loops while a run is active, and clearing plays on click.
+final class SidebarCleanupButton: NSButton {
+    enum Kind: String {
+        case organize = "broom"
+        case clear = "clear-tabs"
+    }
+
+    let kind: Kind
     private var trackingArea: NSTrackingArea?
     private var isHovering = false { didSet { updateAppearance() } }
     private(set) var isOrganizing = false
     private var organizeStartedAt: Date?
     private var safetyTimer: Timer?
+    private var clearPlaybackID: UUID?
 
     // Matches the 24x24 frame used by `UnifiedTabCloseButton` in `SideTabView`.
     static let buttonSize: CGFloat = 24
@@ -1424,24 +1430,24 @@ final class BroomButton: NSButton {
 
     private lazy var animationView: LottieAnimationNSView = {
         let config = LottieAnimationViewConfig(
-            animationName: "broom",
+            animationName: kind.rawValue,
             size: CGSize(width: Self.buttonSize, height: Self.buttonSize),
             animationTrigger: .manual,
-            themedTintColor: .custom(light: .black, dark: .white),
-            loopMode: .loop,
+            themedTintColor: .textSecondary,
+            loopMode: kind == .organize ? .loop : .playOnce,
             allowsHitTesting: false
         )
         return LottieAnimationNSView(config: config)
     }()
 
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
+    init(kind: Kind) {
+        self.kind = kind
+        super.init(frame: .zero)
         configure()
     }
 
     required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        configure()
+        fatalError("init(coder:) has not been implemented")
     }
 
     deinit {
@@ -1463,9 +1469,10 @@ final class BroomButton: NSButton {
         animationView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
-        toolTip = NSLocalizedString("sidebar.newTabRow.aiOrganizeTooltip", value: "Organize tabs with AI",
-            comment: "side bar new tab row - organize tabs button tooltip")
         updateAppearance()
+        guard kind == .organize else { return }
+        toolTip = NSLocalizedString("sidebar.newTabRow.aiOrganizeTooltip", value: "Organize tabs with AI",
+            comment: "Sidebar separator - Organize tabs button tooltip")
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleOrganizeDidStart),
@@ -1490,10 +1497,28 @@ final class BroomButton: NSButton {
             userInfo: nil)
         addTrackingArea(area)
         trackingArea = area
+        updateHoverForCurrentMouseLocation()
+    }
+
+    override var isHidden: Bool {
+        didSet { updateHoverForCurrentMouseLocation() }
+    }
+
+    private func updateHoverForCurrentMouseLocation() {
+        guard let window, !isHiddenOrHasHiddenAncestor else {
+            isHovering = false
+            return
+        }
+        isHovering = bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard isEnabled, !isHidden, alphaValue > 0, bounds.contains(point) else {
+        guard isEnabled, !isHidden, alphaValue > 0, bounds.contains(convert(point, from: superview)) else {
             return nil
         }
         return self
@@ -1510,15 +1535,42 @@ final class BroomButton: NSButton {
     }
 
     private func updateAppearance() {
-        layer?.backgroundColor = isHovering
-            ? NSColor(resource: .sidebarTabHovered).cgColor
-            : NSColor.clear.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer?.backgroundColor = isHovering
+                ? NSColor(resource: .sidebarTabHovered).cgColor
+                : NSColor.clear.cgColor
+            CATransaction.commit()
+        }
+    }
+
+    func playClearAnimation(completion: @escaping () -> Void) {
+        guard kind == .clear, clearPlaybackID == nil else { return }
+        let playbackID = UUID()
+        clearPlaybackID = playbackID
+        animationView.triggerAnimation { [weak self] completed in
+            guard let self, self.clearPlaybackID == playbackID else { return }
+            self.clearPlaybackID = nil
+            if completed { completion() }
+        }
+    }
+
+    func cancelClearAnimation() {
+        guard clearPlaybackID != nil else { return }
+        clearPlaybackID = nil
+        animationView.stopAnimation()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { cancelClearAnimation() }
     }
 
     // MARK: Organizing animation
 
     func startOrganizing() {
-        guard !isOrganizing else { return }
+        guard kind == .organize, !isOrganizing else { return }
         isOrganizing = true
         organizeStartedAt = Date()
         animationView.triggerAnimation()
@@ -1565,60 +1617,8 @@ final class BroomButton: NSButton {
 // MARK: - New Tab Button Cell View
 class NewTabButtonCellView: SidebarCellView {
     var clickAction: (() -> Void)?
-    /// Triggers the Farringdon "organize tabs with AI" action. When nil, the
-    /// trailing broom button is hidden.
-    var cleanupAction: (() -> Void)? {
-        didSet { updateCleanupButtonVisibility() }
-    }
-    private var isCleanupButtonVisible = false
-    private var cleanupVisibilityGeneration = 0
     private var iconHoverState = false
     private var didPlayForwardAnimationForCurrentHover = false
-
-    private lazy var cleanupButton: BroomButton = {
-        let button = BroomButton(frame: .zero)
-        button.target = self
-        button.action = #selector(cleanupButtonClicked)
-        button.isHidden = true
-        button.alphaValue = 0
-        return button
-    }()
-
-    private func updateCleanupButtonVisibility() {
-        let visible = cleanupAction != nil
-        guard isCleanupButtonVisible != visible else { return }
-        isCleanupButtonVisible = visible
-        cleanupVisibilityGeneration += 1
-        let generation = cleanupVisibilityGeneration
-        let shouldAnimate = window != nil && !isHiddenOrHasHiddenAncestor
-            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-
-        guard shouldAnimate else {
-            cleanupButton.layer?.removeAllAnimations()
-            cleanupButton.alphaValue = visible ? 1 : 0
-            cleanupButton.isHidden = !visible
-            return
-        }
-
-        cleanupButton.isHidden = false
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.1
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            cleanupButton.animator().alphaValue = visible ? 1 : 0
-        }) { [weak self] in
-            // Ignore completions from a superseded hover transition or reused cell.
-            guard let self, self.cleanupVisibilityGeneration == generation else { return }
-            self.cleanupButton.isHidden = !visible
-        }
-    }
-
-    @objc private func cleanupButtonClicked() {
-        guard !cleanupButton.isOrganizing, let cleanupAction else { return }
-        // `cleanupAction` triggers the organize run, which posts
-        // `.farringdonOrganizeDidStart`; the button animates via that observer.
-        FeatureEntryAnalytics.capture(.organizeTabs, surface: .sidebar)
-        cleanupAction()
-    }
 
     private lazy var iconView: LottieAnimationNSView = {
         let config = LottieAnimationViewConfig(
@@ -1654,23 +1654,9 @@ class NewTabButtonCellView: SidebarCellView {
         super.prepareForReuse()
         iconHoverState = false
         didPlayForwardAnimationForCurrentHover = false
-        cleanupButton.stopOrganizing()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // Let the trailing broom button claim its own clicks before the cell
-        // swallows the whole row (used by the floating new-tab variant where
-        // `clickAction` opens a new tab).
-        if cleanupAction != nil, !cleanupButton.isHidden {
-            let backgroundPoint = backgoundView.convert(point, from: self)
-            if cleanupButton.frame.contains(backgroundPoint) {
-                return cleanupButton
-            }
-        }
-        if let hit = super.hitTest(point),
-           hit == cleanupButton || hit.isDescendant(of: cleanupButton) {
-            return hit
-        }
         guard clickAction != nil, bounds.contains(point) else {
             return super.hitTest(point)
         }
@@ -1685,13 +1671,6 @@ class NewTabButtonCellView: SidebarCellView {
 
         let point = convert(event.locationInWindow, from: nil)
         guard bounds.contains(point) else { return }
-        if cleanupAction != nil, !cleanupButton.isHidden {
-            let backgroundPoint = backgoundView.convert(point, from: self)
-            if cleanupButton.frame.contains(backgroundPoint) {
-                cleanupButtonClicked()
-                return
-            }
-        }
         clickAction()
     }
     
@@ -1728,7 +1707,6 @@ class NewTabButtonCellView: SidebarCellView {
        
         backgoundView.addSubview(iconView)
         backgoundView.addSubview(titleLabel)
-        backgoundView.addSubview(cleanupButton)
 
         iconView.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(6)
@@ -1736,15 +1714,9 @@ class NewTabButtonCellView: SidebarCellView {
             make.size.equalTo(16)
         }
 
-        cleanupButton.snp.makeConstraints { make in
-            make.trailing.equalToSuperview().inset(4)
-            make.centerY.equalToSuperview()
-            make.size.equalTo(BroomButton.buttonSize)
-        }
-
         titleLabel.snp.makeConstraints { make in
             make.leading.equalTo(iconView.snp.trailing).offset(8)
-            make.trailing.lessThanOrEqualTo(cleanupButton.snp.leading).offset(-8)
+            make.trailing.lessThanOrEqualToSuperview().inset(8)
             make.centerY.equalToSuperview()
         }
     }
@@ -1752,28 +1724,113 @@ class NewTabButtonCellView: SidebarCellView {
 
 // MARK: - Separator Cell View
 class SeparatorCellView: SidebarCellView {
-    private var separatorView: NSView!
-    
+    /// Triggers the Farringdon "organize tabs with AI" action. When nil, the
+    /// trailing broom button is hidden.
+    var cleanupAction: (() -> Void)? {
+        didSet { updateButtonVisibility() }
+    }
+
+    private lazy var cleanupButton: SidebarCleanupButton = {
+        let button = SidebarCleanupButton(kind: .organize)
+        button.target = self
+        button.action = #selector(cleanupButtonClicked)
+        button.isHidden = true
+        return button
+    }()
+
+    private func updateButtonVisibility() {
+        // Sidebar updates can arrive inside an outline animation transaction.
+        // Visibility and the adjacent line must still change immediately.
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            for view in [cleanupButton, clearTabsButton, separatorView] {
+                view.layer?.removeAllAnimations()
+            }
+            cleanupButton.isHidden = cleanupAction == nil
+            clearTabsButton.isHidden = clearTabsAction == nil
+            updateSeparatorWidth()
+            layoutSubtreeIfNeeded()
+            CATransaction.commit()
+        }
+    }
+
+    @objc private func cleanupButtonClicked() {
+        guard !cleanupButton.isOrganizing, let cleanupAction else { return }
+        // `cleanupAction` triggers the organize run, which posts
+        // `.farringdonOrganizeDidStart`; the button animates via that observer.
+        FeatureEntryAnalytics.capture(.organizeTabs, surface: .sidebar)
+        cleanupAction()
+    }
+
+    @objc private func clearTabsButtonClicked() {
+        guard let clearTabsAction else { return }
+        clearTabsButton.playClearAnimation(completion: clearTabsAction)
+    }
+
+    var clearTabsAction: (() -> Void)? {
+        didSet { updateButtonVisibility() }
+    }
+
+    private let separatorView = NSView()
+    private lazy var clearTabsButton: SidebarCleanupButton = {
+        let button = SidebarCleanupButton(kind: .clear)
+        button.target = self
+        button.action = #selector(clearTabsButtonClicked)
+        button.toolTip = NSLocalizedString("sidebar.separator.clearTabsTooltip", value: "Clear unselected tabs", comment: "Sidebar separator - Close background ordinary tabs, keeping the currently displayed tab or split")
+        button.setAccessibilityLabel(button.toolTip)
+        button.isHidden = true
+        return button
+    }()
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setupViews()
     }
-    
+
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         setupViews()
     }
-    
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        clearTabsButton.cancelClearAnimation()
+        cleanupAction = nil
+        clearTabsAction = nil
+        cleanupButton.stopOrganizing()
+    }
+
+    private func updateSeparatorWidth() {
+        guard separatorView.superview != nil else { return }
+        separatorView.snp.updateConstraints { make in
+            make.trailing.equalToSuperview().inset(
+                WebContentConstant.edgesSpacing + (cleanupAction != nil ? 64 : clearTabsAction != nil ? 36 : 0))
+        }
+    }
+
     private func setupViews() {
-        separatorView = NSView()
         separatorView.wantsLayer = true
         separatorView.phiLayer?.setBackgroundColor(.separator)
         addSubview(separatorView)
-
+        addSubview(cleanupButton)
+        addSubview(clearTabsButton)
         separatorView.snp.makeConstraints { make in
             make.leading.trailing.equalToSuperview().inset(WebContentConstant.edgesSpacing)
             make.centerY.equalToSuperview()
             make.height.equalTo(1)
+        }
+        clearTabsButton.snp.makeConstraints { make in
+            make.trailing.equalToSuperview().inset(WebContentConstant.edgesSpacing + 4)
+            make.centerY.equalToSuperview()
+            make.size.equalTo(24)
+        }
+        cleanupButton.snp.makeConstraints { make in
+            make.trailing.equalTo(clearTabsButton.snp.leading).offset(-4)
+            make.centerY.equalToSuperview()
+            make.size.equalTo(SidebarCleanupButton.buttonSize)
         }
     }
 }

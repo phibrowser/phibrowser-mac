@@ -330,6 +330,16 @@ class BrowserState {
     @Published var travelBackHandoffs: [Int: TravelBackHandoff] = [:]
     @Published var profileMoveRequests: [Int: SidecarProfileMoveRequest] = [:]
     var profileMovesInFlight: Set<Int> = []
+    let clearTabsUndoManager: UndoManager = {
+        let manager = UndoManager()
+        manager.groupsByEvent = false
+        manager.levelsOfUndo = 20
+        return manager
+    }()
+    var pendingClearTabClosures: [Int: ClearedTabsBatch] = [:]
+    var pendingClearTabRestores: [String: (Tab) -> Void] = [:]
+    @Published var isRestoringClearedTabs = false
+
     let travelBackTabCreated = PassthroughSubject<(marker: String, tab: Tab), Never>()
     
     /// Read-only views of the owning window's split, never per-Space state.
@@ -1821,7 +1831,7 @@ class BrowserState {
         return expandedIds
     }
 
-    private func isBookmarkBackedTab(_ tab: Tab) -> Bool {
+    func isBookmarkBackedTab(_ tab: Tab) -> Bool {
         bookmarkGuidBacking(tab) != nil
     }
 
@@ -3371,6 +3381,8 @@ class BrowserState {
             return  // Don't add to regular tabs
         }
 
+        let clearTabsCompletion = MainActor.assumeIsolated { consumeClearTabsRestoreMarker(tab) }
+        defer { clearTabsCompletion?() }
         let travelBackMarker = MainActor.assumeIsolated { consumeTravelBackTabMarker(tab) }
         defer {
             if let travelBackMarker {
@@ -5496,6 +5508,7 @@ class BrowserState {
     func applyTabsRemoved(_ tabIds: [Int], indices: [Int: Int]? = nil,
                           activeTabId: Int? = nil) {
         let removalIDs = Set(tabIds)
+        recordClearedTabs(removalIDs)
         guard !removalIDs.isEmpty else { return }
 
         precondition(applyingRemovalIDs == nil)
@@ -5921,7 +5934,7 @@ class BrowserState {
     /// Only ordinary strip entries participate in range/other-tab closing.
     /// The batch bridge includes split partners, so protect an entire split
     /// when either pane belongs to a persistent surface outside this strip.
-    private var ordinaryTabCloseCandidates: [Tab] {
+    var ordinaryTabCloseCandidates: [Tab] {
         let pinnedGuids = Set(pinnedTabs.compactMap(\.guidInLocalDB))
         let eligible = normalTabs.filter { tab in
             !tab.isPinned
@@ -5937,7 +5950,7 @@ class BrowserState {
         }
     }
 
-    private func tabCloseUnits(containing tabIds: Set<Int>) -> Set<Int> {
+    func tabCloseUnits(containing tabIds: Set<Int>) -> Set<Int> {
         var expanded = tabIds
         for tabId in tabIds {
             if let group = splitGroup(forTabId: tabId) {

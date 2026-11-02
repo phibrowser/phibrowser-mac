@@ -56,6 +56,7 @@
 		3741AC652F7BBF62009B5E40 /* ivy-presto-headline-light.otf in Copy Fonts */ = {isa = PBXBuildFile; fileRef = 3741AC632F7BBF48009B5E40 /* ivy-presto-headline-light.otf */; };
 		374BCE992F7157FD0043C656 /* TabAreaContextMenuHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374BCE982F7157FD0043C656 /* TabAreaContextMenuHelper.swift */; };
 		374BD1062F739D5F0043C656 /* NativeTabDecisionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374BD1052F739D5F0043C656 /* NativeTabDecisionEngine.swift */; };
+		374D3D9C3098673C00742455 /* clear-tabs.json in Copy LottieFiles */ = {isa = PBXBuildFile; fileRef = 374D3D9B3098673C00742455 /* clear-tabs.json */; };
 		3751E249305D18AE004D82C7 /* LibraryViewModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3751E246305D18AE004D82C7 /* LibraryViewModule.swift */; };
 		3756AB282F31ABA300FFA686 /* WebContentAddressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3756AB272F31ABA300FFA686 /* WebContentAddressBar.swift */; };
 		3758B1E52F962BA50036F2AF /* AuthManager+Provider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3758B1E42F962BA50036F2AF /* AuthManager+Provider.swift */; };
@@ -492,6 +493,7 @@
 		B8C1B3DE901D130723BDFF30 /* BookmarkKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34F236AC381F208106EF9B34 /* BookmarkKind.swift */; };
 		C0D1D0022FEA000000000002 /* SidebarTabListViewController+MultiSelectionDragPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D1D0012FEA000000000001 /* SidebarTabListViewController+MultiSelectionDragPreview.swift */; };
 		C0D3F1082026090800000001 /* SidebarFileDropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3F1082026090800000002 /* SidebarFileDropView.swift */; };
+		C1EA20261102000100000001 /* BrowserState+ClearTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1EA20261102000100000002 /* BrowserState+ClearTabs.swift */; };
 		C5BADF6174A250C6CE32EA57 /* DeviceApprovalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C80221E1E435653384260DC4 /* DeviceApprovalService.swift */; };
 		C5F9F384A23E1553837E302C /* AccountKeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0024EB323125F300021F9D /* AccountKeyManager.swift */; };
 		C605E8D49C0B02E0FD2D4613 /* DevicesSettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5D71320854F15DA33B8D7BA /* DevicesSettingView.swift */; };
@@ -770,6 +772,7 @@
 				A57A00000000000000000004 /* inputting.json in Copy LottieFiles */,
 				376581A32EE970B000D3E031 /* new-tab-reverse.json in Copy LottieFiles */,
 				37A4750630060D6100F7DC2E /* broom.json in Copy LottieFiles */,
+				374D3D9C3098673C00742455 /* clear-tabs.json in Copy LottieFiles */,
 				37D011013010000100000001 /* refresh.json in Copy LottieFiles */,
 				37D011023010000100000002 /* memory.json in Copy LottieFiles */,
 				37C1B3082EE673C800DD4496 /* new-tab.json in Copy LottieFiles */,
@@ -897,6 +900,7 @@
 		3741AC632F7BBF48009B5E40 /* ivy-presto-headline-light.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ivy-presto-headline-light.otf"; sourceTree = "<group>"; };
 		374BCE982F7157FD0043C656 /* TabAreaContextMenuHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabAreaContextMenuHelper.swift; sourceTree = "<group>"; };
 		374BD1052F739D5F0043C656 /* NativeTabDecisionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTabDecisionEngine.swift; sourceTree = "<group>"; };
+		374D3D9B3098673C00742455 /* clear-tabs.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "clear-tabs.json"; sourceTree = "<group>"; };
 		3751E246305D18AE004D82C7 /* LibraryViewModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViewModule.swift; sourceTree = "<group>"; };
 		3756AB272F31ABA300FFA686 /* WebContentAddressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentAddressBar.swift; sourceTree = "<group>"; };
 		3758B1E42F962BA50036F2AF /* AuthManager+Provider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AuthManager+Provider.swift"; sourceTree = "<group>"; };
@@ -1341,6 +1345,7 @@
 		B7A100013001000000000003 /* PhiChatHotkeyPreferenceSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiChatHotkeyPreferenceSync.swift; sourceTree = "<group>"; };
 		C0D1D0012FEA000000000001 /* SidebarTabListViewController+MultiSelectionDragPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SidebarTabListViewController+MultiSelectionDragPreview.swift"; sourceTree = "<group>"; };
 		C0D3F1082026090800000002 /* SidebarFileDropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarFileDropView.swift; sourceTree = "<group>"; };
+		C1EA20261102000100000002 /* BrowserState+ClearTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+ClearTabs.swift"; sourceTree = "<group>"; };
 		C70000000000000000000001 /* CustomTooltipController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomTooltipController.swift; sourceTree = "<group>"; };
 		C70000000000000000000002 /* CustomTooltip+Hosting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CustomTooltip+Hosting.swift"; sourceTree = "<group>"; };
 		C70000000000000000000003 /* CommandShortcutTooltipContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandShortcutTooltipContent.swift; sourceTree = "<group>"; };
@@ -1973,6 +1978,7 @@
 				37C1B3022EE6732600DD4496 /* extension-button.json */,
 				37C1B3032EE6733200DD4496 /* download-button.json */,
 				37D011043010000100000004 /* refresh.json */,
+				374D3D9B3098673C00742455 /* clear-tabs.json */,
 			);
 			path = LottieFiles;
 			sourceTree = "<group>";
@@ -3157,6 +3163,7 @@
 				A17100000000000000000002 /* SidebarMediaController.swift */,
 				747241560000000000000011 /* TravelBackScene.swift */,
 				747241560000000000000012 /* BrowserState+TravelBack.swift */,
+				C1EA20261102000100000002 /* BrowserState+ClearTabs.swift */,
 				5A454E000000000000000011 /* KioskBrowserState.swift */,
 				CCAA000C2F00010000000002 /* BrowserState+PinnedTabScope.swift */,
 				CCAA000E2F00010000000002 /* BrowserState+PinnedTabTransfer.swift */,
@@ -3680,6 +3687,7 @@
 				AB7090710000000000000003 /* SiteMemoryMessageRouter.swift in Sources */,
 				747241560000000000000001 /* TravelBackScene.swift in Sources */,
 				747241560000000000000002 /* BrowserState+TravelBack.swift in Sources */,
+				C1EA20261102000100000001 /* BrowserState+ClearTabs.swift in Sources */,
 				747241560000000000000003 /* TravelBackMessageHandler.swift in Sources */,
 				376CE4022F2891670093D937 /* ExtensionMessaging.swift in Sources */,
 				376CE4032F2891670093D937 /* NotificationCardManager.swift in Sources */,

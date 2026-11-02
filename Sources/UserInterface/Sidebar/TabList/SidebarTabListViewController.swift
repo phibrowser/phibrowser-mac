@@ -214,7 +214,6 @@ class SidebarTabListViewController: NSViewController {
     
     private var cancellables = Set<AnyCancellable>()
     private var lastFarringdonAIEnabled = PhiPreferences.AISettings.phiAIEnabled.loadValue()
-    private var lastFarringdonTabCountEligible = false
     private var allItems: [SidebarItem] = []
     /// Snapshot committed by the latest accepted `reloadWith` request.
     /// Unlike `allItems`, its captured child IDs cannot be changed by model reuse.
@@ -515,25 +514,17 @@ class SidebarTabListViewController: NSViewController {
                 let enabled = PhiPreferences.AISettings.phiAIEnabled.loadValue()
                 guard enabled != self.lastFarringdonAIEnabled else { return }
                 self.lastFarringdonAIEnabled = enabled
-                self.updateNewTabCleanupVisibility()
+                self.updateSeparatorButtonVisibility()
             }
             .store(in: &cancellables)
 
-        // The broom also needs enough tabs to be worth a run; refresh the live
-        // cells whenever the count crosses the threshold.
-        lastFarringdonTabCountEligible =
-            FarringdonOrganizer.isTabCountEligible(
-                FarringdonOrganizer.eligibleTabCount(in: browserState.normalTabs))
         browserState.$normalTabs
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] tabs in
-                guard let self else { return }
-                let eligible = FarringdonOrganizer.isTabCountEligible(
-                    FarringdonOrganizer.eligibleTabCount(in: tabs))
-                guard eligible != self.lastFarringdonTabCountEligible else { return }
-                self.lastFarringdonTabCountEligible = eligible
-                self.updateNewTabCleanupVisibility()
-            }
+            .sink { [weak self] _ in self?.updateSeparatorButtonVisibility() }
+            .store(in: &cancellables)
+        browserState.$isRestoringClearedTabs
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateSeparatorButtonVisibility() }
             .store(in: &cancellables)
 
     }
@@ -807,7 +798,7 @@ class SidebarTabListViewController: NSViewController {
         tabSectionController.rebuildItemsWithoutNotifyingDelegate()
         refreshAllItems(animated: false) { [weak self] _ in
             guard let self else { return }
-            self.updateNewTabCleanupVisibility()
+            self.updateSeparatorButtonVisibility()
             self.clearFloatingProxyIfTabClosed()
         }
     }
@@ -895,9 +886,9 @@ class SidebarTabListViewController: NSViewController {
 
         if showBookmarks {
             items.append(contentsOf: bookmarkSectionController.bookmarkItems)
-            if !bookmarkSectionController.bookmarkItems.isEmpty && !tabSectionController.tabItems.isEmpty {
-                items.append(separatorItem)
-            }
+        }
+        if !tabSectionController.tabItems.isEmpty {
+            items.append(separatorItem)
         }
 
         items.append(contentsOf: tabSectionController.tabItems)
@@ -3225,7 +3216,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             return true
         }
         let bookmarkSectionEnd = bookmarkSectionController.bookmarkItems.count
-        let separatorOffset = (!bookmarkSectionController.bookmarkItems.isEmpty && !tabSectionController.tabItems.isEmpty) ? 1 : 0
+        let separatorOffset = tabSectionController.tabItems.isEmpty ? 0 : 1
         return row > bookmarkSectionEnd + separatorOffset
     }
 
@@ -3830,7 +3821,6 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
                 newTabCell = NewTabButtonCellView()
                 newTabCell?.identifier = identifier
             }
-            newTabCell?.cleanupAction = farringdonCleanupActionIfVisible()
             cellView = newTabCell!
             
         case .separator:
@@ -3840,6 +3830,8 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
                 separatorCell = SeparatorCellView()
                 separatorCell?.identifier = identifier
             }
+            separatorCell?.cleanupAction = farringdonCleanupActionIfVisible()
+            separatorCell?.clearTabsAction = clearTabsActionIfVisible()
             cellView = separatorCell!
 
         case .tabGroup:
@@ -3899,9 +3891,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         
         switch sidebarItem.itemType {
         case .separator:
-            // The centered 1 pt line sits 8 pt from the 2 pt-inset row
-            // backgrounds above and below it.
-            return 13.0
+            return 28.0
         case .tabGroup:
             guard let groupItem = sidebarItem as? TabGroupSidebarItem else { return 36.0 }
             if temporarilyCollapsedGroupTokenForDrag == groupItem.group.token {
@@ -4110,7 +4100,7 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
         guard areCleanupButtonsVisible != visible else { return }
         areCleanupButtonsVisible = visible
         guard isViewLoaded else { return }
-        updateNewTabCleanupVisibility()
+        updateSeparatorButtonVisibility()
     }
 
     /// The broom (organize-tabs) action is only useful once the window has
@@ -4121,18 +4111,19 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
         return { [weak self] in self?.triggerFarringdonCleanup() }
     }
 
-    /// Reflects cleanup-button eligibility changes onto live New Tab cells without a reload.
-    private func updateNewTabCleanupVisibility() {
-        let action = farringdonCleanupActionIfVisible()
-        if let item = newTabButtonItem {
-            let row = outlineView.row(forItem: item)
-            if row >= 0,
-               let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false)
-                   as? NewTabButtonCellView {
-                cell.cleanupAction = action
-            }
-        }
-        floatingNewTabView?.cellView.cleanupAction = action
+    private func clearTabsActionIfVisible() -> (() -> Void)? {
+        guard areCleanupButtonsVisible, browserState.canClearAllTabs else { return nil }
+        return { [weak self] in self?.browserState.clearAllTabs() }
+    }
+
+    /// Refresh live separator controls without reloading the outline.
+    private func updateSeparatorButtonVisibility() {
+        let row = outlineView.row(forItem: separatorItem)
+        guard row >= 0,
+              let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false)
+                as? SeparatorCellView else { return }
+        cell.cleanupAction = farringdonCleanupActionIfVisible()
+        cell.clearTabsAction = clearTabsActionIfVisible()
     }
 
     func bookmarkClicked(_ item: any SidebarItem) {
@@ -4202,9 +4193,9 @@ extension SidebarTabListViewController: TabSectionDelegate {
     /// this in root-child space (the same coordinate `setDropItem(_:dropChildIndex:)`
     /// expects), so they share one helper instead of recomputing inline.
     private func currentTabSectionStart() -> Int {
-        guard showBookmarks else { return 0 }
+        guard showBookmarks else { return tabSectionController.tabItems.isEmpty ? 0 : 1 }
         let bookmarkCount = bookmarkSectionController.bookmarkItems.count
-        let separatorCount = (!bookmarkSectionController.bookmarkItems.isEmpty && !tabSectionController.tabItems.isEmpty) ? 1 : 0
+        let separatorCount = tabSectionController.tabItems.isEmpty ? 0 : 1
         return tabSectionStartIndexInRootChildren(
             bookmarkCount: bookmarkCount,
             separatorCount: separatorCount)
@@ -4235,7 +4226,7 @@ extension SidebarTabListViewController: TabSectionDelegate {
                 // root ID while changing their cached height and all later rows.
                 self.reconcileTabGroupRowHeightsWithoutAnimation()
                 self.pushPaneUpdatesToSplitPairCells(change.affectedSplitIds)
-                self.updateNewTabCleanupVisibility()
+                self.updateSeparatorButtonVisibility()
                 self.clearFloatingProxyIfTabClosed()
             }
             return
@@ -4253,7 +4244,7 @@ extension SidebarTabListViewController: TabSectionDelegate {
                 animated: !outlineStructureChanged && !self.suppressesGroupUpdateAnimations
             )
             self.pushPaneUpdatesToSplitPairCells(change.affectedSplitIds)
-            self.updateNewTabCleanupVisibility()
+            self.updateSeparatorButtonVisibility()
             self.clearFloatingProxyIfTabClosed()
         }
     }
@@ -4622,7 +4613,6 @@ extension SidebarTabListViewController {
         floatingView.cellView.clickAction = { [weak self] in
             self?.browserState.windowController?.newBrowserTab(nil)
         }
-        floatingView.cellView.cleanupAction = farringdonCleanupActionIfVisible()
         floatingView.hoverStateChanged = { [weak self] hovering in
             self?.setVisibleTabHoverSuppressed(hovering)
         }

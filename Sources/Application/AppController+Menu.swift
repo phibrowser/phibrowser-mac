@@ -629,6 +629,7 @@ extension AppController {
             } else
             
             if menuRole == .edit, let subMenu = menuItem.submenu {
+                installOrUpdateTabCleanupUndoItems(in: subMenu)
                 installOrUpdateCopyURLMenuItem(in: subMenu)
                 installOrUpdateSelectionShortcuts(in: subMenu)
             } else
@@ -879,6 +880,7 @@ extension AppController {
         subMenu.items.removeAll { item in
             item.tag == CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
                 || item.tag == CommandWrapper.PHI_NEW_INCOGNITO_SPACE.rawValue
+                || item.tag == CommandWrapper.PHI_CLEAR_ALL_TABS.rawValue
                 || item.tag == CommandWrapper.PHI_SHARE_PAGE.rawValue
                 || item.action == #selector(AppController.copyFullPageScreenshotFromMenu(_:))
                 || item.action == #selector(AppController.capturePageAreaFromMenu(_:))
@@ -886,6 +888,15 @@ extension AppController {
                 || item.tag == AppController.fileSaveForLaterLibraryItemTag
                 || item.tag == AppController.filePageActionItemTag
         }
+
+        let clearTabsItem = NSMenuItem(
+            title: NSLocalizedString("tabs.clearAll.title", value: "Clear All Tabs", comment: "Tab cleanup command - Close ordinary tabs that are not currently displayed"),
+            action: #selector(AppController.clearAllTabsFromMenu(_:)), keyEquivalent: "")
+        clearTabsItem.target = target
+        clearTabsItem.tag = CommandWrapper.PHI_CLEAR_ALL_TABS.rawValue
+        Shortcuts.updateShortcut(for: clearTabsItem)
+        let closeTabIndex = subMenu.items.firstIndex { $0.tag == CommandWrapper.IDC_CLOSE_TAB.rawValue }
+        subMenu.insertItem(clearTabsItem, at: closeTabIndex.map { $0 + 1 } ?? subMenu.items.count)
 
         let newKioskWindowItem = NSMenuItem(
             title: NSLocalizedString(
@@ -1297,6 +1308,75 @@ extension AppController {
         }
     }
 
+    private func installOrUpdateTabCleanupUndoItems(in menu: NSMenu) {
+        for item in menu.items {
+            switch item.tag {
+            case CommandWrapper.IDC_CONTENT_CONTEXT_UNDO.rawValue:
+                item.action = #selector(undoTabCleanupOrEdit(_:))
+                item.target = self
+            case CommandWrapper.IDC_CONTENT_CONTEXT_REDO.rawValue:
+                item.action = #selector(redoTabCleanupOrEdit(_:))
+                item.target = self
+            default: break
+            }
+        }
+    }
+
+    @MainActor
+    static func tabCleanupHistoryState(redo: Bool) -> BrowserState? {
+        // Native editors keep their own Undo history, including the omnibox.
+        guard ApplicationState.shared.canUseBrowser,
+              !SpaceSessionControllersManager.shared.isGuestTransitionInteractionBlocked,
+              let window = NSApp.keyWindow,
+              !(window.firstResponder is NSTextView),
+              (window.firstResponder as? NSView)?.inputContext == nil,
+              let session = SpaceSessionControllersManager.shared.findControllerWith(window: window) else { return nil }
+        let state = session.browserState
+        guard !state.isKioskWindow,
+              !AgentSpaceManager.shared.isAgentOwned(state.spaceId),
+              redo ? state.clearTabsUndoManager.canRedo : state.clearTabsUndoManager.canUndo else { return nil }
+        return state
+    }
+
+    @MainActor
+    @objc func undoTabCleanupOrEdit(_ sender: Any?) {
+        if let state = Self.tabCleanupHistoryState(redo: false) {
+            guard !state.isRestoringClearedTabs else { return }
+            state.clearTabsUndoManager.undo()
+        } else {
+            NSApp.sendAction(NSSelectorFromString("undo:"), to: nil, from: sender)
+        }
+    }
+
+    @MainActor
+    @objc func redoTabCleanupOrEdit(_ sender: Any?) {
+        if let state = Self.tabCleanupHistoryState(redo: true) {
+            guard !state.isRestoringClearedTabs else { return }
+            state.clearTabsUndoManager.redo()
+        } else {
+            NSApp.sendAction(NSSelectorFromString("redo:"), to: nil, from: sender)
+        }
+    }
+
+    @MainActor
+    private func validateTabCleanupUndoItem(_ item: NSValidatedUserInterfaceItem, redo: Bool) -> Bool {
+        if let state = Self.tabCleanupHistoryState(redo: redo) {
+            (item as? NSMenuItem)?.title = redo ? state.clearTabsUndoManager.redoMenuItemTitle : state.clearTabsUndoManager.undoMenuItemTitle
+            return !state.isRestoringClearedTabs
+        }
+        let action = NSSelectorFromString(redo ? "redo:" : "undo:")
+        let title = redo
+            ? NSLocalizedString("tabs.clearAll.redoFallback", value: "Redo", comment: "Edit menu - Redo title when there is no tab cleanup to redo")
+            : NSLocalizedString("tabs.clearAll.undoFallback", value: "Undo", comment: "Edit menu - Undo title when there is no tab cleanup to undo")
+        (item as? NSMenuItem)?.title = title
+        let forwarded = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        forwarded.tag = item.tag
+        guard let target = NSApp.target(forAction: action) else { return false }
+        if let validator = target as? NSMenuItemValidation { return validator.validateMenuItem(forwarded) }
+        if let validator = target as? NSUserInterfaceValidations { return validator.validateUserInterfaceItem(forwarded) }
+        return true
+    }
+
     private func installOrUpdateCopyURLMenuItem(in menu: NSMenu) {
         menu.items.removeAll { $0.tag == CommandWrapper.PHI_COPY_URL.rawValue }
 
@@ -1461,6 +1541,12 @@ extension AppController {
     @objc func capturePageAreaFromMenu(_ sender: Any?) {
         guard let state = SpaceSessionControllersManager.shared.getActiveWindowState() else { return }
         PageScreenshotService.shared.capture(in: state, area: true)
+    }
+
+    @MainActor
+    @objc func clearAllTabsFromMenu(_ sender: Any?) {
+        guard ApplicationState.shared.canUseBrowser else { return }
+        SpaceSessionControllersManager.shared.getActiveWindowState()?.clearAllTabs()
     }
 
     @MainActor
@@ -3175,6 +3261,11 @@ extension AppController {
     // MARK: - Menu Validation
 
     @objc func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(undoTabCleanupOrEdit(_:)) || item.action == #selector(redoTabCleanupOrEdit(_:)) {
+            return MainActor.assumeIsolated {
+                validateTabCleanupUndoItem(item, redo: item.action == #selector(redoTabCleanupOrEdit(_:)))
+            }
+        }
         if item.action == #selector(toggleSidebar(_:))
             || item.action == #selector(toggleChatbar(_:)) {
             guard let currentWindow = NSApp.keyWindow ?? NSApp.mainWindow,
@@ -3570,6 +3661,11 @@ extension AppController {
                       let state = SpaceSessionControllersManager.shared.getActiveWindowState() else { return false }
                 return PageScreenshotService.shared.canCapture(in: state, area: item.action == #selector(capturePageAreaFromMenu(_:)))
             }
+        }
+        if item.action == #selector(clearAllTabsFromMenu(_:)) {
+            guard ApplicationState.shared.canUseBrowser,
+                  let state = SpaceSessionControllersManager.shared.getActiveWindowState() else { return false }
+            return MainActor.assumeIsolated { state.canClearAllTabs }
         }
         if item.action == #selector(splitWithNewTabFromMenu(_:)) {
             guard ApplicationState.shared.canUseBrowser,

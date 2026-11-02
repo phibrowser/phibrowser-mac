@@ -246,6 +246,7 @@ extension Shortcuts {
                         .IDC_FOCUS_LOCATION,
                         .IDC_CLOSE_WINDOW,
                         .IDC_CLOSE_TAB,
+                        .PHI_CLEAR_ALL_TABS,
                         .PHI_CAPTURE_FULL_PAGE,
                         .PHI_CAPTURE_AREA,
                         .PHI_SHARE_PAGE,
@@ -685,7 +686,7 @@ extension CommandWrapper {
         if spaceSelectionIndex != nil { return true }
         switch self {
         case .IDC_OPEN_FILE, .IDC_SHOW_BOOKMARK_BAR, .PHI_TOGGLE_SIDEBAR,
-             .PHI_FARRINGDON_TOGGLE, .PHI_SPLIT_WITH_NEW_TAB,
+             .PHI_FARRINGDON_TOGGLE, .PHI_SPLIT_WITH_NEW_TAB, .PHI_CLEAR_ALL_TABS,
              .IDC_TAB_SEARCH, .IDC_DUPLICATE_TAB, .IDC_WINDOW_PIN_TAB,
              .IDC_DEV_TOOLS, .IDC_DEV_TOOLS_INSPECT, .IDC_DEV_TOOLS_CONSOLE,
              .PHI_TOGGLE_CHATBAR, .PHI_NEW_CONVERSATION,
@@ -751,6 +752,7 @@ extension CommandWrapper {
         .PHI_TAB_SWITCHER_FORWARD: .init(title: "Show Tab Switcher", keywords: ["tab switcher", "forward"]),
         .PHI_TAB_SWITCHER_BACKWARD: .init(title: "Show Tab Switcher(Reverse)", keywords: ["tab switcher", "backward"]),
         .PHI_NEW_CONVERSATION: .init(title: "New Conversation", keywords: ["new conversation", "new chat", "ai", "chat"]),
+        .PHI_CLEAR_ALL_TABS: .init(title: "Clear All Tabs", keywords: ["clear tabs", "close background tabs", "clean tabs"]),
         .PHI_FARRINGDON_TOGGLE: .init(title: "Organize Tabs with AI", keywords: ["organize tabs", "tidy tabs", "group tabs", "clean", "farringdon", "ai"]),
         .PHI_COPY_URL: .init(title: "Copy URL", keywords: ["copy url", "copy link", "url"]),
         .PHI_TOGGLE_READER: .init(title: "Toggle Reader View", keywords: ["reader", "reader view", "reading", "article", "distraction free"]),

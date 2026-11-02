@@ -93661,6 +93661,18 @@
         }
       }
     },
+    "settings.shortcuts.description.clearAllTabs" : {
+      "comment" : "Shortcuts settings - Description of clearing background tabs",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close ordinary tabs that are not currently displayed. Supports Undo and Redo."
+          }
+        }
+      }
+    },
     "settings.shortcuts.description.clearBrowsingData" : {
       "comment" : "Shortcuts settings - Description of the clearBrowsingData command",
       "extractionState" : "manual",
@@ -108690,7 +108702,7 @@
       }
     },
     "sidebar.newTabRow.aiOrganizeTooltip" : {
-      "comment" : "side bar new tab row - organize tabs button tooltip",
+      "comment" : "Sidebar separator - Organize tabs button tooltip",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -109225,6 +109237,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜尋分頁"
+          }
+        }
+      }
+    },
+    "sidebar.separator.clearTabsTooltip" : {
+      "comment" : "Sidebar separator - Close background ordinary tabs, keeping the currently displayed tab or split",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear unselected tabs"
           }
         }
       }
@@ -130601,6 +130625,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在等待載入設定檔"
+          }
+        }
+      }
+    },
+    "tabs.clearAll.redoFallback" : {
+      "comment" : "Edit menu - Redo title when there is no tab cleanup to redo",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redo"
+          }
+        }
+      }
+    },
+    "tabs.clearAll.title" : {
+      "comment" : "Tab cleanup command - Close ordinary tabs that are not currently displayed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear All Tabs"
+          }
+        }
+      }
+    },
+    "tabs.clearAll.undoFallback" : {
+      "comment" : "Edit menu - Undo title when there is no tab cleanup to undo",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undo"
           }
         }
       }

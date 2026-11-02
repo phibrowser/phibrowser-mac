@@ -2,6 +2,7 @@
 // Use of this source code is governed by an Apache license in the LICENSE file.
 
 import AppKit
+import Combine
 import Lottie
 import XCTest
 @testable import Phi
@@ -22,14 +23,32 @@ private final class ClearTabsRecordingState: BrowserState {
         }
     }
 
-    override func createTab(_ url: String?, customGuid: String? = nil, focusAfterCreate: Bool = true) {
+    override func restoreTabs(order: [[AnyHashable: Any]],
+                              groups: [[AnyHashable: Any]],
+                              splits: [[AnyHashable: Any]]) -> [String: Int] {
         MainActor.assumeIsolated {
-            nextID += 1
-            let tab = Tab(guid: nextID, url: url, isActive: false, index: tabs.count, customGuid: customGuid)
-            let complete = consumeClearTabsRestoreMarker(tab)
-            tabs.append(tab)
+            var restored: [String: Int] = [:]
+            var previous: Int?
+            for (offset, entry) in order.enumerated() {
+                if let id = entry["tabId"] as? Int {
+                    previous = id
+                    continue
+                }
+                guard let key = entry["key"] as? String else { continue }
+                nextID += 1
+                let tab = Tab(guid: nextID, url: entry["url"] as? String, isActive: false, index: 0,
+                              title: entry["title"] as? String ?? "")
+                let next = order[(offset + 1)...].lazy.compactMap { $0["tabId"] as? Int }.first
+                let index = previous.flatMap { id in tabs.firstIndex { $0.guid == id }.map { $0 + 1 } }
+                    ?? next.flatMap { id in tabs.firstIndex { $0.guid == id } }
+                    ?? tabs.count
+                tabs.insert(tab, at: index)
+                restored[key] = tab.guid
+                previous = tab.guid
+            }
             updateNormalTabs()
-            complete?()
+            reorderTabs(Dictionary(uniqueKeysWithValues: tabs.enumerated().map { ($1.guid, $0) }))
+            return restored
         }
     }
 }
@@ -431,7 +450,7 @@ extension ClearTabsTests {
                 try await Task.sleep(for: .milliseconds(25))
             }
             XCTAssertTrue(condition(), "Chromium did not settle: tabs=\(live.normalTabs.map(\.guid)), focus=\(String(describing: live.focusingTab?.guid)), canUndo=\(live.clearTabsUndoManager.canUndo), restoring=\(live.isRestoringClearedTabs), groups=\(live.groups.count), splits=\(live.splits.count)")
-            if !condition() { throw BrowserState.ClearTabsRestoreError.timedOut }
+            if !condition() { throw XCTestError(.timeoutWhileWaiting) }
         }
         for index in 0..<5 {
             live.createTab("data:text/html,<title>Cleanup\(index)</title>", focusAfterCreate: index == 0)
@@ -455,9 +474,17 @@ extension ClearTabsTests {
         live.clearAllTabs()
         try await waitFor { live.normalTabs.count == 1 && live.clearTabsUndoManager.canUndo }
         for _ in 0..<2 {
+            let cleared = live.normalTabs.map(\.guid)
+            var published: [[Int]] = []
+            let recording = live.$normalTabs.sink { published.append($0.map(\.guid)) }
             live.clearTabsUndoManager.undo()
             try await waitFor { !live.isRestoringClearedTabs && live.normalTabs.count == 5 && live.splits.count == 1 }
             try await waitFor { live.groups.values.contains { $0.title == "Research" && $0.isCollapsed == collapsed } }
+            recording.cancel()
+            let restoredOrder = live.normalTabs.map(\.guid)
+            XCTAssertTrue(published.allSatisfy { $0 == cleared || $0 == restoredOrder }, "Intermediate orders: \(published)")
+            let restoredTabs = live.normalTabs.filter { $0.guid != original[foregroundIndex].guid }
+            try await waitFor { restoredTabs.allSatisfy(\.isUnloaded) }
             XCTAssertEqual(live.normalTabs.map(\.url), urls)
             let restoredGroup = try XCTUnwrap(live.groups.values.first { $0.title == "Research" })
             XCTAssertEqual(restoredGroup.color, .blue)

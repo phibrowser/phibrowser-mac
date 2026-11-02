@@ -1129,6 +1129,19 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)duplicateTabsWithWindowId:(int64_t)windowId
                            tabIds:(NSArray<NSNumber *> *)tabIds;
 
+/// Restores pages as unloaded background tabs in one batch, delivered as a
+/// single tabsInsertedSnapshot. `order` is the desired order: each entry is
+/// either @{@"tabId"} for a live anchor tab or @{@"key", @"url", @"title"}
+/// for a page to restore. `groups` entries hold @"keys" plus @"tokenHex" to
+/// rejoin a live group, or @"title", @"color" and @"collapsed" to create one.
+/// `splits` entries hold @"primaryKey", @"secondaryKey", @"layout" and
+/// @"ratio". Returns the new tab id for each restored key.
+- (NSDictionary<NSString *, NSNumber *> *)
+    restoreTabsWithWindowId:(int64_t)windowId
+                      order:(NSArray<NSDictionary *> *)order
+                     groups:(NSArray<NSDictionary *> *)groups
+                     splits:(NSArray<NSDictionary *> *)splits;
+
 /// Keeps the AI Chat panel record of the page tab `tabId` for undo close
 /// (chromium ADR 0017). Chromium never reads it: it writes it into the tab's
 /// recently-closed entry and hands it back as `aiChatPanelRecord` in the

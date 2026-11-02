@@ -22,9 +22,7 @@ final class ClearedTabsBatch {
     let order: [Int]
     let groups: [Group]
     let splits: [SplitGroup]
-    var liveIDs: [Int: Int]
     var closed = Set<Int>()
-    var restored = Set<Int>()
     var registered = false
 
     init(tabs: [Tab], state: BrowserState) {
@@ -36,7 +34,6 @@ final class ClearedTabsBatch {
         }
         let ids = Set(tabs.map(\.guid))
         splits = state.splits.filter { ids.contains($0.primaryTabId) && ids.contains($0.secondaryTabId) }
-        liveIDs = Dictionary(uniqueKeysWithValues: tabs.map { ($0.guid, $0.guid) })
     }
 }
 
@@ -78,10 +75,9 @@ extension BrowserState {
 
     func recordClearedTabs(_ removedIDs: Set<Int>) {
         for id in removedIDs {
-            guard let batch = pendingClearTabClosures.removeValue(forKey: id),
-                  let original = batch.liveIDs.first(where: { $0.value == id })?.key else { continue }
+            guard let batch = pendingClearTabClosures.removeValue(forKey: id) else { continue }
             let isFirstRemoval = batch.closed.isEmpty
-            batch.closed.insert(original)
+            batch.closed.insert(id)
             if !batch.registered {
                 batch.registered = true
                 registerClearTabsUndo(batch)
@@ -101,112 +97,39 @@ extension BrowserState {
         clearTabsUndoManager.endUndoGrouping()
     }
 
+    /// Chromium inserts every page, group and split in one batch and reports the
+    /// final strip once, so the sidebar never passes through intermediate orders.
     private func undoClearedTabs(_ batch: ClearedTabsBatch) {
         clearTabsUndoManager.registerUndo(withTarget: self) { state in
             MainActor.assumeIsolated { state.clearAllTabs() }
         }
         clearTabsUndoManager.setActionName(Self.clearTabsActionTitle)
         pendingClearTabClosures = pendingClearTabClosures.filter { $0.value !== batch }
+
+        let pages = Dictionary(uniqueKeysWithValues: batch.pages.filter { batch.closed.contains($0.id) }.map { ($0.id, $0) })
+        guard !pages.isEmpty else { return }
+        let order: [[AnyHashable: Any]] = batch.order.compactMap { id in
+            if let page = pages[id] { return ["key": String(id), "url": page.url, "title": page.title] }
+            return resolveTab(id) == nil ? nil : ["tabId": id]
+        }
+        let groups: [[AnyHashable: Any]] = batch.groups.compactMap { group in
+            let keys = batch.pages.filter { $0.group == group.token && pages[$0.id] != nil }.map { String($0.id) }
+            guard !keys.isEmpty else { return nil }
+            if self.groups[group.token] != nil { return ["keys": keys, "tokenHex": group.token] }
+            return ["keys": keys, "title": group.title, "color": group.color, "collapsed": group.collapsed]
+        }
+        let splits: [[AnyHashable: Any]] = batch.splits.compactMap { split in
+            guard pages[split.primaryTabId] != nil, pages[split.secondaryTabId] != nil else { return nil }
+            return ["primaryKey": String(split.primaryTabId), "secondaryKey": String(split.secondaryTabId),
+                    "layout": split.layout.rawValue, "ratio": split.ratio]
+        }
+
         isRestoringClearedTabs = true
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.isRestoringClearedTabs = false }
-            let focusedID = self.focusingTab?.guid
-            var collapsedGroups: [String: Bool] = [:]
-            do {
-                for page in batch.pages where batch.closed.contains(page.id) {
-                    let tab = try await self.restoreClearedPage(page)
-                    batch.liveIDs[page.id] = tab.guid
-                    batch.closed.remove(page.id)
-                    batch.restored.insert(page.id)
-                }
-                collapsedGroups = self.restoreClearedTabStructure(batch)
-            } catch {
-                AppLogWarn("[ClearTabs] Restore interrupted: \(error)")
-            }
-            if let focusedID, let focused = self.resolveTab(focusedID) {
-                focused.webContentWrapper?.setAsActiveTab()
-                self.focuseTab(focused)
-            }
-            // Creating a split activates its pane and expands its group. Apply
-            // the saved collapsed state only after returning to the kept tab.
-            for (token, collapsed) in collapsedGroups {
-                ChromiumLauncher.sharedInstance().bridge?.updateTabGroupCollapsed(
-                    withWindowId: Int64(self.windowId), tokenHex: token, isCollapsed: collapsed)
-            }
+        let restored = restoreTabs(order: order, groups: groups, splits: splits)
+        if restored.count < pages.count {
+            AppLogWarn("[ClearTabs] Restored \(restored.count) of \(pages.count) tabs")
         }
-    }
-
-    enum ClearTabsRestoreError: Error { case unavailable, timedOut }
-    static let clearTabsRestorePrefix = "clear-tabs-pending:"
-
-    /// Called before persistent binding resolution; late arrivals are closed.
-    func consumeClearTabsRestoreMarker(_ tab: Tab) -> (() -> Void)? {
-        guard let marker = tab.guidInLocalDB, marker.hasPrefix(Self.clearTabsRestorePrefix) else { return nil }
-        tab.guidInLocalDB = nil
-        tab.webContentWrapper?.updateTabCustomValue("")
-        let completion = pendingClearTabRestores.removeValue(forKey: marker)
-        return {
-            DispatchQueue.main.async {
-                if let completion { completion(tab) }
-                else { tab.webContentWrapper?.close() }
-            }
-        }
-    }
-
-    func restoreClearedPage(_ page: ClearedTabsBatch.Page) async throws -> Tab {
-        guard SpaceSessionControllersManager.shared.getBrowserState(for: windowId) === self,
-              !AgentSpaceManager.shared.isAgentOwned(spaceId) else { throw ClearTabsRestoreError.unavailable }
-        let marker = Self.clearTabsRestorePrefix + UUID().uuidString
-        return try await withCheckedThrowingContinuation { continuation in
-            pendingClearTabRestores[marker] = { tab in
-                tab.title = page.title
-                continuation.resume(returning: tab)
-            }
-            createTab(page.url, customGuid: marker, focusAfterCreate: false)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
-                guard self?.pendingClearTabRestores.removeValue(forKey: marker) != nil else { return }
-                continuation.resume(throwing: ClearTabsRestoreError.timedOut)
-            }
-        }
-    }
-
-    func restoreClearedTabStructure(_ batch: ClearedTabsBatch) -> [String: Bool] {
-        guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return [:] }
-        var collapsedGroups: [String: Bool] = [:]
-        // Restore order before joining groups or splits, whose members move as a unit.
-        let order = batch.order.compactMap { original -> Int? in
-            let id = batch.liveIDs[original] ?? original
-            return resolveTab(id) == nil ? nil : id
-        }
-        for (index, id) in order.enumerated() {
-            guard let current = normalTabs.firstIndex(where: { $0.guid == id }), current != index else { continue }
-            moveNormalTabLocally(from: current, to: current < index ? index + 1 : index)
-        }
-        for group in batch.groups {
-            let members = batch.pages.filter { $0.group == group.token && batch.restored.contains($0.id) }
-                .compactMap { batch.liveIDs[$0.id] }.filter { resolveTab($0) != nil }
-            guard !members.isEmpty else { continue }
-            let token: String
-            if groups[group.token] != nil {
-                token = group.token
-                bridge.addTabsToGroup(withWindowId: Int64(windowId), tabIds: members.map(NSNumber.init(value:)), tokenHex: token)
-            } else {
-                token = bridge.createGroupFromTabs(withWindowId: Int64(windowId), tabIds: members.map(NSNumber.init(value:)),
-                                                   title: group.title, color: group.color)
-            }
-            guard !token.isEmpty else { continue }
-            for id in members { applyOptimisticGroupMembership(tabId: id, newToken: token) }
-            collapsedGroups[token] = group.collapsed
-        }
-        for split in batch.splits {
-            guard batch.restored.contains(split.primaryTabId) || batch.restored.contains(split.secondaryTabId),
-                  let left = batch.liveIDs[split.primaryTabId], let right = batch.liveIDs[split.secondaryTabId],
-                  resolveTab(left) != nil, resolveTab(right) != nil,
-                  splitGroup(forTabId: left) == nil, splitGroup(forTabId: right) == nil,
-                  let id = createSplit(leftTabId: left, rightTabId: right, layout: split.layout) else { continue }
-            updateSplitRatio(id, ratio: split.ratio)
-        }
-        return collapsedGroups
+        // The inserted-tabs snapshot reaches this state on a later main-actor turn.
+        Task { @MainActor [weak self] in self?.isRestoringClearedTabs = false }
     }
 }

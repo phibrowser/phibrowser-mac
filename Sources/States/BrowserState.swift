@@ -337,7 +337,6 @@ class BrowserState {
         return manager
     }()
     var pendingClearTabClosures: [Int: ClearedTabsBatch] = [:]
-    var pendingClearTabRestores: [String: (Tab) -> Void] = [:]
     @Published var isRestoringClearedTabs = false
 
     let travelBackTabCreated = PassthroughSubject<(marker: String, tab: Tab), Never>()
@@ -3404,8 +3403,6 @@ class BrowserState {
             return  // Don't add to regular tabs
         }
 
-        let clearTabsCompletion = MainActor.assumeIsolated { consumeClearTabsRestoreMarker(tab) }
-        defer { clearTabsCompletion?() }
         let travelBackMarker = MainActor.assumeIsolated { consumeTravelBackTabMarker(tab) }
         defer {
             if let travelBackMarker {
@@ -6045,6 +6042,21 @@ class BrowserState {
             bridge.closeTabs(withWindowId: Int64(windowId),
                              tabIds: tabsToClose.map { NSNumber(value: $0.guid) })
         }
+    }
+
+    /// Restores pages as unloaded background tabs in one Chromium batch.
+    /// See `restoreTabs(withWindowId:order:groups:splits:)` for the entry keys.
+    /// Returns the new tab id for each restored key.
+    func restoreTabs(order: [[AnyHashable: Any]],
+                     groups: [[AnyHashable: Any]],
+                     splits: [[AnyHashable: Any]]) -> [String: Int] {
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return [:] }
+        guard bridge.responds(to: #selector(PhiChromiumBridgeProtocol.restoreTabs(withWindowId:order:groups:splits:))) else {
+            AppLogWarn("[TabBatch] Restore requires a framework with batch tab restore")
+            return [:]
+        }
+        return bridge.restoreTabs(withWindowId: Int64(windowId), order: order, groups: groups, splits: splits)
+            .mapValues(\.intValue)
     }
 
     // =========================================================================

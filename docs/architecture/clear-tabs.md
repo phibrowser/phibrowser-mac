@@ -20,14 +20,18 @@ UndoManager is redoing, before asynchronous removal events arrive. Each BrowserS
 owns its cleanup UndoManager; the history is not shared between windows or Spaces.
 
 Undo reopens the recorded URLs and restores normal-tab order, group title/color/
-collapsed state, and split orientation/ratio. It does not restore page navigation
-history, form state, or the live page process. Temporary creation markers correlate
-restored tabs with their record, so duplicate URLs cannot resolve to the wrong tab.
+collapsed state, and split orientation/ratio. It sends the whole record to
+Chromium in one `restoreTabs` call: Chromium inserts each page as an unloaded
+background tab after its recorded neighbor, rebuilds groups and splits without
+activating any tab, and reports the result as a single inserted-tabs snapshot.
+The sidebar therefore goes straight from the cleared order to the restored one.
+It does not restore page navigation history, form state, or the live page process;
+pages load when first shown.
 Redo performs a fresh cleanup of the current background ordinary tabs, including
 tabs opened since Undo. It preserves the current foreground tab, both members of
 its split, and visible Peek, and snapshots the current state for the next Undo.
 
 Edit > Undo/Redo and their shortcuts use cleanup history in the focused browser
 window. Native text editors and views with a text input context retain their own
-editing commands. While cleanup restoration is in flight, another cleanup or
-cleanup Undo/Redo cannot overlap it.
+editing commands. Until the restored snapshot reaches the window, another cleanup
+or cleanup Undo/Redo cannot overlap it.

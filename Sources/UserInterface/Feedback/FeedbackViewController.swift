@@ -129,6 +129,7 @@ class FeedbackViewController: NSViewController, NSWindowDelegate {
 
         // Snapshot before awaiting logs, while the feedback window still has focus.
         let inputSourceMetadata = FeedbackOutbox.currentInputSourceMetadata()
+        let syncStatusMetadata = FeedbackOutbox.currentSyncStatusMetadata()
         refreshFeedbackContext()
         viewModel.isSubmitting = true
 
@@ -150,7 +151,8 @@ class FeedbackViewController: NSViewController, NSWindowDelegate {
                 }
                 try await viewModel.enqueueFeedback(
                     chromiumSystemLogsText: chromiumSystemLogsText,
-                    inputSourceMetadata: inputSourceMetadata
+                    inputSourceMetadata: inputSourceMetadata,
+                    syncStatusMetadata: syncStatusMetadata
                 )
                 closeWindow()
             } catch {

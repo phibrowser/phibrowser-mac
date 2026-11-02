@@ -661,6 +661,7 @@
 		C1D7A5E0B3F24E6A9C0D1F12 /* SyncPairingLocalResetMarker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D7A5E0B3F24E6A9C0D1F11 /* SyncPairingLocalResetMarker.swift */; };
 		C1D7A5E0B3F24E6A9C0D1F22 /* PhiLocalDataReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D7A5E0B3F24E6A9C0D1F21 /* PhiLocalDataReset.swift */; };
 		DB90EAB144A61C14E0121202 /* SyncStatusSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121201 /* SyncStatusSnapshot.swift */; };
+		DB90EAB144A61C14E0121702 /* SyncAttentionReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121701 /* SyncAttentionReporter.swift */; };
 		DB90EAB144A61C14E0121302 /* ChromiumSyncStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121301 /* ChromiumSyncStatus.swift */; };
 		DB90EAB144A61C14E0121402 /* SyncProfileMappingPause.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121401 /* SyncProfileMappingPause.swift */; };
 		DB90EAB144A61C14E0121502 /* SyncProfileLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB90EAB144A61C14E0121501 /* SyncProfileLoader.swift */; };
@@ -1504,6 +1505,7 @@
 		C1D7A5E0B3F24E6A9C0D1F11 /* SyncPairingLocalResetMarker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPairingLocalResetMarker.swift; sourceTree = "<group>"; };
 		C1D7A5E0B3F24E6A9C0D1F21 /* PhiLocalDataReset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiLocalDataReset.swift; sourceTree = "<group>"; };
 		DB90EAB144A61C14E0121201 /* SyncStatusSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SyncStatusSnapshot.swift; path = ../SyncStatusSnapshot.swift; sourceTree = "<group>"; };
+		DB90EAB144A61C14E0121701 /* SyncAttentionReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SyncAttentionReporter.swift; path = ../SyncAttentionReporter.swift; sourceTree = "<group>"; };
 		DB90EAB144A61C14E0121301 /* ChromiumSyncStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChromiumSyncStatus.swift; path = ../../ChromiumBridge/ChromiumSyncStatus.swift; sourceTree = "<group>"; };
 		DB90EAB144A61C14E0121401 /* SyncProfileMappingPause.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncProfileMappingPause.swift; sourceTree = "<group>"; };
 		DB90EAB144A61C14E0121501 /* SyncProfileLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SyncProfileLoader.swift; path = ../SyncProfileLoader.swift; sourceTree = "<group>"; };
@@ -1643,6 +1645,7 @@
 				F1C7683ECEB27E49DFDEFC3C /* SpaceOverwriteDiff.swift */,
 				DB90EAB144A61C14E0121201 /* SyncStatusSnapshot.swift */,
 				69A9FD7809B0AD933D8FE39B /* SyncHelper.swift */,
+				DB90EAB144A61C14E0121701 /* SyncAttentionReporter.swift */,
 				DB90EAB144A61C14E0121501 /* SyncProfileLoader.swift */,
 				DB90EAB144A61C14E0121601 /* SyncProfileMappingPauseReconciler.swift */,
 				DB90EAB144A61C14E0121301 /* ChromiumSyncStatus.swift */,
@@ -4209,6 +4212,7 @@
 				DE5AF6336549677CE099C4B7 /* SpacePairingModel.swift in Sources */,
 				D37B98E344D6E556D8905064 /* SpaceOverwriteDiff.swift in Sources */,
 				DB90EAB144A61C14E0121202 /* SyncStatusSnapshot.swift in Sources */,
+				DB90EAB144A61C14E0121702 /* SyncAttentionReporter.swift in Sources */,
 				0CD31E694E1BC7C813824EFE /* SyncHelper.swift in Sources */,
 				DB90EAB144A61C14E0121502 /* SyncProfileLoader.swift in Sources */,
 				DB90EAB144A61C14E0121602 /* SyncProfileMappingPauseReconciler.swift in Sources */,

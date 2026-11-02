@@ -130,6 +130,9 @@ VERBATIM = [
         (r"^extension PhiOwnedItemTable \{", True),
         (r"^struct PhiOwnedItemCursor\b", True),
     ]),
+    ("Sources/Sync/SyncStatusSnapshot.swift", [
+        (r"^enum SyncHeldReason\b", True),
+    ]),
     ("Sources/LocalStorage/LocalStore+PinnedTabScope.swift", [
         (r"^enum PinnedTabScope\b", True),
     ]),

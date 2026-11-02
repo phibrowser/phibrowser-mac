@@ -14,7 +14,7 @@ struct SyncContextSnapshot: Equatable, Sendable {
 }
 
 /// Phi data kinds the native engine syncs. Profiles join once they have their own numbers.
-enum SyncKind: String, CaseIterable, Sendable {
+enum SyncKind: String, CaseIterable, Codable, Sendable {
     case settings, spaces, bookmarks, pinnedTabs, urlRules
 
     /// Owned-kind registration labels in `PhiSyncEngine`.
@@ -37,6 +37,37 @@ struct SyncKindStatus: Equatable, Sendable {
     var activityAt: Date?
     var pending = 0
     var held = 0
+    /// `held` split by why each item waits; zero entries are left out. Empty when the kind has no
+    /// held items or cannot say why (the counts then sum to less than `held`). Enum keys only.
+    var heldByReason: [SyncHeldReason: Int] = [:]
+}
+
+/// Why an inbound item is held (parked) instead of landed. Persisted on the owned-item cursor
+/// (`PhiOwnedItemCursor.parkReason`) and counted per kind in `SyncKindStatus.heldByReason`.
+/// Raw values are stable: they appear in logs and telemetry.
+enum SyncHeldReason: String, Codable, CaseIterable, Sendable {
+    /// The owner is a Profile this Mac has not mapped.
+    case unmappedProfileOwner
+    /// The owner is a Space (or, for URL rules, a target Space) this Mac has not mapped.
+    case unmappedSpaceOwner
+    /// The owner Space is mapped but hidden, purged or deleted here.
+    case ineligibleSpaceOwner
+    /// The owner already holds a row with the same lineage, so landing would duplicate it.
+    case lineageExists
+    /// The local write failed (import lock or another store error), or its post-check did not find the row.
+    case landingFailed
+    /// Local rows could not be read, or a claim write-back failed, so the payload was parked as is.
+    case storeError
+    /// Any other parking: a parent that is itself held, a scope migration, a merge partner at work,
+    /// a remote tombstone or split partner wait, and cursors parked before reasons were recorded.
+    case unknown
+
+    /// Log key form, for example `unmapped_profile_owner`.
+    var snakeCase: String {
+        rawValue.reduce(into: "") { out, character in
+            if character.isUppercase { out += "_" + character.lowercased() } else { out.append(character) }
+        }
+    }
 }
 
 /// Ordered by precedence: when one round hits several, the earliest case wins.
@@ -107,6 +138,7 @@ struct SyncNativeDetail: Equatable, Sendable {
             }
             status.pending = counts.pending
             status.held = counts.held
+            status.heldByReason = counts.heldByReason
             merged.kinds[kind] = status
         }
         if let problem = round.problem {

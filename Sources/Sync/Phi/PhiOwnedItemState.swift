@@ -95,6 +95,11 @@ struct PhiOwnedItemCursor: Codable, Equatable {
     /// the cursor lands, is deleted, or is parked for any other reason. Optional so existing cursor files
     /// decode unchanged; nil means false.
     var parkedForScope: Bool?
+    /// Why pendingApply is parked, for status `heldByReason` and telemetry. Set wherever pendingApply is
+    /// set for a park and cleared wherever pendingApply is cleared. Dormant copies (parkedForScope) keep
+    /// theirs but stay out of status. Optional so existing cursor files decode unchanged; nil on a parked
+    /// cursor (written before this field) counts as `.unknown`.
+    var parkReason: SyncHeldReason?
     /// Remote tombstone recognized by hash but not landed due to import lock. It has no ciphertext for
     /// pendingApply, and the shared marker already passed its page, so retain it explicitly like
     /// PhiSpaceCursor.pendingTombstone.

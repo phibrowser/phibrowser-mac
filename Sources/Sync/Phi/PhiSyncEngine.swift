@@ -314,6 +314,8 @@ struct OwnedLandingOutcome {
     /// Subset of parked: pins whose owner resolves locally but belongs to another pinned-tab scope.
     /// They are dormant copies, replanned every round but excluded from status held/pending counts.
     var parkedForScope: Set<String> = []
+    /// Why each parked identity is parked; an identity in `parked` without an entry is unknown.
+    var parkReasons: [String: SyncHeldReason] = [:]
     /// Invalid batch plans, such as folderNotEmpty, rowAlreadyMapped or incompatible physical row
     /// types. Refuse without parking or creating cursors.
     var refused: Set<String> = []
@@ -1801,13 +1803,20 @@ actor PhiSyncEngine {
         // attention always has a held count or a category.
         if spaceStore != nil {
             // The Space table is read every round; a shut gate only means no activity counts.
+            let heldSpaces = spaces.cursors.values.filter {
+                $0.pendingApply != nil || $0.heldProfileUuid != nil || $0.pendingTombstone
+            }
+            // A Space held for its Profile waits on a Profile mapping; the other Space parks carry
+            // no recorded reason.
+            var spaceReasons: [SyncHeldReason: Int] = [:]
+            for cursor in heldSpaces {
+                spaceReasons[cursor.heldProfileUuid != nil ? .unmappedProfileOwner : .unknown, default: 0] += 1
+            }
             detail.kinds[.spaces] = SyncKindStatus(
                 received: spaceSectionEnabled ? spaceCounters.applied : 0,
                 sent: spaceSectionEnabled ? spaceCounters.pushed + spaceCounters.tombstones : 0,
                 pending: spaces.cursors.values.filter { $0.pendingProjection != nil || $0.pendingDelete }.count,
-                held: spaces.cursors.values.filter {
-                    $0.pendingApply != nil || $0.heldProfileUuid != nil || $0.pendingTombstone
-                }.count)
+                held: heldSpaces.count, heldByReason: spaceReasons)
         }
         // Owned kinds quarantine their unreadable tags in the Space table too, so no kind.
         if !spaces.unreadableTagHashes.isEmpty { detail.note(.unreadableRemoteData) }
@@ -1822,20 +1831,31 @@ actor PhiSyncEngine {
                 // last known count rather than report them as sent.
                 let pending = counters.publicationCounted ? counters.liveUnpublished + deletes
                     : max(statusState.snapshot.detail?.kinds[kind]?.pending ?? 0, deletes)
+                let heldByReason = Self.ownedHeldByReason(table)
                 detail.kinds[kind] = SyncKindStatus(received: counters.applied,
                     sent: counters.pushed + counters.tombstones, pending: pending,
                     // A pin parked only because its owner shape belongs to another pinned-tab
                     // scope is a dormant copy, not held work.
-                    held: table.cursors.values.filter {
-                        ($0.pendingApply != nil && $0.parkedForScope != true) || $0.pendingTombstone
-                            || $0.pendingPartnerLineage != nil
-                    }.count)
+                    held: heldByReason.values.reduce(0, +), heldByReason: heldByReason)
                 if counters.unreadable > 0 { detail.note(.unreadableRemoteData, kind: kind) }
             }
         }
         // Every outbound failure has a category, even one reported without an error value.
         if roundOutboundFailed, detail.problem == nil { detail.note(.serverError) }
         return detail
+    }
+
+    /// Held owned items by reason, under the held conditions `finishStatusRound` treats as pending
+    /// inbound. A parked payload counts under its cursor's parkReason; a remote tombstone or split
+    /// partner wait without one counts as unknown. Dormant copies are left out.
+    static func ownedHeldByReason(_ table: PhiOwnedItemTable) -> [SyncHeldReason: Int] {
+        var counts: [SyncHeldReason: Int] = [:]
+        for cursor in table.cursors.values {
+            let parked = cursor.pendingApply != nil && cursor.parkedForScope != true
+            guard parked || cursor.pendingTombstone || cursor.pendingPartnerLineage != nil else { continue }
+            counts[parked ? cursor.parkReason ?? .unknown : .unknown, default: 0] += 1
+        }
+        return counts
     }
 
     private func noteStatusError(_ error: Error) {
@@ -5365,6 +5385,7 @@ actor PhiSyncEngine {
                     cursor.pendingApply = item.payload
                     cursor.pendingOwnerUuid = registration.owners(item.payload).first
                     cursor.parkedForScope = nil
+                    cursor.parkReason = .storeError
                 }
                 table.cursors[item.identity] = cursor
             }
@@ -5390,7 +5411,8 @@ actor PhiSyncEngine {
         for (identity, cursor) in table.cursors {
             guard let payload = cursor.pendingApply else { continue }
             parked[identity] = ParkedOwnedItem(payload: payload,
-                                               pendingOwnerUuid: cursor.pendingOwnerUuid)
+                                               pendingOwnerUuid: cursor.pendingOwnerUuid,
+                                               reason: cursor.parkReason)
         }
         guard !parked.isEmpty else { return }
         let result = await registration.retryParkedClaims(parked, maps, wallClockOffsetMs)
@@ -5406,6 +5428,7 @@ actor PhiSyncEngine {
             // 6.2). Keeping it is safe because pendingApply excludes publication until landing.
             guard cursor.reconciled == cursor.pendingApply else { continue }
             cursor.pendingApply = nil
+            cursor.parkReason = nil
             cursor.pendingOwnerUuid = nil
             cursor.parkedForScope = nil
             table.cursors[identity] = cursor
@@ -5503,7 +5526,8 @@ actor PhiSyncEngine {
         for (identity, cursor) in table.cursors {
             guard let payload = cursor.pendingApply else { continue }
             parked[identity] = ParkedOwnedItem(payload: payload,
-                                               pendingOwnerUuid: cursor.pendingOwnerUuid)
+                                               pendingOwnerUuid: cursor.pendingOwnerUuid,
+                                               reason: cursor.parkReason)
         }
         // landsEmptyBatch adds the empty-page path only for URL rules, allowing their M2
         // convergence pass (R-M3-4a-99/56). Other kinds retain their early return.
@@ -5636,6 +5660,7 @@ actor PhiSyncEngine {
                 }
             }
             cursor.pendingApply = nil
+            cursor.parkReason = nil
             cursor.pendingOwnerUuid = nil
             cursor.parkedForScope = nil
             cursor.pendingTombstone = false
@@ -5691,6 +5716,7 @@ actor PhiSyncEngine {
             cursor.pendingApply = item.payload
             cursor.pendingOwnerUuid = item.pendingOwnerUuid
             cursor.parkedForScope = nil
+            cursor.parkReason = item.reason ?? .unknown
             table.cursors[identity] = cursor
         }
         // Persist payload-free tombstones parked by scope mismatch (section 7.3). They produce no
@@ -5715,6 +5741,7 @@ actor PhiSyncEngine {
             cursor.deletedAtMs = now()
             cursor.pendingTombstone = false
             cursor.pendingApply = nil
+            cursor.parkReason = nil
             cursor.pendingOwnerUuid = nil
             cursor.parkedForScope = nil
             cursor.pendingDelete = false
@@ -5738,6 +5765,7 @@ actor PhiSyncEngine {
             if let payload = output.plan.steps.first(where: { $0.identity == identity })?.payload {
                 cursor.pendingApply = payload
             }
+            if cursor.pendingApply != nil { cursor.parkReason = outcome.parkReasons[identity] ?? .unknown }
             // Scope-mismatch parking is a dormant copy; any other parking reason is held work.
             cursor.parkedForScope = outcome.parkedForScope.contains(identity) ? true : nil
             if tombstoned.contains(identity) { cursor.pendingTombstone = true }
@@ -6280,6 +6308,7 @@ actor PhiSyncEngine {
                 guard var cursor = table.cursors[identity] else { continue }
                 cursor.pendingApply = cursor.reconciled
                 cursor.parkedForScope = nil
+                cursor.parkReason = cursor.pendingApply == nil ? nil : .storeError
                 if cursor.ownerUuid == nil { cursor.ownerUuid = snapshot.ownerUuids[identity] }
                 table.cursors[identity] = cursor
             }
@@ -6631,7 +6660,22 @@ actor PhiSyncEngine {
             if dormant > 0 {
                 AppLogInfo("[phi-sync] \(registration.label) parked for another scope=\(dormant)")
             }
+            // The status held count split by reason; counts only (R12).
+            if let line = Self.heldByReasonLogLine(registration.label, Self.ownedHeldByReason(table)) {
+                AppLogInfo(line)
+            }
         }
+    }
+
+    /// `[phi-sync] <label> held_by_reason unmapped_profile_owner=N ...` in `SyncHeldReason` order,
+    /// non-zero entries only; nil when nothing is held.
+    static func heldByReasonLogLine(_ label: String, _ counts: [SyncHeldReason: Int]) -> String? {
+        let fields = SyncHeldReason.allCases.compactMap { reason -> String? in
+            guard let count = counts[reason], count > 0 else { return nil }
+            return "\(reason.snakeCase)=\(count)"
+        }
+        guard !fields.isEmpty else { return nil }
+        return "[phi-sync] \(label) held_by_reason " + fields.joined(separator: " ")
     }
 
     /// Pure formatter for section 11.2/13.2 counters. Extracted so CASE U-27 can verify field-level
@@ -7648,6 +7692,7 @@ private func landBookmarks(_ input: OwnedLandingInput,
         if parentIdentity.isEmpty {
             guard let spaceId = resolve.localSpaceId(entity.spaceUuid.stringValue) else {
                 outcome.parked.insert(identity)
+                outcome.parkReasons[identity] = .unmappedSpaceOwner
                 continue
             }
             group = BookmarkSiblingGroup(spaceId: spaceId, parentGuid: nil)
@@ -7856,6 +7901,7 @@ private func landBookmarks(_ input: OwnedLandingInput,
         } catch {
             // Park import-lock and other transient failures for the next round.
             outcome.parked.formUnion(identities)
+            for identity in identities { outcome.parkReasons[identity] = .landingFailed }
             continue
         }
         // Recheck the plan after landing but before baseline updates (section 4.5). apply rebuilds
@@ -7871,7 +7917,11 @@ private func landBookmarks(_ input: OwnedLandingInput,
                 }
                 continue
             }
-            guard known else { outcome.parked.insert(identity); continue }
+            guard known else {
+                outcome.parked.insert(identity)
+                outcome.parkReasons[identity] = .landingFailed
+                continue
+            }
             outcome.landed.insert(identity)
             // New rows have no favicon by construction; submit them for backfill (section 8.2 /
             // Task 10).
@@ -8430,6 +8480,7 @@ private func landPins(_ input: OwnedLandingInput,
     // consistent projection can update existing migrated rows without duplication.
     state.rescan(access)
     guard !state.scopeBlocked else {
+        // A scope migration holds the rows: no reason of its own, so these stay `.unknown`.
         for step in input.steps { outcome.parked.insert(step.identity) }
         return outcome
     }
@@ -8562,7 +8613,13 @@ private func landPins(_ input: OwnedLandingInput,
             // Park unresolved local owner shapes until Space/Profile mappings become available.
             guard let owner = localOwner(item.ownerKey) else {
                 outcome.parked.insert(identity)
-                if ownerResolvesInAnyScope(item.ownerKey) { outcome.parkedForScope.insert(identity) }
+                if ownerResolvesInAnyScope(item.ownerKey) {
+                    outcome.parkedForScope.insert(identity)
+                } else if case .profileUuid? = entity.owner {
+                    outcome.parkReasons[identity] = .unmappedProfileOwner
+                } else {
+                    outcome.parkReasons[identity] = .unmappedSpaceOwner
+                }
                 continue
             }
             // Enforce one row per lineage/owner at the actual local landing boundary (section 7).
@@ -8579,6 +8636,7 @@ private func landPins(_ input: OwnedLandingInput,
             }
             guard !ownerAlreadyHasLineage else {
                 outcome.parked.insert(identity)
+                outcome.parkReasons[identity] = .lineageExists
                 continue
             }
             let guid = UUID().uuidString
@@ -8773,6 +8831,7 @@ private func landPins(_ input: OwnedLandingInput,
     } catch {
         // Park import-lock and other transient failures for retry next round.
         outcome.parked.formUnion(identities)
+        for identity in identities { outcome.parkReasons[identity] = .landingFailed }
         outcome.pendingPartnerLineages = [:]
         return outcome
     }
@@ -8809,7 +8868,11 @@ private func landPins(_ input: OwnedLandingInput,
             }
             continue
         }
-        guard known else { outcome.parked.insert(identity); continue }
+        guard known else {
+            outcome.parked.insert(identity)
+            outcome.parkReasons[identity] = .landingFailed
+            continue
+        }
         outcome.landed.insert(identity)
         // New pins lack favicons by construction; submit them for backfill (section 8.2 / Task 10).
         if let created = createdPinsByIdentity[identity] { outcome.createdPins.append(created) }

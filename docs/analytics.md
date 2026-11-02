@@ -144,6 +144,9 @@ are out of scope.
 | `bookmark_manager_edited` | A Bookmark Manager page session ends after the user performed at least one edit; the event carries no bookmark or edit details | `Sources/UserInterface/WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
 | `highlight_link_copied` | A highlight link is copied while `shortHighlightLinksEnabled` is enabled at callback time; includes only `is_short_link` (bool), covering short-link success and long-link fallback | `Sources/ChromiumBridge/PhiChromiumCoordinator.swift` |
 | `user_defaults_snapshot` | Launch-time snapshot of new-tab behavior, layout mode, active process language (`app_language`), appearance, default browser, proactive suggestions, automatic current-tab context, short highlight links (`short_highlight_links_enabled`), Peek/Kiosk preferences, and the content blocking switches (`block_ads_enabled`, `block_cookie_banners_enabled`, `block_trackers_enabled`; true when any profile has the switch on) | `Sources/Application/AppControlle+LaunchInfo.swift` |
+| `sync_attention_entered` | A sync Needs attention problem has been present for 60 seconds; once per problem, persisted across launches. Properties `sync_context` (`phi` / `chromium` / `helper`), `sync_kind` (a `SyncKind` raw value or `none`), `sync_reason` (a `SyncAttentionReason` raw value) and `held_count` | `Sources/Sync/SyncAttentionReporter.swift` |
+| `sync_attention_snapshot` | An entered problem is still present 24 hours after entry or the last snapshot; the entry properties plus `age_seconds` since entry | `Sources/Sync/SyncAttentionReporter.swift` |
+| `sync_attention_cleared` | An entered problem has been absent for 60 seconds; the entry properties plus `duration_seconds` since entry and `cleared_by` (`resolved` / `upgrade`) | `Sources/Sync/SyncAttentionReporter.swift` |
 | *Framework-originated events* | Received through the bridge delegate; see [Framework-originated events](#framework-originated-events) | `Sources/ChromiumBridge/ChromiumAnalyticsRelay.swift` |
 
 For `highlight_link_copied`, the fraction of events with `is_short_link = true`
@@ -165,6 +168,10 @@ into UserDefaults (`metrics.contentBlocking.switchesByProfile`) whenever it
 learns them, and the snapshot reads that mirror
 (`Sources/States/ContentBlockingAnalytics.swift`). A profile whose settings were never
 opened on this version reports off. No list, URL or site is reported.
+
+The `sync_attention_*` events carry enum raw values and counts only, never a Profile or Space
+name, identifier, URL or account. Their dedupe rules and the reasons that also reach Sentry are in
+[sync.md](sync.md), "Sync status contract". Sync off drops their state without a cleared event.
 
 `language_changed` is emitted only by Phi's picker. A language change made in
 macOS System Settings is not observable as a user action inside the running

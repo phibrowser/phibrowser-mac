@@ -103,7 +103,8 @@ final class FeedbackViewModel: ObservableObject {
 
     func enqueueFeedback(
         chromiumSystemLogsText: String? = nil,
-        inputSourceMetadata: [String: String]
+        inputSourceMetadata: [String: String],
+        syncStatusMetadata: [String: String] = [:]
     ) async throws {
         guard ApplicationState.shared.isAuthenticated,
               let account = AccountController.shared.account else {
@@ -124,7 +125,8 @@ final class FeedbackViewModel: ObservableObject {
             chromiumSystemLogsText: chromiumSystemLogsText,
             attachments: attachments,
             previousSessionCrash: previousSessionCrash,
-            inputSourceMetadata: inputSourceMetadata
+            inputSourceMetadata: inputSourceMetadata,
+            syncStatusMetadata: syncStatusMetadata
         )
 
         try await FeedbackOutbox.enqueue(draft, account: account)
@@ -160,6 +162,8 @@ struct FeedbackDraft {
     let attachments: [FeedbackDraftAttachment]
     var previousSessionCrash: PreviousSessionCrashContext? = nil
     var inputSourceMetadata: [String: String] = [:]
+    /// `sync_*` keys from `SyncAttentionReporter.feedbackMetadata(now:)`, frozen at submission.
+    var syncStatusMetadata: [String: String] = [:]
 }
 
 struct FeedbackSelectedAttachmentInfo {
@@ -1229,6 +1233,14 @@ enum FeedbackOutbox {
         }
     }
 
+    /// The sync status keys for a report: the running helper's reporter, or Not started when sync
+    /// is not running. Enum raw values and counts only.
+    @MainActor
+    static func currentSyncStatusMetadata(now: Date = Date()) -> [String: String] {
+        PhiChromiumCoordinator.shared.syncHelper?.attentionReporter?.feedbackMetadata(now: now)
+            ?? ["sync_phase": SyncSummaryPhase.notStarted.rawValue]
+    }
+
     @MainActor
     static func currentInputSourceMetadata() -> [String: String] {
         guard let inputSource = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue() else {
@@ -1274,6 +1286,7 @@ enum FeedbackOutbox {
                 "os_version": SystemUtils.osVersionString
             ]
                 .merging(draft.inputSourceMetadata) { _, inputSourceValue in inputSourceValue }
+                .merging(draft.syncStatusMetadata) { _, syncValue in syncValue }
                 .merging(draft.previousSessionCrash?.metadata ?? [:]) { _, crashValue in crashValue }
         )
     }

@@ -927,7 +927,8 @@ import SwiftUI
                 return participants
             },
             lastSuccess: account.userDefaults.date(forKey: SyncHelper.lastSuccessDefaultsKey),
-            saveSuccess: { account.userDefaults.set($0, forKey: SyncHelper.lastSuccessDefaultsKey) })
+            saveSuccess: { account.userDefaults.set($0, forKey: SyncHelper.lastSuccessDefaultsKey) },
+            attentionReporter: .live(defaults: .standard))
         syncHelper?.start()
         // The follower may have failed before this helper existed; it publishes only on change.
         syncHelper?.setPinScopeMigrationFailure(follower.failure)

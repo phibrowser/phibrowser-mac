@@ -473,6 +473,33 @@ struct TimeMachineSentryTraceStore {
         }
     }
 
+    /// One sync Needs attention problem whose reason is unexpected (docs/sync.md, "Sync status
+    /// contract"). `SyncAttentionReporter` calls it at most once per entry and once per seven days per
+    /// problem; the fingerprint groups every occurrence of the same problem into one issue. Every
+    /// argument is an enum raw value or a count, never user content or an identifier.
+    static func captureSyncAttention(kind: String, reason: String, context: String, details: [String: Int]) {
+        guard hasStarted else { return }
+        SentrySDK.capture(message: "Sync needs attention") { scope in
+            configureSyncAttentionScope(scope, kind: kind, reason: reason, context: context, details: details)
+        }
+    }
+
+    /// The event scope for `captureSyncAttention`. It removes the user that `configureUser` sets
+    /// globally and the log attachments of the initial scope, so the event carries enum values and
+    /// counts only. Internal so a test can run it on a fresh `Scope`.
+    static func configureSyncAttentionScope(_ scope: Scope, kind: String, reason: String, context: String,
+                                            details: [String: Int]) {
+        scope.setUser(nil)
+        scope.clearAttachments()
+        scope.setLevel(.warning)
+        scope.setFingerprint(["sync-attention", context, kind, reason])
+        scope.setTag(value: "sync", key: "area")
+        scope.setTag(value: kind, key: "sync_kind")
+        scope.setTag(value: reason, key: "sync_reason")
+        scope.setTag(value: context, key: "sync_context")
+        scope.setContext(value: details, key: "sync_attention")
+    }
+
     static func captureSentinelVersionGuardWarning(_ warning: SentinelVersionGuardWarning) {
         let message: String
         let diagnostic: String

@@ -3605,7 +3605,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     // Tab groups (Chromium → Mac)
     //
     // Forwards all 5 bridge callbacks through EventBus, matching the
-    // dispatch shape used by TabEvent / BookmarkEvent. The actual state
+    // dispatch shape used by TabEvent. The actual state
     // updates happen in `BrowserState.handleTabGroup*`.
     // =========================================================================
 
@@ -3793,23 +3793,6 @@ extension PhiChromiumCoordinator {
     func extensionInstallResult(_ extensionId: String, status: String) {
     }
 
-}
-
-extension PhiChromiumCoordinator {
-    func bookmarksLoaded(_ windowId: Int64) {
-        EventBus.shared.send(BookmarkEvent(browserId: windowId.intValue,
-                                           action: .bookmarksLoaded))
-    }
-    
-    func bookmarksChanged(_ newNodes: [any BookmarkWrapper], windowId: Int64) {
-        EventBus.shared.send(BookmarkEvent(browserId: windowId.intValue,
-                                           action: .bookmarksChanged(newNodes)))
-    }
-    
-    func bookmarkInfoChanged(withWindowId windowId: Int64, bookmarkId id: Int64, title: String?, url: String?, facicon favicon_url: String?) {
-        EventBus.shared.send(BookmarkEvent(browserId: windowId.intValue,
-                                           action: .bookmarkInfoChanged(id: id, title: title, url: url, faviconUrl: favicon_url)))
-    }
 }
 
 extension PhiChromiumCoordinator {

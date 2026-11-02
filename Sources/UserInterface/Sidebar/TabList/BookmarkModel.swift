@@ -553,35 +553,6 @@ class BookmarkManager: ObservableObject {
         return bookmarkIndex[guid]
     }
     
-    func fetchBookmarks() {
-//        let wrappers = ChromiumLauncher.sharedInstance().bridge?.getAllBookmarks(withWindowId: Int64(browserState?.windowId ?? 0))
-//        bookmarksChanged(with: wrappers ?? [])
-    }
-    
-    func bookmarksChanged(with wrappers: [BookmarkWrapper]) {
-//        let bookmarks = Self.mappedModels(from: wrappers)
-//        rootFolder = Bookmark(title: "Bookmarks", children: bookmarks)
-    }
-    
-//    func bookmarkInfoChanged(_ id: Int64, title: String?, url: String?, facicon favicon_url: String?) {
-//        DispatchQueue.global(qos: .utility).async {
-//            let allBookmarks =  self.getAllBookmarks()
-//            if let target = allBookmarks.first(where: { $0.guid == "\(id)" }) {
-//                DispatchQueue.main.async {
-//                    if let title {
-//                        target.title = title
-//                    }
-//                    if let url {
-//                        target.url = url
-//                    }
-//                    if let favicon_url {
-//                        target.faviconUrl = favicon_url
-//                    }
-//                }
-//            }
-//        }
-//    }
-    
     func addBookmark(title: String,
                      url: String,
                      to parent: Bookmark? = nil,

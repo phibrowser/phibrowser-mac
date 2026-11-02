@@ -362,11 +362,6 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                tabId:(int64_t)tabId
             tokenHex:(NSString *)tokenHex;
 
-// bookmark service
-- (void)bookmarksLoaded:(int64_t)windowId;
-- (void)bookmarksChanged:(NSArray <id<BookmarkWrapper>> *)newNodes windowId:(int64_t)windowId;
-- (void)bookmarkInfoChangedWithWindowId:(int64_t)windowId bookmarkId:(int64_t)id title:(NSString * _Nullable)title url:(NSString * _Nullable)url facicon:(NSString * _Nullable)favicon_url;
-
 // extension service
 - (void)extensionsLoaded:(NSArray<NSDictionary *> *)extensions;
 - (void)extensionTriggered:(NSString *)extensionId;

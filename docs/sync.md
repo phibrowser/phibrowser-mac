@@ -1136,6 +1136,28 @@ cross-device acceptance are required before release; object compilation alone
 does not establish runtime correctness. See the reusable UX acceptance cases in
 [sync-e2e-test-cases.md](sync-e2e-test-cases.md).
 
+### Launch snapshot caches
+
+The launch-time `user_defaults_snapshot` fires before the account, the key controller or the
+account key exist, so `SyncLaunchAnalytics` (`Sources/Sync/SyncLaunchAnalytics.swift`) reads
+mirrors in `UserDefaults.standard` that the sync layer writes when it already has the data. They
+are telemetry only: no sync decision reads them.
+
+| Key | Written by |
+| --- | --- |
+| `metrics.sync.enabled` | `ProfilePairingGate.pairingObserver`, on every enrollment configuration and change (not on `stop()`) |
+| `metrics.sync.activeDeviceCount` | The Devices pane's listing, and one listing per `SyncKeyController` (in practice once per launch) from the first paired mapping pass after unlock. This is the only request the caches add |
+| `metrics.sync.accountProfileUuids` | `ProfileKeyManager.onAccountListing`, on every account Profile listing; flags of uuids no longer listed are dropped |
+| `metrics.sync.profileDefaultFlags` | `ProfileKeyManager.onDefaultFlag`, on every envelope it opens or writes (remote read, scan, adopt, resolve, registration, default-flag backfill); a flagless envelope counts as not default |
+
+A paired pass that lists the Profiles also reads at most three envelopes whose flag was never
+read (`defaultFlagFillPerPass`), in uuid order, skipping envelopes that do not open, so an old
+install converges over a few passes. The default-flag count is reported only once every listed
+Profile's flag is known. Sign-out and this device leaving sync (`invalidateSyncKeyController`
+with no account, or a native cleanup) reset every key and set `enabled` to false; an account
+assignment at launch keeps them. The uuid keys never leave the device; the snapshot carries one
+bool and three counts.
+
 ## Framework sync endpoint
 
 `ChromiumLauncher` supplies a channel-specific default `--sync-url` to the

@@ -324,6 +324,8 @@ import SwiftUI
         let localResetMarker = SyncPairingLocalResetMarkerStore(
             readData: { account.userDefaults.object(forKey: SyncPairingLocalResetMarkerStore.defaultsKey) as? Data },
             writeData: { account.userDefaults.set($0, forKey: SyncPairingLocalResetMarkerStore.defaultsKey) })
+        // The launch snapshot's `sync_enabled` mirror (docs/sync.md, "Launch snapshot caches").
+        ProfilePairingGate.shared.pairingObserver = { SyncLaunchAnalytics.recordPaired($0) }
         // Bind the fail-closed prerequisite before any unlock callback can start sync.
         do {
             let deviceID = try stack.manager.deviceKeyProviderForTesting.deviceKeyId()
@@ -338,6 +340,8 @@ import SwiftUI
         }
         let mappingStore = AccountProfileSyncMappingStore(defaults: account.userDefaults)
         let profileKeys = ProfileKeyManager(api: stack.api, keyManager: stack.manager, mappingStore: mappingStore)
+        profileKeys.onAccountListing = { SyncLaunchAnalytics.recordAccountProfiles($0) }
+        profileKeys.onDefaultFlag = { SyncLaunchAnalytics.recordDefaultFlag(uuid: $0, isDefault: $1) }
         let spaceStateStore = AccountPhiSpaceSyncStateStore(defaults: account.userDefaults)
         let spaceMappingStore = AccountSpaceSyncMappingStore(defaults: account.userDefaults)
         let spaceKeys = SpaceSyncMappingManager(store: spaceMappingStore)
@@ -1538,6 +1542,11 @@ import SwiftUI
         syncKeyController?.retire()
         syncKeyController = nil
         ProfilePairingGate.shared.stop()
+        // Sign-out, or this device leaving sync: the launch snapshot caches describe nothing now.
+        // An account assignment (every launch included) keeps them; the rebuild refreshes them.
+        if AccountController.shared.account == nil || nativeSyncCleanupInProgress {
+            SyncLaunchAnalytics.reset()
+        }
         // The facade's seams are bound to the account that has just gone away: the store
         // writes ITS plist and `localSpaceProfileIds` holds ITS `Account`. Leaving them
         // standing would let the no-engine fallback (a Space deleted while signed out)

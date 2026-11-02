@@ -220,6 +220,7 @@ final class DevicesSettingViewModel: ObservableObject {
             guard generation == deviceGeneration, isCurrentAccount() else { return }
             devices = rows.filter { $0.status == "active" && $0.revokedAt == nil }
             devicesLoadError = nil
+            SyncLaunchAnalytics.recordActiveDeviceCount(SyncLaunchAnalytics.activeDeviceCount(rows))
         } catch {
             guard generation == deviceGeneration, isCurrentAccount() else { return }
             devices = []

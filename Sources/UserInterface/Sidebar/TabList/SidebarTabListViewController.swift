@@ -1448,20 +1448,21 @@ class SidebarTabListViewController: NSViewController {
     /// folder toggled in one is stale in the other until it is reconciled here.
     func applyBookmarkExpandedFlags() {
         guard isActive else { return }
-        func traverse(_ items: [SidebarItem]) {
-            for item in items {
-                guard let bookmark = item as? Bookmark, bookmark.isFolder else { continue }
-                if bookmark.isExpanded {
-                    if !outlineView.isItemExpanded(bookmark) {
-                        outlineView.expandItem(bookmark)
-                    }
-                    traverse(bookmark.children)
-                } else if outlineView.isItemExpanded(bookmark) {
-                    outlineView.collapseItem(bookmark)
+        applyBookmarkExpandedFlags(to: allItems)
+    }
+
+    private func applyBookmarkExpandedFlags(to items: [SidebarItem]) {
+        for item in items {
+            guard let bookmark = item as? Bookmark, bookmark.isFolder else { continue }
+            if bookmark.isExpanded {
+                if !outlineView.isItemExpanded(bookmark) {
+                    outlineView.expandItem(bookmark)
                 }
+                applyBookmarkExpandedFlags(to: bookmark.children)
+            } else if outlineView.isItemExpanded(bookmark) {
+                outlineView.collapseItem(bookmark)
             }
         }
-        traverse(allItems)
     }
 
     func tearDown() {
@@ -3983,7 +3984,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         // Defer to next run loop to avoid conflicting with NSOutlineView's expand animation.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.restoreExpandedDescendantsIfNeeded(of: bookmark)
+            self.applyBookmarkExpandedFlags(to: bookmark.children)
             self.refreshAllItems(animated: false)
         }
     }
@@ -4348,22 +4349,6 @@ extension SidebarTabListViewController: TabSectionDelegate {
 
 // MARK: - Focusing bookmark visibility (temporary UI-only reparenting)
 extension SidebarTabListViewController {
-    private func restoreExpandedDescendantsIfNeeded(of folder: Bookmark) {
-        guard folder.isFolder else { return }
-        
-        func traverse(_ node: Bookmark) {
-            for child in node.children where child.isFolder {
-                if child.isExpanded, !outlineView.isItemExpanded(child) {
-                    outlineView.expandItem(child)
-                    child.isExpanded = true
-                }
-                traverse(child)
-            }
-        }
-        
-        traverse(folder)
-    }
-    
     @discardableResult
     private func clearFocusedBookmarkPresentation(animated: Bool, afterReload: (() -> Void)? = nil) -> Bool {
         refreshAllItems(
@@ -5671,8 +5656,9 @@ extension SidebarTabListViewController: NSDraggingSource {
 /// - **Ancestor collapse must not pollute descendant isExpanded**: collapsing F1 also triggers F2's
 ///   collapse notification. `userInitiatedToggleFolderGuid` distinguishes user-initiated toggles from
 ///   passive cascading collapses, preserving F2's expanded state for restoration.
-/// - **Descendant expansion restoration**: `restoreExpandedDescendantsIfNeeded(of:)` re-expands
-///   descendants marked `isExpanded` in the model after their ancestor is expanded.
+/// - **Descendant expansion restoration**: `applyBookmarkExpandedFlags(to:)` reconciles descendants
+///   with `isExpanded` in the model after their ancestor is expanded, in both directions, since a
+///   descendant may have been toggled in the other sidebar while its ancestor was collapsed here.
 ///
 /// #### 6) Keyboard tab switching (CMD+[ ] / CMD+number)
 /// - `browserState.visibleBookmarkTabs` is maintained by `updateVisibleBookmarkTabs()`, including

@@ -93,6 +93,11 @@ struct BookmarkFolderIconView: View {
     @Environment(\.phiTheme) private var theme
     @Environment(\.phiAppearance) private var appearance
     @State private var playbackMode: LottiePlaybackMode
+    /// Latest requested state. Kept in `@State` because the finish handler is
+    /// captured when its stroke starts and would otherwise read a stale value.
+    @State private var requestedExpanded: Bool
+    /// End state of the stroke being played, or nil while the icon is at rest.
+    @State private var strokeTarget: Bool?
 
     init(icon: BookmarkFolderIcon, isExpanded: Bool, usesStaticSnapshotIcon: Bool = false) {
         self.icon = icon
@@ -103,6 +108,7 @@ struct BookmarkFolderIconView: View {
                 at: .progress(BookmarkFolderIcon.animationProgress(isExpanded: isExpanded))
             )
         )
+        _requestedExpanded = State(initialValue: isExpanded)
     }
 
     var body: some View {
@@ -128,7 +134,11 @@ struct BookmarkFolderIconView: View {
                         .playbackMode(playbackMode)
                         .animationDidFinish { completed in
                             guard completed else { return }
-                            pauseAtCurrentState()
+                            if let strokeTarget, strokeTarget != requestedExpanded {
+                                playStroke(toExpanded: requestedExpanded)
+                            } else {
+                                pauseAtCurrentState()
+                            }
                         }
                         .configure { animationView in
                             applyPalette(to: animationView)
@@ -146,20 +156,32 @@ struct BookmarkFolderIconView: View {
         }
         .onChange(of: isExpanded) { oldValue, newValue in
             guard oldValue != newValue else { return }
-            playbackMode = .playing(
-                .fromProgress(
-                    BookmarkFolderIcon.animationProgress(isExpanded: oldValue),
-                    toProgress: BookmarkFolderIcon.animationProgress(isExpanded: newValue),
-                    loopMode: .playOnce
-                )
-            )
+            requestedExpanded = newValue
+            // A toggle that arrives mid-stroke (e.g. a double-click) lets the
+            // running stroke reach its end, then the finish handler plays back
+            // to the latest state — so the icon visibly opens and closes like
+            // the rows do instead of twitching.
+            guard strokeTarget == nil else { return }
+            playStroke(toExpanded: newValue)
         }
         .accessibilityHidden(true)
     }
 
+    private func playStroke(toExpanded expanded: Bool) {
+        strokeTarget = expanded
+        playbackMode = .playing(
+            .fromProgress(
+                nil,
+                toProgress: BookmarkFolderIcon.animationProgress(isExpanded: expanded),
+                loopMode: .playOnce
+            )
+        )
+    }
+
     private func pauseAtCurrentState() {
+        strokeTarget = nil
         playbackMode = .paused(
-            at: .progress(BookmarkFolderIcon.animationProgress(isExpanded: isExpanded))
+            at: .progress(BookmarkFolderIcon.animationProgress(isExpanded: requestedExpanded))
         )
     }
 

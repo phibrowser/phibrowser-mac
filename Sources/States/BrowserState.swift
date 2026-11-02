@@ -494,8 +494,26 @@ class BrowserState {
     let windowId: Int
     let localStore: LocalStore
     @Published private(set) var profileId: String
-    /// Shared by the docked and floating sidebars of this Space session.
-    @Published var isBookmarkRootExpanded = true
+    /// Shared by the docked and floating sidebars of this Space session, and persisted per Space.
+    @Published var isBookmarkRootExpanded: Bool {
+        didSet {
+            guard isBookmarkRootExpanded != oldValue else { return }
+            Self.setBookmarkRootCollapsed(!isBookmarkRootExpanded, spaceId: spaceId)
+        }
+    }
+
+    private static let collapsedBookmarkRootSpaceIdsKey = "SidebarCollapsedBookmarkRootSpaceIds"
+
+    private static func collapsedBookmarkRootSpaceIds() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: collapsedBookmarkRootSpaceIdsKey) ?? [])
+    }
+
+    private static func setBookmarkRootCollapsed(_ collapsed: Bool, spaceId: String) {
+        var ids = collapsedBookmarkRootSpaceIds()
+        let changed = collapsed ? ids.insert(spaceId).inserted : ids.remove(spaceId) != nil
+        guard changed else { return }
+        UserDefaults.standard.set(ids.sorted(), forKey: collapsedBookmarkRootSpaceIdsKey)
+    }
 
     /// Identifies which Space this window renders. Persisted pinned tabs and
     /// bookmarks under the same Space share this id; see `Space`.
@@ -688,6 +706,8 @@ class BrowserState {
         self.localStore = localStore
         self.profileId = profileId
         self.spaceId = spaceId
+        _isBookmarkRootExpanded = Published(
+            initialValue: !Self.collapsedBookmarkRootSpaceIds().contains(spaceId))
         self.isIncognito = isIncognito
         self.isIncognitoSpace = isIncognitoSpace
         self.isAgentSpace = isAgentSpace || AgentSpaceManager.shared.isAgentSpace(spaceId)

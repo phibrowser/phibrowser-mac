@@ -426,6 +426,41 @@ final class SidebarTabSectionFastPathTests: XCTestCase {
         XCTAssertTrue(folder.isExpanded)
     }
 
+    func testSpaceRootCollapseIsRememberedPerSpace() throws {
+        let state = try makeState()
+        let other = try makeState()
+        state.isBookmarkRootExpanded = false
+        XCTAssertFalse(try makeState(spaceId: state.spaceId).isBookmarkRootExpanded)
+        XCTAssertTrue(try makeState(spaceId: other.spaceId).isBookmarkRootExpanded)
+        state.isBookmarkRootExpanded = true
+        XCTAssertTrue(try makeState(spaceId: state.spaceId).isBookmarkRootExpanded)
+    }
+
+    func testCollapsedSpaceRootStillRestoresAutosavedFolders() throws {
+        let autosaveKey = "NSOutlineView Items SidebarTabList"
+        let savedItems = UserDefaults.standard.object(forKey: autosaveKey)
+        defer { UserDefaults.standard.set(savedItems, forKey: autosaveKey) }
+        let state = try makeState()
+        state.isBookmarkRootExpanded = false
+        let guid = "collapsed-root-folder"
+        UserDefaults.standard.set([guid], forKey: autosaveKey)
+        let (controller, outline) = try makeActiveSidebar(for: state)
+        defer { controller.setActive(false) }
+        state.bookmarkManager.addFolder(title: "Folder", guid: guid)
+        guard waitUntil({ outline.autosaveName != nil && outline.item(atRow: 0) is SpaceRootSidebarItem }) else { return }
+        let root = try XCTUnwrap(outline.item(atRow: 0) as? SpaceRootSidebarItem)
+        let folder = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: guid))
+        XCTAssertFalse(outline.isItemExpanded(root))
+        XCTAssertFalse(state.isBookmarkRootExpanded)
+        XCTAssertTrue(folder.isExpanded)
+        state.bookmarkManager.addBookmark(title: "Child", url: "https://child.example", to: folder)
+        guard waitUntil({ !folder.children.isEmpty }) else { return }
+        let child = try XCTUnwrap(folder.children.first)
+        controller.toggleItemExpanded(root)
+        guard waitUntil({ outline.row(forItem: child) >= 0 }) else { return }
+        XCTAssertTrue(outline.isItemExpanded(folder))
+    }
+
     func testCollapsedSpaceRootKeepsFocusedBookmarkBelowHeaderAndRestoresAfterReactivation() throws {
         let state = try makeState()
         let guid = "space-root-active"
@@ -570,12 +605,20 @@ final class SidebarTabSectionFastPathTests: XCTestCase {
     }
 
     private var tempDirectories: [URL] = []
+    private let collapsedRootsKey = "SidebarCollapsedBookmarkRootSpaceIds"
+    private var savedCollapsedRoots: Any?
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        savedCollapsedRoots = UserDefaults.standard.object(forKey: collapsedRootsKey)
+    }
 
     override func tearDownWithError() throws {
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
         }
         tempDirectories.removeAll()
+        UserDefaults.standard.set(savedCollapsedRoots, forKey: collapsedRootsKey)
         try super.tearDownWithError()
     }
 
@@ -727,7 +770,7 @@ final class SidebarTabSectionFastPathTests: XCTestCase {
         XCTAssertFalse(change.allowsInsertedRootTabLayoutRepair)
     }
 
-    private func makeState() throws -> BrowserState {
+    private func makeState(spaceId: String = UUID().uuidString) throws -> BrowserState {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -736,7 +779,7 @@ final class SidebarTabSectionFastPathTests: XCTestCase {
             account: Account(userID: UUID().uuidString),
             storeDirectoryURL: directory
         )
-        return BrowserState(windowId: 7, localStore: store, profileId: "Default")
+        return BrowserState(windowId: 7, localStore: store, profileId: "Default", spaceId: spaceId)
     }
 
     private func seedActiveTab(in state: BrowserState, guid: Int) -> Tab {

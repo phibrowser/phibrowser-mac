@@ -247,7 +247,10 @@ class SidebarTabListViewController: NSViewController {
     /// Transition-only state: when collapsing an ancestor folder, we temporarily remove the real bookmark row
     /// so it doesn't get animated "into" the collapsing folder. This is UI-only and never mutates the model.
     private var temporarilyHiddenRealBookmarkGuid: String?
-    
+
+    /// Set while the Space root is opened only so autosave can restore its folders.
+    private var isRestoringAutosavedExpansion = false
+
     /// Drop-target visual feedback: at most one of bookmark folder
     /// or tab-group is highlighted at a time. Replaces the older
     /// `dropFeedbackFolderGuid: String?` single-purpose flag so the
@@ -4010,6 +4013,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
     
     func outlineViewItemDidExpand(_ notification: Notification) {
         if notification.userInfo?["NSObject"] is SpaceRootSidebarItem {
+            guard !isRestoringAutosavedExpansion else { return }
             if !browserState.isBookmarkRootExpanded { browserState.isBookmarkRootExpanded = true }
             return
         }
@@ -4218,9 +4222,17 @@ extension SidebarTabListViewController: BookmarkSectionDelegate {
             return
         }
         outlineView.autosaveExpandedItems = true
+        // AppKit restores autosaved items only under expanded parents, so open the root for the restore.
+        isRestoringAutosavedExpansion = true
+        if allItems.contains(where: { $0 === spaceRootItem }), !outlineView.isItemExpanded(spaceRootItem) {
+            outlineView.expandItem(spaceRootItem)
+        }
         outlineView.autosaveName = "SidebarTabList"
-        restoreSpaceRootExpansion()
-        if browserState.isBookmarkRootExpanded { syncBookmarkExpandedFlags() }
+        if outlineView.isItemExpanded(spaceRootItem) { syncBookmarkExpandedFlags() }
+        if !browserState.isBookmarkRootExpanded, outlineView.isItemExpanded(spaceRootItem) {
+            outlineView.collapseItem(spaceRootItem)
+        }
+        isRestoringAutosavedExpansion = false
         // The restore posts no expand notifications, and the folders it expanded may no
         // longer hide the focusing bookmark, so recompute its proxy.
         refreshAllItems(animated: false)

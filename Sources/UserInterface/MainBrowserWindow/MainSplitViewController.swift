@@ -9,7 +9,7 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     static let leftItemMinWidth: CGFloat = 193
     static let leftItemMaxWidth: CGFloat = 500
     
-    private let splitViewController = NSSplitViewController()
+    private let splitViewController = PhiSplitViewController()
 
     /// Hosted: the session presents into a shell window whose
     /// `ShellSplitViewController` owns the split. This controller then

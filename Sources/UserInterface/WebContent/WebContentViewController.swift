@@ -355,7 +355,7 @@ class WebContentViewController: NSViewController {
     /// spans the window margins around the card, which must stay visible.
     var pageCardView: NSView { splitViewContainer }
 
-    private lazy var contentSplitViewController = NSSplitViewController()
+    private lazy var contentSplitViewController = PhiSplitViewController()
     private var webContentSplitViewItem: NSSplitViewItem!
     private var aiChatSplitViewItem: NSSplitViewItem?
     /// Embedded AI Chat controller paired one-to-one with the associated tab.

@@ -1149,7 +1149,7 @@ final class PeekPanelController {
         }
     }
 
-    private func relayoutIfVisible() {
+    func relayoutIfVisible() {
         guard rootView.isPresented else { return }
         layoutOnAnchor()
     }

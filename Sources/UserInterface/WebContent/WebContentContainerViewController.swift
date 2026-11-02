@@ -82,6 +82,11 @@ class WebContentContainerViewController: NSViewController {
 
     private var pendingPageMount: (tabId: Int, completion: (NSView) -> Void)?
 
+    /// Fires once a tab's page is mounted and laid out. The Peek panel comes
+    /// back on the same focus change as this mount and can be laid out before
+    /// it, with no card to size against when the previous tab just closed.
+    var onPageMounted: (() -> Void)?
+
     /// Page overlays hand off a live WebContents only after its destination
     /// host is mounted and laid out in the same window.
     func whenPageIsMounted(tabId: Int, perform completion: @escaping (NSView) -> Void) {
@@ -2123,6 +2128,7 @@ class WebContentContainerViewController: NSViewController {
             pendingPageMount = nil
             pending.completion(controller.webPanelView)
         }
+        onPageMounted?()
     }
 
     /// Removes every tab view except `controller`'s from `contentContainer`.

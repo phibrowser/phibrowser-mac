@@ -1053,6 +1053,9 @@ class SpaceSessionController: NSWindowController {
             peekPanelController?.onLayout = { [weak self] in
                 self?.readerPanelControllers.values.forEach { $0.relayoutIfVisible() }
             }
+            container.onPageMounted = { [weak self] in
+                self?.peekPanelController?.relayoutIfVisible()
+            }
         }
         peekPanelController?.present(tab: tab, flyIn: flyIn)
     }

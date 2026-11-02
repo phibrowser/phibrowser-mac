@@ -130641,6 +130641,17 @@
         }
       }
     },
+    "tabs.clearAll.confirmation" : {
+      "comment" : "Tab cleanup toast - Confirmation after tabs close; %@ is the Undo keyboard shortcut",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cleared Tabs. Use %@ to undo."
+          }
+        }
+      }
+    },
     "tabs.clearAll.title" : {
       "comment" : "Tab cleanup command - Close ordinary tabs that are not currently displayed",
       "extractionState" : "manual",

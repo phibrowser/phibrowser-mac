@@ -80,10 +80,14 @@ extension BrowserState {
         for id in removedIDs {
             guard let batch = pendingClearTabClosures.removeValue(forKey: id),
                   let original = batch.liveIDs.first(where: { $0.value == id })?.key else { continue }
+            let isFirstRemoval = batch.closed.isEmpty
             batch.closed.insert(original)
             if !batch.registered {
                 batch.registered = true
                 registerClearTabsUndo(batch)
+            }
+            if isFirstRemoval {
+                OverlayToastCenter.shared.showClearedTabsConfirmation(in: self)
             }
         }
     }

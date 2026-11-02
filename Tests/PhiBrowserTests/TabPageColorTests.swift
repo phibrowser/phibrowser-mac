@@ -244,6 +244,7 @@ final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
     private(set) var setAsActiveTabCallCount = 0
     private(set) var updatedCustomValues: [String] = []
     private(set) var closeCallCount = 0
+    private(set) var restoreFocusCallCount = 0
 
     init(urlString: String?) {
         self.urlString = urlString
@@ -271,7 +272,7 @@ final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
     func moveSplit(toWindow targetWindowId: Int64, at insertIndex: Int) {}
     func updateTabCustomValue(_ customValue: String) { updatedCustomValues.append(customValue) }
     func focus() {}
-    func restoreFocus() {}
+    func restoreFocus() { restoreFocusCallCount += 1 }
     func updateSecurityState(_ securityState: [AnyHashable: Any]) {}
     func updateIsPeekSurface(_ isPeekSurface: Bool) {}
     func updateIsPeekPresented(_ presented: Bool) {}

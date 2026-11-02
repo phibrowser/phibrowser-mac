@@ -260,6 +260,34 @@ final class ContentFullscreenSurfaceTests: XCTestCase {
                       "a spent focus retry took the keyboard: \(String(describing: fixture.window.firstResponder))")
     }
 
+    /// A page focused before it has a URL leaves the keyboard on its
+    /// container; Chromium's focus call would do nothing yet. Once the URL
+    /// arrives the retry still gives the page Chromium's focus: the container
+    /// holding the keyboard is not the page having it.
+    func testAFocusRetryWhileTheContainerHoldsTheKeyboardGivesThePageChromiumsFocus() throws {
+        let fixture = try makeFixture(keyWindow: true)
+        let wrapper = fixture.wrappers[0]
+        let page = try XCTUnwrap(
+            fixture.container.children.compactMap { $0 as? WebContentViewController }.first)
+        wrapper.urlString = nil
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertNil(fixture.tabs[0].url, "precondition: the page has no URL yet")
+        let callsBeforeFocus = wrapper.restoreFocusCallCount
+        page.focusWebContent()
+        XCTAssertTrue(fixture.window.firstResponder === fixture.webViews[0],
+                      "precondition: the unloaded page's container took the keyboard")
+        XCTAssertEqual(wrapper.restoreFocusCallCount, callsBeforeFocus,
+                       "precondition: Chromium's focus waits for the URL")
+
+        wrapper.urlString = "https://tab0.example/loaded"
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        XCTAssertEqual(wrapper.restoreFocusCallCount, callsBeforeFocus + 1,
+                       "the retry did not give the page Chromium's focus")
+        XCTAssertTrue(fixture.window.firstResponder === fixture.webViews[0],
+                      "the keyboard left the page: \(String(describing: fixture.window.firstResponder))")
+    }
+
     // MARK: - Helpers
 
     private struct Fixture {

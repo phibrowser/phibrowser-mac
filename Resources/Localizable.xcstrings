@@ -122901,6 +122901,17 @@
         }
       }
     },
+    "sync.recovery.entry.forgotHelp" : {
+      "comment" : "Sync setup - link on the recovery code entry page when joining from another device; opens the Help article about a lost recovery code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forgot your recovery code?"
+          }
+        }
+      }
+    },
     "sync.recovery.entry.placeholder" : {
       "comment" : "Sync setup - placeholder of the recovery code text field",
       "localizations" : {
@@ -123311,6 +123322,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請將此代碼存放在安全的地方。將其他裝置加入你的帳號時會需要它。"
+          }
+        }
+      }
+    },
+    "sync.recovery.save.lossWarning" : {
+      "comment" : "Recovery code display - warning about the consequence of losing the recovery code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If you lose this code and no Mac is still set up for sync, the sync data in your account cannot be recovered. You would have to reset sync and start over."
           }
         }
       }

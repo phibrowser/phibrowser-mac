@@ -37,7 +37,14 @@ or derived secret is persisted. Wrong input and transport/storage failures retai
 the confirmation page and keep sync off. Re-entry can be deferred by closing the
 window; reopening or restarting requires confirmation even when device-key unlock
 succeeds, and offers no Back: the code left memory with the window. The one-time
-display itself still cannot be dismissed. Full pairing
+display itself still cannot be dismissed. Below the one-time notice, the display
+page warns that losing the code while no Mac is still set up for sync makes the
+account's sync data unrecoverable and leaves only **Reset sync**. When joining
+from another device (entry page, not the confirmation page), a **Forgot your
+recovery code?** link opens the Help Center article
+`https://phibrowser.com/help/[<locale>/]sync/#forgot-your-recovery-code` in the
+default browser, with the locale segment for each non-English UI language
+(`SyncHelpLinks`); a Phi tab is not used because the setup window is app-modal. Full pairing
 remains a separate prerequisite for native writes and Chromium ready-key exposure.
 If bootstrap throws before returning a code, the pending flag is cleared: a lost
 account-creation response must not claim that the user saved an unseen code.

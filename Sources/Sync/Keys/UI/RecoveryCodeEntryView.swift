@@ -37,6 +37,18 @@ struct RecoveryCodeEntryView: View {
                     .foregroundColor(.red)
             }
 
+            if !isConfirmation {
+                // Joining from another device: the code was saved on the first Mac,
+                // so point to the Help article instead of a Back button.
+                Button(NSLocalizedString("sync.recovery.entry.forgotHelp",
+                                         value: "Forgot your recovery code?",
+                                         comment: "Sync setup - link on the recovery code entry page when joining from another device; opens the Help article about a lost recovery code")) {
+                    SyncHelpLinks.openForgotRecoveryCode()
+                }
+                .buttonStyle(.link)
+                .font(.callout)
+            }
+
             if viewModel.canShowRecoveryCodeAgain {
                 // Only while the code this window displayed is still in memory. A reopened
                 // window has nothing to go back to (`KeyLayerViewModel.canShowRecoveryCodeAgain`).

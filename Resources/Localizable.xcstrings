@@ -66955,7 +66955,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Lets agent tooling manage your own browsing data — Spaces, profiles, URL rules, pinned tabs, bookmarks, and the tab layout of your windows. When off, agents can only work inside their own agent Spaces. Applies immediately."
+            "value" : "Lets agent tooling manage your own browsing data — Spaces, profiles, URL rules, pinned tabs, bookmarks, and the tab layout of your windows — and read and operate pages in your visible windows. It also lets agents open invisible background windows that can use your profiles’ cookies and logins: nothing on screen shows they’re open, and you can’t watch or take over them. Agents also need this on to request saved passwords, which requires your approval. On by default; when off, agents can only work inside their own agent Spaces. Turning it off refuses new requests right away, but work an agent already has open can continue until it ends or times out."
           }
         },
         "es" : {

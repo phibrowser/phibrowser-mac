@@ -372,9 +372,13 @@ extension PhiPreferences {
         /// Settings ▸ Developer ▸ Agent control: whether agent tooling may
         /// operate the user's own browsing data and windows over the
         /// management surface — Spaces, profiles, URL rules, pinned tabs,
-        /// bookmarks, and the tab layout of user windows. When off, agents can
-        /// only work inside their own agent Spaces. Read live by the message
-        /// router, so changes apply without a relaunch. Default on.
+        /// bookmarks, and the tab layout of user windows. The same gate covers
+        /// driving user windows over CDP, opening invisible shadow windows
+        /// (see AgentSpaceRouter+Shadow.swift), and the credential routes.
+        /// When off, agents can only work inside their own agent Spaces. Read
+        /// live by the message router and at each CDP attach, so changes apply
+        /// to new requests without a relaunch; turning it off neither closes
+        /// open shadow windows nor detaches CDP sessions. Default on.
         static var userSpaceOperationsEnabled: Bool {
             get { UserDefaults.standard.bool(forKey: userSpaceOperationsKey, default: true) }
             set { UserDefaults.standard.set(newValue, forKey: userSpaceOperationsKey) }

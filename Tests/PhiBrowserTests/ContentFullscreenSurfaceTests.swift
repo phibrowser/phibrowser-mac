@@ -175,6 +175,91 @@ final class ContentFullscreenSurfaceTests: XCTestCase {
                       "the placeholder page is told again once the surface is home")
     }
 
+    /// The page's own view, the one Chromium makes first responder, keeps the
+    /// keyboard while its page is lifted into content fullscreen and back.
+    /// Taking it away and giving it back sends the page a blur and a focus in
+    /// the same task.
+    func testAPageThatHasTheKeyboardKeepsItThroughFullscreen() throws {
+        let fixture = try makeFixture(keyWindow: true)
+        let widget = FirstResponderCountingView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+        fixture.webViews[0].addSubview(widget)
+        XCTAssertTrue(fixture.window.makeFirstResponder(widget), "precondition: the page has the keyboard")
+
+        enterFullscreen(fixture)
+        XCTAssertTrue(fixture.window.firstResponder === widget,
+                      "entry took the keyboard: \(String(describing: fixture.window.firstResponder))")
+        exitFullscreen(fixture)
+
+        XCTAssertTrue(fixture.window.firstResponder === widget,
+                      "exit took the keyboard: \(String(describing: fixture.window.firstResponder))")
+        XCTAssertEqual(widget.resignations, 0, "the page lost the keyboard on the way")
+    }
+
+    /// Focusing the page (a split pane the user just clicked) leaves a page
+    /// that already has the keyboard alone.
+    func testFocusingAPageThatHasTheKeyboardLeavesItAlone() throws {
+        let fixture = try makeFixture(keyWindow: true)
+        let widget = FirstResponderCountingView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+        fixture.webViews[0].addSubview(widget)
+        XCTAssertTrue(fixture.window.makeFirstResponder(widget), "precondition: the page has the keyboard")
+        let page = try XCTUnwrap(
+            fixture.container.children.compactMap { $0 as? WebContentViewController }.first)
+
+        page.focusWebContent()
+
+        XCTAssertTrue(fixture.window.firstResponder === widget,
+                      "the keyboard moved: \(String(describing: fixture.window.firstResponder))")
+        XCTAssertEqual(widget.resignations, 0, "the page lost the keyboard")
+    }
+
+    /// With the keyboard elsewhere (the omnibox), a page entering fullscreen
+    /// still takes it, or Esc would never reach the page.
+    func testAPageEnteringFullscreenStillTakesTheKeyboardFromElsewhere() throws {
+        let fixture = try makeFixture(keyWindow: true)
+        let elsewhere = FirstResponderCountingView(frame: NSRect(x: 600, y: 10, width: 40, height: 20))
+        try XCTUnwrap(fixture.window.contentView).addSubview(elsewhere)
+        XCTAssertTrue(fixture.window.makeFirstResponder(elsewhere), "precondition: another view has the keyboard")
+
+        enterFullscreen(fixture)
+        defer { exitFullscreen(fixture) }
+
+        XCTAssertTrue(fixture.window.firstResponder === fixture.webViews[0],
+                      "the page did not take the keyboard: \(String(describing: fixture.window.firstResponder))")
+    }
+
+    /// A page focused before it has a URL gets Chromium's focus once the URL
+    /// arrives. A page that took the keyboard itself in the meantime needs no
+    /// such retry, and a later URL change (a same-document navigation) must
+    /// not take the keyboard back from the omnibox.
+    func testAFocusRetryThePageNoLongerNeedsIsDropped() throws {
+        let fixture = try makeFixture(keyWindow: true)
+        let wrapper = fixture.wrappers[0]
+        let page = try XCTUnwrap(
+            fixture.container.children.compactMap { $0 as? WebContentViewController }.first)
+        XCTAssertEqual(fixture.tabs[0].lastFocusTarget, .webContent,
+                       "precondition: the page is the tab's focus target")
+        wrapper.urlString = nil
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertNil(fixture.tabs[0].url, "precondition: the page has no URL yet")
+        page.focusWebContent()
+        XCTAssertTrue(fixture.window.firstResponder === fixture.webViews[0],
+                      "precondition: the unloaded page's container took the keyboard")
+        let widget = FirstResponderCountingView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+        fixture.webViews[0].addSubview(widget)
+        XCTAssertTrue(fixture.window.makeFirstResponder(widget), "precondition: the page has the keyboard")
+        wrapper.urlString = "https://tab0.example/loaded"
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        let elsewhere = FirstResponderCountingView(frame: NSRect(x: 600, y: 10, width: 40, height: 20))
+        try XCTUnwrap(fixture.window.contentView).addSubview(elsewhere)
+        XCTAssertTrue(fixture.window.makeFirstResponder(elsewhere), "precondition: another view has the keyboard")
+
+        wrapper.urlString = "https://tab0.example/loaded#later"
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        XCTAssertTrue(fixture.window.firstResponder === elsewhere,
+                      "a spent focus retry took the keyboard: \(String(describing: fixture.window.firstResponder))")
+    }
+
     // MARK: - Helpers
 
     private struct Fixture {
@@ -189,7 +274,7 @@ final class ContentFullscreenSurfaceTests: XCTestCase {
 
     /// Two tabs in a visible window, the first one focused and mounted, with
     /// no surface yet.
-    private func makeFixture() throws -> Fixture {
+    private func makeFixture(keyWindow: Bool = false) throws -> Fixture {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory,
@@ -217,10 +302,13 @@ final class ContentFullscreenSurfaceTests: XCTestCase {
 
         let container = WebContentContainerViewController(state: state)
         container.view.frame = NSRect(x: 0, y: 0, width: 1200, height: 800)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
-                              styleMask: [.titled, .resizable],
-                              backing: .buffered,
-                              defer: false)
+        // A hosted test app is not reliably active, so a window that has to
+        // be key says so itself.
+        let windowClass: NSWindow.Type = keyWindow ? KeyWindowForTesting.self : NSWindow.self
+        let window = windowClass.init(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
+                                      styleMask: [.titled, .resizable],
+                                      backing: .buffered,
+                                      defer: false)
         window.isReleasedWhenClosed = false
         windows.append(window)
         window.contentViewController = container
@@ -281,4 +369,21 @@ private final class WindowDepartureCountingView: NSView {
         }
         super.viewWillMove(toWindow: newWindow)
     }
+}
+
+/// Takes the keyboard and counts the times it gives it up: a stand-in for
+/// Chromium's widget view, or for the omnibox.
+private final class FirstResponderCountingView: NSView {
+    private(set) var resignations = 0
+    override var acceptsFirstResponder: Bool { true }
+
+    override func resignFirstResponder() -> Bool {
+        resignations += 1
+        return super.resignFirstResponder()
+    }
+}
+
+/// Key whether or not the test app is active.
+private final class KeyWindowForTesting: NSWindow {
+    override var isKeyWindow: Bool { true }
 }

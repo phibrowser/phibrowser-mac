@@ -626,6 +626,13 @@ class WebContentViewController: NSViewController {
             return
         }
 
+        // The page already has the keyboard (e.g. a split pane the user just
+        // clicked), and with it Chromium's focus: nothing is left to retry.
+        if let window = view.window, pageViewHoldsKeyboard(in: webView, window: window) {
+            pendingChromeRefocusOnUrlReady = false
+            return
+        }
+
         let mfrResult = view.window?.makeFirstResponder(webView) ?? false
 
         guard let wrapper = tab.webContentWrapper,
@@ -2558,6 +2565,9 @@ class WebContentViewController: NSViewController {
         guard let tab = associatedTab,
               let webView = tab.webContentView,
               let window = hostView.window else { return }
+        // A page clicked into fullscreen, or leaving it with Esc, already
+        // has the keyboard.
+        if pageViewHoldsKeyboard(in: webView, window: window) { return }
         window.makeFirstResponder(webView)
         // makeFirstResponder puts Cocoa's responder chain at webView, but
         // Chromium's internal focus tracker also needs an explicit nudge to
@@ -2572,6 +2582,18 @@ class WebContentViewController: NSViewController {
             return
         }
         wrapper.restoreFocus()
+    }
+
+    /// Whether the page already has the keyboard: a view inside `webView`
+    /// (Chromium's widget view), not `webView` itself, is first responder of
+    /// a key window. Making `webView` first responder then would take the
+    /// keyboard from the page and give it back through Chromium, and the page
+    /// would get a blur and a focus in the same task.
+    private func pageViewHoldsKeyboard(in webView: NSView, window: NSWindow) -> Bool {
+        guard window.isKeyWindow,
+              let responder = window.firstResponder as? NSView,
+              responder !== webView else { return false }
+        return responder.isDescendant(of: webView)
     }
 
     // MARK: - DevTools Embedding

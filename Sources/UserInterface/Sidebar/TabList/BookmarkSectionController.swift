@@ -12,6 +12,13 @@ class BookmarkSectionController: NSObject {
     private var isActive = false
     
     private(set) var bookmarkItems: [SidebarItem] = []
+    /// Must stay last in `bookmarkItems`: the outline derives root drop indices from its count.
+    var liveFolderItem: LiveFolderSidebarItem? {
+        didSet {
+            guard liveFolderItem !== oldValue else { return }
+            refreshBookmarkItems(bookmarkManager.rootFolder, notifyDelegate: false)
+        }
+    }
     private(set) var expandedFolders: Set<String> = []
     private(set) var isInitialDataLoaded = false
 
@@ -79,8 +86,8 @@ class BookmarkSectionController: NSObject {
     }
 
     private func refreshBookmarkItems(_ root: Bookmark, notifyDelegate: Bool) {
-        bookmarkItems = root.children
-        let isFirstLoad = !isInitialDataLoaded && !bookmarkItems.isEmpty
+        bookmarkItems = root.children + (liveFolderItem.map { [$0] } ?? [])
+        let isFirstLoad = !isInitialDataLoaded && !root.children.isEmpty
         if isFirstLoad {
             isInitialDataLoaded = true
         }

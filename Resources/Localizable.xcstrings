@@ -4,6 +4,210 @@
     "" : {
 
     },
+    "common.tabAreaContextMenu.newLiveFolderAction" : {
+      "comment" : "Tab area context menu - Add a folder that lists the user's GitHub pull requests to this Space",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "New GitHub Live Folder"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.copyLinkAction" : {
+      "comment" : "Sidebar live folder row menu - Copy the pull request's address",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copy Link"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.copyLinksAction" : {
+      "comment" : "Sidebar live folder menu - Copy every pull request as a Markdown link",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copy All Links as Markdown"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.deleteAction" : {
+      "comment" : "Sidebar live folder menu - Delete the folder from this Space",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Delete Live Folder"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.failedStatus" : {
+      "comment" : "Sidebar live folder - Tooltip when a refresh fails",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Failed to update"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.filterAuthored" : {
+      "comment" : "Sidebar live folder menu - Toggle showing pull requests the user created",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Created by Me"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.filterReviewRequests" : {
+      "comment" : "Sidebar live folder menu - Toggle showing pull requests where the user was asked for a review",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Review Requests"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.filterTeamReviewRequests" : {
+      "comment" : "Sidebar live folder menu - Toggle showing pull requests where one of the user's teams was asked for a review",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Team Review Requests"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.rateLimitedStatus" : {
+      "comment" : "Sidebar live folder - Tooltip when GitHub rate limits a refresh",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "GitHub is limiting requests. Trying again shortly."
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.refreshAction" : {
+      "comment" : "Sidebar live folder menu - Fetch the pull requests again",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Refresh"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.removeRowAction" : {
+      "comment" : "Sidebar live folder row menu - Hide this pull request and close its tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Remove from Folder"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.removeRowButton" : {
+      "comment" : "Sidebar live folder row - Tooltip of the button that hides this pull request",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Remove from Folder"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.repositoriesNote" : {
+      "comment" : "Sidebar live folder menu - Explains where the repository list comes from",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Based on your active pull requests"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.repositoriesSubmenu" : {
+      "comment" : "Sidebar live folder menu - Submenu choosing which repositories' pull requests show",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Repositories"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.signInAction" : {
+      "comment" : "Sidebar live folder - Row shown when the user isn't signed in to GitHub in this profile",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Sign in to GitHub"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.ssoAction" : {
+      "comment" : "Sidebar live folder - Row shown when an organization hides its pull requests until a single sign-on. %@ is the organization name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Sign in to %@ with SSO"
+          }
+        }
+      }
+    },
+    "sidebar.liveFolder.title" : {
+      "comment" : "Sidebar live folder - Name of the folder listing the user's GitHub pull requests",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pull Requests"
+          }
+        }
+      }
+    },
     "・" : {
       "shouldTranslate" : false
     },

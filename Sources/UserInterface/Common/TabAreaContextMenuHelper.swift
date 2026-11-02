@@ -47,6 +47,17 @@ final class TabAreaContextMenuHelper: NSObject {
                 keyEquivalent: ""
             ).configured { $0.target = self })
 
+            if !isHorizontalLayout, browserState?.layoutMode.isTraditional == false {
+                let hasLiveFolder = MainActor.assumeIsolated {
+                    LiveFolderManager.shared.folder(forSpace: browserState?.spaceId ?? "") != nil
+                }
+                menu.addItem(NSMenuItem(
+                    title: NSLocalizedString("common.tabAreaContextMenu.newLiveFolderAction", value: "New GitHub Live Folder", comment: "Tab area context menu - Add a folder that lists the user's GitHub pull requests to this Space"),
+                    action: hasLiveFolder ? nil : #selector(newLiveFolder),
+                    keyEquivalent: ""
+                ).configured { $0.target = self })
+            }
+
             let hasBookmarkableTabs = browserState?.normalTabs.contains { !$0.isLocalPage } ?? false
             menu.addItem(NSMenuItem(
                 title: NSLocalizedString("common.tabAreaContextMenu.bookmarkAllTabsAction", value: "Bookmark All Tabs", comment: "Tab area context menu - Bookmark all open tabs"),
@@ -107,6 +118,11 @@ final class TabAreaContextMenuHelper: NSObject {
             let untitledName = NSLocalizedString("common.bookmarkFolder.defaultName", value: "Untitled", comment: "Default name for new bookmark folder in root")
             state.bookmarkManager.addFolderWithEditing(title: untitledName, to: nil)
         }
+    }
+
+    @MainActor @objc private func newLiveFolder() {
+        guard let spaceId = browserState?.spaceId else { return }
+        LiveFolderManager.shared.createFolder(inSpace: spaceId)
     }
 
     @objc private func bookmarkAllTabs() {

@@ -320,6 +320,7 @@ class SidebarTabListViewController: NSViewController {
 
     /// Flag to control whether bookmarks are shown in the sidebar
     private var showBookmarks: Bool = true
+    private var liveFolderCancellables = Set<AnyCancellable>()
     // Floating sidebars keep the controls visible; docked sidebars supply hover state.
     private var areCleanupButtonsVisible = true
     
@@ -558,6 +559,7 @@ class SidebarTabListViewController: NSViewController {
         // paints — and that paint has to find both sections filled.
         tabSectionController.browserState = browserState
         bookmarkSectionController.setActive(true)
+        activateLiveFolderBindings()
         refreshAllItems()
     }
 
@@ -593,6 +595,7 @@ class SidebarTabListViewController: NSViewController {
         cancellables.removeAll()
         tabSectionController.browserState = nil
         bookmarkSectionController.setActive(false)
+        liveFolderCancellables.removeAll()
         clearInactiveUIState()
     }
 
@@ -887,6 +890,43 @@ class SidebarTabListViewController: NSViewController {
             context.duration = 0
             context.allowsImplicitAnimation = false
             outlineView.noteHeightOfRows(withIndexesChanged: groupRows)
+        }
+    }
+
+    private func activateLiveFolderBindings() {
+        liveFolderCancellables.removeAll()
+        guard !browserState.isIncognito else { return }
+        let manager = LiveFolderManager.shared
+        manager.startIfNeeded()
+        manager.$folders.combineLatest(manager.$refreshing)
+            .sink { [weak self] folders, refreshing in
+                self?.applyLiveFolder(
+                    folders[self?.browserState.spaceId ?? ""],
+                    isRefreshing: refreshing.contains(self?.browserState.spaceId ?? "")
+                )
+            }
+            .store(in: &liveFolderCancellables)
+    }
+
+    private func applyLiveFolder(_ data: LiveFolderData?, isRefreshing: Bool) {
+        browserState.updateLiveFolderTabMarkers(Set(data?.rows.map(\.tabMarker) ?? []))
+        guard let data else {
+            guard bookmarkSectionController.liveFolderItem != nil else { return }
+            bookmarkSectionController.liveFolderItem = nil
+            refreshAllItems()
+            return
+        }
+        let item: LiveFolderSidebarItem
+        if let existing = bookmarkSectionController.liveFolderItem {
+            existing.update(data, isRefreshing: isRefreshing)
+            item = existing
+        } else {
+            item = LiveFolderSidebarItem(data: data, spaceId: browserState.spaceId, browserState: browserState)
+            bookmarkSectionController.liveFolderItem = item
+        }
+        refreshAllItems { [weak self] _ in
+            guard let self, data.isExpanded, !self.outlineView.isItemExpanded(item) else { return }
+            self.outlineView.expandItem(item)
         }
     }
 
@@ -1651,6 +1691,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
 
     func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
         guard let sidebarItem = item as? SidebarItem else { return nil }
+        if sidebarItem.itemType == .liveFolder || sidebarItem.itemType == .liveFolderRow { return nil }
 
         let pasteboardItem = NSPasteboardItem()
 
@@ -1795,6 +1836,12 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     }
 
     private func _validateDropImpl(_ outlineView: NSOutlineView, info: NSDraggingInfo, proposedItem item: Any?, proposedChildIndex index: Int) -> NSDragOperation {
+        if let sidebarItem = item as? SidebarItem,
+           sidebarItem.itemType == .liveFolder || sidebarItem.itemType == .liveFolderRow {
+            clearDropFeedback()
+            return []
+        }
+
         let originalResolvedItem: Any? = {
             if let provider = item as? UnderlyingBookmarkProviding { return provider.underlyingBookmark }
             return item
@@ -3741,7 +3788,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
             // Group rows animate their height. Keep the cell attached to all
             // four edges so its header stays at the top throughout the animation.
             return InsetTableRowView(insets: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0))
-        case .tab, .newTabButton, .separator, .splitPair:
+        case .tab, .newTabButton, .separator, .splitPair, .liveFolder, .liveFolderRow:
             let identifier = NSUserInterfaceItemIdentifier("SidebarRow")
             if let rowView = outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableRowView {
                 return rowView
@@ -3832,6 +3879,14 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
             splitCell.browserState = browserState
             cellView = splitCell
 
+        case .liveFolder, .liveFolderRow:
+            let identifier = NSUserInterfaceItemIdentifier("LiveFolderCell")
+            let liveCell = outlineView.makeView(withIdentifier: identifier, owner: self) as? LiveFolderCellView ?? {
+                let c = LiveFolderCellView()
+                c.identifier = identifier
+                return c
+            }()
+            cellView = liveCell
         }
         
         cellView.isHidden = false
@@ -3981,6 +4036,16 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
 
 extension SidebarTabListViewController: SidebarTabListItemOwner {
     func toggleItemExpanded(_ item: any SidebarItem) {
+        if let liveFolder = item as? LiveFolderSidebarItem {
+            let isExpanding = !outlineView.isItemExpanded(liveFolder)
+            LiveFolderManager.shared.setExpanded(isExpanding, inSpace: liveFolder.spaceId)
+            if isExpanding {
+                outlineView.animator().expandItem(liveFolder)
+            } else {
+                outlineView.animator().collapseItem(liveFolder)
+            }
+            return
+        }
         if let folder = item as? Bookmark, folder.isFolder {
             userInitiatedToggleFolderGuid = folder.guid
         }

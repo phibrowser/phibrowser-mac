@@ -448,6 +448,7 @@
 		AE5ACE0000000000000000B2 /* AgentSpaceRouter+Shadow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE0000000000000000A2 /* AgentSpaceRouter+Shadow.swift */; };
 		AE8E3290D9DF13FF422A4948 /* PinKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69E9284FAF9F3D97D76D7072 /* PinKind.swift */; };
 		B001795A2E49CF84007B4635 /* PhiChromiumCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */; };
+		723B1F81794C4571A9078FEF /* GitHubSessionFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 361D42BB735E4D85A93736DA /* GitHubSessionFetcher.swift */; };
 		B02586F52E42FD97001B08FC /* ChromiumLauncher.m in Sources */ = {isa = PBXBuildFile; fileRef = B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */; };
 		B02586F62E42FD97001B08FC /* AppController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F02E42FD97001B08FC /* AppController.swift */; };
 		B02586F72E42FD97001B08FC /* SpaceSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F12E42FD97001B08FC /* SpaceSessionController.swift */; };
@@ -598,10 +599,12 @@
 		CCBF8F392E653A8C00B9A99E /* HoverableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F382E653A8C00B9A99E /* HoverableView.swift */; };
 		CCBF8F422E653D9600B9A99E /* SidebarBottomBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F412E653D9600B9A99E /* SidebarBottomBar.swift */; };
 		CCBF8F442E653F3400B9A99E /* SidebarItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F432E653F3400B9A99E /* SidebarItem.swift */; };
+		5F10A25D53054E51BB1F4176 /* LiveFolderSidebarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76857906696D4771B4F22BAA /* LiveFolderSidebarItems.swift */; };
 		CCBF8F462E653F6900B9A99E /* BookmarkModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F452E653F6900B9A99E /* BookmarkModel.swift */; };
 		CCBF8F4C2E6543E800B9A99E /* BookmarkSectionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F492E6543E800B9A99E /* BookmarkSectionController.swift */; };
 		CCBF8F4D2E6543E800B9A99E /* TabSectionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F4B2E6543E800B9A99E /* TabSectionController.swift */; };
 		CCBF8F4E2E6543E800B9A99E /* SidebarCellViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F4A2E6543E800B9A99E /* SidebarCellViews.swift */; };
+		3D8B032A30D848299C5CC0AA /* LiveFolderCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97CB97C8028D451FA5765935 /* LiveFolderCellView.swift */; };
 		CCBF8F502E65445800B9A99E /* SidebarTabListViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F4F2E65445800B9A99E /* SidebarTabListViewController.swift */; };
 		CCBF8F592E656DC000B9A99E /* Tab+Sidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F582E656DC000B9A99E /* Tab+Sidebar.swift */; };
 		CCBF8F622E65719600B9A99E /* SideBarOutlineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F612E65719600B9A99E /* SideBarOutlineView.swift */; };
@@ -687,6 +690,10 @@
 		EAD00000000000000000001C /* URLPatternMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD00000000000000000001B /* URLPatternMatcher.swift */; };
 		EAD000000000000000000024 /* AgentSpaceRouter+Reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000023 /* AgentSpaceRouter+Reader.swift */; };
 		EAD000000000000000000026 /* ReaderExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000025 /* ReaderExportService.swift */; };
+		DA400304ED10483DAD86B436 /* BrowserState+LiveFolders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E08D04C1D924AECB5F30EE2 /* BrowserState+LiveFolders.swift */; };
+		C9189991708B4C1381D7E620 /* LiveFolderManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FD67602A36C441C9564B3B0 /* LiveFolderManager.swift */; };
+		1F078FA8C6914986835CAE13 /* GitHubLiveClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC39EC82B89D4C7E979DE800 /* GitHubLiveClient.swift */; };
+		1FD94871489E414FA34C5E0F /* LiveFolderModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E348899A97944A983968EEB /* LiveFolderModel.swift */; };
 		EAD000000000000000000028 /* ReaderImageInliner.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000027 /* ReaderImageInliner.swift */; };
 		EAD00000000000000000002A /* ReaderStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000029 /* ReaderStyle.swift */; };
 		EAD000000000000000000032 /* ReaderExtensionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000031 /* ReaderExtensionBridge.swift */; };
@@ -1294,6 +1301,7 @@
 		AE5ACE0000000000000000A1 /* AgentSpaceManager+Shadow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentSpaceManager+Shadow.swift"; sourceTree = "<group>"; };
 		AE5ACE0000000000000000A2 /* AgentSpaceRouter+Shadow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentSpaceRouter+Shadow.swift"; sourceTree = "<group>"; };
 		B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiChromiumCoordinator.swift; sourceTree = "<group>"; };
+		361D42BB735E4D85A93736DA /* GitHubSessionFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubSessionFetcher.swift; sourceTree = "<group>"; };
 		B02586EC2E42FD97001B08FC /* PhiBrowser-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "PhiBrowser-Bridging-Header.h"; sourceTree = "<group>"; };
 		B02586ED2E42FD97001B08FC /* ChromiumLauncher.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ChromiumLauncher.h; sourceTree = "<group>"; };
 		B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ChromiumLauncher.m; sourceTree = "<group>"; };
@@ -1446,9 +1454,11 @@
 		CCBF8F382E653A8C00B9A99E /* HoverableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverableView.swift; sourceTree = "<group>"; };
 		CCBF8F412E653D9600B9A99E /* SidebarBottomBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarBottomBar.swift; sourceTree = "<group>"; };
 		CCBF8F432E653F3400B9A99E /* SidebarItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarItem.swift; sourceTree = "<group>"; };
+		76857906696D4771B4F22BAA /* LiveFolderSidebarItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveFolderSidebarItems.swift; sourceTree = "<group>"; };
 		CCBF8F452E653F6900B9A99E /* BookmarkModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkModel.swift; sourceTree = "<group>"; };
 		CCBF8F492E6543E800B9A99E /* BookmarkSectionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkSectionController.swift; sourceTree = "<group>"; };
 		CCBF8F4A2E6543E800B9A99E /* SidebarCellViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarCellViews.swift; sourceTree = "<group>"; };
+		97CB97C8028D451FA5765935 /* LiveFolderCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveFolderCellView.swift; sourceTree = "<group>"; };
 		CCBF8F4B2E6543E800B9A99E /* TabSectionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSectionController.swift; sourceTree = "<group>"; };
 		CCBF8F4F2E65445800B9A99E /* SidebarTabListViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarTabListViewController.swift; sourceTree = "<group>"; };
 		CCBF8F582E656DC000B9A99E /* Tab+Sidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tab+Sidebar.swift"; sourceTree = "<group>"; };
@@ -1527,6 +1537,10 @@
 		EAD00000000000000000001B /* URLPatternMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLPatternMatcher.swift; sourceTree = "<group>"; };
 		EAD000000000000000000023 /* AgentSpaceRouter+Reader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentSpaceRouter+Reader.swift"; sourceTree = "<group>"; };
 		EAD000000000000000000025 /* ReaderExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderExportService.swift; sourceTree = "<group>"; };
+		7E08D04C1D924AECB5F30EE2 /* BrowserState+LiveFolders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+LiveFolders.swift"; sourceTree = "<group>"; };
+		7FD67602A36C441C9564B3B0 /* LiveFolderManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveFolderManager.swift; sourceTree = "<group>"; };
+		AC39EC82B89D4C7E979DE800 /* GitHubLiveClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubLiveClient.swift; sourceTree = "<group>"; };
+		7E348899A97944A983968EEB /* LiveFolderModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveFolderModel.swift; sourceTree = "<group>"; };
 		EAD000000000000000000027 /* ReaderImageInliner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderImageInliner.swift; sourceTree = "<group>"; };
 		EAD000000000000000000029 /* ReaderStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderStyle.swift; sourceTree = "<group>"; };
 		EAD000000000000000000031 /* ReaderExtensionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderExtensionBridge.swift; sourceTree = "<group>"; };
@@ -2543,6 +2557,7 @@
 				ACDC00000000000000000C01 /* AgentCDP */,
 				8EC5A10A2E5C10AA00B41A01 /* ChromiumAnalyticsRelay.swift */,
 				B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */,
+				361D42BB735E4D85A93736DA /* GitHubSessionFetcher.swift */,
 				A17100000000000000000001 /* NativeMediaAdapter.swift */,
 				A17200000000000000000001 /* PeekLinkActivationGuard.swift */,
 				CC288AA82E55824A004A6C1C /* PhiChromiumBridgeHeader.h */,
@@ -2791,6 +2806,7 @@
 				C0D1D0012FEA000000000001 /* SidebarTabListViewController+MultiSelectionDragPreview.swift */,
 				CCBF8F492E6543E800B9A99E /* BookmarkSectionController.swift */,
 				CCBF8F432E653F3400B9A99E /* SidebarItem.swift */,
+				76857906696D4771B4F22BAA /* LiveFolderSidebarItems.swift */,
 				D1F600072FD6000000000007 /* SidebarDiffableSnapshotBuilder.swift */,
 				CCBF8F6A2E66A2C300B9A99E /* Views */,
 			);
@@ -3128,6 +3144,7 @@
 				8EF36C072F4EA95B00FCC91E /* SideTabView.swift */,
 				CCEB64CA2E98DD520036C763 /* InsetTableRowView.swift */,
 				CCBF8F4A2E6543E800B9A99E /* SidebarCellViews.swift */,
+				97CB97C8028D451FA5765935 /* LiveFolderCellView.swift */,
 				F02B00110000000000000001 /* BookmarkFolderIcon.swift */,
 				376581F82EEA9BB200D3E031 /* BookmarkCellView.swift */,
 				376581FA2EEA9D6200D3E031 /* BookmarkRowView.swift */,
@@ -3174,6 +3191,10 @@
 				EAD000000000000000000011 /* ReaderExtractionService.swift */,
 				EAD000000000000000000019 /* ReaderAccessibilityExtractor.swift */,
 				EAD000000000000000000025 /* ReaderExportService.swift */,
+				7E08D04C1D924AECB5F30EE2 /* BrowserState+LiveFolders.swift */,
+				7FD67602A36C441C9564B3B0 /* LiveFolderManager.swift */,
+				AC39EC82B89D4C7E979DE800 /* GitHubLiveClient.swift */,
+				7E348899A97944A983968EEB /* LiveFolderModel.swift */,
 				EAD000000000000000000037 /* SaveForLaterService.swift */,
 				EAD000000000000000000013 /* BrowserState+Reader.swift */,
 				EAD000000000000000000031 /* ReaderExtensionBridge.swift */,
@@ -3690,6 +3711,7 @@
 				CC24EF082E89251D00CE9DD7 /* AuthManager.swift in Sources */,
 				8EC70E162F0BBF3D009FE2CD /* BookmarkItemView.swift in Sources */,
 				B001795A2E49CF84007B4635 /* PhiChromiumCoordinator.swift in Sources */,
+				723B1F81794C4571A9078FEF /* GitHubSessionFetcher.swift in Sources */,
 				8EC5A10A2E5C10AA00B41A02 /* ChromiumAnalyticsRelay.swift in Sources */,
 				ACDC00000000000000000B01 /* AgentCDPListener.swift in Sources */,
 				ACDC00000000000000000B02 /* AgentPeerIdentity.swift in Sources */,
@@ -3700,6 +3722,7 @@
 				CC450AE42EA74AD5004EE144 /* CommandDispatcher.swift in Sources */,
 				CCBF0FA02ECEC1AE005E729B /* AppController+Deeplink.swift in Sources */,
 				CCBF8F442E653F3400B9A99E /* SidebarItem.swift in Sources */,
+				5F10A25D53054E51BB1F4176 /* LiveFolderSidebarItems.swift in Sources */,
 				8E8008F52FA1A72E00EB24C5 /* TabGroupHeaderView.swift in Sources */,
 				3BCDDE6FBABE4BD8A51F0127 /* TabGroupCellView.swift in Sources */,
 				2ABF91DB68C2445BAA58C9BA /* GroupTabsTableView.swift in Sources */,
@@ -3777,6 +3800,7 @@
 				CC5025FE2E702603004223DC /* NSFont+Extension.swift in Sources */,
 				37C9E68C2F3F322D00353A03 /* Shimmer.swift in Sources */,
 				CCBF8F4E2E6543E800B9A99E /* SidebarCellViews.swift in Sources */,
+				3D8B032A30D848299C5CC0AA /* LiveFolderCellView.swift in Sources */,
 				CD4F3A012E56000100FACC01 /* FloatingTrafficLightsView.swift in Sources */,
 				CC288A6B2E4F12EC004A6C1C /* SidebarHeaderView.swift in Sources */,
 				CC6336032E4EE43200A176DA /* PhiLogging.m in Sources */,
@@ -4004,6 +4028,10 @@
 				EAD000000000000000000012 /* ReaderExtractionService.swift in Sources */,
 				EAD00000000000000000001A /* ReaderAccessibilityExtractor.swift in Sources */,
 				EAD000000000000000000026 /* ReaderExportService.swift in Sources */,
+				DA400304ED10483DAD86B436 /* BrowserState+LiveFolders.swift in Sources */,
+				C9189991708B4C1381D7E620 /* LiveFolderManager.swift in Sources */,
+				1F078FA8C6914986835CAE13 /* GitHubLiveClient.swift in Sources */,
+				1FD94871489E414FA34C5E0F /* LiveFolderModel.swift in Sources */,
 				EAD000000000000000000038 /* SaveForLaterService.swift in Sources */,
 				EAD000000000000000000014 /* BrowserState+Reader.swift in Sources */,
 				EAD000000000000000000032 /* ReaderExtensionBridge.swift in Sources */,

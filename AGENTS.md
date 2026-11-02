@@ -203,6 +203,14 @@ must not duplicate calls already served by `APIClient`, and must not reimplement
 the shared `Response<T>` envelope handling. Authentication stays centralized in
 `AuthManager`; only the transport is local.
 
+Exception — live folders read github.com in the browser:
+
+`Sources/ChromiumBridge/GitHubSessionFetcher.swift` reads pull requests with the
+profile's own GitHub session, as a page does, through a hidden DevTools target.
+No token or cookie reaches the app, so it is neither an `APIClient` call nor a
+`URLSession` client. It must only ever read `https://github.com`, and must not
+become a general way to make requests with a user's browser session.
+
 `KeyEnvelopeAPIClient` also owns the device-lifecycle calls on that backend
 (`POST /keys/v1/devices/{id}/revoke`, M3-2's self-revoke). No second client is
 introduced for them: the exception is per BACKEND, not per endpoint, and the

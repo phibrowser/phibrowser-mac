@@ -51,6 +51,8 @@ enum SidebarItemType {
     /// reads as one item; clicking the left half focuses the left
     /// pane, clicking the right half focuses the right pane.
     case splitPair
+    case liveFolder
+    case liveFolderRow
 }
 
 /// Sidebar row that represents a non-pinned split as a single merged

@@ -110,6 +110,7 @@ class BrowserState {
     @Published var tabs: [Tab] = []
     /// Non-pinned tabs shown in the sidebar list.
     @Published var normalTabs: [Tab] = []
+    var liveFolderTabMarkers: Set<String> = []
     /// Pinned tabs managed on the native side.
     @Published var pinnedTabs: [Tab] = []
 
@@ -1095,6 +1096,7 @@ class BrowserState {
             if let localGuid = tab.guidInLocalDB, !localGuid.isEmpty {
                 if openedPinnedGuids.contains(localGuid) { return (tab, "pinned") }
                 if openedBookmarkGuids.contains(localGuid) { return (tab, "bookmark") }
+                if isLiveFolderTab(tab) { return (tab, "liveFolder") }
             }
             if splitBookmarkBoundTabIds.contains(tab.guid) { return (tab, "bookmark") }
             if normalGuids.contains(tab.guid) { return (tab, "normal") }
@@ -1136,7 +1138,7 @@ class BrowserState {
                     return nil
                 }
                 if !traditionalLayout {
-                    if openedBookmarkGuids.contains(localGuid) {
+                    if openedBookmarkGuids.contains(localGuid) || liveFolderTabMarkers.contains(localGuid) {
                         return nil
                     }
                 }
@@ -1799,7 +1801,7 @@ class BrowserState {
     }
 
     private func isBookmarkBackedTab(_ tab: Tab) -> Bool {
-        bookmarkGuidBacking(tab) != nil
+        bookmarkGuidBacking(tab) != nil || isLiveFolderTab(tab)
     }
 
     private func bookmarkGuidBacking(_ tab: Tab) -> String? {
@@ -5297,7 +5299,7 @@ class BrowserState {
             guard let localGuid = tab.guidInLocalDB, !localGuid.isEmpty else {
                 continue
             }
-            if openedPinnedGuids.contains(localGuid) || openedBookmarkGuids.contains(localGuid) {
+            if openedPinnedGuids.contains(localGuid) || openedBookmarkGuids.contains(localGuid) || liveFolderTabMarkers.contains(localGuid) {
                 result.insert(tab.guid)
             }
         }

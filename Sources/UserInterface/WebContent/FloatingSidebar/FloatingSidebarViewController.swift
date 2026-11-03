@@ -348,9 +348,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     private func updatePaletteBackdrop() {
         guard !isSpaceSwitchBackdropOverridden else { return }
         let context = state.themeContext
-        let colors = context.currentTheme.navigationPalette.flatMap {
-            $0.colorCount > 1 ? $0.colors(for: context.currentAppearance) : nil
-        }
+        let colors = context.currentTheme.navigationColors(for: context.currentAppearance)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
@@ -1100,36 +1098,53 @@ extension FloatingSidebarViewController: SpaceSwitchBandSurface {
 
     /// Uses the band slide's clock, just as the docked host's fill does, so
     /// a cold Browser's main-thread work cannot stall the background ramp.
+    /// The backdrop takes the entering Space's whole look, gradient
+    /// included, and ramps to it from what it shows now.
     func animateSpaceSwitchBackdrop(to target: FloatingSidebarViewController,
                                     duration: TimeInterval, startTime: CFTimeInterval) {
         if let effect = (view as? BackdropContainerView)?.backdrop {
-            let from = effect.presentedFillColor
-            effect.themedBackgroundColor = nil
-            effect.backgroundColor = ThemedColor.windowOverlayBackground.resolve(in: target.view)
+            let from = effect.presentedFill
+            // Resolve the entering Space's theme rather than this panel's,
+            // which keeps ramping for its own tree; unpinned when the slide
+            // lands (`setSpaceSwitchBackdropHidden(false)`).
+            effect.subtreeThemeSource = target.view.themeStateProvider
+            effect.rebindThemeProvider()
             if let from { effect.animateFill(from: from, duration: duration, startTime: startTime) }
         } else if let layer = view.layer {
-            let paletteFrom = paletteBackdropLayer.isHidden
-                ? nil : (paletteBackdropLayer.colors as? [CGColor])?.first
-            let from = paletteFrom ?? layer.presentation()?.backgroundColor ?? layer.backgroundColor
-            let to = ThemedColor.windowOverlayBackground.resolve(in: target.view).cgColor
+            let context = target.state.themeContext
+            let toColors = context.currentTheme.navigationColors(for: context.currentAppearance)
+                ?? [ThemedColor.windowOverlayBackground.resolve(in: target.view)]
+            let to = ColoredVisualEffectView.gradientColors(toColors)
+            let fromSamples = paletteBackdropLayer.isHidden ? nil
+                : (paletteBackdropLayer.presentation()?.colors ?? paletteBackdropLayer.colors) as? [CGColor]
+            let fromFlat = layer.presentation()?.backgroundColor ?? layer.backgroundColor
+            // A flat fill starts the ramp as that color at every stop.
+            let from = fromSamples?.count == to.count ? fromSamples
+                : fromFlat.map { Array(repeating: $0, count: to.count) }
             isSpaceSwitchBackdropOverridden = true
-            paletteBackdropLayer.isHidden = true
             view.phiLayer?.backgroundColor = nil
-            layer.backgroundColor = to
-            let ramp = CABasicAnimation(keyPath: "backgroundColor")
+            layer.backgroundColor = nil
+            paletteBackdropLayer.colors = to
+            paletteBackdropColors = nil
+            paletteBackdropLayer.isHidden = false
+            guard let from else { return }
+            let ramp = CABasicAnimation(keyPath: "colors")
             ramp.fromValue = from
             ramp.toValue = to
             ramp.duration = duration
             ramp.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            ramp.beginTime = layer.convertTime(startTime, from: nil)
-            layer.add(ramp, forKey: "phi.fillRamp")
+            ramp.beginTime = paletteBackdropLayer.convertTime(startTime, from: nil)
+            paletteBackdropLayer.add(ramp, forKey: "phi.fillRamp")
         }
     }
 
     func setSpaceSwitchBackdropHidden(_ hidden: Bool) {
         if let container = view as? BackdropContainerView {
             container.paintsBackdrop = !hidden
-            if !hidden { container.backdrop?.themedBackgroundColor = .windowOverlayBackground }
+            if !hidden, let effect = container.backdrop, effect.subtreeThemeSource != nil {
+                effect.subtreeThemeSource = nil
+                effect.rebindThemeProvider()
+            }
         } else if hidden {
             // Clearing only the layer leaves its theme binding alive. The
             // next ramp tick would paint over the outgoing sliding band.
@@ -1139,6 +1154,7 @@ extension FloatingSidebarViewController: SpaceSwitchBandSurface {
             view.layer?.backgroundColor = nil
         } else {
             isSpaceSwitchBackdropOverridden = false
+            paletteBackdropLayer.removeAnimation(forKey: "phi.fillRamp")
             updatePaletteBackdrop()
         }
     }

@@ -11492,7 +11492,7 @@ final class SpaceWindowSlot: ObservableObject {
         animate(leavingView, 0, leavingEndDx)
         // The page-area backdrop ramps to the entering theme with the slide.
         let contentHost = shell.split.contentHost
-        let fromFill = contentHost.backdrop.presentedFillColor
+        let fromFill = contentHost.backdrop.presentedFill
         contentHost.backdrop.appearance = entering.resolvedContentAppearance
         contentHost.followTheme(of: entering)
         if let fromFill {
@@ -12026,7 +12026,7 @@ final class SpaceWindowSlot: ObservableObject {
             }
             if let split = slot?.shell?.split {
                 for backdrop in [split.sidebarHost.backdrop, split.contentHost.backdrop] {
-                    let from = backdrop.presentedFillColor
+                    let from = backdrop.presentedFill
                     // The backdrop's material resolves against its own
                     // appearance, not the theme it follows: left inheriting
                     // the window's, an Incognito Space's backdrop kept the
@@ -12091,7 +12091,6 @@ final class SpaceWindowSlot: ObservableObject {
                 view.layer?.transform = CATransform3DIdentity
             }
             leavingBandContainer.layer?.masksToBounds = leavingContainerMaskedToBounds
-            leavingFloatingSurface?.view.layer?.removeAnimation(forKey: "phi.fillRamp")
             leavingFloatingSurface?.setSpaceSwitchBackdropHidden(false)
             if !viewsToUnback.isEmpty {
                 for view in viewsToUnback { view.wantsLayer = false }
@@ -12393,7 +12392,8 @@ final class SpaceWindowSlot: ObservableObject {
     }
 
     /// Builds a theme whose palette is `from` blended toward `to` by
-    /// `progress`, across every `ColorRole`, for both light and dark.
+    /// `progress`, across every `ColorRole` and the navigation gradient's
+    /// stops, for both light and dark.
     private static func interpolatedTheme(from: Theme, to: Theme, progress: CGFloat) -> Theme {
         let theme = Theme(id: to.id, name: to.name)
         for role in ColorRole.allCases {
@@ -12405,7 +12405,45 @@ final class SpaceWindowSlot: ObservableObject {
                 for: role
             )
         }
+        theme.blendedNavigationColors = blendedNavigationColors(from: from, to: to, progress: progress)
         return theme
+    }
+
+    /// The navigation gradient of `from` blended toward `to`'s, stop by
+    /// stop. A side that paints a flat overlay contributes that color at
+    /// every stop, so a gradient fades into a flat fill (or grows out of
+    /// one) instead of vanishing for the switch. Nil when neither side has
+    /// a gradient.
+    private static func blendedNavigationColors(from: Theme, to: Theme, progress: CGFloat) -> [ColorPair]? {
+        let fromStops = navigationStops(of: from)
+        let toStops = navigationStops(of: to)
+        guard fromStops.count > 1 || toStops.count > 1 else { return nil }
+        let count = max(fromStops.count, toStops.count)
+        return zip(navigationStops(fromStops, count: count), navigationStops(toStops, count: count)).map { f, t in
+            ColorPair(light: lerpColor(f.light, t.light, progress),
+                      dark: lerpColor(f.dark, t.dark, progress))
+        }
+    }
+
+    /// A theme's navigation stops: its gradient's, or its flat overlay once.
+    private static func navigationStops(of theme: Theme) -> [ColorPair] {
+        guard let light = theme.navigationColors(for: .light),
+              let dark = theme.navigationColors(for: .dark),
+              light.count == dark.count else {
+            return [theme.colorPair(for: .windowOverlayBackground)]
+        }
+        return zip(light, dark).map { ColorPair(light: $0, dark: $1) }
+    }
+
+    /// `stops` brought to `count` entries so two sides blend stop by stop:
+    /// a flat color repeated, a two-stop gradient given its middle color.
+    private static func navigationStops(_ stops: [ColorPair], count: Int) -> [ColorPair] {
+        guard stops.count < count, let first = stops.first, let last = stops.last else { return stops }
+        if stops.count == 1 { return Array(repeating: first, count: count) }
+        return [first,
+                ColorPair(light: lerpColor(first.light, last.light, 0.5),
+                          dark: lerpColor(first.dark, last.dark, 0.5)),
+                last]
     }
 
     private static func lerpColor(_ a: NSColor, _ b: NSColor, _ t: CGFloat) -> NSColor {

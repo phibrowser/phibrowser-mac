@@ -484,7 +484,25 @@ public class Theme: NSObject {
     public let name: String
     private var colorPalette: [ColorRole: ColorPair]
     var navigationPalette: ThemePalette?
-    
+
+    /// The navigation gradient's stops while a Space switch ramps this theme
+    /// toward another Space's (`SpaceWindowSlot.interpolatedTheme`). A
+    /// `ThemePalette` is a hue, saturation and brightness and cannot hold a
+    /// blend of two palettes, so the ramp stores the blended colors directly.
+    /// Never persisted: only the ramp's transient themes carry it.
+    var blendedNavigationColors: [ColorPair]?
+
+    /// The navigation gradient's stops as resolved colors: the blend set by a
+    /// Space-switch ramp, else the palette's colors. Nil for a theme that
+    /// paints a flat overlay (no palette, or a single-color one).
+    func navigationColors(for appearance: Appearance) -> [NSColor]? {
+        if let blendedNavigationColors {
+            return blendedNavigationColors.map { $0.color(for: appearance) }
+        }
+        guard let navigationPalette, navigationPalette.colorCount > 1 else { return nil }
+        return navigationPalette.colors(for: appearance)
+    }
+
     public init(id: String, name: String, colorPalette: [ColorRole: ColorPair] = [:]) {
         self.id = id
         self.name = name
@@ -535,6 +553,7 @@ public class Theme: NSObject {
     public func duplicating() -> Theme {
         let copy = Theme(id: id, name: name, colorPalette: colorPalette)
         copy.navigationPalette = navigationPalette
+        copy.blendedNavigationColors = blendedNavigationColors
         return copy
     }
 

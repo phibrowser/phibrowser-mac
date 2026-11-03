@@ -206,6 +206,8 @@ struct OwnedItemApplyStep: Equatable {
 struct ParkedOwnedItem: Equatable {
     var payload: Data
     var pendingOwnerUuid: String?
+    /// Why it is parked; the engine stores it as the cursor's parkReason. Nil means unknown.
+    var reason: SyncHeldReason? = nil
 }
 
 struct OwnedItemPlan {
@@ -391,6 +393,9 @@ protocol OwnedItemKind {
     /// (R-M3-3-18); requiring it would permanently park moved subtrees on new
     /// devices after deletion of their old Space.
     static func ownerUuids(of entity: Entity) -> [String]
+    /// Why an owner reference that resolves neither as a live parent, a Space nor a Profile parks
+    /// the entity. Only the entity can tell a Profile-shaped owner from a Space-shaped one.
+    static func unresolvedOwnerReason(_ owner: String, of entity: Entity) -> SyncHeldReason
 
     /// Current local owner: containing Space syncUuid for bookmarks, inferred
     /// ownerKey for pins; nil means unmapped. Distinct from ownerUuids, which
@@ -460,6 +465,11 @@ protocol OwnedItemKind {
 }
 
 extension OwnedItemKind {
+    /// Space-shaped by default: bookmark roots and URL rule targets name Spaces.
+    static func unresolvedOwnerReason(_ owner: String, of entity: Entity) -> SyncHeldReason {
+        .unmappedSpaceOwner
+    }
+
     /// Default nil preserves BookmarkKind/PinKind implementations and behavior.
     static func targetOwnerUuid(of entity: Entity) -> String? { nil }
     /// All three shipped kinds override this to true under C4. The default stays off so a
@@ -745,6 +755,7 @@ enum SyncableOwnedItems {
             identities.append(identity)
             var updated = cursor
             updated.pendingApply = nil
+            updated.parkReason = nil
             updated.pendingOwnerUuid = nil
             updated.parkedForScope = nil
             updated.pendingDelete = true
@@ -953,7 +964,8 @@ enum SyncableOwnedItems {
                 let identity = K.identity(of: item.entity)
                 guard !identity.isEmpty, let payload = payloadBytes(item.entity) else { continue }
                 parkedOut[identity] = ParkedOwnedItem(
-                    payload: payload, pendingOwnerUuid: K.ownerUuids(of: item.entity).first)
+                    payload: payload, pendingOwnerUuid: K.ownerUuids(of: item.entity).first,
+                    reason: .unknown)
             }
             return OwnedItemPlan(steps: [], parked: parkedOut, refused: 0, lifted: 0,
                                  supersededByDelete: 0, cancelledDeletes: [], harvest: harvest,
@@ -1201,6 +1213,7 @@ enum SyncableOwnedItems {
             var landingParent: String?
             var wasLifted = false
             var blockedBy: String?
+            var blockedReason: SyncHeldReason = .unknown
             var deadOwner: String?
             for owner in K.ownerUuids(of: item.entity) {
                 switch classify(owner) {
@@ -1211,6 +1224,8 @@ enum SyncableOwnedItems {
                         deadOwner = space      // The parent resolved as dead above, this round
                     } else {
                         blockedBy = owner      // The parent is parked, refused, or cyclic
+                        // A child of a parent parked this round waits for the same thing.
+                        blockedReason = parkedOut[parent]?.reason ?? .unknown
                     }
                 case .lift:
                     wasLifted = true
@@ -1219,6 +1234,8 @@ enum SyncableOwnedItems {
                     continue
                 case .unresolved:
                     blockedBy = owner
+                    blockedReason = resolve.localSpaceId(owner) != nil ? .ineligibleSpaceOwner
+                        : K.unresolvedOwnerReason(owner, of: item.entity)
                 case .dead(let space):
                     deadOwner = space
                 }
@@ -1235,6 +1252,7 @@ enum SyncableOwnedItems {
                     // hard-delete that row; the retention purge or the deleting device's own
                     // tombstone removes it, and the parked payload resolves once the row is gone.
                     blockedBy = deadOwner
+                    blockedReason = .ineligibleSpaceOwner
                 } else if table.cursors[identity]?.reconciled != nil
                             || table.cursors[identity]?.pendingDelete == true {
                     // This device landed it and its row is gone with the Space: the outbound diff
@@ -1256,7 +1274,8 @@ enum SyncableOwnedItems {
             if let blockedBy {
                 if let payload = payloadBytes(item.entity) {
                     parkedOut[identity] = ParkedOwnedItem(payload: payload,
-                                                          pendingOwnerUuid: blockedBy)
+                                                          pendingOwnerUuid: blockedBy,
+                                                          reason: blockedReason)
                 }
                 continue
             }
@@ -1322,7 +1341,8 @@ enum SyncableOwnedItems {
                         if let payload = payloadBytes(item.entity) {
                             parkedOut[identity] = ParkedOwnedItem(
                                 payload: payload,
-                                pendingOwnerUuid: K.ownerUuids(of: item.entity).first)
+                                pendingOwnerUuid: K.ownerUuids(of: item.entity).first,
+                                reason: .unknown)
                         }
                         continue
                     }

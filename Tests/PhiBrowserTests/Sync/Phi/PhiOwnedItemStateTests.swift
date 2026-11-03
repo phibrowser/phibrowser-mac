@@ -55,9 +55,9 @@ final class PhiOwnedItemStateTests: XCTestCase {
 
     // MARK: - CASE 3.1
 
-    /// CASE 3.1: round-trip all fourteen fields. Partial coverage misses omitted Codable
+    /// CASE 3.1: round-trip all sixteen fields. Partial coverage misses omitted Codable
     /// fields, which can make the engine send baseVersion=0 creates that blindly overwrite
-    /// account entities. The field-count assertion requires any fifteenth field to join this test.
+    /// account entities. The field-count assertion requires any seventeenth field to join this test.
     func testEveryCursorFieldSurvivesAFileRoundTrip() throws {
         var cursor = PhiOwnedItemCursor()
         cursor.entityId = "srv-1"
@@ -67,6 +67,8 @@ final class PhiOwnedItemStateTests: XCTestCase {
         cursor.ownerUuid = "su-1"
         cursor.pendingApply = Data([0x03])
         cursor.pendingOwnerUuid = "su-2"
+        cursor.parkedForScope = true
+        cursor.parkReason = .lineageExists
         cursor.pendingTombstone = true
         cursor.pendingPartnerLineage = "LY"
         cursor.pendingDelete = true
@@ -84,7 +86,7 @@ final class PhiOwnedItemStateTests: XCTestCase {
         let fieldCount = Mirror(reflecting: cursor).children.count
         let roundTripped = loaded.table
         let reportedLoss = loaded.reportedLoss
-        XCTAssertEqual(fieldCount, 14, "Every new cursor field needs a nondefault value in this test")
+        XCTAssertEqual(fieldCount, 16, "Every new cursor field needs a nondefault value in this test")
         XCTAssertEqual(roundTripped, table)
         XCTAssertEqual(roundTripped.cursors["bm-1"], cursor)
         XCTAssertFalse(reportedLoss, "Readable data is not lost")
@@ -102,6 +104,8 @@ final class PhiOwnedItemStateTests: XCTestCase {
           "ownerUuid": "su-1",
           "pendingApply": "Aw==",
           "pendingOwnerUuid": "su-2",
+          "parkedForScope": true,
+          "parkReason": "lineageExists",
           "pendingTombstone": true,
           "pendingPartnerLineage": "LY",
           "pendingDelete": true,
@@ -114,7 +118,7 @@ final class PhiOwnedItemStateTests: XCTestCase {
 
         let fromLiteral = try JSONDecoder().decode(PhiOwnedItemCursor.self, from: literal)
 
-        XCTAssertEqual(fromLiteral, cursor, "All fourteen persisted keys must match this literal exactly")
+        XCTAssertEqual(fromLiteral, cursor, "All sixteen persisted keys must match this literal exactly")
     }
 
     /// CASE 3.1b: files written by the previous version remain readable (R-exec-13 / F-PK-2).
@@ -155,6 +159,27 @@ final class PhiOwnedItemStateTests: XCTestCase {
         XCTAssertNotNil(loaded.table.cursors["bm-1"]?.reconciled)
         XCTAssertNil(loaded.table.cursors["bm-1"]?.rekeyRejectRounds,
                      "③ A missing key decodes as nil, meaning no rejection streak")
+        XCTAssertNil(loaded.table.cursors["bm-1"]?.parkReason, "④ No parkReason key decodes as nil")
+    }
+
+    /// A parked cursor written before parkReason existed decodes with nil (counted as unknown),
+    /// and the reason round-trips once set.
+    func testACursorWithoutParkReasonDecodesAndTheReasonRoundTrips() throws {
+        let legacy = Data("""
+        {"entityId": "srv-1", "version": 4, "pendingApply": "Aw==", "pendingOwnerUuid": "pu-9",
+         "pendingTombstone": false, "pendingDelete": false, "deleteDecidedAtMs": 0, "deleteRejectRounds": 0}
+        """.utf8)
+        var cursor = try JSONDecoder().decode(PhiOwnedItemCursor.self, from: legacy)
+        XCTAssertNil(cursor.parkReason)
+        XCTAssertEqual(cursor.pendingApply, Data([0x03]))
+        var table = PhiOwnedItemTable()
+        table.cursors["p"] = cursor
+        XCTAssertEqual(PhiSyncEngine.ownedHeldByReason(table), [.unknown: 1])
+
+        cursor.parkReason = .unmappedProfileOwner
+        let decoded = try JSONDecoder().decode(PhiOwnedItemCursor.self, from: JSONEncoder().encode(cursor))
+        XCTAssertEqual(decoded.parkReason, .unmappedProfileOwner)
+        XCTAssertEqual(decoded, cursor)
     }
 
     // MARK: - CASE 3.2

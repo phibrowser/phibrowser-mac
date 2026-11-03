@@ -139,6 +139,38 @@ final class PhiSyncEnginePinScopeStatusTests: XCTestCase {
         XCTAssertNil(table.cursors["lu:su-9"]?.parkedForScope)
         XCTAssertEqual(engine.statusSnapshot.phase, .needsAttention)
         XCTAssertEqual(pinnedTabsHeld(engine), 1)
+        XCTAssertEqual(table.cursors["lu:su-9"]?.parkReason, .unmappedSpaceOwner)
+        XCTAssertEqual(engine.statusSnapshot.detail?.kinds[.pinnedTabs]?.heldByReason, [.unmappedSpaceOwner: 1])
+    }
+
+    /// A Profile-shaped owner that is not mapped parks with unmappedProfileOwner; once the Profile is
+    /// mapped and the scope matches, the next round lands it and clears the reason with pendingApply.
+    func testAnUnmappedProfileOwnerIsHeldByReasonAndLandingClearsIt() async throws {
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([remotePin("lq", owner: "pu-9", version: 4)])]
+        let access = makeSpaceAccess()
+
+        let engine = makeEngine(client: client, access: access,
+                                ownedKinds: [.pins(access: pinAccess, store: pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        var table = await engine.ownedTableForTesting("pins")
+        XCTAssertNotNil(table.cursors["lq:pu-9"]?.pendingApply)
+        XCTAssertEqual(table.cursors["lq:pu-9"]?.parkReason, .unmappedProfileOwner)
+        XCTAssertEqual(engine.statusSnapshot.phase, .needsAttention)
+        XCTAssertEqual(engine.statusSnapshot.detail?.kinds[.pinnedTabs]?.heldByReason, [.unmappedProfileOwner: 1])
+
+        access.uuidByProfileId["Default"] = "pu-9"
+        access.profileIdByUuid = ["pu-9": "Default"]
+        await engine.pullOnce()
+
+        table = await engine.ownedTableForTesting("pins")
+        XCTAssertNil(table.cursors["lq:pu-9"]?.pendingApply, "The mapped owner lands the parked payload")
+        XCTAssertNil(table.cursors["lq:pu-9"]?.parkReason, "Landing clears the reason with pendingApply")
+        XCTAssertEqual(engine.statusSnapshot.detail?.kinds[.pinnedTabs]?.heldByReason, [:])
     }
 
     /// The dormant copy is replanned every round: once the local scope becomes space, the next round

@@ -105,13 +105,20 @@ final class SyncHelper {
     private var pollTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private(set) var report = Report()
+    /// False once stopped; a stopped helper's reporter describes nothing live.
+    var isRunning: Bool { !retired }
+    /// Receives every report an observation leaves behind (docs/sync.md, "Sync status contract");
+    /// the feedback form reads its metadata through the coordinator's helper.
+    let attentionReporter: SyncAttentionReporter?
 
     init(isEligible: @escaping () -> Bool, participants: @escaping () -> [Participant],
          lastSuccess: Date?, saveSuccess: @escaping (Date) -> Bool,
          now: @escaping () -> Date = Date.init,
          minimumRoundInterval: TimeInterval = 60, staleInterval: TimeInterval = 300,
          roundTimeout: TimeInterval = 60,
-         unobservablePolicy: ExplicitRequestPolicy = .waitForAllObservable) {
+         unobservablePolicy: ExplicitRequestPolicy = .waitForAllObservable,
+         attentionReporter: SyncAttentionReporter? = nil) {
+        self.attentionReporter = attentionReporter
         self.isEligible = isEligible
         self.participants = participants
         self.lastSuccess = lastSuccess
@@ -259,6 +266,8 @@ final class SyncHelper {
         refreshTask = pending
         await pending.value
         if generation == expected, refreshTask == pending { refreshTask = nil }
+        guard !retired else { return }
+        attentionReporter?.observe(report, persistenceFailure: coordinationFailure == .persistence, now: now())
     }
 
     /// Sync now upgrades an ordinary active round with one user-initiated dispatch; taps on

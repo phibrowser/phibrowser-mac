@@ -954,6 +954,81 @@ items alone produce no category. Invariant, covered by the status harness: a rou
 Needs attention always has a non-zero held count or a problem category. The detail has no string field, so it cannot
 carry names, identifiers, URLs, hosts, error text or status numbers.
 
+Each kind's `heldByReason` splits `held` by `SyncHeldReason` (enum keys, non-zero counts only; `held`
+stays the total, so the pane is unchanged). An owned item's reason is the cursor's persisted
+`parkReason`, set wherever `pendingApply` is set for a park and cleared wherever it is cleared. A
+cursor written before the field existed, a remote tombstone and a split partner wait count as
+`unknown`. Dormant copies keep their reason but stay out of held. The park sites map as follows.
+
+| Park site | Reason |
+| --- | --- |
+| Plan: owner neither a live parent, a dead owner, a mapped Space nor a mapped Profile | `unmappedProfileOwner` for a Profile-shaped pin owner, otherwise `unmappedSpaceOwner`; a bookmark whose parent folder has not landed is `unknown` |
+| Plan: owner Space mapped but hidden or purged, or a dead owner with a live row | `ineligibleSpaceOwner` |
+| Plan: child of a parent parked in the same round | the parent's reason |
+| Plan: pinned-tab scope mismatch, merge partner at work | `unknown` |
+| Pin landing: owner shape unmapped | `unmappedProfileOwner` or `unmappedSpaceOwner` by the entity's owner |
+| Pin landing: owner already holds the lineage | `lineageExists` |
+| Pin and bookmark landing: write threw (not a refusal), or the post-check missed the row | `landingFailed` |
+| Bookmark landing: root's Space unmapped | `unmappedSpaceOwner` |
+| Pin landing: scope blocked or changed since the sample | `unknown` |
+| Local rows unreadable (`parkUndeliveredOwnedEntities`), claim write-back failed | `storeError` |
+
+Spaces held for a Profile count as `unmappedProfileOwner`; other held Spaces and unreadable settings
+have no recorded reason. After the `[phi-sync] <kind> pulled=…` round line, a kind with held items
+logs `[phi-sync] <kind> held_by_reason unmapped_profile_owner=N …` (snake case, non-zero only,
+counts only).
+
+`SyncAttentionReporter` (`Sources/Sync/SyncAttentionReporter.swift`) reports Needs attention problems.
+`SyncHelper.refresh` feeds it every report after an observation, with the helper's persistence
+failure. A problem's identity is `(context, kind, reason)`: context `phi`, `chromium` (every Chromium
+Profile together) or `helper`; reason a `SyncAttentionReason`. A Phi context in Needs attention
+yields one problem per kind and held reason (`held` prefix; held not covered by `heldByReason` is
+`heldUnknown`) and one for a last problem other than Offline; with neither, `(phi, none, unknown)`. A
+Chromium Profile in Needs attention yields `(chromium, none, unknown)`. The helper adds
+`persistenceFailure`, `profileListNotEnumerated` (unread for 5 minutes), `pinScopeMigrationFailed`
+(kind pinned tabs) and `profileMappingPaused` (a shown pause whose reason is needs attention).
+Absence by context: a Phi problem is absent only in a report whose Phi context is Up to date or in
+Needs attention without it; Checking, Syncing and Offline neither confirm nor deny it and neither
+start nor stop the grace clock already running. The Chromium problem is present exactly when a
+Chromium Profile is in Needs attention and absent otherwise, with no settledness condition,
+because a Profile can stay Syncing or Checking without a connection. Helper problems are absent
+whenever their condition is false. A kind whose held items have no recorded reason while the last
+problem names that kind (unreadable settings) yields only the category problem. State persists in `UserDefaults.standard` (`sync.attention.active`, and
+`sync.attention.sentryHistory`, which survives clears).
+
+1. **Entry debounce.** A problem enters only after 60 seconds of continuous presence; one that
+   disappears first, or whose evidence lapses for more than 60 seconds, starts over.
+2. **Entered once.** Entry emits `sync_attention_entered` once. Later observations, count changes
+   and relaunches never emit it again.
+3. **Snapshot.** While entered and present, `sync_attention_snapshot` at most once per 24 hours
+   per problem, the first 24 hours after entry.
+4. **Clear with grace.** Absent for 60 seconds continuously, an entered problem emits
+   `sync_attention_cleared` with `cleared_by` `upgrade` when the app version differs from the one
+   at entry, else `resolved`, and is forgotten. Reappearing within the grace emits nothing.
+5. **Sentry.** Only `heldLineageExists`, `heldLandingFailed`, `heldStoreError`, `heldUnknown`,
+   `saveFailedOnThisMac`, `readFailedOnThisMac`, `rejectedByServer`, `unreadableRemoteData`,
+   `persistenceFailure` and `pinScopeMigrationFailed` reach Sentry
+   (`SentryService.captureSyncAttention`, fingerprint `sync-attention`, context, kind, reason), once
+   per entry and at most once per 7 days per problem, also across clear and re-entry. By design
+   these events carry no user and no log attachment: the event scope removes the global user
+   and attachments, and `beforeSend` (`SentryService.stripSyncAttentionIdentity`) removes the
+   installation id the client fills in for an event without a user, recognized by the
+   `sync_attention` tag.
+6. **Sync off.** A Not started summary (ineligible: signed out, unpaired, locked or disabled, and
+   briefly at every launch before unlock) neither confirms nor denies any problem; on leaving it,
+   debounce and grace restart. Only 10 minutes of continuous Not started
+   (`sync.attention.notStartedSince`) drops all state, without cleared events. Sign-out and this
+   device leaving sync (`invalidateSyncKeyController` with no account, or a native cleanup) call
+   `SyncAttentionReporter.reset()`, which removes the tracked problems and the Not started run but
+   keeps `sync.attention.sentryHistory`; engine rebuilds and the account assignment at launch do
+   not. Feedback reports problem keys only while a helper is running.
+
+Every property, tag, context, log field and feedback key is an enum raw value or an integer; no
+identifier, name, URL or email. Feedback V2 adds `sync_phase` (the summary, `notStarted` without
+a helper) and, with tracked problems, `sync_attention_problems`
+(`context:kind:reason=held_count`, `;`-joined), `sync_attention_oldest_age_seconds` and
+`sync_attention_entered_count` to `extra`, computed when the form is sent.
+
 The Sync settings pane reads all of this only from `SyncHelper.report`. Its Sync now
 button calls `requestSyncNow()` directly, not through the pane's 3-second poll, whose
 in-flight guard would otherwise drop the tap. `SyncNowButtonState.reduce` maps the summary
@@ -1067,6 +1142,30 @@ Old frameworks safely remain Checking. A matched framework build and manual
 cross-device acceptance are required before release; object compilation alone
 does not establish runtime correctness. See the reusable UX acceptance cases in
 [sync-e2e-test-cases.md](sync-e2e-test-cases.md).
+
+### Launch snapshot caches
+
+The launch-time `user_defaults_snapshot` fires before the account, the key controller or the
+account key exist, so `SyncLaunchAnalytics` (`Sources/Sync/SyncLaunchAnalytics.swift`) reads
+mirrors in `UserDefaults.standard` that the sync layer writes when it already has the data. They
+are telemetry only: no sync decision reads them.
+
+| Key | Written by |
+| --- | --- |
+| `metrics.sync.enabled` | `ProfilePairingGate.pairingObserver`, on every enrollment configuration and change (not on `stop()`) |
+| `metrics.sync.activeDeviceCount` | The Devices pane's listing, and one listing per `SyncKeyController` (in practice once per launch) from the first paired mapping pass after unlock. This is the only request the caches add |
+| `metrics.sync.accountProfileUuids` | `ProfileKeyManager.onAccountListing`, on every account Profile listing; flags of uuids no longer listed are dropped |
+| `metrics.sync.profileDefaultFlags` | `ProfileKeyManager.onDefaultFlag`, on every envelope it opens or writes (remote read, scan, adopt, resolve, registration, default-flag backfill); a flagless envelope counts as not default |
+
+A paired pass that lists the Profiles also reads at most three envelopes whose flag was never
+read (`defaultFlagFillPerPass`), in uuid order, skipping envelopes that do not open, so an old
+install converges over a few passes. The default-flag count is reported only once every listed
+Profile's flag is known. Observer calls are dropped once the owning `SyncKeyController` retires
+(`ProfileKeyManager.retireTelemetry()`, checked after each await), so a response still in flight
+for the previous account cannot overwrite the next one's caches. Sign-out and this device leaving sync (`invalidateSyncKeyController`
+with no account, or a native cleanup) reset every key and set `enabled` to false; an account
+assignment at launch keeps them. The uuid keys never leave the device; the snapshot carries one
+bool and three counts.
 
 ## Framework sync endpoint
 

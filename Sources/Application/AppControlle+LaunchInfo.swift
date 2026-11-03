@@ -391,6 +391,8 @@ extension AppController {
         ]
         // Chromium owns these switches and is not up yet; read the Mac-side mirror.
         properties.merge(ContentBlockingAnalytics.snapshotProperties()) { current, _ in current }
+        // The account and its keys are not loaded yet; read the sync layer's mirror.
+        properties.merge(SyncLaunchAnalytics.snapshotProperties()) { current, _ in current }
         PostHogSDK.shared.capture("user_defaults_snapshot", properties: properties)
     }
 

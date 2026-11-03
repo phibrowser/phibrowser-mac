@@ -212,6 +212,14 @@ final class SyncKeyController {
     private(set) var defaultFlagBackfillTask: Task<Void, Never>?
     private var confirmedDefaultFlagUuids: [String: String] = [:]
     private var loggedDefaultFlagFailureUuids: Set<String> = []
+    /// Launch snapshot caches (docs/sync.md, "Launch snapshot caches"): the bounded default-flag
+    /// fill and the one device listing per controller. Telemetry only, single-flight, best effort.
+    private(set) var launchTelemetryTask: Task<Void, Never>?
+    private var activeDeviceCountRecorded = false
+    /// Envelopes the fill read without opening; not retried by this controller.
+    private var telemetryUnreadableUuids: Set<String> = []
+    /// Where the caches are recorded; tests substitute a suite.
+    var launchTelemetryDefaults: UserDefaults = .standard
 
     // MARK: - Profile mapping pause inputs (docs/sync.md, "Enrollment and setup")
     //
@@ -835,11 +843,15 @@ final class SyncKeyController {
     /// cannot be cancelled mid-request still writes nothing once it resumes.
     func retire() {
         isRetired = true
+        // Before anything else: a launch-snapshot write from a response still in flight for this
+        // account must not land after the caches are reset for the next one.
+        profileKeys.retireTelemetry()
         resolveTask?.cancel()
         silentUnlockTask?.cancel()
         cancelUnlockRetry()
         autoCreateTask?.cancel()
         defaultFlagBackfillTask?.cancel()
+        launchTelemetryTask?.cancel()
         clearResolved()
     }
 
@@ -1193,6 +1205,35 @@ final class SyncKeyController {
         }
     }
 
+    /// Fills the launch snapshot caches from a paired pass that has just listed the account's
+    /// Profiles: up to `SyncLaunchAnalytics.defaultFlagFillPerPass` envelope reads for uuids whose
+    /// default flag was never read (each read records itself through `ProfileKeyManager`), and one
+    /// device listing per controller, which is the request this adds per launch. Failures are
+    /// silent and retried by later passes. Nothing here feeds sync decisions.
+    func refreshLaunchTelemetryBestEffort(accountUuids: Set<String>) {
+        guard !isRetired, manager.currentARK != nil, launchTelemetryTask == nil else { return }
+        let fill = SyncLaunchAnalytics.uuidsNeedingDefaultFlag(
+            listing: accountUuids, excluded: undecryptableRemoteUuids.union(telemetryUnreadableUuids),
+            defaults: launchTelemetryDefaults)
+        let listDevices = !activeDeviceCountRecorded
+        guard !fill.isEmpty || listDevices else { return }
+        launchTelemetryTask = Task { @MainActor [weak self] in
+            defer { self?.launchTelemetryTask = nil }
+            for uuid in fill {
+                guard let self, !Task.isCancelled, !self.isRetired else { return }
+                if let remote = try? await self.profileKeys.remoteProfile(uuid: uuid), remote.name == nil {
+                    self.telemetryUnreadableUuids.insert(uuid)
+                }
+            }
+            guard listDevices, let self, !Task.isCancelled, !self.isRetired,
+                  let rows = try? await self.approvals.listDevices(),
+                  !self.isRetired, self.isCurrentAccount() else { return }
+            self.activeDeviceCountRecorded = true
+            SyncLaunchAnalytics.recordActiveDeviceCount(
+                SyncLaunchAnalytics.activeDeviceCount(rows), defaults: self.launchTelemetryDefaults)
+        }
+    }
+
     /// Updates `knownUnmappedProfileIds` from one pass: Profiles that no longer
     /// exist locally leave, Profiles it proved unmapped enter, and Profiles it
     /// resolved leave last (a 404 that the same pass re-registered is resolved).
@@ -1502,6 +1543,7 @@ final class SyncKeyController {
             // The listing may have answered for the next account (review A11).
             guard !isRetired else { return retiredRefresh() }
             lastAccountProfileUuids = accountUuids
+            refreshLaunchTelemetryBestEffort(accountUuids: accountUuids)
         } catch {
             guard !isRetired else { return retiredRefresh() }
             noteAutoCreateFailure(error)

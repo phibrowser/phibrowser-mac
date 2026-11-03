@@ -24,6 +24,9 @@ extension Notification.Name {
 private final class OmniBoxContainerRootView: NSView {
     weak var controller: OmniBoxContainerViewController?
 
+    // Unhandled scrolling inside the box must not reach the sidebar or page behind it.
+    override func scrollWheel(with event: NSEvent) {}
+
     override func mouseDown(with event: NSEvent) {
         guard let controller else {
             super.mouseDown(with: event)

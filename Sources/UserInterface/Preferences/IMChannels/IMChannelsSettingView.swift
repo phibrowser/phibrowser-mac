@@ -5,7 +5,6 @@
 
 import AppKit
 import SwiftUI
-import CoreImage.CIFilterBuiltins
 
 struct PhiLinkSettingsSectionView: View {
     @State private var vm = IMChannelsViewModel()
@@ -56,10 +55,7 @@ struct PhiLinkSettingsSectionView: View {
         .opacity(enabled ? 1.0 : 0.4)
         .disabled(!enabled)
         .task(id: shouldLoadChannels) {
-            guard shouldLoadChannels else {
-                await vm.stopPolling()
-                return
-            }
+            guard shouldLoadChannels else { return }
             await vm.loadAll()
         }
         .onReceive(
@@ -68,7 +64,6 @@ struct PhiLinkSettingsSectionView: View {
         ) { _ in
             isGuest = ApplicationState.shared.isGuest
         }
-        .onDisappear { Task { await vm.stopPolling() } }
     }
 }
 
@@ -100,8 +95,10 @@ private struct TelegramChannelsSection: View {
 
     var body: some View {
         IMContainerView {
-            OfficialBotSection(vm: vm, enabled: enabled)
-            Divider()
+            if vm.pairing != nil {
+                OfficialBotSection(vm: vm, enabled: enabled)
+                Divider()
+            }
             CustomBotSection(vm: vm, enabled: enabled)
         }
     }
@@ -114,13 +111,20 @@ private struct OfficialBotSection: View {
     let enabled: Bool
 
     var body: some View {
-        DisclosureGroup(isExpanded: $vm.isOfficialBotExpanded) {
-            Divider()
-            officialBotBody
-        } label: {
+        VStack(alignment: .leading, spacing: 0) {
             officialBotHeader
+                .padding(.vertical, 12)
+            IMNoticeBanner(message: NSLocalizedString(
+                "settings.phiLink.officialBot.retirementNotice",
+                value: "The official Telegram bot will be retired soon. Please set up and switch to your own bot as soon as possible.",
+                comment: "Phi Link - Warning for users with an existing official bot binding, asking them to switch to their own bot"
+            ))
+            connectedView
+            if let message = vm.officialBotErrorMessage {
+                IMNoticeBanner(message: message)
+                    .padding(.bottom, 12)
+            }
         }
-        .disclosureGroupStyle(IMDisclosureStyle())
     }
 
     private var officialBotHeader: some View {
@@ -134,74 +138,16 @@ private struct OfficialBotSection: View {
                 Text(NSLocalizedString("settings.phiLink.officialBot.title", value: "Official Phi Link Telegram bot", comment: "Phi Link - Official Bot title"))
                     .font(.system(size: 14))
                     .themedForeground(.textPrimary)
-                Text(NSLocalizedString("settings.phiLink.officialBot.description", value: "We provide a Telegram bot to relay your messages @philink_bot", comment: "Phi Link - Official Bot subtitle"))
-                    .font(.system(size: 12))
-                    .themedForeground(.textTertiary)
             }
             Spacer(minLength: 8)
             if enabled && (!vm.hasLoaded || vm.isOfficialBotLoading) {
                 ProgressView()
                     .controlSize(.mini)
             }
-            if vm.hasLoaded {
-                IMStatusBadge(
-                    text: officialStatusText,
-                    kind: officialStatusKind
-                )
-            }
         }
     }
 
-    @ViewBuilder
-    private var officialBotBody: some View {
-        if enabled && !vm.hasLoaded {
-            loadingRow
-        } else if let pairing = vm.pairing, !vm.officialBotNeedsReconnect {
-            connectedView(pairing: pairing)
-        } else if vm.showPendingSession, let session = vm.activeSession {
-            qrCodeView(session: session)
-        } else if vm.officialBotErrorMessage != nil {
-            serviceIssueView(
-                actionTitle: NSLocalizedString("settings.phiLink.officialBot.retryButton", value: "Retry", comment: "Phi Link - Retry loading official bot")
-            ) {
-                Task { await vm.refreshAll() }
-            }
-        } else {
-            notConnectedView
-        }
-    }
-
-    private var officialStatusText: String {
-        if vm.officialBotHasServiceIssue {
-            return NSLocalizedString("settings.phiLink.officialBot.serviceIssueStatus", value: "Service issue", comment: "Phi Link - Official bot service issue status")
-        }
-        if vm.pairing != nil && !vm.officialBotNeedsReconnect {
-            return NSLocalizedString("settings.phiLink.officialBot.linkedStatus", value: "Linked", comment: "Phi Link - Official bot linked status")
-        }
-        return NSLocalizedString("settings.phiLink.officialBot.notLinkedStatus", value: "Not linked", comment: "Phi Link - Official bot not linked status")
-    }
-
-    private var officialStatusKind: IMStatusKind {
-        if vm.officialBotHasServiceIssue {
-            return .warning
-        }
-        if vm.pairing != nil && !vm.officialBotNeedsReconnect {
-            return .success
-        }
-        return .neutral
-    }
-
-    private var loadingRow: some View {
-        HStack {
-            Spacer()
-            ProgressView()
-                .controlSize(.small)
-            Spacer()
-        }
-        .padding(.vertical, 20)
-    }
-
-    private func connectedView(pairing: ChannelPairing) -> some View {
+    private var connectedView: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(NSLocalizedString("settings.phiLink.officialBot.telegramIDLabel", value: "Telegram ID", comment: "Phi Link - Official bot connected label"))
@@ -232,145 +178,6 @@ private struct OfficialBotSection: View {
         }
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @Environment(\.colorScheme) private var colorScheme
-
-    private func qrCodeView(session: PairingSession) -> some View {
-        VStack(spacing: 14) {
-            if let deepLink = session.deepLink?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !deepLink.isEmpty,
-               session.status != "expired" {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .fill(
-                            colorScheme == .dark
-                                ? Color(white: 0.18)
-                                : Color.white.opacity(0.96)
-                        )
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .stroke(
-                            colorScheme == .dark
-                                ? Color.white.opacity(0.10)
-                                : Color.black.opacity(0.06),
-                            lineWidth: 1
-                        )
-                    qrImage(for: deepLink)
-                        .interpolation(.none)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 154, height: 154)
-                        .padding(18)
-                        .background(
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .fill(Color.white)
-                        )
-                }
-                .frame(width: 210, height: 210)
-                .shadow(
-                    color: colorScheme == .dark
-                        ? Color.black.opacity(0.40)
-                        : Color.black.opacity(0.08),
-                    radius: colorScheme == .dark ? 20 : 14,
-                    x: 0,
-                    y: 8
-                )
-                .padding(.top, 8)
-            }
-
-            Text(session.status == "expired"
-                 ? NSLocalizedString("settings.phiLink.officialBot.qrCode.expiredHint", value: "QR code expired. Generate a fresh one to continue.", comment: "Phi Link - Official bot QR expired hint")
-                 : NSLocalizedString("settings.phiLink.officialBot.qrCode.scanHint", value: "Scan the QR code with your phone camera or click on the button below to add Phi Link bot to your Telegram", comment: "Phi Link - Official bot QR hint"))
-                .font(.system(size: 12))
-                .themedForeground(.textTertiary)
-                .multilineTextAlignment(.center)
-
-            HStack(spacing: 8) {
-                if let deepLink = session.deepLink,
-                   !deepLink.isEmpty,
-                   session.status != "expired",
-                   let deepLinkURL = URL(string: deepLink) {
-                    Button {
-                        NSWorkspace.shared.open(deepLinkURL)
-                    } label: {
-                        Label(NSLocalizedString("settings.phiLink.officialBot.openInTelegramButton", value: "Open in Telegram", comment: "Phi Link - Open official bot link in Telegram"), systemImage: "arrow.up.forward.square")
-                            .font(.system(size: 13))
-                    }
-                    .imPrimaryButtonStyle()
-                }
-
-                Button {
-                    Task { await vm.refreshQR() }
-                } label: {
-                    Label(
-                        session.status == "expired"
-                            ? NSLocalizedString("settings.phiLink.officialBot.relinkAction", value: "Relink", comment: "Phi Link - Official bot relink action")
-                            : NSLocalizedString("settings.phiLink.officialBot.refreshQRCodeAction", value: "Refresh", comment: "Phi Link - Official bot refresh QR action"),
-                        systemImage: "arrow.clockwise"
-                    )
-                    .font(.system(size: 13))
-                }
-                .imSecondaryButtonStyle()
-                .disabled(vm.isOfficialBotLoading)
-            }
-            .padding(.bottom, 8)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-    }
-
-    private var notConnectedView: some View {
-        HStack(spacing: 12) {
-            Text(String(
-                format: NSLocalizedString("settings.phiLink.officialBot.linkPrompt", value: "Link Telegram to chat with %@.", comment: "Phi Link - Official bot link prompt with agent name"),
-                vm.agentName
-            ))
-                .font(.system(size: 13))
-                .themedForeground(.textPrimary)
-                .opacity(0.7)
-            Spacer(minLength: 8)
-            Button {
-                Task { await vm.connectOfficialBot() }
-            } label: {
-                HStack(spacing: 4) {
-                    if enabled && vm.isOfficialBotLoading {
-                        ProgressView()
-                            .controlSize(.mini)
-                    }
-                    Label(
-                        NSLocalizedString("settings.phiLink.officialBot.linkButton", value: "Link", comment: "Phi Link - Official bot link button"),
-                        systemImage: "link.badge.plus"
-                    )
-                    .font(.system(size: 13))
-                }
-            }
-            .imPrimaryButtonStyle()
-            .disabled(vm.isOfficialBotLoading)
-        }
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func serviceIssueView(actionTitle: String, action: @escaping () -> Void) -> some View {
-        HStack(spacing: 12) {
-            Text(
-                NSLocalizedString("settings.phiLink.officialBot.serviceUnavailableHint", value: "Retry after Phi Sentinel is running normally.",
-                    comment: "IM Channels - Official bot retry hint when service is unavailable"
-                )
-            )
-            .font(.system(size: 13))
-            .themedForeground(.textPrimary)
-            .opacity(0.7)
-
-            Spacer()
-
-            Button(action: action) {
-                Label(actionTitle, systemImage: "arrow.clockwise")
-                    .font(.system(size: 13))
-            }
-            .imSecondaryButtonStyle()
-        }
-        .padding(.vertical, 12)
     }
 }
 
@@ -874,28 +681,6 @@ private extension View {
             .controlSize(.small)
             .themedTint(imDestructiveTint)
     }
-}
-
-// MARK: - QR Code Generator
-
-private func qrImage(for string: String) -> Image {
-    let data = Data(string.utf8)
-    let filter = CIFilter.qrCodeGenerator()
-    filter.setValue(data, forKey: "inputMessage")
-    filter.setValue("M", forKey: "inputCorrectionLevel")
-
-    guard let ciImage = filter.outputImage else {
-        return Image(systemName: "qrcode")
-    }
-
-    let transform = CGAffineTransform(scaleX: 10, y: 10)
-    let scaled = ciImage.transformed(by: transform)
-
-    let rep = NSCIImageRep(ciImage: scaled)
-    let nsImage = NSImage(size: rep.size)
-    nsImage.addRepresentation(rep)
-
-    return Image(nsImage: nsImage)
 }
 
 // MARK: - Dark Mode Adaptive Colors

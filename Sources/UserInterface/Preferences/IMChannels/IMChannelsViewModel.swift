@@ -25,6 +25,7 @@ final class IMChannelsViewModel {
     var isImServerConnected = false
     var customBotToken = ""
     var isCustomBotSaving = false
+    var isCustomBotLinking = false
     var isCustomBotExpanded = true
     var showTokenPlaintext = false
     var verifyResult: (success: Bool, error: String?)?
@@ -174,7 +175,7 @@ final class IMChannelsViewModel {
     }
 
     func saveCustomBot() async {
-        guard ApplicationState.shared.isAuthenticated else { return }
+        guard ApplicationState.shared.isAuthenticated, !isCustomBotSaving, !isVerifying, !isCustomBotLinking else { return }
         let token = customBotToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else { return }
 
@@ -258,8 +259,28 @@ final class IMChannelsViewModel {
         }
     }
 
+    func prepareCustomBotLink() async -> URL? {
+        guard ApplicationState.shared.isAuthenticated, !isCustomBotLinking,
+              !isCustomBotSaving, let bot = customBot, !bot.isLinked else { return nil }
+        isCustomBotLinking = true
+        customBotErrorMessage = nil
+        defer { isCustomBotLinking = false }
+        do {
+            let response = try await api.prepareCustomBotPairing(id: bot.id)
+            guard ApplicationState.shared.isAuthenticated, customBot?.id == bot.id else { return nil }
+            guard response.expiresAt > Date().timeIntervalSince1970 * 1000,
+                  let url = URL(string: response.deepLink), url.scheme == "https", url.host == "t.me" else {
+                throw IMChannelAPIError.invalidResponse
+            }
+            return url
+        } catch {
+            customBotErrorMessage = customBotServiceErrorMessage(for: error)
+            return nil
+        }
+    }
+
     func removeCustomBot() async {
-        guard ApplicationState.shared.isAuthenticated else { return }
+        guard ApplicationState.shared.isAuthenticated, !isCustomBotSaving, !isCustomBotLinking else { return }
         guard let existing = customBot else { return }
         await MainActor.run {
             isCustomBotSaving = true

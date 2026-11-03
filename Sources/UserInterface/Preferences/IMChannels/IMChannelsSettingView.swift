@@ -58,6 +58,10 @@ struct PhiLinkSettingsSectionView: View {
             guard shouldLoadChannels else { return }
             await vm.loadAll()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard shouldLoadChannels, vm.customBot != nil else { return }
+            Task { await vm.loadCustomBot() }
+        }
         .onReceive(
             NotificationCenter.default.publisher(for: .browserAccessStateDidChange)
                 .receive(on: DispatchQueue.main)
@@ -247,7 +251,7 @@ private struct CustomBotSection: View {
         if vm.customBotHasServiceIssue {
             return NSLocalizedString("settings.phiLink.customBot.serviceIssueStatus", value: "Service issue", comment: "Phi Link - Custom bot service issue status")
         }
-        if vm.customBot?.isRunning == true {
+        if vm.customBot?.isLinked == true && vm.customBot?.isRunning == true {
             return NSLocalizedString("settings.phiLink.customBot.linkedStatus", value: "Linked", comment: "Phi Link - Custom bot linked status")
         }
         if vm.customBot != nil {
@@ -260,7 +264,7 @@ private struct CustomBotSection: View {
         if vm.customBotHasServiceIssue {
             return .warning
         }
-        if vm.customBot?.isRunning == true {
+        if vm.customBot?.isLinked == true && vm.customBot?.isRunning == true {
             return .success
         }
         return .neutral
@@ -334,15 +338,17 @@ private struct CustomBotSection: View {
 
                     HStack(spacing: 4) {
                         Circle()
-                            .fill(bot.isRunning
+                            .fill(bot.isRunning && bot.isLinked
                                   ? imSuccessDotColor
                                   : bot.status == "error" ? imErrorColor : imWarningDotColor)
                             .frame(width: 6, height: 6)
-                        Text(bot.isRunning
+                        Text(bot.isRunning && bot.isLinked
                              ? NSLocalizedString("settings.phiLink.customBot.linkStatus.linked", value: "Linked", comment: "Phi Link - Custom bot linked text")
                              : bot.status == "error"
                                 ? (bot.statusMessage ?? NSLocalizedString("settings.phiLink.customBot.genericError", value: "Error", comment: "Phi Link - Custom bot generic error text"))
-                                : NSLocalizedString("settings.phiLink.customBot.linkStatus.linking", value: "Linking...", comment: "Phi Link - Custom bot linking text"))
+                                : bot.isRunning
+                                    ? NSLocalizedString("settings.phiLink.customBot.awaitingLink", value: "Open Telegram to finish linking", comment: "Phi Link - Custom bot polling is active but sender is not linked")
+                                    : NSLocalizedString("settings.phiLink.customBot.linkStatus.linking", value: "Linking...", comment: "Phi Link - Custom bot linking text"))
                             .font(.system(size: 11))
                             .themedForeground(.textTertiary)
                     }
@@ -360,6 +366,20 @@ private struct CustomBotSection: View {
 
             HStack(spacing: 8) {
                 Spacer()
+                if !bot.isLinked {
+                    Button {
+                        Task {
+                            if let url = await vm.prepareCustomBotLink() { NSWorkspace.shared.open(url) }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            if vm.isCustomBotLinking { ProgressView().controlSize(.mini) }
+                            Label(NSLocalizedString("settings.phiLink.customBot.connectButton", value: "Connect in Telegram", comment: "Phi Link - Opens a one-time link to authorize the custom bot sender"), systemImage: "arrow.up.right")
+                        }
+                    }
+                    .imPrimaryButtonStyle()
+                    .disabled(!bot.isRunning || vm.isCustomBotLinking || vm.isCustomBotSaving || !vm.isImServerConnected)
+                }
                 Button {
                     Task { await vm.verifyCustomBot() }
                 } label: {
@@ -375,7 +395,7 @@ private struct CustomBotSection: View {
                     }
                 }
                 .imSecondaryButtonStyle()
-                .disabled(vm.isVerifying || vm.isCustomBotSaving || !vm.isImServerConnected)
+                .disabled(vm.isVerifying || vm.isCustomBotSaving || vm.isCustomBotLinking || !vm.isImServerConnected)
 
                 Button(role: .destructive) {
                     Task { await vm.removeCustomBot() }
@@ -392,7 +412,7 @@ private struct CustomBotSection: View {
                     }
                 }
                 .imDestructiveButtonStyle()
-                .disabled(vm.isCustomBotSaving || vm.isVerifying || !vm.isImServerConnected)
+                .disabled(vm.isCustomBotSaving || vm.isVerifying || vm.isCustomBotLinking || !vm.isImServerConnected)
             }
             .padding(.vertical, 12)
         }
@@ -477,7 +497,7 @@ private struct CustomBotSection: View {
                 .font(.system(size: 13))
             Text(result.success
                  ? NSLocalizedString("settings.phiLink.customBot.verificationSuccess", value: "Token verified successfully", comment: "IM Channels - Custom bot verify success")
-                 : NSLocalizedString("settings.phiLink.customBot.verificationFailure", value: "Verification failed. Please check the token and try again.", comment: "IM Channels - Custom bot verify failure"))
+                 : (result.error ?? NSLocalizedString("settings.phiLink.customBot.verificationFailure", value: "Verification failed. Please check the token and try again.", comment: "IM Channels - Custom bot verify failure")))
                 .font(.system(size: 11))
                 .foregroundStyle(result.success ? Color.primary : imErrorColor)
         }

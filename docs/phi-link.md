@@ -29,19 +29,32 @@ retries the query.
 
 The custom bot section is always present for signed-in users and starts expanded.
 It retains the existing BotFather guide, masked token input, verification, save,
-replacement, and removal operations. Users can configure their own bot before
-unlinking the official bot. This UI change does not migrate conversations or
-change backend token handling, sender authorization, or first-message routing.
-The existing official-unlink API also clears the shared Telegram pairing state;
-preserving the custom channel configuration does not establish that message
-routing survives the transition. Verify that separately before rollout.
+replacement through removal/re-add, and removal operations. Users can configure their own bot before
+unlinking the official bot. The server now issues a ten-minute, single-use **Connect in Telegram** link
+for a configured custom bot. Saving a token starts polling; it does not authorize
+the first person who happens to message that bot. Settings display **Configured**
+until `telegramBinding.userId` is present. The user opens the link, presses Start,
+and returns to Phi; the pane refreshes the custom channel when the app becomes
+active. The link button ignores repeated requests and accepts only unexpired
+HTTPS `t.me` URLs from the authenticated API. An active poller and a linked sender
+are separate states.
+
+The authenticated `POST /api/custom-bot/channels/:id/pairing` route belongs to
+phi-agent; ownership, capability validation and local/official state isolation
+belong to phi-agent and im-server. Those services must be deployed with the new
+protocol before enabling the native operation. Existing custom bots without a
+binding need this explicit link. Ownerless legacy installations need an explicit
+administrator migration; listing settings no longer adopts them automatically.
+Official unlink does not clear the custom channel's separate route document.
+Verification failures may show the backend's credential-safe explanation, such
+as a webhook conflict; the UI does not take over another app's webhook.
 
 ## Verification
 
 Run `bash build-scripts/test-im-channels.sh` for the production view model and
 API client with controlled authentication and transport. It covers existing
 bindings, failed/successful unlink, duplicate requests, stale query responses,
-query error recovery, and the sign-in gate. It does not call a live backend.
+query error recovery, custom-link validation, duplicate link requests, and the sign-in gate. It does not call a live backend.
 
 In the native app, check light and dark appearances with no official binding,
 an active binding, and a reconnect-needed binding. The first case must show only

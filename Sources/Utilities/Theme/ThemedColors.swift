@@ -27,6 +27,12 @@ public extension ThemedColor {
     
     /// Tertiary text color.
     static let textTertiary = ThemedColor(role: .textTertiary)
+
+    /// Primary text at reduced opacity. Unlike the opaque textSecondary, it stays
+    /// lighter (dark) or darker (light) than any Space theme background.
+    static let textMuted = ThemedColor { theme, appearance in
+        theme.color(for: .textPrimary, appearance: appearance).withAlphaComponent(0.55)
+    }
     
     
     // MARK: - Window Colors

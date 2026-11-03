@@ -39,7 +39,10 @@ final class SpaceRootChevronView: NSView {
     }
 
     private func updateGlyph() {
-        glyphLayer.contents = symbol?.tinted(with: tintColor ?? ThemedColor.textSecondary.resolve(in: self)).cgImage(forProposedRect: nil, context: nil, hints: nil)
+        let color = tintColor ?? ThemedColor.textMuted.resolve(in: self)
+        // Tint opaquely so source-atop blending cannot mix in the symbol's original color.
+        glyphLayer.contents = symbol?.tinted(with: color.withAlphaComponent(1)).cgImage(forProposedRect: nil, context: nil, hints: nil)
+        glyphLayer.opacity = Float(color.alphaComponent)
     }
 
     func setExpanded(_ expanded: Bool, animated: Bool) {
@@ -125,8 +128,8 @@ final class SpaceRootCellView: SidebarCellView {
         expanded = nil
         super.configure(with: item)
         guard let root = item as? SpaceRootSidebarItem, let state = root.browserState else { return }
-        chevron.phi(source: state.themeContext)[\.tintColor] = ThemedColor.textSecondary.nsColorMapper
-        titleLabel.phi(source: state.themeContext).setTextColor(.textSecondary)
+        chevron.phi(source: state.themeContext)[\.tintColor] = ThemedColor.textMuted.nsColorMapper
+        titleLabel.phi(source: state.themeContext).setTextColor(.textMuted)
         updateTitle(root.title)
         state.$isBookmarkRootExpanded
             .sink { [weak self] in self?.setExpanded($0) }

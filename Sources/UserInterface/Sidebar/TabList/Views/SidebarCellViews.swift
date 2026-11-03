@@ -1433,7 +1433,7 @@ final class SidebarCleanupButton: NSButton {
             animationName: kind.rawValue,
             size: CGSize(width: Self.buttonSize, height: Self.buttonSize),
             animationTrigger: .manual,
-            themedTintColor: .textSecondary,
+            themedTintColor: .textMuted,
             loopMode: kind == .organize ? .loop : .playOnce,
             allowsHitTesting: false
         )

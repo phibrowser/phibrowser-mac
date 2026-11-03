@@ -122925,6 +122925,65 @@
         }
       }
     },
+    "sync.recovery.entry.forgotHelp" : {
+      "comment" : "Sync setup - link on the recovery code entry page when joining from another device; opens the Help article about a lost recovery code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forgot your recovery code?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "忘记了恢复代码？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "忘記復原代碼？"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "復旧コードをお忘れですか?"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "복구 코드를 잊으셨나요?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code de récupération oublié ?"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiederherstellungscode vergessen?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Herstelcode vergeten?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Olvidaste tu código de recuperación?"
+          }
+        }
+      }
+    },
     "sync.recovery.entry.placeholder" : {
       "comment" : "Sync setup - placeholder of the recovery code text field",
       "localizations" : {
@@ -123335,6 +123394,65 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請將此代碼存放在安全的地方。將其他裝置加入你的帳號時會需要它。"
+          }
+        }
+      }
+    },
+    "sync.recovery.save.lossWarning" : {
+      "comment" : "Recovery code display - warning about the consequence of losing the recovery code",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If you lose this code and no Mac is still set up for sync, the sync data in your account cannot be recovered. You would have to reset sync and start over."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果你丢失了此代码，并且没有任何一台 Mac 仍设置了同步，你账户中的同步数据将无法恢复。你需要重置同步并从头重新设置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果你遺失了此代碼，而且沒有任何一部 Mac 仍設定了同步，你帳號中的同步資料將無法復原。你將需要重設同步並從頭開始。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このコードを紛失し、同期が設定されているMacが1台も残っていない場合、アカウントの同期データは復元できません。その場合は、同期をリセットして最初からやり直す必要があります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 코드를 잃어버리고 동기화가 설정된 Mac이 하나도 남아 있지 않으면, 계정의 동기화 데이터를 복구할 수 없어요. 동기화를 재설정하고 처음부터 다시 시작해야 해요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si vous perdez ce code et qu'aucun Mac n'est plus configuré pour la synchronisation, les données de synchronisation de votre compte ne pourront pas être récupérées. Vous devrez réinitialiser la synchronisation et tout recommencer."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn du diesen Code verlierst und kein Mac mehr für die Synchronisierung eingerichtet ist, können die Synchronisierungsdaten in deinem Account nicht wiederhergestellt werden. Du müsstest die Synchronisierung zurücksetzen und von vorn beginnen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Als je deze code kwijtraakt en er geen Mac meer is ingesteld voor synchronisatie, kunnen de synchronisatiegegevens in je account niet worden hersteld. Je zou dan synchronisatie moeten resetten en opnieuw beginnen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si pierdes este código y ya no queda ningún Mac configurado para la sincronización, los datos de sincronización de tu cuenta no se podrán recuperar. Tendrías que restablecer la sincronización y empezar de nuevo."
           }
         }
       }

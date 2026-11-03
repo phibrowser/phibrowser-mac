@@ -23,6 +23,7 @@
 		184EE3BE148F696C555481F0 /* SyncKeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35EE13005B45461A584F7F1C /* SyncKeyController.swift */; };
 		1F8484277AF6957257C01DBD /* PhiOwnedItemState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69537E85565061483273F0A2 /* PhiOwnedItemState.swift */; };
 		20ADEF5F77D82925F11B2966 /* RecoveryCodeEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A632200E83D8AF97F002EB /* RecoveryCodeEntryView.swift */; };
+		5C1E0A7B3D9F4E21A6B8C0D1 /* SyncHelpLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C1E0A7B3D9F4E21A6B8C0D2 /* SyncHelpLinks.swift */; };
 		2617E7C43A0DFE05B416E8F5 /* JoinMethodChoiceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6819EF093F955DAFACDC4C94 /* JoinMethodChoiceView.swift */; };
 		2850A45D3A2F2C11AF0F8F3B /* PhiSpaceSyncState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14B6CA15BC9C435794FC131A /* PhiSpaceSyncState.swift */; };
 		2ABF91DB68C2445BAA58C9BA /* GroupTabsTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457F461C0F164136A46FF641 /* GroupTabsTableView.swift */; };
@@ -1246,6 +1247,7 @@
 		A1B2C3D4E5F60718293A4B55 /* SharedAuthTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedAuthTokenStore.swift; sourceTree = "<group>"; };
 		A2641EED1C4477FEDD13FA92 /* ContentBlockingListInfoPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentBlockingListInfoPopover.swift; sourceTree = "<group>"; };
 		A4A632200E83D8AF97F002EB /* RecoveryCodeEntryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RecoveryCodeEntryView.swift; path = UI/RecoveryCodeEntryView.swift; sourceTree = "<group>"; };
+		5C1E0A7B3D9F4E21A6B8C0D2 /* SyncHelpLinks.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SyncHelpLinks.swift; path = UI/SyncHelpLinks.swift; sourceTree = "<group>"; };
 		A4BC0BCCBF13A16ECD96ED4E /* AIChatPanelBridging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChatPanelBridging.swift; sourceTree = "<group>"; };
 		A55D7E5143F932DF1031B744 /* SyncKeyStack.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SyncKeyStack.swift; sourceTree = "<group>"; };
 		A57A00000000000000000001 /* agent.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = agent.json; sourceTree = "<group>"; };
@@ -1644,6 +1646,7 @@
 				1EAE9BC2177CD71475820E2A /* KeyLayerViewModel.swift */,
 				86DE5E18D7A0314781440048 /* RecoveryCodeDisplayView.swift */,
 				A4A632200E83D8AF97F002EB /* RecoveryCodeEntryView.swift */,
+				5C1E0A7B3D9F4E21A6B8C0D2 /* SyncHelpLinks.swift */,
 				26E0CB91197F4D9D6B21F51D /* KeyLayerView.swift */,
 				6819EF093F955DAFACDC4C94 /* JoinMethodChoiceView.swift */,
 				23216985BAC98CA63F9CB2AC /* WaitingForApprovalView.swift */,
@@ -4185,6 +4188,7 @@
 				968126DBA688716A15DFAC27 /* KeyLayerViewModel.swift in Sources */,
 				87F30FDCDBA26553DFA619EF /* RecoveryCodeDisplayView.swift in Sources */,
 				20ADEF5F77D82925F11B2966 /* RecoveryCodeEntryView.swift in Sources */,
+				5C1E0A7B3D9F4E21A6B8C0D1 /* SyncHelpLinks.swift in Sources */,
 				C5BADF6174A250C6CE32EA57 /* DeviceApprovalService.swift in Sources */,
 				B08D92D0E46467DEC29319D8 /* KeyLayerView.swift in Sources */,
 				2617E7C43A0DFE05B416E8F5 /* JoinMethodChoiceView.swift in Sources */,

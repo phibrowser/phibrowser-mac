@@ -55,8 +55,21 @@ struct CustomBotChannel: Codable, Identifiable {
     let botUsername: String?
     let createdAt: Double?
     let updatedAt: Double?
+    let telegramBinding: TelegramBinding?
+
+    struct TelegramBinding: Codable {
+        let userId: String?
+        let chatId: String?
+    }
+
+    var isLinked: Bool { telegramBinding?.userId != nil }
 
     var id: String { _id }
+}
+
+struct CustomBotPairingResponse: Codable {
+    let deepLink: String
+    let expiresAt: Double
 }
 
 struct CustomBotListResponse: Codable {
@@ -166,7 +179,7 @@ final class IMChannelAPIClient {
     func listCustomBotChannels() async throws -> CustomBotListResponse {
         AppLogDebug("[IMChannelAPI] GET /api/custom-bot/channels")
         let response = try await send("/api/custom-bot/channels")
-        AppLogDebug("[IMChannelAPI] listCustomBotChannels response: \(response.statusCode), body: \(String(data: response.body.prefix(300), encoding: .utf8) ?? "?")")
+        AppLogDebug("[IMChannelAPI] listCustomBotChannels response: \(response.statusCode)")
         try validateResponse(response)
         return try JSONDecoder().decode(CustomBotListResponse.self, from: response.body)
     }
@@ -179,7 +192,7 @@ final class IMChannelAPIClient {
     }
 
     func updateCustomBotChannel(id: String, enabled: Bool? = nil, botToken: String? = nil) async throws -> CustomBotChannel {
-        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#%"))) ?? id
         var bodyDict: [String: Any] = [:]
         if let enabled { bodyDict["enabled"] = enabled }
         if let botToken { bodyDict["botToken"] = botToken }
@@ -203,8 +216,15 @@ final class IMChannelAPIClient {
         return (result.success, result.error)
     }
 
+    func prepareCustomBotPairing(id: String) async throws -> CustomBotPairingResponse {
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#%"))) ?? id
+        let response = try await send("/api/custom-bot/channels/\(encoded)/pairing", method: "POST")
+        try validateResponse(response)
+        return try JSONDecoder().decode(CustomBotPairingResponse.self, from: response.body)
+    }
+
     func deleteCustomBotChannel(id: String) async throws {
-        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#%"))) ?? id
         let response = try await send("/api/custom-bot/channels/\(encoded)", method: "DELETE")
         try validateResponse(response)
     }

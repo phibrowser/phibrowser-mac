@@ -81,6 +81,24 @@ struct IMChannelsTests {
         precondition(vm.pairing == nil && vm.officialBotErrorMessage == nil)
         print("PASS: pairing query errors stay visible and clear after a successful refresh")
 
+        vm.customBot = custom
+        let link = "https://t.me/MyBot?start=phi_fixture"
+        transport.handler = { request in
+            precondition(request.method == "POST" && request.path == "/api/custom-bot/channels/custom/pairing")
+            let repeated = await vm.prepareCustomBotLink()
+            precondition(repeated == nil, "Ignore duplicate link requests while busy")
+            return .init(statusCode: 200, body: Data("{\"deepLink\":\"\(link)\",\"expiresAt\":\(Date().timeIntervalSince1970 * 1000 + 600000)}".utf8))
+        }
+        let prepared = await vm.prepareCustomBotLink()
+        precondition(prepared?.absoluteString == link && !vm.isCustomBotLinking)
+        print("PASS: custom bot link uses the authenticated pairing API and rejects duplicate requests")
+        transport.handler = { _ in
+            .init(statusCode: 200, body: Data("{\"deepLink\":\"https://example.com/\",\"expiresAt\":\(Date().timeIntervalSince1970 * 1000 + 600000)}".utf8))
+        }
+        let invalid = await vm.prepareCustomBotLink()
+        precondition(invalid == nil && vm.customBotErrorMessage != nil)
+        print("PASS: invalid custom bot links never open an unrelated website")
+
         ApplicationState.shared.isAuthenticated = false
         vm.pairing = pairing
         let beforeGuest = transport.requests.count

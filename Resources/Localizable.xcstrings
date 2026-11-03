@@ -75388,6 +75388,18 @@
         }
       }
     },
+    "settings.phiLink.customBot.awaitingLink" : {
+      "comment" : "Phi Link - Custom bot polling is active but sender is not linked",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Telegram to finish linking"
+          }
+        }
+      }
+    },
     "settings.phiLink.customBot.botFatherLink" : {
       "comment" : "Phi Link - Custom bot guide link text",
       "extractionState" : "extracted_with_value",
@@ -75504,6 +75516,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已設定"
+          }
+        }
+      }
+    },
+    "settings.phiLink.customBot.connectButton" : {
+      "comment" : "Phi Link - Opens a one-time link to authorize the custom bot sender",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect in Telegram"
           }
         }
       }

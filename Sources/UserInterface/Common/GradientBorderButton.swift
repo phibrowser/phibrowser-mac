@@ -165,6 +165,7 @@ struct GradientBorderButtonView: View {
                     maxHeight: state.height ?? .infinity
                 )
                 .contentShape(Rectangle())
+                .contentShape(.focusEffect, RoundedRectangle(cornerRadius: state.cornerRadius))
         }
         .buttonStyle(PlainButtonStyle())
         .disabled(!state.isEnabled)

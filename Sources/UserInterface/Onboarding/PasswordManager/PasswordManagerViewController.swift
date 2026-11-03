@@ -51,12 +51,6 @@ class PasswordManagerViewController: OnboardingBaseViewController {
 
     private lazy var optionsStackView: OnboardingOptionStackView = {
         let stackView = OnboardingOptionStackView()
-        stackView.onMoveSelection = { [weak self] offset in
-            guard let self else { return }
-            let managers: [PasswordManager] = [.icloudPasswords, .manual]
-            guard let index = managers.firstIndex(of: selectedManager) else { return }
-            selectManager(managers[(index + offset + managers.count) % managers.count])
-        }
         stackView.orientation = .vertical
         stackView.spacing = optionSpacing
         stackView.alignment = .centerX
@@ -140,6 +134,13 @@ class PasswordManagerViewController: OnboardingBaseViewController {
         setupOptions()
     }
 
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        guard let window = view.window else { return }
+        optionsStackView.configureKeyViewLoop(nextButton: nextButton, backButton: leftButton)
+        icloudOptionView.takeInitialFocus(in: window)
+    }
+
     // MARK: - Options Setup
 
     private func setupOptions() {
@@ -202,10 +203,7 @@ class PasswordManagerViewController: OnboardingBaseViewController {
 
 // MARK: - PasswordManagerOptionView
 
-class PasswordManagerOptionView: NSView {
-    var onTap: (() -> Void)?
-    private var isSelected: Bool
-
+class PasswordManagerOptionView: OnboardingOptionView {
     private let trailingIconView: NSView?
     private let titleLabel: NSTextField
     private let subtitleLabel: NSTextField?
@@ -235,7 +233,6 @@ class PasswordManagerOptionView: NSView {
 
     /// Init with a custom trailing icon view (e.g. a stack of small icons)
     init(trailingIconView: NSView?, title: String, subtitle: String? = nil, isSelected: Bool) {
-        self.isSelected = isSelected
         self.trailingIconView = trailingIconView
 
         self.titleLabel = NSTextField(labelWithString: title)
@@ -260,6 +257,7 @@ class PasswordManagerOptionView: NSView {
 
         super.init(frame: .zero)
 
+        self.isSelected = isSelected
         setupUI()
         updateSelection()
         // Use the raw subtitle; the visible label wraps it in parentheses.
@@ -341,6 +339,7 @@ class PasswordManagerOptionView: NSView {
     }
 
     @objc private func handleTap() {
+        takeFocus()
         onTap?()
     }
 

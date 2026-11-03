@@ -28,6 +28,7 @@ contracts, failure modes and verification entry points. Start with the repositor
 
 ## Features and integration boundaries
 
+- [Phi Link settings](phi-link.md): custom Telegram bots and official bot retirement.
 - [Reader integration and extraction](reader-view.md)
 - [Folio capture](folio-capture.md) and [native Folio library](folio-native-library.md)
 - [Content blocking](content-blocking.md)

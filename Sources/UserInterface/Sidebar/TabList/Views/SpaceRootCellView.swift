@@ -94,6 +94,7 @@ final class SpaceRootCellView: SidebarCellView {
         addSubview(backgoundView)
         backgoundView.backgroundColor = .clear
         backgoundView.hoveredColor = NSColor(resource: .sidebarTabHovered)
+        backgoundView.selectedColor = NSColor(resource: .sidebarTabSelected)
         backgoundView.layer?.cornerRadius = 8
         backgoundView.shadow = nil
         backgoundView.responseToClickAction = false
@@ -160,6 +161,11 @@ final class SpaceRootCellView: SidebarCellView {
         NSAccessibility.post(element: self, notification: .valueChanged)
     }
 
+    func setDropTargetHighlighted(_ highlighted: Bool) {
+        guard backgoundView.isSelected != highlighted else { return }
+        backgoundView.isSelected = highlighted
+    }
+
     override func accessibilityPerformPress() -> Bool {
         onToggle?()
         return onToggle != nil
@@ -169,6 +175,7 @@ final class SpaceRootCellView: SidebarCellView {
         super.prepareForReuse()
         onToggle = nil
         expanded = nil
+        backgoundView.isSelected = false
         chevron.setExpanded(false, animated: false)
     }
 }

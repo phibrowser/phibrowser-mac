@@ -260,6 +260,7 @@ class SidebarTabListViewController: NSViewController {
         case none
         case bookmarkFolder(guid: String)
         case tabGroup(token: String)
+        case spaceRoot
     }
     private var dropFeedbackTarget: DropFeedbackTarget = .none
     
@@ -1868,9 +1869,24 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         }
 
         if let rootIndex = spaceRootDropIndex(item: originalResolvedItem, index: index) {
-            clearDropFeedback()
-            guard canDropIntoSpaceRoot(pasteboard) else { return [] }
-            outlineView.setDropItem(spaceRootItem, dropChildIndex: originalResolvedItem is SpaceRootSidebarItem ? index : rootIndex)
+            guard canDropIntoSpaceRoot(pasteboard) else {
+                clearDropFeedback()
+                return []
+            }
+            let isDropOnRoot = originalResolvedItem is SpaceRootSidebarItem && index == NSOutlineViewDropOnItemIndex
+            let highlightsRoot = isDropOnRoot && SidebarBookmarkFolderDropResolver.shouldHighlightFolder(
+                isExpanded: outlineView.isItemExpanded(spaceRootItem),
+                isDropOnItem: true)
+            setDropFeedback(highlightsRoot ? .spaceRoot : .none)
+            let dropChildIndex: Int
+            if highlightsRoot {
+                dropChildIndex = NSOutlineViewDropOnItemIndex
+            } else if isDropOnRoot {
+                dropChildIndex = 0
+            } else {
+                dropChildIndex = originalResolvedItem is SpaceRootSidebarItem ? index : rootIndex
+            }
+            outlineView.setDropItem(spaceRootItem, dropChildIndex: dropChildIndex)
             return pasteboard.string(forType: .normalTab) != nil || pasteboard.string(forType: .pinnedTab) != nil ? .copy : .move
         }
 
@@ -3656,7 +3672,18 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             updateFolderDropFeedbackCell(guid: guid, highlighted: highlighted)
         case .tabGroup(let token):
             updateTabGroupDropFeedbackCell(token: token, highlighted: highlighted)
+        case .spaceRoot:
+            updateSpaceRootDropFeedbackCell(highlighted: highlighted)
         }
+    }
+
+    private func updateSpaceRootDropFeedbackCell(highlighted: Bool) {
+        let row = outlineView.row(forItem: spaceRootItem)
+        guard row >= 0,
+              let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) as? SpaceRootCellView else {
+            return
+        }
+        cell.setDropTargetHighlighted(highlighted)
     }
 
     private func updateFolderDropFeedbackCell(guid: String, highlighted: Bool) {
@@ -3921,6 +3948,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
            let bookmark = sidebarItem as? Bookmark {
             bookmarkCell.setDropTargetHighlighted(bookmark.isFolder && dropFeedbackTarget == .bookmarkFolder(guid: bookmark.guid))
         }
+        (cellView as? SpaceRootCellView)?.setDropTargetHighlighted(dropFeedbackTarget == .spaceRoot)
         if let groupCell = cellView as? TabGroupCellView,
            let groupItem = sidebarItem as? TabGroupSidebarItem {
             groupCell.setTemporarilyCollapsedForDrag(
@@ -4452,6 +4480,7 @@ extension SidebarTabListViewController {
     func spaceRootDropIndex(item: Any?, index: Int) -> Int? {
         guard showBookmarks, !browserState.isIncognito, spaceRootItem.hasChildren else { return nil }
         if item is SpaceRootSidebarItem {
+            if index == NSOutlineViewDropOnItemIndex { return 0 }
             if let presentation = focusedBookmarkPresentation,
                presentation.insertionParent === spaceRootItem,
                index > presentation.insertionIndex {

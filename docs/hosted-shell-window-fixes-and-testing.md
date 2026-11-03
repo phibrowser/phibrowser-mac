@@ -108,7 +108,10 @@ A tab switch is the page container's mount: it mounts the current tab's view
 and removes every other tab view in the same turn, with or without a surface
 (ADR 0011). The tab "Add Tab to New Split View" opens and focuses is mounted
 once its split reaches the tab model, so its partner, the outgoing tab, never
-leaves the window. Over a surface viz keeps the previous frame until the new tab's is
+leaves the window. A split that dissolves, or a pane entering content
+fullscreen, moves the focused pane's page out of the split within the window
+before the split goes, so the page keeps the keyboard and mouse moves.
+Over a surface viz keeps the previous frame until the new tab's is
 ready or four frames pass. With the feature off the tabs draw themselves and
 a hidden tab holds no compositor, so every switch and every close shows
 blank until its first frame; that configuration is a diagnostic fallback.

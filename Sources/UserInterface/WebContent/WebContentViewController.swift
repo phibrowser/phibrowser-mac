@@ -1833,13 +1833,27 @@ class WebContentViewController: NSViewController {
         }
         removeSplitPreview(keeping: contentView)
         // Tear down any leftover split host before re-mounting single content.
+        var leavesSplitPane = false
         if let existing = currentSplitHost {
+            // This tab's page moves out of its pane first, within the window,
+            // as in `removeSplitPreview(keeping:)`. Removed with the host, it
+            // would leave the window: AppKit then drops its mark that the
+            // pointer is over the page, so mouse moves stop reaching the page
+            // until the pointer crosses its edge (never, over a page filling
+            // a fullscreen window), and the page loses the keyboard.
+            if contentView.isDescendant(of: existing) {
+                hostView.addSubview(contentView)
+                leavesSplitPane = true
+            }
             existing.removeFromSuperview()
             currentSplitHost = nil
             teardownAllSplitCrashViews()
         }
-        // Check if content view is already the primary view in hostView.
-        if hostView.subviews.contains(contentView),
+        // Check if content view is already the primary view in hostView. A
+        // page just out of its pane still needs the single-view mount (its
+        // frame, any docked DevTools).
+        if !leavesSplitPane,
+           hostView.subviews.contains(contentView),
            contentView.superview === hostView {
             contentMode = .webContent
             updateLeftContainerStyleForCurrentAIChatState()
@@ -2319,12 +2333,22 @@ class WebContentViewController: NSViewController {
     }
 
     private func addWebContentView(_ contentView: NSView, tabId: Int) {
-        hostView.subviews.forEach { $0.removeFromSuperview() }
+        // A page already in hostView stays: taken out to be added back, it
+        // would leave the window (see `showWebContent`).
+        for subview in hostView.subviews where subview !== contentView {
+            subview.removeFromSuperview()
+        }
         currentSplitHost = nil
+        // A page kept in hostView may still carry the fill constraints
+        // `detachDevTools` puts on it; it sheds them for the manual frame
+        // below, or the two fight.
+        contentView.snp.removeConstraints()
         contentView.translatesAutoresizingMaskIntoConstraints = true
         contentView.autoresizingMask = []
         contentView.frame = hostView.contentFrame
-        hostView.addSubview(contentView)
+        if contentView.superview !== hostView {
+            hostView.addSubview(contentView)
+        }
 
         if let tab = associatedTab, tab.devToolsAttached {
             // Tab has DevTools: restore DevTools view hierarchy and manual frame layout.

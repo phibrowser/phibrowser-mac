@@ -115,6 +115,118 @@ final class ContentFullscreenSurfaceTests: XCTestCase {
         XCTAssertEqual(page.windowDepartures, departures, "the page left the window")
     }
 
+    /// A split pane entering fullscreen is mounted alone first. Its page
+    /// moves out of the split within the window: taken out with the split
+    /// host, it would leave the window like a lifted page that is removed
+    /// first.
+    func testASplitPaneEnteringFullscreenNeverLeavesTheWindow() throws {
+        let fixture = try makeFixture()
+        _ = adoptSurface(fixture)
+        try formSplit(fixture)
+        let page = try XCTUnwrap(fixture.webViews[0] as? WindowDepartureCountingView)
+        let departures = page.windowDepartures
+
+        enterFullscreen(fixture)
+        XCTAssertTrue(page.superview === (try hostView(fixture)), "the page is not mounted alone")
+        exitFullscreen(fixture)
+
+        XCTAssertEqual(page.windowDepartures, departures, "the page left the window")
+        XCTAssertTrue(page.superview?.superview is SplitPaneHostView, "the split is not rebuilt on exit")
+    }
+
+    /// A split dissolved (the other pane closed or removed from the split)
+    /// leaves the focused pane's page in the window, mounted alone at the
+    /// host view's size.
+    func testDissolvingASplitKeepsTheFocusedPaneInTheWindow() throws {
+        let fixture = try makeFixture()
+        try formSplit(fixture)
+        let page = try XCTUnwrap(fixture.webViews[0] as? WindowDepartureCountingView)
+        let departures = page.windowDepartures
+
+        fixture.state.splits = []
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        let host = try XCTUnwrap(try hostView(fixture) as? WebContentHostView)
+        XCTAssertTrue(page.superview === host, "the page is not mounted alone")
+        XCTAssertEqual(page.frame, host.contentFrame, "the page does not fill the host view")
+        XCTAssertEqual(page.windowDepartures, departures, "the page left the window")
+    }
+
+    /// The focused pane keeps the keyboard when its split dissolves: a view
+    /// that leaves the window gives its first responder status to the
+    /// window, and nothing hands it back.
+    func testDissolvingASplitLeavesTheKeyboardWithTheFocusedPane() throws {
+        let fixture = try makeFixture(keyWindow: true)
+        try formSplit(fixture)
+        let widget = FirstResponderCountingView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+        fixture.webViews[0].addSubview(widget)
+        XCTAssertTrue(fixture.window.makeFirstResponder(widget), "precondition: the page has the keyboard")
+
+        fixture.state.splits = []
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        XCTAssertTrue(fixture.window.firstResponder === widget,
+                      "the keyboard left the page: \(String(describing: fixture.window.firstResponder))")
+        XCTAssertEqual(widget.resignations, 0, "the page lost the keyboard on the way")
+    }
+
+    /// A focused pane with DevTools docked in it collapses the same way: its
+    /// page stays in the window, and its DevTools comes back under it in the
+    /// host view, with the page laid out by hand beside it.
+    func testDissolvingASplitKeepsAPaneWithDockedDevToolsInTheWindow() throws {
+        let fixture = try makeFixture()
+        try formSplit(fixture)
+        let controller = try XCTUnwrap(
+            fixture.container.children.compactMap { $0 as? WebContentViewController }.first)
+        let host = try XCTUnwrap(controller.hostViewForTesting as? WebContentHostView)
+        let page = try XCTUnwrap(fixture.webViews[0] as? WindowDepartureCountingView)
+        let splitHost = try XCTUnwrap(page.superview?.superview as? SplitPaneHostView)
+        let devTools = NSView()
+        controller.attachDevTools(view: devTools)
+        XCTAssertTrue(devTools.isDescendant(of: splitHost), "precondition: DevTools is docked in the pane")
+        let departures = page.windowDepartures
+
+        fixture.state.splits = []
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        XCTAssertEqual(page.windowDepartures, departures, "the page left the window")
+        XCTAssertTrue(page.superview === host, "the page is not mounted alone")
+        let devToolsIndex = try XCTUnwrap(host.subviews.firstIndex(of: devTools),
+                                          "DevTools is not back in the host view")
+        let pageIndex = try XCTUnwrap(host.subviews.firstIndex(of: page))
+        XCTAssertLessThan(devToolsIndex, pageIndex, "DevTools is not under the page")
+        XCTAssertTrue(host.isFrameSyncPaused, "the page is not laid out by hand beside DevTools")
+    }
+
+    /// Closing docked DevTools puts the page back on constraints that fill
+    /// its host view. A page then mounted alone where it already is (here a
+    /// split whose partner has no view yet) sheds them for the frame it is
+    /// given, or the two fight when the window resizes.
+    func testAPageKeptInItsHostViewDropsTheDevToolsFillConstraints() throws {
+        let fixture = try makeFixture()
+        let controller = try XCTUnwrap(
+            fixture.container.children.compactMap { $0 as? WebContentViewController }.first)
+        let host = try XCTUnwrap(controller.hostViewForTesting as? WebContentHostView)
+        let page = fixture.webViews[0]
+        controller.attachDevTools(view: NSView())
+        controller.detachDevTools()
+        let fill = host.constraints.filter { $0.firstItem === page || $0.secondItem === page }
+        XCTAssertFalse(fill.isEmpty, "precondition: the page fills its host view by constraints")
+        fixture.wrappers[1].nativeView = nil
+
+        fixture.state.splits = [SplitGroup(id: "split-970-971", primaryTabId: 970, secondaryTabId: 971,
+                                           layout: .vertical, ratio: 0.5)]
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        XCTAssertTrue(page.superview === host, "the page is not mounted alone")
+        XCTAssertFalse(fill.contains { $0.isActive },
+                       "the page kept the fill constraints: \(fill.filter { $0.isActive })")
+        XCTAssertTrue(page.translatesAutoresizingMaskIntoConstraints, "the page is not on a manual frame")
+        fixture.window.setContentSize(NSSize(width: 1000, height: 700))
+        fixture.window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(page.frame, host.contentFrame, "the page does not follow its host view")
+    }
+
     /// Chromium's exit never reaches a tab that closes in fullscreen: the
     /// controller is torn down with its page still lifted.
     func testTheOverlayGoesWithItsPageAndTheSurfaceComesHomeWhenTheTabCloses() throws {
@@ -361,6 +473,20 @@ final class ContentFullscreenSurfaceTests: XCTestCase {
             fixture.container.children.compactMap { $0 as? WebContentViewController }.first,
             "no page is mounted", file: file, line: line)
         return page.hostViewForTesting
+    }
+
+    /// The two tabs side by side, the focused first one's controller holding
+    /// the split, as Chromium's split arrival does.
+    private func formSplit(_ fixture: Fixture,
+                           file: StaticString = #filePath,
+                           line: UInt = #line) throws {
+        fixture.state.splits = [SplitGroup(id: "split-970-971", primaryTabId: 970, secondaryTabId: 971,
+                                           layout: .vertical, ratio: 0.5)]
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertTrue(fixture.webViews[0].superview?.superview is SplitPaneHostView,
+                      "precondition: the page is a split pane", file: file, line: line)
+        XCTAssertNotNil(fixture.webViews[1].window, "precondition: the partner pane is mounted",
+                        file: file, line: line)
     }
 
     /// The bridge's fullscreen event lands on the tab; the page controller

@@ -3256,7 +3256,7 @@ final class PhiBrowserTests: XCTestCase {
             preferredLayoutWidth: 200
         )
 
-        XCTAssertTrue(textView.isSelectable)
+        XCTAssertFalse(textView.isSelectable)
         XCTAssertNil(textView.linkTextAttributes?[.foregroundColor])
         let textStorage = try XCTUnwrap(textView.textStorage)
         XCTAssertNotNil(textStorage.attribute(.foregroundColor, at: 0, effectiveRange: nil))

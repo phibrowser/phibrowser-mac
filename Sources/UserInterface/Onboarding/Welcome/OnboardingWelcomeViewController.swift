@@ -63,6 +63,26 @@ class OnboardingWelcomeViewController: OnboardingBaseViewController {
         }
     }
 
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        guard let window = view.window else { return }
+        window.recalculateKeyViewLoop()
+        // The footer's SwiftUI buttons own their focusable responders.
+        if let nextFocus = nextButton.nextValidKeyView,
+           nextFocus.isDescendant(of: nextButton),
+           let backFocus = leftButton.nextValidKeyView,
+           backFocus.isDescendant(of: leftButton) {
+            randomButton.nextKeyView = nextFocus
+            nextFocus.nextKeyView = backFocus
+            backFocus.nextKeyView = randomButton
+        }
+        // makeFirstResponder succeeds even with Keyboard navigation off.
+        if NSApp.isFullKeyboardAccessEnabled {
+            window.initialFirstResponder = randomButton
+            window.makeFirstResponder(randomButton)
+        }
+    }
+
     override func viewWillDisappear() {
         super.viewWillDisappear()
         cardView.isPresentationActive = false

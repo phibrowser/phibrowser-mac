@@ -76,6 +76,8 @@ final class HolographicCardView: NSView {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    // Arrow keys tilt the card after a click; it is not a Tab stop.
+    override var canBecomeKeyView: Bool { false }
 
     override convenience init(frame frameRect: NSRect) {
         self.init(frame: frameRect, style: .default)

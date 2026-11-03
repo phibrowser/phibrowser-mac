@@ -595,6 +595,14 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// Changes apply to the next copy. Clients omitting this selector default to YES.
 - (BOOL)isShortHighlightLinkEnabled;
 
+/// Whether picture-in-picture windows (manual and automatic, video and
+/// document) can also appear on other apps' fullscreen desktops. The Mac
+/// preference is the source of truth. Queried synchronously on the browser UI
+/// thread each time a picture-in-picture window is about to show, so a change
+/// applies to the next one shown. Must not block. Clients omitting this
+/// selector get the behaviour from before the switch existed (NO).
+- (BOOL)isPictureInPictureOnFullscreenDesktopsEnabled;
+
 /// Presents a native toast synchronously on the browser UI (main) thread.
 /// `message` is already localized and formatted. `tabId` identifies the source
 /// tab (0 for window-scoped notices); `shareURL` is empty unless sharing a link.

@@ -201,6 +201,25 @@ extension PhiPreferences {
             defaults.set(mode.rawValue, forKey: Self.autoPictureInPictureModeKey)
         }
 
+        /// Whether picture-in-picture windows (manual and automatic, video and
+        /// document) can also appear on other apps' fullscreen desktops.
+        /// Chromium reads it each time a picture-in-picture window is about to
+        /// show. No settings UI yet, and not synced across devices.
+        static let pictureInPictureOnFullscreenDesktopsKey = "pictureInPictureOnFullscreenDesktops"
+
+        static func loadPictureInPictureOnFullscreenDesktops(
+            from defaults: UserDefaults = .standard
+        ) -> Bool {
+            defaults.bool(forKey: pictureInPictureOnFullscreenDesktopsKey, default: true)
+        }
+
+        static func savePictureInPictureOnFullscreenDesktops(
+            _ enabled: Bool,
+            to defaults: UserDefaults = .standard
+        ) {
+            defaults.set(enabled, forKey: pictureInPictureOnFullscreenDesktopsKey)
+        }
+
         static let layoutModeKey = "layoutMode"
 
         static func loadLayoutMode() -> LayoutMode {

@@ -1960,6 +1960,11 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     func isAutoPipParkEnabled() -> Bool {
         PhiPreferences.GeneralSettings.loadAutoPictureInPictureMode() == .parked
     }
+
+    @objc(isPictureInPictureOnFullscreenDesktopsEnabled)
+    func isPictureInPictureOnFullscreenDesktopsEnabled() -> Bool {
+        PhiPreferences.GeneralSettings.loadPictureInPictureOnFullscreenDesktops()
+    }
     
     func handleExtensionMessage(_ type: String, payload: String, requestId: String, senderId: String) -> String? {
         return ExtensionMessageRouter.shared.handle(type: type, payload: payload, requestId: requestId, senderId: senderId)

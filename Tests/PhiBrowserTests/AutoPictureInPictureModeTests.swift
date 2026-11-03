@@ -38,4 +38,15 @@ final class AutoPictureInPictureModeTests: XCTestCase {
             XCTAssertEqual(PhiPreferences.GeneralSettings.loadAutoPictureInPictureMode(from: defaults), mode)
         }
     }
+
+    func testPictureInPictureOnFullscreenDesktopsDefaultsToOn() {
+        XCTAssertTrue(PhiPreferences.GeneralSettings.loadPictureInPictureOnFullscreenDesktops(from: defaults))
+    }
+
+    func testPictureInPictureOnFullscreenDesktopsSaveRoundTrips() {
+        for enabled in [false, true] {
+            PhiPreferences.GeneralSettings.savePictureInPictureOnFullscreenDesktops(enabled, to: defaults)
+            XCTAssertEqual(PhiPreferences.GeneralSettings.loadPictureInPictureOnFullscreenDesktops(from: defaults), enabled)
+        }
+    }
 }

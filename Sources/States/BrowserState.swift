@@ -712,10 +712,14 @@ class BrowserState {
         self.isAgentSpace = isAgentSpace || AgentSpaceManager.shared.isAgentSpace(spaceId)
         self.isKioskWindow = isKioskWindow
         self.imagePreviewState = BrowserImagePreviewState(loader: ImagePreviewLoader())
-        self.themeContext = BrowserThemeContext(
+        let themeContext = BrowserThemeContext(
             configuration: BrowserThemeConfigurationResolver.resolve(isIncognito: isIncognito),
             fixedTheme: isKioskWindow ? .pure : nil
         )
+        #if DEBUG || NIGHTLY_BUILD
+        themeContext.debugName = "space=\(spaceId.prefix(8)) win=\(windowId)\(isIncognito ? " incognito" : "")"
+        #endif
+        self.themeContext = themeContext
         self.layoutMode = Self.buildLayoutMode()
         // Agent Spaces are isolated workspaces, like incognito: they show none
         // of the profile's pinned tabs and grow no bookmarks of their own, so

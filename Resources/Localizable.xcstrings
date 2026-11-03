@@ -77308,6 +77308,18 @@
         }
       }
     },
+    "settings.phiLink.officialBot.retirementNotice" : {
+      "comment" : "Phi Link - Warning for users with an existing official bot binding, asking them to switch to their own bot",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The official Telegram bot will be retired soon. Please set up and switch to your own bot as soon as possible."
+          }
+        }
+      }
+    },
     "settings.phiLink.officialBot.retryButton" : {
       "comment" : "Phi Link - Retry loading official bot",
       "extractionState" : "extracted_with_value",

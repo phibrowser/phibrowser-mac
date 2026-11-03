@@ -5,36 +5,18 @@
 
 import Foundation
 
+@MainActor
 @Observable
 final class IMChannelsViewModel {
     // MARK: - Official Bot State
 
     var pairing: ChannelPairing?
-    var activeSession: PairingSession?
     var isOfficialBotLoading = false
-    var isOfficialBotExpanded = true
     var officialBotErrorMessage: String?
-
-    var officialBotNeedsReconnect: Bool {
-        pairing?.localStatus == "needs_reconnect"
-    }
-
-    var officialBotHasServiceIssue: Bool {
-        officialBotErrorMessage != nil
-    }
 
     var officialBotDisplayName: String {
         guard let p = pairing else { return "" }
         return p.platformName ?? p.platformUsername ?? p.platformUserId
-    }
-
-    /// Mirrors Sidebar's `showPendingSession`:
-    /// show QR only when there IS an active session AND there is NO valid pairing.
-    var showPendingSession: Bool {
-        guard let session = activeSession else { return false }
-        let isPendingOrExpired = session.status == "pending" || session.status == "expired"
-        let hasValidPairing = pairing != nil && !officialBotNeedsReconnect
-        return isPendingOrExpired && !hasValidPairing
     }
 
     // MARK: - Custom Bot State
@@ -43,7 +25,7 @@ final class IMChannelsViewModel {
     var isImServerConnected = false
     var customBotToken = ""
     var isCustomBotSaving = false
-    var isCustomBotExpanded = false
+    var isCustomBotExpanded = true
     var showTokenPlaintext = false
     var verifyResult: (success: Bool, error: String?)?
     var isVerifying = false
@@ -75,7 +57,7 @@ final class IMChannelsViewModel {
 
     var topNoticeMessages: [String] {
         var messages: [String] = []
-        for message in [officialBotErrorMessage, customBotServiceIssueMessage].compactMap({ $0 }) {
+        for message in [pairing == nil ? officialBotErrorMessage : nil, customBotServiceIssueMessage].compactMap({ $0 }) {
             if !messages.contains(message) {
                 messages.append(message)
             }
@@ -84,7 +66,7 @@ final class IMChannelsViewModel {
     }
 
     private let api = IMChannelAPIClient.shared
-    private var pollingTimer: Timer?
+    private var pairingLoadGeneration = 0
 
     // MARK: - Load All
 
@@ -124,21 +106,22 @@ final class IMChannelsViewModel {
     // MARK: - Official Bot
 
     func loadPairings() async {
-        guard ApplicationState.shared.isAuthenticated else { return }
+        guard ApplicationState.shared.isAuthenticated, !isOfficialBotLoading else { return }
+        pairingLoadGeneration += 1
+        let generation = pairingLoadGeneration
         do {
             let pairings = try await api.listPairings()
-            guard ApplicationState.shared.isAuthenticated else { return }
-            await MainActor.run {
-                let found = pairings.first { $0.platform == "telegram" }
-                self.pairing = found
-                self.officialBotErrorMessage = nil
-                AppLogDebug("[IMChannels] loadPairings — found: \(found?.id ?? "nil"), localStatus: \(found?.localStatus ?? "nil")")
-            }
+            guard ApplicationState.shared.isAuthenticated,
+                  generation == pairingLoadGeneration else { return }
+            let found = pairings.first { $0.platform == "telegram" }
+            self.pairing = found
+            self.officialBotErrorMessage = nil
+            AppLogDebug("[IMChannels] loadPairings — found: \(found?.id ?? "nil"), localStatus: \(found?.localStatus ?? "nil")")
         } catch {
             AppLogDebug("[IMChannels] loadPairings failed: \(error)")
-            await MainActor.run {
-                officialBotErrorMessage = officialBotServiceErrorMessage(for: error)
-            }
+            guard ApplicationState.shared.isAuthenticated,
+                  generation == pairingLoadGeneration else { return }
+            officialBotErrorMessage = officialBotServiceErrorMessage(for: error)
         }
     }
 
@@ -154,147 +137,19 @@ final class IMChannelsViewModel {
         }
     }
 
-    func connectOfficialBot() async {
-        guard ApplicationState.shared.isAuthenticated else { return }
-        AppLogDebug("[IMChannels] connectOfficialBot called")
-        await MainActor.run {
-            isOfficialBotLoading = true
-            officialBotErrorMessage = nil
-        }
-        do {
-            let response = try await api.prepareTelegram()
-            guard ApplicationState.shared.isAuthenticated else { return }
-            AppLogDebug("[IMChannels] prepareTelegram success — sessionId: \(response.pairing.sessionId), deepLink: \(response.pairing.deepLink ?? "nil")")
-            await MainActor.run {
-                activeSession = response.pairing
-                officialBotErrorMessage = nil
-                isOfficialBotLoading = false
-            }
-            startPolling(sessionId: response.pairing.sessionId)
-        } catch {
-            AppLogDebug("[IMChannels] connectOfficialBot FAILED: \(error)")
-            await MainActor.run {
-                officialBotErrorMessage = officialBotServiceErrorMessage(for: error)
-                isOfficialBotLoading = false
-            }
-        }
-    }
-
     func disconnectOfficialBot() async {
-        guard ApplicationState.shared.isAuthenticated else { return }
-        guard let p = pairing else { return }
-        AppLogDebug("[IMChannels] disconnectOfficialBot — pairingId: \(p.id)")
-
-        await MainActor.run {
-            isOfficialBotLoading = true
-            officialBotErrorMessage = nil
-            pairing = nil
-            activeSession = nil
-        }
+        guard ApplicationState.shared.isAuthenticated,
+              !isOfficialBotLoading, let pairing else { return }
+        pairingLoadGeneration += 1
+        isOfficialBotLoading = true
+        officialBotErrorMessage = nil
+        defer { isOfficialBotLoading = false }
 
         do {
-            try await api.disconnectPairing(id: p.id)
-            AppLogDebug("[IMChannels] disconnectPairing success")
-            await loadPairings()
-            await MainActor.run {
-                isOfficialBotLoading = false
-            }
+            try await api.disconnectPairing(id: pairing.id)
+            self.pairing = nil
         } catch {
-            AppLogDebug("[IMChannels] disconnectOfficialBot FAILED: \(error)")
-            await MainActor.run {
-                officialBotErrorMessage = officialBotServiceErrorMessage(for: error)
-                isOfficialBotLoading = false
-            }
-        }
-    }
-
-    func refreshQR() async {
-        guard ApplicationState.shared.isAuthenticated else { return }
-        await stopPolling()
-        await connectOfficialBot()
-    }
-
-    // MARK: - Official Bot Polling
-
-    private func startPolling(sessionId: String) {
-        guard ApplicationState.shared.isAuthenticated else { return }
-        Task { @MainActor in
-            self.doStopPolling()
-            AppLogDebug("[IMChannels] polling started — sessionId: \(sessionId)")
-            let timer = Timer(timeInterval: 3.0, repeats: true) { [weak self] _ in
-                guard let self else { return }
-                Task { await self.pollPairingStatus(sessionId: sessionId) }
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            self.pollingTimer = timer
-        }
-    }
-
-    func stopPolling() async {
-        await MainActor.run { doStopPolling() }
-    }
-
-    @MainActor
-    private func doStopPolling() {
-        if pollingTimer != nil {
-            AppLogDebug("[IMChannels] polling stopped")
-        }
-        pollingTimer?.invalidate()
-        pollingTimer = nil
-    }
-
-    private func pollPairingStatus(sessionId: String) async {
-        guard ApplicationState.shared.isAuthenticated else {
-            await stopPolling()
-            return
-        }
-        do {
-            let session = try await api.getPairingStatus(sessionId: sessionId)
-            guard ApplicationState.shared.isAuthenticated else {
-                await stopPolling()
-                return
-            }
-            AppLogDebug("[IMChannels] poll — status: \(session.status)")
-
-            if session.status == "paired" {
-                await stopPolling()
-                await FirstTimeActionTracker.capture(.phiLinkPaired)
-                await loadPairings()
-                await MainActor.run {
-                    activeSession = nil
-                    officialBotErrorMessage = nil
-                }
-                AppLogDebug("[IMChannels] pairing complete — UI should show connected")
-            } else if session.status == "expired" {
-                await stopPolling()
-                await MainActor.run {
-                    activeSession = session
-                }
-            } else {
-                await MainActor.run {
-                    let existingDeepLink = activeSession?.deepLink
-                    var merged = session
-                    if merged.deepLink == nil || merged.deepLink?.isEmpty == true {
-                        merged = PairingSession(
-                            sessionId: session.sessionId,
-                            deepLink: existingDeepLink,
-                            expiresAt: session.expiresAt,
-                            status: session.status,
-                            pairedAt: session.pairedAt,
-                            platform: session.platform,
-                            platformUserId: session.platformUserId,
-                            platformUsername: session.platformUsername,
-                            platformName: session.platformName
-                        )
-                    }
-                    activeSession = merged
-                }
-            }
-        } catch {
-            AppLogDebug("[IMChannels] polling failed: \(error)")
-            await MainActor.run {
-                officialBotErrorMessage = officialBotServiceErrorMessage(for: error)
-            }
+            officialBotErrorMessage = officialBotServiceErrorMessage(for: error)
         }
     }
 

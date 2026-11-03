@@ -28,6 +28,67 @@
 
 import Cocoa
 
+private final class OmniBoxTextLayoutManager: NSTextLayoutManager {
+    weak var fieldEditor: NSTextView?
+    private static let wordSeparators = Set(".-:/?#[]@!$&'()*+,;=%\\".utf16)
+
+    override func textRange(for granularity: NSTextSelection.Granularity,
+                            enclosing location: any NSTextLocation) -> NSTextRange? {
+        let nativeRange = super.textRange(for: granularity, enclosing: location)
+        guard granularity == .word, let fieldEditor, !fieldEditor.hasMarkedText(),
+              let content = textContentManager, let nativeRange else { return nativeRange }
+        let text = fieldEditor.string as NSString
+        let origin = content.documentRange.location
+        let index = content.offset(from: origin, to: location)
+        guard text.length > 0, index >= 0, index <= text.length else { return nativeRange }
+        let characterRange = text.rangeOfComposedCharacterSequence(at: min(index, text.length - 1))
+        let nativeStart = content.offset(from: origin, to: nativeRange.location)
+        let nativeEnd = content.offset(from: origin, to: nativeRange.endLocation)
+        guard nativeStart >= 0, nativeStart <= characterRange.location,
+              nativeEnd >= NSMaxRange(characterRange), nativeEnd <= text.length else { return nativeRange }
+
+        func isWordSeparator(_ range: NSRange) -> Bool {
+            range.length == 1 && Self.wordSeparators.contains(text.character(at: range.location))
+        }
+        // Refine native Unicode words at the TextKit 2 selection boundary used by mouse tracking.
+        // Walking composed characters preserves emoji and combining sequences.
+        let isSeparator = isWordSeparator(characterRange)
+        var start = characterRange.location
+        var end = NSMaxRange(characterRange)
+        while start > nativeStart {
+            let previous = text.rangeOfComposedCharacterSequence(at: start - 1)
+            guard isWordSeparator(previous) == isSeparator else { break }
+            start = previous.location
+        }
+        while end < nativeEnd {
+            let next = text.rangeOfComposedCharacterSequence(at: end)
+            guard isWordSeparator(next) == isSeparator else { break }
+            end = NSMaxRange(next)
+        }
+        guard let startLocation = content.location(origin, offsetBy: start),
+              let endLocation = content.location(origin, offsetBy: end) else { return nativeRange }
+        return NSTextRange(location: startLocation, end: endLocation)
+    }
+}
+
+private final class OmniBoxTextFieldCell: NSTextFieldCell {
+    private let content = NSTextContentStorage()
+    private lazy var editor: NSTextView = {
+        let layout = OmniBoxTextLayoutManager()
+        content.addTextLayoutManager(layout)
+        let container = NSTextContainer()
+        layout.textContainer = container
+        let editor = NSTextView(frame: .zero, textContainer: container)
+        editor.isFieldEditor = true
+        layout.fieldEditor = editor
+        return editor
+    }()
+
+    override func fieldEditor(for controlView: NSView) -> NSTextView? {
+        editor
+    }
+}
+
 protocol OmniBoxTextFieldDelegate: AnyObject {
     func omniBoxTextFieldDidChange(_ textField: OmniBoxTextField, suppressAutoComplete: Bool)
     func omniBoxTextFieldDidBeginEditing(_ textField: OmniBoxTextField)
@@ -83,6 +144,9 @@ class OmniBoxTextField: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     private func setupTextField() {
+        textFiled.cell = OmniBoxTextFieldCell(textCell: textFiled.stringValue)
+        textFiled.isEditable = true
+        textFiled.isSelectable = true
         textFiled.isBezeled = false
         textFiled.isBordered = false
         textFiled.backgroundColor = NSColor.clear
@@ -131,13 +195,13 @@ class OmniBoxTextField: NSView {
     }
     
     func selectAll() {
-        if let fieldEditor = window?.fieldEditor(true, for: self) {
+        if let fieldEditor = textFiled.currentEditor() {
             fieldEditor.selectAll(nil)
         }
     }
     
     func selectToEnd() {
-        if let fieldEditor = window?.fieldEditor(true, for: self) {
+        if let fieldEditor = textFiled.currentEditor() {
             let length = (textFiled.stringValue as NSString).length
             fieldEditor.selectedRange = NSRange(location: length, length: 0)
         }
@@ -148,7 +212,7 @@ class OmniBoxTextField: NSView {
 
 extension OmniBoxTextField {
     func updateSelection(inlineCompletString: String?, fillString: String?, canUseTempString: Bool, inlineCompletionEnabled: Bool) {
-        guard let fieldEditor = window?.fieldEditor(false, for: self) else {
+        guard let fieldEditor = textFiled.currentEditor() else {
             return
         }
         guard (fieldEditor as? NSTextView)?.hasMarkedText() != true else { return }
@@ -242,7 +306,7 @@ extension OmniBoxTextField: NSTextFieldDelegate {
         }
         let previousSelection = savedSelection
 
-        if let fieldEditor = window?.fieldEditor(false, for: textFiled) {
+        if let fieldEditor = textFiled.currentEditor() {
             let raw = fieldEditor.string
             if raw.contains("\n") || raw.contains("\r") {
                 let cleaned = raw
@@ -275,7 +339,7 @@ extension OmniBoxTextField: NSTextFieldDelegate {
     
     @objc func textViewDidChangeSelection(_ noti: Notification) {
         guard let textView = noti.object as? NSTextView,
-              let fieldEditor = window?.fieldEditor(false, for: textFiled),
+              let fieldEditor = textFiled.currentEditor(),
               textView === fieldEditor else {
             return
         }
@@ -349,7 +413,7 @@ extension OmniBoxTextField: NSTextFieldDelegate {
             if modifyingSelectors.contains(commandSelector) {
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
-                    if let fieldEditor = self.window?.fieldEditor(false, for: self) {
+                    if let fieldEditor = self.textFiled.currentEditor() {
                         self.originalText = fieldEditor.string
                         self.inlineCompletionSelection = nil
                         AppLogDebug("[Omnibox] doCommandBy: originalText -> \(self.originalText)")

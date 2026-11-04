@@ -64,7 +64,7 @@ struct HolographicCardStyle: Codable, Equatable, Hashable, Sendable {
     static func random<R: RandomNumberGenerator>(using generator: inout R) -> Self {
         Self(palette: Palette.allCases.randomElement(using: &generator)!,
              texture: Texture.allCases.randomElement(using: &generator)!,
-             ornament: Ornament.allCases.randomElement(using: &generator)!)
+             ornament: Ornament.allCases.filter { $0 != .none }.randomElement(using: &generator)!)
     }
 
     static func random() -> Self {

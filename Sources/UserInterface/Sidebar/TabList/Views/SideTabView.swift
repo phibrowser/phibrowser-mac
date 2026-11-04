@@ -42,6 +42,7 @@ final class SideTabView: NSView {
     private let titleView = SideTabTitleView()
     private let peekButton = SideTabPeekButton()
     private let closeButton = SideTabIconButton()
+    private var shareInsteadButton: SideTabIconButton?
     private let badgeView = SideTabCornerBadgeView()
     private var splitPlaceholder: SideTabSplitPlaceholderView?
     private var beingSharedOutlineHost: TabDecorativeHostingView?
@@ -243,6 +244,16 @@ final class SideTabView: NSView {
             titleMaxX -= Self.buttonSize + Self.itemSpacing
         }
         let hoverFill = theme.map { ThemedColor.hover.resolve(theme: $0, appearance: phiAppearance) } ?? .clear
+        let shareButtonX = titleMaxX - Self.buttonSize
+        if showsClose, model.offersShareInstead, shareButtonX >= x - Self.itemSpacing {
+            let button = shareInsteadButton ?? makeShareInsteadButton()
+            button.frame = buttonFrame(x: shareButtonX, midY: midY)
+            button.hoverFillColor = hoverFill
+            button.isHidden = false
+            titleMaxX -= Self.buttonSize + Self.itemSpacing
+        } else {
+            shareInsteadButton?.isHidden = true
+        }
         for button in [muteButton, closeButton, peekButton] as [SideTabIconButton] {
             button.hoverFillColor = hoverFill
         }
@@ -303,6 +314,19 @@ final class SideTabView: NSView {
 
     private func buttonFrame(x: CGFloat, midY: CGFloat) -> NSRect {
         NSRect(x: x, y: midY - Self.buttonSize / 2, width: Self.buttonSize, height: Self.buttonSize)
+    }
+
+    private func makeShareInsteadButton() -> SideTabIconButton {
+        let button = SideTabIconButton()
+        button.image = NSImage(systemSymbolName: "rectangle.2.swap", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
+        let title = UnifiedTabShareInsteadButton.title
+        button.toolTip = title
+        button.setAccessibilityLabel(title)
+        button.onClick = { [weak self] in self?.model.onShareInstead?() }
+        contentView.addSubview(button)
+        shareInsteadButton = button
+        return button
     }
 
     private func makeSplitPlaceholder() -> SideTabSplitPlaceholderView {

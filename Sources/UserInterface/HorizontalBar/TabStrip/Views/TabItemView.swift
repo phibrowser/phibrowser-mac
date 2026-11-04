@@ -92,6 +92,8 @@ final class TabItemView: NSView {
 
     private var currentTabId: String?
     private weak var sourceTab: Tab?
+    private weak var tabSharingState: BrowserTabSharingState?
+    private var showsShareInstead = false
     private let tabPreviewRegistration = TabPreviewRegistration()
     private let splitTabPreviewRegistration = SplitTabPreviewRegistration()
     private var showsTabPreview = false
@@ -181,6 +183,7 @@ final class TabItemView: NSView {
             tabPreviewRegistration.setHovering(isHovered)
             splitTabPreviewRegistration.setHovering(isHovered)
             onHoverChanged?(isHovered)
+            _ = refreshShareInsteadOffer()
             updateAppearance()
             layoutContent()
         }
@@ -249,6 +252,14 @@ final class TabItemView: NSView {
     private lazy var closeButtonHostingView: ZeroSafeAreaHostingView<AnyView> = {
         let view = ZeroSafeAreaHostingView(rootView: makeCloseButtonRootView())
         view.layer?.backgroundColor = .clear
+        return view
+    }()
+
+    /// Switches a running tab share to this tab; left of the close button.
+    private lazy var shareInsteadButtonHostingView: ZeroSafeAreaHostingView<AnyView> = {
+        let view = ZeroSafeAreaHostingView(rootView: makeShareInsteadButtonRootView())
+        view.layer?.backgroundColor = .clear
+        view.isHidden = true
         return view
     }()
 
@@ -348,6 +359,7 @@ final class TabItemView: NSView {
         addSubview(titleHostingView)
         addSubview(statusBadgeHostingView)
         addSubview(closeButtonHostingView)
+        addSubview(shareInsteadButtonHostingView)
     }
 
     /// Creates the view set for one more non-host pane and installs it
@@ -670,11 +682,13 @@ final class TabItemView: NSView {
                 pane.titleHostingView.isHidden = true
                 pane.closeButtonHostingView.isHidden = true
             }
+            shareInsteadButtonHostingView.isHidden = true
 
         case .normal:
             // Close buttons: one per pane for a merged split cell (all
             // visible on hover), single button for a regular tab.
             if isMergedSplitCell {
+                shareInsteadButtonHostingView.isHidden = true
                 layoutMergedPaneText(
                     column: paneColumn(0),
                     faviconView: faviconHostingView,
@@ -704,8 +718,17 @@ final class TabItemView: NSView {
                     pane.titleHostingView.isHidden = true
                     pane.closeButtonHostingView.isHidden = true
                 }
+                let showsShareInsteadButton = shouldShowCloseButton && showsShareInstead
+                shareInsteadButtonHostingView.isHidden = !showsShareInsteadButton
+                if showsShareInsteadButton {
+                    shareInsteadButtonHostingView.frame = closeButtonHostingView.frame
+                        .offsetBy(dx: -metrics.closeButtonSize.width, dy: 0)
+                }
+                let trailingControlsMinX = showsShareInsteadButton
+                    ? shareInsteadButtonHostingView.frame.minX
+                    : closeButtonHostingView.frame.minX
                 let titleMaxX = shouldShowCloseButton
-                    ? closeButtonHostingView.frame.minX - metrics.titleToCloseButton
+                    ? trailingControlsMinX - metrics.titleToCloseButton
                     : bounds.width - metrics.titleTrailing
                 titleHostingView.frame = CGRect(
                     x: titleStartX,
@@ -785,6 +808,7 @@ final class TabItemView: NSView {
             titleHostingView,
             statusBadgeHostingView,
             closeButtonHostingView,
+            shareInsteadButtonHostingView,
         ]
         for view in ownViews + mergedPanePool.flatMap(\.views) {
             view.isHidden = true
@@ -924,6 +948,26 @@ final class TabItemView: NSView {
         makeThemedRootView(UnifiedTabCaptureCenterIndicator(viewModel: viewModel))
     }
 
+    private func isOnShareInsteadButton(_ point: NSPoint) -> Bool {
+        !shareInsteadButtonHostingView.isHidden
+            && shareInsteadButtonHostingView.frame.contains(point)
+    }
+
+    private func makeShareInsteadButtonRootView() -> AnyView {
+        makeThemedRootView(UnifiedTabShareInsteadButton(viewModel: viewModel))
+    }
+
+    /// Returns whether the offer changed.
+    private func refreshShareInsteadOffer() -> Bool {
+        var offers = false
+        if isHovered, let tabId = sourceTab?.guid, let tabSharingState {
+            offers = tabSharingState.canShareInstead(tabId: tabId)
+        }
+        guard offers != showsShareInstead else { return false }
+        showsShareInstead = offers
+        return true
+    }
+
     private func makeCloseButtonRootView() -> AnyView {
         makeThemedRootView(
             UnifiedTabCloseButton { [weak self] in
@@ -981,6 +1025,7 @@ final class TabItemView: NSView {
 
         updateAppearance()
         
+        tabSharingState = browserState?.tabSharingState
         if let tab = data.sourceTab {
             viewModel.configure(with: tab, in: browserState)
             viewModel.onToggleMute = { [weak tab] in
@@ -1029,6 +1074,15 @@ final class TabItemView: NSView {
                     self?.layoutContent()
                 }
                 .store(in: &cancellables)
+
+            tabSharingState?.$replaceableSession
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    guard let self, self.refreshShareInsteadOffer() else { return }
+                    self.layoutContent()
+                }
+                .store(in: &cancellables)
         }
 
         // Same re-layout triggers for every other pane so its mute icon
@@ -1059,6 +1113,7 @@ final class TabItemView: NSView {
                 .store(in: &cancellables)
         }
 
+        _ = refreshShareInsteadOffer()
         layoutContent()
     }
 
@@ -1293,6 +1348,9 @@ final class TabItemView: NSView {
             if isOnCloseButton(point) {
                 return
             }
+            if isOnShareInsteadButton(point) {
+                return
+            }
 
             // Click check for Mute Button (Only block if active)
             if !muteButtonHostingView.isHidden && muteButtonHostingView.frame.contains(point) && isActive {
@@ -1336,7 +1394,7 @@ final class TabItemView: NSView {
         let point = convert(event.locationInWindow, from: nil)
 
         let isOnMute = !muteButtonHostingView.isHidden && muteButtonHostingView.frame.contains(point)
-        let isOnClose = isOnCloseButton(point)
+        let isOnClose = isOnCloseButton(point) || isOnShareInsteadButton(point)
 
         // Only block press state if on functional buttons
         let isFunctionalMute = isOnMute && isActive
@@ -1364,7 +1422,7 @@ final class TabItemView: NSView {
 
         // Don't drag if starting from functional functional buttons
         let isOnMute = !muteButtonHostingView.isHidden && muteButtonHostingView.frame.contains(startPoint)
-        let isOnClose = isOnCloseButton(startPoint)
+        let isOnClose = isOnCloseButton(startPoint) || isOnShareInsteadButton(startPoint)
 
         if (isOnMute && isActive) || isOnClose {
             return

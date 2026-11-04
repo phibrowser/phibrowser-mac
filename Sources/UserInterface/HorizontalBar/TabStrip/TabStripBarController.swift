@@ -266,8 +266,8 @@ final class TabStripBarController: NSViewController {
         tabStrip.setActive(active)
     }
 
-    func setActivePageStyle(backgroundColor: NSColor?, appearance: Appearance?) {
-        tabStrip.setActivePageStyle(backgroundColor: backgroundColor, appearance: appearance)
+    func setActivePageStyle(backgroundColor: NSColor?, appearance: Appearance?, animated: Bool = false) {
+        tabStrip.setActivePageStyle(backgroundColor: backgroundColor, appearance: appearance, animated: animated)
     }
 
     /// Forwards to the underlying tab strip — used by the content border

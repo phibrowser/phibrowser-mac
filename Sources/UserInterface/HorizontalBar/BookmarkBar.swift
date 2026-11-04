@@ -165,13 +165,21 @@ class BookmarkBar: NSView {
         self.needsLayout = true
     }
 
-    private func applyThemeAppearance() {
+    private func applyThemeAppearance(animatesPageColor: Bool = false) {
         let theme = state.themeContext.currentTheme
         let pageAppearance = pageColorPresentation.appearance
         let resolvedAppearance = pageAppearance ?? state.themeContext.currentAppearance
         let background = pageColorPresentation.backgroundColor
             ?? ThemedColor.contentOverlayBackground.resolve(theme: theme, appearance: resolvedAppearance)
-        layer?.backgroundColor = background.cgColor
+        if let layer {
+            WebContentHeaderPageColorPresentation.setColor(
+                background.cgColor,
+                for: \.backgroundColor,
+                key: "backgroundColor",
+                on: layer,
+                animated: animatesPageColor
+            )
+        }
         separatorView.layer?.backgroundColor = ThemedColor.separator.resolve(
             theme: theme, appearance: resolvedAppearance
         ).cgColor
@@ -181,9 +189,13 @@ class BookmarkBar: NSView {
         updateDropIndicatorColor()
     }
 
-    func setPageColorPresentation(_ presentation: WebContentHeaderPageColorPresentation) {
+    func setPageColorPresentation(_ presentation: WebContentHeaderPageColorPresentation, animated: Bool) {
         pageColorPresentation = presentation
-        applyThemeAppearance()
+        // Also snaps a fade carried over from the previous tab toward the same color.
+        if !animated {
+            layer?.removeAnimation(forKey: "backgroundColor")
+        }
+        applyThemeAppearance(animatesPageColor: animated)
     }
 
     private func updateDropIndicatorColor() {

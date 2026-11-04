@@ -11,11 +11,45 @@ import Combine
 struct WebContentHeaderPageColorPresentation: Equatable {
     let backgroundColor: NSColor?
     let appearance: Appearance?
+    /// True for a change within the same tab. A tab switch swaps the page
+    /// instantly, so the chrome swaps with it.
+    var animatesChange = false
 
     static let inherited = WebContentHeaderPageColorPresentation(
         backgroundColor: nil,
         appearance: nil
     )
+}
+
+extension WebContentHeaderPageColorPresentation {
+    static let transitionDuration: CFTimeInterval = 0.25
+
+    /// Crossfades from the on-screen color when `animated`; an unanimated
+    /// change cancels a crossfade still in flight.
+    static func setColor<Layer: CALayer>(
+        _ color: CGColor,
+        for keyPath: ReferenceWritableKeyPath<Layer, CGColor?>,
+        key: String,
+        on layer: Layer,
+        animated: Bool
+    ) {
+        let current = layer[keyPath: keyPath]
+        guard current != color else { return }
+        let onScreen = layer.presentation()?[keyPath: keyPath] ?? current
+        layer[keyPath: keyPath] = color
+        guard animated,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              let onScreen else {
+            layer.removeAnimation(forKey: key)
+            return
+        }
+        let transition = CABasicAnimation(keyPath: key)
+        transition.fromValue = onScreen
+        transition.toValue = color
+        transition.duration = transitionDuration
+        transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(transition, forKey: key)
+    }
 }
 
 class WebContentHeaderState: ObservableObject {
@@ -108,6 +142,7 @@ class WebContentHeader: NSView {
     private weak var browserState: BrowserState?
     private var didSetupHostingView = false
     private var themeObserver = ThemeObserver.shared
+    private weak var pageColorTab: Tab?
 
     /// The state the header was built with, or (for a header created without
     /// one) the window's. In hosted mode the window is the shared shell,
@@ -248,6 +283,8 @@ class WebContentHeader: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        // A cached tab's header remounts on a tab switch, which snaps.
+        layer?.removeAnimation(forKey: "backgroundColor")
         if window != nil {
             let provider = headerThemeProvider
             AppLogDebug("[ThemeDebug] WebContentHeader.viewDidMoveToWindow: provider=\(type(of: provider)), theme=\(provider.currentTheme.id), appearance=\(provider.currentAppearance)")
@@ -469,15 +506,26 @@ class WebContentHeader: NSView {
         let pageAppearance: Appearance? = pageBackground.map {
             $0.isLight() ? .light : .dark
         }
+        let animatesChange = tab != nil && tab === pageColorTab
+        pageColorTab = tab
 
         // Own both layer colors here so a theme binding cannot overwrite the page override.
-        layer?.backgroundColor = background.cgColor
+        if let layer {
+            WebContentHeaderPageColorPresentation.setColor(
+                background.cgColor,
+                for: \.backgroundColor,
+                key: "backgroundColor",
+                on: layer,
+                animated: animatesChange
+            )
+        }
         bottomSeparator.layer?.backgroundColor = ThemedColor.separator.resolve(
             theme: theme, appearance: pageAppearance ?? fallbackAppearance
         ).cgColor
         let pageColorPresentation = WebContentHeaderPageColorPresentation(
             backgroundColor: background,
-            appearance: pageAppearance
+            appearance: pageAppearance,
+            animatesChange: animatesChange
         )
         if state.pageColorPresentation != pageColorPresentation {
             state.pageColorPresentation = pageColorPresentation

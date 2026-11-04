@@ -646,7 +646,8 @@ class WebContentContainerViewController: NSViewController {
                       self.currentWebContentController === controller else { return }
                 self.tabStripBarController?.setActivePageStyle(
                     backgroundColor: presentation.backgroundColor,
-                    appearance: presentation.appearance
+                    appearance: presentation.appearance,
+                    animated: presentation.animatesChange
                 )
             }
     }

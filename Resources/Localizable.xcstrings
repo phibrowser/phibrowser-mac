@@ -101732,6 +101732,42 @@
         }
       }
     },
+    "settings.spaces.tabSwitcherScope.allSpacesDescription" : {
+      "comment" : "Spaces settings - description under the Tab Switcher scope toggle when it is on",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The Tab Switcher cycles through recent tabs in every Space and switches Spaces when needed."
+          }
+        }
+      }
+    },
+    "settings.spaces.tabSwitcherScope.currentSpaceDescription" : {
+      "comment" : "Spaces settings - description under the Tab Switcher scope toggle when it is off",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The Tab Switcher cycles through recent tabs in the current Space."
+          }
+        }
+      }
+    },
+    "settings.spaces.tabSwitcherScope.title" : {
+      "comment" : "Spaces settings - toggle label for letting the Tab Switcher (Ctrl-Tab) list recent tabs from every Space in the window",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Tab Switcher includes all Spaces"
+          }
+        }
+      }
+    },
     "settings.spaces.theme.colorLabel" : {
       "comment" : "Spaces settings - theme color row label",
       "extractionState" : "extracted_with_value",

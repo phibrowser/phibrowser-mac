@@ -201,4 +201,38 @@ final class TabSwitchManagerTests: XCTestCase {
         XCTAssertEqual(state.tabSwitchManager.recentTabIDs, [1, 2])
         XCTAssertFalse(state.tabs.contains { $0.guid == 3 })
     }
+
+    // MARK: - All-Spaces candidate merge
+
+    func testMergedCandidatesKeepFocusedTabFirstThenNewestAcrossSpaces() {
+        let merged = TabSwitchManager.mergedCandidates(
+            currentTabID: 1,
+            entries: [(id: 1, stamp: 5), (id: 2, stamp: 2), (id: 10, stamp: 4), (id: 11, stamp: 3)],
+            limit: 5
+        )
+        XCTAssertEqual(merged, [1, 10, 11, 2])
+    }
+
+    func testMergedCandidatesDeduplicateAndRespectLimit() {
+        let merged = TabSwitchManager.mergedCandidates(
+            currentTabID: 1,
+            entries: [(id: 1, stamp: 9), (id: 2, stamp: 8), (id: 2, stamp: 1),
+                      (id: 3, stamp: 7), (id: 4, stamp: 6), (id: 5, stamp: 5), (id: 6, stamp: 4)],
+            limit: 5
+        )
+        XCTAssertEqual(merged, [1, 2, 3, 4, 5])
+    }
+
+    func testMergedCandidatesWithoutFocusedTabOrderByRecency() {
+        let merged = TabSwitchManager.mergedCandidates(
+            currentTabID: nil,
+            entries: [(id: 2, stamp: 1), (id: 3, stamp: 3)],
+            limit: 5
+        )
+        XCTAssertEqual(merged, [3, 2])
+    }
+
+    func testAllSpacesSettingDefaultsOff() {
+        XCTAssertFalse(PhiPreferences.GeneralSettings.tabSwitcherIncludesAllSpaces.defaultValue)
+    }
 }

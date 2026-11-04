@@ -114,6 +114,7 @@ extension PhiPreferences {
         case suppressCloseIncognitoSpaceWarning // "Do not ask again" on the close-Incognito-Space confirmation
         case peekViewEnabled // Master gate for Peek View: the context-menu item and the automatic cross-site diversion
         case autoPeekViewEnabled // Sub-gate under peekViewEnabled: the automatic cross-site diversion from pinned/bookmark-bound tabs; explicit peeks are unaffected
+        case tabSwitcherIncludesAllSpaces // Ctrl-Tab switcher lists recent tabs from every Space in the window, not only the current one
 
         var defaultValue: Bool {
             switch self {
@@ -159,6 +160,8 @@ extension PhiPreferences {
                 return true
             case .autoPeekViewEnabled:
                 return true
+            case .tabSwitcherIncludesAllSpaces:
+                return false
             }
         }
 

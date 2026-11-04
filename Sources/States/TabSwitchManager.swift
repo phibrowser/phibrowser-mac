@@ -18,6 +18,10 @@ final class TabSwitchManager {
     private(set) var recentTabIDs: [Int] = []
     /// Media ordering uses actual visits only, retaining every live visited tab.
     var visitedTabIDs: [Int] { visitHistoryTabIDs }
+    /// When each `recentTabIDs` entry was last recorded, on a clock shared by
+    /// every Space's manager so the all-Spaces switcher can merge their lists.
+    private var recencyStamps: [Int: UInt64] = [:]
+    private static var recencyClock: UInt64 = 0
     private weak var browserState: BrowserState?
 
     private var session: Session?
@@ -53,6 +57,7 @@ final class TabSwitchManager {
         recentTabIDs.removeAll { $0 == tabID }
         recentTabIDs.insert(tabID, at: 0)
         recentTabIDs = Array(recentTabIDs.prefix(TabSwitchMetrics.maxRecentTabs))
+        stamp(tabID)
     }
 
     /// Admit an unvisited background tab as the next forward-switch target.
@@ -75,11 +80,19 @@ final class TabSwitchManager {
         let insertionIndex = recentTabIDs.first == state.focusingTab?.guid ? 1 : 0
         recentTabIDs.insert(tab.guid, at: min(insertionIndex, recentTabIDs.count))
         recentTabIDs = Array(recentTabIDs.prefix(TabSwitchMetrics.maxRecentTabs))
+        stamp(tab.guid)
+    }
+
+    private func stamp(_ tabID: Int) {
+        Self.recencyClock += 1
+        recencyStamps[tabID] = Self.recencyClock
+        recencyStamps = recencyStamps.filter { recentTabIDs.contains($0.key) }
     }
 
     func removeTab(tabID: Int) {
         visitHistoryTabIDs.removeAll { $0 == tabID }
         recentTabIDs.removeAll { $0 == tabID }
+        recencyStamps.removeValue(forKey: tabID)
         snapshotCache.removeValue(forKey: tabID)
         guard var session else { return }
         session.candidateTabIDs.removeAll { $0 == tabID }
@@ -188,7 +201,7 @@ final class TabSwitchManager {
     }
 
     private func commitSession() {
-        guard let session, let state = browserState else {
+        guard let session, browserState != nil else {
             cancelSession()
             return
         }
@@ -196,23 +209,35 @@ final class TabSwitchManager {
         let selectedIdx = session.selectedIndex
         tearDownSession()
 
-        let resolvedTab: Tab? = {
+        let resolved: ResolvedTab? = {
             if let tabID = candidates[safe: selectedIdx],
-               let tab = state.tabs.first(where: { $0.guid == tabID }) {
-                return tab
+               let match = resolveTab(tabID) {
+                return match
             }
             for offset in 1..<candidates.count {
                 for idx in [selectedIdx + offset, selectedIdx - offset] {
                     let wrapped = ((idx % candidates.count) + candidates.count) % candidates.count
-                    if let tab = state.tabs.first(where: { $0.guid == candidates[wrapped] }) {
-                        return tab
+                    if let match = resolveTab(candidates[wrapped]) {
+                        return match
                     }
                 }
             }
             return nil
         }()
+        guard let resolved else { return }
 
-        resolvedTab?.webContentWrapper?.setAsActiveTab()
+        // A tab from another Space is focused once that Space has been
+        // swapped in, as the scripting `focus tab` path does.
+        if let owner = resolved.otherSpaceController,
+           let slot = owner.slot,
+           slot.activeSpaceId != owner.spaceId {
+            let tab = resolved.tab
+            slot.activate(spaceId: owner.spaceId, userInitiated: true, onSwapSettled: { [weak tab] in
+                tab?.webContentWrapper?.setAsActiveTab()
+            })
+            return
+        }
+        resolved.tab.webContentWrapper?.setAsActiveTab()
     }
 
     func cancelSession() {
@@ -234,12 +259,81 @@ final class TabSwitchManager {
         let validIDs = Set(state.tabs.map(\.guid))
         visitHistoryTabIDs.removeAll { !validIDs.contains($0) }
         recentTabIDs.removeAll { !validIDs.contains($0) }
+        recencyStamps = recencyStamps.filter { validIDs.contains($0.key) }
     }
 
     private func buildCandidates() -> [Int] {
-        guard browserState != nil else { return [] }
+        guard let state = browserState else { return [] }
         pruneHistory()
-        return recentTabIDs
+        let others = otherSpaceControllers()
+        guard !others.isEmpty else { return recentTabIDs }
+
+        // All-Spaces mode: the focused tab stays first, then every Space's
+        // recent tabs by when they were last recorded. Each Space keeps
+        // owning its own history; only the candidate list is merged.
+        var entries = recentTabIDs.map { (id: $0, stamp: recencyStamps[$0] ?? 0) }
+        for controller in others {
+            let manager = controller.browserState.tabSwitchManager
+            manager.pruneHistory()
+            entries += manager.recentTabIDs.map { (id: $0, stamp: manager.recencyStamps[$0] ?? 0) }
+        }
+        let currentID = state.focusingTab?.guid
+        return Self.mergedCandidates(
+            currentTabID: recentTabIDs.contains(where: { $0 == currentID }) ? currentID : nil,
+            entries: entries,
+            limit: TabSwitchMetrics.maxRecentTabs
+        )
+    }
+
+    /// Orders recent tabs from several Spaces: the focused tab first, then
+    /// newest stamp first, each tab once, capped at `limit`.
+    static func mergedCandidates(
+        currentTabID: Int?,
+        entries: [(id: Int, stamp: UInt64)],
+        limit: Int
+    ) -> [Int] {
+        var seen = Set<Int>()
+        var merged: [Int] = []
+        if let currentTabID {
+            merged.append(currentTabID)
+            seen.insert(currentTabID)
+        }
+        for entry in entries.sorted(by: { $0.stamp > $1.stamp }) where seen.insert(entry.id).inserted {
+            merged.append(entry.id)
+        }
+        return Array(merged.prefix(limit))
+    }
+
+    /// The live sessions of the window's other Spaces when the all-Spaces
+    /// setting is on; empty otherwise, which keeps the per-Space behaviour.
+    private func otherSpaceControllers() -> [SpaceSessionController] {
+        guard PhiPreferences.GeneralSettings.tabSwitcherIncludesAllSpaces.loadValue(),
+              let ownController = browserState?.windowController,
+              let slot = ownController.slot else { return [] }
+        return slot.presentedSpaces.compactMap { space in
+            guard let controller = slot.windowsBySpaceId[space.spaceId],
+                  controller !== ownController,
+                  !controller.isDormant else { return nil }
+            return controller
+        }
+    }
+
+    private struct ResolvedTab {
+        let tab: Tab
+        /// Set when the tab lives in another Space of this window.
+        let otherSpaceController: SpaceSessionController?
+    }
+
+    private func resolveTab(_ tabID: Int) -> ResolvedTab? {
+        if let tab = browserState?.tabs.first(where: { $0.guid == tabID }) {
+            return ResolvedTab(tab: tab, otherSpaceController: nil)
+        }
+        for controller in otherSpaceControllers() {
+            if let tab = controller.browserState.tabs.first(where: { $0.guid == tabID }) {
+                return ResolvedTab(tab: tab, otherSpaceController: controller)
+            }
+        }
+        return nil
     }
 
     // MARK: - Input Monitoring
@@ -359,7 +453,7 @@ final class TabSwitchManager {
     private func buildItems(from session: Session) -> [TabSwitchItem] {
         guard let state = browserState else { return [] }
         return session.candidateTabIDs.compactMap { tabID -> TabSwitchItem? in
-            guard let tab = state.tabs.first(where: { $0.guid == tabID }) else { return nil }
+            guard let tab = resolveTab(tabID)?.tab else { return nil }
             let snapshot = resolveSnapshot(for: tab)
             let liveFavicon = resolveLiveFaviconImage(for: tab)
             let pageURL = tab.url.flatMap { $0.isEmpty ? nil : $0 }

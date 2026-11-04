@@ -252,7 +252,106 @@ final class ShellWindow: NSWindow {
         default:
             break
         }
+        let titlebarDoubleClick = beginTitlebarDoubleClick(event)
         super.sendEvent(event)
+        if titlebarDoubleClick {
+            finishTitlebarDoubleClick()
+        }
+    }
+
+    /// Window origin when the second click of a bare-titlebar double-click
+    /// went down. A window drag started by that click must not zoom on release.
+    private var titlebarDoubleClickDownOrigin: NSPoint?
+    /// True while a bare-titlebar double-click's release is inside
+    /// `super.sendEvent`.
+    private var isDispatchingTitlebarDoubleClick = false
+    /// Whether AppKit zoomed, miniaturized or reframed the window during that
+    /// dispatch — the native action (or the top-edge fill) ran on its own.
+    private var appKitActedOnTitlebarDoubleClick = false
+
+    /// Whether `location` is bare titlebar: AppKit's own hit test ends on the
+    /// frame view itself, so neither Phi's content (`TitlebarTransparentView`
+    /// passes empty titlebar points through) nor a traffic light takes it.
+    private func isBareTitlebar(_ location: NSPoint) -> Bool {
+        guard !styleMask.contains(.fullScreen),
+              NSRect(origin: .zero, size: frame.size).contains(location),
+              let frameView = contentView?.superview else { return false }
+        return frameView.hitTest(location) === frameView
+    }
+
+    /// Tracks the second click of a bare-titlebar double-click; returns true
+    /// for its release, which `finishTitlebarDoubleClick` completes once
+    /// AppKit has seen it.
+    private func beginTitlebarDoubleClick(_ event: NSEvent) -> Bool {
+        guard event.type == .leftMouseDown || event.type == .leftMouseUp,
+              event.clickCount == 2,
+              !event.modifierFlags.contains(.control),
+              isBareTitlebar(event.locationInWindow) else {
+            if event.type == .leftMouseDown { titlebarDoubleClickDownOrigin = nil }
+            return false
+        }
+        if event.type == .leftMouseDown {
+            titlebarDoubleClickDownOrigin = frame.origin
+            return false
+        }
+        defer { titlebarDoubleClickDownOrigin = nil }
+        guard titlebarDoubleClickDownOrigin == frame.origin else { return false }
+        isDispatchingTitlebarDoubleClick = true
+        appKitActedOnTitlebarDoubleClick = false
+        return true
+    }
+
+    /// macOS 27.2 no longer runs the titlebar double-click action for a
+    /// window whose titlebar is transparent: the action belongs to the
+    /// titlebar container's double-click recognizer, a transparent container
+    /// no longer takes the hit, and the frame view the click lands on does
+    /// nothing with it (PHI-1881). Run the System Settings action here when
+    /// AppKit did not, the way Chromium does for its draggable regions; an OS
+    /// that still handles the click natively is left to do so.
+    private func finishTitlebarDoubleClick() {
+        isDispatchingTitlebarDoubleClick = false
+        guard !appKitActedOnTitlebarDoubleClick else { return }
+        switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
+        case "Minimize":
+            performMiniaturize(nil)
+        case "None":
+            break
+        case "Fill":
+            let fill = Selector(("_zoomFill:"))
+            if responds(to: fill) {
+                _ = perform(fill, with: nil)
+            } else {
+                performZoom(nil)
+            }
+        default:
+            // "Maximize", or never changed in System Settings.
+            performZoom(nil)
+        }
+    }
+
+    private func noteWindowActionDuringTitlebarDoubleClick() {
+        guard isDispatchingTitlebarDoubleClick else { return }
+        appKitActedOnTitlebarDoubleClick = true
+    }
+
+    override func zoom(_ sender: Any?) {
+        noteWindowActionDuringTitlebarDoubleClick()
+        super.zoom(sender)
+    }
+
+    override func miniaturize(_ sender: Any?) {
+        noteWindowActionDuringTitlebarDoubleClick()
+        super.miniaturize(sender)
+    }
+
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        noteWindowActionDuringTitlebarDoubleClick()
+        super.setFrame(frameRect, display: flag)
+    }
+
+    override func setFrame(_ frameRect: NSRect, display displayFlag: Bool, animate animateFlag: Bool) {
+        noteWindowActionDuringTitlebarDoubleClick()
+        super.setFrame(frameRect, display: displayFlag, animate: animateFlag)
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {

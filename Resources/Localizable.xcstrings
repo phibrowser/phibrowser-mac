@@ -131406,6 +131406,18 @@
         }
       }
     },
+    "tabs.screenShare.shareThisTabInstead" : {
+      "comment" : "Tab row button - Tooltip and accessibility label on a hovered tab while another tab is being shared; switches the share to this tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Share this tab instead"
+          }
+        }
+      }
+    },
     "tabs.tabGroup.colorName.blue" : {
       "comment" : "Tab Groups - color name shown in auto-named group title and color picker",
       "extractionState" : "extracted_with_value",

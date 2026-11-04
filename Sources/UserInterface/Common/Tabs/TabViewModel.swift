@@ -219,6 +219,8 @@ final class TabViewModel {
     var isPresentingScreenShare: Bool = false
     /// Tab whose page is mirrored to a remote capture consumer.
     var isBeingSharedRemotely: Bool = false
+    /// Hovered tab that a running tab share can switch to.
+    var offersShareInstead: Bool = false
     var isHorizontalCompactMode: Bool = false
     /// Set by the horizontal tab strip while it hides this favicon under the
     /// cell's centered recording icon, or with the whole cell laid out at
@@ -240,11 +242,13 @@ final class TabViewModel {
     let status = TabStatusModel()
 
     var onToggleMute: (() -> Void)?
+    var onShareInstead: (() -> Void)?
     var onToolTipUpdated: (() -> Void)?
     
     private(set) var faviconRevision: Int = 0
     
     private var cancellables = Set<AnyCancellable>()
+    private weak var tabSharingState: BrowserTabSharingState?
     private var rawIsLoading: Bool = false
     private var profileFaviconLoadHandle: ProfileScopedFaviconLoadHandle?
 
@@ -300,21 +304,36 @@ final class TabViewModel {
         isCapturingMedia = false
         isPresentingScreenShare = false
         isBeingSharedRemotely = false
+        offersShareInstead = false
+        tabSharingState = nil
         groupColor = nil
         status.prepareForReuse()
         faviconRevision &+= 1
         onToggleMute = nil
+        onShareInstead = nil
         onToolTipUpdated = nil
     }
 
     func setHovered(_ hovered: Bool) {
         isHovered = hovered && !isHoverSuppressed
+        refreshShareInsteadOffer()
     }
 
     func setHoverSuppressed(_ suppressed: Bool) {
         isHoverSuppressed = suppressed
         if suppressed {
             isHovered = false
+            refreshShareInsteadOffer()
+        }
+    }
+
+    private func refreshShareInsteadOffer() {
+        var offers = false
+        if isHovered, let tabId = configuredTabGuid, let tabSharingState {
+            offers = tabSharingState.canShareInstead(tabId: tabId)
+        }
+        if offers != offersShareInstead {
+            offersShareInstead = offers
         }
     }
 
@@ -506,6 +525,24 @@ final class TabViewModel {
                 self.isBeingSharedRemotely = isBeingMirrored
             }
             .store(in: &cancellables)
+
+        tabSharingState = browserState?.tabSharingState
+        if let tabSharingState {
+            onShareInstead = { [weak tabSharingState] in
+                tabSharingState?.shareInstead(tabId: expectedGuid)
+            }
+            tabSharingState.$replaceableSession
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    guard let self, self.isCurrentConfiguration(expectedGuid: expectedGuid, expectedGeneration: expectedGeneration) else { return }
+                    self.refreshShareInsteadOffer()
+                }
+                .store(in: &cancellables)
+        } else {
+            onShareInstead = nil
+        }
+        refreshShareInsteadOffer()
 
         // Group affiliation color. Updates on (a) tab joining/leaving a group,
         // (b) the dict gaining/losing the entry, (c) the current group's color

@@ -624,6 +624,44 @@ struct SplitPaneMuteButton: View {
     }
 }
 
+/// Shown left of the close button on a hovered tab while a tab share runs:
+/// shares this tab instead, keeping the same share running.
+struct UnifiedTabShareInsteadButton: View {
+    let viewModel: TabViewModel
+    @State private var isHovered = false
+
+    private var title: String {
+        NSLocalizedString(
+            "tabs.screenShare.shareThisTabInstead",
+            value: "Share this tab instead",
+            comment: "Tab row button - Tooltip and accessibility label on a hovered tab while another tab is being shared; switches the share to this tab"
+        )
+    }
+
+    var body: some View {
+        Button {
+            viewModel.onShareInstead?()
+        } label: {
+            Image(systemName: "rectangle.2.swap")
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .themedFill(.hover)
+                .opacity(isHovered ? 1 : 0)
+        )
+        .help(title)
+        .accessibilityLabel(title)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .ignoresSafeArea()
+    }
+}
+
 enum TabCaptureBadgeMetrics {
     static let recordingDotSize: CGFloat = 8
     static let sharePillSize: CGFloat = 11

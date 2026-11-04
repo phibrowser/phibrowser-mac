@@ -3898,6 +3898,14 @@ extension PhiChromiumCoordinator {
             action: .collapseAIChat(chatTabId: tabId.intValue)))
     }
 
+    func tabSharingSnapshotDidChange(_ snapshot: [String: Any], windowId: Int64) {
+        guard let state = SpaceSessionControllersManager.shared
+            .getBrowserState(for: windowId.intValue) else {
+            return
+        }
+        state.tabSharingState.apply(TabSharingSnapshot(dictionary: snapshot))
+    }
+
     func openLinkAsSplitPartner(withPartnerTabId partnerTabId: Int64,
                                 url: String,
                                 windowId: Int64) {

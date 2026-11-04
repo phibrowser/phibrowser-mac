@@ -1035,6 +1035,13 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// (skew).
 - (BOOL)openPhiChatLinks:(NSArray<NSString *> *)urlStrings;
 
+/// The tab sharing state visible from `windowId` changed. `snapshot` uses the
+/// keys documented at -getTabSharingSnapshotWithWindowId:. Sent only when the
+/// window's view of the selected session changes. Main thread. Callers must
+/// guard with respondsToSelector: (skew).
+- (void)tabSharingSnapshotDidChange:(NSDictionary<NSString *, id> *)snapshot
+                           windowId:(int64_t)windowId;
+
 @end
 
 @protocol PhiChromiumBridgeProtocol <NSObject>
@@ -2397,6 +2404,46 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// for the life of the process. Optional so an older framework reads as not
 /// silent. Main thread only.
 - (BOOL)isSilentLaunch;
+
+/// Tab sharing snapshot keys (window-scoped; another profile's session is
+/// never included):
+///   @"revision"        (NSNumber *, uint64) — increases on every change.
+///   @"selectedSession" (NSDictionary *, absent when there is none) — the
+///                      latest started getDisplayMedia() session:
+///     @"sessionId"        (NSString *)  — opaque; pass back unchanged.
+///     @"capturerTabId"    (NSNumber *, int64) — the sharing (meeting) tab.
+///     @"capturerWindowId" (NSNumber *, int64) — absent when not in a window.
+///     @"surfaceType"      (NSString *)  — @"tab", @"window" or @"screen".
+///     @"sharedTabId"      (NSNumber *, int64) — tab surfaces only.
+///     @"sharedWindowId"   (NSNumber *, int64) — tab surfaces only.
+///     @"state"            (NSString *)  — @"active" or @"switching".
+///     @"canSwitch"        (NSNumber *, BOOL) — the session can switch tabs.
+/// Switch result keys:
+///   @"status" (NSString *) — @"success", @"stale", @"notAllowed", @"failed".
+///   @"reason" (NSString *, absent on success) — sessionEnded,
+///             selectionChanged, busy, switchingUnsupported, targetUnavailable,
+///             profileMismatch, policyBlocked, sourceChangeFailed,
+///             handleUnavailable or shutdown.
+/// Returns the tab sharing snapshot visible from `windowId`. Main thread.
+- (NSDictionary<NSString *, id> *)getTabSharingSnapshotWithWindowId:(int64_t)windowId;
+
+/// Whether `sessionId` can switch its shared tab to `targetTabId` right now.
+/// Returns a switch result; @"success" means allowed. Re-checked by
+/// -switchSharedTab..., so a stale answer can never bypass a policy.
+/// Main thread.
+- (NSDictionary<NSString *, id> *)
+    getTabSharingSwitchAvailabilityForSessionId:(NSString *)sessionId
+                                 targetWindowId:(int64_t)targetWindowId
+                                    targetTabId:(int64_t)targetTabId;
+
+/// Replaces the shared tab of `expectedSessionId`, which must still be the
+/// latest started session, with `targetTabId` without restarting the share.
+/// `completion` runs exactly once on the main thread with a switch result;
+/// @"success" means the capture engine finalized the new source.
+- (void)switchSharedTabWithExpectedSessionId:(NSString *)expectedSessionId
+                              targetWindowId:(int64_t)targetWindowId
+                                 targetTabId:(int64_t)targetTabId
+                                  completion:(void (^)(NSDictionary<NSString *, id> *result))completion;
 
 @end
 

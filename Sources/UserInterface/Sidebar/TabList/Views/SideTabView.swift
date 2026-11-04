@@ -73,6 +73,9 @@ struct SideTabView: View {
             // While a peek is attached, the row's only close affordance is
             // the peek indicator's "minus" (same rule as the bookmark row).
             if model.isHovered, !model.showsPeek {
+                if model.offersShareInstead {
+                    UnifiedTabShareInsteadButton(viewModel: model)
+                }
                 UnifiedTabCloseButton { onClose?() }
             }
         }

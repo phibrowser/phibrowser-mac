@@ -470,6 +470,8 @@ class BrowserState {
     /// Reader View overlay state (full-pane reading surface over the origin
     /// tab); see the "Reader View overlay" section below.
     let readerOverlayState = BrowserReaderOverlayState()
+    /// Screen-share quick switch offered on hovered tab rows.
+    private(set) lazy var tabSharingState = BrowserTabSharingState(windowId: windowId)
     let themeContext: BrowserThemeContext
 
     /// Tracks in-flight tab dragging within this BrowserState (not a singleton).
@@ -742,6 +744,7 @@ class BrowserState {
                 }
                 .store(in: &cancellables)
             _ = extensionManager
+            tabSharingState.start()
 
             NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
                 .receive(on: DispatchQueue.main)

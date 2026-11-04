@@ -2416,6 +2416,15 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// silent. Main thread only.
 - (BOOL)isSilentLaunch;
 
+/// Whether `window` is one of Chromium's picture-in-picture windows: a video
+/// picture-in-picture window from its first show, or a document
+/// picture-in-picture browser window from its creation. Answered by Chromium
+/// so the Mac client never guesses from window classes or levels. Cheap
+/// enough to call while validating menu items. Optional so an older framework
+/// reads as NO, no window being picture-in-picture. Main thread only.
+- (BOOL)isPictureInPictureWindow:(NSWindow *)window
+    NS_SWIFT_NAME(isPictureInPictureWindow(_:));
+
 @end
 
 typedef NS_ENUM(NSInteger, PhiMediaControlAction) {

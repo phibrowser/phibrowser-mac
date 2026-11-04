@@ -46,6 +46,23 @@
     }
 }
 
+// With only a picture-in-picture window on the current macOS desktop
+// (PhiApplication+PictureInPicture.swift), main-menu items other than text
+// editing find no target. AppKit validates and sends menu items through here,
+// so they are greyed out and neither a click nor their key equivalent runs
+// them, items with an explicit target included. That is why this is not in
+// AppController's validateUserInterfaceItem, where the guest-transition lock
+// greys the menu out: items with an explicit target or validated by another
+// responder never reach it. The two coexist. Chromium's own key-equivalent
+// dispatch reads the items' enabled states without validating them, and has
+// shortcuts outside the menu, so CommandDispatcher stops the commands it finds.
+- (id)targetForAction:(SEL)action to:(id)target from:(id)sender {
+    if (action && [self blocksMenuAction:action from:sender]) {
+        return nil;
+    }
+    return [super targetForAction:action to:target from:sender];
+}
+
 - (BOOL)isHandlingSendEvent {
     return _handlingSendEvent;
 }

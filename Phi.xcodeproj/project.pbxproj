@@ -394,6 +394,7 @@
 		A11E00000000000000000003 /* Phi.sdef in Resources */ = {isa = PBXBuildFile; fileRef = A11E00000000000000000013 /* Phi.sdef */; };
 		A17100000000000000000011 /* NativeMediaAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17100000000000000000001 /* NativeMediaAdapter.swift */; };
 		A17200000000000000000011 /* PeekLinkActivationGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17200000000000000000001 /* PeekLinkActivationGuard.swift */; };
+		A17300000000000000000011 /* PictureInPictureOnlyDesktop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17300000000000000000001 /* PictureInPictureOnlyDesktop.swift */; };
 		A17100000000000000000012 /* SidebarMediaController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17100000000000000000002 /* SidebarMediaController.swift */; };
 		A17100000000000000000013 /* SidebarMediaPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17100000000000000000003 /* SidebarMediaPlayerView.swift */; };
 		A18579F32E653D9600B9A99E /* ProfileButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A18579F42E653D9600B9A99E /* ProfileButton.swift */; };
@@ -457,6 +458,7 @@
 		B02586F62E42FD97001B08FC /* AppController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F02E42FD97001B08FC /* AppController.swift */; };
 		B02586F72E42FD97001B08FC /* SpaceSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F12E42FD97001B08FC /* SpaceSessionController.swift */; };
 		B02586F82E42FD97001B08FC /* PhiApplication.m in Sources */ = {isa = PBXBuildFile; fileRef = B02586F32E42FD97001B08FC /* PhiApplication.m */; };
+		A17400000000000000000011 /* PhiApplication+PictureInPicture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17400000000000000000001 /* PhiApplication+PictureInPicture.swift */; };
 		B025870E2E430305001B08FC /* MainSplitViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B025870D2E430305001B08FC /* MainSplitViewController.swift */; };
 		B02587122E43038B001B08FC /* Tab.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02587112E43038B001B08FC /* Tab.swift */; };
 		B06B4D010000000000000001 /* BookmarkManagementScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = B06B4D110000000000000001 /* BookmarkManagementScope.swift */; };
@@ -1247,6 +1249,7 @@
 		A11E00000000000000000013 /* Phi.sdef */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Phi.sdef; sourceTree = "<group>"; };
 		A17100000000000000000001 /* NativeMediaAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMediaAdapter.swift; sourceTree = "<group>"; };
 		A17200000000000000000001 /* PeekLinkActivationGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekLinkActivationGuard.swift; sourceTree = "<group>"; };
+		A17300000000000000000001 /* PictureInPictureOnlyDesktop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PictureInPictureOnlyDesktop.swift; sourceTree = "<group>"; };
 		A17100000000000000000002 /* SidebarMediaController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarMediaController.swift; sourceTree = "<group>"; };
 		A17100000000000000000003 /* SidebarMediaPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarMediaPlayerView.swift; sourceTree = "<group>"; };
 		A18579F42E653D9600B9A99E /* ProfileButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileButton.swift; sourceTree = "<group>"; };
@@ -1318,6 +1321,7 @@
 		B02586F12E42FD97001B08FC /* SpaceSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceSessionController.swift; sourceTree = "<group>"; };
 		B02586F22E42FD97001B08FC /* PhiApplication.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PhiApplication.h; sourceTree = "<group>"; };
 		B02586F32E42FD97001B08FC /* PhiApplication.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PhiApplication.m; sourceTree = "<group>"; };
+		A17400000000000000000001 /* PhiApplication+PictureInPicture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhiApplication+PictureInPicture.swift"; sourceTree = "<group>"; };
 		B025870D2E430305001B08FC /* MainSplitViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainSplitViewController.swift; sourceTree = "<group>"; };
 		B02587112E43038B001B08FC /* Tab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tab.swift; sourceTree = "<group>"; };
 		B02BEB632E3B2F5A00E5859A /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Package.swift; path = PackageCollection/Package.swift; sourceTree = "<group>"; };
@@ -2573,6 +2577,7 @@
 				B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */,
 				A17100000000000000000001 /* NativeMediaAdapter.swift */,
 				A17200000000000000000001 /* PeekLinkActivationGuard.swift */,
+				A17300000000000000000001 /* PictureInPictureOnlyDesktop.swift */,
 				CC288AA82E55824A004A6C1C /* PhiChromiumBridgeHeader.h */,
 				B02586ED2E42FD97001B08FC /* ChromiumLauncher.h */,
 				B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */,
@@ -2738,6 +2743,7 @@
 				4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */,
 				B02586F22E42FD97001B08FC /* PhiApplication.h */,
 				B02586F32E42FD97001B08FC /* PhiApplication.m */,
+				A17400000000000000000001 /* PhiApplication+PictureInPicture.swift */,
 				B02586F02E42FD97001B08FC /* AppController.swift */,
 				4B4C00000000000000000002 /* ExternalOpenSender.swift */,
 				CC288A8B2E534230004A6C1C /* AppController+Menu.swift */,
@@ -3729,6 +3735,7 @@
 				ACDC00000000000000000B05 /* PageActionRegistry.swift in Sources */,
 				A17100000000000000000011 /* NativeMediaAdapter.swift in Sources */,
 				A17200000000000000000011 /* PeekLinkActivationGuard.swift in Sources */,
+				A17300000000000000000011 /* PictureInPictureOnlyDesktop.swift in Sources */,
 				CC450AE42EA74AD5004EE144 /* CommandDispatcher.swift in Sources */,
 				CCBF0FA02ECEC1AE005E729B /* AppController+Deeplink.swift in Sources */,
 				CCBF8F442E653F3400B9A99E /* SidebarItem.swift in Sources */,
@@ -4028,6 +4035,7 @@
 				CCCA86782EB316CC0071E30A /* ReorderingCollectionView.swift in Sources */,
 				CC4351BD2EC73223009D8FC3 /* OnboardingWelcomeViewController.swift in Sources */,
 				B02586F82E42FD97001B08FC /* PhiApplication.m in Sources */,
+				A17400000000000000000011 /* PhiApplication+PictureInPicture.swift in Sources */,
 				376195412F5149C40094A78E /* HeaderExtensionsView.swift in Sources */,
 				CCBF0C9C2ECB2C90005E729B /* LoginViewController.swift in Sources */,
 				CCBF8F692E65A9D700B9A99E /* ExtensionList.swift in Sources */,

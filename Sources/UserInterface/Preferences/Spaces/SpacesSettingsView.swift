@@ -25,6 +25,8 @@ struct SpacesSettingsView: View {
 
     @State private var selectedSpaceId: String?
     @State private var pinnedTabScope: PinnedTabScope = .profile
+    @AppStorage(PhiPreferences.GeneralSettings.tabSwitcherIncludesAllSpaces.rawValue)
+    private var tabSwitcherIncludesAllSpaces: Bool = PhiPreferences.GeneralSettings.tabSwitcherIncludesAllSpaces.defaultValue
     @State private var isChangingPinnedTabScope = false
     /// The selected scope is saved but this Mac has not finished rearranging its pinned tabs; the
     /// follower keeps retrying (B-3 stage 1, design 3.1).
@@ -52,6 +54,9 @@ struct SpacesSettingsView: View {
                 .frame(height: 431)
                 SettingsDetailCard {
                     pinnedTabScopeRow
+                }
+                SettingsDetailCard {
+                    tabSwitcherScopeRow
                 }
                 SettingsDetailCard {
                     Button(action: manageSpacesInLibrary) {
@@ -393,6 +398,37 @@ struct SpacesSettingsView: View {
                 .themedForeground(.textSecondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private var tabSwitcherScopeRow: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(NSLocalizedString("settings.spaces.tabSwitcherScope.title", value: "Tab Switcher includes all Spaces",
+                    comment: "Spaces settings - toggle label for letting the Tab Switcher (Ctrl-Tab) list recent tabs from every Space in the window"
+                ))
+                .font(.system(size: 13))
+                .themedForeground(.textPrimary)
+
+                Text(tabSwitcherIncludesAllSpaces
+                    ? NSLocalizedString("settings.spaces.tabSwitcherScope.allSpacesDescription", value: "The Tab Switcher cycles through recent tabs in every Space and switches Spaces when needed.",
+                        comment: "Spaces settings - description under the Tab Switcher scope toggle when it is on")
+                    : NSLocalizedString("settings.spaces.tabSwitcherScope.currentSpaceDescription", value: "The Tab Switcher cycles through recent tabs in the current Space.",
+                        comment: "Spaces settings - description under the Tab Switcher scope toggle when it is off"))
+                    .font(.system(size: 11))
+                    .themedForeground(.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            Toggle("", isOn: $tabSwitcherIncludesAllSpaces)
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .themedTint(.themeColor)
+                .labelsHidden()
+        }
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var pinnedTabScopeRow: some View {

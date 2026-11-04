@@ -74,11 +74,55 @@ final class OmniBoxWordSelectionTests: XCTestCase {
     func testPartialURLsAndSearchTextUseTheSameWordBoundaries() throws {
         for (text, word) in [("www.google", "google"), ("/docs/my-page", "page"),
                              ("?user_id=hello_world", "hello_world"), ("#/settings/account", "settings"),
-                             ("search foo.bar today", "bar"), ("127.0.0.1", "127")] {
+                             ("search foo.bar today", "bar"), ("github.com issues", "github")] {
             try withEditor(text: text) { _, editor, _ in
                 let expected = (text as NSString).range(of: word)
                 XCTAssertEqual(selectionRange(in: editor, forProposedRange: NSRange(location: expected.location, length: 0),
                                                      granularity: .selectByWord), expected, text)
+            }
+        }
+    }
+
+    func testContractionsAndNumbersKeepNativeWordBoundaries() throws {
+        let cases = [
+            ("don't", "don't"), ("don't stop", "don't"), ("what's new", "what's"),
+            ("what\u{2019}s new", "what\u{2019}s"), ("l'amour", "l'amour"),
+            ("3.99", "3.99"), ("$3.99", "3.99"), ("$3.99 sale", "3.99"),
+            ("1,234.56", "1,234.56"), ("127.0.0.1", "127.0.0.1"),
+            ("3\u{301}.99", "3\u{301}.99"),
+            ("\u{0661}\u{0662}.\u{0663}\u{0664}", "\u{0661}\u{0662}.\u{0663}\u{0664}"),
+            ("\u{FF13}\u{FF0E}\u{FF19}\u{FF19}", "\u{FF13}\u{FF0E}\u{FF19}\u{FF19}")
+        ]
+        for (text, word) in cases {
+            try withEditor(text: text) { _, editor, _ in
+                let native = NSTextView.fieldEditor()
+                native.string = text
+                let expected = (text as NSString).range(of: word)
+                for position in expected.location..<NSMaxRange(expected) {
+                    let proposed = NSRange(location: position, length: 0)
+                    let actual = selectionRange(in: editor, forProposedRange: proposed, granularity: .selectByWord)
+                    XCTAssertEqual(actual, expected, "Text \(text), position \(position)")
+                    XCTAssertEqual(actual,
+                                   selectionRange(in: native, forProposedRange: proposed, granularity: .selectByWord),
+                                   "Text \(text), position \(position)")
+                }
+            }
+        }
+    }
+
+    func testChromiumDotAndColonTailoringAlsoAppliesToSearchText() throws {
+        for (text, word) in [("e.g.", "e"), ("i.e.", "i"), ("hello:world", "world"),
+                             ("hello\u{FE55}world", "world"), ("hello\u{FF1A}world", "world"),
+                             ("www\u{FF0E}google\u{FF0E}com", "google"),
+                             ("search foo.\u{301}bar today", "bar")] {
+            try withEditor(text: text) { _, editor, _ in
+                let expected = (text as NSString).range(of: word)
+                for position in expected.location..<NSMaxRange(expected) {
+                    XCTAssertEqual(selectionRange(in: editor,
+                                                  forProposedRange: NSRange(location: position, length: 0),
+                                                  granularity: .selectByWord), expected,
+                                   "Text \(text), position \(position)")
+                }
             }
         }
     }

@@ -30,7 +30,6 @@ import Cocoa
 
 private final class OmniBoxTextLayoutManager: NSTextLayoutManager {
     weak var fieldEditor: NSTextView?
-    private static let wordSeparators = Set(".-:/?#[]@!$&'()*+,;=%\\".utf16)
 
     override func textRange(for granularity: NSTextSelection.Granularity,
                             enclosing location: any NSTextLocation) -> NSTextRange? {
@@ -48,9 +47,24 @@ private final class OmniBoxTextLayoutManager: NSTextLayoutManager {
               nativeEnd >= NSMaxRange(characterRange), nativeEnd <= text.length else { return nativeRange }
 
         func isWordSeparator(_ range: NSRange) -> Bool {
-            range.length == 1 && Self.wordSeparators.contains(text.character(at: range.location))
+            switch text.character(at: range.location) {
+            case 0x003A, 0xFE55, 0xFF1A:
+                return true
+            case 0x002E, 0xFF0E:
+                guard range.location > nativeStart, NSMaxRange(range) < nativeEnd else { return true }
+                let previous = text.rangeOfComposedCharacterSequence(at: range.location - 1)
+                let next = text.rangeOfComposedCharacterSequence(at: NSMaxRange(range))
+                return !isDecimalDigit(previous) || !isDecimalDigit(next)
+            default:
+                return false
+            }
         }
-        // Refine native Unicode words at the TextKit 2 selection boundary used by mouse tracking.
+        func isDecimalDigit(_ range: NSRange) -> Bool {
+            text.substring(with: range).unicodeScalars.first?.properties.generalCategory == .decimalNumber
+        }
+        // Match Chromium's ICU tailoring: dots split hostnames but remain between digits;
+        // colons split words. Native Unicode rules retain apostrophes and other punctuation.
+        // https://chromium.googlesource.com/chromium/deps/icu/+/a0ea93436c528ca316a6e698e483e258839101a5/source/data/brkitr/rules/word.txt
         // Walking composed characters preserves emoji and combining sequences.
         let isSeparator = isWordSeparator(characterRange)
         var start = characterRange.location
@@ -157,7 +171,10 @@ class OmniBoxTextField: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     private func setupTextField() {
-        textFiled.cell = OmniBoxTextFieldCell(textCell: textFiled.stringValue)
+        let cell = OmniBoxTextFieldCell(textCell: textFiled.stringValue)
+        // Preserve the bezel state so applying borderless styling also clears AppKit's editor insets.
+        cell.isBezeled = textFiled.isBezeled
+        textFiled.cell = cell
         textFiled.isEditable = true
         textFiled.isSelectable = true
         textFiled.isBezeled = false

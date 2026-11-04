@@ -22,6 +22,8 @@ final class AgentCompanionPassTests: XCTestCase {
     /// stays the same across channels and updates.
     func testFolioKeyIsStable() {
         XCTAssertEqual(AgentCompanion.folio.key, "phi:companion:com.phibrowser.folio")
+        XCTAssertEqual(AgentCompanion.folio.agentKey, "phi:companion:com.phibrowser.folio:agent",
+                       "an agent the app spawns is its own principal, apart from the scoped channel")
         XCTAssertEqual(AgentCompanion.all, [.folio])
     }
 
@@ -96,10 +98,13 @@ final class AgentCompanionPassTests: XCTestCase {
             executablePath: "/Applications/Folio.app/Contents/Resources/node",
             pid: 4321)
         XCTAssertNil(identity.companion)
+        XCTAssertNil(identity.companionLauncher)
         XCTAssertFalse(identity.firstParty)
     }
 
-    /// The test process is no companion's helper, whatever it is signed with.
+    /// The test process is no companion's helper, whatever it is signed with,
+    /// and the process responsible for it (the test host, Xcode) is no
+    /// companion app, so the spawned-child shape does not admit it either.
     func testConnectionFromThisProcessIsNotRecognized() throws {
         var fds: [Int32] = [-1, -1]
         try XCTSkipIf(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) != 0, "no socketpair")
@@ -139,6 +144,17 @@ final class AgentCompanionPassTests: XCTestCase {
 
     /// `NODE_OPTIONS=--require …` (or any other NODE_* the runtime reads) would
     /// run someone else's code as the signed helper.
+    /// The environment Folio hands the phi-browser skill's runner — a few
+    /// inherited variables and the skill's own `PHI_*` — loads no code and is
+    /// clean; the runtime's variables are not.
+    func testTheSpawnedRunnersEnvironmentIsClean() {
+        let runner = ["HOME=/Users/x", "PATH=/opt/homebrew/bin:/usr/bin", "USER=x", "LANG=en_US.UTF-8",
+                      "TMPDIR=/tmp", "PHI_BUNDLE_ID=com.phibrowser.canary.Mac", "PHI_NO_SESSION_MIRROR=1"]
+        XCTAssertTrue(AgentCompanion.environmentIsClean(runner, runtimeVariables: true))
+        XCTAssertFalse(AgentCompanion.environmentIsClean(runner + ["NODE_OPTIONS=--require x"], runtimeVariables: true))
+        XCTAssertFalse(AgentCompanion.environmentIsClean(runner + ["DYLD_INSERT_LIBRARIES=x"], runtimeVariables: true))
+    }
+
     func testNodeVariablesInTheEnvironmentAreRefused() {
         for variable in ["NODE_OPTIONS=--require /tmp/x.js", "NODE_PATH=/tmp", "DYLD_INSERT_LIBRARIES=/tmp/x.dylib"] {
             XCTAssertFalse(AgentCompanion.launchIsUntampered(

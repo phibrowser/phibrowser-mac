@@ -27,12 +27,6 @@ class LayoutSelectionViewController: OnboardingBaseViewController {
 
     private lazy var optionsStackView: OnboardingOptionStackView = {
         let stackView = OnboardingOptionStackView()
-        stackView.onMoveSelection = { [weak self] offset in
-            guard let self else { return }
-            let modes: [LayoutMode] = [.balanced, .performance, .comfortable]
-            guard let index = modes.firstIndex(of: selectedMode) else { return }
-            selectMode(modes[(index + offset + modes.count) % modes.count])
-        }
         stackView.orientation = .vertical
         stackView.spacing = optionSpacing
         stackView.alignment = .centerX
@@ -94,6 +88,13 @@ class LayoutSelectionViewController: OnboardingBaseViewController {
         setupLayoutOptions()
     }
 
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        guard let window = view.window else { return }
+        optionsStackView.configureKeyViewLoop(nextButton: nextButton, backButton: leftButton)
+        balancedOptionView.takeInitialFocus(in: window)
+    }
+
     // MARK: - Options Setup
 
     private func setupLayoutOptions() {
@@ -135,43 +136,109 @@ class LayoutSelectionViewController: OnboardingBaseViewController {
     }
 }
 
-/// Handles selection shortcuts within the active onboarding page's view tree.
+/// Arrow keys select the adjacent option, starting from the focused option or,
+/// when no option has keyboard focus, from the selected one. Tab is left to
+/// AppKit's key-view loop, including the page's footer buttons.
 final class OnboardingOptionStackView: NSStackView {
-    var onMoveSelection: ((Int) -> Void)?
+    func configureKeyViewLoop(nextButton: NSView, backButton: NSView) {
+        window?.recalculateKeyViewLoop()
+        // Hosting views contain the actual focusable button responders.
+        guard let firstOption = arrangedSubviews.first,
+              let lastOption = arrangedSubviews.last,
+              let nextFocus = nextButton.nextValidKeyView,
+              nextFocus.isDescendant(of: nextButton),
+              let backFocus = backButton.nextValidKeyView,
+              backFocus.isDescendant(of: backButton) else { return }
+        lastOption.nextKeyView = nextFocus
+        nextFocus.nextKeyView = backFocus
+        backFocus.nextKeyView = firstOption
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
-        let offset: Int
-        switch event.keyCode {
-        case 48 where modifiers.isEmpty || modifiers == .shift:
-            offset = modifiers == .shift ? -1 : 1
-        case 125 where modifiers.isEmpty:
-            offset = 1
-        case 126 where modifiers.isEmpty:
-            offset = -1
-        default:
-            return super.performKeyEquivalent(with: event)
-        }
-
         guard event.type == .keyDown,
+              event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
+              event.keyCode == 125 || event.keyCode == 126,
               let window, window.isKeyWindow, window.attachedSheet == nil,
-              !isHiddenOrHasHiddenAncestor, let onMoveSelection else {
+              !isHiddenOrHasHiddenAncestor else {
             return super.performKeyEquivalent(with: event)
         }
-        if let input = window.firstResponder as? NSTextInputClient, input.hasMarkedText() {
-            return false
+        let options = arrangedSubviews.compactMap { $0 as? OnboardingOptionView }
+            .filter { !$0.isHiddenOrHasHiddenAncestor }
+        let focusedOption = window.firstResponder as? OnboardingOptionView
+        guard let currentOption = focusedOption ?? options.first(where: \.isSelected),
+              let index = options.firstIndex(where: { $0 === currentOption }) else {
+            return super.performKeyEquivalent(with: event)
         }
-        onMoveSelection(offset)
+        let offset = event.keyCode == 125 ? 1 : -1
+        let target = options[(index + offset + options.count) % options.count]
+        if focusedOption != nil, !window.makeFirstResponder(target) {
+            return true
+        }
+        target.onTap?()
         return true
+    }
+}
+
+/// A radio option participates in native focus navigation without selecting on Tab.
+class OnboardingOptionView: NSView {
+    var onTap: (() -> Void)?
+    var isSelected = false
+
+    // Like system controls, options take focus only with Keyboard navigation on.
+    override var acceptsFirstResponder: Bool { NSApp.isFullKeyboardAccessEnabled }
+
+    // makeFirstResponder ignores acceptsFirstResponder, so explicit focus
+    // requests go through these to respect Keyboard navigation.
+    func takeFocus() {
+        guard acceptsFirstResponder else { return }
+        window?.makeFirstResponder(self)
+    }
+
+    func takeInitialFocus(in window: NSWindow) {
+        guard acceptsFirstResponder else { return }
+        window.initialFirstResponder = self
+        window.makeFirstResponder(self)
+    }
+
+    override var focusRingMaskBounds: NSRect { bounds }
+
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        setKeyboardFocusRingNeedsDisplay(bounds)
+        return super.becomeFirstResponder()
+    }
+
+    override func resignFirstResponder() -> Bool {
+        setKeyboardFocusRingNeedsDisplay(bounds)
+        return super.resignFirstResponder()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        if event.keyCode == 49, modifiers.isEmpty {
+            if !event.isARepeat { onTap?() }
+        } else if event.keyCode == 48, modifiers.isEmpty || modifiers == .shift {
+            interpretKeyEvents([event])
+        } else {
+            super.keyDown(with: event)
+        }
+    }
+
+    override func insertTab(_ sender: Any?) {
+        window?.selectNextKeyView(sender)
+    }
+
+    override func insertBacktab(_ sender: Any?) {
+        window?.selectPreviousKeyView(sender)
     }
 }
 
 // MARK: - LayoutOptionView
 
-class LayoutOptionView: NSView {
-    var onTap: (() -> Void)?
-    private var isSelected: Bool
-
+class LayoutOptionView: OnboardingOptionView {
     private let titleLabel: NSTextField
     private let previewImageView: NSImageView
     private let checkmarkImageView: NSImageView
@@ -189,8 +256,6 @@ class LayoutOptionView: NSView {
     private let checkmarkSize: CGFloat = 18
 
     init(title: String, previewImage: NSImage, isSelected: Bool) {
-        self.isSelected = isSelected
-
         self.titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = NSFont.systemFont(ofSize: titleFontSize, weight: .regular)
         titleLabel.textColor = .white
@@ -207,6 +272,7 @@ class LayoutOptionView: NSView {
 
         super.init(frame: .zero)
 
+        self.isSelected = isSelected
         setupUI()
         updateSelection()
     }
@@ -266,6 +332,7 @@ class LayoutOptionView: NSView {
     }
 
     @objc private func handleTap() {
+        takeFocus()
         onTap?()
     }
 

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CA7DF0170000000000000003 /* ShareTechMono-Regular.ttf in Copy Fonts */ = {isa = PBXBuildFile; fileRef = CA7DF0170000000000000001 /* ShareTechMono-Regular.ttf */; };
+		CA7DF0170000000000000004 /* ShareTechMono-OFL.txt in Copy Fonts */ = {isa = PBXBuildFile; fileRef = CA7DF0170000000000000002 /* ShareTechMono-OFL.txt */; };
 		032F940519944127A19A4AD6 /* ShortcutsStatusSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02871C6C7E9D44C08F43D639 /* ShortcutsStatusSection.swift */; };
 		A197CA000000000000000006 /* HolographicCardDebugViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A197CA000000000000000004 /* HolographicCardDebugViewController.swift */; };
 		A197CA000000000000000005 /* HolographicCardMaterials.swift in Sources */ = {isa = PBXBuildFile; fileRef = A197CA000000000000000003 /* HolographicCardMaterials.swift */; };
@@ -837,6 +839,8 @@
 			dstPath = Fonts;
 			dstSubfolderSpec = 7;
 			files = (
+				CA7DF0170000000000000003 /* ShareTechMono-Regular.ttf in Copy Fonts */,
+				CA7DF0170000000000000004 /* ShareTechMono-OFL.txt in Copy Fonts */,
 				3741AC652F7BBF62009B5E40 /* ivy-presto-headline-light.otf in Copy Fonts */,
 				378AFF262F78D6780016B334 /* ivy-presto-display-semi-bold.otf in Copy Fonts */,
 				375C66382EFB925F00885D78 /* impact.ttf in Copy Fonts */,
@@ -850,6 +854,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		CA7DF0170000000000000001 /* ShareTechMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ShareTechMono-Regular.ttf"; sourceTree = "<group>"; };
+		CA7DF0170000000000000002 /* ShareTechMono-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "ShareTechMono-OFL.txt"; sourceTree = "<group>"; };
 		A197CA000000000000000004 /* HolographicCardDebugViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HolographicCardDebugViewController.swift; sourceTree = "<group>"; };
 		A197CA000000000000000003 /* HolographicCardMaterials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HolographicCardMaterials.swift; sourceTree = "<group>"; };
 		A197CA000000000000000002 /* HolographicCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HolographicCardView.swift; sourceTree = "<group>"; };
@@ -1741,6 +1747,8 @@
 		375C66372EFB923C00885D78 /* Fonts */ = {
 			isa = PBXGroup;
 			children = (
+				CA7DF0170000000000000001 /* ShareTechMono-Regular.ttf */,
+				CA7DF0170000000000000002 /* ShareTechMono-OFL.txt */,
 				3741AC632F7BBF48009B5E40 /* ivy-presto-headline-light.otf */,
 				378AFF242F78D6530016B334 /* ivy-presto-display-semi-bold.otf */,
 				375C66332EFB923C00885D78 /* impact.ttf */,

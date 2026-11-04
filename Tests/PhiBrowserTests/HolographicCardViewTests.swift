@@ -332,7 +332,7 @@ final class HolographicCardViewTests: XCTestCase {
         XCTAssertEqual(HolographicCardStyle.Palette.blue.themeID, "mist")
     }
 
-    func testRandomSelectionReachesEveryIndependentCombination() {
+    func testRandomSelectionAlwaysIncludesAnOrnamentAndReachesEveryCombination() {
         struct Seeded: RandomNumberGenerator {
             var state: UInt64 = 91
             mutating func next() -> UInt64 {
@@ -346,7 +346,8 @@ final class HolographicCardViewTests: XCTestCase {
         var generator = Seeded()
         var selected = Set<HolographicCardStyle>()
         for _ in 0..<10_000 { selected.insert(.random(using: &generator)) }
-        XCTAssertEqual(selected.count, 8 * 6 * 6)
+        XCTAssertEqual(selected.count, 8 * 6 * 5)
+        XCTAssertFalse(selected.contains { $0.ornament == .none })
     }
 
     func testEveryTextureHasDistinctCachedArtwork() async throws {

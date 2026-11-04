@@ -89,6 +89,19 @@ private final class OmniBoxTextFieldCell: NSTextFieldCell {
     }
 }
 
+private final class OmniBoxInputTextField: NSTextField {
+    override func scrollWheel(with event: NSEvent) {
+        // A field editor has a clip view, but no enclosing scroll view to consume wheel events.
+        // Keep the entire gesture here, including zero deltas and events at either text boundary.
+        guard let editor = currentEditor() as? NSTextView,
+              let clipView = editor.superview as? NSClipView else { return }
+        let multiplier: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 10
+        var bounds = clipView.bounds
+        bounds.origin.x -= event.scrollingDeltaX * multiplier
+        clipView.scroll(to: clipView.constrainBoundsRect(bounds).origin)
+    }
+}
+
 protocol OmniBoxTextFieldDelegate: AnyObject {
     func omniBoxTextFieldDidChange(_ textField: OmniBoxTextField, suppressAutoComplete: Bool)
     func omniBoxTextFieldDidBeginEditing(_ textField: OmniBoxTextField)
@@ -104,7 +117,7 @@ class OmniBoxTextField: NSView {
     
     weak var omniBoxDelegate: OmniBoxTextFieldDelegate?
     
-    let textFiled: NSTextField = NSTextField()
+    let textFiled: NSTextField = OmniBoxInputTextField()
     
     private var originalText = ""
     // Preserve user caret/selection when toggling inline/temp strings

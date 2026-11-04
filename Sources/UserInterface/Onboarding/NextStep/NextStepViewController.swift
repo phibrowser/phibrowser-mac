@@ -374,8 +374,7 @@ final class NextStepViewController: OnboardingBaseViewController {
         attributedTitle.addAttributes(
             [
                 .link: url,
-                .underlineStyle: NSUnderlineStyle.single.rawValue,
-                .cursor: NSCursor.pointingHand
+                .underlineStyle: NSUnderlineStyle.single.rawValue
             ],
             range: range
         )
@@ -701,6 +700,7 @@ final class NextStepLinkTextView: NSTextView {
 
     private let preferredLayoutWidth: CGFloat
     private let backingTextStorage: NSTextStorage
+    private var cursorTrackingArea: NSTrackingArea?
 
     init(
         attributedString: NSAttributedString,
@@ -721,8 +721,10 @@ final class NextStepLinkTextView: NSTextView {
         self.backingTextStorage = textStorage
         super.init(frame: .zero, textContainer: textContainer)
 
+        // Not selectable so plain text keeps the arrow cursor like the
+        // label rows; link clicks and cursors are handled below.
         isEditable = false
-        isSelectable = true
+        isSelectable = false
         drawsBackground = false
         backgroundColor = .clear
         textContainerInset = .zero
@@ -737,8 +739,7 @@ final class NextStepLinkTextView: NSTextView {
         isHorizontallyResizable = false
         isVerticallyResizable = false
         linkTextAttributes = [
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
-            .cursor: NSCursor.pointingHand
+            .underlineStyle: NSUnderlineStyle.single.rawValue
         ]
         setContentHuggingPriority(.required, for: .vertical)
         setContentCompressionResistancePriority(.required, for: .vertical)
@@ -765,29 +766,63 @@ final class NextStepLinkTextView: NSTextView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let onNonLinkClick else {
-            super.mouseDown(with: event)
+        let point = convert(event.locationInWindow, from: nil)
+        if let hit = link(at: point) {
+            clicked(onLink: hit.value, at: hit.characterIndex)
             return
         }
+        onNonLinkClick?()
+    }
 
+    // NSTextView sets its own cursor from mouseMoved/cursorUpdate, which
+    // overrides cursor rects, so the link cursor is set here instead.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let cursorTrackingArea {
+            removeTrackingArea(cursorTrackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        cursorTrackingArea = area
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        updateCursor(for: event)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateCursor(for: event)
+    }
+
+    private func updateCursor(for event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        (link(at: point) == nil ? NSCursor.arrow : NSCursor.pointingHand).set()
+    }
+
+    private func link(at point: NSPoint) -> (value: Any, characterIndex: Int)? {
+        guard let layoutManager, let textContainer, layoutManager.numberOfGlyphs > 0 else {
+            return nil
+        }
         let textPoint = NSPoint(
             x: point.x - textContainerOrigin.x,
             y: point.y - textContainerOrigin.y
         )
-        if let layoutManager, let textContainer, layoutManager.numberOfGlyphs > 0 {
-            let glyphIndex = layoutManager.glyphIndex(for: textPoint, in: textContainer)
-            let glyphRange = NSRange(location: glyphIndex, length: 1)
-            let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
-            if layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-                .contains(textPoint),
-                backingTextStorage.attribute(.link, at: characterIndex, effectiveRange: nil) != nil {
-                super.mouseDown(with: event)
-                return
-            }
+        let glyphIndex = layoutManager.glyphIndex(for: textPoint, in: textContainer)
+        let glyphRect = layoutManager.boundingRect(
+            forGlyphRange: NSRange(location: glyphIndex, length: 1),
+            in: textContainer
+        )
+        guard glyphRect.contains(textPoint) else { return nil }
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        guard let value = backingTextStorage.attribute(.link, at: characterIndex, effectiveRange: nil) else {
+            return nil
         }
-
-        onNonLinkClick()
+        return (value, characterIndex)
     }
 
     override func setFrameSize(_ newSize: NSSize) {

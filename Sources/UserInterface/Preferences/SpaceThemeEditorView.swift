@@ -175,6 +175,21 @@ private struct ThemeEditorPaletteBackground: View {
     }
 }
 
+/// Equatable so the Oklab gradient is only rebuilt when the preset or
+/// appearance changes, not on every drag frame of the color field.
+private struct PresetSwatchFill: View, Equatable {
+    let preset: ThemePalette
+    let appearance: Appearance
+
+    var body: some View {
+        let colors = preset.colors(for: appearance).map { $0.withAlphaComponent(1) }
+        let gradientColors = colors.count > 1
+            ? ColoredVisualEffectView.gradientColors(colors).map { Color(cgColor: $0) }
+            : colors.map { Color(nsColor: $0) }
+        Circle().fill(LinearGradient(colors: gradientColors, startPoint: .top, endPoint: .bottom))
+    }
+}
+
 /// Claims only blank editor background. Controls keep their native/SwiftUI
 /// mouse tracking, while AppKit owns window dragging outside their bounds.
 private struct ThemeEditorWindowDragSurface: NSViewRepresentable {
@@ -285,6 +300,7 @@ struct SpaceThemeEditorView: View {
     @State private var hoveredHarmony: ThemePalette.Harmony?
     @State private var previewThrottle = ThemeEditorPreviewThrottle()
     @AppStorage(PhiPreferences.ThemeSettings.savedPalettes.rawValue) private var savedPaletteData = Data()
+    @State private var savedPalettes: [ThemePalette]
     @State private var presetPage = 0
     @State private var hoveredPreset: Int?
     @State private var deletablePreset: Int?
@@ -300,6 +316,7 @@ struct SpaceThemeEditorView: View {
         self.onDismiss = onDismiss
         let manager = SpaceManager.shared
         storeIdentifier = manager.storeIdentifier
+        _savedPalettes = State(initialValue: Self.loadSavedPalettes())
         let appearance = ThemeManager.shared.currentAppearance
         _palette = State(initialValue: manager.themePalette(forSpaceId: spaceId) ?? ThemePalette(
             color: manager.resolvedTheme(forSpaceId: spaceId).color(for: .windowOverlayBackground, appearance: appearance),
@@ -314,6 +331,7 @@ struct SpaceThemeEditorView: View {
         storeIdentifier = nil
         draftPalette = palette
         _palette = State(initialValue: palette.wrappedValue)
+        _savedPalettes = State(initialValue: Self.loadSavedPalettes())
     }
 
     var body: some View {
@@ -554,9 +572,12 @@ struct SpaceThemeEditorView: View {
         .accessibilityIdentifier("theme.editor.palette")
     }
 
-    /// Appends custom palettes after three complete pages of recommendations.
-    private var savedPalettes: [ThemePalette] {
-        (try? JSONDecoder().decode([ThemePalette].self, from: savedPaletteData)) ?? []
+    private static func loadSavedPalettes() -> [ThemePalette] {
+        decodeSavedPalettes(UserDefaults.standard.data(forKey: PhiPreferences.ThemeSettings.savedPalettes.rawValue) ?? Data())
+    }
+
+    private static func decodeSavedPalettes(_ data: Data) -> [ThemePalette] {
+        (try? JSONDecoder().decode([ThemePalette].self, from: data)) ?? []
     }
 
     private var presets: [ThemePalette] { Self.recommendedPalettes + savedPalettes }
@@ -612,7 +633,8 @@ struct SpaceThemeEditorView: View {
         }
         .frame(height: 24)
         .anchorPreference(key: ThemeEditorControlBoundsKey.self, value: .bounds) { [$0] }
-        .onChange(of: savedPaletteData) { _, _ in
+        .onChange(of: savedPaletteData) { _, data in
+            savedPalettes = Self.decodeSavedPalettes(data)
             presetPage = min(presetPage, pageCount - 1)
             hoveredPreset = nil
             deletablePreset = nil
@@ -622,10 +644,6 @@ struct SpaceThemeEditorView: View {
     private func presetButton(_ preset: ThemePalette, at index: Int) -> some View {
         let selected = preset == palette
         let borderColor = appearance.isDark ? Color.white : Color.black
-        let colors = preset.colors(for: appearance).map { $0.withAlphaComponent(1) }
-        let gradientColors = colors.count > 1
-            ? ColoredVisualEffectView.gradientColors(colors).map { Color(cgColor: $0) }
-            : colors.map { Color(nsColor: $0) }
         let label = String(format: NSLocalizedString(
             "theme.editor.presetColor", value: "Color palette %d",
             comment: "Theme editor - accessible swatch label; placeholder is its one-based position"
@@ -640,8 +658,8 @@ struct SpaceThemeEditorView: View {
                 update(preset, animated: true)
             } label: {
                 ZStack(alignment: .center) {
-                    Circle()
-                        .fill(LinearGradient(colors: gradientColors, startPoint: .top, endPoint: .bottom))
+                    PresetSwatchFill(preset: preset, appearance: appearance)
+                        .equatable()
                         .overlay {
                             Circle().strokeBorder(borderColor.opacity(appearance.isDark ? 0.3 : 0.1), lineWidth: 1)
                         }
@@ -731,6 +749,7 @@ struct SpaceThemeEditorView: View {
     private func savePalette() {
         let saved = savedPalettes + [palette]
         guard let data = try? JSONEncoder().encode(saved) else { return }
+        savedPalettes = saved
         savedPaletteData = data
         uneditedPalette = nil
         presetPage = (Self.recommendedPalettes.count + saved.count - 1) / 7
@@ -744,6 +763,7 @@ struct SpaceThemeEditorView: View {
         guard saved.indices.contains(savedIndex) else { return }
         saved.remove(at: savedIndex)
         guard let data = try? JSONEncoder().encode(saved) else { return }
+        savedPalettes = saved
         savedPaletteData = data
         presetPage = min(presetPage, (Self.recommendedPalettes.count + saved.count - 1) / 7)
         hoveredPreset = nil

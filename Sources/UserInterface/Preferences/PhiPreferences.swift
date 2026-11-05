@@ -743,6 +743,8 @@ extension PhiPreferences {
         case currentThemeId = "PhiCurrentThemeId"
         /// Archived snapshots for themes customized by the user.
         case themeSnapshots = "PhiThemeSnapshots"
+        /// Custom palettes saved from the Space color editor.
+        case savedPalettes = "PhiSavedThemePalettes"
         /// When `true`, the Mirage extension applies the window theme's accent
         /// to `::selection` on every web page; when `false`, it leaves the
         /// page's native selection color alone. Default `true`.
@@ -754,7 +756,7 @@ extension PhiPreferences {
                 return 0  // .system
             case .currentThemeId:
                 return "default"
-            case .themeSnapshots:
+            case .themeSnapshots, .savedPalettes:
                 return Data()
             case .selectionTintEnabled:
                 return true

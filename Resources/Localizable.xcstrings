@@ -1,1040 +1,8 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "oobe.accessibility.headingRoleDescription" : {
-      "comment" : "Onboarding - VoiceOver role spoken after each page title, e.g. \"What should I call you?, heading\"",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "heading"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "标题"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "標題"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "見出し"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "머리말"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "en-tête"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Überschrift"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "kop"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "encabezado"
-          }
-        }
-      }
-    },
-    "oobe.nextSteps.guideVoiceOverDescription" : {
-      "comment" : "Onboarding next steps - VoiceOver name of the scrollable area listing the steps; the placeholder is the number of steps",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Next steps, %lld step"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Next steps, %lld steps"
-                }
-              }
-            }
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "后续步骤，共 %lld 步"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "後續步驟，%lld 個步驟"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "次のステップ、%lld個のステップ"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "다음 단계, %lld개 단계"
-          }
-        },
-        "de" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Nächste Schritte, %lld Schritt"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Nächste Schritte, %lld Schritte"
-                }
-              }
-            }
-          }
-        },
-        "fr" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Prochaines étapes, %lld étape"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Prochaines étapes, %lld étapes"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Próximos pasos, %lld paso"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Próximos pasos, %lld pasos"
-                }
-              }
-            }
-          }
-        },
-        "nl" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Volgende stappen, %lld stap"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Volgende stappen, %lld stappen"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "oobe.nextSteps.stepVoiceOverDescription" : {
-      "comment" : "Onboarding next steps - VoiceOver description of one step; first placeholder is the step number, second is the step text",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$lld, %2$@"
-          }
-        }
-      }
-    },
-    "oobe.passwordManager.manualSetupOptionVoiceOverDescription" : {
-      "comment" : "Onboarding password manager - VoiceOver description of the manual setup option; the placeholder is the option title, followed by the password managers whose icons are shown",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, supports 1Password, Bitwarden, LastPass, Enpass"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@，支持 1Password、Bitwarden、LastPass、Enpass"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@，支援 1Password、Bitwarden、LastPass、Enpass"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@、1Password、Bitwarden、LastPass、Enpassに対応"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, 1Password, Bitwarden, LastPass, Enpass 지원"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, compatible avec 1Password, Bitwarden, LastPass, Enpass"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, unterstützt 1Password, Bitwarden, LastPass, Enpass"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, ondersteunt 1Password, Bitwarden, LastPass, Enpass"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, compatible con 1Password, Bitwarden, LastPass, Enpass"
-          }
-        }
-      }
-    },
-    "profile.card.accessibilitySummary" : {
-      "comment" : "Profile membership card - VoiceOver description; first placeholder is the member's name, second is the month and year they joined",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi member card, %1$@, joined %2$@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi 会员卡片，%1$@，加入于 %2$@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi 會員卡，%1$@，於 %2$@ 加入"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phiメンバーカード、%1$@、%2$@に登録"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi 회원 카드, %1$@, %2$@ 가입"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Carte de membre Phi, %1$@, membre depuis %2$@"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi-Mitgliedskarte, %1$@, Mitglied seit %2$@"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi-lidmaatschapskaart, %1$@, lid sinds %2$@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tarjeta de miembro de Phi, %1$@, miembro desde %2$@"
-          }
-        }
-      }
-    },
-    "profile.card.accessibilitySummaryWithoutDate" : {
-      "comment" : "Profile membership card - VoiceOver description when the join date is unknown; the placeholder is the member's name",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi member card, %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi 会员卡片，%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi 會員卡，%@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phiメンバーカード、%@"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi 회원 카드, %@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Carte de membre Phi, %@"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi-Mitgliedskarte, %@"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi-lidmaatschapskaart, %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tarjeta de miembro de Phi, %@"
-          }
-        }
-      }
-    },
     "" : {
 
-    },
-    "settings.advanced.tabs.directionalClosingDescription" : {
-      "comment" : "Advanced settings - Explains where positional close options appear and how directions follow the tab bar layout",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fügt den Menüs für Tabs und Tab-Gruppen Optionen zum Schließen der Tabs links oder rechts hinzu. Bei einer vertikalen Tab-Leiste gelten die Optionen für Tabs oberhalb oder unterhalb."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Agrega a los menús de pestañas y de grupos de pestañas opciones para cerrar las pestañas a la izquierda o a la derecha, o las de arriba o de abajo en una barra de pestañas vertical."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajoute aux menus des onglets et des groupes des options pour fermer les onglets à gauche ou à droite, ou au-dessus ou en dessous dans une barre verticale."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "タブとタブグループのメニューに、左側・右側のタブを閉じる項目を追加します。縦型タブバーでは上側・下側になります。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "탭과 탭 그룹 메뉴에 왼쪽 또는 오른쪽 탭을 닫는 항목을 추가해요. 세로 탭 막대에서는 위쪽 또는 아래쪽 탭을 닫아요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voegt aan tabblad- en tabbladgroepmenu’s opties toe om tabbladen links of rechts te sluiten, of erboven of eronder bij een verticale tabbladbalk."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在标签页和标签组的右键菜单中，提供关闭左侧或右侧标签页的选项；使用纵向标签栏时，显示为关闭上方或下方标签页。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在分頁與分頁群組的右鍵選單中，提供關閉左側或右側分頁的選項；使用垂直分頁列時，顯示為關閉上方或下方分頁。"
-          }
-        }
-      }
-    },
-    "settings.advanced.tabs.directionalClosingToggle" : {
-      "comment" : "Advanced settings - Toggle for enabling the options to close tabs before or after a tab or tab group",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tabs nach Position schließen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Close tabs by position"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cerrar pestañas por posición"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer les onglets selon leur position"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "位置を指定してタブをまとめて閉じる"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "위치에 따라 탭 닫기"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sluit tabbladen op basis van positie"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "按位置批量关闭标签页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "依位置批次關閉分頁"
-          }
-        }
-      }
-    },
-    "settings.advanced.tabs.doubleClickToCloseDescription" : {
-      "comment" : "Advanced settings - Explains individual pane closing and the preserved double-click actions on pinned tabs and bookmarks",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Schließe einen Tab per Doppelklick. In Split View wird nur der angeklickte Bereich geschlossen. Angeheftete Tabs und Lesezeichen behalten ihre bisherigen Doppelklick-Aktionen."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Haz doble clic en una pestaña para cerrarla. En la vista dividida, solo se cierra el panel en el que hiciste clic. Las pestañas fijadas y los marcadores conservan sus acciones habituales de doble clic."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Double-cliquez sur un onglet pour le fermer. En Split View, seul le volet cliqué se ferme. Les onglets épinglés et les favoris conservent leurs actions de double-clic habituelles."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "タブをダブルクリックすると閉じます。分割表示では、クリックした側だけを閉じます。固定タブとブックマークのダブルクリック操作は変わりません。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "탭을 두 번 클릭하면 닫혀요. 분할 보기에서는 클릭한 쪽만 닫혀요. 고정된 탭과 북마크의 두 번 클릭 동작은 그대로 유지돼요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dubbelklik op een tabblad om het te sluiten. In Split View sluit alleen het aangeklikte paneel. Vastgezette tabbladen en bladwijzers behouden hun bestaande dubbelklikacties."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "双击标签页即可将其关闭。在分屏视图中，只会关闭所点击的窗格。固定标签页和书签保留原有的双击操作。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "連按兩下分頁即可關閉。在分割畫面中，只會關閉點選的窗格。釘選分頁與書籤保留原有的連按兩下操作。"
-          }
-        }
-      }
-    },
-    "sidebar.tabContextMenu.closeTabsAbove" : {
-      "comment" : "Tab context menu - Close ordinary tabs before this tab in a vertical tab bar",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tabs oberhalb schließen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Close Tabs Above"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cerrar pestañas de arriba"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer les onglets au-dessus"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上側のタブを閉じる"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "위쪽 탭 닫기"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sluit tabbladen erboven"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭上方标签页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉上方分頁"
-          }
-        }
-      }
-    },
-    "sidebar.tabContextMenu.closeTabsBelow" : {
-      "comment" : "Tab context menu - Close ordinary tabs after this tab in a vertical tab bar",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tabs unterhalb schließen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Close Tabs Below"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cerrar pestañas de abajo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer les onglets en dessous"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下側のタブを閉じる"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "아래쪽 탭 닫기"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sluit tabbladen eronder"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭下方标签页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉下方分頁"
-          }
-        }
-      }
-    },
-    "sidebar.tabContextMenu.closeTabsToLeft" : {
-      "comment" : "Tab context menu - Close ordinary tabs before this tab in a horizontal tab bar",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tabs links schließen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Close Tabs to the Left"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cerrar pestañas a la izquierda"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer les onglets à gauche"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "左側のタブを閉じる"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "왼쪽 탭 닫기"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sluit tabbladen links"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭左侧标签页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉左側分頁"
-          }
-        }
-      }
-    },
-    "sidebar.tabContextMenu.closeTabsToRight" : {
-      "comment" : "Tab context menu - Close ordinary tabs after this tab in a horizontal tab bar",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tabs rechts schließen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Close Tabs to the Right"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cerrar pestañas a la derecha"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer les onglets à droite"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "右側のタブを閉じる"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "오른쪽 탭 닫기"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sluit tabbladen rechts"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭右侧标签页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉右側分頁"
-          }
-        }
-      }
-    },
-    "sidebar.tabGroupContextMenu.closeTabsAbove" : {
-      "comment" : "Tab group context menu - Close ordinary tabs before the group, preserving all its members, in a vertical tab bar",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tabs oberhalb der Gruppe schließen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Close Tabs Above Group"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cerrar pestañas encima del grupo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer les onglets au-dessus du groupe"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "グループの上側のタブを閉じる"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "그룹 위쪽 탭 닫기"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sluit tabbladen boven de groep"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭标签组上方的标签页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉群組上方的分頁"
-          }
-        }
-      }
-    },
-    "sidebar.tabGroupContextMenu.closeTabsBelow" : {
-      "comment" : "Tab group context menu - Close ordinary tabs after the group, preserving all its members, in a vertical tab bar",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tabs unterhalb der Gruppe schließen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Close Tabs Below Group"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cerrar pestañas debajo del grupo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer les onglets en dessous du groupe"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "グループの下側のタブを閉じる"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "그룹 아래쪽 탭 닫기"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sluit tabbladen onder de groep"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭标签组下方的标签页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉群組下方的分頁"
-          }
-        }
-      }
-    },
-    "sidebar.tabGroupContextMenu.closeTabsToLeft" : {
-      "comment" : "Tab group context menu - Close ordinary tabs before the group, preserving all its members, in a horizontal tab bar",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tabs links von der Gruppe schließen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Close Tabs to the Left of Group"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cerrar pestañas a la izquierda del grupo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer les onglets à gauche du groupe"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "グループの左側のタブを閉じる"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "그룹 왼쪽 탭 닫기"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sluit tabbladen links van de groep"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭标签组左侧的标签页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉群組左側的分頁"
-          }
-        }
-      }
-    },
-    "sidebar.tabGroupContextMenu.closeTabsToRight" : {
-      "comment" : "Tab group context menu - Close ordinary tabs after the group, preserving all its members, in a horizontal tab bar",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tabs rechts von der Gruppe schließen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Close Tabs to the Right of Group"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cerrar pestañas a la derecha del grupo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer les onglets à droite du groupe"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "グループの右側のタブを閉じる"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "그룹 오른쪽 탭 닫기"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sluit tabbladen rechts van de groep"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭标签组右侧的标签页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉群組右側的分頁"
-          }
-        }
-      }
     },
     "・" : {
       "shouldTranslate" : false
@@ -5329,22 +4297,28 @@
       "comment" : "Omnibox suggestion - Hint shown for an open-tab suggestion while choosing the second pane of a new split; holding Command pairs that open tab into the split",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⌘ halten für Split View"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Hold ⌘ to add split"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按住 ⌘ 加入分屏"
+            "value" : "Mantén ⌘ para dividir"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按住 ⌘ 加入分割畫面"
+            "value" : "Maintenez ⌘ pour ajouter à la Split View"
           }
         },
         "ja" : {
@@ -5359,28 +4333,22 @@
             "value" : "⌘ 키를 누른 채 분할 추가"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Maintenez ⌘ pour ajouter à la Split View"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⌘ halten für Split View"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Houd ⌘ ingedrukt om te splitsen"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mantén ⌘ para dividir"
+            "value" : "按住 ⌘ 加入分屏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按住 ⌘ 加入分割畫面"
           }
         }
       }
@@ -18533,22 +17501,28 @@
       "comment" : "Tab menu - Open a new tab in Split View next to the current tab",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split View mit neuem Tab"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Split with New Tab"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "与新标签页分屏"
+            "value" : "Dividir con nueva pestaña"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "以新分頁分割畫面"
+            "value" : "Créer une Split View avec un nouvel onglet"
           }
         },
         "ja" : {
@@ -18563,28 +17537,22 @@
             "value" : "새 탭과 분할"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Créer une Split View avec un nouvel onglet"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Split View mit neuem Tab"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Splits met nieuw tabblad"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dividir con nueva pestaña"
+            "value" : "与新标签页分屏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以新分頁分割畫面"
           }
         }
       }
@@ -51089,22 +50057,28 @@
       "comment" : "Notification card - Status beside the agent avatar while the agent is still working on a task",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arbeitet"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Working"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "工作中"
+            "value" : "Trabajando"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "處理中"
+            "value" : "En cours"
           }
         },
         "ja" : {
@@ -51119,28 +50093,22 @@
             "value" : "작업 중"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En cours"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Arbeitet"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bezig"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trabajando"
+            "value" : "工作中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "處理中"
           }
         }
       }
@@ -51369,6 +50337,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在已登入的裝置上，開啟「設定 → 裝置」並核准此請求。請確認此代碼相符："
+          }
+        }
+      }
+    },
+    "oobe.accessibility.headingRoleDescription" : {
+      "comment" : "Onboarding - VoiceOver role spoken after each page title, e.g. \"What should I call you?, heading\"",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Überschrift"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "heading"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "encabezado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "en-tête"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "見出し"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "머리말"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "kop"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标题"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "標題"
           }
         }
       }
@@ -52277,22 +51305,28 @@
       "comment" : "Guest confirmation - AI features requiring sign-in",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KI-Funktionen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "AI features"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 功能"
+            "value" : "Funciones de IA"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 功能"
+            "value" : "Fonctionnalités IA"
           }
         },
         "ja" : {
@@ -52307,28 +51341,22 @@
             "value" : "AI 기능"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fonctionnalités IA"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "KI-Funktionen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AI-functies"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Funciones de IA"
+            "value" : "AI 功能"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 功能"
           }
         }
       }
@@ -52397,22 +51425,28 @@
       "comment" : "Guest confirmation - Heading for features available without signing in",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jetzt verfügbar"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Available now"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "现在即可使用"
+            "value" : "Disponible ahora"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "現在就能使用"
+            "value" : "Disponible dès maintenant"
           }
         },
         "ja" : {
@@ -52427,28 +51461,22 @@
             "value" : "지금 바로 사용 가능"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Disponible dès maintenant"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jetzt verfügbar"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nu beschikbaar"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Disponible ahora"
+            "value" : "现在即可使用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在就能使用"
           }
         }
       }
@@ -52517,22 +51545,28 @@
       "comment" : "Guest confirmation - Description of features available without signing in",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Browserfunktionen, einschließlich Tabs, Profile, Spaces und Entwicklertools"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "All browser features, including Tabs, Profiles, Spaces and Developer Tools"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全部浏览器功能，包括标签页、个人资料、空间和开发者工具"
+            "value" : "Todas las funciones del navegador, incluidas pestañas, perfiles, Espacios y herramientas para desarrolladores"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "所有瀏覽器功能，包括分頁、設定檔、空間和開發人員工具"
+            "value" : "Toutes les fonctionnalités du navigateur, y compris les onglets, les profils, les Espaces et les outils de développement"
           }
         },
         "ja" : {
@@ -52547,28 +51581,22 @@
             "value" : "탭, 프로필, 스페이스, 개발자 도구를 포함한 모든 브라우저 기능"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Toutes les fonctionnalités du navigateur, y compris les onglets, les profils, les Espaces et les outils de développement"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alle Browserfunktionen, einschließlich Tabs, Profile, Spaces und Entwicklertools"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Alle browserfuncties, inclusief tabbladen, profielen, Spaces en hulpprogramma's voor ontwikkelaars"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Todas las funciones del navegador, incluidas pestañas, perfiles, Espacios y herramientas para desarrolladores"
+            "value" : "全部浏览器功能，包括标签页、个人资料、空间和开发者工具"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有瀏覽器功能，包括分頁、設定檔、空間和開發人員工具"
           }
         }
       }
@@ -52577,22 +51605,28 @@
       "comment" : "Guest confirmation - Browser Memory feature requiring sign-in",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browser-Erinnerung"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Browser Memory"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "浏览器记忆"
+            "value" : "Memoria del navegador"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "瀏覽器記憶"
+            "value" : "Mémoire de navigation"
           }
         },
         "ja" : {
@@ -52607,28 +51641,22 @@
             "value" : "브라우저 메모리"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mémoire de navigation"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Browser-Erinnerung"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Browsergeheugen"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Memoria del navegador"
+            "value" : "浏览器记忆"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "瀏覽器記憶"
           }
         }
       }
@@ -52697,22 +51725,28 @@
       "comment" : "Guest confirmation - Title of the available browser features",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vollwertiger Browser"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Full-fledged browser"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "功能完备的浏览器"
+            "value" : "Navegador completo"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "功能完整的瀏覽器"
+            "value" : "Navigateur complet"
           }
         },
         "ja" : {
@@ -52727,28 +51761,22 @@
             "value" : "모든 기능을 갖춘 브라우저"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Navigateur complet"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vollwertiger Browser"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volwaardige browser"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Navegador completo"
+            "value" : "功能完备的浏览器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "功能完整的瀏覽器"
           }
         }
       }
@@ -52877,22 +51905,28 @@
       "comment" : "Guest confirmation - Additional features available after sign-in",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "und vieles mehr"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "and much more"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "以及更多功能"
+            "value" : "y mucho más"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "以及更多功能"
+            "value" : "et bien plus encore"
           }
         },
         "ja" : {
@@ -52907,28 +51941,22 @@
             "value" : "그 외 다양한 기능"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "et bien plus encore"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "und vieles mehr"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "en nog veel meer"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "y mucho más"
+            "value" : "以及更多功能"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以及更多功能"
           }
         }
       }
@@ -52997,22 +52025,28 @@
       "comment" : "Guest confirmation - Heading for features that require signing in",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi-Konto und Anmeldung erforderlich"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Requires a Phi account and sign-in"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "需要 Phi 账号并登录"
+            "value" : "Requiere una cuenta de Phi e iniciar sesión"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "需要 Phi 帳號並登入"
+            "value" : "Nécessite un compte Phi et une connexion"
           }
         },
         "ja" : {
@@ -53027,28 +52061,22 @@
             "value" : "Phi 계정 및 로그인 필요"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nécessite un compte Phi et une connexion"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi-Konto und Anmeldung erforderlich"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vereist een Phi-account en inloggen"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Requiere una cuenta de Phi e iniciar sesión"
+            "value" : "需要 Phi 账号并登录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要 Phi 帳號並登入"
           }
         }
       }
@@ -53117,22 +52145,28 @@
       "comment" : "Guest confirmation - Button returning to the sign-in page",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stattdessen anmelden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Sign in instead"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "改为登录"
+            "value" : "Mejor iniciar sesión"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "改為登入"
+            "value" : "Se connecter plutôt"
           }
         },
         "ja" : {
@@ -53147,28 +52181,22 @@
             "value" : "대신 로그인하기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se connecter plutôt"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stattdessen anmelden"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toch inloggen"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mejor iniciar sesión"
+            "value" : "改为登录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "改為登入"
           }
         }
       }
@@ -53177,22 +52205,28 @@
       "comment" : "Guest confirmation - Sync feature requiring sign-in",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Synchronisierung"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Sync"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "同步"
+            "value" : "Sincronización"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "同步"
+            "value" : "Synchronisation"
           }
         },
         "ja" : {
@@ -53207,28 +52241,22 @@
             "value" : "동기화"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Synchronisation"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Synchronisierung"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Synchronisatie"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sincronización"
+            "value" : "同步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同步"
           }
         }
       }
@@ -55457,22 +54485,28 @@
       "comment" : "OOBE navigation - Button to return to the previous step",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurück"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Back"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "返回"
+            "value" : "Atrás"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "上一步"
+            "value" : "Retour"
           }
         },
         "ja" : {
@@ -55487,28 +54521,22 @@
             "value" : "뒤로"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Retour"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zurück"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terug"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Atrás"
+            "value" : "返回"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一步"
           }
         }
       }
@@ -55749,6 +54777,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "盡情使用 Phi Browser 🎉"
+          }
+        }
+      }
+    },
+    "oobe.nextSteps.guideVoiceOverDescription" : {
+      "comment" : "Onboarding next steps - VoiceOver name of the scrollable area listing the steps; the placeholder is the number of steps",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Nächste Schritte, %lld Schritt"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Nächste Schritte, %lld Schritte"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Next steps, %lld step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Next steps, %lld steps"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Próximos pasos, %lld paso"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Próximos pasos, %lld pasos"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Prochaines étapes, %lld étape"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Prochaines étapes, %lld étapes"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次のステップ、%lld個のステップ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다음 단계, %lld개 단계"
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volgende stappen, %lld stap"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volgende stappen, %lld stappen"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "后续步骤，共 %lld 步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "後續步驟，%lld 個步驟"
           }
         }
       }
@@ -56049,6 +55197,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "隱私權政策"
+          }
+        }
+      }
+    },
+    "oobe.nextSteps.stepVoiceOverDescription" : {
+      "comment" : "Onboarding next steps - VoiceOver description of one step; first placeholder is the step number, second is the step text",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld, %2$@"
           }
         }
       }
@@ -56409,6 +55569,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "我要自己設定"
+          }
+        }
+      }
+    },
+    "oobe.passwordManager.manualSetupOptionVoiceOverDescription" : {
+      "comment" : "Onboarding password manager - VoiceOver description of the manual setup option; the placeholder is the option title, followed by the password managers whose icons are shown",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, unterstützt 1Password, Bitwarden, LastPass, Enpass"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, supports 1Password, Bitwarden, LastPass, Enpass"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, compatible con 1Password, Bitwarden, LastPass, Enpass"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, compatible avec 1Password, Bitwarden, LastPass, Enpass"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@、1Password、Bitwarden、LastPass、Enpassに対応"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, 1Password, Bitwarden, LastPass, Enpass 지원"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, ondersteunt 1Password, Bitwarden, LastPass, Enpass"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，支持 1Password、Bitwarden、LastPass、Enpass"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，支援 1Password、Bitwarden、LastPass、Enpass"
           }
         }
       }
@@ -57715,6 +56935,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "設定檔選單"
+          }
+        }
+      }
+    },
+    "profile.card.accessibilitySummary" : {
+      "comment" : "Profile membership card - VoiceOver description; first placeholder is the member's name, second is the month and year they joined",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi-Mitgliedskarte, %1$@, Mitglied seit %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi member card, %1$@, joined %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tarjeta de miembro de Phi, %1$@, miembro desde %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carte de membre Phi, %1$@, membre depuis %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phiメンバーカード、%1$@、%2$@に登録"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 회원 카드, %1$@, %2$@ 가입"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi-lidmaatschapskaart, %1$@, lid sinds %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 会员卡片，%1$@，加入于 %2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 會員卡，%1$@，於 %2$@ 加入"
+          }
+        }
+      }
+    },
+    "profile.card.accessibilitySummaryWithoutDate" : {
+      "comment" : "Profile membership card - VoiceOver description when the join date is unknown; the placeholder is the member's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi-Mitgliedskarte, %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi member card, %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tarjeta de miembro de Phi, %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carte de membre Phi, %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phiメンバーカード、%@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 회원 카드, %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi-lidmaatschapskaart, %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 会员卡片，%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 會員卡，%@"
           }
         }
       }
@@ -59305,22 +58645,28 @@
     "settings.account.card.randomizeButton" : {
       "comment" : "Account settings - Randomly choose a profile card theme, background texture and ornament",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zufällig auswählen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Randomize"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "随机"
+            "value" : "Aleatorio"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "隨機"
+            "value" : "Aléatoire"
           }
         },
         "ja" : {
@@ -59335,28 +58681,22 @@
             "value" : "무작위 선택"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aléatoire"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zufällig auswählen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Willekeurig"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aleatorio"
+            "value" : "随机"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隨機"
           }
         }
       }
@@ -59364,22 +58704,28 @@
     "settings.account.card.saveFailed" : {
       "comment" : "Account settings - Error when the randomized profile card style cannot be saved",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Karte konnte nicht gespeichert werden. Bitte versuche es erneut."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your card could not be saved. Please try again."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法保存你的卡片。请重试。"
+            "value" : "No se pudo guardar tu tarjeta. Vuelve a intentarlo."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法儲存你的卡片。請再試一次。"
+            "value" : "Impossible d'enregistrer votre carte. Veuillez réessayer."
           }
         },
         "ja" : {
@@ -59394,28 +58740,22 @@
             "value" : "카드를 저장하지 못했어요. 다시 시도해 주세요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Impossible d'enregistrer votre carte. Veuillez réessayer."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deine Karte konnte nicht gespeichert werden. Bitte versuche es erneut."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Je kaart kan niet worden bewaard. Probeer het opnieuw."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se pudo guardar tu tarjeta. Vuelve a intentarlo."
+            "value" : "无法保存你的卡片。请重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法儲存你的卡片。請再試一次。"
           }
         }
       }
@@ -62780,6 +62120,186 @@
         }
       }
     },
+    "settings.advanced.tabs.directionalClosingDescription" : {
+      "comment" : "Advanced settings - Explains where positional close options appear and how directions follow the tab bar layout",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fügt den Menüs für Tabs und Tab-Gruppen Optionen zum Schließen der Tabs links oder rechts hinzu. Bei einer vertikalen Tab-Leiste gelten die Optionen für Tabs oberhalb oder unterhalb."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agrega a los menús de pestañas y de grupos de pestañas opciones para cerrar las pestañas a la izquierda o a la derecha, o las de arriba o de abajo en una barra de pestañas vertical."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajoute aux menus des onglets et des groupes des options pour fermer les onglets à gauche ou à droite, ou au-dessus ou en dessous dans une barre verticale."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タブとタブグループのメニューに、左側・右側のタブを閉じる項目を追加します。縦型タブバーでは上側・下側になります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "탭과 탭 그룹 메뉴에 왼쪽 또는 오른쪽 탭을 닫는 항목을 추가해요. 세로 탭 막대에서는 위쪽 또는 아래쪽 탭을 닫아요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voegt aan tabblad- en tabbladgroepmenu’s opties toe om tabbladen links of rechts te sluiten, of erboven of eronder bij een verticale tabbladbalk."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在标签页和标签组的右键菜单中，提供关闭左侧或右侧标签页的选项；使用纵向标签栏时，显示为关闭上方或下方标签页。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在分頁與分頁群組的右鍵選單中，提供關閉左側或右側分頁的選項；使用垂直分頁列時，顯示為關閉上方或下方分頁。"
+          }
+        }
+      }
+    },
+    "settings.advanced.tabs.directionalClosingToggle" : {
+      "comment" : "Advanced settings - Toggle for enabling the options to close tabs before or after a tab or tab group",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabs nach Position schließen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close tabs by position"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar pestañas por posición"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer les onglets selon leur position"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位置を指定してタブをまとめて閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "위치에 따라 탭 닫기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sluit tabbladen op basis van positie"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按位置批量关闭标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "依位置批次關閉分頁"
+          }
+        }
+      }
+    },
+    "settings.advanced.tabs.doubleClickToCloseDescription" : {
+      "comment" : "Advanced settings - Explains individual pane closing and the preserved double-click actions on pinned tabs and bookmarks",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schließe einen Tab per Doppelklick. In Split View wird nur der angeklickte Bereich geschlossen. Angeheftete Tabs und Lesezeichen behalten ihre bisherigen Doppelklick-Aktionen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz doble clic en una pestaña para cerrarla. En la vista dividida, solo se cierra el panel en el que hiciste clic. Las pestañas fijadas y los marcadores conservan sus acciones habituales de doble clic."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Double-cliquez sur un onglet pour le fermer. En Split View, seul le volet cliqué se ferme. Les onglets épinglés et les favoris conservent leurs actions de double-clic habituelles."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タブをダブルクリックすると閉じます。分割表示では、クリックした側だけを閉じます。固定タブとブックマークのダブルクリック操作は変わりません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "탭을 두 번 클릭하면 닫혀요. 분할 보기에서는 클릭한 쪽만 닫혀요. 고정된 탭과 북마크의 두 번 클릭 동작은 그대로 유지돼요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dubbelklik op een tabblad om het te sluiten. In Split View sluit alleen het aangeklikte paneel. Vastgezette tabbladen en bladwijzers behouden hun bestaande dubbelklikacties."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "双击标签页即可将其关闭。在分屏视图中，只会关闭所点击的窗格。固定标签页和书签保留原有的双击操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連按兩下分頁即可關閉。在分割畫面中，只會關閉點選的窗格。釘選分頁與書籤保留原有的連按兩下操作。"
+          }
+        }
+      }
+    },
     "settings.advanced.tabs.doubleClickToCloseToggle" : {
       "comment" : "Advanced settings - Toggle for closing ordinary tabs by double-clicking; pinned tabs and bookmarks keep their existing double-click actions",
       "extractionState" : "extracted_with_value",
@@ -62792,7 +62312,7 @@
         },
         "en" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "new",
             "value" : "Double-click to close tabs"
           }
         },
@@ -73233,22 +72753,28 @@
     "settings.general.appearance.edgeToEdgeWebContent" : {
       "comment" : "General settings - Toggle removing outer page margins while keeping the normal Comfortable top layout; full screen also removes rounded corners",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Randloser Inhalt"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Edge-to-edge content"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无边距内容"
+            "value" : "Contenido de borde a borde"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "滿版內容"
+            "value" : "Contenu bord à bord"
           }
         },
         "ja" : {
@@ -73263,28 +72789,22 @@
             "value" : "콘텐츠를 가장자리까지 표시"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Contenu bord à bord"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Randloser Inhalt"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Inhoud van rand tot rand"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Contenido de borde a borde"
+            "value" : "无边距内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "滿版內容"
           }
         }
       }
@@ -73292,22 +72812,28 @@
     "settings.general.appearance.edgeToEdgeWebContent.description" : {
       "comment" : "General settings - Description below the edge-to-edge content toggle",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entfernt die Ränder um den Webinhalt."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remove margins around web content."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "移除网页内容四周的边距。"
+            "value" : "Elimina los márgenes alrededor del contenido web."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "移除網頁內容周圍的邊界。"
+            "value" : "Supprime les marges autour du contenu web."
           }
         },
         "ja" : {
@@ -73322,28 +72848,22 @@
             "value" : "웹 콘텐츠 주변의 여백을 제거해요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Supprime les marges autour du contenu web."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Entfernt die Ränder um den Webinhalt."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verwijder de marges rond de webinhoud."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elimina los márgenes alrededor del contenido web."
+            "value" : "移除网页内容四周的边距。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除網頁內容周圍的邊界。"
           }
         }
       }
@@ -92458,22 +91978,28 @@
       "comment" : "Shortcuts settings - Command title for opening a new tab in Split View next to the current tab",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split View mit neuem Tab"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Split with New Tab"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "与新标签页分屏"
+            "value" : "Dividir con nueva pestaña"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "以新分頁分割畫面"
+            "value" : "Créer une Split View avec un nouvel onglet"
           }
         },
         "ja" : {
@@ -92488,28 +92014,22 @@
             "value" : "새 탭과 분할"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Créer une Split View avec un nouvel onglet"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Split View mit neuem Tab"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Splits met nieuw tabblad"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dividir con nueva pestaña"
+            "value" : "与新标签页分屏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以新分頁分割畫面"
           }
         }
       }
@@ -94071,22 +93591,28 @@
       "comment" : "Shortcuts settings - Description of clearing background tabs",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schließt normale Tabs, die gerade nicht angezeigt werden. Unterstützt Widerrufen und Wiederholen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Close ordinary tabs that are not currently displayed. Supports Undo and Redo."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关闭当前未显示的普通标签页。支持撤销和重做。"
+            "value" : "Cierra las pestañas normales que no se muestran actualmente. Admite Deshacer y Rehacer."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "關閉目前未顯示的一般分頁。支援復原與重做。"
+            "value" : "Fermer les onglets ordinaires qui ne sont pas affichés actuellement. Prend en charge les commandes Annuler et Rétablir."
           }
         },
         "ja" : {
@@ -94101,28 +93627,22 @@
             "value" : "현재 표시되지 않은 일반 탭을 닫아요. 실행 취소와 실행 복귀를 지원해요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer les onglets ordinaires qui ne sont pas affichés actuellement. Prend en charge les commandes Annuler et Rétablir."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Schließt normale Tabs, die gerade nicht angezeigt werden. Unterstützt Widerrufen und Wiederholen."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sluit gewone tabbladen die momenteel niet worden weergegeven. Ondersteunt Herstel en Opnieuw."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cierra las pestañas normales que no se muestran actualmente. Admite Deshacer y Rehacer."
+            "value" : "关闭当前未显示的普通标签页。支持撤销和重做。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉目前未顯示的一般分頁。支援復原與重做。"
           }
         }
       }
@@ -99111,22 +98631,28 @@
       "comment" : "Shortcuts settings - Description of the splitWithNewTab command",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet einen neuen Tab in Split View neben dem aktuellen Tab."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Open a new tab in Split View next to the current tab."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在当前标签页旁以分屏打开一个新标签页。"
+            "value" : "Abre una nueva pestaña en vista dividida junto a la pestaña actual."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在目前分頁旁以分割畫面開啟新分頁。"
+            "value" : "Ouvrir un nouvel onglet en Split View à côté de l'onglet actuel."
           }
         },
         "ja" : {
@@ -99141,28 +98667,22 @@
             "value" : "현재 탭 옆에 분할 보기로 새 탭을 열어요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrir un nouvel onglet en Split View à côté de l'onglet actuel."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Öffnet einen neuen Tab in Split View neben dem aktuellen Tab."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open een nieuw tabblad in Split View naast het huidige tabblad."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre una nueva pestaña en vista dividida junto a la pestaña actual."
+            "value" : "在当前标签页旁以分屏打开一个新标签页。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在目前分頁旁以分割畫面開啟新分頁。"
           }
         }
       }
@@ -109699,22 +109219,28 @@
       "comment" : "Sidebar separator - Close background ordinary tabs, keeping the currently displayed tab or split",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht ausgewählte Tabs aufräumen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Clear unselected tabs"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清理未选中的标签页"
+            "value" : "Limpiar las pestañas no seleccionadas"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除未選取的分頁"
+            "value" : "Effacer les onglets non sélectionnés"
           }
         },
         "ja" : {
@@ -109729,28 +109255,22 @@
             "value" : "선택하지 않은 탭 지우기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Effacer les onglets non sélectionnés"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nicht ausgewählte Tabs aufräumen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wis niet-geselecteerde tabbladen"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Limpiar las pestañas no seleccionadas"
+            "value" : "清理未选中的标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除未選取的分頁"
           }
         }
       }
@@ -110951,6 +110471,246 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "關閉"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.closeTabsAbove" : {
+      "comment" : "Tab context menu - Close ordinary tabs before this tab in a vertical tab bar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabs oberhalb schließen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close Tabs Above"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar pestañas de arriba"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer les onglets au-dessus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上側のタブを閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "위쪽 탭 닫기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sluit tabbladen erboven"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭上方标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉上方分頁"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.closeTabsBelow" : {
+      "comment" : "Tab context menu - Close ordinary tabs after this tab in a vertical tab bar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabs unterhalb schließen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close Tabs Below"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar pestañas de abajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer les onglets en dessous"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下側のタブを閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아래쪽 탭 닫기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sluit tabbladen eronder"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭下方标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉下方分頁"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.closeTabsToLeft" : {
+      "comment" : "Tab context menu - Close ordinary tabs before this tab in a horizontal tab bar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabs links schließen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close Tabs to the Left"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar pestañas a la izquierda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer les onglets à gauche"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左側のタブを閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "왼쪽 탭 닫기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sluit tabbladen links"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭左侧标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉左側分頁"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.closeTabsToRight" : {
+      "comment" : "Tab context menu - Close ordinary tabs after this tab in a horizontal tab bar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabs rechts schließen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close Tabs to the Right"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar pestañas a la derecha"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer les onglets à droite"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右側のタブを閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "오른쪽 탭 닫기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sluit tabbladen rechts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭右侧标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉右側分頁"
           }
         }
       }
@@ -112451,6 +112211,246 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "關閉群組"
+          }
+        }
+      }
+    },
+    "sidebar.tabGroupContextMenu.closeTabsAbove" : {
+      "comment" : "Tab group context menu - Close ordinary tabs before the group, preserving all its members, in a vertical tab bar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabs oberhalb der Gruppe schließen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close Tabs Above Group"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar pestañas encima del grupo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer les onglets au-dessus du groupe"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "グループの上側のタブを閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "그룹 위쪽 탭 닫기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sluit tabbladen boven de groep"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭标签组上方的标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉群組上方的分頁"
+          }
+        }
+      }
+    },
+    "sidebar.tabGroupContextMenu.closeTabsBelow" : {
+      "comment" : "Tab group context menu - Close ordinary tabs after the group, preserving all its members, in a vertical tab bar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabs unterhalb der Gruppe schließen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close Tabs Below Group"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar pestañas debajo del grupo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer les onglets en dessous du groupe"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "グループの下側のタブを閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "그룹 아래쪽 탭 닫기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sluit tabbladen onder de groep"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭标签组下方的标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉群組下方的分頁"
+          }
+        }
+      }
+    },
+    "sidebar.tabGroupContextMenu.closeTabsToLeft" : {
+      "comment" : "Tab group context menu - Close ordinary tabs before the group, preserving all its members, in a horizontal tab bar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabs links von der Gruppe schließen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close Tabs to the Left of Group"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar pestañas a la izquierda del grupo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer les onglets à gauche du groupe"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "グループの左側のタブを閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "그룹 왼쪽 탭 닫기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sluit tabbladen links van de groep"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭标签组左侧的标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉群組左側的分頁"
+          }
+        }
+      }
+    },
+    "sidebar.tabGroupContextMenu.closeTabsToRight" : {
+      "comment" : "Tab group context menu - Close ordinary tabs after the group, preserving all its members, in a horizontal tab bar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabs rechts von der Gruppe schließen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close Tabs to the Right of Group"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar pestañas a la derecha del grupo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer les onglets à droite du groupe"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "グループの右側のタブを閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "그룹 오른쪽 탭 닫기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sluit tabbladen rechts van de groep"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭标签组右侧的标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉群組右側的分頁"
           }
         }
       }
@@ -123133,22 +123133,28 @@
     "sync.recovery.entry.back" : {
       "comment" : "Sync setup - button on the recovery code confirmation page that returns to the recovery code display",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurück"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Back"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "返回"
+            "value" : "Atrás"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "上一頁"
+            "value" : "Retour"
           }
         },
         "ja" : {
@@ -123163,28 +123169,22 @@
             "value" : "뒤로"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Retour"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zurück"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terug"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Atrás"
+            "value" : "返回"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一頁"
           }
         }
       }
@@ -123192,22 +123192,28 @@
     "sync.recovery.entry.backHint" : {
       "comment" : "Sync setup - hint on the recovery code confirmation page while the Back button can still re-display the code",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch nicht gesichert? Geh zurück und sichere ihn jetzt. Sobald dieses Fenster geschlossen ist, kann der Code nicht mehr angezeigt werden."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Didn’t save it? Go back and save it now. The code can’t be shown after this window is closed."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "还没保存？请返回并立即保存。关闭此窗口后，该代码将无法再显示。"
+            "value" : "¿No lo has guardado? Vuelve atrás y guárdalo ahora. El código no se podrá mostrar después de cerrar esta ventana."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "還沒儲存？請回到上一頁並立即儲存。關閉此視窗後，此代碼將無法再顯示。"
+            "value" : "Vous ne l'avez pas enregistré ? Revenez en arrière et enregistrez-le maintenant. Le code ne pourra plus être affiché une fois cette fenêtre fermée."
           }
         },
         "ja" : {
@@ -123222,28 +123228,22 @@
             "value" : "아직 저장하지 않았나요? 뒤로 돌아가 지금 저장하세요. 이 윈도우를 닫으면 코드를 다시 표시할 수 없어요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vous ne l'avez pas enregistré ? Revenez en arrière et enregistrez-le maintenant. Le code ne pourra plus être affiché une fois cette fenêtre fermée."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Noch nicht gesichert? Geh zurück und sichere ihn jetzt. Sobald dieses Fenster geschlossen ist, kann der Code nicht mehr angezeigt werden."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nog niet bewaard? Ga terug en bewaar de code nu. Nadat dit venster is gesloten, kan de code niet meer worden getoond."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿No lo has guardado? Vuelve atrás y guárdalo ahora. El código no se podrá mostrar después de cerrar esta ventana."
+            "value" : "还没保存？请返回并立即保存。关闭此窗口后，该代码将无法再显示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還沒儲存？請回到上一頁並立即儲存。關閉此視窗後，此代碼將無法再顯示。"
           }
         }
       }
@@ -123430,22 +123430,28 @@
     "sync.recovery.entry.forgotHelp" : {
       "comment" : "Sync setup - link on the recovery code entry page when joining from another device; opens the Help article about a lost recovery code",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiederherstellungscode vergessen?"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Forgot your recovery code?"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "忘记了恢复代码？"
+            "value" : "¿Olvidaste tu código de recuperación?"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "忘記復原代碼？"
+            "value" : "Code de récupération oublié ?"
           }
         },
         "ja" : {
@@ -123460,28 +123466,22 @@
             "value" : "복구 코드를 잊으셨나요?"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Code de récupération oublié ?"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wiederherstellungscode vergessen?"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Herstelcode vergeten?"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿Olvidaste tu código de recuperación?"
+            "value" : "忘记了恢复代码？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "忘記復原代碼？"
           }
         }
       }
@@ -123903,22 +123903,28 @@
     "sync.recovery.save.lossWarning" : {
       "comment" : "Recovery code display - warning about the consequence of losing the recovery code",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn du diesen Code verlierst und kein Mac mehr für die Synchronisierung eingerichtet ist, können die Synchronisierungsdaten in deinem Account nicht wiederhergestellt werden. Du müsstest die Synchronisierung zurücksetzen und von vorn beginnen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "If you lose this code and no Mac is still set up for sync, the sync data in your account cannot be recovered. You would have to reset sync and start over."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "如果你丢失了此代码，并且没有任何一台 Mac 仍设置了同步，你账户中的同步数据将无法恢复。你需要重置同步并从头重新设置。"
+            "value" : "Si pierdes este código y ya no queda ningún Mac configurado para la sincronización, los datos de sincronización de tu cuenta no se podrán recuperar. Tendrías que restablecer la sincronización y empezar de nuevo."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "如果你遺失了此代碼，而且沒有任何一部 Mac 仍設定了同步，你帳號中的同步資料將無法復原。你將需要重設同步並從頭開始。"
+            "value" : "Si vous perdez ce code et qu'aucun Mac n'est plus configuré pour la synchronisation, les données de synchronisation de votre compte ne pourront pas être récupérées. Vous devrez réinitialiser la synchronisation et tout recommencer."
           }
         },
         "ja" : {
@@ -123933,28 +123939,22 @@
             "value" : "이 코드를 잃어버리고 동기화가 설정된 Mac이 하나도 남아 있지 않으면, 계정의 동기화 데이터를 복구할 수 없어요. 동기화를 재설정하고 처음부터 다시 시작해야 해요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Si vous perdez ce code et qu'aucun Mac n'est plus configuré pour la synchronisation, les données de synchronisation de votre compte ne pourront pas être récupérées. Vous devrez réinitialiser la synchronisation et tout recommencer."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wenn du diesen Code verlierst und kein Mac mehr für die Synchronisierung eingerichtet ist, können die Synchronisierungsdaten in deinem Account nicht wiederhergestellt werden. Du müsstest die Synchronisierung zurücksetzen und von vorn beginnen."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Als je deze code kwijtraakt en er geen Mac meer is ingesteld voor synchronisatie, kunnen de synchronisatiegegevens in je account niet worden hersteld. Je zou dan synchronisatie moeten resetten en opnieuw beginnen."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Si pierdes este código y ya no queda ningún Mac configurado para la sincronización, los datos de sincronización de tu cuenta no se podrán recuperar. Tendrías que restablecer la sincronización y empezar de nuevo."
+            "value" : "如果你丢失了此代码，并且没有任何一台 Mac 仍设置了同步，你账户中的同步数据将无法恢复。你需要重置同步并从头重新设置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果你遺失了此代碼，而且沒有任何一部 Mac 仍設定了同步，你帳號中的同步資料將無法復原。你將需要重設同步並從頭開始。"
           }
         }
       }
@@ -131249,85 +131249,31 @@
         }
       }
     },
-    "tabs.clearAll.redoFallback" : {
-      "comment" : "Edit menu - Redo title when there is no tab cleanup to redo",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Redo"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重做"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重做"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "やり直す"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "실행 복귀"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rétablir"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wiederholen"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opnieuw"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rehacer"
-          }
-        }
-      }
-    },
     "tabs.clearAll.confirmation" : {
       "comment" : "Tab cleanup toast - Confirmation after tabs close; %@ is the Undo keyboard shortcut",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabs aufgeräumt. Mit %@ widerrufen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cleared Tabs. Use %@ to undo."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已清理标签页。按 %@ 可撤销。"
+            "value" : "Pestañas cerradas. Usa %@ para deshacer."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已清除分頁。按 %@ 可復原。"
+            "value" : "Onglets effacés. Utilisez %@ pour annuler."
           }
         },
         "ja" : {
@@ -131342,28 +131288,82 @@
             "value" : "탭을 지웠어요. %@ 키로 실행 취소할 수 있어요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Onglets effacés. Utilisez %@ pour annuler."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tabs aufgeräumt. Mit %@ widerrufen."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tabbladen gewist. Gebruik %@ om dit ongedaan te maken."
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已清理标签页。按 %@ 可撤销。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已清除分頁。按 %@ 可復原。"
+          }
+        }
+      }
+    },
+    "tabs.clearAll.redoFallback" : {
+      "comment" : "Edit menu - Redo title when there is no tab cleanup to redo",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiederholen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redo"
+          }
+        },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pestañas cerradas. Usa %@ para deshacer."
+            "value" : "Rehacer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rétablir"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "やり直す"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "실행 복귀"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opnieuw"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重做"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重做"
           }
         }
       }
@@ -131372,22 +131372,28 @@
       "comment" : "Tab cleanup command - Close ordinary tabs that are not currently displayed",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Tabs aufräumen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Clear All Tabs"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清理所有标签页"
+            "value" : "Limpiar todas las pestañas"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除所有分頁"
+            "value" : "Effacer tous les onglets"
           }
         },
         "ja" : {
@@ -131402,28 +131408,22 @@
             "value" : "모든 탭 지우기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Effacer tous les onglets"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alle Tabs aufräumen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wis alle tabbladen"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Limpiar todas las pestañas"
+            "value" : "清理所有标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除所有分頁"
           }
         }
       }
@@ -131432,22 +131432,28 @@
       "comment" : "Edit menu - Undo title when there is no tab cleanup to undo",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Widerrufen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Undo"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "撤销"
+            "value" : "Deshacer"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "復原"
+            "value" : "Annuler"
           }
         },
         "ja" : {
@@ -131462,28 +131468,22 @@
             "value" : "실행 취소"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Annuler"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Widerrufen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Herstel"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deshacer"
+            "value" : "撤销"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "復原"
           }
         }
       }
@@ -132212,22 +132212,28 @@
       "comment" : "Theme editor - remove a user-created palette from the saved swatches",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gesicherte Farbe löschen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delete saved color"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "删除已保存的颜色"
+            "value" : "Eliminar color guardado"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "刪除已儲存的顏色"
+            "value" : "Supprimer la couleur enregistrée"
           }
         },
         "ja" : {
@@ -132242,28 +132248,22 @@
             "value" : "저장된 색상 삭제"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Supprimer la couleur enregistrée"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gesicherte Farbe löschen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verwijder bewaarde kleur"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Eliminar color guardado"
+            "value" : "删除已保存的颜色"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除已儲存的顏色"
           }
         }
       }
@@ -132272,22 +132272,28 @@
       "comment" : "Theme editor - show the next group of seven color swatches",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nächste Farben"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Next colors"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下一组颜色"
+            "value" : "Colores siguientes"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下一組顏色"
+            "value" : "Couleurs suivantes"
           }
         },
         "ja" : {
@@ -132302,28 +132308,22 @@
             "value" : "다음 색상"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couleurs suivantes"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nächste Farben"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volgende kleuren"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Colores siguientes"
+            "value" : "下一组颜色"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下一組顏色"
           }
         }
       }
@@ -132332,22 +132332,28 @@
       "comment" : "Theme editor - accessible swatch label; placeholder is its one-based position",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Farbpalette %d"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Color palette %d"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "配色 %d"
+            "value" : "Paleta de colores %d"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "配色 %d"
+            "value" : "Palette de couleurs %d"
           }
         },
         "ja" : {
@@ -132362,28 +132368,22 @@
             "value" : "색상 팔레트 %d"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Palette de couleurs %d"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Farbpalette %d"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kleurenpalet %d"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Paleta de colores %d"
+            "value" : "配色 %d"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配色 %d"
           }
         }
       }
@@ -132392,22 +132392,28 @@
       "comment" : "Theme editor - show the previous group of seven color swatches",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorherige Farben"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Previous colors"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "上一组颜色"
+            "value" : "Colores anteriores"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "上一組顏色"
+            "value" : "Couleurs précédentes"
           }
         },
         "ja" : {
@@ -132422,28 +132428,22 @@
             "value" : "이전 색상"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couleurs précédentes"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vorherige Farben"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vorige kleuren"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Colores anteriores"
+            "value" : "上一组颜色"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一組顏色"
           }
         }
       }
@@ -132452,22 +132452,28 @@
       "comment" : "Theme editor - restore the palette before manual adjustments",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurücksetzen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reset"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重置"
+            "value" : "Restablecer"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重設"
+            "value" : "Réinitialiser"
           }
         },
         "ja" : {
@@ -132482,28 +132488,22 @@
             "value" : "재설정"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Réinitialiser"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zurücksetzen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stel opnieuw in"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Restablecer"
+            "value" : "重置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重設"
           }
         }
       }
@@ -132512,22 +132512,28 @@
       "comment" : "Theme editor - save the current solid or gradient palette as a custom swatch",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Farbe sichern"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Save color"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保存颜色"
+            "value" : "Guardar color"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "儲存顏色"
+            "value" : "Enregistrer la couleur"
           }
         },
         "ja" : {
@@ -132542,28 +132548,22 @@
             "value" : "색상 저장"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enregistrer la couleur"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Farbe sichern"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bewaar kleur"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guardar color"
+            "value" : "保存颜色"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存顏色"
           }
         }
       }

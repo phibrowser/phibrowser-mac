@@ -998,8 +998,12 @@ final class AgentCDPListener {
     /// length limit, sits in the app-support dir where the skill looks for it.
     private static func resolveSocketPaths() -> SocketPaths? {
         let uid = getuid()
-        let bundleId = FileSystemUtils.bundleId
-        let hash = stableSuffix(bundleId)
+        // Chromium's process singleton is per data directory, so a launch with
+        // its own (`--user-data-dir`, a test run) runs beside the regular
+        // instance and must not unlink that instance's live socket.
+        let owner = FileSystemUtils.bundleId
+            + (FileSystemUtils.launchUserDataDirectory.map { "|" + $0 } ?? "")
+        let hash = stableSuffix(owner)
         let dir = "/tmp/phi-cdp-\(uid).\(hash)"
         let socket = (dir as NSString).appendingPathComponent("agent.sock")
         guard socket.utf8.count < 104 else {

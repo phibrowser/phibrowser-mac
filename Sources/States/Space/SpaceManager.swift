@@ -11280,16 +11280,17 @@ final class SpaceWindowSlot: ObservableObject {
     /// the state Chromium arrived at. The transitions this side started
     /// (`shellFullScreenWillChange`) come back through here with the state
     /// the shell is already heading for, and are no-ops. A background
-    /// session's change waits for its next present, whose
-    /// `applyWindowChrome` pushes the shell's state back to it, with one
-    /// exception: the exit of the session owning the shell's fullscreen
-    /// (`shellFullscreenOwner`). A Space leaving the shell takes its tab out
-    /// of fullscreen (`UnpresentHostedBrowser`), and Chromium asks for the
-    /// window to follow only when that tab put it there, as a real window
-    /// leaves fullscreen when its tab switches away from a fullscreen page;
-    /// the shell follows that, though the Space is in the background by
-    /// then. The user's own fullscreen (the green button, View > Enter
-    /// Full Screen, Ctrl-Cmd-F) has no owner and stays.
+    /// session is brought in step by Chromium at once (the presented
+    /// session's report is passed on to the window's other Space
+    /// instances); the push at its next present (`applyWindowChrome`) is
+    /// the fallback. One exception: the exit of the session owning the
+    /// shell's fullscreen (`shellFullscreenOwner`). A Space leaving the
+    /// shell takes its tab out of fullscreen (`UnpresentHostedBrowser`), and
+    /// Chromium asks for the window to follow only when that tab put it
+    /// there, as a real window leaves fullscreen when its tab switches away
+    /// from a fullscreen page; the shell follows that, though the Space is
+    /// in the background by then. The user's own fullscreen (the green
+    /// button, View > Enter Full Screen, Ctrl-Cmd-F) has no owner and stays.
     func sessionRequestedShellFullscreen(_ controller: SpaceSessionController,
                                          fullscreen: Bool, targetDisplayId: Int64 = -1) {
         // `isPresented` as well as `visibleController`: a session being

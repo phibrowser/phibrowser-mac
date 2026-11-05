@@ -1225,7 +1225,9 @@ class SpaceSessionController: NSWindowController {
     /// side, so the transitions Chromium started itself (content
     /// fullscreen, press-and-hold Esc — answered by `requestShellFullscreen`) are
     /// no-ops. Dormant sessions have no Browser to tell yet;
-    /// `attachChromiumWindow` catches a presented one up.
+    /// `attachChromiumWindow` catches a presented one up. Chromium passes a
+    /// presented session's state on to the window's other Space instances at
+    /// once, so the push at one of their later presents is a no-op there.
     func pushShellFullscreenToChromium(_ fullscreen: Bool) {
         guard isHosted, hostedChromiumWindow != nil,
               let bridge = ChromiumLauncher.sharedInstance().bridge,

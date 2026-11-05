@@ -1622,7 +1622,13 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// particular a NO releases a tab's DOM fullscreen, which otherwise stays
 /// on inside the windowed shell. Idempotent, so the transitions Chromium
 /// itself started (content fullscreen, which the client answers by
-/// fullscreening the shell) are no-ops here.
+/// fullscreening the shell) are no-ops here. When the browser is the one
+/// the shell presents, the shell's other hosted browsers bound at that time
+/// (the window's background Space instances) take the same state within
+/// this call, with no exit instruction and no `windowRequestedFullscreen:`
+/// back: their change completes at once, ahead of the presented browser's,
+/// which waits for the shell to settle. A browser bound afterwards takes
+/// the state at the next report or at its own present.
 - (void)setHostedFullscreen:(BOOL)fullscreen forWindowId:(int64_t)windowId;
 /// Complete an explicit-display request after the native shell has settled.
 - (void)hostedFullscreenTransitionDidCompleteForWindowId:(int64_t)windowId;

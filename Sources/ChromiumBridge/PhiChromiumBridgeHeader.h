@@ -997,6 +997,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // profile has no resolved sync key. Keys: @"uuid" (NSString, account-global
 // profile UUID), @"passphrase" (NSString, 64-char lowercase hex).
 - (nullable NSDictionary<NSString *, id> *)getPhiProfileSyncInfo:(NSString *)profileId;
+
 /// Content blocking of `profileId` published a new rule generation or changed
 /// status (active / building / degraded / disabled). Re-read the settings
 /// with -getContentBlockingSettings:completion:. UI thread.
@@ -1532,7 +1533,9 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)clearWebsiteCookies:(NSString *)website windowId:(int64_t)windowId;
 
 // Autocomplete
-/// YES means Tab or Space; NO means Tab only for the window profile.
+/// Reads the window profile's search-engine and site-search keyboard shortcut.
+/// YES means Tab or Space; NO means Tab only. Reads the current preference on
+/// each call. Returns NO if the window is unavailable or shutting down.
 - (BOOL)isSearchEngineSpaceShortcutEnabledForWindowId:(int64_t)windowId;
 
 /// Expands the selected engine's search template without requesting suggestions.
@@ -1762,7 +1765,8 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
     completion:(void (^)(NSArray<id<DownloadItemWrapper>> *items, NSArray<NSString *> *failedProfileIds))completion
     NS_SWIFT_NAME(getDownloadItems(forProfileIds:completion:));
 
-/// Profile-addressed operations target loaded regular profiles without a window.
+/// Profile-addressed operations load regular profiles and their download history
+/// as needed, retaining the profile until the operation has been dispatched.
 - (void)pauseDownloadWithGuid:(NSString *)guid profileId:(NSString *)profileId;
 - (void)resumeDownloadWithGuid:(NSString *)guid profileId:(NSString *)profileId;
 - (void)cancelDownloadWithGuid:(NSString *)guid profileId:(NSString *)profileId;
@@ -1824,7 +1828,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // Asks Chromium to rebuild the main menu after shortcut settings change.
 - (void)requestRebuildMainMenu;
 
-// Main thread only. Effective hidden aliases, including WebContents-only ones.
+// Main thread only. Configured hidden aliases, including WebContents-only ones.
 // Each entry contains commandId, keyEquivalent, modifierFlags, and source.
 - (NSArray<NSDictionary<NSString*, id>*>*)shortcutBindings;
 

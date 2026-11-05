@@ -120,7 +120,7 @@ private struct OfficialBotSection: View {
                 .padding(.vertical, 12)
             IMNoticeBanner(message: NSLocalizedString(
                 "settings.phiLink.officialBot.retirementNotice",
-                value: "The official Telegram bot will be retired soon. Please set up and switch to your own bot as soon as possible.",
+                value: "The official Telegram bot has been retired. Please set up and switch to your own bot as soon as possible.",
                 comment: "Phi Link - Warning for users with an existing official bot binding, asking them to switch to their own bot"
             ))
             connectedView

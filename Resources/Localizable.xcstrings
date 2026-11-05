@@ -79739,7 +79739,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The official Telegram bot will be retired soon. Please set up and switch to your own bot as soon as possible."
+            "value" : "The official Telegram bot has been retired. Please set up and switch to your own bot as soon as possible."
           }
         }
       }

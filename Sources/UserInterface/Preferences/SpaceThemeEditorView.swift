@@ -610,26 +610,16 @@ struct SpaceThemeEditorView: View {
     ]
 
     private var presetStrip: some View {
-        let availablePresets = presets
-        return HStack(spacing: 0) {
+        HStack(spacing: 0) {
             editorButton(asset: "previous", label: NSLocalizedString(
                 "theme.editor.previousColors", value: "Previous colors",
                 comment: "Theme editor - show the previous group of seven color swatches"
-            ), identifier: "theme.editor.previousColors") { changePage(by: -1) }
-            ForEach(0..<7, id: \.self) { slot in
-                Spacer(minLength: 0)
-                let index = presetPage * 7 + slot
-                if availablePresets.indices.contains(index) {
-                    presetButton(availablePresets[index], at: index)
-                } else {
-                    Color.clear.frame(width: 24, height: 24)
-                }
-            }
-            Spacer(minLength: 0)
+            ), identifier: "theme.editor.previousColors", isEnabled: presetPage > 0) { changePage(by: -1) }
+            presetPages
             editorButton(asset: "next", label: NSLocalizedString(
                 "theme.editor.nextColors", value: "Next colors",
                 comment: "Theme editor - show the next group of seven color swatches"
-            ), identifier: "theme.editor.nextColors") { changePage(by: 1) }
+            ), identifier: "theme.editor.nextColors", isEnabled: presetPage < pageCount - 1) { changePage(by: 1) }
         }
         .frame(height: 24)
         .anchorPreference(key: ThemeEditorControlBoundsKey.self, value: .bounds) { [$0] }
@@ -639,6 +629,38 @@ struct SpaceThemeEditorView: View {
             hoveredPreset = nil
             deletablePreset = nil
         }
+    }
+
+    /// All pages sit side by side and slide under the clip; offscreen pages
+    /// stay out of hit testing, keyboard focus and accessibility.
+    private var presetPages: some View {
+        let availablePresets = presets
+        return GeometryReader { geometry in
+            let pageWidth = geometry.size.width
+            HStack(spacing: 0) {
+                ForEach(0..<pageCount, id: \.self) { page in
+                    HStack(spacing: 0) {
+                        ForEach(0..<7, id: \.self) { slot in
+                            Spacer(minLength: 0)
+                            let index = page * 7 + slot
+                            if availablePresets.indices.contains(index) {
+                                presetButton(availablePresets[index], at: index)
+                            } else {
+                                Color.clear.frame(width: 24, height: 24)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(width: pageWidth)
+                    .disabled(page != presetPage)
+                    .allowsHitTesting(page == presetPage)
+                    .accessibilityHidden(page != presetPage)
+                }
+            }
+            .offset(x: -CGFloat(presetPage) * pageWidth)
+            .animation(reduceMotion ? nil : .timingCurve(0.22, 1, 0.36, 1, duration: 0.3), value: presetPage)
+        }
+        .clipped()
     }
 
     private func presetButton(_ preset: ThemePalette, at index: Int) -> some View {
@@ -721,15 +743,17 @@ struct SpaceThemeEditorView: View {
         }
     }
 
-    private func editorButton(asset: String, label: String, identifier: String,
+    private func editorButton(asset: String, label: String, identifier: String, isEnabled: Bool = true,
                               action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image("theme-editor-" + asset)
                 .rotationEffect(.degrees(asset == "next" ? 180 : 0))
+                .opacity(isEnabled ? 1 : 0.3)
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
         .help(label)
         .accessibilityLabel(label)
         .accessibilityIdentifier(identifier)
@@ -737,9 +761,11 @@ struct SpaceThemeEditorView: View {
     }
 
     private func changePage(by delta: Int) {
+        let target = presetPage + delta
+        guard (0..<pageCount).contains(target) else { return }
         hoveredPreset = nil
         deletablePreset = nil
-        presetPage = (presetPage + delta + pageCount) % pageCount
+        presetPage = target
     }
 
     private func focusSelectedPreset() {

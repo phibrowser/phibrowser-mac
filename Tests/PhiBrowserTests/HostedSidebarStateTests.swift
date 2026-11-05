@@ -878,6 +878,18 @@ final class HostedSidebarStateTests: XCTestCase {
         container.setPeekBackgroundDeemphasized(false, animated: false)
         await drainPresentationUpdates()
         assertShown(true, "Peek closed")
+        container.setPeekBackgroundDeemphasized(true, animated: false)
+        await drainPresentationUpdates()
+        assertShown(false, "Peek reopened")
+        container.setPeekBackgroundDeemphasized(false, animated: true)
+        await drainPresentationUpdates()
+        assertShown(false, "The shadow waits for the page to scale back onto the sidebar edge")
+        let settled = expectation(description: "Peek restore animation finished")
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + WebContentContainerViewController.peekBackgroundTransitionDuration + 0.1
+        ) { settled.fulfill() }
+        await fulfillment(of: [settled], timeout: 2)
+        assertShown(true, "Peek closed, page settled")
     }
 
     func testSidebarHeaderClearsTrafficLightsAtMinimumAndUpdateThresholdWidths() async throws {

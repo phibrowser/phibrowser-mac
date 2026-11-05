@@ -110,6 +110,7 @@ class WebContentContainerViewController: NSViewController {
     func setPeekBackgroundDeemphasized(_ deemphasized: Bool, animated: Bool) {
         guard isPeekBackgroundDeemphasized != deemphasized else { return }
         isPeekBackgroundDeemphasized = deemphasized
+        browserState?.isPageDeemphasizedForPeek = deemphasized
         updatePeekBackgroundPresentation(animated: animated)
     }
 
@@ -275,11 +276,15 @@ class WebContentContainerViewController: NSViewController {
     /// cold page's first frame, under an evicted frame, in a split's gap
     /// (`updatePageAreaBackdropCorners` squares its corners to match).
     private var pageAreaBackdropLeadingConstraint: Constraint?
+    private var pageAreaBackdropTrailingBottomConstraint: Constraint?
+    private var contentLayout: WebContentLayout {
+        WebContentLayout(browserState: browserState)
+    }
     private lazy var pageAreaBackdrop: NSView = {
         let view = NSView()
         view.wantsLayer = true
         view.layer?.cornerCurve = .continuous
-        view.layer?.cornerRadius = LiquidGlassCompatible.webContentContainerCornerRadius
+        view.layer?.cornerRadius = contentLayout.containerCornerRadius
         view.phiLayer?.setBackgroundColor(ThemedColor.extensionSurfaceBackground)
         return view
     }()
@@ -495,7 +500,7 @@ class WebContentContainerViewController: NSViewController {
         contentContainer.addSubview(pageAreaBackdrop)
         pageAreaBackdrop.snp.makeConstraints { make in
             pageAreaBackdropLeadingConstraint = make.leading.equalToSuperview().constraint
-            make.trailing.bottom.equalToSuperview().inset(WebContentConstant.edgesSpacing)
+            pageAreaBackdropTrailingBottomConstraint = make.trailing.bottom.equalToSuperview().inset(contentLayout.edgeSpacing).constraint
             make.top.equalToSuperview()
         }
         updatePageAreaBackdropLeadingInset()
@@ -538,9 +543,7 @@ class WebContentContainerViewController: NSViewController {
         titleAwareArea.snp.makeConstraints { make in
             make.leading.trailing.top.equalToSuperview()
             titleAwareAreaHeightConstraint = make.height.equalTo(
-                WebContentConstant.titleAwareAreaHeight(
-                    for: PhiPreferences.GeneralSettings.loadLayoutMode()
-                )
+                contentLayout.titleAwareAreaHeight
             ).constraint
         }
         
@@ -608,7 +611,7 @@ class WebContentContainerViewController: NSViewController {
         view.addSubview(barController.view, positioned: .above, relativeTo: titleAwareArea)
         barController.view.snp.makeConstraints { make in
             make.leading.trailing.equalToSuperview()
-            topBarTopConstraint = make.top.equalToSuperview().inset(WebContentConstant.edgesSpacing).constraint
+            topBarTopConstraint = make.top.equalToSuperview().inset(contentLayout.topEdgeSpacing).constraint
             topBarHeightConstraint = make.height.equalTo(0).constraint
         }
         
@@ -678,9 +681,9 @@ class WebContentContainerViewController: NSViewController {
         transcriptDockView?.removeFromSuperview()
         transcriptDockView = dock
         transcriptDockEdge = edge
+        browserState?.isTranscriptDocked = true
         view.addSubview(dock)
-        dock.updateLeadingInset(pageAreaLeadingInset)
-        remakeContentLayout()
+        updateLayoutForMode()
     }
 
     func detachTranscriptDock() {
@@ -688,7 +691,8 @@ class WebContentContainerViewController: NSViewController {
         dock.removeFromSuperview()
         transcriptDockView = nil
         transcriptDockEdge = nil
-        remakeContentLayout()
+        browserState?.isTranscriptDocked = false
+        updateLayoutForMode()
     }
 
     /// Single owner of `contentContainer`'s outer constraints: below the tab
@@ -718,7 +722,7 @@ class WebContentContainerViewController: NSViewController {
                 // chat card's seam fill. Nothing else draws in the
                 // overlapped strip.
                 make.trailing.equalTo(panelView.snp.leading)
-                    .offset(WebContentConstant.edgesSpacing)
+                    .offset(contentLayout.edgeSpacing)
             }
             if let dock = transcriptDockView, let edge = transcriptDockEdge {
                 switch edge {
@@ -741,6 +745,7 @@ class WebContentContainerViewController: NSViewController {
             }
         }
         if let dock = transcriptDockView, let edge = transcriptDockEdge {
+            dock.updateLayout(contentLayout, leadingInset: pageAreaLeadingInset)
             // The dock's own thickness constraint lives on the dock view
             // (plain NSLayoutConstraint, untouched by this snp remake).
             dock.snp.remakeConstraints { make in
@@ -768,12 +773,13 @@ class WebContentContainerViewController: NSViewController {
             panelView.snp.remakeConstraints { make in
                 make.top.equalTo(contentContainer.snp.top).offset(panelInset)
                 make.bottom.equalTo(contentContainer.snp.bottom)
-                    .offset(-(WebContentConstant.edgesSpacing + panelInset))
+                    .offset(-(contentLayout.edgeSpacing + panelInset))
                 if let dock = transcriptDockView, transcriptDockEdge == .right {
                     make.trailing.equalTo(dock.snp.leading)
+                        .offset(-(contentLayout.edgeSpacing + panelInset))
                 } else {
                     make.trailing.equalToSuperview()
-                        .inset(WebContentConstant.edgesSpacing + panelInset)
+                        .inset(contentLayout.edgeSpacing + panelInset)
                 }
             }
             let backdrop = ensureExtensionSidePanelFrameBackdrop()
@@ -818,7 +824,7 @@ class WebContentContainerViewController: NSViewController {
         let backdrop = NSView()
         backdrop.wantsLayer = true
         backdrop.layer?.cornerCurve = .continuous
-        backdrop.layer?.cornerRadius = LiquidGlassCompatible.webContentContainerCornerRadius
+        backdrop.layer?.cornerRadius = contentLayout.containerCornerRadius
         // Only the frame's outer (right) corners are rounded; the left edge
         // is an interior boundary meeting the page container's fill, and a
         // rounded corner there would carve a see-through notch showing the
@@ -966,16 +972,20 @@ class WebContentContainerViewController: NSViewController {
         }
     }
     
-    /// Relays out on a layout mode change only. `BrowserState` publishes
-    /// `layoutMode` only when the mode changes, though the defaults
-    /// notification behind it fires for a write to any key.
+    /// Filter frequent defaults writes to page geometry changes only.
     private func setupConfigObserver() {
-        browserState?.$layoutMode
-            .dropFirst()
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateLayoutForMode()
-            }
+            .map { [weak self] _ in self?.contentLayout }
+            .prepend(contentLayout)
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in self?.updateLayoutForMode() }
+            .store(in: &cancellables)
+        browserState?.$isInFullScreenMode
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateLayoutForMode() }
             .store(in: &cancellables)
     }
 
@@ -1028,21 +1038,22 @@ class WebContentContainerViewController: NSViewController {
             return
         }
 
-        let cornerR = LiquidGlassCompatible.webContentContainerCornerRadius
+        let cornerR = contentLayout.containerCornerRadius
         let invR = TabStripMetrics.Tab.inverseCornerRadius
         let kappa: CGFloat = 0.55228
         let h = cornerR * kappa
 
         let leftX = r.minX
         // With the extension side panel mounted the outline keeps its right
-        // edge at the window margin instead of following the shrunken page
+        // edge around the panel instead of following the shrunken page
         // card: the frame wraps the panel sub-card (which sits 4pt inside
         // it), and — critically for comfortable — the active-tab notch
         // guard below stays satisfiable for tabs whose chips sit over the
         // panel region; against the narrow card edge they would fail the
         // right-side bound and lose their outline entirely.
         let rightX = panelMounted
-            ? max(r.maxX, view.bounds.maxX - WebContentConstant.edgesSpacing)
+            ? max(r.maxX, (extensionSidePanelView?.frame.maxX ?? r.maxX)
+                + CGFloat(WebContentConstant.contentEdgeSpacing))
             : r.maxX
         let topY = r.maxY
         let bottomY = r.minY
@@ -1819,7 +1830,7 @@ class WebContentContainerViewController: NSViewController {
                 NSAnimationContext.runAnimationGroup({ context in
                     context.allowsImplicitAnimation = true
                     chatGhost.frame.origin.x =
-                        self.view.bounds.maxX + WebContentConstant.edgesSpacing
+                        self.view.bounds.maxX + self.contentLayout.edgeSpacing
                 }, completionHandler: { [weak self] in
                     guard let self,
                           self.closingAIChatGhostView === chatGhost
@@ -1837,10 +1848,10 @@ class WebContentContainerViewController: NSViewController {
         let panelInset = CGFloat(WebContentConstant.contentEdgeSpacing)
         panelView.translatesAutoresizingMaskIntoConstraints = true
         panelView.frame = NSRect(
-            x: view.bounds.maxX + WebContentConstant.edgesSpacing,
-            y: containerFrame.minY + WebContentConstant.edgesSpacing + panelInset,
+            x: view.bounds.maxX + contentLayout.edgeSpacing,
+            y: containerFrame.minY + contentLayout.edgeSpacing + panelInset,
             width: ExtensionSidePanelView.clampedWidth(extensionSidePanelPreferredWidth),
-            height: max(0, containerFrame.height - WebContentConstant.edgesSpacing
+            height: max(0, containerFrame.height - contentLayout.edgeSpacing
                         - panelInset * 2))
         // Pre-seed the frame-interior fill frame-driven at the panel's
         // off-screen origin so the animation group slides both in
@@ -1974,7 +1985,7 @@ class WebContentContainerViewController: NSViewController {
                 }
                 remakeContentLayout()
                 panelView.frame.origin.x =
-                    view.bounds.maxX + WebContentConstant.edgesSpacing
+                    view.bounds.maxX + contentLayout.edgeSpacing
                 view.layoutSubtreeIfNeeded()
                 // A slide-in this one cut short left the page split mid-flight.
                 pageController?.retargetContentSplitForPanelTransition()
@@ -2172,7 +2183,7 @@ class WebContentContainerViewController: NSViewController {
         let traditionalLayout = layoutMode.isTraditional
 
         titleAwareAreaHeightConstraint?.update(
-            offset: WebContentConstant.titleAwareAreaHeight(for: layoutMode)
+            offset: contentLayout.titleAwareAreaHeight
         )
         
         if traditionalLayout {
@@ -2180,19 +2191,24 @@ class WebContentContainerViewController: NSViewController {
             tabStripBarController?.view.isHidden = false
             tabStripBarController?.setActive(true)
             topBarHeightConstraint?.update(offset: WebContentConstant.topBarHeight)
-            topBarTopConstraint?.update(inset: WebContentConstant.edgesSpacing - 2) // align with traffic light
+            topBarTopConstraint?.update(inset: contentLayout.topEdgeSpacing == 0 ? 0 : WebContentConstant.edgesSpacing - 2) // align with traffic light
         } else {
             // Vertical sidebar layout: hide topBar
             tabStripBarController?.setActive(false)
             tabStripBarController?.view.isHidden = true
             topBarHeightConstraint?.update(offset: 0)
-            topBarTopConstraint?.update(inset: WebContentConstant.edgesSpacing)
-            // This owns only the 8pt non-web gap above WebContents.
+            topBarTopConstraint?.update(inset: contentLayout.topEdgeSpacing)
+            // The titlebar hit area disappears with the page margin.
             titleAwareArea.isHidden = false
         }
 
         updateContentOuterBorder()
         updatePageAreaBackdropLeadingInset()
+        pageAreaBackdropTrailingBottomConstraint?.update(inset: contentLayout.edgeSpacing)
+        pageAreaBackdrop.layer?.cornerRadius = contentLayout.containerCornerRadius
+        extensionSidePanelFrameBackdrop?.layer?.cornerRadius = contentLayout.containerCornerRadius
+        remakeContentLayout()
+        contentContainer.needsLayout = true
     }
 
     /// Mirror of `WebContentViewController.updateSplitViewLeadingInset`, so
@@ -2201,7 +2217,7 @@ class WebContentContainerViewController: NSViewController {
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
         let sidebarCollapsed = browserState?.sidebarCollapsed ?? true
         return (traditionalLayout || sidebarCollapsed)
-            ? WebContentConstant.edgesSpacing
+            ? contentLayout.edgeSpacing
             : 0
     }
 
@@ -2211,7 +2227,6 @@ class WebContentContainerViewController: NSViewController {
     private func updatePageAreaBackdropLeadingInset() {
         let inset = pageAreaLeadingInset
         pageAreaBackdropLeadingConstraint?.update(inset: inset)
-        transcriptDockView?.updateLeadingInset(inset)
     }
 
     // MARK: - AI Chat Toggle

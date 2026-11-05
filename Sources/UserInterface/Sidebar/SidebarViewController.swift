@@ -285,6 +285,8 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     }()
     
     private lazy var headerView = SidebarHeaderView(state: state)
+    /// The share of the page card's edge shadow that falls on the sidebar.
+    private lazy var pageEdgeShadowView = PageCardEdgeShadowView(cardPosition: .beyondTrailingEdge)
     private lazy var pinnedTabViewController = PinnedTabViewController(state: state, hostVC: self)
     private lazy var tabList: SidebarTabListViewController = {
         let controller = SidebarTabListViewController(state: state, hostVC: self)
@@ -578,6 +580,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         super.viewDidLoad()
         lastPersistedFavoriteHeight = loadCachedFavoriteHeight()
         setupStackView()
+        setupPageEdgeShadow()
         if !paintsOwnBackdrop {
             setSpaceSwitchBackdropHidden(false)
         }
@@ -744,13 +747,12 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         // Base = nav row (+ address bar in sidebar layouts). The Spaces switch
         // adds its band (see SidebarHeaderView.spaceSwitchBandHeight) only
         // while it is shown, so the header reclaims it when it is hidden.
-        // In top-navigation layouts, 42.5pt leaves 3pt under the nav row or
-        // Space strip; the half point follows the legacy header controls'
-        // 15.5pt top alignment. With the address bar in the sidebar, 79pt
-        // leaves 3pt under it. The pinned band's top inset, or the spacer
+        // Follow the control row's top offset so edge-to-edge changes keep
+        // 3pt under the nav row, Space strip, or sidebar address bar.
+        // The pinned band's top inset, or the spacer
         // while the band is empty, makes up the rest of the 8pt below (see
         // setupStackView).
-        let base: CGFloat = addressInSidebar ? 79 : 42.5
+        let base = headerView.controlRowTopOffset + (addressInSidebar ? 71 : 27)
         let spacesBandHeight = SidebarHeaderView.spaceSwitchBandHeight(addressInSidebar: addressInSidebar)
         let headerHeight = base + (spacesEnabled ? spacesBandHeight : 0)
         headerHeightConstraint?.update(offset: headerHeight)
@@ -760,9 +762,28 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     private func setupConfigObserverIfNeeded() {
         guard hasSetupConfigObserver == false else { return }
         hasSetupConfigObserver = true
+        state.$isTranscriptDocked
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateHeaderHeight()
+                self?.updatePageEdgeShadow()
+            }
+            .store(in: &cancellables)
+
+        state.$isInFullScreenMode
+            .merge(with: state.$isPageDeemphasizedForPeek)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updatePageEdgeShadow() }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
+                self?.updatePageEdgeShadow()
                 self?.updateChatButtonVisibility()
                 self?.updateMemoryButtonVisibility()
                 self?.headerView.updateSpaceSwitchVisibility()
@@ -786,7 +807,25 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     }
     
     // MARK: - Setup
-    
+
+    /// Above every sidebar subview, along the trailing edge the
+    /// edge-to-edge page card meets.
+    private func setupPageEdgeShadow() {
+        view.addSubview(pageEdgeShadowView)
+        pageEdgeShadowView.snp.makeConstraints { make in
+            make.top.bottom.trailing.equalToSuperview()
+            make.width.equalTo(PageCardEdgeShadowView.shadowRadius * 4)
+        }
+        updatePageEdgeShadow()
+    }
+
+    private func updatePageEdgeShadow() {
+        let layout = WebContentLayout(browserState: state)
+        // An open Peek fades the page behind it; its card casts no shadow then.
+        pageEdgeShadowView.isHidden = !layout.showsContentShadow || state.isPageDeemphasizedForPeek
+        pageEdgeShadowView.cornerRadius = layout.containerCornerRadius
+    }
+
     private func setupStackView() {
         // Added before mainStackView so it stays behind every stack item.
         // The root's backdrop always sits at the very back

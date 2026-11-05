@@ -388,6 +388,13 @@ class BrowserState {
     @Published var aiChatCollapsed = true
     private var pendingAIChatSidebarOpenTrigger: AIChatSidebarOpenTrigger = .restore
     @Published var isInFullScreenMode = false
+    /// The content container owns this window's docked Transcript presentation.
+    /// Docked consoles retain normal page padding without changing the preference.
+    @Published var isTranscriptDocked = false
+    /// The content container owns this: true while an open Peek scales and
+    /// fades the page behind it. The page card then casts no edge shadow, on
+    /// either side of the sidebar seam.
+    @Published var isPageDeemphasizedForPeek = false
     @Published var targetURL: String = ""
 
     /// True while this window has no tabs and the placeholder shell holds its

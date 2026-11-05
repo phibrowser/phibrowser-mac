@@ -17,6 +17,7 @@ final class PeekPanelSizeTests: XCTestCase {
     private var directory: URL!
     private var accountDirectory: URL!
     private var previousLayout: Any?
+    private var previousEdgeToEdge: Any?
     private var slots: [SpaceWindowSlot] = []
     private let manager = SpaceManager(observeAccountChanges: false)
     private var nextId = 123461100
@@ -26,6 +27,8 @@ final class PeekPanelSizeTests: XCTestCase {
 
     override func setUp() async throws {
         previousLayout = UserDefaults.standard.object(forKey: PhiPreferences.GeneralSettings.layoutModeKey)
+        previousEdgeToEdge = UserDefaults.standard.object(forKey: "edgeToEdgeWebContent")
+        UserDefaults.standard.set(false, forKey: "edgeToEdgeWebContent")
         PhiPreferences.GeneralSettings.saveLayoutMode(.balanced)
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -56,6 +59,7 @@ final class PeekPanelSizeTests: XCTestCase {
             try FileManager.default.removeItem(at: url)
         }
         UserDefaults.standard.set(previousLayout, forKey: PhiPreferences.GeneralSettings.layoutModeKey)
+        UserDefaults.standard.set(previousEdgeToEdge, forKey: "edgeToEdgeWebContent")
         try await super.tearDown()
     }
 
@@ -121,6 +125,210 @@ final class PeekPanelSizeTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    func testEdgeToEdgeSettingRelayoutsAnOpenPeekAndRestoresItsFrame() throws {
+        let fixture = try makeSessionWithPeek()
+        let page = try XCTUnwrap(fixture.container.currentPageCardView)
+        let originalPage = screenFrame(of: page)
+        let originalPeek = screenFrame(of: fixture.panel.pageCardView)
+        UserDefaults.standard.set(true, forKey: "edgeToEdgeWebContent")
+        settle()
+        fixture.container.view.layoutSubtreeIfNeeded()
+        fixture.panel.relayoutIfVisible()
+        let expandedPage = screenFrame(of: page)
+        XCTAssertEqual(expandedPage.maxX, originalPage.maxX + 8, accuracy: 0.5)
+        XCTAssertEqual(expandedPage.minY, originalPage.minY - 8, accuracy: 0.5)
+        XCTAssertEqual(expandedPage.maxY, originalPage.maxY + 8, accuracy: 0.5)
+        XCTAssertGreaterThan(screenFrame(of: fixture.panel.pageCardView).height, originalPeek.height)
+        XCTAssertGreaterThan(page.layer?.cornerRadius ?? 0, 0)
+
+        fixture.state.isInFullScreenMode = true
+        settle()
+        XCTAssertEqual(page.layer?.cornerRadius, 0)
+        fixture.state.isInFullScreenMode = false
+        settle()
+        XCTAssertGreaterThan(page.layer?.cornerRadius ?? 0, 0)
+
+        UserDefaults.standard.set(false, forKey: "edgeToEdgeWebContent")
+        settle()
+        fixture.container.view.layoutSubtreeIfNeeded()
+        fixture.panel.relayoutIfVisible()
+        assertEqual(screenFrame(of: page), originalPage)
+        assertEqual(screenFrame(of: fixture.panel.pageCardView), originalPeek)
+    }
+
+    func testComfortableRemovesThreeMarginsAndPreservesTopThroughFullscreenRestore() throws {
+        PhiPreferences.GeneralSettings.saveLayoutMode(.comfortable)
+        let fixture = try makeSessionWithPeek()
+        let page = try XCTUnwrap(fixture.container.currentPageCardView)
+        let bar = try XCTUnwrap(fixture.container.children.compactMap { $0 as? TabStripBarController }.first).view
+        let originalPage = screenFrame(of: page)
+        let originalBar = screenFrame(of: bar)
+        let originalPeek = screenFrame(of: fixture.panel.pageCardView)
+        UserDefaults.standard.set(true, forKey: "edgeToEdgeWebContent")
+        settle()
+        fixture.container.view.layoutSubtreeIfNeeded()
+        fixture.panel.relayoutIfVisible()
+        let expandedPage = screenFrame(of: page)
+        XCTAssertEqual(expandedPage.minX, originalPage.minX - 8, accuracy: 0.5)
+        XCTAssertEqual(expandedPage.maxX, originalPage.maxX + 8, accuracy: 0.5)
+        XCTAssertEqual(expandedPage.minY, originalPage.minY - 8, accuracy: 0.5)
+        XCTAssertEqual(expandedPage.maxY, originalPage.maxY, accuracy: 0.5)
+        assertEqual(screenFrame(of: bar), originalBar)
+        XCTAssertGreaterThan(page.layer?.cornerRadius ?? 0, 0)
+        let expandedPeek = screenFrame(of: fixture.panel.pageCardView)
+        XCTAssertGreaterThan(expandedPeek.width, originalPeek.width)
+        XCTAssertGreaterThan(expandedPeek.height, originalPeek.height)
+
+        fixture.state.isInFullScreenMode = true
+        settle()
+        XCTAssertEqual(page.layer?.cornerRadius, 0)
+        XCTAssertEqual(screenFrame(of: page).maxY, expandedPage.maxY + 6, accuracy: 0.5)
+        fixture.state.isInFullScreenMode = false
+        settle()
+        assertEqual(screenFrame(of: page), expandedPage)
+        assertEqual(screenFrame(of: bar), originalBar)
+        XCTAssertGreaterThan(page.layer?.cornerRadius ?? 0, 0)
+
+        UserDefaults.standard.set(false, forKey: "edgeToEdgeWebContent")
+        settle()
+        fixture.panel.relayoutIfVisible()
+        assertEqual(screenFrame(of: page), originalPage)
+        assertEqual(screenFrame(of: fixture.panel.pageCardView), originalPeek)
+    }
+
+    func testGeometryChangeWhileExpansionAwaitsMountDropsOnlyTheStaleSnapshot() throws {
+        let fixture = try makeSessionWithPeek()
+        let peek = try XCTUnwrap(fixture.state.peekState.peek(forOpener: fixture.opener.guid))
+        fixture.panel.prepareToExpand(tabId: peek.guid)
+        XCTAssertEqual(overlays(in: fixture).count, 2, "live Peek plus its painted cover")
+        UserDefaults.standard.set(true, forKey: "edgeToEdgeWebContent")
+        settle()
+        XCTAssertEqual(overlays(in: fixture).count, 1, "discard only the stale snapshot before adoption")
+        adopt(peek, in: fixture)
+        settle()
+        XCTAssertTrue(overlays(in: fixture).isEmpty, "the pending mount still removes the live Peek")
+        XCTAssertNotNil(peek.webContentView?.window)
+    }
+
+    func testComfortableFullscreenExpansionSquaresItsSnapshotAndResizeCancelsTheFlight() throws {
+        PhiPreferences.GeneralSettings.saveLayoutMode(.comfortable)
+        try assertFullscreenExpansionAndResize()
+    }
+
+    func testFullscreenExpansionSquaresItsSnapshotAndResizeCancelsTheFlight() throws {
+        try assertFullscreenExpansionAndResize()
+    }
+
+    private func assertFullscreenExpansionAndResize() throws {
+        let fixture = try makeSessionWithPeek()
+        UserDefaults.standard.set(true, forKey: "edgeToEdgeWebContent")
+        fixture.state.isInFullScreenMode = true
+        settle()
+        let peek = try XCTUnwrap(fixture.state.peekState.peek(forOpener: fixture.opener.guid))
+        attachImage(of: fixture.container.view, named: "Fullscreen Peek before expansion")
+        fixture.panel.prepareToExpand(tabId: peek.guid)
+        XCTAssertEqual(overlays(in: fixture).count, 2)
+        adopt(peek, in: fixture)
+        let deadline = Date().addingTimeInterval(1)
+        var flying: PageOverlayView?
+        repeat {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.005))
+            flying = overlays(in: fixture).first { $0.layer?.animation(forKey: "phiPeekExpandIntoTab") != nil }
+        } while flying == nil && Date() < deadline
+        let snapshot = try XCTUnwrap(flying, "expansion must exercise the real CA flight")
+        let card = try XCTUnwrap(snapshot.subviews.first)
+        let image = try XCTUnwrap(card.subviews.first)
+        XCTAssertEqual(card.layer?.cornerRadius, 0)
+        XCTAssertEqual(image.layer?.cornerRadius, 0)
+        XCTAssertNotNil(image.layer?.animation(forKey: "phiPeekExpandCorners"))
+        attachImage(of: fixture.container.view, named: "Fullscreen Peek expansion")
+        let window = try XCTUnwrap(fixture.container.view.window)
+        window.setContentSize(NSSize(width: 1100, height: 760))
+        settle()
+        XCTAssertNil(snapshot.superview, "a resize must drop the old destination frame")
+        XCTAssertTrue(overlays(in: fixture).isEmpty)
+        XCTAssertEqual(fixture.container.currentPageCardView?.layer?.cornerRadius, 0)
+    }
+
+    func testClosingThenReopeningPeekLeavesNoAnimationCover() throws {
+        let fixture = try makeSessionWithPeek()
+        UserDefaults.standard.set(true, forKey: "edgeToEdgeWebContent")
+        settle()
+        for _ in 0..<2 {
+            let peek = try XCTUnwrap(fixture.state.peekState.peek(forOpener: fixture.opener.guid))
+            fixture.panel.prepareToClose(tabId: peek.guid)
+            XCTAssertEqual(overlays(in: fixture).count, 2)
+            fixture.state.peekState.removePeek(forOpener: fixture.opener.guid)
+            let (replacement, view) = makeTab()
+            fixture.state.peekState.present(replacement, openerTabId: fixture.opener.guid)
+            waitUntilMounted(view)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+            XCTAssertEqual(overlays(in: fixture).count, 1)
+            XCTAssertTrue(fixture.panel.isHosting(replacement))
+            XCTAssertGreaterThan(fixture.panel.pageCardView.layer?.cornerRadius ?? 0, 0)
+        }
+    }
+
+    func testTrafficLightsFollowBalancedPageHeaderWhenEdgeToEdgeChanges() throws {
+        let fixture = try makeSessionWithPeek()
+        fixture.state.peekState.removePeek(forOpener: fixture.opener.guid)
+        settle()
+        let window = try XCTUnwrap(fixture.container.view.window)
+        let close = try XCTUnwrap(window.standardWindowButton(.closeButton))
+        func centerFromTop() -> CGFloat {
+            window.frame.height - close.convert(close.bounds, to: nil).midY
+        }
+        XCTAssertEqual(centerFromTop(), 27.5, accuracy: 0.01)
+        UserDefaults.standard.set(true, forKey: "edgeToEdgeWebContent")
+        settle()
+        fixture.container.view.layoutSubtreeIfNeeded()
+        func descendants(_ view: NSView) -> [NSView] {
+            [view] + view.subviews.flatMap(descendants)
+        }
+        let header = try XCTUnwrap(descendants(fixture.container.view).compactMap { $0 as? WebContentHeader }.first)
+        XCTAssertEqual(close.convert(close.bounds, to: nil).midY,
+                       header.convert(header.bounds, to: nil).midY, accuracy: 0.5)
+        XCTAssertEqual(centerFromTop(), 20, accuracy: 0.01)
+        XCTAssertEqual(close.convert(close.bounds, to: nil).midX, 22, accuracy: 0.01)
+
+        fixture.state.isInFullScreenMode = true
+        settle()
+        fixture.state.isInFullScreenMode = false
+        settle()
+        XCTAssertEqual(centerFromTop(), 20, accuracy: 0.01)
+        PhiPreferences.GeneralSettings.saveLayoutMode(.performance)
+        settle()
+        XCTAssertEqual(centerFromTop(), 20, accuracy: 0.01)
+        PhiPreferences.GeneralSettings.saveLayoutMode(.comfortable)
+        settle()
+        XCTAssertEqual(centerFromTop(), 22, accuracy: 0.01)
+        PhiPreferences.GeneralSettings.saveLayoutMode(.balanced)
+        settle()
+        XCTAssertEqual(centerFromTop(), 20, accuracy: 0.01)
+        UserDefaults.standard.set(false, forKey: "edgeToEdgeWebContent")
+        settle()
+        XCTAssertEqual(centerFromTop(), 27.5, accuracy: 0.01)
+    }
+
+    private func overlays(in fixture: Fixture) -> [PageOverlayView] {
+        fixture.container.view.subviews.compactMap { $0 as? PageOverlayView }
+    }
+
+    private func adopt(_ peek: Tab, in fixture: Fixture) {
+        fixture.state.tabs.append(peek)
+        fixture.state.updateNormalTabs()
+        fixture.state.focusingTab = peek
+        fixture.state.peekState.removePeek(forOpener: fixture.opener.guid)
+    }
+
+    private func attachImage(of view: NSView, named name: String) {
+        guard let image = WebContentSnapshotter.captureOnScreen(view, resolution: .bestResolution) else { return }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
 
     private struct Fixture {
         let state: BrowserState

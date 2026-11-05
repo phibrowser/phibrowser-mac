@@ -390,38 +390,29 @@ final class AgentTranscriptDockView: NSView {
     private static let contentReserve: CGFloat = 400
 
     private var sizeConstraint: NSLayoutConstraint!
-    /// Bottom dock only: the wrapper's leading inset, kept in sync with the
-    /// page panel's leading inset so both panels share one left edge. See
-    /// `updateLeadingInset`.
+    private let wrapper = NSView()
+    private var wrapperTopConstraint: Constraint?
     private var wrapperLeadingConstraint: Constraint?
+    private var wrapperTrailingBottomConstraint: Constraint?
 
     init(edge: AgentTranscriptDockEdge, content: NSView) {
         self.edge = edge
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 
-        // Same panel treatment as the page area (rounded corners, inset from
-        // the window edge) so the console reads as a sibling panel. The page
-        // side needs no inset here — the page panel's own 8pt edge inset
-        // provides the gap between the two panels.
-        let wrapper = NSView()
+        // The container supplies the page geometry on every attach and
+        // layout change, including when this dock moves between windows.
         wrapper.wantsLayer = true
         wrapper.layer?.cornerCurve = .continuous
         wrapper.layer?.cornerRadius = LiquidGlassCompatible.webContentContainerCornerRadius
         wrapper.layer?.masksToBounds = true
         addSubview(wrapper)
         wrapper.snp.makeConstraints { make in
-            make.top.equalToSuperview()
-            switch edge {
-            case .right:
-                make.leading.equalToSuperview()
-                make.trailing.bottom.equalToSuperview().inset(WebContentConstant.edgesSpacing)
-            case .bottom:
-                wrapperLeadingConstraint = make.leading.equalToSuperview()
-                    .inset(WebContentConstant.edgesSpacing).constraint
-                make.trailing.bottom.equalToSuperview()
-                    .inset(WebContentConstant.edgesSpacing)
-            }
+            wrapperTopConstraint = make.top.equalToSuperview().constraint
+            wrapperLeadingConstraint = make.leading.equalToSuperview()
+                .inset(edge == .bottom ? WebContentConstant.edgesSpacing : 0).constraint
+            wrapperTrailingBottomConstraint = make.trailing.bottom.equalToSuperview()
+                .inset(WebContentConstant.edgesSpacing).constraint
         }
 
         content.translatesAutoresizingMaskIntoConstraints = false
@@ -469,12 +460,14 @@ final class AgentTranscriptDockView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    /// Aligns a bottom dock's left edge with the page panel, whose leading
-    /// inset varies with layout mode and sidebar state. Driven by
-    /// `WebContentContainerViewController`, the only layer that knows that
-    /// inset. No-op for a right dock (its leading edge faces the page).
-    func updateLeadingInset(_ inset: CGFloat) {
-        wrapperLeadingConstraint?.update(inset: inset)
+    /// Outer edges follow the page, but the seam between sibling cards stays
+    /// 8pt even when the page no longer contributes its own outer margin.
+    func updateLayout(_ layout: WebContentLayout, leadingInset: CGFloat) {
+        let seamInset = WebContentConstant.edgesSpacing - layout.edgeSpacing
+        wrapperTopConstraint?.update(inset: edge == .bottom ? seamInset : 0)
+        wrapperLeadingConstraint?.update(inset: edge == .right ? seamInset : leadingInset)
+        wrapperTrailingBottomConstraint?.update(inset: layout.edgeSpacing)
+        wrapper.layer?.cornerRadius = layout.containerCornerRadius
     }
 
     private func clamped(_ proposed: CGFloat) -> CGFloat {

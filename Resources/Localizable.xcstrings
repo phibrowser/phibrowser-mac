@@ -73230,6 +73230,28 @@
         }
       }
     },
+    "settings.general.appearance.edgeToEdgeWebContent" : {
+      "comment" : "General settings - Toggle removing outer page margins while keeping the normal Comfortable top layout; full screen also removes rounded corners",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edge-to-edge content"
+          }
+        }
+      }
+    },
+    "settings.general.appearance.edgeToEdgeWebContent.description" : {
+      "comment" : "General settings - Description below the edge-to-edge content toggle",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove margins around web content."
+          }
+        }
+      }
+    },
     "settings.general.appearance.sectionTitle" : {
       "comment" : "General settings - Appearance section title",
       "extractionState" : "extracted_with_value",

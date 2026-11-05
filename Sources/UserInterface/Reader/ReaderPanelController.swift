@@ -92,6 +92,7 @@ final class ReaderPanelController {
     private var isConcealedByInWindowOverlay = false
     /// See `setEclipsedByInWindowOverlay`.
     private var isEclipsedByInWindowOverlay = false
+    private var geometryCancellable: AnyCancellable?
 
     init(browserState: BrowserState,
          parentWindow: NSWindow,
@@ -102,6 +103,21 @@ final class ReaderPanelController {
         self.anchorView = anchorView
         self.cardViewProvider = cardViewProvider
         anchorView.postsFrameChangedNotifications = true
+        geometryCancellable = Publishers.Merge3(
+            NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).map { _ in () },
+            browserState.$isInFullScreenMode.map { _ in () },
+            browserState.$isTranscriptDocked.map { _ in () }
+        )
+        .receive(on: DispatchQueue.main)
+        .map { [weak browserState] _ in
+            WebContentLayout(browserState: browserState)
+        }
+        .removeDuplicates()
+        .sink { [weak self] _ in
+            // Page controllers may subscribe after this Reader; let their
+            // corner updates settle before reading the card's layer.
+            DispatchQueue.main.async { self?.relayoutIfVisible() }
+        }
     }
 
     deinit {

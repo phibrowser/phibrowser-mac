@@ -97,6 +97,7 @@ extension PhiPreferences {
         case openExternalLinksInKiosk
         case openKioskOnCommandOptionClick
         case openKioskWithGlobalShortcut
+        case edgeToEdgeWebContent // Remove outer page margins; square page corners in fullscreen
         case navigationAtTop  // Whether to show navigation and address bar in content header (Layout 2)
         case traditionalLayout  // Traditional layout, show tabs and (maybe) bookmark bar at  top (Layout 3)
         case alwaysShowBookmarkBar // In traditional layout, always show bookmark bar below address bar
@@ -123,6 +124,8 @@ extension PhiPreferences {
             case .openKioskOnCommandOptionClick:
                 return true
             case .openKioskWithGlobalShortcut:
+                return false
+            case .edgeToEdgeWebContent:
                 return false
             case .navigationAtTop:
                 return true

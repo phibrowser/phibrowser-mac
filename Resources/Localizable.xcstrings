@@ -132090,6 +132090,78 @@
         }
       }
     },
+    "theme.editor.deleteColor" : {
+      "comment" : "Theme editor - remove a user-created palette from the saved swatches",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete saved color"
+          }
+        }
+      }
+    },
+    "theme.editor.nextColors" : {
+      "comment" : "Theme editor - show the next group of seven color swatches",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next colors"
+          }
+        }
+      }
+    },
+    "theme.editor.presetColor" : {
+      "comment" : "Theme editor - accessible swatch label; placeholder is its one-based position",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color palette %d"
+          }
+        }
+      }
+    },
+    "theme.editor.previousColors" : {
+      "comment" : "Theme editor - show the previous group of seven color swatches",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous colors"
+          }
+        }
+      }
+    },
+    "theme.editor.reset" : {
+      "comment" : "Theme editor - restore the palette before manual adjustments",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset"
+          }
+        }
+      }
+    },
+    "theme.editor.save" : {
+      "comment" : "Theme editor - save the current solid or gradient palette as a custom swatch",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save color"
+          }
+        }
+      }
+    },
     "theme.editor.singleColor" : {
       "comment" : "Theme editor - select a palette with one color",
       "extractionState" : "manual",

@@ -128,7 +128,8 @@ Core surface — full semantics in this file:
   (screenshot with @ref-labeled boxes — view the PNG with your image-reading
   tool), `screenshot(path?)` (web viewport PNG — view it),
   `screenshotBrowser(path?)` (the WHOLE browser window — native chrome + web
-  content), `pageInfo()` — see "Observing a page"
+  content; throws if the page's capture times out), `pageInfo()` — see
+  "Observing a page"
 - Input: `click(target | x, y)`, `hover(target | x, y)`, `drag(from, to,
   {button})` (press, a held-button humanized glide, release — sliders,
   reorder lists, canvas gestures; both ends must share the viewport, and the

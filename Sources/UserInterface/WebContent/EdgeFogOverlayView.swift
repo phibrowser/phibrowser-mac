@@ -72,6 +72,13 @@ final class EdgeFogOverlayView: NSView {
         }
     }
 
+    var panelCornerRadius: CGFloat = LiquidGlassCompatible.webContentInnerComponentsCornerRadius {
+        didSet {
+            guard panelCornerRadius != oldValue else { return }
+            needsLayout = true
+        }
+    }
+
     private let tintLayer = CALayer()
     /// The 1pt edge line, and the source of the breathing glow.
     private let edgeGlowLayer = CALayer()
@@ -190,8 +197,8 @@ final class EdgeFogOverlayView: NSView {
     /// Re-fits the ring and re-centres the conic sweep. Called from `layout`
     /// because all of it is bounds-derived.
     private func layoutEdgeLights() {
-        let panelRadius = LiquidGlassCompatible.webContentInnerComponentsCornerRadius
-        let ringRadius = panelRadius + (hugsPanelCorners ? 0 : Self.ringCornerBoost)
+        let panelRadius = panelCornerRadius
+        let ringRadius = panelRadius + (hugsPanelCorners || panelRadius == 0 ? 0 : Self.ringCornerBoost)
 
         // The wash matches the panel's own clip so it stops on the same curve;
         // the ring is rounder, so its corners sit just inside that clip and

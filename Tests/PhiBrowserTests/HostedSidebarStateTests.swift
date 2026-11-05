@@ -718,6 +718,168 @@ final class HostedSidebarStateTests: XCTestCase {
         }
     }
 
+    func testSidebarHeaderControlsFollowTrafficLightsWhenEdgeToEdgeChanges() async throws {
+        let key = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue
+        let previousValue = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(previousValue, forKey: key) }
+        let identifiers = ["sidebarHeader.sidebarButton", "sidebarHeader.searchTabsButton",
+            "sidebarHeader.upgradeButton", "sidebarHeader.backButton", "sidebarHeader.forwardButton",
+            "sidebarHeader.refreshButton", "sidebarHeader.stopButton"]
+
+        for mode in [LayoutMode.performance, .balanced] {
+            PhiPreferences.GeneralSettings.saveLayoutMode(mode)
+            for initiallyEnabled in [false, true] {
+                UserDefaults.standard.set(initiallyEnabled, forKey: key)
+                let slot = makeSlot()
+                let session = makeSession(in: slot, spaceId: "header-edge-to-edge")
+                let shell = try XCTUnwrap(slot.shell)
+                shell.split.setSidebarGeometry(width: 260, collapsed: false)
+                session.presentInShell(deferringChromium: true)
+                session.browserState.exitPlaceholderMode()
+                await drainPresentationUpdates()
+                let header = try XCTUnwrap(descendants(of: shell.split.sidebarHost.view)
+                    .compactMap { $0 as? SidebarHeaderView }.first)
+                let controls = try identifiers.map { identifier in
+                    try XCTUnwrap(descendants(of: header).first { $0.accessibilityIdentifier() == identifier })
+                }
+                let close = try XCTUnwrap(shell.window.standardWindowButton(.closeButton))
+                var disabledHeaderHeight: CGFloat?
+
+                for (enabled, docked) in [(initiallyEnabled, false), (false, false), (true, false), (true, true), (true, false), (false, false)] {
+                    let container = session.mainSplitViewController.webContentContainerViewController
+                    if docked {
+                        container.attachTranscriptDock(AgentTranscriptDockView(edge: .right, content: NSView()), edge: .right)
+                    } else {
+                        container.detachTranscriptDock()
+                    }
+                    let effectiveEdgeToEdge = enabled && !docked
+                    UserDefaults.standard.set(enabled, forKey: key)
+                    NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+                    await drainPresentationUpdates()
+                    shell.split.view.layoutSubtreeIfNeeded()
+                    let expectedCenter: CGFloat = mode == .balanced && !effectiveEdgeToEdge ? 27.5 : 20
+                    let lightCenter = close.convert(close.bounds, to: nil).midY
+                    XCTAssertEqual(shell.window.frame.height - lightCenter, expectedCenter, accuracy: 0.01)
+                    for control in controls {
+                        XCTAssertEqual(control.convert(control.bounds, to: nil).midY, lightCenter, accuracy: 0.01,
+                            "\(mode), edge-to-edge \(enabled): \(control.accessibilityIdentifier() ?? "")")
+                    }
+                    if !effectiveEdgeToEdge { disabledHeaderHeight = header.bounds.height }
+                    if let disabledHeaderHeight {
+                        XCTAssertEqual(header.bounds.height,
+                            disabledHeaderHeight - (mode == .balanced && effectiveEdgeToEdge ? 7.5 : 0), accuracy: 0.01,
+                            "The header must reclaim the moved row's height without changing the gap below it")
+                    }
+                }
+            }
+        }
+    }
+
+    func testEdgeToEdgePageCardShadowIsOneShapeSplitAtTheSidebarEdge() async throws {
+        let key = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue
+        let previousValue = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(previousValue, forKey: key) }
+        PhiPreferences.GeneralSettings.saveLayoutMode(.balanced)
+        UserDefaults.standard.set(true, forKey: key)
+        let slot = makeSlot()
+        let session = makeSession(in: slot, spaceId: "edge-shadow")
+        let shell = try XCTUnwrap(slot.shell)
+        shell.split.setSidebarGeometry(width: 260, collapsed: false)
+        session.presentInShell(deferringChromium: true)
+        session.browserState.exitPlaceholderMode()
+        mountPage(in: session)
+        await drainPresentationUpdates()
+        shell.split.view.layoutSubtreeIfNeeded()
+
+        let container = session.mainSplitViewController.webContentContainerViewController
+        let card = try XCTUnwrap(container.currentPageCardView)
+        let sidebarHalf = try XCTUnwrap(descendants(of: shell.split.sidebarHost.view)
+            .compactMap { $0 as? PageCardEdgeShadowView }.first)
+        let pageHalf = try XCTUnwrap(descendants(of: container.view)
+            .compactMap { $0 as? PageCardEdgeShadowView }.first)
+        XCTAssertEqual(sidebarHalf.cardPosition, .beyondTrailingEdge)
+        XCTAssertEqual(pageHalf.cardPosition, .atLeadingEdge)
+        func windowFrame(_ view: NSView) -> NSRect { view.convert(view.bounds, to: nil) }
+
+        // Both halves cast the card's own rounded left edge, in the same
+        // place: the sidebar half ends where the card begins, the page half
+        // covers the card, and their corners match the card's.
+        XCTAssertFalse(sidebarHalf.isHidden)
+        XCTAssertFalse(pageHalf.isHidden)
+        XCTAssertEqual(windowFrame(sidebarHalf).maxX, windowFrame(card).minX, accuracy: 0.01)
+        XCTAssertEqual(windowFrame(pageHalf), windowFrame(card))
+        XCTAssertEqual(windowFrame(sidebarHalf).minY, windowFrame(card).minY, accuracy: 0.01)
+        XCTAssertEqual(windowFrame(sidebarHalf).maxY, windowFrame(card).maxY, accuracy: 0.01)
+        XCTAssertEqual(sidebarHalf.cornerRadius, card.layer?.cornerRadius)
+        XCTAssertEqual(pageHalf.cornerRadius, card.layer?.cornerRadius)
+        for half in [sidebarHalf, pageHalf] {
+            let shadowLayer = try XCTUnwrap(half.layer?.sublayers?.first)
+            XCTAssertEqual(shadowLayer.shadowOpacity, 1, "AppKit must not reset the shadow")
+            XCTAssertEqual(shadowLayer.shadowColor?.alpha,
+                           PageCardEdgeShadowView.shadowColor[half.currentAppearance].alpha,
+                           "The shadow follows the appearance: denser on a dark sidebar")
+            XCTAssertEqual(shadowLayer.shadowOffset, PageCardEdgeShadowView.shadowOffset)
+            XCTAssertLessThan(shadowLayer.shadowOffset.width, 0, "The shadow is cast toward the sidebar")
+            let shape = try XCTUnwrap(shadowLayer.shadowPath?.boundingBox)
+            let cardMinX = half === sidebarHalf ? half.bounds.maxX : half.bounds.minX
+            XCTAssertEqual(half.convert(NSPoint(x: shape.minX, y: shape.minY), to: nil),
+                           half.convert(NSPoint(x: cardMinX, y: half.bounds.minY), to: nil))
+            XCTAssertEqual(shape.height, half.bounds.height, accuracy: 0.01)
+        }
+
+        // The card is a transparent hole over the content surface, so the
+        // page half may paint only in the gaps outside its rounded corners.
+        XCTAssertNil(sidebarHalf.layer?.sublayers?.first?.mask)
+        let cornerGapMask = try XCTUnwrap(pageHalf.layer?.sublayers?.first?.mask as? CAShapeLayer)
+        let gaps = try XCTUnwrap(cornerGapMask.path)
+        XCTAssertEqual(cornerGapMask.fillRule, .evenOdd)
+        XCTAssertEqual(cornerGapMask.frame, pageHalf.bounds)
+        let radius = try XCTUnwrap(card.layer?.cornerRadius)
+        XCTAssertGreaterThan(radius, 0)
+        let bounds = pageHalf.bounds
+        XCTAssertTrue(gaps.contains(CGPoint(x: bounds.minX + 0.5, y: bounds.minY + 0.5), using: .evenOdd),
+                      "The bottom-left corner gap keeps the shadow")
+        XCTAssertTrue(gaps.contains(CGPoint(x: bounds.minX + 0.5, y: bounds.maxY - 0.5), using: .evenOdd),
+                      "The top-left corner gap keeps the shadow")
+        XCTAssertFalse(gaps.contains(CGPoint(x: bounds.minX + radius, y: bounds.midY), using: .evenOdd),
+                       "The page itself must not be shaded")
+        XCTAssertFalse(gaps.contains(CGPoint(x: bounds.minX + 0.5, y: bounds.midY), using: .evenOdd),
+                       "The straight edge inside the card must not be shaded")
+
+        let setEdgeToEdge = { (enabled: Bool) in
+            UserDefaults.standard.set(enabled, forKey: key)
+            NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+        }
+        func assertShown(_ shown: Bool, _ message: String, line: UInt = #line) {
+            XCTAssertEqual(!sidebarHalf.isHidden, shown, message, line: line)
+            XCTAssertEqual(!pageHalf.isHidden, shown, message, line: line)
+        }
+        setEdgeToEdge(false)
+        await drainPresentationUpdates()
+        assertShown(false, "Inset pages keep their margin and need no edge shadow")
+        setEdgeToEdge(true)
+        await drainPresentationUpdates()
+        assertShown(true, "Re-enabled")
+        session.browserState.isInFullScreenMode = true
+        await drainPresentationUpdates()
+        assertShown(false, "Fullscreen squares the page and drops the shadow")
+        session.browserState.isInFullScreenMode = false
+        await drainPresentationUpdates()
+        assertShown(true, "Fullscreen exit")
+        container.attachTranscriptDock(AgentTranscriptDockView(edge: .right, content: NSView()), edge: .right)
+        await drainPresentationUpdates()
+        assertShown(false, "A docked transcript restores the inset page")
+        container.detachTranscriptDock()
+        await drainPresentationUpdates()
+        assertShown(true, "Transcript undocked")
+        container.setPeekBackgroundDeemphasized(true, animated: false)
+        await drainPresentationUpdates()
+        assertShown(false, "An open Peek fades the page behind it, which then casts no shadow on either side")
+        container.setPeekBackgroundDeemphasized(false, animated: false)
+        await drainPresentationUpdates()
+        assertShown(true, "Peek closed")
+    }
+
     func testSidebarHeaderClearsTrafficLightsAtMinimumAndUpdateThresholdWidths() async throws {
         let identifiers = ["sidebarHeader.sidebarButton", "sidebarHeader.searchTabsButton",
             "sidebarHeader.upgradeButton", "sidebarHeader.backButton", "sidebarHeader.forwardButton",

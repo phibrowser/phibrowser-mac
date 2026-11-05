@@ -39,6 +39,225 @@ final class ContentSurfaceHostingTests: XCTestCase {
         XCTAssertEqual(sent.clip, sent.frame, "the whole page shows")
     }
 
+    func testEdgeToEdgeFullscreenUpdatesChromiumClippingAndRestoresCorners() throws {
+        let key = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue
+        let previous = UserDefaults.standard.object(forKey: key)
+        let previousMode = UserDefaults.standard.object(forKey: PhiPreferences.GeneralSettings.layoutModeKey)
+        defer {
+            UserDefaults.standard.set(previous, forKey: key)
+            UserDefaults.standard.set(previousMode, forKey: PhiPreferences.GeneralSettings.layoutModeKey)
+        }
+        PhiPreferences.GeneralSettings.saveLayoutMode(.performance)
+        UserDefaults.standard.set(false, forKey: key)
+        let fixture = try makeFixture()
+        let initial = try XCTUnwrap(fixture.lastSent())
+        XCTAssertGreaterThan(initial.bottomLeft, 0)
+        UserDefaults.standard.set(true, forKey: key)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        let edgeToEdge = try XCTUnwrap(fixture.lastSent())
+        XCTAssertGreaterThan(edgeToEdge.frame.height, initial.frame.height)
+        XCTAssertGreaterThan(edgeToEdge.bottomLeft, 0)
+        fixture.state.isInFullScreenMode = true
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        let fullscreen = try XCTUnwrap(fixture.lastSent())
+        XCTAssertEqual([fullscreen.topLeft, fullscreen.topRight, fullscreen.bottomLeft, fullscreen.bottomRight], [0, 0, 0, 0])
+        fixture.state.isInFullScreenMode = false
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        XCTAssertEqual(try XCTUnwrap(fixture.lastSent()).bottomLeft, edgeToEdge.bottomLeft)
+        UserDefaults.standard.set(false, forKey: key)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        XCTAssertEqual(try XCTUnwrap(fixture.lastSent()).frame, initial.frame)
+    }
+
+    func testTranscriptDockKeepsPageAndTranscriptPaddedInEveryLayout() throws {
+        let key = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue
+        let previous = UserDefaults.standard.object(forKey: key)
+        let previousMode = UserDefaults.standard.object(forKey: PhiPreferences.GeneralSettings.layoutModeKey)
+        defer {
+            UserDefaults.standard.set(previous, forKey: key)
+            UserDefaults.standard.set(previousMode, forKey: PhiPreferences.GeneralSettings.layoutModeKey)
+        }
+        let fixture = try makeFixture()
+        for mode in LayoutMode.allCases {
+            PhiPreferences.GeneralSettings.saveLayoutMode(mode)
+            for edge in [AgentTranscriptDockEdge.right, .bottom] {
+                let content = NSView()
+                let dock = AgentTranscriptDockView(edge: edge, content: content)
+                fixture.container.attachTranscriptDock(dock, edge: edge)
+                for (enabled, fullscreen) in [(false, false), (true, false), (true, true), (false, true), (true, false), (false, false)] {
+                    UserDefaults.standard.set(enabled, forKey: key)
+                    fixture.state.isInFullScreenMode = fullscreen
+                    NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+                    fixture.container.view.layoutSubtreeIfNeeded()
+                    let page = try XCTUnwrap(fixture.container.currentPageCardView)
+                    let card = try XCTUnwrap(content.superview)
+                    let pageFrame = page.convert(page.bounds, to: nil)
+                    let cardFrame = card.convert(card.bounds, to: nil)
+                    let outerFrame = fixture.container.view.convert(fixture.container.view.bounds, to: nil)
+                    let margin: CGFloat = 8
+                    if edge == .right {
+                        XCTAssertEqual(cardFrame.minX - pageFrame.maxX, 8, accuracy: 0.01)
+                        XCTAssertEqual(cardFrame.maxY, pageFrame.maxY, accuracy: 0.01)
+                    } else {
+                        XCTAssertEqual(pageFrame.minY - cardFrame.maxY, 8, accuracy: 0.01)
+                        XCTAssertEqual(cardFrame.minX, pageFrame.minX, accuracy: 0.01)
+                    }
+                    XCTAssertEqual(outerFrame.maxX - cardFrame.maxX, margin, accuracy: 0.01)
+                    XCTAssertEqual(cardFrame.minY - outerFrame.minY, margin, accuracy: 0.01)
+                    XCTAssertEqual(card.layer?.cornerRadius, page.layer?.cornerRadius)
+                    XCTAssertGreaterThan(page.layer?.cornerRadius ?? 0, 0)
+                    XCTAssertEqual(UserDefaults.standard.bool(forKey: key), enabled)
+                }
+                fixture.container.detachTranscriptDock()
+            }
+        }
+    }
+
+    func testMovingTranscriptRestoresEdgeToEdgeOnlyInItsPreviousWindow() throws {
+        let key = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue
+        let previous = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(previous, forKey: key) }
+        UserDefaults.standard.set(true, forKey: key)
+        let first = try makeFixture()
+        let second = try makeFixture()
+        first.state.isInFullScreenMode = true
+        second.state.isInFullScreenMode = true
+        let dock = AgentTranscriptDockView(edge: .right, content: NSView())
+
+        func assertPage(_ fixture: Fixture, margin: CGFloat) throws {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            fixture.container.view.layoutSubtreeIfNeeded()
+            let page = try XCTUnwrap(fixture.container.currentPageCardView)
+            let frame = page.convert(page.bounds, to: fixture.container.view)
+            XCTAssertEqual(frame.minY, margin, accuracy: 0.01)
+            if margin == 0 {
+                XCTAssertEqual(frame.maxX, fixture.container.view.bounds.maxX, accuracy: 0.01)
+                XCTAssertEqual(page.layer?.cornerRadius, 0)
+            } else {
+                XCTAssertGreaterThan(page.layer?.cornerRadius ?? 0, 0)
+            }
+            XCTAssertTrue(UserDefaults.standard.bool(forKey: key))
+        }
+
+        first.container.attachTranscriptDock(dock, edge: .right)
+        try assertPage(first, margin: 8)
+        try assertPage(second, margin: 0)
+        first.container.detachTranscriptDock()
+        second.container.attachTranscriptDock(dock, edge: .right)
+        try assertPage(first, margin: 0)
+        try assertPage(second, margin: 8)
+        second.container.detachTranscriptDock()
+        try assertPage(second, margin: 0)
+    }
+
+    func testTranscriptRetainsEightPointGapFromExtensionPanelFrame() throws {
+        let key = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue
+        let previous = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(previous, forKey: key) }
+        UserDefaults.standard.set(true, forKey: key)
+        WebContentContainerViewController.panelSlideDurationForTesting = 0.05
+        let fixture = try makeFixture()
+        fixture.state.updateExtensionSidePanel(fixture.sidePanelState)
+        waitUntil { !fixture.hosting.isHeld }
+        let content = NSView()
+        fixture.container.attachTranscriptDock(AgentTranscriptDockView(edge: .right, content: content), edge: .right)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        fixture.container.view.layoutSubtreeIfNeeded()
+        let panel = try XCTUnwrap(fixture.container.extensionSidePanelViewForTesting)
+        let card = try XCTUnwrap(content.superview)
+        let panelFrame = panel.convert(panel.bounds, to: nil)
+        let cardFrame = card.convert(card.bounds, to: nil)
+        XCTAssertEqual(cardFrame.minX - panelFrame.maxX - CGFloat(WebContentConstant.contentEdgeSpacing), 8, accuracy: 0.01)
+        fixture.container.detachTranscriptDock()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        fixture.container.view.layoutSubtreeIfNeeded()
+        let restoredPanelFrame = panel.convert(panel.bounds, to: fixture.container.view)
+        XCTAssertEqual(fixture.container.view.bounds.maxX - restoredPanelFrame.maxX,
+            CGFloat(WebContentConstant.contentEdgeSpacing), accuracy: 0.01)
+    }
+
+    func testAgentMaskAndLightRingFollowFullscreenCornersAndRestore() throws {
+        let key = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue
+        let previous = UserDefaults.standard.object(forKey: key)
+        let fixture = try makeFixture()
+        let tabId = try XCTUnwrap(fixture.state.focusingTab).guid
+        let wasActive = AgentAnimationManager.shared.isActive(for: tabId)
+        defer {
+            AgentAnimationManager.shared.setActive(wasActive, for: tabId)
+            UserDefaults.standard.set(previous, forKey: key)
+        }
+        AgentAnimationManager.shared.setActive(true, for: tabId)
+        for (enabled, fullscreen, docked) in [(false, false, false), (true, false, false), (true, true, false), (true, true, true), (true, true, false), (false, true, false), (true, false, false)] {
+            if docked {
+                fixture.container.attachTranscriptDock(AgentTranscriptDockView(edge: .right, content: NSView()), edge: .right)
+            } else {
+                fixture.container.detachTranscriptDock()
+            }
+            UserDefaults.standard.set(enabled, forKey: key)
+            fixture.state.isInFullScreenMode = fullscreen
+            NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            fixture.container.view.layoutSubtreeIfNeeded()
+            let overlay = try XCTUnwrap(descendantViews(fixture.container.view).compactMap { $0 as? EdgeFogOverlayView }.first)
+            overlay.layoutSubtreeIfNeeded()
+            let root = try XCTUnwrap(overlay.layer)
+            let page = try XCTUnwrap(overlay.superview?.layer)
+            XCTAssertEqual(root.cornerRadius, page.cornerRadius)
+            let glow = try XCTUnwrap(root.sublayers?.first { $0.borderWidth == 1 })
+            let ringMask = try XCTUnwrap(root.sublayers?.compactMap(\.mask).first)
+            if enabled && fullscreen && !docked {
+                XCTAssertEqual(root.cornerRadius, 0)
+                XCTAssertEqual(glow.cornerRadius, 0)
+                XCTAssertEqual(ringMask.cornerRadius, 0)
+            } else {
+                XCTAssertGreaterThan(root.cornerRadius, 0)
+                XCTAssertGreaterThan(glow.cornerRadius, 0)
+                XCTAssertGreaterThan(ringMask.cornerRadius, 0)
+            }
+        }
+    }
+
+    func testVisibleSplitReplacementHintsFollowFullscreenCorners() throws {
+        guard #available(macOS 26.0, *) else { return }
+        let key = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue
+        let previous = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(previous, forKey: key) }
+        let fixture = try makeFixture()
+        fixture.state.splits = [SplitGroup(id: "edge-hint-split", primaryTabId: 2400,
+            secondaryTabId: 2401, layout: .vertical, ratio: 0.5)]
+        fixture.state.tabs.append(Tab(guid: 2402, url: "https://dragged.example/", isActive: false, index: 2))
+        fixture.state.updateNormalTabs()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        let dropContainer = fixture.container.splitTabDropContainer
+        dropContainer.showSplitDropHints(draggedTabId: 2402)
+        defer { dropContainer.hideSplitDropHints() }
+        for (enabled, fullscreen, docked) in [(false, false, false), (true, false, false), (true, true, false), (true, true, true), (true, true, false), (false, true, false), (true, false, false)] {
+            if docked {
+                fixture.container.attachTranscriptDock(AgentTranscriptDockView(edge: .right, content: NSView()), edge: .right)
+            } else {
+                fixture.container.detachTranscriptDock()
+            }
+            UserDefaults.standard.set(enabled, forKey: key)
+            fixture.state.isInFullScreenMode = fullscreen
+            NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            fixture.container.view.layoutSubtreeIfNeeded()
+            let cards = descendantViews(dropContainer).compactMap { $0 as? NSGlassEffectView }
+                .filter { !$0.isHiddenOrHasHiddenAncestor }
+            XCTAssertEqual(cards.count, 2)
+            for card in cards {
+                let expected: CGFloat = enabled && fullscreen && !docked ? 0 : LiquidGlassCompatible.webContentInnerComponentsCornerRadius
+                XCTAssertEqual(card.cornerRadius, expected)
+                XCTAssertEqual(card.layer?.cornerRadius, expected)
+            }
+        }
+    }
+
+    private func descendantViews(_ view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap(descendantViews)
+    }
+
     func testReconciliationDoesNotReadBackgroundNativeViewsWith200Tabs() throws {
         let fixture = try makeFixture()
         let backgroundPages = (2..<200).map { index in

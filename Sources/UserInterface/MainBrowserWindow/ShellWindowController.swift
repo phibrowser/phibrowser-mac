@@ -434,7 +434,7 @@ final class ShellWindowController: NSObject, NSWindowDelegate {
     /// on a Space switch, so the positioner is rebuilt only when the layout
     /// mode changes (or dropped for fullscreen), never per session.
     private var trafficLightPositioner: TrafficLightPositioner?
-    private var trafficLightLayoutMode: LayoutMode?
+    private var trafficLightLayout: WebContentLayout?
 
     /// Whether the shell's key group (`ShellWindow.groupOwnsKey`) owned key
     /// at the last reconcile — the state Chromium was last told.
@@ -510,19 +510,20 @@ final class ShellWindowController: NSObject, NSWindowDelegate {
             // the default placement on its own.
             trafficLightPositioner?.stop(restoringPlacement: false)
             trafficLightPositioner = nil
-            trafficLightLayoutMode = nil
+            trafficLightLayout = nil
             return
         }
-        let layoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
-        guard trafficLightLayoutMode != layoutMode || trafficLightPositioner == nil else { return }
+        let layout = WebContentLayout(browserState: (window.windowController as? SpaceSessionController)?.browserState)
+        let layoutMode = layout.layoutMode
+        guard trafficLightLayout != layout || trafficLightPositioner == nil else { return }
         trafficLightPositioner?.stop(restoringPlacement: true)
         let positioner = TrafficLightPositioner(
             window: window,
-            centerFromWindowTop: SpaceSessionController.chromeRowCenter(for: layoutMode),
+            centerFromWindowTop: SpaceSessionController.chromeRowCenter(for: layoutMode, edgeToEdgeEnabled: layout.edgeToEdgeEnabled),
             centerFromWindowLeading: layoutMode == .balanced ? 22 : nil
         )
         trafficLightPositioner = positioner
-        trafficLightLayoutMode = layoutMode
+        trafficLightLayout = layout
         positioner.start()
     }
 

@@ -312,7 +312,7 @@ class SpaceSessionController: NSWindowController {
     private var trafficLightPositioner: TrafficLightPositioner?
     /// The layout the live positioner was built for, so the titlebar is
     /// only handed back and re-shifted when the layout actually changes.
-    private var trafficLightLayoutMode: LayoutMode?
+    private var trafficLightLayout: WebContentLayout?
     private var kioskContentViewController: KioskBrowserContentViewController?
     lazy var cancellables = Set<AnyCancellable>()
     private var multiSelectionEscapeMonitor: Any?
@@ -855,6 +855,7 @@ class SpaceSessionController: NSWindowController {
                     state.$isInFullScreenMode,
                     NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
                         .map { _ in }
+                        .merge(with: state.$isTranscriptDocked.map { _ in })
                         .prepend(())
                 )
             }
@@ -1084,12 +1085,12 @@ class SpaceSessionController: NSWindowController {
             // focused; the corner stays concentric with the pane's.
             let inset = SplitPaneHostView.focusRingThickness
             return .init(view: paneCard,
-                         cornerRadius: max(0, LiquidGlassCompatible.webContentInnerComponentsCornerRadius - inset),
+                         cornerRadius: max(0, (paneCard.layer?.cornerRadius ?? 0) - inset),
                          inset: inset)
         }
         guard let card = container?.currentPageCardView else { return nil }
         return .init(view: card,
-                     cornerRadius: LiquidGlassCompatible.webContentContainerCornerRadius)
+                     cornerRadius: card.layer?.cornerRadius ?? 0)
     }
 
     /// Shows `visibleReaders` (see `BrowserState.visibleReaderOverlays`),
@@ -1595,16 +1596,16 @@ class SpaceSessionController: NSWindowController {
     /// Centre line of the chrome row that runs beside the traffic lights, as a
     /// distance from the top of the window.
     ///
-    /// `.performance` and `.balanced` are both `SidebarHeaderView`'s 24pt
-    /// control row, at its default 8pt and legacy 15.5pt top insets;
+    /// Vertical layouts share the sidebar control row's placement;
     /// `.comfortable` is the horizontal tab strip, whose 32pt tab row starts
     /// `WebContentConstant.edgesSpacing - 2` below the top of the window.
-    static func chromeRowCenter(for layoutMode: LayoutMode) -> CGFloat {
+    static func chromeRowCenter(
+        for layoutMode: LayoutMode,
+        edgeToEdgeEnabled: Bool = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.loadValue()
+    ) -> CGFloat {
         switch layoutMode {
-        case .performance:
-            return 20
-        case .balanced:
-            return 27.5
+        case .performance, .balanced:
+            return SidebarHeaderView.controlRowTopOffset(for: layoutMode, edgeToEdgeEnabled: edgeToEdgeEnabled) + 12
         case .comfortable:
             return 22
         }
@@ -1639,21 +1640,22 @@ class SpaceSessionController: NSWindowController {
             // the default placement on its own.
             trafficLightPositioner?.stop(restoringPlacement: false)
             trafficLightPositioner = nil
-            trafficLightLayoutMode = nil
+            trafficLightLayout = nil
             return
         }
-        let layoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
-        guard trafficLightLayoutMode != layoutMode
+        let layout = WebContentLayout(browserState: browserState)
+        let layoutMode = layout.layoutMode
+        guard trafficLightLayout != layout
                 || trafficLightPositioner == nil else { return }
 
         trafficLightPositioner?.stop(restoringPlacement: true)
         let positioner = TrafficLightPositioner(
             window: window,
-            centerFromWindowTop: Self.chromeRowCenter(for: layoutMode),
+            centerFromWindowTop: Self.chromeRowCenter(for: layoutMode, edgeToEdgeEnabled: layout.edgeToEdgeEnabled),
             centerFromWindowLeading: layoutMode == .balanced ? 22 : nil
         )
         trafficLightPositioner = positioner
-        trafficLightLayoutMode = layoutMode
+        trafficLightLayout = layout
         positioner.start()
     }
 

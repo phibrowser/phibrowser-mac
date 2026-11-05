@@ -24,8 +24,23 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     private var upgradeButtonLeftConstraint: Constraint?
     private var addressViewHeightConstraint: Constraint?
     private var spaceSwitchTopConstraint: Constraint?
-    private let defaultSidebarButtonTopOffset: CGFloat = 8
-    private let legacySidebarButtonTopOffset: CGFloat = 15.5
+    static func controlRowTopOffset(
+        for layoutMode: LayoutMode,
+        edgeToEdgeEnabled: Bool = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.loadValue()
+    ) -> CGFloat {
+        if layoutMode == .performance { return 8 }
+        if layoutMode == .balanced && edgeToEdgeEnabled {
+            return WebContentConstant.headerHeight / 2 - 12
+        }
+        return 15.5
+    }
+
+    var controlRowTopOffset: CGFloat {
+        isFloating ? 8 : Self.controlRowTopOffset(
+            for: browserState?.layoutMode ?? .performance,
+            edgeToEdgeEnabled: WebContentLayout(browserState: browserState).edgeToEdgeEnabled
+        )
+    }
     /// Address bar gap under the nav row, and under the Spaces-switch row.
     private static let addressViewTopOffset: CGFloat = 12
     private static let addressViewTopOffsetBelowSpaceSwitch: CGFloat = 8
@@ -276,7 +291,6 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     
     private func setupViews() {
         let initialLayoutMode = browserState?.layoutMode ?? .performance
-        let showInSidebar = isSidebarLayout(initialLayoutMode)
 
         configureAccessibilityIdentifiers()
 
@@ -285,7 +299,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         addSubview(upgradeButton)
 
         sidebarButton.snp.makeConstraints { make in
-            make.top.equalToSuperview().offset(sidebarButtonTopOffset(for: showInSidebar))
+            make.top.equalToSuperview().offset(controlRowTopOffset)
             sidebarButtonLeftConstraint = make.left.equalToSuperview().offset(78).constraint
             make.size.equalTo(NSSize(width: 24, height: 24))
         }
@@ -402,13 +416,6 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         layoutMode == .performance
     }
 
-    private func sidebarButtonTopOffset(for showInSidebar: Bool) -> CGFloat {
-        if isFloating {
-            return defaultSidebarButtonTopOffset
-        }
-        return showInSidebar ? defaultSidebarButtonTopOffset : legacySidebarButtonTopOffset
-    }
-
     /// Update view visibility based on configuration
     private func updateLayoutVisibility(layoutMode: LayoutMode) {
         let showInSidebar = isSidebarLayout(layoutMode)
@@ -428,7 +435,10 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
 
         // Adjust sidebarButton position
         sidebarButton.snp.remakeConstraints { make in
-            make.top.equalToSuperview().offset(sidebarButtonTopOffset(for: showInSidebar))
+            make.top.equalToSuperview().offset(isFloating ? 8 : Self.controlRowTopOffset(
+                for: layoutMode,
+                edgeToEdgeEnabled: WebContentLayout(browserState: browserState).edgeToEdgeEnabled
+            ))
             make.size.equalTo(NSSize(width: 24, height: 24))
 
             if showInSidebar {
@@ -463,6 +473,19 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             return
         }
         hasSetupConfigObserver = true
+
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .map { _ in }
+            .merge(with: browserState.$isTranscriptDocked.map { _ in })
+            .prepend(())
+            .receive(on: DispatchQueue.main)
+            .map { [weak browserState] _ in WebContentLayout(browserState: browserState).edgeToEdgeEnabled }
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateLayoutVisibility(layoutMode: self.browserState?.layoutMode ?? .performance)
+            }
+            .store(in: &cancellables)
 
         browserState.$layoutMode
             .receive(on: DispatchQueue.main)

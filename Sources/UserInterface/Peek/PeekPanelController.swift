@@ -49,7 +49,7 @@ final class PeekPanelController {
             // An explicit path keeps the window server from deriving the
             // shadow from the card's alpha on every frame of the appear
             // flight; the card is pane-sized, and that is not cheap.
-            let radius = PeekPanelController.cornerRadius
+            let radius = layer?.cornerRadius ?? PeekPanelController.cornerRadius
             layer?.shadowPath = CGPath(roundedRect: bounds,
                                        cornerWidth: radius,
                                        cornerHeight: radius,
@@ -376,6 +376,8 @@ final class PeekPanelController {
     private var pendingFlightStart: CATransform3D?
     private var appearanceOriginScreenPoint: CGPoint?
     private var transitionView: TransitionView?
+    private var geometryCancellables = Set<AnyCancellable>()
+    private var transitionFrameObserver: NSObjectProtocol?
     private var expandingTabId: Int?
     /// See `setConcealedByInWindowOverlay`.
     private var isConcealedByInWindowOverlay = false
@@ -418,6 +420,25 @@ final class PeekPanelController {
             make.edges.equalToSuperview()
         }
 
+        Publishers.Merge3(
+            NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).map { _ in () },
+            browserState.$isInFullScreenMode.map { _ in () },
+            browserState.$isTranscriptDocked.map { _ in () }
+        )
+        .receive(on: DispatchQueue.main)
+        .map { [weak browserState] _ in
+            WebContentLayout(browserState: browserState)
+        }
+        .prepend(WebContentLayout(browserState: browserState))
+        .removeDuplicates()
+        .dropFirst()
+        .sink { [weak self] _ in self?.pageGeometryDidChange() }
+        .store(in: &geometryCancellables)
+
+        NotificationCenter.default.publisher(for: NSWindow.didResizeNotification, object: parentWindow)
+            .sink { [weak self] _ in self?.pageGeometryDidChange() }
+            .store(in: &geometryCancellables)
+
         containerView.addSubview(toastViewController.view)
         toastViewController.view.snp.makeConstraints { make in
             make.edges.equalToSuperview()
@@ -425,6 +446,7 @@ final class PeekPanelController {
     }
 
     deinit {
+        if let transitionFrameObserver { NotificationCenter.default.removeObserver(transitionFrameObserver) }
         transitionView?.removeFromSuperview()
         backgroundContentController?.setPeekBackgroundDeemphasized(false, animated: false)
         removeEventMonitor()
@@ -851,9 +873,7 @@ final class PeekPanelController {
             // on the next main turn, after the mount transaction has committed.
             DispatchQueue.main.async {
                 guard let self, let snapshot, self.transitionView === snapshot else { return }
-                snapshot.removeFromSuperview()
-                self.transitionView = nil
-                self.expandingTabId = nil
+                self.cancelTransition()
             }
         }
         let grow = CABasicAnimation(keyPath: "transform")
@@ -863,7 +883,30 @@ final class PeekPanelController {
         grow.duration = Self.flightDuration
         grow.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         layer.add(grow, forKey: "phiPeekExpandIntoTab")
+        // The floating Peek stays rounded. Its painted cover must become
+        // square with the fullscreen page before the cover is removed.
+        if WebContentLayout(browserState: browserState).squaresCorners {
+            for card in snapshot.subviews {
+                for clippedView in [card] + card.subviews {
+                    guard let clippedLayer = clippedView.layer else { continue }
+                    let rounding = CABasicAnimation(keyPath: "cornerRadius")
+                    rounding.fromValue = clippedLayer.cornerRadius
+                    rounding.toValue = 0
+                    rounding.duration = Self.flightDuration
+                    rounding.timingFunction = grow.timingFunction
+                    clippedLayer.cornerRadius = 0
+                    clippedLayer.add(rounding, forKey: "phiPeekExpandCorners")
+                }
+                // A settled page has no floating card shadow.
+                card.shadow = nil
+                card.needsLayout = true
+            }
+        }
         CATransaction.commit()
+        destination.postsFrameChangedNotifications = true
+        transitionFrameObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification, object: destination, queue: .main
+        ) { [weak self] _ in self?.cancelTransition() }
     }
 
     private func snapshotOverlay(of source: NSView) -> TransitionView? {
@@ -908,7 +951,22 @@ final class PeekPanelController {
         return snapshot
     }
 
+    private func pageGeometryDidChange() {
+        // Before adoption the live Peek still covers the page. Once mounted,
+        // a geometry change can safely drop the now-stale animation cover.
+        if expandingTabId != nil, rootView.superview != nil {
+            transitionView?.removeFromSuperview()
+            transitionView = nil
+        } else {
+            cancelTransition()
+        }
+        landAppearFlight()
+        relayoutIfVisible()
+    }
+
     private func cancelTransition() {
+        if let transitionFrameObserver { NotificationCenter.default.removeObserver(transitionFrameObserver) }
+        transitionFrameObserver = nil
         if let expandingTabId { backgroundContentController?.cancelPageMountWait(tabId: expandingTabId) }
         expandingTabId = nil
         transitionView?.removeFromSuperview()

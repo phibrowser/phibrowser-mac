@@ -1445,6 +1445,7 @@ class SpaceSessionController: NSWindowController {
         // (⌃1…⌃9 shares its modifier) keeps key; left running, releasing
         // Ctrl would select a tab in this hidden Space.
         browserState.tabSwitchManager.cancelSession()
+        browserState.tabSwitchManager.noteSpaceConcealed()
         // An unanswered ask-Space chooser is a child of the shell, not of
         // this Space's tree; it resolves as declined instead of staying over
         // the next Space.

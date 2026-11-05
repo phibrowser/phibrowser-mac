@@ -103,6 +103,8 @@ class WebContentContainerViewController: NSViewController {
     }
 
     private var isPeekBackgroundDeemphasized = false
+    /// How long the page takes to scale and fade behind a Peek, and back.
+    static let peekBackgroundTransitionDuration: TimeInterval = 0.2
 
     /// Animate the common ancestor of the page chrome and Chromium content
     /// surface. Transforming only the page card would leave surface-backed
@@ -110,7 +112,16 @@ class WebContentContainerViewController: NSViewController {
     func setPeekBackgroundDeemphasized(_ deemphasized: Bool, animated: Bool) {
         guard isPeekBackgroundDeemphasized != deemphasized else { return }
         isPeekBackgroundDeemphasized = deemphasized
-        browserState?.isPageDeemphasizedForPeek = deemphasized
+        if deemphasized || !animated {
+            browserState?.isPageDeemphasizedForPeek = deemphasized
+        } else {
+            // The card's edge shadow returns once the page has scaled back
+            // onto that edge, not while it is still in flight.
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.peekBackgroundTransitionDuration) { [weak self] in
+                guard let self, !self.isPeekBackgroundDeemphasized else { return }
+                self.browserState?.isPageDeemphasizedForPeek = false
+            }
+        }
         updatePeekBackgroundPresentation(animated: animated)
     }
 
@@ -146,7 +157,7 @@ class WebContentContainerViewController: NSViewController {
             let shrink = CABasicAnimation(keyPath: "transform")
             shrink.fromValue = NSValue(caTransform3D: fromTransform)
             shrink.toValue = NSValue(caTransform3D: transform)
-            shrink.duration = 0.2
+            shrink.duration = Self.peekBackgroundTransitionDuration
             shrink.timingFunction = timing
             if !reduceMotion {
                 layer.add(shrink, forKey: "phiPeekBackgroundScale")
@@ -155,7 +166,7 @@ class WebContentContainerViewController: NSViewController {
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = fromOpacity
             fade.toValue = Float(opacity)
-            fade.duration = 0.2
+            fade.duration = Self.peekBackgroundTransitionDuration
             fade.timingFunction = timing
             layer.add(fade, forKey: "phiPeekBackgroundFade")
         }

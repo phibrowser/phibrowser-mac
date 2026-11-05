@@ -234,6 +234,10 @@ class Tab: WebContentRepresentable {
     /// live `SplitGroup`. nil for non-split pinned tabs and for live Chromium
     /// tabs that aren't bound to a pinned record.
     var splitPartnerGuid: String?
+    /// guid of every pinned-tab record of a pinned split of three or four
+    /// panes, this one included. Mirrors `TabDataModel.splitPaneGuids`. Empty
+    /// for a solo pin and for a pair, which `splitPartnerGuid` links.
+    var splitPaneGuids: [String] = []
     /// Persisted layout for a pinned split. Nil for ordinary pinned tabs;
     /// legacy paired rows without a value are interpreted as side-by-side.
     var splitLayout: SplitLayout?
@@ -727,39 +731,23 @@ class Tab: WebContentRepresentable {
         webContentWrapper?.setAsActiveTab()
     }
 
-    /// Performs the Option-click split action for this tab. A split may only
-    /// involve two plain tabs: if either side already belongs to a split —
-    /// including a persisted pinned split pair whose panes are not live —
-    /// callers receive `false` and preserve their normal selection behavior
-    /// instead.
+    /// Performs the Option-click split action for this tab. The focused tab
+    /// is either a plain tab, which this tab pairs with, or a pane of a
+    /// split with room, which this tab joins as the pane right
+    /// after it. This tab itself must not belong to a split — including a
+    /// persisted pinned split whose panes are not live — or callers receive
+    /// `false` and preserve their normal selection behavior instead.
     @MainActor
     @discardableResult
     func performSplitAction(in browserState: BrowserState) -> Bool {
-        guard let focusedTab = browserState.focusingTab,
-              browserState.tabs.contains(where: { $0.guid == focusedTab.guid }),
-              let route = TabSplitActionRoute.resolve(
-                  selectedTabId: guid,
-                  focusedTabId: focusedTab.guid,
-                  // Keep the direct live-group check fail-closed while a
-                  // partner pane is still arriving. Membership also catches
-                  // pinned records whose synthetic guid hides a live pane,
-                  // plus persisted pinned pairs with no live group yet.
-                  selectedTabIsInSplit:
-                      browserState.splitGroup(forTabId: guid) != nil ||
-                      browserState.splitMembership(forCellTab: self) != nil,
-                  focusedTabIsInSplit:
-                      browserState.splitGroup(forTabId: focusedTab.guid) != nil ||
-                      browserState.splitMembership(forCellTab: focusedTab) != nil
-              ) else {
+        guard let route = splitActionRoute(in: browserState) else {
             return false
         }
-
         // A closed pinned entry has no live Chromium tab to pair directly.
-        // Treat it as the target URL, keeping the currently focused tab on
-        // the left and creating a fresh right-hand pane from the saved URL.
+        // Treat it as the target URL: the focused tab stays where it is and a
+        // fresh pane created from the saved URL lands right after it.
         if !isOpenned {
-            guard case let .splitWithFocused(focusedTabId) = route,
-                  let pinnedDBGuid = guidInLocalDB,
+            guard let pinnedDBGuid = guidInLocalDB,
                   !pinnedDBGuid.isEmpty,
                   let pinnedURL = pinnedUrl ?? url,
                   !pinnedURL.isEmpty,
@@ -768,11 +756,23 @@ class Tab: WebContentRepresentable {
                   }) else {
                 return false
             }
-            browserState.makeTabNormalOpened(tabId: focusedTabId)
-            return browserState.openNewTabAsSplit(
-                partnerTabId: focusedTabId,
-                partnerNavigateURL: URLProcessor.processUserInput(pinnedURL)
-            )
+            let navigateURL = URLProcessor.processUserInput(pinnedURL)
+            switch route {
+            case let .splitWithFocused(focusedTabId):
+                browserState.makeTabNormalOpened(tabId: focusedTabId)
+                return browserState.openNewTabAsSplit(
+                    partnerTabId: focusedTabId,
+                    partnerNavigateURL: navigateURL
+                )
+            case let .joinFocusedSplit(insertion):
+                return browserState.openNewTabIntoSplit(
+                    splitId: insertion.splitId,
+                    slot: insertion.slot,
+                    navigateURL: navigateURL
+                )
+            case .openNewPartner, .openNewPane:
+                return false
+            }
         }
 
         guard browserState.tabs.contains(where: { $0.guid == guid }) else {
@@ -781,7 +781,14 @@ class Tab: WebContentRepresentable {
 
         switch route {
         case .openNewPartner:
+            browserState.makeTabNormalOpened(tabId: guid)
             return browserState.openNewTabAsSplit(partnerTabId: guid)
+        case let .openNewPane(insertion):
+            return browserState.openNewTabIntoSplit(
+                splitId: insertion.splitId,
+                slot: insertion.slot,
+                navigateURL: nil
+            )
         case let .splitWithFocused(focusedTabId):
             browserState.makeTabNormalOpened(tabId: guid)
             browserState.makeTabNormalOpened(tabId: focusedTabId)
@@ -790,7 +797,58 @@ class Tab: WebContentRepresentable {
                 rightTabId: guid,
                 layout: .vertical
             ) != nil
+        case let .joinFocusedSplit(insertion):
+            // `addTabToSplit` normalizes the tab and the split itself.
+            return browserState.addTabToSplit(
+                insertion.splitId,
+                tabId: guid,
+                slot: insertion.slot
+            )
         }
+    }
+
+    /// Whether `performSplitAction` would put this tab in a split with the
+    /// focused tab, rather than opening a new pane beside this tab.
+    @MainActor
+    func canSplitWithFocusedTab(in browserState: BrowserState) -> Bool {
+        switch splitActionRoute(in: browserState) {
+        case .splitWithFocused, .joinFocusedSplit:
+            return true
+        case .openNewPartner, .openNewPane, nil:
+            return false
+        }
+    }
+
+    @MainActor
+    private func splitActionRoute(in browserState: BrowserState) -> TabSplitActionRoute? {
+        guard let focusedTab = browserState.focusingTab,
+              browserState.tabs.contains(where: { $0.guid == focusedTab.guid }) else {
+            return nil
+        }
+        // Where a new pane joins the focused tab's split, when it can take one.
+        let focusedSplitInsertion: TabSplitActionRoute.SplitInsertion? = {
+            guard let group = browserState.splitGroup(forTabId: focusedTab.guid),
+                  group.canAddPane,
+                  // Fail closed while a pane of the focused split is still arriving.
+                  group.tabIds.allSatisfy({ tabId in browserState.tabs.contains { $0.guid == tabId } }),
+                  let slot = group.slot(of: focusedTab.guid) else { return nil }
+            return TabSplitActionRoute.SplitInsertion(splitId: group.id, slot: slot + 1)
+        }()
+        return TabSplitActionRoute.resolve(
+            selectedTabId: guid,
+            focusedTabId: focusedTab.guid,
+            // Keep the direct live-group check fail-closed while a
+            // partner pane is still arriving. Membership also catches
+            // pinned records whose synthetic guid hides a live pane,
+            // plus persisted pinned pairs with no live group yet.
+            selectedTabIsInSplit:
+                browserState.splitGroup(forTabId: guid) != nil ||
+                browserState.splitMembership(forCellTab: self) != nil,
+            focusedTabIsInSplit:
+                browserState.splitGroup(forTabId: focusedTab.guid) != nil ||
+                browserState.splitMembership(forCellTab: focusedTab) != nil,
+            focusedSplitInsertion: focusedSplitInsertion
+        )
     }
     
     func goBack() {
@@ -861,25 +919,44 @@ class Tab: WebContentRepresentable {
 
 /// Resolves the command an Option-click should dispatch without entangling
 /// pointer handling with BrowserState mutation. The route stays nil whenever
-/// a second split would be created, allowing each view to fall back to its
-/// established selection path.
+/// the selected tab is already a pane of another split, or the focused tab's
+/// split cannot take a pane (already four panes), allowing each
+/// view to fall back to its established selection path.
 enum TabSplitActionRoute: Equatable {
-    case openNewPartner
-    case splitWithFocused(tabId: Int)
+    /// Where a new pane joins the focused tab's split: the split and the
+    /// slot right after the focused pane.
+    struct SplitInsertion: Equatable {
+        let splitId: String
+        let slot: Int
+    }
 
+    /// Option-click on the focused plain tab: open a new-tab pane beside it.
+    case openNewPartner
+    /// Option-click on the focused pane of a split: open a new-tab pane
+    /// right after it.
+    case openNewPane(SplitInsertion)
+    /// Pair the selected tab with the focused plain tab.
+    case splitWithFocused(tabId: Int)
+    /// The selected tab joins the focused tab's split as the pane right
+    /// after the focused one.
+    case joinFocusedSplit(SplitInsertion)
+
+    /// - Parameter focusedSplitInsertion: Non-nil when the focused tab is a
+    ///   pane of a split with room for another pane. Ignored
+    ///   unless `focusedTabIsInSplit`.
     static func resolve(selectedTabId: Int,
                         focusedTabId: Int?,
                         selectedTabIsInSplit: Bool,
-                        focusedTabIsInSplit: Bool) -> Self? {
-        guard let focusedTabId,
-              !selectedTabIsInSplit,
-              !focusedTabIsInSplit else {
-            return nil
-        }
+                        focusedTabIsInSplit: Bool,
+                        focusedSplitInsertion: SplitInsertion? = nil) -> Self? {
+        guard let focusedTabId else { return nil }
         if selectedTabId == focusedTabId {
-            return .openNewPartner
+            guard focusedTabIsInSplit else { return .openNewPartner }
+            return focusedSplitInsertion.map { .openNewPane($0) }
         }
-        return .splitWithFocused(tabId: focusedTabId)
+        guard !selectedTabIsInSplit else { return nil }
+        guard focusedTabIsInSplit else { return .splitWithFocused(tabId: focusedTabId) }
+        return focusedSplitInsertion.map { .joinFocusedSplit($0) }
     }
 }
 
@@ -928,7 +1005,8 @@ extension Tab {
             self.pinnedUrl = dbModel.url.absoluteString
             self.pinnedCreatedDate = dbModel.createdDate
             self.splitPartnerGuid = dbModel.splitPartnerGuid
-            if dbModel.splitPartnerGuid?.isEmpty == false {
+            self.splitPaneGuids = dbModel.decodedSplitPaneGuids
+            if dbModel.splitPartnerGuid?.isEmpty == false || !self.splitPaneGuids.isEmpty {
                 self.splitLayout = dbModel.layout.flatMap(SplitLayout.init(rawValue:)) ?? .vertical
             }
             self.lastSeen = dbModel.lastSeen
@@ -937,6 +1015,11 @@ extension Tab {
 }
 
 extension Tab {
+    /// True when this pinned record is persisted as part of a split.
+    var hasPersistedSplitLink: Bool {
+        splitPartnerGuid?.isEmpty == false || !splitPaneGuids.isEmpty
+    }
+
     var isPinnedOrInDB: Bool {
         return isPinned || guidInLocalDB?.isEmpty ?? true == false
     }

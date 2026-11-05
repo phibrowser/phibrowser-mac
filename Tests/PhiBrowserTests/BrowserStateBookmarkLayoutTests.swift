@@ -81,39 +81,38 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
             index: 1,
             webContentView: rightWrapper
         )
-        let cell = SidebarSplitPairCellView()
-        cell.configure(with: SplitPairSidebarItem(
+        let cell = SidebarSplitCellView()
+        cell.configure(with: SplitSidebarItem(
             groupId: "split-1-2",
-            leftTab: leftTab,
-            rightTab: rightTab,
+            panes: [leftTab, rightTab],
             browserState: nil
         ))
 
-        XCTAssertEqual(cell.faviconOpacity(isLeft: true), 1)
-        XCTAssertEqual(cell.faviconOpacity(isLeft: false), 1)
+        XCTAssertEqual(cell.faviconOpacity(paneIndex: 0), 1)
+        XCTAssertEqual(cell.faviconOpacity(paneIndex: 1), 1)
 
         defaults.set(false, forKey: key)
         NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: defaults)
         XCTAssertTrue(waitUntil {
-            cell.faviconOpacity(isLeft: true) == 1 && cell.faviconOpacity(isLeft: false) == 1
+            cell.faviconOpacity(paneIndex: 0) == 1 && cell.faviconOpacity(paneIndex: 1) == 1
         })
 
         leftWrapper.isUnloaded = false
         rightWrapper.isDiscarded = true
         XCTAssertTrue(waitUntil { !leftTab.isUnloaded && rightTab.isDiscarded })
-        XCTAssertEqual(cell.faviconOpacity(isLeft: true), 1)
-        XCTAssertEqual(cell.faviconOpacity(isLeft: false), 1)
+        XCTAssertEqual(cell.faviconOpacity(paneIndex: 0), 1)
+        XCTAssertEqual(cell.faviconOpacity(paneIndex: 1), 1)
 
         defaults.set(true, forKey: key)
         NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: defaults)
         XCTAssertTrue(waitUntil {
-            cell.faviconOpacity(isLeft: true) == 1 &&
-                cell.faviconOpacity(isLeft: false) == 1
+            cell.faviconOpacity(paneIndex: 0) == 1 &&
+                cell.faviconOpacity(paneIndex: 1) == 1
         })
 
         cell.prepareForReuse()
-        XCTAssertEqual(cell.faviconOpacity(isLeft: true), 1)
-        XCTAssertEqual(cell.faviconOpacity(isLeft: false), 1)
+        XCTAssertEqual(cell.faviconOpacity(paneIndex: 0), 1)
+        XCTAssertEqual(cell.faviconOpacity(paneIndex: 1), 1)
     }
 
     func testSwitchingToComfortableDetachesOpenBookmarkTab() throws {
@@ -170,10 +169,9 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
                             index: 1,
                             title: "Secondary")
         let split = SplitGroup(id: "split-comfortable",
-                               primaryTabId: primary.guid,
-                               secondaryTabId: secondary.guid,
+                               tabIds: [primary.guid, secondary.guid],
                                layout: .vertical,
-                               ratio: 0.5)
+                               fractions: [0.5, 0.5])
         state.tabs = [primary, secondary]
         state.splits = [split]
         state.splitBookmarkBindings[bookmarkGuid] = split.id

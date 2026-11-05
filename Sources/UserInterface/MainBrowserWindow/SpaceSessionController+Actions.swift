@@ -312,11 +312,11 @@ extension SpaceSessionController {
         guard let tab = state.pageCommandTarget,
               let url = tab.url, !url.isEmpty else { return }
 
-        // When the focused tab is one half of a split, bookmark the whole pair
+        // When the focused tab is a pane of a split, bookmark the whole split
         // (matching the right-click "Add Split to Bookmark"), keyed off the
-        // split's primary pane so the toggle round-trips with `openBookmark`.
+        // split's first pane so the toggle round-trips with `openBookmark`.
         if let group = state.splitGroup(forTabId: tab.guid),
-           let primaryTab = state.tabs.first(where: { $0.guid == group.primaryTabId }),
+           let primaryTab = state.tabs.first(where: { $0.guid == group.firstTabId }),
            let primaryURL = primaryTab.url, !primaryURL.isEmpty {
             if let existing = state.bookmarkManager.findSplitBookmark(byPrimaryURL: primaryURL) {
                 presentBookmarkEditor(for: existing)
@@ -566,22 +566,22 @@ extension SpaceSessionController: NSMenuItemValidation {
             return
         }
 
-        // Split cells render both panes as a single merged item, so Close on
-        // that cell should dispose of both live Chromium tabs (the split
+        // Split cells render every pane as a single merged item, so Close on
+        // that cell should dispose of all its live Chromium tabs (the split
         // dissolves as a side-effect). Pinned records stay in place, matching
         // Close-on-a-pinned-tab behavior.
         //   - Live path: menu fires off a live tab in a `SplitGroup` (pinned
         //     or not).
-        //   - Persisted path: menu fires off a pinned record whose partner
-        //     is tracked via `splitPartnerGuid`; either pane may be live.
+        //   - Persisted path: menu fires off a pinned record whose split is
+        //     tracked persistently; any pane may be live.
         let liveTabs: [Tab]
         if let group = browserState.splitGroup(forTabId: tab.guid) {
-            liveTabs = [group.primaryTabId, group.secondaryTabId]
+            liveTabs = group.tabIds
                 .compactMap { id in browserState.tabs.first(where: { $0.guid == id }) }
         } else if let dbGuid = tab.guidInLocalDB, !dbGuid.isEmpty,
                   let pinnedSelf = browserState.pinnedTabs.first(where: { $0.guidInLocalDB == dbGuid }),
-                  let (leftDB, rightDB) = browserState.pinnedSplitDBPair(forPinnedTab: pinnedSelf) {
-            liveTabs = [leftDB, rightDB]
+                  let dbGuids = browserState.pinnedSplitDBGuids(forPinnedTab: pinnedSelf) {
+            liveTabs = dbGuids
                 .compactMap { db in browserState.tabs.first(where: { $0.guidInLocalDB == db }) }
         } else {
             liveTabs = []
@@ -638,10 +638,10 @@ extension SpaceSessionController: NSMenuItemValidation {
     /// hasn't been recreated yet (neither pane is currently open).
     @MainActor
     @objc func unpinClosedPinnedSplit(_ item: NSMenuItem) {
-        guard let pair = item.representedObject as? [String], pair.count == 2 else {
+        guard let dbGuids = item.representedObject as? [String], dbGuids.count >= 2 else {
             return
         }
-        browserState.unpinClosedPinnedSplit(leftDB: pair[0], rightDB: pair[1])
+        browserState.unpinClosedPinnedSplit(dbGuids: dbGuids)
     }
     
     

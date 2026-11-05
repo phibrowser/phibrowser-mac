@@ -199,10 +199,9 @@ final class BookmarkFaviconOriginNavigationTests: XCTestCase {
         )
         let split = SplitGroup(
             id: "bookmark-split",
-            primaryTabId: primary.guid,
-            secondaryTabId: secondary.guid,
+            tabIds: [primary.guid, secondary.guid],
             layout: .vertical,
-            ratio: 0.5
+            fractions: [0.5, 0.5]
         )
         state.tabs = [primary, secondary]
         state.splits = [split]

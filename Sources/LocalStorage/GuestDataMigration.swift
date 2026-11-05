@@ -79,6 +79,7 @@ struct GuestDataMigrationBookmarkRecord: Codable, Equatable, Sendable {
     let source: Int
     let secondaryURL: URL?
     let secondaryTitle: String?
+    var splitExtraPanes: [SplitBookmarkExtraPane]? = nil
     let layout: String?
     let lastSeen: Date?
 }
@@ -102,6 +103,7 @@ struct GuestDataMigrationPinnedTabRecord: Codable, Equatable, Sendable {
     let secondaryURL: URL?
     let secondaryTitle: String?
     let splitPartnerGUID: String?
+    var splitPaneGUIDs: [String]? = nil
     let layout: String?
     let lastSeen: Date?
     let lineageID: String
@@ -155,6 +157,7 @@ struct GuestDataMigrationPinnedTarget: Codable, Equatable, Sendable {
     let targetSpaceID: String?
     let targetIndex: Int
     let targetSplitPartnerGUID: String?
+    var targetSplitPaneGUIDs: [String]? = nil
     let shouldInsert: Bool
     let isDormant: Bool
 }
@@ -1251,6 +1254,7 @@ extension LocalStore {
                     source: model.source,
                     secondaryURL: model.secondaryUrl,
                     secondaryTitle: model.secondaryTitle,
+                    splitExtraPanes: model.decodedSplitExtraPanes,
                     layout: model.layout,
                     lastSeen: model.lastSeen
                 )
@@ -1290,6 +1294,7 @@ extension LocalStore {
                     secondaryURL: model.secondaryUrl,
                     secondaryTitle: model.secondaryTitle,
                     splitPartnerGUID: model.splitPartnerGuid,
+                    splitPaneGUIDs: model.decodedSplitPaneGuids,
                     layout: model.layout,
                     lastSeen: model.lastSeen,
                     lineageID: model.pinLineageId ?? model.guid,
@@ -1861,6 +1866,7 @@ extension LocalStore {
                 model.source = source.source
                 model.secondaryUrl = source.secondaryURL
                 model.secondaryTitle = source.secondaryTitle
+                model.decodedSplitExtraPanes = source.splitExtraPanes ?? []
                 model.layout = source.layout
                 model.lastSeen = source.lastSeen
                 model.icon = source.icon ?? "default"
@@ -1914,6 +1920,7 @@ extension LocalStore {
                 model.secondaryUrl = source.secondaryURL
                 model.secondaryTitle = source.secondaryTitle
                 model.splitPartnerGuid = mapping.targetSplitPartnerGUID
+                model.decodedSplitPaneGuids = mapping.targetSplitPaneGUIDs ?? []
                 model.layout = source.layout
                 model.lastSeen = source.lastSeen
                 model.icon = source.icon ?? "default"
@@ -2468,6 +2475,20 @@ private extension LocalStore {
 
         for index in result.indices {
             let mapping = result[index]
+            // A wider split's list resolves within the same projected owner,
+            // like the partner link below.
+            let owner = GuestMigrationPinnedOwner(
+                profileID: mapping.targetProfileID,
+                spaceID: mapping.targetSpaceID
+            )
+            if let paneSourceGUIDs = sourceByGUID[mapping.sourceGUID]?.splitPaneGUIDs,
+               !paneSourceGUIDs.isEmpty {
+                result[index].targetSplitPaneGUIDs = paneSourceGUIDs.compactMap { paneSourceGUID in
+                    mappingIndexByProjectedKey[
+                        GuestMigrationProjectedPinKey(sourceGUID: paneSourceGUID, owner: owner)
+                    ].map { paneTargetIndex in result[paneTargetIndex].targetGUID }
+                }
+            }
             guard let sourceRow = sourceByGUID[mapping.sourceGUID],
                   let partnerSourceGUID = sourceRow.splitPartnerGUID,
                   let partnerIndex = mappingIndexByProjectedKey[

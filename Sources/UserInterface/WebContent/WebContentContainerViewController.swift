@@ -268,8 +268,23 @@ class WebContentContainerViewController: NSViewController {
                   let current = self.currentWebContentController else { return nil }
             return current.pageContentAreaFrame(in: view)
         }
+        view.onAddPanePreviewChanged = { [weak self] slot in
+            guard let self else { return }
+            let current = self.currentWebContentController
+            if self.addPanePreviewController !== current {
+                self.addPanePreviewController?.setSplitInsertionPreview(slot: nil)
+            }
+            self.addPanePreviewController = slot == nil ? nil : current
+            current?.setSplitInsertionPreview(slot: slot)
+        }
+        view.onAddPaneCommitted = { [weak self] slot in
+            self?.currentWebContentController?.holdSplitInsertionPreview(slot: slot)
+        }
         return view
     }()
+
+    /// The controller whose split is showing the add-a-pane preview.
+    private weak var addPanePreviewController: WebContentViewController?
 
     /// Exposed so the horizontal TabStrip (comfortable layout) can show the
     /// split-drop hint while a tab is being torn out — TabStrip drives drags
@@ -2283,14 +2298,14 @@ class WebContentContainerViewController: NSViewController {
     /// tab's own (offscreen) controller would dump DevTools into a hostView
     /// that isn't in the window hierarchy.
     private func mountedSplitPane(forInspectedTabId tabId: Int)
-        -> (controller: WebContentViewController, pane: SplitPaneHostView.Pane)? {
+        -> (controller: WebContentViewController, pane: Int)? {
         guard let state = browserState,
               let group = state.splitGroup(forTabId: tabId),
+              let slot = group.slot(of: tabId),
               let mounted = currentWebContentController,
               let mountedTabId = mounted.associatedTab?.guid,
               group.contains(tabId: mountedTabId) else { return nil }
-        let pane: SplitPaneHostView.Pane = group.primaryTabId == tabId ? .primary : .secondary
-        return (mounted, pane)
+        return (mounted, slot)
     }
 
     /// Called when Chromium attaches docked DevTools to a tab.

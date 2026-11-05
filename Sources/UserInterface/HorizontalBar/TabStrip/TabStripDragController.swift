@@ -51,9 +51,10 @@ struct TabStripMetricsSnapshot {
     /// cursor (which can sit anywhere within the dragged tab,
     /// depending on where the user grabbed it).
     let draggedTabFrameInNormal: CGRect?
-    /// Lower-index position of every adjacent split pair in `normalTabFrames`.
-    /// Used to stop the drop indicator from landing between the two panes.
-    let normalSplitPairLowerIndices: Set<Int>
+    /// Contiguous split runs in `normalTabFrames` as (lowest index, pane
+    /// count) — `BrowserState.splitRunsInNormalTabs()`. Used to stop the
+    /// drop indicator from landing between two panes of a split.
+    let normalSplitRuns: [(lower: Int, count: Int)]
 }
 
 /// Delegate for drag-driven tab-strip updates.
@@ -63,7 +64,7 @@ protocol TabStripDragDelegate: AnyObject {
     ///   - pinnedExcludedIndices: Source tab indices to hide in the pinned zone.
     ///   - pinnedGapIndex: Gap position in the pinned zone.
     ///   - normalExcludedIndices: Source tab indices to hide in the normal zone.
-    ///     For split-pair drags this set contains both tab indices so the pair
+    ///     For split drags this set contains every pane's index so the split
     ///     lifts out as a unit.
     ///   - normalGapIndex: Gap position in the normal zone.
     ///   - normalGapWidth: Gap width for the normal zone.
@@ -122,7 +123,7 @@ final class TabStripDragController {
         sourceZone: TabContainerType,
         mouseLocation: CGPoint,
         tabFrame: CGRect,
-        siblingSourceIndex: Int? = nil,
+        siblingSourceIndices: Set<Int> = [],
         sourceExcludedIndices: Set<Int>? = nil,
         draggingTabIds: [Int]? = nil,
         draggingVisualSlotCount: Int? = nil
@@ -134,7 +135,7 @@ final class TabStripDragController {
             sourceIndex: sourceIndex,
             initialMouseLocation: mouseLocation,
             initialTabFrame: tabFrame,
-            siblingSourceIndex: siblingSourceIndex,
+            siblingSourceIndices: siblingSourceIndices,
             sourceExcludedIndices: sourceExcludedIndices,
             draggingTabIds: draggingTabIds,
             draggingVisualSlotCount: draggingVisualSlotCount
@@ -573,8 +574,8 @@ final class TabStripDragController {
         var normalGapIndex: Int?
         var normalGapWidth: CGFloat?
 
-        // Hide the source tab — and its split partner, if any — in its
-        // original zone so the whole pair lifts together.
+        // Hide the source tab — and the other panes of its split, if any —
+        // in its original zone so the whole split lifts together.
         switch context.sourceContainerType {
         case .pinned:
             pinnedExcludedIndices.formUnion(sourceExclusionSet(for: context))
@@ -583,7 +584,7 @@ final class TabStripDragController {
         }
 
         // Show the insertion gap in the target zone. The width is based on
-        // visible drag units: a split pair remains one merged slot, while a
+        // visible drag units: a merged split remains one slot, while a
         // regular multi-selection block reserves one slot per visible proxy.
         switch context.targetContainerType {
         case .pinned:
@@ -686,11 +687,11 @@ final class TabStripDragController {
                     chipFrames: metrics.chipFrames
                 )
             }
-            let snappedIndex = snapGapOutsideSplitPair(
+            let snappedIndex = snapGapOutsideSplit(
                 rawIndex: rawIndex,
                 localX: localX,
                 tabFrames: metrics.normalTabFrames,
-                splitPairLowerIndices: metrics.normalSplitPairLowerIndices
+                splitRuns: metrics.normalSplitRuns
             )
             return (.normal, snappedIndex)
         } else {
@@ -812,7 +813,7 @@ final class TabStripDragController {
         }
         // Past every entry: append after every record, not after the last
         // entry — a merged split host's `afterIndex` points between the
-        // pair's records when the pair sits at the strip end.
+        // split's records when the split sits at the strip end.
         return tabFrames.count
     }
 
@@ -821,7 +822,7 @@ final class TabStripDragController {
     ///   - localX: Pointer x-position in container coordinates.
     ///   - tabFrames: Tab frames in container coordinates.
     ///   - excludedIndices: Source tab indices excluded from layout. Contains
-    ///     both pair members during a split-pair drag.
+    ///     every pane during a split drag.
     /// - Returns: Target gap index.
     func calculateGapIndex(
         localX: CGFloat,
@@ -876,38 +877,43 @@ final class TabStripDragController {
 
         // Insert at the end when the pointer is past every visible tab.
         // Append after every record (`tabFrames.count`), not after the
-        // last visible one: trailing zero-width records (a merged split
-        // pair's second pane) sit between the two, and
-        // `lastVisible.index + 1` would land between the pair's records.
+        // last visible one: trailing zero-width records (a merged split's
+        // collapsed panes) sit between the two, and
+        // `lastVisible.index + 1` would land between the split's records.
         return tabFrames.count
     }
 
-    /// Source-zone exclusion set: the dragged tab and (for split pairs) its
-    /// partner so the gap-index math ignores both placeholders.
+    /// Source-zone exclusion set: the dragged tab and (for splits) the other
+    /// panes so the gap-index math ignores every placeholder.
     private func sourceExclusionSet(for context: TabDragContext) -> Set<Int> {
         context.sourceExcludedIndices
     }
 
-    /// If the raw insertion index would land strictly between the two members
-    /// of an adjacent split pair, snap it to the side whose tab the pointer is
-    /// currently over. The same snapped index drives both the drop indicator
-    /// and the eventual commit, so what the user sees matches what they get.
-    private func snapGapOutsideSplitPair(
+    /// If the raw insertion index would land strictly inside a contiguous
+    /// split run (between two of its panes), snap it to the run's edge on the
+    /// side of the run's visual midpoint the pointer is currently over. The
+    /// same snapped index drives both the drop indicator and the eventual
+    /// commit, so what the user sees matches what they get.
+    private func snapGapOutsideSplit(
         rawIndex: Int,
         localX: CGFloat,
         tabFrames: [CGRect],
-        splitPairLowerIndices: Set<Int>
+        splitRuns: [(lower: Int, count: Int)]
     ) -> Int {
-        let lo = rawIndex - 1
-        guard splitPairLowerIndices.contains(lo),
-              lo + 1 < tabFrames.count else {
+        guard let run = splitRuns.first(where: {
+            rawIndex > $0.lower && rawIndex < $0.lower + $0.count
+        }), run.lower + run.count <= tabFrames.count else {
             return rawIndex
         }
-        let frameLo = tabFrames[lo]
-        let frameHi = tabFrames[lo + 1]
-        guard frameLo != .zero, frameHi != .zero else { return rawIndex }
-        let pairMid = (frameLo.midX + frameHi.midX) / 2
-        return localX < pairMid ? lo : lo + 2
+        // The run's visible extent: a merged split shows only its host
+        // frame (the other panes are `.zero` placeholders); an unmerged one
+        // shows every pane.
+        let extent = (run.lower..<(run.lower + run.count))
+            .map { tabFrames[$0] }
+            .filter { $0 != .zero }
+            .reduce(CGRect.null) { $0.union($1) }
+        guard !extent.isNull else { return rawIndex }
+        return localX < extent.midX ? run.lower : run.lower + run.count
     }
 
     /// Converts a visible-array index back into the underlying tab index.

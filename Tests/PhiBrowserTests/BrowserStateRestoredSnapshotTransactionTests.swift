@@ -88,18 +88,15 @@ final class BrowserStateRestoredSnapshotTransactionTests: XCTestCase {
         }
         for action in splitActions {
             switch action {
-            case let .created(splitId, primaryTabId, secondaryTabId, layout, ratio):
+            case let .created(splitId, tabIds, layout, fractions):
                 state.handleSplitCreated(splitId: splitId,
-                                         primaryTabId: primaryTabId,
-                                         secondaryTabId: secondaryTabId,
+                                         tabIds: tabIds,
                                          layout: layout,
-                                         ratio: ratio)
-            case let .visualsChanged(splitId, layout, ratio):
-                state.handleSplitVisualsChanged(splitId: splitId, layout: layout, ratio: ratio)
-            case let .contentsChanged(splitId, primaryTabId, secondaryTabId):
-                state.handleSplitContentsChanged(splitId: splitId,
-                                                 primaryTabId: primaryTabId,
-                                                 secondaryTabId: secondaryTabId)
+                                         fractions: fractions)
+            case let .visualsChanged(splitId, layout, fractions):
+                state.handleSplitVisualsChanged(splitId: splitId, layout: layout, fractions: fractions)
+            case let .contentsChanged(splitId, tabIds):
+                state.handleSplitContentsChanged(splitId: splitId, tabIds: tabIds)
             case .removed(let splitId):
                 state.handleSplitRemoved(splitId: splitId)
             case let .openLinkAsSplitPartner(partnerTabId, url):
@@ -289,10 +286,9 @@ final class BrowserStateRestoredSnapshotTransactionTests: XCTestCase {
         ]
         let splitActions: [SplitEvent.SplitAction] = [
             .created(splitId: "split-1",
-                     primaryTabId: 51,
-                     secondaryTabId: 52,
+                     tabIds: [51, 52],
                      layout: .vertical,
-                     ratio: 0.5),
+                     fractions: [0.5, 0.5]),
         ]
 
         let reference = try makeBrowserState()
@@ -309,17 +305,16 @@ final class BrowserStateRestoredSnapshotTransactionTests: XCTestCase {
 
         assertFinalStatesMatch(transactional, reference)
         XCTAssertEqual(transactional.splits.count, 1)
-        XCTAssertEqual(transactional.splits.first?.primaryTabId, 51)
-        XCTAssertEqual(transactional.splits.first?.secondaryTabId, 52)
+        XCTAssertEqual(transactional.splits.first?.tabIds, [51, 52])
         // Split members stay adjacent in the normal order.
         XCTAssertEqual(transactional.normalTabs.map(\.guid), [50, 51, 52])
     }
 
-    func testRestoredSplitPullsSecondaryNextToItsPrimary() throws {
-        // Chromium's strip keeps the split's two members apart; the Mac side
-        // deliberately pulls the secondary up next to its primary
-        // (`enforceSplitAdjacency`), so the restored visible order diverges
-        // from strip order on purpose.
+    func testRestoredSplitPullsLaterPanesNextToItsFirstPane() throws {
+        // Chromium's strip keeps the split's panes apart; the Mac side
+        // deliberately pulls the later panes up behind the first one in
+        // slot order (`enforceSplitAdjacency`), so the restored visible
+        // order diverges from strip order on purpose.
         let specs = [
             RestoreTabSpec(guid: 110),
             RestoreTabSpec(guid: 111),
@@ -328,10 +323,9 @@ final class BrowserStateRestoredSnapshotTransactionTests: XCTestCase {
         ]
         let splitActions: [SplitEvent.SplitAction] = [
             .created(splitId: "split-apart",
-                     primaryTabId: 110,
-                     secondaryTabId: 112,
+                     tabIds: [110, 112],
                      layout: .vertical,
-                     ratio: 0.5),
+                     fractions: [0.5, 0.5]),
         ]
 
         let state = try makeBrowserState()

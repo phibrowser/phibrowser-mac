@@ -1058,8 +1058,8 @@ final class BookmarkManagerViewController: NSViewController {
               !bookmark.isFolder,
               let primaryURL = bookmark.url,
               !primaryURL.isEmpty else { return }
-        if let secondaryURL = bookmark.secondaryUrl, !secondaryURL.isEmpty {
-            browserState.openTwoURLsAsSplit(primaryURL: primaryURL, secondaryURL: secondaryURL)
+        if bookmark.secondaryUrl?.isEmpty == false {
+            browserState.openURLsAsSplit(bookmark.splitPaneURLs)
         } else {
             browserState.createTab(primaryURL)
         }

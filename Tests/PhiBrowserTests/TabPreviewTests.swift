@@ -149,10 +149,9 @@ final class TabPreviewTests: XCTestCase {
         state.splits = [
             SplitGroup(
                 id: "split-10-11",
-                primaryTabId: 10,
-                secondaryTabId: 11,
+                tabIds: [10, 11],
                 layout: .vertical,
-                ratio: 0.5
+                fractions: [0.5, 0.5]
             ),
         ]
         state.focusingTab = first

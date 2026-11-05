@@ -14,6 +14,7 @@ private struct PinnedTabScopeSyncVariant: Equatable {
     let partnerURL: String?
     let partnerTitle: String?
     let partnerFavicon: Data?
+    let splitPaneLineageIds: [String]
     let layout: SplitLayout?
 }
 
@@ -105,6 +106,9 @@ extension BrowserState {
             partnerURL: partner.flatMap { $0.pinnedUrl ?? $0.url },
             partnerTitle: partner?.storedTitle,
             partnerFavicon: partner?.cachedFaviconData,
+            splitPaneLineageIds: tab.splitPaneGuids.compactMap { paneGuid in
+                collection.first(where: { $0.guidInLocalDB == paneGuid })?.pinnedLineageId
+            },
             layout: tab.splitLayout ?? partner?.splitLayout
         )
     }

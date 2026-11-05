@@ -6,11 +6,46 @@
 import SwiftData
 import Foundation
 
-typealias TabDataModel = TabDataModelSchemaV13.TabDataModel
-typealias ProfileModel = TabDataModelSchemaV13.ProfileModel
-typealias SpaceModel = TabDataModelSchemaV13.SpaceModel
-typealias SpaceURLRule = TabDataModelSchemaV13.SpaceURLRule
-typealias BrowserDataSettingsModel = TabDataModelSchemaV13.BrowserDataSettingsModel
+typealias TabDataModel = TabDataModelSchemaV14.TabDataModel
+typealias ProfileModel = TabDataModelSchemaV14.ProfileModel
+typealias SpaceModel = TabDataModelSchemaV14.SpaceModel
+typealias SpaceURLRule = TabDataModelSchemaV14.SpaceURLRule
+typealias BrowserDataSettingsModel = TabDataModelSchemaV14.BrowserDataSettingsModel
+
+/// A split bookmark's pane after `url` and `secondaryUrl`.
+struct SplitBookmarkExtraPane: Codable, Equatable, Hashable, Sendable {
+    var url: String
+    var title: String?
+}
+
+/// The JSON text form of the split-pane columns. An empty list is stored as nil, and text that
+/// doesn't decode reads as empty, so a damaged row falls back to a pair or a solo pin.
+enum SplitPaneColumnCoding {
+    static func encode<Value: Encodable>(_ values: [Value]) -> String? {
+        guard !values.isEmpty, let data = try? JSONEncoder().encode(values) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func decode<Value: Decodable>(_ text: String?) -> [Value] {
+        guard let data = text?.data(using: .utf8),
+              let values = try? JSONDecoder().decode([Value].self, from: data) else { return [] }
+        return values
+    }
+}
+
+extension TabDataModel {
+    /// Members of a pinned split of three or four panes; empty otherwise.
+    var decodedSplitPaneGuids: [String] {
+        get { SplitPaneColumnCoding.decode(splitPaneGuids) }
+        set { splitPaneGuids = SplitPaneColumnCoding.encode(newValue) }
+    }
+
+    /// A split bookmark's panes after the first two; empty otherwise.
+    var decodedSplitExtraPanes: [SplitBookmarkExtraPane] {
+        get { SplitPaneColumnCoding.decode(splitExtraPanes) }
+        set { splitExtraPanes = SplitPaneColumnCoding.encode(newValue) }
+    }
+}
 
 extension TabDataModel: CustomStringConvertible {
     var description: String {
@@ -34,11 +69,12 @@ enum TabDataModelMigrationPlan: SchemaMigrationPlan {
             TabDataModelSchemaV11.self,
             TabDataModelSchemaV12.self,
             TabDataModelSchemaV13.self,
+            TabDataModelSchemaV14.self,
         ]
     }
 
     static var stages: [MigrationStage] {
-        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10, migrateV10toV11, migrateV11toV12, migrateV12toV13]
+        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10, migrateV10toV11, migrateV11toV12, migrateV12toV13, migrateV13toV14]
     }
 
     nonisolated(unsafe) static var v1TypeMapping: [String: Int] = [:]
@@ -205,6 +241,14 @@ enum TabDataModelMigrationPlan: SchemaMigrationPlan {
     static let migrateV12toV13 = MigrationStage.lightweight(
         fromVersion: TabDataModelSchemaV12.self,
         toVersion: TabDataModelSchemaV13.self
+    )
+
+    /// Additive: `TabDataModel.splitPaneGuids` and `splitExtraPanes`, the persisted form of a
+    /// split with three or four panes. Not backfilled: every existing split is a pair, which
+    /// keeps its `splitPartnerGuid` link or `secondaryUrl`.
+    static let migrateV13toV14 = MigrationStage.lightweight(
+        fromVersion: TabDataModelSchemaV13.self,
+        toVersion: TabDataModelSchemaV14.self
     )
 
     static let migrateV2toV3 = MigrationStage.custom(

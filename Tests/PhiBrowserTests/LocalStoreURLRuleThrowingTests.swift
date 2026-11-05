@@ -171,20 +171,21 @@ final class LocalStoreURLRuleThrowingTests: XCTestCase {
     // If migrateV11toV12 or migrateV12toV13 is omitted from stages, schemas and the typealias
     // still name the newest schema, so SwiftData can infer a lightweight migration while skipping
     // didMigrate's syncId backfill entirely. This is the only detector of that omission.
-    func testMigrationPlanEndsAtV13WithOneStagePerUpgrade() throws {
+    func testMigrationPlanEndsAtV14WithOneStagePerUpgrade() throws {
         let schemas = TabDataModelMigrationPlan.schemas
         let stages = TabDataModelMigrationPlan.stages
 
-        XCTAssertEqual(schemas.count, 13)
+        XCTAssertEqual(schemas.count, 14)
         XCTAssertEqual(stages.count, schemas.count - 1)
         let last = try XCTUnwrap(schemas.last)
-        XCTAssertEqual(ObjectIdentifier(last), ObjectIdentifier(TabDataModelSchemaV13.self))
+        XCTAssertEqual(ObjectIdentifier(last), ObjectIdentifier(TabDataModelSchemaV14.self))
         XCTAssertEqual(TabDataModelSchemaV12.versionIdentifier, Schema.Version(12, 0, 0))
         XCTAssertEqual(TabDataModelSchemaV13.versionIdentifier, Schema.Version(13, 0, 0))
-        XCTAssertEqual(TabDataModelSchemaV13.models.count, 5)
+        XCTAssertEqual(TabDataModelSchemaV14.versionIdentifier, Schema.Version(14, 0, 0))
+        XCTAssertEqual(TabDataModelSchemaV14.models.count, 5)
         // The compatibility manifest gates the downgrade path and must move with the schema.
-        XCTAssertEqual(LocalStore.compatibilityConfiguration.currentStoreFormatVersion, 13)
-        XCTAssertTrue(LocalStore.compatibilityConfiguration.canReadStoreFormatVersion(13))
+        XCTAssertEqual(LocalStore.compatibilityConfiguration.currentStoreFormatVersion, 14)
+        XCTAssertTrue(LocalStore.compatibilityConfiguration.canReadStoreFormatVersion(14))
     }
 
     // MARK: - CASE C-10: Default deletedDate read filtering (R-M3-4a-51)

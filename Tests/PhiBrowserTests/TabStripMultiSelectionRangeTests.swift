@@ -49,7 +49,7 @@ final class TabStripMultiSelectionRangeTests: XCTestCase {
     }
 
     func testSplitPairContributesBothPanesAsOneUnit() {
-        let split = TabStripMultiSelectionUnit.splitPair(left: 2, right: 3)
+        let split = TabStripMultiSelectionUnit.split(panes: [2, 3])
         let units: [TabStripMultiSelectionUnit] = [
             .tab(1),
             split,

@@ -8,39 +8,63 @@ import Combine
 import SnapKit
 import SwiftUI
 
-/// A single pinned-grid cell that represents a pinned split — both panes
-/// rendered as two favicons side-by-side inside one rounded background, so
-/// the pair reads as one item. The cell shares the dimensions and chrome of
+/// A single pinned-grid cell that represents a pinned split — every pane
+/// rendered as a favicon side-by-side inside one rounded background, so the
+/// panes read as one item. The cell shares the dimensions and chrome of
 /// `PinnedTabItem`; click and right-click route through the first pane (the
 /// left/top tab), which carries the split-aware context menu.
 class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     static var reuseIdentifier: NSUserInterfaceItemIdentifier { .init(rawValue: "\(Self.self)") }
-    private static let faviconSize: CGFloat = 16
     private static let faviconCornerRadius: CGFloat = 3
-    private static let defaultFaviconCenterOffset: CGFloat = 10
-    private static let separatedFaviconCenterOffset: CGFloat = 11
 
-    private var leftIconView: TabFaviconImageView!
-    private var rightIconView: TabFaviconImageView!
+    /// Favicon geometry for a pane count: wider splits use smaller favicons
+    /// set closer together, so four panes still fit the grid cell.
+    private struct PaneMetrics {
+        let faviconSize: CGFloat
+        let centerSpacing: CGFloat
+        /// Spacing that keeps every favicon's dashed outline apart.
+        let separatedCenterSpacing: CGFloat
+
+        static func forPaneCount(_ count: Int) -> PaneMetrics {
+            switch count {
+            case ...2: return PaneMetrics(faviconSize: 16, centerSpacing: 20, separatedCenterSpacing: 22)
+            case 3: return PaneMetrics(faviconSize: 14, centerSpacing: 17, separatedCenterSpacing: 19)
+            default: return PaneMetrics(faviconSize: 12, centerSpacing: 14, separatedCenterSpacing: 16)
+            }
+        }
+    }
+
+    /// One favicon position in the cell. Every slot exists up front; a split
+    /// uses as many as it has panes and hides the rest.
+    @MainActor
+    private final class PaneSlot {
+        let statusModel = TabStatusModel()
+        var iconView: TabFaviconImageView!
+        var outlineHost: TabDecorativeHostingView?
+        /// The favicon size `outlineHost` was built for.
+        var outlineFaviconSize: CGFloat?
+        var centerXConstraint: Constraint?
+        var tab: Tab?
+        var faviconHandle: ProfileScopedFaviconLoadHandle?
+
+        func clearFaviconHandle() {
+            faviconHandle?.cancel()
+            faviconHandle = nil
+        }
+    }
+
+    private var slots: [PaneSlot] = []
+    private var activeSlots: ArraySlice<PaneSlot> { slots.prefix(panes.count) }
+    private var panes: [Tab] = []
     private var backgroundView: HoverableView!
     private var openIndicatorHost: TabDecorativeHostingView!
-    private var leftDiscardedOutlineHost: TabDecorativeHostingView!
-    private var rightDiscardedOutlineHost: TabDecorativeHostingView!
     private var statusBadgeHost: TabDecorativeHostingView!
-    private var leftIconCenterXConstraint: Constraint?
-    private var rightIconCenterXConstraint: Constraint?
-    private let leftStatusModel = TabStatusModel()
-    private let rightStatusModel = TabStatusModel()
-    private var leftTab: Tab?
-    private var rightTab: Tab?
     private var cancellables = Set<AnyCancellable>()
-    private var leftFaviconHandle: ProfileScopedFaviconLoadHandle?
-    private var rightFaviconHandle: ProfileScopedFaviconLoadHandle?
     private let splitTabPreviewRegistration = SplitTabPreviewRegistration()
     private var showsSplitTabPreview = false
 
     /// Tab whose action runs when the cell is clicked (the pane the user
-    /// most recently interacted with, or the left pane as fallback).
+    /// most recently interacted with, or the first pane as fallback).
     var itemClicked: ((Tab?) -> Void)?
     var itemDoubleClicked: ((Tab?, NSEvent.ModifierFlags) -> Void)?
 
@@ -62,22 +86,18 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         super.prepareForReuse()
         populateContextMenu = nil
         cancellables.removeAll()
-        leftFaviconHandle?.cancel()
-        leftFaviconHandle = nil
-        rightFaviconHandle?.cancel()
-        rightFaviconHandle = nil
-        leftIconView.image = nil
-        rightIconView.image = nil
-        leftIconView.alphaValue = 1
-        rightIconView.alphaValue = 1
-        leftStatusModel.prepareForReuse()
-        rightStatusModel.prepareForReuse()
-        updateFaviconCenterOffset(separatesDashedOutlines: false)
+        for slot in slots {
+            slot.clearFaviconHandle()
+            slot.iconView.image = nil
+            slot.iconView.alphaValue = 1
+            slot.statusModel.prepareForReuse()
+            slot.tab = nil
+        }
+        panes = []
+        applyPaneLayout(separatesDashedOutlines: false)
         openIndicatorHost.isHidden = true
         openIndicatorHost.alphaValue = 1
         splitTabPreviewRegistration.invalidate()
-        leftTab = nil
-        rightTab = nil
     }
 
     private func setupUI() {
@@ -111,60 +131,34 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
             self?.updateToolTip()
         }
 
-        leftIconView = TabFaviconImageView(model: leftStatusModel, cornerRadius: Self.faviconCornerRadius)
-        rightIconView = TabFaviconImageView(model: rightStatusModel, cornerRadius: Self.faviconCornerRadius)
-
         view.addSubview(backgroundView)
-        backgroundView.addSubview(leftIconView)
-        backgroundView.addSubview(rightIconView)
+
+        slots = (0..<SplitGroup.maxPaneCount).map { _ in
+            let slot = PaneSlot()
+            slot.iconView = TabFaviconImageView(model: slot.statusModel, cornerRadius: Self.faviconCornerRadius)
+            backgroundView.addSubview(slot.iconView)
+            return slot
+        }
 
         openIndicatorHost = TabDecorativeHostingView(rootView: TabOpenIndicatorView())
         openIndicatorHost.isHidden = true
         backgroundView.addSubview(openIndicatorHost)
 
-        leftDiscardedOutlineHost = TabDecorativeHostingView(
-            rootView: TabDiscardedFaviconOutline(
-                model: leftStatusModel,
-                faviconSize: Self.faviconSize,
-                faviconCornerRadius: Self.faviconCornerRadius
-            )
-        )
-        rightDiscardedOutlineHost = TabDecorativeHostingView(
-            rootView: TabDiscardedFaviconOutline(
-                model: rightStatusModel,
-                faviconSize: Self.faviconSize,
-                faviconCornerRadius: Self.faviconCornerRadius
-            )
-        )
-        backgroundView.addSubview(leftDiscardedOutlineHost)
-        backgroundView.addSubview(rightDiscardedOutlineHost)
-
         backgroundView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
 
-        leftIconView.snp.makeConstraints { make in
-            make.centerY.equalToSuperview()
-            leftIconCenterXConstraint = make.centerX.equalToSuperview()
-                .offset(-Self.defaultFaviconCenterOffset).constraint
-            make.size.equalTo(CGSize(
-                width: Self.faviconSize,
-                height: Self.faviconSize
-            ))
-        }
-        rightIconView.snp.makeConstraints { make in
-            make.centerY.equalToSuperview()
-            rightIconCenterXConstraint = make.centerX.equalToSuperview()
-                .offset(Self.defaultFaviconCenterOffset).constraint
-            make.size.equalTo(CGSize(
-                width: Self.faviconSize,
-                height: Self.faviconSize
-            ))
+        for slot in slots {
+            slot.iconView.snp.makeConstraints { make in
+                make.centerY.equalToSuperview()
+                slot.centerXConstraint = make.centerX.equalToSuperview().constraint
+                make.size.equalTo(CGSize(width: 16, height: 16))
+            }
         }
 
         openIndicatorHost.snp.makeConstraints { make in
             make.centerX.equalToSuperview()
-            make.top.equalTo(leftIconView.snp.bottom)
+            make.top.equalTo(slots[0].iconView.snp.bottom)
                 .offset(TabOpenIndicatorMetrics.pinnedSpacing)
             make.size.equalTo(CGSize(
                 width: TabOpenIndicatorMetrics.diameter,
@@ -172,37 +166,9 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
             ))
         }
 
-        leftDiscardedOutlineHost.snp.makeConstraints { make in
-            make.center.equalTo(leftIconView)
-            make.size.equalTo(CGSize(
-                width: TabCornerBadgeMetrics.discardedOutlineSize(
-                    for: Self.faviconSize,
-                    cornerRadius: Self.faviconCornerRadius
-                ),
-                height: TabCornerBadgeMetrics.discardedOutlineSize(
-                    for: Self.faviconSize,
-                    cornerRadius: Self.faviconCornerRadius
-                )
-            ))
-        }
-        rightDiscardedOutlineHost.snp.makeConstraints { make in
-            make.center.equalTo(rightIconView)
-            make.size.equalTo(CGSize(
-                width: TabCornerBadgeMetrics.discardedOutlineSize(
-                    for: Self.faviconSize,
-                    cornerRadius: Self.faviconCornerRadius
-                ),
-                height: TabCornerBadgeMetrics.discardedOutlineSize(
-                    for: Self.faviconSize,
-                    cornerRadius: Self.faviconCornerRadius
-                )
-            ))
-        }
-
         statusBadgeHost = TabDecorativeHostingView(
             rootView: MergedTabCornerBadgeView(
-                primaryModel: leftStatusModel,
-                secondaryModel: rightStatusModel
+                models: slots.map(\.statusModel)
             )
         )
         view.addSubview(statusBadgeHost)
@@ -219,60 +185,48 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     }
 
     func configure(
-        leftTab: Tab,
-        rightTab: Tab,
+        panes: [Tab],
         browserState: BrowserState? = nil,
         themeProvider _: ThemeStateProvider
     ) {
-        self.leftTab = leftTab
-        self.rightTab = rightTab
+        let shownPanes = Array(panes.prefix(slots.count))
+        self.panes = shownPanes
         cancellables.removeAll()
-        leftFaviconHandle?.cancel()
-        leftFaviconHandle = nil
-        rightFaviconHandle?.cancel()
-        rightFaviconHandle = nil
-        leftStatusModel.configure(with: leftTab, in: browserState)
-        rightStatusModel.configure(with: rightTab, in: browserState)
-
-        Publishers.CombineLatest(leftTab.$hasWebContent, rightTab.$hasWebContent)
-        .map { $0 || $1 }
-        .removeDuplicates()
-        .receive(on: DispatchQueue.main)
-        .sink { [weak self] _ in
-            self?.updateSelectedState()
+        for (index, slot) in slots.enumerated() {
+            slot.clearFaviconHandle()
+            slot.statusModel.prepareForReuse()
+            slot.tab = index < shownPanes.count ? shownPanes[index] : nil
+            if let tab = slot.tab {
+                slot.statusModel.configure(with: tab, in: browserState)
+            }
         }
-        .store(in: &cancellables)
+        applyPaneLayout(separatesDashedOutlines: everyFaviconShowsDashedOutline)
 
-        updateFaviconCenterOffset(
-            separatesDashedOutlines: bothFaviconsShowDashedOutline
-        )
+        Publishers.MergeMany(shownPanes.map(\.$hasWebContent))
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateSelectedState()
+            }
+            .store(in: &cancellables)
 
         Publishers.CombineLatest(
-            Publishers.CombineLatest4(
-                leftStatusModel.$isDiscarded,
-                leftStatusModel.$isUnloaded,
-                rightStatusModel.$isDiscarded,
-                rightStatusModel.$isUnloaded
-            ),
+            Publishers.MergeMany(activeSlots.flatMap { [$0.statusModel.$isDiscarded, $0.statusModel.$isUnloaded] }),
             TabFaviconPresentation.dimmingEnabledPublisher
         )
-        .map { states, dimmingEnabled in
-            dimmingEnabled && (states.0 || states.1) && (states.2 || states.3)
-        }
-        .removeDuplicates()
         .receive(on: DispatchQueue.main)
-        .sink { [weak self] separatesDashedOutlines in
-            self?.updateFaviconCenterOffset(
-                separatesDashedOutlines: separatesDashedOutlines
+        .sink { [weak self] _, dimmingEnabled in
+            guard let self else { return }
+            self.applyPaneLayout(
+                separatesDashedOutlines: dimmingEnabled && self.everyFaviconShowsDashedOutline
             )
         }
         .store(in: &cancellables)
 
-        refreshFavicon(for: leftTab)
-        refreshFavicon(for: rightTab)
+        shownPanes.forEach { refreshFavicon(for: $0) }
         updateOpenIndicatorOpacity()
         if let browserState,
-           let target = SplitTabPreviewTarget.make(representing: leftTab, in: browserState) {
+           let first = shownPanes.first,
+           let target = SplitTabPreviewTarget.make(representing: first, in: browserState) {
             splitTabPreviewRegistration.configure(
                 anchorView: view,
                 target: target,
@@ -289,46 +243,79 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         view.setAccessibilityElement(true)
         view.setAccessibilityRole(.button)
         view.setAccessibilityIdentifier(PinnedTabItem.accessibilityIdentifier)
-        view.setAccessibilityLabel("\(leftTab.title) | \(rightTab.title)")
+        view.setAccessibilityLabel(shownPanes.map(\.title).joined(separator: " | "))
 
-        self.isSelected = leftTab.isActive || rightTab.isActive
+        self.isSelected = shownPanes.contains(where: \.isActive)
 
-        // Drive the context menu off the left pane so the user gets the
+        // Drive the context menu off the first pane so the user gets the
         // split-aware items (Unpin Split, Remove from Split, etc.).
         if let menu = view.menu {
             if let populateContextMenu { populateContextMenu(menu) }
-            else { leftTab.makeContextMenu(on: menu) }
+            else { shownPanes.first?.makeContextMenu(on: menu) }
         }
 
-        subscribeFaviconUpdates(for: leftTab)
-        subscribeFaviconUpdates(for: rightTab)
+        shownPanes.forEach { subscribeFaviconUpdates(for: $0) }
 
-        Publishers.CombineLatest(leftTab.$isActive, rightTab.$isActive)
-            .removeDuplicates { $0 == $1 }
+        Publishers.MergeMany(shownPanes.map(\.$isActive))
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] leftActive, rightActive in
-                self?.isSelected = leftActive || rightActive
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.isSelected = self.panes.contains(where: \.isActive)
             }
             .store(in: &cancellables)
-
     }
 
-    private var bothFaviconsShowDashedOutline: Bool {
-        TabFaviconPresentation.showsDashedOutline(
-            isDiscarded: leftStatusModel.isDiscarded,
-            isUnloaded: leftStatusModel.isUnloaded
-        ) && TabFaviconPresentation.showsDashedOutline(
-            isDiscarded: rightStatusModel.isDiscarded,
-            isUnloaded: rightStatusModel.isUnloaded
+    private var everyFaviconShowsDashedOutline: Bool {
+        !activeSlots.isEmpty && activeSlots.allSatisfy { slot in
+            TabFaviconPresentation.showsDashedOutline(
+                isDiscarded: slot.statusModel.isDiscarded,
+                isUnloaded: slot.statusModel.isUnloaded
+            )
+        }
+    }
+
+    /// Centers the used favicons in the cell and hides the rest.
+    private func applyPaneLayout(separatesDashedOutlines: Bool) {
+        let count = panes.count
+        let metrics = PaneMetrics.forPaneCount(count)
+        let spacing = separatesDashedOutlines ? metrics.separatedCenterSpacing : metrics.centerSpacing
+        for (index, slot) in slots.enumerated() {
+            let isUsed = index < count
+            slot.iconView.isHidden = !isUsed
+            slot.outlineHost?.isHidden = !isUsed
+            guard isUsed else { continue }
+            let offset = (CGFloat(index) - CGFloat(count - 1) / 2) * spacing
+            slot.centerXConstraint?.update(offset: offset)
+            slot.iconView.snp.updateConstraints { make in
+                make.size.equalTo(CGSize(width: metrics.faviconSize, height: metrics.faviconSize))
+            }
+            installOutline(in: slot, faviconSize: metrics.faviconSize)
+        }
+    }
+
+    /// The outline view takes its favicon size at construction, so a slot gets
+    /// a new one when the pane count changes its size.
+    private func installOutline(in slot: PaneSlot, faviconSize: CGFloat) {
+        guard slot.outlineFaviconSize != faviconSize else { return }
+        slot.outlineHost?.removeFromSuperview()
+        let host = TabDecorativeHostingView(
+            rootView: TabDiscardedFaviconOutline(
+                model: slot.statusModel,
+                faviconSize: faviconSize,
+                faviconCornerRadius: Self.faviconCornerRadius
+            )
         )
-    }
-
-    private func updateFaviconCenterOffset(separatesDashedOutlines: Bool) {
-        let offset = separatesDashedOutlines
-            ? Self.separatedFaviconCenterOffset
-            : Self.defaultFaviconCenterOffset
-        leftIconCenterXConstraint?.update(offset: -offset)
-        rightIconCenterXConstraint?.update(offset: offset)
+        backgroundView.addSubview(host)
+        let outlineSize = TabCornerBadgeMetrics.discardedOutlineSize(
+            for: faviconSize,
+            cornerRadius: Self.faviconCornerRadius
+        )
+        host.snp.makeConstraints { make in
+            make.center.equalTo(slot.iconView)
+            make.size.equalTo(CGSize(width: outlineSize, height: outlineSize))
+        }
+        slot.outlineHost = host
+        slot.outlineFaviconSize = faviconSize
     }
 
     override var isSelected: Bool {
@@ -340,7 +327,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         backgroundView.layer?.borderWidth = 0
         backgroundView.layer?.borderColor = NSColor.clear.cgColor
         let showsOpenIndicator = TabFaviconPresentation.showsOpenIndicator(
-            isOpened: leftTab?.hasWebContent == true || rightTab?.hasWebContent == true,
+            isOpened: panes.contains(where: \.hasWebContent),
             isActive: isSelected
         )
         openIndicatorHost.isHidden = !showsOpenIndicator
@@ -348,14 +335,15 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
 
     /// Choose which pane a click should focus: the one currently active in
     /// the split (Chromium keeps focus on whichever was last clicked),
-    /// otherwise the left pane.
+    /// otherwise the first pane.
     private func preferredClickTab() -> Tab? {
-        if let rightTab, rightTab.isActive { return rightTab }
-        return leftTab
+        panes.first(where: \.isActive) ?? panes.first
     }
 
     private func tab(at point: NSPoint) -> Tab? {
-        point.x > backgroundView.bounds.midX ? rightTab : leftTab
+        guard !panes.isEmpty, backgroundView.bounds.width > 0 else { return panes.first }
+        let index = Int(point.x / backgroundView.bounds.width * CGFloat(panes.count))
+        return panes[max(0, min(index, panes.count - 1))]
     }
 
     private func subscribeFaviconUpdates(for tab: Tab) {
@@ -402,28 +390,23 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
             .store(in: &cancellables)
     }
 
-    /// Dispatch a favicon refresh to whichever side `tab` occupies in this
-    /// cell. No-op if the cell has been recycled away from `tab`.
+    /// Dispatch a favicon refresh to the slot `tab` occupies in this cell.
+    /// No-op if the cell has been recycled away from `tab`.
     private func refreshFavicon(for tab: Tab) {
-        if tab === leftTab {
-            setupFavicon(for: tab, into: leftIconView, handle: &leftFaviconHandle)
-        } else if tab === rightTab {
-            setupFavicon(for: tab, into: rightIconView, handle: &rightFaviconHandle)
-        }
+        guard let slot = slots.first(where: { $0.tab === tab }) else { return }
+        setupFavicon(for: tab, into: slot)
     }
 
     private func updateOpenIndicatorOpacity() {
         openIndicatorHost.alphaValue = TabFaviconPresentation.opacity(
-            isDiscarded: leftTab?.isDiscarded == true || rightTab?.isDiscarded == true,
-            isUnloaded: leftTab?.isUnloaded == true || rightTab?.isUnloaded == true
+            isDiscarded: panes.contains(where: \.isDiscarded),
+            isUnloaded: panes.contains(where: \.isUnloaded)
         )
     }
 
-    private func setupFavicon(for tab: Tab,
-                              into imageView: TabFaviconImageView,
-                              handle: inout ProfileScopedFaviconLoadHandle?) {
-        handle?.cancel()
-        handle = nil
+    private func setupFavicon(for tab: Tab, into slot: PaneSlot) {
+        slot.clearFaviconHandle()
+        let imageView = slot.iconView!
 
         if let liveFaviconData = tab.liveFaviconData,
            let image = NSImage(data: liveFaviconData) {
@@ -438,7 +421,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
             snapshotData: tab.cachedFaviconData
         )
 
-        handle = ProfileScopedFaviconRepository.shared.loadFavicon(for: request) { [weak imageView, weak tab] result in
+        slot.faviconHandle = ProfileScopedFaviconRepository.shared.loadFavicon(for: request) { [weak imageView, weak tab] result in
             imageView?.image = result.image
             if result.source == .chromium, let data = result.data {
                 tab?.updateProfileScopedFaviconData(
@@ -450,11 +433,11 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     }
 
     private func updateToolTip() {
-        guard let leftTab, let rightTab, !showsSplitTabPreview else {
+        guard panes.count >= 2, !showsSplitTabPreview else {
             view.toolTip = nil
             return
         }
-        view.toolTip = "\(leftTab.title) | \(rightTab.title)"
+        view.toolTip = panes.map(\.title).joined(separator: " | ")
     }
 
     func cancelTabPreviewForInteraction() {
@@ -464,6 +447,6 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         splitTabPreviewRegistration.cancelForInteraction()
         if let populateContextMenu { populateContextMenu(menu) }
-        else { leftTab?.makeContextMenu(on: menu) }
+        else { panes.first?.makeContextMenu(on: menu) }
     }
 }

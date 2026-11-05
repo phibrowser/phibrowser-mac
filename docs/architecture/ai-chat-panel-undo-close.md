@@ -27,9 +27,9 @@ identifier, so the tab keeps its panel and its record through the Peek and
 after.
 
 In a split the record stays with the pane that holds the shared panel
-(`chatIdentifier(for:)`). Expanding mirrors to both panes before the panel
-exists, so the other pane's record is cleared when the panel appears. When a
-split is formed from two tabs that both have a panel, only one panel stays, and
+(`chatIdentifier(for:)`). Expanding mirrors to every pane before the panel
+exists, so the other panes' records are cleared when the panel appears. When a
+split is formed from tabs that each have a panel, only one panel stays, and
 the record of the tab whose panel is closed is cleared with it.
 
 When the holding pane closes, or moves to another window, while the other pane
@@ -40,8 +40,8 @@ recently-closed entry as soon as its tab-removal callback returns, before
 `splitPaneWillBeRemoved(_:)` directly rather than through EventBus, as the
 coordinator already does for placeholder mode and the extension side panel. The
 bridge keeps the closing tab's id resolvable until that callback returns. Undo
-close then brings the closed pane back without a second panel. When both panes
-close (the split row's Close, Close Other Tabs, or one after the other), each
+close then brings the closed pane back without a second panel. When every pane
+closes (the split row's Close, Close Other Tabs, or one after the other), each
 becomes its own closed entry and the split is not restored; the record stays
 with the pane that closes last, which is the first one undo close brings back.
 

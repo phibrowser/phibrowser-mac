@@ -67,11 +67,11 @@ final class SplitWithNewTabBookmarkTests: XCTestCase {
         let partner = Tab(guid: 101, url: "https://partner.example", isActive: false, index: 1)
         state.tabs.append(partner)
         state.updateNormalTabs()
-        state.handleSplitCreated(splitId: "bookmark-source-split", primaryTabId: source.guid,
-                                 secondaryTabId: partner.guid, layout: .vertical, ratio: 0.5)
+        state.handleSplitCreated(splitId: "bookmark-source-split", tabIds: [source.guid, partner.guid],
+                                 layout: .vertical, fractions: [0.5, 0.5])
         XCTAssertEqual(state.normalTabs.map(\.guid), [source.guid, partner.guid], file: file, line: line)
-        XCTAssertNotNil(state.splitPairPosition(forTabId: source.guid), file: file, line: line)
-        XCTAssertNotNil(state.splitPairPosition(forTabId: partner.guid), file: file, line: line)
+        XCTAssertEqual(state.splitPanePosition(forTabId: source.guid), .first, file: file, line: line)
+        XCTAssertEqual(state.splitPanePosition(forTabId: partner.guid), .last, file: file, line: line)
     }
 
     func testNewTabPageUnbindsBookmarkSourceBeforeOpeningPane() throws {

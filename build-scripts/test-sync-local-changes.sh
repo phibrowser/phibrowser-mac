@@ -26,6 +26,6 @@ fixture = fixture.replace('    /* PRODUCTION_CREATE_SPACE_BODY */', space[start:
 Path(sys.argv[2]).write_text(fixture)
 PY
 xcrun swiftc -swift-version 5 -parse-as-library -Xfrontend -disable-sandbox -module-cache-path "$task_build/modules" \
-  "$task_root/Sources/LocalStorage/TabDataModel/TabDataModelSchemaV13.swift" \
+  "$task_root/Sources/LocalStorage/TabDataModel/TabDataModelSchemaV14.swift" \
   "$task_build/main.swift" -o "$task_build/tests"
 "$task_build/tests"

@@ -48,10 +48,9 @@ final class TabsAwaitingSplitMountTests: XCTestCase {
         focusTabAwaitingSplit(fixture)
 
         fixture.state.handleSplitCreated(splitId: "awaited-split",
-                                         primaryTabId: fixture.tabs[0].guid,
-                                         secondaryTabId: fixture.tabs[1].guid,
+                                         tabIds: [fixture.tabs[0].guid, fixture.tabs[1].guid],
                                          layout: .vertical,
-                                         ratio: 0.5)
+                                         fractions: [0.5, 0.5])
 
         XCTAssertTrue(fixture.state.tabsAwaitingSplit.isEmpty)
         try waitUntilMounted(fixture.webViews[1])
@@ -65,10 +64,9 @@ final class TabsAwaitingSplitMountTests: XCTestCase {
         focusTabAwaitingSplit(fixture)
 
         fixture.state.handleSplitCreated(splitId: "other-split",
-                                         primaryTabId: fixture.tabs[2].guid,
-                                         secondaryTabId: fixture.tabs[3].guid,
+                                         tabIds: [fixture.tabs[2].guid, fixture.tabs[3].guid],
                                          layout: .vertical,
-                                         ratio: 0.5)
+                                         fractions: [0.5, 0.5])
         RunLoop.main.run(until: Date().addingTimeInterval(0.25))
 
         XCTAssertEqual(fixture.state.tabsAwaitingSplit, [fixture.tabs[1].guid])
@@ -84,9 +82,9 @@ final class TabsAwaitingSplitMountTests: XCTestCase {
         let pendingGuid = SplitPendingGuid.partner.mint()
         newPane.guidInLocalDB = pendingGuid
         fixture.state.pendingSplitPartnerByCustomGuid[pendingGuid] = PendingSplitPartner(
-            partnerTabId: fixture.tabs[0].guid,
-            newTabSlot: .right,
-            layout: .vertical
+            target: .newPair(partnerTabId: fixture.tabs[0].guid,
+                             newTabSlot: .right,
+                             layout: .vertical)
         )
         var awaiting: [Set<Int>] = []
         let subscription = fixture.state.$tabsAwaitingSplit.sink { awaiting.append($0) }

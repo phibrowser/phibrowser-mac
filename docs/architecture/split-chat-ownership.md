@@ -2,7 +2,7 @@
 
 `BrowserState.aiChatTabs` remains the source of chat-tab ownership. Web-content
 controllers use the ordinary per-tab identifier; chat code uses
-`chatIdentifier(for:)` so both panes can resolve to one shared chat.
+`chatIdentifier(for:)` so every pane (two to four) resolves to one shared chat.
 
 The resolver first reuses an existing pane chat, then an in-flight creation.
 If neither exists, it uses the invoking tab's identifier. It does not choose an

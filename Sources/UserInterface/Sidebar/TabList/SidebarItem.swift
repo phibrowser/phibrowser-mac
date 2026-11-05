@@ -74,52 +74,60 @@ enum SidebarItemType {
     /// `TabGroupSidebarItem`. Selectable=false; expand/collapse routes
     /// through the bridge via `requestTabGroupCollapseChange`.
     case tabGroup
-    /// A non-pinned split rendered as a single merged row with two
-    /// favicons side-by-side. Materialized by `SplitPairSidebarItem`.
-    /// The two panes of a split are merged into one row so the pair
-    /// reads as one item; clicking the left half focuses the left
-    /// pane, clicking the right half focuses the right pane.
-    case splitPair
+    /// A non-pinned split rendered as a single merged row with one
+    /// favicon segment per pane. Materialized by `SplitSidebarItem`.
+    /// The panes of a split (two to `SplitGroup.maxPaneCount`) are merged
+    /// into one row so the split reads as one item; clicking a segment
+    /// focuses that pane.
+    case split
 }
 
 /// Sidebar row that represents a non-pinned split as a single merged
-/// item carrying both panes. Stable across rebuilds via the underlying
+/// item carrying every pane. Stable across rebuilds via the underlying
 /// `SplitGroup.id` so the outline-view diff keeps the row in place when
-/// either pane's title / favicon / focus changes.
-final class SplitPairSidebarItem: SidebarItem, ContextMenuRepresentable {
+/// any pane's title / favicon / focus changes.
+final class SplitSidebarItem: SidebarItem, ContextMenuRepresentable {
     let groupId: String
-    // Mutable so a cell observing the strip can swap left/right in place
-    // after Chromium's reverse — the item's `id` is keyed on `groupId`
-    // alone, so the outline-view diff treats a swap as no-op; the cell
-    // re-resolves order and updates these fields directly.
-    var leftTab: Tab
-    var rightTab: Tab
+    /// Pane tabs in on-screen order (slot order of the live `SplitGroup`,
+    /// two to `SplitGroup.maxPaneCount` entries). Mutable so a cell
+    /// observing the strip can re-sequence the panes in place after
+    /// Chromium reorders or replaces one — the item's `id` is keyed on
+    /// `groupId` alone, so the outline-view diff treats such a change as
+    /// no-op; the cell re-resolves the order and updates this field directly.
+    var panes: [Tab]
     weak var browserState: BrowserState?
 
-    init(groupId: String, leftTab: Tab, rightTab: Tab, browserState: BrowserState?) {
+    init(groupId: String, panes: [Tab], browserState: BrowserState?) {
         self.groupId = groupId
-        self.leftTab = leftTab
-        self.rightTab = rightTab
+        self.panes = panes
         self.browserState = browserState
     }
 
+    var firstPane: Tab { panes[0] }
+    var lastPane: Tab { panes[panes.count - 1] }
+    var paneCount: Int { panes.count }
+
+    func contains(tabId: Int) -> Bool {
+        panes.contains { $0.guid == tabId }
+    }
+
     var id: AnyHashable { "split:\(groupId)" }
-    var title: String { "\(leftTab.title) | \(rightTab.title)" }
-    var url: String? { leftTab.url }
+    var title: String { panes.map(\.title).joined(separator: " | ") }
+    var url: String? { firstPane.url }
     var iconName: String? { nil }
-    var faviconUrl: String? { leftTab.faviconUrl }
+    var faviconUrl: String? { firstPane.faviconUrl }
     var isExpandable: Bool { false }
     var hasChildren: Bool { false }
     var childrenItems: [SidebarItem] { [] }
     var depth: Int { 0 }
-    var itemType: SidebarItemType { .splitPair }
-    var isActive: Bool { leftTab.isActive || rightTab.isActive }
+    var itemType: SidebarItemType { .split }
+    var isActive: Bool { panes.contains { $0.isActive } }
     var isSelectable: Bool { true }
     var isBookmark: Bool { false }
 
     func performAction(with owner: SidebarTabListItemOwner?) {
-        // Default click target is the active pane; left as fallback.
-        let target = rightTab.isActive ? rightTab : leftTab
+        // Default click target is the active pane; the first pane as fallback.
+        let target = panes.first { $0.isActive } ?? firstPane
         target.performAction(with: owner)
     }
 
@@ -130,7 +138,7 @@ final class SplitPairSidebarItem: SidebarItem, ContextMenuRepresentable {
         }?.key
     }
 
-    /// Drives the merged cell's context menu off the left pane so the
+    /// Drives the merged cell's context menu off the first pane so the
     /// user gets split-aware items (Remove from Split, etc.) after the
     /// shared multi-selection menu gets first chance to take over.
     @MainActor func makeContextMenu(on menu: NSMenu) {
@@ -138,7 +146,7 @@ final class SplitPairSidebarItem: SidebarItem, ContextMenuRepresentable {
            TabMultiSelectionMenu.populateIfNeeded(menu, browserState: browserState) {
             return
         }
-        leftTab.makeContextMenu(on: menu)
+        firstPane.makeContextMenu(on: menu)
     }
 }
 

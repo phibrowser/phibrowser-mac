@@ -359,7 +359,7 @@ enum NativeTabDecisionEngine {
         visibleNormalTabIds: [Int],
         context: NativeTabCreationContext?,
         relationGraph: NativeTabRelationGraph,
-        splitPartnerByTabId: [Int: Int] = [:],
+        splitLastTabIdByMember: [Int: Int] = [:],
         hiddenOpenerTabIds: Set<Int> = []
     ) -> Int? {
         let creationKindText = context?.creationKind.rawValue ?? "nil"
@@ -374,7 +374,7 @@ enum NativeTabDecisionEngine {
             "context={kind=\(creationKindText), active=\(isActiveText), opener=\(openerText), " +
             "insertAfter=\(insertAfterText), source=\(sourceText), resetOnActive=\(resetOnActiveText)} " +
             "graph={openers=\(relationGraph.openerByTabId), reset=\(resetTabIds)} " +
-            "splitPartners=\(splitPartnerByTabId)"
+            "splitLastByMember=\(splitLastTabIdByMember)"
         )
         guard !visibleNormalTabIds.isEmpty else { return 0 }
         guard let context else { return nil }
@@ -387,7 +387,7 @@ enum NativeTabDecisionEngine {
                     openerTabId: openerTabId,
                     openerIndex: openerIndex,
                     visibleNormalTabIds: visibleNormalTabIds,
-                    splitPartnerByTabId: splitPartnerByTabId
+                    splitLastTabIdByMember: splitLastTabIdByMember
                 )
                 AppLogDebug(
                     "[NativeTab] insertionIndex chose foreground opener=\(openerTabId) " +
@@ -423,7 +423,7 @@ enum NativeTabDecisionEngine {
                     openerTabId: openerTabId,
                     openerIndex: openerIndex,
                     visibleNormalTabIds: visibleNormalTabIds,
-                    splitPartnerByTabId: splitPartnerByTabId
+                    splitLastTabIdByMember: splitLastTabIdByMember
                 )
                 let result = lastVisibleDescendantInsertionIndex(
                     openerTabId: openerTabId,
@@ -577,14 +577,16 @@ enum NativeTabDecisionEngine {
         openerTabId: Int,
         openerIndex: Int,
         visibleNormalTabIds: [Int],
-        splitPartnerByTabId: [Int: Int]
+        splitLastTabIdByMember: [Int: Int]
     ) -> Int {
-        guard let partnerId = splitPartnerByTabId[openerTabId],
-              let partnerIndex = visibleNormalTabIds.firstIndex(of: partnerId),
-              partnerIndex > openerIndex else {
+        // A link from a split pane lands after the whole split, not between
+        // its panes: anchor on the split's last pane.
+        guard let lastId = splitLastTabIdByMember[openerTabId],
+              let lastIndex = visibleNormalTabIds.firstIndex(of: lastId),
+              lastIndex > openerIndex else {
             return openerIndex
         }
-        return partnerIndex
+        return lastIndex
     }
 
     private static func directionalMatch(

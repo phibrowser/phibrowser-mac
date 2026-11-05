@@ -452,10 +452,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2, 3, 4])
         state.splits = [
             SplitGroup(id: "split-2-3",
-                       primaryTabId: 2,
-                       secondaryTabId: 3,
+                       tabIds: [2, 3],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.focuseTab(state.tabs[0])
 
@@ -471,10 +470,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
             seed(state, guids: [1, 2, 3, 4])
             state.splits = [
                 SplitGroup(id: "split-2-3",
-                           primaryTabId: 2,
-                           secondaryTabId: 3,
+                           tabIds: [2, 3],
                            layout: .vertical,
-                           ratio: 0.5)
+                           fractions: [0.5, 0.5])
             ]
 
             state.focuseTab(state.tabs[focusedIndex])
@@ -531,10 +529,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2, 3])
         state.splits = [
             SplitGroup(id: "split-1-2",
-                       primaryTabId: 1,
-                       secondaryTabId: 2,
+                       tabIds: [1, 2],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.focuseTab(state.tabs[0])
         state.toggleMultiSelection(for: state.tabs[2])
@@ -564,14 +561,12 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2, 3])
         state.splits = [
             SplitGroup(id: "split-1-2",
-                       primaryTabId: 1,
-                       secondaryTabId: 2,
+                       tabIds: [1, 2],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.focuseTab(state.tabs[2])
-        state.toggleMultiSelectionForSplitPair(leftTab: state.tabs[0],
-                                               rightTab: state.tabs[1])
+        state.toggleMultiSelectionForSplit(panes: [state.tabs[0], state.tabs[1]])
 
         state.bookmarkMultiSelectedTabs(into: nil)
 
@@ -596,10 +591,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2, 3])
         state.splits = [
             SplitGroup(id: "split-1-2",
-                       primaryTabId: 1,
-                       secondaryTabId: 2,
+                       tabIds: [1, 2],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.focuseTab(state.tabs[0])
         state.toggleMultiSelection(for: state.tabs[2])
@@ -635,10 +629,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2, 3, 4])
         state.splits = [
             SplitGroup(id: "split-2-3",
-                       primaryTabId: 2,
-                       secondaryTabId: 3,
+                       tabIds: [2, 3],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
 
         XCTAssertEqual(
@@ -656,19 +649,18 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2, 3, 4])
         state.splits = [
             SplitGroup(id: "split-2-3",
-                       primaryTabId: 2,
-                       secondaryTabId: 3,
+                       tabIds: [2, 3],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.focuseTab(state.tabs[0])
 
-        state.toggleMultiSelectionForSplitPair(leftTab: state.tabs[1], rightTab: state.tabs[2])
+        state.toggleMultiSelectionForSplit(panes: [state.tabs[1], state.tabs[2]])
 
         XCTAssertEqual(state.multiSelection.guids, [2, 3])
         XCTAssertEqual(state.multiSelectionDragTabIds(startingFrom: state.tabs[1]), [1, 2, 3])
 
-        state.toggleMultiSelectionForSplitPair(leftTab: state.tabs[1], rightTab: state.tabs[2])
+        state.toggleMultiSelectionForSplit(panes: [state.tabs[1], state.tabs[2]])
 
         XCTAssertFalse(state.multiSelection.isActive)
     }
@@ -678,20 +670,19 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2, 3, 4])
         state.splits = [
             SplitGroup(id: "split-2-3",
-                       primaryTabId: 2,
-                       secondaryTabId: 3,
+                       tabIds: [2, 3],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.focuseTab(state.tabs[1])
 
-        state.toggleMultiSelectionForSplitPair(leftTab: state.tabs[1], rightTab: state.tabs[2])
+        state.toggleMultiSelectionForSplit(panes: [state.tabs[1], state.tabs[2]])
 
         XCTAssertEqual(state.multiSelection.guids, [3])
         XCTAssertEqual(state.orderedMultiSelectedTabs.map(\.guid), [2, 3])
         XCTAssertEqual(state.multiSelectionDragTabIds(startingFrom: state.tabs[1]), [2, 3])
 
-        state.toggleMultiSelectionForSplitPair(leftTab: state.tabs[1], rightTab: state.tabs[2])
+        state.toggleMultiSelectionForSplit(panes: [state.tabs[1], state.tabs[2]])
 
         XCTAssertFalse(state.multiSelection.isActive)
     }
@@ -735,10 +726,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2, 3, 4, 5])
         state.splits = [
             SplitGroup(id: "split-2-3",
-                       primaryTabId: 2,
-                       secondaryTabId: 3,
+                       tabIds: [2, 3],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
 
         state.moveNormalTabsLocally(tabIds: [2, 3, 5], to: 0, syncChromiumOrder: false)
@@ -758,10 +748,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2, 3, 4])
         state.splits = [
             SplitGroup(id: "split-2-3",
-                       primaryTabId: 2,
-                       secondaryTabId: 3,
+                       tabIds: [2, 3],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
 
         let moved = state.moveNormalTabs(tabIds: [1, 2, 3, 4],
@@ -790,10 +779,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2])
         state.splits = [
             SplitGroup(id: "split-1-2",
-                       primaryTabId: 1,
-                       secondaryTabId: 2,
+                       tabIds: [1, 2],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
 
         let insertedBookmarkCount = state.moveNormalTabsToBookmarks(tabIds: [1, 2],
@@ -808,10 +796,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2, 3, 4])
         state.splits = [
             SplitGroup(id: "split-2-3",
-                       primaryTabId: 2,
-                       secondaryTabId: 3,
+                       tabIds: [2, 3],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
 
         let moved = state.moveNormalTabs(tabIds: [2, 3, 4],
@@ -1860,10 +1847,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2])
         state.splits = [
             SplitGroup(id: "split-1-2",
-                       primaryTabId: 1,
-                       secondaryTabId: 2,
+                       tabIds: [1, 2],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.focuseTab(state.tabs[0])
         state.toggleMultiSelection(for: state.tabs[1])
@@ -1913,10 +1899,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2])
         state.splits = [
             SplitGroup(id: "split-1-2",
-                       primaryTabId: 1,
-                       secondaryTabId: 2,
+                       tabIds: [1, 2],
                        layout: .vertical,
-                       ratio: 0.5,
+                       fractions: [0.5, 0.5],
                        isPinned: true)
         ]
         state.focuseTab(state.tabs[0])
@@ -1945,10 +1930,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         state.tabs[1].url = nil
         state.splits = [
             SplitGroup(id: "split-1-2",
-                       primaryTabId: 1,
-                       secondaryTabId: 2,
+                       tabIds: [1, 2],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.focuseTab(state.tabs[0])
         state.toggleMultiSelection(for: state.tabs[1])
@@ -1962,20 +1946,18 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2, 3, 4])
         state.splits = [
             SplitGroup(id: "split-2-3",
-                       primaryTabId: 2,
-                       secondaryTabId: 3,
+                       tabIds: [2, 3],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         let units = SpaceManager.shared.tabMoveUnits(from: [state.tabs[1], state.tabs[3]],
                                                      sourceState: state)
 
         XCTAssertEqual(units.map(\.normalTabCount), [2, 1])
-        guard case .split(let left, let right) = units.first else {
+        guard case .split(let panes) = units.first else {
             return XCTFail("Expected the selected split pane to move as a split unit.")
         }
-        XCTAssertEqual(left.guid, 2)
-        XCTAssertEqual(right.guid, 3)
+        XCTAssertEqual(panes.map(\.guid), [2, 3])
     }
 
     func testCrossProfileMoveUnitClosesSourceWebContents() {
@@ -1999,7 +1981,7 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
                         webContentView: rightWrapper)
 
         SpaceManager.SpaceMoveTabUnit.tab(single).closeSourceTabsAfterCrossProfileMove()
-        SpaceManager.SpaceMoveTabUnit.split(left: left, right: right)
+        SpaceManager.SpaceMoveTabUnit.split(panes: [left, right])
             .closeSourceTabsAfterCrossProfileMove()
 
         XCTAssertEqual(singleWrapper.closeCallCount, 1)
@@ -2150,8 +2132,11 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         XCTAssertNil(openedTab.guidInLocalDB)
         XCTAssertEqual(wrapper.updatedCustomValues, [""])
         XCTAssertFalse(openedBookmark.isOpened)
-        XCTAssertEqual(pending.partnerTabId, openedTab.guid)
-        guard case .right = pending.newTabSlot else {
+        guard case let .newPair(partnerTabId, newTabSlot, _) = pending.target else {
+            return XCTFail("Unopened bookmark should pair with the opened tab.")
+        }
+        XCTAssertEqual(partnerTabId, openedTab.guid)
+        guard case .right = newTabSlot else {
             return XCTFail("Unopened bookmark should be created as the right split pane.")
         }
         XCTAssertNil(pending.boundBookmarkGuid)
@@ -2248,15 +2233,13 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         state.tabs[0].setWebContentsWrapper(wrapper: primaryWrapper)
         state.splits = [
             SplitGroup(id: "split-bookmark",
-                       primaryTabId: 1,
-                       secondaryTabId: 2,
+                       tabIds: [1, 2],
                        layout: .vertical,
-                       ratio: 0.5),
+                       fractions: [0.5, 0.5]),
             SplitGroup(id: "split-normal",
-                       primaryTabId: 4,
-                       secondaryTabId: 5,
+                       tabIds: [4, 5],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.splitBookmarkBindings[bookmarkGuid] = "split-bookmark"
         state.updateNormalTabs()
@@ -2277,8 +2260,7 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         XCTAssertFalse(state.multiSelection.isActive)
 
         state.focuseTab(state.tabs[0])
-        let handled = state.toggleMultiSelectionForSplitPair(leftTab: state.tabs[3],
-                                                             rightTab: state.tabs[4])
+        let handled = state.toggleMultiSelectionForSplit(panes: [state.tabs[3], state.tabs[4]])
 
         XCTAssertTrue(handled)
         XCTAssertEqual(state.multiSelection.guids, [4, 5])
@@ -2309,16 +2291,14 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         ]
         state.splits = [
             SplitGroup(id: "split-normal",
-                       primaryTabId: 2,
-                       secondaryTabId: 3,
+                       tabIds: [2, 3],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.updateNormalTabs()
         state.focuseTab(state.tabs[0])
 
-        let handled = state.toggleMultiSelectionForSplitPair(leftTab: state.tabs[1],
-                                                             rightTab: state.tabs[2])
+        let handled = state.toggleMultiSelectionForSplit(panes: [state.tabs[1], state.tabs[2]])
 
         XCTAssertTrue(handled)
         XCTAssertEqual(state.multiSelection.guids, [2, 3])
@@ -2415,10 +2395,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         ]
         state.splits = [
             SplitGroup(id: "split-1-2",
-                       primaryTabId: 1,
-                       secondaryTabId: 2,
+                       tabIds: [1, 2],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.splitBookmarkBindings[bookmarkGuid] = "split-1-2"
         state.syncSplitBookmarkOpenedState(bookmarkGuid: bookmarkGuid)
@@ -2437,18 +2416,22 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         XCTAssertEqual(state.tabs.map(\.groupToken), ["A", "A"])
     }
 
-    func testMultiSelectionSplitPairRequiresExactlyTwoPlainTabs() throws {
+    func testMultiSelectionSplitTakesTwoToFourPlainTabs() throws {
         let state = try makeState()
-        seed(state, guids: [1, 2, 3])
+        seed(state, guids: [1, 2, 3, 4, 5])
         state.focuseTab(state.tabs[0])
         state.toggleMultiSelection(for: state.tabs[1])
 
-        XCTAssertEqual(state.multiSelectionSplitPair?.left.guid, 1)
-        XCTAssertEqual(state.multiSelectionSplitPair?.right.guid, 2)
+        XCTAssertEqual(state.multiSelectionSplitTabs?.map(\.guid), [1, 2])
 
         state.toggleMultiSelection(for: state.tabs[2])
+        XCTAssertEqual(state.multiSelectionSplitTabs?.map(\.guid), [1, 2, 3])
 
-        XCTAssertNil(state.multiSelectionSplitPair)
+        state.toggleMultiSelection(for: state.tabs[3])
+        XCTAssertEqual(state.multiSelectionSplitTabs?.map(\.guid), [1, 2, 3, 4])
+
+        state.toggleMultiSelection(for: state.tabs[4])
+        XCTAssertNil(state.multiSelectionSplitTabs, "A split holds at most four panes")
     }
 
     func testMultiSelectionSplitPairRejectsExistingSplitPane() throws {
@@ -2456,15 +2439,14 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2, 3])
         state.splits = [
             SplitGroup(id: "split-1-2",
-                       primaryTabId: 1,
-                       secondaryTabId: 2,
+                       tabIds: [1, 2],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.focuseTab(state.tabs[0])
         state.toggleMultiSelection(for: state.tabs[1])
 
-        XCTAssertNil(state.multiSelectionSplitPair)
+        XCTAssertNil(state.multiSelectionSplitTabs)
     }
 
     func testSplitPairSidebarContextMenuUsesMultiSelectionMenuWhenSelectionActive() throws {
@@ -2472,18 +2454,16 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2, 3])
         state.splits = [
             SplitGroup(id: "split-2-3",
-                       primaryTabId: 2,
-                       secondaryTabId: 3,
+                       tabIds: [2, 3],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.focuseTab(state.tabs[0])
-        state.toggleMultiSelectionForSplitPair(leftTab: state.tabs[1], rightTab: state.tabs[2])
+        state.toggleMultiSelectionForSplit(panes: [state.tabs[1], state.tabs[2]])
 
-        let item = SplitPairSidebarItem(groupId: "split-2-3",
-                                        leftTab: state.tabs[1],
-                                        rightTab: state.tabs[2],
-                                        browserState: state)
+        let item = SplitSidebarItem(groupId: "split-2-3",
+                                    panes: [state.tabs[1], state.tabs[2]],
+                                    browserState: state)
         let menu = NSMenu()
 
         item.makeContextMenu(on: menu)
@@ -2497,13 +2477,12 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         seed(state, guids: [1, 2, 3, 4])
         state.splits = [
             SplitGroup(id: "split-2-3",
-                       primaryTabId: 2,
-                       secondaryTabId: 3,
+                       tabIds: [2, 3],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.focuseTab(state.tabs[0])
-        state.toggleMultiSelectionForSplitPair(leftTab: state.tabs[1], rightTab: state.tabs[2])
+        state.toggleMultiSelectionForSplit(panes: [state.tabs[1], state.tabs[2]])
         state.toggleMultiSelection(for: state.tabs[3])
 
         state.duplicateMultiSelectedTabs()
@@ -2516,8 +2495,8 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
     func testCloseMultiSelectionSubmitsOneBatchIncludingSplitPartner() throws {
         let state = try makeBatchRecordingState()
         seed(state, guids: [1, 2, 3, 4])
-        state.splits = [SplitGroup(id: "split-2-3", primaryTabId: 2,
-                                  secondaryTabId: 3, layout: .vertical, ratio: 0.5)]
+        state.splits = [SplitGroup(id: "split-2-3", tabIds: [2, 3],
+                                   layout: .vertical, fractions: [0.5, 0.5])]
         state.focuseTab(state.tabs[0])
         state.toggleMultiSelection(for: state.tabs[1])
 
@@ -2530,8 +2509,8 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
     func testCloseOtherTabsKeepsWholeSplitAndSubmitsOneBatch() throws {
         let state = try makeBatchRecordingState()
         seed(state, guids: [1, 2, 3, 4])
-        state.splits = [SplitGroup(id: "split-2-3", primaryTabId: 2,
-                                  secondaryTabId: 3, layout: .vertical, ratio: 0.5)]
+        state.splits = [SplitGroup(id: "split-2-3", tabIds: [2, 3],
+                                   layout: .vertical, fractions: [0.5, 0.5])]
 
         state.closeTabs(keeping: [2])
 

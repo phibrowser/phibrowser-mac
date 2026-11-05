@@ -21,6 +21,9 @@ class Bookmark: WebContentRepresentable {
     /// even when `secondaryUrl` is set — callers fall back to the secondary
     /// URL's host when this is nil/empty.
     @Published var secondaryTitle: String?
+    /// The panes after `secondaryUrl` of a split-view bookmark of three or
+    /// four panes. Mirrors `TabDataModel.splitExtraPanes`.
+    @Published var splitExtraPanes: [SplitBookmarkExtraPane] = []
     /// Layout restored when this split-view bookmark is opened. Nil for a
     /// regular bookmark; legacy split bookmarks default to side-by-side.
     @Published var layout: SplitLayout?
@@ -62,6 +65,7 @@ class Bookmark: WebContentRepresentable {
          url: String? = nil,
          secondaryUrl: String? = nil,
          secondaryTitle: String? = nil,
+         splitExtraPanes: [SplitBookmarkExtraPane] = [],
          layout: SplitLayout? = nil,
          profileId: String? = nil,
          faviconData: Data? = nil,
@@ -76,6 +80,7 @@ class Bookmark: WebContentRepresentable {
         self.url = url
         self.secondaryUrl = secondaryUrl
         self.secondaryTitle = secondaryTitle
+        self.splitExtraPanes = splitExtraPanes
         self.layout = layout
         self.cachedFaviconData = faviconData
         self.folderIconName = folderIconName
@@ -415,6 +420,7 @@ class BookmarkManager: ObservableObject {
                   left.url == right.url,
                   left.secondaryUrl == right.secondaryUrl,
                   left.secondaryTitle == right.secondaryTitle,
+                  left.splitExtraPanes == right.splitExtraPanes,
                   left.profileId == right.profileId,
                   left.cachedFaviconData == right.cachedFaviconData,
                   left.isFolder == right.isFolder,
@@ -494,14 +500,14 @@ class BookmarkManager: ObservableObject {
             if let url,
                let newPrimary = state.localStore.normalizedURL(from: url)?.absoluteString,
                newPrimary != current?.url,
-               let primaryTab = state.tabs.first(where: { $0.guid == group.primaryTabId }) {
+               let primaryTab = state.tabs.first(where: { $0.guid == group.tabIds[0] }) {
                 navigateSplitPane(primaryTab, to: newPrimary)
             }
             if let secondaryUrlOpt = secondaryUrl, let rawSecondary = secondaryUrlOpt,
                !rawSecondary.isEmpty,
                let newSecondary = state.localStore.normalizedURL(from: rawSecondary)?.absoluteString,
                newSecondary != current?.secondaryUrl,
-               let secondaryTab = state.tabs.first(where: { $0.guid == group.secondaryTabId }) {
+               let secondaryTab = state.tabs.first(where: { $0.guid == group.tabIds[1] }) {
                 navigateSplitPane(secondaryTab, to: newSecondary)
             }
             return
@@ -843,11 +849,28 @@ extension BookmarkManager {
 }
 
 extension Bookmark {
+    /// Every pane of a split-view bookmark in slot order, two to four. Empty
+    /// for a folder or a single-URL bookmark. A pane without a title falls
+    /// back to its URL.
+    var splitPanes: [(url: String, title: String)] {
+        guard !isFolder,
+              let url, !url.isEmpty,
+              let secondaryUrl, !secondaryUrl.isEmpty else { return [] }
+        return [(url, title), (secondaryUrl, secondaryTitle ?? secondaryUrl)]
+            + splitExtraPanes.map { ($0.url, $0.title ?? $0.url) }
+    }
+
+    var splitPaneURLs: [String] { splitPanes.map(\.url) }
+
+    /// How many tabs this bookmark opens.
+    var representedTabCount: Int { max(1, splitPanes.count) }
+
     convenience init(_ model: TabDataModel) {
         let isFolder = (model.dataType == .bookmarkFolder)
         let resolvedURL = isFolder ? nil : model.url.absoluteString
         let resolvedSecondary = isFolder ? nil : model.secondaryUrl?.absoluteString
         let resolvedSecondaryTitle = isFolder ? nil : model.secondaryTitle
+        let resolvedExtraPanes = resolvedSecondary == nil ? [] : model.decodedSplitExtraPanes
         let resolvedLayout: SplitLayout? = resolvedSecondary == nil
             ? nil
             : model.layout.flatMap(SplitLayout.init(rawValue:)) ?? .vertical
@@ -856,6 +879,7 @@ extension Bookmark {
                   url: resolvedURL,
                   secondaryUrl: resolvedSecondary,
                   secondaryTitle: resolvedSecondaryTitle,
+                  splitExtraPanes: resolvedExtraPanes,
                   layout: resolvedLayout,
                   profileId: model.profile?.profileId ?? model.profileId,
                   faviconData: model.favicon,
@@ -871,6 +895,7 @@ extension Bookmark {
         url = isFolder ? nil : model.url.absoluteString
         secondaryUrl = isFolder ? nil : model.secondaryUrl?.absoluteString
         secondaryTitle = isFolder ? nil : model.secondaryTitle
+        splitExtraPanes = secondaryUrl == nil ? [] : model.decodedSplitExtraPanes
         layout = secondaryUrl == nil
             ? nil
             : model.layout.flatMap(SplitLayout.init(rawValue:)) ?? .vertical

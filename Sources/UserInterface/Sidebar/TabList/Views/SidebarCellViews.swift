@@ -488,90 +488,119 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
     }
 }
 
-// MARK: - Split Pair Cell View
+// MARK: - Split Cell View
 /// Sidebar row representing a non-pinned split as a single merged cell.
-/// Two halves stand side-by-side inside one rounded background; each
-/// half shows its favicon, title, and an x close button that appears on
-/// cell hover. The pane whose tab is focused gets a solid white pill,
-/// the other half stays at the cell-level hover tint.
-class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling {
+/// One segment per pane (two to `SplitGroup.maxPaneCount`) stands
+/// side-by-side inside one rounded background, separated by thin seams;
+/// each segment shows its favicon, title, and an x close button that
+/// appears on cell hover. The whole cell becomes the solid selected pill
+/// when any pane's tab is focused; otherwise it stays at the cell-level
+/// hover tint.
+class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private static let faviconSize: CGFloat = 16
     private static let faviconCornerRadius: CGFloat = 3
     private static let closeButtonSize: CGFloat = 24
     private static let titleTrailingSpacing: CGFloat = 5
-    /// The left pane is already inset 2 points from the row background, so
-    /// 4 points aligns its favicon at the normal tab's 6-point leading edge.
-    private static let leftIconLeadingSpacing: CGFloat = 4
-    /// Keep extra breathing room between the divider and the right favicon.
-    private static let rightIconLeadingSpacing: CGFloat = 8
+    /// The first segment is already inset 2 points from the row
+    /// background, so 4 points aligns its favicon at the normal tab's
+    /// 6-point leading edge.
+    private static let firstIconLeadingSpacing: CGFloat = 4
+    /// Keep extra breathing room between a divider and the next favicon.
+    private static let dividedIconLeadingSpacing: CGFloat = 8
+    /// Gap between neighbouring segments; the divider seam sits in it.
+    private static let segmentSpacing: CGFloat = 2
+
+    /// Views of one pane segment. Segments are created on demand (at most
+    /// `SplitGroup.maxPaneCount`) and shown or hidden to match the
+    /// configured pane count, so a reused cell never rebuilds its tree.
+    @MainActor
+    private final class PaneSegment {
+        let pane = HoverableView()
+        let statusModel = TabStatusModel()
+        let iconView: TabFaviconImageView
+        let discardedOutlineHost: TabDecorativeHostingView
+        let titleLabel = TrailingFadeTextField()
+        let closeHost: ZeroSafeAreaHostingView<AnyView>
+        let muteHost: ZeroSafeAreaHostingView<AnyView>
+        /// Recording badge overlaid on the favicon. Mirrors the corner
+        /// badge `UnifiedTabFaviconView` draws on a normal tab so a split
+        /// pane using the microphone / camera / screen share reads the same.
+        let recordingHost: TabRecordingIconHostingView
+        var muteWidth: Constraint?
+        var titlePaneTrailing: Constraint?
+        var titleCloseTrailing: Constraint?
+        var faviconHandle: ProfileScopedFaviconLoadHandle?
+        weak var tab: Tab?
+
+        init(faviconCornerRadius: CGFloat,
+             faviconSize: CGFloat,
+             closeTapped: @escaping () -> Void,
+             themeObserver: ThemeObserver) {
+            iconView = TabFaviconImageView(model: statusModel, cornerRadius: faviconCornerRadius)
+            discardedOutlineHost = TabDecorativeHostingView(
+                rootView: TabDiscardedFaviconOutline(
+                    model: statusModel,
+                    faviconSize: faviconSize,
+                    faviconCornerRadius: faviconCornerRadius
+                )
+            )
+            // Match normal-tab close buttons (24x24 with rounded hover fill)
+            // by reusing `UnifiedTabCloseButton`. Hosted inside the segment
+            // so the SwiftUI button receives its own hover events.
+            closeHost = ZeroSafeAreaHostingView(rootView: AnyView(
+                UnifiedTabCloseButton(action: closeTapped)
+                    .phiThemeObserver(themeObserver)
+            ))
+            closeHost.isHidden = true
+            // Mute toggle. Hidden + zero width by default so the title fills
+            // the same space when no audio is present; shown with 20pt
+            // width when the pane's tab is audible or muted.
+            muteHost = ZeroSafeAreaHostingView(rootView: AnyView(EmptyView()))
+            muteHost.isHidden = true
+            // Recording badge (the pulsing red dot). Only its visibility is
+            // toggled; the host builds the dot on each show and drops it on
+            // hide. The observer is captured by value so the host's closure
+            // does not retain the cell.
+            recordingHost = TabRecordingIconHostingView {
+                AnyView(UnifiedTabRecordingIcon().phiThemeObserver(themeObserver))
+            }
+            recordingHost.isHidden = true
+        }
+
+        func prepareForReuse() {
+            faviconHandle?.cancel()
+            faviconHandle = nil
+            iconView.image = nil
+            iconView.alphaValue = 1
+            statusModel.prepareForReuse()
+            titleLabel.stringValue = ""
+            titleLabel.toolTip = nil
+            closeHost.isHidden = true
+            muteHost.isHidden = true
+            recordingHost.isHidden = true
+            muteWidth?.update(offset: 0)
+            tab = nil
+        }
+    }
+
     private let outerBackground = HoverableView()
-    private let leftPane = HoverableView()
-    private let rightPane = HoverableView()
-
-    func handledPaneClick(onMouseDown event: NSEvent) -> Bool {
-        leftPane.handledClick(onMouseDown: event) || rightPane.handledClick(onMouseDown: event)
-    }
-
-    @discardableResult
-    func handleDoubleClick(with event: NSEvent) -> Bool {
-        // Functional controls retain their own actions, including double-clicks.
-        for control in [leftCloseHost, rightCloseHost, leftMuteHost, rightMuteHost] {
-            if let control, !control.isHidden,
-               control.bounds.contains(control.convert(event.locationInWindow, from: nil)) {
-                return false
-            }
-        }
-        for pane in [leftPane, rightPane] {
-            if pane.bounds.contains(pane.convert(event.locationInWindow, from: nil)) {
-                return pane.handleDoubleClick(with: event)
-            }
-        }
-        return false
-    }
-
-    private lazy var leftIconView = TabFaviconImageView(
-        model: leftStatusModel, cornerRadius: Self.faviconCornerRadius
-    )
-    private lazy var rightIconView = TabFaviconImageView(
-        model: rightStatusModel, cornerRadius: Self.faviconCornerRadius
-    )
-    private var leftDiscardedOutlineHost: TabDecorativeHostingView!
-    private var rightDiscardedOutlineHost: TabDecorativeHostingView!
-    private var statusBadgeHost: TabDecorativeHostingView!
-    private let leftStatusModel = TabStatusModel()
-    private let rightStatusModel = TabStatusModel()
-    private let leftTitleLabel = TrailingFadeTextField()
-    private let rightTitleLabel = TrailingFadeTextField()
-    private var leftCloseHost: ZeroSafeAreaHostingView<AnyView>!
-    private var rightCloseHost: ZeroSafeAreaHostingView<AnyView>!
-    private var leftMuteHost: ZeroSafeAreaHostingView<AnyView>!
-    private var rightMuteHost: ZeroSafeAreaHostingView<AnyView>!
-    /// Per-pane recording badge overlaid on each pane's favicon. Mirrors the
-    /// corner badge `UnifiedTabFaviconView` draws on a normal tab so a split
-    /// pane using the microphone / camera / screen share reads the same.
-    private var leftRecordingHost: TabRecordingIconHostingView!
-    private var rightRecordingHost: TabRecordingIconHostingView!
-    private var leftMuteWidth: Constraint?
-    private var rightMuteWidth: Constraint?
-    private var leftTitlePaneTrailing: Constraint?
-    private var leftTitleCloseTrailing: Constraint?
-    private var rightTitlePaneTrailing: Constraint?
-    private var rightTitleCloseTrailing: Constraint?
-    private let dividerView = NSView()
-    private var themeObserver = ThemeObserver.shared
-    private var leftFaviconHandle: ProfileScopedFaviconLoadHandle?
-    private var rightFaviconHandle: ProfileScopedFaviconLoadHandle?
-    private weak var configuredLeftTab: Tab?
-    private weak var configuredRightTab: Tab?
+    private var segments: [PaneSegment] = []
+    /// Seams drawn in the gap between neighbouring segments so the split
+    /// always reads as grouped tabs. Mirrors `splitDividerView` in the
+    /// horizontal strip. `dividers[i]` sits after `segments[i]`.
+    private var dividers: [NSView] = []
+    private var statusBadgeHost: TabDecorativeHostingView?
+    private var configuredPaneCount = 0
     private var configuredSplitId: String?
     private let splitTabPreviewRegistration = SplitTabPreviewRegistration()
     private var showsSplitTabPreview = false
-    /// Owning window's BrowserState. Lets the cell re-resolve which pane
-    /// is "left" after Chromium reorders the strip (e.g. via the
-    /// "Reverse Panes" context-menu action or a drag) — the
-    /// `SplitPairSidebarItem.id` is keyed on the SplitGroup alone so the
-    /// diff path treats a strip swap as a no-op, but the underlying
-    /// `normalTabs` adjacency tells us which guid is now first.
+    private var themeObserver = ThemeObserver.shared
+    /// Owning window's BrowserState. Lets the cell re-resolve the pane
+    /// order after Chromium reorders the strip (e.g. via the "Reverse
+    /// Panes" / "Move Pane" context-menu actions or a drag) — the
+    /// `SplitSidebarItem.id` is keyed on the SplitGroup alone so the diff
+    /// path treats a strip reorder as a no-op, but the underlying
+    /// `normalTabs` adjacency tells us which pane is now where.
     weak var browserState: BrowserState?
     private var hoverTrackingArea: NSTrackingArea?
     private var isCellHovered = false {
@@ -582,9 +611,18 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     }
     private var isHoverSuppressed = false
     /// Controller that owns the outline view. Routed through so a click
-    /// on either half triggers the same selection flow as a normal tab
+    /// on any segment triggers the same selection flow as a normal tab
     /// click (clears group overview, updates lastSelectedItem, etc.).
     weak var owner: SidebarTabListItemOwner?
+
+    /// Segments currently bound to a pane, in on-screen order.
+    private var visibleSegments: ArraySlice<PaneSegment> {
+        segments.prefix(configuredPaneCount)
+    }
+
+    private var configuredPanes: [Tab] {
+        visibleSegments.compactMap(\.tab)
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -596,38 +634,39 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         setupViews()
     }
 
+    func handledPaneClick(onMouseDown event: NSEvent) -> Bool {
+        visibleSegments.contains { $0.pane.handledClick(onMouseDown: event) }
+    }
+
+    @discardableResult
+    func handleDoubleClick(with event: NSEvent) -> Bool {
+        // Functional controls retain their own actions, including double-clicks.
+        for segment in visibleSegments {
+            for control in [segment.closeHost, segment.muteHost] where !control.isHidden {
+                if control.bounds.contains(control.convert(event.locationInWindow, from: nil)) {
+                    return false
+                }
+            }
+        }
+        for segment in visibleSegments {
+            if segment.pane.bounds.contains(segment.pane.convert(event.locationInWindow, from: nil)) {
+                return segment.pane.handleDoubleClick(with: event)
+            }
+        }
+        return false
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
-        leftFaviconHandle?.cancel()
-        leftFaviconHandle = nil
-        rightFaviconHandle?.cancel()
-        rightFaviconHandle = nil
-        leftIconView.image = nil
-        rightIconView.image = nil
-        leftIconView.alphaValue = 1
-        rightIconView.alphaValue = 1
-        leftStatusModel.prepareForReuse()
-        rightStatusModel.prepareForReuse()
-        leftTitleLabel.stringValue = ""
-        rightTitleLabel.stringValue = ""
-        leftTitleLabel.toolTip = nil
-        rightTitleLabel.toolTip = nil
+        for segment in segments {
+            segment.prepareForReuse()
+        }
         toolTip = nil
-        configuredLeftTab = nil
-        configuredRightTab = nil
         configuredSplitId = nil
         splitTabPreviewRegistration.invalidate()
         outerBackground.isSelected = false
         isCellHovered = false
         setCloseButtonSpaceReserved(false)
-        leftCloseHost.isHidden = true
-        rightCloseHost.isHidden = true
-        leftMuteHost.isHidden = true
-        rightMuteHost.isHidden = true
-        leftRecordingHost.isHidden = true
-        rightRecordingHost.isHidden = true
-        leftMuteWidth?.update(offset: 0)
-        rightMuteWidth?.update(offset: 0)
     }
 
     private func setupViews() {
@@ -651,201 +690,38 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
             make.edges.equalToSuperview().inset(NSEdgeInsets(
                 top: 2, left: WebContentConstant.edgesSpacing, bottom: 2, right: WebContentConstant.edgesSpacing))
         }
-
-        // Match normal-tab close buttons (24x24 with rounded hover fill) by
-        // reusing `UnifiedTabCloseButton`. Hosted inside each pane so the
-        // SwiftUI button receives its own hover events independently.
-        leftCloseHost = ZeroSafeAreaHostingView(rootView: AnyView(
-            UnifiedTabCloseButton { [weak self] in self?.leftCloseTapped() }
-                .phiThemeObserver(themeObserver)
-        ))
-        rightCloseHost = ZeroSafeAreaHostingView(rootView: AnyView(
-            UnifiedTabCloseButton { [weak self] in self?.rightCloseTapped() }
-                .phiThemeObserver(themeObserver)
-        ))
-        leftCloseHost.isHidden = true
-        rightCloseHost.isHidden = true
-
-        // Per-pane mute toggles. Hidden + zero width by default so the
-        // title fills the same space as before when no audio is present;
-        // shown with 20pt width when the pane's tab is audible or muted.
-        leftMuteHost = ZeroSafeAreaHostingView(rootView: AnyView(EmptyView()))
-        rightMuteHost = ZeroSafeAreaHostingView(rootView: AnyView(EmptyView()))
-        leftMuteHost.isHidden = true
-        rightMuteHost.isHidden = true
-
-        // Recording badges (the pulsing red dot). Only their visibility is
-        // toggled here; the host builds the dot on each show and drops it
-        // on hide. The observer is captured by value so the hosts' closures
-        // do not retain the cell.
-        let recordingThemeObserver = themeObserver
-        leftRecordingHost = TabRecordingIconHostingView {
-            AnyView(UnifiedTabRecordingIcon().phiThemeObserver(recordingThemeObserver))
-        }
-        rightRecordingHost = TabRecordingIconHostingView {
-            AnyView(UnifiedTabRecordingIcon().phiThemeObserver(recordingThemeObserver))
-        }
-        leftRecordingHost.isHidden = true
-        rightRecordingHost.isHidden = true
-
-        leftDiscardedOutlineHost = TabDecorativeHostingView(
-            rootView: TabDiscardedFaviconOutline(
-                model: leftStatusModel,
-                faviconSize: Self.faviconSize,
-                faviconCornerRadius: Self.faviconCornerRadius
-            )
-        )
-        rightDiscardedOutlineHost = TabDecorativeHostingView(
-            rootView: TabDiscardedFaviconOutline(
-                model: rightStatusModel,
-                faviconSize: Self.faviconSize,
-                faviconCornerRadius: Self.faviconCornerRadius
-            )
-        )
-
-        leftMuteWidth = configurePane(leftPane,
-                                      icon: leftIconView,
-                                      discardedOutline: leftDiscardedOutlineHost,
-                                      iconLeadingSpacing: Self.leftIconLeadingSpacing,
-                                      title: leftTitleLabel,
-                                      mute: leftMuteHost,
-                                      recording: leftRecordingHost,
-                                      close: leftCloseHost,
-                                      paneTrailing: &leftTitlePaneTrailing,
-                                      closeTrailing: &leftTitleCloseTrailing)
-        rightMuteWidth = configurePane(rightPane,
-                                       icon: rightIconView,
-                                       discardedOutline: rightDiscardedOutlineHost,
-                                       iconLeadingSpacing: Self.rightIconLeadingSpacing,
-                                       title: rightTitleLabel,
-                                       mute: rightMuteHost,
-                                       recording: rightRecordingHost,
-                                       close: rightCloseHost,
-                                       paneTrailing: &rightTitlePaneTrailing,
-                                       closeTrailing: &rightTitleCloseTrailing)
-        outerBackground.addSubview(leftPane)
-        outerBackground.addSubview(rightPane)
-
-        leftPane.snp.makeConstraints { make in
-            make.top.bottom.leading.equalToSuperview().inset(2)
-            make.width.equalTo(rightPane)
-        }
-        rightPane.snp.makeConstraints { make in
-            make.top.bottom.trailing.equalToSuperview().inset(2)
-            make.leading.equalTo(leftPane.snp.trailing).offset(2)
-        }
-        // Long titles must defer to the pane's geometric width — without
-        // lowering compression resistance, NSTextField's intrinsic width
-        // pulls the pane past `centerX` and the right pane shifts out
-        // of the cell entirely.
-        leftTitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        rightTitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        leftTitleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        rightTitleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        leftPane.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        rightPane.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        leftPane.shouldClickOnMouseDown = { [weak self] in
-            self?.browserState?.multiSelection.isActive != true
-        }
-        rightPane.shouldClickOnMouseDown = { [weak self] in
-            self?.browserState?.multiSelection.isActive != true
-        }
-        leftPane.clickAction = { [weak self] in
-            self?.handlePaneClick(isLeft: true)
-        }
-        rightPane.clickAction = { [weak self] in
-            self?.handlePaneClick(isLeft: false)
-        }
-        leftPane.doubleClickAction = { [weak self] event in
-            self?.handlePaneDoubleClick(isLeft: true, event: event)
-        }
-        rightPane.doubleClickAction = { [weak self] event in
-            self?.handlePaneDoubleClick(isLeft: false, event: event)
-        }
-
-        // Vertical seam in the gap between the two panes so the pair
-        // always reads as two grouped tabs. Mirrors `splitDividerView`
-        // in the horizontal strip.
-        dividerView.wantsLayer = true
-        dividerView.phiLayer?.setBackgroundColor(ThemedColor.separator)
-        outerBackground.addSubview(dividerView)
-        dividerView.snp.makeConstraints { make in
-            make.centerX.equalTo(outerBackground.snp.centerX)
-            make.centerY.equalToSuperview()
-            make.width.equalTo(1)
-            make.height.equalTo(16)
-        }
-
-        // Treat the pair as one tab for chat and agent status. Each pane feeds
-        // its own model, while the merged view applies the shared priority and
-        // renders a single badge on the whole cell.
-        statusBadgeHost = TabDecorativeHostingView(
-            rootView: MergedTabCornerBadgeView(
-                primaryModel: leftStatusModel,
-                secondaryModel: rightStatusModel
-            )
-        )
-        addSubview(statusBadgeHost)
-        statusBadgeHost.snp.makeConstraints { make in
-            make.top.trailing.equalTo(outerBackground)
-                .inset(-TabCornerBadgeMetrics.overhang)
-            make.size.equalTo(CGSize(
-                width: TabCornerBadgeMetrics.visualSize,
-                height: TabCornerBadgeMetrics.visualSize
-            ))
-        }
     }
 
-    private func handlePaneDoubleClick(isLeft: Bool, event: NSEvent) {
-        guard let tab = (isLeft ? configuredLeftTab : configuredRightTab) else { return }
-        cancelTabPreviewForInteraction()
-        if !tab.closeOnDoubleClick(modifierFlags: event.modifierFlags) {
-            handlePaneClick(isLeft: isLeft)
-        }
-    }
-
-    private func handlePaneClick(isLeft: Bool) {
-        guard let tab = (isLeft ? configuredLeftTab : configuredRightTab) else { return }
-        cancelTabPreviewForInteraction()
-        let modifierFlags = NSApp.currentEvent?.modifierFlags ?? []
-        if let leftTab = configuredLeftTab,
-           let rightTab = configuredRightTab {
-            if owner?.splitPairPaneClicked(
-                leftTab: leftTab,
-                rightTab: rightTab,
-                selectedTab: tab,
-                modifierFlags: modifierFlags) == true {
-                return
-            }
-            if owner == nil,
-               modifierFlags.contains(.command),
-               browserState?.toggleMultiSelectionForSplitPair(
-                   leftTab: leftTab,
-                   rightTab: rightTab) == true {
-                return
+    /// Returns the segment for pane `index`, creating it (and its divider)
+    /// on first use. Segments stay in the view tree across reuse.
+    private func segment(at index: Int) -> PaneSegment {
+        while segments.count <= index {
+            let segmentIndex = segments.count
+            let segment = PaneSegment(
+                faviconCornerRadius: Self.faviconCornerRadius,
+                faviconSize: Self.faviconSize,
+                closeTapped: { [weak self] in self?.closeTapped(index: segmentIndex) },
+                themeObserver: themeObserver
+            )
+            configureSegment(segment, index: segmentIndex)
+            outerBackground.addSubview(segment.pane)
+            segments.append(segment)
+            if segmentIndex > 0 {
+                let divider = NSView()
+                divider.wantsLayer = true
+                divider.phiLayer?.setBackgroundColor(ThemedColor.separator)
+                outerBackground.addSubview(divider)
+                dividers.append(divider)
             }
         }
-        if browserState?.multiSelection.isActive == true {
-            browserState?.clearMultiSelection()
-        }
-        tab.performAction(with: owner)
+        return segments[index]
     }
 
-    @discardableResult
-    private func configurePane(_ pane: HoverableView,
-                               icon: TabFaviconImageView,
-                               discardedOutline: NSView,
-                               iconLeadingSpacing: CGFloat,
-                               title: NSTextField,
-                               mute: NSView,
-                               recording: NSView,
-                               close: NSView,
-                               paneTrailing: inout Constraint?,
-                               closeTrailing: inout Constraint?) -> Constraint? {
+    private func configureSegment(_ segment: PaneSegment, index: Int) {
+        let pane = segment.pane
         // Selection is owned by the outer background — the whole cell
-        // becomes the white pill when either pane is active, not just
-        // the active half. Leave the pane's own background tints clear
+        // becomes the white pill when any pane is active, not just the
+        // active segment. Leave the segment's own background tints clear
         // so the outer chrome shows through.
         pane.backgroundColor = .clear
         pane.hoveredColor = .clear
@@ -855,19 +731,37 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         pane.layer?.cornerRadius = 6
         pane.layer?.cornerCurve = .continuous
         pane.layer?.masksToBounds = false
+        pane.shouldClickOnMouseDown = { [weak self] in
+            self?.browserState?.multiSelection.isActive != true
+        }
+        pane.clickAction = { [weak self] in
+            self?.handlePaneClick(index: index)
+        }
+        pane.doubleClickAction = { [weak self] event in
+            self?.handlePaneDoubleClick(index: index, event: event)
+        }
+        // Long titles must defer to the segment's geometric width — without
+        // lowering compression resistance, NSTextField's intrinsic width
+        // pulls the segment wider than its equal share and the trailing
+        // segments shift out of the cell entirely.
+        segment.titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        segment.titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        pane.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
+        let icon = segment.iconView
         pane.addSubview(icon)
         icon.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
-            make.leading.equalToSuperview().offset(iconLeadingSpacing)
+            make.leading.equalToSuperview()
+                .offset(index == 0 ? Self.firstIconLeadingSpacing : Self.dividedIconLeadingSpacing)
             make.size.equalTo(CGSize(
                 width: Self.faviconSize,
                 height: Self.faviconSize
             ))
         }
 
-        pane.addSubview(discardedOutline)
-        discardedOutline.snp.makeConstraints { make in
+        pane.addSubview(segment.discardedOutlineHost)
+        segment.discardedOutlineHost.snp.makeConstraints { make in
             make.center.equalTo(icon)
             make.size.equalTo(CGSize(
                 width: TabCornerBadgeMetrics.discardedOutlineSize(
@@ -883,15 +777,16 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
 
         // Recording badge sits at the favicon's top-trailing corner, matching
         // `UnifiedTabFaviconView`'s overlay (8pt dot offset out by 3pt).
-        // Hosted on the pane rather than the icon so the icon's masked corners
-        // don't clip it. Hidden until the pane's tab starts capturing.
-        pane.addSubview(recording)
-        recording.snp.makeConstraints { make in
+        // Hosted on the segment rather than the icon so the icon's masked
+        // corners don't clip it. Hidden until the pane's tab starts capturing.
+        pane.addSubview(segment.recordingHost)
+        segment.recordingHost.snp.makeConstraints { make in
             make.top.equalTo(icon.snp.top).offset(-3)
             make.trailing.equalTo(icon.snp.trailing).offset(3)
             make.size.equalTo(CGSize(width: 8, height: 8))
         }
 
+        let title = segment.titleLabel
         title.font = NSFont.systemFont(ofSize: 13)
         title.phi.setTextColor(.textPrimary)
         title.lineBreakMode = .byClipping
@@ -903,18 +798,17 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         // Mute sits between favicon and title. Width is driven dynamically
         // by the cell so it collapses to 0 when the pane is silent; the
         // 2 / 4 offsets sum to the original 6pt icon→title gap, keeping
-        // the silent layout pixel-identical to before.
-        pane.addSubview(mute)
-        var muteWidthConstraint: Constraint?
-        mute.snp.makeConstraints { make in
+        // the silent layout pixel-identical to a normal tab.
+        pane.addSubview(segment.muteHost)
+        segment.muteHost.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
             make.leading.equalTo(icon.snp.trailing).offset(2)
             make.height.equalTo(20)
-            muteWidthConstraint = make.width.equalTo(0).constraint
+            segment.muteWidth = make.width.equalTo(0).constraint
         }
 
-        pane.addSubview(close)
-        close.snp.makeConstraints { make in
+        pane.addSubview(segment.closeHost)
+        segment.closeHost.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
             make.trailing.equalToSuperview().offset(-2)
             make.size.equalTo(CGSize(width: Self.closeButtonSize, height: Self.closeButtonSize))
@@ -922,17 +816,112 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
 
         title.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
-            make.leading.equalTo(mute.snp.trailing).offset(4)
+            make.leading.equalTo(segment.muteHost.snp.trailing).offset(4)
             // Fill the available region so the trailing fade only overlaps
-            // text when the title actually reaches the pane or close button.
-            // The title's low compression resistance lets mute/close controls
-            // keep their required widths as this region shrinks.
-            paneTrailing = make.trailing.equalToSuperview().offset(-Self.titleTrailingSpacing).constraint
-            closeTrailing = make.trailing.equalTo(close.snp.leading).offset(-Self.titleTrailingSpacing).constraint
+            // text when the title actually reaches the segment or close
+            // button. The title's low compression resistance lets mute/close
+            // controls keep their required widths as this region shrinks.
+            segment.titlePaneTrailing = make.trailing.equalToSuperview()
+                .offset(-Self.titleTrailingSpacing).constraint
+            segment.titleCloseTrailing = make.trailing.equalTo(segment.closeHost.snp.leading)
+                .offset(-Self.titleTrailingSpacing).constraint
         }
-        closeTrailing?.deactivate()
+        segment.titleCloseTrailing?.deactivate()
+    }
 
-        return muteWidthConstraint
+    /// Lays out `count` equal-width segments across the background with a
+    /// divider seam in each gap, hiding the rest. Re-run whenever the pane
+    /// count changes; a same-count rebind keeps the existing constraints.
+    private func applyPaneCountLayout(_ count: Int) {
+        guard count != configuredPaneCount else { return }
+        configuredPaneCount = count
+        for index in 0..<count { _ = segment(at: index) }
+        for (index, segment) in segments.enumerated() {
+            segment.pane.isHidden = index >= count
+            segment.pane.snp.removeConstraints()
+        }
+        for (index, divider) in dividers.enumerated() {
+            divider.isHidden = index >= count - 1
+            divider.snp.removeConstraints()
+        }
+        for index in 0..<count {
+            let pane = segments[index].pane
+            pane.snp.makeConstraints { make in
+                make.top.bottom.equalToSuperview().inset(2)
+                if index == 0 {
+                    make.leading.equalToSuperview().inset(2)
+                } else {
+                    make.leading.equalTo(segments[index - 1].pane.snp.trailing)
+                        .offset(Self.segmentSpacing)
+                    make.width.equalTo(segments[0].pane)
+                }
+                if index == count - 1 {
+                    make.trailing.equalToSuperview().inset(2)
+                }
+            }
+        }
+        for index in 0..<(count - 1) {
+            dividers[index].snp.makeConstraints { make in
+                make.centerX.equalTo(segments[index].pane.snp.trailing)
+                    .offset(Self.segmentSpacing / 2)
+                make.centerY.equalToSuperview()
+                make.width.equalTo(1)
+                make.height.equalTo(16)
+            }
+        }
+        installStatusBadge(models: segments.prefix(count).map(\.statusModel))
+    }
+
+    /// Treat the split as one tab for chat and agent status. Each pane feeds
+    /// its own model, while the merged view applies the shared priority and
+    /// renders a single badge on the whole cell.
+    private func installStatusBadge(models: [TabStatusModel]) {
+        statusBadgeHost?.removeFromSuperview()
+        let host = TabDecorativeHostingView(rootView: MergedTabCornerBadgeView(models: models))
+        addSubview(host)
+        host.snp.makeConstraints { make in
+            make.top.trailing.equalTo(outerBackground)
+                .inset(-TabCornerBadgeMetrics.overhang)
+            make.size.equalTo(CGSize(
+                width: TabCornerBadgeMetrics.visualSize,
+                height: TabCornerBadgeMetrics.visualSize
+            ))
+        }
+        statusBadgeHost = host
+    }
+
+    private func handlePaneDoubleClick(index: Int, event: NSEvent) {
+        guard let tab = segments[index].tab else { return }
+        cancelTabPreviewForInteraction()
+        if !tab.closeOnDoubleClick(modifierFlags: event.modifierFlags) {
+            handlePaneClick(index: index)
+        }
+    }
+
+    private func handlePaneClick(index: Int) {
+        guard let tab = segments[index].tab else { return }
+        cancelTabPreviewForInteraction()
+        let modifierFlags = NSApp.currentEvent?.modifierFlags ?? []
+        let panes = configuredPanes
+        if panes.count == configuredPaneCount, panes.count >= 2 {
+            if owner?.splitPaneClicked(
+                panes: panes,
+                index: index,
+                modifierFlags: modifierFlags) == true {
+                return
+            }
+            // No owner (embedded without the tab-list controller): toggle the
+            // whole split in the multi-selection directly.
+            if owner == nil,
+               modifierFlags.contains(.command),
+               browserState?.toggleMultiSelectionForSplit(panes: panes) == true {
+                return
+            }
+        }
+        if browserState?.multiSelection.isActive == true {
+            browserState?.clearMultiSelection()
+        }
+        tab.performAction(with: owner)
     }
 
     override func viewDidMoveToWindow() {
@@ -977,20 +966,17 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         splitTabPreviewRegistration.setHovering(isCellHovered)
     }
 
-    private func leftCloseTapped() {
+    private func closeTapped(index: Int) {
         cancelTabPreviewForInteraction()
-        configuredLeftTab?.close()
-    }
-
-    private func rightCloseTapped() {
-        cancelTabPreviewForInteraction()
-        configuredRightTab?.close()
+        guard index < configuredPaneCount else { return }
+        segments[index].tab?.close()
     }
 
     private func updateHoverChrome() {
         setCloseButtonSpaceReserved(isCellHovered)
-        leftCloseHost.isHidden = !isCellHovered
-        rightCloseHost.isHidden = !isCellHovered
+        for segment in visibleSegments {
+            segment.closeHost.isHidden = !isCellHovered
+        }
     }
 
     private func setCloseButtonSpaceReserved(_ reserved: Bool) {
@@ -1008,31 +994,34 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     }
 
     private func applyCloseButtonSpaceReservation(_ reserved: Bool) {
-        if reserved {
-            leftTitlePaneTrailing?.deactivate()
-            rightTitlePaneTrailing?.deactivate()
-            leftTitleCloseTrailing?.activate()
-            rightTitleCloseTrailing?.activate()
-        } else {
-            leftTitleCloseTrailing?.deactivate()
-            rightTitleCloseTrailing?.deactivate()
-            leftTitlePaneTrailing?.activate()
-            rightTitlePaneTrailing?.activate()
+        for segment in segments {
+            if reserved {
+                segment.titlePaneTrailing?.deactivate()
+                segment.titleCloseTrailing?.activate()
+            } else {
+                segment.titleCloseTrailing?.deactivate()
+                segment.titlePaneTrailing?.activate()
+            }
         }
     }
 
     override func configureAppearance() {
-        guard let pair = item as? SplitPairSidebarItem else { return }
+        guard let split = item as? SplitSidebarItem else { return }
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
-        configuredLeftTab = pair.leftTab
-        configuredRightTab = pair.rightTab
-        configuredSplitId = pair.groupId
-        let state = browserState ?? pair.browserState
-        leftStatusModel.configure(with: pair.leftTab, in: state)
-        rightStatusModel.configure(with: pair.rightTab, in: state)
+        let panes = split.panes
+        guard panes.count >= 2 else { return }
+        applyPaneCountLayout(panes.count)
+        configuredSplitId = split.groupId
+        let state = browserState ?? split.browserState
+        for (index, tab) in panes.enumerated() {
+            bindSegment(at: index, to: tab, in: state)
+        }
+        for segment in segments.dropFirst(panes.count) {
+            segment.prepareForReuse()
+        }
         if let state,
-           let target = SplitTabPreviewTarget.make(representing: pair.leftTab, in: state) {
+           let target = SplitTabPreviewTarget.make(representing: split.firstPane, in: state) {
             splitTabPreviewRegistration.configure(
                 anchorView: self,
                 target: target,
@@ -1050,44 +1039,29 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         } else {
             splitTabPreviewRegistration.invalidate()
         }
-
-        refreshFavicon(into: leftIconView, for: pair.leftTab, handle: &leftFaviconHandle)
-        refreshFavicon(into: rightIconView, for: pair.rightTab, handle: &rightFaviconHandle)
-        updatePaneTitles(leftTitle: pair.leftTab.title, rightTitle: pair.rightTab.title)
+        toolTip = nil
         updateSelected()
         updateHoverChrome()
-        updateMute(isLeft: true,
-                   audible: pair.leftTab.isCurrentlyAudible,
-                   muted: pair.leftTab.isMuted)
-        updateMute(isLeft: false,
-                   audible: pair.rightTab.isCurrentlyAudible,
-                   muted: pair.rightTab.isMuted)
-        updateRecording(isLeft: true, capturing: pair.leftTab.isCapturingMedia)
-        updateRecording(isLeft: false, capturing: pair.rightTab.isCapturingMedia)
 
-        // Subscribe to each tab's audio state and route by tab identity so a
-        // post-swap event lands in the correct pane — the configured left/right
-        // mapping changes via `reresolvePairOrderIfNeeded` without re-creating
-        // these subscriptions. Same pattern as the title binding above.
-        for tab in [pair.leftTab, pair.rightTab] {
+        for tab in panes {
+            // Subscribe to each tab's audio state and route by tab identity
+            // so a post-reorder event lands in the correct segment — the
+            // configured segment order changes via
+            // `reresolvePaneOrderIfNeeded` without re-creating these
+            // subscriptions. Same pattern as the title binding below.
             tab.$isCurrentlyAudible
                 .combineLatest(tab.audioMutePublisher)
                 .removeDuplicates { $0 == $1 }
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self, weak tab] audible, muted in
-                    guard let self, let tab else { return }
-                    if tab === self.configuredLeftTab {
-                        self.updateMute(isLeft: true, audible: audible, muted: muted)
-                    } else if tab === self.configuredRightTab {
-                        self.updateMute(isLeft: false, audible: audible, muted: muted)
-                    }
+                    guard let self, let tab, let index = self.segmentIndex(of: tab) else { return }
+                    self.updateMute(index: index, audible: audible, muted: muted)
                 }
                 .store(in: &cancellables)
-        }
 
-        // Same identity-routed binding for the capture flags so each pane's
-        // recording badge tracks its own tab, matching a standalone tab.
-        for tab in [pair.leftTab, pair.rightTab] {
+            // Same identity-routed binding for the capture flags so each
+            // segment's recording badge tracks its own tab, matching a
+            // standalone tab.
             Publishers.CombineLatest3(tab.$isCapturingAudio,
                                       tab.$isCapturingVideo,
                                       tab.$isSharingScreen)
@@ -1095,42 +1069,16 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
                 .removeDuplicates()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self, weak tab] capturing in
-                    guard let self, let tab else { return }
-                    if tab === self.configuredLeftTab {
-                        self.updateRecording(isLeft: true, capturing: capturing)
-                    } else if tab === self.configuredRightTab {
-                        self.updateRecording(isLeft: false, capturing: capturing)
-                    }
+                    guard let self, let tab, let index = self.segmentIndex(of: tab) else { return }
+                    self.updateRecording(index: index, capturing: capturing)
                 }
                 .store(in: &cancellables)
-        }
 
-        Publishers.CombineLatest(pair.leftTab.$isActive, pair.rightTab.$isActive)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _, _ in self?.updateSelected() }
-            .store(in: &cancellables)
-
-        // Re-resolve left/right when the strip order changes (swap button,
-        // drag-to-reorder, etc). The SplitPairSidebarItem keeps the same id
-        // across a swap so the outline-view diff skips this row; we rebind
-        // ourselves instead of waiting for an item-level reload.
-        if let state = browserState {
-            state.$normalTabs
-                .dropFirst()
+            tab.$isActive
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self] _ in
-                    self?.reresolvePairOrderIfNeeded()
-                }
+                .sink { [weak self] _ in self?.updateSelected() }
                 .store(in: &cancellables)
-            state.$multiSelection
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] _ in
-                    self?.updateSelected()
-                }
-                .store(in: &cancellables)
-        }
 
-        for tab in [pair.leftTab, pair.rightTab] {
             tab.$liveFaviconData
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self, weak tab] _ in
@@ -1156,32 +1104,61 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
             tab.$title
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self, weak tab] newTitle in
-                    guard let self, let tab else { return }
-                    if tab === self.configuredLeftTab {
-                        self.updatePaneTitle(isLeft: true, title: newTitle)
-                    } else if tab === self.configuredRightTab {
-                        self.updatePaneTitle(isLeft: false, title: newTitle)
-                    }
+                    guard let self, let tab, let index = self.segmentIndex(of: tab) else { return }
+                    self.updatePaneTitle(index: index, title: newTitle)
+                }
+                .store(in: &cancellables)
+        }
+
+        // Re-resolve the pane order when the strip order changes (reverse /
+        // move-pane actions, drag-to-reorder, etc). The SplitSidebarItem
+        // keeps the same id across a reorder so the outline-view diff skips
+        // this row; we rebind ourselves instead of waiting for an item-level
+        // reload.
+        if let state = browserState {
+            state.$normalTabs
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.reresolvePaneOrderIfNeeded()
+                }
+                .store(in: &cancellables)
+            state.$multiSelection
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.updateSelected()
                 }
                 .store(in: &cancellables)
         }
     }
 
-    private func updatePaneTitles(leftTitle: String, rightTitle: String) {
-        toolTip = nil
-        updatePaneTitle(isLeft: true, title: leftTitle)
-        updatePaneTitle(isLeft: false, title: rightTitle)
+    /// Points segment `index` at `tab`: status model, favicon, title, mute
+    /// and recording chrome. Subscriptions are owned by `configureAppearance`
+    /// and route by tab identity, so a rebind never touches them.
+    private func bindSegment(at index: Int, to tab: Tab, in state: BrowserState?) {
+        let segment = segments[index]
+        segment.tab = tab
+        segment.statusModel.configure(with: tab, in: state)
+        refreshFavicon(segment: segment, for: tab)
+        updatePaneTitle(index: index, title: tab.title)
+        updateMute(index: index, audible: tab.isCurrentlyAudible, muted: tab.isMuted)
+        updateRecording(index: index, capturing: tab.isCapturingMedia)
     }
 
-    private func updatePaneTitle(isLeft: Bool, title: String) {
-        let label = isLeft ? leftTitleLabel : rightTitleLabel
+    private func segmentIndex(of tab: Tab) -> Int? {
+        visibleSegments.firstIndex { $0.tab === tab }
+    }
+
+    private func updatePaneTitle(index: Int, title: String) {
+        let label = segments[index].titleLabel
         label.stringValue = title
         label.toolTip = showsSplitTabPreview ? nil : title
     }
 
     private func updatePaneToolTips() {
-        leftTitleLabel.toolTip = showsSplitTabPreview ? nil : configuredLeftTab?.title
-        rightTitleLabel.toolTip = showsSplitTabPreview ? nil : configuredRightTab?.title
+        for segment in visibleSegments {
+            segment.titleLabel.toolTip = showsSplitTabPreview ? nil : segment.tab?.title
+        }
     }
 
     func cancelTabPreviewForInteraction() {
@@ -1189,18 +1166,14 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     }
 
     private func refreshFaviconForTab(_ tab: Tab) {
-        if tab === configuredLeftTab {
-            refreshFavicon(into: leftIconView, for: tab, handle: &leftFaviconHandle)
-        } else if tab === configuredRightTab {
-            refreshFavicon(into: rightIconView, for: tab, handle: &rightFaviconHandle)
-        }
+        guard let index = segmentIndex(of: tab) else { return }
+        refreshFavicon(segment: segments[index], for: tab)
     }
 
-    private func refreshFavicon(into imageView: TabFaviconImageView,
-                                for tab: Tab,
-                                handle: inout ProfileScopedFaviconLoadHandle?) {
-        handle?.cancel()
-        handle = nil
+    private func refreshFavicon(segment: PaneSegment, for tab: Tab) {
+        segment.faviconHandle?.cancel()
+        segment.faviconHandle = nil
+        let imageView = segment.iconView
         if let live = tab.liveFaviconData, let image = NSImage(data: live) {
             imageView.image = image
             return
@@ -1211,7 +1184,7 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
             pageURLString: pageURLString,
             snapshotData: tab.cachedFaviconData
         )
-        handle = ProfileScopedFaviconRepository.shared.loadFavicon(for: request) { [weak imageView, weak tab] result in
+        segment.faviconHandle = ProfileScopedFaviconRepository.shared.loadFavicon(for: request) { [weak imageView, weak tab] result in
             imageView?.image = result.image
             if result.source == .chromium, let data = result.data {
                 tab?.updateProfileScopedFaviconData(
@@ -1222,112 +1195,106 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         }
     }
 
-    /// Show or hide a pane's mute toggle based on its tab's audio state.
+    /// Show or hide a segment's mute toggle based on its tab's audio state.
     /// Mirrors the audible-or-muted condition `SideTabView` uses for the
     /// regular sidebar row so split panes match unsplit panes visually.
-    private func updateMute(isLeft: Bool, audible: Bool, muted: Bool) {
+    private func updateMute(index: Int, audible: Bool, muted: Bool) {
         let hasAudio = audible || muted
-        let host = isLeft ? leftMuteHost : rightMuteHost
-        let widthConstraint = isLeft ? leftMuteWidth : rightMuteWidth
-        host?.isHidden = !hasAudio
-        widthConstraint?.update(offset: hasAudio ? 20 : 0)
+        let segment = segments[index]
+        segment.muteHost.isHidden = !hasAudio
+        segment.muteWidth?.update(offset: hasAudio ? 20 : 0)
         guard hasAudio else { return }
-        host?.rootView = AnyView(
+        segment.muteHost.rootView = AnyView(
             SplitPaneMuteButton(isMuted: muted) { [weak self] in
-                guard let self else { return }
-                let tab = isLeft ? self.configuredLeftTab : self.configuredRightTab
-                guard let tab else { return }
+                guard let self, index < self.configuredPaneCount,
+                      let tab = self.segments[index].tab else { return }
                 tab.toggleAudioMuted()
             }
             .phiThemeObserver(themeObserver)
         )
     }
 
-    /// Show or hide a pane's recording badge based on its tab's capture
+    /// Show or hide a segment's recording badge based on its tab's capture
     /// state. Mirrors the corner badge a standalone tab shows via
     /// `UnifiedTabFaviconView` so split panes match unsplit panes.
-    private func updateRecording(isLeft: Bool, capturing: Bool) {
-        let host = isLeft ? leftRecordingHost : rightRecordingHost
-        host?.isHidden = !capturing
+    private func updateRecording(index: Int, capturing: Bool) {
+        segments[index].recordingHost.isHidden = !capturing
     }
 
-    /// Test seam: whether the given pane currently shows its recording badge.
-    func isRecordingIndicatorVisible(isLeft: Bool) -> Bool {
-        !(isLeft ? leftRecordingHost : rightRecordingHost).isHidden
+    /// Test seam: whether the segment for pane `paneIndex` currently shows
+    /// its recording badge.
+    func isRecordingIndicatorVisible(paneIndex: Int) -> Bool {
+        guard paneIndex < configuredPaneCount else { return false }
+        return !segments[paneIndex].recordingHost.isHidden
     }
 
     /// Test seam: current memory-reclaimed opacity for the given pane's favicon.
-    func faviconOpacity(isLeft: Bool) -> CGFloat {
-        (isLeft ? leftIconView : rightIconView).alphaValue
+    func faviconOpacity(paneIndex: Int) -> CGFloat {
+        guard paneIndex < configuredPaneCount else { return 1 }
+        return segments[paneIndex].iconView.alphaValue
     }
 
     private func updateSelected() {
-        guard let pair = item as? SplitPairSidebarItem else { return }
+        guard let split = item as? SplitSidebarItem else { return }
         // Match SideTabView: active split rows use the regular selected
         // fill, while temporary multi-selection uses the sub-selected fill.
-        let state = browserState ?? pair.browserState
-        let isBookmarkSelected = pair.boundBookmarkGuid(in: state).map {
+        let state = browserState ?? split.browserState
+        let isBookmarkSelected = split.boundBookmarkGuid(in: state).map {
             state?.multiSelection.containsBookmark($0) == true
         } ?? false
-        let isMultiSelected = state?.multiSelection.contains(pair.leftTab.guid) == true ||
-            state?.multiSelection.contains(pair.rightTab.guid) == true ||
-            isBookmarkSelected
-        let isActive = pair.leftTab.isActive || pair.rightTab.isActive
+        let isMultiSelected = split.panes.contains { state?.multiSelection.contains($0.guid) == true }
+            || isBookmarkSelected
+        let isActive = split.panes.contains { $0.isActive }
         outerBackground.selectedColor = isActive
             ? NSColor(resource: .sidebarTabSelected)
             : ThemedColor.tabSubSelectionBackground.resolve(in: outerBackground)
         outerBackground.isSelected = isActive || isMultiSelected
     }
 
-    /// Re-binds the cell when the pair's membership changed in place — a
-    /// drag-to-replace swaps one pane's Tab object on the cached
-    /// `SplitPairSidebarItem` while the row id survives, so the outline
-    /// diff never reloads this row. `reresolvePairOrderIfNeeded` below only
-    /// covers order swaps of the two already-bound tabs; identity drift
-    /// needs the full re-bind so the title/favicon/audio subscriptions
-    /// attach to the new Tab. Driven by
-    /// `SidebarTabListViewController.pushPaneUpdatesToSplitPairCells`.
+    /// Re-binds the cell when the split's membership changed in place — a
+    /// drag-to-replace, pane add or pane remove mutates the cached
+    /// `SplitSidebarItem` while the row id survives, so the outline diff
+    /// never reloads this row. `reresolvePaneOrderIfNeeded` below only
+    /// covers reorders of the already-bound tabs; identity drift needs the
+    /// full re-bind so the title/favicon/audio subscriptions attach to the
+    /// new Tabs. Driven by
+    /// `SidebarTabListViewController.pushPaneUpdatesToSplitCells`.
     func rebindPanesIfNeeded() {
-        guard let pair = item as? SplitPairSidebarItem,
-              pair.leftTab !== configuredLeftTab || pair.rightTab !== configuredRightTab else {
+        guard let split = item as? SplitSidebarItem else { return }
+        let configured = configuredPanes
+        guard split.panes.count != configured.count
+                || zip(split.panes, configured).contains(where: { $0.0 !== $0.1 }) else {
             return
         }
         configureAppearance()
     }
 
-    /// If Chromium reordered the pair (swap button / drag), reflect the new
-    /// order in the cell. The SplitGroup's primary/secondary updates first;
-    /// the strip's `normalTabs` then re-sequences. We compare the cell's
-    /// current left/right against the live `normalTabs` order and swap if
-    /// the visible mapping is stale.
-    private func reresolvePairOrderIfNeeded() {
-        guard let pair = item as? SplitPairSidebarItem,
-              let state = browserState,
-              let leftIdx = state.normalTabs.firstIndex(where: { $0.guid == pair.leftTab.guid }),
-              let rightIdx = state.normalTabs.firstIndex(where: { $0.guid == pair.rightTab.guid }) else {
+    /// If Chromium reordered the panes (reverse / move-pane actions, drag),
+    /// reflect the new order in the cell. The SplitGroup's slot order
+    /// updates first; the strip's `normalTabs` then re-sequences. We compare
+    /// the cell's current order against the live `normalTabs` order and
+    /// re-sequence the segments if the visible mapping is stale.
+    private func reresolvePaneOrderIfNeeded() {
+        guard let split = item as? SplitSidebarItem,
+              let state = browserState else { return }
+        // A pane added or removed reaches the cached item before this cell
+        // has segments for it, and a reorder only re-sequences bound panes.
+        guard split.panes.count == configuredPanes.count else {
+            rebindPanesIfNeeded()
             return
         }
-        if leftIdx > rightIdx {
-            let oldLeft = pair.leftTab
-            pair.leftTab = pair.rightTab
-            pair.rightTab = oldLeft
-            configuredLeftTab = pair.leftTab
-            configuredRightTab = pair.rightTab
-            leftStatusModel.configure(with: pair.leftTab, in: pair.browserState)
-            rightStatusModel.configure(with: pair.rightTab, in: pair.browserState)
-            updatePaneTitles(leftTitle: pair.leftTab.title, rightTitle: pair.rightTab.title)
-            refreshFavicon(into: leftIconView, for: pair.leftTab, handle: &leftFaviconHandle)
-            refreshFavicon(into: rightIconView, for: pair.rightTab, handle: &rightFaviconHandle)
-            updateSelected()
-            updateMute(isLeft: true,
-                       audible: pair.leftTab.isCurrentlyAudible,
-                       muted: pair.leftTab.isMuted)
-            updateMute(isLeft: false,
-                       audible: pair.rightTab.isCurrentlyAudible,
-                       muted: pair.rightTab.isMuted)
-            updateRecording(isLeft: true, capturing: pair.leftTab.isCapturingMedia)
-            updateRecording(isLeft: false, capturing: pair.rightTab.isCapturingMedia)
+        var indices: [Int] = []
+        for pane in split.panes {
+            guard let index = state.normalTabs.firstIndex(where: { $0.guid == pane.guid }) else { return }
+            indices.append(index)
         }
+        guard indices != indices.sorted() else { return }
+        let ordered = zip(indices, split.panes).sorted { $0.0 < $1.0 }.map(\.1)
+        split.panes = ordered
+        for (index, tab) in ordered.enumerated() {
+            bindSegment(at: index, to: tab, in: split.browserState)
+        }
+        updateSelected()
     }
 }
 

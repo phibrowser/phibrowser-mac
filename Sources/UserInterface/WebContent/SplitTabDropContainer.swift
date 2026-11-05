@@ -52,7 +52,7 @@ final class SplitTabDropContainer: NSView {
     private static let dropHintLabelVerticalInset: CGFloat = 12
     private static let dropHintAttractAnimationDuration: CFTimeInterval = 0.16
     private static let dropHintFollowAnimationDuration: CFTimeInterval = 0.12
-    private static let dropHintSettleAnimationDuration: CFTimeInterval = 0.20
+    private static let dropHintSettleAnimationDuration = SplitPaneHostView.panePreviewAnimationDuration
     // Approach closes the primary-axis gap in one animated target. Follow uses
     // lower gains so pointer tremor becomes sub-point card movement.
     private static let approachingPrimaryAxisGain: CGFloat = 1.0
@@ -83,11 +83,26 @@ final class SplitTabDropContainer: NSView {
     /// in which case the full bounds are used as a fallback.
     var pageAreaProvider: (() -> CGRect?)?
 
+    /// Fires when the slot a drop would add a pane at changes, nil once the
+    /// drag leaves the add zones. The split host opens that space.
+    var onAddPanePreviewChanged: ((Int?) -> Void)?
+
+    /// Fires when a drop adds a pane at this slot, so the space stays open
+    /// until the pane arrives.
+    var onAddPaneCommitted: ((Int) -> Void)?
+
     enum DropZone: Hashable {
+        /// Create mode: the focused tab and the drop form a new pair with the
+        /// drop on this side.
         case left
         case right
         case top
         case bottom
+        /// Pane mode: replace the pane at this slot of the focused split.
+        case pane(Int)
+        /// Pane mode: a new pane joins the focused split at this slot, from
+        /// before the first pane to after the last.
+        case insert(Int)
 
         /// Layout a create-mode drop onto this zone produces. The layout cases
         /// name the divider orientation, not the pane arrangement.
@@ -95,6 +110,7 @@ final class SplitTabDropContainer: NSView {
             switch self {
             case .left, .right: return .vertical
             case .top, .bottom: return .horizontal
+            case .pane, .insert: return .vertical
             }
         }
 
@@ -103,6 +119,7 @@ final class SplitTabDropContainer: NSView {
             switch self {
             case .left, .top: return true
             case .right, .bottom: return false
+            case .pane(let slot), .insert(let slot): return slot == 0
             }
         }
 
@@ -112,19 +129,35 @@ final class SplitTabDropContainer: NSView {
             case .right:  return NSLocalizedString("browser.splitDropHint.rightThird", value: "Add Right Split", comment: "Drop-zone hint shown when dragging a tab over the right third of the page")
             case .top:    return NSLocalizedString("browser.splitDropHint.topThird", value: "Add Top Split", comment: "Drop-zone hint shown when dragging a tab over the top third of the page")
             case .bottom: return NSLocalizedString("browser.splitDropHint.bottomThird", value: "Add Bottom Split", comment: "Drop-zone hint shown when dragging a tab over the bottom third of the page")
+            case .pane: return NSLocalizedString("browser.splitDropHint.replacePane", value: "Replace", comment: "Drop-zone hint shown when dragging a tab over a pane of a split to replace it")
+            case .insert: return NSLocalizedString("browser.splitDropHint.addBetween", value: "Add Here", comment: "Drop-zone hint shown when dragging a tab over the boundary between two panes of a split to add it there")
             }
         }
     }
 
+    /// The create-mode edge zones.
     private static let allZones: [DropZone] = [.left, .right, .top, .bottom]
+    /// Every zone a card is built for: the four edges, one pane card per
+    /// possible slot, and one per place a pane can join. A split that takes
+    /// a pane has at most three, so four places.
+    private static let allCardZones: [DropZone] =
+        allZones
+        + (0..<SplitGroup.maxPaneCount).map { DropZone.pane($0) }
+        + (0..<SplitGroup.maxPaneCount).map { DropZone.insert($0) }
+    /// Share of a pane's length at each of its ends that adds a pane there
+    /// instead of replacing it.
+    private static let insertZonePaneFraction: CGFloat = 1.0 / 4.0
 
     /// What a drop will do, decided by whether the focused tab is a split.
     /// `create` (focused tab not a split): four directional edge zones form a
     /// side-by-side or stacked split. `replace` (focused tab is a split):
     /// per-pane zones swap the dragged tab into one existing pane.
     private enum Mode: Equatable {
+        /// The focused tab is in no split: the drop forms a new pair.
         case create
-        case replace(splitId: String)
+        /// The focused tab is a pane of `splitId`: the drop replaces a pane
+        /// or, at the ends and between panes, joins the split as a new pane.
+        case pane(splitId: String)
     }
 
     private enum HintFrameTransition {
@@ -170,8 +203,8 @@ final class SplitTabDropContainer: NSView {
         let label: NSTextField
     }
 
-    /// Left/right cards are also reused for replace mode. Top/bottom are only
-    /// visible while creating a new split.
+    /// Edge cards serve create mode and the add-a-pane ends of pane mode; the
+    /// pane cards show only in pane mode.
     private let cards: [DropZone: HintCard]
 
     private static func makeSurfaceView() -> HintSurfaceView {
@@ -397,7 +430,7 @@ final class SplitTabDropContainer: NSView {
 
     override init(frame frameRect: NSRect) {
         var builtCards: [DropZone: HintCard] = [:]
-        for zone in Self.allZones {
+        for zone in Self.allCardZones {
             builtCards[zone] = HintCard(
                 surface: Self.makeSurfaceView(),
                 glass: Self.makeGlassView(),
@@ -415,7 +448,7 @@ final class SplitTabDropContainer: NSView {
         // Order: transformed surface (glass → white tint → active scrim →
         // dashed border) → label. Keeping the material and every shape under
         // one parent transform prevents their animations from drifting apart.
-        for zone in Self.allZones {
+        for zone in Self.allCardZones {
             guard let card = cards[zone] else { continue }
             addSubview(card.surface)
             card.surface.addSubview(card.glass)
@@ -471,7 +504,8 @@ final class SplitTabDropContainer: NSView {
     /// the point is outside the drop area or no drop is allowed right now.
     /// Multi-tab drags are intentionally not split candidates.
     /// In create mode (focused tab not a split), the four edge thirds land;
-    /// in replace mode the whole page maps onto the two existing panes.
+    /// in pane mode the whole page maps onto the existing panes, with the
+    /// ends of each pane adding a pane while the split has room.
     ///
     /// Note: in create mode, dragging the focused tab onto itself is allowed —
     /// the drop creates a fresh new-tab-page as the partner pane.
@@ -558,7 +592,7 @@ final class SplitTabDropContainer: NSView {
         return true
     }
 
-    /// Commits a split drop, choosing create vs replace from the focused tab.
+    /// Commits a split drop, choosing create vs pane mode from the focused tab.
     /// Shared by the NSDraggingDestination path and the TabStrip manual drag
     /// so both entry points behave identically.
     func commitSplitDrop(state: BrowserState, source: DragSource, zone: DropZone) {
@@ -570,8 +604,12 @@ final class SplitTabDropContainer: NSView {
                              source: source,
                              focusedTabId: focusedTabId,
                              zone: zone)
-        case .replace(let splitId):
-            performPaneReplace(state: state, source: source, splitId: splitId, zone: zone)
+        case .pane(let splitId):
+            if case .pane(let slot) = zone {
+                performPaneReplace(state: state, source: source, splitId: splitId, slot: slot)
+            } else {
+                performAddPane(state: state, source: source, splitId: splitId, zone: zone)
+            }
         }
     }
 
@@ -696,19 +734,56 @@ final class SplitTabDropContainer: NSView {
                                     layout: zone.layout)
     }
 
-    // MARK: - Replace a pane (focused tab is a split)
+    // MARK: - Pane mode (focused tab is a split)
+
+    /// Adds the dragged item to the focused split as a new pane on the
+    /// dropped edge: before the first pane or after the last. Normal tabs
+    /// join directly; bookmarks and closed-pinned entries open a fresh tab
+    /// first and join once Chromium echoes it back.
+    private func performAddPane(state: BrowserState,
+                                source: DragSource,
+                                splitId: String,
+                                zone: DropZone) {
+        guard case .insert(let slot) = zone,
+              let group = state.splitGroup(forId: splitId), group.canAddPane else { return }
+        onAddPaneCommitted?(slot)
+        switch source {
+        case .normalTab(let tabId):
+            state.addTabToSplit(splitId, tabId: tabId, slot: slot)
+        case .pinnedTab(let dbGuid):
+            if let liveTab = state.tabs.first(where: { $0.guidInLocalDB == dbGuid }),
+               !group.contains(tabId: liveTab.guid) {
+                state.demotePinnedTabLeavingPlaceholder(forTabId: liveTab.guid)
+                state.addTabToSplit(splitId, tabId: liveTab.guid, slot: slot)
+                return
+            }
+            guard let pinned = state.pinnedTabs.first(where: { $0.guidInLocalDB == dbGuid }),
+                  let url = pinned.url, !url.isEmpty else { return }
+            state.openNewTabIntoSplit(splitId: splitId, slot: slot,
+                                      navigateURL: URLProcessor.processUserInput(url))
+        case .bookmark(let bookmarkGuid):
+            guard let bookmark = state.bookmarkManager.bookmark(withGuid: bookmarkGuid),
+                  !bookmark.isFolder, let url = bookmark.url, !url.isEmpty else { return }
+            if let attachedLiveTab = state.tabs.first(where: { $0.guidInLocalDB == bookmarkGuid }),
+               state.splitGroup(forTabId: attachedLiveTab.guid) == nil {
+                state.makeTabNormalOpened(tabId: attachedLiveTab.guid)
+                state.addTabToSplit(splitId, tabId: attachedLiveTab.guid, slot: slot)
+                return
+            }
+            state.openNewTabIntoSplit(splitId: splitId, slot: slot,
+                                      navigateURL: URLProcessor.processUserInput(url))
+        }
+    }
 
     /// Replaces one pane of the focused split with the dragged item. The
-    /// hovered half maps to a slot (left → 0 = primary, right → 1 =
-    /// secondary). The evicted pane moves right next to the split, joining
-    /// its tab group if any (`swap: true`). Normal tabs swap synchronously;
-    /// bookmarks and closed-pinned entries open a fresh tab first and swap
-    /// once Chromium echoes it back.
+    /// evicted pane moves right next to the split, joining its tab group if
+    /// any (`swap: true`). Normal tabs swap synchronously; bookmarks and
+    /// closed-pinned entries open a fresh tab first and swap once Chromium
+    /// echoes it back.
     private func performPaneReplace(state: BrowserState,
                                     source: DragSource,
                                     splitId: String,
-                                    zone: DropZone) {
-        let slotIndex = zone.isPrimarySlot ? 0 : 1
+                                    slot slotIndex: Int) {
         // Keep the evicted pane as a standalone tab, unless it's an empty
         // new-tab page — then close it (`swap: false`) instead of littering
         // the strip.
@@ -762,7 +837,7 @@ final class SplitTabDropContainer: NSView {
 
     /// Decides what a drop will do given the drag's source. Returns nil when
     /// no drop is allowed. `create` when the focused tab is not a split;
-    /// `replace` when it is — but only if the split isn't pinned and the
+    /// `pane` when it is — but only if the split isn't pinned and the
     /// dragged item isn't already a pane of that split.
     private func resolveMode(for source: DragSource, state: BrowserState, focusedTab: Tab? = nil) -> Mode? {
         guard let focusedTab = focusedTab ?? state.focusingTab else { return nil }
@@ -772,8 +847,10 @@ final class SplitTabDropContainer: NSView {
         // Pinned splits render as one combined cell in the pinned grid and
         // persist as a DB-guid pair (`persistPinnedSplitPair`). Swapping a
         // pane would strand that pair — the evicted tab stays flagged pinned
-        // while the incoming one isn't. No drop allowed.
-        guard !group.isPinned else { return nil }
+        // while the incoming one isn't. A pinned split with room still takes
+        // a new pane, which moves it to the normal tab list; `paneZone`
+        // offers only those zones.
+        guard !group.isPinned || group.canAddPane else { return nil }
         switch source {
         case .normalTab(let tabId):
             if group.contains(tabId: tabId) { return nil }
@@ -787,7 +864,7 @@ final class SplitTabDropContainer: NSView {
             if let liveTab = state.tabs.first(where: { $0.guidInLocalDB == bookmarkGuid }),
                group.contains(tabId: liveTab.guid) { return nil }
         }
-        return .replace(splitId: group.id)
+        return .pane(splitId: group.id)
     }
 
     private func restorePreviousFocusIfNeeded(for source: DragSource, state: BrowserState) {
@@ -817,7 +894,8 @@ final class SplitTabDropContainer: NSView {
     /// activates from the four edge thirds. Once active, that direction remains
     /// selected throughout its configured movement range so the card can keep
     /// following the pointer without dropping back to its origin.
-    /// Replace mode mirrors the split's panes so every point lands on one.
+    /// Pane mode mirrors the split's panes so every point lands on one, with
+    /// the ends of each pane adding a pane while the split has room.
     private func zone(forPoint pointInSelf: CGPoint, mode: Mode, area: CGRect) -> DropZone? {
         guard area.contains(pointInSelf) else { return nil }
         switch mode {
@@ -827,8 +905,8 @@ final class SplitTabDropContainer: NSView {
                 in: area,
                 retaining: activeDropZone
             )
-        case .replace(let splitId):
-            return replaceZone(forPoint: pointInSelf, splitId: splitId, area: area)
+        case .pane(let splitId):
+            return paneZone(forPoint: pointInSelf, splitId: splitId, area: area)
         }
     }
 
@@ -867,7 +945,7 @@ final class SplitTabDropContainer: NSView {
     /// four directions, even when the page area is unusually wide or tall.
     static func createDropHintRects(in area: CGRect) -> [DropZone: CGRect] {
         guard area.width > 0, area.height > 0 else {
-            return Dictionary(uniqueKeysWithValues: allZones.map { ($0, .zero) })
+            return Dictionary(uniqueKeysWithValues: allZones.map { ($0, CGRect.zero) })
         }
         let scale = min(
             area.width / dropHintReferenceSize.width,
@@ -1120,6 +1198,9 @@ final class SplitTabDropContainer: NSView {
                 width: area.width,
                 height: verticalRange
             )
+        case .pane, .insert:
+            // Pane cards cover their pane and never move.
+            return area
         }
     }
 
@@ -1139,6 +1220,10 @@ final class SplitTabDropContainer: NSView {
             return point.y >= area.maxY - verticalRange - dropHintZoneExitTolerance
         case .bottom:
             return point.y <= area.minY + verticalRange + dropHintZoneExitTolerance
+        case .pane, .insert:
+            // Pane zones are re-resolved on every move (pane mode has no
+            // dead band to retain across).
+            return false
         }
     }
 
@@ -1160,57 +1245,136 @@ final class SplitTabDropContainer: NSView {
     }
 
     /// Visual rectangles for the given mode. Create mode uses the independent
-    /// Figma geometry above; replace mode mirrors the split's actual panes.
+    /// Figma geometry above; pane mode mirrors the split's actual panes, with
+    /// the add-a-pane cards drawn as slim strips on the ends of the axis.
     private func hintRects(mode: Mode, area: CGRect) -> [DropZone: CGRect] {
         switch mode {
         case .create:
             return Self.createDropHintRects(in: area)
-        case .replace(let splitId):
-            let rects = replacePaneRects(splitId: splitId, area: area)
-            return [.left: rects.left, .right: rects.right]
+        case .pane(let splitId):
+            var rects: [DropZone: CGRect] = [:]
+            let preview = addPanePreviewRects(splitId: splitId, area: area)
+            for (slot, rect) in (preview?.panes ?? paneRects(splitId: splitId, area: area)).enumerated() {
+                rects[.pane(slot)] = rect
+            }
+            if let preview, let activeDropZone {
+                rects[activeDropZone] = preview.opened
+            }
+            return rects
         }
     }
 
-    /// Pane rectangles mirroring `SplitPaneHostView.layout()` so the replace
-    /// hint cards line up with the real panes. `.left` is always the primary
-    /// pane (slot 0) — left for a vertical split, top for a horizontal one.
-    private func replacePaneRects(splitId: String, area: CGRect) -> (left: CGRect, right: CGRect) {
-        let dividerThickness = SplitPaneHostView.dividerThickness
-        let group = browserState?.splitGroup(forId: splitId)
-        let ratio = CGFloat(min(max(group?.ratio ?? 0.5, 0), 1))
+    /// The zones that add a pane, indexed by the slot it joins at: the first
+    /// is the start of the first pane, the last the end of the last pane, and
+    /// each one between spans the boundary of two neighbouring panes.
+    static func insertZoneRects(panes: [CGRect], layout: SplitLayout) -> [CGRect] {
+        guard !panes.isEmpty else { return [] }
+        func leadingEnd(of pane: CGRect) -> CGRect {
+            switch layout {
+            case .vertical:
+                return CGRect(x: pane.minX, y: pane.minY,
+                              width: pane.width * insertZonePaneFraction, height: pane.height)
+            case .horizontal:
+                let height = pane.height * insertZonePaneFraction
+                return CGRect(x: pane.minX, y: pane.maxY - height, width: pane.width, height: height)
+            }
+        }
+        func trailingEnd(of pane: CGRect) -> CGRect {
+            switch layout {
+            case .vertical:
+                let width = pane.width * insertZonePaneFraction
+                return CGRect(x: pane.maxX - width, y: pane.minY, width: width, height: pane.height)
+            case .horizontal:
+                return CGRect(x: pane.minX, y: pane.minY,
+                              width: pane.width, height: pane.height * insertZonePaneFraction)
+            }
+        }
+        return (0...panes.count).map { slot in
+            if slot == 0 { return leadingEnd(of: panes[0]) }
+            if slot == panes.count { return trailingEnd(of: panes[slot - 1]) }
+            return trailingEnd(of: panes[slot - 1]).union(leadingEnd(of: panes[slot]))
+        }
+    }
+
+    /// The slot a drop on the active zone would add a pane at, nil unless
+    /// the drag is on an add-a-pane zone.
+    private var addPanePreviewSlot: Int? {
+        guard case .pane(let splitId) = activeMode,
+              case .insert(let slot) = activeDropZone,
+              let group = browserState?.splitGroup(forId: splitId),
+              group.canAddPane else { return nil }
+        return slot
+    }
+
+    /// Where the panes and the new pane's space sit while the drag is on an
+    /// add-a-pane zone.
+    private func addPanePreviewRects(splitId: String,
+                                     area: CGRect) -> (panes: [CGRect], dividers: [CGRect], opened: CGRect)? {
+        guard let slot = addPanePreviewSlot,
+              let group = browserState?.splitGroup(forId: splitId) else { return nil }
         let total = SplitPaneHostView.paneLayoutRect(
             in: area,
             layoutMode: PhiPreferences.GeneralSettings.loadLayoutMode()
         )
-        switch group?.layout ?? .vertical {
-        case .vertical:
-            let primaryWidth = max(0, (total.width - dividerThickness) * ratio)
-            let secondaryWidth = max(0, total.width - dividerThickness - primaryWidth)
-            return (
-                CGRect(x: total.minX, y: total.minY, width: primaryWidth, height: total.height),
-                CGRect(x: total.minX + primaryWidth + dividerThickness, y: total.minY, width: secondaryWidth, height: total.height)
-            )
-        case .horizontal:
-            let primaryHeight = max(0, (total.height - dividerThickness) * ratio)
-            let secondaryHeight = max(0, total.height - dividerThickness - primaryHeight)
-            // y=0 is the bottom in AppKit; primary (slot 0) sits on top.
-            return (
-                CGRect(x: total.minX, y: total.minY + secondaryHeight + dividerThickness, width: total.width, height: primaryHeight),
-                CGRect(x: total.minX, y: total.minY, width: total.width, height: secondaryHeight)
-            )
-        }
+        return SplitPaneHostView.insertionPreviewRects(in: total,
+                                                       layout: group.layout,
+                                                       fractions: group.fractions.map { CGFloat($0) },
+                                                       slot: slot)
     }
 
-    /// Replace-mode hit test: picks the pane the point sits over, splitting at
-    /// the divider midline so the gap resolves to the nearer pane.
-    private func replaceZone(forPoint pointInSelf: CGPoint, splitId: String, area: CGRect) -> DropZone {
-        let rects = replacePaneRects(splitId: splitId, area: area)
-        if browserState?.splitGroup(forId: splitId)?.layout == .horizontal {
-            let mid = (rects.right.maxY + rects.left.minY) / 2
-            return pointInSelf.y >= mid ? .left : .right
+    /// Pane rectangles mirroring `SplitPaneHostView.layout()` so the pane
+    /// hint cards line up with the real panes, in slot order.
+    private func paneRects(splitId: String, area: CGRect) -> [CGRect] {
+        let group = browserState?.splitGroup(forId: splitId)
+        let total = SplitPaneHostView.paneLayoutRect(
+            in: area,
+            layoutMode: PhiPreferences.GeneralSettings.loadLayoutMode()
+        )
+        let fractions = (group?.fractions ?? [0.5, 0.5]).map { CGFloat($0) }
+        return SplitPaneHostView.paneRects(in: total,
+                                           layout: group?.layout ?? .vertical,
+                                           fractions: fractions).panes
+    }
+
+    /// Pane-mode hit test: the ends of each pane add a pane there while the
+    /// split has room; otherwise the point picks the nearest pane along the
+    /// axis, so the divider gaps resolve to a pane.
+    private func paneZone(forPoint pointInSelf: CGPoint, splitId: String, area: CGRect) -> DropZone? {
+        guard let group = browserState?.splitGroup(forId: splitId) else { return nil }
+        // The opened space is wider than the zone that opened it: stay on the
+        // zone while the pointer is anywhere in that space.
+        if let activeDropZone,
+           let preview = addPanePreviewRects(splitId: splitId, area: area),
+           preview.opened.contains(pointInSelf) {
+            return activeDropZone
         }
-        let mid = (rects.left.maxX + rects.right.minX) / 2
-        return pointInSelf.x <= mid ? .left : .right
+        let rects = paneRects(splitId: splitId, area: area)
+        guard !rects.isEmpty else { return nil }
+        if group.canAddPane,
+           let slot = Self.insertZoneRects(panes: rects, layout: group.layout)
+               .firstIndex(where: { $0.contains(pointInSelf) }) {
+            return .insert(slot)
+        }
+        // A pinned split can take a pane but never swap one (`resolveMode`).
+        guard !group.isPinned else { return nil }
+        var nearest = 0
+        var nearestDistance = CGFloat.greatestFiniteMagnitude
+        for (slot, rect) in rects.enumerated() {
+            let distance: CGFloat
+            switch group.layout {
+            case .vertical:
+                distance = pointInSelf.x < rect.minX ? rect.minX - pointInSelf.x
+                    : pointInSelf.x > rect.maxX ? pointInSelf.x - rect.maxX : 0
+            case .horizontal:
+                distance = pointInSelf.y < rect.minY ? rect.minY - pointInSelf.y
+                    : pointInSelf.y > rect.maxY ? pointInSelf.y - rect.maxY : 0
+            }
+            if distance < nearestDistance {
+                nearestDistance = distance
+                nearest = slot
+            }
+        }
+        return .pane(nearest)
     }
 
     // MARK: - Drop validation
@@ -1250,7 +1414,8 @@ final class SplitTabDropContainer: NSView {
         setActiveDropZone(resolvedZone, dragPoint: resolvedZone == nil ? nil : pointInSelf)
         guard let zone = resolvedZone else {
             // Create mode, cursor in the dead middle band — hints stay visible
-            // but no drop will land here. (Replace mode always returns a zone.)
+            // but no drop will land here. Pane mode has one too: the middle
+            // of a pinned split's panes, which can't be replaced.
             return Evaluation(operation: [], zone: nil)
         }
         return Evaluation(operation: .move, zone: zone)
@@ -1285,7 +1450,7 @@ final class SplitTabDropContainer: NSView {
     /// True when the drag source itself represents a split — those drops are
     /// rejected outright so the page workspace doesn't try to nest a split
     /// inside a split. Detects live splits via `splitGroup`, persisted pinned
-    /// splits via `Tab.splitPartnerGuid` (covers the closed-pinned-split case
+    /// splits via their persisted link (covers the closed-pinned-split case
     /// where the pinned leftTab carries `guid == -1` and the live lookup
     /// misses), and split-view bookmarks via `secondaryUrl`. Folder bookmarks
     /// are also rejected — they can't be a split pane.
@@ -1299,7 +1464,7 @@ final class SplitTabDropContainer: NSView {
                 return true
             }
             if let pinned = state.pinnedTabs.first(where: { $0.guidInLocalDB == dbGuid }),
-               let partner = pinned.splitPartnerGuid, !partner.isEmpty {
+               pinned.hasPersistedSplitLink {
                 return true
             }
             return false
@@ -1336,8 +1501,12 @@ final class SplitTabDropContainer: NSView {
 
     private var visibleZones: [DropZone] {
         switch activeMode {
-        case .create: return Self.allZones
-        case .replace: return [.left, .right]
+        case .create:
+            return Self.allZones
+        case .pane:
+            // Only what the drop changes is covered: the pane it replaces or
+            // the space opened for a new pane. Every other pane stays clear.
+            return activeDropZone.map { [$0] } ?? []
         }
     }
 
@@ -1410,6 +1579,7 @@ final class SplitTabDropContainer: NSView {
     /// the pointer even while it remains inside the same directional zone.
     private func setActiveDropZone(_ zone: DropZone?, dragPoint: CGPoint? = nil) {
         let previousZone = activeDropZone
+        let previousAddPaneSlot = addPanePreviewSlot
         let wasExpanded = isActiveDropHintExpanded
         let zoneChanged = zone != previousZone
         if zoneChanged {
@@ -1473,10 +1643,16 @@ final class SplitTabDropContainer: NSView {
             expandedDropHintCenterAnchor = nil
         }
         let expansionChanged = wasExpanded != isActiveDropHintExpanded
+        let addPaneSlotChanged = addPanePreviewSlot != previousAddPaneSlot
+        if addPaneSlotChanged {
+            onAddPanePreviewChanged?(addPanePreviewSlot)
+        }
         if hintsVisible {
             let transition: HintFrameTransition?
-            if activeMode != .create || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                 transition = nil
+            } else if activeMode != .create {
+                transition = addPaneSlotChanged ? .settle : nil
             } else if previousZone == nil, zone != nil {
                 transition = .attract
             } else if zoneChanged || (expansionChanged && !isActiveDropHintExpanded) {
@@ -1489,6 +1665,11 @@ final class SplitTabDropContainer: NSView {
                 transition = .follow
             }
             updateDropHintFrames(transition: transition)
+            // Pane mode covers only the active zone, so each change of zone
+            // swaps which card is on screen.
+            if addPaneSlotChanged || (zoneChanged && activeMode != .create) {
+                showHighlights()
+            }
         }
         if activeMode == .create,
            let zone,
@@ -1514,7 +1695,7 @@ final class SplitTabDropContainer: NSView {
         guard zoneChanged else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for candidate in Self.allZones {
+        for candidate in Self.allCardZones {
             guard let card = cards[candidate] else { continue }
             let isActive = candidate == zone
             card.activeMask.isHidden = !isActive
@@ -1576,7 +1757,9 @@ final class SplitTabDropContainer: NSView {
     }
 
     private func applyHintLabels(for mode: Mode) {
-        for zone in visibleZones {
+        // Every card, not just the visible ones: this runs before the zone
+        // under the pointer is resolved, and that zone's card may be next.
+        for zone in Self.allCardZones {
             cards[zone]?.label.stringValue = labelText(for: zone, mode: mode)
         }
     }
@@ -1585,17 +1768,29 @@ final class SplitTabDropContainer: NSView {
         switch mode {
         case .create:
             return zone.labelText
-        case .replace(let splitId):
-            // `.left` is always the primary pane (slot 0) — left for a
-            // vertical split, top for a horizontal one — so the wording has
-            // to follow the layout.
-            let layout = browserState?.splitGroup(forId: splitId)?.layout ?? .vertical
+        case .pane(let splitId):
+            let group = browserState?.splitGroup(forId: splitId)
+            let layout = group?.layout ?? .vertical
+            let paneCount = group?.paneCount ?? 2
             switch (layout, zone) {
-            case (.vertical, .left):    return NSLocalizedString("browser.splitDropHint.leftHalf", value: "Replace Left", comment: "Drop-zone hint shown when dragging a tab over the left/primary pane of a vertical split to replace it")
-            case (.vertical, .right):   return NSLocalizedString("browser.splitDropHint.rightHalf", value: "Replace Right", comment: "Drop-zone hint shown when dragging a tab over the right/secondary pane of a vertical split to replace it")
-            case (.horizontal, .left):  return NSLocalizedString("browser.splitDropHint.top", value: "Replace Top", comment: "Drop-zone hint shown when dragging a tab over the top/primary pane of a horizontal split to replace it")
-            case (.horizontal, .right): return NSLocalizedString("browser.splitDropHint.bottom", value: "Replace Bottom", comment: "Drop-zone hint shown when dragging a tab over the bottom/secondary pane of a horizontal split to replace it")
-            default:                    return zone.labelText
+            case (.vertical, .pane(0)):
+                return NSLocalizedString("browser.splitDropHint.leftHalf", value: "Replace Left", comment: "Drop-zone hint shown when dragging a tab over the left pane of a vertical split to replace it")
+            case (.vertical, .pane(let slot)) where slot == paneCount - 1:
+                return NSLocalizedString("browser.splitDropHint.rightHalf", value: "Replace Right", comment: "Drop-zone hint shown when dragging a tab over the right pane of a vertical split to replace it")
+            case (.horizontal, .pane(0)):
+                return NSLocalizedString("browser.splitDropHint.top", value: "Replace Top", comment: "Drop-zone hint shown when dragging a tab over the top pane of a horizontal split to replace it")
+            case (.horizontal, .pane(let slot)) where slot == paneCount - 1:
+                return NSLocalizedString("browser.splitDropHint.bottom", value: "Replace Bottom", comment: "Drop-zone hint shown when dragging a tab over the bottom pane of a horizontal split to replace it")
+            case (.vertical, .insert(0)):
+                return NSLocalizedString("browser.splitDropHint.addLeft", value: "Add Left", comment: "Drop-zone hint shown when dragging a tab over the left edge of a split to add a column there")
+            case (.vertical, .insert(let slot)) where slot == paneCount:
+                return NSLocalizedString("browser.splitDropHint.addRight", value: "Add Right", comment: "Drop-zone hint shown when dragging a tab over the right edge of a split to add a column there")
+            case (.horizontal, .insert(0)):
+                return NSLocalizedString("browser.splitDropHint.addTop", value: "Add Top", comment: "Drop-zone hint shown when dragging a tab over the top edge of a split to add a row there")
+            case (.horizontal, .insert(let slot)) where slot == paneCount:
+                return NSLocalizedString("browser.splitDropHint.addBottom", value: "Add Bottom", comment: "Drop-zone hint shown when dragging a tab over the bottom edge of a split to add a row there")
+            default:
+                return zone.labelText
             }
         }
     }
@@ -1626,17 +1821,56 @@ final class SplitTabDropContainer: NSView {
                         : nil
                 )
             }
+            // A card that was hidden has nowhere on screen to move from,
+            // except a new pane's card, which opens out of the zone entered.
+            let openingFrom = card.surface.isHidden ? addPaneEntryRect(for: zone, area: area) : nil
+            let cardTransition = card.surface.isHidden && openingFrom == nil ? nil : transition
+            // Pane cards rest at their real size and only pass through a
+            // scale while moving, so their rounded corners stay true.
+            let movingFrom = activeMode != .create && cardTransition != nil
+                ? openingFrom ?? presentedDropHintRect(for: zone, fallback: card.surface.frame)
+                : nil
             updateDropHintFrame(
                 card: card,
                 baseRect: baseRect,
                 hintRect: hintRect,
-                transition: transition
+                transition: cardTransition
             )
+            if let movingFrom, let cardTransition {
+                animateSurfaceMove(card: card, from: movingFrom, to: baseRect, transition: cardTransition)
+            }
         }
     }
 
+    /// The zone whose entry opens space for a new pane at `zone`, nil for
+    /// any zone that does not add a pane.
+    private func addPaneEntryRect(for zone: DropZone, area: CGRect) -> CGRect? {
+        guard case .pane(let splitId) = activeMode,
+              case .insert(let slot) = zone,
+              let group = browserState?.splitGroup(forId: splitId) else { return nil }
+        let zones = Self.insertZoneRects(panes: paneRects(splitId: splitId, area: area),
+                                         layout: group.layout)
+        return zones.indices.contains(slot) ? zones[slot] : nil
+    }
+
+    /// Plays `card`'s move from `presented` to its already-applied `rect`.
+    private func animateSurfaceMove(card: HintCard,
+                                    from presented: CGRect,
+                                    to rect: CGRect,
+                                    transition: HintFrameTransition) {
+        guard presented != rect, rect.width > 0, rect.height > 0,
+              let surfaceLayer = card.surface.layer else { return }
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = NSValue(caTransform3D: Self.surfaceTransform(
+            from: rect, to: presented, anchorPoint: surfaceLayer.anchorPoint))
+        animation.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+        animation.duration = transition.duration
+        animation.timingFunction = transition.timingFunction
+        surfaceLayer.add(animation, forKey: "splitDropHint.transform")
+    }
+
     /// Corner radius the hint card should draw for the given mode. Create-mode
-    /// cards float inside the page with their own rounded look; replace-mode
+    /// cards float inside the page with their own rounded look; pane-mode
     /// cards cover a pane edge-to-edge, so they must trace the pane's own
     /// radius (`SplitPaneHostView`'s pane container) instead of bulging past
     /// its rounded corners.
@@ -1644,7 +1878,7 @@ final class SplitTabDropContainer: NSView {
         switch mode {
         case .create:
             return Self.dropHintCornerRadius
-        case .replace:
+        case .pane:
             return WebContentLayout(browserState: browserState).innerCornerRadius
         }
     }
@@ -1733,9 +1967,17 @@ final class SplitTabDropContainer: NSView {
                                         transition: HintFrameTransition?) {
         guard baseRect.width > 0, baseRect.height > 0 else { return }
         guard let surfaceLayer = card.surface.layer else { return }
-        let scaleX = hintRect.width / baseRect.width
-        let scaleY = hintRect.height / baseRect.height
-        let anchorPoint = surfaceLayer.anchorPoint
+        updateLayerTransform(
+            surfaceLayer,
+            to: Self.surfaceTransform(from: baseRect, to: hintRect, anchorPoint: surfaceLayer.anchorPoint),
+            transition: transition
+        )
+    }
+
+    /// The transform that draws a surface framed at `baseRect` over `hintRect`.
+    private static func surfaceTransform(from baseRect: CGRect,
+                                         to hintRect: CGRect,
+                                         anchorPoint: CGPoint) -> CATransform3D {
         let baseAnchor = CGPoint(
             x: baseRect.minX + baseRect.width * anchorPoint.x,
             y: baseRect.minY + baseRect.height * anchorPoint.y
@@ -1744,15 +1986,12 @@ final class SplitTabDropContainer: NSView {
             x: hintRect.minX + hintRect.width * anchorPoint.x,
             y: hintRect.minY + hintRect.height * anchorPoint.y
         )
-        var targetTransform = CATransform3DMakeScale(scaleX, scaleY, 1)
-        targetTransform.m41 = hintAnchor.x - baseAnchor.x
-        targetTransform.m42 = hintAnchor.y - baseAnchor.y
-
-        updateLayerTransform(
-            surfaceLayer,
-            to: targetTransform,
-            transition: transition
-        )
+        var transform = CATransform3DMakeScale(hintRect.width / baseRect.width,
+                                               hintRect.height / baseRect.height,
+                                               1)
+        transform.m41 = hintAnchor.x - baseAnchor.x
+        transform.m42 = hintAnchor.y - baseAnchor.y
+        return transform
     }
 
     private func updateLayerTransform(_ layer: CALayer,

@@ -91,9 +91,8 @@ final class FakeTabSwitchManager {
 }
 
 struct FakeSplitGroup {
-    let first: Int
-    let second: Int
-    func contains(tabId: Int) -> Bool { tabId == first || tabId == second }
+    let tabIds: [Int]
+    func contains(tabId: Int) -> Bool { tabIds.contains(tabId) }
 }
 
 @main
@@ -427,7 +426,7 @@ struct SidebarMediaHarness {
             let bSurface = SidebarMediaController.Surface(session: b, kind: .docked)
             c.setSessions([f.state, b], presented: f.state)
             c.setActive(true, on: aSurface)
-            f.state.splits = [FakeSplitGroup(first: 280, second: 281)]
+            f.state.splits = [FakeSplitGroup(tabIds: [280, 281])]
             var playback = snapshot("Split source", source: "source-280")
             playback["canEnterPictureInPicture"] = video
             source.controls.emit(playback)
@@ -818,7 +817,7 @@ struct SidebarMediaHarness {
                 await tick()
                 f.enabled(true)
             default:
-                f.state.splits = [FakeSplitGroup(first: a.guid, second: 970)]
+                f.state.splits = [FakeSplitGroup(tabIds: [a.guid, 970])]
                 await tick()
                 f.state.splits = []
             }
@@ -1610,7 +1609,7 @@ struct SidebarMediaHarness {
         f.state.focusingTab = f.tabs[6]
         await tick()
         precondition(controller.item?.tabId == 30 && controller.backgroundSourceCount == 6)
-        f.state.splits = [FakeSplitGroup(first: 30, second: 36)]
+        f.state.splits = [FakeSplitGroup(tabIds: [30, 36])]
         await tick()
         precondition(controller.item?.tabId == 31 && controller.backgroundSourceCount == 5,
                      "Both visible split panes must be excluded")

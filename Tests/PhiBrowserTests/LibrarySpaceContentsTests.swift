@@ -272,8 +272,8 @@ final class LibrarySpaceContentsTests: XCTestCase {
                 Tab(guid: 3, url: "https://single.example", isActive: false, index: 2,
                     title: "Single", customGuid: singleID)
             ]
-            state.splits = [SplitGroup(id: "pair", primaryTabId: 1, secondaryTabId: 2,
-                                      layout: .horizontal, ratio: 0.5)]
+            state.splits = [SplitGroup(id: "pair", tabIds: [1, 2],
+                                      layout: .horizontal, fractions: [0.5, 0.5])]
             state.splitBookmarkBindings[pairID] = "pair"
             state.syncAllBookmarksOpenedState()
         }

@@ -3196,36 +3196,31 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             }
             switch type {
             case "created":
-                guard let primary = event["primaryTabId"] as? Int,
-                      let secondary = event["secondaryTabId"] as? Int,
+                guard let tabIds = Self.bridgeIntList(event["tabIds"]), tabIds.count >= 2,
                       let layout = event["layout"] as? String,
-                      let ratio = event["ratio"] as? Double else {
+                      let fractions = Self.bridgeDoubleList(event["fractions"]) else {
                     AppLogError("[Split] restored snapshot: malformed created event \(event)")
                     return nil
                 }
                 return .created(splitId: splitId,
-                                primaryTabId: primary,
-                                secondaryTabId: secondary,
+                                tabIds: tabIds,
                                 layout: parseBridgeLayout(layout),
-                                ratio: ratio)
+                                fractions: fractions)
             case "visualsChanged":
                 guard let layout = event["layout"] as? String,
-                      let ratio = event["ratio"] as? Double else {
+                      let fractions = Self.bridgeDoubleList(event["fractions"]) else {
                     AppLogError("[Split] restored snapshot: malformed visualsChanged event \(event)")
                     return nil
                 }
                 return .visualsChanged(splitId: splitId,
                                        layout: parseBridgeLayout(layout),
-                                       ratio: ratio)
+                                       fractions: fractions)
             case "contentsChanged":
-                guard let primary = event["primaryTabId"] as? Int,
-                      let secondary = event["secondaryTabId"] as? Int else {
+                guard let tabIds = Self.bridgeIntList(event["tabIds"]), tabIds.count >= 2 else {
                     AppLogError("[Split] restored snapshot: malformed contentsChanged event \(event)")
                     return nil
                 }
-                return .contentsChanged(splitId: splitId,
-                                        primaryTabId: primary,
-                                        secondaryTabId: secondary)
+                return .contentsChanged(splitId: splitId, tabIds: tabIds)
             case "removed":
                 return .removed(splitId: splitId)
             default:
@@ -3233,6 +3228,18 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 return nil
             }
         }
+    }
+
+    /// Tab ids as the bridge sends them (NSNumber boxes).
+    static func bridgeIntList(_ raw: Any?) -> [Int]? {
+        guard let numbers = raw as? [NSNumber] else { return nil }
+        return numbers.map { $0.intValue }
+    }
+
+    /// Pane shares as the bridge sends them (NSNumber boxes).
+    static func bridgeDoubleList(_ raw: Any?) -> [Double]? {
+        guard let numbers = raw as? [NSNumber] else { return nil }
+        return numbers.map { $0.doubleValue }
     }
 
     @objc(tabRelationshipSnapshotChanged:windowId:version:)
@@ -3826,30 +3833,30 @@ extension PhiChromiumCoordinator {
 
 extension PhiChromiumCoordinator {
     func splitCreated(_ splitId: String,
-                      primaryTabId: Int64,
-                      secondaryTabId: Int64,
+                      tabIds: [NSNumber],
                       layout: String,
-                      ratio: Double,
+                      fractions: [NSNumber],
                       windowId: Int64) {
-        AppLogDebug("[Split] created: id=\(splitId) primary=\(primaryTabId) secondary=\(secondaryTabId) layout=\(layout) ratio=\(ratio) window=\(windowId)")
+        let ids = tabIds.map { $0.intValue }
+        let shares = fractions.map { $0.doubleValue }
+        AppLogDebug("[Split] created: id=\(splitId) tabs=\(ids) layout=\(layout) fractions=\(shares) window=\(windowId)")
         EventBus.shared.send(SplitEvent(
             browserId: windowId.intValue,
             action: .created(splitId: splitId,
-                             primaryTabId: primaryTabId.intValue,
-                             secondaryTabId: secondaryTabId.intValue,
+                             tabIds: ids,
                              layout: parseBridgeLayout(layout),
-                             ratio: ratio)))
+                             fractions: shares)))
     }
 
     func splitVisualsChanged(_ splitId: String,
                              layout: String,
-                             ratio: Double,
+                             fractions: [NSNumber],
                              windowId: Int64) {
         EventBus.shared.send(SplitEvent(
             browserId: windowId.intValue,
             action: .visualsChanged(splitId: splitId,
                                     layout: parseBridgeLayout(layout),
-                                    ratio: ratio)))
+                                    fractions: fractions.map { $0.doubleValue })))
     }
 
     private func parseBridgeLayout(_ raw: String) -> SplitLayout {
@@ -3859,15 +3866,13 @@ extension PhiChromiumCoordinator {
     }
 
     func splitContentsChanged(_ splitId: String,
-                              primaryTabId: Int64,
-                              secondaryTabId: Int64,
+                              tabIds: [NSNumber],
                               windowId: Int64) {
-        AppLogDebug("[Split] contentsChanged: id=\(splitId) primary=\(primaryTabId) secondary=\(secondaryTabId) window=\(windowId)")
+        let ids = tabIds.map { $0.intValue }
+        AppLogDebug("[Split] contentsChanged: id=\(splitId) tabs=\(ids) window=\(windowId)")
         EventBus.shared.send(SplitEvent(
             browserId: windowId.intValue,
-            action: .contentsChanged(splitId: splitId,
-                                     primaryTabId: primaryTabId.intValue,
-                                     secondaryTabId: secondaryTabId.intValue)))
+            action: .contentsChanged(splitId: splitId, tabIds: ids)))
     }
 
     func splitRemoved(_ splitId: String, windowId: Int64) {

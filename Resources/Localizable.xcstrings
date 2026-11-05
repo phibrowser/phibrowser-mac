@@ -25,9 +25,7 @@
         }
       }
     },
-    "" : {
-
-    },
+    "" : {},
     "・" : {
       "shouldTranslate" : false
     },
@@ -30545,6 +30543,66 @@
         }
       }
     },
+    "browser.splitDropHint.addBetween" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over the boundary between two panes of a split to add it there",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Here"
+          }
+        }
+      }
+    },
+    "browser.splitDropHint.addBottom" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over the bottom edge of a split to add a row there",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Bottom"
+          }
+        }
+      }
+    },
+    "browser.splitDropHint.addLeft" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over the left edge of a split to add a column there",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Left"
+          }
+        }
+      }
+    },
+    "browser.splitDropHint.addRight" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over the right edge of a split to add a column there",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Right"
+          }
+        }
+      }
+    },
+    "browser.splitDropHint.addTop" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over the top edge of a split to add a row there",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Top"
+          }
+        }
+      }
+    },
     "browser.splitDropHint.bottom" : {
       "comment" : "Drop-zone hint shown when dragging a tab over the bottom/secondary pane of a horizontal split to replace it",
       "extractionState" : "extracted_with_value",
@@ -30785,6 +30843,18 @@
         }
       }
     },
+    "browser.splitDropHint.replacePane" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over a pane of a split to replace it",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Replace"
+          }
+        }
+      }
+    },
     "browser.splitDropHint.rightHalf" : {
       "comment" : "Drop-zone hint shown when dragging a tab over the right/secondary pane of a vertical split to replace it",
       "extractionState" : "extracted_with_value",
@@ -31021,6 +31091,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加入上方分割畫面"
+          }
+        }
+      }
+    },
+    "browser.splitPane.moveHandle" : {
+      "comment" : "Accessibility label of the grip at the top of a split pane that drags the pane to a new position",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move Pane"
           }
         }
       }

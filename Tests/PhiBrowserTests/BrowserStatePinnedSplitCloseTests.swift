@@ -18,7 +18,7 @@ import Combine
 /// the merged pinned-split cell splinters into two separate pinned tabs.
 ///
 /// These tests assert the linkage survives the live group's removal so the
-/// pair keeps resolving as one merged cell via `pinnedSplitDBPair`.
+/// pair keeps resolving as one merged cell via `pinnedSplitDBGuids`.
 @MainActor
 final class BrowserStatePinnedSplitCloseTests: XCTestCase {
     private var tempDirectories: [URL] = []
@@ -64,10 +64,9 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
         state.tabs = [leftLive, rightLive]
         state.splits = [
             SplitGroup(id: "split-100-101",
-                       primaryTabId: 100,
-                       secondaryTabId: 101,
+                       tabIds: [100, 101],
                        layout: .vertical,
-                       ratio: 0.5,
+                       fractions: [0.5, 0.5],
                        isPinned: true)
         ]
         state.updateNormalTabs()
@@ -79,7 +78,7 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
     func test_livePinnedSplitResolvesAsOneCell() throws {
         let state = try makeState()
         let (leftPinned, _) = seedFreshlyPinnedSplit(state)
-        XCTAssertNotNil(state.pinnedSplitDBPair(forPinnedTab: leftPinned),
+        XCTAssertNotNil(state.pinnedSplitDBGuids(forPinnedTab: leftPinned),
                         "A live pinned split should resolve as one merged cell")
     }
 
@@ -98,17 +97,17 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
         state.tabs = []
 
         // The pair must still resolve as one merged cell, ordered (left, right).
-        let pair = state.pinnedSplitDBPair(forPinnedTab: leftPinned)
-        XCTAssertEqual(pair?.0, "db-left",
+        let pair = state.pinnedSplitDBGuids(forPinnedTab: leftPinned)
+        XCTAssertEqual(pair?[0], "db-left",
                        "Pinned split must stay merged after close, not split into two tabs")
-        XCTAssertEqual(pair?.1, "db-right")
+        XCTAssertEqual(pair?[1], "db-right")
         XCTAssertEqual(leftPinned.splitPartnerGuid, "db-right")
         XCTAssertEqual(rightPinned.splitPartnerGuid, "db-left")
 
         // Resolving from the right record yields the same ordered pair.
-        let mirror = state.pinnedSplitDBPair(forPinnedTab: rightPinned)
-        XCTAssertEqual(mirror?.0, "db-left")
-        XCTAssertEqual(mirror?.1, "db-right")
+        let mirror = state.pinnedSplitDBGuids(forPinnedTab: rightPinned)
+        XCTAssertEqual(mirror?[0], "db-left")
+        XCTAssertEqual(mirror?[1], "db-right")
     }
 
     /// End-to-end repro through the real drag-to-pin entry point. Dragging a
@@ -129,8 +128,8 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
         let rightLive = Tab(guid: 201, url: "https://r.example", isActive: false, index: 1)
         state.tabs = [leftLive, rightLive]
         state.splits = [
-            SplitGroup(id: "split-200-201", primaryTabId: 200, secondaryTabId: 201,
-                       layout: .vertical, ratio: 0.5)
+            SplitGroup(id: "split-200-201", tabIds: [200, 201],
+                       layout: .vertical, fractions: [0.5, 0.5])
         ]
         state.updateNormalTabs()
 
@@ -162,10 +161,10 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
         guard let leftPinned = state.pinnedTabs.first(where: { $0.guidInLocalDB == leftDB }) else {
             return XCTFail("Left pinned record missing after close")
         }
-        let pair = state.pinnedSplitDBPair(forPinnedTab: leftPinned)
-        XCTAssertEqual(pair?.0, leftDB,
+        let pair = state.pinnedSplitDBGuids(forPinnedTab: leftPinned)
+        XCTAssertEqual(pair?[0], leftDB,
                        "Pinned split broke into two tabs after closing right after drag-to-pin")
-        XCTAssertEqual(pair?.1, rightDB)
+        XCTAssertEqual(pair?[1], rightDB)
     }
 
     /// Relaunch repro: only one direction of `splitPartnerGuid` reached disk
@@ -187,13 +186,13 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
         linked.splitPartnerGuid = "db-unlinked"   // reverse link only
         state.pinnedTabs = [unlinked, linked]
 
-        let fromUnlinked = state.pinnedSplitDBPair(forPinnedTab: unlinked)
-        XCTAssertEqual(fromUnlinked?.0, "db-unlinked",
+        let fromUnlinked = state.pinnedSplitDBGuids(forPinnedTab: unlinked)
+        XCTAssertEqual(fromUnlinked?[0], "db-unlinked",
                        "Half-persisted pinned split must still resolve as one pair")
-        XCTAssertEqual(fromUnlinked?.1, "db-linked")
-        let fromLinked = state.pinnedSplitDBPair(forPinnedTab: linked)
-        XCTAssertEqual(fromLinked?.0, "db-unlinked")
-        XCTAssertEqual(fromLinked?.1, "db-linked")
+        XCTAssertEqual(fromUnlinked?[1], "db-linked")
+        let fromLinked = state.pinnedSplitDBGuids(forPinnedTab: linked)
+        XCTAssertEqual(fromLinked?[0], "db-unlinked")
+        XCTAssertEqual(fromLinked?[1], "db-linked")
     }
 
     func testClosedPinnedSplitLayoutDefaultsAndConvertsInMemory() throws {
@@ -206,17 +205,64 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
         right.splitPartnerGuid = "db-left"
         state.pinnedTabs = [left, right]
 
-        XCTAssertEqual(state.pinnedSplitLayout(leftDB: "db-left", rightDB: "db-right"),
+        XCTAssertEqual(state.pinnedSplitLayout(dbGuids: ["db-left", "db-right"]),
                        .vertical)
 
-        state.updatePinnedSplitLayout(leftDB: "db-left",
-                                      rightDB: "db-right",
+        state.updatePinnedSplitLayout(dbGuids: ["db-left", "db-right"],
                                       layout: .horizontal)
 
         XCTAssertEqual(left.splitLayout, .horizontal)
         XCTAssertEqual(right.splitLayout, .horizontal)
-        XCTAssertEqual(state.pinnedSplitLayout(leftDB: "db-left", rightDB: "db-right"),
+        XCTAssertEqual(state.pinnedSplitLayout(dbGuids: ["db-left", "db-right"]),
                        .horizontal)
+    }
+
+    /// A pinned split of three panes is one unit from any of its records,
+    /// including a record whose copy of the list has not landed yet.
+    func test_widerPinnedSplitResolvesEveryPaneFromAnyRecord() throws {
+        let state = try makeState()
+        let first = Tab(guid: 500, url: "https://a.example", isActive: false, index: 0, customGuid: "db-a")
+        let second = Tab(guid: 501, url: "https://b.example", isActive: false, index: 1, customGuid: "db-b")
+        let third = Tab(guid: 502, url: "https://c.example", isActive: false, index: 2, customGuid: "db-c")
+        first.isOpenned = false
+        second.isOpenned = false
+        third.isOpenned = false
+        first.splitPaneGuids = ["db-a", "db-b", "db-c"]
+        second.splitPaneGuids = ["db-a", "db-b", "db-c"]
+        state.pinnedTabs = [first, second, third]
+
+        for record in [first, second, third] {
+            XCTAssertEqual(state.pinnedSplitDBGuids(forPinnedTab: record), ["db-a", "db-b", "db-c"])
+        }
+        XCTAssertEqual(state.splitMembership(forCellTab: third)?.paneCount, 3)
+    }
+
+    /// Closing a pane of a pinned split shrinks the live group but not the
+    /// record: the merged cell keeps the pane and reopens it on the next click.
+    func test_widerPinnedSplitRecordKeepsClosedPane() throws {
+        let state = try makeState()
+        let records = ["db-a", "db-b", "db-c"].enumerated().map { index, db -> Tab in
+            let record = Tab(guid: 600 + index, url: "https://\(db).example",
+                             isActive: false, index: index, customGuid: db)
+            record.splitPaneGuids = ["db-a", "db-b", "db-c"]
+            record.splitLayout = .vertical
+            return record
+        }
+        state.pinnedTabs = records
+        let live = ["db-a", "db-b"].enumerated().map { index, db -> Tab in
+            let tab = Tab(guid: 600 + index, url: "https://\(db).example",
+                          isActive: index == 0, index: index, customGuid: db)
+            tab.isPinned = true
+            return tab
+        }
+        state.tabs = live
+        state.splits = [SplitGroup(id: "split-600-601", tabIds: [600, 601], layout: .vertical,
+                                   fractions: [0.5, 0.5], isPinned: true)]
+
+        state.reconcilePinnedSplitPartners()
+
+        XCTAssertEqual(records[2].splitPaneGuids, ["db-a", "db-b", "db-c"])
+        XCTAssertEqual(state.pinnedSplitDBGuids(forPinnedTab: records[0]), ["db-a", "db-b", "db-c"])
     }
 
     /// During restore, one pinned-split pane can be live and focused before
@@ -245,8 +291,8 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
         XCTAssertFalse(selectedTab.performSplitAction(in: state))
         XCTAssertEqual(leftPinned.splitPartnerGuid, "db-right")
         XCTAssertEqual(rightPinned.splitPartnerGuid, "db-left")
-        XCTAssertEqual(state.pinnedSplitDBPair(forPinnedTab: leftPinned)?.0, "db-left")
-        XCTAssertEqual(state.pinnedSplitDBPair(forPinnedTab: leftPinned)?.1, "db-right")
+        XCTAssertEqual(state.pinnedSplitDBGuids(forPinnedTab: leftPinned)?[0], "db-left")
+        XCTAssertEqual(state.pinnedSplitDBGuids(forPinnedTab: leftPinned)?[1], "db-right")
         XCTAssertEqual(focusedLive.guidInLocalDB, "db-left")
     }
 
@@ -262,10 +308,9 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
         state.tabs = [focusedTab, selectedTab]
         state.splits = [
             SplitGroup(id: "split-500-501",
-                       primaryTabId: 500,
-                       secondaryTabId: 501,
+                       tabIds: [500, 501],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.updateNormalTabs()
         state.focusingTab = focusedTab
@@ -285,10 +330,9 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
         state.tabs = [selectedTab, focusedTab]
         state.splits = [
             SplitGroup(id: "split-600-601",
-                       primaryTabId: 600,
-                       secondaryTabId: 601,
+                       tabIds: [600, 601],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         state.updateNormalTabs()
         state.focusingTab = focusedTab

@@ -347,10 +347,10 @@ final class SearchTabsDataTests: XCTestCase {
             windowId: 42,
             pinnedTabs: [left, right],
             focusingTab: left,
-            pinnedSplitPair: { tab in
+            pinnedSplitMembers: { tab in
                 switch tab.guidInLocalDB {
                 case "pin-left", "pin-right":
-                    return ("pin-left", "pin-right")
+                    return ["pin-left", "pin-right"]
                 default:
                     return nil
                 }
@@ -700,10 +700,9 @@ final class SearchTabsDataTests: XCTestCase {
         state.splits = [
             SplitGroup(
                 id: "split-50-51",
-                primaryTabId: 50,
-                secondaryTabId: 51,
+                tabIds: [50, 51],
                 layout: .vertical,
-                ratio: 0.5
+                fractions: [0.5, 0.5]
             ),
         ]
         let chromium = SearchTabsChromiumProvider(fetchData: { _ in
@@ -731,10 +730,12 @@ final class SearchTabsDataTests: XCTestCase {
         XCTAssertEqual(item.displayMode, .single)
         XCTAssertTrue(item.state.isSplit)
         XCTAssertEqual(relation.splitId, "split-50-51")
-        XCTAssertEqual(relation.role, .primary)
-        XCTAssertEqual(relation.partnerTabId, 51)
-        XCTAssertEqual(relation.partnerTitle, "Calendar")
-        XCTAssertEqual(relation.partnerURL, "https://calendar.example")
+        XCTAssertEqual(relation.slot, 0)
+        XCTAssertEqual(relation.paneCount, 2)
+        XCTAssertEqual(relation.partners, [
+            SearchTabsSplitRelation.Partner(tabId: 51, title: "Calendar",
+                                            url: "https://calendar.example"),
+        ])
     }
 
     func testDataControllerReleasedStateUsesDefaultProfileAndWindowZero() {

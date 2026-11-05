@@ -18,7 +18,7 @@ private final class ClearTabsRecordingState: BrowserState {
             let removed = Set(tabs.map(\.guid)).subtracting(cancelledIDs)
             recordClearedTabs(removed)
             self.tabs.removeAll { removed.contains($0.guid) }
-            splits.removeAll { removed.contains($0.primaryTabId) || removed.contains($0.secondaryTabId) }
+            splits.removeAll { !removed.isDisjoint(with: $0.tabIds) }
             updateNormalTabs()
         }
     }
@@ -112,8 +112,8 @@ final class ClearTabsTests: XCTestCase {
 
     func testClearKeepsBothForegroundSplitPanesAndPinnedTabs() {
         seed(5)
-        state.splits = [SplitGroup(id: "foreground", primaryTabId: 1, secondaryTabId: 2,
-                                  layout: .vertical, ratio: 0.4, isPinned: false)]
+        state.splits = [SplitGroup(id: "foreground", tabIds: [1, 2],
+                                  layout: .vertical, fractions: [0.4, 0.6], isPinned: false)]
         state.tabs[4].isPinned = true
         state.updateNormalTabs()
         XCTAssertTrue(state.canClearAllTabs)
@@ -130,18 +130,30 @@ final class ClearTabsTests: XCTestCase {
         state.clearAllTabs()
         XCTAssertTrue(state.closeRequests.isEmpty)
         seed(2)
-        state.splits = [SplitGroup(id: "foreground", primaryTabId: 1, secondaryTabId: 2,
-                                  layout: .horizontal, ratio: 0.5, isPinned: false)]
+        state.splits = [SplitGroup(id: "foreground", tabIds: [1, 2],
+                                  layout: .horizontal, fractions: [0.5, 0.5], isPinned: false)]
         XCTAssertFalse(state.canClearAllTabs)
         state.clearAllTabs()
         XCTAssertTrue(state.closeRequests.isEmpty)
         XCTAssertFalse(state.clearTabsUndoManager.canUndo)
     }
 
+    func testSplitOfThreeOrFourPanesCountsAsOneUnit() {
+        seed(3)
+        state.splits = [SplitGroup(id: "three", tabIds: [1, 2, 3], layout: .vertical,
+                                   fractions: [0.5, 0.25, 0.25], isPinned: false)]
+        XCTAssertFalse(state.canClearAllTabs)
+
+        seed(5)
+        state.splits = [SplitGroup(id: "four", tabIds: [1, 2, 3, 4], layout: .vertical,
+                                   fractions: [0.25, 0.25, 0.25, 0.25], isPinned: false)]
+        XCTAssertTrue(state.canClearAllTabs)
+    }
+
     func testSplitWithPartnerOutsideNormalTabsDoesNotMergeUnits() {
         seed(2)
-        state.splits = [SplitGroup(id: "detached", primaryTabId: 1, secondaryTabId: 99,
-                                  layout: .horizontal, ratio: 0.5, isPinned: false)]
+        state.splits = [SplitGroup(id: "detached", tabIds: [1, 99],
+                                  layout: .horizontal, fractions: [0.5, 0.5], isPinned: false)]
         XCTAssertTrue(state.canClearAllTabs)
     }
 
@@ -189,8 +201,8 @@ final class ClearTabsTests: XCTestCase {
         try await waitForRestore()
         let restored = state.normalTabs.filter { $0.guid != 1 }
         state.focusingTab = restored[0]
-        state.splits = [SplitGroup(id: "new-foreground", primaryTabId: restored[0].guid,
-                                  secondaryTabId: restored[1].guid, layout: .vertical, ratio: 0.4, isPinned: false)]
+        state.splits = [SplitGroup(id: "new-foreground", tabIds: [restored[0].guid, restored[1].guid],
+                                  layout: .vertical, fractions: [0.4, 0.6], isPinned: false)]
         state.closeTabs(state.tabs.filter { $0.guid == 1 })
         state.clearTabsUndoManager.redo()
         XCTAssertEqual(state.closeRequests.last, [restored[2].guid])
@@ -220,8 +232,8 @@ final class ClearTabsTests: XCTestCase {
         try await waitForRestore()
         let pair = Array(state.normalTabs.prefix(2))
         state.focusingTab = pair[0]
-        state.splits = [SplitGroup(id: "only-foreground", primaryTabId: pair[0].guid,
-                                  secondaryTabId: pair[1].guid, layout: .horizontal, ratio: 0.5, isPinned: false)]
+        state.splits = [SplitGroup(id: "only-foreground", tabIds: [pair[0].guid, pair[1].guid],
+                                  layout: .horizontal, fractions: [0.5, 0.5], isPinned: false)]
         state.closeTabs(state.tabs.filter { !pair.contains($0) })
         let count = state.closeRequests.count
         state.clearTabsUndoManager.redo()
@@ -243,8 +255,8 @@ final class ClearTabsTests: XCTestCase {
         state.tabs[1].groupToken = "group"
         state.tabs[2].groupToken = "group"
         state.groups["group"] = WebContentGroupInfo(token: "group", title: "Research", color: .blue, isCollapsed: true)
-        state.splits = [SplitGroup(id: "background", primaryTabId: 2, secondaryTabId: 3,
-                                  layout: .horizontal, ratio: 0.35, isPinned: false)]
+        state.splits = [SplitGroup(id: "background", tabIds: [2, 3],
+                                  layout: .horizontal, fractions: [0.35, 0.65], isPinned: false)]
         let batch = ClearedTabsBatch(tabs: state.clearAllTabsCandidates, state: state)
         XCTAssertEqual(batch.groups.first?.title, "Research")
         XCTAssertEqual(batch.groups.first?.color, "blue")
@@ -499,7 +511,7 @@ extension ClearTabsTests {
             XCTAssertEqual(live.normalTabs.filter { $0.groupToken == restoredGroup.token }.count, 3)
             let split = try XCTUnwrap(live.splits.first)
             XCTAssertEqual(split.layout, .horizontal)
-            XCTAssertEqual(split.ratio, 0.35, accuracy: 0.01)
+            XCTAssertEqual(try XCTUnwrap(split.pairRatio), 0.35, accuracy: 0.01)
             XCTAssertEqual(live.focusingTab?.guid, original[foregroundIndex].guid)
             live.clearTabsUndoManager.redo()
             try await waitFor { live.normalTabs.count == 1 }

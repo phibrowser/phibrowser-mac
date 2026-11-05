@@ -52,15 +52,15 @@ protocol TabGroupCellViewDelegate: AnyObject {
                       modifierFlags: NSEvent.ModifierFlags) -> Bool
 
     func tabGroupCell(_ cell: TabGroupCellView,
-                      didRequestMultiSelectionFor splitPair: SplitPairSidebarItem,
+                      didRequestMultiSelectionFor split: SplitSidebarItem,
                       modifierFlags: NSEvent.ModifierFlags) -> Bool
 
     /// Inner table detected a grouped-tab row drag. The controller owns
     /// the outer outline view, so it starts the AppKit drag session from
     /// that boundary while the cell supplies the row view snapshot.
     /// `rowView` is `SidebarTabCellView` for normal grouped tabs and
-    /// `SidebarSplitPairCellView` for the merged in-group split row —
-    /// the latter drags the whole pair via the left pane's guid, which
+    /// `SidebarSplitCellView` for the merged in-group split row —
+    /// the latter drags the whole split via the first pane's guid, which
     /// downstream handlers already treat as a split.
     func tabGroupCell(_ cell: TabGroupCellView,
                       beginDragging tab: Tab,
@@ -380,21 +380,21 @@ final class TabGroupCellView: SidebarCellView {
     private var dataSource: GroupTabsDiffableDataSource!
     private var tabsByGuid: [Int: Tab] = [:]
     private var currentMemberOrder: [Int] = []
-    /// Non-pinned split pairs whose both panes are members of this group.
-    /// Keyed by a negative integer derived from the two panes' guids so the
-    /// row identifier stays stable across the pair's swap (the diff sees
+    /// Non-pinned splits whose every pane is a member of this group.
+    /// Keyed by a negative integer derived from the panes' guids so the
+    /// row identifier stays stable across a pane reorder (the diff sees
     /// no change instead of remove+insert, which would flicker). Positive
     /// keys in `currentMemberOrder` map to `tabsByGuid` (regular tabs);
     /// negative keys map here (merged split rows).
     ///
-    /// Holds `SplitPairSidebarItem` strongly so the inner-table cells'
-    /// `weak item` ref stays valid for the lifetime of the pair in this
+    /// Holds `SplitSidebarItem` strongly so the inner-table cells'
+    /// `weak item` ref stays valid for the lifetime of the split in this
     /// group. Without this anchor the item would deallocate as soon as
     /// the data source's cell provider returned, and subsequent
-    /// `Tab.$isActive` emissions would no-op in `SidebarSplitPairCellView.
+    /// `Tab.$isActive` emissions would no-op in `SidebarSplitCellView.
     /// updateSelected` — leaving the merged cell's "selected" pill stuck
     /// on after the user switched away from one of the panes.
-    private var splitPairsByKey: [Int: SplitPairSidebarItem] = [:]
+    private var splitsByKey: [Int: SplitSidebarItem] = [:]
     private var activeDragTabGuid: Int?
 
     private var isDropTargetHighlighted = false
@@ -442,7 +442,7 @@ final class TabGroupCellView: SidebarCellView {
         splitsSubscription = nil
         tabsByGuid = [:]
         currentMemberOrder = []
-        splitPairsByKey = [:]
+        splitsByKey = [:]
         activeDragTabGuid = nil
         isDropTargetHighlighted = false
         isHovered = false
@@ -584,19 +584,19 @@ final class TabGroupCellView: SidebarCellView {
         ) { [weak self] tableView, _, _, key in
             guard let self else { return NSTableCellView() }
             // Merged-split row (negative key)
-            if let pair = self.splitPairsByKey[key] {
-                let identifier = NSUserInterfaceItemIdentifier("InnerGroupSplitPairCell")
-                let cell: SidebarSplitPairCellView
+            if let split = self.splitsByKey[key] {
+                let identifier = NSUserInterfaceItemIdentifier("InnerGroupSplitCell")
+                let cell: SidebarSplitCellView
                 if let existing = tableView.makeView(
-                    withIdentifier: identifier, owner: self) as? SidebarSplitPairCellView {
+                    withIdentifier: identifier, owner: self) as? SidebarSplitCellView {
                     cell = existing
                 } else {
-                    cell = SidebarSplitPairCellView()
+                    cell = SidebarSplitCellView()
                     cell.identifier = identifier
                 }
                 cell.browserState = self.configuredBrowserState
                 cell.owner = self.groupCellDelegate as? SidebarTabListItemOwner
-                cell.configure(with: pair)
+                cell.configure(with: split)
                 return cell
             }
             guard let tab = self.tabsByGuid[key] else {
@@ -725,71 +725,65 @@ final class TabGroupCellView: SidebarCellView {
     func applyMembers(_ newMembers: [Tab], animated: Bool) {
         tabsByGuid = Dictionary(
             uniqueKeysWithValues: newMembers.map { ($0.guid, $0) })
-        // Detect non-pinned split pairs whose both panes live in this
-        // group and are adjacent in the member order — render those as a
-        // single merged row using a stable negative key derived from the
-        // smaller guid (stable across pane swap).
-        var pairs: [Int: SplitPairSidebarItem] = [:]
+        // Detect non-pinned splits whose every pane lives in this group at
+        // consecutive member positions — render those as a single merged
+        // row using a stable negative key derived from the smallest pane
+        // guid (stable across pane reorders).
+        var splits: [Int: SplitSidebarItem] = [:]
         var consumed = Set<Int>()
         var order: [Int] = []
-        // Pair keys reused from the previous frame whose pane identity
-        // changed (drag-to-replace swaps one pane's Tab while the key —
-        // `-min(left, right)` — can survive when the kept pane has the
-        // smaller guid). The diffable snapshot sees the same item id and
-        // skips the cell provider, so the inner cell would stay bound to
-        // the evicted tab; reloadItems below forces the re-bind.
-        var changedPairKeys: [Int] = []
-        for (idx, tab) in newMembers.enumerated() {
+        // Split keys reused from the previous frame whose pane identity or
+        // count changed (drag-to-replace swaps one pane's Tab while the key
+        // — `-min(pane guids)` — can survive when the kept pane has the
+        // smallest guid; a pane add/remove likewise). The diffable snapshot
+        // sees the same item id and skips the cell provider, so the inner
+        // cell would stay bound to the stale panes; reloadItems below
+        // forces the re-bind.
+        var changedSplitKeys: [Int] = []
+        for tab in newMembers {
             if consumed.contains(tab.guid) { continue }
             if let state = configuredBrowserState,
                let group = state.splitGroup(forTabId: tab.guid),
                !group.isPinned,
-               let partnerId = group.partnerTabId(of: tab.guid),
-               let partnerIdx = newMembers.firstIndex(where: { $0.guid == partnerId }),
-               abs(idx - partnerIdx) == 1 {
-                let partner = newMembers[partnerIdx]
-                let leftTab = idx < partnerIdx ? tab : partner
-                let rightTab = idx < partnerIdx ? partner : tab
-                let key = -min(leftTab.guid, rightTab.guid)
-                // Reuse the existing `SplitPairSidebarItem` instance if the same
+               let panes = Self.contiguousPanes(of: group, in: newMembers) {
+                let key = -(panes.map(\.guid).min() ?? tab.guid)
+                // Reuse the existing `SplitSidebarItem` instance if the same
                 // split is still here so the inner-table cell's `weak item` ref
-                // doesn't dangle when `applyMembers` rebuilds. Pane swap is
-                // surfaced via `SidebarSplitPairCellView.reresolvePairOrderIfNeeded`,
-                // but we also mirror the latest left/right here so a freshly
+                // doesn't dangle when `applyMembers` rebuilds. A pane reorder
+                // is surfaced via `SidebarSplitCellView.reresolvePaneOrderIfNeeded`,
+                // but we also mirror the latest order here so a freshly
                 // configured cell sees the right order immediately.
-                let item: SplitPairSidebarItem
-                if let existing = splitPairsByKey[key], existing.groupId == group.id {
-                    if existing.leftTab !== leftTab || existing.rightTab !== rightTab {
-                        changedPairKeys.append(key)
+                let item: SplitSidebarItem
+                if let existing = splitsByKey[key], existing.groupId == group.id {
+                    if existing.panes.count != panes.count
+                        || zip(existing.panes, panes).contains(where: { $0.0 !== $0.1 }) {
+                        changedSplitKeys.append(key)
+                        existing.panes = panes
                     }
-                    if existing.leftTab !== leftTab { existing.leftTab = leftTab }
-                    if existing.rightTab !== rightTab { existing.rightTab = rightTab }
                     item = existing
                 } else {
-                    item = SplitPairSidebarItem(
+                    item = SplitSidebarItem(
                         groupId: group.id,
-                        leftTab: leftTab,
-                        rightTab: rightTab,
+                        panes: panes,
                         browserState: state
                     )
                 }
-                pairs[key] = item
+                splits[key] = item
                 order.append(key)
-                consumed.insert(tab.guid)
-                consumed.insert(partnerId)
+                consumed.formUnion(panes.map(\.guid))
                 continue
             }
             order.append(tab.guid)
             consumed.insert(tab.guid)
         }
-        splitPairsByKey = pairs
+        splitsByKey = splits
         currentMemberOrder = order
 
         var snap = NSDiffableDataSourceSnapshot<Section, Int>()
         snap.appendSections([.members])
         snap.appendItems(currentMemberOrder, toSection: .members)
-        if !changedPairKeys.isEmpty {
-            snap.reloadItems(changedPairKeys)
+        if !changedSplitKeys.isEmpty {
+            snap.reloadItems(changedSplitKeys)
         }
         dataSource.apply(snap, animatingDifferences: animated)
 
@@ -813,9 +807,9 @@ final class TabGroupCellView: SidebarCellView {
         let members = browserState.normalTabs.filter {
             $0.groupToken == groupItem.group.token
         }
-        // Non-pinned split pairs collapse to a single row in the inner
-        // table (mirrors `applyMembers`); the height must shrink with it
-        // or we leave an empty slot below the merged row.
+        // Non-pinned splits collapse to a single row in the inner table
+        // (mirrors `applyMembers`); the height must shrink with it or we
+        // leave empty slots below the merged row.
         let rowCount = effectiveRowCount(members: members, browserState: browserState)
         if rowCount == 0 {
             return collapsedRowHeight
@@ -828,21 +822,18 @@ final class TabGroupCellView: SidebarCellView {
     }
 
     /// Counts merged-cell rows the inner table will produce for `members`.
-    /// Each non-pinned split pair whose two panes are adjacent counts once
-    /// instead of twice. Stays in lockstep with `applyMembers`.
+    /// Each non-pinned split whose panes are consecutive members counts
+    /// once instead of once per pane. Stays in lockstep with `applyMembers`.
     private static func effectiveRowCount(members: [Tab],
                                           browserState: BrowserState) -> Int {
         var consumed = Set<Int>()
         var count = 0
-        for (idx, tab) in members.enumerated() {
+        for tab in members {
             if consumed.contains(tab.guid) { continue }
             if let group = browserState.splitGroup(forTabId: tab.guid),
                !group.isPinned,
-               let partnerId = group.partnerTabId(of: tab.guid),
-               let partnerIdx = members.firstIndex(where: { $0.guid == partnerId }),
-               abs(idx - partnerIdx) == 1 {
-                consumed.insert(tab.guid)
-                consumed.insert(partnerId)
+               let panes = contiguousPanes(of: group, in: members) {
+                consumed.formUnion(panes.map(\.guid))
                 count += 1
                 continue
             }
@@ -850,6 +841,23 @@ final class TabGroupCellView: SidebarCellView {
             count += 1
         }
         return count
+    }
+
+    /// Every pane of `group` when all of them sit at consecutive indices of
+    /// `members` (returned in that order); nil when a pane is outside the
+    /// group or the panes are transiently separated, in which case each
+    /// pane renders as a plain member row.
+    private static func contiguousPanes(of group: SplitGroup, in members: [Tab]) -> [Tab]? {
+        var indexed: [(index: Int, tab: Tab)] = []
+        for tabId in group.tabIds {
+            guard let index = members.firstIndex(where: { $0.guid == tabId }) else { return nil }
+            indexed.append((index, members[index]))
+        }
+        indexed.sort { $0.index < $1.index }
+        for (offset, entry) in indexed.enumerated() where entry.index != indexed[0].index + offset {
+            return nil
+        }
+        return indexed.map(\.tab)
     }
 
     // MARK: - Drop highlight
@@ -927,12 +935,12 @@ final class TabGroupCellView: SidebarCellView {
         if row >= 0,
            currentMemberOrder.indices.contains(row) {
             let key = currentMemberOrder[row]
-            // Merged in-group split row: route through the left pane so
+            // Merged in-group split row: route through the first pane so
             // the user sees split-aware items (Pin Split, Remove from
             // Split, Add Split to Bookmark, …) instead of the group
             // menu that fires when the lookup falls through.
-            if let pair = splitPairsByKey[key] {
-                return pair.leftTab
+            if let split = splitsByKey[key] {
+                return split.firstPane
             }
             if let tab = tabsByGuid[key] {
                 return tab
@@ -944,8 +952,8 @@ final class TabGroupCellView: SidebarCellView {
 
     func draggingImageForMemberTabId(_ tabId: Int) -> NSImage? {
         guard let row = currentMemberOrder.firstIndex(where: { key in
-            if let pair = splitPairsByKey[key] {
-                return pair.leftTab.guid == tabId || pair.rightTab.guid == tabId
+            if let split = splitsByKey[key] {
+                return split.contains(tabId: tabId)
             }
             return key == tabId
         }) else {
@@ -997,8 +1005,8 @@ extension TabGroupCellView {
     }
 
     fileprivate func activateMemberRow(for key: Int) {
-        if let pair = splitPairsByKey[key] {
-            pair.performAction(with: nil)
+        if let split = splitsByKey[key] {
+            split.performAction(with: nil)
             return
         }
         tabsByGuid[key]?.performAction(with: nil)
@@ -1070,16 +1078,16 @@ extension TabGroupCellView: GroupTabsTableViewDelegate {
         let key = currentMemberOrder[row]
         let tab: Tab
         let rowView: SidebarCellView
-        if let pair = splitPairsByKey[key] {
-            // Merged in-group split row: drag carries the left pane's
+        if let split = splitsByKey[key] {
+            // Merged in-group split row: drag carries the first pane's
             // guid; downstream drop handlers detect the tab is in a split
-            // and reorder/pin/bookmark both panes as a unit.
+            // and reorder/pin/bookmark every pane as a unit.
             guard let cellView = tableView.view(
-                atColumn: 0, row: row, makeIfNecessary: false) as? SidebarSplitPairCellView else {
+                atColumn: 0, row: row, makeIfNecessary: false) as? SidebarSplitCellView else {
                 AppLogDebug("[TAB_GROUPS][INNER_DRAG] cell.beginDraggingRow failed (split cell missing)")
                 return
             }
-            tab = pair.leftTab
+            tab = split.firstPane
             rowView = cellView
         } else if let regularTab = tabsByGuid[key],
                   let cellView = tableView.view(
@@ -1129,10 +1137,10 @@ extension TabGroupCellView: GroupTabsTableViewDelegate {
                 return
             }
         }
-        if let pair = splitPairsByKey[key],
+        if let split = splitsByKey[key],
            groupCellDelegate?.tabGroupCell(
                self,
-               didRequestMultiSelectionFor: pair,
+               didRequestMultiSelectionFor: split,
                modifierFlags: modifierFlags) == true {
             return
         }
@@ -1161,14 +1169,16 @@ extension TabGroupCellView: GroupTabsTableViewDelegate {
             makeIfNecessary: false
         ) as? TabPreviewInteractionCancelling)?.cancelTabPreviewForInteraction()
         let key = currentMemberOrder[row]
-        if let pair = splitPairsByKey[key] {
-            // Merged in-group split row renders both panes side-by-side —
-            // route the close to the pane whose half the click landed in.
-            // Use the cell frame so any leading inset doesn't pull midX
-            // off the visible centerline between the two panes.
+        if let split = splitsByKey[key] {
+            // Merged in-group split row renders its panes side-by-side —
+            // route the close to the pane whose segment the click landed
+            // in. Use the cell frame so any leading inset doesn't shift
+            // the segment boundaries off the visible seams.
             let cellRect = tableView.frameOfCell(atColumn: 0, row: row)
-            let target = location.x < cellRect.midX ? pair.leftTab : pair.rightTab
-            groupCellDelegate?.tabGroupCell(self, tabDidRequestClose: target)
+            let index = SidebarTabListViewController.splitSegmentIndex(at: location.x,
+                                                                      in: cellRect,
+                                                                      paneCount: split.paneCount)
+            groupCellDelegate?.tabGroupCell(self, tabDidRequestClose: split.panes[index])
             return
         }
         guard let tab = tabsByGuid[key], !tab.isPinned else { return }
@@ -1210,13 +1220,13 @@ extension TabGroupCellView: GroupTabsDragSource {
             AppLogDebug("[TAB_GROUPS][INNER_DRAG] dataSource.pasteboardWriter nil")
             return nil
         }
-        // Merged in-group split: write the left pane's guid so the
+        // Merged in-group split: write the first pane's guid so the
         // existing `.normalTab` drop handlers (reorder, pin, bookmark)
         // pick up the split-as-a-unit semantics automatically.
         let key = currentMemberOrder[row]
         let dragTab: Tab
-        if let pair = splitPairsByKey[key] {
-            dragTab = pair.leftTab
+        if let split = splitsByKey[key] {
+            dragTab = split.firstPane
         } else if let tab = tabsByGuid[key] {
             dragTab = tab
         } else {
@@ -1251,8 +1261,8 @@ extension TabGroupCellView: GroupTabsDragSource {
         }
         let key = currentMemberOrder[firstRow]
         let tab: Tab
-        if let pair = splitPairsByKey[key] {
-            tab = pair.leftTab
+        if let split = splitsByKey[key] {
+            tab = split.firstPane
         } else if let regular = tabsByGuid[key] {
             tab = regular
         } else {
@@ -1395,8 +1405,8 @@ extension TabGroupCellView: GroupTabsDragSource {
         else { return false }
 
         // `insertionRow` is in visible inner-table row space. Merged split
-        // rows count once here but twice in `normalTabs`, so translate via
-        // `currentMemberOrder` before calling the controller.
+        // rows count once here but once per pane in `normalTabs`, so
+        // translate via `currentMemberOrder` before calling the controller.
         let members = state.normalTabs.filter { $0.groupToken == group.token }
         let groupLowerBound: Int = {
             guard let firstMember = members.first,
@@ -1519,11 +1529,12 @@ extension TabGroupCellView: GroupTabsDragSource {
         }
 
         let key = currentMemberOrder[clampedRow]
-        if let pair = splitPairsByKey[key] {
-            let leftIdx = state.normalTabs.firstIndex { $0.guid == pair.leftTab.guid }
-            let rightIdx = state.normalTabs.firstIndex { $0.guid == pair.rightTab.guid }
-            if let leftIdx, let rightIdx {
-                return min(leftIdx, rightIdx)
+        if let split = splitsByKey[key] {
+            let paneIndices = split.panes.compactMap { pane in
+                state.normalTabs.firstIndex { $0.guid == pane.guid }
+            }
+            if paneIndices.count == split.paneCount, let first = paneIndices.min() {
+                return first
             }
         }
         if let tab = tabsByGuid[key],

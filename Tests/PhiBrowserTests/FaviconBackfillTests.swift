@@ -202,7 +202,7 @@ final class FaviconBackfillTests: XCTestCase {
         let store = try makeStore()
         let left = try await seedPinnedTab(in: store, guid: "left", url: "https://left.example/")
         let right = try await seedPinnedTab(in: store, guid: "right", url: "https://right.example/")
-        store.updatePinnedSplitPair(primaryGuid: left, secondaryGuid: right, layout: "vertical")
+        store.updatePinnedSplit(guids: [left, right], layout: "vertical")
         await store.performBackgroundWriteAndWait { _ in }
         let fetch = RecordingFetch()
         let backfill = makeBackfill(fetch: fetch, store: store)

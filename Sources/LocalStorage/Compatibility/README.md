@@ -98,14 +98,15 @@ Do not delete old backups as part of a schema change unless a separate retention
 policy is intentionally designed and tested. Older app builds may still need a
 lower-version backup to recover from a manual downgrade.
 
-The current store format is 13 (`TabDataModelSchemaV13`), which adds the
-optional `TabDataModel.locationUpdatedDate` column read by edit-time LWW
-stamping of the bookmark location merge unit.
+The current store format is 14 (`TabDataModelSchemaV14`), which adds the
+optional `TabDataModel.splitPaneGuids` and `splitExtraPanes` columns holding
+pinned and bookmarked splits of three or four panes. Neither is backfilled.
 
 The dev rebase preserves the released V10 schema (bookmark icons and split
 layouts). V11 adds bookmark/pinned-tab sync columns; V12 adds URL rule and
 Profile sync columns and backfills URL rule identities; V13 adds the bookmark
-location edit date and backfills nothing. Historical V10 is unchanged, and the
+location edit date and backfills nothing; V14 adds the wider-split columns and
+backfills nothing. Historical V10 is unchanged, and the
 existing before-upgrade backup policy still applies.
 
 This chain follows dev's schema history. Stores created by the pre-rebase sync

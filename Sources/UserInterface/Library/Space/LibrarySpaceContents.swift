@@ -13,9 +13,15 @@ final class LibrarySpaceContents: ObservableObject {
     struct Item: Identifiable {
         let pin: Tab
         let secondaryPin: Tab?
+        /// Panes after `secondaryPin` of a pinned split of three or four panes.
+        var extraPins: [Tab] = []
         var id: String { pin.guidInLocalDB! }
         var title: String { pin.title }
         var secondaryID: String? { secondaryPin?.guidInLocalDB }
+        /// Every pane's id in order; one entry for a solo pin.
+        var memberIDs: [String] {
+            ([pin, secondaryPin].compactMap { $0 } + extraPins).compactMap(\.guidInLocalDB)
+        }
     }
 
     // Actions resolve IDs against this exact source collection.
@@ -54,6 +60,17 @@ final class LibrarySpaceContents: ObservableObject {
         var consumed = Set<String>()
         return sorted.compactMap { model in
             guard consumed.insert(model.guid).inserted else { return nil }
+            let listedGuids = model.decodedSplitPaneGuids.isEmpty
+                ? sorted.first(where: { $0.decodedSplitPaneGuids.contains(model.guid) })?.decodedSplitPaneGuids ?? []
+                : model.decodedSplitPaneGuids
+            let listed = sorted.filter { listedGuids.contains($0.guid) && $0.guid != model.guid
+                && !consumed.contains($0.guid) }
+            if !listed.isEmpty {
+                listed.forEach { consumed.insert($0.guid) }
+                return Item(pin: Tab(with: model),
+                            secondaryPin: Tab(with: listed[0]),
+                            extraPins: listed.dropFirst().map { Tab(with: $0) })
+            }
             let linked = model.splitPartnerGuid.flatMap { byID[$0] }
                 ?? sorted.first { $0.splitPartnerGuid == model.guid }
             let partner = linked.flatMap { consumed.contains($0.guid) ? nil : $0 }

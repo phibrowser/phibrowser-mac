@@ -193,10 +193,9 @@ final class BrowserStateTabGroupBlockTests: XCTestCase {
         ])
         state.splits = [
             SplitGroup(id: "split-100-101",
-                       primaryTabId: 100,
-                       secondaryTabId: 101,
+                       tabIds: [100, 101],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
 
         state.moveNormalTabLocally(from: 0, to: 2)

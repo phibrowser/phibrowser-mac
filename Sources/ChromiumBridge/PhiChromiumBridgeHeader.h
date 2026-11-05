@@ -494,25 +494,29 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // splitId is a SplitTabId serialized via base::Token::ToString()
 // ==========================================================================
 
-/// Called when a split is created. primaryTabId is at position 0, secondaryTabId at position 1.
+/// Called when a split is created. `tabIds` holds the panes' tab ids in slot
+/// order (two to four; slot 0 is left in a vertical split, top in a
+/// horizontal one) and `fractions` each pane's share of the split axis in the
+/// same order, summing to 1.
 - (void)splitCreated:(NSString *)splitId
-        primaryTabId:(int64_t)primaryTabId
-      secondaryTabId:(int64_t)secondaryTabId
+              tabIds:(NSArray<NSNumber *> *)tabIds
               layout:(NSString *)layout   // @"vertical" | @"horizontal"
-               ratio:(double)ratio        // 0.0–1.0, proportion of primary pane
+           fractions:(NSArray<NSNumber *> *)fractions
             windowId:(int64_t)windowId;
 
-/// Called when a split's layout or ratio changes.
+/// Called when a split's layout or pane shares change.
 - (void)splitVisualsChanged:(NSString *)splitId
                      layout:(NSString *)layout
-                      ratio:(double)ratio
+                  fractions:(NSArray<NSNumber *> *)fractions
                    windowId:(int64_t)windowId;
 
-/// Called when one or both sides of a split change (e.g. after reverseTabsInSplit).
+/// Called when the split's panes change: a reorder (reverseTabsInSplit,
+/// moveTabInSplit) or a pane joining or leaving a split that stays up
+/// (addTabToSplit, removeTabFromSplit, closing one pane of three or four).
+/// `tabIds` is the full new membership in slot order.
 - (void)splitContentsChanged:(NSString *)splitId
-               primaryTabId:(int64_t)primaryTabId
-             secondaryTabId:(int64_t)secondaryTabId
-                   windowId:(int64_t)windowId;
+                      tabIds:(NSArray<NSNumber *> *)tabIds
+                    windowId:(int64_t)windowId;
 
 /// Called when a split is disbanded.
 - (void)splitRemoved:(NSString *)splitId windowId:(int64_t)windowId;
@@ -751,7 +755,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 ///     PRECEDING entry (first entry has none).
 ///   splitEvents — NSArray<NSDictionary*> of this window's split events in
 ///     fire order ("type": created|visualsChanged|contentsChanged|removed,
-///     plus splitId/primaryTabId/secondaryTabId/layout/ratio as applicable);
+///     plus splitId/tabIds/layout/fractions as applicable);
 ///     apply after the tabs.
 ///   activeTabId — NSNumber (int64), the window's final active tab; absent
 ///     when the window has none. Apply last.
@@ -1143,8 +1147,8 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// either @{@"tabId"} for a live anchor tab or @{@"key", @"url", @"title"}
 /// for a page to restore. `groups` entries hold @"keys" plus @"tokenHex" to
 /// rejoin a live group, or @"title", @"color" and @"collapsed" to create one.
-/// `splits` entries hold @"primaryKey", @"secondaryKey", @"layout" and
-/// @"ratio". Returns the new tab id for each restored key.
+/// `splits` entries hold @"keys" (two to four, in pane order), @"layout"
+/// and @"fractions". Returns the new tab id for each restored key.
 - (NSDictionary<NSString *, NSNumber *> *)
     restoreTabsWithWindowId:(int64_t)windowId
                       order:(NSArray<NSDictionary *> *)order
@@ -2076,11 +2080,14 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // Split view control (Mac → Chromium)
 // ==========================================================================
 
-/// Create a split from two existing tabs. Returns the split ID string, or nil on failure.
-- (NSString * _Nullable)createSplitWithTabId:(int64_t)primaryTabId
-                                  secondTabId:(int64_t)secondaryTabId
-                                       layout:(NSString *)layout
-                                     windowId:(int64_t)windowId;
+/// Create a split from two to four existing tabs, in the given pane order.
+/// Chromium arranges the tabs next to each other in that order first (they
+/// take the group of whichever is active, else the first). Returns the
+/// split ID string, or nil when a tab is missing, already split, or
+/// repeated.
+- (NSString * _Nullable)createSplitWithTabIds:(NSArray<NSNumber *> *)tabIds
+                                        layout:(NSString *)layout
+                                      windowId:(int64_t)windowId;
 
 /// Disband a split (tabs remain open, just no longer side-by-side).
 - (void)removeSplit:(NSString *)splitId windowId:(int64_t)windowId;
@@ -2088,11 +2095,34 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// Change split orientation (@"vertical" side-by-side, @"horizontal" stacked).
 - (void)updateSplitLayout:(NSString *)splitId layout:(NSString *)layout windowId:(int64_t)windowId;
 
-/// Adjust the divider position (ratio 0.0–1.0 is the fraction occupied by the primary pane).
-- (void)updateSplitRatio:(NSString *)splitId ratio:(double)ratio windowId:(int64_t)windowId;
+/// Set every pane's share of the split axis, in slot order (one entry per
+/// pane, summing to 1). Chromium echoes the accepted shares through
+/// splitVisualsChanged.
+- (void)updateSplitFractions:(NSString *)splitId
+                   fractions:(NSArray<NSNumber *> *)fractions
+                    windowId:(int64_t)windowId;
 
-/// Swap the positions of the two tabs within the split.
+/// Reverse the pane order of the split (a pair swaps).
 - (void)reverseTabsInSplit:(NSString *)splitId windowId:(int64_t)windowId;
+
+/// Add `tabId` (a tab in no split) to `splitId` as pane `slotIndex`
+/// (clamped to the end). The tab moves next to the split and takes its
+/// group and pinned state; the new pane gets an equal share. Ignored once
+/// the split holds four panes. Echoed as splitContentsChanged plus
+/// splitVisualsChanged.
+- (void)addTabToSplit:(NSString *)splitId
+                tabId:(int64_t)tabId
+            slotIndex:(int)slotIndex
+             windowId:(int64_t)windowId;
+
+/// Take `tabId` out of its split; the other panes stay split and the tab
+/// lands right after them. A pair dissolves (splitRemoved) instead.
+- (void)removeTabFromSplitWithTabId:(int64_t)tabId windowId:(int64_t)windowId;
+
+/// Move `tabId` to pane `slotIndex` of its split.
+- (void)moveTabInSplitWithTabId:(int64_t)tabId
+                         toSlot:(int)slotIndex
+                       windowId:(int64_t)windowId;
 
 /// Mark `tabId` as the soon-to-be partner of a split currently being formed.
 /// While marked, the active-tab visibility path skips the OCCLUDED transition
@@ -2107,14 +2137,14 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)clearPendingSplitPartnerWithTabId:(int64_t)tabId
                                  windowId:(int64_t)windowId;
 
-/// Cross-tab reordering: replace or swap one side of a split with another tab in the strip.
+/// Cross-tab reordering: replace or swap one pane of a split with another tab in the strip.
 /// @param splitId   Target split.
-/// @param slotIndex 0 = primary slot, 1 = secondary slot.
+/// @param slotIndex The pane to replace, 0 to the split's pane count - 1.
 /// @param otherTabId The tab outside the split that moves in.
 /// @param swap      YES → other tab takes the slot; the evicted tab moves right
 ///                  next to the split and joins its tab group, if any.
 ///                  NO  → kReplace (evicted tab is closed).
-/// If neither side of the split is currently active, the targeted slot is
+/// If no pane of the split is currently active, the targeted slot is
 /// activated first so Chromium's "split contains the active tab" invariant
 /// holds. Callers should not rely on focus being preserved across this call.
 - (void)swapTabInSplit:(NSString *)splitId
@@ -2123,7 +2153,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                    swap:(BOOL)swap
                windowId:(int64_t)windowId;
 
-/// Move the entire split (both tabs) as a block to a new position in the tab strip.
+/// Move the entire split (every pane) as a block to a new position in the tab strip.
 /// Pin/group state of the split is preserved.
 - (void)moveSplit:(NSString *)splitId
           toIndex:(int)toIndex
@@ -2601,16 +2631,16 @@ typedef NS_ENUM(NSInteger, PhiMediaControlAction) {
    andAddToGroupTokenHex:(NSString *)targetGroupTokenHex
               afterTabId:(int64_t)anchorTabId;
 
-/// Split-aware tear-off: when the receiver belongs to a split, move BOTH tabs
-/// of the split (preserving layout and ratio) into a new window as a single
+/// Split-aware tear-off: when the receiver belongs to a split, move EVERY pane
+/// of the split (preserving layout and shares) into a new window as a single
 /// user-visible operation. The move is not transactional — the source split is
-/// dissolved, both tabs are detached, a new window is created, and the tabs
+/// dissolved, the panes are detached, a new window is created, and the tabs
 /// are re-inserted and re-grouped; observers see those intermediate states.
 /// When the receiver is not in a split, behaves identically to moveSelfToNewWindow:.
 - (void)moveSplitToNewWindow:(BOOL)activateNewWindow;
 /// Split-aware cross-window move: when the receiver belongs to a split, move
-/// BOTH tabs of the split into the target window starting at insertIndex,
-/// preserving layout and ratio. Same intermediate-state caveat as
+/// EVERY pane of the split into the target window starting at insertIndex,
+/// preserving layout and shares. Same intermediate-state caveat as
 /// moveSplitToNewWindow:. When not in a split, behaves identically to
 /// moveSelfToWindow:atIndex:.
 - (void)moveSplitToWindow:(int64_t)targetWindowId atIndex:(NSInteger)insertIndex;

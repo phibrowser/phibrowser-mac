@@ -12,21 +12,22 @@ struct TabRenderData: Equatable {
     var isActive: Bool
     var isPinned: Bool
     var isMultiSelected: Bool = false
-    /// Position within a Chromium split pair, if any. Drives merged-bar shape.
-    /// Invariant: when `pinnedSplitPartner` is non-nil this is forced to nil
-    /// — the merged pinned cell stands alone visually and must not double up
-    /// with the paired-bar styling. Construct via `splitRender(...)` to
-    /// honor the invariant rather than setting both fields directly.
-    var splitPairPosition: SplitPairPosition?
+    /// Position within a Chromium split, if any. Drives the merged-bar shape
+    /// a split renders with when its panes stay separate cells.
+    /// Invariant: when `mergedSplitPanes` is non-empty this is forced to nil
+    /// — the merged cell stands alone visually and must not double up with
+    /// the bar styling. Construct via `TabSplitRender` to honor the
+    /// invariant rather than setting both fields directly.
+    var splitPanePosition: SplitPanePosition?
     /// True when the split this tab belongs to contains the focusing tab.
-    /// Both pair members render with the active-group fill in that case.
-    /// Same invariant as above: false when `pinnedSplitPartner` is non-nil.
+    /// Every pane renders with the active-group fill in that case.
+    /// Same invariant as above: false when `mergedSplitPanes` is non-empty.
     var isSplitGroupActive: Bool
-    /// Set on the `.first` pane of a pinned split so a single pinned cell can
-    /// render both panes' favicons side-by-side. The horizontal strip uses
-    /// this to satisfy the "two icons in one cell" presentation; nil for
-    /// normal tabs and non-first panes.
-    weak var pinnedSplitPartner: Tab?
+    /// The other panes of the split this cell hosts, in on-screen order
+    /// (one to `SplitGroup.maxPaneCount - 1`). Set on the first pane of a
+    /// merged split so a single cell renders every pane's favicon; empty
+    /// for standalone tabs and for the collapsed non-host panes.
+    var mergedSplitPanes: [Tab] = []
 
     // `sourceTab` is intentionally excluded from `Equatable`.
     weak var sourceTab: Tab?
@@ -37,30 +38,31 @@ struct TabRenderData: Equatable {
             lhs.isActive == rhs.isActive &&
             lhs.isPinned == rhs.isPinned &&
             lhs.isMultiSelected == rhs.isMultiSelected &&
-            lhs.splitPairPosition == rhs.splitPairPosition &&
+            lhs.splitPanePosition == rhs.splitPanePosition &&
             lhs.isSplitGroupActive == rhs.isSplitGroupActive &&
-            lhs.pinnedSplitPartner?.uniqueId == rhs.pinnedSplitPartner?.uniqueId
+            lhs.mergedSplitPanes.map(\.uniqueId) == rhs.mergedSplitPanes.map(\.uniqueId)
     }
 }
 
 /// Builder for the three mutually-related split-render fields on
-/// `TabRenderData`. Centralizes the rule "a pinned-merged cell hides the
-/// paired-bar styling" so individual call sites don't open-code the
-/// `partner != nil ? nil : ...` ternaries.
+/// `TabRenderData`. Centralizes the rule "a merged cell hides the bar
+/// styling" so individual call sites don't open-code the
+/// `panes.isEmpty ? position : nil` ternaries.
 struct TabSplitRender {
-    let position: SplitPairPosition?
+    let position: SplitPanePosition?
     let isGroupActive: Bool
-    weak var pinnedMergedPartner: Tab?
+    /// The other panes rendered inside this cell; empty unless merged.
+    let mergedPanes: [Tab]
 
-    static func standalone(position: SplitPairPosition?, isGroupActive: Bool) -> TabSplitRender {
+    static func standalone(position: SplitPanePosition?, isGroupActive: Bool) -> TabSplitRender {
         TabSplitRender(position: position,
                        isGroupActive: isGroupActive,
-                       pinnedMergedPartner: nil)
+                       mergedPanes: [])
     }
 
-    static func pinnedMerged(partner: Tab) -> TabSplitRender {
+    static func merged(panes: [Tab]) -> TabSplitRender {
         TabSplitRender(position: nil,
                        isGroupActive: false,
-                       pinnedMergedPartner: partner)
+                       mergedPanes: panes)
     }
 }

@@ -314,12 +314,8 @@ extension Bookmark: ContextMenuRepresentable {
     /// the originally-tracked split rather than this duplicate.
     @MainActor
     @objc private func openSplitInNewTab() {
-        guard let url, !url.isEmpty,
-              let secondaryURL = secondaryUrl, !secondaryURL.isEmpty,
-              let state = contextMenuState else { return }
-        state.openTwoURLsAsSplit(primaryURL: url,
-                                 secondaryURL: secondaryURL,
-                                 layout: layout ?? .vertical)
+        guard let state = contextMenuState else { return }
+        state.openURLsAsSplit(splitPaneURLs, layout: layout ?? .vertical)
     }
 
     @MainActor

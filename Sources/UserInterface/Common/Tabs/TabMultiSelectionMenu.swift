@@ -34,7 +34,7 @@ enum TabMultiSelectionMenu {
         if context.canOpenAsSplit {
             let openAsSplitItem = NSMenuItem(
                 title: NSLocalizedString("common.tabMultiSelectionContextMenu.openAsSplitAction", value: "Open as Split",
-                    comment: "Tab multi-selection context menu - split exactly two selected tabs into paired panes"),
+                    comment: "Tab multi-selection context menu - open the two to four selected items as the panes of one split"),
                 action: #selector(TabMultiSelectionMenuController.openSelectedAsSplit),
                 keyEquivalent: "")
             items.append(openAsSplitItem)

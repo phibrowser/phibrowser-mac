@@ -81,6 +81,8 @@ private struct PinnedTabVariantSignature: Hashable {
     let content: PinnedTabContentSignature
     let splitPartnerLineageId: String?
     let splitPartnerContent: PinnedTabContentSignature?
+    /// Lineages of a wider split's members; empty for a solo pin or a pair.
+    var splitPaneLineageIds: [String] = []
     let layout: String?
 }
 
@@ -505,6 +507,8 @@ extension LocalStore {
             content: contentSignature(for: tab),
             splitPartnerLineageId: partner.map { $0.pinLineageId ?? $0.guid },
             splitPartnerContent: partner.map { contentSignature(for: $0) },
+            splitPaneLineageIds: tab.decodedSplitPaneGuids.compactMap { rowsByGuid[$0] }
+                .map { $0.pinLineageId ?? $0.guid },
             layout: tab.layout
         )
     }
@@ -746,6 +750,7 @@ extension LocalStore {
                             collections.lazy.flatMap { $0 }.first(where: { $0.guid == partnerGuid })
                         }
                         .map { contentSignature(for: $0) },
+                    splitPaneLineageIds: source.decodedSplitPaneGuids.compactMap { lineageByGuid[$0] },
                     layout: source.layout
                 )
                 let matchingIndex = candidateIndicesByLineage[lineageId]?.first {
@@ -840,6 +845,9 @@ extension LocalStore {
         }
 
         for (index, candidate) in candidates.enumerated() {
+            targetModels[index].decodedSplitPaneGuids = candidate.source.decodedSplitPaneGuids
+                .compactMap { candidateIndexBySourceGuid[$0] }
+                .map { targetModels[$0].guid }
             guard let partnerGuid = candidate.source.splitPartnerGuid,
                   let partnerIndex = candidateIndexBySourceGuid[partnerGuid] else {
                 targetModels[index].splitPartnerGuid = nil
@@ -1323,6 +1331,8 @@ extension LocalStore {
         let layoutAlreadyCleared = partnerGuid != nil || tab.layout == nil
         guard tab.splitPartnerGuid != partnerGuid || !layoutAlreadyCleared else { return }
         tab.splitPartnerGuid = partnerGuid
+        // A partner link replaces any wider-split membership on the row.
+        if partnerGuid != nil { tab.splitPaneGuids = nil }
         if partnerGuid == nil { tab.layout = nil }
         tab.updatedDate = Date()
     }

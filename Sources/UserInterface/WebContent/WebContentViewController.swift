@@ -241,16 +241,16 @@ class WebContentViewController: NSViewController {
     private var contentObserverCancellables = Set<AnyCancellable>()
     /// Cancellable for content-fullscreen subscription on the associated tab.
     private var contentFullscreenCancellable: AnyCancellable?
-    /// Dedicated subscription to the split PARTNER tab's crashState, held only
+    /// Dedicated subscriptions to the split PARTNER tabs' crashState, held only
     /// while THIS controller is the focused split host. The focused VC owns the
-    /// split host, so it must react to the OTHER pane's crash/recover (the
+    /// split host, so it must react to the OTHER panes' crash/recover (a
     /// partner's own VC won't mount the overlay). Kept off the shared
-    /// cancellables so it can be cancelled independently on focus/split change.
-    private var partnerCrashCancellable: AnyCancellable?
-    /// The focused split host also owns its partner's mounted content view. Watch
-    /// partner URL changes so entering or leaving a native URL renderer replaces
-    /// that pane immediately instead of waiting for a focus switch.
-    private var partnerContentCancellable: AnyCancellable?
+    /// cancellables so they can be cancelled independently on focus/split change.
+    private var partnerCrashCancellables = Set<AnyCancellable>()
+    /// The focused split host also owns its partners' mounted content views.
+    /// Watch partner URL changes so entering or leaving a native URL renderer
+    /// replaces that pane immediately instead of waiting for a focus switch.
+    private var partnerContentCancellables = Set<AnyCancellable>()
     /// Saved superview reference while hostView is re-parented into an overlay
     /// over window.contentView for HTML5 content fullscreen. Nil when not in
     /// fullscreen.
@@ -1113,14 +1113,23 @@ class WebContentViewController: NSViewController {
     /// switching focus does not snap the chat back to the partner's stale
     /// width.
     private func syncAIChatWidthToSplitPartner(_ width: CGFloat) {
+        for partner in splitPartnerControllers() {
+            partner.applyAIChatWidthFromPartner(width)
+        }
+    }
+
+    /// The controllers of this tab's other split panes, in slot order.
+    private func splitPartnerControllers() -> [WebContentViewController] {
         guard let state = browserState,
               let tab = associatedTab,
               let group = state.splitGroup(forTabId: tab.guid),
-              let partnerId = group.partnerTabId(of: tab.guid),
-              let container = parent as? WebContentContainerViewController,
-              let partner = container.findController(forTabId: partnerId),
-              partner !== self else { return }
-        partner.applyAIChatWidthFromPartner(width)
+              let container = parent as? WebContentContainerViewController else { return [] }
+        return group.otherTabIds(of: tab.guid).compactMap { partnerId in
+            guard let partner = container.findController(forTabId: partnerId), partner !== self else {
+                return nil
+            }
+            return partner
+        }
     }
 
     /// Re-drive the chat divider to the shared split width if it drifted while
@@ -1156,19 +1165,12 @@ class WebContentViewController: NSViewController {
     /// to a per-origin cached value — the chat is visually shared across both
     /// panes, so we match what the user is already looking at.
     private func splitPartnerCurrentChatWidth() -> CGFloat? {
-        guard let state = browserState,
-              let tab = associatedTab,
-              let group = state.splitGroup(forTabId: tab.guid),
-              let partnerId = group.partnerTabId(of: tab.guid),
-              let container = parent as? WebContentContainerViewController,
-              let partner = container.findController(forTabId: partnerId),
-              partner !== self,
-              let partnerItem = partner.aiChatSplitViewItem,
-              !partnerItem.isCollapsed else {
-            return nil
+        for partner in splitPartnerControllers() {
+            guard let partnerItem = partner.aiChatSplitViewItem, !partnerItem.isCollapsed else { continue }
+            let frameWidth = partnerItem.viewController.view.frame.width
+            if frameWidth > 0 { return frameWidth }
         }
-        let frameWidth = partnerItem.viewController.view.frame.width
-        return frameWidth > 0 ? frameWidth : nil
+        return nil
     }
 
     /// Apply a chat width pushed in from this controller's split partner.
@@ -1326,12 +1328,12 @@ class WebContentViewController: NSViewController {
     private func partnerHasAIChatEnabled() -> Bool {
         guard let state = browserState,
               let tab = associatedTab,
-              let group = state.splitGroup(forTabId: tab.guid),
-              let partnerId = group.partnerTabId(of: tab.guid),
-              let partner = state.tabs.first(where: { $0.guid == partnerId }) else {
+              let group = state.splitGroup(forTabId: tab.guid) else {
             return false
         }
-        return partner.aiChatEnabled
+        return group.otherTabIds(of: tab.guid).contains { partnerId in
+            state.tabs.first(where: { $0.guid == partnerId })?.aiChatEnabled == true
+        }
     }
 
     /// Ask this pane's split partner controller to re-sync its AI Chat
@@ -1339,16 +1341,9 @@ class WebContentViewController: NSViewController {
     /// autohide kicks in so the partner pane converges on the new state
     /// rather than holding its own sidebar open.
     private func refreshSplitPartnerAIChatSidebarState() {
-        guard let state = browserState,
-              let tab = associatedTab,
-              let group = state.splitGroup(forTabId: tab.guid),
-              let partnerId = group.partnerTabId(of: tab.guid),
-              let container = parent as? WebContentContainerViewController,
-              let partner = container.findController(forTabId: partnerId),
-              partner !== self else {
-            return
+        for partner in splitPartnerControllers() {
+            partner.refreshAIChatSidebarStateForPartnerNotification()
         }
-        partner.refreshAIChatSidebarStateForPartnerNotification()
     }
 
     /// Re-run the AI Chat sidebar sync against the current tab and partner
@@ -1776,9 +1771,14 @@ class WebContentViewController: NSViewController {
         return state.splitGroup(forTabId: tab.guid)
     }
 
-    private func partnerTab(for group: SplitGroup, ownTabId: Int) -> Tab? {
-        let partnerId = group.primaryTabId == ownTabId ? group.secondaryTabId : group.primaryTabId
-        return browserState?.tabs.first { $0.guid == partnerId }
+    /// The other panes' tabs in slot order, or nil when any is missing.
+    private func partnerTabs(for group: SplitGroup, ownTabId: Int) -> [Tab]? {
+        var partners: [Tab] = []
+        for partnerId in group.otherTabIds(of: ownTabId) {
+            guard let partner = browserState?.tabs.first(where: { $0.guid == partnerId }) else { return nil }
+            partners.append(partner)
+        }
+        return partners
     }
 
     /// Candidate pages for the surface reconciler; it checks their actual
@@ -1789,8 +1789,8 @@ class WebContentViewController: NSViewController {
         var tabs: [Tab] = []
         if let tab = associatedTab {
             tabs.append(tab)
-            if isSplitContentMounted, let partner = mountedSplitPartner {
-                tabs.append(partner)
+            if isSplitContentMounted {
+                tabs.append(contentsOf: mountedSplitPartners)
             }
         }
         if let chat = aiChatSplitViewItem?.viewController as? EmbeddedChatViewController,
@@ -1808,15 +1808,16 @@ class WebContentViewController: NSViewController {
     private func canMountSplitHost(for tab: Tab) -> Bool {
         guard !tab.isInContentFullscreen,
               let group = browserState?.splitGroup(forTabId: tab.guid),
-              let partner = partnerTab(for: group, ownTabId: tab.guid),
-              // A native renderer partner is mountable even before (or without)
-              // a Chromium view; `partnerPaneView(for:)` resolves its real view.
-              partner.webContentView != nil ||
-              partner.usesNativeNTP ||
-              shouldShowBookmarkManager(for: partner) else {
+              let partners = partnerTabs(for: group, ownTabId: tab.guid) else {
             return false
         }
-        return true
+        // A native renderer partner is mountable even before (or without)
+        // a Chromium view; `partnerPaneView(for:)` resolves its real view.
+        return partners.allSatisfy { partner in
+            partner.webContentView != nil ||
+            partner.usesNativeNTP ||
+            shouldShowBookmarkManager(for: partner)
+        }
     }
 
     private func shouldShowBookmarkManager(for tab: Tab) -> Bool {
@@ -2072,23 +2073,22 @@ class WebContentViewController: NSViewController {
     /// mount (focus / splits change); partner reactivity is Task 12. Stale
     /// controllers from a membership change are dropped first.
     private func reconcileSplitCrashViews(host: SplitPaneHostView, group: SplitGroup) {
-        let liveTabIds: Set<Int> = [group.primaryTabId, group.secondaryTabId]
+        let liveTabIds = Set(group.tabIds)
         for tabId in Array(splitCrashControllers.keys) where !liveTabIds.contains(tabId) {
             dropSplitCrashController(tabId: tabId)
         }
-        for (tabId, pane) in [(group.primaryTabId, SplitPaneHostView.Pane.primary),
-                              (group.secondaryTabId, SplitPaneHostView.Pane.secondary)] {
-            reconcileCrashView(host: host, pane: pane, tabId: tabId)
+        for (slot, tabId) in group.tabIds.enumerated() {
+            reconcileCrashView(host: host, slot: slot, tabId: tabId)
         }
     }
 
     private func reconcileCrashView(host: SplitPaneHostView,
-                                    pane: SplitPaneHostView.Pane,
+                                    slot: Int,
                                     tabId: Int) {
         guard let tab = browserState?.tabs.first(where: { $0.guid == tabId }),
               let crashData = tab.crashState,
               let hostWC = browserState?.windowController else {
-            host.detachCrashView(pane: pane)
+            host.detachCrashView(slot: slot)
             dropSplitCrashController(tabId: tabId)
             return
         }
@@ -2098,7 +2098,7 @@ class WebContentViewController: NSViewController {
         // this tab's controller so a Reverse-Panes swap (both panes crashed,
         // equal data) can't leave crossed crash pages / wrong-tab Reload.
         if let controller = splitCrashControllers[tabId],
-           host.crashView(for: pane) === controller.view,
+           host.crashView(slot: slot) === controller.view,
            splitCrashData[tabId] == crashData {
             return
         }
@@ -2107,7 +2107,7 @@ class WebContentViewController: NSViewController {
         splitCrashControllers[tabId] = controller
         splitCrashData[tabId] = crashData
         addChild(controller)
-        host.attachCrashView(pane: pane, crashView: controller.view)
+        host.attachCrashView(slot: slot, crashView: controller.view)
     }
 
     private func dropSplitCrashController(tabId: Int) {
@@ -2129,36 +2129,39 @@ class WebContentViewController: NSViewController {
     /// (Re)bind subscriptions for partner state owned by the focused split host.
     /// The partner's own VC cannot safely remount while it is behind this one.
     func updatePartnerCrashSubscription() {
-        partnerCrashCancellable = nil
-        partnerContentCancellable = nil
+        partnerCrashCancellables.removeAll()
+        partnerContentCancellables.removeAll()
         guard let tab = associatedTab,
               let state = browserState,
               state.focusingTab?.guid == tab.guid,
-              let group = state.splitGroup(forTabId: tab.guid),
-              let partnerId = group.partnerTabId(of: tab.guid),
-              let partner = state.tabs.first(where: { $0.guid == partnerId }) else {
+              let group = state.splitGroup(forTabId: tab.guid) else {
             return
         }
-        partnerCrashCancellable = partner.$crashState
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.refreshSplitCrashOverlays()
-            }
-        partnerContentCancellable = partner.$url
-            .removeDuplicates()
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.refreshContentForSplitPartnerURLChange()
-            }
+        for partnerId in group.otherTabIds(of: tab.guid) {
+            guard let partner = state.tabs.first(where: { $0.guid == partnerId }) else { continue }
+            partner.$crashState
+                .removeDuplicates()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.refreshSplitCrashOverlays()
+                }
+                .store(in: &partnerCrashCancellables)
+            partner.$url
+                .removeDuplicates()
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.refreshContentForSplitPartnerURLChange()
+                }
+                .store(in: &partnerContentCancellables)
+        }
     }
 
     /// Drop focused-host partner subscriptions unconditionally. The container
     /// calls this on the outgoing focused VC because its observers do not re-run.
     func cancelPartnerCrashSubscription() {
-        partnerCrashCancellable = nil
-        partnerContentCancellable = nil
+        partnerCrashCancellables.removeAll()
+        partnerContentCancellables.removeAll()
     }
 
     private func refreshContentForSplitPartnerURLChange() {
@@ -2227,15 +2230,30 @@ class WebContentViewController: NSViewController {
     private func installSplitContent(group: SplitGroup,
                                      ownTabId: Int,
                                      ownNativeView: NSView) {
-        guard let partner = partnerTab(for: group, ownTabId: ownTabId),
-              let partnerNativeView = partnerPaneView(for: partner) else {
-            // Partner not ready — show ourself alone for now; the splits
-            // subscription will re-trigger when the partner's view arrives.
+        guard let ownSlot = group.slot(of: ownTabId),
+              let partners = partnerTabs(for: group, ownTabId: ownTabId) else {
             addWebContentView(ownNativeView, tabId: ownTabId)
             return
         }
+        // Every pane's view in slot order; a partner whose view is not ready
+        // yet means showing ourself alone for now — the splits subscription
+        // re-triggers when the partner's view arrives.
+        var paneViews: [NSView] = []
+        var partnerIterator = partners.makeIterator()
+        for tabId in group.tabIds {
+            if tabId == ownTabId {
+                paneViews.append(ownNativeView)
+                continue
+            }
+            guard let partner = partnerIterator.next(),
+                  let partnerNativeView = partnerPaneView(for: partner) else {
+                addWebContentView(ownNativeView, tabId: ownTabId)
+                return
+            }
+            paneViews.append(partnerNativeView)
+        }
 
-        // Give the new tab's webContentView a window via hostView before the
+        // Give a new tab's webContentView a window via hostView before the
         // split host moves it. In the "Open as Split" flow this view arrives
         // orphan; a direct addSubview into the split host would be a
         // windowless→window transition that RenderWidgetHostViewCocoa does
@@ -2243,29 +2261,16 @@ class WebContentViewController: NSViewController {
         // in the (already-in-window) hostView first lets the renderer's
         // window transition happen in a stable container, so the subsequent
         // split-host attach is a same-window move that skips the transition.
-        if ownNativeView.window == nil, hostView.window != nil {
-            ownNativeView.removeFromSuperview()
-            hostView.addSubview(ownNativeView)
-        }
-        if partnerNativeView.window == nil, hostView.window != nil {
-            partnerNativeView.removeFromSuperview()
-            hostView.addSubview(partnerNativeView)
-        }
-
-        let (primaryView, secondaryView): (NSView, NSView)
-        if group.primaryTabId == ownTabId {
-            primaryView = ownNativeView
-            secondaryView = partnerNativeView
-        } else {
-            primaryView = partnerNativeView
-            secondaryView = ownNativeView
+        for paneView in paneViews where paneView.window == nil && hostView.window != nil {
+            paneView.removeFromSuperview()
+            hostView.addSubview(paneView)
         }
 
         let host: SplitPaneHostView
         let layoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
         if let existing = currentSplitHost, existing.superview === hostView {
-            existing.update(primary: primaryView, secondary: secondaryView)
-            existing.update(layout: group.layout, ratio: group.ratio, layoutMode: layoutMode)
+            existing.update(panes: paneViews)
+            existing.update(layout: group.layout, fractions: group.fractions, layoutMode: layoutMode)
             host = existing
         } else {
             // Mount the host BEFORE attaching panes: SplitPaneHostView.init no
@@ -2285,16 +2290,16 @@ class WebContentViewController: NSViewController {
             // same-window addSubview move skips viewWillMoveToWindow(nil)).
             let newHost = SplitPaneHostView(
                 layout: group.layout,
-                ratio: group.ratio,
+                fractions: group.fractions,
                 layoutMode: layoutMode
             )
             newHost.hasContentSurface = hasContentSurface
             newHost.translatesAutoresizingMaskIntoConstraints = false
             hostView.addSubview(newHost)
             newHost.snp.makeConstraints { $0.edges.equalToSuperview() }
-            newHost.update(primary: primaryView, secondary: secondaryView)
+            newHost.update(panes: paneViews)
             // Drop anything else still parked in hostView (e.g. a stale
-            // native-NTP view from a prior render). The two panes already
+            // native-NTP view from a prior render). The panes already
             // moved into newHost above, so they will not match here.
             for subview in hostView.subviews where subview !== newHost {
                 subview.removeFromSuperview()
@@ -2304,11 +2309,11 @@ class WebContentViewController: NSViewController {
         }
 
         host.squaresCorners = contentLayout.squaresCorners
-        mountedSplitPartner = partner
+        mountedSplitPartners = partners
 
         // installSplitContent only runs on the focused VC's mount path, so
-        // the host's "focused pane" is always the side that matches ownTabId.
-        host.focusedPane = (group.primaryTabId == ownTabId) ? .primary : .secondary
+        // the host's "focused pane" is always the slot that matches ownTabId.
+        host.focusedPane = ownSlot
 
         // After the panes are mounted, replay any DevTools that was already
         // open on either side. Covers split rebuild on controller switch and
@@ -2319,19 +2324,51 @@ class WebContentViewController: NSViewController {
         reconcileSplitLoginRequiredViews(host: host, group: group)
 
         let splitId = group.id
-        host.onRatioCommit = { [weak self] newRatio in
-            self?.browserState?.updateSplitRatio(splitId, ratio: newRatio)
+        host.onFractionsCommit = { [weak self] fractions in
+            self?.browserState?.updateSplitFractions(splitId, fractions: fractions)
         }
 
-        // Clicking either pane focuses that pane's tab — same as native
-        // browsers. The host reports interactions in its own coordinates
-        // (.primary / .secondary); we map back to Chromium's primary/
-        // secondary tab ids using the group.
-        let primaryTabId = group.primaryTabId
-        let secondaryTabId = group.secondaryTabId
-        host.onPaneInteraction = { [weak self] pane in
-            guard let self else { return }
-            let targetTabId = (pane == .primary) ? primaryTabId : secondaryTabId
+        host.allowsPaneMove = !group.isPinned
+        let movablePaneTabIds = group.tabIds
+        host.onPaneMove = { [weak self] from, to in
+            guard from >= 0, from < movablePaneTabIds.count else { return }
+            self?.browserState?.moveTabInSplit(tabId: movablePaneTabIds[from], toSlot: to)
+        }
+        let removePane: (Int) -> Void = { [weak self] slot in
+            guard let self, let state = self.browserState,
+                  slot >= 0, slot < movablePaneTabIds.count else { return }
+            let tabId = movablePaneTabIds[slot]
+            // The panes left behind stay on screen, so one of them takes
+            // over from a focused pane that leaves.
+            if state.focusingTab?.guid == tabId {
+                let neighborId = movablePaneTabIds[slot + 1 < movablePaneTabIds.count ? slot + 1 : slot - 1]
+                state.tabs.first { $0.guid == neighborId }?.makeSelfActive()
+            }
+            state.removeTabFromSplit(tabId: tabId)
+        }
+        host.onPaneRemove = removePane
+        // Reaching the sidebar makes the pane a normal tab, and the drag
+        // carries on as that tab's, so it can land anywhere in the list.
+        host.onPaneDragOffPage = { [weak self] slot, event in
+            guard let state = self?.browserState,
+                  slot >= 0, slot < movablePaneTabIds.count,
+                  let tab = state.tabs.first(where: { $0.guid == movablePaneTabIds[slot] }),
+                  let split = state.windowController?.mainSplitViewController,
+                  !split.isSidebarCollapsed,
+                  split.sidebarViewController.beginDraggingPaneAsTab(tab, event: event) else {
+                return false
+            }
+            removePane(slot)
+            return true
+        }
+
+        // Clicking any pane focuses that pane's tab — same as native
+        // browsers. The host reports interactions by slot; we map back to
+        // the tab ids using the group.
+        let paneTabIds = group.tabIds
+        host.onPaneInteraction = { [weak self] slot in
+            guard let self, slot >= 0, slot < paneTabIds.count else { return }
+            let targetTabId = paneTabIds[slot]
             guard let tab = self.browserState?.tabs.first(where: { $0.guid == targetTabId }),
                   !tab.isActive else { return }
             tab.makeSelfActive()
@@ -2346,7 +2383,7 @@ class WebContentViewController: NSViewController {
             host = existing
         } else {
             // Mounted before the panes move in, as in `installSplitContent`.
-            host = SplitPaneHostView(layout: .vertical, ratio: 0.5,
+            host = SplitPaneHostView(layout: .vertical, fractions: [0.5, 0.5],
                                      layoutMode: PhiPreferences.GeneralSettings.loadLayoutMode())
             host.hasContentSurface = hasContentSurface
             host.translatesAutoresizingMaskIntoConstraints = false
@@ -2355,8 +2392,8 @@ class WebContentViewController: NSViewController {
             splitPreviewHost = host
         }
         host.squaresCorners = contentLayout.squaresCorners
-        host.update(primary: ownNativeView, secondary: splitPreviewPane)
-        host.focusedPane = .secondary
+        host.update(panes: [ownNativeView, splitPreviewPane])
+        host.focusedPane = 1
     }
 
     private func removeSplitPreview(keeping contentView: NSView) {
@@ -2373,17 +2410,37 @@ class WebContentViewController: NSViewController {
         splitPreviewHost = nil
     }
 
+    /// See `SplitPaneHostView.setInsertionPreview(slot:)`.
+    func setSplitInsertionPreview(slot: Int?) {
+        currentSplitHost?.setInsertionPreview(slot: slot)
+    }
+
+    /// See `SplitPaneHostView.holdInsertionPreview(slot:)`.
+    func holdSplitInsertionPreview(slot: Int) {
+        currentSplitHost?.holdInsertionPreview(slot: slot)
+    }
+
     private weak var splitPreviewHost: SplitPaneHostView?
     private lazy var splitPreviewPane = NSView()
 
     private weak var currentSplitHost: SplitPaneHostView? {
         didSet {
             if currentSplitHost == nil {
-                mountedSplitPartner = nil
+                mountedSplitPartners = []
             }
         }
     }
-    private weak var mountedSplitPartner: Tab?
+    /// The other panes' tabs mounted in `currentSplitHost`, in slot order.
+    /// Weak so a closed tab does not outlive its controller here.
+    private var mountedSplitPartners: [Tab] {
+        get { mountedSplitPartnerBoxes.compactMap { $0.tab } }
+        set { mountedSplitPartnerBoxes = newValue.map { WeakTab($0) } }
+    }
+    private var mountedSplitPartnerBoxes: [WeakTab] = []
+    private struct WeakTab {
+        weak var tab: Tab?
+        init(_ tab: Tab) { self.tab = tab }
+    }
 
     private var isSplitContentMounted: Bool {
         guard let currentSplitHost else { return false }
@@ -2423,10 +2480,7 @@ class WebContentViewController: NSViewController {
             return
         }
 
-        if let host = currentSplitHost {
-            host.detachLoginRequiredView(pane: .primary)
-            host.detachLoginRequiredView(pane: .secondary)
-        }
+        currentSplitHost?.detachAllLoginRequiredViews()
         splitLoginRequiredViews.values.forEach { $0.removeFromSuperview() }
         splitLoginRequiredViews.removeAll()
 
@@ -2446,20 +2500,16 @@ class WebContentViewController: NSViewController {
         host: SplitPaneHostView,
         group: SplitGroup
     ) {
-        let liveTabIds = Set([group.primaryTabId, group.secondaryTabId])
+        let liveTabIds = Set(group.tabIds)
         for tabId in Array(splitLoginRequiredViews.keys) where !liveTabIds.contains(tabId) {
             splitLoginRequiredViews[tabId]?.removeFromSuperview()
             splitLoginRequiredViews[tabId] = nil
         }
 
-        let panes: [(Int, SplitPaneHostView.Pane)] = [
-            (group.primaryTabId, .primary),
-            (group.secondaryTabId, .secondary)
-        ]
-        for (tabId, pane) in panes {
+        for (slot, tabId) in group.tabIds.enumerated() {
             guard let tab = browserState?.tabs.first(where: { $0.guid == tabId }),
                   shouldPresentLoginRequired(for: tab) else {
-                host.detachLoginRequiredView(pane: pane)
+                host.detachLoginRequiredView(slot: slot)
                 splitLoginRequiredViews[tabId]?.removeFromSuperview()
                 splitLoginRequiredViews[tabId] = nil
                 continue
@@ -2467,16 +2517,13 @@ class WebContentViewController: NSViewController {
 
             let overlay = splitLoginRequiredViews[tabId] ?? LoginRequiredOverlayView()
             splitLoginRequiredViews[tabId] = overlay
-            host.attachLoginRequiredView(pane: pane, loginRequiredView: overlay)
+            host.attachLoginRequiredView(slot: slot, loginRequiredView: overlay)
         }
     }
 
     private func removeLoginRequiredPresentations() {
         loginRequiredOverlayView.removeFromSuperview()
-        if let host = currentSplitHost {
-            host.detachLoginRequiredView(pane: .primary)
-            host.detachLoginRequiredView(pane: .secondary)
-        }
+        currentSplitHost?.detachAllLoginRequiredViews()
         splitLoginRequiredViews.values.forEach { $0.removeFromSuperview() }
         splitLoginRequiredViews.removeAll()
     }
@@ -2929,25 +2976,25 @@ class WebContentViewController: NSViewController {
     /// The rounded card of `tabId`'s pane when that tab is in the split this
     /// controller has mounted; nil otherwise.
     func splitPaneCardView(forTabId tabId: Int) -> NSView? {
-        guard let host = currentSplitHost, let pane = splitPane(forTabId: tabId) else { return nil }
-        return host.paneCardView(for: pane)
+        guard let host = currentSplitHost, let slot = splitPane(forTabId: tabId) else { return nil }
+        return host.paneCardView(slot: slot)
     }
 
-    /// Returns the pane (`.primary` / `.secondary`) the given tab currently
-    /// occupies in this controller's split host, or `nil` when the tab isn't
-    /// part of a split mounted in this controller. Routing helper for the
-    /// DevTools attach/detach/bounds-update paths.
-    func splitPane(forTabId tabId: Int) -> SplitPaneHostView.Pane? {
+    /// Returns the slot the given tab currently occupies in this controller's
+    /// split host, or `nil` when the tab isn't part of a split mounted in
+    /// this controller. Routing helper for the DevTools
+    /// attach/detach/bounds-update paths.
+    func splitPane(forTabId tabId: Int) -> Int? {
         guard currentSplitHost != nil,
               let group = browserState?.splitGroup(forTabId: tabId) else { return nil }
-        return group.primaryTabId == tabId ? .primary : .secondary
+        return group.slot(of: tabId)
     }
 
     /// Attach DevTools to a specific pane of the current split host. Lets the
     /// container reroute DevTools events for the partner pane (which lives in
     /// a different tab's controller) into this controller's mounted split.
     func attachDevToolsToPane(tabId: Int,
-                              pane: SplitPaneHostView.Pane,
+                              pane: Int,
                               devToolsView: NSView) {
         guard let host = currentSplitHost,
               let tab = browserState?.tabs.first(where: { $0.guid == tabId }) else { return }
@@ -2958,14 +3005,14 @@ class WebContentViewController: NSViewController {
                              tab: tab)
     }
 
-    func detachDevToolsFromPane(tabId: Int, pane: SplitPaneHostView.Pane) {
+    func detachDevToolsFromPane(tabId: Int, pane: Int) {
         guard let host = currentSplitHost,
               let tab = browserState?.tabs.first(where: { $0.guid == tabId }) else { return }
         detachDevToolsFromPane(tabId: tabId, pane: pane, host: host, tab: tab)
     }
 
     func updateInspectedPageBoundsForPane(tabId: Int,
-                                          pane: SplitPaneHostView.Pane,
+                                          pane: Int,
                                           bounds: CGRect,
                                           hide: Bool) {
         guard let host = currentSplitHost,
@@ -2979,7 +3026,7 @@ class WebContentViewController: NSViewController {
     }
 
     private func attachDevToolsToPane(tabId: Int,
-                                      pane: SplitPaneHostView.Pane,
+                                      pane: Int,
                                       devToolsView: NSView,
                                       host: SplitPaneHostView,
                                       tab: Tab) {
@@ -2990,7 +3037,7 @@ class WebContentViewController: NSViewController {
         if tab.devToolsAttached, let stale = tab.devToolsView, stale !== devToolsView {
             stale.removeFromSuperview()
         }
-        host.attachDevTools(pane: pane, devToolsView: devToolsView)
+        host.attachDevTools(slot: pane, devToolsView: devToolsView)
         tab.devToolsAttached = true
         tab.devToolsView = devToolsView
         tab.inspectedPageBounds = nil
@@ -2998,10 +3045,10 @@ class WebContentViewController: NSViewController {
     }
 
     private func detachDevToolsFromPane(tabId: Int,
-                                        pane: SplitPaneHostView.Pane,
+                                        pane: Int,
                                         host: SplitPaneHostView,
                                         tab: Tab) {
-        host.detachDevTools(pane: pane)
+        host.detachDevTools(slot: pane)
         tab.devToolsAttached = false
         tab.devToolsView = nil
         tab.inspectedPageBounds = nil
@@ -3009,14 +3056,14 @@ class WebContentViewController: NSViewController {
     }
 
     private func updateInspectedPageBoundsForPane(tabId: Int,
-                                                  pane: SplitPaneHostView.Pane,
+                                                  pane: Int,
                                                   bounds: CGRect,
                                                   hide: Bool,
                                                   host: SplitPaneHostView,
                                                   tab: Tab) {
         tab.inspectedPageBounds = bounds
         tab.hideInspectedContents = hide
-        host.updateInspectedPageBounds(pane: pane, bounds: bounds, hide: hide)
+        host.updateInspectedPageBounds(slot: pane, bounds: bounds, hide: hide)
     }
 
     /// After a split host is created / reused / re-attached, re-mount any
@@ -3028,14 +3075,13 @@ class WebContentViewController: NSViewController {
     /// scratch (DevTools needs to migrate from the previous host).
     private func restorePerPaneDevToolsState(host: SplitPaneHostView, group: SplitGroup) {
         guard let state = browserState else { return }
-        for (tabId, pane) in [(group.primaryTabId, SplitPaneHostView.Pane.primary),
-                              (group.secondaryTabId, SplitPaneHostView.Pane.secondary)] {
+        for (slot, tabId) in group.tabIds.enumerated() {
             guard let tab = state.tabs.first(where: { $0.guid == tabId }),
                   tab.devToolsAttached,
                   let devToolsView = tab.devToolsView else { continue }
-            host.attachDevTools(pane: pane, devToolsView: devToolsView)
+            host.attachDevTools(slot: slot, devToolsView: devToolsView)
             if let cachedBounds = tab.inspectedPageBounds {
-                host.updateInspectedPageBounds(pane: pane,
+                host.updateInspectedPageBounds(slot: slot,
                                                bounds: cachedBounds,
                                                hide: tab.hideInspectedContents)
             }

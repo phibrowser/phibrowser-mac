@@ -46,11 +46,11 @@ extension BrowserState {
             liveTabsByPinnedGuid[localGuid] = tab
         }
         var anticipatedTransferGuids = [pinnedGuid]
-        var partnerGuidHint: String?
+        var memberGuidsHint: [String]?
         if let sourcePinned = pinnedTabs.first(where: { $0.guidInLocalDB == pinnedGuid }),
-           let pair = pinnedSplitDBPair(forPinnedTab: sourcePinned) {
-            anticipatedTransferGuids = [pinnedGuid, pair.0, pair.1]
-            partnerGuidHint = pair.0 == pinnedGuid ? pair.1 : pair.0
+           let dbGuids = pinnedSplitDBGuids(forPinnedTab: sourcePinned) {
+            anticipatedTransferGuids = [pinnedGuid] + dbGuids
+            memberGuidsHint = dbGuids
         }
         var seenAnticipatedGuids = Set<String>()
         let anticipatedLiveTabs = anticipatedTransferGuids.compactMap { guid -> Tab? in
@@ -69,7 +69,7 @@ extension BrowserState {
             sourceSpaceId: spaceId,
             targetProfileId: targetState.profileId,
             targetSpaceId: targetState.spaceId,
-            partnerGuidHint: partnerGuidHint,
+            memberGuidsHint: memberGuidsHint,
             destinationIndex: destinationIndex,
             destinationIndexIncludesSourceUnit: destinationIndexIncludesSourceUnit
         )
@@ -101,8 +101,8 @@ extension BrowserState {
     }
 
     /// Pins a normal source tab directly into the target owner. When the tab is
-    /// one pane of a live split, both panes are persisted and retargeted as one
-    /// unit before Chromium moves the split to the destination window.
+    /// one pane of a live split, every pane is persisted and retargeted
+    /// as one unit before Chromium moves the split to the destination window.
     @MainActor
     func commitCrossWindowNormalTabDropToPinned(
         tabId: Int,
@@ -122,11 +122,12 @@ extension BrowserState {
         let splitGroup = splitGroup(forTabId: tabId).flatMap { $0.isPinned ? nil : $0 }
         let transferTabs: [Tab]
         if let splitGroup {
-            guard let primary = tabs.first(where: { $0.guid == splitGroup.primaryTabId }),
-                  let secondary = tabs.first(where: { $0.guid == splitGroup.secondaryTabId }) else {
-                throw CrossWindowPinnedDropError.tabNotFound(tabId)
+            transferTabs = try splitGroup.tabIds.map { paneId in
+                guard let pane = tabs.first(where: { $0.guid == paneId }) else {
+                    throw CrossWindowPinnedDropError.tabNotFound(tabId)
+                }
+                return pane
             }
-            transferTabs = [primary, secondary]
         } else {
             transferTabs = [sourceTab]
         }
@@ -135,17 +136,11 @@ extension BrowserState {
             guard let url = tab.url, !url.isEmpty else {
                 throw CrossWindowPinnedDropError.invalidURL(tab.guid)
             }
-            let partnerTabId: Int?
-            if let splitGroup {
-                partnerTabId = splitGroup.partnerTabId(of: tab.guid)
-            } else {
-                partnerTabId = nil
-            }
             return PinnedTabCreationInput(
                 tabId: tab.guid,
                 title: tab.title,
                 url: url,
-                partnerTabId: partnerTabId,
+                paneTabIds: splitGroup?.tabIds ?? [],
                 layout: splitGroup?.layout.rawValue
             )
         }

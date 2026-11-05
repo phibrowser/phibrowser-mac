@@ -5,27 +5,25 @@
 
 import AppKit
 
-/// Hosts two Chromium native views side-by-side (or stacked) with a draggable
-/// divider. Pure view — owns no model state; the owning controller pushes
-/// updates in and observes drag-end via `onRatioCommit`.
+/// Hosts two to four Chromium native views as columns (or rows) with a
+/// draggable divider between each neighbouring pair. Pure view — owns no
+/// model state; the owning controller pushes updates in and observes
+/// drag-end via `onFractionsCommit`.
 ///
-/// Chromium is source of truth for the ratio: every drag-end calls
-/// `onRatioCommit`, which the controller forwards to `updateSplitRatio:`.
-/// The authoritative new ratio comes back as a `splitVisualsChanged:`
-/// notification and is re-applied via `update(layout:ratio:)`.
+/// Chromium is source of truth for the pane shares: every drag-end calls
+/// `onFractionsCommit`, which the controller forwards to
+/// `updateSplitFractions:`. The authoritative shares come back as a
+/// `splitVisualsChanged:` notification and are re-applied via
+/// `update(layout:fractions:)`.
+///
+/// Panes are addressed by slot: 0 is the left column of a vertical split and
+/// the top row of a horizontal one. Mapping a slot back to a tab id is the
+/// controller's job.
 final class SplitPaneHostView: NSView {
 
-    /// Which side of the split the user interacted with. Mapping back to a
-    /// specific tab id is the controller's job — this view only knows about
-    /// "primary pane" and "secondary pane" in the split's own coordinates.
-    enum Pane {
-        case primary
-        case secondary
-    }
-
-    /// Also mirrored by `SplitTabDropContainer.replacePaneRects` so the
-    /// replace-mode drop hint cards line up with the real panes — keep that
-    /// in mind when changing the value.
+    /// Also mirrored by `SplitTabDropContainer.paneRects` so the pane-mode
+    /// drop hint cards line up with the real panes — keep that in mind when
+    /// changing the value.
     static let dividerThickness: CGFloat = 4
     /// Default inset between the split host's bounds and the rounded pane
     /// cards. Comfortable and Balanced omit it at the top so split content
@@ -35,49 +33,71 @@ final class SplitPaneHostView: NSView {
     /// edge. A page overlay covering one pane (Reader View) insets by it so
     /// the ring stays visible around the overlay.
     static let focusRingThickness: CGFloat = 2
-    private let minPaneFraction: CGFloat = 0.1
+    /// The least share of the split axis any pane keeps while dragging.
+    static let minPaneFraction: CGFloat = 0.1
+    /// How long the panes take to move for a preview. The drop hint cards
+    /// move in step with them.
+    static let panePreviewAnimationDuration: CFTimeInterval = 0.20
+    /// How long a dropped change may take to arrive before the panes go back,
+    /// in case Chromium declines it.
+    private static let panePreviewHoldTimeout: TimeInterval = 2
+    /// How far a pane's handle moves before the press becomes a drag.
+    private static let paneMoveDragThreshold: CGFloat = 4
+    /// How far off the split axis a dragged pane goes to leave the split, at
+    /// most: a short pane needs only a third of its length.
+    private static let panePullOutDistance: CGFloat = 120
+    /// How far past the host a dragged pane goes to leave the split, so a
+    /// drag along the top edge can stray above it.
+    private static let panePullOutMargin: CGFloat = 40
+    /// A pane leaving the split shrinks to this share of its size.
+    private static let panePullOutScale: CGFloat = 0.5
 
-    /// Ratios the divider magnetically snaps to while dragging: an even split
-    /// plus one-third / two-thirds for the common asymmetric layouts.
+    /// Ratios the divider magnetically snaps to while dragging, as the first
+    /// neighbour's share of the two panes it separates: an even split plus
+    /// one-third / two-thirds for the common asymmetric layouts.
     private let magneticSnapRatios: [CGFloat] = [1.0 / 3.0, 0.5, 2.0 / 3.0]
     /// How close (in points) the divider must come to a snap ratio before it
     /// sticks. Converted to a ratio per-drag from the usable axis length.
     private let magneticSnapDistance: CGFloat = 18
 
     private(set) var paneLayout: SplitLayout
-    private(set) var ratio: CGFloat
+    /// Each pane's share of the split axis in slot order, summing to 1.
+    private(set) var fractions: [CGFloat]
     private(set) var layoutMode: LayoutMode
 
-    private let dividerView: DividerHandle
+    /// Per-pane state. The container hosts the Chromium native view and
+    /// (optionally) a docked DevTools view scoped to just that pane. Layout
+    /// positions the containers — the native views and DevTools views
+    /// auto-fill (or take a manual frame when DevTools is shrinking the
+    /// inspected page). Overlays are quick-lookup mirrors; the container owns
+    /// the strong references via the view hierarchy. They must be kept across
+    /// `attach()` (see its keep set).
+    private final class PaneSlot {
+        let container = NSView()
+        weak var native: NSView?
+        weak var devToolsView: NSView?
+        /// Renderer crash view overlaying a pane whose tab's renderer crashed.
+        /// It sits above (and hides) the dead Chromium native view.
+        weak var crashView: NSView?
+        /// Login-required presentation for account-backed content in a Guest
+        /// NTP. Kept separate from crash overlays so a renderer crash can
+        /// still take visual priority when both states are briefly present.
+        weak var loginRequiredView: NSView?
+    }
+
+    private var slots: [PaneSlot] = []
+    /// One divider between each neighbouring pair of panes.
+    private var dividers: [DividerHandle] = []
     private let focusRingView: FocusRingView
-    /// Per-pane container that hosts the Chromium native view and (optionally)
-    /// a docked DevTools view scoped to just that pane. Layout positions these
-    /// containers — the native views and DevTools views auto-fill (or take a
-    /// manual frame when DevTools is shrinking the inspected page).
-    private let primaryPaneContainer = NSView()
-    private let secondaryPaneContainer = NSView()
-    private(set) weak var primaryPane: NSView?
-    private(set) weak var secondaryPane: NSView?
-    /// DevTools NSView mounted in the pane's container, when DevTools is
-    /// docked to that pane's tab. The container owns the strong reference via
-    /// the view hierarchy; this is just a quick-lookup mirror.
-    private weak var primaryDevToolsView: NSView?
-    private weak var secondaryDevToolsView: NSView?
-    /// Renderer crash view overlaying a pane whose tab's renderer crashed. It
-    /// sits above (and hides) the dead Chromium native view. Container owns the
-    /// strong ref via the view hierarchy; this is a quick-lookup mirror, exactly
-    /// like the DevTools views above. Must be kept across `attach()` (see keep).
-    private weak var primaryCrashView: NSView?
-    private weak var secondaryCrashView: NSView?
-    /// Login-required presentation for account-backed content in a Guest NTP.
-    /// Kept separate from crash overlays so a renderer crash can still take
-    /// visual priority when both states are briefly present.
-    private weak var primaryLoginRequiredView: NSView?
-    private weak var secondaryLoginRequiredView: NSView?
+
+    /// The pane cards' native views in slot order (nil where a pane has
+    /// none yet).
+    var panes: [NSView?] { slots.map { $0.native } }
+    var paneCount: Int { slots.count }
 
     /// Which pane currently owns the active tab. Drives the accent-colored
     /// focus ring drawn on top of the pane. Nil hides the ring.
-    var focusedPane: Pane? {
+    var focusedPane: Int? {
         didSet {
             guard oldValue != focusedPane else { return }
             needsLayout = true
@@ -99,17 +119,80 @@ final class SplitPaneHostView: NSView {
     /// content surface and laid out with the panes.
     private var gapFillView: NSView?
 
-    /// Fires when the user releases the divider with a new ratio.
-    var onRatioCommit: ((Double) -> Void)?
+    /// Fires when the user releases a divider with new pane shares.
+    var onFractionsCommit: (([Double]) -> Void)?
 
-    /// Fires on any user mouse-down inside one of the panes (not the divider).
-    /// The owning controller uses this to make the corresponding tab active so
-    /// clicking the unfocused pane focuses it — same as native browsers.
-    var onPaneInteraction: ((Pane) -> Void)?
+    /// Fires when the user drops a pane on another slot, with both slots.
+    var onPaneMove: ((_ from: Int, _ to: Int) -> Void)?
+
+    /// Fires when the user drags the pane at this slot out of the split.
+    var onPaneRemove: ((Int) -> Void)?
+
+    /// Asked while a pane is dragged off the page. Returns true when a tab
+    /// drag has taken over from this one, which ends it here.
+    var onPaneDragOffPage: ((_ slot: Int, _ event: NSEvent) -> Bool)?
+
+    /// Whether panes show a handle to drag them to another slot.
+    var allowsPaneMove = true {
+        didSet {
+            guard allowsPaneMove != oldValue else { return }
+            moveHandles.forEach { $0.isHidden = !allowsPaneMove }
+        }
+    }
+
+    /// Fires on any user mouse-down inside one of the panes (not a divider),
+    /// with the pane's slot. The owning controller uses this to make the
+    /// corresponding tab active so clicking an unfocused pane focuses it —
+    /// same as native browsers.
+    var onPaneInteraction: ((Int) -> Void)?
+
+    /// A change being previewed: the panes lay out as if it had happened.
+    private enum PanePreview: Equatable {
+        /// A dragged tab would join at `slot`, leaving its space open.
+        case insertion(slot: Int)
+        /// The pane at `from` would move to `to`.
+        case move(from: Int, to: Int)
+        /// The pane at `slot` would leave the split, the others filling in.
+        case removal(slot: Int)
+    }
+
+    private struct PaneAnimation {
+        let timer: Timer
+        let startTime: CFTimeInterval
+        let panes: [CGRect]
+        let dividers: [CGRect]
+        let completion: (() -> Void)?
+    }
+
+    private struct PaneMoveDrag {
+        let slot: Int
+        let startPoint: NSPoint
+        let startFrame: CGRect
+        var isActive = false
+        /// Distance dragged along the split axis.
+        var translation: CGFloat = 0
+        /// Where the pointer is now.
+        var point: NSPoint = .zero
+    }
+
+    private var panePreview: PanePreview?
+    private var paneAnimation: PaneAnimation?
+    private var paneMoveDrag: PaneMoveDrag?
+    /// True from the drop until the change arrives, so the panes stay put
+    /// instead of going back and moving again.
+    private var isHoldingPanePreview = false
+    private var panePreviewHoldGeneration = 0
+    /// One handle per pane, for dragging it to another slot.
+    private var moveHandles: [PaneMoveHandle] = []
+    /// Each pane child's autoresizing mask, saved while the preview pins it.
+    private var pinnedPaneChildren: [(view: NSView, mask: NSView.AutoresizingMask)] = []
 
     private var isUserDragging = false
+    private var draggingDividerIndex: Int?
     private var dragStartLocation: NSPoint = .zero
-    private var dragStartRatio: CGFloat = 0
+    /// The two shares the dragged divider redistributes, captured at
+    /// mouse-down.
+    private var dragStartFractions: (leading: CGFloat, trailing: CGFloat) = (0, 0)
     /// Snap ratio the divider is currently stuck to, or nil when free. Tracked
     /// so the alignment haptic fires once on entry, not every mouse move.
     private var activeMagneticSnap: CGFloat?
@@ -117,31 +200,24 @@ final class SplitPaneHostView: NSView {
 
     /// Pane attachment is deliberately deferred: the caller must mount the
     /// host in its target hostView (so `self` has a window) **before** calling
-    /// `update(primary:secondary:)`. Reparenting a Chromium native view into
-    /// a windowless host takes it briefly out of any window, and
-    /// `RenderWidgetHostViewCocoa` tears down its compositor / IOSurface layer
-    /// in that interval — it does not always cleanly resume on the subsequent
-    /// non-nil transition, which manifests as both split panes going blank.
-    init(layout: SplitLayout, ratio: Double, layoutMode: LayoutMode) {
+    /// `update(panes:)`. Reparenting a Chromium native view into a windowless
+    /// host takes it briefly out of any window, and `RenderWidgetHostViewCocoa`
+    /// tears down its compositor / IOSurface layer in that interval — it does
+    /// not always cleanly resume on the subsequent non-nil transition, which
+    /// manifests as every split pane going blank.
+    init(layout: SplitLayout, fractions: [Double], layoutMode: LayoutMode) {
         self.paneLayout = layout
-        self.ratio = CGFloat(ratio)
+        self.fractions = Self.normalized(fractions.map { CGFloat($0) }, count: max(2, fractions.count))
         self.layoutMode = layoutMode
-        self.dividerView = DividerHandle()
         self.focusRingView = FocusRingView()
         super.init(frame: .zero)
         wantsLayer = true
-        configurePaneContainer(primaryPaneContainer)
-        configurePaneContainer(secondaryPaneContainer)
         applyFills()
-        addSubview(primaryPaneContainer)
-        addSubview(secondaryPaneContainer)
-        addSubview(dividerView)
-        addSubview(focusRingView, positioned: .above, relativeTo: dividerView)
+        // The ring goes in first: pane containers and dividers are inserted
+        // below it as they are created.
+        addSubview(focusRingView)
         focusRingView.isHidden = true
-        dividerView.onDragBegan = { [weak self] event in self?.beginDrag(at: event) }
-        dividerView.onDragChanged = { [weak self] event in self?.continueDrag(at: event) }
-        dividerView.onDragEnded = { [weak self] in self?.endDrag() }
-        applyDividerCursor()
+        ensureSlotCount(self.fractions.count)
     }
 
     required init?(coder: NSCoder) {
@@ -159,6 +235,9 @@ final class SplitPaneHostView: NSView {
     /// only the topmost one receives clicks — the hit-test filter inside the
     /// monitor body ensures dormant hosts stay silent.
     override func viewDidMoveToWindow() {
+        if window == nil {
+            endPanePreview()
+        }
         super.viewDidMoveToWindow()
         if window == nil {
             removePaneClickMonitor()
@@ -191,38 +270,99 @@ final class SplitPaneHostView: NSView {
         guard let hitView = window.contentView?.hitTest(event.locationInWindow),
               hitView.isDescendant(of: self) else { return }
         // Ignore divider grabs — those start a resize, not a focus change.
-        guard !hitView.isDescendant(of: dividerView) else { return }
+        guard !dividers.contains(where: { hitView.isDescendant(of: $0) }) else { return }
         // Containers (not the raw native views) are the authoritative pane
         // boundary so clicks land on the correct pane even when DevTools is
         // docked alongside the shrunken Chromium view.
-        if hitView.isDescendant(of: primaryPaneContainer) {
-            onPaneInteraction?(.primary)
-        } else if hitView.isDescendant(of: secondaryPaneContainer) {
-            onPaneInteraction?(.secondary)
+        if let slot = slots.firstIndex(where: { hitView.isDescendant(of: $0.container) }) {
+            onPaneInteraction?(slot)
         }
     }
 
-    /// Swap in new native views. Used after `splitContentsChanged:` arrives.
+    // MARK: - Slots
+
+    /// Creates or retires pane containers and dividers so there are `count`
+    /// panes. A retired pane's container is removed with whatever it holds;
+    /// the controller moves a surviving native view out first.
+    private func ensureSlotCount(_ count: Int) {
+        let count = max(2, min(count, SplitGroup.maxPaneCount))
+        while slots.count < count {
+            let slot = PaneSlot()
+            configurePaneContainer(slot.container)
+            addSubview(slot.container, positioned: .below, relativeTo: focusRingView)
+            slots.append(slot)
+        }
+        while slots.count > count {
+            let slot = slots.removeLast()
+            slot.container.removeFromSuperview()
+        }
+        while dividers.count < count - 1 {
+            let index = dividers.count
+            let divider = DividerHandle()
+            divider.onDragBegan = { [weak self] event in self?.beginDrag(dividerIndex: index, at: event) }
+            divider.onDragChanged = { [weak self] event in self?.continueDrag(at: event) }
+            divider.onDragEnded = { [weak self] in self?.endDrag() }
+            addSubview(divider, positioned: .below, relativeTo: focusRingView)
+            dividers.append(divider)
+        }
+        while dividers.count > count - 1 {
+            dividers.removeLast().removeFromSuperview()
+        }
+        while moveHandles.count < count {
+            let index = moveHandles.count
+            let handle = PaneMoveHandle()
+            handle.isHidden = !allowsPaneMove
+            handle.onDragBegan = { [weak self] event in self?.beginPaneMove(slot: index, at: event) }
+            handle.onDragChanged = { [weak self] event in self?.continuePaneMove(at: event) }
+            handle.onDragEnded = { [weak self] in self?.endPaneMove() }
+            moveHandles.append(handle)
+        }
+        while moveHandles.count > count {
+            moveHandles.removeLast().removeFromSuperview()
+        }
+        // Above every pane, including one just added.
+        for handle in moveHandles {
+            addSubview(handle, positioned: .below, relativeTo: focusRingView)
+        }
+        if fractions.count != count {
+            fractions = Self.normalized(fractions, count: count)
+        }
+        if let focusedPane, focusedPane >= count {
+            self.focusedPane = nil
+        }
+        applyDividerCursor()
+        needsLayout = true
+    }
+
+    /// Swap in new native views, one per slot. Used after
+    /// `splitContentsChanged:` arrives and when the pane count changes.
     /// Also re-attaches when the pane identity is unchanged but a sibling
-    /// SplitPaneHostView has stolen the view in the meantime — `primaryPane`
-    /// is a weak ref to the NSView, so the identity check alone can't tell
-    /// "still mine" from "moved away under a still-valid pointer". Check the
-    /// actual superview as the source of truth.
-    func update(primary: NSView, secondary: NSView) {
-        let primaryNeedsReattach =
-            primaryPane !== primary || primary.superview !== primaryPaneContainer
-        let secondaryNeedsReattach =
-            secondaryPane !== secondary || secondary.superview !== secondaryPaneContainer
-        if primaryNeedsReattach || secondaryNeedsReattach {
-            attach(primary: primary, secondary: secondary)
+    /// SplitPaneHostView has stolen the view in the meantime — `native` is a
+    /// weak ref to the NSView, so the identity check alone can't tell "still
+    /// mine" from "moved away under a still-valid pointer". Check the actual
+    /// superview as the source of truth.
+    func update(panes: [NSView]) {
+        guard panes.count >= 2 else { return }
+        var needsReattach = panes.count != slots.count
+        if !needsReattach {
+            for (slot, pane) in zip(slots, panes)
+            where slot.native !== pane || pane.superview !== slot.container {
+                needsReattach = true
+                break
+            }
+        }
+        if needsReattach {
+            endPanePreview()
+            attach(panes: panes)
             needsLayout = true
         }
     }
 
-    /// Apply incoming server-side layout/ratio. Ignored while the user is
+    /// Apply incoming server-side layout/shares. Ignored while the user is
     /// actively dragging — local drag wins until release, then Chromium's
-    /// echoed value reconciles.
-    func update(layout: SplitLayout, ratio: Double, layoutMode: LayoutMode) {
+    /// echoed value reconciles. Shares that do not match the pane count are
+    /// spread evenly until the next echo.
+    func update(layout: SplitLayout, fractions: [Double], layoutMode: LayoutMode) {
         guard !isUserDragging else { return }
         var changed = false
         if self.paneLayout != layout {
@@ -230,9 +370,9 @@ final class SplitPaneHostView: NSView {
             applyDividerCursor()
             changed = true
         }
-        let clamped = clamp(CGFloat(ratio))
-        if abs(self.ratio - clamped) > .ulpOfOne {
-            self.ratio = clamped
+        let normalized = Self.normalized(fractions.map { CGFloat($0) }, count: slots.count)
+        if normalized != self.fractions {
+            self.fractions = normalized
             changed = true
         }
         if self.layoutMode != layoutMode {
@@ -256,136 +396,499 @@ final class SplitPaneHostView: NSView {
     /// it does not emit `viewWillMoveToWindow(nil)`. An explicit
     /// `removeFromSuperview` would defeat that, briefly taking the Chromium
     /// native view out of any window and tripping the compositor teardown
-    /// described on `init(layout:ratio:)`.
+    /// described on `init(layout:fractions:)`.
     ///
     /// Per-pane DevTools state is preserved across reattach: if the pane
     /// already has a DevTools view in its container, the native view is left
-    /// in manual-frame mode so the next `updateInspectedPageBounds(pane:…)`
+    /// in manual-frame mode so the next `updateInspectedPageBounds(slot:…)`
     /// call sizes it correctly. Otherwise the native view is autoresized to
     /// fill the pane container.
-    private func attach(primary: NSView, secondary: NSView) {
+    private func attach(panes: [NSView]) {
         // The host must be in-window before panes are attached. A windowless
         // host triggers a viewWillMoveToWindow(nil) on the Chromium native
         // view during the reparent, which tears down the renderer compositor
         // and blanks the pane. The mount paths in `installSplitContent`
         // already guarantee this; the precondition just prevents future
         // callers from quietly violating the invariant.
-        precondition(window != nil, "SplitPaneHostView must be in a window before attach(primary:secondary:)")
-        if primary.superview !== primaryPaneContainer {
-            primaryPaneContainer.addSubview(primary)
-        }
-        if secondary.superview !== secondaryPaneContainer {
-            secondaryPaneContainer.addSubview(secondary)
-        }
-        // A pane replace (drag-to-replace) swaps one pane's native view for
-        // another tab's while this host stays mounted. The evicted tab's
-        // view would otherwise stay behind in its container, stacked under
-        // the incoming view and still painting — the "two pages in one
-        // pane" artifact. Evict anything that isn't the current pair or a
-        // docked DevTools view; the evicted tab is a background tab now, so
-        // tearing its view out of the window here is the normal hidden-tab
-        // state and the regular mount path revives it on focus. Reverse
-        // panes is unaffected: the moved view is already re-homed by the
-        // addSubview moves above, so it never matches.
-        let keep: [NSView?] = [primary, secondary, primaryDevToolsView, secondaryDevToolsView,
-                               primaryCrashView, secondaryCrashView,
-                               primaryLoginRequiredView, secondaryLoginRequiredView]
-        for container in [primaryPaneContainer, secondaryPaneContainer] {
-            for stale in container.subviews where !keep.contains(where: { $0 === stale }) {
-                stale.removeFromSuperview()
+        precondition(window != nil, "SplitPaneHostView must be in a window before attach(panes:)")
+        // A pane that is retiring (the count shrank) may still hold a native
+        // view that moves to another slot: park every incoming view in the
+        // host first so removing a retired container never takes one out of
+        // the window.
+        if panes.count < slots.count {
+            for pane in panes where pane.superview !== self {
+                addSubview(pane, positioned: .below, relativeTo: focusRingView)
             }
         }
-        primary.translatesAutoresizingMaskIntoConstraints = true
-        secondary.translatesAutoresizingMaskIntoConstraints = true
-        if primaryDevToolsView == nil {
-            primary.autoresizingMask = [.width, .height]
-            primary.frame = primaryPaneContainer.bounds
-        } else {
-            primary.autoresizingMask = []
+        ensureSlotCount(panes.count)
+        for (slot, pane) in zip(slots, panes) {
+            if pane.superview !== slot.container {
+                slot.container.addSubview(pane)
+            }
+            // A pane replace (drag-to-replace) swaps one pane's native view
+            // for another tab's while this host stays mounted. The evicted
+            // tab's view would otherwise stay behind in its container,
+            // stacked under the incoming view and still painting — the "two
+            // pages in one pane" artifact. Evict anything that isn't the
+            // current pane or a kept overlay; the evicted tab is a background
+            // tab now, so tearing its view out of the window here is the
+            // normal hidden-tab state and the regular mount path revives it
+            // on focus. A reorder is unaffected: the moved view is already
+            // re-homed by the addSubview moves, so it never matches.
+            let keep: [NSView?] = [pane, slot.devToolsView, slot.crashView, slot.loginRequiredView]
+            for stale in slot.container.subviews where !keep.contains(where: { $0 === stale }) {
+                stale.removeFromSuperview()
+            }
+            pane.translatesAutoresizingMaskIntoConstraints = true
+            if slot.devToolsView == nil {
+                pane.autoresizingMask = [.width, .height]
+                pane.frame = slot.container.bounds
+            } else {
+                pane.autoresizingMask = []
+            }
+            // Re-raise presentation overlays above the just-re-added native.
+            if let loginView = slot.loginRequiredView {
+                slot.container.addSubview(loginView, positioned: .above, relativeTo: pane)
+            }
+            // Renderer crashes take priority over the login-required
+            // presentation. attach() re-adds the native via addSubview (on
+            // top), which would otherwise bury a kept crash overlay — the
+            // dead native then intercepts the overlay's button clicks while
+            // drawing nothing (so it still shows).
+            if let crashView = slot.crashView {
+                slot.container.addSubview(crashView,
+                                          positioned: .above,
+                                          relativeTo: slot.loginRequiredView ?? pane)
+            }
+            slot.native = pane
         }
-        if secondaryDevToolsView == nil {
-            secondary.autoresizingMask = [.width, .height]
-            secondary.frame = secondaryPaneContainer.bounds
-        } else {
-            secondary.autoresizingMask = []
-        }
-        // Re-raise presentation overlays above the just-re-added native.
-        if let loginView = primaryLoginRequiredView {
-            primaryPaneContainer.addSubview(loginView, positioned: .above, relativeTo: primary)
-        }
-        if let loginView = secondaryLoginRequiredView {
-            secondaryPaneContainer.addSubview(loginView, positioned: .above, relativeTo: secondary)
-        }
-        // Renderer crashes take priority over the login-required presentation.
-        // attach() re-adds the native via addSubview (on top), which would
-        // otherwise bury a kept crash overlay — the dead native then intercepts
-        // the overlay's button clicks while drawing nothing (so it still shows).
-        if let cv = primaryCrashView {
-            primaryPaneContainer.addSubview(
-                cv,
-                positioned: .above,
-                relativeTo: primaryLoginRequiredView ?? primary
-            )
-        }
-        if let cv = secondaryCrashView {
-            secondaryPaneContainer.addSubview(
-                cv,
-                positioned: .above,
-                relativeTo: secondaryLoginRequiredView ?? secondary
-            )
-        }
-        primaryPane = primary
-        secondaryPane = secondary
     }
 
     // MARK: - Layout
 
     override func layout() {
         super.layout()
+        // An animation places the panes on its own steps.
+        guard paneAnimation == nil else { return }
+        applyPaneFrames(targetPaneRects())
+    }
+
+    /// Where the panes belong now, with any preview applied.
+    private func targetPaneRects() -> (panes: [CGRect], dividers: [CGRect]) {
         let total = Self.paneLayoutRect(in: bounds, layoutMode: layoutMode)
-        switch paneLayout {
-        case .vertical:
-            let primaryWidth = (total.width - Self.dividerThickness) * ratio
-            let secondaryWidth = total.width - Self.dividerThickness - primaryWidth
-            primaryPaneContainer.frame = NSRect(x: total.minX, y: total.minY,
-                                                width: primaryWidth, height: total.height)
-            dividerView.frame = NSRect(x: total.minX + primaryWidth, y: total.minY,
-                                       width: Self.dividerThickness, height: total.height)
-            secondaryPaneContainer.frame = NSRect(x: total.minX + primaryWidth + Self.dividerThickness, y: total.minY,
-                                                  width: secondaryWidth, height: total.height)
-        case .horizontal:
-            let availableHeight = total.height - Self.dividerThickness
-            // CALayer's width/height autoresizing rounds fractional resize
-            // deltas to whole-point changes. Repeatedly alternating a Chromium
-            // pane between integral and fractional heights accumulates that
-            // rounding in its flipped display layer, so keep the split axis
-            // integral at the AppKit boundary. The secondary pane receives the
-            // remainder to preserve the exact available height.
-            let primaryHeight = (availableHeight * ratio).rounded()
-            let secondaryHeight = availableHeight - primaryHeight
-            // y=0 is bottom in AppKit; primary on top matches Chromium's
-            // "position 0" semantic for visual stacking.
-            secondaryPaneContainer.frame = NSRect(x: total.minX, y: total.minY,
-                                                  width: total.width, height: secondaryHeight)
-            dividerView.frame = NSRect(x: total.minX, y: total.minY + secondaryHeight,
-                                       width: total.width, height: Self.dividerThickness)
-            primaryPaneContainer.frame = NSRect(x: total.minX, y: total.minY + secondaryHeight + Self.dividerThickness,
-                                                width: total.width, height: primaryHeight)
+        switch panePreview {
+        case .insertion(let slot):
+            let preview = Self.insertionPreviewRects(in: total,
+                                                     layout: paneLayout,
+                                                     fractions: fractions,
+                                                     slot: slot)
+            return (preview.panes, preview.dividers)
+        case .move(let from, let to):
+            let rects = Self.paneRects(in: total, layout: paneLayout, fractions: fractions)
+            var panes = Self.movePreviewRects(rects.panes, from: from, to: to)
+            // The dragged pane follows the pointer instead of its slot.
+            if let drag = paneMoveDrag, drag.isActive, panes.indices.contains(from) {
+                var dragged = panes[from]
+                switch paneLayout {
+                case .vertical:
+                    dragged.origin.x = max(total.minX, min(drag.startFrame.minX + drag.translation,
+                                                           total.maxX - dragged.width))
+                case .horizontal:
+                    dragged.origin.y = max(total.minY, min(drag.startFrame.minY + drag.translation,
+                                                           total.maxY - dragged.height))
+                }
+                panes[from] = dragged
+            }
+            return (panes, rects.dividers)
+        case .removal(let slot):
+            var rects = Self.removalPreviewRects(in: total,
+                                                 layout: paneLayout,
+                                                 fractions: fractions,
+                                                 slot: slot)
+            if rects.panes.indices.contains(slot) {
+                rects.panes[slot] = paneMoveDrag.map { pulledOutFrame(for: $0, in: total) }
+                    ?? slots[slot].container.frame
+            }
+            return rects
+        case nil:
+            return Self.paneRects(in: total, layout: paneLayout, fractions: fractions)
         }
-        positionFocusRing(primaryFrame: primaryPaneContainer.frame,
-                          secondaryFrame: secondaryPaneContainer.frame)
+    }
+
+    private func applyPaneFrames(_ rects: (panes: [CGRect], dividers: [CGRect])) {
+        for (handle, rect) in zip(moveHandles, rects.panes) {
+            handle.frame = PaneMoveHandle.band(in: rect)
+        }
+        for (slot, rect) in zip(slots, rects.panes) {
+            slot.container.frame = rect
+        }
+        for (divider, rect) in zip(dividers, rects.dividers) {
+            divider.frame = rect
+        }
+        positionFocusRing(paneFrames: rects.panes)
         if let gapFillView {
             layoutGapFill(gapFillView)
         }
+    }
+
+    /// Pane and divider rectangles for `fractions` inside `total` (already
+    /// inset by `paneLayoutRect`). Shared with the drop container's pane
+    /// mode so its hint cards line up with the real panes. The vertical
+    /// layout lays columns out left to right; the horizontal one lays rows
+    /// out top to bottom (slot 0 on top, matching Chromium's "position 0"
+    /// semantic for visual stacking) with integral heights: CALayer's
+    /// autoresizing rounds fractional resize deltas to whole points, and
+    /// repeatedly alternating a Chromium pane between integral and
+    /// fractional heights accumulates that rounding in its flipped display
+    /// layer.
+    static func paneRects(in total: CGRect,
+                          layout: SplitLayout,
+                          fractions: [CGFloat]) -> (panes: [CGRect], dividers: [CGRect]) {
+        let count = fractions.count
+        guard count >= 1 else { return ([], []) }
+        let dividerCount = CGFloat(max(0, count - 1))
+        var panes: [CGRect] = []
+        var dividers: [CGRect] = []
+        switch layout {
+        case .vertical:
+            let available = max(0, total.width - dividerThickness * dividerCount)
+            var x = total.minX
+            for (index, fraction) in fractions.enumerated() {
+                let width = index == count - 1
+                    ? max(0, total.maxX - x)
+                    : max(0, available * fraction)
+                panes.append(CGRect(x: x, y: total.minY, width: width, height: total.height))
+                x += width
+                if index < count - 1 {
+                    dividers.append(CGRect(x: x, y: total.minY,
+                                           width: dividerThickness, height: total.height))
+                    x += dividerThickness
+                }
+            }
+        case .horizontal:
+            let available = max(0, total.height - dividerThickness * dividerCount)
+            // y=0 is bottom in AppKit; walk down from the top.
+            var top = total.maxY
+            for (index, fraction) in fractions.enumerated() {
+                let height = index == count - 1
+                    ? max(0, top - total.minY)
+                    : max(0, (available * fraction).rounded())
+                panes.append(CGRect(x: total.minX, y: top - height,
+                                    width: total.width, height: height))
+                top -= height
+                if index < count - 1 {
+                    dividers.append(CGRect(x: total.minX, y: top - dividerThickness,
+                                           width: total.width, height: dividerThickness))
+                    top -= dividerThickness
+                }
+            }
+        }
+        return (panes, dividers)
+    }
+
+    /// Where the panes sit once a pane joins at `slot`, and the space it
+    /// takes. Mirrors Chromium's `SplitTabVisualData::InsertPane`, so the
+    /// preview matches where the panes land: the new pane gets an equal share
+    /// and the others shrink in proportion. `dividers` leaves out the one
+    /// next to the opened space.
+    static func insertionPreviewRects(in total: CGRect,
+                                      layout: SplitLayout,
+                                      fractions: [CGFloat],
+                                      slot: Int) -> (panes: [CGRect], dividers: [CGRect], opened: CGRect) {
+        let insertAt = max(0, min(slot, fractions.count))
+        let share = 1 / CGFloat(fractions.count + 1)
+        var withNewPane = fractions.map { $0 * (1 - share) }
+        withNewPane.insert(share, at: insertAt)
+        var rects = paneRects(in: total, layout: layout, fractions: withNewPane)
+        let opened = rects.panes.remove(at: insertAt)
+        if !rects.dividers.isEmpty {
+            rects.dividers.remove(at: min(insertAt, rects.dividers.count - 1))
+        }
+        return (rects.panes, rects.dividers, opened)
+    }
+
+    // MARK: - Pane previews
+
+    /// Opens the space for a pane a dragged tab would join at `slot`, or
+    /// closes it when nil. The panes' pages are cropped rather than resized
+    /// so hovering never reflows them; they take their new size on the drop.
+    func setInsertionPreview(slot: Int?) {
+        guard !isHoldingPanePreview else { return }
+        applyPanePreview(slot.map { .insertion(slot: $0) })
+    }
+
+    /// Keeps the space for `slot` open until the dropped pane arrives.
+    func holdInsertionPreview(slot: Int) {
+        isHoldingPanePreview = true
+        applyPanePreview(.insertion(slot: slot))
+        schedulePanePreviewRelease()
+    }
+
+    /// Closes a held preview if the change it waits for never arrives.
+    private func schedulePanePreviewRelease() {
+        panePreviewHoldGeneration += 1
+        let generation = panePreviewHoldGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.panePreviewHoldTimeout) { [weak self] in
+            guard let self, self.panePreviewHoldGeneration == generation,
+                  self.isHoldingPanePreview else { return }
+            self.isHoldingPanePreview = false
+            self.applyPanePreview(nil)
+        }
+    }
+
+    /// Drops any preview without animating, leaving the next layout to place
+    /// the panes.
+    private func endPanePreview() {
+        isHoldingPanePreview = false
+        panePreviewHoldGeneration += 1
+        paneMoveDrag = nil
+        stopPaneAnimation()
+        guard panePreview != nil || !pinnedPaneChildren.isEmpty else { return }
+        panePreview = nil
+        unpinPaneChildren()
+        needsLayout = true
+    }
+
+    private func applyPanePreview(_ preview: PanePreview?) {
+        guard preview != panePreview else { return }
+        if preview != nil {
+            pinPaneChildren()
+        }
+        panePreview = preview
+        animatePaneFrames(completion: preview == nil ? { [weak self] in self?.unpinPaneChildren() } : nil)
+    }
+
+    /// Pins each pane's content at its current size against the pane's top
+    /// left, so a narrower pane crops its page.
+    private func pinPaneChildren() {
+        guard pinnedPaneChildren.isEmpty else { return }
+        for slot in slots {
+            for child in slot.container.subviews {
+                pinnedPaneChildren.append((child, child.autoresizingMask))
+                child.autoresizingMask = [.maxXMargin, .minYMargin]
+            }
+        }
+    }
+
+    private func unpinPaneChildren() {
+        for (child, mask) in pinnedPaneChildren {
+            child.autoresizingMask = mask
+            // Manually framed children (DevTools) have no flexible size and
+            // get their frame from the controller.
+            if mask.contains(.width), mask.contains(.height), let container = child.superview {
+                child.frame = container.bounds
+            }
+        }
+        pinnedPaneChildren = []
+    }
+
+    // MARK: - Pane animation
+
+    /// Moves the panes to their current target, starting from where they are
+    /// so a drag can change the target mid-move. Frames change on every step
+    /// rather than through Core Animation: a page drawn through the content
+    /// surface follows its view's frame and never sees a layer's animation.
+    private func animatePaneFrames(completion: (() -> Void)? = nil) {
+        stopPaneAnimation()
+        guard window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            applyPaneFrames(targetPaneRects())
+            completion?()
+            return
+        }
+        let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.stepPaneAnimation()
+            }
+        }
+        paneAnimation = PaneAnimation(timer: timer,
+                                      startTime: CACurrentMediaTime(),
+                                      panes: slots.map { $0.container.frame },
+                                      dividers: dividers.map { $0.frame },
+                                      completion: completion)
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func stepPaneAnimation() {
+        guard let animation = paneAnimation else { return }
+        let elapsed = CACurrentMediaTime() - animation.startTime
+        let progress = CGFloat(min(1, elapsed / Self.panePreviewAnimationDuration))
+        let target = targetPaneRects()
+        guard progress < 1 else {
+            stopPaneAnimation()
+            applyPaneFrames(target)
+            animation.completion?()
+            return
+        }
+        let eased = progress * progress * (3 - 2 * progress)
+        applyPaneFrames((zip(animation.panes, target.panes).map { Self.interpolate($0, $1, eased) },
+                         zip(animation.dividers, target.dividers).map { Self.interpolate($0, $1, eased) }))
+    }
+
+    private func stopPaneAnimation() {
+        paneAnimation?.timer.invalidate()
+        paneAnimation = nil
+    }
+
+    private static func interpolate(_ start: CGRect, _ end: CGRect, _ progress: CGFloat) -> CGRect {
+        func mix(_ a: CGFloat, _ b: CGFloat) -> CGFloat { (a + (b - a) * progress).rounded() }
+        return CGRect(x: mix(start.minX, end.minX),
+                      y: mix(start.minY, end.minY),
+                      width: mix(start.width, end.width),
+                      height: mix(start.height, end.height))
+    }
+
+    // MARK: - Dragging a pane
+
+    private func beginPaneMove(slot: Int, at event: NSEvent) {
+        guard allowsPaneMove, panePreview == nil, !isHoldingPanePreview, slot < slots.count else { return }
+        paneMoveDrag = PaneMoveDrag(slot: slot,
+                                    startPoint: convert(event.locationInWindow, from: nil),
+                                    startFrame: slots[slot].container.frame)
+    }
+
+    private func continuePaneMove(at event: NSEvent) {
+        guard var drag = paneMoveDrag else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        if !drag.isActive {
+            guard hypot(point.x - drag.startPoint.x, point.y - drag.startPoint.y) >= Self.paneMoveDragThreshold else {
+                return
+            }
+            drag.isActive = true
+            pinPaneChildren()
+            // Stacking follows view order, on the content surface too.
+            addSubview(slots[drag.slot].container, positioned: .below, relativeTo: focusRingView)
+            for handle in moveHandles {
+                addSubview(handle, positioned: .below, relativeTo: focusRingView)
+            }
+        }
+        drag.translation = paneLayout == .vertical
+            ? point.x - drag.startPoint.x
+            : point.y - drag.startPoint.y
+        drag.point = point
+        paneMoveDrag = drag
+
+        if !bounds.contains(point), onPaneDragOffPage?(drag.slot, event) == true {
+            paneMoveDrag = nil
+            moveHandles.forEach { $0.hideGrip() }
+            isHoldingPanePreview = true
+            schedulePanePreviewRelease()
+            panePreview = .removal(slot: drag.slot)
+            animatePaneFrames()
+            return
+        }
+
+        let preview: PanePreview = isPulledOut(drag)
+            ? .removal(slot: drag.slot)
+            : .move(from: drag.slot, to: slot(nearest: point))
+        if preview != panePreview {
+            panePreview = preview
+            animatePaneFrames()
+        } else if paneAnimation == nil {
+            applyPaneFrames(targetPaneRects())
+        }
+    }
+
+    /// Lets the pane settle into its new place before reordering, so the
+    /// page swap lands on panes that are already there.
+    private func endPaneMove() {
+        guard let drag = paneMoveDrag else { return }
+        paneMoveDrag = nil
+        guard drag.isActive else { return }
+        switch panePreview {
+        case .move(let from, let to) where from != to:
+            isHoldingPanePreview = true
+            animatePaneFrames { [weak self] in
+                guard let self else { return }
+                self.schedulePanePreviewRelease()
+                self.onPaneMove?(from, to)
+            }
+        case .removal(let slot):
+            isHoldingPanePreview = true
+            schedulePanePreviewRelease()
+            onPaneRemove?(slot)
+        default:
+            panePreview = nil
+            animatePaneFrames { [weak self] in self?.unpinPaneChildren() }
+        }
+    }
+
+    /// Whether the drag has gone far enough off the split to leave it.
+    private func isPulledOut(_ drag: PaneMoveDrag) -> Bool {
+        let margin = Self.panePullOutMargin
+        guard bounds.insetBy(dx: -margin, dy: -margin).contains(drag.point) else { return true }
+        let (offAxis, length) = paneLayout == .vertical
+            ? (abs(drag.point.y - drag.startPoint.y), drag.startFrame.height)
+            : (abs(drag.point.x - drag.startPoint.x), drag.startFrame.width)
+        return offAxis >= min(Self.panePullOutDistance, length / 3)
+    }
+
+    /// A shrunken pane hanging from the pointer by its top edge, kept inside
+    /// `total` where the page card would cut it off.
+    private func pulledOutFrame(for drag: PaneMoveDrag, in total: CGRect) -> CGRect {
+        let width = drag.startFrame.width * Self.panePullOutScale
+        let height = drag.startFrame.height * Self.panePullOutScale
+        return CGRect(x: max(total.minX, min(drag.point.x - width / 2, total.maxX - width)),
+                      y: max(total.minY, min(drag.point.y - height, total.maxY - height)),
+                      width: width,
+                      height: height)
+    }
+
+    /// The pane slot along the split axis nearest `point`, ignoring any
+    /// preview so the answer does not shift as panes move.
+    private func slot(nearest point: NSPoint) -> Int {
+        let total = Self.paneLayoutRect(in: bounds, layoutMode: layoutMode)
+        let panes = Self.paneRects(in: total, layout: paneLayout, fractions: fractions).panes
+        func distance(to pane: CGRect) -> CGFloat {
+            let (low, high, value) = paneLayout == .vertical
+                ? (pane.minX, pane.maxX, point.x)
+                : (pane.minY, pane.maxY, point.y)
+            return value < low ? low - value : value > high ? value - high : 0
+        }
+        return panes.indices.min { distance(to: panes[$0]) < distance(to: panes[$1]) } ?? 0
+    }
+
+    /// Where the other panes sit once the pane at `slot` leaves, in current
+    /// slot order. Mirrors Chromium's `SplitTabVisualData::RemovePane`: they
+    /// keep their proportions. The leaving pane's rect is left empty for the
+    /// caller, and the divider it frees is empty too.
+    static func removalPreviewRects(in total: CGRect,
+                                    layout: SplitLayout,
+                                    fractions: [CGFloat],
+                                    slot: Int) -> (panes: [CGRect], dividers: [CGRect]) {
+        guard fractions.indices.contains(slot), fractions.count > 1 else {
+            return paneRects(in: total, layout: layout, fractions: fractions)
+        }
+        var remaining = fractions
+        remaining.remove(at: slot)
+        let sum = remaining.reduce(0, +)
+        let shares = sum > 0 ? remaining.map { $0 / sum } : remaining.map { _ in 1 / CGFloat(remaining.count) }
+        var rects = paneRects(in: total, layout: layout, fractions: shares)
+        rects.panes.insert(.zero, at: slot)
+        rects.dividers.append(.zero)
+        return rects
+    }
+
+    /// Where each pane, by current slot, sits once the pane at `from` moves
+    /// to `to`. Shares stay with their slots, as Chromium keeps them.
+    static func movePreviewRects(_ panes: [CGRect], from: Int, to: Int) -> [CGRect] {
+        guard panes.indices.contains(from), panes.indices.contains(to) else { return panes }
+        var order = Array(panes.indices)
+        order.remove(at: from)
+        order.insert(from, at: to)
+        var moved = panes
+        for (place, pane) in order.enumerated() {
+            moved[pane] = panes[place]
+        }
+        return moved
     }
 
     /// The host's and pane cards' fills (see `hasContentSurface`).
     private func applyFills() {
         setFill(ThemedColor.extensionSurfaceBackground.cgColorMapperOptional,
                 overContentSurface: hasContentSurface)
-        for container in [primaryPaneContainer, secondaryPaneContainer] {
-            container.setFill(NSColor.white <> NSColor.black,
-                              overContentSurface: hasContentSurface)
+        for slot in slots {
+            slot.container.setFill(NSColor.white <> NSColor.black,
+                                   overContentSurface: hasContentSurface)
         }
         gapFillView?.removeFromSuperview()
         gapFillView = nil
@@ -405,11 +908,16 @@ final class SplitPaneHostView: NSView {
         guard let mask = gapFillView.layer?.mask as? CAShapeLayer else { return }
         // Circular corners, as Chromium rounds the panes' pixels; the cards'
         // own continuous curve has no CGPath form.
+        let cards = slots.map { $0.container.frame }.filter { !$0.isEmpty }.map { card -> CGPath in
+            let radius = min(outerCornerRadius, card.width / 2, card.height / 2)
+            return CGPath(roundedRect: card, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        }
+        // United first: the mask is even-odd, so cards that overlap while one
+        // is dragged would otherwise fill in where they cross.
         let path = CGMutablePath()
         path.addRect(bounds)
-        for card in [primaryPaneContainer.frame, secondaryPaneContainer.frame] where !card.isEmpty {
-            let radius = min(outerCornerRadius, card.width / 2, card.height / 2)
-            path.addRoundedRect(in: card, cornerWidth: radius, cornerHeight: radius)
+        if let first = cards.first {
+            path.addPath(cards.dropFirst().reduce(first) { $0.union($1) })
         }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -418,7 +926,7 @@ final class SplitPaneHostView: NSView {
         CATransaction.commit()
     }
 
-    /// Shared pane-card area used by both the real split host and its replace
+    /// Shared pane-card area used by both the real split host and its pane
     /// drop hints. Modes with a top address bar align split and single content
     /// at the same header boundary; Performance preserves the legacy inset.
     static func paneLayoutRect(in bounds: CGRect, layoutMode: LayoutMode) -> CGRect {
@@ -439,7 +947,7 @@ final class SplitPaneHostView: NSView {
 
     /// Per-pane rounded card. `masksToBounds` clips DevTools and the Chromium
     /// native view to the corner radius so each pane reads as a standalone
-    /// card rather than as halves of one outer clip.
+    /// card rather than as parts of one outer clip.
     private func configurePaneContainer(_ container: NSView) {
         container.wantsLayer = true
         container.layer?.cornerCurve = .continuous
@@ -447,6 +955,8 @@ final class SplitPaneHostView: NSView {
         container.layer?.masksToBounds = true
         container.layer?.borderWidth = 1
         container.phiLayer?.setBorderColor(.border)
+        container.setFill(NSColor.white <> NSColor.black,
+                          overContentSurface: hasContentSurface)
     }
 
     /// Outer corner radius the focus ring should follow at the pane corners
@@ -456,8 +966,9 @@ final class SplitPaneHostView: NSView {
     var squaresCorners = false {
         didSet {
             guard squaresCorners != oldValue else { return }
-            primaryPaneContainer.layer?.cornerRadius = outerCornerRadius
-            secondaryPaneContainer.layer?.cornerRadius = outerCornerRadius
+            for slot in slots {
+                slot.container.layer?.cornerRadius = outerCornerRadius
+            }
             needsLayout = true
         }
     }
@@ -466,21 +977,25 @@ final class SplitPaneHostView: NSView {
         squaresCorners ? 0 : LiquidGlassCompatible.webContentInnerComponentsCornerRadius
     }
 
+    private func slot(_ index: Int) -> PaneSlot? {
+        guard index >= 0, index < slots.count else { return nil }
+        return slots[index]
+    }
+
     // MARK: - DevTools (per-pane)
 
     /// Mount a docked DevTools view into the given pane's container. The
     /// pane's native Chromium view is switched to manual-frame mode so the
-    /// next `updateInspectedPageBounds(pane:…)` call can shrink it to the
+    /// next `updateInspectedPageBounds(slot:…)` call can shrink it to the
     /// area DevTools JS reports. Idempotent: re-calling with the same view
     /// is a no-op; a different view replaces any previous one.
-    func attachDevTools(pane: Pane, devToolsView: NSView) {
-        let container = paneContainer(for: pane)
-        guard let native = nativePane(for: pane) else { return }
-        let existing = existingDevToolsView(for: pane)
-        if existing === devToolsView, devToolsView.superview === container {
+    func attachDevTools(slot index: Int, devToolsView: NSView) {
+        guard let slot = slot(index), let native = slot.native else { return }
+        let container = slot.container
+        if slot.devToolsView === devToolsView, devToolsView.superview === container {
             return
         }
-        if let stale = existing, stale !== devToolsView {
+        if let stale = slot.devToolsView, stale !== devToolsView {
             stale.removeFromSuperview()
         }
         devToolsView.wantsLayer = true
@@ -495,21 +1010,19 @@ final class SplitPaneHostView: NSView {
         native.autoresizingMask = []
         native.translatesAutoresizingMaskIntoConstraints = true
         native.frame = container.bounds
-        setDevToolsView(devToolsView, for: pane)
+        slot.devToolsView = devToolsView
     }
 
     /// Tear down DevTools for the given pane and restore the native view to
     /// autoresized fill. Safe to call when no DevTools is attached.
-    func detachDevTools(pane: Pane) {
-        let container = paneContainer(for: pane)
-        if let dev = existingDevToolsView(for: pane) {
-            dev.removeFromSuperview()
-        }
-        setDevToolsView(nil, for: pane)
-        if let native = nativePane(for: pane), native.superview === container {
+    func detachDevTools(slot index: Int) {
+        guard let slot = slot(index) else { return }
+        slot.devToolsView?.removeFromSuperview()
+        slot.devToolsView = nil
+        if let native = slot.native, native.superview === slot.container {
             native.translatesAutoresizingMaskIntoConstraints = true
             native.autoresizingMask = [.width, .height]
-            native.frame = container.bounds
+            native.frame = slot.container.bounds
             native.isHidden = false
         }
     }
@@ -518,175 +1031,138 @@ final class SplitPaneHostView: NSView {
     /// view. `bounds` is in web coordinates (origin top-left) and relative to
     /// the pane container, matching how DevTools JS computes the inspected
     /// area inside its own host frame.
-    func updateInspectedPageBounds(pane: Pane, bounds inspected: CGRect, hide: Bool) {
-        let container = paneContainer(for: pane)
-        guard let native = nativePane(for: pane),
-              native.superview === container else { return }
+    func updateInspectedPageBounds(slot index: Int, bounds inspected: CGRect, hide: Bool) {
+        guard let slot = slot(index), let native = slot.native,
+              native.superview === slot.container else { return }
         if hide {
             native.isHidden = true
             return
         }
         native.isHidden = false
-        let containerHeight = container.bounds.height
+        let containerHeight = slot.container.bounds.height
         let flippedY = containerHeight - inspected.origin.y - inspected.size.height
         native.frame = NSRect(x: inspected.origin.x, y: flippedY,
                               width: inspected.size.width, height: inspected.size.height)
     }
 
     /// True if DevTools is currently docked to the given pane's container.
-    func hasDevTools(pane: Pane) -> Bool {
-        existingDevToolsView(for: pane) != nil
-    }
-
-    private func paneContainer(for pane: Pane) -> NSView {
-        pane == .primary ? primaryPaneContainer : secondaryPaneContainer
+    func hasDevTools(slot index: Int) -> Bool {
+        slot(index)?.devToolsView != nil
     }
 
     /// The pane's rounded card — what a page overlay scoped to one pane
     /// (Reader View) covers. Its frame follows divider drags.
-    func paneCardView(for pane: Pane) -> NSView {
-        paneContainer(for: pane)
+    func paneCardView(slot index: Int) -> NSView? {
+        slot(index)?.container
     }
 
-    private func nativePane(for pane: Pane) -> NSView? {
-        pane == .primary ? primaryPane : secondaryPane
-    }
-
-    private func existingDevToolsView(for pane: Pane) -> NSView? {
-        pane == .primary ? primaryDevToolsView : secondaryDevToolsView
-    }
-
-    private func setDevToolsView(_ view: NSView?, for pane: Pane) {
-        switch pane {
-        case .primary: primaryDevToolsView = view
-        case .secondary: secondaryDevToolsView = view
-        }
-    }
+    // MARK: - Crash view (per-pane)
 
     /// Overlay an opaque crash view on the given pane, covering its dead
     /// Chromium native view. The native view is left untouched (not hidden, not
     /// reframed, not reparented) — the overlay just sits above and fills the
     /// pane. Must be in the `attach()` keep set or a re-layout evicts it.
-    func attachCrashView(pane: Pane, crashView: NSView) {
-        let container = paneContainer(for: pane)
-        let existing = existingCrashView(for: pane)
-        if existing === crashView, crashView.superview === container {
+    func attachCrashView(slot index: Int, crashView: NSView) {
+        guard let slot = slot(index) else { return }
+        let container = slot.container
+        if slot.crashView === crashView, crashView.superview === container {
             return
         }
-        if let stale = existing, stale !== crashView {
+        if let stale = slot.crashView, stale !== crashView {
             stale.removeFromSuperview()
         }
         crashView.wantsLayer = true
-        container.addSubview(
-            crashView,
-            positioned: .above,
-            relativeTo: existingLoginRequiredView(for: pane) ?? nativePane(for: pane)
-        )
+        container.addSubview(crashView,
+                             positioned: .above,
+                             relativeTo: slot.loginRequiredView ?? slot.native)
         crashView.frame = container.bounds
         crashView.autoresizingMask = [.width, .height]
-        setCrashView(crashView, for: pane)
+        slot.crashView = crashView
     }
 
     /// Remove the crash overlay from the given pane. The native view was never
     /// hidden or reframed, so there is nothing to restore — just drop the
     /// overlay. Safe to call when no crash view is attached.
-    func detachCrashView(pane: Pane) {
-        existingCrashView(for: pane)?.removeFromSuperview()
-        setCrashView(nil, for: pane)
+    func detachCrashView(slot index: Int) {
+        guard let slot = slot(index) else { return }
+        slot.crashView?.removeFromSuperview()
+        slot.crashView = nil
     }
 
     /// True if a crash view is currently overlaying the given pane.
-    func hasCrashView(pane: Pane) -> Bool {
-        existingCrashView(for: pane) != nil
+    func hasCrashView(slot index: Int) -> Bool {
+        slot(index)?.crashView != nil
     }
 
     /// The crash view currently overlaying the given pane, if any. Lets the
     /// controller identity-check that a pane shows the expected tab's crash
     /// view before skipping a rebuild (guards against crossed panes).
-    func crashView(for pane: Pane) -> NSView? {
-        existingCrashView(for: pane)
-    }
-
-    private func existingCrashView(for pane: Pane) -> NSView? {
-        pane == .primary ? primaryCrashView : secondaryCrashView
-    }
-
-    private func setCrashView(_ view: NSView?, for pane: Pane) {
-        switch pane {
-        case .primary: primaryCrashView = view
-        case .secondary: secondaryCrashView = view
-        }
+    func crashView(slot index: Int) -> NSView? {
+        slot(index)?.crashView
     }
 
     // MARK: - Login Required (per-pane)
 
-    func attachLoginRequiredView(pane: Pane, loginRequiredView: NSView) {
-        let container = paneContainer(for: pane)
-        let existing = existingLoginRequiredView(for: pane)
-        if existing === loginRequiredView, loginRequiredView.superview === container {
+    func attachLoginRequiredView(slot index: Int, loginRequiredView: NSView) {
+        guard let slot = slot(index) else { return }
+        let container = slot.container
+        if slot.loginRequiredView === loginRequiredView, loginRequiredView.superview === container {
             return
         }
-        if let stale = existing, stale !== loginRequiredView {
+        if let stale = slot.loginRequiredView, stale !== loginRequiredView {
             stale.removeFromSuperview()
         }
         loginRequiredView.wantsLayer = true
-        container.addSubview(
-            loginRequiredView,
-            positioned: .above,
-            relativeTo: nativePane(for: pane)
-        )
+        container.addSubview(loginRequiredView, positioned: .above, relativeTo: slot.native)
         loginRequiredView.frame = container.bounds
         loginRequiredView.autoresizingMask = [.width, .height]
-        setLoginRequiredView(loginRequiredView, for: pane)
+        slot.loginRequiredView = loginRequiredView
 
-        if let crashView = existingCrashView(for: pane) {
-            container.addSubview(
-                crashView,
-                positioned: .above,
-                relativeTo: loginRequiredView
-            )
+        if let crashView = slot.crashView {
+            container.addSubview(crashView, positioned: .above, relativeTo: loginRequiredView)
         }
     }
 
-    func detachLoginRequiredView(pane: Pane) {
-        existingLoginRequiredView(for: pane)?.removeFromSuperview()
-        setLoginRequiredView(nil, for: pane)
+    func detachLoginRequiredView(slot index: Int) {
+        guard let slot = slot(index) else { return }
+        slot.loginRequiredView?.removeFromSuperview()
+        slot.loginRequiredView = nil
     }
 
-    private func existingLoginRequiredView(for pane: Pane) -> NSView? {
-        pane == .primary ? primaryLoginRequiredView : secondaryLoginRequiredView
-    }
-
-    private func setLoginRequiredView(_ view: NSView?, for pane: Pane) {
-        switch pane {
-        case .primary: primaryLoginRequiredView = view
-        case .secondary: secondaryLoginRequiredView = view
+    /// Detaches every per-pane overlay of the given kind; used when the
+    /// controller stops presenting a state across the whole split.
+    func detachAllLoginRequiredViews() {
+        for index in slots.indices {
+            detachLoginRequiredView(slot: index)
         }
     }
 
-    private func positionFocusRing(primaryFrame: NSRect, secondaryFrame: NSRect) {
-        guard let focusedPane else {
+    private func positionFocusRing(paneFrames: [NSRect]) {
+        // A ring on another pane would draw across the pane being dragged.
+        guard paneMoveDrag?.isActive != true, let focusedPane, focusedPane < paneFrames.count else {
             focusRingView.isHidden = true
             return
         }
         focusRingView.isHidden = false
-        focusRingView.frame = (focusedPane == .primary) ? primaryFrame : secondaryFrame
+        focusRingView.frame = paneFrames[focusedPane]
         focusRingView.updatePath(outerRadius: outerCornerRadius)
     }
 
     // MARK: - Divider dragging
 
-    private func beginDrag(at event: NSEvent) {
+    private func beginDrag(dividerIndex: Int, at event: NSEvent) {
+        guard dividerIndex + 1 < fractions.count else { return }
         isUserDragging = true
+        draggingDividerIndex = dividerIndex
         dragStartLocation = convert(event.locationInWindow, from: nil)
-        dragStartRatio = ratio
+        dragStartFractions = (fractions[dividerIndex], fractions[dividerIndex + 1])
         activeMagneticSnap = nil
     }
 
-    /// Signed drag distance that grows the primary pane when positive.
-    /// In a stacked split the primary pane sits above the divider, so dragging
+    /// Signed drag distance that grows the leading pane when positive.
+    /// In a stacked split the leading pane sits above the divider, so dragging
     /// downward grows it even though AppKit's y coordinate decreases.
-    static func primaryPaneGrowthDistance(layout: SplitLayout,
+    static func leadingPaneGrowthDistance(layout: SplitLayout,
                                           from start: CGPoint,
                                           to current: CGPoint) -> CGFloat {
         switch layout {
@@ -698,34 +1174,47 @@ final class SplitPaneHostView: NSView {
     }
 
     private func continueDrag(at event: NSEvent) {
+        guard let index = draggingDividerIndex, index + 1 < fractions.count else { return }
         let location = convert(event.locationInWindow, from: nil)
+        let dividerCount = CGFloat(max(0, fractions.count - 1))
         let usable: CGFloat
         switch paneLayout {
         case .vertical:
-            usable = bounds.width - Self.dividerThickness
+            usable = bounds.width - Self.dividerThickness * dividerCount
         case .horizontal:
-            usable = bounds.height - Self.dividerThickness
+            usable = bounds.height - Self.dividerThickness * dividerCount
         }
         guard usable > 0 else { return }
-        let delta = Self.primaryPaneGrowthDistance(
+        // The divider redistributes the two shares it separates; the other
+        // panes keep theirs.
+        let pairShare = dragStartFractions.leading + dragStartFractions.trailing
+        let pairPoints = usable * pairShare
+        guard pairPoints > 0 else { return }
+        let delta = Self.leadingPaneGrowthDistance(
             layout: paneLayout,
             from: dragStartLocation,
             to: location
-        ) / usable
-        let raw = clamp(dragStartRatio + delta)
-        let snapTarget = magneticSnapTarget(for: raw, usable: usable)
+        ) / pairPoints
+        let rawRatio = dragStartFractions.leading / pairShare + delta
+        let minRatio = Self.minPaneFraction / pairShare
+        let clampedRatio = max(minRatio, min(1 - minRatio, rawRatio))
+        let snapTarget = magneticSnapTarget(for: clampedRatio, usable: pairPoints)
         emitSnapFeedbackIfNeeded(snapTarget)
-        let newRatio = snapTarget ?? raw
-        if abs(ratio - newRatio) > .ulpOfOne {
-            ratio = newRatio
+        let ratio = snapTarget.map { max(minRatio, min(1 - minRatio, $0)) } ?? clampedRatio
+        let leading = pairShare * ratio
+        let trailing = pairShare - leading
+        if abs(fractions[index] - leading) > .ulpOfOne {
+            fractions[index] = leading
+            fractions[index + 1] = trailing
             needsLayout = true
         }
     }
 
     private func endDrag() {
         isUserDragging = false
+        draggingDividerIndex = nil
         activeMagneticSnap = nil
-        onRatioCommit?(Double(ratio))
+        onFractionsCommit?(fractions.map { Double($0) })
     }
 
     /// Snap ratio the divider should stick to at `ratio`, or nil when it's
@@ -757,25 +1246,161 @@ final class SplitPaneHostView: NSView {
         }
     }
 
-    private func clamp(_ value: CGFloat) -> CGFloat {
-        max(minPaneFraction, min(1 - minPaneFraction, value))
+    /// One share per pane, summing to 1: `values` when they fit (every value
+    /// at least `minPaneFraction`), equal shares otherwise.
+    static func normalized(_ values: [CGFloat], count: Int) -> [CGFloat] {
+        let count = max(1, count)
+        guard values.count == count, values.allSatisfy({ $0.isFinite && $0 >= 0 }) else {
+            return Array(repeating: 1 / CGFloat(count), count: count)
+        }
+        let sum = values.reduce(0, +)
+        guard sum > 0 else { return Array(repeating: 1 / CGFloat(count), count: count) }
+        var result = values.map { $0 / sum }
+        // Lift any pane below the floor and take the difference from the
+        // largest, so a pane never collapses to nothing.
+        let floor = min(minPaneFraction, 1 / CGFloat(count))
+        for index in result.indices where result[index] < floor {
+            let deficit = floor - result[index]
+            result[index] = floor
+            if let largest = result.indices.max(by: { result[$0] < result[$1] }), largest != index {
+                result[largest] = max(floor, result[largest] - deficit)
+            }
+        }
+        let total = result.reduce(0, +)
+        return total > 0 ? result.map { $0 / total } : result
     }
 
     private func applyDividerCursor() {
-        switch paneLayout {
-        case .vertical:   dividerView.dragCursor = .resizeLeftRight
-        case .horizontal: dividerView.dragCursor = .resizeUpDown
+        for divider in dividers {
+            switch paneLayout {
+            case .vertical:   divider.dragCursor = .resizeLeftRight
+            case .horizontal: divider.dragCursor = .resizeUpDown
+            }
         }
     }
 }
 
 // MARK: - Divider
 
-/// Transparent strip between the two pane cards — it's purely a drag/hit
-/// area. Whatever sits behind the split host (`leftContainerView`'s fill)
-/// shows through, so the gap reads as background rather than as its own
-/// chrome strip. Width is also the drag hit area — no separate invisible
-/// grab band needed.
+/// Transparent strip between two pane cards — it's purely a drag/hit area.
+/// Whatever sits behind the split host (`leftContainerView`'s fill) shows
+/// through, so the gap reads as background rather than as its own chrome
+/// strip. Width is also the drag hit area — no separate invisible grab band
+/// needed.
+/// The grip along the top of a pane for dragging it to another slot. It
+/// appears when the pointer nears the pane's top edge, and only the grip
+/// itself takes the mouse, so the rest of the band still reaches the page.
+private final class PaneMoveHandle: NSView {
+    private static let bandHeight: CGFloat = 44
+    private static let gripSize = CGSize(width: 72, height: 18)
+    private static let pillSize = CGSize(width: 40, height: 5)
+
+    /// The strip of `pane` this handle covers.
+    static func band(in pane: CGRect) -> CGRect {
+        let height = min(bandHeight, pane.height)
+        return CGRect(x: pane.minX, y: pane.maxY - height, width: pane.width, height: height)
+    }
+
+    var onDragBegan: ((NSEvent) -> Void)?
+    var onDragChanged: ((NSEvent) -> Void)?
+    var onDragEnded: (() -> Void)?
+
+    private let pill = CALayer()
+    private var areas: [NSTrackingArea] = []
+
+    private var gripRect: CGRect {
+        CGRect(x: bounds.midX - Self.gripSize.width / 2,
+               y: bounds.maxY - Self.gripSize.height,
+               width: Self.gripSize.width,
+               height: Self.gripSize.height)
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        // Over any page, so a light fill with a dark edge.
+        pill.backgroundColor = NSColor.white.withAlphaComponent(0.9).cgColor
+        pill.borderColor = NSColor.black.withAlphaComponent(0.3).cgColor
+        pill.borderWidth = 0.5
+        pill.cornerRadius = Self.pillSize.height / 2
+        pill.opacity = 0
+        layer?.addSublayer(pill)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityIdentifier("splitPaneMoveHandle")
+        setAccessibilityLabel(NSLocalizedString("browser.splitPane.moveHandle",
+                                                value: "Move Pane",
+                                                comment: "Accessibility label of the grip at the top of a split pane that drags the pane to a new position"))
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        gripRect.contains(convert(point, from: superview)) ? self : nil
+    }
+
+    override func layout() {
+        super.layout()
+        layoutPill()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        layoutPill()
+    }
+
+    private func layoutPill() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        pill.frame = CGRect(x: gripRect.midX - Self.pillSize.width / 2,
+                            y: gripRect.midY - Self.pillSize.height / 2,
+                            width: Self.pillSize.width,
+                            height: Self.pillSize.height)
+        CATransaction.commit()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        areas.forEach { removeTrackingArea($0) }
+        areas = [
+            NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow],
+                           owner: self, userInfo: nil),
+            NSTrackingArea(rect: gripRect, options: [.cursorUpdate, .activeInKeyWindow],
+                           owner: self, userInfo: nil),
+        ]
+        areas.forEach { addTrackingArea($0) }
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        NSCursor.openHand.set()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        pill.opacity = 1
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        pill.opacity = 0
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        NSCursor.closedHand.set()
+        onDragBegan?(event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        onDragChanged?(event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        hideGrip()
+        onDragEnded?()
+    }
+
+    func hideGrip() {
+        pill.opacity = 0
+    }
+}
+
 private final class DividerHandle: NSView {
     var dragCursor: NSCursor = .resizeLeftRight {
         didSet { resetTrackingArea() }
@@ -853,8 +1478,8 @@ private final class FocusRingView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    /// Set the outer corner radius to follow. Panes are now standalone
-    /// rounded cards on all four corners, so no per-corner masking is needed.
+    /// Set the outer corner radius to follow. Panes are standalone rounded
+    /// cards on all four corners, so no per-corner masking is needed.
     func updatePath(outerRadius: CGFloat) {
         guard let layer else { return }
         CATransaction.begin()

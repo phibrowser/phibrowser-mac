@@ -115,12 +115,13 @@ extension BrowserState {
                     let key = self.aiChatTabs.first(where: { $0.value === chat })?.key ?? identifier
                     guard let owner = self.tab(forChatIdentifier: key) else { return }
                     self.pushAIChatPanelRecord(of: owner, panelURL: url)
-                    // Before the panel existed, the other pane of a split
-                    // resolved to itself and may have pushed a record.
-                    if let partnerId = self.splitGroup(forTabId: owner.guid)?.partnerTabId(of: owner.guid),
-                       let partner = self.tabs.first(where: { $0.guid == partnerId }),
-                       self.aiChatTabs[self.getTabIdentifier(for: partner)] == nil {
-                        self.sendAIChatPanelRecord(nil, of: partner)
+                    // Before the panel existed, the other panes of a split
+                    // resolved to themselves and may have pushed a record.
+                    for partnerId in self.splitGroup(forTabId: owner.guid)?.otherTabIds(of: owner.guid) ?? [] {
+                        if let partner = self.tabs.first(where: { $0.guid == partnerId }),
+                           self.aiChatTabs[self.getTabIdentifier(for: partner)] == nil {
+                            self.sendAIChatPanelRecord(nil, of: partner)
+                        }
                     }
                 }
             // The panel exists now; its URL names the conversation from here on.
@@ -177,8 +178,8 @@ extension BrowserState {
     /// record stays with the one that closes last.
     func handOffAIChatPanelRecord(of tab: Tab) {
         guard let panel = aiChatTabs[getTabIdentifier(for: tab)],
-              let partnerId = splitGroup(forTabId: tab.guid)?.partnerTabId(of: tab.guid),
-              !splitPaneIdsBeingRemoved.contains(partnerId),
+              let partnerId = splitGroup(forTabId: tab.guid)?.otherTabIds(of: tab.guid)
+                  .first(where: { !splitPaneIdsBeingRemoved.contains($0) }),
               let partner = tabs.first(where: { $0.guid == partnerId }) else { return }
         sendAIChatPanelRecord(nil, of: tab)
         sendAIChatPanelRecord(
@@ -240,9 +241,9 @@ extension BrowserState {
               !isIncognito, !isInPlaceholderMode, groupOverviewState == nil,
               SpaceSessionControllersManager.shared.getBrowserState(for: windowId) === self,
               let tab = focusingTab else { return false }
-        let partner = splitGroup(forTabId: tab.guid)?.partnerTabId(of: tab.guid)
-            .flatMap { partnerId in tabs.first { $0.guid == partnerId } }
-        guard tab.aiChatEnabled || partner?.aiChatEnabled == true else { return false }
+        let partners = (splitGroup(forTabId: tab.guid)?.otherTabIds(of: tab.guid) ?? [])
+            .compactMap { partnerId in tabs.first { $0.guid == partnerId } }
+        guard tab.aiChatEnabled || partners.contains(where: { $0.aiChatEnabled }) else { return false }
 
         let identifier = chatIdentifier(for: tab)
         if let panel = aiChatTabs[identifier] {

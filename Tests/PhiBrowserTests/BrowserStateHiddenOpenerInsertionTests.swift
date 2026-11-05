@@ -246,10 +246,9 @@ final class BrowserStateHiddenOpenerInsertionTests: XCTestCase {
         state.tabs.append(contentsOf: [leftLive, rightLive])
         state.splits = [
             SplitGroup(id: "split-100-101",
-                       primaryTabId: 100,
-                       secondaryTabId: 101,
+                       tabIds: [100, 101],
                        layout: .vertical,
-                       ratio: 0.5,
+                       fractions: [0.5, 0.5],
                        isPinned: true)
         ]
         state.updateNormalTabs()
@@ -259,8 +258,7 @@ final class BrowserStateHiddenOpenerInsertionTests: XCTestCase {
         state.toggleSplitPinStatus("split-100-101")
 
         XCTAssertEqual(state.normalTabs.map(\.guid), [1, 2, 3, 100, 101])
-        XCTAssertEqual(state.splits.first?.primaryTabId, 100)
-        XCTAssertEqual(state.splits.first?.secondaryTabId, 101)
+        XCTAssertEqual(state.splits.first?.tabIds, [100, 101])
         XCTAssertEqual(state.splits.first?.isPinned, false)
         XCTAssertNil(leftLive.guidInLocalDB)
         XCTAssertNil(rightLive.guidInLocalDB)

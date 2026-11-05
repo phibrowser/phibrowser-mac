@@ -76,10 +76,9 @@ final class BrowserStateGroupOverviewTests: XCTestCase {
         ])
         state.splits = [
             SplitGroup(id: "split-1",
-                       primaryTabId: 200,
-                       secondaryTabId: 201,
+                       tabIds: [200, 201],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
         tabs[0].toggleAIChat(false)
         tabs[1].toggleAIChat(false)

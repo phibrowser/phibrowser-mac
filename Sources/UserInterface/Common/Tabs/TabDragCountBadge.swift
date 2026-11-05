@@ -84,11 +84,12 @@ enum TabDragCountBadge {
             guard !consumedIds.contains(tabId) else { continue }
             consumedIds.insert(tabId)
 
-            if let group = browserState.splitGroup(forTabId: tabId),
-               !group.isPinned,
-               let partnerId = group.partnerTabId(of: tabId),
-               representedIds.contains(partnerId) {
-                consumedIds.insert(partnerId)
+            // A split travels as one unit: every other pane that is also
+            // represented folds into this one.
+            if let group = browserState.splitGroup(forTabId: tabId), !group.isPinned {
+                for otherId in group.otherTabIds(of: tabId) where representedIds.contains(otherId) {
+                    consumedIds.insert(otherId)
+                }
             }
 
             visibleIds.append(tabId)

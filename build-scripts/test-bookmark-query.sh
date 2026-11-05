@@ -22,6 +22,6 @@ Path(sys.argv[2]).write_text(fixture.replace('        /* PRODUCTION_QUERY */', s
 PY
 xcrun swiftc "$task_optimization" -swift-version 5 -parse-as-library -Xfrontend -disable-sandbox \
   -module-cache-path "$task_build/modules" \
-  "$task_root/Sources/LocalStorage/TabDataModel/TabDataModelSchemaV13.swift" \
+  "$task_root/Sources/LocalStorage/TabDataModel/TabDataModelSchemaV14.swift" \
   "$task_build/main.swift" -o "$task_build/tests"
 "$task_build/tests" "$@"

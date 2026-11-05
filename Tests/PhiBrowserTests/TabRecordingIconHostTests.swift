@@ -96,9 +96,7 @@ final class TabRecordingIconHostTests: XCTestCase {
         let view = makeCompactSplitCell(primaryRecording: true, partnerRecording: true)
 
         XCTAssertFalse(try faviconRendersRecordingBadge(in: view))
-        XCTAssertFalse(
-            try faviconRendersRecordingBadge(in: view, viewModel: "secondaryFaviconViewModel")
-        )
+        XCTAssertFalse(try faviconRendersRecordingBadge(in: view, mergedPane: 0))
     }
 
     /// Only the primary pane's recording takes the centred icon; a partner
@@ -107,12 +105,10 @@ final class TabRecordingIconHostTests: XCTestCase {
     func test_compactSplitCellKeepsTheRecordingPartnersFaviconBadge() throws {
         let view = makeCompactSplitCell(primaryRecording: false, partnerRecording: true)
 
-        XCTAssertTrue(
-            try faviconRendersRecordingBadge(in: view, viewModel: "secondaryFaviconViewModel")
-        )
+        XCTAssertTrue(try faviconRendersRecordingBadge(in: view, mergedPane: 0))
     }
 
-    func test_splitPairCellShowsOnlyTheRecordingPanesIcon() {
+    func test_splitCellShowsOnlyTheRecordingPanesIcon() {
         let leftTab = Tab(
             guid: 1,
             url: "https://example.com/1",
@@ -126,18 +122,17 @@ final class TabRecordingIconHostTests: XCTestCase {
             isActive: false,
             index: 1
         )
-        let cell = SidebarSplitPairCellView(
+        let cell = SidebarSplitCellView(
             frame: NSRect(x: 0, y: 0, width: 320, height: 36)
         )
-        cell.configure(with: SplitPairSidebarItem(
+        cell.configure(with: SplitSidebarItem(
             groupId: "split-1-2",
-            leftTab: leftTab,
-            rightTab: rightTab,
+            panes: [leftTab, rightTab],
             browserState: nil
         ))
 
-        XCTAssertTrue(cell.isRecordingIndicatorVisible(isLeft: true))
-        XCTAssertFalse(cell.isRecordingIndicatorVisible(isLeft: false))
+        XCTAssertTrue(cell.isRecordingIndicatorVisible(paneIndex: 0))
+        XCTAssertFalse(cell.isRecordingIndicatorVisible(paneIndex: 1))
         XCTAssertEqual(
             recordingIconHosts(in: cell).count,
             1,
@@ -183,7 +178,7 @@ final class TabRecordingIconHostTests: XCTestCase {
         view.frame = CGRect(
             x: 0,
             y: 0,
-            width: TabStripMetrics.Content.splitCompactModeThreshold - 1,
+            width: TabStripMetrics.Content.splitCompactModeThreshold(paneCount: 2) - 1,
             height: TabStripMetrics.Strip.tabHeight
         )
         view.configure(with: TabRenderData(
@@ -193,7 +188,7 @@ final class TabRecordingIconHostTests: XCTestCase {
             isActive: false,
             isPinned: false,
             isSplitGroupActive: false,
-            pinnedSplitPartner: partner,
+            mergedSplitPanes: [partner],
             sourceTab: primary
         ))
         view.layout()
@@ -238,19 +233,30 @@ final class TabRecordingIconHostTests: XCTestCase {
         return hosts
     }
 
-    /// Whether the item's favicon driven by the view model it stores as
-    /// `viewModel` renders the recording corner badge. The badge sits in
-    /// `UnifiedTabFaviconView.body`, which the description of the favicon
+    /// Whether the item's favicon driven by its own `viewModel` (or, for
+    /// `mergedPane`, the view model of that merged pane in
+    /// `mergedPanePool`) renders the recording corner badge. The badge sits
+    /// in `UnifiedTabFaviconView.body`, which the description of the favicon
     /// host's root view never reaches, so this describes that body built on
-    /// the item's own view model: a rendered badge shows up as an icon
-    /// value, a dropped one as `nil`.
+    /// the item's view model: a rendered badge shows up as an icon value, a
+    /// dropped one as `nil`.
     private func faviconRendersRecordingBadge(
         in view: TabItemView,
-        viewModel name: String = "viewModel"
+        mergedPane index: Int? = nil
     ) throws -> Bool {
+        let mirror = Mirror(reflecting: view)
+        let candidate: Any?
+        let path: String
+        if let index {
+            candidate = mirror.descendant("mergedPanePool", index, "viewModel")
+            path = "mergedPanePool[\(index)].viewModel"
+        } else {
+            candidate = mirror.descendant("viewModel")
+            path = "viewModel"
+        }
         let viewModel = try XCTUnwrap(
-            Mirror(reflecting: view).descendant(name) as? TabViewModel,
-            "TabItemView no longer keeps a favicon view model in `\(name)`."
+            candidate as? TabViewModel,
+            "TabItemView no longer keeps a favicon view model at `\(path)`."
         )
         let iconName = String(describing: UnifiedTabRecordingIcon.self)
         return String(describing: UnifiedTabFaviconView(viewModel: viewModel).body)

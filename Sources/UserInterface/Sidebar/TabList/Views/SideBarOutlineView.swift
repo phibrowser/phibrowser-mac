@@ -210,8 +210,8 @@ protocol SideBarOutlineViewDelegate: AnyObject {
     ///   - outlineView: The outline view that received the click
     ///   - row: The row index that was clicked, or -1 if click was outside any row
     ///   - location: Click location in outline-view coordinates — lets the
-    ///     delegate route middle-click within a merged splitPair row to the
-    ///     specific pane (left/right) the user actually hit.
+    ///     delegate route middle-click within a merged split row to the
+    ///     specific pane segment the user actually hit.
     func outlineView(_ outlineView: SideBarOutlineView,
                      didMiddleClickRow row: Int,
                      at location: NSPoint)
@@ -498,7 +498,7 @@ class SideBarOutlineView: DiffableOutlineView {
             // so an unconsumed click can't leak stale flags.
             lastMouseDownModifierFlags = event.modifierFlags
             let paneHandledClick = (view(atColumn: 0, row: index, makeIfNecessary: false)
-                as? SidebarSplitPairCellView)?.handledPaneClick(onMouseDown: event) == true
+                as? SidebarSplitCellView)?.handledPaneClick(onMouseDown: event) == true
             handledMouseDownAction = paneHandledClick || mouseDownAction?(index, event) == true
             super.mouseDown(with: event)
             handledMouseDownAction = false

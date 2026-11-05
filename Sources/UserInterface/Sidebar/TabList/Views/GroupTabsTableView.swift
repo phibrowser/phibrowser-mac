@@ -53,7 +53,7 @@ final class GroupTabsTableView: NSTableView {
         pendingMouseDownEvent = event
         manualDragInProgress = false
         let paneHandledClick = row >= 0 && (view(atColumn: 0, row: row, makeIfNecessary: false)
-            as? SidebarSplitPairCellView)?.handledPaneClick(onMouseDown: event) == true
+            as? SidebarSplitCellView)?.handledPaneClick(onMouseDown: event) == true
         selectedOnMouseDown = paneHandledClick || (pendingInteractionTarget == nil && row >= 0
             && event.clickCount == 1
             && event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty
@@ -165,7 +165,7 @@ final class GroupTabsTableView: NSTableView {
                                             row: clickedRow)
             } else if pendingInteractionTarget == nil && !selectedOnMouseDown {
                 if let cell = view(atColumn: 0, row: clickedRow, makeIfNecessary: false)
-                    as? SidebarSplitPairCellView,
+                    as? SidebarSplitCellView,
                    cell.handleDoubleClick(with: event) {
                     resetPendingDragState()
                     return

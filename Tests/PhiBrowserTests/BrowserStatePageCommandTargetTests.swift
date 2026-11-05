@@ -85,10 +85,9 @@ final class BrowserStatePageCommandTargetTests: XCTestCase {
         let peek = makeTab(3)
         state.tabs = [primary, secondary]
         state.splits = [SplitGroup(id: "split",
-                                   primaryTabId: primary.guid,
-                                   secondaryTabId: secondary.guid,
+                                   tabIds: [primary.guid, secondary.guid],
                                    layout: .vertical,
-                                   ratio: 0.5)]
+                                   fractions: [0.5, 0.5])]
         state.peekState.present(peek, openerTabId: primary.guid)
         state.focusingTab = secondary
 

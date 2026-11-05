@@ -26,20 +26,20 @@ final class TabDragContext {
     let initialTabFrame: CGRect
     /// Width of the dragged tab, used when sizing the gap.
     let draggedTabWidth: CGFloat
-    /// Index of the dragged tab's split partner in the same zone, if any.
-    /// Set so the partner lifts alongside the dragged tab and the layout
-    /// engine excludes both indices.
-    let siblingSourceIndex: Int?
+    /// Indices of the other panes of the dragged tab's split in the same
+    /// zone, if any. Set so those panes lift alongside the dragged tab and
+    /// the layout engine excludes every pane's index.
+    let siblingSourceIndices: Set<Int>
     /// All source indices that should leave layout flow during this drag.
-    /// Single-tab drags contain `sourceIndex`; split-pair and multi-selection
+    /// Single-tab drags contain `sourceIndex`; split and multi-selection
     /// drags contain every represented tab index.
     let sourceExcludedIndices: Set<Int>
     /// Normal-tab ids represented by this drag. Single-tab drags contain only
     /// `draggingTab.guid`; multi-selection drags carry the selected block in
     /// normal-tab order.
     let draggingTabIds: [Int]
-    /// Number of visible tab slots represented by this drag. Split pairs count
-    /// as one slot even though `draggingTabIds` contains both panes.
+    /// Number of visible tab slots represented by this drag. A merged split
+    /// counts as one slot even though `draggingTabIds` contains every pane.
     let draggingVisualSlotCount: Int
 
     // MARK: - Target State
@@ -171,7 +171,7 @@ final class TabDragContext {
         sourceIndex: Int,
         initialMouseLocation: CGPoint,
         initialTabFrame: CGRect,
-        siblingSourceIndex: Int? = nil,
+        siblingSourceIndices: Set<Int> = [],
         sourceExcludedIndices: Set<Int>? = nil,
         draggingTabIds: [Int]? = nil,
         draggingVisualSlotCount: Int? = nil
@@ -182,15 +182,11 @@ final class TabDragContext {
         self.initialMouseLocation = initialMouseLocation
         self.initialTabFrame = initialTabFrame
         self.draggedTabWidth = initialTabFrame.width
-        self.siblingSourceIndex = siblingSourceIndex
+        self.siblingSourceIndices = siblingSourceIndices
         if let sourceExcludedIndices {
             self.sourceExcludedIndices = sourceExcludedIndices
         } else {
-            var excluded: Set<Int> = [sourceIndex]
-            if let siblingSourceIndex {
-                excluded.insert(siblingSourceIndex)
-            }
-            self.sourceExcludedIndices = excluded
+            self.sourceExcludedIndices = siblingSourceIndices.union([sourceIndex])
         }
         let resolvedDraggingTabIds = draggingTabIds ?? [draggingTab.guid]
         self.draggingTabIds = resolvedDraggingTabIds

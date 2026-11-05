@@ -147,7 +147,7 @@ private final class RecordingTabStripDragDelegate: TabStripDragDelegate {
             normalScrollOffset: 0,
             chipFrames: [],
             draggedTabFrameInNormal: nil,
-            normalSplitPairLowerIndices: []
+            normalSplitRuns: []
         )
     }
 

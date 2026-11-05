@@ -73,17 +73,19 @@ extension BrowserState {
         scene.relatedTabIds = [tab.guid]
         let page = TravelBackPage(url: tab.url ?? "", title: tab.title, favicon: tab.faviconUrl)
         if page.isReopenable { scene.page = page }
-        if let split = splitGroup(forTabId: tab.guid),
-           let primary = resolveTab(split.primaryTabId), let secondary = resolveTab(split.secondaryTabId) {
+        // Travel Back records a pair; a wider split's scene is the tab alone.
+        if let split = splitGroup(forTabId: tab.guid), let pair = split.pair,
+           let primary = resolveTab(pair.primary), let secondary = resolveTab(pair.secondary) {
             scene.relatedTabIds = [primary.guid, secondary.guid]
             let members = [primary, secondary].map {
                 TravelBackPage(url: $0.url ?? "", title: $0.title, favicon: $0.faviconUrl)
             }
             // Never persist a partial pair or shift member indexes by filtering.
             if members.allSatisfy(\.isReopenable) {
+                let ratio = split.pairRatio ?? 0.5
                 scene.layout = .init(splitView: TravelBackSplit(
                     members: members, orientation: split.layout.rawValue,
-                    ratio: split.ratio > 0 && split.ratio < 1 ? split.ratio : nil,
+                    ratio: ratio > 0 && ratio < 1 ? ratio : nil,
                     activeIndex: tab.guid == primary.guid ? 0 : 1
                 ))
             }
@@ -187,9 +189,11 @@ extension BrowserState {
         let split = try snapshot.layout?.splitView?.validated(for: page)
         var destination: Tab
         if let split {
-            let existing = anchor.flatMap { splitGroup(forTabId: $0.guid) }
+            // Only a pair can be reused; a wider split never matches a
+            // recorded pair.
+            let existing = anchor.flatMap { splitGroup(forTabId: $0.guid) }.flatMap { $0.isPair ? $0 : nil }
             let existingURLs = existing.map { group in
-                [group.primaryTabId, group.secondaryTabId].map { resolveTab($0)?.url ?? "" }
+                group.tabIds.map { resolveTab($0)?.url ?? "" }
             }
             // Do not detach pinned/bookmark bindings or merge two live Sidecars.
             // The partner is always new when completing an independent anchor.
@@ -199,8 +203,8 @@ extension BrowserState {
             let primary: Tab
             let secondary: Tab
             let groupId: String
-            if plan == .reuse, let existing,
-               let left = resolveTab(existing.primaryTabId), let right = resolveTab(existing.secondaryTabId) {
+            if plan == .reuse, let existing, let existingPair = existing.pair,
+               let left = resolveTab(existingPair.primary), let right = resolveTab(existingPair.secondary) {
                 primary = left
                 secondary = right
                 groupId = existing.id
@@ -240,19 +244,20 @@ extension BrowserState {
             }
             try travelBackCheck([primary, secondary], deadline: deadline)
             guard let group = splitGroup(forId: groupId),
-                  group.primaryTabId == primary.guid, group.secondaryTabId == secondary.guid else {
+                  group.tabIds == [primary.guid, secondary.guid] else {
                 throw TravelBackFailure.targetChanged
             }
             let orientation: SplitLayout = split.orientation == "horizontal" ? .horizontal : .vertical
             if group.layout != orientation { updateSplitLayout(groupId, layout: orientation) }
-            if abs(group.ratio - (split.ratio ?? 0.5)) > 0.001 { updateSplitRatio(groupId, ratio: split.ratio ?? 0.5) }
+            let wantedRatio = split.ratio ?? 0.5
+            if abs((group.pairRatio ?? 0.5) - wantedRatio) > 0.001 { updateSplitRatio(groupId, ratio: wantedRatio) }
             let _: SplitGroup = try await travelBackWait(until: deadline) {
                 try self.travelBackCheck([primary, secondary], deadline: deadline)
                 guard let live = self.splitGroup(forId: groupId),
-                      live.primaryTabId == primary.guid, live.secondaryTabId == secondary.guid else {
+                      live.tabIds == [primary.guid, secondary.guid] else {
                     throw TravelBackFailure.targetChanged
                 }
-                return live.layout == orientation && abs(live.ratio - (split.ratio ?? 0.5)) <= 0.001 ? live : nil
+                return live.layout == orientation && abs((live.pairRatio ?? 0.5) - wantedRatio) <= 0.001 ? live : nil
             }
             destination = split.activeIndex == 1 ? secondary : primary
         } else if let anchor {
@@ -321,7 +326,10 @@ extension BrowserState {
               profileMovesInFlight.insert(sidebar.chatTabId).inserted else { throw TravelBackFailure.busy }
         defer { profileMovesInFlight.remove(sidebar.chatTabId) }
         let deadline = ProcessInfo.processInfo.systemUptime + 8
-        let split = movingTabs.count == 2 ? splitGroup(forTabId: movingTabs[0].guid) : nil
+        // A whole split moves as one (two to four panes in slot order).
+        let split = splitGroup(forTabId: movingTabs[0].guid).flatMap { group in
+            group.tabIds == movingTabs.map(\.guid) ? group : nil
+        }
         let activeIndex = movingTabs.firstIndex(where: { $0.guid == focusingTab?.guid }) ?? 0
         var created: [Tab] = []
         for tab in movingTabs {
@@ -330,13 +338,13 @@ extension BrowserState {
             }
             created.append(try await target.travelBackCreatePage(.init(url: url), deadline: deadline))
         }
-        if let split, created.count == 2 {
+        if let split, created.count == split.paneCount {
             target.focuseTab(created[activeIndex])
             created[activeIndex].webContentWrapper?.setAsActiveTab()
-            guard let id = target.createSplit(leftTabId: created[0].guid, rightTabId: created[1].guid,
+            guard let id = target.createSplit(tabIds: created.map(\.guid),
                                               layout: split.layout) else { throw TravelBackFailure.unavailable }
             let _: SplitGroup = try await target.travelBackWait(until: deadline) { target.splitGroup(forId: id) }
-            target.updateSplitRatio(id, ratio: split.ratio)
+            target.updateSplitFractions(id, fractions: split.fractions)
         }
         let destination = try await target.prepareTravelBackDestination(created[activeIndex],
             sourceSidebar: sidebar, deadline: deadline, waitUntilEnabled: false)

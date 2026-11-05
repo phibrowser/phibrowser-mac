@@ -360,8 +360,8 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
         let state = BrowserState(windowId: 77, localStore: store, profileId: "Default", spaceId: "space-a")
         let left = bindLiveTab(try XCTUnwrap(state.pinnedTabs.first { $0.guidInLocalDB == "left" }), to: state, chromiumGuid: 501)
         let right = bindLiveTab(try XCTUnwrap(state.pinnedTabs.first { $0.guidInLocalDB == "right" }), to: state, chromiumGuid: 502)
-        state.splits = [SplitGroup(id: "split", primaryTabId: 501, secondaryTabId: 502,
-                                  layout: .horizontal, ratio: 0.5, isPinned: true)]
+        state.splits = [SplitGroup(id: "split", tabIds: [501, 502],
+                                  layout: .horizontal, fractions: [0.5, 0.5], isPinned: true)]
         state.detachLiveTabsFromRemovedPins(["left", "right"])
         XCTAssertEqual(state.tabs.count, 2)
         XCTAssertNil(left.liveTab.guidInLocalDB)

@@ -119,11 +119,11 @@ class SpaceSessionController: NSWindowController {
     private var lastFocusedTabIdForPeek: Int?
 
     /// Reader View overlay panels, one per split pane slot (a single tab
-    /// uses `.primary`), created on first present: each pane of a split can
+    /// uses slot 0), created on first present: each pane of a split can
     /// show its own reader. Slots follow the split group, so moving focus
     /// between panes never swaps a panel's content. Exposed to the
     /// coordinator (`tabWillBeRemove`) for the synchronous view detach.
-    private var readerPanelControllers: [SplitPaneHostView.Pane: ReaderPanelController] = [:]
+    private var readerPanelControllers: [Int: ReaderPanelController] = [:]
     var readerPanelControllersIfLoaded: [ReaderPanelController] { Array(readerPanelControllers.values) }
 
     /// Omnibox child window above the browser's page overlays. It shares the
@@ -1105,7 +1105,7 @@ class SpaceSessionController: NSWindowController {
     /// Shows `visibleReaders` (see `BrowserState.visibleReaderOverlays`),
     /// each in its pane's slot, and hides the slots left without one.
     private func showReaderPanels(_ visibleReaders: [Tab]) {
-        var shownSlots = Set<SplitPaneHostView.Pane>()
+        var shownSlots = Set<Int>()
         for reader in visibleReaders {
             let slot = readerPanelSlot(for: reader)
             shownSlots.insert(slot)
@@ -1122,17 +1122,17 @@ class SpaceSessionController: NSWindowController {
         }
     }
 
-    /// A split's secondary pane's reader takes the `.secondary` panel; every
-    /// other reader (single tab, primary pane, over a peek) `.primary`.
-    private func readerPanelSlot(for readerTab: Tab) -> SplitPaneHostView.Pane {
+    /// A split pane's reader takes the panel for that pane's slot; every
+    /// other reader (single tab, over a peek) slot 0.
+    private func readerPanelSlot(for readerTab: Tab) -> Int {
         guard let originTabId = browserState.readerOverlayState.originTabId(forReaderTabId: readerTab.guid),
-              browserState.splitGroup(forTabId: originTabId)?.secondaryTabId == originTabId else {
-            return .primary
+              let slot = browserState.splitGroup(forTabId: originTabId)?.slot(of: originTabId) else {
+            return 0
         }
-        return .secondary
+        return slot
     }
 
-    private func presentReaderPanel(for tab: Tab, slot: SplitPaneHostView.Pane) {
+    private func presentReaderPanel(for tab: Tab, slot: Int) {
         guard let window = self.window, isPresentedOrLegacy else { return }
         if readerPanelControllers[slot] == nil {
             let container = mainSplitViewController.webContentContainerViewController

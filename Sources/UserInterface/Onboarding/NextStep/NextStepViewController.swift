@@ -135,7 +135,17 @@ final class NextStepViewController: OnboardingBaseViewController {
 
     private lazy var guideHostingView = ZeroSafeAreaHostingView(
         rootView: AnyView(
-            NextStepGuideView(stepTitles: localizedStepTitles)
+            NextStepGuideView(
+                accessibilityTitle: String.localizedStringWithFormat(
+                    NSLocalizedString(
+                        "oobe.nextSteps.guideVoiceOverDescription",
+                        value: "Next steps, %lld steps",
+                        comment: "Onboarding next steps - VoiceOver name of the scrollable area listing the steps; the placeholder is the number of steps"
+                    ),
+                    localizedStepTitles.count
+                ),
+                stepTitles: localizedStepTitles
+            )
                 .environment(\.colorScheme, .dark)
         )
     )
@@ -163,6 +173,14 @@ final class NextStepViewController: OnboardingBaseViewController {
         stackView.spacing = Metrics.consentSpacing
         return stackView
     }()
+
+    private var localizedTitle: String {
+        NSLocalizedString(
+            "oobe.nextSteps.title",
+            value: "Next steps",
+            comment: "Onboarding next steps - Page title"
+        )
+    }
 
     private var localizedStepTitles: [String] {
         [
@@ -239,11 +257,7 @@ final class NextStepViewController: OnboardingBaseViewController {
     override func loadView() {
         super.loadView()
 
-        setTitle(NSLocalizedString(
-            "oobe.nextSteps.title",
-            value: "Next steps",
-            comment: "Onboarding next steps - Page title"
-        ))
+        setTitle(localizedTitle)
 
         let beginButtonTitle = NSLocalizedString(
             "oobe.nextSteps.beginButton",
@@ -360,8 +374,7 @@ final class NextStepViewController: OnboardingBaseViewController {
         attributedTitle.addAttributes(
             [
                 .link: url,
-                .underlineStyle: NSUnderlineStyle.single.rawValue,
-                .cursor: NSCursor.pointingHand
+                .underlineStyle: NSUnderlineStyle.single.rawValue
             ],
             range: range
         )
@@ -372,6 +385,8 @@ final class NextStepViewController: OnboardingBaseViewController {
 struct NextStepGuideView: View {
     private static let scrollCoordinateSpaceName = "NextStepGuideScroll"
 
+    /// VoiceOver name for the scroll area that holds the steps.
+    let accessibilityTitle: String
     let stepTitles: [String]
     @State private var showsOverflowIndicator = false
 
@@ -395,6 +410,7 @@ struct NextStepGuideView: View {
                         }
                     }
             }
+            .accessibilityLabel(Text(verbatim: accessibilityTitle))
             .coordinateSpace(name: Self.scrollCoordinateSpaceName)
             .scrollBounceBehavior(.basedOnSize)
             .onPreferenceChange(NextStepGuideOverflowPreferenceKey.self) { newValue in
@@ -448,6 +464,30 @@ struct NextStepGuideContentView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // VoiceOver reads the steps as a list; the markers, connectors and
+        // illustration stay visual only.
+        .accessibilityRepresentation {
+            List(Array(stepTitles.enumerated()), id: \.offset) { index, title in
+                Text(verbatim: Self.spokenStep(index: index, title: title))
+            }
+        }
+    }
+
+    /// "[number], [title]" with the decorative emoji (👇, 🎉) removed.
+    static func spokenStep(index: Int, title: String) -> String {
+        let spokenTitle = String(title.filter { character in
+            !character.unicodeScalars.contains { $0.properties.isEmojiPresentation }
+        })
+        .trimmingCharacters(in: .whitespaces)
+        return String.localizedStringWithFormat(
+            NSLocalizedString(
+                "oobe.nextSteps.stepVoiceOverDescription",
+                value: "%1$lld, %2$@",
+                comment: "Onboarding next steps - VoiceOver description of one step; first placeholder is the step number, second is the step text"
+            ),
+            index + 1,
+            spokenTitle
+        )
     }
 
     private func stepRow(index: Int, title: String) -> some View {
@@ -469,6 +509,7 @@ struct NextStepGuideContentView: View {
                     Circle()
                         .stroke(.white.opacity(0.2), lineWidth: 1)
                 }
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: NextStepGuideLayout.illustrationSpacing) {
                 Text(title)
@@ -487,7 +528,6 @@ struct NextStepGuideContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.bottom, isLastStep ? 0 : NextStepGuideLayout.stepSpacing)
-        .accessibilityElement(children: .combine)
         .overlay(alignment: .topLeading) {
             if !isLastStep {
                 Rectangle()
@@ -660,6 +700,7 @@ final class NextStepLinkTextView: NSTextView {
 
     private let preferredLayoutWidth: CGFloat
     private let backingTextStorage: NSTextStorage
+    private var cursorTrackingArea: NSTrackingArea?
 
     init(
         attributedString: NSAttributedString,
@@ -680,8 +721,10 @@ final class NextStepLinkTextView: NSTextView {
         self.backingTextStorage = textStorage
         super.init(frame: .zero, textContainer: textContainer)
 
+        // Not selectable so plain text keeps the arrow cursor like the
+        // label rows; link clicks and cursors are handled below.
         isEditable = false
-        isSelectable = true
+        isSelectable = false
         drawsBackground = false
         backgroundColor = .clear
         textContainerInset = .zero
@@ -696,8 +739,7 @@ final class NextStepLinkTextView: NSTextView {
         isHorizontallyResizable = false
         isVerticallyResizable = false
         linkTextAttributes = [
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
-            .cursor: NSCursor.pointingHand
+            .underlineStyle: NSUnderlineStyle.single.rawValue
         ]
         setContentHuggingPriority(.required, for: .vertical)
         setContentCompressionResistancePriority(.required, for: .vertical)
@@ -724,29 +766,63 @@ final class NextStepLinkTextView: NSTextView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let onNonLinkClick else {
-            super.mouseDown(with: event)
+        let point = convert(event.locationInWindow, from: nil)
+        if let hit = link(at: point) {
+            clicked(onLink: hit.value, at: hit.characterIndex)
             return
         }
+        onNonLinkClick?()
+    }
 
+    // NSTextView sets its own cursor from mouseMoved/cursorUpdate, which
+    // overrides cursor rects, so the link cursor is set here instead.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let cursorTrackingArea {
+            removeTrackingArea(cursorTrackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        cursorTrackingArea = area
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        updateCursor(for: event)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateCursor(for: event)
+    }
+
+    private func updateCursor(for event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        (link(at: point) == nil ? NSCursor.arrow : NSCursor.pointingHand).set()
+    }
+
+    private func link(at point: NSPoint) -> (value: Any, characterIndex: Int)? {
+        guard let layoutManager, let textContainer, layoutManager.numberOfGlyphs > 0 else {
+            return nil
+        }
         let textPoint = NSPoint(
             x: point.x - textContainerOrigin.x,
             y: point.y - textContainerOrigin.y
         )
-        if let layoutManager, let textContainer, layoutManager.numberOfGlyphs > 0 {
-            let glyphIndex = layoutManager.glyphIndex(for: textPoint, in: textContainer)
-            let glyphRange = NSRange(location: glyphIndex, length: 1)
-            let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
-            if layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-                .contains(textPoint),
-                backingTextStorage.attribute(.link, at: characterIndex, effectiveRange: nil) != nil {
-                super.mouseDown(with: event)
-                return
-            }
+        let glyphIndex = layoutManager.glyphIndex(for: textPoint, in: textContainer)
+        let glyphRect = layoutManager.boundingRect(
+            forGlyphRange: NSRange(location: glyphIndex, length: 1),
+            in: textContainer
+        )
+        guard glyphRect.contains(textPoint) else { return nil }
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        guard let value = backingTextStorage.attribute(.link, at: characterIndex, effectiveRange: nil) else {
+            return nil
         }
-
-        onNonLinkClick()
+        return (value, characterIndex)
     }
 
     override func setFrameSize(_ newSize: NSSize) {

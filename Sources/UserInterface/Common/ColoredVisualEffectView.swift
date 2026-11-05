@@ -143,14 +143,19 @@ class ColoredVisualEffectView: NSVisualEffectView {
         let previousFill = colorView.layer?.presentation()?.backgroundColor ?? colorView.layer?.backgroundColor
         let previousColors = paletteLayer.presentation()?.colors ?? paletteLayer.colors
         let wasGradient = !paletteLayer.isHidden
-        let palette = usesThemePalette && themedBackgroundColor != nil
-            ? provider.currentTheme.navigationPalette : nil
-        if let palette, palette.colorCount > 1 {
+        // A navigation backdrop paints every theme through the gradient
+        // layer, a flat one as its color at every stop, so a Space switch
+        // ramps it between any two Spaces' looks with one `colors`
+        // animation (`animateFill`), gradient or not on either side.
+        let navigationColors = usesThemePalette && themedBackgroundColor != nil
+            ? provider.currentTheme.navigationColors(for: appearance) ?? [makeBackgroundColor()]
+            : nil
+        if let navigationColors {
             colorView.layer?.backgroundColor = nil
             paletteLayer.startPoint = CGPoint(x: 0.5, y: 1)
             paletteLayer.endPoint = CGPoint(x: 0.5, y: 0)
             paletteLayer.locations = nil
-            let colors = palette.colors(for: appearance).map {
+            let colors = navigationColors.map {
                 $0.withAlphaComponent(colorAlphaComponent ?? $0.alphaComponent)
             }
             if colors != renderedPaletteColors {
@@ -192,9 +197,13 @@ class ColoredVisualEffectView: NSVisualEffectView {
     /// Sample one continuous blend in Oklab to avoid RGB brightness dips and
     /// the slope changes of separately joined color segments.
     static func gradientColors(_ colors: [NSColor]) -> [CGColor] {
-        let components = colors.map { oklabComponents($0) }
         // Saturated endpoints need finer samples through the sRGB transfer curve.
         let intervals = 512
+        // A flat fill keeps the sample count, so it ramps against a gradient.
+        if colors.count == 1 {
+            return Array(repeating: colors[0].cgColor, count: intervals + 1)
+        }
+        let components = colors.map { oklabComponents($0) }
         return (0...intervals).map { index in
             if index == 0 { return colors[0].cgColor }
             if index == intervals { return colors[colors.count - 1].cgColor }
@@ -269,25 +278,43 @@ class ColoredVisualEffectView: NSVisualEffectView {
     }
 
     /// The fill as it shows right now: mid-animation, the presentation
-    /// value; otherwise the model.
-    var presentedFillColor: CGColor? {
+    /// value; otherwise the model. Every gradient sample for a navigation
+    /// backdrop, the one flat color otherwise.
+    var presentedFill: [CGColor]? {
         if !paletteLayer.isHidden {
-            let colors = (paletteLayer.presentation()?.colors ?? paletteLayer.colors) as? [CGColor]
-            return colors?.first
+            return (paletteLayer.presentation()?.colors ?? paletteLayer.colors) as? [CGColor]
         }
-        guard let layer = colorView.layer else { return nil }
-        return layer.presentation()?.backgroundColor ?? layer.backgroundColor
+        guard let layer = colorView.layer,
+              let color = layer.presentation()?.backgroundColor ?? layer.backgroundColor else { return nil }
+        return [color]
     }
 
-    /// Ramps the fill from `from` to the current color as a Core Animation
-    /// animation on the caller's clock (`startTime` in `CACurrentMediaTime`
-    /// terms), so it plays in step with other animations on that clock and
-    /// through main-thread stalls. The model already holds the destination.
-    func animateFill(from: CGColor, duration: TimeInterval, startTime: CFTimeInterval) {
-        guard let layer = colorView.layer, duration > 0 else { return }
-        let ramp = CABasicAnimation(keyPath: "backgroundColor")
-        ramp.fromValue = from
-        ramp.toValue = layer.backgroundColor
+    /// The first stop of `presentedFill`: a gradient's primary color.
+    var presentedFillColor: CGColor? { presentedFill?.first }
+
+    /// Ramps the fill from `from` (a `presentedFill`) to the current fill as
+    /// a Core Animation animation on the caller's clock (`startTime` in
+    /// `CACurrentMediaTime` terms), so it plays in step with other animations
+    /// on that clock and through main-thread stalls. The model already holds
+    /// the destination.
+    func animateFill(from: [CGColor], duration: TimeInterval, startTime: CFTimeInterval) {
+        guard duration > 0, let fromFirst = from.first else { return }
+        let ramp: CABasicAnimation
+        let layer: CALayer
+        if !paletteLayer.isHidden, let to = paletteLayer.colors as? [CGColor] {
+            ramp = CABasicAnimation(keyPath: "colors")
+            // A flat `from` starts the ramp as that color at every stop.
+            ramp.fromValue = from.count == to.count ? from : Array(repeating: fromFirst, count: to.count)
+            ramp.toValue = to
+            layer = paletteLayer
+        } else if let colorLayer = colorView.layer {
+            ramp = CABasicAnimation(keyPath: "backgroundColor")
+            ramp.fromValue = fromFirst
+            ramp.toValue = colorLayer.backgroundColor
+            layer = colorLayer
+        } else {
+            return
+        }
         ramp.duration = duration
         ramp.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         ramp.beginTime = layer.convertTime(startTime, from: nil)

@@ -1645,7 +1645,7 @@ final class SplitTabDropContainer: NSView {
         case .create:
             return Self.dropHintCornerRadius
         case .replace:
-            return LiquidGlassCompatible.webContentInnerComponentsCornerRadius
+            return WebContentLayout(browserState: browserState).innerCornerRadius
         }
     }
 

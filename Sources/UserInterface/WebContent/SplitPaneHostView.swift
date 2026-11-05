@@ -453,8 +453,17 @@ final class SplitPaneHostView: NSView {
     /// that meet the rounded bottom of `leftContainerView` in
     /// `WebContentViewController`. Matches the inner-components radius so the
     /// stroke traces the parent clip instead of being chopped off square.
+    var squaresCorners = false {
+        didSet {
+            guard squaresCorners != oldValue else { return }
+            primaryPaneContainer.layer?.cornerRadius = outerCornerRadius
+            secondaryPaneContainer.layer?.cornerRadius = outerCornerRadius
+            needsLayout = true
+        }
+    }
+
     private var outerCornerRadius: CGFloat {
-        LiquidGlassCompatible.webContentInnerComponentsCornerRadius
+        squaresCorners ? 0 : LiquidGlassCompatible.webContentInnerComponentsCornerRadius
     }
 
     // MARK: - DevTools (per-pane)

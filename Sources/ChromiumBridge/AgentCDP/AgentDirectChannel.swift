@@ -207,17 +207,24 @@ final class AgentDirectChannelRegistry {
     }
 
     func add(_ connection: AgentDirectConnection) {
-        lock.lock(); connections[connection.id] = connection; lock.unlock()
+        lock.lock()
+        let companionArrived = connection.companion.map { !hasCompanionLocked(key: $0.key) } ?? false
+        connections[connection.id] = connection
+        lock.unlock()
+        if companionArrived { Self.postCompanionsDidChange() }
     }
 
     func remove(_ connection: AgentDirectConnection) {
         lock.lock()
-        connections[connection.id] = nil
+        let removed = connections.removeValue(forKey: connection.id) != nil
         for (requestId, p) in pending where p.connectionId == connection.id {
             p.timeout.cancel()
             pending[requestId] = nil
         }
+        let companionLeft = removed
+            && (connection.companion.map { !hasCompanionLocked(key: $0.key) } ?? false)
         lock.unlock()
+        if companionLeft { Self.postCompanionsDidChange() }
         // A driver's paired browser connection can reset compositor overrides
         // as it detaches, including on hidden Chat tabs that do not emit the
         // user-Space operating callbacks. Reconcile app-owned page state after
@@ -227,11 +234,39 @@ final class AgentDirectChannelRegistry {
         }
     }
 
-    func closeAll() {
+    /// Closes every live channel. `sparingCompanions` leaves first-party
+    /// companion apps' channels open (the agent master switch is not theirs).
+    func closeAll(sparingCompanions: Bool = false) {
         lock.lock()
-        let conns = Array(connections.values)
+        let conns = connections.values.filter { !sparingCompanions || $0.companion == nil }
         lock.unlock()
         for c in conns { c.close() }
+    }
+
+    /// Whether at least one channel of the companion app keyed `key` is open.
+    /// Thread-safe, and cheap enough for per-call feature checks
+    /// (`SaveForLaterService.featureEnabled` reads it).
+    func hasCompanionChannel(key: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return hasCompanionLocked(key: key)
+    }
+
+    private func hasCompanionLocked(key: String) -> Bool {
+        connections.values.contains { $0.companion?.key == key }
+    }
+
+    /// Whether the channel `connectionId` is still open.
+    func isLive(connectionId: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return connections[connectionId] != nil
+    }
+
+    /// Posted when a companion app's first channel opens or its last one
+    /// closes; observers re-read whatever depends on it.
+    private static func postCompanionsDidChange() {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .agentCompanionsDidChange, object: nil)
+        }
     }
 
     /// Registers a request awaiting an async app reply, arming a timeout that
@@ -288,6 +323,18 @@ final class AgentDirectChannelRegistry {
         for c in conns { c.sendEvent(type: type, payloadJson: payloadJson) }
     }
 
+    /// Pushes an event to one channel only — for state that belongs to the
+    /// channel itself rather than to its principal (page actions, which a
+    /// channel registers and which end with it). Returns false when the
+    /// channel has closed.
+    @discardableResult
+    func send(type: String, payloadJson: String, connectionId: String) -> Bool {
+        lock.lock(); let conn = connections[connectionId]; lock.unlock()
+        guard let conn else { return false }
+        conn.sendEvent(type: type, payloadJson: payloadJson)
+        return true
+    }
+
     /// App-global, non-task event fan-out retained for existing extension-style
     /// broadcasts. Task/user-content events must use the principal overload.
     func broadcast(type: String, payloadJson: String) {
@@ -302,6 +349,10 @@ final class AgentDirectChannelRegistry {
 final class AgentDirectConnection {
     let id = UUID().uuidString
     let driverPrincipalId: String
+    /// The first-party companion app this channel belongs to, from its
+    /// session's identity; nil for agents. A companion may send only its
+    /// entry's allowlisted types here (see `dispatchMessage`).
+    let companion: AgentCompanion?
 
     private let fd: Int32
     /// The authenticated identity of the connecting code agent, forwarded to
@@ -334,12 +385,14 @@ final class AgentDirectConnection {
     private static let writeStallTimeoutMs = 15_000
 
     init(fd: Int32, agentName: String = "", agentPid: pid_t? = nil,
-         driverPrincipalId: String, agentCapability: String) {
+         driverPrincipalId: String, agentCapability: String,
+         companion: AgentCompanion? = nil) {
         self.fd = fd
         self.agentName = agentName
         self.agentPid = agentPid
         self.driverPrincipalId = driverPrincipalId
         self.agentCapability = agentCapability
+        self.companion = companion
         self.queue = DispatchQueue(label: "com.phibrowser.cdp.direct.\(fd)")
     }
 
@@ -365,6 +418,9 @@ final class AgentDirectConnection {
         readSource?.cancel()
         readSource = nil
         AgentDirectChannelRegistry.shared.remove(self)
+        // After the registry drops the channel, so a registration racing
+        // this close is either cleared here or refused as no longer live.
+        PageActionRegistry.shared.removeAll(channelId: id)
     }
 
     // MARK: - Reading
@@ -477,11 +533,23 @@ final class AgentDirectConnection {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let clientId = obj["id"] as? Int,
               let type = obj["type"] as? String else { return }
+        // A companion app is held to its allowlist. Anything else is refused
+        // here, at once, rather than reaching a handler or being left for the
+        // transport's timeout to fail a minute later.
+        if let companion, !companion.allows(messageType: type) {
+            AppLogWarn("[AgentCDP] refused \(type) from \(companion.displayName): "
+                       + "not on its companion allowlist")
+            sendError(clientId: clientId, error: Self.typeNotAllowedError)
+            return
+        }
         let payloadJson = obj["payloadJson"] as? String ?? "{}"
         DispatchQueue.main.async { [weak self] in
             self?.route(clientId: clientId, type: type, payloadJson: payloadJson)
         }
     }
+
+    /// The error a companion gets for a type outside its allowlist.
+    static let typeNotAllowedError = "type_not_allowed"
 
     /// Main-thread: run the request through the same router the CDP tunnel uses,
     /// then reply synchronously or await the async app response.
@@ -496,7 +564,8 @@ final class AgentDirectConnection {
             timeoutSeconds: timeout)
         let sync = ExtensionMessageRouter.shared.handle(
             type: type, payload: payloadJson, requestId: requestId, senderId: "cdp",
-            agentName: agentName, driverPrincipalId: driverPrincipalId)
+            agentName: agentName, driverPrincipalId: driverPrincipalId,
+            directChannelId: id, isCompanion: companion != nil)
         if let sync {
             AgentDirectChannelRegistry.shared.deliverResponse(
                 requestId: requestId, response: sync)
@@ -617,4 +686,12 @@ final class AgentDirectConnection {
         let digest = Insecure.SHA1.hash(data: Data((key + wsGUID).utf8))
         return Data(digest).base64EncodedString()
     }
+}
+
+extension Notification.Name {
+    /// Posted on the main thread when a first-party companion app's first
+    /// `/phi-agent` channel opens or its last one closes. Whatever a companion
+    /// takes over while it is connected (Folio's, see
+    /// `SaveForLaterService.featureEnabled`) re-reads its state on it.
+    static let agentCompanionsDidChange = Notification.Name("agentCompanionsDidChange")
 }

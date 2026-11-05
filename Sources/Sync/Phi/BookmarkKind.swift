@@ -69,6 +69,11 @@ enum BookmarkKind: OwnedItemKind {
         return space.isEmpty ? [] : [space]
     }
 
+    /// A root waits for its Space mapping; a descendant waits for a parent folder that has not landed.
+    static func unresolvedOwnerReason(_ owner: String, of entity: Phi_PhiBookmarkEntity) -> SyncHeldReason {
+        entity.parentUuid.stringValue.isEmpty ? .unmappedSpaceOwner : .unknown
+    }
+
     // MARK: - Outbound projection and timestamps (§4.2)
 
     /// Project local row to wire entity without timestamps or rank. Return nil if the Space is unmapped (first

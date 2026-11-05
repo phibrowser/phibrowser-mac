@@ -37,8 +37,12 @@ enum NewTabBehaviour: String, CaseIterable, Identifiable {
 
 struct GeneralSettingView: View {
     @ObservedObject private var settingsPresentation = SettingsPresentationState.shared
+    /// Bumped when a companion app connects or quits. Reading it in `body`
+    /// re-runs `body`, which re-reads Folio's flag.
+    @State private var companionRevision = 0
 
     var body: some View {
+        let _ = companionRevision
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 24) {
                 LanguageSectionView()
@@ -58,6 +62,11 @@ struct GeneralSettingView: View {
         }
         .themedBackground(PhiPreferences.fixedWindowBackground)
         .frame(width: 680, height: 561)
+        // The Folio app connecting or quitting flips Folio while Settings is
+        // open (see SaveForLaterService.featureEnabled).
+        .onReceive(NotificationCenter.default.publisher(for: .agentCompanionsDidChange)) { _ in
+            companionRevision += 1
+        }
     }
 }
 
@@ -128,6 +137,9 @@ private struct ThemeSectionView: View {
 }
 
 private struct AppearanceSectionView: View {
+    @AppStorage(PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue)
+    private var edgeToEdgeWebContent = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.defaultValue
+
     @AppStorage(PhiPreferences.GeneralSettings.layoutModeKey)
     private var layoutModeRawValue: String = PhiPreferences.GeneralSettings.loadLayoutMode().rawValue
 
@@ -175,6 +187,27 @@ private struct AppearanceSectionView: View {
                             )
                         }
                     }
+                }
+
+                Divider()
+
+                GeneralRowView(
+                    title: NSLocalizedString(
+                        "settings.general.appearance.edgeToEdgeWebContent",
+                        value: "Edge-to-edge content",
+                        comment: "General settings - Toggle removing outer page margins while keeping the normal Comfortable top layout; full screen also removes rounded corners"
+                    ),
+                    subtitle: NSLocalizedString(
+                        "settings.general.appearance.edgeToEdgeWebContent.description",
+                        value: "Remove margins around web content.",
+                        comment: "General settings - Description below the edge-to-edge content toggle"
+                    )
+                ) {
+                    Toggle("", isOn: $edgeToEdgeWebContent)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .themedTint(.themeColor)
                 }
             }
         }
@@ -601,14 +634,23 @@ private struct GeneralContainerView<Content: View>: View {
 
 private struct GeneralRowView<Accessory: View>: View {
     let title: String
+    var subtitle: String? = nil
     var alignment: VerticalAlignment = .center
     @ViewBuilder var accessory: Accessory
 
     var body: some View {
         HStack(alignment: alignment, spacing: 12) {
-            Text(title)
-                .font(.system(size: 13))
-                .themedForeground(.textPrimary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 13))
+                    .themedForeground(.textPrimary)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .themedForeground(.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Spacer(minLength: 12)
             accessory
         }

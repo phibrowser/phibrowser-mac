@@ -207,6 +207,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     private var focusingTabPartnerAIChatEnabledCancellable: AnyCancellable?
     private var headerHeightConstraint: Constraint?
     private var pinnedHeightConstraint: Constraint?
+    private var headerSpacerHeightConstraint: Constraint?
     private var bottomBarHeightConstraint: Constraint?
     private var mediaPlayerHeightConstraint: Constraint?
     private var messageCardHeightConstraint: Constraint?
@@ -347,9 +348,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     private func updatePaletteBackdrop() {
         guard !isSpaceSwitchBackdropOverridden else { return }
         let context = state.themeContext
-        let colors = context.currentTheme.navigationPalette.flatMap {
-            $0.colorCount > 1 ? $0.colors(for: context.currentAppearance) : nil
-        }
+        let colors = context.currentTheme.navigationColors(for: context.currentAppearance)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
@@ -394,10 +393,16 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         // sidebar, including the window that resolves no slot to bind to.
         bindSpaceStripToSession()
 
-        // 2. Header spacer
-        mainStackView.addArrangedSubview(createSpacer(height: 5))
+        // 2. Header spacer. Opens to 3 pt only while the pinned band is empty,
+        // matching the docked sidebar (see SidebarViewController.setupStackView);
+        // the band starts empty here.
+        let headerSpacer = NSView()
+        headerSpacer.snp.makeConstraints { make in
+            headerSpacerHeightConstraint = make.height.equalTo(3).constraint
+        }
+        mainStackView.addArrangedSubview(headerSpacer)
 
-        // 3. Pinned tabs + their spacer. The pinned-tab (favorites) band is a
+        // 3. Pinned tabs. The pinned-tab (favorites) band is a
         // per-profile feature with no meaning in an incognito session; mounting
         // it here would expose the default profile's favorites as a drop target
         // whose writes land in the default Space. Skip it entirely, matching
@@ -413,12 +418,9 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
                 make.leading.trailing.equalToSuperview()
                 pinnedHeightConstraint = make.height.equalTo(Self.defaultFavoriteHeight).constraint
             }
-
-            // 4. Favorites spacer
-            mainStackView.addArrangedSubview(createSpacer(height: 3))
         }
 
-        // 5. Tab list
+        // 4. Tab list
         tabList.enableContextMenuClickRouting()
         mainStackView.addArrangedSubview(tabList.view)
         tabList.view.snp.makeConstraints { make in
@@ -427,10 +429,10 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         tabList.view.setContentHuggingPriority(.defaultLow, for: .vertical)
         tabList.view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
-        // 6. Tab list bottom spacer
+        // 5. Tab list bottom spacer
         mainStackView.addArrangedSubview(createSpacer(height: 3))
 
-        // 7. Message card container
+        // 6. Message card container
         mainStackView.addArrangedSubview(bottomContentContainerView)
         bottomContentContainerView.snp.makeConstraints { make in
             make.leading.trailing.equalToSuperview()
@@ -452,7 +454,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
 
         bindMediaPresentation()
 
-        // 8. Bottom bar
+        // 7. Bottom bar
         mainStackView.addArrangedSubview(bottomBarSwiftUI)
         bottomBarSwiftUI.snp.makeConstraints { make in
             bottomBarHeightConstraint = make.height.equalTo(SidebarBottomBarState.singleRowHeight).constraint
@@ -462,7 +464,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
             self?.updateBottomBarHeight(newHeight)
         }
 
-        // 9. Bottom spacer
+        // 8. Bottom spacer
         mainStackView.addArrangedSubview(createSpacer(height: 8))
     }
 
@@ -486,6 +488,13 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     private func setupObserversIfNeeded() {
         guard hasSetupObservers == false else { return }
         hasSetupObservers = true
+
+        // Folders toggled in the main sidebar while this list was already active.
+        state.sidebarCollapsedPublisher
+            .receive(on: DispatchQueue.main)
+            .filter { $0 }
+            .sink { [weak self] _ in self?.tabList.applyBookmarkExpandedFlags() }
+            .store(in: &cancellables)
 
         state.$layoutMode
             .receive(on: DispatchQueue.main)
@@ -862,13 +871,16 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         // Reserve the Spaces switch row's height under the exact conditions
         // the header shows the row (see
         // `SidebarHeaderView.updateSpaceSwitchVisibility`), mirroring the
-        // docked sidebar's updateHeaderHeight: reserve the row height plus
-        // the 8pt gap only while shown, and reclaim both when hidden.
+        // docked sidebar's updateHeaderHeight: reserve its band only while
+        // shown, and reclaim it when hidden.
         let spacesEnabled = PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue()
             && state.participatesInSpaces
             && (SpaceManager.shared.spaces.count > 1 || headerView.forcesSpaceSwitchVisible)
-        let base: CGFloat = showInSidebar ? 79 : 42.5
-        let spacesBandHeight = SpacesStripView.sidebarHeight + 8
+        // The floating header keeps its nav row 8pt from the top in every
+        // layout (see SidebarHeaderView.sidebarButtonTopOffset), so both
+        // bases leave 3pt under the last header row, as the docked one does.
+        let base: CGFloat = showInSidebar ? 79 : 35
+        let spacesBandHeight = SidebarHeaderView.spaceSwitchBandHeight(addressInSidebar: showInSidebar)
         let headerHeight = base + (spacesEnabled ? spacesBandHeight : 0)
         headerHeightConstraint?.update(offset: headerHeight)
     }
@@ -1053,6 +1065,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         }
 
         pinnedHeightConstraint?.update(offset: clampedHeight)
+        headerSpacerHeightConstraint?.update(offset: clampedHeight > 0 ? 0 : 3)
         view.layoutSubtreeIfNeeded()
     }
 }
@@ -1085,36 +1098,53 @@ extension FloatingSidebarViewController: SpaceSwitchBandSurface {
 
     /// Uses the band slide's clock, just as the docked host's fill does, so
     /// a cold Browser's main-thread work cannot stall the background ramp.
+    /// The backdrop takes the entering Space's whole look, gradient
+    /// included, and ramps to it from what it shows now.
     func animateSpaceSwitchBackdrop(to target: FloatingSidebarViewController,
                                     duration: TimeInterval, startTime: CFTimeInterval) {
         if let effect = (view as? BackdropContainerView)?.backdrop {
-            let from = effect.presentedFillColor
-            effect.themedBackgroundColor = nil
-            effect.backgroundColor = ThemedColor.windowOverlayBackground.resolve(in: target.view)
+            let from = effect.presentedFill
+            // Resolve the entering Space's theme rather than this panel's,
+            // which keeps ramping for its own tree; unpinned when the slide
+            // lands (`setSpaceSwitchBackdropHidden(false)`).
+            effect.subtreeThemeSource = target.view.themeStateProvider
+            effect.rebindThemeProvider()
             if let from { effect.animateFill(from: from, duration: duration, startTime: startTime) }
         } else if let layer = view.layer {
-            let paletteFrom = paletteBackdropLayer.isHidden
-                ? nil : (paletteBackdropLayer.colors as? [CGColor])?.first
-            let from = paletteFrom ?? layer.presentation()?.backgroundColor ?? layer.backgroundColor
-            let to = ThemedColor.windowOverlayBackground.resolve(in: target.view).cgColor
+            let context = target.state.themeContext
+            let toColors = context.currentTheme.navigationColors(for: context.currentAppearance)
+                ?? [ThemedColor.windowOverlayBackground.resolve(in: target.view)]
+            let to = ColoredVisualEffectView.gradientColors(toColors)
+            let fromSamples = paletteBackdropLayer.isHidden ? nil
+                : (paletteBackdropLayer.presentation()?.colors ?? paletteBackdropLayer.colors) as? [CGColor]
+            let fromFlat = layer.presentation()?.backgroundColor ?? layer.backgroundColor
+            // A flat fill starts the ramp as that color at every stop.
+            let from = fromSamples?.count == to.count ? fromSamples
+                : fromFlat.map { Array(repeating: $0, count: to.count) }
             isSpaceSwitchBackdropOverridden = true
-            paletteBackdropLayer.isHidden = true
             view.phiLayer?.backgroundColor = nil
-            layer.backgroundColor = to
-            let ramp = CABasicAnimation(keyPath: "backgroundColor")
+            layer.backgroundColor = nil
+            paletteBackdropLayer.colors = to
+            paletteBackdropColors = nil
+            paletteBackdropLayer.isHidden = false
+            guard let from else { return }
+            let ramp = CABasicAnimation(keyPath: "colors")
             ramp.fromValue = from
             ramp.toValue = to
             ramp.duration = duration
             ramp.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            ramp.beginTime = layer.convertTime(startTime, from: nil)
-            layer.add(ramp, forKey: "phi.fillRamp")
+            ramp.beginTime = paletteBackdropLayer.convertTime(startTime, from: nil)
+            paletteBackdropLayer.add(ramp, forKey: "phi.fillRamp")
         }
     }
 
     func setSpaceSwitchBackdropHidden(_ hidden: Bool) {
         if let container = view as? BackdropContainerView {
             container.paintsBackdrop = !hidden
-            if !hidden { container.backdrop?.themedBackgroundColor = .windowOverlayBackground }
+            if !hidden, let effect = container.backdrop, effect.subtreeThemeSource != nil {
+                effect.subtreeThemeSource = nil
+                effect.rebindThemeProvider()
+            }
         } else if hidden {
             // Clearing only the layer leaves its theme binding alive. The
             // next ramp tick would paint over the outgoing sliding band.
@@ -1124,6 +1154,7 @@ extension FloatingSidebarViewController: SpaceSwitchBandSurface {
             view.layer?.backgroundColor = nil
         } else {
             isSpaceSwitchBackdropOverridden = false
+            paletteBackdropLayer.removeAnimation(forKey: "phi.fillRamp")
             updatePaletteBackdrop()
         }
     }

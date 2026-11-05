@@ -99,6 +99,130 @@ enum WebContentConstant {
 }
 
 
+/// The soft shadow of an edge-to-edge page card's left edge, rounded corners
+/// included. The page column clips at that edge, so the shadow is drawn in two
+/// halves that share one caster shape: the sidebar column draws what falls on
+/// the sidebar (`.beyondTrailingEdge`), and the page draws what falls in the
+/// gaps outside its own rounded corners (`.atLeadingEdge`). A sublayer carries
+/// the shadow because AppKit resets shadow properties on a view's own
+/// backing layer.
+///
+/// The page half is masked to those corner gaps. The card is a transparent
+/// hole over the Chromium content surface, so a shadow merely stacked below
+/// it would still show through the page as a dark band along its edge.
+final class PageCardEdgeShadowView: NSView {
+    enum CardPosition {
+        /// The card begins at this view's trailing edge (the sidebar half).
+        case beyondTrailingEdge
+        /// The card fills this view (the page half).
+        case atLeadingEdge
+    }
+
+    static let shadowRadius: CGFloat = 4
+    /// A dark sidebar needs a much denser black for the band to read at all.
+    static let shadowColor: Mapper<CGColor> =
+        NSColor.black.withAlphaComponent(0.06) <> NSColor.black.withAlphaComponent(0.3)
+    /// Cast toward the sidebar, so the band hugs the card's left edge and
+    /// wraps its two left corners instead of fading out at them.
+    static let shadowOffset = CGSize(width: -2, height: 0)
+
+    let cardPosition: CardPosition
+    var cornerRadius: CGFloat = 0 {
+        didSet { if cornerRadius != oldValue { needsLayout = true } }
+    }
+    private let shadowLayer = CALayer()
+
+    init(cardPosition: CardPosition) {
+        self.cardPosition = cardPosition
+        super.init(frame: .zero)
+        wantsLayer = true
+        clipsToBounds = true
+        shadowLayer.shadowOpacity = 1
+        shadowLayer.phi(source: self).setShadowColor(Self.shadowColor)
+        shadowLayer.shadowRadius = Self.shadowRadius
+        shadowLayer.shadowOffset = Self.shadowOffset
+        if cardPosition == .atLeadingEdge {
+            let cornerGapMask = CAShapeLayer()
+            cornerGapMask.fillRule = .evenOdd
+            shadowLayer.mask = cornerGapMask
+        }
+        layer?.addSublayer(shadowLayer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        shadowLayer.frame = bounds
+        // Only the card's left edge and its two left corners matter: the
+        // caster runs far enough right that its own right end casts nothing
+        // near them, and the sidebar edge or the corner-gap mask hides the rest.
+        let cardMinX = cardPosition == .beyondTrailingEdge ? bounds.maxX : bounds.minX
+        let reach = (cornerRadius + Self.shadowRadius * 3 + abs(Self.shadowOffset.width)) * 2
+        shadowLayer.shadowPath = CGPath(
+            roundedRect: CGRect(x: cardMinX, y: bounds.minY, width: reach, height: bounds.height),
+            cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        if let cornerGapMask = shadowLayer.mask as? CAShapeLayer {
+            // Circular corners, as Chromium rounds the card's pixels (see
+            // SplitPaneHostView's gap fill).
+            let gaps = CGMutablePath()
+            gaps.addRect(bounds)
+            gaps.addRoundedRect(in: bounds, cornerWidth: cornerRadius, cornerHeight: cornerRadius)
+            cornerGapMask.frame = bounds
+            cornerGapMask.path = gaps
+        }
+        CATransaction.commit()
+    }
+}
+
+/// Page-only geometry. Sidebar chrome keeps WebContentConstant.edgesSpacing.
+struct WebContentLayout: Equatable {
+    var layoutMode: LayoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
+    var edgeToEdgeEnabled: Bool = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.loadValue()
+    var isFullScreen: Bool = false
+
+    /// Outer left, right, and bottom margins in every layout mode.
+    var edgeSpacing: CGFloat {
+        edgeToEdgeEnabled ? 0 : WebContentConstant.edgesSpacing
+    }
+
+    /// Comfortable keeps its normal tab-strip placement until fullscreen.
+    var topEdgeSpacing: CGFloat {
+        edgeToEdgeEnabled && (!layoutMode.isTraditional || isFullScreen)
+            ? 0 : WebContentConstant.edgesSpacing
+    }
+
+    var squaresCorners: Bool { edgeToEdgeEnabled && isFullScreen }
+    /// Edge-to-edge pages sit flush with the sidebar, so the page card casts a
+    /// soft shadow from its left edge (`PageCardEdgeShadowView`). Not needed
+    /// once fullscreen squares it.
+    var showsContentShadow: Bool { edgeToEdgeEnabled && !squaresCorners }
+    var containerCornerRadius: CGFloat {
+        squaresCorners ? 0 : LiquidGlassCompatible.webContentContainerCornerRadius
+    }
+    var innerCornerRadius: CGFloat {
+        squaresCorners ? 0 : LiquidGlassCompatible.webContentInnerComponentsCornerRadius
+    }
+    var titleAwareAreaHeight: CGFloat {
+        topEdgeSpacing == 0 ? 0 : WebContentConstant.titleAwareAreaHeight(for: layoutMode)
+    }
+}
+
+extension WebContentLayout {
+    init(browserState: BrowserState?) {
+        self.init(
+            edgeToEdgeEnabled: PhiPreferences.GeneralSettings.edgeToEdgeWebContent.loadValue()
+                && browserState?.isTranscriptDocked != true,
+            isFullScreen: browserState?.isInFullScreenMode ?? false
+        )
+    }
+}
+
 class WebContentViewController: NSViewController {
     private final class ProgressObserverContext {
         weak var controller: WebContentViewController?
@@ -269,6 +393,10 @@ class WebContentViewController: NSViewController {
     private var isBookmarkBarVisible = false
     private var leftContainerInsetConstraint: Constraint?
     private var splitViewLeadingConstraint: Constraint?
+    private var splitViewTrailingBottomConstraint: Constraint?
+    private var contentLayout: WebContentLayout {
+        WebContentLayout(browserState: browserState)
+    }
     private var nativeNtpController: NewTabViewController?
     private var bookmarkManagerController: BookmarkManagerViewController?
     private var groupOverviewController: GroupOverviewViewController?
@@ -349,13 +477,16 @@ class WebContentViewController: NSViewController {
     // MARK: - AI Chat Split View
     /// Split-view container that owns the rounded background and spacing.
     private lazy var splitViewContainer = NSView()
+    /// The share of the edge-to-edge shadow that falls outside the page
+    /// card's rounded left corners; the sidebar draws the rest.
+    private lazy var splitViewEdgeShadowView = PageCardEdgeShadowView(cardPosition: .atLeadingEdge)
 
     /// The visible rounded page card. What "cover the page pane" means for a
     /// full-pane overlay (the Reader panel): the controller's whole view also
     /// spans the window margins around the card, which must stay visible.
     var pageCardView: NSView { splitViewContainer }
 
-    private lazy var contentSplitViewController = NSSplitViewController()
+    private lazy var contentSplitViewController = PhiSplitViewController()
     private var webContentSplitViewItem: NSSplitViewItem!
     private var aiChatSplitViewItem: NSSplitViewItem?
     /// Embedded AI Chat controller paired one-to-one with the associated tab.
@@ -626,6 +757,13 @@ class WebContentViewController: NSViewController {
             return
         }
 
+        // The page already has the keyboard (e.g. a split pane the user just
+        // clicked), and with it Chromium's focus: nothing is left to retry.
+        if let window = view.window, pageViewHoldsKeyboard(in: webView, window: window) {
+            pendingChromeRefocusOnUrlReady = false
+            return
+        }
+
         let mfrResult = view.window?.makeFirstResponder(webView) ?? false
 
         guard let wrapper = tab.webContentWrapper,
@@ -834,9 +972,21 @@ class WebContentViewController: NSViewController {
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
         let sidebarCollapsed = browserState?.sidebarCollapsed ?? true
         let leadingInset: CGFloat = (traditionalLayout || sidebarCollapsed)
-            ? WebContentConstant.edgesSpacing
+            ? contentLayout.edgeSpacing
             : 0
         splitViewLeadingConstraint?.update(inset: leadingInset)
+        splitViewTrailingBottomConstraint?.update(inset: contentLayout.edgeSpacing)
+        splitViewContainer.layer?.cornerRadius = contentLayout.containerCornerRadius
+        leftContainerView.layer?.cornerRadius = contentLayout.innerCornerRadius
+        agentAnimationOverlay.panelCornerRadius = contentLayout.innerCornerRadius
+        currentSplitHost?.squaresCorners = contentLayout.squaresCorners
+        splitPreviewHost?.squaresCorners = contentLayout.squaresCorners
+        // Only a card that meets the sidebar casts the edge shadow, and not
+        // while an open Peek fades it into the background.
+        splitViewEdgeShadowView.isHidden = !contentLayout.showsContentShadow
+            || traditionalLayout || sidebarCollapsed
+            || browserState?.isPageDeemphasizedForPeek == true
+        splitViewEdgeShadowView.cornerRadius = contentLayout.containerCornerRadius
     }
 
     private func updateTheme() {
@@ -1273,13 +1423,17 @@ class WebContentViewController: NSViewController {
     private func setupContentSplitView() {
         // Rounded container that wraps the split view.
         view.addSubview(splitViewContainer)
+        view.addSubview(splitViewEdgeShadowView, positioned: .below, relativeTo: splitViewContainer)
+        splitViewEdgeShadowView.snp.makeConstraints { make in
+            make.edges.equalTo(splitViewContainer)
+        }
         splitViewContainer.wantsLayer = true
         splitViewContainer.layer?.cornerCurve = .continuous
         splitViewContainer.layer?.cornerRadius = LiquidGlassCompatible.webContentContainerCornerRadius
         splitViewContainer.layer?.masksToBounds = true
         splitViewContainer.snp.makeConstraints { make in
             splitViewLeadingConstraint = make.leading.equalToSuperview().constraint
-            make.trailing.bottom.equalToSuperview().inset(WebContentConstant.edgesSpacing)
+            splitViewTrailingBottomConstraint = make.trailing.bottom.equalToSuperview().inset(contentLayout.edgeSpacing).constraint
             make.top.equalToSuperview()
         }
         updateSplitViewLeadingInset()
@@ -1826,13 +1980,27 @@ class WebContentViewController: NSViewController {
         }
         removeSplitPreview(keeping: contentView)
         // Tear down any leftover split host before re-mounting single content.
+        var leavesSplitPane = false
         if let existing = currentSplitHost {
+            // This tab's page moves out of its pane first, within the window,
+            // as in `removeSplitPreview(keeping:)`. Removed with the host, it
+            // would leave the window: AppKit then drops its mark that the
+            // pointer is over the page, so mouse moves stop reaching the page
+            // until the pointer crosses its edge (never, over a page filling
+            // a fullscreen window), and the page loses the keyboard.
+            if contentView.isDescendant(of: existing) {
+                hostView.addSubview(contentView)
+                leavesSplitPane = true
+            }
             existing.removeFromSuperview()
             currentSplitHost = nil
             teardownAllSplitCrashViews()
         }
-        // Check if content view is already the primary view in hostView.
-        if hostView.subviews.contains(contentView),
+        // Check if content view is already the primary view in hostView. A
+        // page just out of its pane still needs the single-view mount (its
+        // frame, any docked DevTools).
+        if !leavesSplitPane,
+           hostView.subviews.contains(contentView),
            contentView.superview === hostView {
             contentMode = .webContent
             updateLeftContainerStyleForCurrentAIChatState()
@@ -2135,6 +2303,7 @@ class WebContentViewController: NSViewController {
             host = newHost
         }
 
+        host.squaresCorners = contentLayout.squaresCorners
         mountedSplitPartner = partner
 
         // installSplitContent only runs on the focused VC's mount path, so
@@ -2185,6 +2354,7 @@ class WebContentViewController: NSViewController {
             host.snp.makeConstraints { $0.edges.equalToSuperview() }
             splitPreviewHost = host
         }
+        host.squaresCorners = contentLayout.squaresCorners
         host.update(primary: ownNativeView, secondary: splitPreviewPane)
         host.focusedPane = .secondary
     }
@@ -2312,12 +2482,22 @@ class WebContentViewController: NSViewController {
     }
 
     private func addWebContentView(_ contentView: NSView, tabId: Int) {
-        hostView.subviews.forEach { $0.removeFromSuperview() }
+        // A page already in hostView stays: taken out to be added back, it
+        // would leave the window (see `showWebContent`).
+        for subview in hostView.subviews where subview !== contentView {
+            subview.removeFromSuperview()
+        }
         currentSplitHost = nil
+        // A page kept in hostView may still carry the fill constraints
+        // `detachDevTools` puts on it; it sheds them for the manual frame
+        // below, or the two fight.
+        contentView.snp.removeConstraints()
         contentView.translatesAutoresizingMaskIntoConstraints = true
         contentView.autoresizingMask = []
         contentView.frame = hostView.contentFrame
-        hostView.addSubview(contentView)
+        if contentView.superview !== hostView {
+            hostView.addSubview(contentView)
+        }
 
         if let tab = associatedTab, tab.devToolsAttached {
             // Tab has DevTools: restore DevTools view hierarchy and manual frame layout.
@@ -2492,7 +2672,11 @@ class WebContentViewController: NSViewController {
             // up here, as before.
             contentSurfaceLender = parent as? WebContentContainerViewController
             contentSurfaceLender?.lendContentSurface(to: overlay)
-            hostView.removeFromSuperview()
+            // Moved within the window, not removed first: a web view that
+            // leaves the window loses AppKit's mark that the pointer is over
+            // it, which only the pointer crossing its edge sets again. In a
+            // window already fullscreen the page fills the screen, so that
+            // never happens and AppKit drops every mouse move to the page.
             overlay.addSubview(hostView, positioned: .above, relativeTo: nil)
             hostView.snp.remakeConstraints { make in
                 make.edges.equalToSuperview()
@@ -2500,11 +2684,11 @@ class WebContentViewController: NSViewController {
             // The floating sidebar is the overlay's sibling and draws over
             // the page; it has to take the clicks it draws over.
             contentSurfaceLender?.floatingSidebarHost.bringToFront(over: overlay)
-            // Re-parent transiently detaches webContentView from the window,
-            // which causes NSWindow to clear first responder. Without this,
-            // keyboard events (including ESC to exit fullscreen) never reach
-            // Chromium and the "Press Esc to exit full screen" toast is
-            // inert until the user clicks into the video area.
+            // The page may have entered fullscreen without the keyboard.
+            // Without this, keyboard events (including ESC to exit
+            // fullscreen) never reach Chromium and the "Press Esc to exit
+            // full screen" toast is inert until the user clicks into the
+            // video area.
             restoreWebContentFirstResponder()
         } else {
             guard let original = savedHostViewSuperview else { return }
@@ -2513,7 +2697,7 @@ class WebContentViewController: NSViewController {
             // page-area backdrop.
             contentSurfaceLender?.reclaimContentSurface()
             contentSurfaceLender = nil
-            hostView.removeFromSuperview()
+            // Within the window, as on entry.
             original.addSubview(hostView)
             hostView.snp.remakeConstraints { make in
                 make.leading.trailing.bottom.equalToSuperview()
@@ -2544,8 +2728,7 @@ class WebContentViewController: NSViewController {
                browserState?.splitGroup(forTabId: tab.guid) != nil {
                 updateContentForTab(tab)
             }
-            // Same first-responder recovery as on entry (removeFromSuperview
-            // resets responder chain in both directions).
+            // As on entry, give the keyboard to the page.
             restoreWebContentFirstResponder()
         }
     }
@@ -2555,6 +2738,9 @@ class WebContentViewController: NSViewController {
         guard let tab = associatedTab,
               let webView = tab.webContentView,
               let window = hostView.window else { return }
+        // A page clicked into fullscreen, or leaving it with Esc, already
+        // has the keyboard.
+        if pageViewHoldsKeyboard(in: webView, window: window) { return }
         window.makeFirstResponder(webView)
         // makeFirstResponder puts Cocoa's responder chain at webView, but
         // Chromium's internal focus tracker also needs an explicit nudge to
@@ -2562,13 +2748,25 @@ class WebContentViewController: NSViewController {
         // "Press Esc to exit full screen" toast doesn't reach the fullscreen
         // handler until the user clicks inside the video area. Use
         // restoreFocus() (not focus()) so the page's previously focused
-        // element survives the fullscreen detach/reattach: on macOS,
+        // element survives the fullscreen move: on macOS,
         // WebContentsViewMac::Focus() clears the stored focus target.
         guard let wrapper = tab.webContentWrapper,
               wrapper.responds(to: #selector(WebContentWrapper.restoreFocus)) else {
             return
         }
         wrapper.restoreFocus()
+    }
+
+    /// Whether the page already has the keyboard: a view inside `webView`
+    /// (Chromium's widget view), not `webView` itself, is first responder of
+    /// a key window. Making `webView` first responder then would take the
+    /// keyboard from the page and give it back through Chromium, and the page
+    /// would get a blur and a focus in the same task.
+    private func pageViewHoldsKeyboard(in webView: NSView, window: NSWindow) -> Bool {
+        guard window.isKeyWindow,
+              let responder = window.firstResponder as? NSView,
+              responder !== webView else { return false }
+        return responder.isDescendant(of: webView)
     }
 
     // MARK: - DevTools Embedding
@@ -2936,9 +3134,12 @@ class WebContentViewController: NSViewController {
         detachBookmarkBarIfAttached()
         attachedBookmarkBar = bookmarkBar
         // The bar belongs to the page area, so Chat visibility does not suppress its color.
+        // The shared bar moves here on a tab switch, so it takes this header's color instantly.
+        bookmarkBar.setPageColorPresentation(headerView.pageColorPresentation, animated: false)
         bookmarkBarPageColorCancellable = headerView.pageColorPresentationPublisher
+            .dropFirst()
             .sink { [weak bookmarkBar] presentation in
-                bookmarkBar?.setPageColorPresentation(presentation)
+                bookmarkBar?.setPageColorPresentation(presentation, animated: presentation.animatesChange)
             }
 
         installAttachedBookmarkBarIfNeeded()
@@ -3448,6 +3649,26 @@ class WebContentViewController: NSViewController {
 
     /// Observe configuration changes
     private func setupConfigObserver() {
+        browserState?.$isTranscriptDocked
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateHeaderVisibility() }
+            .store(in: &cancellables)
+
+        browserState?.$isInFullScreenMode
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateHeaderVisibility() }
+            .store(in: &cancellables)
+
+        browserState?.$isPageDeemphasizedForPeek
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateSplitViewLeadingInset() }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in

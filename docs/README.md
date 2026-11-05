@@ -36,6 +36,7 @@ contracts, failure modes and verification entry points. Start with the repositor
 - [Profile-scoped connectors](profile-scoped-connectors.md)
 - [Service broker extension boundary](service-broker-extension-boundary.md)
 - [Agent app info](agent-app-info.md): which Phi build an agent is talking to
+- [Companion apps](companion-apps.md): first-party companion admission, page actions and the Folio fallback
 - [Notification cards](notification-cards.md): action and working cards, and revoking them
 - [Sidecar scene restoration](sidecar-travel-back.md)
 - [Sentinel lifecycle](sentinel-lifecycle.md) and [Phi Chat hotkey](sentinel-phi-chat-hotkey.md)

@@ -35,7 +35,36 @@ protocol SidebarItem: AnyObject {
     var isBookmark: Bool { get }
 }
 
+/// Presentation-only root: bookmark ownership and persisted parent GUIDs stay unchanged.
+final class SpaceRootSidebarItem: SidebarItem {
+    weak var browserState: BrowserState?
+    var childrenItems: [SidebarItem] = []
+
+    init(browserState: BrowserState) { self.browserState = browserState }
+
+    var id: AnyHashable { "space-bookmarks:\(browserState?.spaceId ?? "")" }
+    var title: String {
+        SpaceManager.shared.spaces.first { $0.spaceId == browserState?.spaceId }?.name
+            ?? browserState?.bookmarkManager.rootFolder.title ?? ""
+    }
+    var url: String? { nil }
+    var iconName: String? { "chevron.right" }
+    var faviconUrl: String? { nil }
+    var isExpandable: Bool { true }
+    var hasChildren: Bool { !childrenItems.isEmpty }
+    var depth: Int { 0 }
+    var itemType: SidebarItemType { .spaceRoot }
+    var isActive: Bool { false }
+    var isSelectable: Bool { false }
+    var isBookmark: Bool { false }
+
+    func performAction(with owner: SidebarTabListItemOwner?) {
+        owner?.toggleItemExpanded(self)
+    }
+}
+
 enum SidebarItemType {
+    case spaceRoot
     case tab
     case bookmark
     case bookmarkFolder

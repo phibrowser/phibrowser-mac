@@ -3048,7 +3048,8 @@ final class PhiBrowserTests: XCTestCase {
             try XCTUnwrap(NSEvent.keyEvent(
                 with: .keyDown, location: .zero, modifierFlags: modifiers,
                 timestamp: 0, windowNumber: window.windowNumber, context: nil,
-                characters: "", charactersIgnoringModifiers: "",
+                characters: code == 48 ? (modifiers.contains(.shift) ? "\u{19}" : "\t") : (code == 49 ? " " : ""),
+                charactersIgnoringModifiers: code == 48 ? (modifiers.contains(.shift) ? "\u{19}" : "\t") : (code == 49 ? " " : ""),
                 isARepeat: false, keyCode: code
             ))
         }
@@ -3057,24 +3058,90 @@ final class PhiBrowserTests: XCTestCase {
         ]
         for controller in controllers {
             window.contentViewController = controller
+            controller.view.layoutSubtreeIfNeeded()
+            controller.viewDidAppear()
             let stack = try XCTUnwrap(optionStack(in: controller.view))
             let rows = stack.arrangedSubviews
             func assertSelection(_ index: Int, line: UInt = #line) {
                 for (rowIndex, row) in rows.enumerated() {
                     XCTAssertEqual(
-                        row.layer?.backgroundColor,
-                        (rowIndex == index ? NSColor.white.withAlphaComponent(0.1) : NSColor.clear).cgColor,
+                        row.accessibilityValue() as? Int, rowIndex == index ? 1 : 0,
                         line: line
                     )
                 }
             }
+            func assertFocus(in control: NSView, line: UInt = #line) {
+                let focused = window.firstResponder as? NSView
+                XCTAssertTrue(focused === control || focused?.isDescendant(of: control) == true,
+                              "Expected focus in \(control), got \(String(describing: focused))", line: line)
+            }
             assertSelection(0)
+            // Tab is not an option-selection shortcut in either mode.
+            XCTAssertFalse(controller.view.performKeyEquivalent(with: try event(48)))
+
+            // Footer buttons only join the key-view loop with Keyboard navigation
+            // on, so the focus walk below depends on the system setting.
+            guard NSApp.isFullKeyboardAccessEnabled else {
+                XCTAssertFalse(window.firstResponder is OnboardingOptionView)
+                XCTAssertFalse(rows.contains { $0.canBecomeKeyView })
+                window.selectNextKeyView(nil)
+                XCTAssertFalse(window.firstResponder is OnboardingOptionView)
+
+                // Without option focus, arrows move from the selected option.
+                XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(125)))
+                assertSelection(1)
+                XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(126)))
+                assertSelection(0)
+                XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(126)))
+                assertSelection(rows.count - 1)
+                XCTAssertFalse(window.firstResponder is OnboardingOptionView)
+
+                // Clicking selects without taking focus.
+                rows[0].perform(NSSelectorFromString("handleTap"))
+                assertSelection(0)
+                XCTAssertFalse(window.firstResponder is OnboardingOptionView)
+                continue
+            }
+
+            XCTAssertTrue(window.initialFirstResponder === rows[0])
+            assertFocus(in: rows[0])
+            // Its normal responder action moves focus through all options and
+            // the two footer buttons.
+            rows[0].keyDown(with: try event(48))
+            assertFocus(in: rows[1])
+            assertSelection(0)
+            for row in rows.dropFirst(2) {
+                window.selectNextKeyView(nil)
+                assertFocus(in: row)
+            }
+            window.selectNextKeyView(nil)
+            assertFocus(in: controller.nextButton)
+            window.selectNextKeyView(nil)
+            assertFocus(in: controller.leftButton)
+            window.selectNextKeyView(nil)
+            assertFocus(in: rows[0])
+            assertSelection(0)
+
+            XCTAssertFalse(controller.view.performKeyEquivalent(with: try event(48, modifiers: .shift)))
+            rows[0].keyDown(with: try event(48, modifiers: .shift))
+            assertFocus(in: controller.leftButton)
+            // With a footer button focused, arrows move from the selected option
+            // and leave focus where it is.
             XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(125)))
             assertSelection(1)
-            XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(48)))
-            assertSelection(2 % rows.count)
-            XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(48, modifiers: .shift)))
+            assertFocus(in: controller.leftButton)
+            XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(126)))
+            assertSelection(0)
+            window.selectPreviousKeyView(nil)
+            assertFocus(in: controller.nextButton)
+            for row in rows.reversed() {
+                window.selectPreviousKeyView(nil)
+                assertFocus(in: row)
+            }
+
+            XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(125)))
             assertSelection(1)
+            assertFocus(in: rows[1])
             XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(126)))
             assertSelection(0)
             XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(126)))
@@ -3082,24 +3149,76 @@ final class PhiBrowserTests: XCTestCase {
             XCTAssertTrue(controller.view.performKeyEquivalent(with: try event(125)))
             assertSelection(0)
 
-            let excludedModifiers: [NSEvent.ModifierFlags] = [.command, .control, .option]
+            // Focusing with Tab and activating with Space are separate operations.
+            window.makeFirstResponder(rows[1])
+            assertSelection(0)
+            rows[1].keyDown(with: try event(49))
+            assertSelection(1)
+            controller.viewDidAppear()
+            assertFocus(in: rows[0])
+            assertSelection(1)
+
+            let excludedModifiers: [NSEvent.ModifierFlags] = [.command, .control, .option, .shift]
             for modifiers in excludedModifiers {
-                _ = controller.view.performKeyEquivalent(with: try event(48, modifiers: modifiers))
                 _ = controller.view.performKeyEquivalent(with: try event(125, modifiers: modifiers))
-                assertSelection(0)
+                assertSelection(1)
             }
             window.hasSheet = true
             _ = controller.view.performKeyEquivalent(with: try event(125))
-            assertSelection(0)
+            assertSelection(1)
             window.hasSheet = false
             window.acceptsShortcuts = false
             _ = controller.view.performKeyEquivalent(with: try event(125))
-            assertSelection(0)
+            assertSelection(1)
             window.acceptsShortcuts = true
             stack.isHidden = true
             _ = controller.view.performKeyEquivalent(with: try event(125))
-            assertSelection(0)
+            assertSelection(1)
         }
+    }
+
+    @MainActor
+    func testOnboardingWelcomeFocusStartsOnRandomizeAndCyclesThroughNextThenBack() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 800),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        let controller = OnboardingWelcomeViewController()
+        window.contentViewController = controller
+        controller.view.layoutSubtreeIfNeeded()
+        controller.viewDidAppear()
+        let randomButton = try XCTUnwrap(controller.view.subviews.compactMap { $0 as? NSButton }
+            .first { $0.action == NSSelectorFromString("randomizeCard") })
+        func assertFocus(in control: NSView, line: UInt = #line) {
+            let focused = window.firstResponder as? NSView
+            XCTAssertTrue(focused === control || focused?.isDescendant(of: control) == true,
+                          "Expected focus in \(control), got \(String(describing: focused))", line: line)
+        }
+        // Without Keyboard navigation nothing takes focus, and Tab never lands
+        // on the card, which only takes focus when clicked.
+        guard NSApp.isFullKeyboardAccessEnabled else {
+            XCTAssertNil(window.initialFirstResponder)
+            XCTAssertFalse(window.firstResponder === randomButton)
+            window.selectNextKeyView(nil)
+            XCTAssertFalse(window.firstResponder is HolographicCardView)
+            return
+        }
+        XCTAssertTrue(window.initialFirstResponder === randomButton)
+        assertFocus(in: randomButton)
+        for control in [controller.nextButton, controller.leftButton, randomButton] as [NSView] {
+            window.selectNextKeyView(nil)
+            assertFocus(in: control)
+        }
+        for control in [controller.leftButton, controller.nextButton, randomButton] as [NSView] {
+            window.selectPreviousKeyView(nil)
+            assertFocus(in: control)
+        }
+        window.selectNextKeyView(nil)
+        assertFocus(in: controller.nextButton)
+        controller.viewDidAppear()
+        assertFocus(in: randomButton)
+        window.selectNextKeyView(nil)
+        assertFocus(in: controller.nextButton)
     }
 
     @MainActor
@@ -3256,7 +3375,7 @@ final class PhiBrowserTests: XCTestCase {
             preferredLayoutWidth: 200
         )
 
-        XCTAssertTrue(textView.isSelectable)
+        XCTAssertFalse(textView.isSelectable)
         XCTAssertNil(textView.linkTextAttributes?[.foregroundColor])
         let textStorage = try XCTUnwrap(textView.textStorage)
         XCTAssertNotNil(textStorage.attribute(.foregroundColor, at: 0, effectiveRange: nil))

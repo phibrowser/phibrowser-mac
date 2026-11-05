@@ -36,6 +36,10 @@ class PinnedTabLayout: NSCollectionViewLayout {
         static let extensionMinimumWidth: CGFloat = 26
     }
 
+    /// Gaps before the first row and after the last row of the grid.
+    let topInset: CGFloat
+    let bottomInset: CGFloat
+
     private var pendingConfiguredWidth: CGFloat?
     private var lastPreparedInput: LayoutInput?
     private var cachedAttributes: [IndexPath: NSCollectionViewLayoutAttributes] = [:]
@@ -44,6 +48,20 @@ class PinnedTabLayout: NSCollectionViewLayout {
 
     private var tabMetrics: SectionMetrics = .empty
     private var extensionMetrics: SectionMetrics = .empty
+
+    init(topInset: CGFloat, bottomInset: CGFloat) {
+        self.topInset = topInset
+        self.bottomInset = bottomInset
+        super.init()
+    }
+
+    override convenience init() {
+        self.init(topInset: Constants.insets.top, bottomInset: Constants.insets.bottom)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     var numberOfRows: Int {
         tabMetrics.numberOfRows
@@ -131,20 +149,26 @@ private extension PinnedTabLayout {
         extensionMetrics = metrics(for: input.extensionCount, itemHeight: Constants.extensionHeight, minimumWidth: Constants.extensionMinimumWidth, contentWidth: input.contentWidth, columnLimit: extensionMaxColumns)
         tabMetrics = metrics(for: input.tabCount, itemHeight: Constants.tabHeight, minimumWidth: Constants.tabMinimumWidth, contentWidth: input.contentWidth, columnLimit: tabMaxColumns)
 
+        let hasExtensions = extensionMetrics.numberOfItems > 0
+        let hasTabs = tabMetrics.numberOfItems > 0
         var yOffset: CGFloat = 0
-        if extensionMetrics.numberOfItems > 0 {
-            // No top inset: the shelf only shows with the address bar in the
-            // sidebar, where the header's bottom padding and the 5 pt spacer
-            // above this band already put it `spacing` below the bar.
-            layout(section: .extensions, metrics: extensionMetrics, yOffset: &yOffset)
-            yOffset += Constants.spacing
-        } else if tabMetrics.numberOfItems > 0 {
-            yOffset = Constants.insets.top
+        if hasExtensions || hasTabs {
+            yOffset = topInset
         }
 
-        if tabMetrics.numberOfItems > 0 {
+        if hasExtensions {
+            layout(section: .extensions, metrics: extensionMetrics, yOffset: &yOffset)
+        }
+
+        if hasTabs {
+            if hasExtensions {
+                yOffset += Constants.spacing
+            }
             layout(section: .tabs, metrics: tabMetrics, yOffset: &yOffset)
-            yOffset += Constants.insets.bottom
+        }
+
+        if hasExtensions || hasTabs {
+            yOffset += bottomInset
         }
 
         contentSize = NSSize(width: input.contentWidth, height: yOffset)

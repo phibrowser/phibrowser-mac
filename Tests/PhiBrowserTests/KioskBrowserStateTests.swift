@@ -459,6 +459,41 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertEqual(edgeFrame, NSRect(x: 0, y: 400, width: 800, height: 600))
     }
 
+    func testKioskFrameMovesOnlyWhenOffTargetScreen() {
+        let screenFrame = NSRect(x: 1_440, y: 0, width: 1_920, height: 1_080)
+        let visibleFrame = NSRect(x: 1_440, y: 0, width: 1_920, height: 1_055)
+
+        let onScreenFrame = NSRect(x: 1_600, y: 100, width: 900, height: 640)
+        XCTAssertEqual(
+            KioskWindowPresentationGeometry.frame(
+                onScreenFrame,
+                placedOnScreenFrame: screenFrame,
+                visibleFrame: visibleFrame
+            ),
+            onScreenFrame
+        )
+
+        let offScreenFrame = NSRect(x: 100, y: 100, width: 900, height: 640)
+        XCTAssertEqual(
+            KioskWindowPresentationGeometry.frame(
+                offScreenFrame,
+                placedOnScreenFrame: screenFrame,
+                visibleFrame: visibleFrame
+            ),
+            NSRect(x: 1_950, y: 207.5, width: 900, height: 640)
+        )
+
+        let oversizedFrame = NSRect(x: 0, y: 0, width: 2_400, height: 1_400)
+        XCTAssertEqual(
+            KioskWindowPresentationGeometry.frame(
+                oversizedFrame,
+                placedOnScreenFrame: screenFrame,
+                visibleFrame: visibleFrame
+            ),
+            visibleFrame
+        )
+    }
+
     func testKioskCursorPresentationStartsAtCursor() {
         let anchor = NSPoint(x: -300, y: 740)
         let initialFrame = KioskWindowPresentationGeometry.initialFrame(

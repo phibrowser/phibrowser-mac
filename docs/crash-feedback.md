@@ -28,7 +28,11 @@ snapshot file so log rotation and upload retries do not change those bytes.
 Crash feedback sets `client_context.category` to `previous_session_crash`;
 ordinary feedback keeps `issue-report`. Crash feedback adds `sentry_event_id`
 and, when available, `crash_timestamp` to the existing metadata `extra`
-dictionary. `client_context.trace_id` remains the feedback job ID. The
+dictionary. Every feedback report also adds the sync status keys
+`sync_phase` and, when sync problems are tracked, `sync_attention_problems`,
+`sync_attention_oldest_age_seconds` and `sync_attention_entered_count`
+(enum raw values and counts; see [sync.md](sync.md), "Sync status contract"),
+captured when the form is sent. `client_context.trace_id` remains the feedback job ID. The
 retained-log snapshot is capped at 1 MiB and included in `logs.zip` as
 `PreviousSessionCrash/logs.txt`. Chromium system logs are collected at submission
 time from the current session and included as `system_logs.txt`.

@@ -12,8 +12,11 @@ import Foundation
 /// feature is behind Settings ▸ Developer ▸ Agent control ("let agents operate
 /// your Spaces"). That gate, not a shadow-specific one, is deliberate: an
 /// agent Space announces itself with a pip the user can watch and take over,
-/// a shadow window announces nothing. A user who has not granted agents reach
-/// beyond their own visible Spaces must not get invisible ones.
+/// a shadow window announces nothing. The permission is on by default, so
+/// agents can open shadow windows unless the user turns it off; a user who has
+/// denied agents reach beyond their own visible Spaces must not get invisible
+/// ones. The setting's description is where the app tells users these windows
+/// exist, so keep it in step with this surface.
 ///
 /// Conventions match the rest of the router: messages arrive on the main
 /// thread (main-actor state via `MainActor.assumeIsolated`), replies are JSON

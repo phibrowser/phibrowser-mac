@@ -13,6 +13,12 @@ struct AdvancedSettingsView: View {
     @AppStorage(PhiPreferences.GeneralSettings.showTabPreviews.rawValue)
     private var showTabPreviews: Bool = PhiPreferences.GeneralSettings.showTabPreviews.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.doubleClickToCloseTabs.rawValue)
+    private var doubleClickToCloseTabs = PhiPreferences.GeneralSettings.doubleClickToCloseTabs.defaultValue
+
+    @AppStorage(PhiPreferences.GeneralSettings.directionalTabClosingEnabled.rawValue)
+    private var directionalTabClosingEnabled = PhiPreferences.GeneralSettings.directionalTabClosingEnabled.defaultValue
+
     @AppStorage(PhiPreferences.GeneralSettings.showOpenTabIndicators.rawValue)
     private var showOpenTabIndicators = PhiPreferences.GeneralSettings.showOpenTabIndicators.defaultValue
 
@@ -79,6 +85,7 @@ struct AdvancedSettingsView: View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 24) {
                 pageCard
+                tabActionsCard
                 browsingCard
                 mediaCard
                 DeveloperModeSectionView()
@@ -90,6 +97,56 @@ struct AdvancedSettingsView: View {
         }
         .themedBackground(PhiPreferences.fixedWindowBackground)
         .frame(width: 680, height: 561)
+    }
+
+    private var tabActionsCard: some View {
+        SettingsDetailCard {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(NSLocalizedString("settings.advanced.tabs.doubleClickToCloseToggle", value: "Double-click to close tabs", comment: "Advanced settings - Toggle for closing ordinary tabs by double-clicking; pinned tabs and bookmarks keep their existing double-click actions"))
+                        .font(.system(size: 13))
+                        .themedForeground(.textPrimary)
+                    Text(NSLocalizedString("settings.advanced.tabs.doubleClickToCloseDescription", value: "Double-click a tab to close it. In split view, only the clicked pane closes. Pinned tabs and bookmarks keep their existing double-click actions.", comment: "Advanced settings - Explains individual pane closing and the preserved double-click actions on pinned tabs and bookmarks"))
+                        .font(.system(size: 11))
+                        .themedForeground(.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                Toggle("", isOn: $doubleClickToCloseTabs)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .themedTint(.themeColor)
+                    .accessibilityLabel(NSLocalizedString("settings.advanced.tabs.doubleClickToCloseToggle", value: "Double-click to close tabs", comment: "Advanced settings - Toggle for closing ordinary tabs by double-clicking; pinned tabs and bookmarks keep their existing double-click actions"))
+                    .accessibilityIdentifier("settings.tabs.doubleClickToClose")
+            }
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Divider()
+
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(NSLocalizedString("settings.advanced.tabs.directionalClosingToggle", value: "Close tabs by position", comment: "Advanced settings - Toggle for enabling the options to close tabs before or after a tab or tab group"))
+                        .font(.system(size: 13))
+                        .themedForeground(.textPrimary)
+                    Text(NSLocalizedString("settings.advanced.tabs.directionalClosingDescription", value: "Add options to tab and tab group menus to close tabs to the left or right, or above or below in a vertical tab bar.", comment: "Advanced settings - Explains where positional close options appear and how directions follow the tab bar layout"))
+                        .font(.system(size: 11))
+                        .themedForeground(.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                Toggle("", isOn: $directionalTabClosingEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .themedTint(.themeColor)
+                    .accessibilityLabel(NSLocalizedString("settings.advanced.tabs.directionalClosingToggle", value: "Close tabs by position", comment: "Advanced settings - Toggle for enabling the options to close tabs before or after a tab or tab group"))
+                    .accessibilityIdentifier("settings.tabs.directionalClosing")
+            }
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var pageCard: some View {

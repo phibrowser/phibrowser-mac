@@ -301,6 +301,25 @@ final class KioskBrowserContentViewController: NSViewController {
         } else {
             tab.webContentWrapper?.restoreFocus()
         }
+        focusRenderWidgetIfFocusStalled(in: window, webContentView: focusedView)
+    }
+
+    /// Workaround: in a Kiosk opened from a link (Cmd+Option+click or the
+    /// context menu), Chromium's focus calls leave the first responder on
+    /// the WebContents container, so keys never reach the page. Hand it to
+    /// the render widget view directly. Relies on Chromium's internal
+    /// `RenderWidgetHostViewCocoa` class name; drop this once Chromium
+    /// focuses the page itself.
+    private func focusRenderWidgetIfFocusStalled(
+        in window: NSWindow,
+        webContentView: NSView
+    ) {
+        guard window.firstResponder === webContentView,
+              let renderWidgetViewClass = NSClassFromString("RenderWidgetHostViewCocoa"),
+              let renderWidgetView = webContentView.subviews.first(where: {
+                  $0.isKind(of: renderWidgetViewClass)
+              }) else { return }
+        window.makeFirstResponder(renderWidgetView)
     }
 
     private func remakeContentLayout() {

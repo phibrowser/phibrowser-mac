@@ -24,15 +24,26 @@ struct ExtensionMessageContext {
     /// every other approved agent session. Nil for extensions and the legacy
     /// Chromium message tunnel, which therefore cannot own CDP tasks.
     let driverPrincipalId: String?
+    /// The `/phi-agent` channel a direct request arrived on
+    /// (`AgentDirectConnection.id`), for state that belongs to that channel
+    /// and ends with it (page actions). Nil for every other sender.
+    let directChannelId: String?
+    /// True when that channel belongs to a verified first-party companion app
+    /// (`AgentPeerIdentity.firstPartyCompanion`). Only its allowlisted types
+    /// get this far, and those are exempt from the Agent permissions switch.
+    let isCompanion: Bool
 
     init(type: String, payload: String, requestId: String,
-         senderId: String, agentName: String = "", driverPrincipalId: String? = nil) {
+         senderId: String, agentName: String = "", driverPrincipalId: String? = nil,
+         directChannelId: String? = nil, isCompanion: Bool = false) {
         self.type = type
         self.payload = payload
         self.requestId = requestId
         self.senderId = senderId
         self.agentName = agentName
         self.driverPrincipalId = driverPrincipalId
+        self.directChannelId = directChannelId
+        self.isCompanion = isCompanion
     }
 }
 
@@ -49,11 +60,13 @@ final class ExtensionMessageRouter {
     /// settings "Agent permissions" toggle gates them as one unit. Tab-layout
     /// types register plainly: only their spaceId path is user-space, gated
     /// inside `AgentSpaceRouter.withLayoutWindow` so the agent-window path
-    /// keeps working with the toggle off.
+    /// keeps working with the toggle off. A first-party companion app is not
+    /// agent tooling, so the toggle does not gate it (`isCompanion`).
     private func registerUserSpaceManaged(type: String,
                                           handler: @escaping ExtensionMessageHandler) {
         register(type: type) { context in
-            if let denied = AgentSpaceRouter.userSpaceOperationsRefusal() {
+            if let denied = AgentSpaceRouter.userSpaceOperationsRefusal(
+                    exemptingCompanion: context.isCompanion) {
                 return denied
             }
             if !Self.untrackedUserSpaceCommands.contains(context.type) {
@@ -91,11 +104,13 @@ final class ExtensionMessageRouter {
     }
 
     func handle(type: String, payload: String, requestId: String, senderId: String = "",
-                agentName: String = "", driverPrincipalId: String? = nil) -> String? {
+                agentName: String = "", driverPrincipalId: String? = nil,
+                directChannelId: String? = nil, isCompanion: Bool = false) -> String? {
         configureIfNeeded()
         let context = ExtensionMessageContext(
             type: type, payload: payload, requestId: requestId, senderId: senderId,
-            agentName: agentName, driverPrincipalId: driverPrincipalId)
+            agentName: agentName, driverPrincipalId: driverPrincipalId,
+            directChannelId: directChannelId, isCompanion: isCompanion)
         if let handler = handlers[type] {
             return handler(context)
         }
@@ -122,6 +137,12 @@ final class ExtensionMessageRouter {
 
         register(type: "notification.show") { context in
             NotificationCardManager.shared.handleAgentRequest(context: context)
+        }
+
+        // Page actions (PageActionRegistry): menu rows a direct channel asks
+        // Phi to show while it is open; invocations go back to that channel.
+        register(type: "pageActions.register") { context in
+            PageActionRegistry.shared.handleRegister(context)
         }
 
         register(type: "imagePreview") { context in
@@ -618,6 +639,8 @@ final class ExtensionMessageRouter {
         return handle(type: chunk.type, payload: payload,
                       requestId: context.requestId, senderId: context.senderId,
                       agentName: context.agentName,
-                      driverPrincipalId: context.driverPrincipalId)
+                      driverPrincipalId: context.driverPrincipalId,
+                      directChannelId: context.directChannelId,
+                      isCompanion: context.isCompanion)
     }
 }

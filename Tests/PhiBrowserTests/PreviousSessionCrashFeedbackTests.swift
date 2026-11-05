@@ -69,6 +69,26 @@ final class PreviousSessionCrashFeedbackTests: XCTestCase {
         XCTAssertNil(regularMetadata.extra["sentry_event_id"])
     }
 
+    func testSyncStatusMetadataJoinsExtra() {
+        var draft = FeedbackDraft(
+            description: "Pinned tabs missing", pageURL: "", pageTitle: nil,
+            contactEmail: nil, components: [], chromiumSystemLogsText: nil, attachments: []
+        )
+        XCTAssertNil(FeedbackOutbox.makeMetadata(jobID: "job", draft: draft).extra["sync_phase"])
+        draft.syncStatusMetadata = [
+            "sync_phase": "needsAttention",
+            "sync_attention_problems": "phi:pinnedTabs:heldUnmappedProfileOwner=6",
+            "sync_attention_oldest_age_seconds": "120",
+            "sync_attention_entered_count": "1",
+        ]
+        let extra = FeedbackOutbox.makeMetadata(jobID: "job", draft: draft).extra
+        XCTAssertEqual(extra["sync_phase"], "needsAttention")
+        XCTAssertEqual(extra["sync_attention_problems"], "phi:pinnedTabs:heldUnmappedProfileOwner=6")
+        XCTAssertEqual(extra["sync_attention_oldest_age_seconds"], "120")
+        XCTAssertEqual(extra["sync_attention_entered_count"], "1")
+        XCTAssertNotNil(extra["build_number"], "The fixed keys stay")
+    }
+
     @MainActor
     func testCrashDraftClearsRestoredPageAndDismissalReleasesContext() {
         let model = FeedbackViewModel()

@@ -197,7 +197,9 @@ final class ContentSurfaceBackdropTests: XCTestCase {
     private func waitUntilMounted(_ webView: NSView,
                                   file: StaticString = #filePath,
                                   line: UInt = #line) throws {
-        let deadline = Date().addingTimeInterval(2)
+        // This suite can run first, while Chromium startup is still occupying
+        // the main run loop. Wait for the mount without forcing its ordering.
+        let deadline = Date().addingTimeInterval(10)
         while webView.window == nil, Date() < deadline {
             RunLoop.main.run(until: Date().addingTimeInterval(0.01))
         }

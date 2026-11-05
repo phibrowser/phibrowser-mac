@@ -30,7 +30,7 @@ final class ShellSplitViewController: NSViewController {
     static let contentHoldingPriority = NSLayoutConstraint.Priority(240)
     private static let splitViewAutosaveName = "phiMainBrowserSplitView"
 
-    private let splitViewController = NSSplitViewController()
+    private let splitViewController = PhiSplitViewController()
     let sidebarHost = ShellSidebarHostViewController()
     let contentHost = ShellContentHostViewController()
     let floatingSidebarHost = FloatingSidebarHostViewController()

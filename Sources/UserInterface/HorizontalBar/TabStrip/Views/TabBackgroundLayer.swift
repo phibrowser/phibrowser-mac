@@ -55,12 +55,13 @@ final class TabBackgroundLayer: CAShapeLayer {
     /// Resolved by the visible address bar and mirrored into the active tab.
     /// The active path contains both the tab body and its inverse corners, so
     /// one fill color keeps the entire connected surface identical.
-    var activeFillColor: NSColor? {
-        didSet {
-            if oldValue != activeFillColor {
-                updateAppearance()
-            }
-        }
+    private(set) var activeFillColor: NSColor?
+
+    /// `animated` crossfades along with the header the color is mirrored from.
+    func setActiveFillColor(_ color: NSColor?, animated: Bool) {
+        guard activeFillColor != color else { return }
+        activeFillColor = color
+        updateAppearance(animatesFill: animated)
     }
 
     override init() {
@@ -114,10 +115,19 @@ final class TabBackgroundLayer: CAShapeLayer {
         updateAppearance()
     }
 
-    private func updateAppearance() {
+    private func updateAppearance(animatesFill: Bool = false) {
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.1)
         lineDashPattern = nil
+        let setFill = { (color: CGColor) in
+            WebContentHeaderPageColorPresentation.setColor(
+                color,
+                for: \.fillColor,
+                key: "fillColor",
+                on: self,
+                animated: animatesFill
+            )
+        }
 
         // Border (top + sides + inverse curves) for the active normal tab is
         // drawn by WebContentViewController's outerBorderLayer as part of a
@@ -129,18 +139,18 @@ final class TabBackgroundLayer: CAShapeLayer {
         // single selected unit while the focused half visually stands out.
         if splitPairPosition != nil {
             if tabState == .active {
-                fillColor = (activeFillColor
-                    ?? ThemedColor.extensionSurfaceBackground.resolve(in: sourceView)).cgColor
+                setFill((activeFillColor
+                    ?? ThemedColor.extensionSurfaceBackground.resolve(in: sourceView)).cgColor)
                 strokeColor = NSColor.clear.cgColor
                 lineWidth = 0
             } else if isSplitGroupActive {
                 // Unfocused half of a focused split: keep the active fill
                 // mostly opaque so it reads as part of the same selected
                 // group as the focused half, just slightly muted.
-                fillColor = ThemedColor.extensionSurfaceBackground
+                setFill(ThemedColor.extensionSurfaceBackground
                     .resolve(in: sourceView)
                     .withAlphaComponent(0.7)
-                    .cgColor
+                    .cgColor)
                 strokeColor = NSColor.clear.cgColor
                 lineWidth = 0
             } else {
@@ -148,7 +158,7 @@ final class TabBackgroundLayer: CAShapeLayer {
                 // reads as a single grouped unit even when the split isn't
                 // focused. The two halves' inner edges overlap at the seam
                 // and double as a thin separator between the two tabs.
-                fillColor = ThemedColor.hover.resolve(in: sourceView).cgColor
+                setFill(ThemedColor.hover.resolve(in: sourceView).cgColor)
                 strokeColor = ThemedColor.border.resolve(in: sourceView).cgColor
                 lineWidth = 1
             }
@@ -158,14 +168,14 @@ final class TabBackgroundLayer: CAShapeLayer {
 
         switch tabState {
             case .active:
-                fillColor = (activeFillColor
-                    ?? ThemedColor.extensionSurfaceBackground.resolve(in: sourceView)).cgColor
+                setFill((activeFillColor
+                    ?? ThemedColor.extensionSurfaceBackground.resolve(in: sourceView)).cgColor)
             case .subSelected:
-                fillColor = ThemedColor.tabSubSelectionBackground.resolve(in: sourceView).cgColor
+                setFill(ThemedColor.tabSubSelectionBackground.resolve(in: sourceView).cgColor)
             case .hovered:
-                fillColor = ThemedColor.hover.resolve(in: sourceView).cgColor
+                setFill(ThemedColor.hover.resolve(in: sourceView).cgColor)
             case .inactive:
-                fillColor = NSColor.clear.cgColor
+                setFill(NSColor.clear.cgColor)
         }
         strokeColor = NSColor.clear.cgColor
         lineWidth = 0

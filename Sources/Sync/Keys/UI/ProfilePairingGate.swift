@@ -40,7 +40,14 @@ final class ProfilePairingGate {
     static let shared = ProfilePairingGate()
 
     static let enrollmentDefaultsKey = "sync.pairingEnrollment"
-    private var enrollment = SyncPairingEnrollment()
+    private var enrollment = SyncPairingEnrollment() {
+        // Telemetry only (`SyncLaunchAnalytics`); `stop()` reports nothing, so app teardown keeps
+        // the last state. Nil in tests; the coordinator sets it.
+        didSet { if isEnrollmentReported { pairingObserver?(enrollment.isPaired) } }
+    }
+    /// Receives `isPaired` whenever enrollment is configured or changes, for the launch snapshot.
+    var pairingObserver: ((Bool) -> Void)?
+    private var isEnrollmentReported = true
     private(set) var enrollmentGeneration = UUID()
     var isPaired: Bool { enrollment.isPaired }
     var spaceReplayToken: UUID? { enrollment.spaceReplayToken }
@@ -126,7 +133,9 @@ final class ProfilePairingGate {
 
     func stop() {
         enrollmentGeneration = UUID()
+        isEnrollmentReported = false
         enrollment = SyncPairingEnrollment()
+        isEnrollmentReported = true
         clearLocalResetMarker = nil
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers.removeAll()

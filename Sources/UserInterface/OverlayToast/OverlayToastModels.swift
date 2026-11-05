@@ -32,11 +32,13 @@ struct OverlayToastItem: Identifiable, Equatable {
     let placement: OverlayToastPlacement
     var shareURLs: [URL] = []
     var action: OverlayToastAction?
+    var messageKeycap: String? = nil
 
     static func == (lhs: OverlayToastItem, rhs: OverlayToastItem) -> Bool {
         lhs.id == rhs.id
             && lhs.title == rhs.title
             && lhs.message == rhs.message
+            && lhs.messageKeycap == rhs.messageKeycap
             && lhs.duration == rhs.duration
             && lhs.placement == rhs.placement
             && lhs.shareURLs == rhs.shareURLs

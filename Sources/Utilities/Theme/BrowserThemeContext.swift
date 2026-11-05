@@ -132,6 +132,11 @@ public final class BrowserThemeContext: NSObject, ThemeStateProvider {
     /// the Space's own variant.
     public var spaceThemeResolver: (() -> Theme?)?
 
+    #if DEBUG || NIGHTLY_BUILD
+    /// Owner description for theme-binding diagnostics.
+    var debugName: String?
+    #endif
+
     /// A fixed palette for surfaces such as Kiosk; appearance can still follow the app.
     private let fixedTheme: Theme?
     private var cancellables = Set<AnyCancellable>()
@@ -293,6 +298,46 @@ public extension NSView {
         return browserThemeContext ?? ThemeManager.shared
     }
 }
+
+#if DEBUG || NIGHTLY_BUILD
+struct ThemeBindRecord {
+    let sourceLabel: String
+    let origin: String
+    let time = ProcessInfo.processInfo.systemUptime
+
+    init(source: ThemeStateProvider, origin: String) {
+        sourceLabel = themeSourceDebugLabel(source)
+        self.origin = origin
+    }
+}
+
+func themeSourceDebugLabel(_ source: ThemeStateProvider?) -> String {
+    guard let source else { return "deallocated" }
+    let address = String(UInt(bitPattern: ObjectIdentifier(source).hashValue), radix: 16)
+    if let context = source as? BrowserThemeContext {
+        return "\(context.debugName ?? "context")@\(address)(\(context.userAppearanceChoice)/\(context.currentAppearance))"
+    }
+    return "\(type(of: source))@\(address)(\(source.currentAppearance))"
+}
+
+extension NSView {
+    /// Which branch of `themeStateProvider` answers for this view.
+    var themeProviderOrigin: String {
+        var ancestor: NSView? = self
+        while let view = ancestor {
+            if view.subtreeThemeSource != nil { return "subtree:\(type(of: view))" }
+            ancestor = view.superview
+        }
+        var responder: NSResponder? = nextResponder
+        while let current = responder {
+            if current is BrowserThemeContextProviding { return "responder:\(type(of: current))" }
+            if current is NSWindow { break }
+            responder = current.nextResponder
+        }
+        return window?.browserThemeContext != nil ? "window" : "shared"
+    }
+}
+#endif
 
 public extension ThemedColor {
     func resolve(in view: NSView?) -> NSColor {

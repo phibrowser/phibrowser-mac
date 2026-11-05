@@ -26,6 +26,7 @@ struct CommandDispatcher {
         .PHI_SELECT_NEXT_SPACE,
         .PHI_SELECT_PREVIOUS_SPACE,
         .PHI_FARRINGDON_TOGGLE,
+        .PHI_CLEAR_ALL_TABS,
         .PHI_COPY_URL,
         .PHI_TOGGLE_READER,
         .PHI_NEW_KIOSK_WINDOW,
@@ -35,6 +36,8 @@ struct CommandDispatcher {
         .PHI_CAPTURE_AREA,
         .PHI_SAVE_FOR_LATER,
         .PHI_SPLIT_WITH_NEW_TAB,
+        .IDC_WINDOW_CLOSE_OTHER_TABS,
+        .IDC_WINDOW_CLOSE_TABS_TO_RIGHT,
     ] + CommandWrapper.spaceSelectionCommands
 
     /// Commands swallowed while the focused tab shows the native NTP — it has no
@@ -138,6 +141,23 @@ struct CommandDispatcher {
         }
 
         switch command {
+        case .PHI_CLEAR_ALL_TABS:
+            windowController.browserState.clearAllTabs()
+            return true
+        case .IDC_WINDOW_CLOSE_OTHER_TABS:
+            let state = windowController.browserState
+            if state.multiSelection.isActive {
+                state.closeTabsOutsideMultiSelection()
+            } else if let tab = state.focusingTab {
+                state.closeTabs(keeping: [tab.guid])
+            }
+            return true
+        case .IDC_WINDOW_CLOSE_TABS_TO_RIGHT:
+            let state = windowController.browserState
+            if let tab = state.focusingTab {
+                state.closeTabs(state.directionalTabCloseCandidates(anchoredAt: [tab.guid], direction: .after))
+            }
+            return true
         case .IDC_SHOW_BOOKMARK_BAR:
             // Keep the Chromium command identity while Phi owns its presentation.
             if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
@@ -364,6 +384,20 @@ struct CommandDispatcher {
                 .findControllerWith(window: window) as? KioskBrowserWindowController,
            let command = interceptedKioskCommand(for: event) {
             return kiosk.handleCommand(command)
+        }
+
+        if let key = ShortcutsKey.eventKeys(for: event)?.canonical {
+            for (command, redo) in [(CommandWrapper.IDC_CONTENT_CONTEXT_UNDO, false), (.IDC_CONTENT_CONTEXT_REDO, true)] {
+                if key == Shortcuts.key(for: command),
+                   let state = AppController.tabCleanupHistoryState(redo: redo),
+                   SpaceSessionControllersManager.shared.findControllerWith(window: window)?.browserState === state {
+                    if !state.isRestoringClearedTabs {
+                        if redo { state.clearTabsUndoManager.redo() }
+                        else { state.clearTabsUndoManager.undo() }
+                    }
+                    return true
+                }
+            }
         }
 
         // An applicable binding owns the key even when its action currently

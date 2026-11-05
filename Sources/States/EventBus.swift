@@ -83,24 +83,6 @@ struct OmniEvent: WindowEvent {
     }
 }
 
-struct BookmarkEvent: WindowEvent {
-    var browserId: Int?
-    var scope: EventScope {
-        if let browserId {
-            return .window(browserId: browserId)
-        } else {
-            return .global
-        }
-    }
-    let action: BookmarkAction
-    
-    enum BookmarkAction {
-        case bookmarksLoaded
-        case bookmarksChanged(_ newNodes: [any BookmarkWrapper])
-        case bookmarkInfoChanged(id: Int64, title: String?, url: String?, faviconUrl: String?)
-    }
-}
-
 struct TabGroupEvent: WindowEvent {
     var browserId: Int?
     var scope: EventScope {
@@ -202,8 +184,6 @@ class EventBus {
             handleTabEvent(tabEvent, in: browserState)
         case let omniEvent as OmniEvent:
             handleOmniEvent(omniEvent, in: browserState)
-        case let bookmarkEvent as BookmarkEvent:
-            handleBookmarkEvent(bookmarkEvent, in: browserState)
         case let extensionEvent as ExtensionEvent:
             handleExtensionEvent(extensionEvent, in: browserState)
         case let tabGroupEvent as TabGroupEvent:
@@ -260,18 +240,6 @@ class EventBus {
         switch event.action {
         case .searchSuggestionResultChanged(let suggestions, let input):
             state.searchSuggestionChanged.send((suggestions, input))
-        }
-    }
-    
-    private func handleBookmarkEvent(_ event: BookmarkEvent, in state: BrowserState) {
-        switch event.action {
-        case .bookmarksLoaded:
-            state.bookmarkManager.fetchBookmarks()
-        case .bookmarksChanged(let newNodes):
-            state.bookmarkManager.bookmarksChanged(with: newNodes)
-        case .bookmarkInfoChanged(let id, let title, let url, let faviconUrl):
-            return
-        @unknown default: fatalError()
         }
     }
     

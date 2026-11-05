@@ -74,14 +74,14 @@ struct OverlayToastView: View {
 
             if let messageText {
                 if titleText == nil {
-                    Text(messageText)
+                    styledMessage(messageText)
                         .font(.system(size: 13, weight: .regular))
                         .overlayToastPrimaryStyle()
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("overlayToast.message")
                 } else {
-                    Text(messageText)
+                    styledMessage(messageText)
                         .font(.system(size: 12))
                         .overlayToastSecondaryStyle()
                         .lineLimit(3)
@@ -89,6 +89,27 @@ struct OverlayToastView: View {
                         .accessibilityIdentifier("overlayToast.message")
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func styledMessage(_ message: String) -> some View {
+        if let keycap = toast.messageKeycap, !keycap.isEmpty,
+           let range = message.range(of: keycap) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text(String(message[..<range.lowerBound]))
+                Text(keycap)
+                    .monospaced()
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 3))
+                    .fixedSize()
+                Text(String(message[range.upperBound...]))
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(message))
+        } else {
+            Text(message)
         }
     }
 

@@ -105,6 +105,7 @@ struct LottieAnimationViewConfig {
 // MARK: - View State
 
 class LottieAnimationViewState: ObservableObject {
+    private var playbackCompletion: ((Bool) -> Void)?
     @Published var isEnabled: Bool
     /// Increment this to trigger forward animation when using .manual trigger mode
     @Published var playCount: Int = 0
@@ -118,8 +119,19 @@ class LottieAnimationViewState: ObservableObject {
     }
     
     /// Trigger forward animation playback (only works with .manual trigger mode)
-    func triggerAnimation() {
+    func triggerAnimation(completion: ((Bool) -> Void)? = nil) {
+        finishAnimation(completed: false)
+        playbackCompletion = completion
         playCount += 1
+    }
+
+    func finishAnimation(completed: Bool) {
+        let completion = playbackCompletion
+        playbackCompletion = nil
+        // Actions may update the sidebar; keep them outside SwiftUI's render pass.
+        if let completion {
+            DispatchQueue.main.async { completion(completed) }
+        }
     }
     
     /// Trigger reverse animation playback (only works with .manual trigger mode)
@@ -128,6 +140,7 @@ class LottieAnimationViewState: ObservableObject {
     }
 
     func stopAnimation() {
+        finishAnimation(completed: false)
         stopCount += 1
     }
 }
@@ -227,6 +240,9 @@ struct LottieAnimationView: View {
 //                .animationSpeed(config.animationSpeed ?? -1)
                 .animationDidFinish { completed in
                     AppLogDebug("🎬 [\(config.animationName)] animationDidFinish - completed: \(completed), isPlayingReverse: \(isPlayingReverse), isAtEndFrame: \(isAtEndFrame)")
+                    if !isPlayingReverse {
+                        state.finishAnimation(completed: completed)
+                    }
                     guard completed else { return }
                     
                     if isPlayingReverse && config.reverseAnimationName == nil {
@@ -500,6 +516,10 @@ class LottieAnimationNSView: NSView {
     /// Trigger forward animation playback (only works with .manual trigger mode)
     @objc func triggerAnimation() {
         viewState.triggerAnimation()
+    }
+
+    func triggerAnimation(completion: @escaping (Bool) -> Void) {
+        viewState.triggerAnimation(completion: completion)
     }
     
     /// Trigger reverse animation playback (only works with .manual trigger mode)

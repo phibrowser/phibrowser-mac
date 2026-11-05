@@ -233,6 +233,12 @@ class ShortcutsViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.rebuildSections() }
             .store(in: &cancellables)
+        // A companion app connecting or quitting can take a command away
+        // (Save to Folio, see SaveForLaterService.featureEnabled) or give it back.
+        NotificationCenter.default.publisher(for: .agentCompanionsDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.rebuildSections() }
+            .store(in: &cancellables)
         DistributedNotificationCenter.default()
             .publisher(for: KioskGlobalShortcutRegistrar.inputSourceDidChangeNotification)
             .receive(on: DispatchQueue.main)
@@ -632,6 +638,8 @@ private extension CommandWrapper {
             return NSLocalizedString("settings.shortcuts.command.focusAddressBar", value: "Focus Address Bar", comment: "Shortcuts settings - Command title for moving keyboard focus to the address bar")
         case .IDC_CLOSE_WINDOW:
             return NSLocalizedString("settings.shortcuts.command.closeWindow", value: "Close Window", comment: "Shortcuts settings - Command title for closing the current window")
+        case .PHI_CLEAR_ALL_TABS:
+            return NSLocalizedString("tabs.clearAll.title", value: "Clear All Tabs", comment: "Tab cleanup command - Close ordinary tabs that are not currently displayed")
         case .IDC_CLOSE_TAB:
             return NSLocalizedString("settings.shortcuts.command.closeTab", value: "Close Tab", comment: "Shortcuts settings - Command title for closing the current tab")
         case .IDC_PRINT:

@@ -76,6 +76,8 @@ final class HolographicCardView: NSView {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    // Arrow keys tilt the card after a click; it is not a Tab stop.
+    override var canBecomeKeyView: Bool { false }
 
     override convenience init(frame frameRect: NSRect) {
         self.init(frame: frameRect, style: .default)
@@ -97,7 +99,7 @@ final class HolographicCardView: NSView {
         updateCopy()
         updateMaterial()
         setAccessibilityElement(true)
-        setAccessibilityRole(.image)
+        setAccessibilityRole(.staticText)
 
         NotificationCenter.default.addObserver(self, selector: #selector(windowVisibilityChanged),
             name: NSWindow.didChangeOcclusionStateNotification, object: nil)
@@ -245,7 +247,26 @@ final class HolographicCardView: NSView {
 
     private func updateCopy() {
         front.setCopy(name: name, identifier: memberID, joinedDate: joinedDate)
-        setAccessibilityLabel([name, memberID, joinedDate].filter { !$0.isEmpty }.joined(separator: ", "))
+        setAccessibilityValue(accessibilitySummary)
+    }
+
+    /// VoiceOver reads the card as one sentence; the member ID is omitted and
+    /// the "yyyy.MM" join date is spoken as a localized month and year.
+    private var accessibilitySummary: String {
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = .current
+        parser.dateFormat = "yyyy.MM"
+        guard let date = parser.date(from: joinedDate) else {
+            let format = NSLocalizedString("profile.card.accessibilitySummaryWithoutDate", value: "Phi member card, %@",
+                comment: "Profile membership card - VoiceOver description when the join date is unknown; the placeholder is the member's name")
+            return String(format: format, name)
+        }
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("yMMMM")
+        let format = NSLocalizedString("profile.card.accessibilitySummary", value: "Phi member card, %1$@, joined %2$@",
+            comment: "Profile membership card - VoiceOver description; first placeholder is the member's name, second is the month and year they joined")
+        return String(format: format, name, formatter.string(from: date))
     }
 
     private func updateMaterial() {
@@ -390,7 +411,7 @@ private final class HolographicCardFace {
         let edge = CAShapeLayer()
         edge.path = CGPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), cornerWidth: 28, cornerHeight: 28, transform: nil)
         edge.fillColor = nil
-        edge.strokeColor = NSColor.white.withAlphaComponent(isBack ? 0.14 : 0.55).cgColor
+        edge.strokeColor = NSColor.black.withAlphaComponent(0.07).cgColor
         edge.lineWidth = 1
         surface.addSublayer(edge)
         shade.frame = bounds
@@ -403,10 +424,7 @@ private final class HolographicCardFace {
         self.style = style
         let hex = HolographicCardArtwork.hex
         let colors = style.palette.colors
-        if isBack {
-            material.colors = [0x08090b, 0x171a1e, 0x050607].map { hex($0, 1) }
-            material.locations = [0, 0.42, 1]
-        } else if style.palette == .silver {
+        if style.palette == .silver {
             material.colors = [0x898e95, 0xd0d3d7, 0xf1f2f3, 0xb2b7be, 0xdadddf, 0x9299a2, 0xe0e3e6].map { hex($0, 1) }
             material.locations = [0, 0.22, 0.36, 0.5, 0.68, 0.86, 1]
         } else {
@@ -417,14 +435,13 @@ private final class HolographicCardFace {
         iridescence.colors = (silver ? [0x929ba9, 0xebedef, 0xbbc2c9, 0xf5f5f4, 0xa8a5ad, 0xcdd4d8]
             : [colors[1], colors[0], colors[2], colors[1]]).map { hex($0, 1) }
         iridescence.locations = silver ? [0, 0.25, 0.45, 0.58, 0.78, 1] : [0, 0.4, 0.76, 1]
-        iridescenceGroup.isHidden = isBack
         iridescenceGroup.opacity = HolographicCardStyle.iridescenceOpacity
         iridescenceGroup.compositingFilter = silver ? "softLightBlendMode" : nil
         foil.contents = artwork.foil
-        foil.opacity = HolographicCardStyle.textureOpacity * (isBack ? 0.85 : 1)
-        foil.compositingFilter = isBack ? "softLightBlendMode" : "overlayBlendMode"
-        sheen.compositingFilter = isBack || silver ? "screenBlendMode" : "overlayBlendMode"
-        sheen.opacity = isBack ? 0.32 : (silver ? 0.6 : 0.95)
+        foil.opacity = HolographicCardStyle.textureOpacity
+        foil.compositingFilter = "overlayBlendMode"
+        sheen.compositingFilter = silver ? "screenBlendMode" : "overlayBlendMode"
+        sheen.opacity = silver ? 0.6 : 0.95
         if !isBack {
             let path = artwork.seal.value
             let enhanced = style.ornament.enhanced
@@ -481,14 +498,23 @@ private final class HolographicCardFace {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let font = NSFont.brandDisplay("IvyPrestoHeadline-Light", size: 31, renders: value, weight: .regular)
-        setText(name, value, font: font, frame: CGRect(x: 23.36, y: 304, width: 247, height: 42))
+        // Include descenders and leading for both the brand face and fallback fonts.
+        let nameHeight = max(48, ceil(font.ascender - font.descender + max(0, font.leading)) + 4)
+        setText(name, value, font: font, frame: CGRect(x: 23.36, y: 304, width: 247, height: nameHeight))
+        // A fine lower highlight makes the dark lettering read as pressed into the foil.
+        name.shadowColor = NSColor.white.cgColor
+        name.shadowOpacity = 0.65
+        name.shadowRadius = 0.35
+        name.shadowOffset = CGSize(width: 0, height: 0.7)
         setText(identifier, id, font: .monospacedSystemFont(ofSize: 10, weight: .regular),
                 frame: CGRect(x: 23.36, y: 348, width: 210, height: 15))
-        setText(dateLabel, joinedDate.isEmpty ? "" : NSLocalizedString("profile.card.dateJoined", value: "Date Joined",
+        setText(dateLabel, joinedDate.isEmpty ? "" : NSLocalizedString("profile.card.dateJoined", value: "Member Since",
             comment: "Profile membership card - Label above the account creation date"),
                 font: .systemFont(ofSize: 7), frame: CGRect(x: 23.36, y: 377, width: 145, height: 12))
         dateLabel.opacity = 0.66
-        setText(date, joinedDate, font: .systemFont(ofSize: 11), frame: CGRect(x: 23.36, y: 390, width: 155, height: 16))
+        let numberFont = NSFont(name: "ShareTechMono-Regular", size: 12)
+            ?? .monospacedSystemFont(ofSize: 12, weight: .regular)
+        setText(date, joinedDate, font: numberFont, frame: CGRect(x: 23.36, y: 390, width: 155, height: 18))
         CATransaction.commit()
     }
 
@@ -514,7 +540,7 @@ private final class HolographicCardFace {
             gradient.endPoint = CGPoint(x: (center.x + dx * length / 2) / bounds.width,
                                         y: (center.y + dy * length / 2) / bounds.height)
         }
-        position(material, angle: isBack ? lightAngle : HolographicCardStyle.gradientAngle)
+        position(material, angle: HolographicCardStyle.gradientAngle)
         position(iridescence, angle: HolographicCardStyle.gradientAngle + (style.palette == .silver ? 0 : 38) + x * 32 + y * 22,
                  factor: style.palette == .silver ? 2 : 1.25, moving: true)
         position(sheen, angle: lightAngle, factor: 2.2, moving: true)
@@ -531,7 +557,7 @@ private final class HolographicCardFace {
             gradient.startPoint = sealPoint(0)
             gradient.endPoint = sealPoint(100)
         }
-        shade.opacity = Float(0.34 * (1 - max(0, facing)))
+        shade.opacity = Float((isBack ? 0.10 : 0) + 0.34 * (1 - max(0, facing)))
     }
 
     private func setupLogo() {

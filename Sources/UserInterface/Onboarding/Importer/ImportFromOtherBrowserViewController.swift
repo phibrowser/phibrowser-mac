@@ -1333,6 +1333,64 @@ final class ProfileSelectionButtonCell: NSButtonCell {
     }
 }
 
+extension NSView {
+    /// Exposes this view to VoiceOver as a heading named `label`, keeping the
+    /// view's own element so the heading role is never merged away.
+    func setOnboardingAccessibilityHeading(_ label: String) {
+        setAccessibilityElement(true)
+        setAccessibilityLabel(label)
+        // NSAccessibilityHeadingRole ("AXHeading") is public from macOS 26 but
+        // not bridged to Swift, so use its raw value on every system.
+        setAccessibilityRole(NSAccessibility.Role(rawValue: "AXHeading"))
+        if #unavailable(macOS 26.0) {
+            // Older systems supply no spoken role description for it.
+            setAccessibilityRoleDescription(NSLocalizedString(
+                "oobe.accessibility.headingRoleDescription",
+                value: "heading",
+                comment: "Onboarding - VoiceOver role spoken after each page title, e.g. \"What should I call you?, heading\""
+            ))
+        }
+        // A control's cell is a separate element; hide it so the heading is
+        // read once and an image cell is not read as "image".
+        (self as? NSControl)?.cell?.setAccessibilityElement(false)
+    }
+}
+
+/// Onboarding root view that hands VoiceOver its elements in visual order
+/// (top to bottom, then left to right), independent of subview order.
+final class OnboardingAccessibilityRootView: NSView {
+    private static let rowTolerance: CGFloat = 4
+
+    override func accessibilityChildren() -> [Any]? {
+        guard let children = super.accessibilityChildren() else { return nil }
+        let framed = children.map { child in
+            (child, (child as? NSAccessibilityElementProtocol)?.accessibilityFrame() ?? .zero)
+        }
+        // Accessibility frames are in screen coordinates, where y grows upward.
+        return framed.sorted { lhs, rhs in
+            if abs(lhs.1.maxY - rhs.1.maxY) > Self.rowTolerance {
+                return lhs.1.maxY > rhs.1.maxY
+            }
+            return lhs.1.minX < rhs.1.minX
+        }.map(\.0)
+    }
+}
+
+extension OnboardingBaseViewController {
+    /// Moves VoiceOver, not keyboard focus, to `element` once the page is on screen.
+    static func moveVoiceOverFocus(to element: NSView?) {
+        guard let element else { return }
+        DispatchQueue.main.async {
+            guard element.window != nil, !element.isHiddenOrHasHiddenAncestor else { return }
+            NSAccessibility.post(
+                element: element,
+                notification: .layoutChanged,
+                userInfo: [.uiElements: [element]]
+            )
+        }
+    }
+}
+
 class OnboardingBaseViewController: NSViewController {
     var nextClosure: ((Bool) -> Void)?
 
@@ -1451,6 +1509,12 @@ class OnboardingBaseViewController: NSViewController {
     func setTitle(_ title: String, size: CGFloat = OnboardingBaseViewController.defaultTitleFontSize) {
         titleLabel.stringValue = title
         titleLabel.font = .brandDisplay(Self.titleFontName, size: size, renders: title)
+        titleLabel.setOnboardingAccessibilityHeading(title)
+    }
+
+    /// Where VoiceOver starts reading when the page appears.
+    var initialAccessibilityElement: NSView? {
+        titleLabel.isHidden ? nil : titleLabel
     }
     
     lazy var nextButton: GradientBorderButton = {
@@ -1486,7 +1550,7 @@ class OnboardingBaseViewController: NSViewController {
     }
     
     override func loadView() {
-        view = NSView()
+        view = OnboardingAccessibilityRootView()
         view.wantsLayer = true
         view.addSubview(placeholderView)
         view.addSubview(dotView)
@@ -1506,6 +1570,9 @@ class OnboardingBaseViewController: NSViewController {
         // cover the view at 4:5 and crop, instead of letterboxing and exposing
         // bands of the bare video layer beneath.
         for background in [placeholderView, dotView] {
+            // NSImageView exposes its cell to VoiceOver, so hide both.
+            background.setAccessibilityElement(false)
+            background.cell?.setAccessibilityElement(false)
             background.imageScaling = .scaleProportionallyUpOrDown
             background.snp.makeConstraints { make in
                 make.center.equalToSuperview()
@@ -1556,6 +1623,7 @@ class OnboardingBaseViewController: NSViewController {
         if isFisrtPage {
             view.window?.center()
         }
+        Self.moveVoiceOverFocus(to: initialAccessibilityElement)
     }
     
     // MARK: - Video Background

@@ -126,6 +126,13 @@ enum PinKind: OwnedItemKind {
         [ownerKey(of: entity)]
     }
 
+    /// Profile-shaped owners wait for a Profile mapping, Space-shaped ones for a Space mapping. The app
+    /// owner always resolves, so it never reaches this.
+    static func unresolvedOwnerReason(_ owner: String, of entity: Phi_PhiPinTabEntity) -> SyncHeldReason {
+        if case .profileUuid? = entity.owner { return .unmappedProfileOwner }
+        return .unmappedSpaceOwner
+    }
+
     // MARK: - Outbound projection and timestamps (§4.2)
 
     /// Project a local row to a wire entity without stamping or assigning rank.

@@ -330,6 +330,15 @@ class BrowserState {
     @Published var travelBackHandoffs: [Int: TravelBackHandoff] = [:]
     @Published var profileMoveRequests: [Int: SidecarProfileMoveRequest] = [:]
     var profileMovesInFlight: Set<Int> = []
+    let clearTabsUndoManager: UndoManager = {
+        let manager = UndoManager()
+        manager.groupsByEvent = false
+        manager.levelsOfUndo = 20
+        return manager
+    }()
+    var pendingClearTabClosures: [Int: ClearedTabsBatch] = [:]
+    @Published var isRestoringClearedTabs = false
+
     let travelBackTabCreated = PassthroughSubject<(marker: String, tab: Tab), Never>()
     
     /// Read-only views of the owning window's split, never per-Space state.
@@ -379,9 +388,17 @@ class BrowserState {
     @Published var aiChatCollapsed = true
     private var pendingAIChatSidebarOpenTrigger: AIChatSidebarOpenTrigger = .restore
     @Published var isInFullScreenMode = false
+    /// The content container owns this window's docked Transcript presentation.
+    /// Docked consoles retain normal page padding without changing the preference.
+    @Published var isTranscriptDocked = false
+    /// The content container owns this: true while an open Peek scales and
+    /// fades the page behind it. The page card then casts no edge shadow, on
+    /// either side of the sidebar seam.
+    @Published var isPageDeemphasizedForPeek = false
     @Published var targetURL: String = ""
 
-    /// True while this window is showing the chrome://dino placeholder.
+    /// True while this window has no tabs and the placeholder shell holds its
+    /// page area, with or without the chrome://dino page (`showsPlaceholderPage`).
     /// Drives every UI binding that hides sub-elements during placeholder mode.
     @Published private(set) var isInPlaceholderMode: Bool = false
 
@@ -391,6 +408,14 @@ class BrowserState {
     /// Chromium — wrapper.nativeView is invalid after exitPlaceholderMode
     /// returns.
     private(set) var placeholderWrapper: (WebContentWrapper & NSObject)? = nil
+
+    /// Whether placeholder mode shows the chrome://dino page. Set on every
+    /// entry: only a window that just lost its last tab shows it. A window
+    /// that had no tab to lose (a new window or a Space opened empty under the
+    /// Omnibox "New tab behavior") leaves its page area empty beneath the
+    /// omnibox, and so does an empty Space the user switches to
+    /// (`hidePlaceholderPage`).
+    private(set) var showsPlaceholderPage = false
 
     /// The extension side panel currently shown in this window, nil when
     /// closed. Driven by PhiChromiumCoordinator.extensionSidePanelChanged;
@@ -475,6 +500,27 @@ class BrowserState {
     let windowId: Int
     let localStore: LocalStore
     @Published private(set) var profileId: String
+    /// Shared by the docked and floating sidebars of this Space session, and persisted per Space.
+    @Published var isBookmarkRootExpanded: Bool {
+        didSet {
+            guard isBookmarkRootExpanded != oldValue else { return }
+            Self.setBookmarkRootCollapsed(!isBookmarkRootExpanded, spaceId: spaceId)
+        }
+    }
+
+    private static let collapsedBookmarkRootSpaceIdsKey = "SidebarCollapsedBookmarkRootSpaceIds"
+
+    private static func collapsedBookmarkRootSpaceIds() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: collapsedBookmarkRootSpaceIdsKey) ?? [])
+    }
+
+    private static func setBookmarkRootCollapsed(_ collapsed: Bool, spaceId: String) {
+        var ids = collapsedBookmarkRootSpaceIds()
+        let changed = collapsed ? ids.insert(spaceId).inserted : ids.remove(spaceId) != nil
+        guard changed else { return }
+        UserDefaults.standard.set(ids.sorted(), forKey: collapsedBookmarkRootSpaceIdsKey)
+    }
+
     /// Identifies which Space this window renders. Persisted pinned tabs and
     /// bookmarks under the same Space share this id; see `Space`.
     let spaceId: String
@@ -666,15 +712,21 @@ class BrowserState {
         self.localStore = localStore
         self.profileId = profileId
         self.spaceId = spaceId
+        _isBookmarkRootExpanded = Published(
+            initialValue: !Self.collapsedBookmarkRootSpaceIds().contains(spaceId))
         self.isIncognito = isIncognito
         self.isIncognitoSpace = isIncognitoSpace
         self.isAgentSpace = isAgentSpace || AgentSpaceManager.shared.isAgentSpace(spaceId)
         self.isKioskWindow = isKioskWindow
         self.imagePreviewState = BrowserImagePreviewState(loader: ImagePreviewLoader())
-        self.themeContext = BrowserThemeContext(
+        let themeContext = BrowserThemeContext(
             configuration: BrowserThemeConfigurationResolver.resolve(isIncognito: isIncognito),
             fixedTheme: isKioskWindow ? .pure : nil
         )
+        #if DEBUG || NIGHTLY_BUILD
+        themeContext.debugName = "space=\(spaceId.prefix(8)) win=\(windowId)\(isIncognito ? " incognito" : "")"
+        #endif
+        self.themeContext = themeContext
         self.layoutMode = Self.buildLayoutMode()
         // Agent Spaces are isolated workspaces, like incognito: they show none
         // of the profile's pinned tabs and grow no bookmarks of their own, so
@@ -1395,6 +1447,10 @@ class BrowserState {
     func enterPlaceholderMode(wrapper: WebContentWrapper & NSObject) {
         guard placeholderWrapper == nil else { return }  // Idempotent
         placeholderWrapper = wrapper
+        // The tab that just left is still in `focusingTab`, and in `tabs` until
+        // its queued close event applies. A window that never had a tab holds
+        // nothing in either. Read before the clear below.
+        showsPlaceholderPage = focusingTab != nil || !tabs.isEmpty
         // Clear stale focused tab. The just-closed tab is already gone from
         // `tabs`, but `focusingTab` still references it because nothing on the
         // close path nils it. Selectors that read `focusingTab` (e.g.
@@ -1419,6 +1475,16 @@ class BrowserState {
         // The new real tab's activeTabChanged event arrives shortly and sets
         // focusingTab. Until then, nil is correct.
         AppLogInfo("🦖 [BrowserState] exited placeholder mode windowId=\(windowId)")
+    }
+
+    /// Empties the page area of a window in placeholder mode, for a Space
+    /// parked there by a last-tab close that the user switches back to. The
+    /// mount is what puts a page on screen (chromium ADR 0015), so the web view
+    /// leaves the hierarchy rather than being hidden in place.
+    @MainActor
+    func hidePlaceholderPage() {
+        showsPlaceholderPage = false
+        placeholderWrapper?.nativeView?.removeFromSuperview()
     }
 
     deinit {
@@ -1798,7 +1864,7 @@ class BrowserState {
         return expandedIds
     }
 
-    private func isBookmarkBackedTab(_ tab: Tab) -> Bool {
+    func isBookmarkBackedTab(_ tab: Tab) -> Bool {
         bookmarkGuidBacking(tab) != nil
     }
 
@@ -1825,7 +1891,7 @@ class BrowserState {
 
     var hasTabsOutsideMultiSelection: Bool {
         let selectedTabIds = Set(orderedMultiSelectedTabs.map(\.guid))
-        return tabs.contains { !selectedTabIds.contains($0.guid) }
+        return !otherTabCloseCandidates(keeping: selectedTabIds).isEmpty
     }
 
     @MainActor
@@ -1875,6 +1941,25 @@ class BrowserState {
             return copyableURLStringsForCurrentMultiSelection()
         }
         return pageCommandTarget.map { copyableURLStrings(from: [$0]) } ?? []
+    }
+
+    /// The string an address bar's Copy URL affordance puts on the clipboard
+    /// for a bar describing `tab`: the page in front of that bar — a
+    /// presented peek, resolved the way `pageCommandTarget(focusingTab:)`
+    /// resolves it for the Copy URL command — rather than the opener hidden
+    /// behind the panel. Keeps the button and the shortcut on one answer.
+    func addressBarCopyURLString(for tab: Tab?) -> String? {
+        Self.copyURLString(forAddressBarShowing: pageCommandTarget(focusingTab: tab))
+    }
+
+    /// `addressBarCopyURLString(for:)` without the peek resolution, for a bar
+    /// that has no `BrowserState` to resolve one against.
+    static func copyURLString(forAddressBarShowing tab: Tab?) -> String? {
+        guard var urlString = tab?.url, !urlString.isEmpty else { return nil }
+        // A reader page stands in for its article, as everywhere else a URL
+        // is handed to the user.
+        urlString = ReaderExtensionBridge.sourceURLString(fromReaderPageURL: urlString) ?? urlString
+        return URLProcessor.phiBrandEnsuredUrlString(urlString)
     }
 
     private func copyableURLStrings(from tabs: [Tab]) -> [String] {
@@ -3171,11 +3256,36 @@ class BrowserState {
             }
         }
 
+        // Chromium's own pick after a close can be a floating surface's tab:
+        // nothing marks it unselectable in the strip, and no override is set
+        // when no normal tab remains (a pinned or bookmark opener is not one).
+        // It is not in `tabs` and has no view in the page area, so staying on
+        // it would leave the page area blank.
+        if let anchorTab = stripActiveTab(forSurfaceTabId: tabId),
+           let wrapper = anchorTab.webContentWrapper {
+            AppLogDebug("[NativeTab] handleChromiumActiveTabChanged surface tab=\(tabId) activating anchor=\(anchorTab.guid)")
+            wrapper.setAsActiveTab()
+            let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+            AppLogDebug("[NativeTab] ⏱ handleChromiumActiveTabChanged tabId=\(tabId) took \(String(format: "%.2f", elapsed))ms")
+            return
+        }
+
         focusTabWithTabId(tabId)
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         AppLogDebug("[NativeTab] ⏱ handleChromiumActiveTabChanged tabId=\(tabId) took \(String(format: "%.2f", elapsed))ms")
     }
-    
+
+    /// The strip tab holding strip-active for a floating surface: a peek's
+    /// opener, a reader's origin, or for a reader over a peek, that peek's
+    /// opener. nil when `tabId` is no presented surface (a candidate is not
+    /// one yet) or the anchor tab is gone.
+    private func stripActiveTab(forSurfaceTabId tabId: Int) -> Tab? {
+        let readerOriginTabId = readerOverlayState.originTabId(forReaderTabId: tabId)
+        let openerTabId = peekState.openerTabId(forPeekTabId: readerOriginTabId ?? tabId)
+        guard let anchorTabId = openerTabId ?? readerOriginTabId else { return nil }
+        return tabs.first(where: { $0.guid == anchorTabId })
+    }
+
     /// Find a tab by its identifier (either guidInLocalDB or chromium guid as string)
     func tab(forChatIdentifier identifier: String) -> Tab? {
         if let tab = tabs.first(where: { $0.guidInLocalDB == identifier }) {
@@ -5429,6 +5539,7 @@ class BrowserState {
     func applyTabsRemoved(_ tabIds: [Int], indices: [Int: Int]? = nil,
                           activeTabId: Int? = nil) {
         let removalIDs = Set(tabIds)
+        recordClearedTabs(removalIDs)
         guard !removalIDs.isEmpty else { return }
 
         precondition(applyingRemovalIDs == nil)
@@ -5846,18 +5957,78 @@ class BrowserState {
         info.objectWillChange.send()
     }
 
-    func closeTabs(keeping: Set<Int>) {
-        // Expand the keep-set to cover the partner pane of any split the user
-        // is keeping — "Close Other Tabs" should leave the whole splitview
-        // intact rather than dissolve it into a single pane.
-        var keep = keeping
-        for tabId in keeping {
+    enum TabCloseDirection: Int, CaseIterable {
+        case before
+        case after
+    }
+
+    /// Only ordinary strip entries participate in range/other-tab closing.
+    /// The batch bridge includes split partners, so protect an entire split
+    /// when either pane belongs to a persistent surface outside this strip.
+    var ordinaryTabCloseCandidates: [Tab] {
+        let pinnedGuids = Set(pinnedTabs.compactMap(\.guidInLocalDB))
+        let eligible = normalTabs.filter { tab in
+            !tab.isPinned
+                && !pinnedGuids.contains(tab.guidInLocalDB ?? "")
+                && (layoutMode.isTraditional || !isBookmarkBackedTab(tab))
+        }
+        let eligibleIds = Set(eligible.map(\.guid))
+        return eligible.filter { tab in
+            guard let split = splitGroup(forTabId: tab.guid) else { return true }
+            return !split.isPinned
+                && eligibleIds.contains(split.primaryTabId)
+                && eligibleIds.contains(split.secondaryTabId)
+        }
+    }
+
+    func tabCloseUnits(containing tabIds: Set<Int>) -> Set<Int> {
+        var expanded = tabIds
+        for tabId in tabIds {
             if let group = splitGroup(forTabId: tabId) {
-                keep.insert(group.primaryTabId)
-                keep.insert(group.secondaryTabId)
+                expanded.insert(group.primaryTabId)
+                expanded.insert(group.secondaryTabId)
             }
         }
-        closeTabs(tabs.filter { !keep.contains($0.guid) })
+        return expanded
+    }
+
+    func isCurrentTabCloseAnchor(_ tab: Tab) -> Bool {
+        tabs.contains { $0 === tab } || pinnedTabs.contains { $0 === tab }
+    }
+
+    func otherTabCloseCandidates(keeping: Set<Int>) -> [Tab] {
+        guard !keeping.isEmpty else { return [] }
+        let keep = tabCloseUnits(containing: keeping)
+        return ordinaryTabCloseCandidates.filter { !keep.contains($0.guid) }
+    }
+
+    /// Uses native strip order, including collapsed group members. A group
+    /// anchor supplies every member, protecting the entire group's range.
+    func directionalTabCloseCandidates(anchoredAt tabIds: Set<Int>,
+                                       direction: TabCloseDirection) -> [Tab] {
+        guard PhiPreferences.GeneralSettings.directionalTabClosingEnabled.loadValue(),
+              !tabIds.isEmpty else { return [] }
+        let candidates = ordinaryTabCloseCandidates
+        let eligibleIds = Set(candidates.map(\.guid))
+        guard tabIds.isSubset(of: eligibleIds) else { return [] }
+        let anchor = tabCloseUnits(containing: tabIds)
+        let positions = normalTabs.indices.filter { anchor.contains(normalTabs[$0].guid) }
+        guard let first = positions.first, let last = positions.last else { return [] }
+        let rangeIds: Set<Int>
+        switch direction {
+        case .before:
+            rangeIds = Set(normalTabs.prefix(first).map(\.guid))
+        case .after:
+            rangeIds = Set(normalTabs.dropFirst(last + 1).map(\.guid))
+        }
+        // Expand before submitting so menu validation and invocation agree
+        // with the framework's split-aware batch behavior.
+        let closing = tabCloseUnits(containing: rangeIds).subtracting(anchor)
+        return candidates.filter { closing.contains($0.guid) }
+    }
+
+    func closeTabs(keeping: Set<Int>) {
+        closeTabs(otherTabCloseCandidates(keeping: keeping))
     }
 
     func closeTabs(_ tabsToClose: [Tab]) {
@@ -5882,6 +6053,21 @@ class BrowserState {
             bridge.closeTabs(withWindowId: Int64(windowId),
                              tabIds: tabsToClose.map { NSNumber(value: $0.guid) })
         }
+    }
+
+    /// Restores pages as unloaded background tabs in one Chromium batch.
+    /// See `restoreTabs(withWindowId:order:groups:splits:)` for the entry keys.
+    /// Returns the new tab id for each restored key.
+    func restoreTabs(order: [[AnyHashable: Any]],
+                     groups: [[AnyHashable: Any]],
+                     splits: [[AnyHashable: Any]]) -> [String: Int] {
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return [:] }
+        guard bridge.responds(to: #selector(PhiChromiumBridgeProtocol.restoreTabs(withWindowId:order:groups:splits:))) else {
+            AppLogWarn("[TabBatch] Restore requires a framework with batch tab restore")
+            return [:]
+        }
+        return bridge.restoreTabs(withWindowId: Int64(windowId), order: order, groups: groups, splits: splits)
+            .mapValues(\.intValue)
     }
 
     // =========================================================================

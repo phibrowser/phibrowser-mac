@@ -97,12 +97,15 @@ extension PhiPreferences {
         case openExternalLinksInKiosk
         case openKioskOnCommandOptionClick
         case openKioskWithGlobalShortcut
+        case edgeToEdgeWebContent // Remove outer page margins; square page corners in fullscreen
         case navigationAtTop  // Whether to show navigation and address bar in content header (Layout 2)
         case traditionalLayout  // Traditional layout, show tabs and (maybe) bookmark bar at  top (Layout 3)
         case alwaysShowBookmarkBar // In traditional layout, always show bookmark bar below address bar
         case showBookmarkBarOnNewTabPage // In traditional layout, show bookmark bar on new tab page
         case alwaysShowURLPath // In address bar menu, always show full URL path
         case showTabPreviews // Whether open tabs use custom hover preview cards
+        case doubleClickToCloseTabs // Close ordinary tabs with an unmodified double-click
+        case directionalTabClosingEnabled // Show and enable closing ordinary tabs before or after an anchor
         case sidebarMediaPlayerEnabled // Show controls for background page media
         case showOpenTabIndicators // Show dots on inactive open pinned tabs and bookmarks
         case showUnloadedTabIndicators // Show dashed outlines and smaller icons for unloaded or discarded tabs
@@ -122,6 +125,8 @@ extension PhiPreferences {
                 return true
             case .openKioskWithGlobalShortcut:
                 return false
+            case .edgeToEdgeWebContent:
+                return false
             case .navigationAtTop:
                 return true
             case .traditionalLayout:
@@ -133,6 +138,10 @@ extension PhiPreferences {
             case .alwaysShowURLPath:
                 return false
             case .showTabPreviews:
+                return true
+            case .doubleClickToCloseTabs:
+                return false
+            case .directionalTabClosingEnabled:
                 return true
             case .sidebarMediaPlayerEnabled:
                 return true
@@ -366,9 +375,13 @@ extension PhiPreferences {
         /// Settings ▸ Developer ▸ Agent control: whether agent tooling may
         /// operate the user's own browsing data and windows over the
         /// management surface — Spaces, profiles, URL rules, pinned tabs,
-        /// bookmarks, and the tab layout of user windows. When off, agents can
-        /// only work inside their own agent Spaces. Read live by the message
-        /// router, so changes apply without a relaunch. Default on.
+        /// bookmarks, and the tab layout of user windows. The same gate covers
+        /// driving user windows over CDP, opening invisible shadow windows
+        /// (see AgentSpaceRouter+Shadow.swift), and the credential routes.
+        /// When off, agents can only work inside their own agent Spaces. Read
+        /// live by the message router and at each CDP attach, so changes apply
+        /// to new requests without a relaunch; turning it off neither closes
+        /// open shadow windows nor detaches CDP sessions. Default on.
         static var userSpaceOperationsEnabled: Bool {
             get { UserDefaults.standard.bool(forKey: userSpaceOperationsKey, default: true) }
             set { UserDefaults.standard.set(newValue, forKey: userSpaceOperationsKey) }
@@ -733,6 +746,8 @@ extension PhiPreferences {
         case currentThemeId = "PhiCurrentThemeId"
         /// Archived snapshots for themes customized by the user.
         case themeSnapshots = "PhiThemeSnapshots"
+        /// Custom palettes saved from the Space color editor.
+        case savedPalettes = "PhiSavedThemePalettes"
         /// When `true`, the Mirage extension applies the window theme's accent
         /// to `::selection` on every web page; when `false`, it leaves the
         /// page's native selection color alone. Default `true`.
@@ -744,7 +759,7 @@ extension PhiPreferences {
                 return 0  // .system
             case .currentThemeId:
                 return "default"
-            case .themeSnapshots:
+            case .themeSnapshots, .savedPalettes:
                 return Data()
             case .selectionTintEnabled:
                 return true

@@ -3,11 +3,12 @@
 //  PhiBrowser
 //
 //  Hosts the placeholder WebContents NSView (chrome://dino) when the window
-//  enters placeholder mode after closing the last tab. Mirrors the relevant
-//  parts of WebContentViewController so the layout's address bar (in
-//  .balanced / .comfortable) stays visible during placeholder mode. Skips
-//  the splitView / AI chat / bookmark bar / progress bar — placeholder
-//  doesn't use any of them.
+//  enters placeholder mode after closing the last tab. A window with no tab
+//  to lose gets the shell with nothing mounted in it, an empty page area
+//  (`BrowserState.showsPlaceholderPage`). Mirrors the relevant parts of
+//  WebContentViewController so the layout's address bar (in .balanced /
+//  .comfortable) stays visible during placeholder mode. Skips the splitView /
+//  AI chat / bookmark bar / progress bar — placeholder doesn't use any of them.
 //
 
 import AppKit
@@ -40,6 +41,12 @@ final class PlaceholderShellViewController: NSViewController {
 
     private var headerHeightConstraint: Constraint?
     private var leftContainerLeadingConstraint: Constraint?
+    private var trailingBottomConstraint: Constraint?
+    private var fullscreenObserverCancellable: AnyCancellable?
+    private var transcriptObserverCancellable: AnyCancellable?
+    private var contentLayout: WebContentLayout {
+        WebContentLayout(browserState: browserState)
+    }
     private var layoutObserverCancellable: AnyCancellable?
     private var sidebarCollapsedObserverCancellable: AnyCancellable?
 
@@ -88,7 +95,7 @@ final class PlaceholderShellViewController: NSViewController {
             leftContainerLeadingConstraint = make.leading.equalToSuperview()
                 .inset(contentLeadingInset)
                 .constraint
-            make.trailing.bottom.equalToSuperview().inset(WebContentConstant.edgesSpacing)
+            trailingBottomConstraint = make.trailing.bottom.equalToSuperview().inset(contentLayout.edgeSpacing).constraint
             make.top.equalToSuperview()
         }
 
@@ -128,6 +135,17 @@ final class PlaceholderShellViewController: NSViewController {
     /// Adapts to layout-mode preference changes (.performance ↔ .balanced
     /// ↔ .comfortable) while in placeholder mode.
     private func observeLayoutMode() {
+        transcriptObserverCancellable = browserState?.$isTranscriptDocked
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateHeaderVisibility() }
+
+        fullscreenObserverCancellable = browserState?.$isInFullScreenMode
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateContentLeadingInset() }
+
         layoutObserverCancellable =
             NotificationCenter.default
                 .publisher(for: UserDefaults.didChangeNotification)
@@ -148,12 +166,14 @@ final class PlaceholderShellViewController: NSViewController {
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
         let sidebarCollapsed = browserState?.sidebarCollapsed ?? true
         return (traditionalLayout || sidebarCollapsed)
-            ? WebContentConstant.edgesSpacing
+            ? contentLayout.edgeSpacing
             : 0
     }
 
     private func updateContentLeadingInset() {
         leftContainerLeadingConstraint?.update(inset: contentLeadingInset)
+        trailingBottomConstraint?.update(inset: contentLayout.edgeSpacing)
+        leftContainerView.layer?.cornerRadius = contentLayout.innerCornerRadius
     }
 
     private func updateHeaderVisibility() {

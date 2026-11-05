@@ -18,7 +18,7 @@ final class TrafficLightPositionerTests: XCTestCase {
 
         for (layout, expectedCenter) in [(LayoutMode.performance, CGFloat(20)), (.balanced, 27.5), (.comfortable, 22)] {
             let positioner = TrafficLightPositioner(window: window,
-                centerFromWindowTop: SpaceSessionController.chromeRowCenter(for: layout),
+                centerFromWindowTop: SpaceSessionController.chromeRowCenter(for: layout, edgeToEdgeEnabled: false),
                 centerFromWindowLeading: layout == .balanced ? 22 : nil)
             positioner.start()
             let frames = buttons.map { $0.convert($0.bounds, to: nil) }

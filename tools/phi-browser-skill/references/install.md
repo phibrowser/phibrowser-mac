@@ -2,8 +2,10 @@
 
 ## 1. Install the skill
 
-Easiest: in Phi Browser open **Settings → General → Developer**, under "Install
-the phi-browser skill" pick your agent from **Add skill to…** — Claude Code
+Easiest: in Phi Browser turn on **Developer mode** in **Settings → Advanced**,
+then open **Settings → Developer** and switch on "Allow agents to control Phi
+(CDP)". Under "Install the phi-browser skill" pick your agent from
+**Add skill to…** — Claude Code
 (`~/.claude/skills`), Codex (`~/.codex/skills`), Cursor (`~/.cursor/skills`),
 OpenClaw (`~/.openclaw/skills`), Pi (`~/.pi/agent/skills`), Hermes
 (`~/.hermes/skills`), Grok Build (`~/.grok/skills`), Grok Bot (the same
@@ -52,8 +54,8 @@ How it works, and why it's safe:
 - If agent control is off (it is off by default, as is Developer mode), the
   same prompt says so and turns **both** on when you allow — the socket is a
   doorbell, not an open door. Deny and nothing changes.
-- *Always Allow* is remembered per agent under **Settings ▸ Developer ▸ Remote
-  debugging ▸ Remembered agents**; **Remove** there makes that agent ask again.
+- *Always Allow* is remembered per agent under **Settings ▸ Developer ▸ Agent
+  control ▸ Allowed agents**; **Remove** there makes that agent ask again.
 - *Deny* carries a scope: **Just this time** (ask again next connection),
   **For 30 min**, or **Never ask again** — each optionally widened to *all
   agents*, which turns away every agent including ones Phi has never seen.
@@ -234,7 +236,7 @@ needed): `node scripts/selftest-mirror.mjs`.
   `PHI_HERMES_BIN`). Check `hermes --resume <session-id> -z test` by hand.
 - **Access denied**: you denied this agent. If the denial was "For 30 min" or
   "Never ask again", retrying does not re-prompt — lift it under Settings ▸
-  Developer ▸ Remote debugging ▸ Blocked agents (**Unblock**), or switch
+  Developer ▸ Agent control ▸ Blocked agents (**Unblock**), or switch
   "Allow agents to control Phi (CDP)" off and on, which clears every block.
   A "Just this time" denial re-prompts on the next connection.
 - **Endpoint not responding / first call hangs**: the first connection waits on

@@ -285,6 +285,8 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     }()
     
     private lazy var headerView = SidebarHeaderView(state: state)
+    /// The share of the page card's edge shadow that falls on the sidebar.
+    private lazy var pageEdgeShadowView = PageCardEdgeShadowView(cardPosition: .beyondTrailingEdge)
     private lazy var pinnedTabViewController = PinnedTabViewController(state: state, hostVC: self)
     private lazy var tabList: SidebarTabListViewController = {
         let controller = SidebarTabListViewController(state: state, hostVC: self)
@@ -519,8 +521,8 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     private var mediaWindowVisibilityCancellables = Set<AnyCancellable>()
     private weak var mediaObservedWindow: NSWindow?
     private var headerHeightConstraint: Constraint?
+    private var headerSpacerHeightConstraint: Constraint?
     private var pinnedTabsHeightConstraint: Constraint?
-    private var pinSpacerHeightConstraint: Constraint?
     private var bottomBarHeightConstraint: Constraint?
     private var mediaPlayerHeightConstraint: Constraint?
     private var messageCardHeightConstraint: Constraint?
@@ -578,6 +580,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         super.viewDidLoad()
         lastPersistedFavoriteHeight = loadCachedFavoriteHeight()
         setupStackView()
+        setupPageEdgeShadow()
         if !paintsOwnBackdrop {
             setSpaceSwitchBackdropHidden(false)
         }
@@ -742,15 +745,15 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
             && state.participatesInSpaces
             && (SpaceManager.shared.spaces.count > 1 || headerView.forcesSpaceSwitchVisible)
         // Base = nav row (+ address bar in sidebar layouts). The Spaces switch
-        // adds its row height plus the 8pt gap below the nav row only while it
-        // is shown, so the header reclaims the full band when it is hidden.
-        // In top-navigation layouts, 42.5pt leaves the Space strip exactly
-        // 8pt above the next sidebar band once the 5pt header spacer below is
-        // included. The half point follows the legacy header controls' 15.5pt
-        // top alignment. With the address bar in the sidebar, 79pt leaves 3pt
-        // under it, so the band below starts 8pt under the bar.
-        let base: CGFloat = addressInSidebar ? 79 : 42.5
-        let spacesBandHeight = SpacesStripView.sidebarHeight + 8
+        // adds its band (see SidebarHeaderView.spaceSwitchBandHeight) only
+        // while it is shown, so the header reclaims it when it is hidden.
+        // Follow the control row's top offset so edge-to-edge changes keep
+        // 3pt under the nav row, Space strip, or sidebar address bar.
+        // The pinned band's top inset, or the spacer
+        // while the band is empty, makes up the rest of the 8pt below (see
+        // setupStackView).
+        let base = headerView.controlRowTopOffset + (addressInSidebar ? 71 : 27)
+        let spacesBandHeight = SidebarHeaderView.spaceSwitchBandHeight(addressInSidebar: addressInSidebar)
         let headerHeight = base + (spacesEnabled ? spacesBandHeight : 0)
         headerHeightConstraint?.update(offset: headerHeight)
     }
@@ -759,9 +762,28 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     private func setupConfigObserverIfNeeded() {
         guard hasSetupConfigObserver == false else { return }
         hasSetupConfigObserver = true
+        state.$isTranscriptDocked
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateHeaderHeight()
+                self?.updatePageEdgeShadow()
+            }
+            .store(in: &cancellables)
+
+        state.$isInFullScreenMode
+            .merge(with: state.$isPageDeemphasizedForPeek)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updatePageEdgeShadow() }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
+                self?.updatePageEdgeShadow()
                 self?.updateChatButtonVisibility()
                 self?.updateMemoryButtonVisibility()
                 self?.headerView.updateSpaceSwitchVisibility()
@@ -785,7 +807,25 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     }
     
     // MARK: - Setup
-    
+
+    /// Above every sidebar subview, along the trailing edge the
+    /// edge-to-edge page card meets.
+    private func setupPageEdgeShadow() {
+        view.addSubview(pageEdgeShadowView)
+        pageEdgeShadowView.snp.makeConstraints { make in
+            make.top.bottom.trailing.equalToSuperview()
+            make.width.equalTo(PageCardEdgeShadowView.shadowRadius * 4)
+        }
+        updatePageEdgeShadow()
+    }
+
+    private func updatePageEdgeShadow() {
+        let layout = WebContentLayout(browserState: state)
+        // An open Peek fades the page behind it; its card casts no shadow then.
+        pageEdgeShadowView.isHidden = !layout.showsContentShadow || state.isPageDeemphasizedForPeek
+        pageEdgeShadowView.cornerRadius = layout.containerCornerRadius
+    }
+
     private func setupStackView() {
         // Added before mainStackView so it stays behind every stack item.
         // The root's backdrop always sits at the very back
@@ -809,29 +849,29 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         
         updateHeaderHeight()
 
-        let headerSpacer = createSpacer(height: 5)
+        // The pinned band carries its own gaps (see PinnedTabViewController),
+        // so this spacer opens only while the band is empty: with the
+        // header's 3 pt under its last row and the tab list's 2 pt row inset,
+        // 3 pt here puts the first row 8 pt under that row.
+        let initialPinnedHeight = state.isIncognito ? 0 : loadCachedFavoriteHeight()
+        let headerSpacer = NSView()
+        headerSpacer.snp.makeConstraints { make in
+            headerSpacerHeightConstraint = make.height.equalTo(initialPinnedHeight > 0 ? 0 : 3).constraint
+        }
         mainStackView.addArrangedSubview(headerSpacer)
 
         // The pinned-tab (favorites) band is a per-profile feature with no
         // meaning in an incognito session, which has no favorites. Skip mounting
-        // it entirely — along with its trailing spacer — so the tab list and its
-        // "+ New Tab" row sit directly below the address bar instead of under an
-        // empty reserved band (matching how the Spaces strip / AI chat / memory
-        // are suppressed for incognito).
+        // it entirely so the tab list and its "+ New Tab" row sit directly below
+        // the address bar instead of under an empty reserved band (matching how
+        // the Spaces strip / AI chat / memory are suppressed for incognito).
         if !state.isIncognito {
             setupFavoriteContainer()
-            let initialPinnedHeight = loadCachedFavoriteHeight()
             mainStackView.addArrangedSubview(pinnedTabContainerView)
             pinnedTabContainerView.snp.makeConstraints { make in
                 make.leading.trailing.equalToSuperview()
                 pinnedTabsHeightConstraint = make.height.equalTo(initialPinnedHeight).constraint
             }
-
-            let pinSpacer = NSView()
-            pinSpacer.snp.makeConstraints { make in
-                pinSpacerHeightConstraint = make.height.equalTo(initialPinnedHeight > 0 ? 3 : 0).constraint
-            }
-            mainStackView.addArrangedSubview(pinSpacer)
         }
 
         // The Spaces switch is mounted at the TOP of the sidebar — inside the
@@ -945,7 +985,11 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     private func setupObservers(_ state: BrowserState) {
         state.sidebarCollapsedPublisher
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.updateMediaActivation() }
+            .sink { [weak self] collapsed in
+                self?.updateMediaActivation()
+                // Folders toggled in the floating sidebar while this one was collapsed.
+                if !collapsed { self?.tabList.applyBookmarkExpandedFlags() }
+            }
             .store(in: &cancellables)
 
         state.$layoutMode
@@ -1266,7 +1310,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         }
 
         pinnedTabsHeightConstraint?.update(offset: clampedHeight)
-        pinSpacerHeightConstraint?.update(offset: clampedHeight > 0 ? 3 : 0)
+        headerSpacerHeightConstraint?.update(offset: clampedHeight > 0 ? 0 : 3)
         view.layoutSubtreeIfNeeded()
         persistFavoriteHeightIfNeeded(clampedHeight, isDragging: isDragging)
     }

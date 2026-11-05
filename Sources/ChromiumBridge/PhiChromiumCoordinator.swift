@@ -324,6 +324,8 @@ import SwiftUI
         let localResetMarker = SyncPairingLocalResetMarkerStore(
             readData: { account.userDefaults.object(forKey: SyncPairingLocalResetMarkerStore.defaultsKey) as? Data },
             writeData: { account.userDefaults.set($0, forKey: SyncPairingLocalResetMarkerStore.defaultsKey) })
+        // The launch snapshot's `sync_enabled` mirror (docs/sync.md, "Launch snapshot caches").
+        ProfilePairingGate.shared.pairingObserver = { SyncLaunchAnalytics.recordPaired($0) }
         // Bind the fail-closed prerequisite before any unlock callback can start sync.
         do {
             let deviceID = try stack.manager.deviceKeyProviderForTesting.deviceKeyId()
@@ -338,6 +340,8 @@ import SwiftUI
         }
         let mappingStore = AccountProfileSyncMappingStore(defaults: account.userDefaults)
         let profileKeys = ProfileKeyManager(api: stack.api, keyManager: stack.manager, mappingStore: mappingStore)
+        profileKeys.onAccountListing = { SyncLaunchAnalytics.recordAccountProfiles($0) }
+        profileKeys.onDefaultFlag = { SyncLaunchAnalytics.recordDefaultFlag(uuid: $0, isDefault: $1) }
         let spaceStateStore = AccountPhiSpaceSyncStateStore(defaults: account.userDefaults)
         let spaceMappingStore = AccountSpaceSyncMappingStore(defaults: account.userDefaults)
         let spaceKeys = SpaceSyncMappingManager(store: spaceMappingStore)
@@ -927,7 +931,8 @@ import SwiftUI
                 return participants
             },
             lastSuccess: account.userDefaults.date(forKey: SyncHelper.lastSuccessDefaultsKey),
-            saveSuccess: { account.userDefaults.set($0, forKey: SyncHelper.lastSuccessDefaultsKey) })
+            saveSuccess: { account.userDefaults.set($0, forKey: SyncHelper.lastSuccessDefaultsKey) },
+            attentionReporter: .live(defaults: .standard))
         syncHelper?.start()
         // The follower may have failed before this helper existed; it publishes only on change.
         syncHelper?.setPinScopeMigrationFailure(follower.failure)
@@ -1537,6 +1542,12 @@ import SwiftUI
         syncKeyController?.retire()
         syncKeyController = nil
         ProfilePairingGate.shared.stop()
+        // Sign-out, or this device leaving sync: the launch snapshot caches describe nothing now.
+        // An account assignment (every launch included) keeps them; the rebuild refreshes them.
+        if AccountController.shared.account == nil || nativeSyncCleanupInProgress {
+            SyncLaunchAnalytics.reset()
+            SyncAttentionReporter.reset()
+        }
         // The facade's seams are bound to the account that has just gone away: the store
         // writes ITS plist and `localSpaceProfileIds` holds ITS `Account`. Leaving them
         // standing would let the no-engine fallback (a Space deleted while signed out)
@@ -3605,7 +3616,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     // Tab groups (Chromium → Mac)
     //
     // Forwards all 5 bridge callbacks through EventBus, matching the
-    // dispatch shape used by TabEvent / BookmarkEvent. The actual state
+    // dispatch shape used by TabEvent. The actual state
     // updates happen in `BrowserState.handleTabGroup*`.
     // =========================================================================
 
@@ -3796,23 +3807,6 @@ extension PhiChromiumCoordinator {
 }
 
 extension PhiChromiumCoordinator {
-    func bookmarksLoaded(_ windowId: Int64) {
-        EventBus.shared.send(BookmarkEvent(browserId: windowId.intValue,
-                                           action: .bookmarksLoaded))
-    }
-    
-    func bookmarksChanged(_ newNodes: [any BookmarkWrapper], windowId: Int64) {
-        EventBus.shared.send(BookmarkEvent(browserId: windowId.intValue,
-                                           action: .bookmarksChanged(newNodes)))
-    }
-    
-    func bookmarkInfoChanged(withWindowId windowId: Int64, bookmarkId id: Int64, title: String?, url: String?, facicon favicon_url: String?) {
-        EventBus.shared.send(BookmarkEvent(browserId: windowId.intValue,
-                                           action: .bookmarkInfoChanged(id: id, title: title, url: url, faviconUrl: favicon_url)))
-    }
-}
-
-extension PhiChromiumCoordinator {
     func omniboxResultChanged(_ matches: [[AnyHashable : Any]], originalInput: String, windowId: Int64) {
         guard let infos = matches as? [[String: Any]] else {
             return
@@ -3876,6 +3870,16 @@ extension PhiChromiumCoordinator {
         EventBus.shared.send(SplitEvent(
             browserId: windowId.intValue,
             action: .removed(splitId: splitId)))
+    }
+
+    /// A companion app's page action chosen in the web-content right-click
+    /// menu: reported to the channel that registered it.
+    @objc(pageActionInvoked:channelId:info:)
+    func pageActionInvoked(_ actionId: String, channelId: String, info: [String: Any]) {
+        DispatchQueue.main.async {
+            AppController.shared?.invokePageActionFromContextMenu(actionId: actionId, channelId: channelId,
+                                                                   info: info)
+        }
     }
 
     func openReaderView(forTabId tabId: Int64, windowId: Int64) {

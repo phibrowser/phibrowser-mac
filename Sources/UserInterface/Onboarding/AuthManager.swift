@@ -268,7 +268,7 @@ final class InMemoryCredentialsStorage: CredentialsStorage {
 }
 
 /// Logs Keychain failures that Auth0's default storage converts to nil or false.
-private struct Auth0KeychainCredentialsStorage: CredentialsStorage {
+struct Auth0KeychainCredentialsStorage: CredentialsStorage {
     private let keychain = SimpleKeychain()
 
     func getEntry(forKey key: String) -> Data? {
@@ -294,6 +294,78 @@ private struct Auth0KeychainCredentialsStorage: CredentialsStorage {
 
     func deleteEntry(forKey key: String) -> Bool {
         keychain.deleteEntry(forKey: key)
+    }
+
+    static func clear(
+        query: [String: Any],
+        sdkClear: () -> Bool,
+        copyMatching: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus = SecItemCopyMatching,
+        deleteMatching: (CFDictionary) -> OSStatus = SecItemDelete,
+        deleteLegacyItem: (SecKeychainItem) -> OSStatus = SecKeychainItemDelete
+    ) -> Bool {
+        let sdkCleared = sdkClear()
+        var localStatus = copyMatching(query as CFDictionary, nil)
+        // The file-based keychain removes one match at a time. Drain matching
+        // credentials across the search list, but bound retries if another
+        // writer keeps recreating them or deletion reports false success.
+        let maximumDeletionAttempts = 8
+        for attempt in 1...maximumDeletionAttempts {
+            guard localStatus == errSecSuccess else { break }
+            // Retry the same SDK item directly to retain its deletion OSStatus.
+            var deleteQuery = query
+            deleteQuery.removeValue(forKey: kSecMatchLimit as String)
+            let deleteStatus = deleteMatching(deleteQuery as CFDictionary)
+            var effectiveDeleteStatus = deleteStatus
+            if deleteStatus == errSecInvalidOwnerEdit {
+                // SecItemDelete compares the last path component of trusted
+                // applications in the first decrypt ACL. The deprecated API
+                // is needed here to delete file-keychain items rejected by
+                // that name check.
+                // Resolve only this product's Auth0 item, without reading its
+                // secret, and let the legacy API perform the actual deletion.
+                var referenceQuery = query
+                referenceQuery[kSecReturnRef as String] = true
+                var result: CFTypeRef?
+                let lookupStatus = copyMatching(referenceQuery as CFDictionary, &result)
+                let legacyStatus: OSStatus
+                if lookupStatus == errSecSuccess {
+                    if let result, CFGetTypeID(result) == SecKeychainItemGetTypeID() {
+                        legacyStatus = deleteLegacyItem(result as! SecKeychainItem)
+                    } else {
+                        legacyStatus = errSecInvalidItemRef
+                    }
+                } else {
+                    legacyStatus = lookupStatus
+                }
+                effectiveDeleteStatus = legacyStatus
+                let description = SecCopyErrorMessageString(legacyStatus, nil) as String? ?? "Unknown error"
+                let message = "[Auth] Local Auth0 legacy credential deletion after owner mismatch (\(deleteStatus)): OSStatus \(legacyStatus) (\(description)); SDK clear=\(sdkCleared); attempt=\(attempt)"
+                if legacyStatus == errSecSuccess || legacyStatus == errSecItemNotFound {
+                    AppLogInfo(message)
+                } else {
+                    AppLogError(message)
+                }
+            } else if deleteStatus != errSecSuccess && deleteStatus != errSecItemNotFound {
+                let message = SecCopyErrorMessageString(deleteStatus, nil) as String? ?? "Unknown error"
+                AppLogError("[Auth] Local Auth0 credential deletion failed: OSStatus \(deleteStatus) (\(message)); SDK clear=\(sdkCleared)")
+            }
+            // Neither SDK nor legacy deletion success is sufficient: Guest
+            // access requires proof that the original credential is gone.
+            localStatus = copyMatching(query as CFDictionary, nil)
+            guard effectiveDeleteStatus == errSecSuccess || effectiveDeleteStatus == errSecItemNotFound else {
+                break
+            }
+            if attempt == maximumDeletionAttempts && localStatus == errSecSuccess {
+                AppLogError("[Auth] Local Auth0 credential cleanup reached its deletion limit; SDK clear=\(sdkCleared)")
+            }
+        }
+        guard localStatus == errSecItemNotFound else {
+            AppLogError(
+                "[Auth] Local Auth0 credential verification failed with OSStatus \(localStatus)"
+            )
+            return false
+        }
+        return true
     }
 
     private func logError(_ error: Error, operation: String, key: String) {
@@ -907,27 +979,10 @@ class AuthManager {
     }
 
     private func clearCredentialStores(postSharedTokenChange: Bool) -> Bool {
-        let sdkCleared = credentialManager.clear()
-        var localStatus = storedAuth0CredentialStatus()
-        if localStatus != errSecItemNotFound {
-            // Retry the same SDK item directly so a deletion failure retains its
-            // OSStatus; CredentialsManager.clear() reduces every error to false.
-            var query = storedAuth0CredentialQuery()
-            query.removeValue(forKey: kSecMatchLimit as String)
-            let deleteStatus = SecItemDelete(query as CFDictionary)
-            if deleteStatus != errSecSuccess && deleteStatus != errSecItemNotFound {
-                let message = SecCopyErrorMessageString(deleteStatus, nil) as String? ?? "Unknown error"
-                AppLogError("[Auth] Local Auth0 credential deletion failed: OSStatus \(deleteStatus) (\(message)); SDK clear=\(sdkCleared)")
-            }
-            localStatus = storedAuth0CredentialStatus()
-        }
-        let localCleared = localStatus == errSecItemNotFound
-        if !localCleared {
-            AppLogError(
-                "[Auth] Local Auth0 credential verification failed with OSStatus \(localStatus)"
-            )
-        }
-
+        let localCleared = Auth0KeychainCredentialsStorage.clear(
+            query: storedAuth0CredentialQuery(),
+            sdkClear: { credentialManager.clear() }
+        )
         let sharedCleared = SharedAuthTokenStore.shared.clear(
             postChangeNotification: postSharedTokenChange
         )
@@ -948,10 +1003,6 @@ class AuthManager {
             kSecAttrAccount as String: credentialStoreKey,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
-    }
-
-    private func storedAuth0CredentialStatus() -> OSStatus {
-        SecItemCopyMatching(storedAuth0CredentialQuery() as CFDictionary, nil)
     }
 
     private func storedAuth0CredentialData() -> Data? {

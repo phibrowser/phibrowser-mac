@@ -59,7 +59,7 @@ final class GroupTabsTableView: NSTableView {
             && event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty
             && shouldSelectOnMouseDown?() == true)
         if selectedOnMouseDown && !paneHandledClick {
-            phiTableDelegate?.tableView(self, didClickRow: row, modifierFlags: event.modifierFlags)
+            phiTableDelegate?.tableView(self, didClickRow: row, clickCount: 1, modifierFlags: event.modifierFlags)
         }
         AppLogDebug(
             "[TAB_GROUPS][INNER_DRAG] inner.mouseDown row=\(row) " +
@@ -164,9 +164,16 @@ final class GroupTabsTableView: NSTableView {
                                             didRequest: pendingInteractionTarget,
                                             row: clickedRow)
             } else if pendingInteractionTarget == nil && !selectedOnMouseDown {
+                if let cell = view(atColumn: 0, row: clickedRow, makeIfNecessary: false)
+                    as? SidebarSplitPairCellView,
+                   cell.handleDoubleClick(with: event) {
+                    resetPendingDragState()
+                    return
+                }
                 phiTableDelegate?.tableView(
                     self,
                     didClickRow: clickedRow,
+                    clickCount: event.clickCount,
                     modifierFlags: modifierFlags
                 )
             }
@@ -241,6 +248,7 @@ protocol GroupTabsTableViewDelegate: AnyObject {
                    with event: NSEvent)
     func tableView(_ tableView: GroupTabsTableView,
                    didClickRow row: Int,
+                   clickCount: Int,
                    modifierFlags: NSEvent.ModifierFlags)
     func tableView(_ tableView: GroupTabsTableView,
                    didMiddleClickRow row: Int,

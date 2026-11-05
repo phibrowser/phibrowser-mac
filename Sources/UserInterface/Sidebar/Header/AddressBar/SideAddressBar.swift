@@ -276,7 +276,13 @@ class SideAddressBar: NSView {
             browserState: browserState
         )
 
+        // A presented peek covers the current tab, so the bar shows the peek's URL.
         $currentTab
+            .combineLatest(browserState.peekState.$peeksByOpener, browserState.$splits)
+            .map { tab, peeksByOpener, splits in
+                BrowserState.visiblePeek(focusingTab: tab, peeksByOpener: peeksByOpener, splits: splits)?.tab ?? tab
+            }
+            .removeDuplicates { $0 === $1 }
             .compactMap { $0 }
             .map { tab in
                 tab.$url
@@ -295,7 +301,7 @@ class SideAddressBar: NSView {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard browserState.isInPlaceholderMode != true else { return }
-                self?.updateDisplayedURL(self?.currentTab?.url)
+                self?.updateDisplayedURL(self?.displayedTab?.url)
             }
             .store(in: &cancellables)
 
@@ -310,7 +316,7 @@ class SideAddressBar: NSView {
                 if isPlaceholder {
                     self.textField.stringValue = ""
                 } else {
-                    self.updateDisplayedURL(self.currentTab?.url)
+                    self.updateDisplayedURL(self.displayedTab?.url)
                 }
                 self.copyURLButton.isHidden = isPlaceholder
                 self.extensionMenuHostingView.isHidden = isPlaceholder
@@ -468,6 +474,10 @@ class SideAddressBar: NSView {
         refreshReorderSourceVisibility()
     }
 
+    private var displayedTab: Tab? {
+        sessionBrowserState?.pageCommandTarget(focusingTab: currentTab) ?? currentTab
+    }
+
     private func updateDisplayedURL(_ url: String?) {
         guard sessionBrowserState?.groupOverviewState == nil,
               let url,
@@ -579,11 +589,14 @@ class SideAddressBar: NSView {
     }
     
     private func copyCurrentURL() {
-        guard var urlString = currentTab?.url, !urlString.isEmpty else { return }
-        urlString = ReaderExtensionBridge.sourceURLString(fromReaderPageURL: urlString) ?? urlString
-        let branded = URLProcessor.phiBrandEnsuredUrlString(urlString)
+        // The page in front of the bar: a presented peek's, not the opener
+        // hidden behind the panel — the same answer the Copy URL command
+        // gives, so the button and ⌘⇧C cannot disagree.
+        let urlString = sessionBrowserState?.addressBarCopyURLString(for: currentTab)
+            ?? BrowserState.copyURLString(forAddressBarShowing: currentTab)
+        guard let urlString else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(branded, forType: .string)
+        NSPasteboard.general.setString(urlString, forType: .string)
     }
 
     private func toggleReaderView() {

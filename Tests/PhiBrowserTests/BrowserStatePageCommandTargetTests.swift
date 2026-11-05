@@ -123,4 +123,64 @@ final class BrowserStatePageCommandTargetTests: XCTestCase {
         XCTAssertTrue(state.readerViewTarget(focusingTab: opener) === opener)
         XCTAssertTrue(state.pageCommandTarget === peek)
     }
+
+    // MARK: - Address bar Copy URL
+
+    /// The address bar's Copy URL button resolves its URL through the same
+    /// rule as the command, so a presented peek is what both put on the
+    /// clipboard — not the opener hidden behind the panel.
+    func testAddressBarCopyURLFollowsThePresentedPeek() throws {
+        let state = try makeState()
+        let opener = makeTab(1)
+        let peek = makeTab(2)
+        state.tabs = [opener]
+        state.focusingTab = opener
+        state.peekState.present(peek, openerTabId: opener.guid)
+
+        XCTAssertEqual(state.addressBarCopyURLString(for: opener), "https://e2.example")
+        XCTAssertNotEqual(state.addressBarCopyURLString(for: opener), "https://e1.example")
+    }
+
+    func testAddressBarCopyURLIsTheBarTabsURLWithoutAPeek() throws {
+        let state = try makeState()
+        let opener = makeTab(1)
+        state.tabs = [opener]
+        state.focusingTab = opener
+
+        XCTAssertEqual(state.addressBarCopyURLString(for: opener), "https://e1.example")
+    }
+
+    /// Only the bar's own opener's peek is on screen; another opener's peek
+    /// stays hidden and must not be copied.
+    func testAddressBarCopyURLIgnoresAnotherOpenersPeek() throws {
+        let state = try makeState()
+        let focused = makeTab(1)
+        let otherOpener = makeTab(2)
+        let hiddenPeek = makeTab(3)
+        state.tabs = [focused, otherOpener]
+        state.focusingTab = focused
+        state.peekState.present(hiddenPeek, openerTabId: otherOpener.guid)
+
+        XCTAssertEqual(state.addressBarCopyURLString(for: focused), "https://e1.example")
+    }
+
+    func testAddressBarCopyURLIsEmptyWithoutATab() throws {
+        let state = try makeState()
+
+        XCTAssertNil(state.addressBarCopyURLString(for: nil))
+    }
+
+    /// A reader page stands in for its article, whichever caller of the
+    /// shared resolution reaches it.
+    func testAddressBarCopyURLRecoversTheArticleFromAReaderPage() throws {
+        let readerURL = "chrome-extension://\(ReaderExtensionBridge.extensionId)/reader.html#src=https%3A%2F%2Farticle.example%2Fstory"
+        let reader = makeTab(1)
+        reader.url = readerURL
+        let state = try makeState()
+        state.tabs = [reader]
+        state.focusingTab = reader
+
+        XCTAssertEqual(state.addressBarCopyURLString(for: reader), "https://article.example/story")
+        XCTAssertEqual(BrowserState.copyURLString(forAddressBarShowing: reader), "https://article.example/story")
+    }
 }

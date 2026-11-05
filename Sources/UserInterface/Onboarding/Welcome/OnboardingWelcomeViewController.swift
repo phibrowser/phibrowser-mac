@@ -41,6 +41,9 @@ class OnboardingWelcomeViewController: OnboardingBaseViewController {
         }
     }
 
+    // The page has no visible title, so VoiceOver starts on the card.
+    override var initialAccessibilityElement: NSView? { cardView }
+
     // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -57,6 +60,26 @@ class OnboardingWelcomeViewController: OnboardingBaseViewController {
         profileTask = Task { [weak self] in await self?.requestProfile() }
         if let theme = themes.first(where: { $0.id == selectedThemeId }) ?? themes.first {
             themeChanged(theme)
+        }
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        guard let window = view.window else { return }
+        window.recalculateKeyViewLoop()
+        // The footer's SwiftUI buttons own their focusable responders.
+        if let nextFocus = nextButton.nextValidKeyView,
+           nextFocus.isDescendant(of: nextButton),
+           let backFocus = leftButton.nextValidKeyView,
+           backFocus.isDescendant(of: leftButton) {
+            randomButton.nextKeyView = nextFocus
+            nextFocus.nextKeyView = backFocus
+            backFocus.nextKeyView = randomButton
+        }
+        // makeFirstResponder succeeds even with Keyboard navigation off.
+        if NSApp.isFullKeyboardAccessEnabled {
+            window.initialFirstResponder = randomButton
+            window.makeFirstResponder(randomButton)
         }
     }
 

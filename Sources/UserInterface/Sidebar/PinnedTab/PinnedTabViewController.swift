@@ -8,10 +8,13 @@ import Combine
 import SnapKit
 
 class PinnedTabViewController: NSViewController {
-    private lazy var customLayout: PinnedTabLayout = {
-        let layout = PinnedTabLayout()
-        return layout
-    }()
+    // Every gap around this band matches the 8 pt between its rows. The
+    // header leaves 3 pt under its last row and the tab list insets its row
+    // backgrounds by 2 pt, so 5 pt above and 6 pt below put the band 8 pt
+    // from both. The gaps sit inside the band rather than in the sidebars'
+    // spacers, so a corner badge overhanging the first row is not clipped
+    // and drops just above or below the grid still land here.
+    private lazy var customLayout = PinnedTabLayout(topInset: 5, bottomInset: 6)
 
     private lazy var collectionView: ReorderingCollectionView = {
         let collectionView = ReorderingCollectionView()

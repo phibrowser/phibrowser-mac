@@ -175,6 +175,21 @@ private struct ThemeEditorPaletteBackground: View {
     }
 }
 
+/// Equatable so the Oklab gradient is only rebuilt when the preset or
+/// appearance changes, not on every drag frame of the color field.
+private struct PresetSwatchFill: View, Equatable {
+    let preset: ThemePalette
+    let appearance: Appearance
+
+    var body: some View {
+        let colors = preset.colors(for: appearance).map { $0.withAlphaComponent(1) }
+        let gradientColors = colors.count > 1
+            ? ColoredVisualEffectView.gradientColors(colors).map { Color(cgColor: $0) }
+            : colors.map { Color(nsColor: $0) }
+        Circle().fill(LinearGradient(colors: gradientColors, startPoint: .top, endPoint: .bottom))
+    }
+}
+
 /// Claims only blank editor background. Controls keep their native/SwiftUI
 /// mouse tracking, while AppKit owns window dragging outside their bounds.
 private struct ThemeEditorWindowDragSurface: NSViewRepresentable {
@@ -271,7 +286,7 @@ private final class ThemeEditorPreviewThrottle: NSObject {
 
 /// The existing Space theme editor, with a linked palette and live window updates.
 struct SpaceThemeEditorView: View {
-    static let contentSize = NSSize(width: 260, height: 296)
+    static let contentSize = NSSize(width: 260, height: 328)
 
     let spaceId: String?
     let allowsWindowDragging: Bool
@@ -284,6 +299,12 @@ struct SpaceThemeEditorView: View {
     @State private var draggedHandle: Int?
     @State private var hoveredHarmony: ThemePalette.Harmony?
     @State private var previewThrottle = ThemeEditorPreviewThrottle()
+    @AppStorage(PhiPreferences.ThemeSettings.savedPalettes.rawValue) private var savedPaletteData = Data()
+    @State private var savedPalettes: [ThemePalette]
+    @State private var presetPage = 0
+    @State private var hoveredPreset: Int?
+    @State private var deletablePreset: Int?
+    @State private var uneditedPalette: ThemePalette?
     private let storeIdentifier: UUID?
     /// New Spaces edit the form's draft until creation commits it.
     private let draftPalette: Binding<ThemePalette>?
@@ -295,6 +316,7 @@ struct SpaceThemeEditorView: View {
         self.onDismiss = onDismiss
         let manager = SpaceManager.shared
         storeIdentifier = manager.storeIdentifier
+        _savedPalettes = State(initialValue: Self.loadSavedPalettes())
         let appearance = ThemeManager.shared.currentAppearance
         _palette = State(initialValue: manager.themePalette(forSpaceId: spaceId) ?? ThemePalette(
             color: manager.resolvedTheme(forSpaceId: spaceId).color(for: .windowOverlayBackground, appearance: appearance),
@@ -309,12 +331,16 @@ struct SpaceThemeEditorView: View {
         storeIdentifier = nil
         draftPalette = palette
         _palette = State(initialValue: palette.wrappedValue)
+        _savedPalettes = State(initialValue: Self.loadSavedPalettes())
     }
 
     var body: some View {
         VStack(spacing: 10) {
-            colorField
             toolbar
+            VStack(spacing: 8) {
+                colorField
+                presetStrip
+            }
         }
         .padding(.horizontal, 8)
         .padding(.top, 8)
@@ -334,7 +360,10 @@ struct SpaceThemeEditorView: View {
                 }
             }
         }
-        .onAppear(perform: syncControls)
+        .onAppear {
+            syncControls()
+            focusSelectedPreset()
+        }
         .onDisappear {
             if draggedHandle != nil { update(palette) }
             previewThrottle.cancel()
@@ -367,7 +396,7 @@ struct SpaceThemeEditorView: View {
             .overlay {
                 Capsule().strokeBorder(Color.primary.opacity(appearance.isDark ? 0.2 : 0.06), lineWidth: 1)
             }
-            Spacer(minLength: 0)
+            Spacer().frame(width: 29)
             HStack(spacing: 0) {
                 ForEach(ThemePalette.Harmony.allCases, id: \.self) { harmony in
                     harmonyButton(harmony)
@@ -376,6 +405,25 @@ struct SpaceThemeEditorView: View {
             .padding(1)
             .overlay {
                 Capsule().strokeBorder(Color.primary.opacity(appearance.isDark ? 0.2 : 0.06), lineWidth: 1)
+            }
+            Spacer(minLength: 0)
+        }
+        .overlay(alignment: .trailing) {
+            if uneditedPalette != nil {
+                HStack(spacing: 2) {
+                    editorButton(asset: "reset", label: NSLocalizedString(
+                        "theme.editor.reset", value: "Reset",
+                        comment: "Theme editor - restore the palette before manual adjustments"
+                    ), identifier: "theme.editor.reset") {
+                        guard let original = uneditedPalette else { return }
+                        uneditedPalette = nil
+                        update(original, animated: true)
+                    }
+                    editorButton(asset: "save", label: NSLocalizedString(
+                        "theme.editor.save", value: "Save color",
+                        comment: "Theme editor - save the current solid or gradient palette as a custom swatch"
+                    ), identifier: "theme.editor.save", action: savePalette)
+                }
             }
         }
         .frame(height: 24)
@@ -413,7 +461,7 @@ struct SpaceThemeEditorView: View {
             assetName = "theme-editor-count-three-" + mode
         }
         return Button {
-            update(palette.settingHarmony(harmony))
+            edit(palette.settingHarmony(harmony))
         } label: {
             ZStack {
                 Image(assetName)
@@ -479,8 +527,8 @@ struct SpaceThemeEditorView: View {
                         .contentShape(Circle())
                         .focusable()
                         .focusEffectDisabled()
-                        .onKeyPress(.leftArrow) { update(palette.rotatingHue(by: -1 / 360)); return .handled }
-                        .onKeyPress(.rightArrow) { update(palette.rotatingHue(by: 1 / 360)); return .handled }
+                        .onKeyPress(.leftArrow) { edit(palette.rotatingHue(by: -1 / 360)); return .handled }
+                        .onKeyPress(.rightArrow) { edit(palette.rotatingHue(by: 1 / 360)); return .handled }
                         .accessibilityElement()
                         .accessibilityLabel(String(format: NSLocalizedString(
                             "theme.editor.colorHandle", value: "Color %d",
@@ -488,7 +536,7 @@ struct SpaceThemeEditorView: View {
                         ), index + 1))
                         .accessibilityValue(colors[index].hexRGBString)
                         .accessibilityAdjustableAction { direction in
-                            update(palette.rotatingHue(by: direction == .increment ? 1 / 360 : -1 / 360))
+                            edit(palette.rotatingHue(by: direction == .increment ? 1 / 360 : -1 / 360))
                         }
                         .position(x: point.x * geometry.size.width, y: point.y * geometry.size.height)
                 }
@@ -507,21 +555,251 @@ struct SpaceThemeEditorView: View {
                         .min { $0.distance < $1.distance }?.index ?? 0
                 }
                 guard hypot(value.translation.width, value.translation.height) >= 3 else { return }
-                update(palette.movingHandle(at: draggedHandle ?? 0, to: CGPoint(
+                edit(palette.movingHandle(at: draggedHandle ?? 0, to: CGPoint(
                     x: value.location.x / geometry.size.width, y: value.location.y / geometry.size.height
                 ), snappingToCenter: true), preview: true)
             }.onEnded { value in
                 let isClick = hypot(value.translation.width, value.translation.height) < 3
-                update(palette.movingHandle(at: isClick ? 0 : (draggedHandle ?? 0), to: CGPoint(
+                edit(palette.movingHandle(at: isClick ? 0 : (draggedHandle ?? 0), to: CGPoint(
                     x: value.location.x / geometry.size.width, y: value.location.y / geometry.size.height
                 ), snappingToCenter: true), animated: isClick)
                 draggedHandle = nil
             })
         }
         .frame(width: 244, height: 244)
-        .clipShape(RoundedRectangle(cornerRadius: LiquidGlassCompatible.cornerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .anchorPreference(key: ThemeEditorControlBoundsKey.self, value: .bounds) { [$0] }
         .accessibilityIdentifier("theme.editor.palette")
+    }
+
+    private static func loadSavedPalettes() -> [ThemePalette] {
+        decodeSavedPalettes(UserDefaults.standard.data(forKey: PhiPreferences.ThemeSettings.savedPalettes.rawValue) ?? Data())
+    }
+
+    private static func decodeSavedPalettes(_ data: Data) -> [ThemePalette] {
+        (try? JSONDecoder().decode([ThemePalette].self, from: data)) ?? []
+    }
+
+    private var presets: [ThemePalette] { Self.recommendedPalettes + savedPalettes }
+    private var pageCount: Int { (presets.count + 6) / 7 }
+
+    // Dusty solids, tonal pairs and balanced accents. These stay inside the
+    // dark field's neutral-center branch, avoiding its highly saturated ring.
+    private static let recommendedPalettes: [ThemePalette] = [
+        ThemePalette(hue: 0.595, saturation: 0.25, brightness: 0.86), // Mist blue
+        ThemePalette(hue: 0.375, saturation: 0.23, brightness: 0.80), // Sage
+        ThemePalette(hue: 0.105, saturation: 0.22, brightness: 0.90), // Champagne
+        ThemePalette(hue: 0.735, saturation: 0.24, brightness: 0.86), // Heather
+        ThemePalette(hue: 0.960, saturation: 0.23, brightness: 0.82), // Dusty rose
+        ThemePalette(hue: 0.055, saturation: 0.25, brightness: 0.88), // Apricot
+        ThemePalette(hue: 0.490, saturation: 0.20, brightness: 0.92), // Sea glass
+        ThemePalette(hue: 0.540, saturation: 0.27, brightness: 0.86, harmony: .analogous), // Coast
+        ThemePalette(hue: 0.085, saturation: 0.24, brightness: 0.86, harmony: .analogous), // Meadow
+        ThemePalette(hue: 0.815, saturation: 0.26, brightness: 0.82, harmony: .analogous), // Orchid
+        ThemePalette(hue: 0.360, saturation: 0.25, brightness: 0.80, harmony: .analogous), // Eucalyptus
+        ThemePalette(hue: 0.660, saturation: 0.28, brightness: 0.82, harmony: .analogous), // Twilight
+        ThemePalette(hue: 0.965, saturation: 0.25, brightness: 0.88, harmony: .analogous), // Peach blossom
+        ThemePalette(hue: 0.215, saturation: 0.22, brightness: 0.84, harmony: .analogous), // Olive grove
+        ThemePalette(hue: 0.600, saturation: 0.28, brightness: 0.80, harmony: .complementary), // Blue and clay
+        ThemePalette(hue: 0.920, saturation: 0.25, brightness: 0.84, harmony: .complementary), // Rose and mint
+        ThemePalette(hue: 0.290, saturation: 0.23, brightness: 0.82, harmony: .complementary), // Fern and mauve
+        ThemePalette(hue: 0.075, saturation: 0.27, brightness: 0.86, harmony: .splitComplementary), // Dawn
+        ThemePalette(hue: 0.720, saturation: 0.26, brightness: 0.80, harmony: .splitComplementary), // Iris garden
+        ThemePalette(hue: 0.460, saturation: 0.24, brightness: 0.84, harmony: .splitComplementary), // Tidal pool
+        ThemePalette(hue: 0.000, saturation: 0.22, brightness: 0.88, harmony: .splitComplementary) // Porcelain
+    ]
+
+    private var presetStrip: some View {
+        HStack(spacing: 0) {
+            editorButton(asset: "previous", label: NSLocalizedString(
+                "theme.editor.previousColors", value: "Previous colors",
+                comment: "Theme editor - show the previous group of seven color swatches"
+            ), identifier: "theme.editor.previousColors", isEnabled: presetPage > 0) { changePage(by: -1) }
+            presetPages
+            editorButton(asset: "next", label: NSLocalizedString(
+                "theme.editor.nextColors", value: "Next colors",
+                comment: "Theme editor - show the next group of seven color swatches"
+            ), identifier: "theme.editor.nextColors", isEnabled: presetPage < pageCount - 1) { changePage(by: 1) }
+        }
+        .frame(height: 24)
+        .anchorPreference(key: ThemeEditorControlBoundsKey.self, value: .bounds) { [$0] }
+        .onChange(of: savedPaletteData) { _, data in
+            savedPalettes = Self.decodeSavedPalettes(data)
+            presetPage = min(presetPage, pageCount - 1)
+            hoveredPreset = nil
+            deletablePreset = nil
+        }
+    }
+
+    /// All pages sit side by side and slide under the clip; offscreen pages
+    /// stay out of hit testing, keyboard focus and accessibility.
+    private var presetPages: some View {
+        let availablePresets = presets
+        return GeometryReader { geometry in
+            let pageWidth = geometry.size.width
+            HStack(spacing: 0) {
+                ForEach(0..<pageCount, id: \.self) { page in
+                    HStack(spacing: 0) {
+                        ForEach(0..<7, id: \.self) { slot in
+                            Spacer(minLength: 0)
+                            let index = page * 7 + slot
+                            if availablePresets.indices.contains(index) {
+                                presetButton(availablePresets[index], at: index)
+                            } else {
+                                Color.clear.frame(width: 24, height: 24)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(width: pageWidth)
+                    .disabled(page != presetPage)
+                    .allowsHitTesting(page == presetPage)
+                    .accessibilityHidden(page != presetPage)
+                }
+            }
+            .offset(x: -CGFloat(presetPage) * pageWidth)
+            .animation(reduceMotion ? nil : .timingCurve(0.22, 1, 0.36, 1, duration: 0.3), value: presetPage)
+        }
+        .clipped()
+    }
+
+    private func presetButton(_ preset: ThemePalette, at index: Int) -> some View {
+        let selected = preset == palette
+        let borderColor = appearance.isDark ? Color.white : Color.black
+        let label = String(format: NSLocalizedString(
+            "theme.editor.presetColor", value: "Color palette %d",
+            comment: "Theme editor - accessible swatch label; placeholder is its one-based position"
+        ), index + 1)
+        let deleteLabel = NSLocalizedString(
+            "theme.editor.deleteColor", value: "Delete saved color",
+            comment: "Theme editor - remove a user-created palette from the saved swatches"
+        )
+        return ZStack(alignment: .bottomTrailing) {
+            Button {
+                uneditedPalette = nil
+                update(preset, animated: true)
+            } label: {
+                ZStack(alignment: .center) {
+                    PresetSwatchFill(preset: preset, appearance: appearance)
+                        .equatable()
+                        .overlay {
+                            Circle().strokeBorder(borderColor.opacity(appearance.isDark ? 0.3 : 0.1), lineWidth: 1)
+                        }
+                        .frame(width: 18, height: 18)
+                    Circle()
+                        .strokeBorder(borderColor.opacity(selected ? (appearance.isDark ? 0.3 : 0.18) : 0), lineWidth: 1)
+                        .frame(width: 24, height: 24)
+                }
+                .frame(width: 24, height: 24, alignment: .center)
+                .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help(label)
+            .accessibilityLabel(label)
+            .accessibilityIdentifier("theme.editor.preset.\(index)")
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityActions {
+                if index >= Self.recommendedPalettes.count {
+                    Button(deleteLabel) { deletePalette(at: index) }
+                }
+            }
+            if index >= Self.recommendedPalettes.count {
+                Button {
+                    deletePalette(at: index)
+                } label: {
+                    Image("theme-editor-remove")
+                        .renderingMode(.original)
+                        .environment(\.colorScheme, appearance.isDark ? .dark : .light)
+                        .frame(width: 10, height: 10)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                // Keep the hit area at the badge's size, outside the swatch
+                // center. It only accepts clicks after a deliberate hover.
+                .opacity(hoveredPreset == index ? 1 : 0)
+                .allowsHitTesting(hoveredPreset == index && deletablePreset == index)
+                .offset(x: -0.25, y: 1)
+                .help(deleteLabel)
+                .accessibilityLabel(deleteLabel)
+                .accessibilityIdentifier("theme.editor.deletePreset.\(index)")
+            }
+        }
+        .frame(width: 24, height: 24)
+        .contentShape(Rectangle().inset(by: -1))
+        .onHover { isHovered in
+            if isHovered {
+                deletablePreset = nil
+                hoveredPreset = index
+            } else if hoveredPreset == index {
+                hoveredPreset = nil
+                deletablePreset = nil
+            }
+        }
+        .task(id: hoveredPreset == index) {
+            guard hoveredPreset == index, index >= Self.recommendedPalettes.count else { return }
+            do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+            guard !Task.isCancelled, hoveredPreset == index else { return }
+            deletablePreset = index
+        }
+    }
+
+    private func editorButton(asset: String, label: String, identifier: String, isEnabled: Bool = true,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image("theme-editor-" + asset)
+                .rotationEffect(.degrees(asset == "next" ? 180 : 0))
+                .opacity(isEnabled ? 1 : 0.3)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(identifier)
+        .anchorPreference(key: ThemeEditorControlBoundsKey.self, value: .bounds) { [$0] }
+    }
+
+    private func changePage(by delta: Int) {
+        let target = presetPage + delta
+        guard (0..<pageCount).contains(target) else { return }
+        hoveredPreset = nil
+        deletablePreset = nil
+        presetPage = target
+    }
+
+    private func focusSelectedPreset() {
+        if let index = presets.firstIndex(of: palette) { presetPage = index / 7 }
+    }
+
+    private func savePalette() {
+        let saved = savedPalettes + [palette]
+        guard let data = try? JSONEncoder().encode(saved) else { return }
+        savedPalettes = saved
+        savedPaletteData = data
+        uneditedPalette = nil
+        presetPage = (Self.recommendedPalettes.count + saved.count - 1) / 7
+        hoveredPreset = nil
+        deletablePreset = nil
+    }
+
+    private func deletePalette(at index: Int) {
+        var saved = savedPalettes
+        let savedIndex = index - Self.recommendedPalettes.count
+        guard saved.indices.contains(savedIndex) else { return }
+        saved.remove(at: savedIndex)
+        guard let data = try? JSONEncoder().encode(saved) else { return }
+        savedPalettes = saved
+        savedPaletteData = data
+        presetPage = min(presetPage, (Self.recommendedPalettes.count + saved.count - 1) / 7)
+        hoveredPreset = nil
+        deletablePreset = nil
+    }
+
+    private func edit(_ newPalette: ThemePalette, animated: Bool = false, preview: Bool = false) {
+        if newPalette != palette, uneditedPalette == nil { uneditedPalette = palette }
+        if newPalette == uneditedPalette { uneditedPalette = nil }
+        update(newPalette, animated: animated, preview: preview)
     }
 
     private func update(_ newPalette: ThemePalette, animated: Bool = false, preview: Bool = false) {

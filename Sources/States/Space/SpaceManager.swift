@@ -10340,6 +10340,9 @@ final class SpaceWindowSlot: ObservableObject {
                 if let bridge = ChromiumLauncher.sharedInstance().bridge,
                    Self.emptyWindowOpensOmniBox(bridge: bridge, windowId: Int64(target.windowId)) {
                     emptyLiveSpaceOpensOmniBox = true
+                    MainActor.assumeIsolated {
+                        target.browserState.hidePlaceholderPage()
+                    }
                     AppLogInfo("[SpaceWindowSlot] activate(\(spaceId)): empty live Space opens the omnibox, no seed tab")
                 } else {
                     target.browserState.createQuickLookupTab()
@@ -11134,30 +11137,41 @@ final class SpaceWindowSlot: ObservableObject {
 
     func shellFullScreenDidSettle() {
         shellFullScreenTransitionTarget = nil
-        if releasesShellFullscreenAfterTransition {
+        let deferred = deferredShellFullscreen
+        deferredShellFullscreen = nil
+        // An exit held for the settle: the owner's from the background, or
+        // the presented session's own when its page left fullscreen while
+        // the enter ran (a video entering picture-in-picture, a script).
+        if releasesShellFullscreenAfterTransition || deferred == false {
             releasesShellFullscreenAfterTransition = false
+            // The presented session's exit keeps its request pending until
+            // the exit's settle, as a real window would: completing it here
+            // would report an enter Chromium has already left (a round of
+            // browser fullscreen, its bubble and its notifications). A page
+            // asking for fullscreen again in the meantime completes it at
+            // once (no transition to wait for), which stands the exit down.
+            let holdsRequest = deferred == false
             // AppKit drops a toggle sent from inside its did-enter callback,
-            // which is where this runs; the next turn's lands. Leaving that
-            // early, AppKit can bring the window back at the screen's visible
-            // frame instead of where it was, so the exit's settle puts it
-            // back (unless a display move already holds a return frame).
+            // which is where this runs (a failed enter lands here too); the
+            // next turn's lands. Leaving that early, AppKit can bring the
+            // window back at the screen's visible frame instead of where it
+            // was, so the exit's settle puts it back (unless a display move
+            // already holds a return frame).
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.shellFullScreenTransitionTarget == nil,
                       self.fullscreenTargetDisplayId == nil,
-                      self.shellIsOrWillBeFullScreen else { return }
+                      self.shellIsOrWillBeFullScreen,
+                      !holdsRequest || self.fullscreenRequestSession != nil else { return }
                 AppLogInfo("[SpaceWindowSlot] owner requested shell fullscreen=false: leaving after the transition")
                 if self.fullscreenReturnFrame == nil {
                     self.fullscreenReturnFrame = self.windowedFrameBeforeFullscreen
                 }
                 self.toggleShellFullScreen()
             }
-        }
-        if let requested = deferredShellFullscreen {
-            deferredShellFullscreen = nil
-            if requested != shell?.window.styleMask.contains(.fullScreen) {
-                shell?.window.toggleFullScreen(nil)
-                return
-            }
+            if holdsRequest { return }
+        } else if deferred == true, shell?.window.styleMask.contains(.fullScreen) == false {
+            shell?.window.toggleFullScreen(nil)
+            return
         }
         if continueFullscreenDisplayMove() { return }
         if shell?.window.styleMask.contains(.fullScreen) == false,
@@ -11202,8 +11216,8 @@ final class SpaceWindowSlot: ObservableObject {
     /// in fullscreen outside a real transition: `toggleShellFullScreen` (a
     /// presented session's request, an owner's release) calls the closure
     /// instead of the shell window, and `shellIsOrWillBeFullScreen` reads
-    /// the flag in place of the mask. The settle's replay and a display move
-    /// still toggle the window directly.
+    /// the flag in place of the mask. The settle's replay of a deferred enter
+    /// and a display move still toggle the window directly.
     var toggleShellFullScreenForTesting: (() -> Void)?
     var shellIsFullScreenForTesting: Bool?
 
@@ -11334,6 +11348,7 @@ final class SpaceWindowSlot: ObservableObject {
         }
         if fullscreenTargetDisplayId != nil { return }
         if let transition = shellFullScreenTransitionTarget {
+            AppLogInfo("[SpaceWindowSlot] session \(controller.windowId) requested shell fullscreen=\(fullscreen) during a transition to \(transition)")
             deferredShellFullscreen = fullscreen != transition ? fullscreen : nil
             return
         }
@@ -11477,7 +11492,7 @@ final class SpaceWindowSlot: ObservableObject {
         animate(leavingView, 0, leavingEndDx)
         // The page-area backdrop ramps to the entering theme with the slide.
         let contentHost = shell.split.contentHost
-        let fromFill = contentHost.backdrop.presentedFillColor
+        let fromFill = contentHost.backdrop.presentedFill
         contentHost.backdrop.appearance = entering.resolvedContentAppearance
         contentHost.followTheme(of: entering)
         if let fromFill {
@@ -12011,7 +12026,7 @@ final class SpaceWindowSlot: ObservableObject {
             }
             if let split = slot?.shell?.split {
                 for backdrop in [split.sidebarHost.backdrop, split.contentHost.backdrop] {
-                    let from = backdrop.presentedFillColor
+                    let from = backdrop.presentedFill
                     // The backdrop's material resolves against its own
                     // appearance, not the theme it follows: left inheriting
                     // the window's, an Incognito Space's backdrop kept the
@@ -12076,7 +12091,6 @@ final class SpaceWindowSlot: ObservableObject {
                 view.layer?.transform = CATransform3DIdentity
             }
             leavingBandContainer.layer?.masksToBounds = leavingContainerMaskedToBounds
-            leavingFloatingSurface?.view.layer?.removeAnimation(forKey: "phi.fillRamp")
             leavingFloatingSurface?.setSpaceSwitchBackdropHidden(false)
             if !viewsToUnback.isEmpty {
                 for view in viewsToUnback { view.wantsLayer = false }
@@ -12378,7 +12392,8 @@ final class SpaceWindowSlot: ObservableObject {
     }
 
     /// Builds a theme whose palette is `from` blended toward `to` by
-    /// `progress`, across every `ColorRole`, for both light and dark.
+    /// `progress`, across every `ColorRole` and the navigation gradient's
+    /// stops, for both light and dark.
     private static func interpolatedTheme(from: Theme, to: Theme, progress: CGFloat) -> Theme {
         let theme = Theme(id: to.id, name: to.name)
         for role in ColorRole.allCases {
@@ -12390,7 +12405,45 @@ final class SpaceWindowSlot: ObservableObject {
                 for: role
             )
         }
+        theme.blendedNavigationColors = blendedNavigationColors(from: from, to: to, progress: progress)
         return theme
+    }
+
+    /// The navigation gradient of `from` blended toward `to`'s, stop by
+    /// stop. A side that paints a flat overlay contributes that color at
+    /// every stop, so a gradient fades into a flat fill (or grows out of
+    /// one) instead of vanishing for the switch. Nil when neither side has
+    /// a gradient.
+    private static func blendedNavigationColors(from: Theme, to: Theme, progress: CGFloat) -> [ColorPair]? {
+        let fromStops = navigationStops(of: from)
+        let toStops = navigationStops(of: to)
+        guard fromStops.count > 1 || toStops.count > 1 else { return nil }
+        let count = max(fromStops.count, toStops.count)
+        return zip(navigationStops(fromStops, count: count), navigationStops(toStops, count: count)).map { f, t in
+            ColorPair(light: lerpColor(f.light, t.light, progress),
+                      dark: lerpColor(f.dark, t.dark, progress))
+        }
+    }
+
+    /// A theme's navigation stops: its gradient's, or its flat overlay once.
+    private static func navigationStops(of theme: Theme) -> [ColorPair] {
+        guard let light = theme.navigationColors(for: .light),
+              let dark = theme.navigationColors(for: .dark),
+              light.count == dark.count else {
+            return [theme.colorPair(for: .windowOverlayBackground)]
+        }
+        return zip(light, dark).map { ColorPair(light: $0, dark: $1) }
+    }
+
+    /// `stops` brought to `count` entries so two sides blend stop by stop:
+    /// a flat color repeated, a two-stop gradient given its middle color.
+    private static func navigationStops(_ stops: [ColorPair], count: Int) -> [ColorPair] {
+        guard stops.count < count, let first = stops.first, let last = stops.last else { return stops }
+        if stops.count == 1 { return Array(repeating: first, count: count) }
+        return [first,
+                ColorPair(light: lerpColor(first.light, last.light, 0.5),
+                          dark: lerpColor(first.dark, last.dark, 0.5)),
+                last]
     }
 
     private static func lerpColor(_ a: NSColor, _ b: NSColor, _ t: CGFloat) -> NSColor {

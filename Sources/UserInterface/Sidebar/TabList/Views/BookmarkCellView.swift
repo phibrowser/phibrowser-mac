@@ -481,12 +481,15 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             }
             .store(in: &cancellables)
 
+        // Applied synchronously: the outline posts its expand/collapse
+        // notification before it builds the child rows, so the folder icon
+        // starts in the same frame as the rows instead of a main-queue hop later.
+        // `@Published` emits before the property is stored, so use the value.
         bookmark.$isExpanded
             .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self, weak bookmark] _ in
-                guard let self, let bookmark else { return }
-                self.updateFolderIcon(bookmark: bookmark)
+            .dropFirst()
+            .sink { [weak self] isExpanded in
+                self?.viewState.isFolderExpanded = isExpanded
             }
             .store(in: &cancellables)
 

@@ -12,7 +12,7 @@ import AppKit
 /// (single source of truth on `Tab.groupToken`); the wrapper holds no
 /// cached child set, so closing/reordering grouped tabs reflects after a
 /// `reloadItem(_:reloadChildren:)` call without rebuilding the wrapper.
-final class TabGroupSidebarItem: SidebarItem {
+final class TabGroupSidebarItem: NSObject, SidebarItem {
     let group: WebContentGroupInfo
     private weak var browserState: BrowserState?
     /// Snapshot at init: the wrapper's owning window. Bridge calls require
@@ -25,6 +25,7 @@ final class TabGroupSidebarItem: SidebarItem {
         self.group = group
         self.browserState = browserState
         self.windowId = browserState.windowId
+        super.init()
     }
 
     var id: AnyHashable { group.token }
@@ -65,7 +66,7 @@ final class TabGroupSidebarItem: SidebarItem {
 
 // MARK: - Right-click menu
 
-extension TabGroupSidebarItem: ContextMenuRepresentable {
+extension TabGroupSidebarItem: ContextMenuRepresentable, NSMenuItemValidation {
     @MainActor
     func makeContextMenu(on menu: NSMenu) {
         menu.removeAllItems()
@@ -140,6 +141,38 @@ extension TabGroupSidebarItem: ContextMenuRepresentable {
         closeItem.keyEquivalentModifierMask = [.command, .control]
         closeItem.target = self
         menu.addItem(closeItem)
+
+        if let state = browserState,
+           PhiPreferences.GeneralSettings.directionalTabClosingEnabled.loadValue() {
+            for direction in BrowserState.TabCloseDirection.allCases {
+                let item = NSMenuItem(
+                    title: direction.menuTitle(isHorizontal: state.layoutMode.isTraditional, relativeToGroup: true),
+                    action: #selector(closeTabsInDirection(_:)),
+                    keyEquivalent: "")
+                item.tag = direction.rawValue
+                item.target = self
+                menu.addItem(item)
+            }
+        }
+    }
+
+    @MainActor
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard let state = browserState, groupStillExists,
+              !SpaceSessionControllersManager.shared.isGuestTransitionInteractionBlocked,
+              !AgentSpaceManager.shared.isAgentOwned(state.spaceId) else { return false }
+        guard menuItem.action == #selector(closeTabsInDirection(_:)) else { return true }
+        guard let direction = BrowserState.TabCloseDirection(rawValue: menuItem.tag) else { return false }
+        return !state.directionalTabCloseCandidates(
+            anchoredAt: Set(members.map(\.guid)), direction: direction).isEmpty
+    }
+
+    @MainActor
+    @objc private func closeTabsInDirection(_ item: NSMenuItem) {
+        guard let state = browserState, groupStillExists,
+              let direction = BrowserState.TabCloseDirection(rawValue: item.tag) else { return }
+        state.closeTabs(state.directionalTabCloseCandidates(
+            anchoredAt: Set(members.map(\.guid)), direction: direction))
     }
 
     private var bridge: PhiChromiumBridgeProtocol? {

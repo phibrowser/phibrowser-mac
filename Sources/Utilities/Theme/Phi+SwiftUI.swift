@@ -58,16 +58,23 @@ public final class ThemeObserver: ObservableObject {
     
     /// Rebinds this observer to a different theme source without replacing the object.
     /// Existing SwiftUI environment references stay valid.
-    public func rebind(to source: ThemeStateProvider) {
+    /// Returns whether the observer was rebound.
+    @discardableResult
+    public func rebind(to source: ThemeStateProvider) -> Bool {
         // Reused hosting views reenter the same window during scrolling.
         // Keep their live subscription without invalidating unchanged content.
         guard boundSource !== source || theme !== source.currentTheme ||
-                appearance != source.currentAppearance else { return }
+                appearance != source.currentAppearance else { return false }
         AppLogDebug("[ThemeDebug] rebind: source=\(type(of: source)), theme=\(source.currentTheme.id), appearance=\(source.currentAppearance)")
         self.theme = source.currentTheme
         self.appearance = source.currentAppearance
         bindSubscription(to: source)
+        return true
     }
+
+    #if DEBUG || NIGHTLY_BUILD
+    var debugBoundSource: ThemeStateProvider? { boundSource }
+    #endif
     
     private func bindSubscription(to source: ThemeStateProvider) {
         boundSource = source
@@ -352,12 +359,20 @@ public class ThemedHostingController<Content: View>: NSHostingController<AnyView
 ///
 public class ThemedHostingView: NSHostingView<AnyView> {
     private var themeObserver: ThemeObserver
+    #if DEBUG || NIGHTLY_BUILD
+    private var themeBindRecord: ThemeBindRecord?
+    private var reportedStaleThemeBinding = false
+    #endif
 
     public init<Content: View>(rootView content: Content, themeSource: ThemeStateProvider? = nil) {
         let source = themeSource ?? Self.resolveNonIncognitoContext()
         let observer = ThemeObserver(themeSource: source)
         self.themeObserver = observer
         super.init(rootView: AnyView(content.phiThemeObserver(observer)))
+        #if DEBUG || NIGHTLY_BUILD
+        themeBindRecord = ThemeBindRecord(source: source,
+                                          origin: themeSource == nil ? "init.activeWindow" : "init.explicit")
+        #endif
     }
 
     @MainActor @preconcurrency required public init(rootView: AnyView) {
@@ -380,8 +395,37 @@ public class ThemedHostingView: NSHostingView<AnyView> {
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else { return }
-        themeObserver.rebind(to: themeStateProvider)
+        let provider = themeStateProvider
+        #if DEBUG || NIGHTLY_BUILD
+        if themeObserver.rebind(to: provider) {
+            themeBindRecord = ThemeBindRecord(source: provider, origin: "moveToWindow." + themeProviderOrigin)
+            reportedStaleThemeBinding = false
+        }
+        #else
+        themeObserver.rebind(to: provider)
+        #endif
     }
+
+    #if DEBUG || NIGHTLY_BUILD
+    public override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        reportStaleThemeBindingIfNeeded()
+    }
+
+    /// The observer only rebinds on window moves; flag one that no longer
+    /// follows the provider this view resolves to now.
+    private func reportStaleThemeBindingIfNeeded() {
+        guard !reportedStaleThemeBinding, window != nil else { return }
+        let provider = themeStateProvider
+        let bound = themeObserver.debugBoundSource
+        guard bound !== provider else { return }
+        reportedStaleThemeBinding = true
+        let host = superview.map { String(describing: type(of: $0)) } ?? "nil"
+        let record = themeBindRecord
+        let age = record.map { String(format: "%.1f", ProcessInfo.processInfo.systemUptime - $0.time) } ?? "?"
+        AppLogInfo("[ThemeBind] stale host=\(host) observer=\(themeObserver.appearance) bound=\(themeSourceDebugLabel(bound)) boundAs=\(record?.sourceLabel ?? "?") via=\(record?.origin ?? "?") \(age)s ago expected=\(themeSourceDebugLabel(provider)) via=\(themeProviderOrigin)")
+    }
+    #endif
 
     /// Updates the hosted content while preserving theme injection.
     public func setThemedContent<Content: View>(_ content: Content) {

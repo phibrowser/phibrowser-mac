@@ -138,6 +138,54 @@ final class ShellFullscreenOwnerTests: XCTestCase {
         XCTAssertEqual(shell.window.frame, windowed, "the exit's settle puts the shell back where it was")
     }
 
+    /// The presented Space's page leaves fullscreen while the shell's enter
+    /// animation runs (a video entering picture-in-picture, a script's
+    /// exitFullscreen): Chromium's exit lands mid-transition and is held for
+    /// the settle. AppKit drops a toggle sent from inside its did-enter
+    /// callback, so the held exit toggles one turn later, or the shell stays
+    /// fullscreen around a page that no longer is.
+    func testAPresentedSessionsExitDuringTheEnterTogglesOneTurnAfterTheSettle() async throws {
+        let (slot, sessions) = try makeSlot(spaceIds: ["first"])
+        let first = sessions[0]
+        let shell = try XCTUnwrap(slot.shell)
+        let windowed = shell.window.frame
+        var toggles = 0
+        slot.toggleShellFullScreenForTesting = { toggles += 1 }
+        slot.sessionRequestedShellFullscreen(first, fullscreen: true)
+        XCTAssertEqual(toggles, 1, "precondition: the presented Space's request toggles the shell")
+        slot.shellFullScreenWillChange(isFullScreen: true)
+
+        slot.sessionRequestedShellFullscreen(first, fullscreen: false)
+        XCTAssertEqual(toggles, 1, "nothing toggles while the enter runs")
+        slot.shellIsFullScreenForTesting = true
+        slot.shellFullScreenDidSettle()
+        XCTAssertEqual(toggles, 1, "no toggle from inside the settle")
+        await drainMainQueue()
+        XCTAssertEqual(toggles, 2, "the shell leaves fullscreen one turn after the enter settles")
+
+        shell.window.setFrame(NSRect(x: 40, y: 40, width: 800, height: 600), display: false)
+        transition(slot, toFullScreen: false)
+        XCTAssertEqual(shell.window.frame, windowed, "the exit's settle puts the shell back where it was")
+    }
+
+    /// A page asking for fullscreen again between the enter's settle and the
+    /// held exit completes at once, which stands the exit down.
+    func testAPresentedSessionsReentryBeforeTheHeldExitStandsItDown() async throws {
+        let (slot, sessions) = try makeSlot(spaceIds: ["first"])
+        let first = sessions[0]
+        var toggles = 0
+        slot.toggleShellFullScreenForTesting = { toggles += 1 }
+        slot.sessionRequestedShellFullscreen(first, fullscreen: true)
+        slot.shellFullScreenWillChange(isFullScreen: true)
+        slot.sessionRequestedShellFullscreen(first, fullscreen: false)
+        slot.shellIsFullScreenForTesting = true
+        slot.shellFullScreenDidSettle()
+
+        slot.sessionRequestedShellFullscreen(first, fullscreen: true)
+        await drainMainQueue()
+        XCTAssertEqual(toggles, 1, "the page's new request keeps the shell fullscreen")
+    }
+
     /// AppKit moves a fullscreen window to another display by leaving
     /// fullscreen and entering it again there; neither half changes whose
     /// fullscreen it is. The halves are posted directly (the settle between

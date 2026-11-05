@@ -69,7 +69,8 @@ final class OverlayToastCenter: ObservableObject {
         shareURLs: [URL] = [],
         in target: OverlayToastTarget = .activeWindow,
         action: OverlayToastAction? = nil,
-        id: UUID? = nil
+        id: UUID? = nil,
+        messageKeycap: String? = nil
     ) -> UUID? {
         performOnMainQueue {
             showOnMainQueue(
@@ -80,7 +81,8 @@ final class OverlayToastCenter: ObservableObject {
                 shareURLs: shareURLs,
                 in: target,
                 action: action,
-                id: id
+                id: id,
+                messageKeycap: messageKeycap
             )
         }
     }
@@ -134,7 +136,8 @@ final class OverlayToastCenter: ObservableObject {
         shareURLs: [URL],
         in target: OverlayToastTarget,
         action: OverlayToastAction? = nil,
-        id: UUID? = nil
+        id: UUID? = nil,
+        messageKeycap: String? = nil
     ) -> UUID? {
         guard let windowId = targetResolver(target) else {
             AppLogWarn("[OverlayToast] Drop toast without target window: title=\(title)")
@@ -148,7 +151,8 @@ final class OverlayToastCenter: ObservableObject {
             duration: duration > 0 ? duration : Self.defaultDuration,
             placement: placement,
             shareURLs: shareURLs,
-            action: action
+            action: action,
+            messageKeycap: messageKeycap
         )
         enqueueOnMainQueue(toast, for: windowId)
         return toast.id
@@ -283,6 +287,19 @@ final class OverlayToastCenter: ObservableObject {
 }
 
 extension OverlayToastCenter {
+    @discardableResult
+    func showClearedTabsConfirmation(in browserState: BrowserState) -> UUID? {
+        let shortcut = "⌘Z"
+        let format = NSLocalizedString(
+            "tabs.clearAll.confirmation",
+            value: "Cleared Tabs. Use %@ to undo.",
+            comment: "Tab cleanup toast - Confirmation after tabs close; %@ is the Undo keyboard shortcut")
+        return show(
+            title: "", message: String(format: format, shortcut),
+            placement: .topTrailing, in: .windowId(browserState.windowId),
+            messageKeycap: shortcut)
+    }
+
     @discardableResult
     func showHighlightLinkCopyConfirmation(url: URL, in browserState: BrowserState) -> UUID? {
         let title = NSLocalizedString(

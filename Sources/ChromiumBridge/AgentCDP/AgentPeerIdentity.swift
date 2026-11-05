@@ -45,25 +45,33 @@ struct AgentIdentity: Equatable {
     let pid: pid_t?
     /// True only for the browser's own agent runtime, recognized by
     /// `AgentPeerIdentity.firstPartyAgent` rather than resolved from an
-    /// arbitrary peer's ancestry. It is the one identity that connects without
-    /// the user's consent (see `AgentCDPListener.evaluate`).
+    /// arbitrary peer's ancestry. It connects without the user's consent (see
+    /// `AgentCDPListener.evaluate`), as does a verified `companion` — and
+    /// nothing else does.
     let firstParty: Bool
+    /// The first-party companion app this peer was verified as, recognized by
+    /// `AgentPeerIdentity.firstPartyCompanion`; nil for every other peer. A
+    /// companion connects without consent, but only on the terms its
+    /// `AgentCompanion` entry sets.
+    let companion: AgentCompanion?
 
-    /// The initializer every resolved peer goes through. `firstParty` is
-    /// deliberately not a parameter: being the browser's own runtime is
-    /// something this file establishes from the connection, never something a
-    /// caller can assert.
+    /// The initializer every resolved peer goes through. `firstParty` and
+    /// `companion` are deliberately not parameters: being the browser's own
+    /// runtime, or one of its companion apps, is something this file
+    /// establishes from the connection, never something a caller can assert.
     init(key: String, displayName: String, teamId: String?,
          signingId: String? = nil, verified: Bool,
          executablePath: String, pid: pid_t?) {
         self.init(key: key, displayName: displayName, teamId: teamId,
                   signingId: signingId, verified: verified,
-                  executablePath: executablePath, pid: pid, firstParty: false)
+                  executablePath: executablePath, pid: pid, firstParty: false,
+                  companion: nil)
     }
 
     fileprivate init(key: String, displayName: String, teamId: String?,
                      signingId: String?, verified: Bool,
-                     executablePath: String, pid: pid_t?, firstParty: Bool) {
+                     executablePath: String, pid: pid_t?, firstParty: Bool,
+                     companion: AgentCompanion?) {
         self.key = key
         self.displayName = displayName
         self.teamId = teamId
@@ -72,6 +80,7 @@ struct AgentIdentity: Equatable {
         self.executablePath = executablePath
         self.pid = pid
         self.firstParty = firstParty
+        self.companion = companion
     }
 
     /// Key of the identity below. Its own constant because the rule attached
@@ -236,7 +245,7 @@ enum AgentIdentityLabels {
     /// its signing id. Unsigned peers are already named from their path, and
     /// the unresolved/first-party sentinels are never listed.
     static func note(_ identity: AgentIdentity) {
-        guard identity.verified, !identity.firstParty,
+        guard identity.verified, !identity.firstParty, identity.companion == nil,
               identity.key != AgentIdentity.unresolvedKey,
               identity.displayName != identity.signingId,
               !identity.displayName.isEmpty else { return }
@@ -358,6 +367,111 @@ struct AgentProcessDetails: Equatable {
     /// Oldest ancestor first, the agent process last, so the list reads as a
     /// tree from the top down. Empty when the ancestry can't be read.
     let tree: [AgentProcessNode]
+}
+
+/// A separate Phi-signed app that is part of the product and reaches the
+/// browser over the agent socket — today Folio's helper. It is admitted
+/// without the consent prompt (see `AgentPeerIdentity.firstPartyCompanion`),
+/// but unlike the browser's own agent runtime it is scoped: on the
+/// `/phi-agent` channel it may send only `allowedMessageTypes`. Stock CDP is
+/// not restricted.
+///
+/// The table is the whole allowlist, so the next companion app is one more
+/// entry in `all`. See docs/companion-apps.md.
+struct AgentCompanion: Equatable {
+    /// One shipping flavor of the companion, paired with one Phi flavor.
+    struct Channel: Equatable {
+        /// The Phi bundle id this flavor pairs with.
+        let phiBundleId: String
+        /// The companion app's signing identifier (also its bundle id).
+        let appIdentifier: String
+        /// The signing identifier of the helper binary that connects.
+        let helperIdentifier: String
+    }
+
+    /// Stable identity key, the same for every channel of the app, so the
+    /// app is one principal however it was built.
+    let key: String
+    /// Shown wherever the driving peer is named.
+    let displayName: String
+    let channels: [Channel]
+    /// The script a runtime helper runs, relative to the app bundle. A helper
+    /// that is a general-purpose runtime (Node) proves nothing about the code
+    /// it runs by its signature; this and `launchIsUntampered` do. A native
+    /// helper runs with no arguments and does not use it.
+    let helperScript: String
+    /// The `/phi-agent` message types the companion may send. Anything else
+    /// is refused at once by the channel (`AgentDirectConnection`).
+    let allowedMessageTypes: Set<String>
+
+    func allows(messageType: String) -> Bool {
+        allowedMessageTypes.contains(messageType)
+    }
+
+    /// Whether the helper was started the way its app starts it: argv is the
+    /// runtime plus exactly the bundled script, and the exec-time environment
+    /// carries nothing the runtime loads code or libraries from. Whoever
+    /// launches the app chooses its environment (`open --env`, `launchctl
+    /// setenv`), and the app hands its helper an allowlisted one; a
+    /// `NODE_OPTIONS=--require …` or an extra `--import` here means someone
+    /// else's code would run as the signed helper.
+    static func launchIsUntampered(argv: [String], env: [String],
+                                   expectedScript: String) -> Bool {
+        let argumentsMatch = argv.count == 1 || (argv.count == 2 && argv[1] == expectedScript)
+        return argumentsMatch && environmentIsClean(env, runtimeVariables: true)
+    }
+
+    /// Whether an exec-time environment carries nothing that loads code into
+    /// the process: no `DYLD_*`, and for a runtime helper no `NODE_*` but
+    /// `NODE_ENV`. The companion app itself is native code, so the runtime's
+    /// variables mean nothing to it and are not held against it.
+    static func environmentIsClean(_ env: [String], runtimeVariables: Bool) -> Bool {
+        for entry in env {
+            let name = entry.split(separator: "=", maxSplits: 1).first.map(String.init) ?? entry
+            if name.hasPrefix("DYLD_") { return false }
+            if runtimeVariables, name.hasPrefix("NODE_"), name != "NODE_ENV" { return false }
+        }
+        return true
+    }
+
+    /// The channels this build accepts: the one paired with Phi's own bundle
+    /// id. A DEBUG build accepts every channel, so a locally built Phi can
+    /// pair with either flavor of the companion.
+    var acceptedChannels: [Channel] {
+        #if DEBUG
+        return channels
+        #else
+        return channels.filter { $0.phiBundleId == FileSystemUtils.bundleId }
+        #endif
+    }
+
+    static let folio = AgentCompanion(
+        key: "phi:companion:com.phibrowser.folio",
+        displayName: "Folio",
+        channels: [
+            Channel(phiBundleId: "com.phibrowser.Mac",
+                    appIdentifier: "com.phibrowser.folio",
+                    helperIdentifier: "com.phibrowser.folio.service"),
+            Channel(phiBundleId: "com.phibrowser.canary.Mac",
+                    appIdentifier: "com.phibrowser.canary.folio",
+                    helperIdentifier: "com.phibrowser.canary.folio.service"),
+        ],
+        helperScript: "Contents/Resources/folio-service/folio-service.mjs",
+        allowedMessageTypes: [
+            "agentSpace.shadow.create",
+            "agentSpace.shadow.list",
+            "agentSpace.shadow.openTab",
+            "agentSpace.shadow.ping",
+            "agentSpace.shadow.close",
+            "agentSpace.listProfiles",
+            "agentSpace.spaces.list",
+            "agentSpace.spaces.listTabs",
+            "agentSpace.spaces.openTab",
+            "notification.show",
+            "pageActions.register",
+        ])
+
+    static let all: [AgentCompanion] = [.folio]
 }
 
 enum AgentPeerIdentity {
@@ -527,7 +641,8 @@ enum AgentPeerIdentity {
             verified: true,
             executablePath: executable ?? "",
             pid: peerPID,
-            firstParty: true)
+            firstParty: true,
+            companion: nil)
     }
 
     /// Identity key for the pass. Deliberately a constant: the key a normal
@@ -633,6 +748,198 @@ enum AgentPeerIdentity {
         return candidate == sentinelExecutablePath
     }
 
+    // MARK: - Companion pass
+
+    /// A first-party companion app (`AgentCompanion`), or its helper: a
+    /// separate Phi-signed app that ships as part of the product and reaches
+    /// the browser only over this socket. Recognized instead of prompted for, and
+    /// `AgentCDPListener` admits it without consent and without the master
+    /// switches, like the browser's own agent — but scoped to its entry's
+    /// allowlist on the private channel. As with the first-party pass, the
+    /// code signature is the boundary here, so all of these must hold, after
+    /// the same-uid gate the listener applies first:
+    ///
+    ///   1. the connecting process, pinned by its audit token, satisfies
+    ///      `anchor apple generic and certificate leaf[subject.OU] = "<team>"
+    ///      and identifier "<helper id>"` for a channel this build accepts;
+    ///   2. the process macOS holds responsible for it
+    ///      (`responsibility_get_pid_responsible_for_pid`) is an app whose
+    ///      code satisfies the same requirement with that channel's app
+    ///      identifier;
+    ///   3. the connecting executable lies inside that app's bundle;
+    ///   4. it was started as its app starts it (`launchIsUntampered`): no
+    ///      arguments, or exactly the bundled script, and nothing in its
+    ///      exec-time environment that loads code into it.
+    ///
+    /// (2) is what carries the check. The helper may be a signed interpreter
+    /// that any same-user process can run with any script; what such a
+    /// process cannot arrange is for the companion app to be held responsible
+    /// for it, because responsibility is recorded by the kernel at spawn. (3)
+    /// keeps a copy of the signed helper run from elsewhere out, even when the
+    /// real app happens to be its responsible process. (4) keeps out code fed
+    /// to the real helper through the app's environment, which whoever
+    /// launches the app chooses (`open --env`, `launchctl setenv`).
+    ///
+    /// The companion app may also connect itself, with its backend in the app
+    /// rather than a helper: a peer satisfying the app's own requirement and
+    /// running as that bundle's main executable is admitted, with no `DYLD_*`
+    /// in its environment. Native code signed as the app is the app, whoever
+    /// launched it.
+    ///
+    /// Returns nil for every other connection, which then resolves normally —
+    /// including a companion's helper that fails (2) to (4): it is then just
+    /// Phi-signed code started outside its app, and gets no pass.
+    static func firstPartyCompanion(socketFD: Int32) -> AgentIdentity? {
+        guard let auditToken = peerAuditToken(socketFD: socketFD) else { return nil }
+        let peerPID = pid_t(bitPattern: auditToken.val.5)
+        guard peerPID > 0 else { return nil }
+        let tokenData = withUnsafeBytes(of: auditToken) { Data($0) } as CFData
+
+        for companion in AgentCompanion.all {
+            for channel in companion.acceptedChannels {
+                if isFirstPartyCode(
+                        guestAttributes: [kSecGuestAttributeAudit: tokenData], pid: peerPID,
+                        requirement: companionRequirements[channel.appIdentifier]) {
+                    return companionApp(companion, channel: channel, pid: peerPID)
+                }
+                guard isFirstPartyCode(
+                        guestAttributes: [kSecGuestAttributeAudit: tokenData], pid: peerPID,
+                        requirement: companionRequirements[channel.helperIdentifier]) else {
+                    continue
+                }
+                let executable = executablePath(peerPID) ?? recordedExecutablePath(peerPID)
+                guard let appPID = responsibleProcess(of: peerPID), appPID != peerPID,
+                      isFirstPartyCode(
+                        guestAttributes: [kSecGuestAttributePid: appPID], pid: appPID,
+                        requirement: companionRequirements[channel.appIdentifier]),
+                      let appExecutable = executablePath(appPID) ?? recordedExecutablePath(appPID),
+                      let bundleRoot = appBundleRoot(forExecutablePath: appExecutable) else {
+                    AppLogWarn("[AgentCDP] \(channel.helperIdentifier) (pid \(peerPID)) is not "
+                               + "the responsibility of a verified \(channel.appIdentifier); "
+                               + "not admitting it as \(companion.displayName)")
+                    return nil
+                }
+                guard let executable, let candidate = canonicalPath(executable),
+                      candidate.hasPrefix(bundleRoot + "/") else {
+                    AppLogWarn("[AgentCDP] \(channel.helperIdentifier) (pid \(peerPID)) runs from "
+                               + "outside \(bundleRoot); not admitting it as \(companion.displayName)")
+                    return nil
+                }
+                let expectedScript = canonicalPath(bundleRoot + "/" + companion.helperScript)
+                    ?? bundleRoot + "/" + companion.helperScript
+                guard let launch = processArgsAndEnv(peerPID),
+                      AgentCompanion.launchIsUntampered(
+                        argv: launch.argv.enumerated().map { index, argument in
+                            index == 1 ? (canonicalPath(argument) ?? argument) : argument
+                        },
+                        env: launch.env, expectedScript: expectedScript) else {
+                    AppLogWarn("[AgentCDP] \(channel.helperIdentifier) (pid \(peerPID)) was not "
+                               + "started as \(companion.displayName) starts it (arguments or "
+                               + "runtime environment differ); not admitting it")
+                    return nil
+                }
+                return AgentIdentity(
+                    key: companion.key,
+                    displayName: companion.displayName,
+                    teamId: FileSystemUtils.teamId,
+                    signingId: channel.helperIdentifier,
+                    verified: true,
+                    executablePath: executable,
+                    pid: peerPID,
+                    firstParty: false,
+                    companion: companion)
+            }
+        }
+        return nil
+    }
+
+    /// The companion app connecting itself: it must run as its bundle's main
+    /// executable, with no `DYLD_*` in its exec-time environment.
+    private static func companionApp(_ companion: AgentCompanion,
+                                     channel: AgentCompanion.Channel,
+                                     pid: pid_t) -> AgentIdentity? {
+        guard let executable = executablePath(pid) ?? recordedExecutablePath(pid),
+              appBundleRoot(forExecutablePath: executable) != nil,
+              let launch = processArgsAndEnv(pid),
+              AgentCompanion.environmentIsClean(launch.env, runtimeVariables: false) else {
+            AppLogWarn("[AgentCDP] \(channel.appIdentifier) (pid \(pid)) is not running as "
+                       + "its app's main executable with a clean environment; not admitting it "
+                       + "as \(companion.displayName)")
+            return nil
+        }
+        return AgentIdentity(
+            key: companion.key,
+            displayName: companion.displayName,
+            teamId: FileSystemUtils.teamId,
+            signingId: channel.appIdentifier,
+            verified: true,
+            executablePath: executable,
+            pid: pid,
+            firstParty: false,
+            companion: companion)
+    }
+
+    /// The code requirement for one companion signing identifier — the
+    /// first-party requirement narrowed to that identifier. Compiled once for
+    /// every helper and app identifier in the table.
+    static func companionRequirementText(identifier: String) -> String {
+        "anchor apple generic and certificate leaf[subject.OU] = \"\(FileSystemUtils.teamId)\""
+            + " and identifier \"\(identifier)\""
+    }
+
+    private static let companionRequirements: [String: SecRequirement] = {
+        var requirements: [String: SecRequirement] = [:]
+        let identifiers = AgentCompanion.all.flatMap(\.channels)
+            .flatMap { [$0.helperIdentifier, $0.appIdentifier] }
+        for identifier in identifiers {
+            var requirement: SecRequirement?
+            guard SecRequirementCreateWithString(
+                    companionRequirementText(identifier: identifier) as CFString,
+                    [], &requirement) == errSecSuccess,
+                  let requirement else {
+                AppLogError("[AgentCDP] could not compile the companion requirement for \(identifier)")
+                continue
+            }
+            requirements[identifier] = requirement
+        }
+        return requirements
+    }()
+
+    /// The process macOS holds responsible for `pid`: the app that spawned it
+    /// (and everything it spawns in turn) unless a spawn disclaimed it. Set by
+    /// the kernel at spawn, so the process cannot change it afterwards. The
+    /// call is resolved at runtime; nil when it is unavailable or the process
+    /// is gone, which fails the companion pass closed.
+    private static func responsibleProcess(of pid: pid_t) -> pid_t? {
+        guard let lookup = responsibilityLookup else { return nil }
+        let responsible = lookup(pid)
+        return responsible > 0 ? responsible : nil
+    }
+
+    private typealias ResponsibilityLookup = @convention(c) (pid_t) -> pid_t
+
+    private static let responsibilityLookup: ResponsibilityLookup? = {
+        // RTLD_DEFAULT ((void *)-2): search every image already loaded. The
+        // call lives in libquarantine, which libSystem re-exports.
+        let everyLoadedImage = UnsafeMutableRawPointer(bitPattern: -2)
+        guard let symbol = dlsym(everyLoadedImage,
+                                 "responsibility_get_pid_responsible_for_pid") else {
+            AppLogError("[AgentCDP] responsibility_get_pid_responsible_for_pid is unavailable")
+            return nil
+        }
+        return unsafeBitCast(symbol, to: ResponsibilityLookup.self)
+    }()
+
+    /// The `.app` bundle an app's main executable belongs to, symlinks
+    /// resolved, or nil when `path` is not an app's main executable.
+    /// Internal for unit coverage.
+    static func appBundleRoot(forExecutablePath path: String) -> String? {
+        guard let range = path.range(of: ".app/Contents/MacOS/", options: .backwards) else {
+            return nil
+        }
+        return canonicalPath(String(path[..<range.lowerBound]) + ".app")
+    }
+
     /// True when `path` is inside the running browser's own app bundle.
     private static func isInsideRunningAppBundle(_ path: String) -> Bool {
         guard let root = canonicalPath(Bundle.main.bundleURL.path),
@@ -666,10 +973,12 @@ enum AgentPeerIdentity {
 
     /// Whether a process is Phi's own code. `guestAttributes` locates the
     /// running process (an audit token where we have one, else a pid); `pid`
-    /// is only for the fallback below.
+    /// is only for the fallback below. `requirement` defaults to "any Phi
+    /// code"; the companion pass narrows it to one signing identifier.
     private static func isFirstPartyCode(guestAttributes: [CFString: Any],
-                                         pid: pid_t) -> Bool {
-        if satisfiesFirstPartyRequirement(guestAttributes: guestAttributes) { return true }
+                                         pid: pid_t,
+                                         requirement: SecRequirement? = firstPartyRequirement) -> Bool {
+        if satisfies(requirement, guestAttributes: guestAttributes) { return true }
         // The running process can be unreadable because its executable was
         // replaced on disk since it launched — routine during development,
         // where a rebuild unlinks the binary that a long-lived Sentinel is
@@ -691,7 +1000,7 @@ enum AgentPeerIdentity {
         guard let path = recordedExecutablePath(pid),
               isInsideRunningAppBundle(path) else { return false }
         var staticCode: SecStaticCode?
-        guard let requirement = firstPartyRequirement,
+        guard let requirement,
               SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL,
                                           [], &staticCode) == errSecSuccess,
               let staticCode else {
@@ -700,8 +1009,9 @@ enum AgentPeerIdentity {
         return SecStaticCodeCheckValidity(staticCode, [], requirement) == errSecSuccess
     }
 
-    private static func satisfiesFirstPartyRequirement(guestAttributes: [CFString: Any]) -> Bool {
-        guard let requirement = firstPartyRequirement else { return false }
+    private static func satisfies(_ requirement: SecRequirement?,
+                                  guestAttributes: [CFString: Any]) -> Bool {
+        guard let requirement else { return false }
         var code: SecCode?
         guard SecCodeCopyGuestWithAttributes(
                 nil, guestAttributes as CFDictionary, [], &code) == errSecSuccess,

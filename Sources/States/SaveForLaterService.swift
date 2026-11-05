@@ -38,7 +38,17 @@ enum SaveForLaterService {
     /// Swift conditions carry only `DEBUG` — harmless here because the DEBUG
     /// branch defaults on regardless, but it is why the canary case cannot
     /// be written as a bare `#if NIGHTLY_BUILD`.
+    ///
+    /// While the Folio app is connected — at least one verified Folio
+    /// companion channel is open (`AgentCompanion.folio`, see
+    /// docs/companion-apps.md) — the app owns Folio and this reads as off.
+    /// The registry posts `.agentCompanionsDidChange` when that flips, and
+    /// everything gated on this flag re-reads it. With no companion connected
+    /// the flag is decided exactly as below. Thread-safe, like the rest of it.
     nonisolated static var featureEnabled: Bool {
+        if AgentDirectChannelRegistry.shared.hasCompanionChannel(key: AgentCompanion.folio.key) {
+            return false
+        }
         #if DEBUG
         if UserDefaults.standard.object(forKey: "FolioFeatureFlag") != nil {
             return UserDefaults.standard.bool(forKey: "FolioFeatureFlag")

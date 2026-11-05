@@ -24,6 +24,14 @@ struct RecoveryCodeDisplayView: View {
                 .themedForeground(.textPrimary)
                 .multilineTextAlignment(.center)
 
+            Text(NSLocalizedString(
+                "sync.recovery.save.lossWarning",
+                value: "If you lose this code and no Mac is still set up for sync, the sync data in your account cannot be recovered. You would have to reset sync and start over.",
+                comment: "Recovery code display - warning about the consequence of losing the recovery code"))
+                .font(.body)
+                .themedForeground(.textPrimaryStrong)
+                .multilineTextAlignment(.center)
+
             // Deliberately not selectable (no `.textSelection` modifier): it
             // backs this Text with an NSTextView, whose mouse-tracking loop for a drag
             // selection drains main-actor continuations. `confirmSaved()` can

@@ -33,10 +33,14 @@ struct ProfileDetailSettingsView: View {
     @State private var downloadPath: String = ""
     @State private var saveForLaterOverridePath: String = ""
     @State private var isLoadingDetail: Bool = false
+    /// Bumped when a companion app connects or quits. Reading it in `body`
+    /// re-runs `body`, which re-reads Folio's flag.
+    @State private var companionRevision = 0
 
     private var profileManager: ProfileManager { .shared }
 
     var body: some View {
+        let _ = companionRevision
         VStack(alignment: .leading, spacing: 16) {
             SettingsDetailCard {
                 SettingsDetailRow(NSLocalizedString("settings.profiles.details.searchEngineLabel", value: "Search Engine", comment: "Profiles settings - search engine row label"),
@@ -67,6 +71,11 @@ struct ProfileDetailSettingsView: View {
         .onChange(of: profileId) { _, newProfileId in
             activeProfileId = newProfileId
             loadDetail(newProfileId)
+        }
+        // The Folio app connecting or quitting flips Folio while Settings is
+        // open (see SaveForLaterService.featureEnabled).
+        .onReceive(NotificationCenter.default.publisher(for: .agentCompanionsDidChange)) { _ in
+            companionRevision += 1
         }
     }
 

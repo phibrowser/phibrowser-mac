@@ -81,9 +81,23 @@ final class TabSwitchManager {
         recentTabIDs.insert(tab.guid, at: min(insertionIndex, recentTabIDs.count))
         recentTabIDs = Array(recentTabIDs.prefix(TabSwitchMetrics.maxRecentTabs))
         stamp(tab.guid)
+        // Stamped last: the focused tab was seen more recently than the
+        // background tab, which matters when another Space merges this list.
+        if let currentTab = state.focusingTab { stamp(currentTab.guid) }
+    }
+
+    /// Re-stamp this Space's focused tab when the window leaves the Space:
+    /// that is when it was last seen. A Space switch does not change each
+    /// Space's focused tab, so `recordActiveTab` never runs for it. The Space
+    /// being entered needs no stamp, as its focused tab is always listed first.
+    func noteSpaceConcealed() {
+        guard let tabID = browserState?.focusingTab?.guid,
+              recentTabIDs.contains(tabID) else { return }
+        stamp(tabID)
     }
 
     private func stamp(_ tabID: Int) {
+        guard recentTabIDs.contains(tabID) else { return }
         Self.recencyClock += 1
         recencyStamps[tabID] = Self.recencyClock
         recencyStamps = recencyStamps.filter { recentTabIDs.contains($0.key) }
@@ -130,19 +144,24 @@ final class TabSwitchManager {
         guard !candidates.isEmpty else { return }
 
         guard let state = browserState,
-              let currentTab = state.focusingTab else { return }
+              state.focusingTab != nil
+                || PhiPreferences.GeneralSettings.tabSwitcherIncludesAllSpaces.loadValue() else { return }
 
-        let currentIndex = candidates.firstIndex(of: currentTab.guid) ?? 0
+        // With no focused tab (an empty Space when all Spaces are merged), the
+        // first step lands on the newest candidate rather than skipping it.
         let initialIndex: Int
         if candidates.count == 1 {
             initialIndex = 0
-        } else {
+        } else if let currentID = state.focusingTab?.guid,
+                  let currentIndex = candidates.firstIndex(of: currentID) {
             switch direction {
             case .forward:
                 initialIndex = (currentIndex + 1) % candidates.count
             case .backward:
                 initialIndex = (currentIndex - 1 + candidates.count) % candidates.count
             }
+        } else {
+            initialIndex = direction == .forward ? 0 : candidates.count - 1
         }
 
         // Freeze the initiating binding for this gesture. Shift can change
@@ -306,16 +325,27 @@ final class TabSwitchManager {
 
     /// The live sessions of the window's other Spaces when the all-Spaces
     /// setting is on; empty otherwise, which keeps the per-Space behaviour.
+    /// Only Spaces with the same profile and Incognito state are merged, and
+    /// agent Spaces never are, so no tab titles or thumbnails cross those
+    /// boundaries.
     private func otherSpaceControllers() -> [SpaceSessionController] {
         guard PhiPreferences.GeneralSettings.tabSwitcherIncludesAllSpaces.loadValue(),
-              let ownController = browserState?.windowController,
+              let state = browserState,
+              !state.isAgentSpace,
+              let ownController = state.windowController,
               let slot = ownController.slot else { return [] }
         return slot.presentedSpaces.compactMap { space in
             guard let controller = slot.windowsBySpaceId[space.spaceId],
                   controller !== ownController,
-                  !controller.isDormant else { return nil }
+                  Self.canMergeHistory(of: controller.browserState, into: state) else { return nil }
             return controller
         }
+    }
+
+    static func canMergeHistory(of other: BrowserState, into state: BrowserState) -> Bool {
+        !other.isAgentSpace
+            && other.isIncognito == state.isIncognito
+            && other.profileId == state.profileId
     }
 
     private struct ResolvedTab {

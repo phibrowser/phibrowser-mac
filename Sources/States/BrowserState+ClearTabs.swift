@@ -44,7 +44,11 @@ extension BrowserState {
     }
 
     var canClearAllTabs: Bool {
-        normalTabs.count > 1 && !isKioskWindow && !isRestoringClearedTabs
+        // A split pair counts as one tab.
+        let ids = Set(normalTabs.map(\.guid))
+        let pairedSplits = splits.filter { ids.contains($0.primaryTabId) && ids.contains($0.secondaryTabId) }.count
+        return normalTabs.count - pairedSplits > 1
+            && !isKioskWindow && !isRestoringClearedTabs
             && !AgentSpaceManager.shared.isAgentOwned(spaceId)
     }
 

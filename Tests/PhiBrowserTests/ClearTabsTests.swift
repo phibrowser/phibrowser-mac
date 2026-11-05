@@ -132,10 +132,17 @@ final class ClearTabsTests: XCTestCase {
         seed(2)
         state.splits = [SplitGroup(id: "foreground", primaryTabId: 1, secondaryTabId: 2,
                                   layout: .horizontal, ratio: 0.5, isPinned: false)]
-        XCTAssertTrue(state.canClearAllTabs)
+        XCTAssertFalse(state.canClearAllTabs)
         state.clearAllTabs()
         XCTAssertTrue(state.closeRequests.isEmpty)
         XCTAssertFalse(state.clearTabsUndoManager.canUndo)
+    }
+
+    func testSplitWithPartnerOutsideNormalTabsDoesNotMergeUnits() {
+        seed(2)
+        state.splits = [SplitGroup(id: "detached", primaryTabId: 1, secondaryTabId: 99,
+                                  layout: .horizontal, ratio: 0.5, isPinned: false)]
+        XCTAssertTrue(state.canClearAllTabs)
     }
 
     func testRedoCleansCurrentBackgroundTabsAndUndoRestoresItsNewSnapshot() async throws {

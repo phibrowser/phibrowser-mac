@@ -3134,9 +3134,12 @@ class WebContentViewController: NSViewController {
         detachBookmarkBarIfAttached()
         attachedBookmarkBar = bookmarkBar
         // The bar belongs to the page area, so Chat visibility does not suppress its color.
+        // The shared bar moves here on a tab switch, so it takes this header's color instantly.
+        bookmarkBar.setPageColorPresentation(headerView.pageColorPresentation, animated: false)
         bookmarkBarPageColorCancellable = headerView.pageColorPresentationPublisher
+            .dropFirst()
             .sink { [weak bookmarkBar] presentation in
-                bookmarkBar?.setPageColorPresentation(presentation)
+                bookmarkBar?.setPageColorPresentation(presentation, animated: presentation.animatesChange)
             }
 
         installAttachedBookmarkBarIfNeeded()

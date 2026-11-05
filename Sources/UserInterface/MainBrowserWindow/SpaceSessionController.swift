@@ -292,12 +292,18 @@ class SpaceSessionController: NSWindowController {
                                           height: fullOnScreen.height)
     }
     
+    /// Both backdrops draw above the floating sidebar they can open from and
+    /// overlap (`WebContentContainerViewController.LayerZIndex.windowOverlay`).
     lazy var omnibackgroundView: EventBlockBgView = {
-       return EventBlockBgView()
+        let view = EventBlockBgView()
+        view.layer?.zPosition = WebContentContainerViewController.LayerZIndex.windowOverlay
+        return view
     }()
 
     lazy var searchTabsBackgroundView: EventBlockBgView = {
-        EventBlockBgView()
+        let view = EventBlockBgView()
+        view.layer?.zPosition = WebContentContainerViewController.LayerZIndex.windowOverlay
+        return view
     }()
     
     private var originalContentView: NSView?

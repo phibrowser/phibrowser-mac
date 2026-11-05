@@ -31,10 +31,15 @@ enum KioskWindowFramePersistence {
         return restoredFrame
     }
 
+    /// Setting the autosave name re-applies the saved frame, mapped onto
+    /// whichever screen AppKit picks for a hidden window, so the frame is
+    /// put back and saved after the name is set.
     @MainActor
     static func saveFrameAndEnableAutosave(for window: NSWindow) {
-        window.saveFrame(usingName: autosaveName)
+        let frame = window.frame
         enableAutosave(for: window)
+        window.setFrame(frame, display: false)
+        window.saveFrame(usingName: autosaveName)
     }
 }
 
@@ -114,6 +119,26 @@ enum KioskWindowPresentationGeometry {
             y: anchor.y - size.height / 2,
             width: size.width,
             height: size.height
+        )
+    }
+
+    /// Keeps a restored frame whose center is already on the target screen;
+    /// otherwise centers it on that screen, keeping its size where it fits.
+    static func frame(
+        _ frame: NSRect,
+        placedOnScreenFrame screenFrame: NSRect,
+        visibleFrame: NSRect
+    ) -> NSRect {
+        if screenFrame.contains(NSPoint(x: frame.midX, y: frame.midY)) {
+            return frame
+        }
+        return finalFrame(
+            size: NSSize(
+                width: min(frame.width, visibleFrame.width),
+                height: min(frame.height, visibleFrame.height)
+            ),
+            centeredAt: NSPoint(x: visibleFrame.midX, y: visibleFrame.midY),
+            constrainedTo: visibleFrame
         )
     }
 }
@@ -892,8 +917,39 @@ final class KioskBrowserWindowController: SpaceSessionController {
                 request: presentationRequest
             )
         } else {
-            KioskWindowFramePersistence.enableAutosave(for: window)
+            placeOnPresentationScreen(window)
         }
+    }
+
+    /// Opens without a cursor anchor (external links, menu, shortcuts, URL
+    /// rules) land on the screen the user acted on instead of the saved one.
+    private func placeOnPresentationScreen(_ window: NSWindow) {
+        if let screen = Self.presentationScreen() {
+            let targetFrame = KioskWindowPresentationGeometry.frame(
+                window.frame,
+                placedOnScreenFrame: screen.frame,
+                visibleFrame: screen.visibleFrame
+            )
+            if targetFrame != window.frame {
+                AppLogInfo("[Kiosk] Move window from \(window.frame) to \(targetFrame) on screen \(screen.localizedName)")
+                window.setFrame(targetFrame, display: false)
+            }
+        }
+        KioskWindowFramePersistence.saveFrameAndEnableAutosave(for: window)
+    }
+
+    /// A keyboard shortcut opens on the focused window's screen. Anything
+    /// else follows the cursor: an external link activates Phi first, so the
+    /// key window is just whichever Phi window was last focused.
+    private static func presentationScreen() -> NSScreen? {
+        if NSApp.currentEvent?.type == .keyDown,
+           let keyWindowScreen = NSApp.keyWindow?.screen {
+            return keyWindowScreen
+        }
+        let mouseLocation = NSEvent.mouseLocation
+        return NSScreen.screens.first {
+            NSMouseInRect(mouseLocation, $0.frame, false)
+        } ?? NSScreen.main
     }
 
     private func prepareCursorPresentation(

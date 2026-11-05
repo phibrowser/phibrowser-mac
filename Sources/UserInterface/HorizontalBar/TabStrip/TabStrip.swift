@@ -1357,30 +1357,33 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         }
     }
 
-    func setActivePageStyle(backgroundColor: NSColor?, appearance: Appearance?) {
+    func setActivePageStyle(backgroundColor: NSColor?, appearance: Appearance?, animated: Bool = false) {
         guard activePageBackgroundColor != backgroundColor
                 || activePageAppearance != appearance else { return }
         activePageBackgroundColor = backgroundColor
         activePageAppearance = appearance
 
         for view in pinnedTabViews.values {
-            view.setActivePageStyle(backgroundColor: backgroundColor, appearance: appearance)
+            view.setActivePageStyle(backgroundColor: backgroundColor, appearance: appearance, animated: animated)
         }
         for view in normalTabViews.values {
-            view.setActivePageStyle(backgroundColor: backgroundColor, appearance: appearance)
+            view.setActivePageStyle(backgroundColor: backgroundColor, appearance: appearance, animated: animated)
         }
         draggingProxyView?.setActivePageStyle(
             backgroundColor: backgroundColor,
-            appearance: appearance
+            appearance: appearance,
+            animated: animated
         )
         draggingSiblingProxyView?.setActivePageStyle(
             backgroundColor: backgroundColor,
-            appearance: appearance
+            appearance: appearance,
+            animated: animated
         )
         for companion in draggingCompanionProxyViews {
             companion.view.setActivePageStyle(
                 backgroundColor: backgroundColor,
-                appearance: appearance
+                appearance: appearance,
+                animated: animated
             )
         }
     }

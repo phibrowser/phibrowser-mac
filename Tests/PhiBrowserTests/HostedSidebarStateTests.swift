@@ -675,6 +675,32 @@ final class HostedSidebarStateTests: XCTestCase {
         XCTAssertNil(host.view.hitTest(point))
     }
 
+    func testOmniBoxOpenedOverFloatingPanelDrawsAboveIt() throws {
+        let slot = makeSlot()
+        let session = makeSession(in: slot, spaceId: "floating-omnibox")
+        let split = try XCTUnwrap(slot.shell?.split)
+        session.presentInShell(completing: false, deferringChromium: true)
+        split.view.layoutSubtreeIfNeeded()
+        split.setSidebarCollapsed(true, animated: false)
+        let host = split.floatingSidebarHost
+        host.showFloatingSidebar()
+        let panel = try XCTUnwrap(host.floatingSidebarContainerView)
+        XCTAssertFalse(panel.isHidden)
+
+        // The panel's address bar opens the omnibox anchored inside the panel.
+        session.toggleOmniBox(fromAddressBar: true, addressView: panel)
+        XCTAssertEqual(session.omniBoxContainerViewController?.hasShown, true)
+        let backdrop = session.omnibackgroundView
+        XCTAssertTrue(backdrop.superview === host.view.superview,
+                      "The in-window omnibox is a sibling of the floating sidebar host")
+        let panelZ = try XCTUnwrap(host.view.layer?.zPosition)
+        XCTAssertGreaterThan(try XCTUnwrap(backdrop.layer?.zPosition), panelZ,
+                             "The omnibox must draw above the floating sidebar it opened from")
+        XCTAssertGreaterThan(try XCTUnwrap(session.searchTabsBackgroundView.layer?.zPosition), panelZ,
+                             "Tab search opened from the panel's button must draw above it too")
+        session.omniBoxContainerViewController?.hideOmniBox()
+    }
+
     func testPresentedShellMatchesTrafficLightInsetsAcrossLayoutChanges() async throws {
         let slot = makeSlot()
         let session = makeSession(in: slot, spaceId: "traffic-light-layouts")

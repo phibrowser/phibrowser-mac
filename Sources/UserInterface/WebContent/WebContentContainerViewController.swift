@@ -341,6 +341,13 @@ class WebContentContainerViewController: NSViewController {
         /// `contentOuterBorder` so the outer-border stroke doesn't render on
         /// top of the panel.
         static let floatingSidebar: CGFloat = 1100
+        /// The omnibox and tab search mount in the window's own view tree
+        /// (`SpaceSessionController.toggleOmniBox` / `toggleSearchTabs`) as
+        /// siblings of the floating sidebar host. Both open from the panel's
+        /// address bar and search button and anchor to them, so they must
+        /// draw above the panel: subview order only settles hit-testing, and
+        /// a backdrop left at the default z was painted under the panel.
+        static let windowOverlay: CGFloat = 1200
     }
     
     /// Single window-level region for titlebar drag and double-click handling.
@@ -653,7 +660,8 @@ class WebContentContainerViewController: NSViewController {
                       self.currentWebContentController === controller else { return }
                 self.tabStripBarController?.setActivePageStyle(
                     backgroundColor: presentation.backgroundColor,
-                    appearance: presentation.appearance
+                    appearance: presentation.appearance,
+                    animated: presentation.animatesChange
                 )
             }
     }

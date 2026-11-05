@@ -726,7 +726,7 @@ final class TabItemView: NSView {
 
     // MARK: - Appearance
 
-    private func updateAppearance() {
+    private func updateAppearance(animatesPageColor: Bool = false) {
         let pageAppearance = isActive && !isPinned ? activePageAppearance : nil
         if appearance?.phiAppearance != pageAppearance {
             appearance = pageAppearance?.nsAppearance
@@ -736,7 +736,10 @@ final class TabItemView: NSView {
         }
 
         backgroundLayer.isPinned = isPinned
-        backgroundLayer.activeFillColor = isPinned ? nil : activePageBackgroundColor
+        backgroundLayer.setActiveFillColor(
+            isPinned ? nil : activePageBackgroundColor,
+            animated: animatesPageColor
+        )
 
         if isActive {
             backgroundLayer.tabState = .active
@@ -758,12 +761,12 @@ final class TabItemView: NSView {
         backgroundLayer.refreshAppearance()
     }
 
-    func setActivePageStyle(backgroundColor: NSColor?, appearance: Appearance?) {
+    func setActivePageStyle(backgroundColor: NSColor?, appearance: Appearance?, animated: Bool = false) {
         guard activePageBackgroundColor != backgroundColor
                 || activePageAppearance != appearance else { return }
         activePageBackgroundColor = backgroundColor
         activePageAppearance = appearance
-        updateAppearance()
+        updateAppearance(animatesPageColor: animated)
     }
 
     private var shouldShowOpenIndicator: Bool {

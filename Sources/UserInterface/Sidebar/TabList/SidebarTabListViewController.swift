@@ -2260,6 +2260,13 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             return canAccept ? .move : []
         }
 
+        if effectiveItem is SpaceRootSidebarItem {
+            setDropFeedback(.none)
+            let canAccept = canDropIntoSpaceRoot(info.draggingPasteboard)
+                && browserState.canMoveSelectedBookmarks(bookmarkGuids: bookmarkGuids, to: nil)
+            return canAccept ? .move : []
+        }
+
         if effectiveItem == nil {
             let proposedRow = effectiveIndex == NSOutlineViewDropOnItemIndex
                 ? outlineView.numberOfRows

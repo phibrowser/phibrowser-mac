@@ -85,6 +85,11 @@ private struct AgentControlSectionView: View {
         PhiPreferences.AgentSpaces.userSpaceOperationsEnabled
     @State private var unstyledOperatingPageEnabled: Bool =
         PhiPreferences.AgentSpaces.unstyledOperatingPageEnabled
+    @State private var remoteAgentsEnabled: Bool =
+        PhiPreferences.AgentSpaces.remoteAgentsEnabled
+    #if PHI_OSS_BUILD
+    @State private var linkCode: String = AgentRemoteTrust.linkCode
+    #endif
     @ObservedObject private var profileManager = ProfileManager.shared
     // Profiles the agent may NOT create Spaces in (blocklist mirror; empty =
     // all allowed). Kept in @State for toggle reactivity, written through to
@@ -96,6 +101,9 @@ private struct AgentControlSectionView: View {
         DeveloperSectionView(title: NSLocalizedString("settings.developer.agentControl.sectionTitle", value: "Agent control", comment: "Developer settings - Agent control section title")) {
             VStack(alignment: .leading, spacing: 10) {
                 accessCard
+                // Outside the access gate: a Mac that only watches its other
+                // Macs' agents runs none itself.
+                remoteAgentsCard
                 if agentAccessEnabled {
                     allowedAgentsCard
                 }
@@ -479,6 +487,83 @@ private struct AgentControlSectionView: View {
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    // MARK: Other Macs card — agent Spaces across the user's Macs.
+
+    private var remoteAgentsCard: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                SettingsIconChip(systemName: "macbook.and.laptopcomputer", color: .purple)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(NSLocalizedString("settings.developer.remoteAgents.enableToggle", value: "Show agents from your other Macs", comment: "Developer settings - Toggle title for seeing and controlling agent Spaces that run on the user's other Macs"))
+                        .font(.system(size: 13))
+                        .themedForeground(.textPrimary)
+                    Text(remoteAgentsDescription)
+                        .font(.system(size: 11))
+                        .themedForeground(.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                Toggle("", isOn: Binding(
+                    get: { remoteAgentsEnabled },
+                    set: { newValue in
+                        remoteAgentsEnabled = newValue
+                        PhiPreferences.AgentSpaces.remoteAgentsEnabled = newValue
+                    }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .themedTint(.themeColor)
+            }
+            .padding(.vertical, 12)
+            #if PHI_OSS_BUILD
+            if remoteAgentsEnabled {
+                Divider()
+                linkCodeRow
+            }
+            #endif
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .settingsCardChrome()
+    }
+
+    private var remoteAgentsDescription: String {
+        #if PHI_OSS_BUILD
+        NSLocalizedString("settings.developer.remoteAgents.linkCodeDescription", value: "Agent Spaces running on your other Macs appear after a divider in the Space strip, where you can watch them, switch tabs, take control and hand it back. Only Macs on this network with the same link code can connect. Applies immediately.", comment: "Developer settings - Explanation for the other-Macs agent toggle in builds without a Phi account")
+        #else
+        NSLocalizedString("settings.developer.remoteAgents.accountDescription", value: "Agent Spaces running on your other Macs appear after a divider in the Space strip, where you can watch them, switch tabs, take control and hand it back. Only Macs on this network signed in to your Phi account with Sync on can connect. Applies immediately.", comment: "Developer settings - Explanation for the other-Macs agent toggle")
+        #endif
+    }
+
+    #if PHI_OSS_BUILD
+    private var linkCodeRow: some View {
+        HStack(spacing: 12) {
+            Text(NSLocalizedString("settings.developer.remoteAgents.linkCodeTitle", value: "Link code", comment: "Developer settings - Label for the code shared by the user's Macs that may see each other's agents"))
+                .font(.system(size: 13))
+                .themedForeground(.textPrimary)
+            Spacer(minLength: 12)
+            TextField("", text: $linkCode)
+                .font(.system(size: 12, design: .monospaced))
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 190)
+                .onSubmit { applyLinkCode() }
+            Button(NSLocalizedString("settings.developer.remoteAgents.copyLinkCodeButton", value: "Copy", comment: "Developer settings - Copy the link code to paste on the user's other Mac")) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(linkCode, forType: .string)
+            }
+            .controlSize(.small)
+        }
+        .padding(.vertical, 10)
+    }
+
+    private func applyLinkCode() {
+        AgentRemoteTrust.linkCode = linkCode
+        linkCode = AgentRemoteTrust.linkCode
+        AgentRemotePresence.shared.refresh()
+    }
+    #endif
 
     // MARK: Page view card — how an operated page is presented.
 

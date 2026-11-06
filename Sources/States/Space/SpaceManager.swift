@@ -1306,6 +1306,11 @@ final class SpaceManager: ObservableObject {
         let parkedGhosts = parkedGhostEntries(for: slot)
         slots.removeAll { $0 === slot }
         slot.closeShellIfPresent()
+        // A closed window that mirrored another Mac's agent stops its frames.
+        if slot.remoteMirror != nil {
+            slot.remoteMirror = nil
+            MainActor.assumeIsolated { AgentRemotePresence.shared.mirrorsDidChange() }
+        }
         // Paired with the mint line in `createSlot`: the two together are what
         // let a log bundle tell "the registry drained" from "one slot stayed
         // behind", which is the whole of the windowless-reopen predicate.
@@ -8871,6 +8876,9 @@ final class SpaceWindowSlot: ObservableObject {
     }
 
     @Published private(set) var activeSpaceId: String?
+    /// An agent Space of the user's other Mac shown in place of this window's
+    /// page (see `AgentRemotePresence`). Switching to any Space here ends it.
+    @Published var remoteMirror: AgentRemoteMirrorTarget?
 
     /// The Space pip being drag-reordered in this window's strip, shared by
     /// every Space's strip (see `SpacesStripView.stripDraggingId`).
@@ -9685,6 +9693,10 @@ final class SpaceWindowSlot: ObservableObject {
         // and always run — they must, to keep the slot consistent. Re-activating
         // the current Space is a no-op and never gated.
         AppLogInfo("[SpaceWindowSlot] activate(\(spaceId)) from=\(activeSpaceId ?? "nil") userInitiated=\(userInitiated) animated=\(animated)")
+        if userInitiated, remoteMirror != nil {
+            remoteMirror = nil
+            MainActor.assumeIsolated { AgentRemotePresence.shared.mirrorsDidChange() }
+        }
         if userInitiated, spaceId != activeSpaceId, isSwitchAnimationInFlight {
             AppLogInfo("[SpaceWindowSlot] activate(\(spaceId)) dropped: switch animation in flight")
             onActivationFailed?()

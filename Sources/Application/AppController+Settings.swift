@@ -87,6 +87,8 @@ extension AppController {
                 Task { await BitwardenService.shared.lock() }
             }
         }
+        // Off is a kill-switch here too: no agent Space leaves this Mac.
+        AgentRemotePresence.shared.refresh()
         developerModeDidChange()
     }
 

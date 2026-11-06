@@ -379,7 +379,8 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     func updateSpaceSwitchVisibility() {
         guard let view = spaceSwitchView else { return }
         let enabled = PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue()
-            && (SpaceManager.shared.spaces.count > 1 || forcesSpaceSwitchVisible)
+            && (SpaceManager.shared.spaces.count > 1 || forcesSpaceSwitchVisible
+                || !AgentRemotePresence.shared.peers.isEmpty)
         guard spaceSwitchVisible != enabled else { return }
         spaceSwitchVisible = enabled
 

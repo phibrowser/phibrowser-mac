@@ -47,7 +47,9 @@ NSLocalizedString(
   by the dedicated translation repository and should enter this repository only
   through that repository's synchronization workflow.
 - Preserve existing non-English localizations unless a translation-repository
-  synchronization explicitly updates them.
+  synchronization explicitly updates them or the entire stale entry is removed.
+- Delete entries marked as stale (`extractionState: "stale"`) from
+  `Resources/Localizable.xcstrings`, including all of their localizations.
 - Developer-only strings under `#if DEBUG`, and strings used only by examples,
   samples, previews, or debug tools, must remain direct string literals instead
   of using `NSLocalizedString`.

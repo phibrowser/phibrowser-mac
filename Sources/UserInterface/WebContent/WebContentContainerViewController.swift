@@ -499,6 +499,43 @@ class WebContentContainerViewController: NSViewController {
         setupTopBarIfNeeded()
         setupSubscriptionsIfNeeded()
         updateLayoutForMode()
+        bindRemoteMirrorIfNeeded()
+    }
+
+    // MARK: - Remote agent mirror
+
+    /// The page card of an agent Space running on the user's other Mac, laid
+    /// over this window's own page while the strip's remote pip is selected.
+    private var remoteMirrorView: AgentRemoteMirrorView?
+    private var remoteMirrorCancellable: AnyCancellable?
+
+    private func bindRemoteMirrorIfNeeded() {
+        guard remoteMirrorCancellable == nil,
+              let slot = browserState?.windowController?.slot else { return }
+        remoteMirrorCancellable = slot.$remoteMirror
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.showRemoteMirror($0) }
+    }
+
+    private func showRemoteMirror(_ target: AgentRemoteMirrorTarget?) {
+        guard remoteMirrorView?.target != target else { return }
+        remoteMirrorView?.removeFromSuperview()
+        remoteMirrorView = nil
+        // The page under the mirror would still track the pointer (link
+        // status bubbles, hover) through its own tracking areas.
+        currentWebContentController?.view.isHidden = target != nil
+        guard let target else { return }
+        let mirror = AgentRemoteMirrorView(target: target)
+        mirror.setCornerRadius(contentLayout.containerCornerRadius)
+        if let themeContext = browserState?.themeContext {
+            mirror.applyTheme(themeContext.currentTheme, appearance: themeContext.currentAppearance)
+        }
+        contentContainer.addSubview(mirror)
+        mirror.snp.makeConstraints { make in
+            make.edges.equalTo(pageAreaBackdrop)
+        }
+        remoteMirrorView = mirror
     }
     
     // MARK: - UI Setup

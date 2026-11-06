@@ -4677,6 +4677,18 @@
         }
       }
     },
+    "agent.handoffPrompt.remoteTitle" : {
+      "comment" : "Agent handoff prompt - title when the agent runs on the user's other Mac; %@ is that Mac's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The agent on %@ needs you"
+          }
+        }
+      }
+    },
     "agent.handoffPrompt.switchToAgentSpaceButton" : {
       "comment" : "Agent handoff prompt - open the agent Space",
       "extractionState" : "extracted_with_value",
@@ -4793,6 +4805,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "AI 代理需要你協助"
+          }
+        }
+      }
+    },
+    "agent.overlay.remoteAgentLabel" : {
+      "comment" : "Agent control pill - agent name followed by the name of the user's other Mac it runs on",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "agent.overlay.controlledFromCaption" : {
+      "comment" : "Agent control pill - caption while the user drives this agent Space from another Mac; %@ is that Mac's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Controlled from %@"
           }
         }
       }
@@ -70074,6 +70110,66 @@
         }
       }
     },
+    "settings.developer.remoteAgents.linkCodeTitle" : {
+      "comment" : "Developer settings - Label for the code shared by the user's Macs that may see each other's agents",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Link code"
+          }
+        }
+      }
+    },
+    "settings.developer.remoteAgents.linkCodeDescription" : {
+      "comment" : "Developer settings - Explanation for the other-Macs agent toggle in builds without a Phi account",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Agent Spaces running on your other Macs appear after a divider in the Space strip, where you can watch them, switch tabs, take control and hand it back. Only Macs on this network with the same link code can connect. Applies immediately."
+          }
+        }
+      }
+    },
+    "settings.developer.remoteAgents.enableToggle" : {
+      "comment" : "Developer settings - Toggle title for seeing and controlling agent Spaces that run on the user's other Macs",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show agents from your other Macs"
+          }
+        }
+      }
+    },
+    "settings.developer.remoteAgents.copyLinkCodeButton" : {
+      "comment" : "Developer settings - Copy the link code to paste on the user's other Mac",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copy"
+          }
+        }
+      }
+    },
+    "settings.developer.remoteAgents.accountDescription" : {
+      "comment" : "Developer settings - Explanation for the other-Macs agent toggle",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Agent Spaces running on your other Macs appear after a divider in the Space strip, where you can watch them, switch tabs, take control and hand it back. Only Macs on this network signed in to your Phi account with Sync on can connect. Applies immediately."
+          }
+        }
+      }
+    },
     "settings.developer.skillInstall.all.failureTitle" : {
       "comment" : "Developer settings - Skill install error title",
       "extractionState" : "extracted_with_value",
@@ -105491,6 +105587,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將分頁拖曳到這裡，或從分頁列表釘選"
+          }
+        }
+      }
+    },
+    "sidebar.remoteAgentPip.help" : {
+      "comment" : "Space strip - tooltip of an agent Space running on the user's other Mac; %1$@ is the agent Space name (R1), %2$@ that Mac's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
           }
         }
       }

@@ -192,6 +192,11 @@ Rules:
   request-scoped extension bridge and authenticated Unix-domain-socket client.
   It must not become a general remote HTTP client or bypass the shared-auth and
   extension-authorization boundaries.
+- The other local-transport exception is
+  `Sources/Networking/AgentRemoteChannel.swift`: the TLS pre-shared-key
+  channel between the user's own Macs on the local network (Bonjour), used
+  only by `AgentRemotePresence` to show agent Spaces across them. It carries
+  no account credentials and never talks to a server.
 
 Exception — dedicated per-backend clients:
 

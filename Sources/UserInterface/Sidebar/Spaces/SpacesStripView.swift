@@ -267,6 +267,8 @@ struct SpacesStripView: View {
     @ObservedObject var stripGeometry: SpacesStripGeometry = SpacesStripGeometry()
     @ObservedObject private var profileManager: ProfileManager = .shared
     @ObservedObject private var agentSpaceManager: AgentSpaceManager = .shared
+    @ObservedObject private var remotePresence: AgentRemotePresence = .shared
+    @State private var hoveredRemotePipId: String?
     @Environment(\.phiAppearance) private var windowAppearance: Appearance
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -709,6 +711,7 @@ struct SpacesStripView: View {
         let hasOverflow = visibleCount < stripPipCount
         return HStack(spacing: Self.stripSpacing) {
             pipsViewport(visibleCount: visibleCount)
+            remotePipGroup
             if !hasOverflow { Spacer(minLength: 4) }
             if hasOverflow {
                 moreButton
@@ -985,6 +988,7 @@ struct SpacesStripView: View {
             // the pending Space instead of the source Space's selection chip.
             if !stripGeometry.isChipConcealed,
                !isCreating,
+               slot.remoteMirror == nil,
                let activeId = stripSelectedSpaceId,
                spaces.contains(where: { $0.spaceId == activeId }) {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -1054,6 +1058,96 @@ struct SpacesStripView: View {
     /// Width of `count` uniform strip items plus the gaps between them.
     private func pipRowWidth(_ count: Int) -> CGFloat {
         count <= 0 ? 0 : CGFloat(count) * Self.stripItemWidth + CGFloat(count - 1) * Self.stripSpacing
+    }
+
+    // MARK: - Remote agent pips
+
+    private struct RemotePipEntry: Identifiable {
+        let peerId: String
+        let deviceName: String
+        let task: AgentRemoteTask
+        var id: String { peerId + "/" + task.spaceId }
+        var target: AgentRemoteMirrorTarget { AgentRemoteMirrorTarget(peerId: peerId, spaceId: task.spaceId) }
+    }
+
+    /// Agent Spaces running on the user's other Macs, after this Mac's own.
+    private var remotePipEntries: [RemotePipEntry] {
+        remotePresence.peers
+            .sorted { ($0.value.deviceName, $0.key) < ($1.value.deviceName, $1.key) }
+            .flatMap { peer in
+                peer.value.tasks.map {
+                    RemotePipEntry(peerId: peer.key, deviceName: peer.value.deviceName, task: $0)
+                }
+            }
+    }
+
+    /// Room the remote group takes out of the row: its pips plus the gap that
+    /// carries the second divider. Not part of the sliding viewport.
+    private var remotePipGroupWidth: CGFloat {
+        let count = remotePipEntries.count
+        return count == 0 ? 0 : pipRowWidth(count) + Self.stripSpacing
+    }
+
+    @ViewBuilder
+    private var remotePipGroup: some View {
+        let entries = remotePipEntries
+        if !entries.isEmpty {
+            HStack(spacing: Self.stripSpacing) {
+                ForEach(entries) { remotePip($0) }
+            }
+            .overlay(alignment: .leading) { agentGroupDivider }
+        }
+    }
+
+    /// A remote agent Space's pip: the local agent pip's icon, badge, chip
+    /// and hover wash. Selecting it mirrors that Space in this window.
+    private func remotePip(_ entry: RemotePipEntry) -> some View {
+        let task = entry.task.displayTask
+        let isSelected = slot.remoteMirror == entry.target
+        let badge = AgentDriverBadge.make(agentName: task.agentName, origin: task.origin)
+        let name = String(format: NSLocalizedString("sidebar.remoteAgentPip.help", value: "%1$@ · %2$@", comment: "Space strip - tooltip of an agent Space running on the user's other Mac; %1$@ is the agent Space name (R1), %2$@ that Mac's name"), AgentSpaceManager.agentSpaceName(task.number), entry.deviceName)
+        return Button {
+            remotePresence.showMirror(entry.target, in: slot)
+        } label: {
+            Group {
+                if let asset = badge.assetName {
+                    Image(asset).renderingMode(.template).resizable().scaledToFit()
+                        .frame(width: Self.iconSize / AgentDriverBadge.assetInkRatio,
+                               height: Self.iconSize / AgentDriverBadge.assetInkRatio)
+                } else {
+                    Image(systemName: badge.symbol).resizable().scaledToFit()
+                        .frame(width: Self.iconSize, height: Self.iconSize)
+                }
+            }
+            .foregroundStyle(Color.primary)
+            .frame(width: Self.stripItemWidth, height: Self.stripItemHeight)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.sidebarTabSelected)
+                        .shadow(color: Color.black.opacity(0.15), radius: 1, x: 0, y: 1)
+                } else if hoveredRemotePipId == entry.id {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.sidebarTabHovered)
+                }
+            }
+            .frame(width: Self.stripItemWidth, height: rowHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .overlay(alignment: .topTrailing) {
+            agentBadge(for: task)
+                .offset(y: max(0, (rowHeight - Self.stripItemHeight) / 2))
+        }
+        .help(name)
+        .accessibilityLabel(name)
+        .onHover { hovering in
+            if hovering {
+                hoveredRemotePipId = entry.id
+            } else if hoveredRemotePipId == entry.id {
+                hoveredRemotePipId = nil
+            }
+        }
     }
 
     /// Thin vertical rule splitting the strip into the user-Space and
@@ -1188,6 +1282,7 @@ struct SpacesStripView: View {
 
     /// Fits whole pips while reserving the trailing button and overflow peeks.
     private func visiblePipCount(availableWidth: CGFloat) -> Int {
+        let availableWidth = availableWidth - remotePipGroupWidth
         let total = stripPipCount
         guard total > 0 else { return 0 }
         let item = Self.stripItemWidth
@@ -1241,6 +1336,12 @@ struct SpacesStripView: View {
     @ViewBuilder
     private func agentBadge(for spaceId: String) -> some View {
         if let task = agentSpaceManager.tasksBySpaceId[spaceId] {
+            agentBadge(for: task)
+        }
+    }
+
+    @ViewBuilder
+    private func agentBadge(for task: AgentTask) -> some View {
             // Corner badge for the agent Space's state. Error/completed take
             // precedence; otherwise it reads the three live states: the user
             // holds control (hand), the agent is working (green dot), or the
@@ -1265,7 +1366,6 @@ struct SpacesStripView: View {
                     .foregroundStyle(color)
                     .padding(2)
             }
-        }
     }
 
     /// The pip's icon. For a Space with a live agent task, draw the driving

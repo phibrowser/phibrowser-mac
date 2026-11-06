@@ -55,21 +55,8 @@ struct CustomBotChannel: Codable, Identifiable {
     let botUsername: String?
     let createdAt: Double?
     let updatedAt: Double?
-    let telegramBinding: TelegramBinding?
-
-    struct TelegramBinding: Codable {
-        let userId: String?
-        let chatId: String?
-    }
-
-    var isLinked: Bool { telegramBinding?.userId != nil }
 
     var id: String { _id }
-}
-
-struct CustomBotPairingResponse: Codable {
-    let deepLink: String
-    let expiresAt: Double
 }
 
 struct CustomBotListResponse: Codable {
@@ -214,13 +201,6 @@ final class IMChannelAPIClient {
         struct VerifyResult: Codable { let success: Bool; let error: String? }
         let result = try JSONDecoder().decode(VerifyResult.self, from: response.body)
         return (result.success, result.error)
-    }
-
-    func prepareCustomBotPairing(id: String) async throws -> CustomBotPairingResponse {
-        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#%"))) ?? id
-        let response = try await send("/api/custom-bot/channels/\(encoded)/pairing", method: "POST")
-        try validateResponse(response)
-        return try JSONDecoder().decode(CustomBotPairingResponse.self, from: response.body)
     }
 
     func deleteCustomBotChannel(id: String) async throws {

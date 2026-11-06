@@ -77792,10 +77792,58 @@
       "comment" : "Phi Link - Custom bot polling is active but sender is not linked",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffne Telegram, um die Verknüpfung abzuschließen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open Telegram to finish linking"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Telegram para terminar la vinculación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrez Telegram pour terminer l'association"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telegramを開いて連携を完了"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telegram을 열어 연결을 완료해 주세요"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Telegram om het koppelen af te ronden"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 Telegram 以完成关联"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟 Telegram 以完成連結"
           }
         }
       }
@@ -77924,10 +77972,58 @@
       "comment" : "Phi Link - Opens a one-time link to authorize the custom bot sender",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Telegram verbinden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Connect in Telegram"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectar en Telegram"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecter dans Telegram"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telegramで接続"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telegram에서 연결"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbinden in Telegram"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Telegram 中连接"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Telegram 中連線"
           }
         }
       }
@@ -79736,10 +79832,58 @@
       "comment" : "Phi Link - Warning for users with an existing official bot binding, asking them to switch to their own bot",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der offizielle Telegram-Bot wurde eingestellt. Bitte richte so bald wie möglich deinen eigenen Bot ein und wechsle zu diesem."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "The official Telegram bot has been retired. Please set up and switch to your own bot as soon as possible."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El bot de Telegram oficial ya no está disponible. Configura tu propio bot y cambia a él lo antes posible."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le bot Telegram officiel a été définitivement arrêté. Veuillez configurer votre propre bot et passer à celui-ci dès que possible."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "公式Telegramボットは提供を終了しました。できるだけ早く独自のボットを設定し、切り替えてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "공식 Telegram 봇 서비스가 종료됐어요. 가능한 한 빨리 나만의 봇을 설정하고 그 봇으로 전환해 주세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De officiële Telegram-bot is stopgezet. Stel zo snel mogelijk je eigen bot in en stap daarop over."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "官方 Telegram 机器人已停止服务。请尽快设置并切换到你自己的机器人。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "官方 Telegram 機器人已終止服務。請儘快設定並改用你自己的機器人。"
           }
         }
       }

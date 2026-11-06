@@ -7,6 +7,9 @@ import SwiftUI
 import AppKit
 
 struct AboutView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    static let contentSize = NSSize(width: 290, height: 392)
+
     private let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ??
                          Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Phi"
 
@@ -147,25 +150,23 @@ struct AboutView: View {
     }
 
     var body: some View {
-        VStack {
-            Spacer(minLength: 10)
+        VStack(spacing: 0) {
+            Spacer(minLength: 28)
 
-            VStack(spacing: 10) {
-                // App Icon
-                Group {
-                    if let appIcon = NSApp.applicationIconImage {
-                        Image(nsImage: appIcon)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 58, height: 58)
-                    } else {
-                        Image(systemName: "app.fill")
-                            .font(.system(size: 64))
-                            .foregroundColor(.accentColor)
-                            .frame(width: 48, height: 48)
-                    }
-                }
-                .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+            VStack(spacing: 18) {
+                AboutConchView(mapping: selectedMapping)
+                    .frame(width: 112, height: 120)
+                    .padding(.bottom, 10)
+                    .accessibilityLabel(Text(NSLocalizedString(
+                        "about.conch.accessibilityLabel",
+                        value: "Interactive 3D conch",
+                        comment: "About window - Accessible name of the draggable conch illustration"
+                    )))
+                    .help(NSLocalizedString(
+                        "about.conch.dragHint",
+                        value: "Drag to rotate the conch",
+                        comment: "About window - Tooltip explaining how to interact with the conch"
+                    ))
 
                 Text(appName)
                     .font(.title2)
@@ -196,11 +197,106 @@ struct AboutView: View {
                 }
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: 42)
         }
-        .padding(20)
-        .frame(width: 290, height: 280)
+        .padding(.horizontal, 20)
+        .frame(width: Self.contentSize.width, height: Self.contentSize.height)
         .background(Color(NSColor.windowBackgroundColor))
+    }
+
+    private var selectedMapping: AboutConchMapping {
+        colorScheme == .dark ? .dark : .light
+    }
+}
+
+private struct AboutConchMapping: Equatable {
+    var shadows: Double
+    var midtones: Double
+    var highlights: Double
+    var coverage: Double = 256
+
+    static let light = Self(shadows: 1, midtones: 0.696387993092399, highlights: 0.4919679985226069, coverage: 512)
+    static let dark = Self(shadows: 0.105127427184466, midtones: 0.5108214383518463, highlights: 0.7292919779196909, coverage: 512)
+}
+
+/// Interactive logo using the existing multi-angle conch frames.
+private struct AboutConchView: NSViewControllerRepresentable {
+    let mapping: AboutConchMapping
+
+    func makeNSViewController(context: Context) -> AboutConchViewController {
+        let controller = AboutConchViewController()
+        controller.updateMapping(mapping)
+        return controller
+    }
+
+    func updateNSViewController(_ controller: AboutConchViewController, context: Context) {
+        controller.updateMapping(mapping)
+    }
+
+    static func dismantleNSViewController(_ controller: AboutConchViewController, coordinator: ()) {
+        controller.tearDown()
+    }
+}
+
+private final class AboutConchViewController: ConchFrameAnimationBaseViewController {
+    private var mapping = AboutConchMapping.light
+    override var imageNamagePrefix: String { "setting_" }
+    override var usesTransparentBackground: Bool { true }
+    override var transparentBackgroundGain: CGFloat { mapping.coverage }
+    override var gradientStartColor: NSColor { gray(mapping.shadows) }
+    override var gradientMidtoneColor: NSColor? { gray(mapping.midtones) }
+
+    private func gray(_ value: Double) -> NSColor {
+        NSColor(srgbRed: value, green: value, blue: value, alpha: 1)
+    }
+
+    func updateMapping(_ mapping: AboutConchMapping) {
+        guard self.mapping != mapping else { return }
+        self.mapping = mapping
+        guard isViewLoaded else { return }
+        themChanged(h: 0, s: 0, b: mapping.highlights, refreshMapping: true)
+    }
+
+    override func loadView() {
+        view = AboutConchInteractionView()
+        view.wantsLayer = true
+        view.layer?.masksToBounds = true
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(imageView)
+        // Crop the empty source margins so the shell fills the logo's hit area.
+        NSLayoutConstraint.activate([
+            imageView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            imageView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            imageView.widthAnchor.constraint(equalToConstant: 108),
+            imageView.heightAnchor.constraint(equalToConstant: 171)
+        ])
+    }
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        themChanged(h: 0, s: 0, b: mapping.highlights, refreshMapping: true)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        NSCursor.closedHand.set()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        NSCursor.openHand.set()
+    }
+}
+
+private final class AboutConchInteractionView: NSView {
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .openHand)
+    }
+
+    // Keep the logo draggable, including the decorative image subview.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        super.hitTest(point) == nil ? nil : self
     }
 }
 

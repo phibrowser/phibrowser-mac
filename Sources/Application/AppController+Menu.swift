@@ -3251,7 +3251,7 @@ extension AppController {
         window.identifier = NSUserInterfaceItemIdentifier("About Phi Browser")
 
         window.contentViewController = hostingController
-        window.setContentSize(NSSize(width: 290, height: 180))
+        window.setContentSize(AboutView.contentSize)
         window.isReleasedWhenClosed = false
         window.center()
         window.makeKeyAndOrderFront(nil)

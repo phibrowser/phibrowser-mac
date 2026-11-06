@@ -1,6 +1,30 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "about.conch.accessibilityLabel" : {
+      "comment" : "About window - Accessible name of the draggable conch illustration",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interactive 3D conch"
+          }
+        }
+      }
+    },
+    "about.conch.dragHint" : {
+      "comment" : "About window - Tooltip explaining how to interact with the conch",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag to rotate the conch"
+          }
+        }
+      }
+    },
     "" : {
 
     },

@@ -60,19 +60,41 @@ class GradientMapper {
         return ci
     }
 
-    static func apply(to bwImage: NSImage, using gradientStrip: CIImage) -> NSImage? {
+    static func apply(to bwImage: NSImage, using gradientStrip: CIImage, transparentBackground: Bool = false, coverageGain: CGFloat = 256) -> NSImage? {
            return autoreleasepool { () -> NSImage? in
                guard let cgImage = bwImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
                    return nil
                }
                
-               let input = CIImage(cgImage: cgImage)
+               let source = CIImage(cgImage: cgImage)
+               // Exclude the faint one-pixel frame encoded in these JPEG assets
+               // before recovering low-luminance interior detail.
+               let input = transparentBackground
+                   ? source.cropped(to: source.extent.insetBy(dx: 2, dy: 2))
+                   : source
                
                guard let filter = CIFilter(name: "CIColorMap") else { return nil }
                filter.setValue(input, forKey: kCIInputImageKey)
                filter.setValue(gradientStrip, forKey: "inputGradientImage")
                
-               guard let output = filter.outputImage else { return nil }
+               guard var output = filter.outputImage else { return nil }
+
+               if transparentBackground {
+                   // Coverage must reach opacity before the surface reaches its
+                   // midtones; otherwise shadowed interiors fade into the window.
+                   // Keep near-black backdrop/compression noise transparent.
+                   let coverage = CIVector(x: coverageGain, y: 0, z: 0, w: 0)
+                   let mask = input.applyingFilter("CIColorMatrix", parameters: [
+                       "inputRVector": coverage,
+                       "inputGVector": coverage,
+                       "inputBVector": coverage,
+                       "inputBiasVector": CIVector(x: -0.16, y: -0.16, z: -0.16, w: 0)
+                   ]).applyingFilter("CIColorClamp")
+                   output = output.applyingFilter("CIBlendWithMask", parameters: [
+                       kCIInputBackgroundImageKey: CIImage(color: .clear).cropped(to: input.extent),
+                       kCIInputMaskImageKey: mask
+                   ])
+               }
                
                guard let finalCGImage = sharedContext.createCGImage(output, from: output.extent) else {
                    return nil

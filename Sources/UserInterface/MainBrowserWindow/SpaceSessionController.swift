@@ -434,6 +434,15 @@ class SpaceSessionController: NSWindowController {
     
     override var windowNibName: NSNib.Name? { "" }
 
+    /// The controller ends the shell's responder chain. A key that no native
+    /// responder handles (a letter typed with the sidebar list focused) lands
+    /// here, and AppKit's default beeps. Chromium's `BridgedContentView`
+    /// swallowed such keys before hosted mode; drop them the same way.
+    override func noResponder(for eventSelector: Selector) {
+        if eventSelector == #selector(NSResponder.keyDown(with:)) { return }
+        super.noResponder(for: eventSelector)
+    }
+
     private func installMultiSelectionEscapeMonitor() {
         guard multiSelectionEscapeMonitor == nil else { return }
         multiSelectionEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {

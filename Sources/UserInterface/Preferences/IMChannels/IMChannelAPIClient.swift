@@ -166,7 +166,7 @@ final class IMChannelAPIClient {
     func listCustomBotChannels() async throws -> CustomBotListResponse {
         AppLogDebug("[IMChannelAPI] GET /api/custom-bot/channels")
         let response = try await send("/api/custom-bot/channels")
-        AppLogDebug("[IMChannelAPI] listCustomBotChannels response: \(response.statusCode), body: \(String(data: response.body.prefix(300), encoding: .utf8) ?? "?")")
+        AppLogDebug("[IMChannelAPI] listCustomBotChannels response: \(response.statusCode)")
         try validateResponse(response)
         return try JSONDecoder().decode(CustomBotListResponse.self, from: response.body)
     }
@@ -179,7 +179,7 @@ final class IMChannelAPIClient {
     }
 
     func updateCustomBotChannel(id: String, enabled: Bool? = nil, botToken: String? = nil) async throws -> CustomBotChannel {
-        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#%"))) ?? id
         var bodyDict: [String: Any] = [:]
         if let enabled { bodyDict["enabled"] = enabled }
         if let botToken { bodyDict["botToken"] = botToken }
@@ -204,7 +204,7 @@ final class IMChannelAPIClient {
     }
 
     func deleteCustomBotChannel(id: String) async throws {
-        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#%"))) ?? id
         let response = try await send("/api/custom-bot/channels/\(encoded)", method: "DELETE")
         try validateResponse(response)
     }

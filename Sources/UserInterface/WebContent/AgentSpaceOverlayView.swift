@@ -566,7 +566,9 @@ final class AgentSpaceOverlayView: NSView {
 
     // MARK: - Update
 
-    func update(with task: AgentTask?) {
+    /// `deviceName` names the Mac the agent runs on when this pill mirrors an
+    /// agent Space from the user's other Mac.
+    func update(with task: AgentTask?, deviceName: String? = nil) {
         guard let task else { return }
         ownership = task.ownership
 
@@ -582,14 +584,22 @@ final class AgentSpaceOverlayView: NSView {
             agentIconWidth?.constant = 14
             agentIconHeight?.constant = 14
         }
-        agentLabel.stringValue = badge.label
-        agentIcon.toolTip = badge.label
-        agentLabel.toolTip = badge.label
+        let label = deviceName.map {
+            String(format: NSLocalizedString("agent.overlay.remoteAgentLabel", value: "%1$@ · %2$@", comment: "Agent control pill - agent name followed by the name of the user's other Mac it runs on"), badge.label, $0)
+        } ?? badge.label
+        agentLabel.stringValue = label
+        agentIcon.toolTip = label
+        agentLabel.toolTip = label
 
         switch task.status {
         case .failed(let message):
             setCaption("⚠︎ \(message)", color: .systemRed)
         default:
+            if ownership == .user, let controller = task.remoteController {
+                setCaption(String(format: NSLocalizedString("agent.overlay.controlledFromCaption", value: "Controlled from %@", comment: "Agent control pill - caption while the user drives this agent Space from another Mac; %@ is that Mac's name"), controller),
+                           color: .labelColor)
+                break
+            }
             setCaption(
                 task.statusCaption.isEmpty
                     ? (ownership == .agent ? "Agent is working…" : "Agent paused")

@@ -89,6 +89,9 @@ struct AgentTask {
     /// hidden: the first one measured, then the last one it had on screen.
     /// See `AgentSpaceRouter.taskPageAreaSize`.
     var heldPageArea: CGSize? = nil
+    /// The other Mac that took control, while it holds it (see
+    /// `AgentRemotePresence`). Nil while the agent or this Mac's user holds it.
+    var remoteController: String? = nil
 }
 
 /// Presentation for "which code agent drives this Space": an icon plus a short
@@ -404,6 +407,10 @@ final class AgentSpaceManager: ObservableObject {
     /// user to visit — see `presentHandoffPrompt`.
     private var handoffPromptPanel: NSPanel?
     private var handoffPromptSpaceId: String?
+    /// Handoffs still waiting for the user, by Space, with the agent's message
+    /// (empty when it gave none). Kept apart from the panel, which shows one
+    /// prompt at a time, so the user's other Macs see every pending one.
+    private var pendingHandoffBySpaceId: [String: String] = [:]
     /// Dock-bounce request shown with the handoff prompt, cancelled with it —
     /// an auto-dismissed prompt (hand-back, completion) must not keep bouncing.
     private var handoffPromptAttentionRequest: Int?
@@ -960,13 +967,22 @@ final class AgentSpaceManager: ObservableObject {
     /// extension broadcast → phi-agent HTTP (`.phiAgent` tasks only). Local
     /// state stays `.user` even if the HTTP call fails (local enforcement
     /// already holds).
-    func takeControl(spaceId: String, initiatedByAgent: Bool = false) {
+    /// `remoteController` names the user's other Mac when the takeover comes
+    /// from there. Agent mode then stays on: it is what keeps the hidden
+    /// window painting, and the frames are all that Mac sees of it.
+    func takeControl(spaceId: String, initiatedByAgent: Bool = false,
+                     remoteController: String? = nil) {
         guard var task = tasksBySpaceId[spaceId] else { return }
+        let alreadyUser = task.ownership == .user
         task.ownership = .user
+        task.remoteController = remoteController
         tasksBySpaceId[spaceId] = task
         // Agent-initiated handoffs log their own richer line (with the
         // agent's message) in `interruptByAgentRequest`.
-        if !initiatedByAgent {
+        if let remoteController {
+            appendTranscript(taskId: task.taskId, kind: .status,
+                             text: "Taken over from \(remoteController)")
+        } else if !initiatedByAgent {
             appendTranscript(taskId: task.taskId, kind: .status, text: "You took control")
         }
         // The user is driving now — drop the operating mask.
@@ -974,7 +990,9 @@ final class AgentSpaceManager: ObservableObject {
                              activeTabId: currentActiveTabId(forSpaceId: spaceId))
 
         ChromiumLauncher.sharedInstance().bridge?
-            .setAgentMode(false, windowId: Int64(task.windowId))
+            .setAgentMode(remoteController != nil, windowId: Int64(task.windowId))
+        // The agent was already told when the first human took over.
+        guard !alreadyUser else { return }
         broadcastOwnership(taskId: task.taskId, owner: "user")
         guard task.origin == .phiAgent else { return }
         let taskId = task.taskId
@@ -1010,6 +1028,66 @@ final class AgentSpaceManager: ObservableObject {
     /// ready. Dismissed automatically when its task no longer needs the user
     /// (hand-back, takeover, completion, deletion).
     private func presentHandoffPrompt(spaceId: String, message: String?) {
+        showHandoffPanel(
+            key: spaceId,
+            title: NSLocalizedString("agent.handoffPrompt.title", value: "The agent needs you", comment: "Agent handoff prompt - title"),
+            message: message,
+            onSwitch: { [weak self] in
+                self?.pendingHandoffBySpaceId[spaceId] = nil
+                SpaceManager.shared.activateInFocusedWindow(spaceId: spaceId)
+            })
+        pendingHandoffBySpaceId[spaceId] = message ?? ""
+    }
+
+    /// The same prompt for an agent Space on the user's other Mac. `key`
+    /// identifies it for `dismissRemoteHandoffPrompt`. Returns false, showing
+    /// nothing, while this Mac's own agent is waiting on its prompt: that one
+    /// stays up, and the caller retries on its next snapshot.
+    @discardableResult
+    func presentRemoteHandoffPrompt(key: String, deviceName: String, message: String?,
+                                    onSwitch: @escaping () -> Void) -> Bool {
+        if let shown = handoffPromptSpaceId, pendingHandoffBySpaceId[shown] != nil { return false }
+        showHandoffPanel(
+            key: key,
+            title: String(format: NSLocalizedString("agent.handoffPrompt.remoteTitle", value: "The agent on %@ needs you", comment: "Agent handoff prompt - title when the agent runs on the user's other Mac; %@ is that Mac's name"), deviceName),
+            message: message,
+            onSwitch: onSwitch)
+        return true
+    }
+
+    func dismissRemoteHandoffPrompt(key: String) {
+        dismissHandoffPrompt(forSpaceId: key)
+    }
+
+    /// Non-nil while this Mac's handoff prompt for `spaceId` is up (empty
+    /// when the agent gave no message), so other Macs can show it too.
+    func pendingHandoffMessage(forSpaceId spaceId: String) -> String? {
+        pendingHandoffBySpaceId[spaceId]
+    }
+
+    /// The other Mac holding control went away (quit, slept, turned the
+    /// setting off, lost its key). Control stays with the user, now on this
+    /// Mac, and the window goes back to normal visibility as after a local
+    /// takeover.
+    func remoteControllerDidLeave(spaceId: String) {
+        guard var task = tasksBySpaceId[spaceId], let controller = task.remoteController else { return }
+        task.remoteController = nil
+        tasksBySpaceId[spaceId] = task
+        appendTranscript(taskId: task.taskId, kind: .status,
+                         text: "\(controller) let go of control")
+        ChromiumLauncher.sharedInstance().bridge?
+            .setAgentMode(false, windowId: Int64(task.windowId))
+    }
+
+    /// The user answered the handoff prompt on another Mac: retire this one
+    /// and give that Mac the control the agent handed over.
+    func answerHandoffRemotely(spaceId: String, deviceName: String) {
+        dismissHandoffPrompt(forSpaceId: spaceId)
+        takeControl(spaceId: spaceId, remoteController: deviceName)
+    }
+
+    private func showHandoffPanel(key: String, title: String, message: String?,
+                                  onSwitch: @escaping () -> Void) {
         dismissHandoffPrompt()
 
         let body = (message?.isEmpty == false)
@@ -1017,7 +1095,7 @@ final class AgentSpaceManager: ObservableObject {
             : NSLocalizedString("agent.handoffPrompt.message", value: "The agent handed control back to you to finish a step — for example, signing in.",
                 comment: "Agent handoff prompt - default body")
         let view = HandoffPromptView(
-            title: NSLocalizedString("agent.handoffPrompt.title", value: "The agent needs you", comment: "Agent handoff prompt - title"),
+            title: title,
             message: body,
             switchTitle: NSLocalizedString("agent.handoffPrompt.switchToAgentSpaceButton", value: "Switch to Agent Space", comment: "Agent handoff prompt - open the agent Space"),
             laterTitle: NSLocalizedString("agent.handoffPrompt.laterButton", value: "Later", comment: "Agent handoff prompt - dismiss"),
@@ -1027,7 +1105,7 @@ final class AgentSpaceManager: ObservableObject {
                 let manager = SpaceManager.shared
                 // The slot `activateInFocusedWindow` resolves.
                 let window = (manager.keySlot ?? manager.slots.first)?.shell?.window
-                manager.activateInFocusedWindow(spaceId: spaceId)
+                onSwitch()
                 // The prompt is a non-activating panel, so clicking it while
                 // another app is frontmost leaves Phi in the background: the
                 // Space swap alone would happen out of sight. The user asked
@@ -1076,13 +1154,15 @@ final class AgentSpaceManager: ObservableObject {
         handoffPromptAttentionRequest = NSApp.requestUserAttention(.criticalRequest)
 
         handoffPromptPanel = panel
-        handoffPromptSpaceId = spaceId
+        handoffPromptSpaceId = key
     }
 
     /// Closes the handoff prompt. With a `spaceId`, only when the prompt
     /// belongs to that Space — the automatic dismissals (hand-back, takeover,
     /// completion, deletion) must not tear down a newer task's prompt.
     private func dismissHandoffPrompt(forSpaceId spaceId: String? = nil) {
+        // A Space-scoped dismissal means the handoff itself is over.
+        if let spaceId { pendingHandoffBySpaceId[spaceId] = nil }
         if let spaceId, handoffPromptSpaceId != spaceId { return }
         if let request = handoffPromptAttentionRequest {
             NSApp.cancelUserAttentionRequest(request)
@@ -1105,6 +1185,7 @@ final class AgentSpaceManager: ObservableObject {
         if task.origin == .cdp {
             var t = task
             t.ownership = .agent
+            t.remoteController = nil
             tasksBySpaceId[spaceId] = t
             appendTranscript(taskId: taskId, kind: .status,
                              text: "You handed control back to the agent",
@@ -1134,6 +1215,7 @@ final class AgentSpaceManager: ObservableObject {
             await MainActor.run {
                 guard let self, var t = self.tasksBySpaceId[spaceId] else { return }
                 t.ownership = .agent
+                t.remoteController = nil
                 self.tasksBySpaceId[spaceId] = t
                 self.appendTranscript(taskId: taskId, kind: .status,
                                       text: "You handed control back to the agent")
@@ -1155,6 +1237,7 @@ final class AgentSpaceManager: ObservableObject {
               var task = tasksBySpaceId[spaceId] else { return false }
         guard task.ownership == .user else { return true }
         task.ownership = .agent
+        task.remoteController = nil
         tasksBySpaceId[spaceId] = task
         appendTranscript(taskId: taskId, kind: .status, text: "Agent resumed control")
         refreshOperatingMask(forSpaceId: spaceId,

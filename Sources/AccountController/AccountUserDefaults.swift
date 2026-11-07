@@ -309,6 +309,7 @@ extension AccountUserDefaults {
         /// Controls whether notification cards auto-popup. Default is popup enabled.
         case notificationPopupMode
         case lastKnownSidebarWidth
+        case lastKnownRightSidebarWidth
         case authReauthenticationReason
         case authReauthenticationFirstDetectedAt
         case authReauthenticationIncidentID
@@ -385,15 +386,24 @@ extension AccountUserDefaults {
         )
     }
 
-    var lastKnownSidebarWidth: CGFloat {
-        CGFloat(double(forKey: DefaultsKey.lastKnownSidebarWidth.rawValue))
+    /// The last expanded sidebar width, kept per side so switching the
+    /// sidebar's side restores that side's own width.
+    func lastKnownSidebarWidth(for side: SidebarPosition) -> CGFloat {
+        CGFloat(double(forKey: Self.lastKnownSidebarWidthKey(for: side)))
     }
 
-    func setLastKnownSidebarWidth(_ width: CGFloat) {
+    func setLastKnownSidebarWidth(_ width: CGFloat, for side: SidebarPosition) {
         guard width > 0 else {
             return
         }
-        set(Double(width), forKey: DefaultsKey.lastKnownSidebarWidth.rawValue)
+        set(Double(width), forKey: Self.lastKnownSidebarWidthKey(for: side))
+    }
+
+    private static func lastKnownSidebarWidthKey(for side: SidebarPosition) -> String {
+        switch side {
+        case .left: return DefaultsKey.lastKnownSidebarWidth.rawValue
+        case .right: return DefaultsKey.lastKnownRightSidebarWidth.rawValue
+        }
     }
 
     /// Snapshot of the per-Space theme override map. Returns an empty

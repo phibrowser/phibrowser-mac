@@ -21,6 +21,9 @@ enum SidebarPosition: String, CaseIterable {
         !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
             && PhiPreferences.GeneralSettings.loadSidebarPosition() == .right
     }
+
+    /// The side the sidebar actually sits on: traditional layout keeps it on the left.
+    static var effective: SidebarPosition { isOnRight ? .right : .left }
 }
 
 enum LayoutMode: String, CaseIterable, Identifiable {

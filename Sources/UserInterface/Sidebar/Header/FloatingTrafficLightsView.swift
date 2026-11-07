@@ -113,9 +113,15 @@ final class FloatingTrafficLightsView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if placement == .topBand, pointerMonitor == nil, window != nil {
-            pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] event in
+            pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
                 guard let self, event.window === self.window else { return event }
-                updateStripFromPointer()
+                if event.type == .leftMouseUp {
+                    // A drag that resized or moved the window ends here; read
+                    // the pointer against the geometry it left behind.
+                    DispatchQueue.main.async { [weak self] in self?.updateStripFromPointer() }
+                } else {
+                    updateStripFromPointer()
+                }
                 return event
             }
         }
@@ -175,6 +181,15 @@ final class FloatingTrafficLightsView: NSView {
             center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                 self?.updateWindowActiveState()
             }
+        }
+        if placement == .topBand {
+            // A resize can carry the band away from a pointer that has not
+            // moved since, so no mouse event re-checks it.
+            notificationObservers.append(
+                center.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self] _ in
+                    self?.updateStripFromPointer()
+                }
+            )
         }
         notificationObservers.append(
             center.addObserver(

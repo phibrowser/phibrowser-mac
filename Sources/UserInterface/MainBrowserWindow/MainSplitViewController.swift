@@ -132,9 +132,12 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     private func updateSidebarPosition() {
         let right = SidebarPosition.isOnRight
         guard sidebarOnRight != right else { return }
+        let destinationWidth = AccountController.shared.localDataAccount?.userDefaults
+            .lastKnownSidebarWidth(for: SidebarPosition.effective) ?? 0
         isReorderingSidebar = true
         sideBarSplitViewItem = splitViewController.repositionSidebarItem(
-            sideBarSplitViewItem, onRight: right, autosaveName: Self.splitViewAutosaveName
+            sideBarSplitViewItem, onRight: right, width: destinationWidth,
+            autosaveName: Self.splitViewAutosaveName
         )
         sidebarOnRight = right
         isReorderingSidebar = false
@@ -471,7 +474,7 @@ extension MainSplitViewController: NSSplitViewDelegate {
         guard width != Self.leftItemMinWidth else {
             return
         }
-        AccountController.shared.localDataAccount?.userDefaults.setLastKnownSidebarWidth(width)
+        AccountController.shared.localDataAccount?.userDefaults.setLastKnownSidebarWidth(width, for: SidebarPosition.effective)
     }
 }
 

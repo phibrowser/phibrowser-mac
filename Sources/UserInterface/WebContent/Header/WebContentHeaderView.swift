@@ -7,6 +7,9 @@ import SwiftUI
 import AppKit
 
 struct WebContentHeaderView: View {
+    @AppStorage(PhiPreferences.GeneralSettings.sidebarPositionKey)
+    private var sidebarPosition = SidebarPosition.left.rawValue
+
     @ObservedObject var state: WebContentHeaderState
     @ObservedObject var downloadViewModel: DownloadButtonViewModel
     var currentTab: Tab?
@@ -184,7 +187,7 @@ struct WebContentHeaderView: View {
         HStack(spacing: 8) {
             if state.showSidebarButton {
                 NavigationButton(
-                    systemName: "sidebar.left",
+                    systemName: sidebarPosition == SidebarPosition.right.rawValue && !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional ? "sidebar.right" : "sidebar.left",
                     accessibilityLabel: NSLocalizedString("browser.webContentHeader.sidebarButton.accessibilityLabel", value: "Toggle Sidebar", comment: "Web content header - Accessibility description for sidebar toggle button"),
                     onAnchorResolved: onSidebarAnchorResolved,
                     action: onSidebarTap

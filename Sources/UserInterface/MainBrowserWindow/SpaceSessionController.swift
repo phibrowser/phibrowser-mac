@@ -1595,7 +1595,7 @@ class SpaceSessionController: NSWindowController {
     private func applyTrafficLightVisibility(collapsed: Bool, fullScreen: Bool) {
         guard let window else { return }
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
-        let hideTrafficLights = !fullScreen && collapsed && !traditionalLayout
+        let hideTrafficLights = !fullScreen && (collapsed || SidebarPosition.isOnRight) && !traditionalLayout
 
         window.standardWindowButton(.closeButton)?.isHidden = hideTrafficLights
         window.standardWindowButton(.miniaturizeButton)?.isHidden = hideTrafficLights

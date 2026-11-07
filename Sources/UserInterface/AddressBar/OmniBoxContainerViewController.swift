@@ -709,6 +709,7 @@ final class OmniBoxContainerViewController: NSViewController {
         
         frameChangePublisher
             .merge(with: sidebarWidthPublisher)
+            .merge(with: NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).receive(on: DispatchQueue.main).map { _ in () })
             .sink { [weak self] _ in
                 self?.updateOmniBoxFrame()
             }
@@ -743,7 +744,7 @@ final class OmniBoxContainerViewController: NSViewController {
         if sidebarWidth == 0 || rightAreaWidth < actualWidth {
             proposedX = (parentBounds.width - actualWidth) / 2
         } else {
-            proposedX = sidebarWidth + (rightAreaWidth - actualWidth) / 2
+            proposedX = (SidebarPosition.isOnRight ? 0 : sidebarWidth) + (rightAreaWidth - actualWidth) / 2
         }
         let x = max(
             horizontalInset,

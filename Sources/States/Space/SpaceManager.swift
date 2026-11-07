@@ -14135,7 +14135,7 @@ final class ReopenLoadingWindow: NSWindow {
          trafficLightOrigin: NSPoint? = nil) {
         // Resolved before `super.init` because it decides the style mask: no
         // usable origin, no buttons at all.
-        let lightOrigin = Self.trafficLightOrigin(remembered: trafficLightOrigin)
+        let lightOrigin = SidebarPosition.isOnRight ? nil : Self.trafficLightOrigin(remembered: trafficLightOrigin)
         // Byte for byte the mask the fork gives a normal browser window
         // (`BrowserNativeWidgetMac::PopulateCreateWindowParams`: titled,
         // closable, miniaturizable, resizable, plus full-size content for the
@@ -14333,7 +14333,7 @@ final class ReopenLoadingWindow: NSWindow {
     /// Nothing resizes this window after `init`, so it is placed once.
     private func installSidebarBand(width: CGFloat, tint: NSColor, in host: NSView) {
         let band = ColoredVisualEffectView(
-            frame: NSRect(x: 0, y: 0, width: width, height: frame.height))
+            frame: NSRect(x: SidebarPosition.isOnRight ? frame.width - width : 0, y: 0, width: width, height: frame.height))
         band.material = .fullScreenUI
         band.state = .active
         band.backgroundColor = tint
@@ -14411,7 +14411,7 @@ final class ReopenLoadingWindow: NSWindow {
         let group = activityDotsSize
         let contentWidth = size.width - leading
         guard contentWidth >= group.width, size.height >= group.height else { return nil }
-        return NSRect(x: leading + (contentWidth - group.width) / 2,
+        return NSRect(x: (SidebarPosition.isOnRight ? 0 : leading) + (contentWidth - group.width) / 2,
                       y: (size.height - group.height) / 2,
                       width: group.width,
                       height: group.height)

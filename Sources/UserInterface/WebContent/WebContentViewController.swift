@@ -159,6 +159,7 @@ final class PageCardEdgeShadowView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         shadowLayer.frame = bounds
+        shadowLayer.setAffineTransform(SidebarPosition.isOnRight ? CGAffineTransform(scaleX: -1, y: 1) : .identity)
         // Only the card's left edge and its two left corners matter: the
         // caster runs far enough right that its own right end casts nothing
         // near them, and the sidebar edge or the corner-gap mask hides the rest.
@@ -182,6 +183,7 @@ final class PageCardEdgeShadowView: NSView {
 
 /// Page-only geometry. Sidebar chrome keeps WebContentConstant.edgesSpacing.
 struct WebContentLayout: Equatable {
+    var sidebarPosition: SidebarPosition = PhiPreferences.GeneralSettings.loadSidebarPosition()
     var layoutMode: LayoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
     var edgeToEdgeEnabled: Bool = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.loadValue()
     var isFullScreen: Bool = false
@@ -393,6 +395,7 @@ class WebContentViewController: NSViewController {
     private var isBookmarkBarVisible = false
     private var leftContainerInsetConstraint: Constraint?
     private var splitViewLeadingConstraint: Constraint?
+    private var splitViewTrailingConstraint: Constraint?
     private var splitViewTrailingBottomConstraint: Constraint?
     private var contentLayout: WebContentLayout {
         WebContentLayout(browserState: browserState)
@@ -971,10 +974,11 @@ class WebContentViewController: NSViewController {
     private func updateSplitViewLeadingInset() {
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
         let sidebarCollapsed = browserState?.sidebarCollapsed ?? true
-        let leadingInset: CGFloat = (traditionalLayout || sidebarCollapsed)
+        let leadingInset: CGFloat = (traditionalLayout || sidebarCollapsed || SidebarPosition.isOnRight)
             ? contentLayout.edgeSpacing
             : 0
         splitViewLeadingConstraint?.update(inset: leadingInset)
+        splitViewTrailingConstraint?.update(inset: SidebarPosition.isOnRight && !sidebarCollapsed ? 0 : contentLayout.edgeSpacing)
         splitViewTrailingBottomConstraint?.update(inset: contentLayout.edgeSpacing)
         splitViewContainer.layer?.cornerRadius = contentLayout.containerCornerRadius
         leftContainerView.layer?.cornerRadius = contentLayout.innerCornerRadius
@@ -987,6 +991,7 @@ class WebContentViewController: NSViewController {
             || traditionalLayout || sidebarCollapsed
             || browserState?.isPageDeemphasizedForPeek == true
         splitViewEdgeShadowView.cornerRadius = contentLayout.containerCornerRadius
+        splitViewEdgeShadowView.needsLayout = true
     }
 
     private func updateTheme() {
@@ -1428,7 +1433,8 @@ class WebContentViewController: NSViewController {
         splitViewContainer.layer?.masksToBounds = true
         splitViewContainer.snp.makeConstraints { make in
             splitViewLeadingConstraint = make.leading.equalToSuperview().constraint
-            splitViewTrailingBottomConstraint = make.trailing.bottom.equalToSuperview().inset(contentLayout.edgeSpacing).constraint
+            splitViewTrailingBottomConstraint = make.bottom.equalToSuperview().inset(contentLayout.edgeSpacing).constraint
+            splitViewTrailingConstraint = make.trailing.equalToSuperview().inset(contentLayout.edgeSpacing).constraint
             make.top.equalToSuperview()
         }
         updateSplitViewLeadingInset()
@@ -3719,6 +3725,7 @@ class WebContentViewController: NSViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateHeaderVisibility()
+                self?.updateSplitViewLeadingInset()
             }
             .store(in: &cancellables)
     }

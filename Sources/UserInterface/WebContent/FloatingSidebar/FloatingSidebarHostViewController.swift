@@ -15,6 +15,9 @@ final class FloatingSidebarHostViewController: NSViewController {
     private let floatingSidebarTriggerView = MouseTrackingAreaView()
     private(set) var floatingSidebarContainerView: NSView?
     private(set) var floatingSidebarViewController: FloatingSidebarViewController?
+    private var trafficLightStrip: FloatingTrafficLightsView?
+    private var sidebarOnRight = false
+    private var panelVisualContainer: NSView?
     private var outgoingContent: FloatingSidebarViewController?
     private var panelContentView: NSView?
     private var floatingSidebarLeadingConstraint: Constraint?
@@ -60,7 +63,7 @@ final class FloatingSidebarHostViewController: NSViewController {
     func install(in parent: NSViewController, over content: NSView) {
         parent.addChild(self)
         parent.view.addSubview(view)
-        view.snp.makeConstraints { make in make.edges.equalTo(content) }
+        view.snp.makeConstraints { make in make.edges.equalTo(parent.view) }
     }
 
     /// AppKit hit-tests in subview order, independently of the layer
@@ -85,6 +88,15 @@ final class FloatingSidebarHostViewController: NSViewController {
             let previous = floatingSidebarViewController
             previous?.dismissCreateSpaceOverlay()
             browserState = state
+            trafficLightStrip?.removeFromSuperview()
+            let strip = FloatingTrafficLightsView(browserState: state, placement: .topLeftStrip)
+            view.addSubview(strip)
+            strip.snp.makeConstraints { make in
+                make.left.top.equalTo(parent?.view ?? view)
+                make.width.equalTo(FloatingTrafficLightMetrics.maxX + 12)
+                make.height.equalTo(34)
+            }
+            trafficLightStrip = strip
             // The panel's border resolves its theme through the window, and a
             // binding resolves its provider only when set or when the view
             // changes window, which it never does here. Re-bind it to the
@@ -265,7 +277,7 @@ final class FloatingSidebarHostViewController: NSViewController {
     }
 
     var floatingSidebarHiddenLeading: CGFloat {
-        -(currentFloatingWidth + Self.floatingSidebarInset)
+        (sidebarOnRight ? 1 : -1) * (currentFloatingWidth + Self.floatingSidebarInset)
     }
 
     func setupFloatingSidebarTrigger() {
@@ -273,7 +285,7 @@ final class FloatingSidebarHostViewController: NSViewController {
             guard let self else { return }
             isPointerInsideFloatingSidebarTrigger = true
             let enterPoint = floatingSidebarTriggerView.convert(event.locationInWindow, from: nil)
-            floatingSidebarShownFromRightToLeft = enterPoint.x >= (Self.floatingSidebarTriggerWidth * 0.5)
+            floatingSidebarShownFromRightToLeft = sidebarOnRight ? enterPoint.x <= (Self.floatingSidebarTriggerWidth * 0.5) : enterPoint.x >= (Self.floatingSidebarTriggerWidth * 0.5)
             showFloatingSidebar()
         }
 
@@ -340,10 +352,12 @@ final class FloatingSidebarHostViewController: NSViewController {
             panelVisualContainer = panelContentView
         }
 
+        self.panelVisualContainer = panelVisualContainer
         interactionContainerView.addSubview(panelVisualContainer)
         panelVisualContainer.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(Self.floatingSidebarInset)
-            make.top.bottom.trailing.equalToSuperview()
+            make.left.equalToSuperview().offset(sidebarOnRight ? 0 : Self.floatingSidebarInset)
+            make.right.equalToSuperview().offset(sidebarOnRight ? -Self.floatingSidebarInset : 0)
+            make.top.bottom.equalToSuperview()
         }
 
         // Sit above `outerBorderLayer` (zPosition = contentOuterBorder) so the
@@ -354,7 +368,11 @@ final class FloatingSidebarHostViewController: NSViewController {
 
         view.addSubview(interactionContainerView, positioned: .above, relativeTo: nil)
         interactionContainerView.snp.makeConstraints { make in
-            floatingSidebarLeadingConstraint = make.leading.equalToSuperview().offset(floatingSidebarHiddenLeading).constraint
+            if sidebarOnRight {
+                floatingSidebarLeadingConstraint = make.right.equalToSuperview().offset(floatingSidebarHiddenLeading).constraint
+            } else {
+                floatingSidebarLeadingConstraint = make.left.equalToSuperview().offset(floatingSidebarHiddenLeading).constraint
+            }
             make.top.equalToSuperview().offset(Self.floatingSidebarInset)
             make.bottom.equalToSuperview().offset(-Self.floatingSidebarInset)
             floatingSidebarWidthConstraint = make.width.equalTo(currentFloatingWidth + Self.floatingSidebarInset).constraint
@@ -422,7 +440,36 @@ final class FloatingSidebarHostViewController: NSViewController {
         view.layoutSubtreeIfNeeded()
     }
 
+    private func updateSidebarPosition() {
+        let right = SidebarPosition.isOnRight
+        guard right != sidebarOnRight else { return }
+        hideFloatingSidebar(animated: false)
+        sidebarOnRight = right
+        floatingSidebarTriggerView.snp.remakeConstraints { make in
+            make.top.bottom.equalToSuperview()
+            if right { make.right.equalToSuperview() } else { make.left.equalToSuperview() }
+            make.width.equalTo(Self.floatingSidebarTriggerWidth)
+        }
+        if let panel = floatingSidebarContainerView {
+            panel.snp.remakeConstraints { make in
+                if right {
+                    floatingSidebarLeadingConstraint = make.right.equalToSuperview().offset(floatingSidebarHiddenLeading).constraint
+                } else {
+                    floatingSidebarLeadingConstraint = make.left.equalToSuperview().offset(floatingSidebarHiddenLeading).constraint
+                }
+                make.top.bottom.equalToSuperview().inset(Self.floatingSidebarInset)
+                floatingSidebarWidthConstraint = make.width.equalTo(currentFloatingWidth + Self.floatingSidebarInset).constraint
+            }
+            panelVisualContainer?.snp.remakeConstraints { make in
+                make.top.bottom.equalToSuperview()
+                make.left.equalToSuperview().offset(right ? 0 : Self.floatingSidebarInset)
+                make.right.equalToSuperview().offset(right ? -Self.floatingSidebarInset : 0)
+            }
+        }
+    }
+
     func updateFloatingSidebarAvailability() {
+        updateSidebarPosition()
         let shouldEnable = shouldEnableFloatingSidebar()
 
         floatingSidebarEnableWorkItem?.cancel()
@@ -632,7 +679,7 @@ final class FloatingSidebarHostViewController: NSViewController {
 
         let withinY = (mouseLocationInWindow.y >= panelFrameInWindow.minY) && (mouseLocationInWindow.y <= panelFrameInWindow.maxY)
         let visiblePanelMinX = panelFrameInWindow.minX + Self.floatingSidebarInset
-        return withinY && mouseLocationInWindow.x < visiblePanelMinX
+        return withinY && (sidebarOnRight ? mouseLocationInWindow.x > panelFrameInWindow.maxX - Self.floatingSidebarInset : mouseLocationInWindow.x < visiblePanelMinX)
     }
 
     func isMouseInsideFloatingSidebarVisibleRegion() -> Bool {
@@ -643,7 +690,9 @@ final class FloatingSidebarHostViewController: NSViewController {
 
         let visiblePanelMinX = panelFrameInWindow.minX + Self.floatingSidebarInset
         let withinY = (mouseLocationInWindow.y >= panelFrameInWindow.minY) && (mouseLocationInWindow.y <= panelFrameInWindow.maxY)
-        let withinX = (mouseLocationInWindow.x >= visiblePanelMinX) && (mouseLocationInWindow.x <= panelFrameInWindow.maxX)
+        let withinX = sidebarOnRight
+            ? mouseLocationInWindow.x >= panelFrameInWindow.minX && mouseLocationInWindow.x <= panelFrameInWindow.maxX - Self.floatingSidebarInset
+            : (mouseLocationInWindow.x >= visiblePanelMinX) && (mouseLocationInWindow.x <= panelFrameInWindow.maxX)
         return withinX && withinY
     }
 }

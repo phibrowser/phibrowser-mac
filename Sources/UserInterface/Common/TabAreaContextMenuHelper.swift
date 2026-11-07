@@ -64,6 +64,14 @@ final class TabAreaContextMenuHelper: NSObject {
         )
         layoutItem.submenu = buildLayoutSubmenu()
         menu.addItem(layoutItem)
+        if !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
+            menu.addItem(NSMenuItem(
+                title: SidebarPosition.isOnRight
+                    ? NSLocalizedString("sidebar.contextMenu.moveLeft", value: "Move Sidebar to Left", comment: "Sidebar context menu - Move vertical tabs to the left window edge")
+                    : NSLocalizedString("sidebar.contextMenu.moveRight", value: "Move Sidebar to Right", comment: "Sidebar context menu - Move vertical tabs to the right window edge"),
+                action: #selector(moveSidebar), keyEquivalent: ""
+            ).configured { $0.target = self })
+        }
 
         // Active-Space controls, mirroring the Spaces menu / Space right-click.
         // Only surface them while the Spaces feature is enabled and the window
@@ -79,6 +87,10 @@ final class TabAreaContextMenuHelper: NSObject {
                 triggerScreenPoint: NSEvent.mouseLocation
             )
         }
+    }
+
+    @objc private func moveSidebar() {
+        PhiPreferences.GeneralSettings.saveSidebarPosition(SidebarPosition.isOnRight ? .left : .right)
     }
 
     @objc private func newTab() {

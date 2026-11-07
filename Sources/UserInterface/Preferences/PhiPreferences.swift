@@ -14,6 +14,15 @@ extension UserDefaults {
     }
 }
 
+enum SidebarPosition: String, CaseIterable {
+    case left, right
+
+    static var isOnRight: Bool {
+        !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
+            && PhiPreferences.GeneralSettings.loadSidebarPosition() == .right
+    }
+}
+
 enum LayoutMode: String, CaseIterable, Identifiable {
     case balanced     // vertical tabs + address bar at the top of webcontent
     case performance  // vertical tabs
@@ -221,6 +230,16 @@ extension PhiPreferences {
             to defaults: UserDefaults = .standard
         ) {
             defaults.set(enabled, forKey: pictureInPictureOnFullscreenDesktopsKey)
+        }
+
+        static let sidebarPositionKey = "sidebarPosition"
+
+        static func loadSidebarPosition(from defaults: UserDefaults = .standard) -> SidebarPosition {
+            defaults.string(forKey: sidebarPositionKey).flatMap(SidebarPosition.init(rawValue:)) ?? .left
+        }
+
+        static func saveSidebarPosition(_ position: SidebarPosition, to defaults: UserDefaults = .standard) {
+            defaults.set(position.rawValue, forKey: sidebarPositionKey)
         }
 
         static let layoutModeKey = "layoutMode"

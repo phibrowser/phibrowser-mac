@@ -422,6 +422,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
 
     /// Update view visibility based on configuration
     private func updateLayoutVisibility(layoutMode: LayoutMode) {
+        sidebarButton.layer?.setAffineTransform(SidebarPosition.isOnRight ? CGAffineTransform(scaleX: -1, y: 1) : .identity)
         let showInSidebar = isSidebarLayout(layoutMode)
         let inPlaceholder = browserState?.isInPlaceholderMode ?? false
         AppLogDebug("[SidebarHeader] updateLayoutVisibility showInSidebar=\(showInSidebar) inPlaceholder=\(inPlaceholder)")
@@ -529,6 +530,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     
     /// Returns the maxX of the leading chrome controls in this header.
     private func leadingChromeMaxX() -> CGFloat? {
+        if SidebarPosition.isOnRight { return 0 }
         if isFloating {
             if browserState?.isInFullScreenMode == true {
                 return 0

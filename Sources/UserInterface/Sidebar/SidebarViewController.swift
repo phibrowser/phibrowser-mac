@@ -286,6 +286,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     
     private lazy var headerView = SidebarHeaderView(state: state)
     /// The share of the page card's edge shadow that falls on the sidebar.
+    private var pageEdgeShadowOnRight = false
     private lazy var pageEdgeShadowView = PageCardEdgeShadowView(cardPosition: .beyondTrailingEdge)
     private lazy var pinnedTabViewController = PinnedTabViewController(state: state, hostVC: self)
     /// See `SidebarTabListViewController.beginDraggingPaneAsTab(_:event:)`.
@@ -831,6 +832,16 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         // An open Peek fades the page behind it; its card casts no shadow then.
         pageEdgeShadowView.isHidden = !layout.showsContentShadow || state.isPageDeemphasizedForPeek
         pageEdgeShadowView.cornerRadius = layout.containerCornerRadius
+        let right = SidebarPosition.isOnRight
+        if right != pageEdgeShadowOnRight {
+            pageEdgeShadowOnRight = right
+            pageEdgeShadowView.snp.remakeConstraints { make in
+                make.top.bottom.equalToSuperview()
+                if right { make.left.equalToSuperview() } else { make.right.equalToSuperview() }
+                make.width.equalTo(PageCardEdgeShadowView.shadowRadius * 4)
+            }
+            pageEdgeShadowView.needsLayout = true
+        }
     }
 
     private func setupStackView() {

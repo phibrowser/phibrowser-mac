@@ -14,15 +14,29 @@ enum FloatingTrafficLightMetrics {
     static let spacing: CGFloat = 9
     static let width: CGFloat = size * 3 + spacing * 2
     static let maxX: CGFloat = leading + width
+    /// Height of the right-sidebar layout's top band, which carries the
+    /// native lights on its centre line.
+    static let bandHeight: CGFloat = 32
+    /// How close to the window's top edge the pointer must come to reveal
+    /// the band.
+    static let bandRevealDistance: CGFloat = 8
 }
 
 final class FloatingTrafficLightsView: NSView {
-    enum Placement { case sidebarHeader, topLeftStrip }
+    /// `.sidebarHeader` draws stand-in lights in a collapsed left sidebar's
+    /// header. `.topBand` is the right-sidebar layout's full-width titlebar
+    /// band: hidden until the pointer reaches the window's top edge (always
+    /// shown under VoiceOver, absent in full screen), it draws only the
+    /// backdrop, and the native lights are revealed on it by
+    /// `SpaceSessionController.applyTrafficLightVisibility`.
+    enum Placement { case sidebarHeader, topBand }
     private var placement: Placement = .sidebarHeader
     private var voiceOverObservation: NSKeyValueObservation?
     private var pointerMonitor: Any?
     private var hideWorkItem: DispatchWorkItem?
-    private var stripVisible = false
+    private(set) var isStripVisible = false
+    /// Called when the top band is revealed or hidden.
+    var onStripVisibilityChanged: ((Bool) -> Void)?
 
     private weak var browserState: BrowserState?
     private lazy var dotViews: [FloatingTrafficLightDotView] = FloatingTrafficLightRole.allCases.map { role in
@@ -69,8 +83,10 @@ final class FloatingTrafficLightsView: NSView {
         if let trackingArea {
             removeTrackingArea(trackingArea)
         }
+        // A tracking area answers by geometry, so the band hears the pointer
+        // even over the Chromium views that take the mouse-moved events.
         var options: NSTrackingArea.Options = [.activeAlways, .inVisibleRect, .mouseEnteredAndExited]
-        if placement == .topLeftStrip { options.insert(.mouseMoved) }
+        if placement == .topBand { options.insert(.mouseMoved) }
         let area = NSTrackingArea(
             rect: .zero,
             options: options,
@@ -81,29 +97,29 @@ final class FloatingTrafficLightsView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        if placement == .topLeftStrip { updateStripFromPointer() }
+        if placement == .topBand { updateStripFromPointer() }
     }
 
     override func mouseEntered(with event: NSEvent) {
         isGroupHovered = true
-        if placement == .topLeftStrip { updateStripFromPointer() }
+        if placement == .topBand { updateStripFromPointer() }
     }
 
     override func mouseExited(with event: NSEvent) {
         isGroupHovered = false
-        if placement == .topLeftStrip { updateStripFromPointer() }
+        if placement == .topBand { updateStripFromPointer() }
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if placement == .topLeftStrip, pointerMonitor == nil, window != nil {
-            pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .mouseExited]) { [weak self] event in
-                guard event.window === self?.window else { return event }
-                self?.updateStripFromPointer()
+        if placement == .topBand, pointerMonitor == nil, window != nil {
+            pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] event in
+                guard let self, event.window === self.window else { return event }
+                updateStripFromPointer()
                 return event
             }
         }
-        if placement == .topLeftStrip, voiceOverObservation == nil {
+        if placement == .topBand, voiceOverObservation == nil {
             voiceOverObservation = NSWorkspace.shared.observe(\.isVoiceOverEnabled, options: [.new]) { [weak self] _, _ in
                 DispatchQueue.main.async { self?.updateStripFromPointer() }
             }
@@ -116,19 +132,23 @@ final class FloatingTrafficLightsView: NSView {
 
     private func setupViews() {
         setAccessibilityElement(false)
+        if placement == .topBand {
+            isHidden = true
+            alphaValue = 0
+            // The sidebar column's own backdrop recipe
+            // (`ShellSidebarHostViewController`), so the band reads as window chrome.
+            let backdrop = ColoredVisualEffectView()
+            backdrop.material = .fullScreenUI
+            backdrop.blendingMode = .behindWindow
+            backdrop.themedBackgroundColor = .windowOverlayBackground
+            backdrop.usesThemePalette = true
+            addSubview(backdrop)
+            backdrop.snp.makeConstraints { $0.edges.equalToSuperview() }
+            return
+        }
         addSubview(stackView)
         stackView.snp.makeConstraints { make in
-            if placement == .topLeftStrip {
-                make.center.equalToSuperview()
-            } else {
-                make.edges.equalToSuperview()
-            }
-        }
-        if placement == .topLeftStrip {
-            wantsLayer = true
-            layer?.cornerRadius = 9
-            alphaValue = 0
-            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            make.edges.equalToSuperview()
         }
         stackView.arrangedSubviews.forEach { view in
             view.snp.makeConstraints { make in
@@ -236,39 +256,54 @@ final class FloatingTrafficLightsView: NSView {
     private func syncWindowButtonAvailability() {
         let isEnabled = shouldEnableWindowButtonActions
         isHidden = !isEnabled
-        if placement == .topLeftStrip && !isEnabled { setStripVisible(false) }
-        dotViews.forEach { $0.syncControlAvailability(from: window, isEnabled: isEnabled) }
-        refreshHoverStateFromPointer()
-        if placement == .topLeftStrip { updateStripFromPointer() }
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        if placement == .topLeftStrip && !stripVisible { return nil }
-        return super.hitTest(point)
-    }
-
-    private func updateStripFromPointer() {
-        guard placement == .topLeftStrip, let window else { return }
-        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        let inside = bounds.contains(point)
-        let reveal = NSWorkspace.shared.isVoiceOverEnabled || (inside && (stripVisible || point.y >= bounds.maxY - 4))
-        if reveal && shouldEnableWindowButtonActions {
-            hideWorkItem?.cancel()
-            hideWorkItem = nil
-            setStripVisible(true)
-        } else if stripVisible && hideWorkItem == nil {
-            let work = DispatchWorkItem { [weak self] in
-                self?.setStripVisible(false)
-                self?.hideWorkItem = nil
+        if placement == .topBand {
+            if !isEnabled || window == nil {
+                hideWorkItem?.cancel()
+                hideWorkItem = nil
+                setStripVisible(false)
             }
-            hideWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+            updateStripFromPointer()
+        } else {
+            dotViews.forEach { $0.syncControlAvailability(from: window, isEnabled: isEnabled) }
+            refreshHoverStateFromPointer()
         }
     }
 
-    private func setStripVisible(_ visible: Bool) {
-        guard stripVisible != visible else { return }
-        stripVisible = visible
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if placement == .topBand && !isStripVisible { return nil }
+        return super.hitTest(point)
+    }
+
+    /// Reveals the band while the pointer is at the window's top edge (or
+    /// anywhere on the revealed band), and hides it shortly after it leaves.
+    private func updateStripFromPointer() {
+        guard placement == .topBand, let window else { return }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        let distanceFromTop = bounds.maxY - point.y
+        let reach = isStripVisible ? bounds.height : FloatingTrafficLightMetrics.bandRevealDistance
+        let isPointerOnBand = point.x >= bounds.minX && point.x <= bounds.maxX
+            && distanceFromTop >= 0 && distanceFromTop <= reach
+        let reveal = shouldEnableWindowButtonActions
+            && (NSWorkspace.shared.isVoiceOverEnabled || isPointerOnBand)
+        if reveal {
+            hideWorkItem?.cancel()
+            hideWorkItem = nil
+            setStripVisible(true)
+        } else if isStripVisible && hideWorkItem == nil {
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                hideWorkItem = nil
+                setStripVisible(false)
+            }
+            hideWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+        }
+    }
+
+    func setStripVisible(_ visible: Bool) {
+        guard placement == .topBand, isStripVisible != visible else { return }
+        isStripVisible = visible
+        onStripVisibilityChanged?(visible)
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.15
             animator().alphaValue = visible ? 1 : 0
@@ -282,6 +317,7 @@ final class FloatingTrafficLightsView: NSView {
     }
 
     private func refreshHoverStateFromPointer() {
+        guard placement == .sidebarHeader else { return }
         guard isHidden == false, let window else {
             isGroupHovered = false
             return
@@ -292,7 +328,7 @@ final class FloatingTrafficLightsView: NSView {
     }
 
     private var shouldEnableWindowButtonActions: Bool {
-        if placement == .topLeftStrip {
+        if placement == .topBand {
             return SidebarPosition.isOnRight && browserState?.isInFullScreenMode != true
                 && window?.styleMask.contains(.fullScreen) != true
         }

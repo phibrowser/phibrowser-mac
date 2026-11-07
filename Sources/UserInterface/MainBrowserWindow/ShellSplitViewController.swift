@@ -30,6 +30,21 @@ final class ShellSplitViewController: NSViewController {
     private static var splitViewAutosaveName: String {
         SidebarPosition.isOnRight ? "phiMainBrowserSplitViewRight" : "phiMainBrowserSplitView"
     }
+    private var splitTopConstraint: NSLayoutConstraint?
+
+    /// Moves the split below the right-sidebar layout's revealed top band
+    /// (`FloatingSidebarHostViewController` owns the band).
+    func setTrafficLightBandVisible(_ visible: Bool) {
+        let inset = visible ? FloatingTrafficLightMetrics.bandHeight : 0
+        guard let splitTopConstraint, splitTopConstraint.constant != inset else { return }
+        splitTopConstraint.constant = inset
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            context.allowsImplicitAnimation = true
+            view.layoutSubtreeIfNeeded()
+        }
+    }
+
     private var sidebarOnRight = false
     private var isReorderingSidebar = false
 
@@ -37,11 +52,12 @@ final class ShellSplitViewController: NSViewController {
         let right = SidebarPosition.isOnRight
         guard sidebarOnRight != right else { return }
         isReorderingSidebar = true
-        defer { isReorderingSidebar = false }
         sidebarSplitViewItem = splitViewController.repositionSidebarItem(
             sidebarSplitViewItem, onRight: right, autosaveName: Self.splitViewAutosaveName
         )
         sidebarOnRight = right
+        isReorderingSidebar = false
+        recordSidebarWidth()
     }
 
     private let splitViewController = PhiSplitViewController()
@@ -67,8 +83,9 @@ final class ShellSplitViewController: NSViewController {
         addChild(splitViewController)
         view.addSubview(splitViewController.view)
         splitViewController.view.translatesAutoresizingMaskIntoConstraints = false
+        splitTopConstraint = splitViewController.view.topAnchor.constraint(equalTo: view.topAnchor)
         NSLayoutConstraint.activate([
-            splitViewController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            splitTopConstraint!,
             splitViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             splitViewController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             splitViewController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -84,6 +101,7 @@ final class ShellSplitViewController: NSViewController {
         sidebarSplitViewItem.minimumThickness = Self.leftItemMinWidth
         sidebarSplitViewItem.maximumThickness = Self.leftItemMaxWidth
         sidebarSplitViewItem.canCollapse = true
+        sidebarSplitViewItem.collapseBehavior = SidebarPosition.isOnRight ? .preferResizingSiblingsWithFixedSplitView : .default
         sidebarSplitViewItem.holdingPriority = Self.sidebarHoldingPriority
         if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
             sidebarSplitViewItem.isCollapsed = true
@@ -513,6 +531,14 @@ extension NSSplitViewController {
         let collapsed = previous.isCollapsed
         let width = max(previous.minimumThickness, previous.viewController.view.frame.width)
         splitView.autosaveName = nil
+        // Restoring the frames saved under the new side's name on top of the
+        // moved item hides or shows its view behind `isCollapsed`'s back (the
+        // split then reports collapsed while the column shows, or expands to
+        // zero width), so a live move saves the moved item's own width and
+        // collapsed state under that name instead.
+        if restoringExistingGeometry {
+            UserDefaults.standard.removeObject(forKey: "NSSplitView Subview Frames \(autosaveName)")
+        }
         removeSplitViewItem(previous)
         let item: NSSplitViewItem
         if #available(macOS 26.0, *) {
@@ -526,6 +552,7 @@ extension NSSplitViewController {
             item.holdingPriority = previous.holdingPriority
             item.canCollapse = previous.canCollapse
         }
+        item.collapseBehavior = onRight ? .preferResizingSiblingsWithFixedSplitView : .default
         item.isCollapsed = collapsed
         insertSplitViewItem(item, at: onRight ? 1 : 0)
         if restoringExistingGeometry { splitView.autosaveName = autosaveName }

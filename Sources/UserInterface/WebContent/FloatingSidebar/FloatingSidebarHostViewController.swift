@@ -37,6 +37,18 @@ final class FloatingSidebarHostViewController: NSViewController {
     /// before the panel next shows or is realized off screen.
     private var needsContentInstall = false
 
+    /// Whether the right-sidebar layout's top band is revealed. See
+    /// `FloatingTrafficLightsView.Placement.topBand`.
+    var isTrafficLightBandVisible: Bool { trafficLightStrip?.isStripVisible == true }
+
+    /// Insets the window's split below the revealed band and shows or hides
+    /// the native lights on it.
+    private func trafficLightBandVisibilityChanged(_ visible: Bool) {
+        (parent as? ShellSplitViewController)?.setTrafficLightBandVisible(visible)
+        (parent as? MainSplitViewController)?.setTrafficLightBandVisible(visible)
+        browserState?.windowController?.refreshTrafficLightVisibility()
+    }
+
     var isVisible: Bool { floatingSidebarContainerView?.isHidden == false }
 
     override func loadView() {
@@ -88,15 +100,24 @@ final class FloatingSidebarHostViewController: NSViewController {
             let previous = floatingSidebarViewController
             previous?.dismissCreateSpaceOverlay()
             browserState = state
+            let bandWasVisible = isTrafficLightBandVisible
             trafficLightStrip?.removeFromSuperview()
-            let strip = FloatingTrafficLightsView(browserState: state, placement: .topLeftStrip)
+            let strip = FloatingTrafficLightsView(browserState: state, placement: .topBand)
+            strip.onStripVisibilityChanged = { [weak self] visible in
+                self?.trafficLightBandVisibilityChanged(visible)
+            }
             view.addSubview(strip)
             strip.snp.makeConstraints { make in
-                make.left.top.equalTo(parent?.view ?? view)
-                make.width.equalTo(FloatingTrafficLightMetrics.maxX + 12)
-                make.height.equalTo(34)
+                make.left.right.top.equalToSuperview()
+                make.height.equalTo(FloatingTrafficLightMetrics.bandHeight)
             }
             trafficLightStrip = strip
+            // The new Space's band starts from the shown state the outgoing
+            // one left the window in, and re-reads the pointer itself.
+            strip.setStripVisible(bandWasVisible && SidebarPosition.isOnRight && !state.isInFullScreenMode)
+            if bandWasVisible && !strip.isStripVisible {
+                trafficLightBandVisibilityChanged(false)
+            }
             // The panel's border resolves its theme through the window, and a
             // binding resolves its provider only when set or when the view
             // changes window, which it never does here. Re-bind it to the

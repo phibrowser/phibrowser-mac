@@ -38,28 +38,17 @@ final class ShellSplitViewController: NSViewController {
         guard sidebarOnRight != right else { return }
         isReorderingSidebar = true
         defer { isReorderingSidebar = false }
-        let split = splitViewController.splitView
-        let item = sidebarSplitViewItem!
-        let restoringExistingGeometry = split.autosaveName != nil
-        let collapsed = item.isCollapsed
-        let width = max(Self.leftItemMinWidth, item.viewController.view.frame.width)
-        split.autosaveName = nil
-        splitViewController.removeSplitViewItem(item)
-        splitViewController.insertSplitViewItem(item, at: right ? 1 : 0)
+        sidebarSplitViewItem = splitViewController.repositionSidebarItem(
+            sidebarSplitViewItem, onRight: right, autosaveName: Self.splitViewAutosaveName
+        )
         sidebarOnRight = right
-        if restoringExistingGeometry { split.autosaveName = Self.splitViewAutosaveName }
-        item.isCollapsed = collapsed
-        view.layoutSubtreeIfNeeded()
-        if restoringExistingGeometry && !collapsed {
-            split.setPosition(right ? split.bounds.width - split.dividerThickness - width : width, ofDividerAt: 0)
-        }
     }
 
     private let splitViewController = PhiSplitViewController()
     let sidebarHost = ShellSidebarHostViewController()
     let contentHost = ShellContentHostViewController()
     let floatingSidebarHost = FloatingSidebarHostViewController()
-    private var sidebarSplitViewItem: NSSplitViewItem!
+    @Published private var sidebarSplitViewItem: NSSplitViewItem!
     private var contentSplitViewItem: NSSplitViewItem!
     private var cancellables = Set<AnyCancellable>()
     private var lastTraditionalLayout: Bool?
@@ -117,7 +106,10 @@ final class ShellSplitViewController: NSViewController {
         lastExpandedSidebarWidth = AccountController.shared.localDataAccount?
             .userDefaults.lastKnownSidebarWidth ?? 0
 
-        sidebarSplitViewItem.publisher(for: \.isCollapsed)
+        $sidebarSplitViewItem
+            .compactMap { $0 }
+            .map { $0.publisher(for: \.isCollapsed) }
+            .switchToLatest()
             .sink { [weak self] isCollapsed in
                 guard let self else { return }
                 if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
@@ -140,12 +132,15 @@ final class ShellSplitViewController: NSViewController {
             .sink { [weak self] _ in self?.updateLayoutForHorizontalTabs() }
             .store(in: &cancellables)
         updateLayoutForHorizontalTabs()
-        floatingSidebarHost.install(in: self, over: contentHost.view)
+        floatingSidebarHost.install(in: self)
     }
 
     /// Observes the actual split item, including AppKit collapse/restore.
     var sidebarCollapsedPublisher: AnyPublisher<Bool, Never> {
-        sidebarSplitViewItem.publisher(for: \.isCollapsed)
+        $sidebarSplitViewItem
+            .compactMap { $0 }
+            .map { $0.publisher(for: \.isCollapsed) }
+            .switchToLatest()
             .removeDuplicates()
             .eraseToAnyPublisher()
     }
@@ -508,5 +503,37 @@ final class ShellContentHostViewController: NSViewController, BrowserThemeContex
     func evict(_ contentView: NSView) {
         contentView.removeFromSuperview()
         contentView.isHidden = false
+    }
+}
+
+@MainActor
+extension NSSplitViewController {
+    func repositionSidebarItem(_ previous: NSSplitViewItem, onRight: Bool, autosaveName: String) -> NSSplitViewItem {
+        let restoringExistingGeometry = splitView.autosaveName != nil
+        let collapsed = previous.isCollapsed
+        let width = max(previous.minimumThickness, previous.viewController.view.frame.width)
+        splitView.autosaveName = nil
+        removeSplitViewItem(previous)
+        let item: NSSplitViewItem
+        if #available(macOS 26.0, *) {
+            item = previous
+        } else {
+            // AppKit's legacy sidebar behavior is leading-only; trailing columns need a plain item.
+            item = onRight ? NSSplitViewItem(viewController: previous.viewController)
+                : NSSplitViewItem(sidebarWithViewController: previous.viewController)
+            item.minimumThickness = previous.minimumThickness
+            item.maximumThickness = previous.maximumThickness
+            item.holdingPriority = previous.holdingPriority
+            item.canCollapse = previous.canCollapse
+        }
+        item.isCollapsed = collapsed
+        insertSplitViewItem(item, at: onRight ? 1 : 0)
+        if restoringExistingGeometry { splitView.autosaveName = autosaveName }
+        item.isCollapsed = collapsed
+        view.layoutSubtreeIfNeeded()
+        if restoringExistingGeometry && !collapsed {
+            splitView.setPosition(onRight ? splitView.bounds.width - splitView.dividerThickness - width : width, ofDividerAt: 0)
+        }
+        return item
     }
 }

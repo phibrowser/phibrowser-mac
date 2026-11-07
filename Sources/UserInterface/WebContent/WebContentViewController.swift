@@ -159,7 +159,7 @@ final class PageCardEdgeShadowView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         shadowLayer.frame = bounds
-        shadowLayer.setAffineTransform(SidebarPosition.isOnRight ? CGAffineTransform(scaleX: -1, y: 1) : .identity)
+        shadowLayer.setAffineTransform(WebContentLayout().sidebarOnRight ? CGAffineTransform(scaleX: -1, y: 1) : .identity)
         // Only the card's left edge and its two left corners matter: the
         // caster runs far enough right that its own right end casts nothing
         // near them, and the sidebar edge or the corner-gap mask hides the rest.
@@ -187,6 +187,16 @@ struct WebContentLayout: Equatable {
     var layoutMode: LayoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
     var edgeToEdgeEnabled: Bool = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.loadValue()
     var isFullScreen: Bool = false
+
+    var sidebarOnRight: Bool { !layoutMode.isTraditional && sidebarPosition == .right }
+
+    func pageInsets(sidebarCollapsed: Bool) -> (leading: CGFloat, trailing: CGFloat) {
+        let sidebarVisible = !layoutMode.isTraditional && !sidebarCollapsed
+        return (
+            sidebarVisible && !sidebarOnRight ? 0 : edgeSpacing,
+            sidebarVisible && sidebarOnRight ? 0 : edgeSpacing
+        )
+    }
 
     /// Outer left, right, and bottom margins in every layout mode.
     var edgeSpacing: CGFloat {
@@ -974,11 +984,9 @@ class WebContentViewController: NSViewController {
     private func updateSplitViewLeadingInset() {
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
         let sidebarCollapsed = browserState?.sidebarCollapsed ?? true
-        let leadingInset: CGFloat = (traditionalLayout || sidebarCollapsed || SidebarPosition.isOnRight)
-            ? contentLayout.edgeSpacing
-            : 0
-        splitViewLeadingConstraint?.update(inset: leadingInset)
-        splitViewTrailingConstraint?.update(inset: SidebarPosition.isOnRight && !sidebarCollapsed ? 0 : contentLayout.edgeSpacing)
+        let insets = contentLayout.pageInsets(sidebarCollapsed: sidebarCollapsed)
+        splitViewLeadingConstraint?.update(inset: insets.leading)
+        splitViewTrailingConstraint?.update(inset: insets.trailing)
         splitViewTrailingBottomConstraint?.update(inset: contentLayout.edgeSpacing)
         splitViewContainer.layer?.cornerRadius = contentLayout.containerCornerRadius
         leftContainerView.layer?.cornerRadius = contentLayout.innerCornerRadius

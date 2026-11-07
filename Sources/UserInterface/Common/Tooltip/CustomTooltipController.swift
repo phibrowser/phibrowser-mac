@@ -13,6 +13,7 @@ enum CustomTooltipPlacement: Equatable {
     case right
     case belowAttached
     case rightTopAttached
+    case leftTopAttached
 }
 
 enum CustomTooltipHandoffGroup: Equatable {
@@ -47,6 +48,11 @@ struct CustomTooltipGeometry {
                 x: anchorScreenRect.midX - contentSize.width / 2,
                 y: anchorScreenRect.minY - contentSize.height
             )
+        case .leftTopAttached:
+            preferredOrigin = CGPoint(
+                x: anchorScreenRect.minX - contentSize.width,
+                y: anchorScreenRect.maxY - contentSize.height
+            )
         case .rightTopAttached:
             preferredOrigin = CGPoint(
                 x: anchorScreenRect.maxX,
@@ -75,6 +81,12 @@ struct CustomTooltipGeometry {
             if origin.y < visibleFrame.minY + screenMargin,
                aboveY + contentSize.height <= visibleFrame.maxY - screenMargin {
                 origin.y = aboveY
+            }
+        case .leftTopAttached:
+            let rightX = anchorScreenRect.maxX
+            if origin.x < visibleFrame.minX + screenMargin,
+               rightX + contentSize.width <= visibleFrame.maxX - screenMargin {
+                origin.x = rightX
             }
         case .rightTopAttached:
             let leftX = anchorScreenRect.minX - contentSize.width
@@ -128,6 +140,13 @@ struct CustomTooltipConfiguration: Equatable {
         self.handoffDelay = handoffDelay
         self.handoffGroup = handoffGroup
         self.handoffFrameAnimationDuration = handoffFrameAnimationDuration
+    }
+
+    // Sidebar preview registrations survive position changes; resolve their edge when shown.
+    var presentationPlacement: CustomTooltipPlacement {
+        guard handoffGroup == .tabPreview,
+              placement == .rightTopAttached || placement == .leftTopAttached else { return placement }
+        return SidebarPosition.isOnRight ? .leftTopAttached : .rightTopAttached
     }
 
     fileprivate var normalizedShowDelay: TimeInterval {
@@ -594,7 +613,7 @@ final class CustomTooltipController {
             anchorScreenRect: context.anchorScreenRect,
             screen: context.screen,
             themeProvider: context.themeProvider,
-            placement: request.configuration.placement,
+            placement: request.configuration.presentationPlacement,
             frameAnimationDuration: shouldAnimateFrame
                 ? request.configuration.normalizedHandoffFrameAnimationDuration
                 : 0
@@ -621,7 +640,7 @@ final class CustomTooltipController {
             anchorScreenRect: context.anchorScreenRect,
             screen: context.screen,
             themeProvider: context.themeProvider,
-            placement: request.configuration.placement,
+            placement: request.configuration.presentationPlacement,
             frameAnimationDuration: 0
         )
     }

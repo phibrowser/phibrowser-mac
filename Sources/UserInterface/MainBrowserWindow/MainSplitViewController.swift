@@ -82,7 +82,7 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
 
     let webContentContainerViewController: WebContentContainerViewController
 
-    private var sideBarSplitViewItem: NSSplitViewItem!
+    @Published private var sideBarSplitViewItem: NSSplitViewItem!
     private var webContentSplitViewItem: NSSplitViewItem!
     private lazy var cancellables = Set<AnyCancellable>()
 
@@ -119,21 +119,10 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
         guard sidebarOnRight != right else { return }
         isReorderingSidebar = true
         defer { isReorderingSidebar = false }
-        let split = splitViewController.splitView
-        let item = sideBarSplitViewItem!
-        let restoringExistingGeometry = split.autosaveName != nil
-        let collapsed = item.isCollapsed
-        let width = max(Self.leftItemMinWidth, item.viewController.view.frame.width)
-        split.autosaveName = nil
-        splitViewController.removeSplitViewItem(item)
-        splitViewController.insertSplitViewItem(item, at: right ? 1 : 0)
+        sideBarSplitViewItem = splitViewController.repositionSidebarItem(
+            sideBarSplitViewItem, onRight: right, autosaveName: Self.splitViewAutosaveName
+        )
         sidebarOnRight = right
-        if restoringExistingGeometry { split.autosaveName = Self.splitViewAutosaveName }
-        item.isCollapsed = collapsed
-        view.layoutSubtreeIfNeeded()
-        if restoringExistingGeometry && !collapsed {
-            split.setPosition(right ? split.bounds.width - split.dividerThickness - width : width, ofDividerAt: 0)
-        }
     }
 
     override func viewDidLoad() {
@@ -188,7 +177,10 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
         cancellables.removeAll()
         guard !isHosted else { return }
 
-        sideBarSplitViewItem.publisher(for: \.isCollapsed)
+        $sideBarSplitViewItem
+            .compactMap { $0 }
+            .map { $0.publisher(for: \.isCollapsed) }
+            .switchToLatest()
             .sink { [weak self] isCollapsed in
                 guard let self else { return }
                 self.updateSidebarWidth()

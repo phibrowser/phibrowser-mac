@@ -484,8 +484,14 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             .merge(with: browserState.$isTranscriptDocked.map { _ in })
             .prepend(())
             .receive(on: DispatchQueue.main)
-            .map { [weak browserState] _ in WebContentLayout(browserState: browserState).edgeToEdgeEnabled }
-            .removeDuplicates()
+            .map { [weak browserState] _ -> (Bool, Bool) in
+                let layout = WebContentLayout(browserState: browserState)
+                return (layout.edgeToEdgeEnabled, layout.sidebarOnRight)
+            }
+            .removeDuplicates { (previous: (Bool, Bool), current: (Bool, Bool)) in
+                guard previous.0 == current.0 else { return false }
+                return previous.1 == current.1
+            }
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.updateLayoutVisibility(layoutMode: self.browserState?.layoutMode ?? .performance)

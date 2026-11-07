@@ -781,7 +781,7 @@ class WebContentContainerViewController: NSViewController {
             }
         }
         if let dock = transcriptDockView, let edge = transcriptDockEdge {
-            dock.updateLayout(contentLayout, leadingInset: pageAreaLeadingInset, trailingInset: SidebarPosition.isOnRight && browserState?.sidebarCollapsed == false ? 0 : contentLayout.edgeSpacing)
+            dock.updateLayout(contentLayout, leadingInset: pageAreaInsets.leading, trailingInset: pageAreaInsets.trailing)
             // The dock's own thickness constraint lives on the dock view
             // (plain NSLayoutConstraint, untouched by this snp remake).
             dock.snp.remakeConstraints { make in
@@ -2249,21 +2249,17 @@ class WebContentContainerViewController: NSViewController {
 
     /// Mirror of `WebContentViewController.updateSplitViewLeadingInset`, so
     /// the backdrop hugs the same leading edge the mounted panel uses.
-    private var pageAreaLeadingInset: CGFloat {
-        let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
-        let sidebarCollapsed = browserState?.sidebarCollapsed ?? true
-        return (traditionalLayout || sidebarCollapsed || SidebarPosition.isOnRight)
-            ? contentLayout.edgeSpacing
-            : 0
+    private var pageAreaInsets: (leading: CGFloat, trailing: CGFloat) {
+        contentLayout.pageInsets(sidebarCollapsed: browserState?.sidebarCollapsed ?? true)
     }
 
     /// Called from `updateLayoutForMode`, which already re-runs on layout-mode
     /// and sidebar-collapse changes. A bottom transcript dock shares the page
     /// panel's left edge, so it follows the same inset.
     private func updatePageAreaBackdropLeadingInset() {
-        let inset = pageAreaLeadingInset
+        let inset = pageAreaInsets.leading
         pageAreaBackdropLeadingConstraint?.update(inset: inset)
-        pageAreaBackdropTrailingConstraint?.update(inset: SidebarPosition.isOnRight && browserState?.sidebarCollapsed == false ? 0 : contentLayout.edgeSpacing)
+        pageAreaBackdropTrailingConstraint?.update(inset: pageAreaInsets.trailing)
     }
 
     // MARK: - AI Chat Toggle

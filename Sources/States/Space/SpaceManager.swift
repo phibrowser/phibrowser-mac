@@ -14135,6 +14135,7 @@ final class ReopenLoadingWindow: NSWindow {
          trafficLightOrigin: NSPoint? = nil) {
         // Resolved before `super.init` because it decides the style mask: no
         // usable origin, no buttons at all.
+        // Right-sidebar windows reveal controls on hover, so the inert loading window must not show them.
         let lightOrigin = SidebarPosition.isOnRight ? nil : Self.trafficLightOrigin(remembered: trafficLightOrigin)
         // Byte for byte the mask the fork gives a normal browser window
         // (`BrowserNativeWidgetMac::PopulateCreateWindowParams`: titled,
@@ -14284,7 +14285,7 @@ final class ReopenLoadingWindow: NSWindow {
     /// keeps the sidebar collapsed permanently
     /// (`MainSplitViewController.updateLayoutForHorizontalTabs`). One number
     /// therefore settles the width, the collapsed state and which layouts draw
-    /// anything, which is why nothing in this class reads `LayoutMode` — and
+    /// anything. The current layout only gates the effective sidebar side;
     /// `.comfortable` is the layout that needs no help, since its own first
     /// painted frame already carries a tab-strip skeleton.
     ///

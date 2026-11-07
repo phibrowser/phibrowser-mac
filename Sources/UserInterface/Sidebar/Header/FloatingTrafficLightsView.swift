@@ -19,6 +19,7 @@ enum FloatingTrafficLightMetrics {
 final class FloatingTrafficLightsView: NSView {
     enum Placement { case sidebarHeader, topLeftStrip }
     private var placement: Placement = .sidebarHeader
+    private var voiceOverObservation: NSKeyValueObservation?
     private var pointerMonitor: Any?
     private var hideWorkItem: DispatchWorkItem?
     private var stripVisible = false
@@ -97,8 +98,14 @@ final class FloatingTrafficLightsView: NSView {
         super.viewDidMoveToWindow()
         if placement == .topLeftStrip, pointerMonitor == nil, window != nil {
             pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .mouseExited]) { [weak self] event in
+                guard event.window === self?.window else { return event }
                 self?.updateStripFromPointer()
                 return event
+            }
+        }
+        if placement == .topLeftStrip, voiceOverObservation == nil {
+            voiceOverObservation = NSWorkspace.shared.observe(\.isVoiceOverEnabled, options: [.new]) { [weak self] _, _ in
+                DispatchQueue.main.async { self?.updateStripFromPointer() }
             }
         }
         startObservingWindowState()
@@ -244,12 +251,12 @@ final class FloatingTrafficLightsView: NSView {
         guard placement == .topLeftStrip, let window else { return }
         let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
         let inside = bounds.contains(point)
-        let reveal = inside && (stripVisible || point.y >= bounds.maxY - 4)
+        let reveal = NSWorkspace.shared.isVoiceOverEnabled || (inside && (stripVisible || point.y >= bounds.maxY - 4))
         if reveal && shouldEnableWindowButtonActions {
             hideWorkItem?.cancel()
             hideWorkItem = nil
             setStripVisible(true)
-        } else if hideWorkItem == nil {
+        } else if stripVisible && hideWorkItem == nil {
             let work = DispatchWorkItem { [weak self] in
                 self?.setStripVisible(false)
                 self?.hideWorkItem = nil

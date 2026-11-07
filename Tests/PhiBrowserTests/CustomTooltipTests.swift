@@ -908,6 +908,23 @@ final class CustomTooltipTests: XCTestCase {
         XCTAssertEqual(origin.y, 76)
     }
 
+    func testAttachedLeftPlacementAndBothScreenEdgeFallbacks() {
+        let size = CGSize(width: 180, height: 120)
+        let screen = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        XCTAssertEqual(CustomTooltipGeometry.origin(
+            contentSize: size, anchorScreenRect: CGRect(x: 750, y: 400, width: 200, height: 40),
+            visibleFrame: screen, placement: .leftTopAttached
+        ), CGPoint(x: 570, y: 320))
+        XCTAssertEqual(CustomTooltipGeometry.origin(
+            contentSize: size, anchorScreenRect: CGRect(x: 20, y: 400, width: 200, height: 40),
+            visibleFrame: screen, placement: .leftTopAttached
+        ), CGPoint(x: 220, y: 320))
+        XCTAssertEqual(CustomTooltipGeometry.origin(
+            contentSize: size, anchorScreenRect: CGRect(x: 750, y: 400, width: 200, height: 40),
+            visibleFrame: screen, placement: .rightTopAttached
+        ), CGPoint(x: 570, y: 320))
+    }
+
     func testBelowPlacementFlipsAboveNearScreenBottom() {
         let visibleFrame = CGRect(x: 0, y: 0, width: 500, height: 400)
         let origin = CustomTooltipGeometry.origin(

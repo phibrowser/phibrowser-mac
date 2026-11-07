@@ -60,7 +60,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         setupFloatingSidebarTrigger()
     }
 
-    func install(in parent: NSViewController, over content: NSView) {
+    func install(in parent: NSViewController) {
         parent.addChild(self)
         parent.view.addSubview(view)
         view.snp.makeConstraints { make in make.edges.equalTo(parent.view) }

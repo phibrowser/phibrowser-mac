@@ -90,6 +90,7 @@ class OmniBoxSuggestionCellView: NSTableCellView {
         let view = SwitchToTabView()
         view.wantsLayer = true
         view.addsSplit = switchToTabAddsSplit
+        if let entityHint { view.text = entityHint }
         return view
     }()
     
@@ -115,6 +116,17 @@ class OmniBoxSuggestionCellView: NSTableCellView {
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    private var entityHint: String? {
+        switch suggestion?.v2Kind {
+        case "pin":
+            return NSLocalizedString("addressBar.suggestions.switchToPinHint", value: "Switch to Pin →", comment: "Omnibox suggestion - Trailing hint on a pinned tab result; choosing it opens or focuses that pin")
+        case "bookmark":
+            return NSLocalizedString("addressBar.suggestions.switchToBookmarkHint", value: "Switch to Bookmark →", comment: "Omnibox suggestion - Trailing hint on a bookmark result; choosing it opens or focuses that bookmark")
+        default:
+            return nil
+        }
     }
 
     var isSwitchToTabViewHiddenForTesting: Bool {
@@ -266,8 +278,8 @@ class OmniBoxSuggestionCellView: NSTableCellView {
         hoverableBg.phi.hoveredColor = accent.opacity(0.16).mapper
         let rowView = superview as? NSTableRowView
         let isSelected = rowView?.isSelected ?? false
-        let canShowSwitchToTab = showsSwitchToTabHint
-            && (suggestion?.hasTabMatch ?? false)
+        let canShowSwitchToTab = entityHint != nil || (showsSwitchToTabHint
+            && (suggestion?.hasTabMatch ?? false))
         hoverableBg.isSelected = isSelected
         updateConstraint(
             canDelete: suggestion?.canDelete ?? false,
@@ -342,6 +354,11 @@ class SwitchToTabView: NSView {
                 ? NSLocalizedString("addressBar.suggestions.addOpenTabToSplitHint", value: "Hold ⌘ to add split", comment: "Omnibox suggestion - Hint shown for an open-tab suggestion while choosing the second pane of a new split; holding Command pairs that open tab into the split")
                 : NSLocalizedString("addressBar.suggestions.switchToOpenTabHint", value: "Hold ⌘ to switch →", comment: "Omnibox suggestion - Hint shown for suggestions that can switch to an open tab")
         }
+    }
+
+    var text: String {
+        get { label.stringValue }
+        set { label.stringValue = newValue }
     }
 
     override init(frame frameRect: NSRect) {

@@ -146,7 +146,8 @@ private struct AppearanceSectionView: View {
     @AppStorage(PhiPreferences.GeneralSettings.sidebarPositionKey)
     private var sidebarPosition = SidebarPosition.left.rawValue
 
-    @State private var selectedAppearance: UserAppearanceChoice = ThemeManager.shared.userAppearanceChoice
+    @AppStorage(PhiPreferences.ThemeSettings.userAppearanceChoice.rawValue)
+    private var selectedAppearance: UserAppearanceChoice = .system
 
     private var selectedLayoutMode: Binding<LayoutMode> {
         Binding(

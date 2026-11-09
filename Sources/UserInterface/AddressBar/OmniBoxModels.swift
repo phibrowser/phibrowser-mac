@@ -71,6 +71,12 @@ struct OmniBoxSuggestion: Equatable {
     let index: Int
     var inlineCompletionString: String?
     var allowedToBeDefault: Bool = true
+    var v2Token: OmniboxNativeUIClient.Token?
+    var v2Kind: String?
+    /// Display-only identity, stable across requests of one v2 session.
+    var v2RowKey: String?
+    /// Live tab URL of an open pin or bookmark, which may differ from `url`.
+    var v2CurrentURL: String?
     // Keyword-search metadata from a Chromium autocomplete match.
     var keywordSearchEngine: OmniBoxKeywordSearchEngine?
     var keywordSearchQuery: String?
@@ -168,11 +174,14 @@ struct OmniBoxSuggestion: Equatable {
         let title = selectionEngine.map {
             String(format: NSLocalizedString("addressBar.keywordSearch.suggestionTitle", value: "Search %@", comment: "Address bar - Suggestion that selects the named search engine"), $0.name)
         } ?? contents
+        let nativeKind = (chromiumDic["phiV2"] as? [String: Any])?["kind"] as? String
         self.init(type: omniTpye,
                   title: title,
                   subtitle: selectionEngine?.keyword ?? description,
                   url: destinationUrl,
-                  iconName: omniTpye == .searchEngine ? "magnifyingglass" : nil,
+                  iconName: omniTpye == .searchEngine ? "magnifyingglass" :
+                    nativeKind == "command" ? (chromiumDic["phiCommandId"] as? String)
+                        .flatMap(OmniboxCommand.init(rawValue:))?.symbolName : nil,
                   iconURL: iconUrl,
                   index: index ?? -1,
                   relevanceScore: relevance,
@@ -182,6 +191,19 @@ struct OmniBoxSuggestion: Equatable {
                   canDelete: selectionEngine == nil && deletable,
                   hasTabMatch: tabMatch)
         self.inlineCompletionString = inlineCompletion
+        if let metadata = chromiumDic["phiV2"] as? [String: Any],
+           let presentation = metadata["presentationID"] as? String,
+           let request = metadata["request"] as? UInt64,
+           let revision = metadata["revision"] as? UInt64,
+           let result = metadata["resultId"] as? String {
+            self.v2Token = .init(presentationID: presentation, request: request,
+                                revision: revision, resultID: result)
+            self.v2Kind = metadata["kind"] as? String
+            self.v2RowKey = metadata["rowKey"] as? String
+            if let current = chromiumDic["currentURL"] as? String, !current.isEmpty {
+                self.v2CurrentURL = current
+            }
+        }
         self.allowedToBeDefault = selectionEngine == nil && allowdToBeDefault
         self.keywordSearchEngine = engine
         self.keywordSearchQuery = engine != nil && !destinationUrl.isEmpty ? contents : nil
@@ -198,8 +220,11 @@ struct OmniBoxSuggestion: Equatable {
     var isEmpty: Bool { title.isEmpty && (subtitle?.isEmpty ?? true) }
     var isSupportedType: Bool { type != .pedal /*&& type != .searchEngine*/ }
 
+    var isNativeEntity: Bool { v2Kind == "pin" || v2Kind == "bookmark" }
+
     var faviconPageURL: URL? {
-        type == .history ? URL(string: url) : nil
+        if isNativeEntity { return URL(string: v2CurrentURL ?? url) }
+        return type == .history ? URL(string: url) : nil
     }
 }
 
@@ -386,7 +411,7 @@ struct OmniBoxConfiguration {
         showBookmarks: true,
         showHistory: true,
         showTopSites: true,
-        placeholder: NSLocalizedString("addressBar.configuration.defaultPlaceholder", value: "Search or Enter URL", comment: "Address bar - Default placeholder supplied by its configuration")
+        placeholder: NSLocalizedString("addressBar.configuration.defaultPlaceholder", value: "Search or enter URL", comment: "Address bar - Default placeholder supplied by its configuration")
     )
 }
 

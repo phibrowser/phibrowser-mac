@@ -38,6 +38,32 @@ final class ApplicationState {
     private let notificationCenter: NotificationCenter
     private let supportsAuthentication: Bool
     private let stateLock = NSLock()
+    private var omniboxAuthorityTransitionDepth = 0
+
+    var isOmniboxAuthorityTransitioning: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return omniboxAuthorityTransitionDepth != 0
+    }
+
+    /// Keep preflight, identity commit, and reconciliation in one main-thread
+    /// transaction. The depth also blocks adapters created by reentrant UI work.
+    /// Never call this while holding stateLock or an authentication/keychain lock.
+    func performOmniboxAuthorityChange<Value>(changed: Bool, _ mutation: () -> Value) -> Value {
+        precondition(Thread.isMainThread)
+        guard changed else { return mutation() }
+        stateLock.lock()
+        omniboxAuthorityTransitionDepth += 1
+        stateLock.unlock()
+        notificationCenter.post(name: .omniboxAuthorityWillChange, object: self)
+        defer {
+            stateLock.lock()
+            omniboxAuthorityTransitionDepth -= 1
+            stateLock.unlock()
+            notificationCenter.post(name: .omniboxAuthorityDidChange, object: self)
+        }
+        return mutation()
+    }
     private var storedBrowserAccessState: BrowserAccessState
     /// In-memory fence spanning authenticated-account publication and Native
     /// controller rebinding. It deliberately is not persisted: on a relaunch,
@@ -202,42 +228,37 @@ final class ApplicationState {
     /// Suspends Guest browser access before Chromium can create a window or
     /// open the default-account store for an interrupted migration.
     @discardableResult
-    func beginGuestMigrationRecovery(
-        notifyBrowserAccessChange: Bool = true
-    ) -> Bool {
+    func beginGuestMigrationRecovery(notifyBrowserAccessChange: Bool = true) -> Bool {
+        if !Thread.isMainThread {
+            return DispatchQueue.main.sync { self.beginGuestMigrationRecovery(notifyBrowserAccessChange: notifyBrowserAccessChange) }
+        }
         guard supportsAuthentication else { return false }
-        stateLock.lock()
-        guard storedBrowserAccessState == .guest,
-              defaults.bool(forKey: Self.guestModeEnabledKey) else {
+        let old = guestTransitionSnapshot()
+        guard old.state == .guest, persistedGuestChoice else { return false }
+        return performOmniboxAuthorityChange(changed: !old.isRecovering) {
+            stateLock.lock()
+            guestMigrationRecoveryInProgress = true
             stateLock.unlock()
-            return false
+            if !old.isRecovering && notifyBrowserAccessChange {
+                notificationCenter.post(name: .browserAccessStateDidChange, object: self)
+            }
+            return true
         }
-        let didChange = !guestMigrationRecoveryInProgress
-        guestMigrationRecoveryInProgress = true
-        stateLock.unlock()
-
-        if didChange && notifyBrowserAccessChange {
-            notificationCenter.post(
-                name: .browserAccessStateDidChange,
-                object: self
-            )
-        }
-        return true
     }
 
     /// Restores ordinary Guest access when recovery stops before account
     /// publication and the source directory remains authoritative.
     func endGuestMigrationRecovery() {
-        stateLock.lock()
-        let didChange = guestMigrationRecoveryInProgress
-        guestMigrationRecoveryInProgress = false
-        stateLock.unlock()
-
-        if didChange {
-            notificationCenter.post(
-                name: .browserAccessStateDidChange,
-                object: self
-            )
+        if !Thread.isMainThread {
+            DispatchQueue.main.sync { self.endGuestMigrationRecovery() }
+            return
+        }
+        let changed = guestTransitionSnapshot().isRecovering
+        performOmniboxAuthorityChange(changed: changed) {
+            stateLock.lock()
+            guestMigrationRecoveryInProgress = false
+            stateLock.unlock()
+            if changed { notificationCenter.post(name: .browserAccessStateDidChange, object: self) }
         }
     }
 
@@ -248,30 +269,33 @@ final class ApplicationState {
     /// regular login or account refresh.
     @discardableResult
     func beginGuestAccountPromotion() -> Bool {
-        guard supportsAuthentication else { return false }
-        stateLock.lock()
-        defer { stateLock.unlock() }
-        guard storedBrowserAccessState == .guest,
-              defaults.bool(forKey: Self.guestModeEnabledKey) else {
-            return false
+        if !Thread.isMainThread {
+            return DispatchQueue.main.sync { self.beginGuestAccountPromotion() }
         }
-        guestAccountPromotionInProgress = true
-        return true
+        guard supportsAuthentication else { return false }
+        let old = guestTransitionSnapshot()
+        guard old.state == .guest, persistedGuestChoice else { return false }
+        return performOmniboxAuthorityChange(changed: !old.isPromoting) {
+            stateLock.lock()
+            guestAccountPromotionInProgress = true
+            stateLock.unlock()
+            return true
+        }
     }
 
     /// Cancels a promotion that failed before authenticated account
     /// publication. Guest access and its persisted marker remain unchanged.
     func cancelGuestAccountPromotion() {
-        stateLock.lock()
-        let didChange = guestAccountPromotionInProgress
-        guestAccountPromotionInProgress = false
-        stateLock.unlock()
-
-        if didChange {
-            notificationCenter.post(
-                name: .kioskExternalLinkAccessDidChange,
-                object: self
-            )
+        if !Thread.isMainThread {
+            DispatchQueue.main.sync { self.cancelGuestAccountPromotion() }
+            return
+        }
+        let changed = guestTransitionSnapshot().isPromoting
+        performOmniboxAuthorityChange(changed: changed) {
+            stateLock.lock()
+            guestAccountPromotionInProgress = false
+            stateLock.unlock()
+            if changed { notificationCenter.post(name: .kioskExternalLinkAccessDidChange, object: self) }
         }
     }
 
@@ -281,25 +305,19 @@ final class ApplicationState {
     /// until `markSignedIn()` commits the transaction.
     @discardableResult
     func resumeBrowserAccessForGuestAccountPromotion() -> Bool {
+        if !Thread.isMainThread {
+            return DispatchQueue.main.sync { self.resumeBrowserAccessForGuestAccountPromotion() }
+        }
         guard supportsAuthentication else { return false }
-        stateLock.lock()
-        guard storedBrowserAccessState == .guest,
-              guestAccountPromotionInProgress,
-              defaults.bool(forKey: Self.guestModeEnabledKey) else {
+        let old = guestTransitionSnapshot()
+        guard old.state == .guest, old.isPromoting, persistedGuestChoice else { return false }
+        return performOmniboxAuthorityChange(changed: old.isRecovering) {
+            stateLock.lock()
+            guestMigrationRecoveryInProgress = false
             stateLock.unlock()
-            return false
+            if old.isRecovering { notificationCenter.post(name: .browserAccessStateDidChange, object: self) }
+            return true
         }
-        let didChange = guestMigrationRecoveryInProgress
-        guestMigrationRecoveryInProgress = false
-        stateLock.unlock()
-
-        if didChange {
-            notificationCenter.post(
-                name: .browserAccessStateDidChange,
-                object: self
-            )
-        }
-        return true
     }
 
     /// Marks completed account onboarding and Guest-data cleanup as ready for
@@ -346,8 +364,21 @@ final class ApplicationState {
         guestPromotionInProgress: Bool? = nil,
         guestMigrationRecoveryInProgress: Bool? = nil
     ) {
-        stateLock.lock()
+        if !Thread.isMainThread {
+            DispatchQueue.main.sync {
+                self.transition(to: newState, persistedGuestChoice: persistedGuestChoice,
+                    guestPromotionInProgress: guestPromotionInProgress,
+                    guestMigrationRecoveryInProgress: guestMigrationRecoveryInProgress)
+            }
+            return
+        }
+        let old = guestTransitionSnapshot()
         let effectiveState = supportsAuthentication ? newState : .guest
+        let nextPromotion = supportsAuthentication ? (guestPromotionInProgress ?? old.isPromoting) : false
+        let nextRecovery = supportsAuthentication ? (guestMigrationRecoveryInProgress ?? old.isRecovering) : false
+        let changed = effectiveState != old.state || nextPromotion != old.isPromoting || nextRecovery != old.isRecovering
+        performOmniboxAuthorityChange(changed: changed) {
+        stateLock.lock()
         if supportsAuthentication {
             if let persistedGuestChoice {
                 persistGuestChoiceIfChanged(persistedGuestChoice)
@@ -373,6 +404,7 @@ final class ApplicationState {
 
         guard didChange else { return }
         notificationCenter.post(name: .browserAccessStateDidChange, object: self)
+        }
     }
 
     /// Writes the choice only when it differs from the stored one. Every
@@ -402,6 +434,9 @@ final class ApplicationState {
 }
 
 extension Notification.Name {
+    static let omniboxAuthorityWillChange = Notification.Name("Phi.omniboxAuthorityWillChange")
+    static let omniboxAuthorityDidChange = Notification.Name("Phi.omniboxAuthorityDidChange")
+    static let omniboxNativeContextInvalidated = Notification.Name("Phi.omniboxNativeContextInvalidated")
     static let browserAccessStateDidChange = Notification.Name(
         "BrowserAccessStateDidChange"
     )

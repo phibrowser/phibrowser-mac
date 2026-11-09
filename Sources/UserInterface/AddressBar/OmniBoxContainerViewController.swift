@@ -59,6 +59,7 @@ final class OmniBoxContainerViewController: NSViewController {
     private(set) var hasShown = false
     private var needsShowAnimation = false
     private var animationOn = false
+    private var presentationGeneration: UInt64 = 0
     private weak var browserState: BrowserState?
     private var focusingTabObserver: AnyCancellable?
     private var keyboardMonitor: Any?
@@ -94,7 +95,9 @@ final class OmniBoxContainerViewController: NSViewController {
         super.init(nibName: nil, bundle: nil)
         self.browserState = browserState
         self.parentView = superView
-        omniBoxController = OmniBoxViewController(viewModel: .init(windowState: browserState), state: browserState)
+        omniBoxController = OmniBoxViewController(
+            viewModel: .init(windowState: browserState, enableUnifiedOmnibox: UnifiedOmnibox.isEnabled),
+            state: browserState)
         omniBoxController?.setActionDelegate(self)
         
         superView?.mouseDown = { [weak self] event in
@@ -259,6 +262,7 @@ final class OmniBoxContainerViewController: NSViewController {
     
     
     func showOmniBox(fromAddressBar: Bool, addressView: NSView? = nil) {
+        presentationGeneration += 1
         omniBoxController?.prepareForPresentation()
         self.addressView = addressView
         showFromAddressBar = fromAddressBar && addressView != nil
@@ -328,6 +332,9 @@ final class OmniBoxContainerViewController: NSViewController {
     }
 
     func hideOmniBox(fromAddressBar: Bool = false) {
+        presentationGeneration += 1
+        let generation = presentationGeneration
+        omniBoxController?.endV2Presentation()
         // At hide START, not completion: the overlay is on its way out, and
         // anything that deferred to it may take key back behind the fade.
         postInWindowOverlayVisibility(false)
@@ -365,8 +372,9 @@ final class OmniBoxContainerViewController: NSViewController {
             
             CATransaction.begin()
             CATransaction.setCompletionBlock { [weak self] in
-                self?.hasShown = false
-                self?.view.superview?.removeFromSuperview()
+                guard let self, self.presentationGeneration == generation else { return }
+                self.hasShown = false
+                self.view.superview?.removeFromSuperview()
                 omniBoxView.alphaValue = 0
                 omniBoxView.layer?.removeAllAnimations()
             }
@@ -377,6 +385,7 @@ final class OmniBoxContainerViewController: NSViewController {
         }
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            guard self.presentationGeneration == generation else { return }
             self.omniBoxController?.reset()
         }
         
@@ -413,10 +422,12 @@ final class OmniBoxContainerViewController: NSViewController {
         animationGroup.isRemovedOnCompletion = true
 
         CATransaction.begin()
+        let generation = presentationGeneration
         CATransaction.setCompletionBlock { [weak self] in
-            self?.omniBoxController?.focusTextField()
-            self?.hasShown = true
-            self?.needsShowAnimation = false
+            guard let self, self.presentationGeneration == generation else { return }
+            self.omniBoxController?.focusTextField()
+            self.hasShown = true
+            self.needsShowAnimation = false
         }
         
         omniBoxView.layer?.add(animationGroup, forKey: "showAnimation")
@@ -539,10 +550,12 @@ final class OmniBoxContainerViewController: NSViewController {
         animationGroup.isRemovedOnCompletion = true
 
         CATransaction.begin()
+        let generation = presentationGeneration
         CATransaction.setCompletionBlock { [weak self] in
-            self?.omniBoxController?.focusTextField()
-            self?.hasShown = true
-            self?.needsShowAnimation = false
+            guard let self, self.presentationGeneration == generation else { return }
+            self.omniBoxController?.focusTextField()
+            self.hasShown = true
+            self.needsShowAnimation = false
         }
 
         omniBoxView.layer?.add(animationGroup, forKey: "expandAnimation")
@@ -611,8 +624,10 @@ final class OmniBoxContainerViewController: NSViewController {
         animationGroup.isRemovedOnCompletion = false
 
         CATransaction.begin()
+        let generation = presentationGeneration
         CATransaction.setCompletionBlock { [weak self, weak omniBoxView] in
-            guard let self = self, let omniBoxView = omniBoxView else { return }
+            guard let self = self, self.presentationGeneration == generation,
+                  let omniBoxView = omniBoxView else { return }
             if let layer = omniBoxView.layer {
                 layer.removeAllAnimations()
                 layer.transform = CATransform3DIdentity

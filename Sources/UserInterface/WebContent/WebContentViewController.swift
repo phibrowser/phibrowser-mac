@@ -2412,12 +2412,13 @@ class WebContentViewController: NSViewController {
     /// "Split with New Tab" preview: this tab beside a blank pane, with no
     /// Chromium split behind it (`BrowserState.pendingSplitPreview`).
     private func installSplitPreview(ownNativeView: NSView) {
+        guard let preview = browserState?.pendingSplitPreview else { return }
         let host: SplitPaneHostView
         if let existing = splitPreviewHost, existing.superview === hostView {
             host = existing
         } else {
             // Mounted before the panes move in, as in `installSplitContent`.
-            host = SplitPaneHostView(layout: .vertical, fractions: [0.5, 0.5],
+            host = SplitPaneHostView(layout: preview.layout, fractions: [0.5, 0.5],
                                      layoutMode: PhiPreferences.GeneralSettings.loadLayoutMode())
             host.hasContentSurface = hasContentSurface
             host.translatesAutoresizingMaskIntoConstraints = false
@@ -2426,8 +2427,11 @@ class WebContentViewController: NSViewController {
             splitPreviewHost = host
         }
         host.squaresCorners = contentLayout.squaresCorners
-        host.update(panes: [ownNativeView, splitPreviewPane])
-        host.focusedPane = 1
+        host.update(layout: preview.layout, fractions: [0.5, 0.5],
+                    layoutMode: PhiPreferences.GeneralSettings.loadLayoutMode())
+        let newTabIsPrimary = preview.newTabSlot == .left
+        host.update(panes: newTabIsPrimary ? [splitPreviewPane, ownNativeView] : [ownNativeView, splitPreviewPane])
+        host.focusedPane = newTabIsPrimary ? 0 : 1
     }
 
     private func removeSplitPreview(keeping contentView: NSView) {

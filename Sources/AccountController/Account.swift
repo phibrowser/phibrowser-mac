@@ -138,8 +138,16 @@ class AccountController {
         }
     }
 
+    private var storedAccount: Account?
     var account: Account? {
-        didSet {
+        get { storedAccount }
+        set {
+            if !Thread.isMainThread {
+                DispatchQueue.main.sync { self.account = newValue }
+                return
+            }
+            ApplicationState.shared.performOmniboxAuthorityChange(changed: storedAccount !== newValue) {
+            storedAccount = newValue
             if account == nil {
                 activatedAuthenticatedAccount = nil
                 syncTelemetryIdentity(for: nil)
@@ -150,6 +158,7 @@ class AccountController {
             Shortcuts.reloadOverrides()
             activateAuthenticatedAccountIfNeeded()
             AppLogInfo("account controller created: \(String(describing: account?.userID))")
+            }
         }
     }
 

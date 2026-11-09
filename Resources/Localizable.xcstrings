@@ -3994,7 +3994,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Search or Enter URL"
+            "value" : "Search or enter URL"
           }
         },
         "es" : {
@@ -4041,13 +4041,24 @@
         }
       }
     },
+    "addressBar.input.createSplitPlaceholder" : {
+      "comment" : "Address bar - Placeholder while choosing the page for a new split pane",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search or enter URL to create split"
+          }
+        }
+      }
+    },
     "addressBar.input.placeholder" : {
       "comment" : "Address bar - Text field placeholder prompting the user to search or enter a URL",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "Suchen oder URL eingeben"
           }
         },
@@ -4059,43 +4070,43 @@
         },
         "es" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "Buscar o introducir URL"
           }
         },
         "fr" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "Rechercher ou saisir une URL"
           }
         },
         "ja" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "検索またはURLを入力"
           }
         },
         "ko" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "검색어 또는 URL 입력"
           }
         },
         "nl" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "Zoek of voer URL in"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "搜索或输入网址"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "搜尋或輸入網址"
           }
         }
@@ -4581,6 +4592,18 @@
         }
       }
     },
+    "addressBar.suggestions.switchToBookmarkHint" : {
+      "comment" : "Omnibox suggestion - Trailing hint on a bookmark result; choosing it opens or focuses that bookmark",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Switch to Bookmark →"
+          }
+        }
+      }
+    },
     "addressBar.suggestions.switchToOpenTabHint" : {
       "comment" : "Omnibox suggestion - Hint shown for suggestions that can switch to an open tab",
       "extractionState" : "extracted_with_value",
@@ -4637,6 +4660,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "按住 ⌘ 切換 →"
+          }
+        }
+      }
+    },
+    "addressBar.suggestions.switchToPinHint" : {
+      "comment" : "Omnibox suggestion - Trailing hint on a pinned tab result; choosing it opens or focuses that pin",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Switch to Pin →"
           }
         }
       }
@@ -50889,6 +50924,141 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "彈出顯示"
+          }
+        }
+      }
+    },
+    "omnibox.command.addLeftSplit" : {
+      "comment" : "Omnibox commands - Adds a new pane to the left of the current tab",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add left split"
+          }
+        }
+      }
+    },
+    "omnibox.command.addTopSplit" : {
+      "comment" : "Omnibox commands - Adds a new pane above the current tab",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add top split"
+          }
+        }
+      }
+    },
+    "omnibox.command.addVerticalSplitView" : {
+      "comment" : "Omnibox commands - Adds a new pane below the current tab",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add vertical split view"
+          }
+        }
+      }
+    },
+    "omnibox.command.manageExtensions" : {
+      "comment" : "Omnibox commands - Command that opens the extensions management page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Manage extensions"
+          }
+        }
+      }
+    },
+    "omnibox.command.newSplitView" : {
+      "comment" : "Omnibox commands - Command that splits the current tab with a new tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add split view"
+          }
+        }
+      }
+    },
+    "omnibox.command.removeSplitView" : {
+      "comment" : "Omnibox commands - Separates the current split into two tabs without closing either page",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove split view"
+          }
+        }
+      }
+    },
+    "omnibox.command.switchToLightMode" : {
+      "comment" : "Omnibox commands - Sets the browser appearance preference to light mode",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to light mode"
+          }
+        }
+      }
+    },
+    "omnibox.command.switchToDarkMode" : {
+      "comment" : "Omnibox commands - Sets the browser appearance preference to dark mode",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to dark mode"
+          }
+        }
+      }
+    },
+    "omnibox.command.switchToBalancedMode" : {
+      "comment" : "Omnibox commands - Sets the browser layout preference to balanced mode",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to balanced mode"
+          }
+        }
+      }
+    },
+    "omnibox.command.switchToPerformanceMode" : {
+      "comment" : "Omnibox commands - Sets the browser layout preference to performance mode",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to performance mode"
+          }
+        }
+      }
+    },
+    "omnibox.command.switchToComfortableMode" : {
+      "comment" : "Omnibox commands - Sets the browser layout preference to comfortable mode",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to comfortable mode"
+          }
+        }
+      }
+    },
+    "omnibox.result.actionUnavailable" : {
+      "comment" : "Omnibox results - A retained action cannot currently be executed",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This action is unavailable."
           }
         }
       }

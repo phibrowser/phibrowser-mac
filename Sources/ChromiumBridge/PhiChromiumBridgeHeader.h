@@ -592,6 +592,57 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                 channelId:(NSString *)channelId
                      info:(NSDictionary<NSString *, id> *)info;
 
+- (BOOL)advanceNativeOmniboxSession:(NSString*)sessionID
+    bindingToken:(NSString*)bindingToken request:(uint64_t)request windowId:(int64_t)windowId
+    NS_SWIFT_NAME(advanceNativeOmniboxSession(_:bindingToken:request:windowId:));
+
+/// Whether Phi's Mac omnibox and the NTP search box use the unified omnibox
+/// session. Off when the selector is missing.
+- (BOOL)isUnifiedOmniboxEnabled;
+
+/// V2 native data bridge. These selectors are browser-process only; no renderer
+/// identity, URL or entity identifier is accepted as selection authority.
+- (NSString* _Nullable)beginNativeOmniboxSession:(NSString*)sessionID
+    windowId:(int64_t)windowId profileId:(NSString*)profileID
+    targetTabId:(NSNumber* _Nullable)targetTabID
+    NS_SWIFT_NAME(beginNativeOmniboxSession(_:windowId:profileId:targetTabId:));
+- (void)queryNativeOmniboxSession:(NSString*)sessionID
+    bindingToken:(NSString*)bindingToken request:(uint64_t)request
+    windowId:(int64_t)windowId
+    completion:(void (^)(NSString* _Nullable json, NSString* status))completion
+    NS_SWIFT_NAME(queryNativeOmniboxSession(_:bindingToken:request:windowId:completion:));
+- (void)stopNativeOmniboxSession:(NSString*)sessionID request:(uint64_t)request
+    windowId:(int64_t)windowId
+    NS_SWIFT_NAME(stopNativeOmniboxSession(_:request:windowId:));
+- (void)endNativeOmniboxSession:(NSString*)sessionID windowId:(int64_t)windowId
+    NS_SWIFT_NAME(endNativeOmniboxSession(_:windowId:));
+- (void)executeNativeOmniboxSession:(NSString*)sessionID
+    bindingToken:(NSString*)bindingToken request:(uint64_t)request
+    windowId:(int64_t)windowId frozenEntityJSON:(NSString*)frozenEntityJSON
+    mutationEpoch:(NSString*)mutationEpoch pinScope:(NSString*)pinScope
+    learningText:(NSString*)learningText
+    completion:(void (^)(NSString* status, NSString* _Nullable effect))completion
+    NS_SWIFT_NAME(executeNativeOmniboxSession(_:bindingToken:request:windowId:frozenEntityJSON:mutationEpoch:pinScope:learningText:completion:));
+/// Runs a Phi command chosen from the native omnibox. `status` is
+/// "accepted" once Phi has taken the command, otherwise "rejected" or "stale".
+- (void)executeNativeOmniboxCommand:(NSString*)sessionID
+    bindingToken:(NSString*)bindingToken request:(uint64_t)request
+    windowId:(int64_t)windowId commandId:(NSString*)commandID
+    completion:(void (^)(NSString* status))completion
+    NS_SWIFT_NAME(executeNativeOmniboxCommand(_:bindingToken:request:windowId:commandId:completion:));
+/// An ordinary row was chosen while native rows were shown for this
+/// normalized input; the next matching input prefers no native default.
+- (void)recordOrdinaryOmniboxChoice:(NSString*)sessionID
+    bindingToken:(NSString*)bindingToken request:(uint64_t)request
+    windowId:(int64_t)windowId learningText:(NSString*)learningText
+    NS_SWIFT_NAME(recordOrdinaryOmniboxChoice(_:bindingToken:request:windowId:learningText:));
+/// The user deleted history of `profileId` in [begin, end), seconds since
+/// 1970; `end` is infinity for an open range. Omnibox choices recorded in
+/// that range are forgotten.
+- (void)omniboxHistoryDeletedForProfile:(NSString*)profileId
+    begin:(double)begin end:(double)end
+    NS_SWIFT_NAME(omniboxHistoryDeleted(profileId:begin:end:));
+
 /// Hosted-window mode: Chromium asked to show or activate a hosted browser
 /// window — a routed navigation landing in another Space's window, a page
 /// calling window.focus(), chrome.windows.update({focused: true}), a tab
@@ -1140,6 +1191,38 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (BOOL)routeURLIfSpaceRuleMatches:(NSString *)url
                           windowId:(int64_t)windowId
                     ordinaryNewTab:(BOOL)ordinaryNewTab;
+
+/// PHI-1817: synchronous submission receipts for validated native entities.
+/// Exact window only; no dormant queue, URL fallback, or cross-window lookup.
+/// Callers must negotiate both selectors before enabling native execution.
+/// Native presentation transport; v1 remains separate. JSON replies use the
+/// same bounded v2 envelopes as the document API. Native callers never supply
+/// a Profile, Space, entity payload or URL to select.
+- (void)performOmniboxV2Operation:(NSString *)operation
+                    requestJSON:(NSString *)requestJSON
+                       windowId:(int64_t)windowId
+                     completion:(void (^)(NSString *responseJSON))completion
+    NS_SWIFT_NAME(performOmniboxV2Operation(_:requestJSON:windowId:completion:));
+
+- (BOOL)revokeOmniboxSearchContextForWindow:(int64_t)windowId
+                      expectedBindingToken:(NSString *)token
+                                    reason:(NSString *)reason
+    NS_SWIFT_NAME(revokeOmniboxSearchContext(windowId:expectedBindingToken:reason:));
+
+// Pins or bookmarks in the bound scope changed. Live sessions with this
+// binding re-read their native snapshot; nothing else is revoked.
+- (BOOL)refreshOmniboxNativeDataForWindow:(int64_t)windowId
+                     expectedBindingToken:(NSString *)token
+    NS_SWIFT_NAME(refreshOmniboxNativeData(windowId:expectedBindingToken:));
+
+- (BOOL)createOmniboxEntityTabWithUrl:(NSString *)urlString
+                           windowId:(int64_t)windowId
+                         customGuid:(NSString * _Nullable)customGuid
+    NS_SWIFT_NAME(createOmniboxEntityTab(url:windowId:customGuid:));
+- (BOOL)activateOmniboxEntityTabWithId:(int64_t)tabId
+                            windowId:(int64_t)windowId
+                  expectedCustomGuid:(NSString *)customGuid
+    NS_SWIFT_NAME(activateOmniboxEntityTab(tabId:windowId:expectedCustomGuid:));
 
 - (void)createQuickLookupTabWithWindowId:(int64_t)windowId
                                customGuid:(NSString* _Nullable)customGuid;

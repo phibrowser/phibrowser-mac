@@ -10,6 +10,22 @@ import Combine
 
 @ModelActor
 actor LocalStoreActor {
+    private var omniboxMutationEpoch: UInt64 = 0
+
+    func beginOmniboxWriteJob() {
+        // Saturation disables future reads; never reuse an earlier authority.
+        if omniboxMutationEpoch < UInt64.max { omniboxMutationEpoch += 1 }
+    }
+
+    func readForOmnibox<Result: Sendable>(
+        _ block: (ModelContext, UInt64) throws -> Result
+    ) throws -> Result {
+        guard omniboxMutationEpoch < UInt64.max else {
+            throw OmniboxNativeQueryError.unavailable
+        }
+        return try block(modelContext, omniboxMutationEpoch)
+    }
+
     func perform(_ block: (ModelContext) -> Void) {
         block(modelContext)
         do {
@@ -40,6 +56,9 @@ actor LocalStoreActor {
 class LocalStore {
     /// Sent synchronously on the main actor before the terminal FIFO operation.
     static let willCloseNotification = Notification.Name("LocalStore.willClose")
+    /// Posted when a write is submitted; omnibox native snapshots re-read after it.
+    static let omniboxNativeDataWillChangeNotification =
+        Notification.Name("LocalStore.omniboxNativeDataWillChange")
     static let defaultProfileId = "Default"
     static let compatibilityConfiguration = LocalStoreCompatibilityConfiguration(
         currentStoreFormatVersion: 14,
@@ -72,6 +91,7 @@ class LocalStore {
     /// through this stream restores submit-order == apply-order, which every
     /// caller already assumes.
     private var writeJobContinuation: AsyncStream<() async -> Void>.Continuation?
+    private let omniboxReadAdmission = OmniboxReadAdmission()
     private(set) var compatibilityStatus: LocalStoreCompatibilityStatus = .notChecked
     /// In-memory count of pin scope migrations that changed the row scope; see `pinScopeGeneration`.
     let pinScopeGenerationCounter = PinScopeGenerationCounter()
@@ -629,17 +649,25 @@ extension LocalStore {
     
     func performBackgroundWrite(_ block: @escaping (ModelContext) -> Void) {
         guard let writeActor, let writeJobContinuation else { return }
+        postOmniboxNativeDataWillChange()
         writeJobContinuation.yield {
+            await writeActor.beginOmniboxWriteJob()
             await writeActor.perform(block)
         }
     }
 
+    private func postOmniboxNativeDataWillChange() {
+        NotificationCenter.default.post(name: Self.omniboxNativeDataWillChangeNotification, object: self)
+    }
+
     func performBackgroundWriteAndWait(_ block: @escaping (ModelContext) -> Void) async {
         guard let writeActor, let writeJobContinuation else { return }
+        postOmniboxNativeDataWillChange()
         // Enqueue through the same FIFO stream so ordering relative to async
         // writes is preserved, then await this job's completion.
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             writeJobContinuation.yield {
+                await writeActor.beginOmniboxWriteJob()
                 await writeActor.perform(block)
                 continuation.resume()
             }
@@ -652,8 +680,10 @@ extension LocalStore {
         guard let writeActor, let writeJobContinuation else {
             throw LocalStoreWriteError.storeUnavailable
         }
+        postOmniboxNativeDataWillChange()
         return try await withCheckedThrowingContinuation { continuation in
             writeJobContinuation.yield {
+                await writeActor.beginOmniboxWriteJob()
                 do {
                     let result = try await writeActor.performThrowing(block)
                     continuation.resume(returning: result)
@@ -675,8 +705,10 @@ extension LocalStore {
         guard let writeActor, let writeJobContinuation else {
             throw LocalStoreWriteError.storeUnavailable
         }
+        postOmniboxNativeDataWillChange()
         return try await withCheckedThrowingContinuation { continuation in
             writeJobContinuation.yield {
+                await writeActor.beginOmniboxWriteJob()
                 do {
                     try await precondition()
                     let result = try await writeActor.performThrowing(block)
@@ -685,6 +717,68 @@ extension LocalStore {
                     continuation.resume(throwing: error)
                 }
             }
+        }
+    }
+
+    @MainActor
+    func makeOmniboxQueryCoordinator<Value: Sendable>() -> OmniboxNativeQueryCoordinator<Value> {
+        OmniboxNativeQueryCoordinator(admission: omniboxReadAdmission) { [weak self] job in
+            self?.enqueueOmniboxJob(job) ?? false
+        }
+    }
+
+    @MainActor
+    private func enqueueOmniboxJob(_ job: @escaping @Sendable () async -> Void) -> Bool {
+        guard !omniboxReadAdmission.isClosed, let writeJobContinuation else { return false }
+        switch writeJobContinuation.yield(job) {
+        case .enqueued: return true
+        case .dropped, .terminated: return false
+        @unknown default: return false
+        }
+    }
+
+    // Only called inside the coordinator's admitted FIFO job. Unlike writer
+    // methods this neither saves the context nor advances the mutation epoch.
+    func readForOmnibox<Value: Sendable>(
+        _ block: @escaping (ModelContext, UInt64) throws -> Value
+    ) async throws -> Value {
+        guard !omniboxReadAdmission.isClosed, let writeActor else {
+            throw OmniboxNativeQueryError.unavailable
+        }
+        return try await writeActor.readForOmnibox(block)
+    }
+
+    @MainActor
+    func performOmniboxSelection<Value: Sendable, Result: Sendable>(
+        ticket: OmniboxQueryTicket,
+        validate: @escaping @Sendable (ModelContext, UInt64) throws -> Value,
+        dispatch: @escaping @MainActor @Sendable (Value) throws -> Result
+    ) async throws -> Result {
+        guard let writeActor, !omniboxReadAdmission.isClosed else {
+            throw OmniboxNativeQueryError.unavailable
+        }
+        let admission = omniboxReadAdmission
+        return try await withCheckedThrowingContinuation { continuation in
+            let accepted = enqueueOmniboxJob {
+                do {
+                    if let error = ticket.failure(atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds) {
+                        throw error
+                    }
+                    guard !admission.isClosed else { throw OmniboxNativeQueryError.unavailable }
+                    let value = try await writeActor.readForOmnibox(validate)
+                    let result = try await MainActor.run {
+                        if let error = ticket.failure(atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds) {
+                            throw error
+                        }
+                        guard !admission.isClosed else { throw OmniboxNativeQueryError.unavailable }
+                        return try dispatch(value)
+                    }
+                    continuation.resume(returning: result)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+            if !accepted { continuation.resume(throwing: OmniboxNativeQueryError.unavailable) }
         }
     }
 
@@ -703,12 +797,14 @@ extension LocalStore {
         }
 
         writeJobContinuation = nil
+        omniboxReadAdmission.close()
         NotificationCenter.default.post(name: Self.willCloseNotification, object: self)
         let result: Result
         do {
             result = try await withCheckedThrowingContinuation {
                 (resultContinuation: CheckedContinuation<Result, Error>) in
                 continuation.yield {
+                    await writeActor.beginOmniboxWriteJob()
                     do {
                         let value = try await writeActor.performThrowing(block)
                         resultContinuation.resume(returning: value)

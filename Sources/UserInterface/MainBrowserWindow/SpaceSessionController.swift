@@ -498,6 +498,7 @@ class SpaceSessionController: NSWindowController {
     /// retired through its Chromium window's close instead.
     func discardDormant() {
         guard isDormant else { return }
+        browserState.omniboxNativeSearchAdapter?.close(reason: "window_closed")
         pendingBrowserCalls.removeAll()
         leaveShell()
         removeMultiSelectionEscapeMonitor()
@@ -1267,6 +1268,7 @@ class SpaceSessionController: NSWindowController {
     /// switch's first frame.
     func concealFromShell(removingView: Bool = true, deferringChromium: Bool = false) {
         guard isHosted, isPresented else { return }
+        browserState.omniboxNativeSearchAdapter?.beginContextTransition(reason: "surface_hidden")
         isPresented = false
         if removingView {
             removeSessionViewFromShell(evictingSidebar: true)
@@ -1302,6 +1304,7 @@ class SpaceSessionController: NSWindowController {
     /// that is leaving the slot (closing in the background, dropped while
     /// dormant); a presented one goes through `concealFromShell()`.
     func leaveShell() {
+        browserState.omniboxNativeSearchAdapter?.beginContextTransition(reason: "surface_hidden")
         guard isHosted else { return }
         if isPresented {
             concealFromShell()
@@ -1370,6 +1373,7 @@ class SpaceSessionController: NSWindowController {
     /// use this rather than `window?.close()`, which in hosted mode would
     /// close the whole shell.
     func closeChromiumWindow() {
+        browserState.omniboxNativeSearchAdapter?.close(reason: "window_closed")
         lifecycleWindow?.close()
     }
 
@@ -1534,6 +1538,7 @@ class SpaceSessionController: NSWindowController {
     }
 
     @objc private func myWindowWillClose(_ notification: Notification) {
+        browserState.omniboxNativeSearchAdapter?.close(reason: "window_closed")
         // Before the Library leaves: its Folio pane closes the pane tab when
         // it leaves its window, and the tab is torn down with the strip.
         browserState.teardownLibraryPaneForWindowClose()

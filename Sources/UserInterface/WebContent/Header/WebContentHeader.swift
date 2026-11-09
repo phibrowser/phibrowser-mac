@@ -378,6 +378,14 @@ class WebContentHeader: NSView {
             }
             .store(in: &cancellables)
 
+        owningBrowserState?.$pendingSplitPreview
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updatePageColor()
+            }
+            .store(in: &cancellables)
+
         state.loadingProgress = 0
         state.isLoading = false
         state.isProgressVisible = false
@@ -511,7 +519,11 @@ class WebContentHeader: NSView {
         let theme = provider.currentTheme
         let fallbackAppearance = provider.currentAppearance
         let fallback = theme.extensionSurfaceBackground(for: fallbackAppearance)
-        let tab = currentTab
+        // The blank split pane has no page color while its URL is being chosen.
+        let isSplitPreview = currentTab.map {
+            owningBrowserState?.pendingSplitPreview?.partnerTabId == $0.guid
+        } ?? false
+        let tab = isSplitPreview ? nil : currentTab
         let canApplyPageStyle = tab?.hasWebContent == true
             && tab?.crashState == nil
             && !BookmarkManagerRoute.matches(tab?.url)

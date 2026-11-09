@@ -1706,23 +1706,24 @@ extension BrowserState {
     }
 
     /// Tab menu / shortcut "Split with New Tab": keeps the focused tab on the
-    /// left. Under the New Tab Page behavior the right pane is a new-tab page;
+    /// left by default. The requested new pane is a new-tab page under that behavior;
     /// under Omnibox it is previewed blank and the omnibox's submission
     /// becomes the pane (`commitSplitPreview`). A focused pane of a split
     /// gets a new-tab page as the pane right after it (no omnibox preview:
     /// the preview host shows a pair).
     @discardableResult
-    func splitFocusedTabWithNewTab() -> Bool {
+    func splitFocusedTabWithNewTab(newTabSlot: SplitSlot = .right,
+                                   layout: SplitLayout = .vertical) -> Bool {
         guard canSplitFocusedTabWithNewTab, let tab = focusingTab else { return false }
         if let group = splitGroup(forTabId: tab.guid), let slot = group.slot(of: tab.guid) {
             return openNewTabIntoSplit(splitId: group.id, slot: slot + 1, navigateURL: nil)
         }
         if PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.loadValue() {
             makeTabNormalOpened(tabId: tab.guid)
-            return openNewTabAsSplit(partnerTabId: tab.guid)
+            return openNewTabAsSplit(partnerTabId: tab.guid, newTabSlot: newTabSlot, layout: layout)
         }
         guard let windowController else { return false }
-        pendingSplitPreview = PendingSplitPreview(partnerTabId: tab.guid)
+        pendingSplitPreview = PendingSplitPreview(partnerTabId: tab.guid, newTabSlot: newTabSlot, layout: layout)
         // Next turn, after the page container has mounted the preview.
         DispatchQueue.main.async { [weak self, weak windowController] in
             guard self?.pendingSplitPreview?.isCommitted == false else { return }
@@ -1740,7 +1741,8 @@ extension BrowserState {
         // Keep the bookmark binding while previewing; release it only on submission.
         makeTabNormalOpened(tabId: preview.partnerTabId)
         guard openNewTabAsSplit(partnerTabId: preview.partnerTabId,
-                                partnerNavigateURL: url) else {
+                                newTabSlot: preview.newTabSlot,
+                                partnerNavigateURL: url, layout: preview.layout) else {
             pendingSplitPreview = nil
             return false
         }
@@ -1759,8 +1761,10 @@ extension BrowserState {
               }) else { return false }
         makeTabNormalOpened(tabId: match.guid)
         makeTabNormalOpened(tabId: preview.partnerTabId)
-        guard createSplit(leftTabId: preview.partnerTabId, rightTabId: match.guid,
-                          layout: .vertical) != nil else { return false }
+        let newTabIsPrimary = preview.newTabSlot == .left
+        guard createSplit(leftTabId: newTabIsPrimary ? match.guid : preview.partnerTabId,
+                          rightTabId: newTabIsPrimary ? preview.partnerTabId : match.guid,
+                          layout: preview.layout) != nil else { return false }
         preview.isCommitted = true
         pendingSplitPreview = preview
         expireCommittedSplitPreview(preview)
@@ -2322,6 +2326,8 @@ enum SplitSlot {
 struct PendingSplitPreview: Equatable {
     /// The focused tab shown beside the blank pane.
     let partnerTabId: Int
+    var newTabSlot: SplitSlot = .right
+    var layout: SplitLayout = .vertical
     /// The omnibox submitted; the real split is on its way.
     var isCommitted = false
 }

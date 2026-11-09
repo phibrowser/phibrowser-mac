@@ -8,6 +8,9 @@ import Combine
 
 /// Window-scoped browser state for tabs, layout, and sidebar UI.
 class BrowserState {
+    // Optional ownership prevents lifecycle revocation from opening a lazy
+    // store or constructing an adapter in unsupported windows.
+    var omniboxNativeSearchAdapter: OmniboxNativeSearchAdapter?
     enum AIChatSidebarOpenTrigger: String {
         case button
         case shortcut
@@ -204,7 +207,13 @@ class BrowserState {
     /// `openNewTabAsSplit` arrives from Chromium, it is paired with the
     /// stored partner into a vertical split; the slot field decides which
     /// side the *new* tab takes (the partner takes the other slot).
-    var pendingSplitPartnerByCustomGuid: [String: PendingSplitPartner] = [:]
+    var pendingSplitPartnerByCustomGuid: [String: PendingSplitPartner] = [:] {
+        willSet {
+            MainActor.assumeIsolated {
+                omniboxNativeSearchAdapter?.beginContextTransition(reason: "context_changed")
+            }
+        }
+    }
 
     /// Tabs `openNewTabAsSplit` focuses before their split exists, from
     /// their arrival until Chromium's split echo reaches `splits`
@@ -784,6 +793,12 @@ class BrowserState {
     // subject carries no sidebar value and does not retain the controller.
     private let windowControllerChanges = PassthroughSubject<Void, Never>()
     weak var windowController: SpaceSessionController? {
+        willSet {
+            guard windowController !== newValue else { return }
+            MainActor.assumeIsolated {
+                omniboxNativeSearchAdapter?.beginContextTransition(reason: "context_changed")
+            }
+        }
         didSet { windowControllerChanges.send(()) }
     }
     

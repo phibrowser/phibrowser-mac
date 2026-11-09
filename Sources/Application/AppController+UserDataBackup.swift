@@ -32,6 +32,11 @@ private final class PhiUserDataExportSelectionBox {
 }
 
 extension AppController {
+    private struct PhiUserDataDirectoryRecoveryFailure: LocalizedError {
+        let underlying: Error
+        var errorDescription: String? { underlying.localizedDescription }
+    }
+
     private enum PhiUserDataBackupPromptResult {
         case cancel
         case skipBackup
@@ -97,11 +102,13 @@ extension AppController {
             // Passwords auto-install (PhiICloudPasswordsExternalLoader). Defer
             // clears it on every exit.
             PhiChromiumCoordinator.shared.isBackupImportInProgress = true
+            SpaceSessionControllersManager.shared.revokeOmniboxContexts(reason: "store_closed")
             Self.createMissingChromiumProfiles(
                 for: staging.referencedProfileIds,
                 displayNames: staging.profileDisplayNames
             ) { [weak self] result in
                 guard let self else {
+                    PhiChromiumCoordinator.shared.isBackupImportInProgress = false
                     staging.cleanup()
                     return
                 }
@@ -118,11 +125,15 @@ extension AppController {
                     } catch {
                         Self.rollbackCreatedChromiumProfiles(repairResult.createdProfileIds) {
                             staging.cleanup()
+                            if !(error is PhiUserDataDirectoryRecoveryFailure) {
+                                PhiChromiumCoordinator.shared.isBackupImportInProgress = false
+                            }
                             self.presentPhiUserDataImportFailure(error)
                         }
                     }
                 case .failure(let error):
                     staging.cleanup()
+                    PhiChromiumCoordinator.shared.isBackupImportInProgress = false
                     presentPhiUserDataImportFailure(error)
                 }
             }
@@ -866,13 +877,18 @@ extension AppController {
             }
         } catch {
             try? fm.removeItem(at: preparedPhiURL)
+            var originalDirectoryRestored = !movedExistingPhi
             if movedExistingPhi, !fm.fileExists(atPath: phiURL.path), fm.fileExists(atPath: previousPhiURL.path) {
                 do {
                     try fm.moveItem(at: previousPhiURL, to: phiURL)
+                    originalDirectoryRestored = true
                     AppLogInfo("[Debug] Phi user data import restored previous Phi data directory after replace failure")
                 } catch {
                     AppLogWarn("[Debug] Phi user data import failed to restore previous Phi data directory: \(error.localizedDescription)")
                 }
+            }
+            guard originalDirectoryRestored else {
+                throw PhiUserDataDirectoryRecoveryFailure(underlying: error)
             }
             throw error
         }

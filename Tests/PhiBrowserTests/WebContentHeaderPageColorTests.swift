@@ -23,6 +23,39 @@ final class WebContentHeaderPageColorTests: XCTestCase {
         try await super.tearDown()
     }
 
+    func testSplitPreviewClearsAddressAndPageColorUntilItEnds() throws {
+        let state = try makeState()
+        let (tab, wrapper) = makeTab(color: .black)
+        let header = WebContentHeader(browserState: state)
+        header.currentTab = tab
+        let address = WebContentAddressBarViewModel(browserState: state, currentTab: tab)
+        drainPageColorUpdates()
+        XCTAssertFalse(address.displayText.isEmpty)
+        assertBackground(header, .black)
+
+        state.pendingSplitPreview = PendingSplitPreview(partnerTabId: tab.guid)
+        drainPageColorUpdates()
+        XCTAssertEqual(address.displayText, "")
+        assertBackground(header, fallback(state))
+        XCTAssertNil(header.pageColorPresentation.appearance)
+
+        wrapper.urlString = "https://changed.example"
+        wrapper.pageColor = .red
+        drainPageColorUpdates()
+        XCTAssertEqual(address.displayText, "")
+        assertBackground(header, fallback(state))
+
+        state.pendingSplitPreview?.isCommitted = true
+        drainPageColorUpdates()
+        XCTAssertEqual(address.displayText, "")
+        assertBackground(header, fallback(state))
+
+        state.pendingSplitPreview = nil
+        drainPageColorUpdates()
+        XCTAssertFalse(address.displayText.isEmpty)
+        assertBackground(header, .red)
+    }
+
     func testDarkPageChangesParentAndDescendantAppearanceOnly() throws {
         let state = try makeState()
         let (tab, _) = makeTab(color: .black)

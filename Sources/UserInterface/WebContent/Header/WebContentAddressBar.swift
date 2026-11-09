@@ -34,12 +34,12 @@ final class WebContentAddressBarViewModel: ObservableObject {
         // shell sets currentTab=nil.
         if let browserState {
             browserState.$isInPlaceholderMode
-                .removeDuplicates()
+                .combineLatest(browserState.$pendingSplitPreview)
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self] isPlaceholder in
+                .sink { [weak self] isPlaceholder, preview in
                     guard let self else { return }
                     self.isInPlaceholderMode = isPlaceholder
-                    if isPlaceholder {
+                    if isPlaceholder || (preview != nil && preview?.partnerTabId == currentTab?.guid) {
                         self.displayText = ""
                     } else if let url = currentTab?.url {
                         let alwaysShowURLPath = PhiPreferences.GeneralSettings.alwaysShowURLPath.loadValue()
@@ -99,6 +99,11 @@ final class WebContentAddressBarViewModel: ObservableObject {
                 // Skip writes during placeholder mode so the placeholder sink
                 // (which blanks displayText) is not raced by a stale URL update.
                 guard self?.browserState?.isInPlaceholderMode != true else { return }
+                if let preview = self?.browserState?.pendingSplitPreview,
+                   preview.partnerTabId == tab.guid {
+                    self?.displayText = ""
+                    return
+                }
                 self?.displayText = text
             }
             .store(in: &cancellables)

@@ -665,8 +665,17 @@ final class SpaceManager: ObservableObject {
     }
 
     private func suspendStoreBinding() {
-        discardSpacePrewarm()
+        if !Thread.isMainThread {
+            DispatchQueue.main.sync { self.suspendStoreBinding() }
+            return
+        }
         isStoreBindingSuspended = true
+        if let account = boundAccount {
+            MainActor.assumeIsolated {
+                SpaceSessionControllersManager.shared.revokeOmniboxContexts(reason: "context_changed", account: account)
+            }
+        }
+        discardSpacePrewarm()
         storeBindingGeneration = UUID()
         spacesCancellable?.cancel()
         spacesCancellable = nil

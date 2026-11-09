@@ -74,6 +74,19 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
         }
     }
     private var windowControllers: Set<SpaceSessionController> = []
+
+    @MainActor
+    func revokeOmniboxContexts(reason: String, account: Account? = nil, permanently: Bool = false) {
+        // Snapshot ownership before callbacks can rebind or close a window.
+        let adapters = windowControllers.compactMap { controller -> OmniboxNativeSearchAdapter? in
+            guard account == nil || controller.account === account else { return nil }
+            return controller.browserState.omniboxNativeSearchAdapter
+        }
+        for adapter in adapters {
+            if permanently { adapter.close(reason: reason) }
+            else { adapter.beginContextTransition(reason: reason) }
+        }
+    }
     
     /// Windows waiting to be converted to SpaceSessionController.
     private(set) var danglingWindows: [DanglingWindow] = []
@@ -545,6 +558,7 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
         assert(Thread.isMainThread)
         guard blocked != isGuestTransitionInteractionBlocked else { return }
         isGuestTransitionInteractionBlocked = blocked
+        if blocked { revokeOmniboxContexts(reason: "context_changed") }
 
         let windows = trackedWindows()
         if blocked {
@@ -680,6 +694,7 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
         to account: Account,
         migrationReceipt: GuestDataMigrationReceipt?
     ) {
+        oldController.browserState.omniboxNativeSearchAdapter?.close(reason: "context_changed")
         guard let window = oldController.window else {
             windowControllers.remove(oldController)
             if activeWindowController === oldController {

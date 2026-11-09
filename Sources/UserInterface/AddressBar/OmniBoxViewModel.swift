@@ -51,6 +51,11 @@ class OmniBoxViewModel: ObservableObject {
     private var targetsPresentedPeek = false
     private var openedFromGroupOverview = false
     private(set) var openTraceSession: OmniBoxTraceSession?
+    /// When set, a submission is not opened in this window: it resolves to
+    /// its destination URL and is handed here instead. The Kiosk launcher
+    /// uses it to open the chosen page in a Kiosk that does not exist yet.
+    /// Kept across `reset()`; the owner clears it when its session ends.
+    var submissionURLHandler: ((String) -> Void)?
 
     /// Picking the pane of `BrowserState.pendingSplitPreview`.
     var isChoosingSplitPane: Bool {
@@ -413,6 +418,14 @@ class OmniBoxViewModel: ObservableObject {
     }
 
     private func selectSuggestion(_ suggestion: OmniBoxSuggestion, commandKeyPressed: Bool) {
+        if let submissionURLHandler {
+            let url = suggestion.url.isEmpty
+                ? URLProcessor.processUserInput(state.inputText) : suggestion.url
+            AppLogDebug("omni: handing off suggestion line \(suggestion.index): \(url)")
+            submissionURLHandler(url)
+            finishNavigationAction()
+            return
+        }
         // Chromium would open the match in a tab of its own; the previewed
         // split pane needs the destination instead.
         if isChoosingSplitPane {
@@ -470,7 +483,9 @@ class OmniBoxViewModel: ObservableObject {
     
     private func openURL(_ url: String, switchToTab: Bool = false, commandKeyPressed: Bool = false) {
         AppLogDebug("omni: open url: \(url)")
-        if shouldCreateInGroupOverview {
+        if let submissionURLHandler {
+            submissionURLHandler(url)
+        } else if shouldCreateInGroupOverview {
             Task { @MainActor [browserState] in
                 browserState.createTabInCurrentOverviewGroup(url: url)
             }

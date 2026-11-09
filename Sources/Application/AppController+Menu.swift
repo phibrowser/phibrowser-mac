@@ -2894,20 +2894,202 @@ extension AppController {
         }
     }
 
-    /// Opens about:blank in a Kiosk that inherits the focused window's exact
-    /// profile, then presents the native omnibox once AppKit leaves menu
-    /// tracking. With no browser window open, Chromium's last-used profile is
-    /// used instead, matching the windowless New Window commands.
+    /// Asks for the new Kiosk's URL first and creates the Kiosk only once one
+    /// is picked (`presentNewKioskOmniBox`). The Kiosk inherits the focused
+    /// window's exact profile; with no browser window open, Chromium's
+    /// last-used profile is used instead, matching the windowless New Window
+    /// commands.
     @objc func newKioskWindowFromMenu(_ sender: Any?) {
         MainActor.assumeIsolated {
-            openNewKioskWindow(bringToFront: false)
+            presentNewKioskOmniBox(bringToFront: false)
         }
     }
 
     func newKioskWindowFromGlobalShortcut() {
         MainActor.assumeIsolated {
-            openNewKioskWindow(bringToFront: true)
+            presentNewKioskOmniBox(bringToFront: true)
         }
+    }
+
+    /// The empty New Kiosk commands: shows the omnibox before any Kiosk
+    /// exists, then opens the submitted URL through `openNewKioskWindow`.
+    /// A main browser window on screen is activated and hosts the omnibox;
+    /// without one (closed, hidden, or miniaturized), a standalone panel
+    /// does, so no browser window is revealed just to ask. Dismissing the
+    /// omnibox opens nothing. Issuing the command again while its omnibox is
+    /// up dismisses it, like Cmd+T.
+    @MainActor
+    func presentNewKioskOmniBox(bringToFront: Bool) {
+        if let panel = kioskLaunchOmniBoxPanel, !panel.isFinished {
+            panel.dismiss()
+            return
+        }
+        kioskLaunchOmniBoxPanel = nil
+        let manager = SpaceSessionControllersManager.shared
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge,
+              canOpenNewKioskWindow(manager: manager, bridgeAvailable: true) else {
+            return
+        }
+        // Resolved now: a keyboard shortcut places the omnibox (and the
+        // Kiosk after it) on the focused window's screen, which a deferred
+        // turn no longer knows.
+        let screen = KioskBrowserWindowController.presentationScreen()
+        // One turn later, once AppKit has left menu tracking.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.kioskLaunchOmniBoxPanel == nil,
+                  self.canOpenNewKioskWindow(manager: manager, bridgeAvailable: true) else {
+                return
+            }
+            switch KioskLaunchOmniBoxRouting.target(
+                windowsFrontToBack: Self.kioskLaunchRoutingWindows(manager: manager),
+                activeWindowId: manager.activeWindowController?.windowId,
+                applicationIsHidden: NSApp.isHidden
+            ) {
+            case .browserWindow(let windowId):
+                if let controller = manager.controller(for: windowId),
+                   let window = controller.window {
+                    AppLogDebug("[KioskLaunch] omnibox in browser window \(windowId)")
+                    NSApp.activate(ignoringOtherApps: true)
+                    window.makeKeyAndOrderFront(nil)
+                    controller.presentOmniBoxForKioskLaunch(
+                        onSubmit: { [weak self] url in
+                            self?.openNewKioskWindow(url: url, bringToFront: bringToFront)
+                        },
+                        onDismissWithoutSubmission: {
+                            AppLogDebug("[KioskLaunch] dismissed without a URL")
+                        }
+                    )
+                    return
+                }
+                self.presentStandaloneKioskLaunchOmniBox(
+                    bringToFront: bringToFront, screen: screen, bridge: bridge, manager: manager)
+            case .standalone:
+                self.presentStandaloneKioskLaunchOmniBox(
+                    bringToFront: bringToFront, screen: screen, bridge: bridge, manager: manager)
+            }
+        }
+    }
+
+    @MainActor
+    private static func kioskLaunchRoutingWindows(
+        manager: SpaceSessionControllersManager
+    ) -> [KioskLaunchOmniBoxRouting.Window] {
+        var seen = Set<Int>()
+        return NSApp.orderedWindows.compactMap { window in
+            guard let controller = manager.findControllerWith(window: window),
+                  !controller.isDormant,
+                  seen.insert(controller.windowId).inserted else { return nil }
+            return KioskLaunchOmniBoxRouting.Window(
+                windowId: controller.windowId,
+                isMainBrowserWindow: !(controller is KioskBrowserWindowController)
+                    && KioskLaunchOmniBoxRouting.isMainBrowserWindowType(controller.browserType),
+                isOnScreen: controller.isPresentedOrLegacy
+                    && window.isVisible && !window.isMiniaturized,
+                isOnActiveSpace: window.isOnActiveSpace
+            )
+        }
+    }
+
+    /// The omnibox needs a Browser for Chromium's suggestions. The active one
+    /// serves when it exists — off screen or not, it is also the source the
+    /// Kiosk inherits its profile from. With no Browser at all, a hidden,
+    /// tabless Kiosk Browser stands in for the omnibox alone; it is never
+    /// shown and closes with the panel, and the real Kiosk opens through the
+    /// ordinary path in the host's profile.
+    @MainActor
+    private func presentStandaloneKioskLaunchOmniBox(
+        bringToFront: Bool,
+        screen: NSScreen?,
+        bridge: PhiChromiumBridgeProtocol,
+        manager: SpaceSessionControllersManager
+    ) {
+        let host: SpaceSessionController
+        let ownsHost: Bool
+        if let active = manager.activeWindowController, !active.isDormant {
+            host = active
+            ownsHost = false
+        } else if let created = createKioskLaunchOmniBoxHost(bridge: bridge, manager: manager) {
+            host = created
+            ownsHost = true
+        } else {
+            return
+        }
+        let hostWindowId = host.windowId
+        let profileId = ownsHost ? host.profileId : nil
+        AppLogDebug(
+            "[KioskLaunch] standalone omnibox host=\(hostWindowId) ownsHost=\(ownsHost)"
+        )
+        let panel = KioskLaunchOmniBoxPanelController(
+            browserState: host.browserState,
+            hostWindow: host.lifecycleWindow
+        ) { [weak self] url in
+            guard let self else { return }
+            self.kioskLaunchOmniBoxPanel = nil
+            if let url {
+                self.openNewKioskWindow(url: url, bringToFront: bringToFront, profileId: profileId)
+            } else {
+                AppLogDebug("[KioskLaunch] dismissed without a URL")
+            }
+            if ownsHost, manager.controller(for: hostWindowId) != nil {
+                bridge.executeCommand(
+                    Int32(CommandWrapper.IDC_CLOSE_WINDOW.rawValue),
+                    windowId: Int64(hostWindowId)
+                )
+            }
+        }
+        kioskLaunchOmniBoxPanel = panel
+        panel.present(on: screen)
+    }
+
+    @MainActor
+    private func createKioskLaunchOmniBoxHost(
+        bridge: PhiChromiumBridgeProtocol,
+        manager: SpaceSessionControllersManager
+    ) -> KioskBrowserWindowController? {
+        guard let result = bridge.createBrowser(
+            withWindowType: .kiosk,
+            profileId: nil,
+            hidden: true
+        ), let windowId = (result["windowId"] as? NSNumber)?.intValue else {
+            AppLogWarn("[KioskLaunch] could not create the omnibox host Browser")
+            return nil
+        }
+        guard let controller = manager.controller(for: windowId)
+                as? KioskBrowserWindowController else {
+            AppLogWarn("[KioskLaunch] omnibox host Browser was not registered")
+            bridge.executeCommand(
+                Int32(CommandWrapper.IDC_CLOSE_WINDOW.rawValue),
+                windowId: Int64(windowId)
+            )
+            return nil
+        }
+        return controller
+    }
+
+    /// Whether a Kiosk could open now; shared by the open itself and the
+    /// omnibox that precedes an empty one.
+    @MainActor
+    private func canOpenNewKioskWindow(
+        manager: SpaceSessionControllersManager,
+        bridgeAvailable: Bool
+    ) -> Bool {
+        guard ApplicationState.shared.canOpenExternalLinksInKiosk,
+              !manager.isGuestTransitionInteractionBlocked,
+              bridgeAvailable else {
+            AppLogDebug(
+                "[ExternalKioskRouting] openNewKioskWindow rejected by precondition"
+            )
+            return false
+        }
+        if manager.activeWindowController == nil,
+           SpaceManager.shared.isSessionRestoreInFlight {
+            AppLogDebug(
+                "[ExternalKioskRouting] openNewKioskWindow rejected because "
+                    + "session restore is in flight without an active window"
+            )
+            return false
+        }
+        return true
     }
 
     @MainActor
@@ -2930,20 +3112,8 @@ extension AppController {
                 + "guestTransitionBlocked=\(manager.isGuestTransitionInteractionBlocked) "
                 + "bridgeAvailable=\(bridge != nil)"
         )
-        guard ApplicationState.shared.canOpenExternalLinksInKiosk,
-              !manager.isGuestTransitionInteractionBlocked,
+        guard canOpenNewKioskWindow(manager: manager, bridgeAvailable: bridge != nil),
               let bridge else {
-            AppLogDebug(
-                "[ExternalKioskRouting] openNewKioskWindow rejected by precondition"
-            )
-            return false
-        }
-        if manager.activeWindowController == nil,
-           SpaceManager.shared.isSessionRestoreInFlight {
-            AppLogDebug(
-                "[ExternalKioskRouting] openNewKioskWindow rejected because "
-                    + "session restore is in flight without an active window"
-            )
             return false
         }
 
@@ -2995,6 +3165,8 @@ extension AppController {
             if bringToFront, let window = kioskController.window {
                 Self.bringKioskWindowToFront(window)
             }
+            // Only a script's URL-less `new kiosk window` still opens blank;
+            // the New Kiosk commands ask first (`presentNewKioskOmniBox`).
             if url == "about:blank" {
                 kioskController.presentOmniBoxCentered()
             }

@@ -941,7 +941,7 @@ final class KioskBrowserWindowController: SpaceSessionController {
     /// A keyboard shortcut opens on the focused window's screen. Anything
     /// else follows the cursor: an external link activates Phi first, so the
     /// key window is just whichever Phi window was last focused.
-    private static func presentationScreen() -> NSScreen? {
+    static func presentationScreen() -> NSScreen? {
         if NSApp.currentEvent?.type == .keyDown,
            let keyWindowScreen = NSApp.keyWindow?.screen {
             return keyWindowScreen

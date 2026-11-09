@@ -323,6 +323,18 @@ class OmniBoxViewController: NSViewController {
         return true
     }
     
+    /// Routes submissions to `handler` instead of this window (see
+    /// `OmniBoxViewModel.submissionURLHandler`); nil restores normal opens.
+    /// A handed-off submission never switches to an open tab, so the hint
+    /// that promises it is hidden meanwhile.
+    func setSubmissionURLHandler(_ handler: ((String) -> Void)?) {
+        viewModel.submissionURLHandler = handler
+        suggestionView.showsSwitchToTabHint = showsSwitchToTabHint && handler == nil
+    }
+
+    var isHandingOffSubmissions: Bool { viewModel.submissionURLHandler != nil }
+    var showsSwitchToTabHintInSuggestionsForTesting: Bool { suggestionView.showsSwitchToTabHint }
+
     func setActionDelegate(_ delegate: OmniBoxActionDelegate) {
         self.actionDelegate = delegate
         viewModel.delegate = delegate

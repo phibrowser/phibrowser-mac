@@ -41,7 +41,9 @@ final class OmniBoxContainerViewController: NSViewController {
     private var cancellables = Set<AnyCancellable>()
     
     private let omniBoxWidth: CGFloat = 520
-    private let maxOmniBoxHeight: CGFloat = 284 // 57 (base) + 226 (max suggestions) + 1 (separator)
+    /// 57 (base) + 226 (max suggestions) + 1 (separator).
+    static let maxOmniBoxHeight: CGFloat = 284
+    private var maxOmniBoxHeight: CGFloat { Self.maxOmniBoxHeight }
     private let collapsedOmniBoxHeight: CGFloat = 52 // base 52 + separator 1
     private let centeredHorizontalInset: CGFloat
     private weak var parentView: EventBlockBgView?
@@ -55,6 +57,18 @@ final class OmniBoxContainerViewController: NSViewController {
     private var keyboardMonitor: Any?
     private weak var escapeDismissalPanel: NSWindow?
     private weak var escapeDismissalWindow: NSWindow?
+    /// The open session whose submission is handed off rather than opened
+    /// here (`handOffNextSubmission`). Ends with the omnibox's next hide.
+    private var submissionHandoff: SubmissionHandoff?
+
+    private struct SubmissionHandoff {
+        let onSubmit: (String) -> Void
+        let onDismissWithoutSubmission: () -> Void
+        var submittedURL: String?
+    }
+
+    /// Whether the omnibox currently up hands its submission off.
+    var isHandingOffSubmission: Bool { submissionHandoff != nil }
 
     var isAnchoredToAddressBarForTesting: Bool {
         showFromAddressBar && addressView != nil
@@ -282,6 +296,37 @@ final class OmniBoxContainerViewController: NSViewController {
         showOmniBox(fromAddressBar: false)
     }
 
+    /// Makes the omnibox session that is up (or about to open) a URL picker:
+    /// its submission is not opened in this window but handed to `onSubmit`
+    /// as a destination URL once the omnibox hides. Any other way the
+    /// omnibox goes away — Escape, a click outside, Cmd+W, a focus change, a
+    /// toggle — calls `onDismissWithoutSubmission` instead. Exactly one of
+    /// the two runs, after which the omnibox opens normally again.
+    func handOffNextSubmission(
+        onSubmit: @escaping (String) -> Void,
+        onDismissWithoutSubmission: @escaping () -> Void
+    ) {
+        finishSubmissionHandoff()
+        submissionHandoff = SubmissionHandoff(
+            onSubmit: onSubmit,
+            onDismissWithoutSubmission: onDismissWithoutSubmission
+        )
+        omniBoxController?.setSubmissionURLHandler { [weak self] url in
+            self?.submissionHandoff?.submittedURL = url
+        }
+    }
+
+    private func finishSubmissionHandoff() {
+        guard let handoff = submissionHandoff else { return }
+        submissionHandoff = nil
+        omniBoxController?.setSubmissionURLHandler(nil)
+        if let url = handoff.submittedURL {
+            handoff.onSubmit(url)
+        } else {
+            handoff.onDismissWithoutSubmission()
+        }
+    }
+
     func hideOmniBox(fromAddressBar: Bool = false) {
         // At hide START, not completion: the overlay is on its way out, and
         // anything that deferred to it may take key back behind the fade.
@@ -289,6 +334,7 @@ final class OmniBoxContainerViewController: NSViewController {
                                         object: view.window?.parent ?? view.window,
                                         userInfo: ["visible": false, "surface": "omnibox",
                                                    "windowId": browserState?.windowId as Any])
+        defer { finishSubmissionHandoff() }
         focusingTabObserver = nil
         browserState?.endSplitPreview()
         guard animationOn else {
@@ -729,6 +775,7 @@ final class OmniBoxContainerViewController: NSViewController {
     }
     
     deinit {
+        finishSubmissionHandoff()
         if let keyboardMonitor {
             NSEvent.removeMonitor(keyboardMonitor)
         }

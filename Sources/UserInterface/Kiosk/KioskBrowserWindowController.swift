@@ -143,176 +143,6 @@ enum KioskWindowPresentationGeometry {
     }
 }
 
-@MainActor
-final class KioskTrafficLightPositioner: NSObject {
-    private static let buttonTypes: [NSWindow.ButtonType] = [
-        .closeButton,
-        .miniaturizeButton,
-        .zoomButton,
-    ]
-
-    private weak var window: NSWindow?
-    private weak var observedTitlebarContainer: NSView?
-    private var observedTrafficLightButtons: [NSButton] = []
-    private var titleObservation: NSKeyValueObservation?
-    private let downwardOffset: CGFloat
-    private var targetTopMargin: CGFloat?
-    private var isApplying = false
-
-    init(window: NSWindow, downwardOffset: CGFloat) {
-        self.window = window
-        self.downwardOffset = downwardOffset
-        super.init()
-    }
-
-    func start() {
-        guard let window else { return }
-        window.layoutIfNeeded()
-        let notifications: [Notification.Name] = [
-            NSWindow.didBecomeKeyNotification,
-            NSWindow.didChangeOcclusionStateNotification,
-            NSWindow.didDeminiaturizeNotification,
-            NSWindow.didExitFullScreenNotification,
-            NSWindow.didResizeNotification,
-        ]
-        for notification in notifications {
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(windowLayoutDidChange),
-                name: notification,
-                object: window
-            )
-        }
-        titleObservation = window.observe(\.title, options: [.new]) {
-            [weak self] _, _ in
-            MainActor.assumeIsolated {
-                self?.apply()
-            }
-        }
-        apply()
-        DispatchQueue.main.async { [weak self] in
-            self?.apply()
-        }
-    }
-
-    func apply() {
-        guard !isApplying,
-              let window,
-              !window.styleMask.contains(.fullScreen) else { return }
-        let buttons = Self.buttonTypes.compactMap {
-            window.standardWindowButton($0)
-        }
-        guard buttons.count == Self.buttonTypes.count,
-              let closeButton = buttons.first,
-              let closeButtonSuperview = closeButton.superview,
-              let titlebarContainer = closeButton.superview?.superview,
-              let containerSuperview = titlebarContainer.superview else {
-            return
-        }
-        observeFrameChanges(
-            of: titlebarContainer,
-            trafficLightButtons: buttons
-        )
-        isApplying = true
-        defer { isApplying = false }
-
-        let buttonHeight = closeButton.frame.height
-        if targetTopMargin == nil {
-            let closeFrameInContainer = closeButtonSuperview.convert(
-                closeButton.frame,
-                to: titlebarContainer
-            )
-            let currentTopMargin = titlebarContainer.bounds.maxY
-                - closeFrameInContainer.maxY
-            targetTopMargin = max(0, currentTopMargin + downwardOffset)
-        }
-        guard let targetTopMargin else { return }
-
-        var containerFrame = titlebarContainer.frame
-        containerFrame.size.height = buttonHeight + 2 * targetTopMargin
-        containerFrame.origin.y = containerSuperview.bounds.maxY
-            - containerFrame.height
-        titlebarContainer.setFrameOrigin(containerFrame.origin)
-        titlebarContainer.setFrameSize(containerFrame.size)
-
-        for button in buttons {
-            guard let buttonSuperview = button.superview else { continue }
-            let frameInContainer = buttonSuperview.convert(
-                button.frame,
-                to: titlebarContainer
-            )
-            let targetOriginInContainer = NSPoint(
-                x: frameInContainer.minX,
-                y: titlebarContainer.bounds.minY + targetTopMargin
-            )
-            button.setFrameOrigin(
-                buttonSuperview.convert(
-                    targetOriginInContainer,
-                    from: titlebarContainer
-                )
-            )
-            button.updateTrackingAreas()
-        }
-        titlebarContainer.updateTrackingAreas()
-    }
-
-    @objc private func windowLayoutDidChange(_ notification: Notification) {
-        apply()
-    }
-
-    @objc private func nativeTitlebarFrameDidChange(
-        _ notification: Notification
-    ) {
-        apply()
-    }
-
-    private func observeFrameChanges(
-        of titlebarContainer: NSView,
-        trafficLightButtons: [NSButton]
-    ) {
-        let hierarchyChanged = observedTitlebarContainer !== titlebarContainer
-            || observedTrafficLightButtons.count != trafficLightButtons.count
-            || !zip(observedTrafficLightButtons, trafficLightButtons)
-                .allSatisfy { $0 === $1 }
-        guard hierarchyChanged else { return }
-
-        if let observedTitlebarContainer {
-            NotificationCenter.default.removeObserver(
-                self,
-                name: NSView.frameDidChangeNotification,
-                object: observedTitlebarContainer
-            )
-        }
-        for button in observedTrafficLightButtons {
-            NotificationCenter.default.removeObserver(
-                self,
-                name: NSView.frameDidChangeNotification,
-                object: button
-            )
-        }
-        observedTitlebarContainer = titlebarContainer
-        observedTrafficLightButtons = trafficLightButtons
-
-        // AppKit restores these frames during live resize and navigation.
-        // Reapply synchronously so its default position is never presented.
-        let observedViews = [titlebarContainer]
-            + trafficLightButtons.map { $0 as NSView }
-        for view in observedViews {
-            view.postsFrameChangedNotifications = true
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(nativeTitlebarFrameDidChange),
-                name: NSView.frameDidChangeNotification,
-                object: view
-            )
-        }
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-    }
-}
-
 /// Native owner for Chromium browsers carrying the Kiosk semantic type.
 final class KioskBrowserWindowController: SpaceSessionController {
     override var centeredOmniBoxHorizontalInset: CGFloat { 20 }
@@ -335,7 +165,7 @@ final class KioskBrowserWindowController: SpaceSessionController {
     private var profileReplacementSourceCloseObserver: NSObjectProtocol?
     private var profileReplacementSourceFullscreenObserver: NSObjectProtocol?
     private var profileReplacementTargetCloseObserver: NSObjectProtocol?
-    private var trafficLightPositioner: KioskTrafficLightPositioner?
+    private var trafficLightPositioner: TrafficLightPositioner?
     private var presentationTargetFrame: NSRect?
     private var presentationOriginalMinSize: NSSize?
     private var presentationOriginalIgnoresMouseEvents: Bool?
@@ -898,7 +728,7 @@ final class KioskBrowserWindowController: SpaceSessionController {
             .restoreFrame(for: window)
         if !restoredFrame
             && (window.frame.width < 640 || window.frame.height < 480) {
-            window.setContentSize(NSSize(width: 900, height: 640))
+            window.setContentSize(NSSize(width: 760, height: 560))
         }
 
         window.backgroundColor = NSColor.windowBackgroundColor
@@ -910,9 +740,9 @@ final class KioskBrowserWindowController: SpaceSessionController {
             zoomButton.target = self
             zoomButton.action = #selector(openFocusedTabInDefaultSpace(_:))
         }
-        let positioner = KioskTrafficLightPositioner(
+        let positioner = TrafficLightPositioner(
             window: window,
-            downwardOffset: KioskBrowserToolbar.titlebarVerticalShift
+            centerFromWindowTop: KioskBrowserToolbar.trafficLightCenterFromWindowTop
         )
         trafficLightPositioner = positioner
         positioner.start()

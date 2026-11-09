@@ -1631,8 +1631,8 @@ class SpaceSessionController: NSWindowController {
     /// most one layout. The lights are what moves, rather than the rows: a row
     /// carries the header's vertical rhythm and the strip's hit targets with
     /// it, and the lights carry nothing.
-    /// `KioskBrowserWindowController` moves its own lights the same way, by
-    /// `KioskBrowserToolbar.titlebarVerticalShift`.
+    /// `KioskBrowserWindowController` holds its own lights on its toolbar's
+    /// centre line with the same positioner.
     ///
     /// The row centre is handed over as an absolute distance from the top of
     /// the window rather than as a shift off AppKit's placement, so a titlebar

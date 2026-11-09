@@ -46,6 +46,9 @@ final class OmniBoxContainerViewController: NSViewController {
     private var maxOmniBoxHeight: CGFloat { Self.maxOmniBoxHeight }
     private let collapsedOmniBoxHeight: CGFloat = 52 // base 52 + separator 1
     private let centeredHorizontalInset: CGFloat
+    /// Whether the centered box shifts into the area right of the browser's
+    /// sidebar. Off for hosts outside the browser window.
+    private let centersBesideSidebar: Bool
     private weak var parentView: EventBlockBgView?
     private var showFromAddressBar: Bool = false
     private weak var addressView: NSView?
@@ -77,9 +80,11 @@ final class OmniBoxContainerViewController: NSViewController {
     init(
         browserState: BrowserState,
         superView: EventBlockBgView? = nil,
-        centeredHorizontalInset: CGFloat = 0
+        centeredHorizontalInset: CGFloat = 0,
+        centersBesideSidebar: Bool = true
     ) {
         self.centeredHorizontalInset = max(centeredHorizontalInset, 0)
+        self.centersBesideSidebar = centersBesideSidebar
         super.init(nibName: nil, bundle: nil)
         self.browserState = browserState
         self.parentView = superView
@@ -721,7 +726,7 @@ final class OmniBoxContainerViewController: NSViewController {
         )
         let actualWidth = min(contentSize.width, availableWidth)
 
-        let sidebarWidth = browserState?.sidebarWidth ?? 0
+        let sidebarWidth = centersBesideSidebar ? browserState?.sidebarWidth ?? 0 : 0
         let rightAreaWidth = parentBounds.width - sidebarWidth
         let proposedX: CGFloat
         if sidebarWidth == 0 || rightAreaWidth < actualWidth {

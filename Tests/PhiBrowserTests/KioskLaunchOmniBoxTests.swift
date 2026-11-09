@@ -217,6 +217,36 @@ final class KioskLaunchOmniBoxTests: XCTestCase {
         XCTAssertTrue(small.contains(clamped), "The panel stays inside a small visible frame")
     }
 
+    /// The panel draws no chrome of its own, and its transparent margin holds
+    /// the box's whole shadow: a panel edge inside the blur would cut it into
+    /// a gray rectangle behind the rounded box.
+    func testStandalonePanelHasNoChromeAndRoomForTheBoxShadow() throws {
+        let state = try makeState()
+        let controller = KioskLaunchOmniBoxPanelController(
+            browserState: state, hostWindow: nil) { _ in }
+        defer { controller.dismiss() }
+        controller.present(on: NSScreen.main)
+
+        XCTAssertFalse(controller.panel.isOpaque)
+        XCTAssertFalse(controller.panel.hasShadow)
+        XCTAssertEqual(controller.panel.backgroundColor, .clear)
+
+        let box = try XCTUnwrap(controller.container.omniBoxController?.view)
+        let shadow = try XCTUnwrap(box.shadow)
+        let margin = KioskLaunchOmniBoxPanelController.shadowMargin
+        XCTAssertGreaterThanOrEqual(margin, shadow.shadowBlurRadius + abs(shadow.shadowOffset.width))
+        XCTAssertGreaterThanOrEqual(margin, shadow.shadowBlurRadius + abs(shadow.shadowOffset.height))
+
+        let content = try XCTUnwrap(controller.panel.contentView)
+        content.layoutSubtreeIfNeeded()
+        let boxInPanel = box.convert(box.bounds, to: content)
+        XCTAssertEqual(boxInPanel.midX, content.bounds.midX, accuracy: 1,
+                       "Centered on the panel, not beside the host Browser's sidebar")
+        XCTAssertGreaterThanOrEqual(boxInPanel.minX, margin - 1)
+        XCTAssertLessThanOrEqual(boxInPanel.maxX, content.bounds.maxX - margin + 1)
+        XCTAssertLessThanOrEqual(boxInPanel.maxY, content.bounds.maxY - margin + 1)
+    }
+
     func testStandalonePanelHandsOffTheSubmissionAndCloses() throws {
         let state = try makeState()
         var results: [String?] = []

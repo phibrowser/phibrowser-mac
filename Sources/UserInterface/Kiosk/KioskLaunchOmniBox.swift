@@ -84,8 +84,11 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
         override var canBecomeMain: Bool { false }
     }
 
-    /// Room around the box for its shadow.
-    static let shadowMargin: CGFloat = 30
+    /// Transparent room around the box for its shadow (`OmniBoxViewController`
+    /// draws a 50pt blur offset 20pt down). The panel clips everything it
+    /// draws, so a narrower margin cuts the soft shadow off at the panel's
+    /// edges into a visible gray rectangle behind the rounded box.
+    static let shadowMargin: CGFloat = 80
     /// Share of the screen's visible height left above the box.
     static let topOffsetRatio: CGFloat = 0.22
 
@@ -133,9 +136,12 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: true
         )
+        // The host Browser's sidebar is not in this panel: center on the
+        // panel itself.
         container = OmniBoxContainerViewController(
             browserState: browserState,
-            superView: backgroundView
+            superView: backgroundView,
+            centersBesideSidebar: false
         )
         self.onFinish = onFinish
         super.init()

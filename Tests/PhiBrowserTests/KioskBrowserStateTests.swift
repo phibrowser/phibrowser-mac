@@ -559,6 +559,33 @@ final class KioskBrowserStateTests: XCTestCase {
         )
     }
 
+    func testKioskWindowWithoutSavedFrameUsesDefaultSize() throws {
+        let autosaveName = KioskWindowFramePersistence.autosaveName
+        NSWindow.removeFrame(usingName: autosaveName)
+        defer { NSWindow.removeFrame(usingName: autosaveName) }
+
+        let state = try makeState()
+        let window = makeWindow(
+            frame: NSRect(x: 0, y: 0, width: 900, height: 640)
+        )
+        let controller = KioskBrowserWindowController(
+            window: window,
+            windowId: state.windowId,
+            browserType: .kiosk,
+            profileId: state.profileId,
+            account: state.localStore.account
+        )
+        defer {
+            window.close()
+            withExtendedLifetime(controller) {}
+        }
+
+        XCTAssertEqual(
+            window.contentRect(forFrameRect: window.frame).size,
+            KioskBrowserWindowController.defaultContentSize
+        )
+    }
+
     func testKioskWindowRemainsWindowedInExistingFullscreenSpace() throws {
         let state = try makeState()
         let window = makeWindow(

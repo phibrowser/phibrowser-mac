@@ -163,6 +163,7 @@ final class KioskBrowserWindowController: SpaceSessionController {
     override var centeredOmniBoxHorizontalInset: CGFloat { 20 }
 
     private static let toolbarIdentifier = NSToolbar.Identifier("KioskBrowserToolbar")
+    static let defaultContentSize = NSSize(width: 560, height: 650)
     private static let profileReplacementTimeout: TimeInterval = 1.5
     private static let profileReplacementClosePollInterval: TimeInterval = 0.5
     private static let profileReplacementHandoffDelay: TimeInterval = 0.05
@@ -738,12 +739,9 @@ final class KioskBrowserWindowController: SpaceSessionController {
         toolbar.showsBaselineSeparator = false
         window.toolbar = toolbar
         window.toolbarStyle = .unifiedCompact
-        window.minSize = NSSize(width: 640, height: 420)
-        let restoredFrame = KioskWindowFramePersistence
-            .restoreFrame(for: window)
-        if !restoredFrame
-            && (window.frame.width < 640 || window.frame.height < 480) {
-            window.setContentSize(NSSize(width: 760, height: 560))
+        window.minSize = NSSize(width: 560, height: 420)
+        if !KioskWindowFramePersistence.restoreFrame(for: window) {
+            window.setContentSize(Self.defaultContentSize)
         }
 
         window.backgroundColor = NSColor.windowBackgroundColor

@@ -666,13 +666,15 @@ private struct SkillInstallRowView: View {
                     ".pi/agent/extensions", isDirectory: true)),
             // Skill-only agents: no session mirror, no companion extension.
             // Grok Build is the xAI CLI. Grok Bot, the desktop app, has no
-            // folder of its own — it reads this one plus Cursor's, Claude
-            // Code's, Codex's, and the common folder — so its row links the
-            // same folder: one link serves both, and both rows tick together.
+            // folder of its own and skips third-party folders (Grok Build's,
+            // Claude Code's, Codex's) unless those are enabled; it always
+            // reads Cursor's and the common folder. Its row therefore links
+            // the common folder: one link serves it and "Common agents", and
+            // both rows tick together.
             SkillTarget(id: "grok", name: "Grok Build", iconAsset: "agent-grok",
                         skillsDirectory: home.appendingPathComponent(".grok/skills", isDirectory: true)),
             SkillTarget(id: "grokbot", name: "Grok Bot", iconAsset: "agent-grokbot",
-                        skillsDirectory: home.appendingPathComponent(".grok/skills", isDirectory: true)),
+                        skillsDirectory: home.appendingPathComponent(".agents/skills", isDirectory: true)),
             // Antigravity's "shared" skills folder, which Gemini CLI reads too;
             // its CLI-only global folder is ~/.gemini/antigravity-cli/skills.
             SkillTarget(id: "antigravity", name: "Antigravity", iconAsset: "agent-antigravity",

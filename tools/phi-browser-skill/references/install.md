@@ -8,16 +8,16 @@ then open **Settings → Developer** and switch on "Allow agents to control Phi
 **Add skill to…** — Claude Code
 (`~/.claude/skills`), Codex (`~/.codex/skills`), Cursor (`~/.cursor/skills`),
 OpenClaw (`~/.openclaw/skills`), Pi (`~/.pi/agent/skills`), Hermes
-(`~/.hermes/skills`), Grok Build (`~/.grok/skills`), Grok Bot (the same
-`~/.grok/skills`), Antigravity
+(`~/.hermes/skills`), Grok Build (`~/.grok/skills`), Grok Bot
+(`~/.agents/skills`), Antigravity
 (`~/.gemini/skills`, shared with Gemini CLI), GitHub Copilot (`~/.copilot/skills`),
 OpenCode (`~/.config/opencode/skills`), Qwen Code (`~/.qwen/skills`),
 CodeBuddy (`~/.codebuddy/skills`), or Common agents (`~/.agents/skills`, the
 cross-agent folder Deep Code, Kimi Code, Cline, and DeepSeek Harness read).
-Grok Bot, the desktop app, has no skills folder of its own: it loads skills
-from Grok Build's folder, Cursor's, Claude Code's, Codex's, and the common
-folder, so its row shares Grok Build's link and any of those installs covers
-it. This links the skill
+Grok Bot, the desktop app, has no skills folder of its own. It always loads
+skills from Cursor's folder and the common folder, and only loads Grok Build's,
+Claude Code's, and Codex's when third-party skills are enabled, so its row
+shares the Common agents link. This links the skill
 bundled inside the app into that agent's `skills/phi-browser`, so it stays
 current with each Phi Browser update. Every agent can drive Phi; only the
 first six also get the session mirror described in §4 — under the others,

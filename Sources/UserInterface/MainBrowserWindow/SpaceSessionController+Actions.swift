@@ -254,37 +254,6 @@ extension SpaceSessionController {
         }
     }
 
-    /// Presents the centered omnibox as the URL picker of a Kiosk that does
-    /// not exist yet: a submission is handed to `onSubmit` instead of
-    /// opening here, and any dismissal calls `onDismissWithoutSubmission`.
-    /// An omnibox already up for that purpose is dismissed instead, so the
-    /// New Kiosk command toggles it like Cmd+T. Returns whether the picker
-    /// is showing.
-    @discardableResult
-    func presentOmniBoxForKioskLaunch(
-        onSubmit: @escaping (String) -> Void,
-        onDismissWithoutSubmission: @escaping () -> Void
-    ) -> Bool {
-        if let container = omniBoxContainerViewController, container.hasShown {
-            let wasKioskLaunch = container.isHandingOffSubmission
-            container.hideOmniBox()
-            if wasKioskLaunch {
-                onDismissWithoutSubmission()
-                return false
-            }
-        }
-        toggleOmniBox(fromAddressBar: false)
-        guard let container = omniBoxContainerViewController, container.hasShown else {
-            onDismissWithoutSubmission()
-            return false
-        }
-        container.handOffNextSubmission(
-            onSubmit: onSubmit,
-            onDismissWithoutSubmission: onDismissWithoutSubmission
-        )
-        return true
-    }
-
     @objc func toggleSearchTabs() {
         toggleSearchTabs(presentation: .centered)
     }

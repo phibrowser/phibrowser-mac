@@ -92,8 +92,8 @@ import PostHog
     private var crashFeedbackCoordinator: CrashFeedbackCoordinator?
     /// Cached in `applicationWillFinishLaunching`; weak — owned by `ChromiumLauncher`, not AppController.
     private weak var chromiumBridge: (any PhiChromiumBridgeProtocol)?
-    /// The standalone omnibox asking for a new Kiosk's URL while no main
-    /// browser window is on screen; see `presentNewKioskOmniBox`.
+    /// The standalone omnibox asking for a new Kiosk's URL; see
+    /// `presentNewKioskOmniBox`.
     var kioskLaunchOmniBoxPanel: KioskLaunchOmniBoxPanelController?
     private lazy var kioskGlobalShortcutRegistrar =
         KioskGlobalShortcutRegistrar { [weak self] in

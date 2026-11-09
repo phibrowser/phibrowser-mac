@@ -52,6 +52,9 @@ final class OmniBoxContainerViewController: NSViewController {
     /// host (which would otherwise eclipse its panels and take key back on
     /// hide).
     private let isDetachedFromHostWindow: Bool
+    /// Overrides the box's natural width when it is not anchored to an
+    /// address bar.
+    private let fixedBoxWidth: CGFloat?
     private weak var parentView: EventBlockBgView?
     private var showFromAddressBar: Bool = false
     private weak var addressView: NSView?
@@ -84,10 +87,12 @@ final class OmniBoxContainerViewController: NSViewController {
         browserState: BrowserState,
         superView: EventBlockBgView? = nil,
         centeredHorizontalInset: CGFloat = 0,
-        isDetachedFromHostWindow: Bool = false
+        isDetachedFromHostWindow: Bool = false,
+        fixedBoxWidth: CGFloat? = nil
     ) {
         self.centeredHorizontalInset = max(centeredHorizontalInset, 0)
         self.isDetachedFromHostWindow = isDetachedFromHostWindow
+        self.fixedBoxWidth = fixedBoxWidth
         super.init(nibName: nil, bundle: nil)
         self.browserState = browserState
         self.parentView = superView
@@ -730,7 +735,7 @@ final class OmniBoxContainerViewController: NSViewController {
             parentBounds.width - horizontalInset * 2,
             0
         )
-        let actualWidth = min(contentSize.width, availableWidth)
+        let actualWidth = min(fixedBoxWidth ?? contentSize.width, availableWidth)
 
         let sidebarWidth = isDetachedFromHostWindow ? 0 : browserState?.sidebarWidth ?? 0
         let rightAreaWidth = parentBounds.width - sidebarWidth

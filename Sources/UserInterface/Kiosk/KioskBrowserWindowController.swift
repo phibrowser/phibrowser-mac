@@ -142,6 +142,21 @@ enum KioskWindowPresentationGeometry {
         )
     }
 
+    static func frame(
+        size: NSSize,
+        topRight: NSPoint,
+        constrainedTo visibleFrame: NSRect
+    ) -> NSRect {
+        finalFrame(
+            size: size,
+            centeredAt: NSPoint(
+                x: topRight.x - size.width / 2,
+                y: topRight.y - size.height / 2
+            ),
+            constrainedTo: visibleFrame
+        )
+    }
+
     static let cascadeOffset: CGFloat = 28
 
     /// Shifts a new Kiosk right of the previous one; a shift past the right
@@ -794,6 +809,22 @@ final class KioskBrowserWindowController: SpaceSessionController {
             }
         }
         KioskWindowFramePersistence.saveFrameAndEnableAutosave(for: window)
+    }
+
+    /// Puts the window's top-right corner at `topRight`, kept inside that
+    /// screen's visible frame.
+    func alignTopRight(to topRight: NSPoint) {
+        guard let window,
+              let screen = NSScreen.screens.first(where: { $0.frame.contains(topRight) })
+                ?? window.screen else { return }
+        let targetFrame = KioskWindowPresentationGeometry.frame(
+            size: window.frame.size,
+            topRight: topRight,
+            constrainedTo: screen.visibleFrame
+        )
+        AppLogInfo("[Kiosk] Align window to \(targetFrame) on screen \(screen.localizedName)")
+        window.setFrame(targetFrame, display: false)
+        window.saveFrame(usingName: KioskWindowFramePersistence.autosaveName)
     }
 
     /// The frontmost on-screen Kiosk is the most recently opened one.

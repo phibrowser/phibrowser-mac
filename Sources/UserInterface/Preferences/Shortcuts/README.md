@@ -427,8 +427,8 @@ the registrar removes successful aliases and reports failure. Failed cleanup
 retains its handles for retry and prevents action dispatch. Rebinding allocates
 new hotkey IDs, so queued events from an old registration cannot open a window.
 A press runs its action immediately, without activating Phi first: the New
-Kiosk omnibox asks in a non-activating panel while another app is active, and
-Phi activates only once a URL is picked.
+Kiosk omnibox asks in a non-activating panel, and Phi activates only once a
+URL is picked.
 
 The global-shortcut preference expresses intent; `KioskGlobalShortcutRegistrar`
 owns the runtime status. Navigation settings distinguishes registered,

@@ -5,77 +5,10 @@
 
 import Cocoa
 
-/// Decides where a new empty Kiosk asks for its URL. The Kiosk window is
-/// only created once the user has picked a destination: until then the
-/// omnibox lives either in a main browser window already on screen, or in
-/// the standalone `KioskLaunchOmniBoxPanelController` when there is none —
-/// main windows that are closed, hidden, or miniaturized count as absent,
-/// and Kiosk windows never host it. While Phi is not the active app (the
-/// global shortcut from another app), the standalone panel asks as well.
-enum KioskLaunchOmniBoxRouting {
-    struct Window: Equatable {
-        let windowId: Int
-        /// A user-facing main browser window, not a Kiosk, shadow, popup,
-        /// or other auxiliary Browser.
-        let isMainBrowserWindow: Bool
-        /// Ordered in, not miniaturized, and the presented session of its
-        /// shell.
-        let isOnScreen: Bool
-        let isOnActiveSpace: Bool
-    }
-
-    enum Target: Equatable {
-        case browserWindow(windowId: Int)
-        case standalone
-    }
-
-    static func isMainBrowserWindowType(_ type: ChromiumBrowserType) -> Bool {
-        switch type {
-        case .normal, .incognito, .incognitoSpace:
-            return true
-        default:
-            return false
-        }
-    }
-
-    /// - Parameters:
-    ///   - windowsFrontToBack: Phi's windows in z-order, frontmost first.
-    ///   - activeWindowId: The manager's active browser window, preferred
-    ///     among equally eligible windows.
-    ///   - applicationIsHidden: Cmd+H hides every window; revealing one to
-    ///     host the omnibox would bring them all back.
-    ///   - applicationIsActive: macOS may refuse to activate Phi from a
-    ///     global shortcut, and a browser window of an inactive app gets no
-    ///     typing. The non-activating panel takes key without activation.
-    static func target(
-        windowsFrontToBack: [Window],
-        activeWindowId: Int?,
-        applicationIsHidden: Bool,
-        applicationIsActive: Bool
-    ) -> Target {
-        guard !applicationIsHidden, applicationIsActive else { return .standalone }
-        let eligible = windowsFrontToBack.filter {
-            $0.isMainBrowserWindow && $0.isOnScreen
-        }
-        // A window on the current desktop wins over one that activating
-        // would switch Spaces to; the active window wins among equals.
-        let preferred = eligible.filter(\.isOnActiveSpace)
-        let pool = preferred.isEmpty ? eligible : preferred
-        if let activeWindowId,
-           pool.contains(where: { $0.windowId == activeWindowId }) {
-            return .browserWindow(windowId: activeWindowId)
-        }
-        if let frontmost = pool.first {
-            return .browserWindow(windowId: frontmost.windowId)
-        }
-        return .standalone
-    }
-}
-
-/// The standalone window that asks for a new Kiosk's URL when no main
-/// browser window is on screen. It is a non-activating panel, like
-/// Spotlight: it takes keyboard focus without activating Phi, so a hidden
-/// app's other windows stay hidden. The omnibox in it runs against an
+/// The standalone window that asks for a new Kiosk's URL, in the top-right
+/// corner of the screen the user is working on. It is a non-activating
+/// panel, like Spotlight: it takes keyboard focus without activating Phi, so
+/// a hidden app's other windows stay hidden. The omnibox in it runs against an
 /// existing Browser's state (`browserState`), which supplies Chromium's
 /// suggestions; no Kiosk exists until a submission arrives.
 ///
@@ -87,6 +20,12 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
     private final class Panel: NSPanel {
         override var canBecomeKey: Bool { true }
         override var canBecomeMain: Bool { false }
+
+        /// The transparent shadow margin reaches into the menu bar; AppKit's
+        /// default would push the whole panel, and the box, down below it.
+        override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+            frameRect
+        }
     }
 
     /// Transparent room around the box for its shadow (`OmniBoxViewController`
@@ -94,32 +33,84 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
     /// draws, so a narrower margin cuts the soft shadow off at the panel's
     /// edges into a visible gray rectangle behind the rounded box.
     static let shadowMargin: CGFloat = 80
-    /// Share of the screen's visible height left above the box.
-    static let topOffsetRatio: CGFloat = 0.22
+    static let boxWidth: CGFloat = 450
+    static let rightInset: CGFloat = 12
+    static let topInset: CGFloat = 40
 
     static var panelSize: NSSize {
         NSSize(
-            width: OmniBoxViewController.boxWidth + shadowMargin * 2,
+            width: boxWidth + shadowMargin * 2,
             height: OmniBoxContainerViewController.maxOmniBoxHeight + shadowMargin * 2
         )
     }
 
-    /// Centered horizontally, with the box's top edge a fixed share of the
-    /// visible height below the top, kept inside the visible frame. The box
-    /// grows downward as suggestions arrive, so the panel is sized for the
-    /// tallest box from the start.
-    static func frame(size: NSSize, onVisibleFrame visibleFrame: NSRect) -> NSRect {
-        let width = min(size.width, visibleFrame.width)
-        let height = min(size.height, visibleFrame.height)
-        let boxTop = visibleFrame.maxY - visibleFrame.height * topOffsetRatio
-        let proposedY = boxTop + shadowMargin - height
-        let y = max(visibleFrame.minY, min(proposedY, visibleFrame.maxY - height))
-        return NSRect(
-            x: (visibleFrame.midX - width / 2).rounded(),
-            y: y.rounded(),
-            width: width,
-            height: height
+    /// The box's top-right corner, inset from the visible frame's top-right
+    /// corner and moved in only when the box would not fit.
+    static func boxTopRight(onVisibleFrame visibleFrame: NSRect) -> NSPoint {
+        NSPoint(
+            x: max(visibleFrame.maxX - rightInset, visibleFrame.minX + boxWidth),
+            y: max(
+                visibleFrame.maxY - topInset,
+                visibleFrame.minY + OmniBoxContainerViewController.maxOmniBoxHeight
+            )
         )
+    }
+
+    /// The box is centered in the panel, so only the transparent shadow
+    /// margin reaches past the visible frame. The box grows downward as
+    /// suggestions arrive, so the panel is sized for the tallest box from the
+    /// start.
+    static func frame(onVisibleFrame visibleFrame: NSRect) -> NSRect {
+        let topRight = boxTopRight(onVisibleFrame: visibleFrame)
+        return NSRect(
+            x: (topRight.x + shadowMargin - panelSize.width).rounded(),
+            y: (topRight.y + shadowMargin - panelSize.height).rounded(),
+            width: panelSize.width,
+            height: panelSize.height
+        )
+    }
+
+    /// The screen of the window the user is working in: Phi's key window
+    /// while Phi is active, otherwise the frontmost window of the active app
+    /// (the global shortcut pressed in another app).
+    static func activeWindowScreen() -> NSScreen? {
+        if NSApp.isActive, let screen = (NSApp.keyWindow ?? NSApp.mainWindow)?.screen {
+            return screen
+        }
+        if let frame = frontmostApplicationWindowFrame(),
+           let screen = NSScreen.screens.first(where: {
+               $0.frame.contains(NSPoint(x: frame.midX, y: frame.midY))
+           }) {
+            return screen
+        }
+        return NSScreen.main
+    }
+
+    /// Window bounds need no Screen Recording permission, unlike titles.
+    private static func frontmostApplicationWindowFrame() -> NSRect? {
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+              let primaryScreenFrame = NSScreen.screens.first?.frame,
+              let windows = CGWindowListCopyWindowInfo(
+                [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
+              ) as? [[String: Any]] else {
+            return nil
+        }
+        for window in windows {
+            guard window[kCGWindowOwnerPID as String] as? pid_t == pid,
+                  window[kCGWindowLayer as String] as? Int == 0,
+                  let boundsDictionary = window[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: boundsDictionary) else {
+                continue
+            }
+            // Quartz window bounds are top-left based on the primary screen.
+            return NSRect(
+                x: bounds.minX,
+                y: primaryScreenFrame.maxY - bounds.maxY,
+                width: bounds.width,
+                height: bounds.height
+            )
+        }
+        return nil
     }
 
     let panel: NSPanel
@@ -129,6 +120,13 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
     private var hostCloseObserver: NSObjectProtocol?
 
     var isFinished: Bool { onFinish == nil }
+
+    var boxTopRight: NSPoint {
+        NSPoint(
+            x: panel.frame.maxX - Self.shadowMargin,
+            y: panel.frame.maxY - Self.shadowMargin
+        )
+    }
 
     init(
         browserState: BrowserState,
@@ -146,7 +144,8 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
         container = OmniBoxContainerViewController(
             browserState: browserState,
             superView: backgroundView,
-            isDetachedFromHostWindow: true
+            isDetachedFromHostWindow: true,
+            fixedBoxWidth: Self.boxWidth
         )
         self.onFinish = onFinish
         super.init()
@@ -187,7 +186,7 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
         guard !isFinished, let contentView = panel.contentView else { return }
         if let visibleFrame = (screen ?? NSScreen.main)?.visibleFrame {
             panel.setFrame(
-                Self.frame(size: Self.panelSize, onVisibleFrame: visibleFrame),
+                Self.frame(onVisibleFrame: visibleFrame),
                 display: false
             )
         }

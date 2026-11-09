@@ -7,10 +7,9 @@ import AppKit
 import XCTest
 @testable import Phi
 
-/// An empty New Kiosk asks for its URL before any Kiosk exists: in a main
-/// browser window on screen when there is one, otherwise in a standalone
-/// panel. A submission is handed off as a URL for the Kiosk to open; any
-/// dismissal opens nothing.
+/// An empty New Kiosk asks for its URL before any Kiosk exists, in a
+/// standalone panel. A submission is handed off as a URL for the Kiosk to
+/// open; any dismissal opens nothing.
 @MainActor
 final class KioskLaunchOmniBoxTests: XCTestCase {
     private var directory: URL?
@@ -50,94 +49,6 @@ final class KioskLaunchOmniBoxTests: XCTestCase {
         let delivered = expectation(description: "Autocomplete response delivered")
         DispatchQueue.main.async { delivered.fulfill() }
         wait(for: [delivered], timeout: 1)
-    }
-
-    private func window(_ id: Int, main: Bool = true, onScreen: Bool = true,
-                        activeSpace: Bool = true) -> KioskLaunchOmniBoxRouting.Window {
-        .init(windowId: id, isMainBrowserWindow: main, isOnScreen: onScreen,
-              isOnActiveSpace: activeSpace)
-    }
-
-    // MARK: - Routing
-
-    func testVisibleMainWindowHostsTheOmniBox() {
-        XCTAssertEqual(
-            KioskLaunchOmniBoxRouting.target(windowsFrontToBack: [window(1)],
-                                             activeWindowId: 1, applicationIsHidden: false,
-                                             applicationIsActive: true),
-            .browserWindow(windowId: 1))
-    }
-
-    func testWithoutAMainWindowOnScreenTheStandalonePanelHostsIt() {
-        XCTAssertEqual(
-            KioskLaunchOmniBoxRouting.target(windowsFrontToBack: [],
-                                             activeWindowId: nil, applicationIsHidden: false,
-                                             applicationIsActive: true),
-            .standalone, "Every main window closed")
-        XCTAssertEqual(
-            KioskLaunchOmniBoxRouting.target(windowsFrontToBack: [window(7, main: false)],
-                                             activeWindowId: 7, applicationIsHidden: false,
-                                             applicationIsActive: true),
-            .standalone, "A Kiosk window is never the host")
-        XCTAssertEqual(
-            KioskLaunchOmniBoxRouting.target(windowsFrontToBack: [window(1, onScreen: false)],
-                                             activeWindowId: 1, applicationIsHidden: false,
-                                             applicationIsActive: true),
-            .standalone, "Ordered out or miniaturized main windows count as absent")
-        XCTAssertEqual(
-            KioskLaunchOmniBoxRouting.target(windowsFrontToBack: [window(1)],
-                                             activeWindowId: 1, applicationIsHidden: true,
-                                             applicationIsActive: true),
-            .standalone, "A hidden app must not be unhidden to host the omnibox")
-    }
-
-    /// The global shortcut from another app: macOS may decline to activate
-    /// Phi, and a browser window of an inactive app gets no typing, so the
-    /// non-activating panel asks instead.
-    func testInactiveAppAsksInTheStandalonePanel() {
-        XCTAssertEqual(
-            KioskLaunchOmniBoxRouting.target(windowsFrontToBack: [window(1)],
-                                             activeWindowId: 1, applicationIsHidden: false,
-                                             applicationIsActive: false),
-            .standalone)
-    }
-
-    func testActiveMainWindowWinsThenTheFrontmostOne() {
-        let windows = [window(7, main: false), window(2), window(1)]
-        XCTAssertEqual(
-            KioskLaunchOmniBoxRouting.target(windowsFrontToBack: windows,
-                                             activeWindowId: 1, applicationIsHidden: false,
-                                             applicationIsActive: true),
-            .browserWindow(windowId: 1))
-        XCTAssertEqual(
-            KioskLaunchOmniBoxRouting.target(windowsFrontToBack: windows,
-                                             activeWindowId: 7, applicationIsHidden: false,
-                                             applicationIsActive: true),
-            .browserWindow(windowId: 2), "The active Kiosk does not count; the frontmost main window does")
-    }
-
-    func testWindowOnTheCurrentDesktopWinsOverOneOnAnotherSpace() {
-        let windows = [window(1, activeSpace: false), window(2)]
-        XCTAssertEqual(
-            KioskLaunchOmniBoxRouting.target(windowsFrontToBack: windows,
-                                             activeWindowId: 1, applicationIsHidden: false,
-                                             applicationIsActive: true),
-            .browserWindow(windowId: 2))
-        XCTAssertEqual(
-            KioskLaunchOmniBoxRouting.target(windowsFrontToBack: [window(1, activeSpace: false)],
-                                             activeWindowId: nil, applicationIsHidden: false,
-                                             applicationIsActive: true),
-            .browserWindow(windowId: 1), "With no window here, the main window elsewhere still hosts it")
-    }
-
-    func testOnlyMainBrowserTypesHostTheOmniBox() {
-        XCTAssertTrue(KioskLaunchOmniBoxRouting.isMainBrowserWindowType(.normal))
-        XCTAssertTrue(KioskLaunchOmniBoxRouting.isMainBrowserWindowType(.incognito))
-        XCTAssertTrue(KioskLaunchOmniBoxRouting.isMainBrowserWindowType(.incognitoSpace))
-        XCTAssertFalse(KioskLaunchOmniBoxRouting.isMainBrowserWindowType(.kiosk))
-        XCTAssertFalse(KioskLaunchOmniBoxRouting.isMainBrowserWindowType(.kioskIncognito))
-        XCTAssertFalse(KioskLaunchOmniBoxRouting.isMainBrowserWindowType(.shadow))
-        XCTAssertFalse(KioskLaunchOmniBoxRouting.isMainBrowserWindowType(.popup))
     }
 
     // MARK: - Submission handoff
@@ -340,20 +251,56 @@ final class KioskLaunchOmniBoxTests: XCTestCase {
 
     // MARK: - Standalone panel
 
-    func testStandalonePanelSitsCenteredInTheUpperPartOfTheScreen() {
-        let visible = NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let size = KioskLaunchOmniBoxPanelController.panelSize
-        let frame = KioskLaunchOmniBoxPanelController.frame(size: size, onVisibleFrame: visible)
+    func testStandalonePanelPutsTheBoxInTheTopRightCornerOfTheScreen() {
+        let visible = NSRect(x: 1440, y: 0, width: 1920, height: 1055)
+        let margin = KioskLaunchOmniBoxPanelController.shadowMargin
+        let rightInset = KioskLaunchOmniBoxPanelController.rightInset
+        let topInset = KioskLaunchOmniBoxPanelController.topInset
+        let frame = KioskLaunchOmniBoxPanelController.frame(onVisibleFrame: visible)
 
-        XCTAssertEqual(frame.size, size)
-        XCTAssertEqual(frame.midX, visible.midX, accuracy: 1)
-        let boxTop = frame.maxY - KioskLaunchOmniBoxPanelController.shadowMargin
-        XCTAssertEqual(boxTop, visible.maxY - visible.height * KioskLaunchOmniBoxPanelController.topOffsetRatio,
-                       accuracy: 1)
+        XCTAssertEqual(frame.size, KioskLaunchOmniBoxPanelController.panelSize)
+        XCTAssertEqual(KioskLaunchOmniBoxPanelController.boxTopRight(onVisibleFrame: visible),
+                       NSPoint(x: visible.maxX - rightInset, y: visible.maxY - topInset))
+        XCTAssertEqual(frame.maxX - margin, visible.maxX - rightInset, accuracy: 1)
+        XCTAssertEqual(frame.maxY - margin, visible.maxY - topInset, accuracy: 1)
 
-        let small = NSRect(x: 100, y: 50, width: 500, height: 200)
-        let clamped = KioskLaunchOmniBoxPanelController.frame(size: size, onVisibleFrame: small)
-        XCTAssertTrue(small.contains(clamped), "The panel stays inside a small visible frame")
+        let small = NSRect(x: 100, y: 50, width: 300, height: 200)
+        let clamped = KioskLaunchOmniBoxPanelController.frame(onVisibleFrame: small)
+        XCTAssertEqual(clamped.minX + margin, small.minX, accuracy: 1,
+                       "The box never starts left of a narrow visible frame")
+        XCTAssertEqual(clamped.minY + margin, small.minY, accuracy: 1)
+    }
+
+    func testKioskTopRightFollowsTheOmniBox() {
+        let visible = NSRect(x: 1440, y: 0, width: 1920, height: 1055)
+        let topRight = KioskLaunchOmniBoxPanelController.boxTopRight(onVisibleFrame: visible)
+        let size = NSSize(width: 560, height: 650)
+
+        let frame = KioskWindowPresentationGeometry.frame(
+            size: size, topRight: topRight, constrainedTo: visible)
+        XCTAssertEqual(frame, NSRect(x: topRight.x - 560, y: topRight.y - 650,
+                                     width: 560, height: 650))
+
+        let tall = KioskWindowPresentationGeometry.frame(
+            size: NSSize(width: 560, height: 1200), topRight: topRight, constrainedTo: visible)
+        XCTAssertEqual(tall.maxX, topRight.x, accuracy: 1)
+        XCTAssertEqual(tall.minY, visible.minY, accuracy: 1)
+    }
+
+    /// The shadow margin above the box reaches past the visible frame's top
+    /// into the menu bar; AppKit must not push the panel down below it.
+    func testStandalonePanelKeepsTheBoxAtItsInsetsOnScreen() throws {
+        let screen = try XCTUnwrap(NSScreen.main)
+        let state = try makeState()
+        let controller = KioskLaunchOmniBoxPanelController(
+            browserState: state, hostWindow: nil) { _ in }
+        defer { controller.dismiss() }
+        controller.present(on: screen)
+
+        XCTAssertEqual(controller.panel.frame,
+                       KioskLaunchOmniBoxPanelController.frame(onVisibleFrame: screen.visibleFrame))
+        XCTAssertEqual(controller.boxTopRight,
+                       KioskLaunchOmniBoxPanelController.boxTopRight(onVisibleFrame: screen.visibleFrame))
     }
 
     /// The panel draws no chrome of its own, and its transparent margin holds
@@ -379,6 +326,7 @@ final class KioskLaunchOmniBoxTests: XCTestCase {
         let content = try XCTUnwrap(controller.panel.contentView)
         content.layoutSubtreeIfNeeded()
         let boxInPanel = box.convert(box.bounds, to: content)
+        XCTAssertEqual(boxInPanel.width, KioskLaunchOmniBoxPanelController.boxWidth, accuracy: 1)
         XCTAssertEqual(boxInPanel.midX, content.bounds.midX, accuracy: 1,
                        "Centered on the panel, not beside the host Browser's sidebar")
         XCTAssertGreaterThanOrEqual(boxInPanel.minX, margin - 1)

@@ -41,9 +41,20 @@ final class OmniBoxContainerViewController: NSViewController {
     private var cancellables = Set<AnyCancellable>()
     
     private let omniBoxWidth: CGFloat = 520
-    private let maxOmniBoxHeight: CGFloat = 284 // 57 (base) + 226 (max suggestions) + 1 (separator)
+    /// 57 (base) + 226 (max suggestions) + 1 (separator).
+    static let maxOmniBoxHeight: CGFloat = 284
+    private var maxOmniBoxHeight: CGFloat { Self.maxOmniBoxHeight }
     private let collapsedOmniBoxHeight: CGFloat = 52 // base 52 + separator 1
     private let centeredHorizontalInset: CGFloat
+    /// Whether the omnibox floats in its own window rather than over its
+    /// host Browser's window: it then centers without the host's sidebar,
+    /// ignores the host's tab changes, and is no in-window overlay of the
+    /// host (which would otherwise eclipse its panels and take key back on
+    /// hide).
+    private let isDetachedFromHostWindow: Bool
+    /// Overrides the box's natural width when it is not anchored to an
+    /// address bar.
+    private let fixedBoxWidth: CGFloat?
     private weak var parentView: EventBlockBgView?
     private var showFromAddressBar: Bool = false
     private weak var addressView: NSView?
@@ -55,6 +66,18 @@ final class OmniBoxContainerViewController: NSViewController {
     private var keyboardMonitor: Any?
     private weak var escapeDismissalPanel: NSWindow?
     private weak var escapeDismissalWindow: NSWindow?
+    /// The open session whose submission is handed off rather than opened
+    /// here (`handOffNextSubmission`). Ends with the omnibox's next hide.
+    private var submissionHandoff: SubmissionHandoff?
+
+    private struct SubmissionHandoff {
+        let onSubmit: (String) -> Void
+        let onDismissWithoutSubmission: () -> Void
+        var submittedURL: String?
+    }
+
+    /// Whether the omnibox currently up hands its submission off.
+    var isHandingOffSubmission: Bool { submissionHandoff != nil }
 
     var isAnchoredToAddressBarForTesting: Bool {
         showFromAddressBar && addressView != nil
@@ -63,9 +86,13 @@ final class OmniBoxContainerViewController: NSViewController {
     init(
         browserState: BrowserState,
         superView: EventBlockBgView? = nil,
-        centeredHorizontalInset: CGFloat = 0
+        centeredHorizontalInset: CGFloat = 0,
+        isDetachedFromHostWindow: Bool = false,
+        fixedBoxWidth: CGFloat? = nil
     ) {
         self.centeredHorizontalInset = max(centeredHorizontalInset, 0)
+        self.isDetachedFromHostWindow = isDetachedFromHostWindow
+        self.fixedBoxWidth = fixedBoxWidth
         super.init(nibName: nil, bundle: nil)
         self.browserState = browserState
         self.parentView = superView
@@ -150,6 +177,7 @@ final class OmniBoxContainerViewController: NSViewController {
     }
     
     private func observeFocusingTabChange() {
+        guard !isDetachedFromHostWindow else { return }
         focusingTabObserver = browserState?.$focusingTab
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -268,9 +296,14 @@ final class OmniBoxContainerViewController: NSViewController {
         }
         omniBoxController?.focusTextField()
         observeFocusingTabChange()
+        postInWindowOverlayVisibility(true)
+    }
+
+    private func postInWindowOverlayVisibility(_ visible: Bool) {
+        guard !isDetachedFromHostWindow else { return }
         NotificationCenter.default.post(name: .phiInWindowOverlayVisibilityChanged,
                                         object: view.window?.parent ?? view.window,
-                                        userInfo: ["visible": true, "surface": "omnibox",
+                                        userInfo: ["visible": visible, "surface": "omnibox",
                                                    "windowId": browserState?.windowId as Any])
     }
 
@@ -282,13 +315,42 @@ final class OmniBoxContainerViewController: NSViewController {
         showOmniBox(fromAddressBar: false)
     }
 
+    /// Makes the omnibox session that is up (or about to open) a URL picker:
+    /// its submission is not opened in this window but handed to `onSubmit`
+    /// as a destination URL once the omnibox hides. Any other way the
+    /// omnibox goes away — Escape, a click outside, Cmd+W, a focus change, a
+    /// toggle — calls `onDismissWithoutSubmission` instead. Exactly one of
+    /// the two runs, after which the omnibox opens normally again.
+    func handOffNextSubmission(
+        onSubmit: @escaping (String) -> Void,
+        onDismissWithoutSubmission: @escaping () -> Void
+    ) {
+        finishSubmissionHandoff()
+        submissionHandoff = SubmissionHandoff(
+            onSubmit: onSubmit,
+            onDismissWithoutSubmission: onDismissWithoutSubmission
+        )
+        omniBoxController?.setSubmissionURLHandler { [weak self] url in
+            self?.submissionHandoff?.submittedURL = url
+        }
+    }
+
+    private func finishSubmissionHandoff() {
+        guard let handoff = submissionHandoff else { return }
+        submissionHandoff = nil
+        omniBoxController?.setSubmissionURLHandler(nil)
+        if let url = handoff.submittedURL {
+            handoff.onSubmit(url)
+        } else {
+            handoff.onDismissWithoutSubmission()
+        }
+    }
+
     func hideOmniBox(fromAddressBar: Bool = false) {
         // At hide START, not completion: the overlay is on its way out, and
         // anything that deferred to it may take key back behind the fade.
-        NotificationCenter.default.post(name: .phiInWindowOverlayVisibilityChanged,
-                                        object: view.window?.parent ?? view.window,
-                                        userInfo: ["visible": false, "surface": "omnibox",
-                                                   "windowId": browserState?.windowId as Any])
+        postInWindowOverlayVisibility(false)
+        defer { finishSubmissionHandoff() }
         focusingTabObserver = nil
         browserState?.endSplitPreview()
         guard animationOn else {
@@ -673,9 +735,9 @@ final class OmniBoxContainerViewController: NSViewController {
             parentBounds.width - horizontalInset * 2,
             0
         )
-        let actualWidth = min(contentSize.width, availableWidth)
+        let actualWidth = min(fixedBoxWidth ?? contentSize.width, availableWidth)
 
-        let sidebarWidth = browserState?.sidebarWidth ?? 0
+        let sidebarWidth = isDetachedFromHostWindow ? 0 : browserState?.sidebarWidth ?? 0
         let rightAreaWidth = parentBounds.width - sidebarWidth
         let proposedX: CGFloat
         if sidebarWidth == 0 || rightAreaWidth < actualWidth {
@@ -729,6 +791,7 @@ final class OmniBoxContainerViewController: NSViewController {
     }
     
     deinit {
+        finishSubmissionHandoff()
         if let keyboardMonitor {
             NSEvent.removeMonitor(keyboardMonitor)
         }

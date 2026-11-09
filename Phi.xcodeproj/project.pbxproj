@@ -225,6 +225,7 @@
 		5A454E000000000000000002 /* KioskBrowserContentViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A454E000000000000000012 /* KioskBrowserContentViewController.swift */; };
 		5A454E000000000000000003 /* KioskBrowserWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A454E000000000000000013 /* KioskBrowserWindowController.swift */; };
 		5A454E000000000000000004 /* KioskBrowserToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A454E000000000000000014 /* KioskBrowserToolbar.swift */; };
+		5A454E000000000000000005 /* KioskLaunchOmniBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A454E000000000000000016 /* KioskLaunchOmniBox.swift */; };
 		5AB2CC000A744E09B299ADE1 /* ShortcutRecordingSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AB2CC000A744E09B299ADE2 /* ShortcutRecordingSection.swift */; };
 		5ACE00000000000000000005 /* SpacesSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000002 /* SpacesSettingViewController.swift */; };
 		5ACE00000000000000000006 /* SpacesSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000003 /* SpacesSettingHostingViewController.swift */; };
@@ -1077,6 +1078,7 @@
 		5A454E000000000000000012 /* KioskBrowserContentViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskBrowserContentViewController.swift; sourceTree = "<group>"; };
 		5A454E000000000000000013 /* KioskBrowserWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskBrowserWindowController.swift; sourceTree = "<group>"; };
 		5A454E000000000000000014 /* KioskBrowserToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskBrowserToolbar.swift; sourceTree = "<group>"; };
+		5A454E000000000000000016 /* KioskLaunchOmniBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskLaunchOmniBox.swift; sourceTree = "<group>"; };
 		5AB2CC000A744E09B299ADE2 /* ShortcutRecordingSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutRecordingSection.swift; sourceTree = "<group>"; };
 		5ACE00000000000000000002 /* SpacesSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesSettingViewController.swift; sourceTree = "<group>"; };
 		5ACE00000000000000000003 /* SpacesSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesSettingHostingViewController.swift; sourceTree = "<group>"; };
@@ -2143,6 +2145,7 @@
 				5A454E000000000000000012 /* KioskBrowserContentViewController.swift */,
 				5A454E000000000000000014 /* KioskBrowserToolbar.swift */,
 				5A454E000000000000000013 /* KioskBrowserWindowController.swift */,
+				5A454E000000000000000016 /* KioskLaunchOmniBox.swift */,
 			);
 			path = Kiosk;
 			sourceTree = "<group>";
@@ -3631,6 +3634,7 @@
 				5A454E000000000000000002 /* KioskBrowserContentViewController.swift in Sources */,
 				5A454E000000000000000004 /* KioskBrowserToolbar.swift in Sources */,
 				5A454E000000000000000003 /* KioskBrowserWindowController.swift in Sources */,
+				5A454E000000000000000005 /* KioskLaunchOmniBox.swift in Sources */,
 				A10500022FF1000000000002 /* NextStepViewController.swift in Sources */,
 				A10600022FF2000000000002 /* GuestPrivacyConfirmationViewController.swift in Sources */,
 				F7FD00000000000000000002 /* FullTitleDisplay.swift in Sources */,

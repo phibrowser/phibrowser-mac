@@ -2894,20 +2894,216 @@ extension AppController {
         }
     }
 
-    /// Opens about:blank in a Kiosk that inherits the focused window's exact
-    /// profile, then presents the native omnibox once AppKit leaves menu
-    /// tracking. With no browser window open, Chromium's last-used profile is
-    /// used instead, matching the windowless New Window commands.
+    /// Asks for the new Kiosk's URL first and creates the Kiosk only once one
+    /// is picked (`presentNewKioskOmniBox`). The Kiosk inherits the focused
+    /// window's exact profile; with no browser window open, Chromium's
+    /// last-used profile is used instead, matching the windowless New Window
+    /// commands.
     @objc func newKioskWindowFromMenu(_ sender: Any?) {
         MainActor.assumeIsolated {
-            openNewKioskWindow(bringToFront: false)
+            presentNewKioskOmniBox()
         }
     }
 
+    /// Runs as soon as the hotkey arrives, even while another app is
+    /// active: the omnibox then asks in the non-activating standalone
+    /// panel, and Phi activates only once a URL is picked.
     func newKioskWindowFromGlobalShortcut() {
         MainActor.assumeIsolated {
-            openNewKioskWindow(bringToFront: true)
+            presentNewKioskOmniBox()
         }
+    }
+
+    /// The empty New Kiosk commands: shows the omnibox before any Kiosk
+    /// exists, then opens the submitted URL through `openNewKioskWindow`.
+    /// The omnibox always asks in the standalone panel, on the screen of
+    /// the window the user is working in, so no browser window is revealed
+    /// just to ask. Dismissing the omnibox opens nothing. Issuing the
+    /// command again while its omnibox is up dismisses it, like Cmd+T.
+    @MainActor
+    func presentNewKioskOmniBox() {
+        if let panel = kioskLaunchOmniBoxPanel, !panel.isFinished {
+            panel.dismiss()
+            return
+        }
+        kioskLaunchOmniBoxPanel = nil
+        let manager = SpaceSessionControllersManager.shared
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge,
+              canOpenNewKioskWindow(manager: manager, bridgeAvailable: true) else {
+            return
+        }
+        // The panel's omnibox shares the active Browser's suggestions, so an
+        // omnibox already up there (and the split it may be picking) ends.
+        // Now, not with the panel: its hide hands key back to its window one
+        // turn later, which must not land after the panel takes key.
+        if let container = manager.activeWindowController?.omniBoxContainerViewController,
+           container.hasShown {
+            container.hideOmniBox()
+        }
+        // Resolved now: a deferred turn may already see another key window.
+        let screen = KioskLaunchOmniBoxPanelController.activeWindowScreen()
+        // One turn later, once AppKit has left menu tracking.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.kioskLaunchOmniBoxPanel == nil,
+                  self.canOpenNewKioskWindow(manager: manager, bridgeAvailable: true) else {
+                return
+            }
+            self.presentStandaloneKioskLaunchOmniBox(
+                screen: screen, bridge: bridge, manager: manager)
+        }
+    }
+
+    /// Opens the picked URL once Phi is active (`KioskLaunchActivation`)
+    /// and always fronts the Kiosk: the omnibox that asked belongs to
+    /// another window, which its hide would otherwise hand key back to. The
+    /// Kiosk's top-right corner goes where the omnibox's was.
+    @MainActor
+    private func openKioskFromLaunchOmniBox(
+        url: String,
+        profileId: String?,
+        topRight: NSPoint?,
+        completion: @escaping () -> Void
+    ) {
+        KioskLaunchActivation().perform { [weak self] in
+            AppLogDebug("[KioskLaunch] opening the picked URL active=\(NSApp.isActive)")
+            self?.openNewKioskWindow(
+                url: url,
+                bringToFront: true,
+                profileId: profileId,
+                alignedTopRight: topRight
+            )
+            completion()
+        }
+    }
+
+    /// The omnibox needs a Browser for Chromium's suggestions. The active one
+    /// serves when it exists — off screen or not, it is also the source the
+    /// Kiosk inherits its profile from. With no Browser at all, a hidden
+    /// Kiosk Browser stands in for the omnibox alone; it is never shown and
+    /// closes once the panel is done, and the real Kiosk opens through the
+    /// ordinary path in the host's profile.
+    @MainActor
+    private func presentStandaloneKioskLaunchOmniBox(
+        screen: NSScreen?,
+        bridge: PhiChromiumBridgeProtocol,
+        manager: SpaceSessionControllersManager
+    ) {
+        let host: SpaceSessionController
+        let ownsHost: Bool
+        if let active = manager.activeWindowController, !active.isDormant {
+            host = active
+            ownsHost = false
+        } else if let created = createKioskLaunchOmniBoxHost(bridge: bridge, manager: manager) {
+            host = created
+            ownsHost = true
+        } else {
+            return
+        }
+        let hostWindowId = host.windowId
+        let profileId = ownsHost ? host.profileId : nil
+        AppLogDebug(
+            "[KioskLaunch] standalone omnibox host=\(hostWindowId) ownsHost=\(ownsHost)"
+        )
+        let closeOwnedHost = {
+            guard ownsHost else { return }
+            Self.closeKioskLaunchOmniBoxHost(windowId: hostWindowId, manager: manager)
+        }
+        let panel = KioskLaunchOmniBoxPanelController(
+            browserState: host.browserState,
+            hostWindow: host.lifecycleWindow
+        ) { [weak self] url in
+            guard let self else {
+                closeOwnedHost()
+                return
+            }
+            let topRight = self.kioskLaunchOmniBoxPanel?.boxTopRight
+            self.kioskLaunchOmniBoxPanel = nil
+            if let url {
+                // The host goes after the Kiosk exists: closing Phi's last
+                // Browser first would leave nothing to open from.
+                self.openKioskFromLaunchOmniBox(
+                    url: url, profileId: profileId, topRight: topRight,
+                    completion: closeOwnedHost)
+            } else {
+                AppLogDebug("[KioskLaunch] dismissed without a URL")
+                closeOwnedHost()
+            }
+        }
+        kioskLaunchOmniBoxPanel = panel
+        panel.present(on: screen)
+    }
+
+    /// A Browser needs a tab to close: Chromium closes a window once its
+    /// last tab goes, so a tabless one ignores IDC_CLOSE_WINDOW and would
+    /// linger as a hidden active window. Like a shadow Browser, the host is
+    /// seeded with about:blank, kept invisible, and closed directly.
+    @MainActor
+    private func createKioskLaunchOmniBoxHost(
+        bridge: PhiChromiumBridgeProtocol,
+        manager: SpaceSessionControllersManager
+    ) -> KioskBrowserWindowController? {
+        guard let result = bridge.createBrowser(
+            withWindowType: .kiosk,
+            profileId: nil,
+            hidden: true
+        ), let windowId = (result["windowId"] as? NSNumber)?.intValue else {
+            AppLogWarn("[KioskLaunch] could not create the omnibox host Browser")
+            return nil
+        }
+        guard let controller = manager.controller(for: windowId)
+                as? KioskBrowserWindowController else {
+            AppLogWarn("[KioskLaunch] omnibox host Browser was not registered")
+            (result["window"] as? NSWindow)?.close()
+            return nil
+        }
+        controller.prepareAsLaunchOmniBoxHost()
+        if let window = controller.window {
+            window.alphaValue = 0
+            window.ignoresMouseEvents = true
+        }
+        bridge.createNewTab(
+            withUrl: "about:blank",
+            windowId: Int64(windowId),
+            customGuid: nil,
+            focusAfterCreate: false
+        )
+        return controller
+    }
+
+    @MainActor
+    private static func closeKioskLaunchOmniBoxHost(
+        windowId: Int,
+        manager: SpaceSessionControllersManager
+    ) {
+        guard let window = manager.controller(for: windowId)?.window else { return }
+        AppLogDebug("[KioskLaunch] closing omnibox host \(windowId)")
+        window.close()
+    }
+
+    /// Whether a Kiosk could open now; shared by the open itself and the
+    /// omnibox that precedes an empty one.
+    @MainActor
+    private func canOpenNewKioskWindow(
+        manager: SpaceSessionControllersManager,
+        bridgeAvailable: Bool
+    ) -> Bool {
+        guard ApplicationState.shared.canOpenExternalLinksInKiosk,
+              !manager.isGuestTransitionInteractionBlocked,
+              bridgeAvailable else {
+            AppLogDebug(
+                "[ExternalKioskRouting] openNewKioskWindow rejected by precondition"
+            )
+            return false
+        }
+        if manager.activeWindowController == nil,
+           SpaceManager.shared.isSessionRestoreInFlight {
+            AppLogDebug(
+                "[ExternalKioskRouting] openNewKioskWindow rejected because "
+                    + "session restore is in flight without an active window"
+            )
+            return false
+        }
+        return true
     }
 
     @MainActor
@@ -2917,7 +3113,8 @@ extension AppController {
         bringToFront: Bool,
         profileId: String? = nil,
         preferredSpaceId: String? = nil,
-        returnApplication: NSRunningApplication? = nil
+        returnApplication: NSRunningApplication? = nil,
+        alignedTopRight: NSPoint? = nil
     ) -> Bool {
         let manager = SpaceSessionControllersManager.shared
         let bridge = ChromiumLauncher.sharedInstance().bridge
@@ -2930,20 +3127,8 @@ extension AppController {
                 + "guestTransitionBlocked=\(manager.isGuestTransitionInteractionBlocked) "
                 + "bridgeAvailable=\(bridge != nil)"
         )
-        guard ApplicationState.shared.canOpenExternalLinksInKiosk,
-              !manager.isGuestTransitionInteractionBlocked,
+        guard canOpenNewKioskWindow(manager: manager, bridgeAvailable: bridge != nil),
               let bridge else {
-            AppLogDebug(
-                "[ExternalKioskRouting] openNewKioskWindow rejected by precondition"
-            )
-            return false
-        }
-        if manager.activeWindowController == nil,
-           SpaceManager.shared.isSessionRestoreInFlight {
-            AppLogDebug(
-                "[ExternalKioskRouting] openNewKioskWindow rejected because "
-                    + "session restore is in flight without an active window"
-            )
             return false
         }
 
@@ -2977,6 +3162,9 @@ extension AppController {
         }
 
         kioskController.returnApplication = returnApplication
+        if let alignedTopRight {
+            kioskController.alignTopRight(to: alignedTopRight)
+        }
         let windowId = kioskController.windowId
         if let state = kioskController.browserState as? KioskBrowserState {
             state.preferredSpaceId = preferredSpaceId
@@ -2995,6 +3183,8 @@ extension AppController {
             if bringToFront, let window = kioskController.window {
                 Self.bringKioskWindowToFront(window)
             }
+            // Only a script's URL-less `new kiosk window` still opens blank;
+            // the New Kiosk commands ask first (`presentNewKioskOmniBox`).
             if url == "about:blank" {
                 kioskController.presentOmniBoxCentered()
             }
@@ -3008,6 +3198,9 @@ extension AppController {
     ) {
         window.orderFrontRegardless()
         window.makeKey()
+        if !NSApp.isActive {
+            KioskActivationKeyReclaim.start(for: window)
+        }
     }
 
     @MainActor

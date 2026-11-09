@@ -150,6 +150,14 @@ final class FloatingTrafficLightsView: NSView {
             backdrop.usesThemePalette = true
             addSubview(backdrop)
             backdrop.snp.makeConstraints { $0.edges.equalToSuperview() }
+            let separator = NSView()
+            separator.wantsLayer = true
+            separator.phiLayer?.setBackgroundColor(.separator)
+            addSubview(separator)
+            separator.snp.makeConstraints { make in
+                make.left.right.bottom.equalToSuperview()
+                make.height.equalTo(1)
+            }
             return
         }
         addSubview(stackView)

@@ -30,20 +30,6 @@ final class ShellSplitViewController: NSViewController {
     private static var splitViewAutosaveName: String {
         SidebarPosition.isOnRight ? "phiMainBrowserSplitViewRight" : "phiMainBrowserSplitView"
     }
-    private var splitTopConstraint: NSLayoutConstraint?
-
-    /// Moves the split below the right-sidebar layout's revealed top band
-    /// (`FloatingSidebarHostViewController` owns the band).
-    func setTrafficLightBandVisible(_ visible: Bool) {
-        let inset = visible ? FloatingTrafficLightMetrics.bandHeight : 0
-        guard let splitTopConstraint, splitTopConstraint.constant != inset else { return }
-        splitTopConstraint.constant = inset
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.15
-            context.allowsImplicitAnimation = true
-            view.layoutSubtreeIfNeeded()
-        }
-    }
 
     private var sidebarOnRight = false
     private var isReorderingSidebar = false
@@ -51,6 +37,10 @@ final class ShellSplitViewController: NSViewController {
     private func updateSidebarPosition() {
         let right = SidebarPosition.isOnRight
         guard sidebarOnRight != right else { return }
+        // The outgoing side's pending write still belongs to that side.
+        sidebarWidthPersistWorkItem?.perform()
+        sidebarWidthPersistWorkItem?.cancel()
+        sidebarWidthPersistWorkItem = nil
         let destinationWidth = AccountController.shared.localDataAccount?.userDefaults
             .lastKnownSidebarWidth(for: SidebarPosition.effective) ?? 0
         isReorderingSidebar = true
@@ -63,6 +53,7 @@ final class ShellSplitViewController: NSViewController {
         if destinationWidth >= Self.leftItemMinWidth {
             lastExpandedSidebarWidth = destinationWidth
         }
+        lastRecordedSidebarWidth = nil
         recordSidebarWidth()
     }
 
@@ -89,9 +80,8 @@ final class ShellSplitViewController: NSViewController {
         addChild(splitViewController)
         view.addSubview(splitViewController.view)
         splitViewController.view.translatesAutoresizingMaskIntoConstraints = false
-        splitTopConstraint = splitViewController.view.topAnchor.constraint(equalTo: view.topAnchor)
         NSLayoutConstraint.activate([
-            splitTopConstraint!,
+            splitViewController.view.topAnchor.constraint(equalTo: view.topAnchor),
             splitViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             splitViewController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             splitViewController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),

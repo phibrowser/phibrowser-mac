@@ -41,11 +41,10 @@ final class FloatingSidebarHostViewController: NSViewController {
     /// `FloatingTrafficLightsView.Placement.topBand`.
     var isTrafficLightBandVisible: Bool { trafficLightStrip?.isStripVisible == true }
 
-    /// Insets the window's split below the revealed band and shows or hides
-    /// the native lights on it.
+    /// Shows or hides the native lights on the band. The band overlays the
+    /// window's content rather than pushing it down, so revealing it never
+    /// resizes the page.
     private func trafficLightBandVisibilityChanged(_ visible: Bool) {
-        (parent as? ShellSplitViewController)?.setTrafficLightBandVisible(visible)
-        (parent as? MainSplitViewController)?.setTrafficLightBandVisible(visible)
         browserState?.windowController?.refreshTrafficLightVisibility()
     }
 
@@ -335,6 +334,7 @@ final class FloatingSidebarHostViewController: NSViewController {
 
     private func ensurePanelIfNeeded() {
         guard floatingSidebarContainerView == nil else { return }
+        updateSidebarPosition()
         let interactionContainerView = MouseTrackingAreaView()
         interactionContainerView.onMouseEntered = { [weak self] _ in
             guard let self else { return }

@@ -242,7 +242,7 @@ final class KioskGlobalShortcutTests: XCTestCase {
         var key = ShortcutsKey(characters: "z", modifiers: .control)
         var actions = 0
         let registrar = Registrar(action: { actions += 1 }, hotKeyAPI: api.api, shortcut: { key }, keyboardLayout: { layout },
-                                  isApplicationActive: { true }, notificationCenter: center,
+                                  notificationCenter: center,
                                   inputSourceNotificationCenter: NotificationCenter())
         defer { registrar.invalidate() }
         registrar.start(enabled: true)
@@ -260,32 +260,27 @@ final class KioskGlobalShortcutTests: XCTestCase {
         XCTAssertEqual(actions, 2)
     }
 
-    func testDisablingOrInvalidatingCancelsAnAlreadyScheduledActivationAction() throws {
+    /// The New Kiosk omnibox asks in a non-activating panel, so a press
+    /// must act right away: waiting for an activation macOS may decline
+    /// would swallow this press and every later one.
+    func testPressActsImmediatelyEvenWhileAnotherAppIsActive() throws {
         let api = FakeHotKeys()
-        let center = NotificationCenter()
-        let activationObject = NSObject()
         let layout = try layout("US")
-        var scheduled: [() -> Void] = []
         var actions = 0
-        var activations = 0
         let registrar = Registrar(action: { actions += 1 }, hotKeyAPI: api.api,
             shortcut: { .init(characters: "z", modifiers: .control) }, keyboardLayout: { layout },
-            isApplicationActive: { false }, activateApplication: { activations += 1 },
-            notificationCenter: center, inputSourceNotificationCenter: NotificationCenter(),
-            activationNotificationObject: activationObject, scheduleAfterActivation: { scheduled.append($0) })
+            notificationCenter: NotificationCenter(), inputSourceNotificationCenter: NotificationCenter())
         defer { registrar.invalidate() }
-        for invalidating in [false, true] {
-            registrar.setEnabled(true)
-            let identifier = try XCTUnwrap(api.active.values.first?.identifier)
-            XCTAssertEqual(try deliver(identifier, to: registrar), noErr)
-            XCTAssertEqual(try deliver(identifier, to: registrar), noErr)
-            center.post(name: NSApplication.didBecomeActiveNotification, object: activationObject)
-            if invalidating { registrar.invalidate() } else { registrar.setEnabled(false) }
-            try XCTUnwrap(scheduled.last)()
-        }
-        XCTAssertEqual(activations, 2, "Repeated hotkeys during activation must coalesce")
-        XCTAssertEqual(scheduled.count, 2)
-        XCTAssertEqual(actions, 0)
+        registrar.start(enabled: true)
+        let identifier = try XCTUnwrap(api.active.values.first?.identifier)
+
+        XCTAssertEqual(try deliver(identifier, to: registrar), noErr)
+        XCTAssertEqual(try deliver(identifier, to: registrar), noErr)
+        XCTAssertEqual(actions, 2, "Every press acts; none waits on the one before")
+
+        registrar.setEnabled(false)
+        XCTAssertEqual(try deliver(identifier, to: registrar), OSStatus(eventNotHandledErr))
+        XCTAssertEqual(actions, 2)
     }
 
     func testUnregisterFailurePreventsReplacementAndActionUntilRecovery() throws {
@@ -295,7 +290,7 @@ final class KioskGlobalShortcutTests: XCTestCase {
         var key = ShortcutsKey(characters: "z", modifiers: .control)
         var actions = 0
         let registrar = Registrar(action: { actions += 1 }, hotKeyAPI: api.api, shortcut: { key }, keyboardLayout: { layout },
-            isApplicationActive: { true }, notificationCenter: center, inputSourceNotificationCenter: NotificationCenter())
+            notificationCenter: center, inputSourceNotificationCenter: NotificationCenter())
         defer { registrar.invalidate() }
         registrar.start(enabled: true)
         let oldID = try XCTUnwrap(api.active.values.first?.identifier)
@@ -320,7 +315,7 @@ final class KioskGlobalShortcutTests: XCTestCase {
         var key = ShortcutsKey(characters: "+", modifiers: .command)
         var actions = 0
         let registrar = Registrar(action: { actions += 1 }, hotKeyAPI: api.api,
-            shortcut: { key }, keyboardLayout: { layout }, isApplicationActive: { true },
+            shortcut: { key }, keyboardLayout: { layout }, 
             notificationCenter: center, inputSourceNotificationCenter: sources)
         defer { registrar.invalidate() }
         registrar.start(enabled: true)
@@ -350,24 +345,18 @@ final class KioskGlobalShortcutTests: XCTestCase {
         XCTAssertEqual(actions, 1)
     }
 
-    func testRecordingCancelsPendingActivationAndRespectsDisablement() throws {
+    func testRecordingRejectsPressesAndRespectsDisablement() throws {
         let api = FakeHotKeys()
-        let center = NotificationCenter()
-        let activationObject = NSObject()
         let layout = try layout("US")
-        var scheduled: [() -> Void] = []
         var actions = 0
         let registrar = Registrar(action: { actions += 1 }, hotKeyAPI: api.api,
             shortcut: { .init(characters: "n", modifiers: .control) }, keyboardLayout: { layout },
-            isApplicationActive: { false }, activateApplication: {}, notificationCenter: center,
-            inputSourceNotificationCenter: NotificationCenter(), activationNotificationObject: activationObject,
-            scheduleAfterActivation: { scheduled.append($0) })
+            notificationCenter: NotificationCenter(), inputSourceNotificationCenter: NotificationCenter())
         defer { registrar.invalidate() }
         registrar.start(enabled: true)
-        XCTAssertEqual(try deliver(try XCTUnwrap(api.active.values.first?.identifier), to: registrar), noErr)
-        center.post(name: NSApplication.didBecomeActiveNotification, object: activationObject)
+        let identifier = try XCTUnwrap(api.active.values.first?.identifier)
         let resume = registrar.suspendForShortcutRecording()
-        try XCTUnwrap(scheduled.first)()
+        XCTAssertEqual(try deliver(identifier, to: registrar), OSStatus(eventNotHandledErr))
         XCTAssertEqual(actions, 0)
         registrar.setEnabled(false)
         resume()
@@ -380,7 +369,7 @@ final class KioskGlobalShortcutTests: XCTestCase {
         let layout = try layout("US")
         let registrar = Registrar(action: { XCTFail("A recording must not open Kiosk") }, hotKeyAPI: api.api,
             shortcut: { .init(characters: "n", modifiers: .control) }, keyboardLayout: { layout },
-            isApplicationActive: { true }, notificationCenter: NotificationCenter(),
+            notificationCenter: NotificationCenter(),
             inputSourceNotificationCenter: NotificationCenter())
         defer { registrar.invalidate() }
         registrar.start(enabled: true)

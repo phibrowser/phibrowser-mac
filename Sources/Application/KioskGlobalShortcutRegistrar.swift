@@ -96,12 +96,8 @@ final class KioskGlobalShortcutRegistrar {
     private let hotKeyAPI: HotKeyAPI
     private let shortcut: () -> ShortcutsKey?
     private let keyboardLayout: () -> KeyboardLayout?
-    private let isApplicationActive: () -> Bool
-    private let activateApplication: () -> Void
     private let notificationCenter: NotificationCenter
     private let inputSourceNotificationCenter: NotificationCenter
-    private let activationNotificationObject: Any?
-    private let scheduleAfterActivation: (@escaping () -> Void) -> Void
     private var eventHandler: EventHandlerRef?
     private struct Registration {
         let configuration: Configuration
@@ -111,9 +107,7 @@ final class KioskGlobalShortcutRegistrar {
     private var registrations: [Registration] = []
     private var shortcutsObserver: NSObjectProtocol?
     private var inputSourceObserver: NSObjectProtocol?
-    private var applicationActivationObserver: NSObjectProtocol?
     private var nextHotKeyID: UInt32 = 0
-    private var activationGeneration: UInt64 = 0
     private var isEnabled = false
     private var recordingSessions: Set<UUID> = []
     private(set) var status: Status = .disabled {
@@ -127,27 +121,15 @@ final class KioskGlobalShortcutRegistrar {
         hotKeyAPI: HotKeyAPI = .live,
         shortcut: @escaping () -> ShortcutsKey? = { Shortcuts.key(for: .PHI_NEW_KIOSK_WINDOW) },
         keyboardLayout: @escaping () -> KeyboardLayout? = KeyboardLayout.current,
-        isApplicationActive: @escaping () -> Bool = { NSApp.isActive },
-        activateApplication: @escaping () -> Void = {
-            NSApp.activate(ignoringOtherApps: true)
-        },
         notificationCenter: NotificationCenter = .default,
-        inputSourceNotificationCenter: NotificationCenter = DistributedNotificationCenter.default(),
-        activationNotificationObject: Any? = NSApp,
-        scheduleAfterActivation: @escaping (@escaping () -> Void) -> Void = {
-            DispatchQueue.main.async(execute: $0)
-        }
+        inputSourceNotificationCenter: NotificationCenter = DistributedNotificationCenter.default()
     ) {
         self.action = action
         self.hotKeyAPI = hotKeyAPI
         self.shortcut = shortcut
         self.keyboardLayout = keyboardLayout
-        self.isApplicationActive = isApplicationActive
-        self.activateApplication = activateApplication
         self.notificationCenter = notificationCenter
         self.inputSourceNotificationCenter = inputSourceNotificationCenter
-        self.activationNotificationObject = activationNotificationObject
-        self.scheduleAfterActivation = scheduleAfterActivation
     }
 
     func start(enabled: Bool = PhiPreferences.GeneralSettings.openKioskWithGlobalShortcut.loadValue()) {
@@ -203,7 +185,6 @@ final class KioskGlobalShortcutRegistrar {
         }
         isEnabled = false
         recordingSessions.removeAll()
-        cancelPendingActivation()
         if unregisterCurrentShortcut() { status = .disabled }
         if let eventHandler {
             let result = hotKeyAPI.removeHandler(eventHandler)
@@ -294,7 +275,6 @@ final class KioskGlobalShortcutRegistrar {
     private func refresh() {
         assert(Thread.isMainThread)
         guard recordingSessions.isEmpty else {
-            cancelPendingActivation()
             if unregisterCurrentShortcut() { status = .disabled }
             return
         }
@@ -305,7 +285,6 @@ final class KioskGlobalShortcutRegistrar {
            configurations == registrations.map(\.configuration), eventHandler != nil {
             return
         }
-        cancelPendingActivation()
         guard unregisterCurrentShortcut() else { return }
         guard !configurations.isEmpty else {
             status = !isEnabled ? .disabled : (shortcut == nil ? .unassigned : .unsupported)
@@ -360,45 +339,11 @@ final class KioskGlobalShortcutRegistrar {
             return OSStatus(eventNotHandledErr)
         }
 
-        performActionAfterApplicationActivation()
+        // Immediately, even while another app is active: the action asks
+        // in a non-activating panel and activates Phi only once it opens
+        // something (`KioskLaunchActivation`). Waiting for activation here
+        // would stall every later press when macOS declines to activate.
+        action()
         return noErr
-    }
-
-    /// When Phi is in the background, AppKit can restore an existing main
-    /// window at the end of activation. Wait for that lifecycle to settle
-    /// before creating Kiosk so the new window wins the final ordering pass.
-    func performActionAfterApplicationActivation() {
-        assert(Thread.isMainThread)
-        guard !isApplicationActive() else {
-            action()
-            return
-        }
-        guard applicationActivationObserver == nil else { return }
-        let generation = activationGeneration
-        applicationActivationObserver = notificationCenter.addObserver(
-            forName: NSApplication.didBecomeActiveNotification,
-            object: activationNotificationObject,
-            queue: .main
-        ) { [weak self] _ in
-            guard let self, self.activationGeneration == generation else { return }
-            self.removeApplicationActivationObserver()
-            self.scheduleAfterActivation { [weak self] in
-                guard let self, self.activationGeneration == generation else { return }
-                self.action()
-            }
-        }
-        activateApplication()
-    }
-
-    private func cancelPendingActivation() {
-        activationGeneration &+= 1
-        removeApplicationActivationObserver()
-    }
-
-    private func removeApplicationActivationObserver() {
-        if let applicationActivationObserver {
-            notificationCenter.removeObserver(applicationActivationObserver)
-            self.applicationActivationObserver = nil
-        }
     }
 }

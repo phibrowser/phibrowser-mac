@@ -152,37 +152,6 @@ final class PhiBrowserTests: XCTestCase {
     }
 
     @MainActor
-    func testGlobalKioskWaitsForApplicationActivationBeforeOpening() {
-        let events = KioskFrontingEventRecorder()
-        let notificationCenter = NotificationCenter()
-        let activationObject = NSObject()
-        let registrar = KioskGlobalShortcutRegistrar(
-            action: {
-                events.values.append("open")
-            },
-            isApplicationActive: { false },
-            activateApplication: {
-                events.values.append("activate")
-            },
-            notificationCenter: notificationCenter,
-            activationNotificationObject: activationObject,
-            scheduleAfterActivation: { action in
-                events.values.append("schedule")
-                action()
-            }
-        )
-
-        registrar.performActionAfterApplicationActivation()
-        XCTAssertEqual(events.values, ["activate"])
-
-        notificationCenter.post(
-            name: NSApplication.didBecomeActiveNotification,
-            object: activationObject
-        )
-        XCTAssertEqual(events.values, ["activate", "schedule", "open"])
-    }
-
-    @MainActor
     func testGlobalKioskFrontingOrdersAndKeysWindow() {
         let events = KioskFrontingEventRecorder()
         let window = KioskFrontingTestWindow(events: events)

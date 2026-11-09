@@ -10,7 +10,8 @@ import Cocoa
 /// omnibox lives either in a main browser window already on screen, or in
 /// the standalone `KioskLaunchOmniBoxPanelController` when there is none —
 /// main windows that are closed, hidden, or miniaturized count as absent,
-/// and Kiosk windows never host it.
+/// and Kiosk windows never host it. While Phi is not the active app (the
+/// global shortcut from another app), the standalone panel asks as well.
 enum KioskLaunchOmniBoxRouting {
     struct Window: Equatable {
         let windowId: Int
@@ -43,12 +44,16 @@ enum KioskLaunchOmniBoxRouting {
     ///     among equally eligible windows.
     ///   - applicationIsHidden: Cmd+H hides every window; revealing one to
     ///     host the omnibox would bring them all back.
+    ///   - applicationIsActive: macOS may refuse to activate Phi from a
+    ///     global shortcut, and a browser window of an inactive app gets no
+    ///     typing. The non-activating panel takes key without activation.
     static func target(
         windowsFrontToBack: [Window],
         activeWindowId: Int?,
-        applicationIsHidden: Bool
+        applicationIsHidden: Bool,
+        applicationIsActive: Bool
     ) -> Target {
-        guard !applicationIsHidden else { return .standalone }
+        guard !applicationIsHidden, applicationIsActive else { return .standalone }
         let eligible = windowsFrontToBack.filter {
             $0.isMainBrowserWindow && $0.isOnScreen
         }
@@ -136,12 +141,12 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: true
         )
-        // The host Browser's sidebar is not in this panel: center on the
-        // panel itself.
+        // The host Browser only supplies suggestions: its window, sidebar,
+        // and tabs are not behind this panel.
         container = OmniBoxContainerViewController(
             browserState: browserState,
             superView: backgroundView,
-            centersBesideSidebar: false
+            isDetachedFromHostWindow: true
         )
         self.onFinish = onFinish
         super.init()
@@ -244,5 +249,90 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         dismiss()
+    }
+}
+
+/// Opens the Kiosk picked in the launch omnibox only once Phi is active, so
+/// the new Kiosk takes key and keeps it. A submission from the standalone
+/// panel arrives while Phi may still be inactive (the panel does not
+/// activate it), and activating can bring an existing window forward at
+/// the end of the activation; opening after that settles lets the Kiosk win
+/// the final ordering. An active app still waits one turn, for the omnibox
+/// hide that is under way to hand key back first. If activation never
+/// arrives, `fallbackDelay` later the Kiosk opens anyway.
+@MainActor
+struct KioskLaunchActivation {
+    static let fallbackDelay: TimeInterval = 0.5
+
+    var isApplicationActive: () -> Bool = { NSApp.isActive }
+    var activateApplication: () -> Void = { NSApp.activate(ignoringOtherApps: true) }
+    var notificationCenter: NotificationCenter = .default
+    var activationNotificationObject: Any? = NSApp
+    var scheduleNextTurn: (@escaping () -> Void) -> Void = {
+        DispatchQueue.main.async(execute: $0)
+    }
+    var scheduleFallback: (@escaping () -> Void) -> Void = {
+        DispatchQueue.main.asyncAfter(deadline: .now() + KioskLaunchActivation.fallbackDelay, execute: $0)
+    }
+
+    func perform(_ action: @escaping () -> Void) {
+        guard !isApplicationActive() else {
+            scheduleNextTurn(action)
+            return
+        }
+        let pending = Pending(
+            action: action,
+            notificationCenter: notificationCenter,
+            scheduleNextTurn: scheduleNextTurn
+        )
+        pending.observer = notificationCenter.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: activationNotificationObject,
+            queue: nil
+        ) { _ in
+            MainActor.assumeIsolated {
+                pending.runAfterActivation()
+            }
+        }
+        scheduleFallback { pending.run() }
+        activateApplication()
+    }
+
+    /// Runs its action at most once, whichever of activation and the
+    /// fallback comes first.
+    @MainActor
+    private final class Pending {
+        private var action: (() -> Void)?
+        private let notificationCenter: NotificationCenter
+        private let scheduleNextTurn: (@escaping () -> Void) -> Void
+        var observer: NSObjectProtocol?
+
+        init(
+            action: @escaping () -> Void,
+            notificationCenter: NotificationCenter,
+            scheduleNextTurn: @escaping (@escaping () -> Void) -> Void
+        ) {
+            self.action = action
+            self.notificationCenter = notificationCenter
+            self.scheduleNextTurn = scheduleNextTurn
+        }
+
+        /// One turn after activation, once its own ordering pass is done.
+        func runAfterActivation() {
+            stopObserving()
+            scheduleNextTurn { [self] in run() }
+        }
+
+        func stopObserving() {
+            if let observer { notificationCenter.removeObserver(observer) }
+            observer = nil
+        }
+
+        func run() {
+            stopObserving()
+            guard let action else { return }
+            self.action = nil
+            action()
+        }
     }
 }

@@ -540,6 +540,12 @@ final class KioskBrowserWindowController: SpaceSessionController {
         }
     }
 
+    /// The hidden Browser behind the standalone launch omnibox is never a
+    /// Kiosk the user opened.
+    func prepareAsLaunchOmniBoxHost() {
+        shouldCaptureKioskOpened = false
+    }
+
     @MainActor
     private func prepareForProfileReplacement(
         from source: KioskBrowserWindowController,

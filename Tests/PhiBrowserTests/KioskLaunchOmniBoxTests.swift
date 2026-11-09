@@ -63,38 +63,56 @@ final class KioskLaunchOmniBoxTests: XCTestCase {
     func testVisibleMainWindowHostsTheOmniBox() {
         XCTAssertEqual(
             KioskLaunchOmniBoxRouting.target(windowsFrontToBack: [window(1)],
-                                             activeWindowId: 1, applicationIsHidden: false),
+                                             activeWindowId: 1, applicationIsHidden: false,
+                                             applicationIsActive: true),
             .browserWindow(windowId: 1))
     }
 
     func testWithoutAMainWindowOnScreenTheStandalonePanelHostsIt() {
         XCTAssertEqual(
             KioskLaunchOmniBoxRouting.target(windowsFrontToBack: [],
-                                             activeWindowId: nil, applicationIsHidden: false),
+                                             activeWindowId: nil, applicationIsHidden: false,
+                                             applicationIsActive: true),
             .standalone, "Every main window closed")
         XCTAssertEqual(
             KioskLaunchOmniBoxRouting.target(windowsFrontToBack: [window(7, main: false)],
-                                             activeWindowId: 7, applicationIsHidden: false),
+                                             activeWindowId: 7, applicationIsHidden: false,
+                                             applicationIsActive: true),
             .standalone, "A Kiosk window is never the host")
         XCTAssertEqual(
             KioskLaunchOmniBoxRouting.target(windowsFrontToBack: [window(1, onScreen: false)],
-                                             activeWindowId: 1, applicationIsHidden: false),
+                                             activeWindowId: 1, applicationIsHidden: false,
+                                             applicationIsActive: true),
             .standalone, "Ordered out or miniaturized main windows count as absent")
         XCTAssertEqual(
             KioskLaunchOmniBoxRouting.target(windowsFrontToBack: [window(1)],
-                                             activeWindowId: 1, applicationIsHidden: true),
+                                             activeWindowId: 1, applicationIsHidden: true,
+                                             applicationIsActive: true),
             .standalone, "A hidden app must not be unhidden to host the omnibox")
+    }
+
+    /// The global shortcut from another app: macOS may decline to activate
+    /// Phi, and a browser window of an inactive app gets no typing, so the
+    /// non-activating panel asks instead.
+    func testInactiveAppAsksInTheStandalonePanel() {
+        XCTAssertEqual(
+            KioskLaunchOmniBoxRouting.target(windowsFrontToBack: [window(1)],
+                                             activeWindowId: 1, applicationIsHidden: false,
+                                             applicationIsActive: false),
+            .standalone)
     }
 
     func testActiveMainWindowWinsThenTheFrontmostOne() {
         let windows = [window(7, main: false), window(2), window(1)]
         XCTAssertEqual(
             KioskLaunchOmniBoxRouting.target(windowsFrontToBack: windows,
-                                             activeWindowId: 1, applicationIsHidden: false),
+                                             activeWindowId: 1, applicationIsHidden: false,
+                                             applicationIsActive: true),
             .browserWindow(windowId: 1))
         XCTAssertEqual(
             KioskLaunchOmniBoxRouting.target(windowsFrontToBack: windows,
-                                             activeWindowId: 7, applicationIsHidden: false),
+                                             activeWindowId: 7, applicationIsHidden: false,
+                                             applicationIsActive: true),
             .browserWindow(windowId: 2), "The active Kiosk does not count; the frontmost main window does")
     }
 
@@ -102,11 +120,13 @@ final class KioskLaunchOmniBoxTests: XCTestCase {
         let windows = [window(1, activeSpace: false), window(2)]
         XCTAssertEqual(
             KioskLaunchOmniBoxRouting.target(windowsFrontToBack: windows,
-                                             activeWindowId: 1, applicationIsHidden: false),
+                                             activeWindowId: 1, applicationIsHidden: false,
+                                             applicationIsActive: true),
             .browserWindow(windowId: 2))
         XCTAssertEqual(
             KioskLaunchOmniBoxRouting.target(windowsFrontToBack: [window(1, activeSpace: false)],
-                                             activeWindowId: nil, applicationIsHidden: false),
+                                             activeWindowId: nil, applicationIsHidden: false,
+                                             applicationIsActive: true),
             .browserWindow(windowId: 1), "With no window here, the main window elsewhere still hosts it")
     }
 
@@ -197,6 +217,125 @@ final class KioskLaunchOmniBoxTests: XCTestCase {
         XCTAssertTrue(submitted.isEmpty)
         XCTAssertEqual(dismissals, 1)
         XCTAssertFalse(container.isHandingOffSubmission)
+    }
+
+    /// A detached omnibox (the standalone panel) is no overlay of its host
+    /// Browser's window: announcing one would make that window take key
+    /// back on hide and eclipse its panels, and the host's tab changes are
+    /// not in front of the user.
+    func testDetachedContainerIsNoInWindowOverlayAndIgnoresHostTabChanges() throws {
+        let state = try makeState()
+        let container = OmniBoxContainerViewController(browserState: state, isDetachedFromHostWindow: true)
+        var announcements = 0
+        let observer = NotificationCenter.default.addObserver(
+            forName: .phiInWindowOverlayVisibilityChanged, object: nil, queue: nil) { _ in announcements += 1 }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        var dismissals = 0
+        container.showOmniBox(fromAddressBar: false)
+        container.handOffNextSubmission(onSubmit: { _ in }, onDismissWithoutSubmission: { dismissals += 1 })
+
+        state.focusingTab = Tab(guid: 9, url: "about:blank", isActive: true, index: 0)
+        let settled = expectation(description: "Focusing-tab change delivered")
+        DispatchQueue.main.async { settled.fulfill() }
+        wait(for: [settled], timeout: 1)
+        XCTAssertTrue(container.hasShown, "A host tab change must not dismiss a detached omnibox")
+        XCTAssertEqual(dismissals, 0)
+
+        container.hideOmniBox()
+        XCTAssertEqual(announcements, 0)
+        XCTAssertEqual(dismissals, 1)
+    }
+
+    func testInWindowContainerStillAnnouncesItsOverlay() throws {
+        let state = try makeState()
+        let container = OmniBoxContainerViewController(browserState: state)
+        var visibility: [Bool] = []
+        let observer = NotificationCenter.default.addObserver(
+            forName: .phiInWindowOverlayVisibilityChanged, object: nil, queue: nil) {
+                if let visible = $0.userInfo?["visible"] as? Bool { visibility.append(visible) }
+            }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        container.showOmniBox(fromAddressBar: false)
+        container.hideOmniBox()
+        XCTAssertEqual(visibility, [true, false])
+    }
+
+    // MARK: - Opening after activation
+
+    private final class ActivationHarness {
+        let center = NotificationCenter()
+        let object = NSObject()
+        var isActive = false
+        var activations = 0
+        var nextTurn: [() -> Void] = []
+        var fallbacks: [() -> Void] = []
+
+        @MainActor
+        var activation: KioskLaunchActivation {
+            KioskLaunchActivation(
+                isApplicationActive: { [unowned self] in self.isActive },
+                activateApplication: { [unowned self] in self.activations += 1 },
+                notificationCenter: center,
+                activationNotificationObject: object,
+                scheduleNextTurn: { [unowned self] in self.nextTurn.append($0) },
+                scheduleFallback: { [unowned self] in self.fallbacks.append($0) })
+        }
+
+        func becomeActive() {
+            isActive = true
+            center.post(name: NSApplication.didBecomeActiveNotification, object: object)
+        }
+
+        func runNextTurn() {
+            let pending = nextTurn
+            nextTurn = []
+            pending.forEach { $0() }
+        }
+    }
+
+    /// In an active app the Kiosk still opens a turn later, behind the hide
+    /// of the omnibox that asked, which hands key back to its own window.
+    func testActiveAppOpensTheKioskOnTheNextTurnWithoutActivating() {
+        let harness = ActivationHarness()
+        harness.isActive = true
+        var opens = 0
+        harness.activation.perform { opens += 1 }
+        XCTAssertEqual(opens, 0)
+        harness.runNextTurn()
+        XCTAssertEqual(opens, 1)
+        XCTAssertEqual(harness.activations, 0)
+        XCTAssertTrue(harness.fallbacks.isEmpty)
+    }
+
+    func testInactiveAppActivatesAndOpensTheKioskOnceActivationSettles() {
+        let harness = ActivationHarness()
+        var opens = 0
+        harness.activation.perform { opens += 1 }
+        XCTAssertEqual(harness.activations, 1)
+        XCTAssertEqual(opens, 0, "Not before Phi is active")
+
+        harness.becomeActive()
+        XCTAssertEqual(opens, 0, "Not before the activation's own ordering pass")
+        harness.runNextTurn()
+        XCTAssertEqual(opens, 1)
+
+        harness.fallbacks.forEach { $0() }
+        harness.becomeActive()
+        harness.runNextTurn()
+        XCTAssertEqual(opens, 1, "Opens exactly once")
+    }
+
+    func testDeclinedActivationStillOpensTheKioskAfterTheFallback() {
+        let harness = ActivationHarness()
+        var opens = 0
+        harness.activation.perform { opens += 1 }
+        XCTAssertEqual(harness.fallbacks.count, 1)
+        harness.fallbacks.forEach { $0() }
+        XCTAssertEqual(opens, 1)
+
+        harness.becomeActive()
+        harness.runNextTurn()
+        XCTAssertEqual(opens, 1, "A late activation opens nothing more")
     }
 
     // MARK: - Standalone panel
@@ -294,5 +433,29 @@ final class KioskLaunchOmniBoxTests: XCTestCase {
 
         XCTAssertEqual(results, [nil])
         XCTAssertFalse(controller.panel.isVisible)
+    }
+
+    /// Each New Kiosk gets a fresh panel; a finished one leaves nothing that
+    /// would stop the next from asking.
+    func testAFreshPanelAsksAgainAfterAFinishedOne() throws {
+        let state = try makeState()
+        var results: [String?] = []
+        let first = KioskLaunchOmniBoxPanelController(
+            browserState: state, hostWindow: nil) { results.append($0) }
+        first.present(on: NSScreen.main)
+        let firstBox = try XCTUnwrap(first.container.omniBoxController)
+        firstBox.updateStatus(with: Tab(guid: 1, url: "https://example.com/one", isActive: true, index: 0))
+        firstBox.confirmSelection()
+
+        let second = KioskLaunchOmniBoxPanelController(
+            browserState: state, hostWindow: nil) { results.append($0) }
+        second.present(on: NSScreen.main)
+        XCTAssertTrue(second.panel.isVisible)
+        XCTAssertTrue(second.container.hasShown)
+        let secondBox = try XCTUnwrap(second.container.omniBoxController)
+        secondBox.updateStatus(with: Tab(guid: 2, url: "https://example.com/two", isActive: true, index: 0))
+        secondBox.confirmSelection()
+
+        XCTAssertEqual(results, ["https://example.com/one", "https://example.com/two"])
     }
 }

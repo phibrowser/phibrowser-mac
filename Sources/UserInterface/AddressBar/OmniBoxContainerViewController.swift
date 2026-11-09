@@ -46,9 +46,12 @@ final class OmniBoxContainerViewController: NSViewController {
     private var maxOmniBoxHeight: CGFloat { Self.maxOmniBoxHeight }
     private let collapsedOmniBoxHeight: CGFloat = 52 // base 52 + separator 1
     private let centeredHorizontalInset: CGFloat
-    /// Whether the centered box shifts into the area right of the browser's
-    /// sidebar. Off for hosts outside the browser window.
-    private let centersBesideSidebar: Bool
+    /// Whether the omnibox floats in its own window rather than over its
+    /// host Browser's window: it then centers without the host's sidebar,
+    /// ignores the host's tab changes, and is no in-window overlay of the
+    /// host (which would otherwise eclipse its panels and take key back on
+    /// hide).
+    private let isDetachedFromHostWindow: Bool
     private weak var parentView: EventBlockBgView?
     private var showFromAddressBar: Bool = false
     private weak var addressView: NSView?
@@ -81,10 +84,10 @@ final class OmniBoxContainerViewController: NSViewController {
         browserState: BrowserState,
         superView: EventBlockBgView? = nil,
         centeredHorizontalInset: CGFloat = 0,
-        centersBesideSidebar: Bool = true
+        isDetachedFromHostWindow: Bool = false
     ) {
         self.centeredHorizontalInset = max(centeredHorizontalInset, 0)
-        self.centersBesideSidebar = centersBesideSidebar
+        self.isDetachedFromHostWindow = isDetachedFromHostWindow
         super.init(nibName: nil, bundle: nil)
         self.browserState = browserState
         self.parentView = superView
@@ -169,6 +172,7 @@ final class OmniBoxContainerViewController: NSViewController {
     }
     
     private func observeFocusingTabChange() {
+        guard !isDetachedFromHostWindow else { return }
         focusingTabObserver = browserState?.$focusingTab
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -287,9 +291,14 @@ final class OmniBoxContainerViewController: NSViewController {
         }
         omniBoxController?.focusTextField()
         observeFocusingTabChange()
+        postInWindowOverlayVisibility(true)
+    }
+
+    private func postInWindowOverlayVisibility(_ visible: Bool) {
+        guard !isDetachedFromHostWindow else { return }
         NotificationCenter.default.post(name: .phiInWindowOverlayVisibilityChanged,
                                         object: view.window?.parent ?? view.window,
-                                        userInfo: ["visible": true, "surface": "omnibox",
+                                        userInfo: ["visible": visible, "surface": "omnibox",
                                                    "windowId": browserState?.windowId as Any])
     }
 
@@ -335,10 +344,7 @@ final class OmniBoxContainerViewController: NSViewController {
     func hideOmniBox(fromAddressBar: Bool = false) {
         // At hide START, not completion: the overlay is on its way out, and
         // anything that deferred to it may take key back behind the fade.
-        NotificationCenter.default.post(name: .phiInWindowOverlayVisibilityChanged,
-                                        object: view.window?.parent ?? view.window,
-                                        userInfo: ["visible": false, "surface": "omnibox",
-                                                   "windowId": browserState?.windowId as Any])
+        postInWindowOverlayVisibility(false)
         defer { finishSubmissionHandoff() }
         focusingTabObserver = nil
         browserState?.endSplitPreview()
@@ -726,7 +732,7 @@ final class OmniBoxContainerViewController: NSViewController {
         )
         let actualWidth = min(contentSize.width, availableWidth)
 
-        let sidebarWidth = centersBesideSidebar ? browserState?.sidebarWidth ?? 0 : 0
+        let sidebarWidth = isDetachedFromHostWindow ? 0 : browserState?.sidebarWidth ?? 0
         let rightAreaWidth = parentBounds.width - sidebarWidth
         let proposedX: CGFloat
         if sidebarWidth == 0 || rightAreaWidth < actualWidth {

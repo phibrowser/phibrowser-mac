@@ -37,8 +37,8 @@ final class ShellSplitViewController: NSViewController {
     private func updateSidebarPosition() {
         let right = SidebarPosition.isOnRight
         guard sidebarOnRight != right else { return }
-        // The outgoing side's pending write still belongs to that side.
-        sidebarWidthPersistWorkItem?.perform()
+        // `repositionSidebarItem` saves the outgoing side's current width;
+        // a pending write from before the move would overwrite it later.
         sidebarWidthPersistWorkItem?.cancel()
         sidebarWidthPersistWorkItem = nil
         let destinationWidth = AccountController.shared.localDataAccount?.userDefaults
@@ -531,6 +531,12 @@ extension NSSplitViewController {
         let restoringExistingGeometry = splitView.autosaveName != nil
         let collapsed = previous.isCollapsed
         let currentWidth = max(previous.minimumThickness, previous.viewController.view.frame.width)
+        if restoringExistingGeometry, !collapsed {
+            // The outgoing side's width is only in its autosaved frames,
+            // which the move drops; keep it for the next switch back.
+            AccountController.shared.localDataAccount?.userDefaults
+                .setLastKnownSidebarWidth(currentWidth, for: onRight ? .left : .right)
+        }
         let width = destinationWidth > 0
             ? min(max(destinationWidth, previous.minimumThickness), previous.maximumThickness)
             : currentWidth

@@ -141,6 +141,21 @@ enum KioskWindowPresentationGeometry {
             constrainedTo: visibleFrame
         )
     }
+
+    static let cascadeOffset: CGFloat = 28
+
+    /// Shifts a new Kiosk right of the previous one; a shift past the right
+    /// edge starts again at the left edge.
+    static func frame(
+        cascadedFrom previousFrame: NSRect,
+        visibleFrame: NSRect
+    ) -> NSRect {
+        var frame = previousFrame.offsetBy(dx: cascadeOffset, dy: 0)
+        if frame.maxX > visibleFrame.maxX {
+            frame.origin.x = visibleFrame.minX
+        }
+        return frame
+    }
 }
 
 /// Native owner for Chromium browsers carrying the Kiosk semantic type.
@@ -758,20 +773,43 @@ final class KioskBrowserWindowController: SpaceSessionController {
     }
 
     /// Opens without a cursor anchor (external links, menu, shortcuts, URL
-    /// rules) land on the screen the user acted on instead of the saved one.
+    /// rules) land on the screen the user acted on instead of the saved one,
+    /// shifted right of a Kiosk already there so they don't stack.
     private func placeOnPresentationScreen(_ window: NSWindow) {
         if let screen = Self.presentationScreen() {
-            let targetFrame = KioskWindowPresentationGeometry.frame(
-                window.frame,
-                placedOnScreenFrame: screen.frame,
-                visibleFrame: screen.visibleFrame
-            )
+            let targetFrame: NSRect
+            if let previousFrame = previousKioskFrame(on: screen) {
+                targetFrame = KioskWindowPresentationGeometry.frame(
+                    cascadedFrom: previousFrame,
+                    visibleFrame: screen.visibleFrame
+                )
+            } else {
+                targetFrame = KioskWindowPresentationGeometry.frame(
+                    window.frame,
+                    placedOnScreenFrame: screen.frame,
+                    visibleFrame: screen.visibleFrame
+                )
+            }
             if targetFrame != window.frame {
                 AppLogInfo("[Kiosk] Move window from \(window.frame) to \(targetFrame) on screen \(screen.localizedName)")
                 window.setFrame(targetFrame, display: false)
             }
         }
         KioskWindowFramePersistence.saveFrameAndEnableAutosave(for: window)
+    }
+
+    /// The frontmost on-screen Kiosk is the most recently opened one.
+    private func previousKioskFrame(on screen: NSScreen) -> NSRect? {
+        NSApp.orderedWindows.first { candidate in
+            candidate !== window
+                && candidate.windowController is KioskBrowserWindowController
+                && candidate.isVisible
+                && !candidate.isMiniaturized
+                && !candidate.styleMask.contains(.fullScreen)
+                && screen.frame.contains(
+                    NSPoint(x: candidate.frame.midX, y: candidate.frame.midY)
+                )
+        }?.frame
     }
 
     /// A keyboard shortcut opens on the focused window's screen. Anything

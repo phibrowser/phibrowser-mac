@@ -494,6 +494,31 @@ final class KioskBrowserStateTests: XCTestCase {
         )
     }
 
+    func testKioskCascadesRightOfPreviousKiosk() {
+        let visibleFrame = NSRect(x: 1_440, y: 0, width: 1_920, height: 1_055)
+        let offset = KioskWindowPresentationGeometry.cascadeOffset
+
+        let previousFrame = NSRect(x: 1_600, y: 100, width: 900, height: 640)
+        XCTAssertEqual(
+            KioskWindowPresentationGeometry.frame(
+                cascadedFrom: previousFrame,
+                visibleFrame: visibleFrame
+            ),
+            NSRect(x: 1_600 + offset, y: 100, width: 900, height: 640)
+        )
+
+        let rightEdgeFrame = NSRect(
+            x: visibleFrame.maxX - 900, y: 100, width: 900, height: 640
+        )
+        XCTAssertEqual(
+            KioskWindowPresentationGeometry.frame(
+                cascadedFrom: rightEdgeFrame,
+                visibleFrame: visibleFrame
+            ),
+            NSRect(x: 1_440, y: 100, width: 900, height: 640)
+        )
+    }
+
     func testKioskCursorPresentationStartsAtCursor() {
         let anchor = NSPoint(x: -300, y: 740)
         let initialFrame = KioskWindowPresentationGeometry.initialFrame(

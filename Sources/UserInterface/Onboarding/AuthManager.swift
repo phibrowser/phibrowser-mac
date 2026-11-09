@@ -301,8 +301,13 @@ enum Auth0CredentialKeychain {
         )
     }
 
+    /// Legacy access must set `kSecUseDataProtectionKeychain` to false: when
+    /// it is absent, macOS also matches and deletes data protection items.
     static var fileBasedKeychain: SimpleKeychain {
-        SimpleKeychain(service: service)
+        SimpleKeychain(
+            service: service,
+            attributes: [kSecUseDataProtectionKeychain as String: false]
+        )
     }
 
     static func dataProtectionQuery(account: String) -> [String: Any] {
@@ -325,8 +330,16 @@ enum Auth0CredentialKeychain {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+            kSecUseDataProtectionKeychain as String: false,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+    }
+
+    static func clearLegacy(account: String) -> Bool {
+        Auth0KeychainCredentialsStorage.clear(
+            query: fileBasedQuery(account: account),
+            sdkClear: { fileBasedKeychain.deleteEntry(forKey: account) }
+        )
     }
 
     static func read(query: [String: Any]) -> Auth0CredentialStoreMigration.ReadResult {
@@ -727,7 +740,7 @@ class AuthManager {
                     query: Auth0CredentialKeychain.fileBasedQuery(account: account)
                 )
             },
-            clearLegacy: { clearLegacyCredential(account: account) }
+            clearLegacy: { Auth0CredentialKeychain.clearLegacy(account: account) }
         )
         logCredentialStoreMigration(outcome, account: account)
         return Auth0KeychainCredentialsStorage(
@@ -1272,18 +1285,11 @@ class AuthManager {
             query: Auth0CredentialKeychain.dataProtectionQuery(account: credentialStoreKey),
             sdkClear: { credentialManager.clear() }
         )
-        let legacyCleared = clearLegacyCredential(account: credentialStoreKey)
+        let legacyCleared = Auth0CredentialKeychain.clearLegacy(account: credentialStoreKey)
         let sharedCleared = SharedAuthTokenStore.shared.clear(
             postChangeNotification: postSharedTokenChange
         )
         return localCleared && legacyCleared && sharedCleared
-    }
-
-    private func clearLegacyCredential(account: String) -> Bool {
-        Auth0KeychainCredentialsStorage.clear(
-            query: Auth0CredentialKeychain.fileBasedQuery(account: account),
-            sdkClear: { Auth0CredentialKeychain.fileBasedKeychain.deleteEntry(forKey: account) }
-        )
     }
 
     private func storeCredentialsIfAllowed(_ credentials: Credentials) -> Bool {

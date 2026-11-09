@@ -66,6 +66,10 @@ final class Auth0CredentialStoreMigrationTests: XCTestCase {
     }
 
     private var isCleanupPending: Bool {
+        isCleanupPending(account: account)
+    }
+
+    private func isCleanupPending(account: String) -> Bool {
         defaults.bool(forKey: Auth0CredentialStoreMigration.legacyCleanupPendingKey(account: account))
     }
 
@@ -300,6 +304,40 @@ final class Auth0CredentialStoreMigrationTests: XCTestCase {
         XCTAssertEqual(try? primary.data(forKey: account), renewed)
         XCTAssertEqual(try? fallback.data(forKey: account), legacyData, "Writes must not touch the fallback")
         XCTAssertEqual(storage.getEntry(forKey: account), renewed)
+    }
+
+    func testRealKeychainMigrationKeepsDataProtectionItemAfterLegacyCleanup() {
+        let account = "credentials-test-\(UUID().uuidString)"
+        let dataProtectionQuery = Auth0CredentialKeychain.dataProtectionQuery(account: account)
+        let legacyQuery = Auth0CredentialKeychain.fileBasedQuery(account: account)
+        var legacyItem = legacyQuery
+        legacyItem.removeValue(forKey: kSecMatchLimit as String)
+        legacyItem[kSecValueData as String] = legacyData
+        XCTAssertEqual(SecItemAdd(legacyItem as CFDictionary, nil), errSecSuccess)
+        defer {
+            _ = Auth0CredentialKeychain.clearLegacy(account: account)
+            var dataProtectionItem = dataProtectionQuery
+            dataProtectionItem.removeValue(forKey: kSecMatchLimit as String)
+            SecItemDelete(dataProtectionItem as CFDictionary)
+        }
+
+        let outcome = Auth0CredentialStoreMigration.runIfNeeded(
+            account: account,
+            defaults: defaults,
+            discardsLegacyCredential: false,
+            readDataProtection: { Auth0CredentialKeychain.read(query: dataProtectionQuery) },
+            addToDataProtection: {
+                Auth0CredentialKeychain.addToDataProtectionKeychain($0, account: account)
+            },
+            readLegacy: { Auth0CredentialKeychain.read(query: legacyQuery) },
+            clearLegacy: { Auth0CredentialKeychain.clearLegacy(account: account) }
+        )
+
+        XCTAssertEqual(outcome, .migrated)
+        XCTAssertEqual(Auth0CredentialKeychain.read(query: dataProtectionQuery), .found(legacyData))
+        XCTAssertEqual(Auth0CredentialKeychain.read(query: legacyQuery), .notFound)
+        XCTAssertEqual(Auth0KeychainCredentialsStorage().getEntry(forKey: account), legacyData)
+        XCTAssertFalse(isCleanupPending(account: account))
     }
 
     func testMigrationStateIsScopedPerAccount() {

@@ -335,3 +335,48 @@ struct KioskLaunchActivation {
         }
     }
 }
+
+/// A Kiosk keyed while Phi is still inactive loses key when Phi's
+/// activation lands: AppKit's activation pass re-keys the window Phi last
+/// had key. One turn after an activation within `timeout`, the Kiosk takes
+/// key back.
+@MainActor
+enum KioskActivationKeyReclaim {
+    static let timeout: TimeInterval = 1
+
+    private static var observer: NSObjectProtocol?
+    private static var generation = 0
+
+    static func start(
+        for window: NSWindow,
+        notificationCenter: NotificationCenter = .default,
+        activationNotificationObject: Any? = NSApp
+    ) {
+        stop(notificationCenter: notificationCenter)
+        generation += 1
+        let startedGeneration = generation
+        observer = notificationCenter.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: activationNotificationObject,
+            queue: nil
+        ) { [weak window] _ in
+            MainActor.assumeIsolated {
+                stop(notificationCenter: notificationCenter)
+                DispatchQueue.main.async {
+                    guard let window, window.isVisible, !window.isKeyWindow else { return }
+                    AppLogDebug("[KioskLaunch] reclaiming key after activation")
+                    window.makeKeyAndOrderFront(nil)
+                }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
+            guard generation == startedGeneration else { return }
+            stop(notificationCenter: notificationCenter)
+        }
+    }
+
+    private static func stop(notificationCenter: NotificationCenter) {
+        if let observer { notificationCenter.removeObserver(observer) }
+        observer = nil
+    }
+}

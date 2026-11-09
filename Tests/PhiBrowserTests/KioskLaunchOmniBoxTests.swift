@@ -249,6 +249,41 @@ final class KioskLaunchOmniBoxTests: XCTestCase {
         XCTAssertEqual(opens, 1, "A late activation opens nothing more")
     }
 
+    // MARK: - Key after activation
+
+    private final class KeyRecordingWindow: NSWindow {
+        var keyRequests = 0
+        override var isVisible: Bool { true }
+        override func makeKeyAndOrderFront(_ sender: Any?) { keyRequests += 1 }
+    }
+
+    private func drainMainQueue() {
+        let drained = expectation(description: "Main queue drained")
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 1)
+    }
+
+    /// Phi's activation re-keys the window it last had; the Kiosk opened
+    /// while Phi was inactive takes key back once, a turn later.
+    func testKioskTakesKeyBackOnceWhenActivationLands() {
+        let center = NotificationCenter()
+        let application = NSObject()
+        let window = KeyRecordingWindow(contentRect: .zero, styleMask: [.titled],
+                                        backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        KioskActivationKeyReclaim.start(for: window, notificationCenter: center,
+                                        activationNotificationObject: application)
+
+        center.post(name: NSApplication.didBecomeActiveNotification, object: application)
+        XCTAssertEqual(window.keyRequests, 0, "Not before AppKit's own activation pass")
+        drainMainQueue()
+        XCTAssertEqual(window.keyRequests, 1)
+
+        center.post(name: NSApplication.didBecomeActiveNotification, object: application)
+        drainMainQueue()
+        XCTAssertEqual(window.keyRequests, 1, "A later activation leaves key alone")
+    }
+
     // MARK: - Standalone panel
 
     func testStandalonePanelPutsTheBoxInTheTopRightCornerOfTheScreen() {

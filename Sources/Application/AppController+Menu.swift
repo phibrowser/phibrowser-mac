@@ -3190,6 +3190,9 @@ extension AppController {
     ) {
         window.orderFrontRegardless()
         window.makeKey()
+        if !NSApp.isActive {
+            KioskActivationKeyReclaim.start(for: window)
+        }
     }
 
     @MainActor

@@ -1870,6 +1870,21 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (BOOL)isRestorePreviousSessionEnabled;
 - (void)setRestorePreviousSessionEnabled:(BOOL)enabled;
 
+/// Marks Sign out's session-restore discard (Mac ADR 0012). Call this on both
+/// Sign out paths once the Sign out is committed, before closing the windows.
+/// The mark is recorded in Chromium local state and written to disk at once;
+/// unless consumeSignOutSessionDiscard takes it first, the next launch empties
+/// Session restore and Undo Close for every profile before it restores
+/// anything, even after a quit or crash. Main thread only.
+- (void)markSignOutSessionDiscard;
+
+/// Consumes what markSignOutSessionDiscard left, in the same run: call it
+/// before committing a signed-in account and before entering Guest, so the
+/// mark never outlives the return of browser access. Synchronous: whatever it
+/// carries out is visible to any restore that starts after it returns. A no-op
+/// when nothing is marked. Main thread only.
+- (void)consumeSignOutSessionDiscard;
+
 /// Updates Chromium's process-local routing cache for external links. Phi
 /// UserDefaults remains the persisted source of truth. Main thread only.
 - (void)setOpenExternalLinksInKioskEnabled:(BOOL)enabled;

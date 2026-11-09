@@ -2324,6 +2324,8 @@ class AuthManager {
             self.clearLocalAccountData()
             LoginController.shared.phase = .login
             ApplicationState.shared.requireLogin()
+            // Same as a Sign out the user chose (ADR 0012).
+            ChromiumLauncher.sharedInstance().bridge?.markSignOutSessionDiscard()
             SpaceSessionControllersManager.shared.closeNonBrowserWindows()
             SpaceSessionControllersManager.shared.closeAllWindows()
             LoginController.shared.showLoginWindow()

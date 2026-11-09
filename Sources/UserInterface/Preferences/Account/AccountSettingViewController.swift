@@ -611,6 +611,9 @@ class AccountViewModel: ObservableObject {
         // and the account reference — was cleared by `AuthManager.logOut()`.
         AppLogDebug("🚪 [Logout] Step 4: Local session invalidated")
         ApplicationState.shared.requireLogin()
+        // The Sign out is committed: whoever signs in next must not get these
+        // windows back. Marked before the windows close (ADR 0012).
+        ChromiumLauncher.sharedInstance().bridge?.markSignOutSessionDiscard()
         
         // Step 5: close all auxiliary windows, including settings and account web pages.
         AppLogDebug("🚪 [Logout] Step 5: Closing non-browser windows")

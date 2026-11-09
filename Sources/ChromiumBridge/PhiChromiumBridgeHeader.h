@@ -1875,7 +1875,9 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// The mark is recorded in Chromium local state and written to disk at once;
 /// unless consumeSignOutSessionDiscard takes it first, the next launch empties
 /// Session restore and Undo Close for every profile before it restores
-/// anything, even after a quit or crash. Main thread only.
+/// anything, even after a quit or crash. It also makes every window open now
+/// close without leave-page (beforeunload) prompts, which is why it must come
+/// before the windows close. Main thread only.
 - (void)markSignOutSessionDiscard;
 
 /// Consumes what markSignOutSessionDiscard left, in the same run: call it

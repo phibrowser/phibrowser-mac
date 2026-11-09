@@ -742,7 +742,9 @@ extension AppController {
                 userDataSeparator.tag = AppController.manageUserDataHelpSeparatorTag
                 subMenu.addItem(userDataSeparator)
 
-                subMenu.addItem(makeTimeMachineBackupsMenuItem())
+                if TimeMachineBootstrap.isEnabled {
+                    subMenu.addItem(makeTimeMachineBackupsMenuItem())
+                }
 
                 let manageUserDataTitle = NSLocalizedString("app.helpMenu.manageUserData", value: "Manage User Data", comment: "Help menu - Parent menu item for exporting and importing Phi user data backup")
                 let manageUserDataItem = NSMenuItem(title: manageUserDataTitle, action: nil, keyEquivalent: "")

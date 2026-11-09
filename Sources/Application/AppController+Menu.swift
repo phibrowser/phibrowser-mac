@@ -2932,6 +2932,14 @@ extension AppController {
               canOpenNewKioskWindow(manager: manager, bridgeAvailable: true) else {
             return
         }
+        // The panel's omnibox shares the active Browser's suggestions, so an
+        // omnibox already up there (and the split it may be picking) ends.
+        // Now, not with the panel: its hide hands key back to its window one
+        // turn later, which must not land after the panel takes key.
+        if let container = manager.activeWindowController?.omniBoxContainerViewController,
+           container.hasShown {
+            container.hideOmniBox()
+        }
         // Resolved now: a deferred turn may already see another key window.
         let screen = KioskLaunchOmniBoxPanelController.activeWindowScreen()
         // One turn later, once AppKit has left menu tracking.

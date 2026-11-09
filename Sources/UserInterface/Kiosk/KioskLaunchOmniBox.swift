@@ -234,8 +234,6 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
             NotificationCenter.default.removeObserver(hostCloseObserver)
         }
         hostCloseObserver = nil
-        // While the panel is still key: a Kiosk opened from Return lands on
-        // the screen of the key window.
         onFinish(url)
         panel.delegate = nil
         panel.orderOut(nil)

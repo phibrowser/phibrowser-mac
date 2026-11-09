@@ -36,6 +36,57 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
         try super.tearDownWithError()
     }
 
+    func testBookmarkEditSubmenuIsLimitedToOrdinarySidebarBookmarks() {
+        let bookmark = Bookmark(title: "Bookmark", url: "https://example.com")
+        let menu = NSMenu()
+        bookmark.makeContextMenu(on: menu, source: .sidebar)
+        let submenu = menu.items.compactMap(\.submenu).first {
+            $0.items.contains { $0.action == NSSelectorFromString("replaceSavedBookmarkURL") }
+        }
+        XCTAssertEqual(submenu?.items.count, 2)
+        XCTAssertEqual(submenu?.items.first?.action, NSSelectorFromString("edit"))
+        XCTAssertEqual(submenu?.items.last?.isEnabled, false)
+        submenu?.update()
+        XCTAssertEqual(submenu?.items.last?.isEnabled, false)
+
+        bookmark.makeContextMenu(on: menu, source: .bookmarkBar)
+        XCTAssertTrue(menu.items.contains { $0.action == NSSelectorFromString("edit") })
+        XCTAssertFalse(menu.items.contains { $0.submenu?.items.contains { $0.action == NSSelectorFromString("replaceSavedBookmarkURL") } == true })
+
+        bookmark.secondaryUrl = "https://split.example"
+        bookmark.makeContextMenu(on: menu, source: .sidebar)
+        XCTAssertTrue(menu.items.contains { $0.action == NSSelectorFromString("edit") })
+        XCTAssertFalse(menu.items.contains { $0.submenu?.items.contains { $0.action == NSSelectorFromString("replaceSavedBookmarkURL") } == true })
+    }
+
+    func testReplaceSavedBookmarkURLPreservesLivePageAndTitle() throws {
+        let state = try makeState()
+        let bookmark = try createBookmark(in: state, guid: "replace-bookmark", url: "https://old.example")
+        XCTAssertNil(state.replacementURLForBookmark(guid: bookmark.guid))
+        let wrapper = BookmarkLayoutTestWebContentWrapper(urlString: "https://old.example")
+        let tab = Tab(guid: 101, url: wrapper.urlString, isActive: false, index: 0,
+                      webContentView: wrapper, customGuid: bookmark.guid)
+        state.tabs = [tab]
+        bookmark.isOpened = true
+        bookmark.chromiumTabGuid = tab.guid
+        bookmark.setWebContentWrapper(wrapper)
+        XCTAssertNil(state.replacementURLForBookmark(guid: bookmark.guid))
+        wrapper.urlString = "https://new.example/path"
+        XCTAssertNotNil(state.replacementURLForBookmark(guid: bookmark.guid))
+        state.replaceSavedURLForBookmark(guid: bookmark.guid)
+        XCTAssertTrue(waitUntil { bookmark.url == "https://new.example/path" })
+        XCTAssertEqual(bookmark.title, "Bookmark")
+        XCTAssertTrue(wrapper.navigatedURLs.isEmpty)
+        XCTAssertTrue(wrapper.customValues.isEmpty)
+        XCTAssertNil(state.replacementURLForBookmark(guid: bookmark.guid))
+        wrapper.urlString = "https://another.example"
+        bookmark.secondaryUrl = "https://split.example"
+        XCTAssertNil(state.replacementURLForBookmark(guid: bookmark.guid))
+        bookmark.secondaryUrl = nil
+        state.tabs = []
+        XCTAssertNil(state.replacementURLForBookmark(guid: bookmark.guid))
+    }
+
     func testTabTracksWebContentUnloadedState() {
         let wrapper = BookmarkLayoutTestWebContentWrapper(urlString: "https://example.com")
         wrapper.isUnloaded = true
@@ -415,7 +466,11 @@ final class BookmarkLayoutTestWebContentWrapper: NSObject, WebContentWrapper {
     func goBack() {}
     func goForward() {}
     func stopLoading() {}
-    func navigate(toURL urlString: String) { self.urlString = urlString }
+    private(set) var navigatedURLs: [String] = []
+    func navigate(toURL urlString: String) {
+        navigatedURLs.append(urlString)
+        self.urlString = urlString
+    }
     func setAsActiveTab() {}
     func moveSelf(to newIndex: Int, selectAfterMove: Bool) {}
     func moveSelf(toNewWindow activateNewWindow: Bool) {}

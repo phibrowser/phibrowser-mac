@@ -34,6 +34,35 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
         tempDirectories.removeAll()
     }
 
+    func testReplaceSavedPinnedURLPreservesLivePageAndTitle() async throws {
+        let store = try makeStore()
+        try seedPinnedTab(in: store, guid: "replace-pin", url: "https://old.example")
+        let state = BrowserState(windowId: 1, localStore: store,
+                                 profileId: "Default", spaceId: "space-a")
+        let pin = try XCTUnwrap(state.pinnedTabs.first)
+        XCTAssertNil(state.replacementURLForPinnedTab(pin))
+        let title = pin.storedTitle
+        let wrapper = PinnedEditWebContentWrapperSpy(urlString: "https://old.example")
+        pin.isOpenned = true
+        pin.setWebContentsWrapper(wrapper: wrapper)
+        XCTAssertNil(state.replacementURLForPinnedTab(pin))
+        wrapper.urlString = "https://new.example/path"
+        XCTAssertNotNil(state.replacementURLForPinnedTab(pin))
+        state.replaceSavedURLForPinnedTab(pin)
+        await store.performBackgroundWriteAndWait { _ in }
+        await settleAsyncWork()
+        XCTAssertEqual(store.getTab(by: "replace-pin")?.url.absoluteString, "https://new.example/path")
+        XCTAssertEqual(pin.storedTitle, title)
+        XCTAssertTrue(wrapper.navigatedURLs.isEmpty)
+        XCTAssertTrue(wrapper.customValues.isEmpty)
+        XCTAssertNil(state.replacementURLForPinnedTab(pin))
+        wrapper.urlString = "https://another.example"
+        pin.isOpenned = false
+        state.replaceSavedURLForPinnedTab(pin)
+        await store.performBackgroundWriteAndWait { _ in }
+        XCTAssertEqual(store.getTab(by: "replace-pin")?.url.absoluteString, "https://new.example/path")
+    }
+
     func testPinnedTabURLEditNavigatesOpenCopyInOtherSpace() throws {
         let store = try makeStore()
         try seedPinnedTab(in: store, guid: "pinned-guid", url: "https://old.example")

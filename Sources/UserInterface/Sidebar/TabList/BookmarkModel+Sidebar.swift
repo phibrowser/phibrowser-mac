@@ -149,7 +149,20 @@ extension Bookmark: ContextMenuRepresentable {
         } else {
             let editURL =  NSMenuItem(title: NSLocalizedString("sidebar.bookmarkContextMenu.editAction", value: "Edit...", comment: "Edit bookmark url menu item title"), action: #selector(edit), keyEquivalent: "")
             editURL.target = self
-            menu.addItem(editURL)
+            if source == .sidebar && (secondaryUrl ?? "").isEmpty {
+                let parent = NSMenuItem(title: NSLocalizedString("sidebar.bookmarkContextMenu.editSubmenu", value: "Edit Bookmark", comment: "Bookmark context menu - Submenu for editing the saved bookmark"), action: nil, keyEquivalent: "")
+                let submenu = NSMenu()
+                submenu.autoenablesItems = false
+                submenu.addItem(editURL)
+                let replace = NSMenuItem(title: NSLocalizedString("sidebar.bookmarkContextMenu.replaceSavedURL", value: "Replace Saved URL with Current", comment: "Bookmark context menu - Save the open page URL as the bookmark URL"), action: #selector(replaceSavedBookmarkURL), keyEquivalent: "")
+                replace.target = self
+                replace.isEnabled = contextMenuState?.replacementURLForBookmark(guid: guid) != nil
+                submenu.addItem(replace)
+                parent.submenu = submenu
+                menu.addItem(parent)
+            } else {
+                menu.addItem(editURL)
+            }
             
             // Route split-view bookmarks through a dedicated action that
             // opens a fresh duplicate split without touching the existing
@@ -430,6 +443,11 @@ extension Bookmark: ContextMenuRepresentable {
         }
     }
     
+    @MainActor
+    @objc private func replaceSavedBookmarkURL() {
+        contextMenuState?.replaceSavedURLForBookmark(guid: guid)
+    }
+
     @MainActor
     @objc private func edit() {
         guard let windowController = contextMenuWindowController else {

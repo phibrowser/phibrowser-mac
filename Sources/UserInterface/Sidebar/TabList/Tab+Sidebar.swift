@@ -420,7 +420,20 @@ extension Tab: ContextMenuRepresentable {
         if isPinned {
             let editItem = NSMenuItem(title: NSLocalizedString("sidebar.pinnedTabContextMenu.editAction", value: "Edit...", comment: "Pinned tab context menu - Edit pinned tab menu item"), action: #selector(editPinnedTab), keyEquivalent: "")
             editItem.target = self
-            items.append(editItem)
+            if !isSplitCell {
+                let parent = NSMenuItem(title: NSLocalizedString("sidebar.pinnedTabContextMenu.editSubmenu", value: "Edit Pinned Tab", comment: "Pinned tab context menu - Submenu for editing the saved pinned tab"), action: nil, keyEquivalent: "")
+                let submenu = NSMenu()
+                submenu.autoenablesItems = false
+                submenu.addItem(editItem)
+                let replace = NSMenuItem(title: NSLocalizedString("sidebar.pinnedTabContextMenu.replaceSavedURL", value: "Replace Saved URL with Current", comment: "Pinned tab context menu - Save the open page URL as the pinned tab URL"), action: #selector(replaceSavedPinnedURL), keyEquivalent: "")
+                replace.target = self
+                replace.isEnabled = contextMenuState?.replacementURLForPinnedTab(self) != nil
+                submenu.addItem(replace)
+                parent.submenu = submenu
+                items.append(parent)
+            } else {
+                items.append(editItem)
+            }
         }
         
         if !isPinned || (isPinned && isOpenned) {
@@ -583,6 +596,11 @@ extension Tab: ContextMenuRepresentable {
         }
     }
 
+
+    @MainActor
+    @objc private func replaceSavedPinnedURL() {
+        contextMenuState?.replaceSavedURLForPinnedTab(self)
+    }
 
     @MainActor
     @objc private func editPinnedTab() {

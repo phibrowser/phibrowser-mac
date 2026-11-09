@@ -487,3 +487,26 @@ extension BrowserState {
         updateNormalTabs()
     }
 }
+
+@MainActor
+extension BrowserState {
+    func replacementURLForBookmark(guid: String) -> URL? {
+        guard !isIncognito,
+              let bookmark = bookmarkManager.bookmark(withGuid: guid),
+              !bookmark.isFolder, (bookmark.secondaryUrl ?? "").isEmpty,
+              bookmark.isOpened,
+              let tab = tabs.first(where: { $0.guid == bookmark.chromiumTabGuid && $0.guidInLocalDB == guid }),
+              splitGroup(forTabId: tab.guid) == nil,
+              let current = tab.webContentWrapper?.urlString, !current.isEmpty,
+              let url = localStore.normalizedURL(from: current),
+              url.absoluteString != bookmark.url else { return nil }
+        return url
+    }
+
+    func replaceSavedURLForBookmark(guid: String) {
+        guard let url = replacementURLForBookmark(guid: guid) else { return }
+        // The editor also navigates the attached tab; this action only saves.
+        localStore.updateBookmark(guid, profileId: profileId, title: nil,
+                                  url: url.absoluteString, expectedSpaceId: spaceId)
+    }
+}

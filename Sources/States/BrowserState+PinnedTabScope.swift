@@ -179,3 +179,27 @@ extension BrowserState {
         }
     }
 }
+
+@MainActor
+extension BrowserState {
+    func replacementURLForPinnedTab(_ tab: Tab) -> URL? {
+        guard !isIncognito,
+              pinnedTabs.contains(where: { $0 === tab }),
+              tab.isOpenned,
+              splitMembership(forCellTab: tab) == nil,
+              let guid = tab.guidInLocalDB,
+              let current = tab.webContentWrapper?.urlString, !current.isEmpty,
+              let url = localStore.normalizedURL(from: current),
+              url.absoluteString != pinnedTabEditingURL(for: guid, fallbackURL: tab.pinnedUrl) else { return nil }
+        return url
+    }
+
+    func replaceSavedURLForPinnedTab(_ tab: Tab) {
+        guard let url = replacementURLForPinnedTab(tab),
+              let guid = tab.guidInLocalDB else { return }
+        // Keep the initiating page in place when the persisted snapshot arrives.
+        tab.pinnedUrl = url.absoluteString
+        localStore.updatePinnedTab(resolving: guid, profileId: profileId,
+                                   spaceId: spaceId, url: url, title: nil)
+    }
+}

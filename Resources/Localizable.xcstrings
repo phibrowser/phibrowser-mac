@@ -103014,6 +103014,28 @@
         }
       }
     },
+    "sidebar.bookmarkContextMenu.editSubmenu" : {
+      "comment" : "Bookmark context menu - Submenu for editing the saved bookmark",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Bookmark"
+          }
+        }
+      }
+    },
+    "sidebar.bookmarkContextMenu.replaceSavedURL" : {
+      "comment" : "Bookmark context menu - Save the open page URL as the bookmark URL",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace Saved URL with Current"
+          }
+        }
+      }
+    },
     "sidebar.bookmarkContextMenu.editAction" : {
       "comment" : "Edit bookmark url menu item title",
       "extractionState" : "extracted_with_value",
@@ -105453,6 +105475,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新增分頁"
+          }
+        }
+      }
+    },
+    "sidebar.pinnedTabContextMenu.editSubmenu" : {
+      "comment" : "Pinned tab context menu - Submenu for editing the saved pinned tab",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Pinned Tab"
+          }
+        }
+      }
+    },
+    "sidebar.pinnedTabContextMenu.replaceSavedURL" : {
+      "comment" : "Pinned tab context menu - Save the open page URL as the pinned tab URL",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace Saved URL with Current"
           }
         }
       }

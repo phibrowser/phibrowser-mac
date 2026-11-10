@@ -333,6 +333,28 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
                       "③ The same runtime tab survives")
     }
 
+    /// A sidebar item can keep an unpinned record alive after it leaves
+    /// `pinnedTabs`; still bound, the record would tell Chromium to keep the
+    /// unpinned tab loaded whenever the Keep pinned tabs loaded setting changes.
+    func testAnUnpinnedRecordLetsGoOfTheLiveTab() async throws {
+        let store = try makeStore()
+        let profile = try seedProfileAndSpaces(in: store)
+        try insertPinnedTab(in: store, guid: "pin", lineageId: "pin", profile: profile,
+                            title: "Pin", url: "https://pin.example")
+        let state = BrowserState(windowId: 1, localStore: store,
+                                 profileId: "Default", spaceId: "space-a")
+        let record = try runtimeTab(in: state, lineageId: "pin")
+        _ = bindLiveTab(record, to: state, chromiumGuid: 101)
+
+        store.removeActivePinnedTab(guid: "pin")
+        await store.performBackgroundWriteAndWait { _ in }
+        try waitUntil(describing: "the unpin reaches the window") {
+            state.pinnedTabs.isEmpty
+        }
+
+        XCTAssertNil(record.webContentWrapper)
+    }
+
     private func assertUniquePinnedRuntimeTabs(
         _ state: BrowserState,
         expectedCount: Int,

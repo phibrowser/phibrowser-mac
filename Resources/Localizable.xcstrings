@@ -60140,6 +60140,30 @@
         }
       }
     },
+    "settings.advanced.keepPinnedTabsLoaded.description" : {
+      "comment" : "Advanced settings - Explains that, while the toggle is on, pinned tabs the user has opened are not unloaded from memory",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pinned tabs you have opened stay in memory instead of being unloaded to free it."
+          }
+        }
+      }
+    },
+    "settings.advanced.keepPinnedTabsLoaded.toggle" : {
+      "comment" : "Advanced settings - Toggle title for keeping opened pinned tabs in memory instead of unloading them to free memory",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Keep pinned tabs loaded"
+          }
+        }
+      }
+    },
     "settings.advanced.miniPlayer.offOption" : {
       "comment" : "Mini Player display option - Hide the player while media continues playing",
       "extractionState" : "manual",

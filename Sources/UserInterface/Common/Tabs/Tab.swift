@@ -361,6 +361,21 @@ class Tab: WebContentRepresentable {
         // A new WebContents starts out not kept loaded.
         pushKeepLoaded()
 
+        // The notification comes on whichever thread wrote a default (the sync
+        // engine writes off the main thread), so hop before comparing values.
+        let keepLoadedSetting = PhiPreferences.GeneralSettings.keepPinnedTabsLoaded
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .map { _ in keepLoadedSetting.loadValue() }
+            .prepend(keepLoadedSetting.loadValue())
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self, self.isPinned else { return }
+                self.pushKeepLoaded()
+            }
+            .store(in: &cancellables)
+
         // Older frameworks do not implement this getter or its KVO key.
         if wrapper.responds(to: Self.pageColorSelector) {
             pageColor = wrapper.pageColor
@@ -543,19 +558,24 @@ class Tab: WebContentRepresentable {
             .store(in: &cancellables)
     }
 
-    /// Tells Chromium whether to keep this tab loaded, so Memory Saver and
-    /// memory pressure leave Pinned tabs alone.
+    /// Tells Chromium whether to keep this tab loaded: a Pinned tab is kept
+    /// loaded while the Keep pinned tabs loaded setting is on, so Memory
+    /// Saver and memory pressure leave it alone.
     ///
     /// Two `Tab`s can share one wrapper: the live strip tab and the pinned
     /// record bound to it. A tab restored, opened from its saved entry or
     /// dragged into the pinned area keeps a live tab that is not `isPinned`;
-    /// only its record is. Each pushes its own `isPinned` when it binds the
-    /// wrapper and on every assignment, unchanged values included: unpinning
-    /// such a tab assigns `false` to the live tab, which has to overwrite the
+    /// only its record is. Each pushes its own value when it binds the
+    /// wrapper and on every `isPinned` assignment, unchanged values included:
+    /// unpinning such a tab assigns `false` to the live tab, which has to
+    /// overwrite the record's `true`. A change of the setting pushes only
+    /// from a `Tab` that is `isPinned`, the only kind whose value it changes;
+    /// the live tab's unchanged `false` could otherwise land after the
     /// record's `true`. The optional call skips frameworks that predate the
     /// selector.
     private func pushKeepLoaded() {
-        webContentWrapper?.setPhiKeepLoaded?(isPinned)
+        webContentWrapper?.setPhiKeepLoaded?(
+            isPinned && PhiPreferences.GeneralSettings.keepPinnedTabsLoaded.loadValue())
     }
 
     static func supportsAIChat(urlString: String?) -> Bool {

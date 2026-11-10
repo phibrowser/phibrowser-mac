@@ -950,6 +950,13 @@ class BrowserState {
             }
             return localTab
         })
+        // A record that leaves the list (an unpin) still holds the live tab's
+        // wrapper, and an off-screen sidebar item can keep the record alive.
+        // Unbind it, or it goes on telling Chromium to keep the unpinned tab
+        // loaded each time the Keep pinned tabs loaded setting changes.
+        for dropped in existingTabs where !pinnedTabs.contains(where: { $0 === dropped }) {
+            dropped.setWebContentsWrapper(wrapper: nil)
+        }
 
         // Re-sync every pinned tab against the currently open Chromium tabs.
         syncAllPinnedTabsState()

@@ -109,6 +109,7 @@ extension PhiPreferences {
         case sidebarMediaPlayerEnabled // Show controls for background page media
         case showOpenTabIndicators // Show dots on inactive open pinned tabs and bookmarks
         case showUnloadedTabIndicators // Show dashed outlines and smaller icons for unloaded or discarded tabs
+        case keepPinnedTabsLoaded // Keep opened Pinned tabs in memory instead of letting them be unloaded; per-Mac, not synced
         case shortHighlightLinksEnabled // Use the sharing service for Copy Link to Highlight
         case spacesFeatureEnabled // Master gate for Spaces + profile management UI; defaults on, no user-facing toggle
         case suppressCloseIncognitoSpaceWarning // "Do not ask again" on the close-Incognito-Space confirmation
@@ -149,6 +150,8 @@ extension PhiPreferences {
             case .showOpenTabIndicators:
                 return false
             case .showUnloadedTabIndicators:
+                return true
+            case .keepPinnedTabsLoaded:
                 return true
             case .shortHighlightLinksEnabled:
                 return true

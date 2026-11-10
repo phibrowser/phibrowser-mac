@@ -21,6 +21,9 @@ struct SideTabView: View {
     @Environment(\.phiAppearance) private var appearance
 
     private var backgroundColor: Color {
+        if model.splitDropSide != nil {
+            return Color(nsColor: NSColor(resource: .sidebarTabHovered))
+        }
         if model.isActive {
             return Color(nsColor: NSColor(resource: .sidebarTabSelected))
         }
@@ -53,7 +56,43 @@ struct SideTabView: View {
         model.isActive ? 0.15 : 0
     }
 
-    var body: some View {
+    @ViewBuilder
+    private var arrangedContent: some View {
+        if let side = model.splitDropSide {
+            GeometryReader { geometry in
+                let paneWidth = max(0, (geometry.size.width - 4) * 0.5)
+                HStack(spacing: 4) {
+                    if side == .left {
+                        splitPlaceholder
+                            .frame(width: paneWidth,
+                                   height: geometry.size.height)
+                    }
+                    tabContent
+                        .frame(width: paneWidth,
+                               height: geometry.size.height)
+                    if side == .right {
+                        splitPlaceholder
+                            .frame(width: paneWidth,
+                                   height: geometry.size.height)
+                    }
+                }
+            }
+        } else {
+            tabContent
+        }
+    }
+
+    private var splitPlaceholder: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(Color.primary.opacity(0.08))
+            .overlay {
+                Image(systemName: "rectangle.split.2x1")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.secondary.opacity(0.65))
+            }
+    }
+
+    private var tabContent: some View {
         HStack(spacing: 8) {
             UnifiedTabFaviconView(viewModel: model)
                 .frame(width: 16, height: 16)
@@ -72,12 +111,11 @@ struct SideTabView: View {
 
             // While a peek is attached, the row's only close affordance is
             // the peek indicator's "minus" (same rule as the bookmark row).
-            if model.isHovered, !model.showsPeek {
+            if model.isHovered, !model.showsPeek, model.splitDropSide == nil {
                 UnifiedTabCloseButton { onClose?() }
             }
         }
 //        .debugBorder(.green)
-        .help(model.showsTabPreview ? "" : model.displayTitle)
         .padding(.leading, 6)
         .padding(.trailing, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -93,18 +131,24 @@ struct SideTabView: View {
         .overlay(alignment: .topTrailing) {
             TabCornerBadgeView(
                 model: model.status,
-                isSuppressed: model.showsPeek
+                isSuppressed: model.showsPeek || model.splitDropSide != nil
             )
             .offset(
                 x: TabCornerBadgeMetrics.overhang,
                 y: -TabCornerBadgeMetrics.overhang
             )
         }
+    }
+
+    var body: some View {
+        arrangedContent
+        .help(model.showsTabPreview ? "" : model.displayTitle)
         .padding(.leading, WebContentConstant.edgesSpacing)
         .padding(.trailing, model.isInGroup ? 2 : WebContentConstant.edgesSpacing)
         .padding(.vertical, 2)
         .scaleEffect(model.isPressed ? 0.985 : 1.0)
         .animation(.easeOut(duration: 0.08), value: model.isPressed)
+        .animation(.easeOut(duration: 0.16), value: model.splitDropSide)
         .onHover { hovering in
             model.setHovered(hovering)
         }

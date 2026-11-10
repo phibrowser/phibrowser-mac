@@ -293,6 +293,7 @@ extension AppController {
     static let viewLibraryItemTag = 500040
     /// Every File menu row rendered from `PageActionRegistry`.
     static let filePageActionItemTag = 500041
+    static let viewAppearanceParentItemTag = 500042
     static let debugMenuItemTag = 500027
     static let spacesProfileSeparatorTag = 500020
     static let deleteProfileSubmenuIdentifier = NSUserInterfaceItemIdentifier("phi.spaces.deleteProfile")
@@ -428,6 +429,7 @@ extension AppController {
                     item.tag == CommandWrapper.PHI_NEW_CONVERSATION.rawValue ||
                     item.tag == CommandWrapper.PHI_TOGGLE_READER.rawValue ||
                     item.tag == AppController.viewLibraryItemTag ||
+                    item.tag == AppController.viewAppearanceParentItemTag ||
                     item.tag == AppController.viewMenuPhiSectionSeparatorTag ||
                     item.tag == CommandWrapper.IDC_SHOW_BOOKMARK_BAR.rawValue ||
                     item.tag == AppController.toggleBookmarkBarOnNewTabItemTag ||
@@ -464,6 +466,26 @@ extension AppController {
                 let readerSeparator = NSMenuItem.separator()
                 readerSeparator.tag = AppController.viewMenuPhiSectionSeparatorTag
                 submenu.addItem(readerSeparator)
+
+                let appearanceSubmenu = NSMenu()
+                for choice in UserAppearanceChoice.allCases {
+                    let choiceItem = NSMenuItem(title: choice.localizedName,
+                                                action: #selector(selectAppearanceChoice(_:)),
+                                                keyEquivalent: "")
+                    choiceItem.representedObject = choice.rawValue
+                    choiceItem.target = self
+                    appearanceSubmenu.addItem(choiceItem)
+                }
+                let appearanceItem = NSMenuItem(title: NSLocalizedString("app.viewMenu.appearance", value: "Appearance", comment: "View menu - Submenu for choosing System, Light, or Dark color appearance"),
+                                                action: nil,
+                                                keyEquivalent: "")
+                appearanceItem.tag = AppController.viewAppearanceParentItemTag
+                appearanceItem.submenu = appearanceSubmenu
+                submenu.addItem(appearanceItem)
+
+                let appearanceSeparator = NSMenuItem.separator()
+                appearanceSeparator.tag = AppController.viewMenuPhiSectionSeparatorTag
+                submenu.addItem(appearanceSeparator)
 
                 let layoutTtitle = NSMenuItem.sectionHeader(title: NSLocalizedString("app.viewMenu.layoutModeSectionTitle", value: "Layout Mode", comment: "View menu - Layout mode section header in View menu"))
                 layoutTtitle.tag = AppController.layoutModeTitleItemTag
@@ -1745,6 +1767,14 @@ extension AppController {
             PhiPreferences.GeneralSettings.saveLayoutMode(.comfortable)
         default:
             break
+        }
+    }
+
+    @objc func selectAppearanceChoice(_ sender: Any?) {
+        guard let rawValue = (sender as? NSMenuItem)?.representedObject as? Int,
+              let choice = UserAppearanceChoice(rawValue: rawValue) else { return }
+        MainActor.assumeIsolated {
+            ThemeManager.shared.setUserAppearanceChoice(choice)
         }
     }
 
@@ -3625,6 +3655,13 @@ extension AppController {
                 }
                 return ApplicationState.shared.canUseBrowser
             }
+        }
+
+        if item.action == #selector(selectAppearanceChoice(_:)),
+           let menuItem = item as? NSMenuItem {
+            let current = MainActor.assumeIsolated { ThemeManager.shared.userAppearanceChoice }
+            menuItem.state = (menuItem.representedObject as? Int) == current.rawValue ? .on : .off
+            return true
         }
 
         if item.action == #selector(toggleAgentAutoView(_:)) {

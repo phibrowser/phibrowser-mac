@@ -22417,6 +22417,18 @@
         }
       }
     },
+    "app.viewMenu.appearance" : {
+      "comment" : "View menu - Submenu for choosing System, Light, or Dark color appearance",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Appearance"
+          }
+        }
+      }
+    },
     "app.viewMenu.layoutModeSectionTitle" : {
       "comment" : "View menu - Layout mode section header in View menu",
       "extractionState" : "extracted_with_value",

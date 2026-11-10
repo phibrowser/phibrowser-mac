@@ -60,6 +60,10 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     private var sidebarButtonLeftOffset: CGFloat = 78
     private let defaultSidebarButtonTrailingInset: CGFloat = 5
     private let balancedSidebarButtonTrailingInset: CGFloat = 9
+    private static let sidebarButtonWidth: CGFloat = 24
+    private static let upgradeButtonSize = NSSize(width: 56, height: 24)
+    private static let upgradeButtonSpacing: CGFloat = 6
+    private static let navigationTrailingInset: CGFloat = 9
     private var layoutSettleCancellable: AnyCancellable?
     /// Frame observer of the zoom button the sidebar button is aligned to;
     /// see `observeFrameChanges(zoomButton:)`.
@@ -323,14 +327,14 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         upgradeButton.snp.makeConstraints { make in
             make.centerY.equalTo(sidebarButton)
             upgradeButtonLeftConstraint = make.left.equalToSuperview().offset(sidebarButtonLeftOffset).constraint
-            make.size.equalTo(NSSize(width: 56, height: 24))
+            make.size.equalTo(Self.upgradeButtonSize)
         }
-        
+
         addSubview(stackView)
         stackView.snp.makeConstraints { make in
             make.centerY.equalTo(sidebarButton)
             make.height.equalTo(24)
-            make.right.equalToSuperview().inset(9)
+            make.right.equalToSuperview().inset(Self.navigationTrailingInset)
         }
         
         addSubview(addressView)
@@ -565,7 +569,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         AppLogDebug("[SidebarHeader] updateSidebarButtonLeftConstraint update offset=\(x + 10)")
         sidebarButtonLeftOffset = x + 10
         sidebarButtonLeftConstraint?.update(offset: sidebarButtonLeftOffset)
-        upgradeButtonLeftConstraint?.update(offset: sidebarButtonLeftOffset)
+        updateUpgradeAndSidebarVisibility(layoutMode: browserState?.layoutMode ?? .performance)
         // A titlebar frame notification can arrive during layout. Let AppKit
         // coalesce this constraint update instead of laying out recursively.
         needsLayout = true
@@ -801,16 +805,27 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     }
 
     private func updateUpgradeAndSidebarVisibility(layoutMode: LayoutMode) {
-        guard availableUpdateVersion != nil else {
-            upgradeButton.isHidden = true
-            sidebarButton.isHidden = false
-            searchTabsButton.isHidden = layoutMode != .balanced
-            return
-        }
+        sidebarButton.isHidden = false
+        searchTabsButton.isHidden = layoutMode != .balanced
 
-        let tooNarrowForUpgrade = currentWidth <= 225
-        upgradeButton.isHidden = tooNarrowForUpgrade
-        sidebarButton.isHidden = tooNarrowForUpgrade ? false : (layoutMode != .balanced)
-        searchTabsButton.isHidden = layoutMode != .balanced || sidebarButton.isHidden
+        let upgradeLeftOffset = upgradeButtonLeftOffset(layoutMode: layoutMode)
+        upgradeButtonLeftConstraint?.update(offset: upgradeLeftOffset)
+        upgradeButton.isHidden = availableUpdateVersion == nil
+            || !hasRoomForUpgradeButton(layoutMode: layoutMode, leftOffset: upgradeLeftOffset)
+    }
+
+    /// Performance keeps the sidebar button after the traffic lights, so
+    /// Update follows it; elsewhere the sidebar button sits at the trailing
+    /// edge and Update takes the slot after the traffic lights.
+    private func upgradeButtonLeftOffset(layoutMode: LayoutMode) -> CGFloat {
+        guard isSidebarLayout(layoutMode) else { return sidebarButtonLeftOffset }
+        return sidebarButtonLeftOffset + Self.sidebarButtonWidth + Self.upgradeButtonSpacing
+    }
+
+    private func hasRoomForUpgradeButton(layoutMode: LayoutMode, leftOffset: CGFloat) -> Bool {
+        guard isSidebarLayout(layoutMode) else { return currentWidth > 225 }
+        let navigationWidth = stackView.isHidden ? 0 : stackView.fittingSize.width
+        let navigationMinX = currentWidth - Self.navigationTrailingInset - navigationWidth
+        return leftOffset + Self.upgradeButtonSize.width + Self.upgradeButtonSpacing <= navigationMinX
     }
 }

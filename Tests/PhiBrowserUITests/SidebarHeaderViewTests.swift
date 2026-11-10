@@ -60,15 +60,21 @@ final class SidebarHeaderViewTests: XCTestCase {
 
     @MainActor
     func test_performanceLayoutWithUpdateShowsUpgradeWhenWideEnough() throws {
-        try launch(layoutMode: .performance, sidebarWidth: 260, updateVersion: "1.2.3")
+        try launch(layoutMode: .performance, sidebarWidth: 280, updateVersion: "1.2.3")
 
+        assertVisible(HeaderID.sidebarButton)
         assertVisible(HeaderID.upgradeButton)
         assertVisible(HeaderID.backButton)
         assertVisible(HeaderID.forwardButton)
         assertVisible(HeaderID.refreshButton)
         assertVisible(HeaderID.addressView)
-        assertNotVisible(HeaderID.sidebarButton)
         assertNotVisible(HeaderID.searchTabsButton)
+
+        let sidebarButton = element(matching: HeaderID.sidebarButton)
+        let upgradeButton = element(matching: HeaderID.upgradeButton)
+        let backButton = element(matching: HeaderID.backButton)
+        XCTAssertLessThan(sidebarButton.frame.maxX, upgradeButton.frame.minX)
+        XCTAssertLessThan(upgradeButton.frame.maxX, backButton.frame.minX)
     }
 
     @MainActor

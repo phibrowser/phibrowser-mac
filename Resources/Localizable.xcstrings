@@ -1,31 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "about.conch.accessibilityLabel" : {
-      "comment" : "About window - Accessible name of the draggable conch illustration",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Interactive 3D conch"
-          }
-        }
-      }
+    "" : {
+
     },
-    "about.conch.dragHint" : {
-      "comment" : "About window - Tooltip explaining how to interact with the conch",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Drag to rotate the conch"
-          }
-        }
-      }
-    },
-    "" : {},
     "・" : {
       "shouldTranslate" : false
     },
@@ -351,6 +329,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Chromium 引擎版本 %@"
+          }
+        }
+      }
+    },
+    "about.conch.accessibilityLabel" : {
+      "comment" : "About window - Accessible name of the draggable conch illustration",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interactive 3D conch"
+          }
+        }
+      }
+    },
+    "about.conch.dragHint" : {
+      "comment" : "About window - Tooltip explaining how to interact with the conch",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag to rotate the conch"
           }
         }
       }
@@ -30604,7 +30606,7 @@
       }
     },
     "browser.splitDropHint.bottom" : {
-      "comment" : "Drop-zone hint shown when dragging a tab over the bottom/secondary pane of a horizontal split to replace it",
+      "comment" : "Drop-zone hint shown when dragging a tab over the bottom pane of a horizontal split to replace it",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -30724,7 +30726,7 @@
       }
     },
     "browser.splitDropHint.leftHalf" : {
-      "comment" : "Drop-zone hint shown when dragging a tab over the left/primary pane of a vertical split to replace it",
+      "comment" : "Drop-zone hint shown when dragging a tab over the left pane of a vertical split to replace it",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -30856,7 +30858,7 @@
       }
     },
     "browser.splitDropHint.rightHalf" : {
-      "comment" : "Drop-zone hint shown when dragging a tab over the right/secondary pane of a vertical split to replace it",
+      "comment" : "Drop-zone hint shown when dragging a tab over the right pane of a vertical split to replace it",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -30976,7 +30978,7 @@
       }
     },
     "browser.splitDropHint.top" : {
-      "comment" : "Drop-zone hint shown when dragging a tab over the top/primary pane of a horizontal split to replace it",
+      "comment" : "Drop-zone hint shown when dragging a tab over the top pane of a horizontal split to replace it",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -39268,7 +39270,7 @@
       }
     },
     "common.tabMultiSelectionContextMenu.openAsSplitAction" : {
-      "comment" : "Tab multi-selection context menu - split exactly two selected tabs into paired panes",
+      "comment" : "Tab multi-selection context menu - open the two to four selected items as the panes of one split",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -103014,28 +103016,6 @@
         }
       }
     },
-    "sidebar.bookmarkContextMenu.editSubmenu" : {
-      "comment" : "Bookmark context menu - Submenu for editing the saved bookmark",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edit Bookmark"
-          }
-        }
-      }
-    },
-    "sidebar.bookmarkContextMenu.replaceSavedURL" : {
-      "comment" : "Bookmark context menu - Save the open page URL as the bookmark URL",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Replace Saved URL with Current"
-          }
-        }
-      }
-    },
     "sidebar.bookmarkContextMenu.editAction" : {
       "comment" : "Edit bookmark url menu item title",
       "extractionState" : "extracted_with_value",
@@ -103092,6 +103072,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "編輯…"
+          }
+        }
+      }
+    },
+    "sidebar.bookmarkContextMenu.editSubmenu" : {
+      "comment" : "Bookmark context menu - Submenu for editing the saved bookmark",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Bookmark"
           }
         }
       }
@@ -103392,6 +103383,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新命名…"
+          }
+        }
+      }
+    },
+    "sidebar.bookmarkContextMenu.replaceSavedURL" : {
+      "comment" : "Bookmark context menu - Save the open page URL as the bookmark URL",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace Saved URL with Current"
           }
         }
       }
@@ -105479,28 +105481,6 @@
         }
       }
     },
-    "sidebar.pinnedTabContextMenu.editSubmenu" : {
-      "comment" : "Pinned tab context menu - Submenu for editing the saved pinned tab",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edit Pinned Tab"
-          }
-        }
-      }
-    },
-    "sidebar.pinnedTabContextMenu.replaceSavedURL" : {
-      "comment" : "Pinned tab context menu - Save the open page URL as the pinned tab URL",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Replace Saved URL with Current"
-          }
-        }
-      }
-    },
     "sidebar.pinnedTabContextMenu.editAction" : {
       "comment" : "Pinned tab context menu - Edit pinned tab menu item",
       "extractionState" : "extracted_with_value",
@@ -105557,6 +105537,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "編輯…"
+          }
+        }
+      }
+    },
+    "sidebar.pinnedTabContextMenu.editSubmenu" : {
+      "comment" : "Pinned tab context menu - Submenu for editing the saved pinned tab",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Pinned Tab"
+          }
+        }
+      }
+    },
+    "sidebar.pinnedTabContextMenu.replaceSavedURL" : {
+      "comment" : "Pinned tab context menu - Save the open page URL as the pinned tab URL",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace Saved URL with Current"
           }
         }
       }
@@ -107121,6 +107123,18 @@
         }
       }
     },
+    "sidebar.tabContextMenu.closeSplit" : {
+      "comment" : "Tab context menu - Close every pane of the split that contains this tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close Split"
+          }
+        }
+      }
+    },
     "sidebar.tabContextMenu.closeTab" : {
       "comment" : "Tab context menu - Menu item to close the selected tab",
       "extractionState" : "extracted_with_value",
@@ -107661,6 +107675,18 @@
         }
       }
     },
+    "sidebar.tabContextMenu.copyPaneURLAtPosition" : {
+      "comment" : "Tab context menu - Copy one pane's URL of a split with three or four panes; %d is the pane's position counted from the left (or top when stacked), starting at 1",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copy Pane %d URL"
+          }
+        }
+      }
+    },
     "sidebar.tabContextMenu.copyRightPaneURL" : {
       "comment" : "Tab context menu - Copy the right pane's URL for a side-by-side split",
       "extractionState" : "extracted_with_value",
@@ -107957,6 +107983,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "複製"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.movePaneDown" : {
+      "comment" : "Tab context menu - Move this pane one position down within a stacked split of three or four panes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Move Pane Down"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.movePaneLeft" : {
+      "comment" : "Tab context menu - Move this pane one position to the left within a side-by-side split of three or four panes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Move Pane Left"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.movePaneRight" : {
+      "comment" : "Tab context menu - Move this pane one position to the right within a side-by-side split of three or four panes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Move Pane Right"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.movePaneUp" : {
+      "comment" : "Tab context menu - Move this pane one position up within a stacked split of three or four panes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Move Pane Up"
           }
         }
       }
@@ -108442,7 +108516,7 @@
       }
     },
     "sidebar.tabContextMenu.removeFromSplit" : {
-      "comment" : "Tab context menu - Dissolve the split that contains this tab",
+      "comment" : "Tab context menu - Take this tab out of its split; a two-pane split dissolves, a wider split keeps its other panes",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {

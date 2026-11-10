@@ -815,6 +815,7 @@ final class LibrarySpaceManagementController: NSViewController,
             mode: folder ? (bookmark == nil ? .newFolder : .folder) : (bookmark == nil ? .newBookmark : .bookmark),
             title: bookmark?.title ?? "", urlString: bookmark?.url ?? "",
             secondaryUrlString: secondaryURL, secondaryTitleString: bookmark?.secondaryTitle,
+            extraPanes: bookmark?.splitExtraPanes ?? [],
             modelContainer: store.container,
             profileId: contents.scope.profileId, spaceId: contents.scope.spaceId,
             initialFolderGuid: originalParentGuid,
@@ -831,7 +832,8 @@ final class LibrarySpaceManagementController: NSViewController,
                       bookmark == nil || validBookmark(bookmark!.guid),
                       validBookmarkFolder(folder ? originalParentGuid : result.parentFolderGuid),
                       folder || store.normalizedURL(from: result.url) != nil,
-                      secondaryURL == nil || store.normalizedURL(from: result.secondaryUrl) != nil else {
+                      secondaryURL == nil || store.normalizedURL(from: result.secondaryUrl) != nil,
+                      (result.extraPanes ?? []).allSatisfy({ store.normalizedURL(from: $0.url) != nil }) else {
                     NSSound.beep()
                     return false
                 }
@@ -845,7 +847,8 @@ final class LibrarySpaceManagementController: NSViewController,
                 actionManager.updateBookmark(guid: bookmark.guid, title: result.title,
                     url: folder ? nil : result.url,
                     secondaryUrl: secondaryURL == nil ? nil : .some(result.secondaryUrl ?? ""),
-                    secondaryTitle: secondaryURL == nil ? nil : .some(result.secondaryTitle ?? ""))
+                    secondaryTitle: secondaryURL == nil ? nil : .some(result.secondaryTitle ?? ""),
+                    splitExtraPanes: result.extraPanes)
                 if !folder && parentGuid != originalParentGuid {
                     store.moveBookmark(bookmark.guid, profileId: contents.scope.profileId,
                                        to: parentGuid, newIndex: Int.max)

@@ -1276,12 +1276,15 @@ extension LocalStore {
     /// clear it and turn the bookmark back into a single-URL bookmark, or
     /// `.none` to leave it untouched. Clearing `secondaryUrl` also clears
     /// `secondaryTitle` even if no explicit update was passed for the title.
+    /// `splitExtraPanes` replaces the panes after the first two of a split
+    /// bookmark; nil leaves them untouched.
     func updateBookmark(_ guid: String,
                         profileId: String,
                         title: String?,
                         url: String?,
                         secondaryUrl: String?? = nil,
                         secondaryTitle: String?? = nil,
+                        splitExtraPanes: [SplitBookmarkExtraPane]? = nil,
                         iconName: String? = nil,
                         expectedSpaceId: String? = nil) {
         // Preserve UI behavior by treating an empty title as no title update. The shared body's empty-title
@@ -1297,6 +1300,7 @@ extension LocalStore {
                                             url: url,
                                             secondaryUrl: secondaryUrl,
                                             secondaryTitle: secondaryTitle,
+                                            splitExtraPanes: splitExtraPanes,
                                             allowsEmptyTitle: false,
                                             iconName: iconName,
                                             expectedSpaceId: expectedSpaceId,
@@ -1359,6 +1363,7 @@ extension LocalStore {
                                     url: String?,
                                     secondaryUrl: String??,
                                     secondaryTitle: String??,
+                                    splitExtraPanes: [SplitBookmarkExtraPane]? = nil,
                                     allowsEmptyTitle: Bool,
                                     iconName: String? = nil,
                                     expectedSpaceId: String? = nil,
@@ -1389,6 +1394,19 @@ extension LocalStore {
                 resolvedSecondaryURL = .some(normalized)
             } else {
                 resolvedSecondaryURL = .some(nil)
+            }
+        }
+
+        // An extra pane with an invalid URL aborts the update like the
+        // primary and secondary URLs do.
+        var resolvedExtraPanes: [SplitBookmarkExtraPane]?
+        if let splitExtraPanes {
+            resolvedExtraPanes = try splitExtraPanes.map { pane in
+                guard let normalized = normalizedURL(from: pane.url) else {
+                    throw LocalStoreWriteError.invalidURL
+                }
+                return SplitBookmarkExtraPane(url: normalized.absoluteString,
+                                              title: (pane.title?.isEmpty == false) ? pane.title : nil)
             }
         }
 
@@ -1428,6 +1446,12 @@ extension LocalStore {
                 node.secondaryTitle = newSecondaryTitle
                 contentDidChange = true
             }
+        }
+        // Extra panes extend a split, so a single-URL bookmark never gains them.
+        if let resolvedExtraPanes, node.secondaryUrl != nil,
+           node.decodedSplitExtraPanes != resolvedExtraPanes {
+            node.decodedSplitExtraPanes = resolvedExtraPanes
+            contentDidChange = true
         }
         if let iconName, node.dataType == .bookmarkFolder, node.icon != iconName {
             node.icon = iconName

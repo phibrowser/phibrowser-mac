@@ -616,15 +616,25 @@ extension Tab: ContextMenuRepresentable {
         }
         let state = windowController.browserState
 
-        // Pinned-split cells edit the first two panes in a single sheet so the
-        // user doesn't have to unpin to change either side, matching the
-        // primary/secondary inputs in `EditPinnedTabView`. Further panes of a
-        // wider split keep their URLs.
+        // Pinned-split cells edit every pane in a single sheet so the user
+        // doesn't have to unpin to change one of them: the first two through
+        // the primary/secondary inputs in `EditPinnedTabView`, the third and
+        // fourth through its extra-pane inputs.
         if let pinnedSelf = state.pinnedTabs.first(where: { $0.guidInLocalDB == guid }),
            let dbGuids = state.pinnedSplitDBGuids(forPinnedTab: pinnedSelf),
+           dbGuids.count >= 2,
            case let leftDB = dbGuids[0], case let rightDB = dbGuids[1],
            let leftTab = state.pinnedTabs.first(where: { $0.guidInLocalDB == leftDB }),
            let rightTab = state.pinnedTabs.first(where: { $0.guidInLocalDB == rightDB }) {
+            let extraTabs = dbGuids.dropFirst(2).compactMap { dbGuid in
+                state.pinnedTabs.first(where: { $0.guidInLocalDB == dbGuid })
+            }
+            let extraPanes = extraTabs.map { tab in
+                SplitBookmarkExtraPane(
+                    url: state.pinnedTabEditingURL(for: tab.guidInLocalDB ?? "", fallbackURL: tab.url),
+                    title: tab.storedTitle ?? tab.title
+                )
+            }
             let leftURL = state.pinnedTabEditingURL(for: leftDB, fallbackURL: leftTab.url)
             let leftTitle = leftTab.storedTitle ?? leftTab.title
             let rightURL = state.pinnedTabEditingURL(for: rightDB, fallbackURL: rightTab.url)
@@ -636,6 +646,7 @@ extension Tab: ContextMenuRepresentable {
                 urlString: leftURL,
                 secondaryUrlString: rightURL,
                 secondaryTitleString: rightTitle,
+                extraPanes: extraPanes,
                 from: windowController.window
             ) { [weak windowController, weak leftTab, weak rightTab] result in
                 guard let windowController, let leftTab, let rightTab else { return }
@@ -648,6 +659,14 @@ extension Tab: ContextMenuRepresentable {
                                         url: result.secondaryUrl,
                                         title: result.secondaryTitle,
                                         in: state)
+                // The sheet returns the extra panes in the order it was given.
+                // `applyPinnedTabEdit` skips a tab that is no longer pinned.
+                for (extraTab, pane) in zip(extraTabs, result.extraPanes ?? []) {
+                    Self.applyPinnedTabEdit(targetTab: extraTab,
+                                            url: pane.url,
+                                            title: pane.title ?? "",
+                                            in: state)
+                }
             }
             return
         }

@@ -478,7 +478,8 @@ class BookmarkManager: ObservableObject {
                         title: String? = nil,
                         url: String? = nil,
                         secondaryUrl: String?? = nil,
-                        secondaryTitle: String?? = nil) {
+                        secondaryTitle: String?? = nil,
+                        splitExtraPanes: [SplitBookmarkExtraPane]? = nil) {
         guard localStore != nil else { return }
         let profileId = scope.profileId
         localStore?.updateBookmark(guid,
@@ -487,6 +488,7 @@ class BookmarkManager: ObservableObject {
                                                 url: url,
                                                 secondaryUrl: secondaryUrl,
                                                 secondaryTitle: secondaryTitle,
+                                                splitExtraPanes: splitExtraPanes,
                                                 expectedSpaceId: scope.spaceId)
 
         guard let state = browserState else { return }
@@ -509,6 +511,19 @@ class BookmarkManager: ObservableObject {
                newSecondary != current?.secondaryUrl,
                let secondaryTab = state.tabs.first(where: { $0.guid == group.tabIds[1] }) {
                 navigateSplitPane(secondaryTab, to: newSecondary)
+            }
+            // Panes after the first two sit at the same offset in the live
+            // split as in the bookmark.
+            let currentExtraPanes = current?.splitExtraPanes ?? []
+            for (index, pane) in (splitExtraPanes ?? []).enumerated() {
+                let paneIndex = index + 2
+                guard paneIndex < group.tabIds.count,
+                      let newURL = state.localStore.normalizedURL(from: pane.url)?.absoluteString,
+                      index >= currentExtraPanes.count || newURL != currentExtraPanes[index].url,
+                      let paneTab = state.tabs.first(where: { $0.guid == group.tabIds[paneIndex] }) else {
+                    continue
+                }
+                navigateSplitPane(paneTab, to: newURL)
             }
             return
         }

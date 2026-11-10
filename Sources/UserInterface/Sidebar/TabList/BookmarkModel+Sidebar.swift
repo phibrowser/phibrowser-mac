@@ -461,12 +461,15 @@ extension Bookmark: ContextMenuRepresentable {
         // values when those rows are left untouched.
         let initialSecondaryUrl = self.secondaryUrl
         let initialSecondaryTitle = self.secondaryTitle
+        // A three- or four-pane split bookmark edits its further panes too.
+        let initialExtraPanes = self.splitExtraPanes
         EditPinnedTabPresenter.presentModal(
             mode: isFolder ? .folder : .bookmark,
             title: title,
             urlString: url ?? "",
             secondaryUrlString: initialSecondaryUrl,
             secondaryTitleString: initialSecondaryTitle,
+            extraPanes: initialExtraPanes,
             modelContainer: state.localStore.container,
             profileId: state.profileId,
             spaceId: state.spaceId,
@@ -492,7 +495,8 @@ extension Bookmark: ContextMenuRepresentable {
                 title: result.title,
                 url: result.url,
                 secondaryUrl: secondaryUrlUpdate,
-                secondaryTitle: secondaryTitleUpdate
+                secondaryTitle: secondaryTitleUpdate,
+                splitExtraPanes: result.extraPanes
             )
             if let newParentGuid = result.parentFolderGuid,
                newParentGuid != originalParentGuid {

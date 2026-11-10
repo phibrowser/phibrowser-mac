@@ -52,17 +52,23 @@ struct EditPinnedTabResult {
     /// bookmarks; for split bookmarks an empty string clears the title and
     /// lets the renderer fall back to the host.
     let secondaryTitle: String?
+    /// Updated panes after the first two of a three- or four-pane split, in
+    /// slot order. Nil when the edited item has no such panes; the count
+    /// always matches the panes passed into the editor.
+    let extraPanes: [SplitBookmarkExtraPane]?
 
     init(title: String?,
          url: String?,
          parentFolderGuid: String?,
          secondaryUrl: String? = nil,
-         secondaryTitle: String? = nil) {
+         secondaryTitle: String? = nil,
+         extraPanes: [SplitBookmarkExtraPane]? = nil) {
         self.title = title
         self.url = url
         self.parentFolderGuid = parentFolderGuid
         self.secondaryUrl = secondaryUrl
         self.secondaryTitle = secondaryTitle
+        self.extraPanes = extraPanes
     }
 }
 
@@ -168,6 +174,7 @@ enum EditPinnedTabPresenter {
         urlString: String = "",
         secondaryUrlString: String? = nil,
         secondaryTitleString: String? = nil,
+        extraPanes: [SplitBookmarkExtraPane] = [],
         modelContainer: ModelContainer? = nil,
         profileId: String = "",
         spaceId: String = SpaceManager.shared.currentDefaultSpaceId,
@@ -187,6 +194,7 @@ enum EditPinnedTabPresenter {
             urlString: urlString,
             secondaryUrlString: secondaryUrlString,
             secondaryTitleString: secondaryTitleString,
+            extraPanes: extraPanes,
             profileId: profileId,
             spaceId: spaceId,
             initialFolderGuid: initialFolderGuid,
@@ -330,18 +338,27 @@ struct EditPinnedTabView: View {
     @State private var urlString: String
     @State private var secondaryUrlString: String
     @State private var secondaryTitleString: String
+    /// Editable name and URL of each pane after the first two.
+    @State private var extraPaneTitles: [String]
+    @State private var extraPaneURLs: [String]
     @State private var selectedFolderGuid: String?
     @State private var isCreatingFolder = false
     @State private var newFolderName = ""
     @FocusState private var focusedField: FocusField?
 
-    private enum FocusField {
+    private enum FocusField: Hashable {
         case title
         case url
         case secondaryTitle
         case secondaryUrl
+        case extraPaneTitle(Int)
+        case extraPaneUrl(Int)
         case newFolderName
     }
+
+    /// A split of three or four panes has no single left and right, so its
+    /// fields are numbered instead.
+    private var hasExtraPanes: Bool { !extraPaneURLs.isEmpty }
 
     init(
         mode: EditPinnedTabMode,
@@ -349,6 +366,7 @@ struct EditPinnedTabView: View {
         urlString: String = "",
         secondaryUrlString: String? = nil,
         secondaryTitleString: String? = nil,
+        extraPanes: [SplitBookmarkExtraPane] = [],
         profileId: String = "",
         spaceId: String = SpaceManager.shared.currentDefaultSpaceId,
         initialFolderGuid: String? = nil,
@@ -375,6 +393,10 @@ struct EditPinnedTabView: View {
         _urlString = State(initialValue: URLProcessor.phiBrandEnsuredUrlString(urlString))
         _secondaryUrlString = State(initialValue: URLProcessor.phiBrandEnsuredUrlString(secondaryUrlString ?? ""))
         _secondaryTitleString = State(initialValue: secondaryTitleString ?? "")
+        // Extra panes only exist on top of a secondary pane.
+        let shownExtraPanes = (secondaryUrlString?.isEmpty == false) ? extraPanes : []
+        _extraPaneTitles = State(initialValue: shownExtraPanes.map { $0.title ?? "" })
+        _extraPaneURLs = State(initialValue: shownExtraPanes.map { URLProcessor.phiBrandEnsuredUrlString($0.url) })
         _selectedFolderGuid = State(initialValue: initialFolderGuid)
     }
 
@@ -502,6 +524,11 @@ struct EditPinnedTabView: View {
                 comment: "Folder creator - Subtitle explaining new folder creation"
             )
         case .bookmark, .editOrMoveBookmark:
+            if hasExtraPanes {
+                return NSLocalizedString("common.bookmarkEditor.editMultiPaneSplitSubtitle", value: "Edit the name and address for each pane of this split-view bookmark.",
+                    comment: "Bookmark editor - Subtitle explaining editing of a split-view bookmark with three or four panes"
+                )
+            }
             if isSplitBookmark {
                 return NSLocalizedString("common.bookmarkEditor.editSplitSubtitle", value: "Edit the name and both addresses for this split-view bookmark.",
                     comment: "Bookmark editor - Subtitle explaining split-view bookmark editing"
@@ -511,6 +538,11 @@ struct EditPinnedTabView: View {
                 comment: "Bookmark editor - Subtitle explaining bookmark editing"
             )
         case .pin:
+            if hasExtraPanes {
+                return NSLocalizedString("common.pinnedTabEditor.editMultiPaneSplitSubtitle", value: "Edit the name and address for each pane of this pinned split.",
+                    comment: "Pinned tab editor - Subtitle explaining editing of a pinned split with three or four panes"
+                )
+            }
             if isSplitBookmark {
                 return NSLocalizedString("common.pinnedTabEditor.editSplitSubtitle", value: "Edit the names and addresses for both panes of this pinned split.",
                     comment: "Pinned tab editor - Subtitle explaining pinned split editing"
@@ -565,11 +597,7 @@ struct EditPinnedTabView: View {
 
             if isSplitBookmark, mode.editsURL {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(
-                        NSLocalizedString("common.bookmarkEditor.secondaryNameField.label", value: "Right Name",
-                            comment: "Bookmark editor - Label for the right (secondary) title input field on a split-view bookmark"
-                        )
-                    )
+                    Text(secondaryNameFieldLabel)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
@@ -587,11 +615,7 @@ struct EditPinnedTabView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(
-                        NSLocalizedString("common.bookmarkEditor.secondaryURLField.label", value: "Right URL",
-                            comment: "Bookmark editor - Label for the right (secondary) URL input field on a split-view bookmark"
-                        )
-                    )
+                    Text(secondaryUrlFieldLabel)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
@@ -606,6 +630,40 @@ struct EditPinnedTabView: View {
                     )
                     .textFieldStyle(.roundedBorder)
                     .focused($focusedField, equals: .secondaryUrl)
+                }
+
+                ForEach(extraPaneURLs.indices, id: \.self) { index in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(Self.paneNameFieldLabel(index + 3))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        TextField(
+                            "",
+                            text: $extraPaneTitles[index],
+                            prompt: Text(titlePlaceholder)
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .focused($focusedField, equals: .extraPaneTitle(index))
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(Self.paneUrlFieldLabel(index + 3))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        TextField(
+                            "",
+                            text: $extraPaneURLs[index],
+                            prompt: Text(
+                                NSLocalizedString("common.editor.urlField.placeholder", value: "https://example.com",
+                                    comment: "Editor - Placeholder example URL in text field"
+                                )
+                            )
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .focused($focusedField, equals: .extraPaneUrl(index))
+                    }
                 }
             }
 
@@ -633,7 +691,34 @@ struct EditPinnedTabView: View {
         }
     }
 
+    private static func paneNameFieldLabel(_ number: Int) -> String {
+        String(format: NSLocalizedString("common.bookmarkEditor.paneNameField.label", value: "Pane %d Name",
+            comment: "Bookmark and pinned tab editor - Label for the name input field of one pane of a split with three or four panes. %d is the pane's position, starting at 1"
+        ), number)
+    }
+
+    private static func paneUrlFieldLabel(_ number: Int) -> String {
+        String(format: NSLocalizedString("common.bookmarkEditor.paneURLField.label", value: "Pane %d URL",
+            comment: "Bookmark and pinned tab editor - Label for the URL input field of one pane of a split with three or four panes. %d is the pane's position, starting at 1"
+        ), number)
+    }
+
+    private var secondaryNameFieldLabel: String {
+        if hasExtraPanes { return Self.paneNameFieldLabel(2) }
+        return NSLocalizedString("common.bookmarkEditor.secondaryNameField.label", value: "Right Name",
+            comment: "Bookmark editor - Label for the right (secondary) title input field on a split-view bookmark"
+        )
+    }
+
+    private var secondaryUrlFieldLabel: String {
+        if hasExtraPanes { return Self.paneUrlFieldLabel(2) }
+        return NSLocalizedString("common.bookmarkEditor.secondaryURLField.label", value: "Right URL",
+            comment: "Bookmark editor - Label for the right (secondary) URL input field on a split-view bookmark"
+        )
+    }
+
     private var primaryUrlFieldLabel: String {
+        if hasExtraPanes { return Self.paneUrlFieldLabel(1) }
         if isSplitBookmark {
             return NSLocalizedString("common.bookmarkEditor.primaryURLField.label", value: "Left URL",
                 comment: "Bookmark editor - Label for the left (primary) URL input field on a split-view bookmark"
@@ -645,6 +730,7 @@ struct EditPinnedTabView: View {
     }
 
     private var primaryNameFieldLabel: String {
+        if hasExtraPanes { return Self.paneNameFieldLabel(1) }
         if isSplitBookmark {
             return NSLocalizedString("common.bookmarkEditor.primaryNameField.label", value: "Left Name",
                 comment: "Bookmark editor - Label for the left (primary) title input field on a split-view bookmark"
@@ -732,7 +818,7 @@ struct EditPinnedTabView: View {
             let primaryOK = !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             if isSplitBookmark {
                 let secondaryOK = !secondaryUrlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                return titleOK && primaryOK && secondaryOK
+                return titleOK && primaryOK && secondaryOK && extraPaneURLsAreFilled
             }
             return titleOK && primaryOK
         case .pin, .newPin:
@@ -740,10 +826,14 @@ struct EditPinnedTabView: View {
             let primaryOK = !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             if isSplitBookmark {
                 let secondaryOK = !secondaryUrlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                return titleOK && primaryOK && secondaryOK
+                return titleOK && primaryOK && secondaryOK && extraPaneURLsAreFilled
             }
             return titleOK && primaryOK
         }
+    }
+
+    private var extraPaneURLsAreFilled: Bool {
+        extraPaneURLs.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
     private func editResult(parentFolderGuid: String?) -> EditPinnedTabResult {
@@ -762,6 +852,15 @@ struct EditPinnedTabView: View {
                 : nil,
             secondaryTitle: (isSplitBookmark && mode.editsURL)
                 ? secondaryTitleString.trimmingCharacters(in: .whitespacesAndNewlines)
+                : nil,
+            extraPanes: (hasExtraPanes && mode.editsURL)
+                ? zip(extraPaneURLs, extraPaneTitles).map { url, title in
+                    let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return SplitBookmarkExtraPane(
+                        url: url.trimmingCharacters(in: .whitespacesAndNewlines),
+                        title: trimmedTitle.isEmpty ? nil : trimmedTitle
+                    )
+                }
                 : nil
         )
     }

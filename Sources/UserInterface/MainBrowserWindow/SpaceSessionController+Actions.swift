@@ -383,6 +383,7 @@ extension SpaceSessionController {
             urlString: bookmark.url ?? "",
             secondaryUrlString: initialSecondaryUrl,
             secondaryTitleString: initialSecondaryTitle,
+            extraPanes: bookmark.splitExtraPanes,
             modelContainer: state.localStore.container,
             profileId: state.profileId,
             spaceId: state.spaceId,
@@ -410,7 +411,8 @@ extension SpaceSessionController {
                     title: result.title,
                     url: result.url,
                     secondaryUrl: secondaryUrlUpdate,
-                    secondaryTitle: secondaryTitleUpdate
+                    secondaryTitle: secondaryTitleUpdate,
+                    splitExtraPanes: result.extraPanes
                 )
                 if let newParentGuid = result.parentFolderGuid,
                    newParentGuid != originalParentGuid {

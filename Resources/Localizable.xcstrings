@@ -33701,6 +33701,18 @@
         }
       }
     },
+    "common.bookmarkEditor.editMultiPaneSplitSubtitle" : {
+      "comment" : "Bookmark editor - Subtitle explaining editing of a split-view bookmark with three or four panes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Edit the name and address for each pane of this split-view bookmark."
+          }
+        }
+      }
+    },
     "common.bookmarkEditor.editSplitSubtitle" : {
       "comment" : "Bookmark editor - Subtitle explaining split-view bookmark editing",
       "extractionState" : "extracted_with_value",
@@ -34537,6 +34549,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新增資料夾"
+          }
+        }
+      }
+    },
+    "common.bookmarkEditor.paneNameField.label" : {
+      "comment" : "Bookmark and pinned tab editor - Label for the name input field of one pane of a split with three or four panes. %d is the pane's position, starting at 1",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pane %d Name"
+          }
+        }
+      }
+    },
+    "common.bookmarkEditor.paneURLField.label" : {
+      "comment" : "Bookmark and pinned tab editor - Label for the URL input field of one pane of a split with three or four panes. %d is the pane's position, starting at 1",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pane %d URL"
           }
         }
       }
@@ -37777,6 +37813,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新增釘選分頁"
+          }
+        }
+      }
+    },
+    "common.pinnedTabEditor.editMultiPaneSplitSubtitle" : {
+      "comment" : "Pinned tab editor - Subtitle explaining editing of a pinned split with three or four panes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Edit the name and address for each pane of this pinned split."
           }
         }
       }

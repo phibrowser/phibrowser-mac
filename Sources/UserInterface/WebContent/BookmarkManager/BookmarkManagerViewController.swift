@@ -1195,12 +1195,14 @@ final class BookmarkManagerViewController: NSViewController {
         let originalParentGuid = bookmark.parent?.guid
         let originalSecondaryURL = bookmark.secondaryUrl
         let originalSecondaryTitle = bookmark.secondaryTitle
+        let originalExtraPanes = bookmark.splitExtraPanes
         EditPinnedTabPresenter.presentModal(
             mode: .bookmark,
             title: bookmark.title,
             urlString: bookmark.url ?? "",
             secondaryUrlString: originalSecondaryURL,
             secondaryTitleString: bookmark.secondaryTitle,
+            extraPanes: originalExtraPanes,
             modelContainer: browserState.localStore.container,
             profileId: scope.profileId,
             spaceId: scope.spaceId,
@@ -1233,6 +1235,12 @@ final class BookmarkManagerViewController: NSViewController {
                         return false
                     }
                 }
+                for pane in result.extraPanes ?? [] {
+                    guard self.browserState.localStore.normalizedURL(from: pane.url) != nil else {
+                        NSSound.beep()
+                        return false
+                    }
+                }
                 return true
             }
         ) { [weak self] result in
@@ -1248,12 +1256,14 @@ final class BookmarkManagerViewController: NSViewController {
                 title: result.title,
                 url: result.url,
                 secondaryUrl: secondaryURLUpdate,
-                secondaryTitle: secondaryTitleUpdate
+                secondaryTitle: secondaryTitleUpdate,
+                splitExtraPanes: result.extraPanes
             )
             let didUpdateFields = result.title != originalTitle
                 || result.url != originalURL
                 || (originalSecondaryURL != nil && result.secondaryUrl != originalSecondaryURL)
                 || (originalSecondaryURL != nil && result.secondaryTitle != originalSecondaryTitle)
+                || (result.extraPanes != nil && result.extraPanes != originalExtraPanes)
             if didUpdateFields {
                 self.analyticsSession.markEdited()
             }

@@ -1209,6 +1209,11 @@ class BrowserState {
             // the order early — each one is placed when its turn comes, so
             // anchor lookups match the per-tab path's intermediate states.
             if restoreTransactionPendingGuids?.contains(guid) == true { continue }
+            // A hidden pane Chromium is already removing stays hidden: a pane
+            // closing out of a bookmark-bound split leaves the split (or
+            // dissolves it) before its own removal lands, and listing it
+            // would flash a row that vanishes.
+            if splitPaneIdsBeingRemoved.contains(guid) { continue }
             normalTabOrder.append(guid)
         }
 

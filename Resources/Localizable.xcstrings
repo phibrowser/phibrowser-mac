@@ -108852,7 +108852,7 @@
       }
     },
     "sidebar.tabContextMenu.movePaneDown" : {
-      "comment" : "Tab context menu - Move this pane one position down within a stacked split of three or four panes",
+      "comment" : "Tab context menu - Move the focused pane one position down within a stacked split of three or four panes",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -108864,7 +108864,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Move Pane Down"
+            "value" : "Move Focused Pane Down"
           }
         },
         "es" : {
@@ -108912,7 +108912,7 @@
       }
     },
     "sidebar.tabContextMenu.movePaneLeft" : {
-      "comment" : "Tab context menu - Move this pane one position to the left within a side-by-side split of three or four panes",
+      "comment" : "Tab context menu - Move the focused pane one position to the left within a side-by-side split of three or four panes",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -108924,7 +108924,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Move Pane Left"
+            "value" : "Move Focused Pane Left"
           }
         },
         "es" : {
@@ -108972,7 +108972,7 @@
       }
     },
     "sidebar.tabContextMenu.movePaneRight" : {
-      "comment" : "Tab context menu - Move this pane one position to the right within a side-by-side split of three or four panes",
+      "comment" : "Tab context menu - Move the focused pane one position to the right within a side-by-side split of three or four panes",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -108984,7 +108984,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Move Pane Right"
+            "value" : "Move Focused Pane Right"
           }
         },
         "es" : {
@@ -109032,7 +109032,7 @@
       }
     },
     "sidebar.tabContextMenu.movePaneUp" : {
-      "comment" : "Tab context menu - Move this pane one position up within a stacked split of three or four panes",
+      "comment" : "Tab context menu - Move the focused pane one position up within a stacked split of three or four panes",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -109044,7 +109044,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Move Pane Up"
+            "value" : "Move Focused Pane Up"
           }
         },
         "es" : {

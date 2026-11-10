@@ -201,7 +201,6 @@ extension Tab: ContextMenuRepresentable {
                 let paneTabId = existingSplit.contains(tabId: guid)
                     ? guid
                     : (state.tabs.first { $0.guidInLocalDB == guidInLocalDB && existingSplit.contains(tabId: $0.guid) }?.guid ?? guid)
-                let paneSlot = existingSplit.slot(of: paneTabId)
                 // Pinned splits don't expose "Reverse Panes" / "Move Pane" /
                 // "Remove from Split" — those are normal-split affordances.
                 // Unpinning a pinned split (via the "Unpin Split" item above)
@@ -215,33 +214,38 @@ extension Tab: ContextMenuRepresentable {
                         reverseSplitItem.target = self
                         reverseSplitItem.representedObject = existingSplit.id
                         items.append(reverseSplitItem)
-                    } else if let paneSlot {
-                        // A wider split moves this pane one slot at a time
-                        // instead of reversing the whole split. The item at
-                        // an end carries no action so the auto-enabling menu
-                        // shows it disabled.
+                    } else {
+                        // A wider split moves its focused pane one slot at a
+                        // time instead of reversing the whole split, whichever
+                        // pane's cell the menu opened on. An item that cannot
+                        // move — the pane is at that end, or the split has no
+                        // focused pane — carries no action so the
+                        // auto-enabling menu shows it disabled.
                         let isStacked = existingSplit.layout == .horizontal
-                        let canMoveBackward = paneSlot > 0
+                        let focusedPaneTabId = state.focusingTab.map(\.guid)
+                            .flatMap { existingSplit.contains(tabId: $0) ? $0 : nil }
+                        let focusedPaneSlot = focusedPaneTabId.flatMap { existingSplit.slot(of: $0) }
+                        let canMoveBackward = focusedPaneSlot.map { $0 > 0 } ?? false
                         let moveBackwardItem = NSMenuItem(
                             title: isStacked
-                                ? NSLocalizedString("sidebar.tabContextMenu.movePaneUp", value: "Move Pane Up", comment: "Tab context menu - Move this pane one position up within a stacked split of three or four panes")
-                                : NSLocalizedString("sidebar.tabContextMenu.movePaneLeft", value: "Move Pane Left", comment: "Tab context menu - Move this pane one position to the left within a side-by-side split of three or four panes"),
+                                ? NSLocalizedString("sidebar.tabContextMenu.movePaneUp", value: "Move Focused Pane Up", comment: "Tab context menu - Move the focused pane one position up within a stacked split of three or four panes")
+                                : NSLocalizedString("sidebar.tabContextMenu.movePaneLeft", value: "Move Focused Pane Left", comment: "Tab context menu - Move the focused pane one position to the left within a side-by-side split of three or four panes"),
                             action: canMoveBackward ? #selector(movePaneBackward(_:)) : nil,
                             keyEquivalent: "")
                         moveBackwardItem.target = self
-                        moveBackwardItem.representedObject = paneTabId
+                        moveBackwardItem.representedObject = focusedPaneTabId
                         moveBackwardItem.isEnabled = canMoveBackward
                         items.append(moveBackwardItem)
 
-                        let canMoveForward = paneSlot < existingSplit.paneCount - 1
+                        let canMoveForward = focusedPaneSlot.map { $0 < existingSplit.paneCount - 1 } ?? false
                         let moveForwardItem = NSMenuItem(
                             title: isStacked
-                                ? NSLocalizedString("sidebar.tabContextMenu.movePaneDown", value: "Move Pane Down", comment: "Tab context menu - Move this pane one position down within a stacked split of three or four panes")
-                                : NSLocalizedString("sidebar.tabContextMenu.movePaneRight", value: "Move Pane Right", comment: "Tab context menu - Move this pane one position to the right within a side-by-side split of three or four panes"),
+                                ? NSLocalizedString("sidebar.tabContextMenu.movePaneDown", value: "Move Focused Pane Down", comment: "Tab context menu - Move the focused pane one position down within a stacked split of three or four panes")
+                                : NSLocalizedString("sidebar.tabContextMenu.movePaneRight", value: "Move Focused Pane Right", comment: "Tab context menu - Move the focused pane one position to the right within a side-by-side split of three or four panes"),
                             action: canMoveForward ? #selector(movePaneForward(_:)) : nil,
                             keyEquivalent: "")
                         moveForwardItem.target = self
-                        moveForwardItem.representedObject = paneTabId
+                        moveForwardItem.representedObject = focusedPaneTabId
                         moveForwardItem.isEnabled = canMoveForward
                         items.append(moveForwardItem)
                     }
@@ -1102,7 +1106,7 @@ extension Tab: ContextMenuRepresentable {
         state.removeTabFromSplit(tabId: tabId)
     }
 
-    /// Moves this pane one slot towards the first pane (left / top).
+    /// Moves the focused pane one slot towards the first pane (left / top).
     @MainActor
     @objc private func movePaneBackward(_ sender: NSMenuItem) {
         guard let state = contextMenuState,
@@ -1111,7 +1115,7 @@ extension Tab: ContextMenuRepresentable {
         state.moveTabInSplit(tabId: tabId, toSlot: slot - 1)
     }
 
-    /// Moves this pane one slot towards the last pane (right / bottom).
+    /// Moves the focused pane one slot towards the last pane (right / bottom).
     @MainActor
     @objc private func movePaneForward(_ sender: NSMenuItem) {
         guard let state = contextMenuState,

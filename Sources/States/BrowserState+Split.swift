@@ -496,6 +496,16 @@ extension BrowserState {
         } else {
             splits.append(group)
         }
+        // The split a pane was just replaced in, back under its id: its
+        // bookmark takes it again and saves the new pane.
+        if let swap = pendingBoundSplitPaneSwaps.removeValue(forKey: splitId),
+           swap.tabIds.count == tabIds.count {
+            for bookmarkGuid in swap.bookmarkGuids
+            where bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil {
+                splitBookmarkBindings[bookmarkGuid] = splitId
+            }
+            saveBoundBookmarkPanes(group, previousTabIds: swap.tabIds)
+        }
         // After `splits`, so the page container mounts the waiting pane with
         // its split. Checked first: a restore replays every split here, and
         // each write would publish.
@@ -630,6 +640,9 @@ extension BrowserState {
         let previous = splits[index]
         let departed = previous.tabIds.filter { !tabIds.contains($0) }
         let joined = tabIds.filter { !previous.tabIds.contains($0) }
+        let removedByUser = !departed.isEmpty
+            && departed.allSatisfy { splitPaneIdsLeavingByUserAction.contains($0) }
+        splitPaneIdsLeavingByUserAction.subtract(departed)
         splits[index].tabIds = tabIds
         if splits[index].fractions.count != tabIds.count {
             // Chromium's visuals echo lands right after this; until it does,
@@ -649,6 +662,15 @@ extension BrowserState {
         notifyTravelBackSceneChanged(tabIds: Array(Set(previous.tabIds + tabIds)))
         if !joined.isEmpty {
             openNextPendingPane(splitId: splitId)
+        }
+        // A reorder, a replaced pane, or a pane the user took out changes
+        // what the split's bookmark or pinned record saves. A pane that
+        // leaves any other way is the split, window or app closing, and a
+        // pane that only joins is the saved split still opening.
+        let isReorder = departed.isEmpty && joined.isEmpty && previous.tabIds != tabIds
+        let isReplace = !departed.isEmpty && departed.count == joined.count
+        if isReorder || isReplace || (removedByUser && joined.isEmpty) {
+            saveRepresentedSplitPanes(splits[index], previousTabIds: previous.tabIds)
         }
         // The accompanying `TabMoved` event lands first via `reorderTabs` →
         // `updateNormalTabs` → `enforceSplitAdjacency`, which runs against
@@ -769,6 +791,115 @@ extension BrowserState {
         persistRepresentedSplitLayout(splitId: splitId, layout: layout)
     }
 
+    /// The user is taking the pane `tabId` alone out of its split: closing
+    /// just that pane, or "Remove from Split". A bookmark or pinned record
+    /// drops a saved pane only after this, because panes also leave one at a
+    /// time while a whole split, a window or the app closes, and those must
+    /// leave the saved panes intact. A pair is not noted: it dissolves
+    /// instead of shrinking.
+    func noteUserRemovingSplitPane(_ tabId: Int) {
+        guard let group = splitGroup(forTabId: tabId), !group.isPair else { return }
+        splitPaneIdsLeavingByUserAction.insert(tabId)
+        // Chromium reports the pane leaving right away. A close it holds
+        // back (an unload prompt) must not leave the note behind for a
+        // later teardown to pick up.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.splitPaneIdsLeavingByUserAction.remove(tabId)
+        }
+    }
+
+    /// Saves the panes of `group` into whatever stands for it in the
+    /// sidebar, after its panes were reordered, one was replaced, or the user
+    /// took one out: a bound split-view bookmark and a pinned split both list
+    /// their panes in slot order, so they follow the live split, as a layout
+    /// change is saved through `persistRepresentedSplitLayout`.
+    /// `previousTabIds` is the membership the saved panes still match.
+    private func saveRepresentedSplitPanes(_ group: SplitGroup, previousTabIds: [Int]) {
+        saveBoundBookmarkPanes(group, previousTabIds: previousTabIds)
+        if group.isPinned {
+            savePinnedSplitPanes(group, previousTabIds: previousTabIds)
+        }
+    }
+
+    private func saveBoundBookmarkPanes(_ group: SplitGroup, previousTabIds: [Int]) {
+        let boundBookmarkGuids = splitBookmarkBindings.compactMap { $0.value == group.id ? $0.key : nil }
+        guard !boundBookmarkGuids.isEmpty else { return }
+        var panes: [BookmarkManager.SplitPaneSource] = []
+        for tabId in group.tabIds {
+            if let savedIndex = previousTabIds.firstIndex(of: tabId) {
+                panes.append(.saved(savedIndex))
+            } else if let tab = tabs.first(where: { $0.guid == tabId }),
+                      let url = tab.url, !url.isEmpty {
+                // A pane that replaced another is saved as the page it shows.
+                panes.append(.page(url: url, title: tab.title))
+            } else {
+                return
+            }
+        }
+        for bookmarkGuid in boundBookmarkGuids {
+            bookmarkManager.updateSplitPanes(guid: bookmarkGuid,
+                                             to: panes,
+                                             savedPaneCount: previousTabIds.count)
+            // The first pane may have changed, and the cell shows its favicon.
+            syncSplitBookmarkOpenedState(bookmarkGuid: bookmarkGuid)
+        }
+    }
+
+    /// A pinned split saves one pinned record per pane, in pinned-list
+    /// order. Removes the record of a pane the user took out, puts the
+    /// records in the split's slot order, and saves the membership again.
+    /// Records of panes closed earlier stay, after the live ones. A pane
+    /// without a pinned record (a replacement) is not handled: pinned splits
+    /// offer no pane swap.
+    private func savePinnedSplitPanes(_ group: SplitGroup, previousTabIds: [Int]) {
+        func dbGuid(_ tabId: Int) -> String? {
+            guard let db = tabs.first(where: { $0.guid == tabId })?.guidInLocalDB, !db.isEmpty,
+                  pinnedTabs.contains(where: { $0.guidInLocalDB == db }) else { return nil }
+            return db
+        }
+        let previousDBs = previousTabIds.compactMap(dbGuid)
+        let liveDBs = group.tabIds.compactMap(dbGuid)
+        guard previousDBs.count == previousTabIds.count,
+              liveDBs.count == group.paneCount,
+              let firstRecord = pinnedTabs.first(where: { $0.guidInLocalDB == liveDBs[0] }) else { return }
+        let removedDBs = previousDBs.filter { !liveDBs.contains($0) }
+        let knownDBs = pinnedSplitDBGuids(forPinnedTab: firstRecord) ?? liveDBs
+        let closedDBs = knownDBs.filter { !liveDBs.contains($0) && !removedDBs.contains($0) }
+        let orderedDBs = liveDBs + closedDBs
+
+        // Captured before any record goes away or moves.
+        let members = Set(orderedDBs + removedDBs)
+        var anchor: String? = pinnedTabs
+            .firstIndex(where: { $0.guidInLocalDB.map(members.contains) ?? false })
+            .flatMap { $0 > 0 ? pinnedTabs[$0 - 1].guidInLocalDB : nil }
+        let listedDBs = pinnedTabs.compactMap { tab -> String? in
+            guard let db = tab.guidInLocalDB, orderedDBs.contains(db) else { return nil }
+            return db
+        }
+
+        if !removedDBs.isEmpty {
+            let removedRecords = removedDBs.compactMap { db in
+                pinnedTabs.first(where: { $0.guidInLocalDB == db })
+            }
+            clearPinnedSplit(dbGuids: removedDBs)
+            for record in removedRecords {
+                localStore.removePinnedTab(record, profileId: profileId, spaceId: spaceId)
+            }
+        }
+        if listedDBs != orderedDBs {
+            for db in orderedDBs {
+                guard let record = pinnedTabs.first(where: { $0.guidInLocalDB == db }) else { continue }
+                localStore.moveOrCreatePinnedTab(record, after: anchor, profileId: profileId, spaceId: spaceId)
+                anchor = db
+            }
+        }
+        if orderedDBs.count >= 2 {
+            persistPinnedSplit(dbGuids: orderedDBs, layout: group.layout)
+        } else {
+            clearPinnedSplit(dbGuids: orderedDBs)
+        }
+    }
+
     private func persistRepresentedSplitLayout(splitId: String, layout: SplitLayout) {
         if let group = splits.first(where: { $0.id == splitId }), group.isPinned,
            let record = tabs.first(where: { $0.guid == group.firstTabId })?.guidInLocalDB
@@ -848,6 +979,7 @@ extension BrowserState {
             removeSplit(group.id)
             return
         }
+        noteUserRemovingSplitPane(tabId)
         ChromiumLauncher.sharedInstance().bridge?.removeTabFromSplit(withTabId: tabId.int64Value,
                                                                      windowId: windowId.int64Value)
     }
@@ -871,6 +1003,17 @@ extension BrowserState {
                         slotIndex: Int,
                         withTabId otherTabId: Int,
                         swap: Bool) {
+        // Chromium replaces a pane by removing the split and creating it
+        // again under the same id. The removal drops a bookmark binding, so
+        // note it here for `handleSplitCreated` to restore and to save the
+        // new pane into the bookmark.
+        let boundBookmarkGuids = splitBookmarkBindings.compactMap { $0.value == splitId ? $0.key : nil }
+        if !boundBookmarkGuids.isEmpty, let group = splitGroup(forId: splitId) {
+            pendingBoundSplitPaneSwaps[splitId] = (boundBookmarkGuids, group.tabIds)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.pendingBoundSplitPaneSwaps.removeValue(forKey: splitId)
+            }
+        }
         ChromiumLauncher.sharedInstance().bridge?.swapTab(inSplit: splitId,
                                                           slotIndex: Int32(slotIndex),
                                                           withTabId: otherTabId.int64Value,

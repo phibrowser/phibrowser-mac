@@ -250,6 +250,10 @@ class BrowserState {
     /// reports the split created or grown.
     var pendingSplitAdditionalPaneURLsById: [String: [String]] = [:]
 
+    /// splitId → the bookmarks bound to a split and its panes, noted just
+    /// before one of the panes is replaced. See `swapTabInSplit`.
+    var pendingBoundSplitPaneSwaps: [String: (bookmarkGuids: [String], tabIds: [Int])] = [:]
+
     /// "Split with New Tab" under the Omnibox new-tab behavior: the focused
     /// tab is shown beside a blank pane while the omnibox picks the partner.
     /// No tab exists for that pane until the omnibox submits.
@@ -319,6 +323,9 @@ class BrowserState {
     /// Split panes Chromium announced it is removing whose `closeTab` has not
     /// run yet. See `splitPaneWillBeRemoved(_:)`.
     var splitPaneIdsBeingRemoved: Set<Int> = []
+    /// Split panes the user is taking out of their split one at a time. See
+    /// `noteUserRemovingSplitPane(_:)`.
+    var splitPaneIdsLeavingByUserAction: Set<Int> = []
     var aiChatCollapseWatches: [ObjectIdentifier: (tabId: Int, watch: AnyCancellable)] = [:]
     var aiChatPanelURLWatches: [ObjectIdentifier: AnyCancellable] = [:]
     var aiChatPanelRecordSubscriptions = Set<AnyCancellable>()

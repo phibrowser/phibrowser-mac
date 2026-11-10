@@ -474,6 +474,71 @@ class BookmarkManager: ObservableObject {
         localStore?.updateBookmarkSplitLayout(guid, layout: layout.rawValue)
     }
     
+    /// Where one pane of a split-view bookmark's new pane list comes from.
+    enum SplitPaneSource {
+        /// The pane currently saved at this index.
+        case saved(Int)
+        /// A page that was not saved in the bookmark before.
+        case page(url: String, title: String)
+    }
+
+    /// Replaces the saved panes of a split-view bookmark with `panes`, two
+    /// to four in slot order, to follow its live split after panes were
+    /// reordered, replaced or removed. Ignored unless the bookmark currently
+    /// saves `savedPaneCount` panes, so a split that is still opening its
+    /// panes leaves the bookmark alone. Nothing navigates: the live panes
+    /// already are what gets saved.
+    func updateSplitPanes(guid: String, to panes: [SplitPaneSource], savedPaneCount: Int) {
+        guard let bookmark = bookmarkIndex[guid], !bookmark.isFolder,
+              let primaryURL = bookmark.url, !primaryURL.isEmpty,
+              let secondaryURL = bookmark.secondaryUrl, !secondaryURL.isEmpty else {
+            return
+        }
+        // A pane saved without a title repeats the first pane's.
+        let primaryTitle = bookmark.title
+        let saved: [(url: String, title: String)] =
+            [(primaryURL, primaryTitle), (secondaryURL, bookmark.secondaryTitle ?? primaryTitle)]
+            + bookmark.splitExtraPanes.map { ($0.url, $0.title ?? primaryTitle) }
+        guard saved.count == savedPaneCount,
+              (2...SplitGroup.maxPaneCount).contains(panes.count) else {
+            return
+        }
+        var updated: [(url: String, title: String)] = []
+        for pane in panes {
+            switch pane {
+            case .saved(let index):
+                guard saved.indices.contains(index) else { return }
+                updated.append(saved[index])
+            case .page(let url, let title):
+                updated.append((url, title.isEmpty ? url : title))
+            }
+        }
+        guard updated.map(\.url) != saved.map(\.url) || updated.map(\.title) != saved.map(\.title) else {
+            return
+        }
+        let title = updated[0].title
+        func paneTitle(_ paneTitle: String) -> String? {
+            paneTitle == title ? nil : paneTitle
+        }
+        let secondaryTitle = paneTitle(updated[1].title)
+        let extraPanes = updated.dropFirst(2).map {
+            SplitBookmarkExtraPane(url: $0.url, title: paneTitle($0.title))
+        }
+        bookmark.title = title
+        bookmark.url = updated[0].url
+        bookmark.secondaryUrl = updated[1].url
+        bookmark.secondaryTitle = secondaryTitle
+        bookmark.splitExtraPanes = extraPanes
+        localStore?.updateBookmark(guid,
+                                   profileId: scope.profileId,
+                                   title: title,
+                                   url: updated[0].url,
+                                   secondaryUrl: .some(updated[1].url),
+                                   secondaryTitle: .some(secondaryTitle),
+                                   splitExtraPanes: extraPanes,
+                                   expectedSpaceId: scope.spaceId)
+    }
+
     func updateBookmark(guid: String,
                         title: String? = nil,
                         url: String? = nil,

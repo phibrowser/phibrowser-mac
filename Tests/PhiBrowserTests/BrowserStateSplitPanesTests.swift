@@ -440,6 +440,45 @@ final class BrowserStateSplitPanesTests: XCTestCase {
         XCTAssertNil(state.splitPanePosition(forTabId: 2))
     }
 
+    /// A pinned split saves one record per pane: the record of a pane the
+    /// user closes leaves the split, and the others stay linked.
+    func testPaneTheUserClosesLeavesThePinnedSplitRecords() throws {
+        let state = try makeState()
+        seedPinnedSplit(state, liveIds: [1, 2, 3])
+        func record(_ db: String) -> Tab? { state.pinnedTabs.first { $0.guidInLocalDB == db } }
+
+        state.noteUserRemovingSplitPane(2)
+        state.handleSplitContentsChanged(splitId: "pinned", tabIds: [1, 3])
+
+        XCTAssertEqual(record("db-1")?.splitPartnerGuid, "db-3")
+        XCTAssertEqual(record("db-3")?.splitPartnerGuid, "db-1")
+        XCTAssertEqual(record("db-1")?.splitPaneGuids, [])
+        XCTAssertNil(record("db-2")?.splitPartnerGuid)
+        XCTAssertEqual(record("db-2")?.splitPaneGuids, [])
+    }
+
+    /// A pane that leaves while the split, window or app closes keeps its
+    /// pinned record in the split.
+    func testPaneLeavingWithoutAUserRemovalKeepsThePinnedSplitRecords() throws {
+        let state = try makeState()
+        seedPinnedSplit(state, liveIds: [1, 2, 3])
+
+        state.handleSplitContentsChanged(splitId: "pinned", tabIds: [1, 3])
+
+        XCTAssertEqual(state.pinnedTabs.map(\.splitPaneGuids),
+                       Array(repeating: ["db-1", "db-2", "db-3"], count: 3))
+    }
+
+    func testReorderingAPinnedSplitResequencesItsRecords() throws {
+        let state = try makeState()
+        seedPinnedSplit(state, liveIds: [1, 2, 3])
+
+        state.handleSplitContentsChanged(splitId: "pinned", tabIds: [3, 1, 2])
+
+        XCTAssertEqual(state.pinnedTabs.map(\.splitPaneGuids),
+                       Array(repeating: ["db-3", "db-1", "db-2"], count: 3))
+    }
+
     /// A reorder keeps the shares (one per pane) and re-sequences the strip.
     func testContentsChangedReordersThePanesAndKeepsTheirShares() throws {
         let state = try makeState()

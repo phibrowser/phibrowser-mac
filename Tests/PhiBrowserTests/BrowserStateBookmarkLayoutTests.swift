@@ -367,6 +367,89 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
         })
     }
 
+    /// A four-pane bookmark C, A, F, D bound to the live split of tabs 1...4.
+    private func makeBoundFourPaneBookmark(in state: BrowserState, guid: String) throws -> Bookmark {
+        state.localStore.createBookmark(url: "https://c.example/",
+                                        title: "C",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: guid,
+                                        spaceId: state.spaceId,
+                                        secondaryUrl: "https://a.example/",
+                                        secondaryTitle: "A",
+                                        splitExtraPanes: [
+                                            SplitBookmarkExtraPane(url: "https://f.example/", title: "F"),
+                                            SplitBookmarkExtraPane(url: "https://d.example/", title: "D"),
+                                        ])
+        XCTAssertTrue(waitUntil { state.bookmarkManager.bookmark(withGuid: guid) != nil })
+        let bookmark = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: guid))
+        state.tabs = (1...5).map { Tab(guid: $0, url: "https://e\($0).example/", isActive: false, index: $0, title: "E\($0)") }
+        state.handleSplitCreated(splitId: "split", tabIds: [1, 2, 3, 4], layout: .vertical,
+                                 fractions: [0.25, 0.25, 0.25, 0.25])
+        state.splitBookmarkBindings[guid] = "split"
+        return bookmark
+    }
+
+    func testReorderingABoundSplitResequencesTheBookmarkPanes() throws {
+        let state = try makeState()
+        let bookmark = try makeBoundFourPaneBookmark(in: state, guid: "reorder-bookmark")
+
+        state.handleSplitContentsChanged(splitId: "split", tabIds: [3, 1, 2, 4])
+
+        XCTAssertEqual(bookmark.splitPanes.map(\.url),
+                       ["https://f.example/", "https://c.example/", "https://a.example/", "https://d.example/"])
+        XCTAssertEqual(bookmark.splitPanes.map(\.title), ["F", "C", "A", "D"])
+        XCTAssertEqual(state.splitBookmarkBindings[bookmark.guid], "split")
+        XCTAssertTrue(waitUntil {
+            state.localStore.getTab(by: bookmark.guid)?.url.absoluteString == "https://f.example/"
+        })
+        let row = try XCTUnwrap(state.localStore.getTab(by: bookmark.guid))
+        XCTAssertEqual(row.secondaryUrl?.absoluteString, "https://c.example/")
+        XCTAssertEqual(row.decodedSplitExtraPanes,
+                       [SplitBookmarkExtraPane(url: "https://a.example/", title: "A"),
+                        SplitBookmarkExtraPane(url: "https://d.example/", title: "D")])
+    }
+
+    func testPaneTheUserRemovesLeavesTheBoundBookmark() throws {
+        let state = try makeState()
+        let bookmark = try makeBoundFourPaneBookmark(in: state, guid: "remove-bookmark")
+
+        state.noteUserRemovingSplitPane(1)
+        state.handleSplitContentsChanged(splitId: "split", tabIds: [2, 3, 4])
+
+        XCTAssertEqual(bookmark.splitPanes.map(\.url),
+                       ["https://a.example/", "https://f.example/", "https://d.example/"])
+        XCTAssertEqual(bookmark.title, "A")
+        XCTAssertTrue(waitUntil {
+            state.localStore.getTab(by: bookmark.guid)?.decodedSplitExtraPanes
+                == [SplitBookmarkExtraPane(url: "https://d.example/", title: "D")]
+        })
+    }
+
+    /// Panes also leave one by one while the split, the window or the app
+    /// closes; that must not strip the bookmark.
+    func testPaneLeavingWithoutAUserRemovalKeepsTheBoundBookmark() throws {
+        let state = try makeState()
+        let bookmark = try makeBoundFourPaneBookmark(in: state, guid: "teardown-bookmark")
+
+        state.handleSplitContentsChanged(splitId: "split", tabIds: [2, 3, 4])
+        state.handleSplitContentsChanged(splitId: "split", tabIds: [3, 4])
+
+        XCTAssertEqual(bookmark.splitPanes.map(\.url),
+                       ["https://c.example/", "https://a.example/", "https://f.example/", "https://d.example/"])
+    }
+
+    func testReplacedPaneIsSavedIntoTheBoundBookmark() throws {
+        let state = try makeState()
+        let bookmark = try makeBoundFourPaneBookmark(in: state, guid: "replace-bookmark-pane")
+
+        state.handleSplitContentsChanged(splitId: "split", tabIds: [1, 5, 3, 4])
+
+        XCTAssertEqual(bookmark.splitPanes.map(\.url),
+                       ["https://c.example/", "https://e5.example/", "https://f.example/", "https://d.example/"])
+        XCTAssertEqual(bookmark.splitPanes.map(\.title), ["C", "E5", "F", "D"])
+    }
+
     private func makeState() throws -> BrowserState {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

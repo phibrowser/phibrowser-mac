@@ -192,6 +192,11 @@ struct CommandDispatcher {
             if windowController.handleCloseTab() {
                 return true
             }
+            // Closing the focused pane of a split takes just that pane out;
+            // a bookmark or pinned record that saves the split follows.
+            if let focusedTabId = windowController.browserState.focusingTab?.guid {
+                windowController.browserState.noteUserRemovingSplitPane(focusedTabId)
+            }
             // ⌘W closing the last tab in a Space tears the whole window
             // slot down — same as ⇧⌘W / the red ✕ — rather than switching
             // to a sibling Space. It therefore deliberately does NOT tag

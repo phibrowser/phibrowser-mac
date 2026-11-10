@@ -129,19 +129,32 @@ class PinnedTabViewController: NSViewController {
     }
 
     /// One pinned split represented as a single grid cell with every pane.
-    /// Identified by the split's stable Chromium id so the diffable snapshot
-    /// can detect when the same split is rebuilt with new tab instances.
+    /// Identified by the split's stable Chromium id and its panes in order,
+    /// so the diffable snapshot keeps the cell when the same split is rebuilt
+    /// with new tab instances, and replaces it when a pane leaves or the
+    /// panes are reordered: a cell is configured, and its click handler
+    /// bound, to the panes it was created with.
     struct PinnedSplitGroupItem: Hashable {
         let splitId: String
         /// Pinned records of the panes in rendered order.
         let tabs: [Tab]
+        /// The panes' database guids in order, captured when the item is
+        /// built: a scope migration rebinds a record's guid in place.
+        private let paneKey: String
+
+        init(splitId: String, tabs: [Tab]) {
+            self.splitId = splitId
+            self.tabs = tabs
+            paneKey = tabs.map { $0.guidInLocalDB ?? "" }.joined(separator: "|")
+        }
 
         func hash(into hasher: inout Hasher) {
             hasher.combine(splitId)
+            hasher.combine(paneKey)
         }
 
         static func == (lhs: PinnedSplitGroupItem, rhs: PinnedSplitGroupItem) -> Bool {
-            lhs.splitId == rhs.splitId
+            lhs.splitId == rhs.splitId && lhs.paneKey == rhs.paneKey
         }
 
         func containsPinnedGuid(_ guid: String?) -> Bool {
@@ -872,7 +885,10 @@ class PinnedTabViewController: NSViewController {
             guard case .splitItem(let group) = item else { continue }
             let pairKey = group.tabs.map { $0.guidInLocalDB ?? "" }.joined(separator: "|")
             newSplitPairs[group.splitId] = pairKey
-            if let previous = lastSplitItemPairs[group.splitId], previous != pairKey {
+            // A changed pane list is a different item (`PinnedSplitGroupItem`),
+            // so only an item the previous snapshot already held is reloaded.
+            if let previous = lastSplitItemPairs[group.splitId], previous != pairKey,
+               dataSource.snapshot().indexOfItem(item) != nil {
                 splitItemsToReconfigure.append(item)
             }
         }

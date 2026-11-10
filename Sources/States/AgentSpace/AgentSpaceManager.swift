@@ -85,6 +85,10 @@ struct AgentTask {
     /// Empty for phi-agent tasks and when the identity couldn't be resolved.
     /// Surfaced as a badge on the control pill and the transcript filter.
     var agentName: String = ""
+    /// The page area the agent's viewport is sized from while the Space is
+    /// hidden: the first one measured, then the last one it had on screen.
+    /// See `AgentSpaceRouter.taskPageAreaSize`.
+    var heldPageArea: CGSize? = nil
 }
 
 /// Presentation for "which code agent drives this Space": an icon plus a short
@@ -509,6 +513,19 @@ final class AgentSpaceManager: ObservableObject {
     func task(forTaskId taskId: String) -> AgentTask? {
         guard let spaceId = spaceIdByTaskId[taskId] else { return nil }
         return tasksBySpaceId[spaceId]
+    }
+
+    func task(forWindowId windowId: Int) -> AgentTask? {
+        tasksBySpaceId.values.first { $0.windowId == windowId }
+    }
+
+    /// Records `size` as the page area held by the task driving `windowId`.
+    /// No-op for a window no task drives.
+    func holdPageArea(_ size: CGSize, forWindowId windowId: Int) {
+        guard var task = task(forWindowId: windowId),
+              task.heldPageArea != size else { return }
+        task.heldPageArea = size
+        tasksBySpaceId[task.spaceId] = task
     }
 
     // MARK: - Creation

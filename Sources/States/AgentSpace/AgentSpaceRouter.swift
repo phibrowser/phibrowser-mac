@@ -516,8 +516,8 @@ enum AgentSpaceRouter {
     /// presents them — the hidden window's own view size reads 0×0 over CDP,
     /// and measuring user tabs is unreliable (native-NTP shells). With a
     /// `windowId` (the agent's hidden Chromium window) the answer is the page
-    /// area of the Space instance behind that window, as its window presents
-    /// it or would (`pageAreaSize`); without one, or when nothing is
+    /// area of the Space instance behind that window, held steady while the
+    /// Space is hidden (`taskPageAreaSize`); without one, or when nothing is
     /// measurable there (no shell yet), it is the key window's presented
     /// instance, as before. Informational, so not origin-scoped — same class
     /// as `agentSpace.listProfiles`.
@@ -526,7 +526,7 @@ enum AgentSpaceRouter {
         let size = MainActor.assumeIsolated { () -> CGSize? in
             if let windowId, windowId != 0,
                let controller = SpaceSessionControllersManager.shared.controller(for: windowId),
-               let size = pageAreaSize(of: controller) {
+               let size = taskPageAreaSize(of: controller, windowId: windowId) {
                 return size
             }
             let slot = SpaceManager.shared.keySlot ?? SpaceManager.shared.slots.first

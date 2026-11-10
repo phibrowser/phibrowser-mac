@@ -105,6 +105,10 @@ final class FloatingSidebarHostViewController: NSViewController {
             strip.onStripVisibilityChanged = { [weak self] visible in
                 self?.trafficLightBandVisibilityChanged(visible)
             }
+            // Over the floating panel in both draw and hit-test order, so the
+            // lights it carries never land on the panel's own header row.
+            strip.wantsLayer = true
+            strip.layer?.zPosition = WebContentContainerViewController.LayerZIndex.floatingSidebar + 1
             view.addSubview(strip)
             strip.snp.makeConstraints { make in
                 make.left.right.top.equalToSuperview()
@@ -387,7 +391,11 @@ final class FloatingSidebarHostViewController: NSViewController {
         interactionContainerView.wantsLayer = true
         interactionContainerView.layer?.zPosition = WebContentContainerViewController.LayerZIndex.floatingSidebar
 
-        view.addSubview(interactionContainerView, positioned: .above, relativeTo: nil)
+        if let trafficLightStrip {
+            view.addSubview(interactionContainerView, positioned: .below, relativeTo: trafficLightStrip)
+        } else {
+            view.addSubview(interactionContainerView, positioned: .above, relativeTo: nil)
+        }
         interactionContainerView.snp.makeConstraints { make in
             if sidebarOnRight {
                 floatingSidebarLeadingConstraint = make.right.equalToSuperview().offset(floatingSidebarHiddenLeading).constraint

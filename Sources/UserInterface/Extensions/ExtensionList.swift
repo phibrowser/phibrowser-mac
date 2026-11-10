@@ -51,7 +51,8 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
     private let itemHeight: CGFloat = 32
     private let spacing: CGFloat = 6
     private let maxRows = 4
-    private let fixedWidth: CGFloat = 240
+    // 4 columns × 50 + 3 gaps × 6 + 12 horizontal inset on each side.
+    private let fixedWidth: CGFloat = 242
     
     init(
         extensionManager: Manager,
@@ -105,7 +106,8 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
                         gridContent
                             .padding(.horizontal, 12)
                     }
-                    .frame(height: gridHeight)
+                    .scrollIndicators(.never)
+                    .frame(width: fixedWidth, height: gridHeight)
                 } else {
                     gridContent
                         .padding(.horizontal, 12)

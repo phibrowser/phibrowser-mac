@@ -173,17 +173,23 @@ class OmniBoxSuggestionCellView: NSTableCellView {
         
         switchToTabView.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
-            self.switchTabTrailingConstraintToCloseButton = make.trailing.equalTo(deleteButton.snp.leading).offset(-5).constraint
-            self.switchTabTrailingConstraintToSuperView = make.trailing.equalToSuperview().offset(-5).constraint
             make.height.equalTo(26)
             // Fits the hint text; the title and subtitle truncate first.
             make.width.equalTo(max(128, switchToTabView.labelWidth))
         }
-        
+        // The trailing alternatives are mutually exclusive, so they start inactive and
+        // updateTrailingConstraints activates one of them.
+        switchToTabView.snp.prepareConstraints { make in
+            self.switchTabTrailingConstraintToCloseButton = make.trailing.equalTo(deleteButton.snp.leading).offset(-5).constraint
+            self.switchTabTrailingConstraintToSuperView = make.trailing.equalToSuperview().offset(-5).constraint
+        }
+
         subtitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         subtitleLabel.snp.makeConstraints { make in
             make.leading.equalTo(titleLabel.snp.trailing).offset(2)
             make.centerY.equalToSuperview()
+        }
+        subtitleLabel.snp.prepareConstraints { make in
             self.subTitleTrailingConstraintToSuperView = make.trailing.equalToSuperview().offset(-5).constraint
             self.subTitleTrailingConstraintToCloseButton = make.trailing.equalTo(deleteButton.snp.leading).offset(-5).constraint
             self.subTitleTrailingConstraintToSwitchTabView = make.trailing.equalTo(switchToTabView.snp.leading).offset(-5).constraint
@@ -192,9 +198,8 @@ class OmniBoxSuggestionCellView: NSTableCellView {
         updateAppearance()
     }
     
-    private func updateConstraint(canDelete: Bool, canSwitch: Bool, hovered: Bool, selected: Bool) {
-        let canShowDelete = hovered || selected
-        let showDeleteBtn = canShowDelete && canDelete
+    private func updateConstraint(canDelete: Bool, canSwitch: Bool, hovered: Bool) {
+        let showDeleteBtn = hovered && canDelete
         
         if showDeleteBtn && canSwitch {
             updateTrailingConstraints(toSuperViewEnabled: false, closeButtonEnabled: false, canShowDeleteBtn: showDeleteBtn, switchViewEnabled: true)
@@ -211,12 +216,21 @@ class OmniBoxSuggestionCellView: NSTableCellView {
     private func updateTrailingConstraints(toSuperViewEnabled superViewEnabled: Bool, closeButtonEnabled: Bool, canShowDeleteBtn: Bool, switchViewEnabled: Bool) {
         AppLogDebug("title: \(titleLabel.stringValue) superViewEnabled: \(superViewEnabled), close: \(closeButtonEnabled), switch: \(switchViewEnabled)")
         
-        subTitleTrailingConstraintToSuperView?.isActive = superViewEnabled
-        subTitleTrailingConstraintToCloseButton?.isActive = closeButtonEnabled
-        subTitleTrailingConstraintToSwitchTabView?.isActive = switchViewEnabled
-        switchTabTrailingConstraintToSuperView?.isActive = !canShowDeleteBtn
-        switchTabTrailingConstraintToCloseButton?.isActive = canShowDeleteBtn
-        
+        let trailingConstraints: [(Constraint?, Bool)] = [
+            (subTitleTrailingConstraintToSuperView, superViewEnabled),
+            (subTitleTrailingConstraintToCloseButton, closeButtonEnabled),
+            (subTitleTrailingConstraintToSwitchTabView, switchViewEnabled),
+            (switchTabTrailingConstraintToSuperView, !canShowDeleteBtn),
+            (switchTabTrailingConstraintToCloseButton, canShowDeleteBtn),
+        ]
+        // Deactivate first so two exclusive trailing constraints are never active together.
+        for (constraint, isActive) in trailingConstraints where !isActive {
+            constraint?.isActive = false
+        }
+        for (constraint, isActive) in trailingConstraints where isActive {
+            constraint?.isActive = true
+        }
+
         deleteButton.isHidden = !canShowDeleteBtn
         switchToTabView.isHidden = !switchViewEnabled
         
@@ -284,8 +298,7 @@ class OmniBoxSuggestionCellView: NSTableCellView {
         updateConstraint(
             canDelete: suggestion?.canDelete ?? false,
             canSwitch: canShowSwitchToTab,
-            hovered: isHovered,
-            selected: isSelected
+            hovered: isHovered
         )
         if canShowSwitchToTab {
             switchToTabView.setEmphasized(isSelected || isHovered)
@@ -343,7 +356,7 @@ class SwitchToTabView: NSView {
         l.lineBreakMode = .byTruncatingTail
         l.usesSingleLineMode = true
         l.stringValue = NSLocalizedString("addressBar.suggestions.switchToOpenTabHint", value: "Hold ⌘ to switch →", comment: "Omnibox suggestion - Hint shown for suggestions that can switch to an open tab")
-        l.alignment = .center
+        l.alignment = .right
         return l
     }()
 

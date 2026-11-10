@@ -158,6 +158,7 @@ enum CommandWrapper: Int, Equatable {
     case PHI_CAPTURE_AREA            = 90029
     case PHI_SPLIT_WITH_NEW_TAB      = 90030
     case PHI_CLEAR_ALL_TABS          = 90031
+    case PHI_TOGGLE_DARK_MODE        = 90032
 
     // System Preserved
     case IDS_HIDE_OTHERS_MAC         = 110

@@ -192,6 +192,8 @@ extension CommandWrapper {
             return NSLocalizedString("settings.shortcuts.description.copyURL", value: "Copy the current page's URL to the clipboard.", comment: "Shortcuts settings - Description of the copyURL command")
         case .PHI_TOGGLE_READER:
             return NSLocalizedString("settings.shortcuts.description.reader", value: "Open or close Reader for the current page.", comment: "Shortcuts settings - Description of the reader command")
+        case .PHI_TOGGLE_DARK_MODE:
+            return NSLocalizedString("settings.shortcuts.description.toggleDarkMode", value: "Switch between light and dark appearance.", comment: "Shortcuts settings - Description of the toggleDarkMode command")
         case .PHI_NEW_KIOSK_WINDOW:
             return NSLocalizedString("settings.shortcuts.description.newKiosk", value: "Open a new Kiosk window.", comment: "Shortcuts settings - Description of the newKiosk command")
         case .PHI_NEW_INCOGNITO_SPACE:

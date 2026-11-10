@@ -278,7 +278,8 @@ extension Shortcuts {
                         .PHI_TOGGLE_SIDEBAR,
                         .PHI_TOGGLE_CHATBAR,
                         .PHI_TOGGLE_READER,
-                        .PHI_NEW_CONVERSATION]
+                        .PHI_NEW_CONVERSATION,
+                        .PHI_TOGGLE_DARK_MODE]
             case .history:
                 return [.IDC_HOME,
                         .IDC_BACK,
@@ -756,6 +757,7 @@ extension CommandWrapper {
         .PHI_FARRINGDON_TOGGLE: .init(title: "Organize Tabs with AI", keywords: ["organize tabs", "tidy tabs", "group tabs", "clean", "farringdon", "ai"]),
         .PHI_COPY_URL: .init(title: "Copy URL", keywords: ["copy url", "copy link", "url"]),
         .PHI_TOGGLE_READER: .init(title: "Toggle Reader View", keywords: ["reader", "reader view", "reading", "article", "distraction free"]),
+        .PHI_TOGGLE_DARK_MODE: .init(title: "Toggle Dark Mode", keywords: ["dark mode", "light mode", "appearance", "color appearance", "theme", "night"]),
         .PHI_NEW_KIOSK_WINDOW: .init(title: "New Kiosk Window", keywords: ["new kiosk window", "kiosk", "window"]),
         .PHI_NEW_INCOGNITO_SPACE: .init(title: "New Incognito Space", keywords: ["new incognito space", "incognito", "private", "space"]),
         .PHI_SHARE_PAGE: .init(title: "Share Page", keywords: ["share", "share page", "share link", "airdrop", "send"]),

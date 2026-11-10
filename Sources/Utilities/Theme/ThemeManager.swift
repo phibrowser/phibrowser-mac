@@ -358,6 +358,12 @@ public final class ThemeManager: NSObject, ThemeSource {
         userAppearanceChoice = choice
     }
     
+    /// Switches to the opposite of the appearance on screen, so under System
+    /// it pins Light or Dark.
+    public func toggleDarkMode() {
+        userAppearanceChoice = currentAppearance == .dark ? .light : .dark
+    }
+
     /// Switches appearance handling back to the system setting.
     public func followSystemAppearance() {
         userAppearanceChoice = .system

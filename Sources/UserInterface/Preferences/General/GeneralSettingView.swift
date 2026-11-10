@@ -188,6 +188,10 @@ private struct AppearanceSectionView: View {
                         }
                     }
                 }
+                // The View menu and the Toggle Dark Mode shortcut change it too.
+                .onReceive(NotificationCenter.default.publisher(for: .appearanceDidChange)) { _ in
+                    selectedAppearance = ThemeManager.shared.userAppearanceChoice
+                }
 
                 Divider()
 

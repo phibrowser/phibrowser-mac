@@ -22417,6 +22417,18 @@
         }
       }
     },
+    "app.viewMenu.appearanceSectionTitle" : {
+      "comment" : "View menu - Section header above the System, Light and Dark appearance choices",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Appearance"
+          }
+        }
+      }
+    },
     "app.viewMenu.layoutModeSectionTitle" : {
       "comment" : "View menu - Layout mode section header in View menu",
       "extractionState" : "extracted_with_value",
@@ -22653,6 +22665,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "切換 Chatbar"
+          }
+        }
+      }
+    },
+    "app.viewMenu.toggleDarkMode" : {
+      "comment" : "View menu - Menu item that switches the browser between light and dark appearance",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Toggle Dark Mode"
           }
         }
       }
@@ -90172,6 +90196,18 @@
         }
       }
     },
+    "settings.shortcuts.command.toggleDarkMode" : {
+      "comment" : "Shortcuts settings - Command title for switching the browser between light and dark appearance",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Toggle Dark Mode"
+          }
+        }
+      }
+    },
     "settings.shortcuts.command.toggleFullscreenToolbar" : {
       "comment" : "Shortcuts settings - Command title for showing or hiding the toolbar in full screen",
       "localizations" : {
@@ -96883,6 +96919,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檢視瀏覽器工作及其資源使用情況。"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.description.toggleDarkMode" : {
+      "comment" : "Shortcuts settings - Description of the toggleDarkMode command",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Switch between light and dark appearance."
           }
         }
       }

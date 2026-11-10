@@ -27,6 +27,7 @@ struct CommandDispatcher {
         .PHI_SELECT_PREVIOUS_SPACE,
         .PHI_FARRINGDON_TOGGLE,
         .PHI_CLEAR_ALL_TABS,
+        .PHI_TOGGLE_DARK_MODE,
         .PHI_COPY_URL,
         .PHI_TOGGLE_READER,
         .PHI_NEW_KIOSK_WINDOW,
@@ -102,6 +103,11 @@ struct CommandDispatcher {
         if command == .PHI_NEW_KIOSK_WINDOW {
             guard let appController = AppController.shared else { return false }
             appController.newKioskWindowFromMenu(nil)
+            return true
+        }
+        // App-wide, so it needs no browser window and works in Kiosk too.
+        if command == .PHI_TOGGLE_DARK_MODE {
+            ThemeManager.shared.toggleDarkMode()
             return true
         }
         if command == .PHI_NEW_INCOGNITO_SPACE {

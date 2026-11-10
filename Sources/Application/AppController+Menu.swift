@@ -293,6 +293,9 @@ extension AppController {
     static let viewLibraryItemTag = 500040
     /// Every File menu row rendered from `PageActionRegistry`.
     static let filePageActionItemTag = 500041
+    static let appearanceTitleItemTag = 500042
+    /// 500043-500045: the View menu's System, Light and Dark rows.
+    static let appearanceFirstChoiceItemTag = 500043
     static let debugMenuItemTag = 500027
     static let spacesProfileSeparatorTag = 500020
     static let deleteProfileSubmenuIdentifier = NSUserInterfaceItemIdentifier("phi.spaces.deleteProfile")
@@ -436,7 +439,10 @@ extension AppController {
                     item.tag == AppController.layoutModeTraditionalItemTag ||
                     item.tag == AppController.layoutModeTitleItemTag ||
                     item.tag == AppController.agentAutoViewItemTag ||
-                    item.tag == AppController.agentTranscriptItemTag
+                    item.tag == AppController.agentTranscriptItemTag ||
+                    item.tag == AppController.appearanceTitleItemTag ||
+                    AppController.appearanceChoice(forItemTag: item.tag) != nil ||
+                    item.tag == CommandWrapper.PHI_TOGGLE_DARK_MODE.rawValue
                 }
 
                 if submenu.items.last?.isSeparatorItem == false {
@@ -489,6 +495,30 @@ extension AppController {
                 traditionalLayoutItem.tag = AppController.layoutModeTraditionalItemTag
                 traditionalLayoutItem.target = self
                 submenu.addItem(traditionalLayoutItem)
+
+                let appearanceSeparator = NSMenuItem.separator()
+                appearanceSeparator.tag = AppController.viewMenuPhiSectionSeparatorTag
+                submenu.addItem(appearanceSeparator)
+
+                let appearanceTitle = NSMenuItem.sectionHeader(title: NSLocalizedString("app.viewMenu.appearanceSectionTitle", value: "Appearance", comment: "View menu - Section header above the System, Light and Dark appearance choices"))
+                appearanceTitle.tag = AppController.appearanceTitleItemTag
+                submenu.addItem(appearanceTitle)
+
+                for choice in UserAppearanceChoice.allCases {
+                    let appearanceItem = NSMenuItem(title: choice.localizedName,
+                                                    action: #selector(selectAppearance(_:)),
+                                                    keyEquivalent: "")
+                    appearanceItem.tag = AppController.appearanceItemTag(for: choice)
+                    appearanceItem.target = self
+                    submenu.addItem(appearanceItem)
+                }
+
+                let toggleDarkModeItem = NSMenuItem(title: NSLocalizedString("app.viewMenu.toggleDarkMode", value: "Toggle Dark Mode", comment: "View menu - Menu item that switches the browser between light and dark appearance"),
+                                                    action: #selector(toggleDarkMode(_:)),
+                                                    keyEquivalent: "")
+                applyEffectiveShortcut(.PHI_TOGGLE_DARK_MODE, to: toggleDarkModeItem)
+                toggleDarkModeItem.target = self
+                submenu.addItem(toggleDarkModeItem)
 
                 let bookmarkBarSeparator = NSMenuItem.separator()
                 bookmarkBarSeparator.tag = AppController.viewMenuPhiSectionSeparatorTag
@@ -1746,6 +1776,26 @@ extension AppController {
         default:
             break
         }
+    }
+
+    static func appearanceItemTag(for choice: UserAppearanceChoice) -> Int {
+        appearanceFirstChoiceItemTag + choice.rawValue
+    }
+
+    static func appearanceChoice(forItemTag tag: Int) -> UserAppearanceChoice? {
+        UserAppearanceChoice(rawValue: tag - appearanceFirstChoiceItemTag)
+    }
+
+    @MainActor
+    @objc func selectAppearance(_ sender: Any?) {
+        guard let menuItem = sender as? NSMenuItem,
+              let choice = AppController.appearanceChoice(forItemTag: menuItem.tag) else { return }
+        ThemeManager.shared.setUserAppearanceChoice(choice)
+    }
+
+    @MainActor
+    @objc func toggleDarkMode(_ sender: Any?) {
+        ThemeManager.shared.toggleDarkMode()
     }
 
     @objc func showWhatsNew(_ sender: Any?) {
@@ -3608,6 +3658,19 @@ extension AppController {
             }
         }
         #endif
+
+        if item.action == #selector(selectAppearance(_:)) {
+            if let menuItem = item as? NSMenuItem,
+               let choice = AppController.appearanceChoice(forItemTag: menuItem.tag) {
+                let current = MainActor.assumeIsolated { ThemeManager.shared.userAppearanceChoice }
+                menuItem.state = current == choice ? .on : .off
+            }
+            return true
+        }
+
+        if item.action == #selector(toggleDarkMode(_:)) {
+            return true
+        }
 
         if item.action == #selector(selectLayoutMode(_:)) {
             if let menuItem = item as? NSMenuItem {

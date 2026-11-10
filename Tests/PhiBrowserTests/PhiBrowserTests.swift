@@ -113,6 +113,36 @@ final class PhiBrowserTests: XCTestCase {
         )
     }
 
+    func testToggleDarkModeIsUnassignedAndCustomizableFromViewShortcuts() {
+        XCTAssertNil(Shortcuts.DefaultShortcuts[.PHI_TOGGLE_DARK_MODE])
+        XCTAssertTrue(
+            Shortcuts.Group.view.commands.contains(.PHI_TOGGLE_DARK_MODE)
+        )
+        XCTAssertEqual(
+            CommandWrapper.PHI_TOGGLE_DARK_MODE.displayName,
+            "Toggle Dark Mode"
+        )
+    }
+
+    @MainActor
+    func testToggleDarkModeSwitchesToTheOppositeOfTheAppearanceOnScreen() {
+        let themeManager = ThemeManager.shared
+        let originalChoice = themeManager.userAppearanceChoice
+        defer { themeManager.userAppearanceChoice = originalChoice }
+
+        themeManager.userAppearanceChoice = .light
+        themeManager.toggleDarkMode()
+        XCTAssertEqual(themeManager.userAppearanceChoice, .dark)
+        themeManager.toggleDarkMode()
+        XCTAssertEqual(themeManager.userAppearanceChoice, .light)
+
+        themeManager.userAppearanceChoice = .system
+        let opposite: UserAppearanceChoice =
+            themeManager.currentAppearance == .dark ? .light : .dark
+        themeManager.toggleDarkMode()
+        XCTAssertEqual(themeManager.userAppearanceChoice, opposite)
+    }
+
     func testKioskGlobalShortcutDefaultsOffAndFormatsCurrentShortcut() {
         XCTAssertFalse(
             PhiPreferences.GeneralSettings

@@ -654,6 +654,8 @@ private extension CommandWrapper {
             return NSLocalizedString("settings.shortcuts.command.copyURL", value: "Copy URL", comment: "Shortcuts settings - Command title for copying the current URL")
         case .PHI_TOGGLE_READER:
             return NSLocalizedString("settings.shortcuts.command.toggleReaderView", value: "Toggle Reader View", comment: "Shortcuts settings - Command title for switching the current page between Reader View and the normal page")
+        case .PHI_TOGGLE_DARK_MODE:
+            return NSLocalizedString("settings.shortcuts.command.toggleDarkMode", value: "Toggle Dark Mode", comment: "Shortcuts settings - Command title for switching the browser between light and dark appearance")
         case .PHI_SAVE_FOR_LATER:
             return NSLocalizedString("settings.shortcuts.command.saveToFolio", value: "Save to Folio", comment: "Shortcuts settings - Command title for saving the current page for later as markdown plus a webpage copy")
         case .PHI_SPLIT_WITH_NEW_TAB:

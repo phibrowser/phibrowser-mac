@@ -107,6 +107,10 @@ extension PhiPreferences {
         case doubleClickToCloseTabs // Close ordinary tabs with an unmodified double-click
         case directionalTabClosingEnabled // Show and enable closing ordinary tabs before or after an anchor
         case sidebarMediaPlayerEnabled // Show controls for background page media
+        case sidebarBottomBarShowsProfile // Sidebar bottom bar entries the user can toggle from the sidebar context menu
+        case sidebarBottomBarShowsDownloads
+        case sidebarBottomBarShowsMemory
+        case sidebarBottomBarShowsFeedback
         case showOpenTabIndicators // Show dots on inactive open pinned tabs and bookmarks
         case showUnloadedTabIndicators // Show dashed outlines and smaller icons for unloaded or discarded tabs
         case keepPinnedTabsLoaded // Keep opened Pinned tabs in memory instead of letting them be unloaded; per-Mac, not synced
@@ -146,6 +150,11 @@ extension PhiPreferences {
             case .directionalTabClosingEnabled:
                 return true
             case .sidebarMediaPlayerEnabled:
+                return true
+            case .sidebarBottomBarShowsProfile,
+                 .sidebarBottomBarShowsDownloads,
+                 .sidebarBottomBarShowsMemory,
+                 .sidebarBottomBarShowsFeedback:
                 return true
             case .showOpenTabIndicators:
                 return false

@@ -74,7 +74,16 @@ struct SidebarBottomBarSwiftUI: View {
     let onCardEntryTap: () -> Void
     let onMemoryTap: () -> Void
     let onDownloadTap: () -> Void
-    
+
+    @AppStorage(PhiPreferences.GeneralSettings.sidebarBottomBarShowsProfile.rawValue)
+    private var showsProfile = PhiPreferences.GeneralSettings.sidebarBottomBarShowsProfile.defaultValue
+    @AppStorage(PhiPreferences.GeneralSettings.sidebarBottomBarShowsDownloads.rawValue)
+    private var showsDownloads = PhiPreferences.GeneralSettings.sidebarBottomBarShowsDownloads.defaultValue
+    @AppStorage(PhiPreferences.GeneralSettings.sidebarBottomBarShowsMemory.rawValue)
+    private var showsMemory = PhiPreferences.GeneralSettings.sidebarBottomBarShowsMemory.defaultValue
+    @AppStorage(PhiPreferences.GeneralSettings.sidebarBottomBarShowsFeedback.rawValue)
+    private var showsFeedback = PhiPreferences.GeneralSettings.sidebarBottomBarShowsFeedback.defaultValue
+
     var body: some View {
         GeometryReader { geometry in
             regularLayout(availableWidth: geometry.size.width)
@@ -86,8 +95,17 @@ struct SidebarBottomBarSwiftUI: View {
     
     // MARK: - Regular Layout
     
+    private var isMemoryVisible: Bool {
+        showsMemory && !state.isMemoryHidden
+    }
+
+    private var leadingIconCount: Int {
+        (showsProfile ? 1 : 0) + (showsDownloads ? 1 : 0)
+            + (isMemoryVisible ? 1 : 0) + (showCardEntry ? 1 : 0)
+    }
+
     private var widthWithFeedback: CGFloat {
-        let iconCount = 3 + (state.isMemoryHidden ? 0 : 1) + (showCardEntry ? 1 : 0)
+        let iconCount = leadingIconCount + 1
         let chatCount = state.isChatHidden ? 0 : 1
         // Include both gaps around the zero-length spacer.
         return CGFloat(iconCount) * 24 + CGFloat(iconCount + chatCount) * 4
@@ -96,20 +114,24 @@ struct SidebarBottomBarSwiftUI: View {
     }
 
     private func regularLayout(availableWidth: CGFloat) -> some View {
-        let showsFeedback = !state.isFeedbackHidden && availableWidth >= widthWithFeedback
-        let iconCount = 2 + (state.isMemoryHidden ? 0 : 1) + (showCardEntry ? 1 : 0)
-            + (showsFeedback ? 1 : 0)
-        let gapCount = iconCount + (state.isChatHidden ? 0 : 1)
+        let showsFeedbackButton = showsFeedback && !state.isFeedbackHidden
+            && availableWidth >= widthWithFeedback
+        let iconCount = leadingIconCount + (showsFeedbackButton ? 1 : 0)
+        let gapCount = max(1, iconCount + (state.isChatHidden ? 0 : 1))
         let controlsWidth = CGFloat(iconCount) * 24
             + (state.isChatHidden ? 0 : ChatButton.preferredContentWidth)
         // Hide Feedback first, then compress only the gaps if the remaining row cannot fit.
         let spacing = min(4, max(0, (availableWidth - controlsWidth
             - 2 * WebContentConstant.edgesSpacing) / CGFloat(gapCount)))
         return HStack(spacing: spacing) {
-            ProfileButton(surface: .sidebar)
-                .frame(width: 24, height: 24)
+            if showsProfile {
+                ProfileButton(surface: .sidebar)
+                    .frame(width: 24, height: 24)
+            }
 
-            downloadButton
+            if showsDownloads {
+                downloadButton
+            }
 
             memoryButton
 
@@ -117,7 +139,7 @@ struct SidebarBottomBarSwiftUI: View {
 
             Spacer(minLength: 0)
 
-            if showsFeedback {
+            if showsFeedbackButton {
                 FeedbackButtonSwiftUI(action: onFeedbackTap)
                     .layoutPriority(1)
             }
@@ -132,7 +154,7 @@ struct SidebarBottomBarSwiftUI: View {
 
     @ViewBuilder
     private var memoryButton: some View {
-        if !state.isMemoryHidden {
+        if isMemoryVisible {
             MemoryButton(action: onMemoryTap)
         }
     }

@@ -38741,6 +38741,66 @@
         }
       }
     },
+    "common.tabAreaContextMenu.bottomButtons.downloads" : {
+      "comment" : "Tab area context menu - Bottom Buttons submenu item that shows or hides the downloads button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Downloads"
+          }
+        }
+      }
+    },
+    "common.tabAreaContextMenu.bottomButtons.feedback" : {
+      "comment" : "Tab area context menu - Bottom Buttons submenu item that shows or hides the feedback button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Feedback"
+          }
+        }
+      }
+    },
+    "common.tabAreaContextMenu.bottomButtons.memory" : {
+      "comment" : "Tab area context menu - Bottom Buttons submenu item that shows or hides the AI memory button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Memory"
+          }
+        }
+      }
+    },
+    "common.tabAreaContextMenu.bottomButtons.profile" : {
+      "comment" : "Tab area context menu - Bottom Buttons submenu item that shows or hides the profile button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Profile"
+          }
+        }
+      }
+    },
+    "common.tabAreaContextMenu.bottomButtonsSubmenu" : {
+      "comment" : "Tab area context menu - Submenu to choose which buttons the sidebar bottom bar shows",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Bottom Buttons"
+          }
+        }
+      }
+    },
     "common.tabAreaContextMenu.layoutModeSubmenu" : {
       "comment" : "Tab area context menu - Switch layout mode",
       "extractionState" : "extracted_with_value",

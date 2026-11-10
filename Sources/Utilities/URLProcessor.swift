@@ -16,6 +16,10 @@ public struct URLProcessor {
             return trimmedText
         } else if trimmedText.hasPrefix("chrome://") || trimmedText.hasPrefix("about://") {
             return trimmedText
+        } else if trimmedText.hasPrefix("file://") || trimmedText.hasPrefix("chrome-extension://") {
+            // Already complete URLs. Their file names contain a dot, so the
+            // domain check below would otherwise prefix them with https://.
+            return trimmedText
         } else if trimmedText.hasPrefix("phi://") {
             return trimmedText.replacingOccurrences(of: "phi://", with: "chrome://")
         } else if isURL(trimmedText) {
@@ -45,6 +49,8 @@ public struct URLProcessor {
            trimmedText.hasPrefix("https://") ||
            trimmedText.hasPrefix("chrome://") ||
            trimmedText.hasPrefix("about://") ||
+           trimmedText.hasPrefix("file://") ||
+           trimmedText.hasPrefix("chrome-extension://") ||
            trimmedText.hasPrefix("phi://") {
             return true
         }

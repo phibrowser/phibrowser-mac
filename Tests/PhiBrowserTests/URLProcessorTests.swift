@@ -7,6 +7,18 @@ import XCTest
 @testable import Phi
 
 final class URLProcessorTests: XCTestCase {
+    func testUserInputKeepsLocalFileAndExtensionURLsUnchanged() {
+        let urls = [
+            "file:///Users/someone/Documents/page.html",
+            "chrome-extension://abcdefghijklmnop/options.html"
+        ]
+
+        for url in urls {
+            XCTAssertEqual(URLProcessor.processUserInput(url), url)
+            XCTAssertTrue(URLProcessor.isURL(url))
+        }
+    }
+
     func testOriginNavigationComparisonTreatsWWWAndRootSlashAsEquivalent() {
         XCTAssertTrue(
             URLProcessor.areEquivalentForOriginNavigation(

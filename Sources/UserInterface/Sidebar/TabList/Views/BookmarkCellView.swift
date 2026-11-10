@@ -1036,6 +1036,15 @@ private struct SidebarBookmarkCellContentView: View {
         faviconHoverAction != nil
     }
 
+    private var showsNavigatedAwaySeparator: Bool {
+        !state.isFolder
+            && !state.showsSecondaryFavicon
+            && !state.isEditing
+            && state.primaryTabIsLive
+            && BookmarkFaviconView.hasNavigatedAway(originalURL: state.primaryPageURL,
+                                                    currentURL: primaryTabViewModel.url)
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: state.isFolder ? 6 : 8) {
             BookmarkFaviconView(
@@ -1129,6 +1138,15 @@ private struct SidebarBookmarkCellContentView: View {
                 .offset(y: 8)
                 .opacity(showBookmarkFaviconHint ? 1 : 0)
             }
+            .padding(.leading, showsNavigatedAwaySeparator ? NavigatedAwaySeparator.titleInset : 0)
+            .overlay(alignment: .leading) {
+                if showsNavigatedAwaySeparator {
+                    NavigatedAwaySeparator()
+                        .frame(width: NavigatedAwaySeparator.titleInset)
+                        .offset(x: NavigatedAwaySeparator.centeringOffset)
+                        .opacity(primaryFaviconHoverAction == nil ? 1 : 0)
+                }
+            }
             .opacity(state.isEditing ? 0 : 1)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 30)
@@ -1173,6 +1191,22 @@ private struct SidebarBookmarkCellContentView: View {
         .padding(.vertical, 2)
         .scaleEffect(state.isFolder ? 1.0 : (state.isPressed ? 0.985 : 1.0))
         .animation(.easeOut(duration: 0.08), value: state.isPressed)
+    }
+}
+
+/// Marks an open bookmark whose tab has navigated away from the saved URL.
+private struct NavigatedAwaySeparator: View {
+    static let titleInset: CGFloat = 6
+    /// The row already leaves 9 points after the favicon image (8-point stack
+    /// spacing plus the slot's 1-point inset); shift back by half to center.
+    static let centeringOffset: CGFloat = -4.5
+
+    var body: some View {
+        Capsule()
+            .themedFill(.textTertiary)
+            .frame(width: 2, height: 14)
+            .rotationEffect(.degrees(15))
+            .accessibilityHidden(true)
     }
 }
 
@@ -1245,15 +1279,16 @@ private struct BookmarkFaviconView: View {
         isFolder ? Self.folderSize : Self.faviconSlotSize
     }
 
-    private var canNavigateToOriginalURL: Bool {
-        guard !isFolder,
-              let originalURL = pageURL,
-              !originalURL.isEmpty,
-              let currentURL = liveTabViewModel?.url,
-              !currentURL.isEmpty else {
+    static func hasNavigatedAway(originalURL: String?, currentURL: String?) -> Bool {
+        guard let originalURL, !originalURL.isEmpty,
+              let currentURL, !currentURL.isEmpty else {
             return false
         }
         return !URLProcessor.areEquivalentForOriginNavigation(currentURL, originalURL)
+    }
+
+    private var canNavigateToOriginalURL: Bool {
+        !isFolder && Self.hasNavigatedAway(originalURL: pageURL, currentURL: liveTabViewModel?.url)
     }
 
     private var hoverAction: BookmarkFaviconHoverAction {

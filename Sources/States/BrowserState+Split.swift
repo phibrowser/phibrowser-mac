@@ -938,7 +938,10 @@ extension BrowserState {
             windowId: windowId.int64Value)
     }
 
+    /// Reverses the pane order. Refused for a bookmark-bound split, whose
+    /// panes do not move.
     func reverseTabsInSplit(_ splitId: String) {
+        guard !splitBookmarkBindings.values.contains(splitId) else { return }
         ChromiumLauncher.sharedInstance().bridge?.reverseTabs(inSplit: splitId,
                                                               windowId: windowId.int64Value)
     }
@@ -970,11 +973,18 @@ extension BrowserState {
         return true
     }
 
+    /// Whether the user may move a pane of `group` to another slot or take
+    /// one out of it. Not while a pinned tab or a bookmark stands for the
+    /// split in the sidebar: the split then shows what that entry saved.
+    func splitAllowsPaneRearrangement(_ group: SplitGroup) -> Bool {
+        !group.isPinned && !splitBookmarkBindings.values.contains(group.id)
+    }
+
     /// Takes `tabId` out of its split; the other panes stay split. A pair
     /// dissolves instead (Chromium reports `splitRemoved`). Refused for a
-    /// pinned split.
+    /// pinned or bookmark-bound split.
     func removeTabFromSplit(tabId: Int) {
-        guard let group = splitGroup(forTabId: tabId), !group.isPinned else { return }
+        guard let group = splitGroup(forTabId: tabId), splitAllowsPaneRearrangement(group) else { return }
         if group.isPair {
             removeSplit(group.id)
             return
@@ -984,9 +994,11 @@ extension BrowserState {
                                                                      windowId: windowId.int64Value)
     }
 
-    /// Moves `tabId` to pane `slot` of its split.
+    /// Moves `tabId` to pane `slot` of its split. Refused for a pinned or
+    /// bookmark-bound split.
     func moveTabInSplit(tabId: Int, toSlot slot: Int) {
-        guard let group = splitGroup(forTabId: tabId), slot >= 0, slot < group.paneCount else { return }
+        guard let group = splitGroup(forTabId: tabId), splitAllowsPaneRearrangement(group),
+              slot >= 0, slot < group.paneCount else { return }
         ChromiumLauncher.sharedInstance().bridge?.moveTabInSplit(withTabId: tabId.int64Value,
                                                                  toSlot: Int32(slot),
                                                                  windowId: windowId.int64Value)

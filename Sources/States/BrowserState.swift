@@ -473,7 +473,7 @@ class BrowserState {
     /// already open (and re-activate its primary pane) instead of creating
     /// another duplicate split. Cleared when the split is removed. Not
     /// persisted — window-scoped.
-    var splitBookmarkBindings: [String: String] = [:]
+    @Published var splitBookmarkBindings: [String: String] = [:]
 
     let imagePreviewState: BrowserImagePreviewState
     /// Peek popup state (bound-tab cross-site previews); see the

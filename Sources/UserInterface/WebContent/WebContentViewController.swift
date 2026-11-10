@@ -929,6 +929,20 @@ class WebContentViewController: NSViewController {
             }
             .store(in: &cancellables)
 
+        // A split on screen gains or loses its move handles as a bookmark
+        // takes it or lets it go (`splitAllowsPaneRearrangement`).
+        browserState?.$splitBookmarkBindings
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, let host = self.currentSplitHost,
+                      let state = self.browserState,
+                      let tabId = self.associatedTab?.guid,
+                      let group = state.splitGroup(forTabId: tabId) else { return }
+                host.allowsPaneMove = state.splitAllowsPaneRearrangement(group)
+            }
+            .store(in: &cancellables)
+
         browserState?.$splits
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -2328,7 +2342,9 @@ class WebContentViewController: NSViewController {
             self?.browserState?.updateSplitFractions(splitId, fractions: fractions)
         }
 
-        host.allowsPaneMove = !group.isPinned
+        // No move handle while a pinned tab or a bookmark stands for the
+        // split: its panes stay as saved.
+        host.allowsPaneMove = browserState?.splitAllowsPaneRearrangement(group) ?? !group.isPinned
         let movablePaneTabIds = group.tabIds
         host.onPaneMove = { [weak self] from, to in
             guard from >= 0, from < movablePaneTabIds.count else { return }
@@ -2352,6 +2368,7 @@ class WebContentViewController: NSViewController {
         host.onPaneDragOffPage = { [weak self] slot, event in
             guard let state = self?.browserState,
                   slot >= 0, slot < movablePaneTabIds.count,
+                  state.splitGroup(forId: splitId).map(state.splitAllowsPaneRearrangement) == true,
                   let tab = state.tabs.first(where: { $0.guid == movablePaneTabIds[slot] }),
                   let split = state.windowController?.mainSplitViewController,
                   !split.isSidebarCollapsed,

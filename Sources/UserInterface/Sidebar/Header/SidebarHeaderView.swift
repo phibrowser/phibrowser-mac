@@ -524,36 +524,39 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     }
     
     /// Returns the maxX of the leading chrome controls in this header.
-    private func leadingChromeMaxXRelativeToSelf() -> CGFloat? {
+    private func leadingChromeMaxX() -> CGFloat? {
         if isFloating {
             if browserState?.isInFullScreenMode == true {
                 return 0
             }
             return FloatingTrafficLightMetrics.maxX
         }
-        return windowButtonMaxXRelativeToSelf(button: .zoomButton)
-            ?? windowButtonMaxXRelativeToSelf(button: .closeButton)
+        return windowButtonMaxX(button: .zoomButton)
+            ?? windowButtonMaxX(button: .closeButton)
     }
 
-    /// Returns the maxX of a standard window button (e.g. .zoomButton or .fullScreenButton)
-    /// in the current view's coordinate space. If the button doesn't exist, returns nil.
-    private func windowButtonMaxXRelativeToSelf(button type: NSWindow.ButtonType) -> CGFloat? {
+    /// Returns the maxX of a standard window button in window coordinates, or
+    /// nil if the button doesn't exist.
+    ///
+    /// Not converted into this view: the docked header's resting leading edge
+    /// is the window's, but while the column slides in or out it is offscreen,
+    /// and a titlebar re-tile during that slide would turn into an offset that
+    /// pushes the button out of the header with nothing to correct it after.
+    private func windowButtonMaxX(button type: NSWindow.ButtonType) -> CGFloat? {
         if browserState?.isInFullScreenMode == true {
             return 0
         }
-        
+
         guard let window, let btn = window.standardWindowButton(type) else { return nil }
-        // Convert via window coordinates to avoid view-hierarchy mismatches during layout transitions.
-        let rectInWindow = btn.convert(btn.bounds, to: nil)
-        let rectInSelf = convert(rectInWindow, from: nil)
-        AppLogDebug("[SidebarHeader] windowButtonMaxXRelativeToSelf type=\(type.rawValue) maxX=\(rectInSelf.maxX)")
-        return rectInSelf.maxX
+        let maxX = btn.convert(btn.bounds, to: nil).maxX
+        AppLogDebug("[SidebarHeader] windowButtonMaxX type=\(type.rawValue) maxX=\(maxX)")
+        return maxX
     }
 
     /// Updates the left constraint for `sidebarButton` based on the right edge of the leading chrome.
     private func updateSidebarButtonLeftConstraint() {
         observeFrameChanges(zoomButton: isFloating ? nil : window?.standardWindowButton(.zoomButton))
-        guard let x = leadingChromeMaxXRelativeToSelf() else {
+        guard let x = leadingChromeMaxX() else {
             AppLogDebug("[SidebarHeader] updateSidebarButtonLeftConstraint maxX=nil (window buttons unavailable)")
             return
         }

@@ -2664,6 +2664,16 @@ typedef NS_ENUM(NSInteger, PhiMediaControlAction) {
 - (void)toggleAudioMuted;
 - (void)muteAudio;
 - (void)unmuteAudio;
+
+@optional
+/// Whether Chromium keeps this tab loaded. While YES, Memory Saver and
+/// memory-pressure unloading skip the tab; an extension's explicit
+/// chrome.tabs.discard and the unload of a frozen page whose memory keeps
+/// growing still go through. Every new WebContents starts at NO and the value
+/// is not saved with the session, so the client pushes it whenever it binds a
+/// wrapper and whenever the value changes. The Mac client is the only writer.
+/// Optional so a newer client keeps working with an older framework.
+- (void)setPhiKeepLoaded:(BOOL)keepLoaded;
 @end
 
 @protocol BookmarkWrapper <NSObject>

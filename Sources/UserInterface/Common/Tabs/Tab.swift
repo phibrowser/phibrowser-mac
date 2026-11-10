@@ -92,7 +92,9 @@ class Tab: WebContentRepresentable {
     /// controller subscribes to this to re-parent `hostView` on/off the
     /// window's top-level overlay layer.
     @Published var isInContentFullscreen: Bool = false
-    @Published var isPinned = false
+    @Published var isPinned = false {
+        didSet { pushKeepLoaded() }
+    }
     /// Hex token of the Chromium tab group this tab belongs to, or nil when
     /// the tab is ungrouped. Mirrors `chrome.tabGroups` membership; updated
     /// by `BrowserState.handleTabJoinedGroup` / `handleTabLeftGroup`.
@@ -356,6 +358,9 @@ class Tab: WebContentRepresentable {
             return
         }
 
+        // A new WebContents starts out not kept loaded.
+        pushKeepLoaded()
+
         // Older frameworks do not implement this getter or its KVO key.
         if wrapper.responds(to: Self.pageColorSelector) {
             pageColor = wrapper.pageColor
@@ -536,6 +541,21 @@ class Tab: WebContentRepresentable {
                 self?.onFocusGained?()
             }
             .store(in: &cancellables)
+    }
+
+    /// Tells Chromium whether to keep this tab loaded, so Memory Saver and
+    /// memory pressure leave Pinned tabs alone.
+    ///
+    /// Two `Tab`s can share one wrapper: the live strip tab and the pinned
+    /// record bound to it. A tab restored, opened from its saved entry or
+    /// dragged into the pinned area keeps a live tab that is not `isPinned`;
+    /// only its record is. Each pushes its own `isPinned` when it binds the
+    /// wrapper and on every assignment, unchanged values included: unpinning
+    /// such a tab assigns `false` to the live tab, which has to overwrite the
+    /// record's `true`. The optional call skips frameworks that predate the
+    /// selector.
+    private func pushKeepLoaded() {
+        webContentWrapper?.setPhiKeepLoaded?(isPinned)
     }
 
     static func supportsAIChat(urlString: String?) -> Bool {

@@ -943,6 +943,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         bindMediaPresentation()
         
         mainStackView.addArrangedSubview(bottomBarSwiftUI)
+        bottomBarSwiftUI.contextMenu = tabList.blankAreaContextMenu
         bottomBarSwiftUI.snp.makeConstraints { make in
             bottomBarHeightConstraint = make.height.equalTo(SidebarBottomBarState.singleRowHeight).constraint
             make.leading.trailing.equalToSuperview()

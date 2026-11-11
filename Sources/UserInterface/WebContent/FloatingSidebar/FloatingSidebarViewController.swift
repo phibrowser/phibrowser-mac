@@ -457,6 +457,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
 
         // 7. Bottom bar
         mainStackView.addArrangedSubview(bottomBarSwiftUI)
+        bottomBarSwiftUI.contextMenu = tabList.blankAreaContextMenu
         bottomBarSwiftUI.snp.makeConstraints { make in
             bottomBarHeightConstraint = make.height.equalTo(SidebarBottomBarState.singleRowHeight).constraint
             make.leading.trailing.equalToSuperview()

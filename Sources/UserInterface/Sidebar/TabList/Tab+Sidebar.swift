@@ -263,7 +263,7 @@ extension Tab: ContextMenuRepresentable {
 
                 if !existingSplit.isPinned {
                     let removeSplitItem = NSMenuItem(
-                        title: NSLocalizedString("sidebar.tabContextMenu.removeFromSplit", value: "Remove from Split", comment: "Tab context menu - Take this tab out of its split; a two-pane split dissolves, a wider split keeps its other panes"),
+                        title: NSLocalizedString("sidebar.tabContextMenu.removeFromSplit", value: "Remove from Split", comment: "Tab context menu - Dissolve the split this tab belongs to; every pane becomes a normal tab again"),
                         action: #selector(removeFromSplit(_:)),
                         keyEquivalent: "")
                     removeSplitItem.target = self
@@ -1116,13 +1116,14 @@ extension Tab: ContextMenuRepresentable {
         performSplitAction(in: state)
     }
 
-    /// Takes this pane out of its split: a pair dissolves, a wider split
-    /// keeps its other panes. `representedObject` is the pane's live tab id.
+    /// Dissolves the split this pane belongs to, whatever its width: every
+    /// pane becomes a normal tab again. `representedObject` is the pane's
+    /// live tab id.
     @MainActor
     @objc private func removeFromSplit(_ sender: NSMenuItem) {
         guard let state = contextMenuState,
               let tabId = sender.representedObject as? Int else { return }
-        state.removeTabFromSplit(tabId: tabId)
+        state.dissolveSplit(containingTabId: tabId)
     }
 
     /// Moves the focused pane one slot towards the first pane (left / top).

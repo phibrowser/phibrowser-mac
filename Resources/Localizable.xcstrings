@@ -110292,7 +110292,7 @@
       }
     },
     "sidebar.tabContextMenu.removeFromSplit" : {
-      "comment" : "Tab context menu - Take this tab out of its split; a two-pane split dissolves, a wider split keeps its other panes",
+      "comment" : "Tab context menu - Dissolve the split this tab belongs to; every pane becomes a normal tab again",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {

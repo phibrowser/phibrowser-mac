@@ -473,17 +473,18 @@ final class SplitViewTests: XCTestCase {
     }
 
     @MainActor
-    func test_removeFromSplit_keepsTheOtherPanesSplit() throws {
+    func test_removeFromSplit_dissolvesAWiderSplit() throws {
         try runStep("Three panes") {
             try self.seedTitledTabs(["PaneA", "PaneB", "PaneC"])
             try self.buildSplit(["PaneA", "PaneB", "PaneC"])
         }
-        try runStep("Remove the first pane") {
+        try runStep("Remove from Split on the first pane") {
             try self.rightClickRow(containing: "PaneA")
             try self.clickMenuItem(matching: ["Remove from Split"])
         }
-        assertRow(containing: "PaneB", is: ["PaneB", "PaneC"])
         assertRow(containing: "PaneA", is: ["PaneA"])
+        assertRow(containing: "PaneB", is: ["PaneB"])
+        assertRow(containing: "PaneC", is: ["PaneC"])
     }
 
     @MainActor

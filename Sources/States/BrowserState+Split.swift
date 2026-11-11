@@ -994,6 +994,14 @@ extension BrowserState {
                                                                      windowId: windowId.int64Value)
     }
 
+    /// Dissolves the split holding `tabId`: all of its panes stay open as
+    /// normal tabs (Chromium reports `splitRemoved`). Refused for a pinned or
+    /// bookmark-bound split.
+    func dissolveSplit(containingTabId tabId: Int) {
+        guard let group = splitGroup(forTabId: tabId), splitAllowsPaneRearrangement(group) else { return }
+        removeSplit(group.id)
+    }
+
     /// Moves `tabId` to pane `slot` of its split. Refused for a pinned or
     /// bookmark-bound split.
     func moveTabInSplit(tabId: Int, toSlot slot: Int) {

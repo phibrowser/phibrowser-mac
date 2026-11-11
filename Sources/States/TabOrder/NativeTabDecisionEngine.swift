@@ -24,6 +24,9 @@ struct NativeTabCreationContext: Equatable {
     /// middle-click, Cmd-Shift-click, or Open Link in New Tab), as opposed to
     /// the page opening it or a Phi command. Absent from older frameworks.
     var isUserOpenedNewTab: Bool
+    /// The Opener's search terms, normalised by Chromium, when the Opener is
+    /// a search results page of a search engine its profile knows.
+    var openerSearchTerms: String?
 
     init(
         isActiveAtCreation: Bool = false,
@@ -33,7 +36,8 @@ struct NativeTabCreationContext: Equatable {
         sourceTabId: Int? = nil,
         resetOpenerOnActiveTabChange: Bool = false,
         didForgetAllOpenersBeforeCreate: Bool = false,
-        isUserOpenedNewTab: Bool = false
+        isUserOpenedNewTab: Bool = false,
+        openerSearchTerms: String? = nil
     ) {
         self.isActiveAtCreation = isActiveAtCreation
         self.creationKind = creationKind
@@ -43,6 +47,7 @@ struct NativeTabCreationContext: Equatable {
         self.resetOpenerOnActiveTabChange = resetOpenerOnActiveTabChange
         self.didForgetAllOpenersBeforeCreate = didForgetAllOpenersBeforeCreate
         self.isUserOpenedNewTab = isUserOpenedNewTab
+        self.openerSearchTerms = openerSearchTerms
     }
 
     init(dictionary: [AnyHashable: Any]) {
@@ -54,7 +59,8 @@ struct NativeTabCreationContext: Equatable {
             sourceTabId: Self.intValue(dictionary["sourceTabId"]),
             resetOpenerOnActiveTabChange: Self.boolValue(dictionary["resetOpenerOnActiveTabChange"]),
             didForgetAllOpenersBeforeCreate: Self.boolValue(dictionary["didForgetAllOpenersBeforeCreate"]),
-            isUserOpenedNewTab: Self.boolValue(dictionary["isUserOpenedNewTab"])
+            isUserOpenedNewTab: Self.boolValue(dictionary["isUserOpenedNewTab"]),
+            openerSearchTerms: dictionary["openerSearchTerms"] as? String
         )
     }
 

@@ -303,6 +303,9 @@ class BrowserState {
     /// Where AI Chat panel tabs are requested and panel records go to Chromium.
     let aiChatPanelBridge: AIChatPanelBridging
 
+    /// Where a tab opened from a link is grouped with its Opener.
+    let tabGroupBridge: TabGroupBridging
+
     /// Test seam: stands in for the sign-in and live-window gates of
     /// `createAIChatTab(for:chromeTabId:)`, which the test process cannot
     /// meet. nil in production.
@@ -710,9 +713,11 @@ class BrowserState {
          isIncognitoSpace: Bool = false,
          isKioskWindow: Bool = false,
          isAgentSpace: Bool = false,
-         aiChatPanelBridge: AIChatPanelBridging = LiveAIChatPanelBridge()) {
+         aiChatPanelBridge: AIChatPanelBridging = LiveAIChatPanelBridge(),
+         tabGroupBridge: TabGroupBridging = LiveTabGroupBridge()) {
         self.windowId = windowId
         self.aiChatPanelBridge = aiChatPanelBridge
+        self.tabGroupBridge = tabGroupBridge
         self.localStore = localStore
         self.profileId = profileId
         self.spaceId = spaceId

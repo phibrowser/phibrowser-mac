@@ -1058,7 +1058,12 @@ class WebContentContainerViewController: NSViewController {
         // docked: then this unified outline wraps [page card | panel card]
         // as one frame (AI Chat parity), and svc's border would draw a
         // second frame around the page alone.
-        controller.setSplitViewContainerBorderVisible(!isComfortableLayout && !panelMounted)
+        // Edge-to-edge pages meet the window and screen edges, where the
+        // 1pt frame reads as a stray border around the page.
+        let drawsContentFrame = !contentLayout.edgeToEdgeEnabled
+        controller.setSplitViewContainerBorderVisible(
+            drawsContentFrame && !isComfortableLayout && !panelMounted
+        )
         guard isComfortableLayout || panelMounted else {
             outerBorderLayer.path = nil
             clearGroupBoundaryLayers()
@@ -1187,7 +1192,7 @@ class WebContentContainerViewController: NSViewController {
         let shouldAnimate = NSAnimationContext.current.allowsImplicitAnimation
         CATransaction.begin()
         CATransaction.setDisableActions(!shouldAnimate)
-        outerBorderLayer.path = path
+        outerBorderLayer.path = drawsContentFrame ? path : nil
         outerBorderLayer.strokeColor = ThemedColor.border.resolve(in: view).cgColor
 
         updateGroupBoundaryLayers(apexY: topY, invR: invR, activeTab: activeTabForBorder)

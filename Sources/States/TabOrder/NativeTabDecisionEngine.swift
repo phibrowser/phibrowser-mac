@@ -20,6 +20,10 @@ struct NativeTabCreationContext: Equatable {
     var sourceTabId: Int?
     var resetOpenerOnActiveTabChange: Bool
     var didForgetAllOpenersBeforeCreate: Bool
+    /// The user asked for this tab with a link gesture (Cmd-click,
+    /// middle-click, Cmd-Shift-click, or Open Link in New Tab), as opposed to
+    /// the page opening it or a Phi command. Absent from older frameworks.
+    var isUserOpenedNewTab: Bool
 
     init(
         isActiveAtCreation: Bool = false,
@@ -28,7 +32,8 @@ struct NativeTabCreationContext: Equatable {
         insertAfterTabId: Int? = nil,
         sourceTabId: Int? = nil,
         resetOpenerOnActiveTabChange: Bool = false,
-        didForgetAllOpenersBeforeCreate: Bool = false
+        didForgetAllOpenersBeforeCreate: Bool = false,
+        isUserOpenedNewTab: Bool = false
     ) {
         self.isActiveAtCreation = isActiveAtCreation
         self.creationKind = creationKind
@@ -37,6 +42,7 @@ struct NativeTabCreationContext: Equatable {
         self.sourceTabId = sourceTabId
         self.resetOpenerOnActiveTabChange = resetOpenerOnActiveTabChange
         self.didForgetAllOpenersBeforeCreate = didForgetAllOpenersBeforeCreate
+        self.isUserOpenedNewTab = isUserOpenedNewTab
     }
 
     init(dictionary: [AnyHashable: Any]) {
@@ -47,7 +53,8 @@ struct NativeTabCreationContext: Equatable {
             insertAfterTabId: Self.intValue(dictionary["insertAfterTabId"]),
             sourceTabId: Self.intValue(dictionary["sourceTabId"]),
             resetOpenerOnActiveTabChange: Self.boolValue(dictionary["resetOpenerOnActiveTabChange"]),
-            didForgetAllOpenersBeforeCreate: Self.boolValue(dictionary["didForgetAllOpenersBeforeCreate"])
+            didForgetAllOpenersBeforeCreate: Self.boolValue(dictionary["didForgetAllOpenersBeforeCreate"]),
+            isUserOpenedNewTab: Self.boolValue(dictionary["isUserOpenedNewTab"])
         )
     }
 

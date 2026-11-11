@@ -3588,6 +3588,7 @@ class BrowserState {
                                      context: context,
                                      hiddenOpenerTabIds: preseededHiddenOpenerTabIds,
                                      visibleNormalTabIds: normalTabs.map(\.guid))
+        groupTabOpenedFromLinkIfNeeded(tab, context: context)
         if let context, context.creationKind == .linkBackground, !context.isActiveAtCreation {
             MainActor.assumeIsolated {
                 tabSwitchManager.recordBackgroundTab(tab)
@@ -3605,6 +3606,70 @@ class BrowserState {
                 )
             }
         }
+    }
+
+    // MARK: - Tab groups from opened links
+
+    /// "Group tabs opened from links": a link the user opened in a new tab on
+    /// purpose, from a regular tab that is not in a tab group, forms a new
+    /// tab group with that tab (its Opener). Runs once the arrival has its
+    /// place in the tab order. Later links from the group's tabs join it
+    /// through Chromium's own rule that a link-opened tab inherits its
+    /// Opener's group.
+    private func groupTabOpenedFromLinkIfNeeded(_ tab: Tab, context: NativeTabCreationContext?) {
+        // A tab that arrived in a group inherited its Opener's group.
+        guard tab.groupToken == nil,
+              let context, context.isUserOpenedNewTab,
+              PhiPreferences.GeneralSettings.groupTabsOpenedFromLinks.loadValue(),
+              windowAllowsGroupingTabsOpenedFromLinks,
+              normalTabOrder.contains(tab.guid),
+              let openerTabId = context.openerTabId,
+              let opener = normalTabs.first(where: { $0.guid == openerTabId }),
+              opener.groupToken == nil,
+              // Pinned tabs and Bookmark Tabs never join a tab group.
+              (opener.guidInLocalDB ?? "").isEmpty,
+              !isBookmarkBackedTab(opener) else {
+            return
+        }
+        // Chromium groups a split as a whole; mirror that here.
+        let openerTabIds = splitGroup(forTabId: opener.guid)?.tabIds ?? [opener.guid]
+        guard let token = tabGroupBridge.createGroup(tabIds: openerTabIds + [tab.guid],
+                                                     title: Self.groupName(forOpener: opener),
+                                                     windowId: windowId) else {
+            return
+        }
+        // Chromium stacks the new tab right after the Opener; tabs opened
+        // from the Opener earlier stay where they are, outside the group.
+        // Mac order only: Chromium has already moved it.
+        normalTabOrder.removeAll { $0 == tab.guid }
+        if let anchorIndex = openerTabIds.compactMap({ normalTabOrder.firstIndex(of: $0) }).max() {
+            normalTabOrder.insert(tab.guid, at: anchorIndex + 1)
+        }
+        let updates = (openerTabIds + [tab.guid]).map { (tabId: $0, newToken: Optional(token)) }
+        MainActor.assumeIsolated {
+            applyOptimisticGroupMembership(updates: updates)
+        }
+    }
+
+    /// Only a regular window's Space instance or an Incognito window groups
+    /// tabs: never an Agent Space (even while the user has taken it over),
+    /// a Kiosk window or a Shadow window. Popup and app windows have no
+    /// `BrowserState`.
+    private var windowAllowsGroupingTabsOpenedFromLinks: Bool {
+        let isAgentSpaceWindow = isAgentSpace || MainActor.assumeIsolated {
+            AgentSpaceManager.shared.isAgentSpace(spaceId)
+        }
+        return !isAgentSpaceWindow && !isKioskWindow
+            && windowController?.browserType != .shadow
+    }
+
+    /// The Opener's title, or its site when the title is empty. Set once
+    /// when the group is created.
+    private static func groupName(forOpener opener: Tab) -> String? {
+        let title = (opener.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !title.isEmpty { return title }
+        let site = URLProcessor.displayName(for: opener.url ?? "")
+        return site.isEmpty ? nil : site
     }
 
     // MARK: - Peek (bound-tab cross-site popups)

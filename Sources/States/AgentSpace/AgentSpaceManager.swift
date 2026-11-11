@@ -1024,7 +1024,19 @@ final class AgentSpaceManager: ObservableObject {
             onSwitch: { [weak self] in
                 AppLogInfo("[AgentSpace] handoff prompt: switch to agent Space")
                 self?.dismissHandoffPrompt()
-                SpaceManager.shared.activateInFocusedWindow(spaceId: spaceId)
+                let manager = SpaceManager.shared
+                // The slot `activateInFocusedWindow` resolves.
+                let window = (manager.keySlot ?? manager.slots.first)?.shell?.window
+                manager.activateInFocusedWindow(spaceId: spaceId)
+                // The prompt is a non-activating panel, so clicking it while
+                // another app is frontmost leaves Phi in the background: the
+                // Space swap alone would happen out of sight. The user asked
+                // to go there — bring the window and the app forward.
+                if let window {
+                    if window.isMiniaturized { window.deminiaturize(nil) }
+                    window.makeKeyAndOrderFront(nil)
+                }
+                NSApp.activate(ignoringOtherApps: true)
             },
             onLater: { [weak self] in
                 AppLogInfo("[AgentSpace] handoff prompt: dismissed (Later)")

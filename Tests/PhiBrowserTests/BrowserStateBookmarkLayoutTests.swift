@@ -367,6 +367,66 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
         })
     }
 
+    /// The primary pane of a split bookmark, arrived from Chromium while its
+    /// split is still opening.
+    private func arrivePrimaryPane(of bookmark: Bookmark, in state: BrowserState, tabId: Int) throws {
+        state.openBookmark(bookmark)
+        let pendingGuid = try XCTUnwrap(
+            state.pendingPrimarySplitTargetByGuid.first {
+                $0.value.boundBookmarkGuid == bookmark.guid
+            }?.key
+        )
+        state.handleNewTabFromChromium(Tab(guid: tabId,
+                                           url: "https://primary.example",
+                                           isActive: true,
+                                           index: 0,
+                                           title: "Primary",
+                                           customGuid: pendingGuid))
+    }
+
+    /// Chromium reports a split a moment after its panes arrive. The panes
+    /// of a split its bookmark opened stay out of the tab list meanwhile,
+    /// instead of each flashing a row that vanishes behind the bookmark.
+    func testPanesOfASplitOpeningFromItsBookmarkStayOutOfTheTabList() throws {
+        let state = try makeState()
+        let bookmarkGuid = "split-bookmark-opening"
+        let bookmark = try createBookmark(in: state,
+                                          guid: bookmarkGuid,
+                                          url: "https://primary.example",
+                                          secondaryUrl: "https://secondary.example")
+
+        try arrivePrimaryPane(of: bookmark, in: state, tabId: 501)
+
+        XCTAssertEqual(state.splitPaneIdsOpeningBehindBookmark, [501])
+        XCTAssertTrue(state.normalTabs.isEmpty)
+
+        // The partner is tracked the same way on arrival; then the split lands.
+        state.tabs.append(Tab(guid: 502, url: "https://secondary.example",
+                              isActive: false, index: 1, title: "Secondary"))
+        state.splitPaneIdsOpeningBehindBookmark.insert(502)
+        state.splitBookmarkBindings[bookmarkGuid] = "split"
+        state.handleSplitCreated(splitId: "split", tabIds: [501, 502],
+                                 layout: .vertical, fractions: [0.5, 0.5])
+
+        XCTAssertTrue(state.splitPaneIdsOpeningBehindBookmark.isEmpty)
+        XCTAssertTrue(state.normalTabs.isEmpty, "The bound split keeps its panes behind the bookmark")
+    }
+
+    func testPaneOfABookmarkSplitThatNeverFormsIsListed() throws {
+        let state = try makeState()
+        let bookmark = try createBookmark(in: state,
+                                          guid: "split-bookmark-abandoned",
+                                          url: "https://primary.example",
+                                          secondaryUrl: "https://secondary.example")
+        try arrivePrimaryPane(of: bookmark, in: state, tabId: 601)
+        XCTAssertTrue(state.normalTabs.isEmpty)
+
+        state.listPanesNoLongerOpeningBehindBookmark([601])
+
+        XCTAssertTrue(state.splitPaneIdsOpeningBehindBookmark.isEmpty)
+        XCTAssertEqual(state.normalTabs.map(\.guid), [601])
+    }
+
     /// A four-pane bookmark C, A, F, D bound to the live split of tabs 1...4.
     private func makeBoundFourPaneBookmark(in state: BrowserState, guid: String) throws -> Bookmark {
         state.localStore.createBookmark(url: "https://c.example/",

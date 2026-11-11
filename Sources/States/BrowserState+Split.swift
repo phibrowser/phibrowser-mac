@@ -513,6 +513,12 @@ extension BrowserState {
         if !tabsAwaitingSplit.isDisjoint(with: members) {
             tabsAwaitingSplit.subtract(members)
         }
+        // The split holds them now: its bookmark binding hides them from
+        // here on, and without one they are listed below.
+        let wereOpeningBehindBookmark = !splitPaneIdsOpeningBehindBookmark.isDisjoint(with: members)
+        if wereOpeningBehindBookmark {
+            splitPaneIdsOpeningBehindBookmark.subtract(members)
+        }
         if let preview = pendingSplitPreview, preview.isCommitted,
            members.contains(preview.partnerTabId) {
             pendingSplitPreview = nil
@@ -557,6 +563,10 @@ extension BrowserState {
             for bookmarkGuid in boundBookmarkGuids {
                 syncSplitBookmarkOpenedState(bookmarkGuid: bookmarkGuid)
             }
+            updateNormalTabs()
+        } else if wereOpeningBehindBookmark {
+            // The bookmark let go of the split while it was opening (deleted,
+            // or the layout stopped attaching bookmarks): list its panes.
             updateNormalTabs()
         }
 
@@ -656,6 +666,7 @@ extension BrowserState {
                 SidecarAIOutputStateStore.shared.tabDidLeaveSplit(tabId, in: self)
             }
             tabsAwaitingSplit.subtract(joined)
+            splitPaneIdsOpeningBehindBookmark.subtract(joined)
             reconcileSplitChatBinding(splits[index])
             syncSplitAIChatCollapsed(splits[index])
         }
@@ -1857,6 +1868,7 @@ extension BrowserState {
                     .clearPendingSplitPartner(withTabId: partnerId.int64Value,
                                               windowId: wid.int64Value)
             }
+            self.listPanesNoLongerOpeningBehindBookmark(partnerIds)
             if pending.closePartnerOnTimeout, case .newPair(let partnerId, _, _) = pending.target {
                 self.tabs.first(where: { $0.guid == partnerId })?
                     .webContentWrapper?.close()
@@ -1904,6 +1916,7 @@ extension BrowserState {
         // the early-return guards below would otherwise leave a permanent
         // skip latched on the partner tabs.
         let partnerIds = pending.partnerTabIds(in: self)
+        let arrivedTabId = tab.guid
         let clearPartnerMarks: () -> Void = { [weak self] in
             guard let self else { return }
             for partnerId in partnerIds {
@@ -1911,6 +1924,9 @@ extension BrowserState {
                     .clearPendingSplitPartner(withTabId: partnerId.int64Value,
                                               windowId: self.windowId.int64Value)
             }
+            // Every caller is a request that produced no split, so panes
+            // that were hidden for a bookmark-bound one are plain tabs.
+            self.listPanesNoLongerOpeningBehindBookmark(partnerIds + [arrivedTabId])
         }
 
         switch pending.target {
@@ -2217,13 +2233,44 @@ extension BrowserState {
                 applyOptimisticGroupMembership(tabId: tab.guid, newToken: groupToken)
             }
         }
-        openNewTabAsSplit(partnerTabId: tab.guid,
-                          newTabSlot: .right,
-                          partnerNavigateURL: pending.secondaryURL,
-                          additionalPaneURLs: pending.additionalURLs,
-                          boundBookmarkGuid: pending.boundBookmarkGuid,
-                          insertionIndex: pending.insertionIndex,
-                          layout: pending.layout)
+        let requested = openNewTabAsSplit(partnerTabId: tab.guid,
+                                          newTabSlot: .right,
+                                          partnerNavigateURL: pending.secondaryURL,
+                                          additionalPaneURLs: pending.additionalURLs,
+                                          boundBookmarkGuid: pending.boundBookmarkGuid,
+                                          insertionIndex: pending.insertionIndex,
+                                          layout: pending.layout)
+        if !requested {
+            listPanesNoLongerOpeningBehindBookmark([tab.guid])
+        }
+    }
+
+    // MARK: - Panes opening behind a bookmark
+
+    /// Whether the tab arriving under `customGuid` is a pane of a split that
+    /// hides behind a bookmark: one of the first two panes of a split its
+    /// bookmark is opening, or a saved pane joining a split already bound.
+    /// Such a pane is tracked in `splitPaneIdsOpeningBehindBookmark`.
+    func isPaneOpeningBehindBookmark(customGuid: String?) -> Bool {
+        guard let customGuid else { return false }
+        if let primary = pendingPrimarySplitTargetByGuid[customGuid] {
+            return primary.boundBookmarkGuid?.isEmpty == false
+        }
+        guard let partner = pendingSplitPartnerByCustomGuid[customGuid] else { return false }
+        switch partner.target {
+        case .newPair:
+            return partner.boundBookmarkGuid?.isEmpty == false
+        case .existingSplit(let splitId, _):
+            return splitBookmarkBindings.values.contains(splitId)
+        }
+    }
+
+    /// The split `tabIds` were opening into is not coming: list the ones
+    /// that were hidden for it as normal tabs.
+    func listPanesNoLongerOpeningBehindBookmark(_ tabIds: [Int]) {
+        guard !splitPaneIdsOpeningBehindBookmark.isDisjoint(with: tabIds) else { return }
+        splitPaneIdsOpeningBehindBookmark.subtract(tabIds)
+        updateNormalTabs()
     }
 
 }

@@ -213,6 +213,14 @@ class BrowserState {
     /// window (mac ADR 0011).
     @Published var tabsAwaitingSplit: Set<Int> = []
 
+    /// Panes opening into a split that hides behind a bookmark, from their
+    /// arrival until the split holds them (`handleSplitCreated`,
+    /// `handleSplitContentsChanged`) or the request fails. Chromium echoes
+    /// the split back a moment after its panes arrive, so `updateNormalTabs`
+    /// keeps them out of the tab list meanwhile: listed, each would flash a
+    /// row that vanishes once the split lands behind the bookmark cell.
+    var splitPaneIdsOpeningBehindBookmark: Set<Int> = []
+
     /// customGuid → target URLs. The tab is initially opened as NTP (to keep
     /// `CrossDomainNewTabNavigationThrottle` from intercepting the initial
     /// load while the customGuid marker is set); once Chromium echoes the
@@ -1208,7 +1216,9 @@ class BrowserState {
             if tab.isPinned {
                 return nil
             }
-            if !traditionalLayout, splitBookmarkBoundTabIds.contains(tab.guid) {
+            if !traditionalLayout,
+               splitBookmarkBoundTabIds.contains(tab.guid)
+                || splitPaneIdsOpeningBehindBookmark.contains(tab.guid) {
                 return nil
             }
             return tab.guid
@@ -3545,6 +3555,12 @@ class BrowserState {
         if tabs.isEmpty, let controller = windowController {
             controller.slot?.cancelTabDrivenClose(for: controller.spaceId)
         }
+        // Before the tab is placed below: a pane of a split opening behind a
+        // bookmark never enters the tab list. Read here because the pending
+        // record is consumed in the `defer` above.
+        if isPaneOpeningBehindBookmark(customGuid: tab.guidInLocalDB) {
+            splitPaneIdsOpeningBehindBookmark.insert(tab.guid)
+        }
         tabs.append(tab)
         // Cross-window drag: a crash event may have been buffered before this
         // tab existed on the Mac side (Coordinator.showCrashPage). Apply it now
@@ -5569,6 +5585,7 @@ class BrowserState {
         precondition(applyingRemovalIDs == nil)
         applyingRemovalIDs = removalIDs
         splitPaneIdsBeingRemoved.formUnion(removalIDs)
+        splitPaneIdsOpeningBehindBookmark.subtract(removalIDs)
         defer {
             applyingRemovalIDs = nil
             splitPaneIdsBeingRemoved.subtract(removalIDs)

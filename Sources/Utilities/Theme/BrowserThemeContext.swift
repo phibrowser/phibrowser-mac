@@ -240,7 +240,7 @@ public final class BrowserThemeContext: NSObject, ThemeStateProvider {
 
 public extension NSWindow {
     var browserThemeContext: BrowserThemeContext? {
-        // Overlays such as the omnibox live in child panels without a browser controller.
+        // Child panels have no browser controller of their own and follow their parent.
         (windowController as? SpaceSessionController)?.browserState.themeContext
             ?? parent?.browserThemeContext
     }

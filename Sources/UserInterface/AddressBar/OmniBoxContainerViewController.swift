@@ -11,10 +11,8 @@ extension Notification.Name {
     /// Posted by the blocking overlays (omnibox, tab search) when they show
     /// or hide — object is the browser window, userInfo carries
     /// `visible: Bool` and `surface: "omnibox" | "tabSearch"`. The peek and
-    /// reader panels (child windows) listen: the omnibox floats above them
-    /// in its own higher-level child window, so they only go input-inert
-    /// beneath it; tab search is an in-window view they must fully step
-    /// aside for.
+    /// reader panels listen: the omnibox draws above them, so they only go
+    /// input-inert beneath it; tab search they must fully step aside for.
     static let phiInWindowOverlayVisibilityChanged =
         Notification.Name("PhiInWindowOverlayVisibilityChanged")
 }
@@ -224,25 +222,8 @@ final class OmniBoxContainerViewController: NSViewController {
         in window: NSWindow,
         originalEvent: NSEvent
     ) {
-        // The overlay lives in a child panel above the browser window and
-        // its peek/reader panels — replay the click into whichever of those
-        // windows is under the point, with coordinates converted into it.
-        var targetWindow = window
-        var locationInTarget = locationInWindow
-        if let parent = window.parent {
-            let screenPoint = window.convertPoint(toScreen: locationInWindow)
-            // Siblings sit at the host's own level (peek/reader) — anything
-            // higher is a `.floating` surface that must not be clicked into.
-            let sibling = (parent.childWindows ?? []).first { child in
-                child !== window && child.isVisible
-                    && child.level.rawValue <= window.level.rawValue
-                    && child.frame.contains(screenPoint)
-            }
-            targetWindow = sibling ?? parent
-            locationInTarget = targetWindow.convertPoint(fromScreen: screenPoint)
-        }
         let timestamp = ProcessInfo.processInfo.systemUptime
-        let windowNumber = targetWindow.windowNumber
+        let windowNumber = window.windowNumber
         let flags = originalEvent.modifierFlags
         let clickCount = originalEvent.clickCount
         let eventNumber = originalEvent.eventNumber
@@ -250,7 +231,7 @@ final class OmniBoxContainerViewController: NSViewController {
 
         guard let mouseDown = NSEvent.mouseEvent(
             with: .leftMouseDown,
-            location: locationInTarget,
+            location: locationInWindow,
             modifierFlags: flags,
             timestamp: timestamp,
             windowNumber: windowNumber,
@@ -262,7 +243,7 @@ final class OmniBoxContainerViewController: NSViewController {
 
         guard let mouseUp = NSEvent.mouseEvent(
             with: .leftMouseUp,
-            location: locationInTarget,
+            location: locationInWindow,
             modifierFlags: flags,
             timestamp: timestamp + 0.02,
             windowNumber: windowNumber,
@@ -475,20 +456,9 @@ final class OmniBoxContainerViewController: NSViewController {
         guard parentBounds.width > 0, parentBounds.height > 0,
               !addressView.bounds.isEmpty else { return nil }
 
-        // The overlay lives in a child panel while the address bar lives in
-        // the browser window — `NSView.convert` is only defined within one
-        // window, so cross-window anchoring must go through screen space.
-        let addressFrameInParent: NSRect
-        if addressView.window === view.window {
-            addressFrameInParent = view.convert(addressView.bounds, from: addressView)
-        } else if let addressWindow = addressView.window, let panelWindow = view.window {
-            let inScreen = addressWindow.convertToScreen(
-                addressView.convert(addressView.bounds, to: nil))
-            addressFrameInParent = view.convert(
-                panelWindow.convertFromScreen(inScreen), from: nil)
-        } else {
-            return nil
-        }
+        // `NSView.convert` is only defined within one window.
+        guard addressView.window === view.window else { return nil }
+        let addressFrameInParent = view.convert(addressView.bounds, from: addressView)
 
         let anchoredHeight = min(maxOmniBoxHeight, parentBounds.height)
         let actualHeight = min(size.height, anchoredHeight)

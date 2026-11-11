@@ -62000,6 +62000,30 @@
         }
       }
     },
+    "settings.advanced.tabs.groupTabsOpenedFromLinksDescription" : {
+      "comment" : "Advanced settings - Explains where the tab goes when the user Command-clicks a link",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "When you Command-click a link, the new tab goes into a tab group for the page it came from."
+          }
+        }
+      }
+    },
+    "settings.advanced.tabs.groupTabsOpenedFromLinksToggle" : {
+      "comment" : "Advanced settings - Toggle for putting a link the user opens in a new tab into a tab group with the page it was opened from",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Group tabs opened from links"
+          }
+        }
+      }
+    },
     "settings.advanced.unloadedTabIcons.description" : {
       "comment" : "Advanced settings - Explains the dashed outline on icons of tabs whose pages are unloaded from memory",
       "localizations" : {

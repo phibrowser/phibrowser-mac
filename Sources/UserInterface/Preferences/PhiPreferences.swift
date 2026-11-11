@@ -106,6 +106,7 @@ extension PhiPreferences {
         case showTabPreviews // Whether open tabs use custom hover preview cards
         case doubleClickToCloseTabs // Close ordinary tabs with an unmodified double-click
         case directionalTabClosingEnabled // Show and enable closing ordinary tabs before or after an anchor
+        case groupTabsOpenedFromLinks // A link opened in a new tab on purpose forms a tab group with its Opener
         case sidebarMediaPlayerEnabled // Show controls for background page media
         case sidebarBottomBarShowsProfile // Sidebar bottom bar entries the user can toggle from the sidebar context menu
         case sidebarBottomBarShowsDownloads
@@ -149,6 +150,8 @@ extension PhiPreferences {
                 return false
             case .directionalTabClosingEnabled:
                 return true
+            case .groupTabsOpenedFromLinks:
+                return false
             case .sidebarMediaPlayerEnabled:
                 return true
             case .sidebarBottomBarShowsProfile,

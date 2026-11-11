@@ -155,6 +155,7 @@ struct LibrarySpaceBackdrop: NSViewRepresentable {
         return view
     }
     func updateNSView(_ view: ColoredVisualEffectView, context: Context) {
-        view.backgroundColor = ThemedColor.windowOverlayBackground.resolve(theme: theme, appearance: appearance)
+        view.setStaticFill(ThemedColor.windowOverlayBackground.resolve(theme: theme, appearance: appearance),
+                           paletteColors: theme.navigationColors(for: appearance))
     }
 }

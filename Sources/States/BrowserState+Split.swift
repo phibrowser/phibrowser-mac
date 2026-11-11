@@ -663,14 +663,18 @@ extension BrowserState {
         if !joined.isEmpty {
             openNextPendingPane(splitId: splitId)
         }
-        // A reorder, a replaced pane, or a pane the user took out changes
-        // what the split's bookmark or pinned record saves. A pane that
-        // leaves any other way is the split, window or app closing, and a
-        // pane that only joins is the saved split still opening.
+        // A reorder or a replaced pane changes what the split's bookmark or
+        // pinned record saves. A pane the user took out leaves that entry
+        // as it was saved and takes the remaining panes out from behind it.
+        // A pane that leaves any other way is the split, window or app
+        // closing, and a pane that only joins is the saved split still
+        // opening.
         let isReorder = departed.isEmpty && joined.isEmpty && previous.tabIds != tabIds
         let isReplace = !departed.isEmpty && departed.count == joined.count
-        if isReorder || isReplace || (removedByUser && joined.isEmpty) {
+        if isReorder || isReplace {
             saveRepresentedSplitPanes(splits[index], previousTabIds: previous.tabIds)
+        } else if removedByUser && joined.isEmpty {
+            moveSplitToNormalListAfterPaneRemoval(splitId)
         }
         // The accompanying `TabMoved` event lands first via `reorderTabs` →
         // `updateNormalTabs` → `enforceSplitAdjacency`, which runs against
@@ -792,11 +796,12 @@ extension BrowserState {
     }
 
     /// The user is taking the pane `tabId` alone out of its split: closing
-    /// just that pane, or "Remove from Split". A bookmark or pinned record
-    /// drops a saved pane only after this, because panes also leave one at a
-    /// time while a whole split, a window or the app closes, and those must
-    /// leave the saved panes intact. A pair is not noted: it dissolves
-    /// instead of shrinking.
+    /// just that pane, or "Remove from Split". A split that a bookmark or a
+    /// pinned record stands for moves its remaining panes to the normal tab
+    /// list only after this, because panes also leave one at a time while a
+    /// whole split, a window or the app closes, and those must leave the
+    /// split behind its entry. A pair is not noted: it dissolves instead of
+    /// shrinking.
     func noteUserRemovingSplitPane(_ tabId: Int) {
         guard let group = splitGroup(forTabId: tabId), !group.isPair else { return }
         splitPaneIdsLeavingByUserAction.insert(tabId)
@@ -808,11 +813,25 @@ extension BrowserState {
         }
     }
 
+    /// The user took one pane out of the split `splitId`. When a bookmark or
+    /// a pinned record stands for the split, the panes left open no longer
+    /// show what that entry saved: they move to the normal tab list as a
+    /// split of their own, and the entry keeps every saved pane, closed, to
+    /// open in full again. Next turn, so the pane's removal is over before
+    /// the split moves.
+    private func moveSplitToNormalListAfterPaneRemoval(_ splitId: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let group = self.splitGroup(forId: splitId),
+                  !self.splitAllowsPaneRearrangement(group) else { return }
+            self.makeSplitNormalOpened(splitId)
+        }
+    }
+
     /// Saves the panes of `group` into whatever stands for it in the
-    /// sidebar, after its panes were reordered, one was replaced, or the user
-    /// took one out: a bound split-view bookmark and a pinned split both list
-    /// their panes in slot order, so they follow the live split, as a layout
-    /// change is saved through `persistRepresentedSplitLayout`.
+    /// sidebar, after its panes were reordered or one was replaced: a bound
+    /// split-view bookmark and a pinned split both list their panes in slot
+    /// order, so they follow the live split, as a layout change is saved
+    /// through `persistRepresentedSplitLayout`.
     /// `previousTabIds` is the membership the saved panes still match.
     private func saveRepresentedSplitPanes(_ group: SplitGroup, previousTabIds: [Int]) {
         saveBoundBookmarkPanes(group, previousTabIds: previousTabIds)
@@ -846,7 +865,7 @@ extension BrowserState {
     }
 
     /// A pinned split saves one pinned record per pane, in pinned-list
-    /// order. Removes the record of a pane the user took out, puts the
+    /// order. Removes the record of a pane that left the split, puts the
     /// records in the split's slot order, and saves the membership again.
     /// Records of panes closed earlier stay, after the live ones. A pane
     /// without a pinned record (a replacement) is not handled: pinned splits

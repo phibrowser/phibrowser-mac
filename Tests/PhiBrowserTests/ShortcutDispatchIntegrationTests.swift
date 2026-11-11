@@ -207,6 +207,29 @@ final class ShortcutDispatchIntegrationTests: XCTestCase {
         }
     }
 
+    /// Close Tab on the focused pane of a split of three notes that pane as
+    /// taken out by the user. A pinned or bookmark-bound split relies on the
+    /// note to keep its saved panes and release the ones left open.
+    func testCloseTabNotesTheFocusedSplitPaneAsTakenOutByTheUser() throws {
+        try withController { controller, window in
+            let state = controller.browserState
+            state.tabs = (1...3).map {
+                Tab(guid: $0, url: "https://e\($0).example", isActive: $0 == 2, index: $0 - 1)
+            }
+            state.splits = [SplitGroup(id: "split", tabIds: [1, 2, 3], layout: .vertical,
+                                       fractions: SplitGroup.equalFractions(paneCount: 3))]
+            state.updateNormalTabs()
+            state.focusingTab = state.tabs[1]
+
+            let item = NSMenuItem(title: "Close Tab", action: nil, keyEquivalent: "")
+            item.tag = CommandWrapper.IDC_CLOSE_TAB.rawValue
+            XCTAssertFalse(CommandDispatcher.dispatchCommand(item, window: window),
+                           "Chromium closes the focused pane")
+
+            XCTAssertEqual(state.splitPaneIdsLeavingByUserAction, [2])
+        }
+    }
+
     private func assignInspectKey(to command: CommandWrapper) {
         var overrides: [CommandWrapper: ShortcutOverride] = [.PHI_COPY_URL: .disabled]
         overrides[command] = .custom(inspectKey)

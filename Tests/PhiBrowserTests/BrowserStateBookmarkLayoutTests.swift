@@ -410,20 +410,19 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
                         SplitBookmarkExtraPane(url: "https://d.example/", title: "D")])
     }
 
-    func testPaneTheUserRemovesLeavesTheBoundBookmark() throws {
+    /// A pane the user takes out of a bound split leaves the bookmark as it
+    /// was saved, and the remaining panes come out from behind it.
+    func testPaneTheUserRemovesReleasesTheSplitAndKeepsTheBoundBookmark() throws {
         let state = try makeState()
         let bookmark = try makeBoundFourPaneBookmark(in: state, guid: "remove-bookmark")
 
         state.noteUserRemovingSplitPane(1)
         state.handleSplitContentsChanged(splitId: "split", tabIds: [2, 3, 4])
 
+        XCTAssertTrue(waitUntil { state.splitBookmarkBindings[bookmark.guid] == nil })
+        XCTAssertEqual(state.splitGroup(forId: "split")?.tabIds, [2, 3, 4])
         XCTAssertEqual(bookmark.splitPanes.map(\.url),
-                       ["https://a.example/", "https://f.example/", "https://d.example/"])
-        XCTAssertEqual(bookmark.title, "A")
-        XCTAssertTrue(waitUntil {
-            state.localStore.getTab(by: bookmark.guid)?.decodedSplitExtraPanes
-                == [SplitBookmarkExtraPane(url: "https://d.example/", title: "D")]
-        })
+                       ["https://c.example/", "https://a.example/", "https://f.example/", "https://d.example/"])
     }
 
     /// Panes also leave one by one while the split, the window or the app

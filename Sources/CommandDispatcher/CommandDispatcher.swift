@@ -192,8 +192,9 @@ struct CommandDispatcher {
             if windowController.handleCloseTab() {
                 return true
             }
-            // Closing the focused pane of a split takes just that pane out;
-            // a bookmark or pinned record that saves the split follows.
+            // Closing the focused pane of a split takes just that pane out.
+            // A bookmark or pinned record that saves the split keeps every
+            // pane; the panes left open move to the normal tab list.
             if let focusedTabId = windowController.browserState.focusingTab?.guid {
                 windowController.browserState.noteUserRemovingSplitPane(focusedTabId)
             }

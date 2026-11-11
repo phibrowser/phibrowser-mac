@@ -440,21 +440,26 @@ final class BrowserStateSplitPanesTests: XCTestCase {
         XCTAssertNil(state.splitPanePosition(forTabId: 2))
     }
 
-    /// A pinned split saves one record per pane: the record of a pane the
-    /// user closes leaves the split, and the others stay linked.
-    func testPaneTheUserClosesLeavesThePinnedSplitRecords() throws {
+    /// A pane the user takes out of a pinned split moves the remaining
+    /// panes to the normal tab list, off their pinned records.
+    func testPaneTheUserTakesOutMovesThePinnedSplitToTheList() throws {
         let state = try makeState()
         seedPinnedSplit(state, liveIds: [1, 2, 3])
-        func record(_ db: String) -> Tab? { state.pinnedTabs.first { $0.guidInLocalDB == db } }
 
         state.noteUserRemovingSplitPane(2)
         state.handleSplitContentsChanged(splitId: "pinned", tabIds: [1, 3])
 
-        XCTAssertEqual(record("db-1")?.splitPartnerGuid, "db-3")
-        XCTAssertEqual(record("db-3")?.splitPartnerGuid, "db-1")
-        XCTAssertEqual(record("db-1")?.splitPaneGuids, [])
-        XCTAssertNil(record("db-2")?.splitPartnerGuid)
-        XCTAssertEqual(record("db-2")?.splitPaneGuids, [])
+        let deadline = Date().addingTimeInterval(1)
+        while state.splitGroup(forId: "pinned")?.isPinned == true, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        XCTAssertEqual(state.splitGroup(forId: "pinned")?.isPinned, false)
+        XCTAssertEqual(state.splitGroup(forId: "pinned")?.tabIds, [1, 3])
+        XCTAssertEqual(state.normalTabs.map(\.guid), [1, 3])
+        for guid in [1, 3] {
+            let tab = try XCTUnwrap(state.tabs.first { $0.guid == guid })
+            XCTAssertNil(tab.guidInLocalDB, "Pane \(guid) must leave its pinned record")
+        }
     }
 
     /// A pane that leaves while the split, window or app closes keeps its

@@ -80,16 +80,16 @@ final class TabAreaContextMenuHelper: NSObject {
             )
         }
 
-        if !isHorizontalLayout {
-            menu.addItem(.separator())
-            let bottomButtonsItem = NSMenuItem(
-                title: NSLocalizedString("common.tabAreaContextMenu.bottomButtonsSubmenu", value: "Bottom Buttons", comment: "Tab area context menu - Submenu to choose which buttons the sidebar bottom bar shows"),
-                action: nil,
-                keyEquivalent: ""
-            )
-            bottomButtonsItem.submenu = buildBottomButtonsSubmenu()
-            menu.addItem(bottomButtonsItem)
-        }
+        menu.addItem(.separator())
+        let buttonsItem = NSMenuItem(
+            title: isHorizontalLayout
+                ? NSLocalizedString("common.tabAreaContextMenu.toolbarButtonsSubmenu", value: "Toolbar Buttons", comment: "Tab strip context menu - Submenu to choose which buttons the top bar shows in the Comfortable layout")
+                : NSLocalizedString("common.tabAreaContextMenu.bottomButtonsSubmenu", value: "Bottom Buttons", comment: "Tab area context menu - Submenu to choose which buttons the sidebar bottom bar shows"),
+            action: nil,
+            keyEquivalent: ""
+        )
+        buttonsItem.submenu = buildButtonsSubmenu()
+        menu.addItem(buttonsItem)
     }
 
     @objc private func newTab() {
@@ -141,7 +141,7 @@ final class TabAreaContextMenuHelper: NSObject {
         PhiPreferences.GeneralSettings.saveLayoutMode(mode)
     }
 
-    @objc private func toggleBottomButton(_ sender: NSMenuItem) {
+    @objc private func toggleButtonVisibility(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? String,
               let setting = PhiPreferences.GeneralSettings(rawValue: rawValue) else { return }
         UserDefaults.standard.set(!setting.loadValue(), forKey: setting.rawValue)
@@ -149,20 +149,21 @@ final class TabAreaContextMenuHelper: NSObject {
 
     // MARK: - Private
 
-    private func buildBottomButtonsSubmenu() -> NSMenu {
-        var entries: [(PhiPreferences.GeneralSettings, String)] = [
-            (.sidebarBottomBarShowsProfile,
+    private func buildButtonsSubmenu() -> NSMenu {
+        typealias Setting = PhiPreferences.GeneralSettings
+        var entries: [(Setting, String)] = [
+            (isHorizontalLayout ? Setting.topBarShowsProfile : .sidebarBottomBarShowsProfile,
              NSLocalizedString("common.tabAreaContextMenu.bottomButtons.profile", value: "Profile", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the profile button")),
-            (.sidebarBottomBarShowsDownloads,
+            (isHorizontalLayout ? Setting.topBarShowsDownloads : .sidebarBottomBarShowsDownloads,
              NSLocalizedString("common.tabAreaContextMenu.bottomButtons.downloads", value: "Downloads", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the downloads button")),
         ]
         let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
         if phiAIEnabled, browserState?.isIncognito != true {
-            entries.append((.sidebarBottomBarShowsMemory,
+            entries.append((isHorizontalLayout ? Setting.topBarShowsMemory : .sidebarBottomBarShowsMemory,
                             NSLocalizedString("common.tabAreaContextMenu.bottomButtons.memory", value: "Memory", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the AI memory button")))
         }
         if !ApplicationState.shared.isGuest {
-            entries.append((.sidebarBottomBarShowsFeedback,
+            entries.append((isHorizontalLayout ? Setting.topBarShowsFeedback : .sidebarBottomBarShowsFeedback,
                             NSLocalizedString("common.tabAreaContextMenu.bottomButtons.feedback", value: "Feedback", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the feedback button")))
         }
 
@@ -170,7 +171,7 @@ final class TabAreaContextMenuHelper: NSObject {
         for (setting, title) in entries {
             let item = NSMenuItem(
                 title: title,
-                action: #selector(toggleBottomButton(_:)),
+                action: #selector(toggleButtonVisibility(_:)),
                 keyEquivalent: ""
             )
             item.representedObject = setting.rawValue

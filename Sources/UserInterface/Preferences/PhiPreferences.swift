@@ -111,6 +111,10 @@ extension PhiPreferences {
         case sidebarBottomBarShowsDownloads
         case sidebarBottomBarShowsMemory
         case sidebarBottomBarShowsFeedback
+        case topBarShowsProfile // Comfortable layout top bar entries the user can toggle from the tab strip context menu
+        case topBarShowsDownloads
+        case topBarShowsMemory
+        case topBarShowsFeedback
         case showOpenTabIndicators // Show dots on inactive open pinned tabs and bookmarks
         case showUnloadedTabIndicators // Show dashed outlines and smaller icons for unloaded or discarded tabs
         case keepPinnedTabsLoaded // Keep opened Pinned tabs in memory instead of letting them be unloaded; per-Mac, not synced
@@ -154,7 +158,11 @@ extension PhiPreferences {
             case .sidebarBottomBarShowsProfile,
                  .sidebarBottomBarShowsDownloads,
                  .sidebarBottomBarShowsMemory,
-                 .sidebarBottomBarShowsFeedback:
+                 .sidebarBottomBarShowsFeedback,
+                 .topBarShowsProfile,
+                 .topBarShowsDownloads,
+                 .topBarShowsMemory,
+                 .topBarShowsFeedback:
                 return true
             case .showOpenTabIndicators:
                 return false

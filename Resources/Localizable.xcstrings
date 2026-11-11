@@ -39281,6 +39281,18 @@
         }
       }
     },
+    "common.tabAreaContextMenu.toolbarButtonsSubmenu" : {
+      "comment" : "Tab strip context menu - Submenu to choose which buttons the top bar shows in the Comfortable layout",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Toolbar Buttons"
+          }
+        }
+      }
+    },
     "common.tabMultiSelectionContextMenu.addToBookmarksAction" : {
       "comment" : "Tab multi-selection context menu - add selected tabs to the root bookmark location",
       "extractionState" : "extracted_with_value",

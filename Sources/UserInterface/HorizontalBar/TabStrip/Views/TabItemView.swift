@@ -1223,6 +1223,7 @@ final class TabItemView: NSView {
             return menu
         }
         if let representable = sourceTab as? ContextMenuRepresentable {
+            sourceTab?.contextMenuAnchorView = self
             representable.makeContextMenu(on: menu)
         }
         return menu.items.isEmpty ? nil : menu

@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import Foundation
+import SwiftUI
 extension Tab: SidebarItem {
     var isBookmark: Bool {
         false
@@ -422,6 +423,13 @@ extension Tab: ContextMenuRepresentable {
         }
 
         if isPinned {
+            if !isPinnedSplitCell {
+                let iconItem = NSMenuItem(
+                    title: NSLocalizedString("sidebar.pinnedTabContextMenu.changeIcon", value: "Change Icon…", comment: "Pinned tab context menu - Open the emoji and icon picker"),
+                    action: #selector(changePinnedTabIcon), keyEquivalent: "")
+                iconItem.target = self
+                items.append(iconItem)
+            }
             let editItem = NSMenuItem(title: NSLocalizedString("sidebar.pinnedTabContextMenu.editAction", value: "Edit...", comment: "Pinned tab context menu - Edit pinned tab menu item"), action: #selector(editPinnedTab), keyEquivalent: "")
             editItem.target = self
             if !isSplitCell {
@@ -476,6 +484,55 @@ extension Tab: ContextMenuRepresentable {
     /// the one the menu was opened from, else the active one.
     private var contextMenuState: BrowserState? {
         contextMenuOwnerState ?? SpaceSessionControllersManager.shared.activeWindowController?.browserState
+    }
+
+    @MainActor
+    @objc private func changePinnedTabIcon() {
+        guard let window = contextMenuWindowController?.window,
+              let anchor = window.contentView,
+              let guid = guidInLocalDB,
+              let state = contextMenuState,
+              state.pinnedTabs.contains(where: { $0.guidInLocalDB == guid }) else { return }
+        let targetView = contextMenuAnchorView.flatMap { $0.window === window ? $0 : nil } ?? anchor
+        let rect: NSRect
+        if targetView === anchor {
+            let point = anchor.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+            rect = NSRect(x: point.x, y: point.y, width: 1, height: 1)
+        } else {
+            rect = targetView.bounds
+        }
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentSize = NSSize(width: 262, height: IconPicker.preferredHeight)
+        popover.contentViewController = NSHostingController(rootView: IconPicker(
+            selected: pinnedIcon.flatMap { IconPickerSelection.fromStorageValue($0) },
+            showsGroups: true,
+            onReset: { [weak self, weak state, weak popover] in
+                self?.setPinnedTabIcon("default", in: state)
+                popover?.performClose(nil)
+            }
+        ) { [weak self, weak state, weak popover] selection in
+            self?.setPinnedTabIcon(selection.storageValue, in: state)
+            popover?.performClose(nil)
+        })
+        pinnedIconPopover?.performClose(nil)
+        pinnedIconPopover = popover
+        RunLoop.main.perform(inModes: [.default]) { [weak self, weak targetView, weak popover] in
+            guard self?.pinnedIconPopover === popover,
+                  let targetView, let popover else { return }
+            popover.show(relativeTo: rect, of: targetView, preferredEdge: .maxY)
+        }
+    }
+
+    @MainActor
+    private func setPinnedTabIcon(_ icon: String, in state: BrowserState?) {
+        guard let state, let guid = guidInLocalDB,
+              let pinnedTab = state.pinnedTabs.first(where: { $0.guidInLocalDB == guid }) else { return }
+        state.localStore.updatePinnedTabIcon(
+            resolving: guid, profileId: state.profileId, spaceId: state.spaceId, icon: icon)
+        let value = icon == "default" ? nil : icon
+        pinnedTab.pinnedIcon = value
+        pinnedIcon = value
     }
 
     @MainActor private var contextMenuWindowController: SpaceSessionController? {

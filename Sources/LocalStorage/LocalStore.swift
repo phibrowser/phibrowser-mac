@@ -1204,6 +1204,7 @@ private struct URLRuleChangeSnapshot: Equatable {
 /// change detection across saves.
 private struct PinnedTabSnapshot: Equatable {
     let guid: String
+    let icon: String
     let title: String
     let url: URL
     let index: Int
@@ -1217,6 +1218,7 @@ private struct PinnedTabSnapshot: Equatable {
 
     init(_ model: TabDataModel) {
         guid = model.guid
+        icon = model.icon
         title = model.title
         url = model.url
         index = model.index

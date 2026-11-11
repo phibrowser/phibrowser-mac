@@ -190,6 +190,7 @@ final class TabViewModel {
     var title: String = ""
     var url: String?
     var faviconUrl: String?
+    var pinnedIcon: String?
     var liveFaviconImage: NSImage?
     var profileFaviconImage: NSImage?
     private(set) var liveFaviconRevision: Int = 0
@@ -272,6 +273,7 @@ final class TabViewModel {
         title = ""
         url = nil
         faviconUrl = nil
+        pinnedIcon = nil
         faviconLoadURL = nil
         liveFaviconImage = nil
         profileFaviconImage = nil
@@ -333,6 +335,7 @@ final class TabViewModel {
         self.url = tab.url
         self.faviconLoadURL = Self.faviconPageURLString(for: tab)
         self.faviconUrl = tab.faviconUrl
+        self.pinnedIcon = tab.pinnedIcon
         updateLiveFavicon(data: tab.liveFaviconData, revision: tab.liveFaviconRevision)
         updateProfileFaviconImage(data: tab.cachedFaviconData, clearsOnNil: true)
         refreshProfileFaviconIfNeeded(for: tab, expectedGuid: tab.guid)
@@ -361,6 +364,15 @@ final class TabViewModel {
                 guard let self, self.isCurrentConfiguration(expectedGuid: expectedGuid, expectedGeneration: expectedGeneration) else { return }
                 self.title = newTitle
                 self.onToolTipUpdated?()
+            }
+            .store(in: &cancellables)
+
+        tab.$pinnedIcon
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] icon in
+                guard let self, self.isCurrentConfiguration(expectedGuid: expectedGuid, expectedGeneration: expectedGeneration) else { return }
+                self.pinnedIcon = icon
             }
             .store(in: &cancellables)
             

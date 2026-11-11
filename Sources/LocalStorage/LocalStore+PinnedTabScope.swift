@@ -388,6 +388,21 @@ extension LocalStore {
         }
     }
 
+    func updatePinnedTabIcon(resolving guid: String, profileId: String, spaceId: String, icon: String) {
+        performBackgroundWrite { context in
+            do {
+                guard let tab = try self.activePinnedTab(
+                    resolving: guid, profileId: profileId, spaceId: spaceId, in: context
+                ) else { return }
+                guard tab.icon != icon else { return }
+                tab.icon = icon
+                tab.updatedDate = Date()
+            } catch {
+                AppLogError("[LocalStore] Failed to update pinned tab icon: \(error)")
+            }
+        }
+    }
+
     /// Executes an Agent/API mutation only while its exact physical guid is
     /// still part of the selected scope. Unlike a window-owned UI action, an
     /// API call has no unambiguous child Space to target after a narrowing

@@ -14,8 +14,14 @@ final class FakeTabGroupBridge: TabGroupBridging {
         let windowId: Int
     }
 
+    struct Add: Equatable {
+        let tabIds: [Int]
+        let token: String
+        let windowId: Int
+    }
+
     var creates: [Create] = []
-    var adds: [(tabIds: [Int], token: String, windowId: Int)] = []
+    var adds: [Add] = []
     var tokenToReturn: String? = "NEWGROUPTOKEN"
 
     func createGroup(tabIds: [Int], title: String?, windowId: Int) -> String? {
@@ -24,13 +30,15 @@ final class FakeTabGroupBridge: TabGroupBridging {
     }
 
     func addTabs(_ tabIds: [Int], toGroup token: String, windowId: Int) {
-        adds.append((tabIds, token, windowId))
+        adds.append(Add(tabIds: tabIds, token: token, windowId: windowId))
     }
 }
 
 /// "Group tabs opened from links": a link the user opens in a new tab on
 /// purpose from a regular tab that is not in a tab group forms a new tab
-/// group with that tab (its Opener), named after the Opener.
+/// group with that tab (its Opener), named after the Opener. Links from a
+/// pinned tab or Bookmark Tab form a group without it, and the Opener's
+/// further links join that group.
 @MainActor
 final class BrowserStateGroupTabsOpenedFromLinksTests: XCTestCase {
     private var tempDirectories: [URL] = []
@@ -88,6 +96,36 @@ final class BrowserStateGroupTabsOpenedFromLinksTests: XCTestCase {
             Tab(guid: 2, url: "https://b.example", isActive: false, index: 1, title: "B"),
             Tab(guid: 3, url: "https://c.example", isActive: false, index: 2, title: "C"),
         ]
+        state.updateNormalTabs()
+    }
+
+    /// Adds an open pinned tab, live as tab 9, showing an email.
+    private func seedPinnedOpener(_ state: BrowserState) {
+        let record = Tab(guid: 9, url: "https://mail.example/inbox", isActive: false, index: 3,
+                         customGuid: "pinned-mail")
+        record.isOpenned = true
+        state.pinnedTabs = [record]
+        let live = Tab(guid: 9, url: "https://mail.example/inbox/1", isActive: false, index: 3,
+                       title: "An Email", customGuid: "pinned-mail")
+        live.isPinned = true
+        state.tabs.append(live)
+        state.updateNormalTabs()
+    }
+
+    /// Adds an open Bookmark Tab, live as tab 9, showing a doc.
+    private func seedBookmarkOpener(_ state: BrowserState) {
+        state.localStore.createBookmark(url: "https://docs.example",
+                                        title: "Docs",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: "bookmark-docs",
+                                        spaceId: state.spaceId)
+        guard waitUntil({ state.bookmarkManager.bookmark(withGuid: "bookmark-docs") != nil }) else {
+            return
+        }
+        state.bookmarkManager.bookmark(withGuid: "bookmark-docs")?.isOpened = true
+        state.tabs.append(Tab(guid: 9, url: "https://docs.example/page", isActive: false, index: 3,
+                              title: "A Doc", customGuid: "bookmark-docs"))
         state.updateNormalTabs()
     }
 
@@ -197,6 +235,17 @@ final class BrowserStateGroupTabsOpenedFromLinksTests: XCTestCase {
         XCTAssertEqual(bridge.creates.map(\.title), ["rust async"])
     }
 
+    func testARegularTabShowingAPeekFormsAGroupWithItsLink() throws {
+        let bridge = FakeTabGroupBridge()
+        let state = try makeState(bridge: bridge)
+        seed(state)
+        state.tabs[0].guidInLocalDB = BrowserState.peekOpenerGuidPrefix + "pair-1"
+
+        arrive(state, context: linkContext(opener: 1))
+
+        XCTAssertEqual(bridge.creates.map(\.tabIds), [[1, 10]])
+    }
+
     func testAnEmptyOpenerTitleNamesTheGroupAfterTheOpenersSite() throws {
         let bridge = FakeTabGroupBridge()
         let state = try makeState(bridge: bridge)
@@ -206,6 +255,118 @@ final class BrowserStateGroupTabsOpenedFromLinksTests: XCTestCase {
         arrive(state, context: linkContext(opener: 1))
 
         XCTAssertEqual(bridge.creates.map(\.title), ["news.example"])
+    }
+
+    // MARK: - Pinned tab and Bookmark Tab Openers
+
+    func testAPinnedTabsFirstLinkFormsAGroupWithoutThePinnedTab() throws {
+        let bridge = FakeTabGroupBridge()
+        let state = try makeState(bridge: bridge)
+        seed(state)
+        seedPinnedOpener(state)
+
+        arrive(state, context: linkContext(opener: 9))
+
+        XCTAssertEqual(bridge.creates, [.init(tabIds: [10], title: "An Email", windowId: 7)])
+    }
+
+    func testAPinnedTabsNextLinkJoinsTheGroupItsFirstLinkFormed() throws {
+        let bridge = FakeTabGroupBridge()
+        let state = try makeState(bridge: bridge)
+        seed(state)
+        seedPinnedOpener(state)
+        arrive(state, context: linkContext(opener: 9))
+
+        arrive(state, guid: 11, context: linkContext(opener: 9))
+
+        XCTAssertEqual(bridge.adds, [.init(tabIds: [11], token: "NEWGROUPTOKEN", windowId: 7)])
+    }
+
+    func testAPinnedTabsLinkFormsANewGroupOnceItsGroupIsGone() throws {
+        let bridge = FakeTabGroupBridge()
+        let state = try makeState(bridge: bridge)
+        seed(state)
+        seedPinnedOpener(state)
+        arrive(state, context: linkContext(opener: 9))
+        state.closeTab(10)
+
+        arrive(state, guid: 11, context: linkContext(opener: 9))
+
+        XCTAssertEqual(bridge.creates.map(\.tabIds), [[10], [11]])
+    }
+
+    func testAReopenedPinnedTabsLinkFormsANewGroup() throws {
+        let bridge = FakeTabGroupBridge()
+        let state = try makeState(bridge: bridge)
+        seed(state)
+        seedPinnedOpener(state)
+        arrive(state, context: linkContext(opener: 9))
+        state.closeTab(9)
+        state.handleNewTabFromChromium(Tab(guid: 12, url: "https://mail.example/inbox", isActive: false,
+                                           index: 4, title: "Inbox", customGuid: "pinned-mail"),
+                                       context: nil)
+
+        arrive(state, guid: 11, context: linkContext(opener: 12))
+
+        XCTAssertEqual(bridge.creates.map(\.tabIds), [[10], [11]])
+    }
+
+    func testACrossDomainClickPhiTurnsIntoANewTabFromAPinnedTabFormsNoGroup() throws {
+        let bridge = FakeTabGroupBridge()
+        let state = try makeState(bridge: bridge)
+        seed(state)
+        seedPinnedOpener(state)
+
+        arrive(state, context: linkContext(opener: 9, foreground: true, userOpened: false))
+
+        XCTAssertEqual(bridge.creates, [])
+    }
+
+    func testABookmarkTabsFirstLinkFormsAGroupWithoutTheBookmarkTab() throws {
+        let bridge = FakeTabGroupBridge()
+        let state = try makeState(bridge: bridge)
+        seed(state)
+        seedBookmarkOpener(state)
+
+        arrive(state, context: linkContext(opener: 9))
+
+        XCTAssertEqual(bridge.creates, [.init(tabIds: [10], title: "A Doc", windowId: 7)])
+    }
+
+    func testABookmarkTabsNextLinkJoinsTheGroupItsFirstLinkFormed() throws {
+        let bridge = FakeTabGroupBridge()
+        let state = try makeState(bridge: bridge)
+        seed(state)
+        seedBookmarkOpener(state)
+        arrive(state, context: linkContext(opener: 9))
+
+        arrive(state, guid: 11, context: linkContext(opener: 9))
+
+        XCTAssertEqual(bridge.adds, [.init(tabIds: [11], token: "NEWGROUPTOKEN", windowId: 7)])
+    }
+
+    func testABookmarkedSplitsLinkFormsAGroupWithoutTheSplit() throws {
+        let bridge = FakeTabGroupBridge()
+        let state = try makeState(bridge: bridge)
+        seed(state)
+        state.localStore.createBookmark(url: "https://www.news.example/article",
+                                        title: "Split",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: "bookmark-split",
+                                        spaceId: state.spaceId,
+                                        secondaryUrl: "https://b.example")
+        guard waitUntil({ state.bookmarkManager.bookmark(withGuid: "bookmark-split") != nil }) else {
+            return
+        }
+        state.splits = [SplitGroup(id: "split-1-2", tabIds: [1, 2], layout: .vertical,
+                                   fractions: [0.5, 0.5])]
+        state.splitBookmarkBindings["bookmark-split"] = "split-1-2"
+        state.updateNormalTabs()
+
+        arrive(state, context: linkContext(opener: 1))
+
+        XCTAssertEqual(bridge.creates.map(\.tabIds), [[10]])
     }
 
     // MARK: - No group
@@ -246,42 +407,6 @@ final class BrowserStateGroupTabsOpenedFromLinksTests: XCTestCase {
         let state = try makeState(bridge: bridge)
         seed(state)
         state.tabs[0].groupToken = "USERGROUPTOKEN"
-
-        arrive(state, context: linkContext(opener: 1))
-
-        XCTAssertEqual(bridge.creates, [])
-    }
-
-    func testABookmarkTabOpenerFormsNoGroupYet() throws {
-        let bridge = FakeTabGroupBridge()
-        let state = try makeState(bridge: bridge)
-        seed(state)
-        state.tabs[0].guidInLocalDB = "bookmark-guid"
-        state.updateNormalTabs()
-
-        arrive(state, context: linkContext(opener: 1))
-
-        XCTAssertEqual(bridge.creates, [])
-    }
-
-    func testABookmarkedSplitOpenerFormsNoGroupYet() throws {
-        let bridge = FakeTabGroupBridge()
-        let state = try makeState(bridge: bridge)
-        seed(state)
-        state.localStore.createBookmark(url: "https://www.news.example/article",
-                                        title: "Split",
-                                        profileId: state.profileId,
-                                        parentId: nil,
-                                        guid: "bookmark-split",
-                                        spaceId: state.spaceId,
-                                        secondaryUrl: "https://b.example")
-        guard waitUntil({ state.bookmarkManager.bookmark(withGuid: "bookmark-split") != nil }) else {
-            return
-        }
-        state.splits = [SplitGroup(id: "split-1-2", tabIds: [1, 2], layout: .vertical,
-                                   fractions: [0.5, 0.5])]
-        state.splitBookmarkBindings["bookmark-split"] = "split-1-2"
-        state.updateNormalTabs()
 
         arrive(state, context: linkContext(opener: 1))
 

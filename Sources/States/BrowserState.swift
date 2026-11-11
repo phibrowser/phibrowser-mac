@@ -3610,12 +3610,18 @@ class BrowserState {
 
     // MARK: - Tab groups from opened links
 
+    /// Keyed by the live tab id of a pinned tab or Bookmark Tab: the token of
+    /// the tab group its first link formed. Memory only, so after a relaunch
+    /// the Opener's next link starts a new group.
+    private var groupTokenByPinnedOrBookmarkOpenerTabId: [Int: String] = [:]
+
     /// "Group tabs opened from links": a link the user opened in a new tab on
     /// purpose, from a regular tab that is not in a tab group, forms a new
     /// tab group with that tab (its Opener). Runs once the arrival has its
     /// place in the tab order. Later links from the group's tabs join it
     /// through Chromium's own rule that a link-opened tab inherits its
-    /// Opener's group.
+    /// Opener's group. Links from a pinned tab or Bookmark Tab group without
+    /// their Opener.
     private func groupTabOpenedFromLinkIfNeeded(_ tab: Tab, context: NativeTabCreationContext?) {
         // A tab that arrived in a group inherited its Opener's group.
         guard tab.groupToken == nil,
@@ -3624,11 +3630,16 @@ class BrowserState {
               windowAllowsGroupingTabsOpenedFromLinks,
               normalTabOrder.contains(tab.guid),
               let openerTabId = context.openerTabId,
-              let opener = normalTabs.first(where: { $0.guid == openerTabId }),
-              opener.groupToken == nil,
-              // Pinned tabs and Bookmark Tabs never join a tab group.
-              (opener.guidInLocalDB ?? "").isEmpty,
-              !isBookmarkBackedTab(opener) else {
+              let opener = tabs.first(where: { $0.guid == openerTabId }) else {
+            return
+        }
+        // Pinned tabs and Bookmark Tabs never join a tab group, so their
+        // links form one without them.
+        if isPinnedOrBookmarkTab(opener) {
+            groupTabOpenedFromPinnedOrBookmarkOpener(tab, opener: opener, context: context)
+            return
+        }
+        guard normalTabOrder.contains(opener.guid), opener.groupToken == nil else {
             return
         }
         // Chromium groups a split as a whole; mirror that here.
@@ -3650,6 +3661,46 @@ class BrowserState {
         MainActor.assumeIsolated {
             applyOptimisticGroupMembership(updates: updates)
         }
+    }
+
+    /// A link from a pinned tab or Bookmark Tab forms a group on its own,
+    /// where the tab already landed in the regular tabs; further links from
+    /// the same Opener join that group.
+    private func groupTabOpenedFromPinnedOrBookmarkOpener(_ tab: Tab,
+                                                          opener: Tab,
+                                                          context: NativeTabCreationContext) {
+        // Forget groups that are gone and Openers whose live tab closed.
+        // Pruning here rather than when the group closes is enough: Undo
+        // Close reopens a group under a new token, so the Opener's next link
+        // still starts a new group.
+        groupTokenByPinnedOrBookmarkOpenerTabId = groupTokenByPinnedOrBookmarkOpenerTabId.filter { openerTabId, token in
+            tabs.contains { $0.guid == openerTabId } && tabs.contains { $0.groupToken == token }
+        }
+        let token: String
+        if let existingToken = groupTokenByPinnedOrBookmarkOpenerTabId[opener.guid] {
+            tabGroupBridge.addTabs([tab.guid], toGroup: existingToken, windowId: windowId)
+            token = existingToken
+        } else {
+            guard let newToken = tabGroupBridge.createGroup(tabIds: [tab.guid],
+                                                            title: Self.groupName(forOpener: opener,
+                                                                                  searchTerms: context.openerSearchTerms),
+                                                            windowId: windowId) else {
+                return
+            }
+            groupTokenByPinnedOrBookmarkOpenerTabId[opener.guid] = newToken
+            token = newToken
+        }
+        MainActor.assumeIsolated {
+            applyOptimisticGroupMembership(tabId: tab.guid, newToken: token)
+        }
+    }
+
+    /// A pinned tab or a Bookmark Tab, the tabs Chromium never puts in a tab
+    /// group. A regular tab that only carries a Peek marker is neither.
+    private func isPinnedOrBookmarkTab(_ tab: Tab) -> Bool {
+        if tab.isPinned || isBookmarkBackedTab(tab) { return true }
+        guard let localGuid = tab.guidInLocalDB, !localGuid.isEmpty else { return false }
+        return pinnedTabs.contains { $0.guidInLocalDB == localGuid }
     }
 
     /// Only a regular window's Space instance or an Incognito window groups

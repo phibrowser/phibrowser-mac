@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "AV1 Image File Format" : {
+
+    },
     "CFBundleDisplayName" : {
       "comment" : "Bundle display name",
       "extractionState" : "extracted_with_value",
@@ -25,6 +28,21 @@
           }
         }
       },
+      "shouldTranslate" : false
+    },
+    "GIF image" : {
+      "shouldTranslate" : false
+    },
+    "HTML text" : {
+      "shouldTranslate" : false
+    },
+    "JavaScript" : {
+      "shouldTranslate" : false
+    },
+    "JPEG image" : {
+      "shouldTranslate" : false
+    },
+    "MIME HTML document" : {
       "shouldTranslate" : false
     },
     "NSBluetoothAlwaysUsageDescription" : {
@@ -565,6 +583,33 @@
           }
         }
       }
+    },
+    "Ogg audio" : {
+      "shouldTranslate" : false
+    },
+    "Ogg video" : {
+      "shouldTranslate" : false
+    },
+    "PDF document" : {
+      "shouldTranslate" : false
+    },
+    "PNG image" : {
+      "shouldTranslate" : false
+    },
+    "SVG image" : {
+      "shouldTranslate" : false
+    },
+    "text" : {
+      "shouldTranslate" : false
+    },
+    "WebM media" : {
+      "shouldTranslate" : false
+    },
+    "WebP image" : {
+      "shouldTranslate" : false
+    },
+    "XHTML" : {
+      "shouldTranslate" : false
     }
   },
   "version" : "1.2"

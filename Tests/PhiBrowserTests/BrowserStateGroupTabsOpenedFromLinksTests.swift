@@ -179,6 +179,24 @@ final class BrowserStateGroupTabsOpenedFromLinksTests: XCTestCase {
         XCTAssertTrue(state.normalTabs.allSatisfy { $0.groupToken == nil })
     }
 
+    func testASearchResultsOpenerNamesTheGroupAfterTheSearchTerms() throws {
+        let bridge = FakeTabGroupBridge()
+        let state = try makeState(bridge: bridge)
+        seed(state)
+
+        // As Chromium sends it for a Cmd-click on a search results page.
+        arrive(state, context: NativeTabCreationContext(dictionary: [
+            "creationKind": "linkBackground",
+            "openerTabId": 1,
+            "insertAfterTabId": 1,
+            "sourceTabId": 1,
+            "isUserOpenedNewTab": true,
+            "openerSearchTerms": "rust async",
+        ]))
+
+        XCTAssertEqual(bridge.creates.map(\.title), ["rust async"])
+    }
+
     func testAnEmptyOpenerTitleNamesTheGroupAfterTheOpenersSite() throws {
         let bridge = FakeTabGroupBridge()
         let state = try makeState(bridge: bridge)

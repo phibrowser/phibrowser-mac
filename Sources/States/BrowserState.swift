@@ -3634,7 +3634,8 @@ class BrowserState {
         // Chromium groups a split as a whole; mirror that here.
         let openerTabIds = splitGroup(forTabId: opener.guid)?.tabIds ?? [opener.guid]
         guard let token = tabGroupBridge.createGroup(tabIds: openerTabIds + [tab.guid],
-                                                     title: Self.groupName(forOpener: opener),
+                                                     title: Self.groupName(forOpener: opener,
+                                                                           searchTerms: context.openerSearchTerms),
                                                      windowId: windowId) else {
             return
         }
@@ -3663,9 +3664,10 @@ class BrowserState {
             && windowController?.browserType != .shadow
     }
 
-    /// The Opener's title, or its site when the title is empty. Set once
-    /// when the group is created.
-    private static func groupName(forOpener opener: Tab) -> String? {
+    /// The Opener's search terms when it is a search results page, else its
+    /// title, else its site. Set once when the group is created.
+    private static func groupName(forOpener opener: Tab, searchTerms: String?) -> String? {
+        if let searchTerms, !searchTerms.isEmpty { return searchTerms }
         let title = (opener.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !title.isEmpty { return title }
         let site = URLProcessor.displayName(for: opener.url ?? "")

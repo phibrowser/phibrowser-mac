@@ -625,6 +625,7 @@
 		CCBF8FA72E69948D00B9A99E /* BrowserState.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8FA62E69948D00B9A99E /* BrowserState.swift */; };
 		CCCA86782EB316CC0071E30A /* ReorderingCollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCCA86772EB316CC0071E30A /* ReorderingCollectionView.swift */; };
 		CCCD5E362EB1C36300E78FC1 /* DefaultExtensionManifestWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCCD5E352EB1C36300E78FC1 /* DefaultExtensionManifestWriter.swift */; };
+		CCCD5E382EB1C36300E78FC1 /* PiCompanionExtensionCleanup.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCCD5E372EB1C36300E78FC1 /* PiCompanionExtensionCleanup.swift */; };
 		CCD3246D2EB1EFB600AA0B85 /* PinnedExtensionItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCD3246C2EB1EFB600AA0B85 /* PinnedExtensionItem.swift */; };
 		CCD87CC42EC2E7E000148E3F /* LocalStore+Bookmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCD87CC32EC2E7E000148E3F /* LocalStore+Bookmark.swift */; };
 		CCD87CC62EC2E7E000148E3F /* LocalStore+Space.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCD87CC52EC2E7E000148E3F /* LocalStore+Space.swift */; };
@@ -1489,6 +1490,7 @@
 		CCBF8FA62E69948D00B9A99E /* BrowserState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserState.swift; sourceTree = "<group>"; };
 		CCCA86772EB316CC0071E30A /* ReorderingCollectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReorderingCollectionView.swift; sourceTree = "<group>"; };
 		CCCD5E352EB1C36300E78FC1 /* DefaultExtensionManifestWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultExtensionManifestWriter.swift; sourceTree = "<group>"; };
+		CCCD5E372EB1C36300E78FC1 /* PiCompanionExtensionCleanup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiCompanionExtensionCleanup.swift; sourceTree = "<group>"; };
 		CCD3246C2EB1EFB600AA0B85 /* PinnedExtensionItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedExtensionItem.swift; sourceTree = "<group>"; };
 		CCD87CC32EC2E7E000148E3F /* LocalStore+Bookmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalStore+Bookmark.swift"; sourceTree = "<group>"; };
 		CCD87CC52EC2E7E000148E3F /* LocalStore+Space.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalStore+Space.swift"; sourceTree = "<group>"; };
@@ -2732,6 +2734,7 @@
 				CC35D7932E7271CE00E1A970 /* LiquidGlassCompatible.swift */,
 				CC6BFFDC2E72C04000D4F133 /* FaviconDataProvider.swift */,
 				CCCD5E352EB1C36300E78FC1 /* DefaultExtensionManifestWriter.swift */,
+				CCCD5E372EB1C36300E78FC1 /* PiCompanionExtensionCleanup.swift */,
 				3764F7382F1628DA00C1F4E3 /* FaviconProvider.swift */,
 				376193522F4EB8630094A78E /* SystemUtils.swift */,
 				37289F142EFE602F0003624E /* ExperimentConfigProvider.swift */,
@@ -3976,6 +3979,7 @@
 				C0D3F1082026090800000001 /* SidebarFileDropView.swift in Sources */,
 				CC288A692E4F12CB004A6C1C /* SidebarViewController.swift in Sources */,
 				CCCD5E362EB1C36300E78FC1 /* DefaultExtensionManifestWriter.swift in Sources */,
+				CCCD5E382EB1C36300E78FC1 /* PiCompanionExtensionCleanup.swift in Sources */,
 				8E9E96AC2F0F6E64002D0D21 /* TabItemView.swift in Sources */,
 				8E4C949A2F10D01500B09A80 /* TabStripLayout.swift in Sources */,
 				8E9E96AD2F0F6E64002D0D21 /* TabStripState.swift in Sources */,

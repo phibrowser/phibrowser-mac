@@ -360,6 +360,7 @@ extension AppController {
                 ? "ntp"
                 : "omnibox",
             "layout_mode": PhiPreferences.GeneralSettings.loadLayoutMode().rawValue,
+            "edge_to_edge_content_enabled": PhiPreferences.GeneralSettings.edgeToEdgeWebContent.loadValue(),
             "app_language": PhiPreferences.GeneralSettings
                 .activeProcessAppLanguage().rawValue,
             "appearance": Self.analyticsValue(for: appearance),

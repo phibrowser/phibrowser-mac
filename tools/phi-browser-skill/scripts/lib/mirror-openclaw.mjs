@@ -15,7 +15,7 @@
 // Two OpenClaw-specific deviations from the terminal agents:
 //   - Discovery: exec-tool children carry OPENCLAW_SHELL/OPENCLAW_CLI env
 //     markers but NO session id, so the session is matched by evidence like
-//     Codex/Pi: among transcripts written in the last 30 minutes, the one
+//     Codex: among transcripts written in the last 30 minutes, the one
 //     whose newest bytes mention the task id (the exec toolCall that
 //     spawned this very heredoc is recorded before the shell runs). No
 //     evidence → no mirror (never guess).

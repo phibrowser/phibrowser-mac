@@ -3,7 +3,7 @@
 // Claude Code adapter for the session mirror (the tailer daemon,
 // scripts/mirror-tailer.mjs): session discovery and transcript parsing.
 // Kept separate from the agent-neutral core so each agent's sibling
-// (mirror-codex, -pi, -hermes, -openclaw) supplies only these two pieces
+// (mirror-codex, -hermes, -openclaw) supplies only these two pieces
 // and reuses everything else.
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
@@ -34,8 +34,8 @@ export function discoverClaudeTranscript() {
 // task_started / task_complete). The edges are reconstructed here: the first
 // conversation record while no turn is open means "working" began, and the
 // system turn_duration record closes it with the turn's real duration.
-// Module-level state follows the mirror-pi precedent (the daemon is one
-// process per session); a daemon restart mid-turn only costs that turn's
+// Module-level state is safe here (the daemon is one process per
+// session); a daemon restart mid-turn only costs that turn's
 // elapsed baseline and the background-shell set.
 let workingSince = null
 const runningShells = new Set()

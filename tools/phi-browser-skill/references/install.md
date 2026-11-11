@@ -19,21 +19,16 @@ skills from Cursor's folder and the common folder, and only loads Grok Build's,
 Claude Code's, and Codex's when third-party skills are enabled, so its row
 shares the Common agents link. This links the skill
 bundled inside the app into that agent's `skills/phi-browser`, so it stays
-current with each Phi Browser update. Every agent can drive Phi; only the
-first six also get the session mirror described in §4 — under the others,
-Agent Transcript shows the browser steps and `say()` prose, not the agent's
-own conversation.
-For Pi, Install also links a companion extension at
-`~/.pi/agent/extensions/phi-browser`; run `/reload` in an already-open Pi
-session so it can wake automatically when Agent Transcript receives a command.
+current with each Phi Browser update. Every agent can drive Phi; only
+Claude Code, Codex, Cursor, OpenClaw, and Hermes also get the session mirror
+described in §4 — under the others, Agent Transcript shows the browser steps
+and `say()` prose, not the agent's own conversation.
 
-Or link it by hand from the repository root (swap the skill destination for
-another agent). Pi needs both links:
+Or link it by hand from the repository root (swap the destination for your
+agent):
 
 ```bash
-mkdir -p ~/.pi/agent/skills ~/.pi/agent/extensions
-ln -sfn "$PWD/tools/phi-browser-skill" ~/.pi/agent/skills/phi-browser
-ln -sfn "$PWD/tools/phi-browser-skill/extensions/pi" ~/.pi/agent/extensions/phi-browser
+ln -sfn "$PWD/tools/phi-browser-skill" ~/.claude/skills/phi-browser
 ```
 
 Requires Node >= 22. No npm dependencies.
@@ -118,8 +113,8 @@ node ~/.claude/skills/phi-browser/scripts/selftest-animations.mjs
 ## 4. Session mirror (automatic, two-way)
 
 The Agent Transcript panel (View ▸ Agent Transcript) always shows the browser
-action steps, narration, rounds, and lifecycle. Under all six supported
-agents — Claude Code, Codex, OpenClaw, Pi, Hermes, and Cursor — the driving
+action steps, narration, rounds, and lifecycle. Under all five supported
+agents — Claude Code, Codex, OpenClaw, Hermes, and Cursor — the driving
 session is ALSO mirrored automatically, in both directions, with no setup:
 `enterContext` locates the session's own transcript and spawns a small
 tailer daemon (`scripts/mirror-tailer.mjs`). Discovery is per agent,
@@ -136,7 +131,6 @@ mirroring nothing rather than guessing wrong:
   transcripts (`~/.openclaw/agents/*/sessions/<sessionId>.jsonl`): the
   freshly-written transcript whose newest events mention the task. Assumes
   the gateway runs on this Mac.
-- **Pi** — by the same evidence heuristic over its session files.
 - **Cursor** — by the strongest evidence its transcripts offer: the IDE
   records the agent's Shell command — the skill heredoc itself — in
   `~/.cursor/projects/<project>/agent-transcripts/<id>/<id>.jsonl` before
@@ -149,10 +143,9 @@ The mirror then
 - forwards your prompts and the assistant's reply prose into the Space's
   console while the task is live, and
 - delivers commands you type into the console back INTO the idle session
-  (prefixed `[phi-console]`) where the agent has a delivery transport. Pi's
-  installed companion extension calls its supported in-process
-  `pi.sendUserMessage()` API, which wakes the session immediately. OpenClaw
-  uses `openclaw agent --session-id … --message …` through its gateway.
+  (prefixed `[phi-console]`) where the agent has a delivery transport.
+  OpenClaw uses `openclaw agent --session-id … --message …` through its
+  gateway.
   Hermes is resumed headless (`hermes --resume <session-id> -z …`) — the
   woken turn appends to the same session in state.db and mirrors back into
   the console (an interactive TUI open on that session shows the exchange
@@ -162,7 +155,7 @@ The mirror then
   additionally posts a notice saying so, because an ended Cursor turn never
   runs another round until you prompt Cursor again.
 
-Agents outside those six (Grok Build, Grok Bot, Antigravity, GitHub Copilot,
+Agents outside those five (Pi, Grok Build, Grok Bot, Antigravity, GitHub Copilot,
 OpenCode, Qwen Code, CodeBuddy, or anything else that loads the skill) get no
 mirror at all: every discover* requires positive evidence of its own host
 (an exported session id, a known env marker, or the agent process's name),
@@ -204,18 +197,13 @@ needed): `node scripts/selftest-mirror.mjs`.
 - **Console shows browser steps but not the conversation**: the session
   couldn't be identified (Claude Code: update the CLI so it exports
   `CLAUDE_CODE_SESSION_ID`; Hermes: the session must export
-  `HERMES_SESSION_ID` — the classic CLI does; Codex/OpenClaw/Pi/Cursor: the
+  `HERMES_SESSION_ID` — the classic CLI does; Codex/OpenClaw/Cursor: the
   evidence heuristic found no match — or use `say()`), the transcript store
   isn't where discovery looks (`PHI_CODEX_SESSIONS_DIR`, `PHI_HERMES_HOME`,
-  `PHI_OPENCLAW_STATE_DIR`, `PHI_CURSOR_STATE_DIR`,
-  `PI_CODING_AGENT_SESSION_DIR` override the roots),
+  `PHI_OPENCLAW_STATE_DIR`, `PHI_CURSOR_STATE_DIR` override the roots),
   `PHI_NO_SESSION_MIRROR` is set, or the skill running your heredocs
   predates the session mirror — rebuild Phi so the bundled skill has it.
-- **Under Pi: console commands wait for “continue”**: the companion extension
-  is not loaded. Install Pi again from Phi settings, then run `/reload` in Pi.
-  The skill link alone can mirror the transcript but cannot call Pi's
-  in-process `sendUserMessage()` API.
-- **Console commands don't reach another terminal agent's idle session**:
+- **Console commands don't reach a terminal agent's idle session**:
   Claude Code, Codex, and Cursor have no supported delivery transport, so
   commands are picked up at the next round rather than typed into a
   terminal.

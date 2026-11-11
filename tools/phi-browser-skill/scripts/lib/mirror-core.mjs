@@ -5,7 +5,7 @@
 // daemon, the per-session transcript cursor, and the batched forward into
 // the task's console — plus the agent-neutral console-command bridge that
 // drains the user's typed commands back into the driving session. The
-// per-agent siblings (lib/mirror-claude, -codex, -pi, -hermes, -openclaw)
+// per-agent siblings (lib/mirror-claude, -codex, -hermes, -openclaw)
 // supply only the agent-specific parts — session discovery, record parsing,
 // and (where the agent has one) the bridge's delivery transport — and reuse
 // everything here.
@@ -312,18 +312,9 @@ export async function forwardEntries(taskId, entries, channel = null) {
       entries: entries.map((e) => ({
         kind: e.kind,
         text: String(e.text).slice(0, 4000),
-        // Pi's collapsed tool cards deliberately retain short multiline
-        // output/diff previews; every other adapter keeps the original tight
-        // secondary-line cap.
-        ...(e.detail ? { detail: String(e.detail).slice(
-          0, e.agent === 'pi' && e.kind === 'tool' ? 4000 : 500) } : {}),
+        ...(e.detail ? { detail: String(e.detail).slice(0, 500) } : {}),
         ...(e.ts ? { ts: e.ts } : {}),
         ...(e.agent ? { agent: String(e.agent).slice(0, 16) } : {}),
-        ...(e.agent === 'pi' && e.kind === 'tool' && e.sourceId
-          ? { sourceId: String(e.sourceId).slice(0, 128) } : {}),
-        ...(e.agent === 'pi' && e.kind === 'tool'
-          && ['pending', 'success', 'error'].includes(e.toolState)
-          ? { toolState: e.toolState } : {}),
       })),
     })
     if (res && res.ok === false) {

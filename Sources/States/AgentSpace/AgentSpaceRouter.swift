@@ -421,20 +421,10 @@ enum AgentSpaceRouter {
                 // flips, round edges) — reserved so a driver cannot forge
                 // "You took control"-style entries in its console.
                 if kind == .status || kind == .round { kind = .action }
-                let agent = item["agent"] as? String
-                // Pairing metadata is reserved for Pi tool cards. Other
-                // agents retain append-only transcript semantics even if a
-                // caller sends similarly named fields.
-                let isPiTool = agent == "pi" && kind == .tool
                 AgentSpaceManager.shared.appendTranscript(
                     taskId: taskId, kind: kind, text: text,
                     detail: item["detail"] as? String,
-                    agent: agent,
-                    piToolCallId: isPiTool ? item["sourceId"] as? String : nil,
-                    piToolState: isPiTool
-                        ? (item["toolState"] as? String).flatMap(
-                            PiTranscriptToolState.init(rawValue:))
-                        : nil,
+                    agent: item["agent"] as? String,
                     timestamp: Self.clampedLogTimestamp(item["ts"] as? Double))
             }
         }

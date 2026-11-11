@@ -885,6 +885,7 @@ class SpaceSessionController: NSWindowController {
                 parentWindow: window,
                 anchorView: container.view,
                 cardViewProvider: { [weak container] in container?.currentPageCardView },
+                headerViewProvider: { [weak container] in container?.currentHeaderRowView },
                 originTracker: peekOriginTracker
             )
             // A reader over the peek covers the peek card, which moves with

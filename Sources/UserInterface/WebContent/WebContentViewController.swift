@@ -347,6 +347,9 @@ class WebContentViewController: NSViewController {
     private var splitLoginRequiredViews: [Int: LoginRequiredOverlayView] = [:]
 
     var addressBarAnchorView: NSView? { headerView.addressBarAnchorView }
+    /// The header row, shown or not (`WebContentContainerViewController
+    /// .isHeaderRowShown`). A Peek leaves a shown row uncovered.
+    var headerRowView: NSView { headerView }
     /// The active tab sits on the window frame while the page card is
     /// separated, and on the header otherwise, so it takes the header's
     /// page color only then. Following the card rather than its causes keeps

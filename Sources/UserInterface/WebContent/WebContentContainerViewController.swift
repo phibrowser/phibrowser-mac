@@ -80,6 +80,18 @@ class WebContentContainerViewController: NSViewController {
     /// excludes. See `WebContentViewController.pageCardView`.
     var currentPageCardView: NSView? { currentWebContentController?.pageCardView }
 
+    /// The visible tab's header row, shown or not; nil when nothing is
+    /// mounted. Its frame changes when the layout shows or hides it.
+    var currentHeaderRowView: NSView? { currentWebContentController?.headerRowView }
+
+    /// Whether the layout shows `header` (Balanced and Comfortable do,
+    /// Performance keeps navigation in the sidebar). A Peek stays below a
+    /// shown row and leaves it at full strength, so the row's controls — the
+    /// extensions among them — keep working while the Peek is up.
+    static func isHeaderRowShown(_ header: NSView) -> Bool {
+        !header.isHiddenOrHasHiddenAncestor && header.frame.height > 0
+    }
+
     private var pendingPageMount: (tabId: Int, completion: (NSView) -> Void)?
 
     /// Fires once a tab's page is mounted and laid out. The Peek panel comes
@@ -125,11 +137,49 @@ class WebContentContainerViewController: NSViewController {
         updatePeekBackgroundPresentation(animated: animated)
     }
 
+    /// Dims everything but the header row. A view cannot be brighter than a
+    /// faded ancestor, so with a header to spare the 50% moves from the
+    /// container's opacity into this mask: `pageDim` carries it everywhere
+    /// and `headerHole` restores the row.
+    private final class PeekBackgroundDimMask: CALayer {
+        let pageDim = CALayer()
+        let headerHole = CALayer()
+
+        override init() {
+            super.init()
+            pageDim.backgroundColor = NSColor.black.cgColor
+            headerHole.backgroundColor = NSColor.black.cgColor
+            addSublayer(pageDim)
+            addSublayer(headerHole)
+        }
+
+        override init(layer: Any) {
+            super.init(layer: layer)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    }
+
+    /// Re-fits the dim to the current geometry (the header row can appear,
+    /// go or move without this controller's own view laying out).
+    func refreshPeekBackgroundPresentation() {
+        guard isPeekBackgroundDeemphasized else { return }
+        updatePeekBackgroundPresentation(animated: false)
+    }
+
     private func updatePeekBackgroundPresentation(animated: Bool) {
         guard let layer = contentContainer.layer else { return }
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let scale: CGFloat = isPeekBackgroundDeemphasized && !reduceMotion ? 0.99 : 1
-        let opacity: CGFloat = isPeekBackgroundDeemphasized ? 0.5 : 1
+        let headerRect: CGRect? = isPeekBackgroundDeemphasized
+            ? currentHeaderRowView.flatMap { header in
+                Self.isHeaderRowShown(header) ? header.convert(header.bounds, to: contentContainer) : nil
+            }
+            : nil
+        // The shrink would slide a shown header out from under the pointer:
+        // hit testing ignores layer transforms.
+        let scale: CGFloat = isPeekBackgroundDeemphasized && !reduceMotion && headerRect == nil ? 0.99 : 1
+        let dim: Float = isPeekBackgroundDeemphasized ? 0.5 : 1
         let cardRect = currentPageCardView.map { $0.convert($0.bounds, to: contentContainer) }
             ?? contentContainer.bounds
         // AppKit backing layers need not anchor at (0.5, 0.5). Compensate
@@ -141,34 +191,72 @@ class WebContentContainerViewController: NSViewController {
             CATransform3DMakeTranslation((center.x - anchor.x) * (1 - scale),
                                         (center.y - anchor.y) * (1 - scale), 0),
             scale, scale, 1)
+
+        let mask = layer.mask as? PeekBackgroundDimMask
+        // With a header to spare the mask dims; otherwise the container's
+        // own opacity does, as it also does on the way back out of a mask.
+        let containerOpacity: CGFloat = headerRect == nil ? CGFloat(dim) : 1
+        let maskIsCurrent: Bool
+        if let headerRect {
+            maskIsCurrent = mask != nil && mask?.frame == layer.bounds
+                && mask?.headerHole.frame == headerRect && mask?.pageDim.opacity == dim
+        } else {
+            maskIsCurrent = mask == nil
+        }
         guard !CATransform3DEqualToTransform(layer.transform, transform)
-                || contentContainer.alphaValue != opacity else { return }
+                || contentContainer.alphaValue != containerOpacity
+                || !maskIsCurrent else { return }
 
         let fromTransform = layer.presentation()?.transform ?? layer.transform
-        let fromOpacity = layer.presentation()?.opacity ?? Float(contentContainer.alphaValue)
+        // Whichever of the two carried the dim until now.
+        let fromDim = mask.map { $0.pageDim.presentation()?.opacity ?? $0.pageDim.opacity }
+            ?? layer.presentation()?.opacity ?? Float(contentContainer.alphaValue)
         layer.removeAnimation(forKey: "phiPeekBackgroundScale")
         layer.removeAnimation(forKey: "phiPeekBackgroundFade")
+        mask?.pageDim.removeAnimation(forKey: "phiPeekBackgroundFade")
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         layer.transform = transform
-        contentContainer.alphaValue = opacity
-        if animated {
-            let timing = CAMediaTimingFunction(name: .easeOut)
+        contentContainer.alphaValue = containerOpacity
+        let timing = CAMediaTimingFunction(name: .easeOut)
+        func fade(_ target: CALayer, from: Float, to: Float) {
+            guard animated, from != to else { return }
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = from
+            fade.toValue = to
+            fade.duration = Self.peekBackgroundTransitionDuration
+            fade.timingFunction = timing
+            target.add(fade, forKey: "phiPeekBackgroundFade")
+        }
+        if let headerRect {
+            let dimMask = mask ?? PeekBackgroundDimMask()
+            dimMask.frame = layer.bounds
+            dimMask.pageDim.frame = dimMask.bounds
+            dimMask.headerHole.frame = headerRect
+            dimMask.pageDim.opacity = dim
+            if layer.mask !== dimMask { layer.mask = dimMask }
+            fade(dimMask.pageDim, from: fromDim, to: dim)
+        } else if let mask, animated, !isPeekBackgroundDeemphasized {
+            // Fade back inside the mask, so the header row stays at full
+            // strength to the end, then drop it.
+            CATransaction.setCompletionBlock { [weak self, weak layer, weak mask] in
+                guard let self, !self.isPeekBackgroundDeemphasized,
+                      let layer, layer.mask === mask else { return }
+                layer.mask = nil
+            }
+            mask.pageDim.opacity = dim
+            fade(mask.pageDim, from: fromDim, to: dim)
+        } else {
+            layer.mask = nil
+            fade(layer, from: fromDim, to: dim)
+        }
+        if animated, !reduceMotion {
             let shrink = CABasicAnimation(keyPath: "transform")
             shrink.fromValue = NSValue(caTransform3D: fromTransform)
             shrink.toValue = NSValue(caTransform3D: transform)
             shrink.duration = Self.peekBackgroundTransitionDuration
             shrink.timingFunction = timing
-            if !reduceMotion {
-                layer.add(shrink, forKey: "phiPeekBackgroundScale")
-            }
-
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = fromOpacity
-            fade.toValue = Float(opacity)
-            fade.duration = Self.peekBackgroundTransitionDuration
-            fade.timingFunction = timing
-            layer.add(fade, forKey: "phiPeekBackgroundFade")
+            layer.add(shrink, forKey: "phiPeekBackgroundScale")
         }
         CATransaction.commit()
     }

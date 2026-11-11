@@ -822,11 +822,31 @@ private struct SkillInstallRowView: View {
                 try fm.removeItem(at: link)
             }
             try fm.createSymbolicLink(at: link, withDestinationURL: bundled)
+            if target.id == "pi" { Self.removeLegacyPiCompanionExtensionLink() }
             installedTargets.insert(target.id)
             return .success
         } catch {
             return .failure(error.localizedDescription)
         }
+    }
+
+    /// Earlier builds also linked a Pi companion extension at
+    /// `~/.pi/agent/extensions/phi-browser`. That extension imports
+    /// `scripts/lib/mirror-pi-bridge.mjs` through the skill link, which no
+    /// longer ships, so a link left behind by another build makes Pi report a
+    /// missing module on every start. Only a symlink into a phi-browser skill
+    /// tree is removed; a real folder or an unrelated link is the user's own.
+    private static func removeLegacyPiCompanionExtensionLink() {
+        let fm = FileManager.default
+        let link = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent(".pi/agent/extensions/phi-browser", isDirectory: true)
+        guard let dest = try? fm.destinationOfSymbolicLink(atPath: link.path) else { return }
+        let resolved = dest.hasPrefix("/")
+            ? dest
+            : link.deletingLastPathComponent().appendingPathComponent(dest).path
+        guard URL(fileURLWithPath: resolved).standardizedFileURL.path
+            .hasSuffix("/phi-browser-skill/extensions/pi") else { return }
+        try? fm.removeItem(at: link)
     }
 
     private func installSkill(for target: SkillTarget) {

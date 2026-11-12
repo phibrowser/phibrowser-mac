@@ -470,45 +470,9 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
                         SplitBookmarkExtraPane(url: "https://d.example/", title: "D")])
     }
 
-    /// A pane the user takes out of a bound split leaves the bookmark as it
-    /// was saved, and the remaining panes come out from behind it.
-    func testPaneTheUserRemovesReleasesTheSplitAndKeepsTheBoundBookmark() throws {
-        let state = try makeState()
-        let bookmark = try makeBoundFourPaneBookmark(in: state, guid: "remove-bookmark")
-
-        state.noteUserRemovingSplitPane(1)
-        state.handleSplitContentsChanged(splitId: "split", tabIds: [2, 3, 4])
-
-        XCTAssertTrue(waitUntil { state.splitBookmarkBindings[bookmark.guid] == nil })
-        XCTAssertEqual(state.splitGroup(forId: "split")?.tabIds, [2, 3, 4])
-        XCTAssertEqual(bookmark.splitPanes.map(\.url),
-                       ["https://c.example/", "https://a.example/", "https://f.example/", "https://d.example/"])
-    }
-
-    /// A bound pair dissolves when the user takes one pane out: the bookmark
-    /// stays as it was saved, and the pane left open leads the normal tab
-    /// list.
-    func testPaneTheUserRemovesFromABoundPairMovesTheOtherToTheTopOfTheList() throws {
-        let state = try makeState()
-        let bookmark = try createBookmark(in: state,
-                                          guid: "pair-bookmark",
-                                          url: "https://c.example/",
-                                          secondaryUrl: "https://a.example/")
-        state.tabs = (1...3).map { Tab(guid: $0, url: "https://e\($0).example/", isActive: false, index: $0, title: "E\($0)") }
-        state.handleSplitCreated(splitId: "split", tabIds: [2, 3], layout: .vertical, fractions: [0.5, 0.5])
-        state.splitBookmarkBindings[bookmark.guid] = "split"
-
-        state.noteUserRemovingSplitPane(2)
-        state.handleSplitRemoved(splitId: "split")
-
-        XCTAssertNil(state.splitBookmarkBindings[bookmark.guid])
-        XCTAssertTrue(waitUntil { state.normalTabs.first?.guid == 3 })
-        XCTAssertEqual(bookmark.splitPanes.map(\.url), ["https://c.example/", "https://a.example/"])
-    }
-
     /// Panes also leave one by one while the split, the window or the app
     /// closes; that must not strip the bookmark.
-    func testPaneLeavingWithoutAUserRemovalKeepsTheBoundBookmark() throws {
+    func testPaneLeavingKeepsTheBoundBookmark() throws {
         let state = try makeState()
         let bookmark = try makeBoundFourPaneBookmark(in: state, guid: "teardown-bookmark")
 

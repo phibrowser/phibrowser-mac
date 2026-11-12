@@ -650,9 +650,6 @@ extension BrowserState {
         let previous = splits[index]
         let departed = previous.tabIds.filter { !tabIds.contains($0) }
         let joined = tabIds.filter { !previous.tabIds.contains($0) }
-        let removedByUser = !departed.isEmpty
-            && departed.allSatisfy { splitPaneIdsLeavingByUserAction.contains($0) }
-        splitPaneIdsLeavingByUserAction.subtract(departed)
         splits[index].tabIds = tabIds
         if splits[index].fractions.count != tabIds.count {
             // Chromium's visuals echo lands right after this; until it does,
@@ -675,17 +672,13 @@ extension BrowserState {
             openNextPendingPane(splitId: splitId)
         }
         // A reorder or a replaced pane changes what the split's bookmark or
-        // pinned record saves. A pane the user took out leaves that entry
-        // as it was saved and takes the remaining panes out from behind it.
-        // A pane that leaves any other way is the split, window or app
-        // closing, and a pane that only joins is the saved split still
-        // opening.
+        // pinned record saves. A pane that only leaves is the split, window
+        // or app closing, and a pane that only joins is the saved split
+        // still opening: neither changes the entry.
         let isReorder = departed.isEmpty && joined.isEmpty && previous.tabIds != tabIds
         let isReplace = !departed.isEmpty && departed.count == joined.count
         if isReorder || isReplace {
             saveRepresentedSplitPanes(splits[index], previousTabIds: previous.tabIds)
-        } else if removedByUser && joined.isEmpty {
-            moveSplitToNormalListAfterPaneRemoval(splitId)
         }
         // The accompanying `TabMoved` event lands first via `reorderTabs` →
         // `updateNormalTabs` → `enforceSplitAdjacency`, which runs against
@@ -729,12 +722,6 @@ extension BrowserState {
     @MainActor
     func handleSplitRemoved(splitId: String) {
         let removedSplit = splits.first { $0.id == splitId }
-        // Read before the bindings below are cleared: they are what says a
-        // bookmark stood for this split.
-        let paneLeftOpenByUser = removedSplit.flatMap { paneLeftOpenByUserRemoval(fromPair: $0) }
-        if let removedSplit {
-            splitPaneIdsLeavingByUserAction.subtract(removedSplit.tabIds)
-        }
         // A pinned split's underlying Chromium split only dissolves on close
         // (its panes can't be "Remove from Split"-ed). Capture the partner
         // linkage from the still-present live group before dropping it, so the
@@ -770,11 +757,6 @@ extension BrowserState {
         // the binding is gone so they reappear as normal tab rows.
         if !clearedBookmarkGuids.isEmpty {
             updateNormalTabs()
-        }
-        if let paneLeftOpenByUser, let removedSplit {
-            movePaneToNormalListAfterPairDissolved(paneLeftOpenByUser,
-                                                   wasPinned: removedSplit.isPinned,
-                                                   layout: removedSplit.layout)
         }
     }
 
@@ -817,67 +799,16 @@ extension BrowserState {
         persistRepresentedSplitLayout(splitId: splitId, layout: layout)
     }
 
-    /// The user is taking the pane `tabId` alone out of its split: closing
-    /// just that pane, or "Remove from Split". A split that a bookmark or a
-    /// pinned record stands for moves its remaining panes to the normal tab
-    /// list only after this, because panes also leave one at a time while a
-    /// whole split, a window or the app closes, and those must leave the
-    /// split behind its entry. A wider split shrinks
-    /// (`handleSplitContentsChanged`); a pair dissolves
-    /// (`handleSplitRemoved`), and its other pane is the one that moves.
-    func noteUserRemovingSplitPane(_ tabId: Int) {
-        guard splitGroup(forTabId: tabId) != nil else { return }
-        splitPaneIdsLeavingByUserAction.insert(tabId)
-        // Chromium reports the pane leaving right away. A close it holds
-        // back (an unload prompt) must not leave the note behind for a
-        // later teardown to pick up.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.splitPaneIdsLeavingByUserAction.remove(tabId)
-        }
-    }
-
-    /// The user took one pane out of the split `splitId`. When a bookmark or
-    /// a pinned record stands for the split, the panes left open no longer
-    /// show what that entry saved: they move to the normal tab list as a
-    /// split of their own, and the entry keeps every saved pane, closed, to
-    /// open in full again. Next turn, so the pane's removal is over before
-    /// the split moves.
-    private func moveSplitToNormalListAfterPaneRemoval(_ splitId: String) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let group = self.splitGroup(forId: splitId),
-                  !self.splitAllowsPaneRearrangement(group) else { return }
-            self.makeSplitNormalOpened(splitId)
-        }
-    }
-
-    /// The pane left open when the user took the other pane out of the pair
-    /// `group`, and a bookmark or a pinned record stands for that pair. Nil
-    /// for any other split, and for a pair closing as a whole.
-    private func paneLeftOpenByUserRemoval(fromPair group: SplitGroup) -> Int? {
-        guard group.isPair, !splitAllowsPaneRearrangement(group) else { return nil }
-        let remaining = group.tabIds.filter { !splitPaneIdsLeavingByUserAction.contains($0) }
-        return remaining.count == 1 ? remaining[0] : nil
-    }
-
-    /// The pair counterpart of `moveSplitToNormalListAfterPaneRemoval`: the
-    /// user took one pane out of a pair that a bookmark or a pinned record
-    /// stood for, and the pair dissolved. The pane left open moves to the top
-    /// of the normal tab list, and the entry keeps both saved panes, closed,
-    /// to open in full again. Next turn, so the split's removal is over
-    /// before the pane moves.
-    private func movePaneToNormalListAfterPairDissolved(_ tabId: Int,
-                                                        wasPinned: Bool,
-                                                        layout: SplitLayout) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.tabs.contains(where: { $0.guid == tabId }),
-                  self.splitGroup(forTabId: tabId) == nil else { return }
-            if wasPinned {
-                self.demotePinnedPanesLeavingPlaceholder(tabIds: [tabId], layout: layout)
-            } else {
-                // The bookmark let go of the pane as the split was removed.
-                self.insertIntoNormalTabOrder(tabGuid: tabId, at: 0, syncChromiumOrder: true)
-            }
-        }
+    /// Close Tab on a pane of a split that a bookmark or a pinned record
+    /// stands for closes the whole split: the entry saves every pane, so
+    /// the split closes as the one thing the entry shows, and reopens in
+    /// full from it.
+    /// - Returns: `true` when `tabId` is a pane of such a split and its
+    ///   close was handled here; `false` leaves the close to the caller.
+    func closeSplitSavedInSidebar(containingTabId tabId: Int) -> Bool {
+        guard let group = splitGroup(forTabId: tabId), !splitAllowsPaneRearrangement(group) else { return false }
+        closeTabs(group.tabIds.compactMap { id in tabs.first { $0.guid == id } })
+        return true
     }
 
     /// Saves the panes of `group` into whatever stands for it in the
@@ -1061,7 +992,6 @@ extension BrowserState {
             removeSplit(group.id)
             return
         }
-        noteUserRemovingSplitPane(tabId)
         ChromiumLauncher.sharedInstance().bridge?.removeTabFromSplit(withTabId: tabId.int64Value,
                                                                      windowId: windowId.int64Value)
     }
@@ -1590,17 +1520,9 @@ extension BrowserState {
     /// split with the same panes takes the original slot. Panes closed since
     /// the split opened stay in the placeholder.
     private func demotePinnedSplitLeavingPlaceholder(_ group: SplitGroup) {
-        demotePinnedPanesLeavingPlaceholder(tabIds: group.tabIds, layout: group.layout)
-    }
-
-    /// Moves the live panes `tabIds` of one pinned split off their pinned
-    /// records to the top of the normal list, and leaves a closed pinned
-    /// split saving every pane, in `layout`, at the original slot. `tabIds`
-    /// is a live split's panes, or the one pane a dissolved pair left open.
-    private func demotePinnedPanesLeavingPlaceholder(tabIds: [Int], layout: SplitLayout) {
-        let livePanes = tabIds.compactMap { tabId in tabs.first(where: { $0.guid == tabId }) }
+        let livePanes = group.tabIds.compactMap { tabId in tabs.first(where: { $0.guid == tabId }) }
         let liveDBGuids = livePanes.compactMap(\.guidInLocalDB)
-        guard livePanes.count == tabIds.count, liveDBGuids.count == tabIds.count,
+        guard livePanes.count == group.paneCount, liveDBGuids.count == group.paneCount,
               let firstRecord = pinnedTabs.first(where: { $0.guidInLocalDB == liveDBGuids[0] }),
               let dbGuids = pinnedSplitDBGuids(forPinnedTab: firstRecord),
               Set(liveDBGuids).isSubset(of: dbGuids),
@@ -1637,7 +1559,7 @@ extension BrowserState {
             placeholderGuids.append(newGuid)
             anchor = newGuid
         }
-        persistPinnedSplit(dbGuids: placeholderGuids, layout: layout)
+        persistPinnedSplit(dbGuids: placeholderGuids, layout: group.layout)
     }
 
     /// Forms a split between a bookmark and `partnerTabId`. If the

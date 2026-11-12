@@ -11,6 +11,14 @@ import XCTest
 /// pair never did: share normalisation, the middle pane position, adjacency
 /// of a longer run, drops around it, and a split that grows or shrinks while
 /// it stays up.
+private final class SplitCloseRecordingBrowserState: BrowserState {
+    var closedTabBatches: [[Int]] = []
+
+    override func closeTabs(_ tabs: [Tab]) {
+        closedTabBatches.append(tabs.map(\.guid))
+    }
+}
+
 @MainActor
 final class BrowserStateSplitPanesTests: XCTestCase {
     private var tempDirectories: [URL] = []
@@ -31,6 +39,16 @@ final class BrowserStateSplitPanesTests: XCTestCase {
                                storeDirectoryURL: directory)
         // No Chromium Browser exists for this ID; bridge requests cannot affect real tabs.
         return BrowserState(windowId: -982641, localStore: store, profileId: "Default")
+    }
+
+    private func makeCloseRecordingState() throws -> SplitCloseRecordingBrowserState {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        tempDirectories.append(directory)
+        let store = LocalStore(account: Account(userID: UUID().uuidString),
+                               storeDirectoryURL: directory)
+        return SplitCloseRecordingBrowserState(windowId: -982641, localStore: store, profileId: "Default")
     }
 
     /// `guids` as plain normal tabs, the first one focused, in that order.
@@ -440,64 +458,44 @@ final class BrowserStateSplitPanesTests: XCTestCase {
         XCTAssertNil(state.splitPanePosition(forTabId: 2))
     }
 
-    /// A pane the user takes out of a pinned split moves the remaining
-    /// panes to the normal tab list, off their pinned records.
-    func testPaneTheUserTakesOutMovesThePinnedSplitToTheList() throws {
-        let state = try makeState()
-        seedPinnedSplit(state, liveIds: [1, 2, 3])
+    // MARK: - Close Tab on a split saved in the sidebar
 
-        state.noteUserRemovingSplitPane(2)
-        state.handleSplitContentsChanged(splitId: "pinned", tabIds: [1, 3])
+    /// Close Tab on a pane of a pinned split closes every pane, in a pair
+    /// as in a wider split.
+    func testCloseTabOnAPinnedSplitPaneClosesTheWholeSplit() throws {
+        for liveIds in [[1, 2], [1, 2, 3]] {
+            let state = try makeCloseRecordingState()
+            seedPinnedSplit(state, liveIds: liveIds)
 
-        let deadline = Date().addingTimeInterval(1)
-        while state.splitGroup(forId: "pinned")?.isPinned == true, Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-        }
-        XCTAssertEqual(state.splitGroup(forId: "pinned")?.isPinned, false)
-        XCTAssertEqual(state.splitGroup(forId: "pinned")?.tabIds, [1, 3])
-        XCTAssertEqual(state.normalTabs.map(\.guid), [1, 3])
-        for guid in [1, 3] {
-            let tab = try XCTUnwrap(state.tabs.first { $0.guid == guid })
-            XCTAssertNil(tab.guidInLocalDB, "Pane \(guid) must leave its pinned record")
+            XCTAssertTrue(state.closeSplitSavedInSidebar(containingTabId: 2))
+            XCTAssertEqual(state.closedTabBatches, [liveIds])
         }
     }
 
-    /// A pinned pair dissolves when the user takes one pane out: the pane
-    /// left open moves to the normal tab list, off its pinned record.
-    func testPaneTheUserTakesOutOfAPinnedPairMovesTheOtherToTheList() throws {
-        let state = try makeState()
-        seedPinnedSplit(state, liveIds: [1, 2])
+    func testCloseTabOnABookmarkBoundSplitPaneClosesTheWholeSplit() throws {
+        let state = try makeCloseRecordingState()
+        seed(state, guids: [1, 2, 3])
+        state.splits = [SplitGroup(id: "s", tabIds: [2, 3], layout: .vertical, fractions: [0.5, 0.5])]
+        state.splitBookmarkBindings["bookmark"] = "s"
 
-        state.noteUserRemovingSplitPane(1)
-        state.handleSplitRemoved(splitId: "pinned")
-
-        let deadline = Date().addingTimeInterval(1)
-        while state.normalTabs.isEmpty, Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-        }
-        XCTAssertEqual(state.normalTabs.map(\.guid), [2])
-        let remaining = try XCTUnwrap(state.tabs.first { $0.guid == 2 })
-        XCTAssertNil(remaining.guidInLocalDB, "The pane left open must leave its pinned record")
-        XCTAssertFalse(remaining.isPinned)
-        XCTAssertEqual(state.splitPaneIdsLeavingByUserAction, [])
+        XCTAssertTrue(state.closeSplitSavedInSidebar(containingTabId: 3))
+        XCTAssertEqual(state.closedTabBatches, [[2, 3]])
     }
 
-    /// A pinned pair that dissolves while the split, window or app closes
-    /// keeps its panes on their pinned records.
-    func testPinnedPairDissolvingWithoutAUserRemovalKeepsItsPanesPinned() throws {
-        let state = try makeState()
-        seedPinnedSplit(state, liveIds: [1, 2])
+    /// A split in the tab list, and a tab in no split, close the usual way.
+    func testCloseTabOnASplitInTheTabListIsLeftToTheCaller() throws {
+        let state = try makeCloseRecordingState()
+        seed(state, guids: [1, 2, 3])
+        state.splits = [SplitGroup(id: "s", tabIds: [1, 2], layout: .vertical, fractions: [0.5, 0.5])]
 
-        state.handleSplitRemoved(splitId: "pinned")
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-
-        XCTAssertEqual(state.normalTabs.map(\.guid), [])
-        XCTAssertEqual(state.tabs.map(\.guidInLocalDB), ["db-1", "db-2"])
+        XCTAssertFalse(state.closeSplitSavedInSidebar(containingTabId: 1))
+        XCTAssertFalse(state.closeSplitSavedInSidebar(containingTabId: 3))
+        XCTAssertEqual(state.closedTabBatches, [])
     }
 
     /// A pane that leaves while the split, window or app closes keeps its
     /// pinned record in the split.
-    func testPaneLeavingWithoutAUserRemovalKeepsThePinnedSplitRecords() throws {
+    func testPaneLeavingKeepsThePinnedSplitRecords() throws {
         let state = try makeState()
         seedPinnedSplit(state, liveIds: [1, 2, 3])
 

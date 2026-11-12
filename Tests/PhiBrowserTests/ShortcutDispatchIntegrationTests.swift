@@ -207,28 +207,25 @@ final class ShortcutDispatchIntegrationTests: XCTestCase {
         }
     }
 
-    /// Close Tab on the focused pane of a split notes that pane as taken out
-    /// by the user, in a pair as in a wider split. A pinned or
-    /// bookmark-bound split relies on the note to keep its saved panes and
-    /// release the ones left open.
-    func testCloseTabNotesTheFocusedSplitPaneAsTakenOutByTheUser() throws {
-        for paneCount in [2, 3] {
+    /// Close Tab on the focused pane of a split in the tab list is left to
+    /// Chromium, which closes that pane alone. In a split that a bookmark or
+    /// a pinned record saves it is handled here: the whole split closes.
+    func testCloseTabIsHandledHereOnlyForASplitSavedInTheSidebar() throws {
+        for savedInSidebar in [false, true] {
             try withController { controller, window in
                 let state = controller.browserState
-                state.tabs = (1...paneCount).map {
+                state.tabs = (1...4).map {
                     Tab(guid: $0, url: "https://e\($0).example", isActive: $0 == 2, index: $0 - 1)
                 }
-                state.splits = [SplitGroup(id: "split", tabIds: Array(1...paneCount), layout: .vertical,
-                                           fractions: SplitGroup.equalFractions(paneCount: paneCount))]
+                state.splits = [SplitGroup(id: "split", tabIds: [1, 2, 3], layout: .vertical,
+                                           fractions: SplitGroup.equalFractions(paneCount: 3))]
+                if savedInSidebar { state.splitBookmarkBindings["bookmark"] = "split" }
                 state.updateNormalTabs()
                 state.focusingTab = state.tabs[1]
 
                 let item = NSMenuItem(title: "Close Tab", action: nil, keyEquivalent: "")
                 item.tag = CommandWrapper.IDC_CLOSE_TAB.rawValue
-                XCTAssertFalse(CommandDispatcher.dispatchCommand(item, window: window),
-                               "Chromium closes the focused pane")
-
-                XCTAssertEqual(state.splitPaneIdsLeavingByUserAction, [2])
+                XCTAssertEqual(CommandDispatcher.dispatchCommand(item, window: window), savedInSidebar)
             }
         }
     }

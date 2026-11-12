@@ -331,9 +331,6 @@ class BrowserState {
     /// Split panes Chromium announced it is removing whose `closeTab` has not
     /// run yet. See `splitPaneWillBeRemoved(_:)`.
     var splitPaneIdsBeingRemoved: Set<Int> = []
-    /// Split panes the user is taking out of their split one at a time. See
-    /// `noteUserRemovingSplitPane(_:)`.
-    var splitPaneIdsLeavingByUserAction: Set<Int> = []
     var aiChatCollapseWatches: [ObjectIdentifier: (tabId: Int, watch: AnyCancellable)] = [:]
     var aiChatPanelURLWatches: [ObjectIdentifier: AnyCancellable] = [:]
     var aiChatPanelRecordSubscriptions = Set<AnyCancellable>()

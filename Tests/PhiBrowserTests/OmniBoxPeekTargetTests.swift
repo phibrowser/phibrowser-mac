@@ -80,6 +80,31 @@ final class OmniBoxPeekTargetTests: XCTestCase {
         wait(for: [delivered], timeout: 1)
     }
 
+    /// The omnibox opens in the window's own view tree above a peek, as it
+    /// does everywhere else. A child window cropped to the box cut the box's
+    /// shadow off in a straight line there.
+    func testOmniBoxOverAPeekIsHostedInTheBrowserWindow() throws {
+        let (_, state, _, _) = try makePeekedOmniBox()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let controller = SpaceSessionController(window: window, windowId: state.windowId,
+                                                profileId: state.profileId,
+                                                account: try XCTUnwrap(store).account,
+                                                browserState: state)
+        defer {
+            window.close()
+            withExtendedLifetime(controller) {}
+        }
+        XCTAssertNotNil(state.visiblePeek(focusingTab: state.focusingTab))
+
+        controller.toggleOmniBox(fromAddressBar: true)
+
+        XCTAssertEqual(controller.omniBoxContainerViewController?.hasShown, true)
+        XCTAssertTrue(controller.omnibackgroundView.window === window)
+        XCTAssertTrue((window.childWindows ?? []).isEmpty)
+    }
+
     func testAddressBarOpenPrefillsThePresentedPeeksURL() throws {
         let (model, state, _, _) = try makePeekedOmniBox()
 

@@ -143,6 +143,20 @@ final class ThemePaletteTests: XCTestCase {
         }
     }
 
+    func testCenteredPaletteUsesDefaultAccentRegardlessOfRetainedHueOrBase() {
+        let tinted = ThemePalette(hue: 0.3, saturation: 0.5)
+        XCTAssertNotEqual(tinted.applying(to: .mint).colorPair(for: .themeColor), DefaultColors.themeColor)
+        // Editor previews layer the new palette over a theme that already
+        // carries the stored palette's accent.
+        for base in [Theme.mint, tinted.applying(to: .mint)] {
+            for hue in [0.0, 0.3, 0.73] {
+                let theme = ThemePalette(hue: hue, saturation: 0).applying(to: base)
+                XCTAssertEqual(theme.colorPair(for: .themeColor), DefaultColors.themeColor)
+                XCTAssertEqual(theme.colorPair(for: .themeColorOnHover), DefaultColors.themeColorOnHover)
+            }
+        }
+    }
+
     func testCenterSnapIsSmallCircularAndDoesNotFlattenColorSampling() {
         let original = ThemePalette(hue: 0.4, saturation: 0.7, colorCount: 3)
         for point in [CGPoint(x: 0.526, y: 0.5), CGPoint(x: 0.524, y: 0.524)] {

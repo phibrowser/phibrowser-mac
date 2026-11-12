@@ -936,7 +936,7 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertFalse(regularCell.isSwitchToTabViewHiddenForTesting)
     }
 
-    func testKioskOmniBoxDismissalRestoresWindowInteraction() throws {
+    func testKioskOmniBoxMountsInTheWindowAndLeavesOnDismissal() throws {
         let state = try makeState()
         let window = makeWindow(
             frame: NSRect(x: 0, y: 0, width: 640, height: 480)
@@ -956,57 +956,16 @@ final class KioskBrowserStateTests: XCTestCase {
 
         window.makeKeyAndOrderFront(nil)
         controller.toggleOmniBox(fromAddressBar: false)
-        let hostPanel = try XCTUnwrap(controller.omniBoxHostPanel)
-        XCTAssertTrue(hostPanel.parent === window)
-        XCTAssertFalse(hostPanel.ignoresMouseEvents)
+
+        // A view of the window, never a window of its own: that would lift
+        // the omnibox out of the window's stacking and key ownership.
+        XCTAssertTrue(controller.omnibackgroundView.window === window)
+        XCTAssertTrue((window.childWindows ?? []).isEmpty)
 
         controller.omniBoxContainerViewController?.hideOmniBox()
-        let observerDrained = expectation(description: "Overlay observer drained")
-        DispatchQueue.main.async {
-            observerDrained.fulfill()
-        }
-        wait(for: [observerDrained], timeout: 1)
 
-        XCTAssertTrue(hostPanel.ignoresMouseEvents)
-    }
-
-    func testOmniBoxHostPanelSharesWindowLevelAndRetiresOnDismissal() throws {
-        let state = try makeState()
-        let window = makeWindow(
-            frame: NSRect(x: 0, y: 0, width: 640, height: 480)
-        )
-        let controller = SpaceSessionController(
-            window: window,
-            windowId: state.windowId,
-            browserType: .kiosk,
-            profileId: state.profileId,
-            account: state.localStore.account,
-            browserState: state
-        )
-        defer {
-            window.close()
-            withExtendedLifetime(controller) {}
-        }
-
-        window.makeKeyAndOrderFront(nil)
-        controller.toggleOmniBox(fromAddressBar: false)
-        let hostPanel = try XCTUnwrap(controller.omniBoxHostPanel)
-
-        // Any level above the window's own would lift the overlay out of the
-        // inter-app window order, leaving the omnibox floating over whatever
-        // app the user switches to.
-        XCTAssertEqual(hostPanel.level, window.level)
-
-        controller.omniBoxContainerViewController?.hideOmniBox()
-        let observerDrained = expectation(description: "Overlay observer drained")
-        DispatchQueue.main.async {
-            observerDrained.fulfill()
-        }
-        wait(for: [observerDrained], timeout: 1)
-
-        // A dismissed omnibox leaves no window behind.
-        XCTAssertNil(hostPanel.parent)
-        XCTAssertFalse(hostPanel.isVisible)
+        // A dismissed omnibox leaves nothing over the window.
+        XCTAssertNil(controller.omnibackgroundView.superview)
     }
 
     func testExtensionSidePanelMountsAndDetachesSynchronously() throws {

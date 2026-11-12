@@ -39281,6 +39281,66 @@
         }
       }
     },
+    "common.tabAreaContextMenu.toolbarButtonsSubmenu" : {
+      "comment" : "Tab strip context menu - Submenu to choose which buttons the top bar shows in the Comfortable layout",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Symbolleisten-Tasten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Toolbar Buttons"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Botones de la barra de herramientas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Boutons de la barre d'outils"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ツールバーのボタン"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "도구 막대 버튼"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knoppen in knoppenbalk"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工具栏按钮"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工具列按鈕"
+          }
+        }
+      }
+    },
     "common.tabMultiSelectionContextMenu.addToBookmarksAction" : {
       "comment" : "Tab multi-selection context menu - add selected tabs to the root bookmark location",
       "extractionState" : "extracted_with_value",
@@ -71587,7 +71647,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Links the skill bundled in this app into an AI coding agent’s skills folder so it can drive Phi over the DevTools Protocol. Pi also gets a companion extension that wakes idle sessions from Agent Transcript commands. Requires Node 22+."
+            "value" : "Links the skill bundled in this app into an AI coding agent’s skills folder so it can drive Phi over the DevTools Protocol. Requires Node 22+."
           }
         },
         "es" : {
@@ -71630,66 +71690,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將此 App 內建的 Skill 連結到 AI 程式開發代理的 Skill 資料夾，讓它能透過 DevTools Protocol 操控 Phi。同時也會安裝一個附屬擴充功能，能從 AI 代理逐字稿的指令喚醒閒置的工作階段。需要 Node 22 或更新版本。"
-          }
-        }
-      }
-    },
-    "settings.developer.skillInstall.missingCompanionError" : {
-      "comment" : "Developer settings - Pi companion extension missing",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dieser Build enthält die Pi-Begleiterweiterung nicht. Erstelle Phi Browser neu und versuche es erneut."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "This build doesn’t include the Pi companion extension. Rebuild Phi Browser and try again."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta compilación no incluye la extensión complementaria de Pi. Vuelve a compilar Phi Browser e inténtalo de nuevo."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cette version ne contient pas l'extension compagnon Pi. Recompilez Phi Browser et réessayez."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このビルドにはPiコンパニオン拡張機能が含まれていません。Phi Browserを再ビルドして、もう一度お試しください。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이 빌드에는 Pi 컴패니언 확장 프로그램이 없어요. Phi Browser를 다시 빌드하고 다시 시도해 주세요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deze build bevat de Pi-companionextensie niet. Bouw Phi Browser opnieuw en probeer het opnieuw."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此版本不包含 Pi 配套扩展程序。请重新构建 Phi Browser 后重试。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此版本未包含 Pi 隨附擴充功能。請重新建置 Phi Browser 後再試一次。"
           }
         }
       }

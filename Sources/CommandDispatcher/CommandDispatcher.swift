@@ -192,10 +192,12 @@ struct CommandDispatcher {
             if windowController.handleCloseTab() {
                 return true
             }
-            // Closing the focused pane of a split takes just that pane out;
-            // a bookmark or pinned record that saves the split follows.
-            if let focusedTabId = windowController.browserState.focusingTab?.guid {
-                windowController.browserState.noteUserRemovingSplitPane(focusedTabId)
+            // Closing the focused pane of a split takes just that pane out,
+            // except in a split that a bookmark or a pinned record saves:
+            // that one closes whole, and reopens in full from its entry.
+            if let focusedTabId = windowController.browserState.focusingTab?.guid,
+               windowController.browserState.closeSplitSavedInSidebar(containingTabId: focusedTabId) {
+                return true
             }
             // ⌘W closing the last tab in a Space tears the whole window
             // slot down — same as ⇧⌘W / the red ✕ — rather than switching

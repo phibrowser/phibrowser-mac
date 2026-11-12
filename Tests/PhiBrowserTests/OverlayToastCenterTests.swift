@@ -68,7 +68,7 @@ final class OverlayToastCenterTests: XCTestCase {
 
         let peek = PeekPanelController(
             browserState: state, parentWindow: window, anchorView: kiosk.view,
-            cardViewProvider: { kiosk.view }, originTracker: nil)
+            cardViewProvider: { kiosk.view }, headerViewProvider: { nil }, originTracker: nil)
         defer { peek.dismiss() }
         let tab = PreviewTab(guid: 10, url: url.absoluteString, isActive: false, index: 0)
         peek.present(tab: tab, flyIn: false)

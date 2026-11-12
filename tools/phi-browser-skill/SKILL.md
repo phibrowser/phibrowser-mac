@@ -421,10 +421,10 @@ caption to a short phrase: the pill is one line and truncates (the full text
 survives on its tooltip and in the console), so findings and recommendations
 belong in your reply prose or `say(...)`, not in the caption. NEVER put
 secrets (passwords, tokens, cookie values) into `setStatus`/`narrate`/`say`
-text: both surfaces are displayed and buffered. Under all six supported
-agents — Claude Code, Codex, OpenClaw, Pi, Hermes, and Cursor — the console
+text: both surfaces are displayed and buffered. Under all five supported
+agents — Claude Code, Codex, OpenClaw, Hermes, and Cursor — the console
 also mirrors your whole session (prompts, reply prose, tool calls)
-automatically; under any other agent (Grok Build, Grok Bot, Antigravity,
+automatically; under any other agent (Pi, Grok Build, Grok Bot, Antigravity,
 GitHub Copilot, OpenCode, Qwen Code, CodeBuddy, …) there is no mirror, and
 when no mirror is running, use `say('…')` to reflect your own prose into the
 console yourself. Mirror internals:

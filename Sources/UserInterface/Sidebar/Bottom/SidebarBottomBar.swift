@@ -483,6 +483,14 @@ class SidebarBottomBarSwiftUIView: NSView {
     var onCardEntryTap: (() -> Void)?
     var onMemoryTap: (() -> Void)?
     var onDownloadTap: (() -> Void)?
+
+    /// Shown when right-clicking the bar, including over its buttons.
+    var contextMenu: NSMenu? {
+        didSet {
+            menu = contextMenu
+            hostingView?.menu = contextMenu
+        }
+    }
     
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

@@ -24,10 +24,14 @@ final class WebContentOuterBorderResizeTests: XCTestCase {
     private var tempDirectories: [URL] = []
     private var windows: [NSWindow] = []
     private var previousLayout: Any?
+    private var previousEdgeToEdge: Any?
 
     override func setUpWithError() throws {
         previousLayout = UserDefaults.standard.object(forKey: PhiPreferences.GeneralSettings.layoutModeKey)
         PhiPreferences.GeneralSettings.saveLayoutMode(.comfortable)
+        // Edge-to-edge drops the outline entirely.
+        previousEdgeToEdge = UserDefaults.standard.object(forKey: PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue)
+        UserDefaults.standard.set(false, forKey: PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue)
     }
 
     override func tearDownWithError() throws {
@@ -35,6 +39,8 @@ final class WebContentOuterBorderResizeTests: XCTestCase {
         windows.removeAll()
         UserDefaults.standard.set(previousLayout, forKey: PhiPreferences.GeneralSettings.layoutModeKey)
         previousLayout = nil
+        UserDefaults.standard.set(previousEdgeToEdge, forKey: PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue)
+        previousEdgeToEdge = nil
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
         }

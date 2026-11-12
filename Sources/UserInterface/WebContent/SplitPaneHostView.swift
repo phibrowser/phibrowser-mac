@@ -140,8 +140,8 @@ final class SplitPaneHostView: NSView {
         }
     }
 
-    /// Fires on any user mouse-down inside one of the panes (not a divider),
-    /// with the pane's slot. The owning controller uses this to make the
+    /// Fires on a user click inside one of the panes (not a divider), with
+    /// the pane's slot. The owning controller uses this to make the
     /// corresponding tab active so clicking an unfocused pane focuses it —
     /// same as native browsers.
     var onPaneInteraction: ((Int) -> Void)?
@@ -197,6 +197,9 @@ final class SplitPaneHostView: NSView {
     /// so the alignment haptic fires once on entry, not every mouse move.
     private var activeMagneticSnap: CGFloat?
     private var paneClickMonitor: Any?
+    /// The pane a left or middle click went down on, by its native view so a
+    /// pane reorder or replacement during the click can't misdirect it.
+    private weak var pendingInteractionPane: NSView?
 
     /// Pane attachment is deliberately deferred: the caller must mount the
     /// host in its target hostView (so `self` has a window) **before** calling
@@ -248,9 +251,14 @@ final class SplitPaneHostView: NSView {
 
     private func installPaneClickMonitor() {
         paneClickMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseUp, .otherMouseUp]
         ) { [weak self] event in
-            self?.handleGlobalMouseDown(event)
+            switch event.type {
+            case .leftMouseUp, .otherMouseUp:
+                self?.handleGlobalMouseUp(event)
+            default:
+                self?.handleGlobalMouseDown(event)
+            }
             return event
         }
     }
@@ -260,9 +268,26 @@ final class SplitPaneHostView: NSView {
             NSEvent.removeMonitor(paneClickMonitor)
             self.paneClickMonitor = nil
         }
+        pendingInteractionPane = nil
+    }
+
+    /// Activating a pane's tab mid-click swaps the split host and moves the
+    /// pane views, which drops the click: a link clicked in an unfocused pane
+    /// would only focus it. So a left or middle click focuses its pane once
+    /// the mouse-up has reached the page. A right click focuses right away —
+    /// its context menu swallows the mouse-up.
+    private func handleGlobalMouseUp(_ event: NSEvent) {
+        guard let pane = pendingInteractionPane, event.window === window else { return }
+        pendingInteractionPane = nil
+        DispatchQueue.main.async { [weak self, weak pane] in
+            guard let self, self.window != nil, let pane,
+                  let slot = self.slots.firstIndex(where: { $0.native === pane }) else { return }
+            self.onPaneInteraction?(slot)
+        }
     }
 
     private func handleGlobalMouseDown(_ event: NSEvent) {
+        pendingInteractionPane = nil
         guard let window, event.window === window else { return }
         // Only act when this host actually receives the click — if another
         // host (or any sibling view) sits above us, hitTest will return
@@ -275,7 +300,11 @@ final class SplitPaneHostView: NSView {
         // boundary so clicks land on the correct pane even when DevTools is
         // docked alongside the shrunken Chromium view.
         if let slot = slots.firstIndex(where: { hitView.isDescendant(of: $0.container) }) {
-            onPaneInteraction?(slot)
+            if event.type == .rightMouseDown || slots[slot].native == nil {
+                onPaneInteraction?(slot)
+            } else {
+                pendingInteractionPane = slots[slot].native
+            }
         }
     }
 

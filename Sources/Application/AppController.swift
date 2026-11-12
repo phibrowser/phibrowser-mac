@@ -179,6 +179,9 @@ import PostHog
         ThemeEditorPaletteRenderer.prewarmFields()
 
         DefaultExtensionManifestWriter.start()
+        DispatchQueue.global(qos: .utility).async {
+            PiCompanionExtensionCleanup.removeBrokenLink()
+        }
         FeedbackOutboxUploader.shared.start()
 
         // The agent CDP socket listens for the whole app session, whether or

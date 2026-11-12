@@ -513,6 +513,12 @@ extension BrowserState {
         if !tabsAwaitingSplit.isDisjoint(with: members) {
             tabsAwaitingSplit.subtract(members)
         }
+        // The split holds them now: its bookmark binding hides them from
+        // here on, and without one they are listed below.
+        let wereOpeningBehindBookmark = !splitPaneIdsOpeningBehindBookmark.isDisjoint(with: members)
+        if wereOpeningBehindBookmark {
+            splitPaneIdsOpeningBehindBookmark.subtract(members)
+        }
         if let preview = pendingSplitPreview, preview.isCommitted,
            members.contains(preview.partnerTabId) {
             pendingSplitPreview = nil
@@ -557,6 +563,10 @@ extension BrowserState {
             for bookmarkGuid in boundBookmarkGuids {
                 syncSplitBookmarkOpenedState(bookmarkGuid: bookmarkGuid)
             }
+            updateNormalTabs()
+        } else if wereOpeningBehindBookmark {
+            // The bookmark let go of the split while it was opening (deleted,
+            // or the layout stopped attaching bookmarks): list its panes.
             updateNormalTabs()
         }
 
@@ -640,9 +650,6 @@ extension BrowserState {
         let previous = splits[index]
         let departed = previous.tabIds.filter { !tabIds.contains($0) }
         let joined = tabIds.filter { !previous.tabIds.contains($0) }
-        let removedByUser = !departed.isEmpty
-            && departed.allSatisfy { splitPaneIdsLeavingByUserAction.contains($0) }
-        splitPaneIdsLeavingByUserAction.subtract(departed)
         splits[index].tabIds = tabIds
         if splits[index].fractions.count != tabIds.count {
             // Chromium's visuals echo lands right after this; until it does,
@@ -656,6 +663,7 @@ extension BrowserState {
                 SidecarAIOutputStateStore.shared.tabDidLeaveSplit(tabId, in: self)
             }
             tabsAwaitingSplit.subtract(joined)
+            splitPaneIdsOpeningBehindBookmark.subtract(joined)
             reconcileSplitChatBinding(splits[index])
             syncSplitAIChatCollapsed(splits[index])
         }
@@ -663,13 +671,13 @@ extension BrowserState {
         if !joined.isEmpty {
             openNextPendingPane(splitId: splitId)
         }
-        // A reorder, a replaced pane, or a pane the user took out changes
-        // what the split's bookmark or pinned record saves. A pane that
-        // leaves any other way is the split, window or app closing, and a
-        // pane that only joins is the saved split still opening.
+        // A reorder or a replaced pane changes what the split's bookmark or
+        // pinned record saves. A pane that only leaves is the split, window
+        // or app closing, and a pane that only joins is the saved split
+        // still opening: neither changes the entry.
         let isReorder = departed.isEmpty && joined.isEmpty && previous.tabIds != tabIds
         let isReplace = !departed.isEmpty && departed.count == joined.count
-        if isReorder || isReplace || (removedByUser && joined.isEmpty) {
+        if isReorder || isReplace {
             saveRepresentedSplitPanes(splits[index], previousTabIds: previous.tabIds)
         }
         // The accompanying `TabMoved` event lands first via `reorderTabs` →
@@ -691,7 +699,8 @@ extension BrowserState {
     /// drag-onto-page and bookmark "Open as Split" flows so a pinned or
     /// bookmark-bound source tab doesn't drag its binding into the split.
     /// A source tab already in a split with room gets the link as a new
-    /// pane right after it.
+    /// pane right after it; when the pane can't be added (a full split, or
+    /// a pinned split that can't be demoted yet) the link opens in a new tab.
     @MainActor
     func handleOpenLinkAsSplitPartner(partnerTabId: Int, url: String) {
         // A link inside a peek or reader overlay: that page is no strip tab
@@ -700,9 +709,13 @@ extension BrowserState {
             return
         }
         if let group = splitGroup(forTabId: partnerTabId) {
-            guard group.canAddPane,
-                  let slot = group.slot(of: partnerTabId) else { return }
-            openNewTabIntoSplit(splitId: group.id, slot: slot + 1, navigateURL: url)
+            if let slot = group.slot(of: partnerTabId),
+               openNewTabIntoSplit(splitId: group.id, slot: slot + 1, navigateURL: url) {
+                return
+            }
+            AppLogInfo("[Split] openLinkAsSplitPartner: split \(group.id) can't take a pane " +
+                       "(panes=\(group.paneCount)), opening link in a new tab")
+            createTab(url)
             return
         }
         makeTabNormalOpened(tabId: partnerTabId)
@@ -791,28 +804,51 @@ extension BrowserState {
         persistRepresentedSplitLayout(splitId: splitId, layout: layout)
     }
 
-    /// The user is taking the pane `tabId` alone out of its split: closing
-    /// just that pane, or "Remove from Split". A bookmark or pinned record
-    /// drops a saved pane only after this, because panes also leave one at a
-    /// time while a whole split, a window or the app closes, and those must
-    /// leave the saved panes intact. A pair is not noted: it dissolves
-    /// instead of shrinking.
-    func noteUserRemovingSplitPane(_ tabId: Int) {
-        guard let group = splitGroup(forTabId: tabId), !group.isPair else { return }
-        splitPaneIdsLeavingByUserAction.insert(tabId)
-        // Chromium reports the pane leaving right away. A close it holds
-        // back (an unload prompt) must not leave the note behind for a
-        // later teardown to pick up.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.splitPaneIdsLeavingByUserAction.remove(tabId)
+    /// Close Tab on a pane of a split that a bookmark or a pinned record
+    /// stands for closes the whole split: the entry saves every pane, so
+    /// the split closes as the one thing the entry shows, and reopens in
+    /// full from it.
+    /// - Returns: `true` when `tabId` is a pane of such a split and its
+    ///   close was handled here; `false` leaves the close to the caller.
+    func closeSplitSavedInSidebar(containingTabId tabId: Int) -> Bool {
+        guard let group = splitGroup(forTabId: tabId), !splitAllowsPaneRearrangement(group) else { return false }
+        noteBookmarkSplitClosing(group)
+        closeTabs(group.tabIds.compactMap { id in tabs.first { $0.guid == id } })
+        return true
+    }
+
+    /// The user is closing the bookmark-bound split `group` whole. Its panes
+    /// do not all go at once: a page with an unload handler closes a moment
+    /// after the others, and by then the split has dissolved and its
+    /// bookmark has let go of it. `updateNormalTabs` keeps the panes out of
+    /// the tab list until they are removed: listed, the late one would flash
+    /// a row that vanishes. A pane whose page holds the close back (an
+    /// unload prompt the user declines) stays open, so whatever is left
+    /// after a short wait is listed.
+    func noteBookmarkSplitClosing(_ group: SplitGroup) {
+        guard splitBookmarkBindings.values.contains(group.id) else { return }
+        let tabIds = group.tabIds
+        splitPaneIdsClosingBehindBookmark.formUnion(tabIds)
+        // Longer than Chromium gives a page's unload handlers to finish.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.listPanesNoLongerClosingBehindBookmark(tabIds)
         }
     }
 
+    /// The panes `tabIds` of a bookmark-bound split that was closing are
+    /// staying open: list the ones that were hidden for the close as normal
+    /// tabs.
+    func listPanesNoLongerClosingBehindBookmark(_ tabIds: [Int]) {
+        guard !splitPaneIdsClosingBehindBookmark.isDisjoint(with: tabIds) else { return }
+        splitPaneIdsClosingBehindBookmark.subtract(tabIds)
+        updateNormalTabs()
+    }
+
     /// Saves the panes of `group` into whatever stands for it in the
-    /// sidebar, after its panes were reordered, one was replaced, or the user
-    /// took one out: a bound split-view bookmark and a pinned split both list
-    /// their panes in slot order, so they follow the live split, as a layout
-    /// change is saved through `persistRepresentedSplitLayout`.
+    /// sidebar, after its panes were reordered or one was replaced: a bound
+    /// split-view bookmark and a pinned split both list their panes in slot
+    /// order, so they follow the live split, as a layout change is saved
+    /// through `persistRepresentedSplitLayout`.
     /// `previousTabIds` is the membership the saved panes still match.
     private func saveRepresentedSplitPanes(_ group: SplitGroup, previousTabIds: [Int]) {
         saveBoundBookmarkPanes(group, previousTabIds: previousTabIds)
@@ -846,7 +882,7 @@ extension BrowserState {
     }
 
     /// A pinned split saves one pinned record per pane, in pinned-list
-    /// order. Removes the record of a pane the user took out, puts the
+    /// order. Removes the record of a pane that left the split, puts the
     /// records in the split's slot order, and saves the membership again.
     /// Records of panes closed earlier stay, after the live ones. A pane
     /// without a pinned record (a replacement) is not handled: pinned splits
@@ -989,7 +1025,6 @@ extension BrowserState {
             removeSplit(group.id)
             return
         }
-        noteUserRemovingSplitPane(tabId)
         ChromiumLauncher.sharedInstance().bridge?.removeTabFromSplit(withTabId: tabId.int64Value,
                                                                      windowId: windowId.int64Value)
     }
@@ -1838,6 +1873,7 @@ extension BrowserState {
                     .clearPendingSplitPartner(withTabId: partnerId.int64Value,
                                               windowId: wid.int64Value)
             }
+            self.listPanesNoLongerOpeningBehindBookmark(partnerIds)
             if pending.closePartnerOnTimeout, case .newPair(let partnerId, _, _) = pending.target {
                 self.tabs.first(where: { $0.guid == partnerId })?
                     .webContentWrapper?.close()
@@ -1885,6 +1921,7 @@ extension BrowserState {
         // the early-return guards below would otherwise leave a permanent
         // skip latched on the partner tabs.
         let partnerIds = pending.partnerTabIds(in: self)
+        let arrivedTabId = tab.guid
         let clearPartnerMarks: () -> Void = { [weak self] in
             guard let self else { return }
             for partnerId in partnerIds {
@@ -1892,6 +1929,9 @@ extension BrowserState {
                     .clearPendingSplitPartner(withTabId: partnerId.int64Value,
                                               windowId: self.windowId.int64Value)
             }
+            // Every caller is a request that produced no split, so panes
+            // that were hidden for a bookmark-bound one are plain tabs.
+            self.listPanesNoLongerOpeningBehindBookmark(partnerIds + [arrivedTabId])
         }
 
         switch pending.target {
@@ -2198,13 +2238,44 @@ extension BrowserState {
                 applyOptimisticGroupMembership(tabId: tab.guid, newToken: groupToken)
             }
         }
-        openNewTabAsSplit(partnerTabId: tab.guid,
-                          newTabSlot: .right,
-                          partnerNavigateURL: pending.secondaryURL,
-                          additionalPaneURLs: pending.additionalURLs,
-                          boundBookmarkGuid: pending.boundBookmarkGuid,
-                          insertionIndex: pending.insertionIndex,
-                          layout: pending.layout)
+        let requested = openNewTabAsSplit(partnerTabId: tab.guid,
+                                          newTabSlot: .right,
+                                          partnerNavigateURL: pending.secondaryURL,
+                                          additionalPaneURLs: pending.additionalURLs,
+                                          boundBookmarkGuid: pending.boundBookmarkGuid,
+                                          insertionIndex: pending.insertionIndex,
+                                          layout: pending.layout)
+        if !requested {
+            listPanesNoLongerOpeningBehindBookmark([tab.guid])
+        }
+    }
+
+    // MARK: - Panes opening behind a bookmark
+
+    /// Whether the tab arriving under `customGuid` is a pane of a split that
+    /// hides behind a bookmark: one of the first two panes of a split its
+    /// bookmark is opening, or a saved pane joining a split already bound.
+    /// Such a pane is tracked in `splitPaneIdsOpeningBehindBookmark`.
+    func isPaneOpeningBehindBookmark(customGuid: String?) -> Bool {
+        guard let customGuid else { return false }
+        if let primary = pendingPrimarySplitTargetByGuid[customGuid] {
+            return primary.boundBookmarkGuid?.isEmpty == false
+        }
+        guard let partner = pendingSplitPartnerByCustomGuid[customGuid] else { return false }
+        switch partner.target {
+        case .newPair:
+            return partner.boundBookmarkGuid?.isEmpty == false
+        case .existingSplit(let splitId, _):
+            return splitBookmarkBindings.values.contains(splitId)
+        }
+    }
+
+    /// The split `tabIds` were opening into is not coming: list the ones
+    /// that were hidden for it as normal tabs.
+    func listPanesNoLongerOpeningBehindBookmark(_ tabIds: [Int]) {
+        guard !splitPaneIdsOpeningBehindBookmark.isDisjoint(with: tabIds) else { return }
+        splitPaneIdsOpeningBehindBookmark.subtract(tabIds)
+        updateNormalTabs()
     }
 
 }

@@ -20,7 +20,6 @@ import {
 } from './mirror-core.mjs'
 import { discoverClaudeTranscript } from './mirror-claude.mjs'
 import { discoverCodexTranscript } from './mirror-codex.mjs'
-import { discoverPiTranscript } from './mirror-pi.mjs'
 import { discoverHermesTranscript } from './mirror-hermes.mjs'
 import { discoverOpenclawTranscript } from './mirror-openclaw.mjs'
 import { discoverCursorTranscript } from './mirror-cursor.mjs'
@@ -1169,8 +1168,8 @@ function writeStoredPointer(key, windowId, point) {
 // The tailer daemon (scripts/mirror-tailer.mjs): the session mirror. When
 // the driving session's transcript can be located — exactly under Claude
 // Code and Hermes (exported session ids), by thread id or the rollout
-// heuristic under Codex, by the recorded-toolCall evidence heuristics
-// under OpenClaw and Pi, and by the recorded heredoc source under Cursor
+// heuristic under Codex, by the recorded-toolCall evidence heuristic
+// under OpenClaw, and by the recorded heredoc source under Cursor
 // (see the discover* in lib/mirror-*.mjs) — the heredoc writes the daemon
 // control file and spawns a detached tailer; the binding is exact because
 // we TELL the daemon its transcript, format, task, and agent process. A
@@ -1191,7 +1190,6 @@ function discoverSessionTranscript(taskId, agentPid) {
     || discoverHermesTranscript()
     || discoverCodexTranscript(taskId, agentPid)
     || discoverOpenclawTranscript(taskId)
-    || discoverPiTranscript(taskId, agentPid)
     || discoverCursorTranscript(heredocSource)
 }
 

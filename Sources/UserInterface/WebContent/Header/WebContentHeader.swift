@@ -83,9 +83,12 @@ class WebContentHeaderState: ObservableObject {
         self.showAddressBar = navigationAtTop
         self.showNavigationButtons = navigationAtTop
         self.showDownloadButton = traditionalLayout
+            && PhiPreferences.GeneralSettings.topBarShowsDownloads.loadValue()
         self.showMemoryButton = traditionalLayout && phiAIEnabled
+            && PhiPreferences.GeneralSettings.topBarShowsMemory.loadValue()
         self.showFeedbackButton = traditionalLayout
             && !ApplicationState.shared.isGuest
+            && PhiPreferences.GeneralSettings.topBarShowsFeedback.loadValue()
         self.allowsWindowDrag = layoutMode == .balanced
         self.showChatButton = false
     }
@@ -336,6 +339,19 @@ class WebContentHeader: NSView {
             }
             .store(in: &cancellables)
 
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .map { _ in
+                [PhiPreferences.GeneralSettings.topBarShowsDownloads,
+                 .topBarShowsMemory,
+                 .topBarShowsFeedback].map { $0.loadValue() }
+            }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateLayoutVisibility()
+            }
+            .store(in: &cancellables)
+
         owningBrowserState?.sidebarCollapsedPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -458,6 +474,14 @@ class WebContentHeader: NSView {
         let isInPlaceholder = owningBrowserState?.isInPlaceholderMode ?? false
         let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
         let isGuest = ApplicationState.shared.isGuest
+        // The Comfortable top bar honors its own button settings; Balanced
+        // only borrows these buttons while the sidebar is collapsed.
+        let showsTopBarDownloads = !traditionalLayout
+            || PhiPreferences.GeneralSettings.topBarShowsDownloads.loadValue()
+        let showsTopBarMemory = !traditionalLayout
+            || PhiPreferences.GeneralSettings.topBarShowsMemory.loadValue()
+        let showsTopBarFeedback = !traditionalLayout
+            || PhiPreferences.GeneralSettings.topBarShowsFeedback.loadValue()
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -468,9 +492,12 @@ class WebContentHeader: NSView {
                 (traditionalLayout || (navigationAtTop && isCollapsed))
                 && !isInPlaceholder
                 && !isGuest
+                && showsTopBarFeedback
             self.state.allowsWindowDrag = layoutMode == .balanced
             self.state.showDownloadButton = (traditionalLayout || (navigationAtTop && isCollapsed)) && !isInPlaceholder
+                && showsTopBarDownloads
             self.state.showMemoryButton = (traditionalLayout || (navigationAtTop && isCollapsed)) && phiAIEnabled && !isIncognito && !isInPlaceholder
+                && showsTopBarMemory
             self.state.showSidebarButton = !traditionalLayout && navigationAtTop && isCollapsed
             self.state.isIncognito = isIncognito
             self.state.isInPlaceholderMode = isInPlaceholder

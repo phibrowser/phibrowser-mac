@@ -24,6 +24,9 @@ struct TabStripRightButtons: View {
     @AppStorage(PhiPreferences.AISettings.phiAIEnabled.rawValue)
     private var phiAIEnabled: Bool = PhiPreferences.AISettings.phiAIEnabled.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.topBarShowsProfile.rawValue)
+    private var showsProfile = PhiPreferences.GeneralSettings.topBarShowsProfile.defaultValue
+
     /// `BrowserState` isn't an `ObservableObject`, so the eligible page count is
     /// mirrored from the `$normalTabs` publisher via `onReceive`.
     @State private var eligibleTabCount: Int
@@ -72,8 +75,10 @@ struct TabStripRightButtons: View {
 
             TabStripSearchTabsButton(action: onSearchTabsTap)
 
-            ProfileButton(surface: .tabStrip)
-                .frame(width: 24, height: 24)
+            if showsProfile {
+                ProfileButton(surface: .tabStrip)
+                    .frame(width: 24, height: 24)
+            }
         }
         .onReceive(browserState.$normalTabs.receive(on: DispatchQueue.main)) { tabs in
             eligibleTabCount = FarringdonOrganizer.eligibleTabCount(in: tabs)

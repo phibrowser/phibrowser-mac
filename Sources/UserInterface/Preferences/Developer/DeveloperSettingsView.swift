@@ -615,32 +615,16 @@ private struct SkillInstallRowView: View {
         /// glyphs are template, Hermes's favicon artwork renders in color.
         let iconAsset: String?
         let skillsDirectory: URL
-        /// Pi alone exposes a supported in-process message API. Its companion
-        /// extension wakes idle sessions when Agent Transcript receives input.
-        let companionExtensionDirectory: URL?
-
-        init(id: String, name: String, iconAsset: String?, skillsDirectory: URL,
-             companionExtensionDirectory: URL? = nil) {
-            self.id = id
-            self.name = name
-            self.iconAsset = iconAsset
-            self.skillsDirectory = skillsDirectory
-            self.companionExtensionDirectory = companionExtensionDirectory
-        }
 
         var linkURL: URL {
             skillsDirectory.appendingPathComponent("phi-browser", isDirectory: true)
         }
-
-        var companionExtensionLinkURL: URL? {
-            companionExtensionDirectory?
-                .appendingPathComponent("phi-browser", isDirectory: true)
-        }
     }
 
-    /// Every agent the skill can be linked into. The first six are also the
+    /// Every agent the skill can be linked into. The first five are also the
     /// agents whose driving session the skill mirrors into Agent Transcript
-    /// (see `scripts/lib/mirror-*.mjs`); the agents after Pi only DRIVE Phi.
+    /// (see `scripts/lib/mirror-*.mjs`); Pi and the agents after it only
+    /// DRIVE Phi.
     /// Under them the transcript shows the browser steps and `say()` prose
     /// but never the agent's own conversation — the skill's session
     /// discovery is gated on positive evidence of a known host, so adding an
@@ -659,12 +643,9 @@ private struct SkillInstallRowView: View {
                         skillsDirectory: home.appendingPathComponent(".hermes/skills", isDirectory: true)),
             SkillTarget(id: "openclaw", name: "OpenClaw", iconAsset: "agent-openclaw",
                         skillsDirectory: home.appendingPathComponent(".openclaw/skills", isDirectory: true)),
-            SkillTarget(
-                id: "pi", name: "Pi", iconAsset: "agent-pi",
-                skillsDirectory: home.appendingPathComponent(".pi/agent/skills", isDirectory: true),
-                companionExtensionDirectory: home.appendingPathComponent(
-                    ".pi/agent/extensions", isDirectory: true)),
-            // Skill-only agents: no session mirror, no companion extension.
+            // Skill-only agents: no session mirror.
+            SkillTarget(id: "pi", name: "Pi", iconAsset: "agent-pi",
+                        skillsDirectory: home.appendingPathComponent(".pi/agent/skills", isDirectory: true)),
             // Grok Build is the xAI CLI. Grok Bot, the desktop app, has no
             // folder of its own and skips third-party folders (Grok Build's,
             // Claude Code's, Codex's) unless those are enabled; it always
@@ -704,11 +685,6 @@ private struct SkillInstallRowView: View {
             .appendingPathComponent("phi-browser-skill", isDirectory: true)
     }
 
-    private static var bundledPiExtensionURL: URL? {
-        bundledSkillURL?
-            .appendingPathComponent("extensions/pi", isDirectory: true)
-    }
-
     // IDs of agents whose skills folder already links to *this* app's bundle.
     @State private var installedTargets: Set<String> = SkillInstallRowView.installedTargetIDs()
 
@@ -719,7 +695,7 @@ private struct SkillInstallRowView: View {
                 Text(NSLocalizedString("settings.developer.skillInstall.sectionTitle", value: "Install the phi-browser skill", comment: "Developer settings - Title for installing the phi-browser agent skill"))
                     .font(.system(size: 13))
                     .themedForeground(.textPrimary)
-                Text(NSLocalizedString("settings.developer.skillInstall.description", value: "Links the skill bundled in this app into an AI coding agent’s skills folder so it can drive Phi over the DevTools Protocol. Pi also gets a companion extension that wakes idle sessions from Agent Transcript commands. Requires Node 22+.", comment: "Developer settings - Explanation for the phi-browser skill installer"))
+                Text(NSLocalizedString("settings.developer.skillInstall.description", value: "Links the skill bundled in this app into an AI coding agent’s skills folder so it can drive Phi over the DevTools Protocol. Requires Node 22+.", comment: "Developer settings - Explanation for the phi-browser skill installer"))
                     .font(.system(size: 11))
                     .themedForeground(.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -800,12 +776,7 @@ private struct SkillInstallRowView: View {
 
     static func installedTargetIDs() -> Set<String> {
         guard let bundled = bundledSkillURL else { return [] }
-        return Set(skillTargets.filter { target in
-            guard isLinked(target.linkURL, to: bundled) else { return false }
-            guard let companionLink = target.companionExtensionLinkURL else { return true }
-            guard let companion = bundledPiExtensionURL else { return false }
-            return isLinked(companionLink, to: companion)
-        }.map(\.id))
+        return Set(skillTargets.filter { isLinked($0.linkURL, to: bundled) }.map(\.id))
     }
 
     // True only when linkURL is a symlink resolving to *this* app's bundled
@@ -838,39 +809,20 @@ private struct SkillInstallRowView: View {
             return .failure(NSLocalizedString("settings.developer.skillInstall.missingResourcesError", value: "This build doesn’t include the phi-browser skill resources. Rebuild Phi Browser and try again.", comment: "Developer settings - Skill install failure body when the resource is missing"))
         }
 
-        var installs: [(link: URL, source: URL)] = [(target.linkURL, bundled)]
-        if let companionLink = target.companionExtensionLinkURL {
-            guard let companion = Self.bundledPiExtensionURL,
-                  fm.fileExists(atPath: companion.path) else {
-                return .failure(NSLocalizedString("settings.developer.skillInstall.missingCompanionError", value: "This build doesn’t include the Pi companion extension. Rebuild Phi Browser and try again.",
-                    comment: "Developer settings - Pi companion extension missing"))
-            }
-            installs.append((companionLink, companion))
-        }
-
+        let link = target.linkURL
         do {
-            // Ask about every real destination before changing any of them, so
-            // declining the Pi extension replacement cannot leave a partial install.
-            for install in installs {
-                try fm.createDirectory(
-                    at: install.link.deletingLastPathComponent(),
-                    withIntermediateDirectories: true)
-                let isSymlink = (try? fm.destinationOfSymbolicLink(
-                    atPath: install.link.path)) != nil
-                if !isSymlink, fm.fileExists(atPath: install.link.path),
-                   !confirmSkillOverwrite(at: install.link.path) {
-                    return .cancelled
-                }
+            try fm.createDirectory(
+                at: target.skillsDirectory, withIntermediateDirectories: true)
+            let isSymlink = (try? fm.destinationOfSymbolicLink(atPath: link.path)) != nil
+            if !isSymlink, fm.fileExists(atPath: link.path),
+               !confirmSkillOverwrite(at: link.path) {
+                return .cancelled
             }
-
-            for install in installs {
-                if (try? fm.destinationOfSymbolicLink(atPath: install.link.path)) != nil
-                    || fm.fileExists(atPath: install.link.path) {
-                    try fm.removeItem(at: install.link)
-                }
-                try fm.createSymbolicLink(
-                    at: install.link, withDestinationURL: install.source)
+            if isSymlink || fm.fileExists(atPath: link.path) {
+                try fm.removeItem(at: link)
             }
+            try fm.createSymbolicLink(at: link, withDestinationURL: bundled)
+            if target.id == "pi" { PiCompanionExtensionCleanup.removeBrokenLink() }
             installedTargets.insert(target.id)
             return .success
         } catch {

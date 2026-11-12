@@ -56,7 +56,7 @@ extension SpaceSessionController {
         omniBoxOwedForEmptyWindow = false
         // One turn later: placeholder entry is delivered inside Chromium's
         // strip mutation (or the spawn's synchronous bridge call), and the
-        // omnibox host panel must not attach mid-callback.
+        // omnibox must not mount mid-callback.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.browserState.isInPlaceholderMode, self.isPresentedOrLegacy,
                   self.omniBoxContainerViewController?.hasShown != true else { return }
@@ -150,70 +150,45 @@ extension SpaceSessionController {
                 addressViewPresent: addressView != nil
             )
             
-            // The omnibox normally lives in the window's own tree, like tab
-            // search, with a backdrop that owns nothing but the box: a click
-            // anywhere else lands on the real control and dismisses the
-            // omnibox at the same time. Only above a Peek or Reader panel does
-            // it need the host panel, which floats over those child windows
-            // (see attachAndShowOmniBoxHostPanel) and is shrunk to the box so
-            // outside clicks stay real there too.
-            omniBoxOverlayClicksThrough = !omniBoxNeedsFloatingHost
-            let hostView: NSView?
-            if omniBoxOverlayClicksThrough {
-                hostView = isHosted ? shellSplit?.view : contentViewController?.view
-                omnibackgroundView.clickThroughOutside = { [weak self] in
-                    self?.omniBoxContainerViewController?.omniBoxController?.view
-                }
-                omnibackgroundView.clickedThroughOutside = { [weak self] in
-                    // One turn later: the click is mid-dispatch to the view
-                    // beneath, and the overlay must not leave the hierarchy
-                    // under it.
-                    DispatchQueue.main.async {
-                        guard let container = self?.omniBoxContainerViewController,
-                              container.hasShown else { return }
-                        container.hideOmniBox()
-                    }
-                }
-            } else {
-                hostView = attachAndShowOmniBoxHostPanel()?.contentView
-                omnibackgroundView.clickThroughOutside = nil
-                omnibackgroundView.clickedThroughOutside = nil
+            // The omnibox lives in the window's own tree, like tab search and
+            // the Peek and Reader overlays it can open above. Its backdrop
+            // owns nothing but the box: a click anywhere else lands on the
+            // real control and dismisses the omnibox at the same time.
+            omnibackgroundView.clickThroughOutside = { [weak self] in
+                self?.omniBoxContainerViewController?.omniBoxController?.view
             }
-            if let hostView {
-                // Resolve the shell and address-bar geometry before mounting
-                // the overlay or asking its text field to become first responder.
-                hostView.layoutSubtreeIfNeeded()
-                if omniBoxOverlayClicksThrough {
-                    omnibackgroundView.frame = hostView.bounds
+            omnibackgroundView.clickedThroughOutside = { [weak self] in
+                // One turn later: the click is mid-dispatch to the view
+                // beneath, and the overlay must not leave the hierarchy
+                // under it.
+                DispatchQueue.main.async {
+                    guard let container = self?.omniBoxContainerViewController,
+                          container.hasShown else { return }
+                    container.hideOmniBox()
                 }
-                hostView.addSubview(omnibackgroundView)
-                if omniBoxOverlayClicksThrough {
-                    omnibackgroundView.snp.remakeConstraints { make in
-                        make.edges.equalToSuperview()
-                    }
-                } else {
-                    // The panel is sized to the box; the backdrop keeps the
-                    // content area's size and is placed by
-                    // `syncOmniBoxHostPanelFrame`, not by its superview.
-                    omnibackgroundView.snp.removeConstraints()
-                    omnibackgroundView.translatesAutoresizingMaskIntoConstraints = true
-                    omnibackgroundView.autoresizingMask = []
-                    syncOmniBoxHostPanelFrame()
-                }
-
-                // Add omniBox container to background view
-                if let containerView = omniBoxContainerViewController?.view {
-                    containerView.frame = omnibackgroundView.bounds
-                    omnibackgroundView.addSubview(containerView)
-                    containerView.snp.remakeConstraints { make in
-                        make.edges.equalToSuperview()
-                    }
-                }
-                hostView.layoutSubtreeIfNeeded()
-            } else {
+            }
+            guard let hostView = isHosted ? shellSplit?.view : contentViewController?.view else {
                 AppLogWarn("[Omnibox] cannot present without a host for window \(windowId)")
                 return
             }
+            // Resolve the shell and address-bar geometry before mounting
+            // the overlay or asking its text field to become first responder.
+            hostView.layoutSubtreeIfNeeded()
+            omnibackgroundView.frame = hostView.bounds
+            hostView.addSubview(omnibackgroundView)
+            omnibackgroundView.snp.remakeConstraints { make in
+                make.edges.equalToSuperview()
+            }
+
+            // Add omniBox container to background view
+            if let containerView = omniBoxContainerViewController?.view {
+                containerView.frame = omnibackgroundView.bounds
+                omnibackgroundView.addSubview(containerView)
+                containerView.snp.remakeConstraints { make in
+                    make.edges.equalToSuperview()
+                }
+            }
+            hostView.layoutSubtreeIfNeeded()
             if fromAddressBar {
                 if browserState.groupOverviewState != nil {
                     omniBoxContainerViewController?.omniBoxController?

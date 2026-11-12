@@ -244,7 +244,8 @@ final class ShortcutOverlayIntegrationTests: XCTestCase {
         case .peek:
             state.peekState.present(tab, openerTabId: origin.guid)
             peek = PeekPanelController(browserState: state, parentWindow: window, anchorView: anchor,
-                                       cardViewProvider: { anchor }, originTracker: nil)
+                                       cardViewProvider: { anchor }, headerViewProvider: { nil },
+                                       originTracker: nil)
             reader = nil
             peek!.present(tab: tab, flyIn: false)
         case .reader:

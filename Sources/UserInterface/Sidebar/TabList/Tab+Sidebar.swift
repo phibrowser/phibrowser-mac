@@ -1152,6 +1152,7 @@ extension Tab: ContextMenuRepresentable {
               let splitId = sender.representedObject as? String,
               let group = state.splitGroup(forId: splitId) else { return }
         let panes = group.tabIds.compactMap { id in state.tabs.first { $0.guid == id } }
+        state.noteBookmarkSplitClosing(group)
         state.closeTabs(panes)
     }
 

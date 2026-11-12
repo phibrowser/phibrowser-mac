@@ -444,11 +444,11 @@ final class ShellWindowController: NSObject, NSWindowDelegate {
 
     /// Key ownership is tracked for the shell and its descendants as one
     /// group, from AppKit's key notifications for any window in it. The
-    /// shell's own delegate callbacks are not enough: the reader and peek
-    /// panels, the omnibox host and every child window Chromium parents
-    /// here are windows of their own, so key leaving one of THEM for another
-    /// shell, a standalone Incognito or Kiosk window or another app — or
-    /// coming straight back into one — never passes through the shell.
+    /// shell's own delegate callbacks are not enough: every child window
+    /// parented here, Chromium's included, is a window of its own, so key
+    /// leaving one of THEM for another shell, a standalone Incognito or
+    /// Kiosk window or another app — or coming straight back into one —
+    /// never passes through the shell.
     ///
     /// Decided one turn after the notification, once AppKit has made the
     /// next window key; only a change of the group's ownership is forwarded,

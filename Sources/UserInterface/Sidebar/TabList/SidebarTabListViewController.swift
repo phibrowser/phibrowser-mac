@@ -214,6 +214,14 @@ class SidebarTabListViewController: NSViewController {
         return menu
     }()
 
+    /// The tab area's blank-space menu, for sidebar regions outside the
+    /// outline such as the bottom bar.
+    private(set) lazy var blankAreaContextMenu: NSMenu = {
+        let menu = NSMenu()
+        menu.delegate = self
+        return menu
+    }()
+
     private lazy var contextMenuHelper = TabAreaContextMenuHelper(browserState: browserState)
     
     private var cancellables = Set<AnyCancellable>()
@@ -5106,6 +5114,12 @@ extension SidebarTabListViewController {
 // MARK: - right click menu
 extension SidebarTabListViewController: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === blankAreaContextMenu {
+            cancelVisibleTabPreviews()
+            defultMenu(on: menu)
+            disableItemsIfAgentLocked(in: menu)
+            return
+        }
         guard menu === self.contextMenu else {
             return
         }
@@ -5122,9 +5136,13 @@ extension SidebarTabListViewController: NSMenuDelegate {
             cancelVisibleTabPreviews()
         }
         populateContextMenu(menu)
-        // While the agent controls this Space the user may only watch — disable
-        // every right-click action (whichever variant was populated above).
-        // Taking control (overlay button) flips ownership and re-enables them.
+        disableItemsIfAgentLocked(in: menu)
+    }
+
+    /// While the agent controls this Space the user may only watch — disable
+    /// every right-click action. Taking control (overlay button) flips
+    /// ownership and re-enables them.
+    private func disableItemsIfAgentLocked(in menu: NSMenu) {
         let locked = AgentSpaceManager.shared.isAgentOwned(browserState.spaceId)
         menu.autoenablesItems = !locked
         if locked {

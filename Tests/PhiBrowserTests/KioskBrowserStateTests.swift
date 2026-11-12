@@ -318,6 +318,7 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertFalse(addressField.stringValue.isEmpty)
         XCTAssertEqual(omniBoxRequestCount, 1)
         XCTAssertTrue(wrapper.navigatedURLs.isEmpty)
+        XCTAssertTrue(wrapper.inPlaceNavigatedURLs.isEmpty)
     }
 
     func testAddressFieldHidesAboutBlank() throws {
@@ -1095,6 +1096,11 @@ private final class KioskTestWebContentWrapper: NSObject, WebContentWrapper {
     func stopLoading() {}
     func navigate(toURL urlString: String) {
         navigatedURLs.append(urlString)
+        self.urlString = urlString
+    }
+    private(set) var inPlaceNavigatedURLs: [String] = []
+    func navigateInPlace(toURL urlString: String) {
+        inPlaceNavigatedURLs.append(urlString)
         self.urlString = urlString
     }
     func setAsActiveTab() {}

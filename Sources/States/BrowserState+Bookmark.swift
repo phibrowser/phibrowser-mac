@@ -8,8 +8,7 @@ import Foundation
 private typealias BookmarkOriginNavigationContext = (
     currentURL: String,
     originalURL: String,
-    wrapper: WebContentWrapper & NSObject,
-    restoredCustomValue: String
+    wrapper: WebContentWrapper & NSObject
 )
 
 /// The bookmark row fields for a split's panes in slot order: the first two
@@ -303,8 +302,8 @@ extension BrowserState {
     }
 
     /// Returns one live bookmark pane to the URL stored by its bookmark.
-    /// The tab's custom value is cleared around navigation so a cross-domain
-    /// return stays in place instead of being redirected into a new tab.
+    /// The load stays in the tab even when the return is cross-domain, and
+    /// the tab's binding is not touched.
     func navigateBookmarkTabToOriginalURL(_ tab: Tab, bookmark: Bookmark) {
         guard let context = bookmarkOriginNavigationContext(for: tab, bookmark: bookmark) else {
             return
@@ -365,18 +364,13 @@ extension BrowserState {
         return (
             currentURL: currentURL,
             originalURL: originalURL,
-            wrapper: wrapper,
-            restoredCustomValue: tab.guidInLocalDB ?? ""
+            wrapper: wrapper
         )
     }
 
     private func performBookmarkOriginNavigation(_ context: BookmarkOriginNavigationContext) {
         DispatchQueue.main.async {
-            context.wrapper.updateTabCustomValue("")
-            context.wrapper.navigate(toURL: context.originalURL)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                context.wrapper.updateTabCustomValue(context.restoredCustomValue)
-            }
+            context.wrapper.navigateInPlace(toURL: context.originalURL)
         }
     }
 

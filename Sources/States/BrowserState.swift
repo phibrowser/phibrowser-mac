@@ -926,20 +926,14 @@ class BrowserState {
         }
     }
 
-    /// Retargets an open pinned tab in place. custom_value must be cleared
-    /// around the navigation or `CrossDomainNewTabNavigationThrottle` bounces
-    /// a cross-domain load into a new tab.
+    /// Retargets an open pinned tab in place: the load stays in the tab even
+    /// when `url` is on another site, and the tab's binding is not touched.
     private func navigateOpenPinnedTab(_ tab: Tab, to url: String?) {
         guard let url, tab.isOpenned, let wrapper = tab.webContentWrapper else { return }
         if tab.url != url {
             tab.url = url
         }
-        wrapper.updateTabCustomValue("")
-        wrapper.navigate(toURL: url)
-        guard let pinnedGuid = tab.guidInLocalDB else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            wrapper.updateTabCustomValue(pinnedGuid)
-        }
+        wrapper.navigateInPlace(toURL: url)
     }
 
     @MainActor

@@ -77,6 +77,7 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
         XCTAssertTrue(waitUntil { bookmark.url == "https://new.example/path" })
         XCTAssertEqual(bookmark.title, "Bookmark")
         XCTAssertTrue(wrapper.navigatedURLs.isEmpty)
+        XCTAssertTrue(wrapper.inPlaceNavigatedURLs.isEmpty)
         XCTAssertTrue(wrapper.customValues.isEmpty)
         XCTAssertNil(state.replacementURLForBookmark(guid: bookmark.guid))
         wrapper.urlString = "https://another.example"
@@ -634,6 +635,11 @@ final class BookmarkLayoutTestWebContentWrapper: NSObject, WebContentWrapper {
     private(set) var navigatedURLs: [String] = []
     func navigate(toURL urlString: String) {
         navigatedURLs.append(urlString)
+        self.urlString = urlString
+    }
+    private(set) var inPlaceNavigatedURLs: [String] = []
+    func navigateInPlace(toURL urlString: String) {
+        inPlaceNavigatedURLs.append(urlString)
         self.urlString = urlString
     }
     func setAsActiveTab() {}

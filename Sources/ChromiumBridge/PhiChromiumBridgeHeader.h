@@ -2615,6 +2615,13 @@ typedef NS_ENUM(NSInteger, PhiMediaControlAction) {
 - (void)goForward;
 - (void)stopLoading;
 - (void)navigateToURL:(NSString *)urlString;
+/// navigateToURL for a bound tab (Pinned tab, Bookmark Tab): the load stays in
+/// this tab even when `urlString` is on another site, where a bound tab's
+/// cross-site navigation is otherwise re-opened as a Peek or a new tab. The
+/// tab's binding is not touched. Covers this one load only, and only when the
+/// request starts at `urlString`; a later redirect or script jump is re-opened
+/// as usual.
+- (void)navigateInPlaceToURL:(NSString *)urlString;
 - (void)setAsActiveTab;
 - (void)moveSelfToIndex:(NSInteger)newIndex selectAfterMove:(BOOL)selectAfterMove;
 - (void)moveSelfToNewWindow:(BOOL)activateNewWindow;

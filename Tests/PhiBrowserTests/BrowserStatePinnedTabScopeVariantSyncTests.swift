@@ -114,7 +114,9 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
         XCTAssertEqual(bindingA.wrapper.customValues.last, targetA.guid)
         XCTAssertEqual(bindingB.wrapper.customValues.last, targetB.guid)
         XCTAssertTrue(bindingA.wrapper.navigatedURLs.isEmpty)
+        XCTAssertTrue(bindingA.wrapper.inPlaceNavigatedURLs.isEmpty)
         XCTAssertTrue(bindingB.wrapper.navigatedURLs.isEmpty)
+        XCTAssertTrue(bindingB.wrapper.inPlaceNavigatedURLs.isEmpty)
     }
 
     func testSpaceToProfileRebindsLiveSplitPanesToTheirContentMatchingPairVariant() async throws {
@@ -538,6 +540,7 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
         XCTAssertEqual(runtimeTab.splitPartnerGuid, target.splitPartnerGuid, file: file, line: line)
         XCTAssertEqual(liveBinding.liveTab.guidInLocalDB, target.guid, file: file, line: line)
         XCTAssertTrue(liveBinding.wrapper.navigatedURLs.isEmpty, file: file, line: line)
+        XCTAssertTrue(liveBinding.wrapper.inPlaceNavigatedURLs.isEmpty, file: file, line: line)
     }
 
     private func drainMainQueue() {
@@ -615,6 +618,11 @@ final class PinnedScopeVariantWebContentWrapperSpy: NSObject, WebContentWrapper 
     func stopLoading() {}
     func navigate(toURL urlString: String) {
         navigatedURLs.append(urlString)
+        self.urlString = urlString
+    }
+    private(set) var inPlaceNavigatedURLs: [String] = []
+    func navigateInPlace(toURL urlString: String) {
+        inPlaceNavigatedURLs.append(urlString)
         self.urlString = urlString
     }
     func setAsActiveTab() {}

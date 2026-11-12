@@ -64,12 +64,9 @@ final class BookmarkFaviconOriginNavigationTests: XCTestCase {
         state.navigateBookmarkTabToOriginalURL(tab, bookmark: bookmark)
 
         XCTAssertTrue(waitUntil {
-            wrapper.navigatedURLs == ["https://bookmark.example/original"]
+            wrapper.inPlaceNavigatedURLs == ["https://bookmark.example/original"]
         })
-        XCTAssertEqual(wrapper.customValues.first, "")
-        XCTAssertTrue(waitUntil {
-            wrapper.customValues.last == bookmark.guid
-        })
+        XCTAssertTrue(wrapper.customValues.isEmpty)
     }
 
     func testDoesNotNavigateWhenBookmarkAlreadyShowsStoredURL() throws {
@@ -98,6 +95,7 @@ final class BookmarkFaviconOriginNavigationTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
 
         XCTAssertTrue(wrapper.navigatedURLs.isEmpty)
+        XCTAssertTrue(wrapper.inPlaceNavigatedURLs.isEmpty)
         XCTAssertTrue(wrapper.customValues.isEmpty)
         XCTAssertTrue(state.createTabRequests.isEmpty)
     }
@@ -128,6 +126,7 @@ final class BookmarkFaviconOriginNavigationTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
 
         XCTAssertTrue(wrapper.navigatedURLs.isEmpty)
+        XCTAssertTrue(wrapper.inPlaceNavigatedURLs.isEmpty)
         XCTAssertTrue(wrapper.customValues.isEmpty)
         XCTAssertTrue(state.createTabRequests.isEmpty)
     }
@@ -175,7 +174,7 @@ final class BookmarkFaviconOriginNavigationTests: XCTestCase {
         )
         XCTAssertEqual(state.focusingTab?.guid, tab.guid)
         XCTAssertTrue(waitUntil {
-            wrapper.navigatedURLs == ["https://bookmark.example/original"]
+            wrapper.inPlaceNavigatedURLs == ["https://bookmark.example/original"]
         })
         XCTAssertEqual(state.focusingTab?.guid, tab.guid)
         XCTAssertEqual(
@@ -185,10 +184,7 @@ final class BookmarkFaviconOriginNavigationTests: XCTestCase {
                 "navigate:https://bookmark.example/original"
             ]
         )
-        XCTAssertEqual(wrapper.customValues.first, "")
-        XCTAssertTrue(waitUntil {
-            wrapper.customValues.last == bookmark.guid
-        })
+        XCTAssertTrue(wrapper.customValues.isEmpty)
     }
 
     func testNavigatesSelectedSplitBookmarkPaneToItsStoredURL() throws {
@@ -232,13 +228,89 @@ final class BookmarkFaviconOriginNavigationTests: XCTestCase {
         state.navigateBookmarkTabToOriginalURL(secondary, bookmark: bookmark)
 
         XCTAssertTrue(waitUntil {
-            secondaryWrapper.navigatedURLs == ["https://secondary.example/original"]
+            secondaryWrapper.inPlaceNavigatedURLs == ["https://secondary.example/original"]
         })
-        XCTAssertEqual(secondaryWrapper.customValues.first, "")
+        XCTAssertTrue(secondaryWrapper.customValues.isEmpty)
+    }
+
+    func testEditingABookmarkURLNavigatesItsOpenTabInPlace() throws {
+        let state = try makeState()
+        let bookmark = try createBookmark(
+            in: state,
+            guid: "bookmark-edit",
+            url: "https://bookmark.example/original"
+        )
+        let wrapper = BookmarkOriginTestWebContentWrapper(
+            urlString: "https://bookmark.example/original"
+        )
+        let tab = Tab(
+            guid: 105,
+            url: "https://bookmark.example/original",
+            isActive: true,
+            index: 0,
+            webContentView: wrapper,
+            customGuid: bookmark.guid
+        )
+        state.tabs = [tab]
+        state.handleBookmarkTabOpened(tab)
+
+        state.bookmarkManager.updateBookmark(guid: bookmark.guid, url: "https://other.example/edited")
+
         XCTAssertTrue(waitUntil {
-            secondaryWrapper.customValues.count == 2
+            wrapper.inPlaceNavigatedURLs == ["https://other.example/edited"]
         })
-        XCTAssertEqual(secondaryWrapper.customValues.last, "")
+        XCTAssertTrue(wrapper.customValues.isEmpty)
+    }
+
+    func testEditingASplitBookmarkPaneURLNavigatesThatPaneInPlace() throws {
+        let state = try makeState()
+        let bookmark = try createBookmark(
+            in: state,
+            guid: "split-bookmark-edit",
+            url: "https://primary.example/original",
+            secondaryURL: "https://secondary.example/original"
+        )
+        let primaryWrapper = BookmarkOriginTestWebContentWrapper(
+            urlString: "https://primary.example/original"
+        )
+        let primary = Tab(
+            guid: 203,
+            url: "https://primary.example/original",
+            isActive: true,
+            index: 0,
+            webContentView: primaryWrapper
+        )
+        let secondaryWrapper = BookmarkOriginTestWebContentWrapper(
+            urlString: "https://secondary.example/original"
+        )
+        let secondary = Tab(
+            guid: 204,
+            url: "https://secondary.example/original",
+            isActive: false,
+            index: 1,
+            webContentView: secondaryWrapper
+        )
+        let split = SplitGroup(
+            id: "bookmark-split-edit",
+            tabIds: [primary.guid, secondary.guid],
+            layout: .vertical,
+            fractions: [0.5, 0.5]
+        )
+        state.tabs = [primary, secondary]
+        state.splits = [split]
+        state.splitBookmarkBindings[bookmark.guid] = split.id
+        state.syncSplitBookmarkOpenedState(bookmarkGuid: bookmark.guid)
+
+        state.bookmarkManager.updateBookmark(
+            guid: bookmark.guid,
+            secondaryUrl: .some("https://other.example/edited")
+        )
+
+        XCTAssertTrue(waitUntil {
+            secondaryWrapper.inPlaceNavigatedURLs == ["https://other.example/edited"]
+        })
+        XCTAssertTrue(secondaryWrapper.customValues.isEmpty)
+        XCTAssertTrue(primaryWrapper.inPlaceNavigatedURLs.isEmpty)
     }
 
     private func makeState() throws -> BookmarkOriginRecordingBrowserState {
@@ -375,6 +447,12 @@ private final class BookmarkOriginTestWebContentWrapper: NSObject, WebContentWra
     func stopLoading() {}
     func navigate(toURL urlString: String) {
         navigatedURLs.append(urlString)
+        self.urlString = urlString
+        onNavigate?(urlString)
+    }
+    private(set) var inPlaceNavigatedURLs: [String] = []
+    func navigateInPlace(toURL urlString: String) {
+        inPlaceNavigatedURLs.append(urlString)
         self.urlString = urlString
         onNavigate?(urlString)
     }

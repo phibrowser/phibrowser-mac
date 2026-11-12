@@ -608,29 +608,17 @@ class BookmarkManager: ObservableObject {
         }
 
         DispatchQueue.main.async {
-            wrapper.updateTabCustomValue("")
-            wrapper.navigate(toURL: normalizedURL)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                wrapper.updateTabCustomValue(guid)
-            }
+            wrapper.navigateInPlace(toURL: normalizedURL)
         }
     }
     
-    /// Navigates one pane of a bookmarked split to `url`. The pane carries a
-    /// non-empty `custom_value` marker (e.g. the NTP partner minted during the
-    /// open-as-split flow), which makes `CrossDomainNewTabNavigationThrottle`
-    /// hijack a cross-domain change into a brand-new tab. Clear the marker
-    /// before navigating and restore it once the load settles, mirroring the
-    /// single-tab path above.
+    /// Navigates one pane of a bookmarked split to `url`. The load stays in
+    /// the pane even when `url` is on another site, as on the single-tab
+    /// path above.
     private func navigateSplitPane(_ tab: Tab, to url: String) {
         guard let wrapper = tab.webContentWrapper else { return }
-        let restore = tab.guidInLocalDB ?? ""
         DispatchQueue.main.async {
-            wrapper.updateTabCustomValue("")
-            wrapper.navigate(toURL: url)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                wrapper.updateTabCustomValue(restore)
-            }
+            wrapper.navigateInPlace(toURL: url)
         }
     }
 

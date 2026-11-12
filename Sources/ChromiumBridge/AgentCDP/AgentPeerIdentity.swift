@@ -461,10 +461,21 @@ struct AgentCompanion: Equatable {
         #endif
     }
 
+    /// The app is Athena. It was called Folio until 2026-10-30 and signed
+    /// with Folio's identifiers until 2026-11-11, so each Phi flavor pairs
+    /// with two channels: the app under its current identifier, and under the
+    /// one a build from before the rename carries. The key stays Folio's: it
+    /// names the principal, and the same app must stay the same principal.
     static let folio = AgentCompanion(
         key: "phi:companion:com.phibrowser.folio",
-        displayName: "Folio",
+        displayName: "Athena",
         channels: [
+            Channel(phiBundleId: "com.phibrowser.Mac",
+                    appIdentifier: "com.phibrowser.athena",
+                    helperIdentifier: "com.phibrowser.athena.service"),
+            Channel(phiBundleId: "com.phibrowser.canary.Mac",
+                    appIdentifier: "com.phibrowser.canary.athena",
+                    helperIdentifier: "com.phibrowser.canary.athena.service"),
             Channel(phiBundleId: "com.phibrowser.Mac",
                     appIdentifier: "com.phibrowser.folio",
                     helperIdentifier: "com.phibrowser.folio.service"),

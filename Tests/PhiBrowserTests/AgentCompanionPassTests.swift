@@ -30,7 +30,17 @@ final class AgentCompanionPassTests: XCTestCase {
     /// The identities in docs/contracts.md, mapped by Phi's own bundle id.
     func testFolioChannelsMatchTheContract() {
         let channels = AgentCompanion.folio.channels
-        XCTAssertEqual(channels.count, 2)
+        XCTAssertEqual(channels.count, 4)
+        // The app under its current identifiers (Athena, since 2026-11-11)…
+        XCTAssertTrue(channels.contains(AgentCompanion.Channel(
+            phiBundleId: "com.phibrowser.Mac",
+            appIdentifier: "com.phibrowser.athena",
+            helperIdentifier: "com.phibrowser.athena.service")))
+        XCTAssertTrue(channels.contains(AgentCompanion.Channel(
+            phiBundleId: "com.phibrowser.canary.Mac",
+            appIdentifier: "com.phibrowser.canary.athena",
+            helperIdentifier: "com.phibrowser.canary.athena.service")))
+        // …and under the ones a build from before the rename carries.
         XCTAssertTrue(channels.contains(AgentCompanion.Channel(
             phiBundleId: "com.phibrowser.Mac",
             appIdentifier: "com.phibrowser.folio",

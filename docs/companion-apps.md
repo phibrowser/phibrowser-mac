@@ -37,12 +37,19 @@ shape of Folio without further change.
 
 | Phi bundle id | App identifier | Helper identifier |
 | --- | --- | --- |
+| `com.phibrowser.Mac` | `com.phibrowser.athena` | `com.phibrowser.athena.service` |
+| `com.phibrowser.canary.Mac` | `com.phibrowser.canary.athena` | `com.phibrowser.canary.athena.service` |
 | `com.phibrowser.Mac` | `com.phibrowser.folio` | `com.phibrowser.folio.service` |
 | `com.phibrowser.canary.Mac` | `com.phibrowser.canary.folio` | `com.phibrowser.canary.folio.service` |
 
-A build accepts the channel paired with its own bundle id; DEBUG builds accept
-both. The identity key is per app, not per channel:
-`phi:companion:com.phibrowser.folio`. The responsibility lookup is resolved at
+The app is Athena; it was called Folio until 2026-10-30 and signed with the
+`folio` identifiers until 2026-11-11. Both sets are admitted, so a build from
+before the rename keeps working.
+
+A build accepts the channels paired with its own bundle id; DEBUG builds accept
+all of them. The identity key is per app, not per channel:
+`phi:companion:com.phibrowser.folio`. Its display name, used wherever Phi
+names the driving peer, is "Athena". The responsibility lookup is resolved at
 runtime and fails closed when unavailable.
 
 A third shape is a process the app spawned that is signed as nothing of the

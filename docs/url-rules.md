@@ -123,6 +123,18 @@ Chromium's `PhiURLRouter`, which checks ask before the Kiosk target. The tab it 
 `openTabBypassingSpaceRouting`, a one-shot exemption, so Chromium's host rules
 do not re-route it. Later navigations in that tab are routed normally.
 
+A link the user opens in a new tab stays in the current Space through its
+redirects, until the user navigates in it. This covers ⌘-click, middle-click,
+⌘⇧-click, "Open Link in New Tab", and a ⌘- or middle-click on a link whose
+handler calls `window.open()`. Chromium marks such a tab
+(`phi::PhiLinkTabMarker`) and lets its first load, every server redirect of
+it, and any page redirect without a user gesture proceed, whatever rule
+matches where they land. The first other navigation in the tab (a click, a
+typed URL, a bookmark) removes the mark, and that navigation and every later
+one are routed as in any other tab. Reload, back/forward and session restore
+neither route nor remove it. A plain click, in the current tab or on a
+`target=_blank` link, is routed at every hop.
+
 ## Sender capture
 
 `ExternalOpenSender.captureCurrent()` reads the Apple event AppKit is

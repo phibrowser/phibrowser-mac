@@ -602,7 +602,8 @@ class BrowserState {
     /// customGuid namespace persisted on a live peek tab so session restore
     /// can re-bind it to its opener: "phi-peek:" + the opener's key. The key
     /// is the opener's bookmark/pinned record guid when it has one, else the
-    /// paired one-shot marker below. Stamped in `presentPeek`, stripped in
+    /// paired one-shot marker below. Stamped in `presentPeek`, rewritten by
+    /// `setBinding` when the opener's binding changes, stripped in
     /// `adoptPeekTabIntoStrip`. Chromium exempts the "phi-peek" namespaces
     /// everywhere a non-empty custom_value changes behavior (cross-domain
     /// re-homing, tab-group blocking, the extensions' phiSaved bit) — see
@@ -613,7 +614,8 @@ class BrowserState {
     /// "phi-peek-opener:" + a pair UUID (normal tabs have no record guid to
     /// address them across restarts). The peek's marker embeds this whole
     /// string as its opener key, so restore matching is a plain equality
-    /// check either way. Stripped when the peek ends.
+    /// check either way. Also given by `setBinding` to an opener whose
+    /// binding is cleared under a peek. Stripped when the peek ends.
     static let peekOpenerGuidPrefix = "phi-peek-opener:"
 
     static func isPeekTabGuid(_ customGuid: String?) -> Bool {
@@ -709,13 +711,18 @@ class BrowserState {
     /// the tab's new identifier, updates `guidInLocalDB`, then writes the
     /// binding to Chromium.
     ///
+    /// A Peek open on the tab follows it: the Peek's restore marker is
+    /// rewritten to name the new binding. When the binding is cleared, the
+    /// tab gets (or keeps) a Peek opener marker for the Peek to name, as a
+    /// normal tab that opens a Peek does.
+    ///
     /// A caller that binds an unbound tab takes it out of its tab group
     /// first: Chromium does not allow a bound tab in a group. A tab that
     /// holds only a Peek opener marker counts as unbound.
     ///
-    /// Not for writing the other values kept in the same slot (Peek markers
-    /// and the one-shot markers a new tab arrives with), nor for the record
-    /// objects of the pinned area.
+    /// Callers pass bindings only: never one of the other values kept in the
+    /// same slot (Peek markers and the one-shot markers a new tab arrives
+    /// with). Not for the record objects of the pinned area.
     ///
     /// Pass `writeToChromium: false` to hold the Chromium write back, and
     /// call again with the same binding once it may go out.
@@ -725,9 +732,25 @@ class BrowserState {
         assert(newBinding == nil || !isUnbound || tab.groupToken == nil,
                "A tab must leave its tab group before it is bound")
         migrateAIChatTab(for: tab, toNewIdentifier: newBinding)
-        tab.guidInLocalDB = newBinding
+        let peek = peekState.peek(forOpener: tab.guid)
+        var stored = newBinding
+        // Same exclusion as `presentPeek`: a split pane never carries an
+        // opener marker.
+        if stored == nil, peek != nil, splitGroup(forTabId: tab.guid) == nil {
+            stored = Self.isPeekOpenerGuid(tab.guidInLocalDB)
+                ? tab.guidInLocalDB
+                : Self.peekOpenerGuidPrefix + UUID().uuidString
+        }
+        tab.guidInLocalDB = stored
         if writeToChromium {
-            tab.webContentWrapper?.updateTabCustomValue(newBinding ?? "")
+            tab.webContentWrapper?.updateTabCustomValue(stored ?? "")
+        }
+        guard let peek else { return }
+        // An AI Chat id is not an opener key (`presentPeek`).
+        let marker = stored.flatMap { Self.isAIChatId($0) ? nil : Self.peekTabGuidPrefix + $0 }
+        peek.guidInLocalDB = marker
+        if writeToChromium {
+            peek.webContentWrapper?.updateTabCustomValue(marker ?? "")
         }
     }
 
@@ -6304,7 +6327,11 @@ class BrowserState {
                 updateNormalTabs()
                 return
             }
-            if opennedTab.isPinned || opennedTab.guidInLocalDB?.isEmpty == false {
+            // A Peek opener marker is not a binding: a normal tab that
+            // carries one is not pinned.
+            if opennedTab.isPinned
+                || (opennedTab.guidInLocalDB?.isEmpty == false
+                    && !Self.isPeekOpenerGuid(opennedTab.guidInLocalDB)) {
                 if let pinnedGuid = opennedTab.guidInLocalDB,
                    let pinnedTab = pinnedTabs.first(where: { $0.guidInLocalDB == pinnedGuid }),
                    pinnedSplitDBGuids(forPinnedTab: pinnedTab) != nil {

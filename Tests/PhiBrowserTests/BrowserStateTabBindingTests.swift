@@ -98,6 +98,71 @@ final class BrowserStateTabBindingTests: XCTestCase {
         XCTAssertTrue(state.aiChatTabs[state.getTabIdentifier(for: live.tab)] === panel)
     }
 
+    // MARK: - Peek
+
+    func testRebindingAnOpenerPointsItsPeekAtTheNewBinding() throws {
+        let state = try makeState()
+        let opener = addLiveTab(to: state, guid: 1, binding: "old")
+        let peek = addPeek(to: opener.tab, in: state)
+
+        state.setBinding("new", for: opener.tab)
+
+        XCTAssertEqual(peek.tab.guidInLocalDB, "phi-peek:new")
+        XCTAssertEqual(peek.wrapper.customValues.last, "phi-peek:new")
+    }
+
+    func testClearingAnOpenersBindingLeavesItAnOpenerMarkerItsPeekPointsAt() throws {
+        let state = try makeState()
+        let opener = addLiveTab(to: state, guid: 1, binding: "pin")
+        let peek = addPeek(to: opener.tab, in: state)
+
+        state.setBinding(nil, for: opener.tab)
+
+        let marker = try XCTUnwrap(opener.tab.guidInLocalDB)
+        XCTAssertTrue(BrowserState.isPeekOpenerGuid(marker))
+        XCTAssertEqual(opener.wrapper.customValues.last, marker)
+        XCTAssertEqual(peek.tab.guidInLocalDB, "phi-peek:" + marker)
+        XCTAssertEqual(peek.wrapper.customValues.last, "phi-peek:" + marker)
+    }
+
+    func testBindingANormalOpenerReplacesItsOpenerMarker() throws {
+        let state = try makeState()
+        let opener = addLiveTab(to: state, guid: 1, binding: "phi-peek-opener:pair")
+        let peek = addPeek(to: opener.tab, in: state)
+
+        state.setBinding("pin", for: opener.tab)
+
+        XCTAssertEqual(opener.wrapper.customValues.last, "pin")
+        XCTAssertEqual(peek.tab.guidInLocalDB, "phi-peek:pin")
+        XCTAssertEqual(peek.wrapper.customValues.last, "phi-peek:pin")
+    }
+
+    /// A Peek opener marker is not a pin: the Pin command pins the tab.
+    func testPinCommandPinsANormalTabThatCarriesAPeek() throws {
+        let state = try makeState()
+        let opener = addLiveTab(to: state, guid: 1, binding: "phi-peek-opener:pair")
+        let peek = addPeek(to: opener.tab, in: state)
+
+        state.toggleTabPinStatus(1, guidInDB: opener.tab.guidInLocalDB)
+
+        XCTAssertTrue(opener.tab.isPinned)
+        let binding = try XCTUnwrap(opener.tab.guidInLocalDB)
+        XCTAssertFalse(BrowserState.isPeekOpenerGuid(binding))
+        XCTAssertEqual(opener.wrapper.customValues.last, binding)
+        XCTAssertEqual(peek.tab.guidInLocalDB, "phi-peek:" + binding)
+    }
+
+    func testRebindingATabWithoutAPeekWritesOnlyItsBinding() throws {
+        let state = try makeState()
+        let live = addLiveTab(to: state, guid: 1, binding: "old")
+        let other = addLiveTab(to: state, guid: 2)
+
+        state.setBinding("new", for: live.tab)
+
+        XCTAssertEqual(live.wrapper.customValues, ["new"])
+        XCTAssertEqual(other.wrapper.customValues, [])
+    }
+
     // MARK: - Rebinding paths
 
     func testPinnedTabSavedAsABookmarkIsBoundToTheBookmarkInChromium() throws {
@@ -229,6 +294,19 @@ final class BrowserStateTabBindingTests: XCTestCase {
         let tab = Tab(guid: guid, url: wrapper.urlString, isActive: false, index: state.tabs.count,
                       webContentView: wrapper, customGuid: binding)
         state.tabs.append(tab)
+        return (tab, wrapper)
+    }
+
+    /// A Peek open on `opener`, marked the way opening one marks it. Like a
+    /// real Peek, its tab is not in the window's tab list.
+    private func addPeek(
+        to opener: Tab,
+        in state: BrowserState
+    ) -> (tab: Tab, wrapper: PinnedScopeVariantWebContentWrapperSpy) {
+        let wrapper = PinnedScopeVariantWebContentWrapperSpy(urlString: "https://peek.example", title: nil)
+        let tab = Tab(guid: opener.guid * 1000, url: wrapper.urlString, isActive: false, index: 0,
+                      webContentView: wrapper, customGuid: "phi-peek:" + (opener.guidInLocalDB ?? ""))
+        state.peekState.present(tab, openerTabId: opener.guid)
         return (tab, wrapper)
     }
 

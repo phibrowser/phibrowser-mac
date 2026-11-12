@@ -266,7 +266,7 @@ private final class SidebarTabHoverDeadZoneView: NSView {
 }
 
 // MARK: - Tab Cell View (reused from existing)
-class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
+class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling, NSGestureRecognizerDelegate {
     private var hostingView: ThemedHostingView!
     private let hoverRegionView = SidebarTabHoverRegionView()
     private let hoverDeadZoneView = SidebarTabHoverDeadZoneView()
@@ -277,6 +277,8 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private let tabPreviewRegistration = TabPreviewRegistration()
     private weak var configuredTab: Tab?
     private var activeSuppressed = false
+    private var pressRecognizer: NSPressGestureRecognizer?
+    private var touchTapRecognizer: NSClickGestureRecognizer?
     weak var delegate: TabCellDelegate?
 
 
@@ -397,7 +399,43 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         press.allowableMovement = 5
         // Don't delay events — let them reach NSHostingView's SwiftUI Button simultaneously
         press.delaysPrimaryMouseButtonEvents = false
+        if #available(macOS 27.0, *) {
+            press.isCancellableByScrollGesture = true
+            press.delegate = self
+        }
+        pressRecognizer = press
         addGestureRecognizer(press)
+
+        if #available(macOS 27.0, *) {
+            let tap = NSClickGestureRecognizer(target: self, action: #selector(handleTouchTap(_:)))
+            tap.buttonMask = 0
+            tap.allowedTouchTypes = .direct
+            tap.isCancellableByScrollGesture = true
+            tap.delegate = self
+            touchTapRecognizer = tap
+            addGestureRecognizer(tap)
+        }
+    }
+
+    @available(macOS 27.0, *)
+    @objc private func handleTouchTap(_ recognizer: NSClickGestureRecognizer) {
+        guard recognizer.state == .ended,
+              bounds.contains(recognizer.location(in: self)),
+              let tab = configuredTab else { return }
+        delegate?.tabCellDidRequestActivation(tab, modifierFlags: recognizer.modifierFlags)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: NSGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith otherGestureRecognizer: NSGestureRecognizer) -> Bool {
+        gestureRecognizer === pressRecognizer || otherGestureRecognizer === pressRecognizer
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: NSGestureRecognizer,
+                           shouldRequireFailureOf otherGestureRecognizer: NSGestureRecognizer) -> Bool {
+        guard gestureRecognizer === touchTapRecognizer,
+              let otherView = otherGestureRecognizer.view,
+              otherView !== self else { return false }
+        return otherView.isDescendant(of: self)
     }
     
     @objc private func handlePress(_ recognizer: NSPressGestureRecognizer) {
@@ -1803,5 +1841,6 @@ class SeparatorCellView: SidebarCellView {
 }
 
 protocol TabCellDelegate: AnyObject {
+    func tabCellDidRequestActivation(_ tab: Tab, modifierFlags: NSEvent.ModifierFlags)
     func tabCellDidRequestClose(_ tab: Tab)
 }

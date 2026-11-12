@@ -15,6 +15,27 @@ import XCTest
 @MainActor
 final class BrowserStateTabBindingTests: XCTestCase {
     private var tempDirectories: [URL] = []
+    nonisolated(unsafe) private static var replacedLayout: Any?
+
+    /// Bookmark Tabs exist only outside the Comfortable layout: under it a
+    /// window unbinds them on its first defaults change. The host app's own
+    /// layout setting must not decide these tests. Any other layout is left
+    /// alone, and the write happens once per class: each one makes the host
+    /// app lay its windows out again.
+    override class func setUp() {
+        super.setUp()
+        guard PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional else { return }
+        replacedLayout = UserDefaults.standard.object(forKey: PhiPreferences.GeneralSettings.layoutModeKey)
+        PhiPreferences.GeneralSettings.saveLayoutMode(.performance)
+    }
+
+    override class func tearDown() {
+        if let replacedLayout {
+            UserDefaults.standard.set(replacedLayout, forKey: PhiPreferences.GeneralSettings.layoutModeKey)
+            Self.replacedLayout = nil
+        }
+        super.tearDown()
+    }
 
     override func tearDownWithError() throws {
         // The transfer test changes the pinned tab scope; see
@@ -102,6 +123,24 @@ final class BrowserStateTabBindingTests: XCTestCase {
         state.syncAllBookmarksOpenedState()
 
         let pinnedGuid = try XCTUnwrap(state.moveBookmarkOut(bookmark, afterPinnedGuid: nil))
+
+        XCTAssertEqual(live.tab.guidInLocalDB, pinnedGuid)
+        XCTAssertEqual(live.wrapper.customValues.last, pinnedGuid)
+    }
+
+    /// The window's first defaults change lands between the Bookmark Tab
+    /// opening and the pin. Under the Comfortable layout that change unbinds
+    /// the tab; under any other layout the pin must still rebind it.
+    func testBookmarkTabPinnedRightAfterOpeningIsBoundToThePinnedRecord() throws {
+        let state = try makeState()
+        let bookmark = try addBookmark(to: state, url: "https://bookmark.example")
+        let live = addLiveTab(to: state, guid: 1, binding: "bookmark")
+        state.handleBookmarkTabOpened(live.tab)
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+
+        let pinnedGuid = try XCTUnwrap(state.moveBookmarkOut(bookmark, afterPinnedGuid: nil))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.8))
 
         XCTAssertEqual(live.tab.guidInLocalDB, pinnedGuid)
         XCTAssertEqual(live.wrapper.customValues.last, pinnedGuid)

@@ -699,7 +699,8 @@ extension BrowserState {
     /// drag-onto-page and bookmark "Open as Split" flows so a pinned or
     /// bookmark-bound source tab doesn't drag its binding into the split.
     /// A source tab already in a split with room gets the link as a new
-    /// pane right after it.
+    /// pane right after it; when the pane can't be added (a full split, or
+    /// a pinned split that can't be demoted yet) the link opens in a new tab.
     @MainActor
     func handleOpenLinkAsSplitPartner(partnerTabId: Int, url: String) {
         // A link inside a peek or reader overlay: that page is no strip tab
@@ -708,9 +709,13 @@ extension BrowserState {
             return
         }
         if let group = splitGroup(forTabId: partnerTabId) {
-            guard group.canAddPane,
-                  let slot = group.slot(of: partnerTabId) else { return }
-            openNewTabIntoSplit(splitId: group.id, slot: slot + 1, navigateURL: url)
+            if let slot = group.slot(of: partnerTabId),
+               openNewTabIntoSplit(splitId: group.id, slot: slot + 1, navigateURL: url) {
+                return
+            }
+            AppLogInfo("[Split] openLinkAsSplitPartner: split \(group.id) can't take a pane " +
+                       "(panes=\(group.paneCount)), opening link in a new tab")
+            createTab(url)
             return
         }
         makeTabNormalOpened(tabId: partnerTabId)

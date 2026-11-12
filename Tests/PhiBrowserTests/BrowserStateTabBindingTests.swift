@@ -152,6 +152,59 @@ final class BrowserStateTabBindingTests: XCTestCase {
         XCTAssertEqual(peek.tab.guidInLocalDB, "phi-peek:" + binding)
     }
 
+    /// A session saved before a pinned tab scope change can restore a normal
+    /// tab that still carries the guid of its pre-change record. The current
+    /// scope holds a record of the same lineage under a new guid.
+    func testPinCommandOnANormalTabWithAStaleBindingKeepsTheExistingRecord() async throws {
+        let store = try makeStore()
+        try await seedPinnedTabUnderSpaceScope(in: store)
+        let state = BrowserState(windowId: 1, localStore: store, profileId: "Default", spaceId: "space-a")
+        let existing = try XCTUnwrap(state.pinnedTabs.first?.guidInLocalDB)
+        XCTAssertNotEqual(existing, "pin")
+        let live = addLiveTab(to: state, guid: 1, binding: "pin")
+
+        state.toggleTabPinStatus(1, guidInDB: "pin")
+        await store.performBackgroundWriteAndWait { _ in }
+
+        XCTAssertTrue(store.isPinnedTabInActiveScope(guid: existing))
+        XCTAssertTrue(live.tab.isPinned)
+        let binding = try XCTUnwrap(live.tab.guidInLocalDB)
+        XCTAssertFalse(["pin", existing].contains(binding))
+        XCTAssertEqual(live.wrapper.customValues.last, binding)
+        XCTAssertTrue(store.isPinnedTabInActiveScope(guid: binding))
+    }
+
+    func testPinCommandPinsABookmarkTabAsANewRecord() throws {
+        let state = try makeState()
+        _ = try addBookmark(to: state, url: "https://bookmark.example")
+        let live = addLiveTab(to: state, guid: 1, binding: "bookmark")
+
+        state.toggleTabPinStatus(1, guidInDB: "bookmark")
+
+        XCTAssertTrue(live.tab.isPinned)
+        let binding = try XCTUnwrap(live.tab.guidInLocalDB)
+        XCTAssertNotEqual(binding, "bookmark")
+        XCTAssertEqual(live.wrapper.customValues.last, binding)
+        XCTAssertNotNil(state.bookmarkManager.bookmark(withGuid: "bookmark"))
+    }
+
+    /// The live tab of a restored pinned tab is not flagged pinned; its
+    /// binding to a current record is what makes the command an unpin.
+    func testPinCommandUnpinsAnUnflaggedTabBoundToACurrentRecord() async throws {
+        let store = try makeStore()
+        try await seedPinnedTabUnderSpaceScope(in: store)
+        let state = BrowserState(windowId: 1, localStore: store, profileId: "Default", spaceId: "space-a")
+        let existing = try XCTUnwrap(state.pinnedTabs.first?.guidInLocalDB)
+        let live = addLiveTab(to: state, guid: 1, binding: existing)
+
+        state.toggleTabPinStatus(1, guidInDB: existing)
+        await store.performBackgroundWriteAndWait { _ in }
+
+        XCTAssertFalse(store.isPinnedTabInActiveScope(guid: existing))
+        XCTAssertNil(live.tab.guidInLocalDB)
+        XCTAssertEqual(live.wrapper.customValues.last, "")
+    }
+
     func testRebindingATabWithoutAPeekWritesOnlyItsBinding() throws {
         let state = try makeState()
         let live = addLiveTab(to: state, guid: 1, binding: "old")

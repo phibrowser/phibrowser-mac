@@ -6305,27 +6305,15 @@ class BrowserState {
     
     func toggleTabPinStatus(_ tabId: Int, guidInDB: String?) {
         if let opennedTab = tabs.first(where: { $0.guid == tabId }) {
-            // A bookmark-backed tab is not pinned yet still carries a non-empty
-            // guidInLocalDB (the bookmark GUID). The branch below treats any
-            // non-empty guidInLocalDB as "already pinned" and would unpin it,
-            // which severs the bookmark binding and leaves the tab neither
-            // pinned nor bookmarked. Pin it like a normal tab instead: a fresh
-            // pinned-record GUID is minted and the live tab retargeted, while
-            // the original bookmark (a separate record keyed by its own GUID)
-            // is left in place.
-            if !opennedTab.isPinned,
-               let bookmarkGuid = opennedTab.guidInLocalDB, !bookmarkGuid.isEmpty,
-               bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil {
-                moveNormalTab(tabId: opennedTab.guid, toPinnd: -1, selectAfterMove: opennedTab.isActive)
-                opennedTab.isPinned = true
-                updateNormalTabs()
-                return
-            }
-            // A Peek opener marker is not a binding: a normal tab that
-            // carries one is not pinned.
+            // The live tab of a pinned record is not always flagged
+            // `isPinned`, so a binding to a current pinned record counts too.
+            // Any other binding does not, and the tab is pinned as a new
+            // record: a bookmark's guid (the bookmark stays in place), a Peek
+            // opener marker, or the guid of a record from before a pinned tab
+            // scope change, which unpinning would resolve through its lineage
+            // to the current record and delete.
             if opennedTab.isPinned
-                || (opennedTab.guidInLocalDB?.isEmpty == false
-                    && !Self.isPeekOpenerGuid(opennedTab.guidInLocalDB)) {
+                || pinnedTabs.contains(where: { $0.guidInLocalDB == opennedTab.guidInLocalDB }) {
                 if let pinnedGuid = opennedTab.guidInLocalDB,
                    let pinnedTab = pinnedTabs.first(where: { $0.guidInLocalDB == pinnedGuid }),
                    pinnedSplitDBGuids(forPinnedTab: pinnedTab) != nil {
@@ -8255,11 +8243,17 @@ class BrowserState {
 
         // A tab unpinned earlier in this session still carries its old pin's
         // lineage. Pinning a normal tab is always a new pin (an owner change is
-        // a tombstone plus a new create), and the store rejects a lineage that
-        // has no active row, so drop the residue before the write.
+        // a tombstone plus a new create), so drop the residue: the new record
+        // has its own lineage.
         tab.pinnedLineageId = nil
         tab.pinnedCreatedDate = nil
-        localStore.moveOrCreatePinnedTab(tab, after: afterGuid, profileId: profileId, spaceId: spaceId, newGuid: newGuid)
+        // The store takes the tab's binding and lineage as the record to
+        // move. It rejects a lineage that has no active row, and resolves the
+        // guid of a record from before a pinned tab scope change to the
+        // current record of its lineage, which it would then move instead of
+        // creating one. Hand it a stand-in that carries neither.
+        let unbound = Tab(guid: -1, url: tab.url, isActive: false, index: 0, title: tab.title, customGuid: nil)
+        localStore.moveOrCreatePinnedTab(unbound, after: afterGuid, profileId: profileId, spaceId: spaceId, newGuid: newGuid)
         setBinding(newGuid, for: tab)
         return newGuid
     }

@@ -8378,6 +8378,26 @@ class BrowserState {
         return true
     }
 
+    /// Takes every pane of a split out of its tab group in one Chromium call,
+    /// so the split leaves the group whole. The panes keep no bookmark guid
+    /// of their own: the split-view bookmark binds to the live split.
+    private func detachSplitFromGroupForBookmark(_ panes: [Tab]) {
+        let grouped = panes.filter { $0.groupToken != nil }
+        guard let token = grouped.first?.groupToken else { return }
+        ChromiumLauncher.sharedInstance().bridge?.removeTabsFromGroup(
+            withWindowId: windowId.int64Value,
+            tabIds: grouped.map { NSNumber(value: Int64($0.guid)) }
+        )
+        for pane in grouped {
+            pane.groupToken = nil
+        }
+        if tabs.contains(where: { $0.groupToken == token }) {
+            groups[token]?.objectWillChange.send()
+        } else {
+            groups.removeValue(forKey: token)
+        }
+    }
+
     private func prepareNormalTabForBookmark(_ tab: Tab, bookmarkGuid: String) {
         // Symmetric to the detach in `moveNormalTab(toPinnd:)`. Phi's
         // bookmark-backed tab is a Mac-only concept layered on top of
@@ -8411,7 +8431,8 @@ class BrowserState {
     /// Converts every member of a tab group into a bookmark folder,
     /// dissolving the group on Chromium's side. Members are NOT closed:
     /// each one is detached from the group and rewired to a fresh bookmark
-    /// record inside the new folder, preserving the in-group order.
+    /// record inside the new folder, preserving the in-group order. A split
+    /// in the group becomes one split-view bookmark bound to the live split.
     /// - Parameters:
     ///   - token: Hex token of the group to dissolve.
     ///   - parentFolder: Destination bookmark folder, or nil for the root.
@@ -8440,21 +8461,43 @@ class BrowserState {
             "startIndex=\(startIndex) folderGuid=\(folderGuid)"
         )
 
-        var bookmarkDrafts: [(tab: Tab, title: String?, url: String, guid: String)] = []
-        for tab in members {
-            guard let url = tab.url, !url.isEmpty else {
+        // A split in the group is saved as one split-view bookmark, bound to
+        // the live split as dragging a split onto bookmarks does; any other
+        // member is saved as a bookmark of its own.
+        var bookmarkDrafts: [(tab: Tab, title: String?, url: String, guid: String,
+                              split: (group: SplitGroup, panes: [Tab], fields: SplitBookmarkFields)?)] = []
+        for unit in normalTabTransferUnits(tabIds: memberGuids) {
+            if let group = splitGroup(forTabId: unit.guid), !group.isPinned {
+                let panes = group.tabIds.compactMap { id in tabs.first { $0.guid == id } }
+                guard panes.count == group.paneCount,
+                      let fields = SplitBookmarkFields(panes: panes.map { (url: $0.url, title: $0.title) }) else {
+                    AppLogWarn(
+                        "[TAB_GROUPS] convertGroupToBookmarks split has a pane without url " +
+                        "token=\(token) splitId=\(group.id); skipping conversion"
+                    )
+                    return
+                }
+                bookmarkDrafts.append((tab: panes[0], title: fields.title, url: fields.url,
+                                       guid: UUID().uuidString, split: (group, panes, fields)))
+                continue
+            }
+            guard let url = unit.url, !url.isEmpty else {
                 AppLogWarn(
                     "[TAB_GROUPS] convertGroupToBookmarks member has empty url " +
-                    "token=\(token) tabId=\(tab.guid); skipping conversion"
+                    "token=\(token) tabId=\(unit.guid); skipping conversion"
                 )
                 return
             }
-            let bookmarkGuid = UUID().uuidString
-            bookmarkDrafts.append((tab: tab, title: tab.title, url: url, guid: bookmarkGuid))
+            bookmarkDrafts.append((tab: unit, title: unit.title, url: url,
+                                   guid: UUID().uuidString, split: nil))
         }
 
         for draft in bookmarkDrafts {
-            prepareNormalTabForBookmark(draft.tab, bookmarkGuid: draft.guid)
+            if let split = draft.split {
+                detachSplitFromGroupForBookmark(split.panes)
+            } else {
+                prepareNormalTabForBookmark(draft.tab, bookmarkGuid: draft.guid)
+            }
         }
 
         localStore.createDirectoryWithBookmarks(
@@ -8468,13 +8511,20 @@ class BrowserState {
                 (title: $0.title,
                  url: $0.url,
                  guid: $0.guid,
-                 secondaryUrl: nil,
-                 secondaryTitle: nil,
-                 splitExtraPanes: [],
-                 layout: nil,
+                 secondaryUrl: $0.split?.fields.secondaryUrl,
+                 secondaryTitle: $0.split?.fields.secondaryTitle,
+                 splitExtraPanes: $0.split?.fields.extraPanes ?? [],
+                 layout: $0.split?.group.layout.rawValue,
                  favicon: $0.tab.liveFaviconData ?? $0.tab.cachedFaviconData)
             }
         )
+        // The live split becomes the bookmark's opened state, so its panes
+        // hide behind the bookmark cell instead of listing as separate tabs.
+        for draft in bookmarkDrafts {
+            if let split = draft.split {
+                splitBookmarkBindings[draft.guid] = split.group.id
+            }
+        }
         updateNormalTabs()
         groups.removeValue(forKey: token)
         pendingGroupClaims = pendingGroupClaims.filter { $0.value != token }

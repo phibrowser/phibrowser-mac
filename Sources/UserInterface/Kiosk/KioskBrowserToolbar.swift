@@ -330,6 +330,10 @@ final class KioskBrowserToolbar: NSVisualEffectView {
             make.width.equalTo(Layout.toolbarActionsWidth)
             make.height.equalTo(Layout.addressBarAccessoryHeight)
         }
+        addressField.setContentCompressionResistancePriority(
+            .defaultLow - 1,
+            for: .horizontal
+        )
         addressField.snp.makeConstraints { make in
             make.leading.equalTo(profileHostingView.snp.trailing).offset(6)
             make.trailing.equalTo(toolbarActionsHostingView.snp.leading).offset(-6)

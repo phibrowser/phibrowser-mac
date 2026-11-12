@@ -165,7 +165,7 @@ final class BookmarkManagerViewController: NSViewController {
     override func loadView() {
         view = NSView()
         view.wantsLayer = true
-        view.phiLayer?.setBackgroundColor(.windowBackground)
+        view.phiLayer?.setBackgroundColor(.pair(.white, .black))
         buildLayout()
     }
 
@@ -528,6 +528,14 @@ final class BookmarkManagerViewController: NSViewController {
             completion: { [weak self] in
                 guard let self, self.projectionGeneration == generation else { return }
                 self.restoreExpandedFolders()
+                let changedRows = IndexSet(next.snapshot.reloadIDs.compactMap { id in
+                    guard let bookmark = next.snapshot.item(for: id) else { return nil }
+                    let row = self.outlineView.row(forItem: bookmark)
+                    return row >= 0 ? row : nil
+                })
+                if !changedRows.isEmpty {
+                    self.outlineView.noteHeightOfRows(withIndexesChanged: changedRows)
+                }
                 self.restoreSelection(guids: selectedGuids)
                 self.beginPendingEditIfPossible()
                 completion?()
@@ -1491,7 +1499,7 @@ extension BookmarkManagerViewController: NSOutlineViewDelegate {
               bookmark.secondaryUrl?.isEmpty == false else {
             return Row.regularHeight
         }
-        return Row.splitHeight
+        return Row.splitHeight / 2 * CGFloat(min(4, 2 + bookmark.splitExtraPanes.count))
     }
 
     func outlineView(

@@ -115,6 +115,23 @@ final class BookmarkManagerProjectionTests: XCTestCase {
         XCTAssertEqual(projection.displaySignatures[folderID]?.childCount, 1)
     }
 
+    func testExtraPanesParticipateInSearchAndReloads() {
+        let bookmark = Bookmark(title: "First", url: "https://first.example",
+                                secondaryUrl: "https://second.example",
+                                splitExtraPanes: [
+                                    SplitBookmarkExtraPane(url: "https://third.example", title: "Third"),
+                                    SplitBookmarkExtraPane(url: "https://fourth.example", title: "Fourth"),
+                                ])
+        for query in ["Third", "fourth.example"] {
+            let result = BookmarkManagerProjection.make(scope: scope, rootBookmarks: [bookmark], searchText: query)
+            XCTAssertEqual(result.rootIDs.map(\.guid), [bookmark.guid])
+        }
+        let previous = BookmarkManagerProjection.make(scope: scope, rootBookmarks: [bookmark])
+        bookmark.splitExtraPanes.removeLast()
+        let current = BookmarkManagerProjection.make(scope: scope, rootBookmarks: [bookmark], previous: previous)
+        XCTAssertTrue(current.snapshot.reloadIDs.contains(AnyHashable(current.itemID(for: bookmark))))
+    }
+
     func testItemIdentityIncludesScopeAndBookmarkGUID() {
         let bookmark = Bookmark(guid: "shared-guid", title: "Shared", url: "https://shared.example")
         let first = BookmarkManagerProjection.make(scope: scope, rootBookmarks: [bookmark])

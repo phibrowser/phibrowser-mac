@@ -14,18 +14,15 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
 
     private(set) var representedBookmarkGuid: String?
 
-    private let primaryIconView = BookmarkManagerCellView.makeIconView()
-    private let secondaryIconView = BookmarkManagerCellView.makeIconView()
+    private let iconViews = (0..<4).map { _ in BookmarkManagerCellView.makeIconView() }
+    private let valueFields = (0..<4).map { _ in NSTextField() }
+    private let laneGuides = (0..<4).map { _ in NSLayoutGuide() }
+    private let laneSeparators = (0..<3).map { _ in NSBox() }
     private let splitMarkerView = NSImageView()
-    private let valueField = NSTextField()
-    private let secondaryValueField = NSTextField()
-    private let laneSeparator = NSBox()
-    private let primaryLaneGuide = NSLayoutGuide()
-    private let secondaryLaneGuide = NSLayoutGuide()
+    private var valueField: NSTextField { valueFields[0] }
 
     private var activeLayoutConstraints: [NSLayoutConstraint] = []
-    private var primaryFaviconHandle: ProfileScopedFaviconLoadHandle?
-    private var secondaryFaviconHandle: ProfileScopedFaviconLoadHandle?
+    private var faviconHandles: [ProfileScopedFaviconLoadHandle] = []
     private var representedScope: BookmarkManagementScope?
     private var configuredColumn: Column = .website
     private var configuredEditableValue: String?
@@ -45,8 +42,7 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
     }
 
     deinit {
-        primaryFaviconHandle?.cancel()
-        secondaryFaviconHandle?.cancel()
+        faviconHandles.forEach { $0.cancel() }
     }
 
     override func prepareForReuse() {
@@ -57,16 +53,17 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
         representedScope = nil
         configuredEditableValue = nil
         commitHandler = nil
-        primaryIconView.image = nil
-        secondaryIconView.image = nil
-        secondaryIconView.isHidden = true
+        for icon in iconViews {
+            icon.image = nil
+            icon.isHidden = true
+        }
+        for field in valueFields {
+            field.stringValue = ""
+            field.toolTip = nil
+            field.isHidden = true
+        }
+        laneSeparators.forEach { $0.isHidden = true }
         splitMarkerView.isHidden = true
-        valueField.stringValue = ""
-        valueField.toolTip = nil
-        secondaryValueField.stringValue = ""
-        secondaryValueField.toolTip = nil
-        secondaryValueField.isHidden = true
-        laneSeparator.isHidden = true
     }
 
     func configure(
@@ -88,7 +85,7 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
             systemSymbolName: Self.splitMarkerSymbolName(for: bookmark.layout),
             accessibilityDescription: nil
         )
-        updateLayout(column: column, isSplit: isSplit)
+        updateLayout(column: column, laneCount: isSplit ? 2 + bookmark.splitExtraPanes.count : 1)
         switch column {
         case .website:
             configureWebsite(bookmark: bookmark, scope: scope, isSplit: isSplit)
@@ -100,8 +97,9 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
                 : nil
         }
 
-        valueField.toolTip = valueField.stringValue
-        secondaryValueField.toolTip = isSplit ? secondaryValueField.stringValue : nil
+        for field in valueFields {
+            field.toolTip = field.isHidden ? nil : field.stringValue
+        }
         updateEditingAppearance(isEditing: false)
     }
 
@@ -151,51 +149,36 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
     }
 
     private func buildLayout() {
-        configureValueField(valueField)
+        for field in valueFields {
+            configureValueField(field)
+            addSubview(field)
+        }
         valueField.delegate = self
-        configureValueField(secondaryValueField)
-
+        for icon in iconViews {
+            addSubview(icon)
+            NSLayoutConstraint.activate([
+                icon.widthAnchor.constraint(equalToConstant: 16),
+                icon.heightAnchor.constraint(equalToConstant: 16),
+            ])
+        }
+        for guide in laneGuides { addLayoutGuide(guide) }
+        for separator in laneSeparators {
+            separator.translatesAutoresizingMaskIntoConstraints = false
+            separator.boxType = .separator
+            separator.alphaValue = 0.45
+            addSubview(separator)
+            separator.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        }
         splitMarkerView.translatesAutoresizingMaskIntoConstraints = false
-        splitMarkerView.image = NSImage(
-            systemSymbolName: Self.splitMarkerSymbolName(for: nil),
-            accessibilityDescription: nil
-        )
         splitMarkerView.imageScaling = .scaleProportionallyDown
         splitMarkerView.contentTintColor = .secondaryLabelColor
-
-        laneSeparator.translatesAutoresizingMaskIntoConstraints = false
-        laneSeparator.boxType = .separator
-        laneSeparator.alphaValue = 0.45
-
-        addLayoutGuide(primaryLaneGuide)
-        addLayoutGuide(secondaryLaneGuide)
         addSubview(splitMarkerView)
-        addSubview(primaryIconView)
-        addSubview(secondaryIconView)
-        addSubview(valueField)
-        addSubview(secondaryValueField)
-        addSubview(laneSeparator)
-        textField = valueField
-        imageView = primaryIconView
-
         NSLayoutConstraint.activate([
-            primaryLaneGuide.topAnchor.constraint(equalTo: topAnchor),
-            primaryLaneGuide.bottomAnchor.constraint(equalTo: centerYAnchor),
-            primaryLaneGuide.leadingAnchor.constraint(equalTo: leadingAnchor),
-            primaryLaneGuide.trailingAnchor.constraint(equalTo: trailingAnchor),
-            secondaryLaneGuide.topAnchor.constraint(equalTo: centerYAnchor),
-            secondaryLaneGuide.bottomAnchor.constraint(equalTo: bottomAnchor),
-            secondaryLaneGuide.leadingAnchor.constraint(equalTo: leadingAnchor),
-            secondaryLaneGuide.trailingAnchor.constraint(equalTo: trailingAnchor),
-
-            primaryIconView.widthAnchor.constraint(equalToConstant: 16),
-            primaryIconView.heightAnchor.constraint(equalToConstant: 16),
-            secondaryIconView.widthAnchor.constraint(equalToConstant: 16),
-            secondaryIconView.heightAnchor.constraint(equalToConstant: 16),
             splitMarkerView.widthAnchor.constraint(equalToConstant: 16),
             splitMarkerView.heightAnchor.constraint(equalToConstant: 16),
-            laneSeparator.heightAnchor.constraint(equalToConstant: 1),
         ])
+        textField = valueField
+        imageView = iconViews[0]
     }
 
     private func configureValueField(_ field: NSTextField) {
@@ -215,66 +198,63 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
         field.setContentCompressionResistancePriority(.init(1), for: .horizontal)
     }
 
-    private func updateLayout(column: Column, isSplit: Bool) {
+    private func updateLayout(column: Column, laneCount: Int) {
         NSLayoutConstraint.deactivate(activeLayoutConstraints)
-
+        activeLayoutConstraints = []
+        let count = min(laneCount, valueFields.count)
+        let isSplit = count > 1
         splitMarkerView.isHidden = column != .website || !isSplit
-        primaryIconView.isHidden = column != .website
-        secondaryIconView.isHidden = column != .website || !isSplit
-        secondaryValueField.isHidden = !isSplit
-        laneSeparator.isHidden = !isSplit
 
-        switch (column, isSplit) {
-        case (.website, false):
-            activeLayoutConstraints = [
-                primaryIconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-                primaryIconView.centerYAnchor.constraint(equalTo: centerYAnchor),
-                valueField.leadingAnchor.constraint(equalTo: primaryIconView.trailingAnchor, constant: 8),
-                valueField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-                valueField.centerYAnchor.constraint(equalTo: centerYAnchor),
+        for index in valueFields.indices {
+            let field = valueFields[index]
+            let icon = iconViews[index]
+            field.isHidden = index >= count
+            icon.isHidden = index >= count || column != .website
+            guard index < count else { continue }
+            let guide = laneGuides[index]
+            activeLayoutConstraints += [
+                guide.topAnchor.constraint(equalTo: index == 0 ? topAnchor : laneGuides[index - 1].bottomAnchor),
+                guide.heightAnchor.constraint(equalTo: heightAnchor, multiplier: 1 / CGFloat(count)),
+                guide.leadingAnchor.constraint(equalTo: leadingAnchor),
+                guide.trailingAnchor.constraint(equalTo: trailingAnchor),
+                field.centerYAnchor.constraint(equalTo: guide.centerYAnchor),
+                field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             ]
-
-        case (.website, true):
-            activeLayoutConstraints = [
-                splitMarkerView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-                splitMarkerView.centerYAnchor.constraint(equalTo: primaryLaneGuide.centerYAnchor),
-                primaryIconView.leadingAnchor.constraint(equalTo: splitMarkerView.trailingAnchor, constant: 8),
-                primaryIconView.centerYAnchor.constraint(equalTo: primaryLaneGuide.centerYAnchor),
-                secondaryIconView.leadingAnchor.constraint(equalTo: primaryIconView.leadingAnchor),
-                secondaryIconView.centerYAnchor.constraint(equalTo: secondaryLaneGuide.centerYAnchor),
-                valueField.leadingAnchor.constraint(equalTo: primaryIconView.trailingAnchor, constant: 8),
-                valueField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-                valueField.centerYAnchor.constraint(equalTo: primaryLaneGuide.centerYAnchor),
-                secondaryValueField.leadingAnchor.constraint(equalTo: secondaryIconView.trailingAnchor, constant: 8),
-                secondaryValueField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-                secondaryValueField.centerYAnchor.constraint(equalTo: secondaryLaneGuide.centerYAnchor),
-                laneSeparator.leadingAnchor.constraint(equalTo: valueField.leadingAnchor),
-                laneSeparator.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-                laneSeparator.centerYAnchor.constraint(equalTo: centerYAnchor),
-            ]
-
-        case (.address, false):
-            activeLayoutConstraints = [
-                valueField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-                valueField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-                valueField.centerYAnchor.constraint(equalTo: centerYAnchor),
-            ]
-
-        case (.address, true):
-            activeLayoutConstraints = [
-                valueField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-                valueField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-                valueField.centerYAnchor.constraint(equalTo: primaryLaneGuide.centerYAnchor),
-                secondaryValueField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-                secondaryValueField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-                secondaryValueField.centerYAnchor.constraint(equalTo: secondaryLaneGuide.centerYAnchor),
-                laneSeparator.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-                laneSeparator.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-                laneSeparator.centerYAnchor.constraint(equalTo: centerYAnchor),
+            if column == .website {
+                activeLayoutConstraints += [
+                    icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: isSplit ? 32 : 8),
+                    icon.centerYAnchor.constraint(equalTo: guide.centerYAnchor),
+                    field.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
+                ]
+            } else {
+                activeLayoutConstraints.append(field.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8))
+            }
+        }
+        for (index, separator) in laneSeparators.enumerated() {
+            separator.isHidden = index >= count - 1
+            guard !separator.isHidden else { continue }
+            activeLayoutConstraints += [
+                separator.leadingAnchor.constraint(equalTo: valueField.leadingAnchor),
+                separator.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+                separator.centerYAnchor.constraint(equalTo: laneGuides[index].bottomAnchor),
             ]
         }
-
+        if column == .website && isSplit {
+            activeLayoutConstraints += [
+                splitMarkerView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+                splitMarkerView.centerYAnchor.constraint(equalTo: laneGuides[0].centerYAnchor),
+            ]
+        }
         NSLayoutConstraint.activate(activeLayoutConstraints)
+    }
+
+    private func paneValues(for bookmark: Bookmark, isSplit: Bool) -> [(url: String?, title: String?)] {
+        var panes: [(url: String?, title: String?)] = [(bookmark.url, bookmark.title)]
+        if isSplit {
+            panes.append((bookmark.secondaryUrl, bookmark.secondaryTitle))
+            panes += bookmark.splitExtraPanes.map { ($0.url, $0.title) }
+        }
+        return Array(panes.prefix(valueFields.count))
     }
 
     private func configureWebsite(
@@ -282,65 +262,34 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
         scope: BookmarkManagementScope,
         isSplit: Bool
     ) {
-        valueField.stringValue = Self.laneTitle(
-            title: bookmark.title,
-            fallbackURLString: bookmark.url
-        )
-        secondaryValueField.stringValue = isSplit
-            ? Self.laneTitle(title: bookmark.secondaryTitle, fallbackURLString: bookmark.secondaryUrl)
-            : ""
-        valueField.textColor = .labelColor
-        secondaryValueField.textColor = .labelColor
-
-        if bookmark.isFolder {
-            primaryIconView.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
-            primaryIconView.contentTintColor = .secondaryLabelColor
-            secondaryIconView.image = nil
-            secondaryIconView.isHidden = true
-            return
-        }
-
-        primaryIconView.contentTintColor = nil
-        secondaryIconView.contentTintColor = nil
-        secondaryIconView.isHidden = !isSplit
-        loadFavicon(
-            into: primaryIconView,
-            pageURLString: bookmark.url,
-            snapshotData: bookmark.liveFaviconData ?? bookmark.cachedFaviconData,
-            scope: scope,
-            expectedGuid: bookmark.guid,
-            isPrimary: true
-        )
-        if isSplit {
-            loadFavicon(
-                into: secondaryIconView,
-                pageURLString: bookmark.secondaryUrl,
-                snapshotData: nil,
-                scope: scope,
-                expectedGuid: bookmark.guid,
-                isPrimary: false
-            )
-        } else {
-            secondaryIconView.image = nil
+        for (index, pane) in paneValues(for: bookmark, isSplit: isSplit).enumerated() {
+            let field = valueFields[index]
+            let icon = iconViews[index]
+            field.stringValue = Self.laneTitle(title: pane.title, fallbackURLString: pane.url)
+            field.textColor = .labelColor
+            if bookmark.isFolder {
+                icon.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
+                icon.contentTintColor = .secondaryLabelColor
+            } else {
+                icon.contentTintColor = nil
+                loadFavicon(
+                    into: icon,
+                    pageURLString: pane.url,
+                    snapshotData: index == 0 ? bookmark.liveFaviconData ?? bookmark.cachedFaviconData : nil,
+                    scope: scope,
+                    expectedGuid: bookmark.guid
+                )
+            }
         }
     }
 
     private func configureAddress(bookmark: Bookmark, isSplit: Bool) {
-        valueField.textColor = .secondaryLabelColor
-        secondaryValueField.textColor = .secondaryLabelColor
-        primaryIconView.image = nil
-        secondaryIconView.image = nil
-
-        if bookmark.isFolder {
-            valueField.stringValue = Self.localizedChildCount(bookmark.children.count)
-        } else if isSplit {
-            valueField.stringValue = Self.displayURL(bookmark.url)
-            secondaryValueField.stringValue = Self.displayURL(bookmark.secondaryUrl)
-        } else {
-            valueField.stringValue = Self.displayURL(bookmark.url)
-        }
-        if !isSplit {
-            secondaryValueField.stringValue = ""
+        iconViews.forEach { $0.image = nil }
+        for (index, pane) in paneValues(for: bookmark, isSplit: isSplit).enumerated() {
+            valueFields[index].textColor = .secondaryLabelColor
+            valueFields[index].stringValue = bookmark.isFolder
+                ? Self.localizedChildCount(bookmark.children.count)
+                : Self.displayURL(pane.url)
         }
     }
 
@@ -349,8 +298,7 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
         pageURLString: String?,
         snapshotData: Data?,
         scope: BookmarkManagementScope,
-        expectedGuid: String,
-        isPrimary: Bool
+        expectedGuid: String
     ) {
         imageView.image = Self.faviconPlaceholder
         let request = ProfileScopedFaviconRequest(
@@ -367,18 +315,19 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
             }
             imageView?.image = result.image
         }
-        if isPrimary {
-            primaryFaviconHandle = handle
-        } else {
-            secondaryFaviconHandle = handle
+        if let handle {
+            faviconHandles.append(handle)
         }
     }
 
     private func cancelFaviconLoads() {
-        primaryFaviconHandle?.cancel()
-        primaryFaviconHandle = nil
-        secondaryFaviconHandle?.cancel()
-        secondaryFaviconHandle = nil
+        faviconHandles.forEach { $0.cancel() }
+        faviconHandles.removeAll()
+        for icon in iconViews { icon.image = nil }
+        for field in valueFields {
+            field.stringValue = ""
+            field.toolTip = nil
+        }
     }
 
     private func endEditing(value: String?, deferUntilResigned: Bool = false) {

@@ -135,6 +135,27 @@ one are routed as in any other tab. Reload, back/forward and session restore
 neither route nor remove it. A plain click, in the current tab or on a
 `target=_blank` link, is routed at every hop.
 
+When a rule re-homes the jump a Redirector page makes, the tab that showed the
+Redirector page is put back the way it was before it, so no blank page is left
+in the Space. This holds for every rule kind and however the Redirector page
+was reached (a click, the address bar, a bookmark, another app). Chromium
+(`PhiSpaceRoutingNavigationThrottle`) counts a navigation as that jump when it
+is a client redirect (`location.replace`, a meta refresh) with no user
+gesture, started within 5 seconds of the page appearing. The tab then:
+
+- goes back to the page it showed before, and the Redirector page's history
+  entry is removed, so Forward cannot reach it. If that earlier page was the
+  result of a submitted form, the tab is left on the Redirector page instead;
+- with no earlier page, is closed, and does not enter the recently-closed
+  list. It is reset to the New Tab page instead when the Redirector page's
+  address was typed into it, or when it is its window's last tab. A pinned tab
+  or Bookmark Tab is never closed or reset.
+
+With "Ask every time" this happens before the chooser appears, and the pick
+then opens as it does after a server redirect: in a new tab, or in place when
+the tab is back on the New Tab page. A later jump, or one the user made, is
+re-homed and the tab left on its page.
+
 ## Sender capture
 
 `ExternalOpenSender.captureCurrent()` reads the Apple event AppKit is

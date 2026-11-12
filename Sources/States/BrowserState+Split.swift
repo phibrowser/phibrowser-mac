@@ -812,8 +812,36 @@ extension BrowserState {
     ///   close was handled here; `false` leaves the close to the caller.
     func closeSplitSavedInSidebar(containingTabId tabId: Int) -> Bool {
         guard let group = splitGroup(forTabId: tabId), !splitAllowsPaneRearrangement(group) else { return false }
+        noteBookmarkSplitClosing(group)
         closeTabs(group.tabIds.compactMap { id in tabs.first { $0.guid == id } })
         return true
+    }
+
+    /// The user is closing the bookmark-bound split `group` whole. Its panes
+    /// do not all go at once: a page with an unload handler closes a moment
+    /// after the others, and by then the split has dissolved and its
+    /// bookmark has let go of it. `updateNormalTabs` keeps the panes out of
+    /// the tab list until they are removed: listed, the late one would flash
+    /// a row that vanishes. A pane whose page holds the close back (an
+    /// unload prompt the user declines) stays open, so whatever is left
+    /// after a short wait is listed.
+    func noteBookmarkSplitClosing(_ group: SplitGroup) {
+        guard splitBookmarkBindings.values.contains(group.id) else { return }
+        let tabIds = group.tabIds
+        splitPaneIdsClosingBehindBookmark.formUnion(tabIds)
+        // Longer than Chromium gives a page's unload handlers to finish.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.listPanesNoLongerClosingBehindBookmark(tabIds)
+        }
+    }
+
+    /// The panes `tabIds` of a bookmark-bound split that was closing are
+    /// staying open: list the ones that were hidden for the close as normal
+    /// tabs.
+    func listPanesNoLongerClosingBehindBookmark(_ tabIds: [Int]) {
+        guard !splitPaneIdsClosingBehindBookmark.isDisjoint(with: tabIds) else { return }
+        splitPaneIdsClosingBehindBookmark.subtract(tabIds)
+        updateNormalTabs()
     }
 
     /// Saves the panes of `group` into whatever stands for it in the

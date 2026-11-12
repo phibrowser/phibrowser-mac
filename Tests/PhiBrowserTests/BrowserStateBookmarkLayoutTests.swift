@@ -483,6 +483,44 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
                        ["https://c.example/", "https://a.example/", "https://f.example/", "https://d.example/"])
     }
 
+    /// A page with an unload handler closes a moment after the other panes,
+    /// once the split has dissolved and the bookmark has let go of it. It
+    /// stays out of the tab list instead of flashing a row that vanishes.
+    func testPaneClosingLastOutOfABookmarkSplitStaysOutOfTheTabList() throws {
+        let state = try makeState()
+        let bookmark = try makeBoundFourPaneBookmark(in: state, guid: "closing-bookmark")
+        XCTAssertEqual(state.normalTabs.map(\.guid), [5])
+
+        state.closeBookmark(bookmark)
+        XCTAssertEqual(state.splitPaneIdsClosingBehindBookmark, [1, 2, 3, 4])
+
+        // Panes 2...4 go right away; pane 1 is still running its handler.
+        state.applyTabsRemoved([2, 3, 4])
+        state.handleSplitRemoved(splitId: "split")
+        XCTAssertNil(state.splitBookmarkBindings["closing-bookmark"])
+        XCTAssertEqual(state.normalTabs.map(\.guid), [5])
+
+        state.closeTab(1)
+        XCTAssertTrue(state.splitPaneIdsClosingBehindBookmark.isEmpty)
+        XCTAssertEqual(state.normalTabs.map(\.guid), [5])
+    }
+
+    /// A pane whose page held the close back stays open, as a normal tab.
+    func testPaneOfAClosingBookmarkSplitThatStaysOpenIsListed() throws {
+        let state = try makeState()
+        let bookmark = try makeBoundFourPaneBookmark(in: state, guid: "held-back-bookmark")
+
+        state.closeBookmark(bookmark)
+        state.applyTabsRemoved([2, 3, 4])
+        state.handleSplitRemoved(splitId: "split")
+        XCTAssertEqual(state.normalTabs.map(\.guid), [5])
+
+        state.listPanesNoLongerClosingBehindBookmark([1, 2, 3, 4])
+
+        XCTAssertTrue(state.splitPaneIdsClosingBehindBookmark.isEmpty)
+        XCTAssertEqual(Set(state.normalTabs.map(\.guid)), [1, 5])
+    }
+
     func testReplacedPaneIsSavedIntoTheBoundBookmark() throws {
         let state = try makeState()
         let bookmark = try makeBoundFourPaneBookmark(in: state, guid: "replace-bookmark-pane")

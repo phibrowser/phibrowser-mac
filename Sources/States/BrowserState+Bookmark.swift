@@ -425,6 +425,7 @@ extension BrowserState {
             // `group` would race with state cleanup.
             let panes = group.tabIds
                 .compactMap { id in tabs.first(where: { $0.guid == id }) }
+            noteBookmarkSplitClosing(group)
             panes.forEach { $0.close() }
             return
         }

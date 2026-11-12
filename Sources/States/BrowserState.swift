@@ -221,6 +221,11 @@ class BrowserState {
     /// row that vanishes once the split lands behind the bookmark cell.
     var splitPaneIdsOpeningBehindBookmark: Set<Int> = []
 
+    /// Panes of a bookmark-bound split the user is closing whole, from the
+    /// close request until each is removed. See
+    /// `noteBookmarkSplitClosing(_:)`.
+    var splitPaneIdsClosingBehindBookmark: Set<Int> = []
+
     /// customGuid → target URLs. The tab is initially opened as NTP (to keep
     /// `CrossDomainNewTabNavigationThrottle` from intercepting the initial
     /// load while the customGuid marker is set); once Chromium echoes the
@@ -1215,7 +1220,8 @@ class BrowserState {
             }
             if !traditionalLayout,
                splitBookmarkBoundTabIds.contains(tab.guid)
-                || splitPaneIdsOpeningBehindBookmark.contains(tab.guid) {
+                || splitPaneIdsOpeningBehindBookmark.contains(tab.guid)
+                || splitPaneIdsClosingBehindBookmark.contains(tab.guid) {
                 return nil
             }
             return tab.guid
@@ -5583,6 +5589,7 @@ class BrowserState {
         applyingRemovalIDs = removalIDs
         splitPaneIdsBeingRemoved.formUnion(removalIDs)
         splitPaneIdsOpeningBehindBookmark.subtract(removalIDs)
+        splitPaneIdsClosingBehindBookmark.subtract(removalIDs)
         defer {
             applyingRemovalIDs = nil
             splitPaneIdsBeingRemoved.subtract(removalIDs)

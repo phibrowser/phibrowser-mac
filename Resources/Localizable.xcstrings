@@ -1,6 +1,66 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "settings.general.sidebarPosition.left" : {
+      "comment" : "General settings - Left sidebar position",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Left"
+          }
+        }
+      }
+    },
+    "settings.general.sidebarPosition.right" : {
+      "comment" : "General settings - Right sidebar position",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Right"
+          }
+        }
+      }
+    },
+    "settings.general.sidebarPosition.title" : {
+      "comment" : "General settings - Side of the window containing vertical tabs",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sidebar position"
+          }
+        }
+      }
+    },
+    "sidebar.contextMenu.moveLeft" : {
+      "comment" : "Sidebar context menu - Move vertical tabs to the left window edge",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move Sidebar to Left"
+          }
+        }
+      }
+    },
+    "sidebar.contextMenu.moveRight" : {
+      "comment" : "Sidebar context menu - Move vertical tabs to the right window edge",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move Sidebar to Right"
+          }
+        }
+      }
+    },
     "" : {
 
     },

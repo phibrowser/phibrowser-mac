@@ -6,8 +6,7 @@
 import Cocoa
 import Combine
 
-/// The shell window's one split: the sidebar column on the left, the page
-/// area on the right. It belongs to the window, not to any Space session,
+/// The shell window's one split: the sidebar column and the page area. It belongs to the window, not to any Space session,
 /// which is what makes the sidebar read as one sidebar across Space
 /// switches: its width, collapsed state, vibrancy backdrop and divider never
 /// rebuild when the presented session changes. A session contributes two
@@ -28,13 +27,41 @@ final class ShellSplitViewController: NSViewController {
     /// — ahead of any width its resident trees would prefer.
     static let sidebarHoldingPriority = NSLayoutConstraint.Priority(260)
     static let contentHoldingPriority = NSLayoutConstraint.Priority(240)
-    private static let splitViewAutosaveName = "phiMainBrowserSplitView"
+    private static var splitViewAutosaveName: String {
+        SidebarPosition.isOnRight ? "phiMainBrowserSplitViewRight" : "phiMainBrowserSplitView"
+    }
+
+    private var sidebarOnRight = false
+    private var isReorderingSidebar = false
+
+    private func updateSidebarPosition() {
+        let right = SidebarPosition.isOnRight
+        guard sidebarOnRight != right else { return }
+        // `repositionSidebarItem` saves the outgoing side's current width;
+        // a pending write from before the move would overwrite it later.
+        sidebarWidthPersistWorkItem?.cancel()
+        sidebarWidthPersistWorkItem = nil
+        let destinationWidth = AccountController.shared.localDataAccount?.userDefaults
+            .lastKnownSidebarWidth(for: SidebarPosition.effective) ?? 0
+        isReorderingSidebar = true
+        sidebarSplitViewItem = splitViewController.repositionSidebarItem(
+            sidebarSplitViewItem, onRight: right, width: destinationWidth,
+            autosaveName: Self.splitViewAutosaveName
+        )
+        sidebarOnRight = right
+        isReorderingSidebar = false
+        if destinationWidth >= Self.leftItemMinWidth {
+            lastExpandedSidebarWidth = destinationWidth
+        }
+        lastRecordedSidebarWidth = nil
+        recordSidebarWidth()
+    }
 
     private let splitViewController = PhiSplitViewController()
     let sidebarHost = ShellSidebarHostViewController()
     let contentHost = ShellContentHostViewController()
     let floatingSidebarHost = FloatingSidebarHostViewController()
-    private var sidebarSplitViewItem: NSSplitViewItem!
+    @Published private var sidebarSplitViewItem: NSSplitViewItem!
     private var contentSplitViewItem: NSSplitViewItem!
     private var cancellables = Set<AnyCancellable>()
     private var lastTraditionalLayout: Bool?
@@ -62,12 +89,15 @@ final class ShellSplitViewController: NSViewController {
 
         if #available(macOS 26.0, *) {
             sidebarSplitViewItem = NSSplitViewItem(viewController: sidebarHost)
-        } else {
+        } else if !SidebarPosition.isOnRight {
             sidebarSplitViewItem = NSSplitViewItem(sidebarWithViewController: sidebarHost)
+        } else {
+            sidebarSplitViewItem = NSSplitViewItem(viewController: sidebarHost)
         }
         sidebarSplitViewItem.minimumThickness = Self.leftItemMinWidth
         sidebarSplitViewItem.maximumThickness = Self.leftItemMaxWidth
         sidebarSplitViewItem.canCollapse = true
+        sidebarSplitViewItem.collapseBehavior = SidebarPosition.isOnRight ? .preferResizingSiblingsWithFixedSplitView : .default
         sidebarSplitViewItem.holdingPriority = Self.sidebarHoldingPriority
         if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
             sidebarSplitViewItem.isCollapsed = true
@@ -78,6 +108,8 @@ final class ShellSplitViewController: NSViewController {
         contentSplitViewItem.holdingPriority = Self.contentHoldingPriority
         splitViewController.addSplitViewItem(contentSplitViewItem)
 
+        updateSidebarPosition()
+
         // The same autosave name the per-session split used, so the width
         // the user had carries over.
         splitView.autosaveName = Self.splitViewAutosaveName
@@ -86,9 +118,12 @@ final class ShellSplitViewController: NSViewController {
         // account so a launch with a collapsed sidebar still opens the panel
         // at the user's width; every expanded-column frame updates it.
         lastExpandedSidebarWidth = AccountController.shared.localDataAccount?
-            .userDefaults.lastKnownSidebarWidth ?? 0
+            .userDefaults.lastKnownSidebarWidth(for: SidebarPosition.effective) ?? 0
 
-        sidebarSplitViewItem.publisher(for: \.isCollapsed)
+        $sidebarSplitViewItem
+            .compactMap { $0 }
+            .map { $0.publisher(for: \.isCollapsed) }
+            .switchToLatest()
             .sink { [weak self] isCollapsed in
                 guard let self else { return }
                 if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
@@ -111,12 +146,15 @@ final class ShellSplitViewController: NSViewController {
             .sink { [weak self] _ in self?.updateLayoutForHorizontalTabs() }
             .store(in: &cancellables)
         updateLayoutForHorizontalTabs()
-        floatingSidebarHost.install(in: self, over: contentHost.view)
+        floatingSidebarHost.install(in: self)
     }
 
     /// Observes the actual split item, including AppKit collapse/restore.
     var sidebarCollapsedPublisher: AnyPublisher<Bool, Never> {
-        sidebarSplitViewItem.publisher(for: \.isCollapsed)
+        $sidebarSplitViewItem
+            .compactMap { $0 }
+            .map { $0.publisher(for: \.isCollapsed) }
+            .switchToLatest()
             .removeDuplicates()
             .eraseToAnyPublisher()
     }
@@ -162,7 +200,7 @@ final class ShellSplitViewController: NSViewController {
         }
         guard !collapsed, let width, width > 0 else { return }
         let clamped = min(max(width, Self.leftItemMinWidth), Self.leftItemMaxWidth)
-        splitViewController.splitView.setPosition(clamped, ofDividerAt: 0)
+        splitViewController.splitView.setPosition(SidebarPosition.isOnRight ? splitViewController.splitView.bounds.width - splitViewController.splitView.dividerThickness - clamped : clamped, ofDividerAt: 0)
     }
 
     func containsSidebarTabDragBoundary(at screenLocation: CGPoint) -> Bool {
@@ -171,6 +209,7 @@ final class ShellSplitViewController: NSViewController {
     }
 
     private func updateLayoutForHorizontalTabs() {
+        updateSidebarPosition()
         let traditional = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
         if let last = lastTraditionalLayout, last == traditional { return }
         let changingLayout = lastTraditionalLayout != nil
@@ -194,7 +233,7 @@ final class ShellSplitViewController: NSViewController {
     /// serializes and atomically rewrites the whole store, and a divider drag
     /// reports a new width (twice) on every frame.
     private func recordSidebarWidth() {
-        guard let item = sidebarSplitViewItem else { return }
+        guard !isReorderingSidebar, let item = sidebarSplitViewItem else { return }
         let width = item.isCollapsed ? 0 : item.viewController.view.frame.width
         guard width != lastRecordedSidebarWidth else { return }
         lastRecordedSidebarWidth = width
@@ -203,8 +242,9 @@ final class ShellSplitViewController: NSViewController {
         }
         guard width != Self.leftItemMinWidth else { return }
         sidebarWidthPersistWorkItem?.cancel()
+        let side = SidebarPosition.effective
         let workItem = DispatchWorkItem {
-            AccountController.shared.localDataAccount?.userDefaults.setLastKnownSidebarWidth(width)
+            AccountController.shared.localDataAccount?.userDefaults.setLastKnownSidebarWidth(width, for: side)
         }
         sidebarWidthPersistWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.sidebarWidthPersistDelay, execute: workItem)
@@ -478,5 +518,72 @@ final class ShellContentHostViewController: NSViewController, BrowserThemeContex
     func evict(_ contentView: NSView) {
         contentView.removeFromSuperview()
         contentView.isHidden = false
+    }
+}
+
+@MainActor
+extension NSSplitViewController {
+    /// Moves the sidebar item to the other side, keeping its collapsed state.
+    /// `width` is the destination side's own last expanded width (0 keeps the
+    /// current width); it is applied to a visible column, and to a collapsed
+    /// one's hidden view so the next expand opens at it.
+    func repositionSidebarItem(_ previous: NSSplitViewItem, onRight: Bool, width destinationWidth: CGFloat, autosaveName: String) -> NSSplitViewItem {
+        let restoringExistingGeometry = splitView.autosaveName != nil
+        let collapsed = previous.isCollapsed
+        let currentWidth = max(previous.minimumThickness, previous.viewController.view.frame.width)
+        if restoringExistingGeometry, !collapsed {
+            // The outgoing side's width is only in its autosaved frames,
+            // which the move drops; keep it for the next switch back.
+            AccountController.shared.localDataAccount?.userDefaults
+                .setLastKnownSidebarWidth(currentWidth, for: onRight ? .left : .right)
+        }
+        let width = destinationWidth > 0
+            ? min(max(destinationWidth, previous.minimumThickness), previous.maximumThickness)
+            : currentWidth
+        splitView.autosaveName = nil
+        // AppKit restores the frames saved under a name as soon as it is
+        // assigned, setting the subviews' hidden state behind the item's
+        // `isCollapsed` (the split then reports collapsed while the column
+        // shows, or expands to zero width), and offers no way to assign a
+        // name without that restore. A live move therefore drops the frames
+        // saved under the destination name: the destination side's width is
+        // carried by `width` instead, and the frames applied below are what
+        // AppKit saves under that name next.
+        if restoringExistingGeometry {
+            UserDefaults.standard.removeObject(forKey: "NSSplitView Subview Frames \(autosaveName)")
+        }
+        removeSplitViewItem(previous)
+        let item: NSSplitViewItem
+        if #available(macOS 26.0, *) {
+            item = previous
+        } else {
+            // AppKit's legacy sidebar behavior is leading-only; trailing columns need a plain item.
+            item = onRight ? NSSplitViewItem(viewController: previous.viewController)
+                : NSSplitViewItem(sidebarWithViewController: previous.viewController)
+            item.minimumThickness = previous.minimumThickness
+            item.maximumThickness = previous.maximumThickness
+            item.holdingPriority = previous.holdingPriority
+            item.canCollapse = previous.canCollapse
+        }
+        item.collapseBehavior = onRight ? .preferResizingSiblingsWithFixedSplitView : .default
+        item.isCollapsed = collapsed
+        let index = onRight ? 1 : 0
+        insertSplitViewItem(item, at: index)
+        if restoringExistingGeometry { splitView.autosaveName = autosaveName }
+        item.isCollapsed = collapsed
+        view.layoutSubtreeIfNeeded()
+        if restoringExistingGeometry {
+            if collapsed {
+                // A collapsed subview keeps its size while hidden and
+                // expands back to it.
+                if splitView.arrangedSubviews.indices.contains(index) {
+                    let column = splitView.arrangedSubviews[index]
+                    column.setFrameSize(NSSize(width: width, height: column.frame.height))
+                }
+            } else {
+                splitView.setPosition(onRight ? splitView.bounds.width - splitView.dividerThickness - width : width, ofDividerAt: 0)
+            }
+        }
+        return item
     }
 }

@@ -1412,10 +1412,14 @@ class SpaceSessionController: NSWindowController {
     /// re-places them on the chrome row. Driven by the sidebar/fullscreen sink
     /// and, in hosted mode, re-applied when a session is presented (the sink
     /// is silent for background sessions).
+    /// In the right-sidebar layout the lights live in the top band and show
+    /// only while it is revealed (`FloatingTrafficLightsView.Placement.topBand`).
     private func applyTrafficLightVisibility(collapsed: Bool, fullScreen: Bool) {
         guard let window else { return }
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
-        let hideTrafficLights = !fullScreen && collapsed && !traditionalLayout
+        let bandVisible = mainSplitViewController.webContentContainerViewController.floatingSidebarHost.isTrafficLightBandVisible
+        let hideTrafficLights = !fullScreen && !traditionalLayout
+            && (SidebarPosition.isOnRight ? !bandVisible : collapsed)
 
         window.standardWindowButton(.closeButton)?.isHidden = hideTrafficLights
         window.standardWindowButton(.miniaturizeButton)?.isHidden = hideTrafficLights
@@ -1423,6 +1427,14 @@ class SpaceSessionController: NSWindowController {
 
         window.titlebarAppearsTransparent = !fullScreen
         updateTrafficLightPlacement(fullScreen: fullScreen)
+    }
+
+    /// Re-applies the lights' visibility when the right-sidebar top band is
+    /// revealed or hidden.
+    func refreshTrafficLightVisibility() {
+        guard isPresentedOrLegacy else { return }
+        applyTrafficLightVisibility(collapsed: browserState.sidebarCollapsed,
+                                    fullScreen: browserState.isInFullScreenMode)
     }
 
     /// Centre line of the chrome row that runs beside the traffic lights, as a
@@ -1483,8 +1495,8 @@ class SpaceSessionController: NSWindowController {
         trafficLightPositioner?.stop(restoringPlacement: true)
         let positioner = TrafficLightPositioner(
             window: window,
-            centerFromWindowTop: Self.chromeRowCenter(for: layoutMode, edgeToEdgeEnabled: layout.edgeToEdgeEnabled),
-            centerFromWindowLeading: layoutMode == .balanced ? 22 : nil
+            centerFromWindowTop: layout.sidebarOnRight ? FloatingTrafficLightMetrics.bandHeight / 2 : Self.chromeRowCenter(for: layoutMode, edgeToEdgeEnabled: layout.edgeToEdgeEnabled),
+            centerFromWindowLeading: layout.sidebarOnRight ? 20 : (layoutMode == .balanced ? 22 : nil)
         )
         trafficLightPositioner = positioner
         trafficLightLayout = layout

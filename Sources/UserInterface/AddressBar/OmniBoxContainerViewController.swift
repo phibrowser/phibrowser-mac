@@ -677,8 +677,23 @@ final class OmniBoxContainerViewController: NSViewController {
             .map { _ in () }
             .eraseToAnyPublisher() ?? Empty<Void, Never>().eraseToAnyPublisher()
         
-        frameChangePublisher
+        let defaultsChanges = NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .map { _ in () }
+        let geometryChanges = frameChangePublisher
             .merge(with: sidebarWidthPublisher)
+            .merge(with: defaultsChanges)
+            .eraseToAnyPublisher()
+
+        geometryChanges
+            .map { [weak self] _ -> (CGRect, CGFloat, Bool) in
+                (self?.view.bounds ?? .zero, self?.browserState?.sidebarWidth ?? 0, SidebarPosition.isOnRight)
+            }
+            .removeDuplicates { (previous: (CGRect, CGFloat, Bool), current: (CGRect, CGFloat, Bool)) in
+                guard previous.0 == current.0 else { return false }
+                guard previous.1 == current.1 else { return false }
+                return previous.2 == current.2
+            }
             .sink { [weak self] _ in
                 self?.updateOmniBoxFrame()
             }
@@ -713,7 +728,7 @@ final class OmniBoxContainerViewController: NSViewController {
         if sidebarWidth == 0 || rightAreaWidth < actualWidth {
             proposedX = (parentBounds.width - actualWidth) / 2
         } else {
-            proposedX = sidebarWidth + (rightAreaWidth - actualWidth) / 2
+            proposedX = (SidebarPosition.isOnRight ? 0 : sidebarWidth) + (rightAreaWidth - actualWidth) / 2
         }
         let x = max(
             horizontalInset,

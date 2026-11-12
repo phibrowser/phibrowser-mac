@@ -15,6 +15,7 @@ final class HostedSidebarStateTests: XCTestCase {
     private var directory: URL!
     private var accountDirectory: URL!
     private var previousLayout: Any?
+    private var previousSidebarPosition: Any?
     private var slots: [SpaceWindowSlot] = []
     private var subscriptions = Set<AnyCancellable>()
     /// Stand-in web views of `mountPage`, held here: a wrapper's `nativeView` is weak.
@@ -25,6 +26,10 @@ final class HostedSidebarStateTests: XCTestCase {
     override func setUp() async throws {
         previousLayout = UserDefaults.standard.object(forKey: PhiPreferences.GeneralSettings.layoutModeKey)
         PhiPreferences.GeneralSettings.saveLayoutMode(.performance)
+        // The geometry below is the left sidebar's, whatever side the
+        // developer running the suite chose.
+        previousSidebarPosition = UserDefaults.standard.object(forKey: PhiPreferences.GeneralSettings.sidebarPositionKey)
+        PhiPreferences.GeneralSettings.saveSidebarPosition(.left)
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let account = Account(userID: "hosted-sidebar-test-\(UUID().uuidString)")
@@ -48,6 +53,7 @@ final class HostedSidebarStateTests: XCTestCase {
             try FileManager.default.removeItem(at: url)
         }
         UserDefaults.standard.set(previousLayout, forKey: PhiPreferences.GeneralSettings.layoutModeKey)
+        UserDefaults.standard.set(previousSidebarPosition, forKey: PhiPreferences.GeneralSettings.sidebarPositionKey)
         try await super.tearDown()
     }
 

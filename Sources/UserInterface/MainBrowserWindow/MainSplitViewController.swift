@@ -82,7 +82,7 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
 
     let webContentContainerViewController: WebContentContainerViewController
 
-    private var sideBarSplitViewItem: NSSplitViewItem!
+    @Published private var sideBarSplitViewItem: NSSplitViewItem!
     private var webContentSplitViewItem: NSSplitViewItem!
     private lazy var cancellables = Set<AnyCancellable>()
 
@@ -108,7 +108,27 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
         self.view = isHosted ? NSView() : TitlebarTransparentView()
     }
 
-    private static let splitViewAutosaveName = "phiMainBrowserSplitView"
+    private static var splitViewAutosaveName: String {
+        SidebarPosition.isOnRight ? "phiMainBrowserSplitViewRight" : "phiMainBrowserSplitView"
+    }
+
+    private var sidebarOnRight = false
+    private var isReorderingSidebar = false
+
+    private func updateSidebarPosition() {
+        let right = SidebarPosition.isOnRight
+        guard sidebarOnRight != right else { return }
+        let destinationWidth = AccountController.shared.localDataAccount?.userDefaults
+            .lastKnownSidebarWidth(for: SidebarPosition.effective) ?? 0
+        isReorderingSidebar = true
+        sideBarSplitViewItem = splitViewController.repositionSidebarItem(
+            sideBarSplitViewItem, onRight: right, width: destinationWidth,
+            autosaveName: Self.splitViewAutosaveName
+        )
+        sidebarOnRight = right
+        isReorderingSidebar = false
+        updateSidebarWidth()
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -162,7 +182,10 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
         cancellables.removeAll()
         guard !isHosted else { return }
 
-        sideBarSplitViewItem.publisher(for: \.isCollapsed)
+        $sideBarSplitViewItem
+            .compactMap { $0 }
+            .map { $0.publisher(for: \.isCollapsed) }
+            .switchToLatest()
             .sink { [weak self] isCollapsed in
                 guard let self else { return }
                 self.updateSidebarWidth()
@@ -251,7 +274,7 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
         setSidebarCollapsed(collapsed, animated: false)
         guard !collapsed, let width, width > 0 else { return }
         let clamped = min(max(width, Self.leftItemMinWidth), Self.leftItemMaxWidth)
-        splitViewController.splitView.setPosition(clamped, ofDividerAt: 0)
+        splitViewController.splitView.setPosition(SidebarPosition.isOnRight ? splitViewController.splitView.bounds.width - splitViewController.splitView.dividerThickness - clamped : clamped, ofDividerAt: 0)
     }
 
     func toggleAIChat(_ sender: Any?) {
@@ -291,17 +314,21 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     private func setupSplitViewItems() {
         setupLeftSplitViewItem()
         setupWebContentSplitViewItem()
+        updateSidebarPosition()
     }
 
     private func setupLeftSplitViewItem() {
         if #available(macOS 26.0, *) {
             sideBarSplitViewItem = NSSplitViewItem(viewController: verticalTabListViewController)
-        } else {
+        } else if !SidebarPosition.isOnRight {
             sideBarSplitViewItem = NSSplitViewItem(sidebarWithViewController: verticalTabListViewController)
+        } else {
+            sideBarSplitViewItem = NSSplitViewItem(viewController: verticalTabListViewController)
         }
         sideBarSplitViewItem.minimumThickness = Self.leftItemMinWidth
         sideBarSplitViewItem.maximumThickness = Self.leftItemMaxWidth
         sideBarSplitViewItem.canCollapse = true
+        sideBarSplitViewItem.collapseBehavior = SidebarPosition.isOnRight ? .preferResizingSiblingsWithFixedSplitView : .default
         sideBarSplitViewItem.holdingPriority = .init(rawValue: 260)
         
         if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
@@ -319,6 +346,7 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
 
     /// Updates the split-view layout based on the current tab-bar mode.
     private func updateLayoutForHorizontalTabs() {
+        if !isHosted { updateSidebarPosition() }
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
         if lastUseHorizontalTabs != nil && traditionalLayout == lastUseHorizontalTabs {
             return
@@ -424,13 +452,14 @@ extension MainSplitViewController: NSSplitViewDelegate {
     }
 
     private func updateSidebarWidth() {
+        guard !isReorderingSidebar else { return }
         guard sideBarSplitViewItem != nil else { return }
         let width = sidebarWidth
         sidebarGeometryChanges.send(())
         guard width != Self.leftItemMinWidth else {
             return
         }
-        AccountController.shared.localDataAccount?.userDefaults.setLastKnownSidebarWidth(width)
+        AccountController.shared.localDataAccount?.userDefaults.setLastKnownSidebarWidth(width, for: SidebarPosition.effective)
     }
 }
 

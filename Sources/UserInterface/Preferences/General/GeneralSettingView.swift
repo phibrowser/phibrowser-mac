@@ -143,6 +143,9 @@ private struct AppearanceSectionView: View {
     @AppStorage(PhiPreferences.GeneralSettings.layoutModeKey)
     private var layoutModeRawValue: String = PhiPreferences.GeneralSettings.loadLayoutMode().rawValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.sidebarPositionKey)
+    private var sidebarPosition = SidebarPosition.left.rawValue
+
     @State private var selectedAppearance: UserAppearanceChoice = ThemeManager.shared.userAppearanceChoice
 
     private var selectedLayoutMode: Binding<LayoutMode> {
@@ -169,6 +172,17 @@ private struct AppearanceSectionView: View {
                             )
                         }
                     }
+                }
+
+                Divider()
+
+                GeneralRowView(title: NSLocalizedString("settings.general.sidebarPosition.title", value: "Sidebar position", comment: "General settings - Side of the window containing vertical tabs")) {
+                    Picker("", selection: $sidebarPosition) {
+                        Text(NSLocalizedString("settings.general.sidebarPosition.left", value: "Left", comment: "General settings - Left sidebar position")).tag(SidebarPosition.left.rawValue)
+                        Text(NSLocalizedString("settings.general.sidebarPosition.right", value: "Right", comment: "General settings - Right sidebar position")).tag(SidebarPosition.right.rawValue)
+                    }
+                    .labelsHidden()
+                    .disabled(selectedLayoutMode.wrappedValue.isTraditional)
                 }
 
                 Divider()

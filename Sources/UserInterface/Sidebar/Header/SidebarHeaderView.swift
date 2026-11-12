@@ -422,6 +422,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
 
     /// Update view visibility based on configuration
     private func updateLayoutVisibility(layoutMode: LayoutMode) {
+        sidebarButton.isImageMirrored = SidebarPosition.isOnRight
         let showInSidebar = isSidebarLayout(layoutMode)
         let inPlaceholder = browserState?.isInPlaceholderMode ?? false
         AppLogDebug("[SidebarHeader] updateLayoutVisibility showInSidebar=\(showInSidebar) inPlaceholder=\(inPlaceholder)")
@@ -465,6 +466,12 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         }
         if !isFloating {
             updateSidebarButtonLeftConstraint()
+            // A sidebar-side change reaches this sink before the window's
+            // split has moved the column, so the lights were measured from
+            // the old side. Measure again once the move has landed.
+            DispatchQueue.main.async { [weak self] in
+                self?.updateSidebarButtonLeftConstraint()
+            }
         }
 
         updateUpgradeAndSidebarVisibility(layoutMode: layoutMode)
@@ -483,8 +490,14 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             .merge(with: browserState.$isTranscriptDocked.map { _ in })
             .prepend(())
             .receive(on: DispatchQueue.main)
-            .map { [weak browserState] _ in WebContentLayout(browserState: browserState).edgeToEdgeEnabled }
-            .removeDuplicates()
+            .map { [weak browserState] _ -> (Bool, Bool) in
+                let layout = WebContentLayout(browserState: browserState)
+                return (layout.edgeToEdgeEnabled, layout.sidebarOnRight)
+            }
+            .removeDuplicates { (previous: (Bool, Bool), current: (Bool, Bool)) in
+                guard previous.0 == current.0 else { return false }
+                return previous.1 == current.1
+            }
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.updateLayoutVisibility(layoutMode: self.browserState?.layoutMode ?? .performance)
@@ -529,6 +542,9 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     
     /// Returns the maxX of the leading chrome controls in this header.
     private func leadingChromeMaxX() -> CGFloat? {
+        // The right-sidebar layout keeps the lights in the window's top band,
+        // not in this header.
+        if SidebarPosition.isOnRight { return 0 }
         if isFloating {
             if browserState?.isInFullScreenMode == true {
                 return 0
@@ -751,7 +767,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     }
     
     @objc private func sidebarButtonClicked() {
-        SpaceSessionControllersManager.shared.activeWindowController?.browserState.toggleSidebar(nil)
+        browserState?.toggleSidebar(nil)
     }
 
     @objc private func searchTabsButtonClicked() {

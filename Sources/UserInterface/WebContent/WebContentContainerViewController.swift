@@ -390,6 +390,7 @@ class WebContentContainerViewController: NSViewController {
     /// cold page's first frame, under an evicted frame, in a split's gap
     /// (`updatePageAreaBackdropCorners` squares its corners to match).
     private var pageAreaBackdropLeadingConstraint: Constraint?
+    private var pageAreaBackdropTrailingConstraint: Constraint?
     private var pageAreaBackdropTrailingBottomConstraint: Constraint?
     private var contentLayout: WebContentLayout {
         WebContentLayout(browserState: browserState)
@@ -621,7 +622,8 @@ class WebContentContainerViewController: NSViewController {
         contentContainer.addSubview(pageAreaBackdrop)
         pageAreaBackdrop.snp.makeConstraints { make in
             pageAreaBackdropLeadingConstraint = make.leading.equalToSuperview().constraint
-            pageAreaBackdropTrailingBottomConstraint = make.trailing.bottom.equalToSuperview().inset(contentLayout.edgeSpacing).constraint
+            pageAreaBackdropTrailingBottomConstraint = make.bottom.equalToSuperview().inset(contentLayout.edgeSpacing).constraint
+            pageAreaBackdropTrailingConstraint = make.trailing.equalToSuperview().inset(contentLayout.edgeSpacing).constraint
             make.top.equalToSuperview()
         }
         updatePageAreaBackdropLeadingInset()
@@ -867,7 +869,7 @@ class WebContentContainerViewController: NSViewController {
             }
         }
         if let dock = transcriptDockView, let edge = transcriptDockEdge {
-            dock.updateLayout(contentLayout, leadingInset: pageAreaLeadingInset)
+            dock.updateLayout(contentLayout, leadingInset: pageAreaInsets.leading, trailingInset: pageAreaInsets.trailing)
             // The dock's own thickness constraint lives on the dock view
             // (plain NSLayoutConstraint, untouched by this snp remake).
             dock.snp.remakeConstraints { make in
@@ -2340,20 +2342,17 @@ class WebContentContainerViewController: NSViewController {
 
     /// Mirror of `WebContentViewController.updateSplitViewLeadingInset`, so
     /// the backdrop hugs the same leading edge the mounted panel uses.
-    private var pageAreaLeadingInset: CGFloat {
-        let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
-        let sidebarCollapsed = browserState?.sidebarCollapsed ?? true
-        return (traditionalLayout || sidebarCollapsed)
-            ? contentLayout.edgeSpacing
-            : 0
+    private var pageAreaInsets: (leading: CGFloat, trailing: CGFloat) {
+        contentLayout.pageInsets(sidebarCollapsed: browserState?.sidebarCollapsed ?? true)
     }
 
     /// Called from `updateLayoutForMode`, which already re-runs on layout-mode
     /// and sidebar-collapse changes. A bottom transcript dock shares the page
     /// panel's left edge, so it follows the same inset.
     private func updatePageAreaBackdropLeadingInset() {
-        let inset = pageAreaLeadingInset
+        let inset = pageAreaInsets.leading
         pageAreaBackdropLeadingConstraint?.update(inset: inset)
+        pageAreaBackdropTrailingConstraint?.update(inset: pageAreaInsets.trailing)
     }
 
     // MARK: - AI Chat Toggle

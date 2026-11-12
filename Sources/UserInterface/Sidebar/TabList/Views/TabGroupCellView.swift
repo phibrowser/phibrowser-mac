@@ -1537,6 +1537,11 @@ extension TabGroupCellView: GroupTabsDragSource {
 // MARK: - TabCellDelegate
 
 extension TabGroupCellView: TabCellDelegate {
+    func tabCellDidRequestActivation(_ tab: Tab, modifierFlags: NSEvent.ModifierFlags) {
+        guard let row = currentMemberOrder.firstIndex(of: tab.guid) else { return }
+        tableView(innerTable, didClickRow: row, clickCount: 1, modifierFlags: modifierFlags)
+    }
+
     func tabCellDidRequestClose(_ tab: Tab) {
         groupCellDelegate?.tabGroupCell(self, tabDidRequestClose: tab)
     }

@@ -5182,6 +5182,12 @@ extension SidebarTabListViewController: BookmarkCellViewDelegate {
 }
 
 extension SidebarTabListViewController: TabCellDelegate {
+    func tabCellDidRequestActivation(_ tab: Tab, modifierFlags: NSEvent.ModifierFlags) {
+        let row = outlineView.row(forItem: tab)
+        guard row >= 0 else { return }
+        outlineView(outlineView, didClickRow: row, modifierFlags: modifierFlags)
+    }
+
     func tabCellDidRequestClose(_ tab: Tab) {
         tabSectionController.closeTab(tab)
     }

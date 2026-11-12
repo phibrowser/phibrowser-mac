@@ -362,7 +362,12 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
         if let hostingView = danglingWindow.contentSurfaceView {
             windowController.browserState.adoptContentSurface(hostingView)
         }
-        
+        // The replay below matches each tab to its record by binding, so the
+        // migrated bindings go in first; Chromium is told after the replay.
+        for update in customValueUpdates {
+            windowController.browserState.setBinding(update.guid, for: update.tab, writeToChromium: false)
+        }
+
         // Process pending tabs that were created before browser access.
         for tab in danglingWindow.pendingTabs {
             AppLogInfo("🪟 [WindowManager] Processing pending tab - tabGuid: \(tab.guid)")
@@ -392,7 +397,7 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
             windowController.browserState.focuseTab(last)
         }
         for update in customValueUpdates {
-            update.tab.webContentWrapper?.updateTabCustomValue(update.guid)
+            windowController.browserState.setBinding(update.guid, for: update.tab)
         }
         // Restore and show the window
         windowController.restoreAndShowWindow()
@@ -764,6 +769,11 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
             chromiumWindow: oldController.hostedChromiumWindow
         )
         let newState = replacement.browserState
+        // The replay below matches each tab to its record by binding, so the
+        // migrated bindings go in first; Chromium is told after the replay.
+        for update in customValueUpdates {
+            newState.setBinding(update.guid, for: update.tab, writeToChromium: false)
+        }
         // The content surface is sent once per Space instance (chromium ADR
         // 0014): the replacement takes it over from the old state before the
         // tabs are replayed into it.
@@ -826,7 +836,7 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
             bookmarkGuids: selectedBookmarkGuids
         )
         for update in customValueUpdates {
-            update.tab.webContentWrapper?.updateTabCustomValue(update.guid)
+            newState.setBinding(update.guid, for: update.tab)
         }
 
         // Hosted: `window` is the slot's shell, which was never touched by
@@ -910,7 +920,6 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
             }
 
             guard let targetGUID, targetGUID != sourceGUID else { continue }
-            tab.guidInLocalDB = targetGUID
             customValueUpdates.append((tab, targetGUID))
         }
         return customValueUpdates

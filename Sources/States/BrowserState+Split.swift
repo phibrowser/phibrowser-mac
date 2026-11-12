@@ -1508,8 +1508,7 @@ extension BrowserState {
             // `CrossDomainNewTabNavigationThrottle` stops treating the tab
             // as bookmark-bound, then re-sync bookmark state so the
             // bookmark cell stops rendering as opened.
-            tab.guidInLocalDB = nil
-            tab.webContentWrapper?.updateTabCustomValue("")
+            setBinding(nil, for: tab)
             syncAllBookmarksOpenedState()
         }
     }

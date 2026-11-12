@@ -700,7 +700,37 @@ class BrowserState {
         aiChatTabs[newId] = aiChatTab
         AppLogInfo("🔄 [AIChat] Migrated split chat tab from '\(oldId)' to '\(newId)'")
     }
-    
+
+    // MARK: - Tab binding
+
+    /// The one place that changes which bookmark or pinned record an open tab
+    /// is bound to: binds an unbound tab, rebinds a bound one, or clears the
+    /// binding (`nil` or an empty string). Moves the tab's AI Chat panel to
+    /// the tab's new identifier, updates `guidInLocalDB`, then writes the
+    /// binding to Chromium.
+    ///
+    /// A caller that binds an unbound tab takes it out of its tab group
+    /// first: Chromium does not allow a bound tab in a group. A tab that
+    /// holds only a Peek opener marker counts as unbound.
+    ///
+    /// Not for writing the other values kept in the same slot (Peek markers
+    /// and the one-shot markers a new tab arrives with), nor for the record
+    /// objects of the pinned area.
+    ///
+    /// Pass `writeToChromium: false` to hold the Chromium write back, and
+    /// call again with the same binding once it may go out.
+    func setBinding(_ binding: String?, for tab: Tab, writeToChromium: Bool = true) {
+        let newBinding = binding?.isEmpty == false ? binding : nil
+        let isUnbound = tab.guidInLocalDB?.isEmpty != false || Self.isPeekOpenerGuid(tab.guidInLocalDB)
+        assert(newBinding == nil || !isUnbound || tab.groupToken == nil,
+               "A tab must leave its tab group before it is bound")
+        migrateAIChatTab(for: tab, toNewIdentifier: newBinding)
+        tab.guidInLocalDB = newBinding
+        if writeToChromium {
+            tab.webContentWrapper?.updateTabCustomValue(newBinding ?? "")
+        }
+    }
+
     private var cancellables = Set<AnyCancellable>()
     
     private(set) lazy var  bookmarkManager: BookmarkManager = { .init(with: self) }()
@@ -1082,9 +1112,7 @@ class BrowserState {
                   bookmarkGuids.contains(localGuid) else {
                 continue
             }
-            migrateAIChatTab(for: tab, toNewIdentifier: nil)
-            tab.guidInLocalDB = nil
-            tab.webContentWrapper?.updateTabCustomValue("")
+            setBinding(nil, for: tab)
             detachedBookmarkGuids.insert(localGuid)
         }
 
@@ -6286,16 +6314,9 @@ class BrowserState {
                     return
                 }
 
-                // Migrate AI Chat tab association before changing identifier
-                // When unpinning, identifier changes from guidInLocalDB to chromium guid
-                migrateAIChatTab(for: opennedTab, toNewIdentifier: nil)
-
                 clearPinnedSplitPartnerReference(forPinnedGuid: opennedTab.guidInLocalDB)
                 localStore.removePinnedTab(opennedTab, profileId: profileId, spaceId: spaceId)
-                opennedTab.guidInLocalDB = nil
-                if let wrapper = opennedTab.webContentWrapper {
-                    wrapper.updateTabCustomValue("")
-                }
+                setBinding(nil, for: opennedTab)
                 opennedTab.isPinned = false
                 insertIntoNormalTabOrder(tabGuid: opennedTab.guid,
                                          at: normalTabOrder.count,
@@ -8210,7 +8231,6 @@ class BrowserState {
         }
 
         let newGuid = UUID().uuidString
-        migrateAIChatTab(for: tab, toNewIdentifier: newGuid)
 
         // A tab unpinned earlier in this session still carries its old pin's
         // lineage. Pinning a normal tab is always a new pin (an owner change is
@@ -8219,10 +8239,7 @@ class BrowserState {
         tab.pinnedLineageId = nil
         tab.pinnedCreatedDate = nil
         localStore.moveOrCreatePinnedTab(tab, after: afterGuid, profileId: profileId, spaceId: spaceId, newGuid: newGuid)
-        tab.guidInLocalDB = newGuid
-        if let wrapper = tab.webContentWrapper {
-            wrapper.updateTabCustomValue(newGuid)
-        }
+        setBinding(newGuid, for: tab)
         return newGuid
     }
 
@@ -8244,15 +8261,13 @@ class BrowserState {
             for childId in affectedChildren {
                 nativeRelationGraph.locallyFixedOpenerTabIds.insert(childId)
             }
-            migrateAIChatTab(for: tab, toNewIdentifier: newGuid)
-            tab.guidInLocalDB = newGuid
+            setBinding(newGuid, for: tab)
             // Same residue as `moveNormalTabToPinned`: the new row has its own lineage.
             tab.pinnedLineageId = nil
             tab.pinnedCreatedDate = nil
             if splitId != nil {
                 tab.isPinned = true
             }
-            tab.webContentWrapper?.updateTabCustomValue(newGuid)
         }
         if let splitId,
            let splitIndex = splits.firstIndex(where: { $0.id == splitId }) {
@@ -8269,10 +8284,8 @@ class BrowserState {
         guard !affected.isEmpty else { return }
         let tabIDs = Set(affected.map(\.guid))
         for tab in affected {
-            migrateAIChatTab(for: tab, toNewIdentifier: nil)
-            tab.guidInLocalDB = nil
+            setBinding(nil, for: tab)
             tab.isPinned = false
-            tab.webContentWrapper?.updateTabCustomValue("")
             insertIntoNormalTabOrder(tabGuid: tab.guid, at: normalTabOrder.count, syncChromiumOrder: false)
         }
         for index in splits.indices where splits[index].tabIds.contains(where: { tabIDs.contains($0) }) {
@@ -8313,16 +8326,11 @@ class BrowserState {
             return
         }
         if let normalTab = tabs.first(where: { $0.guidInLocalDB == pinnedGuid }) {
-            // Migrate AI Chat tab association before changing identifier
-            // When moving out of pinned, identifier changes from guidInLocalDB to chromium guid
-            migrateAIChatTab(for: normalTab, toNewIdentifier: nil)
-
-            normalTab.guidInLocalDB = nil
+            setBinding(nil, for: normalTab)
             normalTab.isPinned = false
             if let storedTitle = pinnedTab.storedTitle {
                 normalTab.applyStoredTitle(storedTitle)
             }
-            pinnedTab.webContentWrapper?.updateTabCustomValue("")
 
             insertIntoNormalTabOrder(tabGuid: normalTab.guid,
                                      at: normalIndex,
@@ -8368,13 +8376,11 @@ class BrowserState {
         }
 
         for pane in ordered {
-            migrateAIChatTab(for: pane.live, toNewIdentifier: nil)
-            pane.live.guidInLocalDB = nil
+            setBinding(nil, for: pane.live)
             pane.live.isPinned = false
             if let storedTitle = pane.pinned.storedTitle {
                 pane.live.applyStoredTitle(storedTitle)
             }
-            pane.live.webContentWrapper?.updateTabCustomValue("")
         }
 
         // Clear the pinned flag on the live split so its toolbar/sidebar
@@ -8546,9 +8552,7 @@ class BrowserState {
             nativeRelationGraph.locallyFixedOpenerTabIds.insert(childId)
         }
 
-        migrateAIChatTab(for: tab, toNewIdentifier: bookmarkGuid)
-        tab.guidInLocalDB = bookmarkGuid
-        tab.webContentWrapper?.updateTabCustomValue(bookmarkGuid)
+        setBinding(bookmarkGuid, for: tab)
     }
     
     /// Converts every member of a tab group into a bookmark folder,
@@ -8705,14 +8709,8 @@ class BrowserState {
                                   favicon: pinnedTab.liveFaviconData ?? pinnedTab.cachedFaviconData)
 
         if pinnedTab.isOpenned, let chromiumTab = tabs.first(where: { $0.guidInLocalDB == pinnedGuid }) {
-            migrateAIChatTab(for: chromiumTab, toNewIdentifier: newBookmarkGuid)
-
-            chromiumTab.guidInLocalDB = newBookmarkGuid
+            setBinding(newBookmarkGuid, for: chromiumTab)
             chromiumTab.isPinned = false
-
-            if let wrapper = chromiumTab.webContentWrapper {
-                wrapper.updateTabCustomValue(newBookmarkGuid)
-            }
         }
 
         // Remove the persisted pinned entry after the Chromium tab is converted back.
@@ -8787,13 +8785,11 @@ class BrowserState {
         // records are removed below.
         if allLive {
             for (livePane, record) in zip(live, records) {
-                migrateAIChatTab(for: livePane, toNewIdentifier: nil)
-                livePane.guidInLocalDB = nil
+                setBinding(nil, for: livePane)
                 livePane.isPinned = false
                 if let storedTitle = record.storedTitle {
                     livePane.applyStoredTitle(storedTitle)
                 }
-                livePane.webContentWrapper?.updateTabCustomValue("")
             }
             // Resolve a SplitGroup to bind under the new bookmark. The live
             // SplitGroup is the common case; if none exists (the pinned
@@ -8871,18 +8867,10 @@ class BrowserState {
         
         // If the bookmark is already open, retarget the live Chromium tab as well.
         if realBookmark.isOpened, let chromiumTab = tabs.first(where: { $0.guidInLocalDB == bookmark.guid }) {
-            // Migrate AI Chat tab association before changing identifier
-            migrateAIChatTab(for: chromiumTab, toNewIdentifier: newPinnedGuid)
-            
             // Point the live tab at the new pinned-tab identifier.
-            chromiumTab.guidInLocalDB = newPinnedGuid
+            setBinding(newPinnedGuid, for: chromiumTab)
             chromiumTab.isPinned = true
             chromiumTab.title = tempTab.title
-            
-            // Keep the Chromium-side custom value in sync.
-            if let wrapper = chromiumTab.webContentWrapper {
-                wrapper.updateTabCustomValue(newPinnedGuid)
-            }
         }
         
         // Remove the old bookmark entry once the pinned version exists.
@@ -8917,19 +8905,10 @@ class BrowserState {
         }
 
         if realBookmark.isOpened, let chromiumTab = tabs.first(where: { $0.guidInLocalDB == bookmark.guid }) {
-            // Migrate AI Chat tab association before changing identifier
-            // When moving out of bookmark to normal tab, identifier changes to chromium guid
-            migrateAIChatTab(for: chromiumTab, toNewIdentifier: nil)
-            
             // Reuse the open Chromium tab and detach it from bookmark storage.
-            chromiumTab.guidInLocalDB = nil
+            setBinding(nil, for: chromiumTab)
             chromiumTab.applyStoredTitle(bookmark.title)
-            
-            // Keep the Chromium-side custom value in sync.
-            if let wrapper = chromiumTab.webContentWrapper {
-                wrapper.updateTabCustomValue("")
-            }
-            
+
             // Insert the existing tab into the desired normal-tab position.
             insertIntoNormalTabOrder(tabGuid: chromiumTab.guid,
                                      at: index,
@@ -9005,9 +8984,7 @@ class BrowserState {
         }
 
         if let chromiumTab = tabs.first(where: { $0.guidInLocalDB == realBookmark.guid }) {
-            migrateAIChatTab(for: chromiumTab, toNewIdentifier: nil)
-            chromiumTab.guidInLocalDB = nil
-            chromiumTab.webContentWrapper?.updateTabCustomValue("")
+            setBinding(nil, for: chromiumTab)
             clearBookmarkOpenedStateForComfortableLayout(realBookmark)
             applyOptimisticGroupMembership(tabId: chromiumTab.guid, newToken: tokenHex)
             insertIntoNormalTabOrder(tabGuid: chromiumTab.guid,
@@ -9051,9 +9028,7 @@ class BrowserState {
               let bookmark = bookmarkManager.bookmark(withGuid: localGuid) else {
             return
         }
-        migrateAIChatTab(for: tab, toNewIdentifier: nil)
-        tab.guidInLocalDB = nil
-        tab.webContentWrapper?.updateTabCustomValue("")
+        setBinding(nil, for: tab)
         clearBookmarkOpenedStateForComfortableLayout(bookmark)
         updateNormalTabs()
     }
@@ -9155,13 +9130,11 @@ class BrowserState {
         }
 
         if let normalTab = tabs.first(where: { $0.guidInLocalDB == pinnedGuid }) {
-            migrateAIChatTab(for: normalTab, toNewIdentifier: nil)
-            normalTab.guidInLocalDB = nil
+            setBinding(nil, for: normalTab)
             normalTab.isPinned = false
             if let storedTitle = pinnedTab.storedTitle {
                 normalTab.applyStoredTitle(storedTitle)
             }
-            normalTab.webContentWrapper?.updateTabCustomValue("")
             applyOptimisticGroupMembership(tabId: normalTab.guid, newToken: tokenHex)
             insertIntoNormalTabOrder(tabGuid: normalTab.guid,
                                      at: normalTabsIndex,
@@ -9238,9 +9211,7 @@ class BrowserState {
         }
 
         for tab in tabsToClose {
-            migrateAIChatTab(for: tab, toNewIdentifier: nil)
-            tab.guidInLocalDB = nil
-            tab.webContentWrapper?.updateTabCustomValue("")
+            setBinding(nil, for: tab)
         }
 
         for splitId in orderedSplitIdsToRemove {
@@ -9286,10 +9257,10 @@ class BrowserState {
            let groupIdx = splits.firstIndex(where: { $0.id == splitId }) {
             for (tabId, db) in zip(splits[groupIdx].tabIds, dbGuids) {
                 guard let live = tabs.first(where: { $0.guid == tabId }) else { continue }
-                migrateAIChatTab(for: live, toNewIdentifier: db)
-                live.guidInLocalDB = db
+                // A split saved as a bookmark while in a tab group is still in it.
+                detachNormalTabFromGroupForPinning(live)
+                setBinding(db, for: live)
                 live.isPinned = true
-                live.webContentWrapper?.updateTabCustomValue(db)
             }
             splits[groupIdx].isPinned = true
             splitBookmarkBindings.removeValue(forKey: bookmarkGuid)

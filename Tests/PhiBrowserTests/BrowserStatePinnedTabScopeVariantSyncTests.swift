@@ -111,6 +111,8 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
         XCTAssertEqual(runtimeB.storedTitle, "Space B")
         XCTAssertEqual(bindingA.liveTab.guidInLocalDB, targetA.guid)
         XCTAssertEqual(bindingB.liveTab.guidInLocalDB, targetB.guid)
+        XCTAssertEqual(bindingA.wrapper.customValues.last, targetA.guid)
+        XCTAssertEqual(bindingB.wrapper.customValues.last, targetB.guid)
         XCTAssertTrue(bindingA.wrapper.navigatedURLs.isEmpty)
         XCTAssertTrue(bindingB.wrapper.navigatedURLs.isEmpty)
     }
@@ -556,7 +558,7 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
     }
 }
 
-private final class PinnedScopeVariantWebContentWrapperSpy: NSObject, WebContentWrapper {
+final class PinnedScopeVariantWebContentWrapperSpy: NSObject, WebContentWrapper {
     let mediaControls: PhiMediaControls = InactiveMediaControlsStub()
     @objc dynamic weak var nativeView: NSView?
     @objc dynamic var isLoading = false

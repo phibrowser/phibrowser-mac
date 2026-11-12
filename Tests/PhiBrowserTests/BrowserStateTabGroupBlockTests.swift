@@ -193,10 +193,9 @@ final class BrowserStateTabGroupBlockTests: XCTestCase {
         ])
         state.splits = [
             SplitGroup(id: "split-100-101",
-                       primaryTabId: 100,
-                       secondaryTabId: 101,
+                       tabIds: [100, 101],
                        layout: .vertical,
-                       ratio: 0.5)
+                       fractions: [0.5, 0.5])
         ]
 
         state.moveNormalTabLocally(from: 0, to: 2)
@@ -464,6 +463,40 @@ final class BrowserStateTabGroupBlockTests: XCTestCase {
         XCTAssertEqual(children.map(\.guid), [a1BookmarkGuid, a2BookmarkGuid])
         XCTAssertEqual(children.map { $0.url.absoluteString },
                        ["https://a1.example/", "https://a2.example/"])
+    }
+
+    /// A split in the group is saved as one split-view bookmark bound to the
+    /// live split, so its panes stay together instead of becoming separate
+    /// bookmarks.
+    func testConvertGroupToBookmarks_savesASplitAsOneSplitBookmark() throws {
+        let state = try makeBrowserState()
+        let tabs = seed(state: state, tabs: [
+            (guid: 200, url: "https://a1.example", token: "A"),
+            (guid: 201, url: "https://left.example", token: "A"),
+            (guid: 202, url: "https://right.example", token: "A"),
+        ])
+        state.handleSplitCreated(splitId: "split", tabIds: [201, 202],
+                                 layout: .horizontal, fractions: [0.5, 0.5])
+
+        state.convertGroupToBookmarks(token: "A", parentFolder: nil, at: 0)
+
+        XCTAssertNil(tabs[1].groupToken)
+        XCTAssertNil(tabs[2].groupToken)
+        XCTAssertNil(tabs[1].guidInLocalDB)
+        XCTAssertNil(tabs[2].guidInLocalDB)
+        XCTAssertNotNil(state.splitGroup(forId: "split"))
+        let boundGuid = try XCTUnwrap(state.splitBookmarkBindings.first { $0.value == "split" }?.key)
+
+        waitForBackgroundWrite()
+        let folder = try XCTUnwrap(state.localStore.fetchBookmarks(parentId: nil as String?,
+                                                                    profileId: state.profileId).first)
+        let children = state.localStore.fetchBookmarks(parentId: folder.guid, profileId: state.profileId)
+            .sorted { $0.index < $1.index }
+        XCTAssertEqual(children.count, 2)
+        XCTAssertEqual(children.map(\.url.absoluteString), ["https://a1.example/", "https://left.example/"])
+        XCTAssertEqual(children[1].guid, boundGuid)
+        XCTAssertEqual(children[1].secondaryUrl?.absoluteString, "https://right.example/")
+        XCTAssertEqual(children[1].layout, SplitLayout.horizontal.rawValue)
     }
 
     /// Members hit `moveNormalTab(toBookmark:index:)` in normalTabs order

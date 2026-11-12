@@ -11,6 +11,8 @@ private enum KioskToolbarStyle {
     static let borderWidth: CGFloat = 0.5
     static let borderColorOpacity: CGFloat = 0.12
     static let hoverColorOpacity: CGFloat = 0.06
+    static let controlBackgroundOpacity: CGFloat = 0.55
+    static let controlHeight: CGFloat = 28
 }
 
 private final class KioskToolbarHoverTrackingView: NSView {
@@ -43,8 +45,28 @@ private final class KioskToolbarHoverTrackingView: NSView {
     }
 }
 
+/// Draws its single line vertically centered, so the field can span the
+/// address bar's full height as one click target.
+private final class KioskAddressFieldCell: NSTextFieldCell {
+    override func titleRect(forBounds rect: NSRect) -> NSRect {
+        let titleRect = super.titleRect(forBounds: rect)
+        let textHeight = cellSize(forBounds: rect).height
+        guard textHeight < titleRect.height else { return titleRect }
+        return titleRect.insetBy(dx: 0, dy: (titleRect.height - textHeight) / 2)
+    }
+
+    override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
+        super.drawInterior(withFrame: titleRect(forBounds: cellFrame), in: controlView)
+    }
+}
+
 private final class KioskAddressField: NSTextField {
     var onActivate: (() -> Void)?
+
+    override class var cellClass: AnyClass? {
+        get { KioskAddressFieldCell.self }
+        set {}
+    }
 
     override func mouseDown(with event: NSEvent) {
         guard isEnabled else { return }
@@ -55,19 +77,21 @@ private final class KioskAddressField: NSTextField {
 /// Hosts the Kiosk window controls above its single Chromium content view.
 final class KioskBrowserToolbar: NSVisualEffectView {
     private enum Layout {
-        static let systemAlignedControlCenterOffset: CGFloat = -6
-        static let controlCenterOffset = systemAlignedControlCenterOffset
-            + KioskBrowserToolbar.titlebarVerticalShift
-        static let trafficLightInset: CGFloat = 78
+        static let trafficLightInset: CGFloat = 80
         static let navigationButtonSize: CGFloat = 24
         static let navigationButtonSpacing: CGFloat = 8
         static let navigationButtonAnimationDuration: TimeInterval = 0.18
-        static let addressBarHeight: CGFloat = 32
+        static let addressBarHeight = KioskToolbarStyle.controlHeight
+        static let addressBarAccessoryInset: CGFloat = 2
+        static let addressBarAccessoryHeight = addressBarHeight
+            - 2 * addressBarAccessoryInset
+        static let toolbarActionsWidth: CGFloat = 50
         static let spaceMenuMaximumWidth: CGFloat = 220
     }
 
-    static let preferredHeight: CGFloat = 52
-    static let titlebarVerticalShift: CGFloat = 6
+    static let preferredHeight: CGFloat = 38
+    /// The native traffic lights are held on the toolbar's center line.
+    static let trafficLightCenterFromWindowTop = preferredHeight / 2
 
     private let browserState: KioskBrowserState
     private let addressBarContainer = KioskToolbarHoverTrackingView()
@@ -275,13 +299,13 @@ final class KioskBrowserToolbar: NSVisualEffectView {
         )
         spaceHostingView.snp.makeConstraints { make in
             make.trailing.equalToSuperview().inset(12)
-            make.centerY.equalToSuperview().offset(Layout.controlCenterOffset)
+            make.centerY.equalToSuperview()
             make.width.lessThanOrEqualTo(Layout.spaceMenuMaximumWidth)
-            make.height.equalTo(34)
+            make.height.equalTo(KioskToolbarStyle.controlHeight)
         }
         backButtonHostingView.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(Layout.trafficLightInset)
-            make.centerY.equalToSuperview().offset(Layout.controlCenterOffset)
+            make.centerY.equalToSuperview()
             make.size.equalTo(Layout.navigationButtonSize)
         }
         addressBarContainer.snp.makeConstraints { make in
@@ -289,28 +313,31 @@ final class KioskBrowserToolbar: NSVisualEffectView {
                 .offset(Layout.trafficLightInset)
                 .constraint
             make.trailing.equalTo(spaceHostingView.snp.leading).offset(-8)
-            make.centerY.equalToSuperview().offset(Layout.controlCenterOffset)
+            make.centerY.equalToSuperview()
             make.height.equalTo(Layout.addressBarHeight)
         }
         profileHostingView.setContentHuggingPriority(.required, for: .horizontal)
         profileHostingView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         profileHostingView.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(5)
+            make.leading.equalToSuperview().offset(Layout.addressBarAccessoryInset)
             make.centerY.equalToSuperview()
-            make.height.equalTo(26)
+            make.height.equalTo(Layout.addressBarAccessoryHeight)
             make.width.lessThanOrEqualTo(138)
         }
         toolbarActionsHostingView.snp.makeConstraints { make in
-            make.trailing.equalToSuperview().inset(5)
+            make.trailing.equalToSuperview().inset(Layout.addressBarAccessoryInset)
             make.centerY.equalToSuperview()
-            make.width.equalTo(52)
-            make.height.equalTo(26)
+            make.width.equalTo(Layout.toolbarActionsWidth)
+            make.height.equalTo(Layout.addressBarAccessoryHeight)
         }
+        addressField.setContentCompressionResistancePriority(
+            .defaultLow - 1,
+            for: .horizontal
+        )
         addressField.snp.makeConstraints { make in
             make.leading.equalTo(profileHostingView.snp.trailing).offset(6)
             make.trailing.equalTo(toolbarActionsHostingView.snp.leading).offset(-6)
-            make.centerY.equalToSuperview().offset(4)
-            make.height.equalTo(24)
+            make.top.bottom.equalToSuperview()
         }
 
         browserState.extensionManager.refreshExtensions()
@@ -319,7 +346,7 @@ final class KioskBrowserToolbar: NSVisualEffectView {
     private func updateAddressBarAppearance() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             addressBarContainer.layer?.backgroundColor = NSColor.controlBackgroundColor
-                .withAlphaComponent(0.55)
+                .withAlphaComponent(KioskToolbarStyle.controlBackgroundOpacity)
                 .cgColor
             addressBarContainer.layer?.borderColor = NSColor.labelColor
                 .withAlphaComponent(KioskToolbarStyle.borderColorOpacity)
@@ -379,16 +406,16 @@ private struct KioskProfileMenu: View {
                 .disabled(profile.profileId == currentProfileId)
             }
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
                 Text(verbatim: currentProfileName)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 7)
             .frame(height: 24)
             .background(Capsule().fill(Color.primary.opacity(0.07)))
             .contentShape(Capsule())
@@ -446,7 +473,7 @@ private struct KioskToolbarActions: View {
                 )
             }
         }
-        .frame(height: 26)
+        .frame(height: 24)
     }
 }
 
@@ -538,9 +565,10 @@ enum KioskSpaceMenuTargetResolver {
 
 private struct KioskSpaceMenu: View {
     private enum Layout {
-        static let height: CGFloat = 32
-        static let iconSize: CGFloat = 12
-        static let menuButtonWidth: CGFloat = 32
+        static let height = KioskToolbarStyle.controlHeight
+        static let iconSize: CGFloat = 14
+        static let primaryActionPadding: CGFloat = 10
+        static let menuButtonWidth: CGFloat = 24
     }
 
     @ObservedObject private var spaceManager: SpaceManager
@@ -607,30 +635,25 @@ private struct KioskSpaceMenu: View {
     var body: some View {
         HStack(spacing: 0) {
             Button(action: openInPrimarySpace) {
-                HStack(spacing: 6) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: true, vertical: false)
+                Group {
                     if let primarySpace {
                         SpaceIconView(
                             storedValue: primarySpace.iconName,
                             size: Layout.iconSize,
-                            symbolWeight: .semibold,
+                            symbolWeight: .medium,
                             tint: .primary
                         )
-                        .accessibilityHidden(true)
                         .fixedSize()
-                        Text(verbatim: primarySpace.name)
-                            .font(.system(size: 13, weight: .semibold))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(minWidth: 0, alignment: .leading)
-                            .layoutPriority(-1)
+                    } else {
+                        Text(title)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                 }
-                .padding(.horizontal, 6)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.leading, Layout.primaryActionPadding)
+                .padding(.trailing, Layout.primaryActionPadding - 2)
+                .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
             }
             .buttonStyle(
@@ -639,6 +662,7 @@ private struct KioskSpaceMenu: View {
                 )
             )
             .disabled(primarySpace == nil)
+            .accessibilityLabel(primaryActionTooltipTitle)
             .onHover { isPrimaryActionHovered = $0 }
             .customTooltip {
                 CommandShortcutTooltipContent(
@@ -648,11 +672,11 @@ private struct KioskSpaceMenu: View {
             }
 
             Divider()
-                .frame(height: 18)
+                .frame(height: 14)
 
             Button(action: onShowMenu) {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(
                         width: Layout.menuButtonWidth,
@@ -686,7 +710,10 @@ private struct KioskSpaceMenu: View {
         .frame(height: Layout.height)
         .background {
             Capsule()
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(
+                    Color(nsColor: .controlBackgroundColor)
+                        .opacity(KioskToolbarStyle.controlBackgroundOpacity)
+                )
         }
         .overlay {
             Capsule()

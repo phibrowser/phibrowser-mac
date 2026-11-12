@@ -18,7 +18,8 @@ palettes retain their primary hue and resolve their neighbors with the current r
 Moving any handle updates the anchor, preserving the harmony across hue wrap.
 `Theme.navigationPalette` travels with window-scoped theme copies. Navigation
 backdrops opt into its gradient through `ColoredVisualEffectView.usesThemePalette`;
-other semantic surfaces retain solid colors. Native headers above New Tab,
+backdrops painting an explicit theme, such as Library Space cards, pass its stops
+through `setStaticFill(_:paletteColors:)`. Other semantic surfaces retain solid colors. Native headers above New Tab,
 internal pages and empty states use `Theme.extensionSurfaceBackground(for:)`:
 white in light appearance, or the primary navigation color under a black scrim
 in dark appearance. `Theme.extensionSurfaceScrimOpacity` is the shared strength

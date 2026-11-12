@@ -214,8 +214,8 @@ final class ContentFullscreenSurfaceTests: XCTestCase {
         XCTAssertFalse(fill.isEmpty, "precondition: the page fills its host view by constraints")
         fixture.wrappers[1].nativeView = nil
 
-        fixture.state.splits = [SplitGroup(id: "split-970-971", primaryTabId: 970, secondaryTabId: 971,
-                                           layout: .vertical, ratio: 0.5)]
+        fixture.state.splits = [SplitGroup(id: "split-970-971", tabIds: [970, 971],
+                                           layout: .vertical, fractions: [0.5, 0.5])]
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
 
         XCTAssertTrue(page.superview === host, "the page is not mounted alone")
@@ -480,8 +480,8 @@ final class ContentFullscreenSurfaceTests: XCTestCase {
     private func formSplit(_ fixture: Fixture,
                            file: StaticString = #filePath,
                            line: UInt = #line) throws {
-        fixture.state.splits = [SplitGroup(id: "split-970-971", primaryTabId: 970, secondaryTabId: 971,
-                                           layout: .vertical, ratio: 0.5)]
+        fixture.state.splits = [SplitGroup(id: "split-970-971", tabIds: [970, 971],
+                                           layout: .vertical, fractions: [0.5, 0.5])]
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         XCTAssertTrue(fixture.webViews[0].superview?.superview is SplitPaneHostView,
                       "precondition: the page is a split pane", file: file, line: line)

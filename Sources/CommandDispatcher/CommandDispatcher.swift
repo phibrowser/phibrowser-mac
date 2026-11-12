@@ -192,6 +192,13 @@ struct CommandDispatcher {
             if windowController.handleCloseTab() {
                 return true
             }
+            // Closing the focused pane of a split takes just that pane out,
+            // except in a split that a bookmark or a pinned record saves:
+            // that one closes whole, and reopens in full from its entry.
+            if let focusedTabId = windowController.browserState.focusingTab?.guid,
+               windowController.browserState.closeSplitSavedInSidebar(containingTabId: focusedTabId) {
+                return true
+            }
             // ⌘W closing the last tab in a Space tears the whole window
             // slot down — same as ⇧⌘W / the red ✕ — rather than switching
             // to a sibling Space. It therefore deliberately does NOT tag
@@ -406,6 +413,13 @@ struct CommandDispatcher {
         // alias execute a different command for the same press.
         if let phiCommand = interceptedPhiCommand(for: event),
            phiShortcutApplies(phiCommand, to: window) {
+            // No Phi command runs from a picture-in-picture window alone on
+            // this desktop. The commands that get here from it (a new Kiosk
+            // window, a new incognito Space) skip the main menu, which is
+            // greyed out then, so they are swallowed here. The global Kiosk
+            // shortcut is a system hot key that never gets here, so it still
+            // opens a Kiosk window, as it does from any other app.
+            if PictureInPictureOnlyDesktop.isActive { return true }
             _ = dispatchCommand(phiCommand, to: window, initiatingShortcut: Shortcuts.key(for: phiCommand))
             return true
         }
@@ -498,6 +512,16 @@ struct CommandDispatcher {
     
     @MainActor
     static func dispatchCommand(_ commandId: Int32, window: NSWindow) -> Bool {
+        // Chromium asks here before it runs the command a key resolved to in
+        // one of its windows, a document picture-in-picture window and its
+        // alerts included, and before the page sees the key. Swallow every
+        // command while a picture-in-picture window is alone on this
+        // desktop, for two reasons: Chromium reads the main menu's enabled
+        // states without validating the submenus, so they can predate that
+        // state; and its shortcuts outside the main menu are never validated
+        // (Control-Command-P would open a tab in a Phi window on another
+        // desktop). The page misses those keys then.
+        if PictureInPictureOnlyDesktop.isActive { return true }
         guard let command = CommandWrapper(rawValue: Int(commandId)) else {
             return false
         }

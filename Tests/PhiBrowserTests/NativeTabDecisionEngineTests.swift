@@ -143,7 +143,7 @@ final class NativeTabDecisionEngineTests: XCTestCase {
             visibleNormalTabIds: [0, 1, 2, 3],
             context: context,
             relationGraph: .empty,
-            splitPartnerByTabId: [1: 2, 2: 1]
+            splitLastTabIdByMember: [1: 2, 2: 2]
         )
 
         XCTAssertEqual(index, 3)
@@ -164,15 +164,15 @@ final class NativeTabDecisionEngineTests: XCTestCase {
             visibleNormalTabIds: [0, 1, 2, 3],
             context: context,
             relationGraph: .empty,
-            splitPartnerByTabId: [1: 2, 2: 1]
+            splitLastTabIdByMember: [1: 2, 2: 2]
         )
 
         XCTAssertEqual(index, 3)
     }
 
     func testForegroundLinkFromSecondSplitTabLandsImmediatelyAfterOpener() {
-        // Opener is the higher-indexed half of the split; partner is to the left,
-        // so the partner-anchor shortcut must NOT pull the insertion back.
+        // Opener is the split's last pane, so the split-anchor shortcut
+        // resolves to the opener itself and must NOT pull the insertion back.
         let context = NativeTabCreationContext(
             isActiveAtCreation: true,
             creationKind: .linkForeground,
@@ -187,18 +187,18 @@ final class NativeTabDecisionEngineTests: XCTestCase {
             visibleNormalTabIds: [0, 1, 2, 3],
             context: context,
             relationGraph: .empty,
-            splitPartnerByTabId: [1: 2, 2: 1]
+            splitLastTabIdByMember: [1: 2, 2: 2]
         )
 
         XCTAssertEqual(index, 3)
     }
 
     func testBackgroundLinkFromSplitOpenerLandsPastDescendantsBeyondPartner() {
-        // Split opener at index 1 with partner at index 2. A descendant of the
-        // opener lives at index 4 (past the partner). The split-anchor shortcut
-        // bumps the anchor to the partner, but the descendant-walk must still
-        // discover the deeper descendant and insert after it (index 5), not
-        // immediately after the partner (index 3).
+        // Split opener at index 1 with its last pane at index 2. A descendant
+        // of the opener lives at index 4 (past the split). The split-anchor
+        // shortcut bumps the anchor to the last pane, but the descendant-walk
+        // must still discover the deeper descendant and insert after it
+        // (index 5), not immediately after the split (index 3).
         let context = NativeTabCreationContext(
             isActiveAtCreation: false,
             creationKind: .linkBackground,
@@ -220,10 +220,36 @@ final class NativeTabDecisionEngineTests: XCTestCase {
             visibleNormalTabIds: [0, 1, 2, 3, 4],
             context: context,
             relationGraph: relationGraph,
-            splitPartnerByTabId: [1: 2, 2: 1]
+            splitLastTabIdByMember: [1: 2, 2: 2]
         )
 
         XCTAssertEqual(index, 5)
+    }
+
+    /// A link from any pane of a three-pane split lands after the whole
+    /// split: the member map points every pane at the last one.
+    func testForegroundLinkFromThreePaneSplitOpenerLandsAfterTheLastPane() {
+        let splitLastTabIdByMember = [1: 3, 2: 3, 3: 3]
+        for opener in [1, 2, 3] {
+            let context = NativeTabCreationContext(
+                isActiveAtCreation: true,
+                creationKind: .linkForeground,
+                openerTabId: opener,
+                insertAfterTabId: nil,
+                sourceTabId: opener,
+                resetOpenerOnActiveTabChange: false,
+                didForgetAllOpenersBeforeCreate: false
+            )
+
+            let index = NativeTabDecisionEngine.insertionIndex(
+                visibleNormalTabIds: [0, 1, 2, 3, 4],
+                context: context,
+                relationGraph: .empty,
+                splitLastTabIdByMember: splitLastTabIdByMember
+            )
+
+            XCTAssertEqual(index, 4, "opener \(opener)")
+        }
     }
 
     func testBackgroundLinkInsertionPrefersOpenerChainOverInsertAfterHint() {

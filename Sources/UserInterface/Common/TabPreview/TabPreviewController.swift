@@ -243,12 +243,13 @@ struct TabPreviewContentResolver {
             return true
         }
         guard tab.isPinned || tab.guidInLocalDB?.isEmpty == false else { return false }
-        return tab.splitPartnerGuid?.isEmpty == false
+        return tab.hasPersistedSplitLink
             || browserState.pinnedTabs.contains { candidate in
                 guard let tabPersistentID = tab.guidInLocalDB, !tabPersistentID.isEmpty else {
                     return false
                 }
                 return candidate.splitPartnerGuid == tabPersistentID
+                    || candidate.splitPaneGuids.contains(tabPersistentID)
             }
     }
 

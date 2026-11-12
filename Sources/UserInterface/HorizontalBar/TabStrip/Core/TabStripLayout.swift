@@ -38,19 +38,21 @@ struct TabStripLayoutInput {
     /// caller leaves its visible frame at the drag-start value and
     /// drives cursor follow via a `layer.transform` translation.
     let excludedGroupRange: ClosedRange<Int>?
-    /// General multi-index exclusion form: split-pair drags carry the
-    /// dragged tab and its partner so both lift together; idle layout
-    /// carries split-secondary pane indices (merged cells render as a
-    /// single slot); single-tab drags may mirror `excludedTabIndex`
-    /// here. The engine unions all three exclusion forms before
-    /// counting, so overlap between them is safe.
+    /// General multi-index exclusion form: split drags carry the dragged
+    /// tab and the other panes of its split so they all lift together;
+    /// idle layout carries the collapsed split-pane indices (a merged
+    /// split renders as a single slot, so every pane after the host
+    /// collapses); single-tab drags may mirror `excludedTabIndex` here.
+    /// The engine unions all three exclusion forms before counting, so
+    /// overlap between them is safe.
     let excludedTabIndices: Set<Int>
-    /// Indices of split-merged host cells (the pair's first pane; the
-    /// second pane sits in `excludedTabIndices`). Only `layoutPinned`
-    /// widens these cells to a double slot; the normal-zone paths ignore
-    /// this set on purpose — a merged cell occupies a single tab slot so
-    /// its right-half hit region can't spill into the next cell.
-    let wideTabIndices: Set<Int>
+    /// Split-merged host cells (the split's first pane; the other panes
+    /// sit in `excludedTabIndices`), keyed by index with the split's pane
+    /// count as value. Only `layoutPinned` widens these cells to one slot
+    /// per pane; the normal-zone paths ignore this map on purpose — a
+    /// merged cell occupies a single tab slot so its per-pane hit regions
+    /// can't spill into the next cell.
+    let wideTabPaneCounts: [Int: Int]
     /// Gap insertion index.
     let gapAtIndex: Int?
     /// Gap width.
@@ -80,7 +82,7 @@ struct TabStripLayoutInput {
     /// and medium regimes) instead of going through container-width
     /// allocation. `TabStrip` sets it after a close with the cursor still
     /// inside the strip, so the next tab's close button stays under the
-    /// cursor. Everything else (split-pair collapse, group runs, chips,
+    /// cursor. Everything else (split collapse, group runs, chips,
     /// exclusions) lays out as usual.
     let lockedInactiveTabWidth: CGFloat?
 
@@ -95,7 +97,7 @@ struct TabStripLayoutInput {
          excludedTabIndex: Int? = nil,
          excludedGroupRange: ClosedRange<Int>? = nil,
          excludedTabIndices: Set<Int> = [],
-         wideTabIndices: Set<Int> = [],
+         wideTabPaneCounts: [Int: Int] = [:],
          gapAtIndex: Int? = nil,
          gapWidth: CGFloat? = nil,
          groupRuns: [GroupRun] = [],
@@ -113,7 +115,7 @@ struct TabStripLayoutInput {
         self.excludedTabIndex = excludedTabIndex
         self.excludedGroupRange = excludedGroupRange
         self.excludedTabIndices = excludedTabIndices
-        self.wideTabIndices = wideTabIndices
+        self.wideTabPaneCounts = wideTabPaneCounts
         self.gapAtIndex = gapAtIndex
         self.gapWidth = gapWidth
         self.groupRuns = groupRuns
@@ -168,7 +170,7 @@ enum TabStripLayoutEngine {
     static func layoutPinned(
         tabCount: Int,
         excludedTabIndices: Set<Int> = [],
-        wideTabIndices: Set<Int> = [],
+        wideTabPaneCounts: [Int: Int] = [:],
         gapAtIndex: Int? = nil
     ) -> TabStripLayoutOutput {
         var frames: [CGRect] = []
@@ -179,11 +181,6 @@ enum TabStripLayoutEngine {
         // Center pinned tabs vertically in the 32pt strip.
         let containerHeight = TabStripMetrics.Strip.tabHeight // 32
         let y = (containerHeight - itemHeight) / 2.0
-
-        // Wide cells (pinned splits) span two normal slots plus the spacing
-        // that would have sat between them, so the cell visually "absorbs"
-        // its collapsed partner's slot.
-        let wideWidth = itemWidth * 2 + spacing
 
         var currentX: CGFloat = 0
 
@@ -202,7 +199,12 @@ enum TabStripLayoutEngine {
                 continue
             }
 
-            let width = wideTabIndices.contains(i) ? wideWidth : itemWidth
+            // Wide cells (pinned splits) span one slot per pane plus the
+            // spacing that would have sat between those slots, so the cell
+            // visually "absorbs" its collapsed panes' slots.
+            let width = wideTabPaneCounts[i].map {
+                TabStripMetrics.PinnedTab.mergedWidth(paneCount: $0)
+            } ?? itemWidth
             let frame = CGRect(x: currentX, y: y, width: width, height: itemHeight)
             frames.append(frame)
             currentX += width + spacing
@@ -242,7 +244,7 @@ enum TabStripLayoutEngine {
         // Excluding the dragged tab(s) changes the available width
         // calculation. excludedTabIndex (single-tab drag),
         // excludedGroupRange (whole-group drag), and excludedTabIndices
-        // (split-pair drag) can overlap — `TabStrip.layout()` passes the
+        // (split drag) can overlap — `TabStrip.layout()` passes the
         // dragged index through both the single and the set form — so
         // union them before counting. Subtracting each form separately
         // double-counts the dragged tab and hands its phantom slot's
@@ -338,8 +340,8 @@ enum TabStripLayoutEngine {
             let isActive = (input.activeTabIndex != nil && i == input.activeTabIndex!)
             let width = isActive ? activeW : inactiveW
             // Split-merged cells occupy a single normal-tab slot (no
-            // widening). Fitting both panes inside the same width as one
-            // tab keeps the right-half hit region from spilling into the
+            // widening). Fitting every pane inside the same width as one
+            // tab keeps the per-pane hit regions from spilling into the
             // next cell.
             let frame = CGRect(
                 x: currentX,
@@ -408,8 +410,8 @@ enum TabStripLayoutEngine {
         // The three drag-exclusion forms can overlap (`TabStrip.layout()`
         // passes the dragged index through both the single and the set
         // form), so union them before counting — mirrors
-        // `layoutNormalUngrouped`. The set also carries split-secondary
-        // panes (from `normalSplitCollapseInfo`) that collapse to
+        // `layoutNormalUngrouped`. The set also carries the collapsed
+        // split panes (from `normalSplitCollapseInfo`) that collapse to
         // zero-width so the merged cell renders as a single slot.
         var dragExcludedIndices = input.excludedTabIndices
         if let excluded = input.excludedTabIndex {
@@ -594,8 +596,8 @@ enum TabStripLayoutEngine {
             }
 
             // Drag/split exclusions in any form (single, set — which
-            // carries the split-secondary panes from
-            // `normalSplitCollapseInfo`, collapsed under their merged
+            // carries the collapsed split panes from
+            // `normalSplitCollapseInfo`, folded under their merged
             // cell — or whole-group range): zero placeholder, no width.
             // Uses the same union as the width math above so counting
             // and placement can't disagree about which slots exist.
@@ -609,8 +611,8 @@ enum TabStripLayoutEngine {
             let isActive = (input.activeTabIndex == i)
             let width = isActive ? activeW : inactiveW
             // Split-merged cells occupy a single normal-tab slot (no
-            // widening). Fitting both panes inside the same width as one
-            // tab keeps the right-half hit region from spilling into the
+            // widening). Fitting every pane inside the same width as one
+            // tab keeps the per-pane hit regions from spilling into the
             // next cell.
             let frame = CGRect(x: currentX, y: TabStripMetrics.Strip.bottomSpacing,
                                 width: width, height: input.tabHeight)
@@ -648,9 +650,9 @@ enum TabStripLayoutEngine {
     }
 
     /// Index of the separator that sits visually to the LEFT of
-    /// `tabIndex`'s cell: normally `tabIndex - 1`, but split-secondary
+    /// `tabIndex`'s cell: normally `tabIndex - 1`, but collapsed split-pane
     /// slots are zero-width with off-screen separators, so walk past
-    /// them to the previous real slot (the pair's host, whose separator
+    /// them to the previous real slot (the split's host, whose separator
     /// is the merged cell's right edge). Returns -1 at the strip start,
     /// matching the no-separator case of the plain `tabIndex - 1` form.
     static func visibleLeftSeparatorIndex(of tabIndex: Int, skippingCollapsed collapsed: Set<Int>) -> Int {

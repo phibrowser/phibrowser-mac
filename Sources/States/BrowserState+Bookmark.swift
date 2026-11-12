@@ -12,6 +12,37 @@ private typealias BookmarkOriginNavigationContext = (
     restoredCustomValue: String
 )
 
+/// The bookmark row fields for a split's panes in slot order: the first two
+/// are the row's URLs, any others its extra panes. A pane's title is dropped
+/// when it only repeats the first pane's (common for panes of the same page),
+/// so the bookmark bar label stays compact.
+struct SplitBookmarkFields {
+    let url: String
+    let title: String
+    let secondaryUrl: String
+    let secondaryTitle: String?
+    let extraPanes: [SplitBookmarkExtraPane]
+
+    /// Nil unless there are two to four panes and each has a URL.
+    init?(panes: [(url: String?, title: String)]) {
+        guard (2...SplitGroup.maxPaneCount).contains(panes.count) else { return nil }
+        let urls = panes.compactMap { $0.url?.isEmpty == false ? $0.url : nil }
+        guard urls.count == panes.count else { return nil }
+        let primaryTitle = panes[0].title
+        func displayTitle(_ title: String) -> String? {
+            title == primaryTitle || title.isEmpty ? nil : title
+        }
+        url = URLProcessor.processUserInput(urls[0])
+        title = primaryTitle.isEmpty ? urls[0] : primaryTitle
+        secondaryUrl = URLProcessor.processUserInput(urls[1])
+        secondaryTitle = displayTitle(panes[1].title)
+        extraPanes = zip(urls, panes).dropFirst(2).map { url, pane in
+            SplitBookmarkExtraPane(url: URLProcessor.processUserInput(url),
+                                   title: displayTitle(pane.title))
+        }
+    }
+}
+
 extension BrowserState {
     private func syncBookmarkBinding(_ bookmark: Bookmark, with tab: Tab?, focusingTabGuid: Int?) {
         if let tab {
@@ -91,7 +122,7 @@ extension BrowserState {
         localStore.createBookmark(url: url, title: title, profileId: profileId, parentId: parentId, spaceId: spaceId)
     }
 
-    /// If `tab` belongs to a split pair, save the whole pair as one split-view
+    /// If `tab` belongs to a split, save the whole split as one split-view
     /// bookmark and return true. Otherwise return false so the caller can fall
     /// back to a single-URL bookmark path.
     ///
@@ -121,19 +152,12 @@ extension BrowserState {
         }()
         let parentGuid = toFolderGuid ?? parent?.guid
         if let resolvedTab,
-           let group = splitGroup(forTabId: resolvedTab.guid),
-           let primaryTab = tabs.first(where: { $0.guid == group.primaryTabId }),
-           let secondaryTab = tabs.first(where: { $0.guid == group.secondaryTabId }),
-           let primaryURL = primaryTab.url, !primaryURL.isEmpty,
-           let secondaryURL = secondaryTab.url, !secondaryURL.isEmpty {
-            let bookmarkTitle = primaryTab.title.isEmpty ? primaryURL : primaryTab.title
-            // Suppress the secondary title when it would just duplicate the
-            // primary (common for two halves of the same page) so the bookmark
-            // bar label stays compact.
-            let secondaryDisplayTitle: String? = {
-                if primaryTab.title == secondaryTab.title { return nil }
-                return secondaryTab.title.isEmpty ? nil : secondaryTab.title
-            }()
+           let group = splitGroup(forTabId: resolvedTab.guid) {
+            let panes = group.tabIds.compactMap { tabId in tabs.first(where: { $0.guid == tabId }) }
+            guard panes.count == group.paneCount,
+                  let fields = SplitBookmarkFields(panes: panes.map { (url: $0.url, title: $0.title) }) else {
+                return false
+            }
             let newBookmarkGuid = UUID().uuidString
             // `toFolderGuid` lets the "New Folder" flow target a folder created
             // with a pre-generated guid before its Bookmark instance has been
@@ -143,17 +167,18 @@ extension BrowserState {
             // can register the bookmark→split binding immediately, before the
             // bookmark publisher republishes the tree.
             localStore.createBookmark(
-                url: URLProcessor.processUserInput(primaryURL),
-                title: bookmarkTitle,
+                url: fields.url,
+                title: fields.title,
                 profileId: profileId,
                 parentId: parentGuid,
                 index: targetIndex,
                 guid: newBookmarkGuid,
                 spaceId: spaceId,
-                secondaryUrl: URLProcessor.processUserInput(secondaryURL),
-                secondaryTitle: secondaryDisplayTitle,
+                secondaryUrl: fields.secondaryUrl,
+                secondaryTitle: fields.secondaryTitle,
+                splitExtraPanes: fields.extraPanes,
                 layout: group.layout.rawValue,
-                favicon: primaryTab.liveFaviconData ?? primaryTab.cachedFaviconData
+                favicon: panes[0].liveFaviconData ?? panes[0].cachedFaviconData
             )
             // Drag binds the live split so it becomes the bookmark's opened
             // representation (a move); menu/Cmd+D leaves the split open as an
@@ -167,37 +192,32 @@ extension BrowserState {
             updateNormalTabs()
             return true
         }
-        // Unopened pinned split: no live SplitGroup, but the two halves are
-        // persisted as paired records in `pinnedTabs`. Build the bookmark
+        // Unopened pinned split: no live SplitGroup, but the panes are
+        // persisted as linked records in `pinnedTabs`. Build the bookmark
         // from each pinned record's persisted URL/title so the right-click
         // "Add Split to Bookmark / Folder" works on a cell whose panes
         // haven't been opened in this session yet.
         if let myDB = tab.guidInLocalDB, !myDB.isEmpty,
            let pinnedSelf = pinnedTabs.first(where: { $0.guidInLocalDB == myDB }),
-           let (leftDB, rightDB) = pinnedSplitDBPair(forPinnedTab: pinnedSelf),
-           let leftPinned = pinnedTabs.first(where: { $0.guidInLocalDB == leftDB }),
-           let rightPinned = pinnedTabs.first(where: { $0.guidInLocalDB == rightDB }),
-           let primaryURL = leftPinned.url, !primaryURL.isEmpty,
-           let secondaryURL = rightPinned.url, !secondaryURL.isEmpty {
-            let primaryTitle = leftPinned.title
-            let secondaryTitle = rightPinned.title
-            let bookmarkTitle = primaryTitle.isEmpty ? primaryURL : primaryTitle
-            let secondaryDisplayTitle: String? = {
-                if primaryTitle == secondaryTitle { return nil }
-                return secondaryTitle.isEmpty ? nil : secondaryTitle
-            }()
+           let dbGuids = pinnedSplitDBGuids(forPinnedTab: pinnedSelf) {
+            let records = dbGuids.compactMap { db in pinnedTabs.first(where: { $0.guidInLocalDB == db }) }
+            guard records.count == dbGuids.count,
+                  let fields = SplitBookmarkFields(panes: records.map { (url: $0.url, title: $0.title) }) else {
+                return false
+            }
             localStore.createBookmark(
-                url: URLProcessor.processUserInput(primaryURL),
-                title: bookmarkTitle,
+                url: fields.url,
+                title: fields.title,
                 profileId: profileId,
                 parentId: parentGuid,
                 index: targetIndex,
                 guid: UUID().uuidString,
                 spaceId: spaceId,
-                secondaryUrl: URLProcessor.processUserInput(secondaryURL),
-                secondaryTitle: secondaryDisplayTitle,
-                layout: pinnedSplitLayout(leftDB: leftDB, rightDB: rightDB).rawValue,
-                favicon: leftPinned.liveFaviconData ?? leftPinned.cachedFaviconData
+                secondaryUrl: fields.secondaryUrl,
+                secondaryTitle: fields.secondaryTitle,
+                splitExtraPanes: fields.extraPanes,
+                layout: pinnedSplitLayout(dbGuids: dbGuids).rawValue,
+                favicon: records[0].liveFaviconData ?? records[0].cachedFaviconData
             )
             return true
         }
@@ -206,7 +226,7 @@ extension BrowserState {
     
     /// Activates the existing tab for a bookmark or creates a new tab when needed.
     /// Split bookmarks consult `splitBookmarkBindings` to find the split that
-    /// was opened from this bookmark — if it still exists the primary pane is
+    /// was opened from this bookmark — if it still exists its first pane is
     /// re-activated; otherwise a fresh split is opened and registered.
     func openBookmark(_ bookmark: Bookmark) {
         guard !bookmark.isFolder, let url = bookmark.url else { return }
@@ -217,27 +237,25 @@ extension BrowserState {
         }
 
         localStore.updateLastSeen(bookmark.guid)
-        if let secondaryURL = bookmark.secondaryUrl, !secondaryURL.isEmpty {
+        if bookmark.secondaryUrl?.isEmpty == false {
             if layoutMode.isTraditional {
                 detachBookmarkTabsForComfortableLayout(bookmarkGuids: [bookmark.guid])
-                openTwoURLsAsSplit(primaryURL: url,
-                                   secondaryURL: secondaryURL,
-                                   layout: bookmark.layout ?? .vertical)
+                openURLsAsSplit(bookmark.splitPaneURLs,
+                                layout: bookmark.layout ?? .vertical)
                 return
             }
             if let splitId = splitBookmarkBindings[bookmark.guid],
                let group = splits.first(where: { $0.id == splitId }),
-               let primaryTab = tabs.first(where: { $0.guid == group.primaryTabId }),
+               let primaryTab = tabs.first(where: { $0.guid == group.firstTabId }),
                let wrapper = primaryTab.webContentWrapper {
                 wrapper.setAsActiveTab()
                 MainActor.assumeIsolated {
                     focuseTab(primaryTab)
                 }
             } else {
-                openTwoURLsAsSplit(primaryURL: url,
-                                   secondaryURL: secondaryURL,
-                                   bookmarkGuid: bookmark.guid,
-                                   layout: bookmark.layout ?? .vertical)
+                openURLsAsSplit(bookmark.splitPaneURLs,
+                                bookmarkGuid: bookmark.guid,
+                                layout: bookmark.layout ?? .vertical)
             }
             return
         }
@@ -316,11 +334,14 @@ extension BrowserState {
         let originalURL: String?
         if let splitId = splitBookmarkBindings[realBookmark.guid],
            let group = splits.first(where: { $0.id == splitId }) {
-            if tab.guid == group.primaryTabId {
+            // The bookmark stores the URLs of slots 0 and 1; any further
+            // pane of the bound split has no stored origin.
+            switch group.slot(of: tab.guid) {
+            case 0:
                 originalURL = realBookmark.url
-            } else if tab.guid == group.secondaryTabId {
+            case 1:
                 originalURL = realBookmark.secondaryUrl
-            } else {
+            default:
                 return nil
             }
         } else {
@@ -376,7 +397,7 @@ extension BrowserState {
         bookmark.setWebContentWrapper(nil)
         if let splitId = splitBookmarkBindings[bookmarkGuid],
            let group = splits.first(where: { $0.id == splitId }),
-           let primaryTab = tabs.first(where: { $0.guid == group.primaryTabId }) {
+           let primaryTab = tabs.first(where: { $0.guid == group.firstTabId }) {
             bookmark.setCanonicalFaviconSource(primaryTab.webContentWrapper)
         } else {
             bookmark.clearCanonicalFaviconSource()
@@ -391,7 +412,7 @@ extension BrowserState {
     }
     
     /// Closes the currently open tab(s) associated with a bookmark. For split
-    /// bookmarks both panes are closed via the binding map.
+    /// bookmarks every pane of the bound split is closed via the binding map.
     func closeBookmark(_ bookmark: Bookmark) {
         guard let realBookmark = bookmarkManager.bookmark(withGuid: bookmark.guid) else {
             return
@@ -399,11 +420,12 @@ extension BrowserState {
 
         if let splitId = splitBookmarkBindings[realBookmark.guid],
            let group = splits.first(where: { $0.id == splitId }) {
-            // Snapshot the tab ids before closing — closing the first tab
-            // dissolves the split and clears the binding, so the second
-            // lookup against `group` would race with state cleanup.
-            let panes = [group.primaryTabId, group.secondaryTabId]
+            // Snapshot the tabs before closing — closing a pane can dissolve
+            // the split and clear the binding, so a later lookup against
+            // `group` would race with state cleanup.
+            let panes = group.tabIds
                 .compactMap { id in tabs.first(where: { $0.guid == id }) }
+            noteBookmarkSplitClosing(group)
             panes.forEach { $0.close() }
             return
         }
@@ -464,5 +486,28 @@ extension BrowserState {
         }
 
         updateNormalTabs()
+    }
+}
+
+@MainActor
+extension BrowserState {
+    func replacementURLForBookmark(guid: String) -> URL? {
+        guard !isIncognito,
+              let bookmark = bookmarkManager.bookmark(withGuid: guid),
+              !bookmark.isFolder, (bookmark.secondaryUrl ?? "").isEmpty,
+              bookmark.isOpened,
+              let tab = tabs.first(where: { $0.guid == bookmark.chromiumTabGuid && $0.guidInLocalDB == guid }),
+              splitGroup(forTabId: tab.guid) == nil,
+              let current = tab.webContentWrapper?.urlString, !current.isEmpty,
+              let url = localStore.normalizedURL(from: current),
+              url.absoluteString != bookmark.url else { return nil }
+        return url
+    }
+
+    func replaceSavedURLForBookmark(guid: String) {
+        guard let url = replacementURLForBookmark(guid: guid) else { return }
+        // The editor also navigates the attached tab; this action only saves.
+        localStore.updateBookmark(guid, profileId: profileId, title: nil,
+                                  url: url.absoluteString, expectedSpaceId: spaceId)
     }
 }

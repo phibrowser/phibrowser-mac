@@ -365,6 +365,8 @@ class LoginController {
         pendingAuthenticatedAccount = nil
         ApplicationState.shared.cancelGuestAccountPromotion()
         GuestModePreferences.disableAI()
+        // Before browser access returns, as for a sign-in (ADR 0012).
+        ChromiumLauncher.sharedInstance().bridge?.consumeSignOutSessionDiscard()
         ApplicationState.shared.enterGuestMode()
         if let metricsReportingPreference {
             if let bridge = ChromiumLauncher.sharedInstance().bridge {
@@ -698,6 +700,11 @@ class LoginController {
     }
 
     private func installAuthenticatedAccount(_ account: Account) {
+        // Before browser access returns: publishing the account can grant it
+        // on the spot (`.mainAccountChanged` re-resolves access, and a
+        // returning account is already past onboarding), so a Sign out earlier
+        // in this run has its session-restore discard consumed here (ADR 0012).
+        ChromiumLauncher.sharedInstance().bridge?.consumeSignOutSessionDiscard()
         if ApplicationState.shared.isGuest {
             pendingAuthenticatedAccount = account
         } else {

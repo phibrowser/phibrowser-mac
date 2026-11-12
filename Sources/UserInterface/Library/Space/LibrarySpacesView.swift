@@ -16,7 +16,6 @@ struct LibrarySpacesView: View {
     @State private var dragOriginIndex = 0
     @State private var dragTranslation: CGFloat = 0
     @State private var isCreating = false
-    @State private var creationTheme: Theme?
     @State private var themeRevision = 0
     @State private var pendingCreatedID: String?
     private static let cardWidth: CGFloat = 240
@@ -50,7 +49,6 @@ struct LibrarySpacesView: View {
                         }
                         Button {
                             AppLogInfo("[LibrarySpaces] create.open count=\(spaces.count)")
-                            creationTheme = browserState.themeContext.currentTheme
                             isCreating = true
                         } label: {
                             Image(systemName: "plus")
@@ -160,31 +158,56 @@ struct LibrarySpacesView: View {
     }
 
     private var creationCard: some View {
-        let theme = creationTheme ?? browserState.themeContext.currentTheme
-        return CreateSpacePanel(style: .library, manager: manager, profileManager: .shared,
-                                initialProfileId: browserState.profileId,
-                                initialThemeId: browserState.themeContext.currentTheme.id,
-                                afterSpaceId: browserState.spaceId,
-                                onClose: { restorePreview in
-                                    AppLogInfo("[LibrarySpaces] create.close restorePreview=\(restorePreview)")
-                                    isCreating = false
-                                },
-                                onThemeSelectionChange: { creationTheme = $0 },
-                                onCreated: {
-                                    AppLogInfo("[LibrarySpaces] create.completed space=\($0)")
-                                    pendingCreatedID = $0
-                                })
-            .frame(width: Self.cardWidth)
-            .frame(maxHeight: .infinity)
-            .background(LibrarySpaceBackdrop(theme: theme, appearance: appearance))
-            .clipShape(.rect(cornerRadius: 18))
-            .shadow(color: .black.opacity(appearance.isDark ? 0.28 : 0.14), radius: 8, y: 4)
-            .environment(\.phiTheme, theme)
+        LibrarySpaceCreationCard(browserState: browserState, manager: manager, width: Self.cardWidth, onClose: { restorePreview in
+            AppLogInfo("[LibrarySpaces] create.close restorePreview=\(restorePreview)")
+            isCreating = false
+        }, onCreated: {
+            AppLogInfo("[LibrarySpaces] create.completed space=\($0)")
+            pendingCreatedID = $0
+        })
     }
 
     private func scroll(_ proxy: ScrollViewProxy, to id: String) {
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
             proxy.scrollTo(id, anchor: .trailing)
         }
+    }
+}
+
+/// Owns the draft theme so palette edits refresh only this card, not the list.
+private struct LibrarySpaceCreationCard: View {
+    let browserState: BrowserState
+    let manager: SpaceManager
+    let width: CGFloat
+    let onClose: (_ restorePreviewTheme: Bool) -> Void
+    let onCreated: (String) -> Void
+    @Environment(\.phiAppearance) private var appearance
+    @State private var draft: DraftTheme?
+
+    var body: some View {
+        let theme = draft?.theme ?? browserState.themeContext.currentTheme
+        CreateSpacePanel(style: .library, manager: manager, profileManager: .shared,
+                         initialProfileId: browserState.profileId,
+                         initialThemeId: browserState.themeContext.currentTheme.id,
+                         afterSpaceId: browserState.spaceId,
+                         onClose: onClose,
+                         onThemeSelectionChange: { draft = DraftTheme(theme: $0) },
+                         onCreated: onCreated)
+            .frame(width: width)
+            .frame(maxHeight: .infinity)
+            .background(LibrarySpaceBackdrop(theme: theme, appearance: appearance))
+            .clipShape(.rect(cornerRadius: 18))
+            .shadow(color: .black.opacity(appearance.isDark ? 0.28 : 0.14), radius: 8, y: 4)
+            .environment(\.phiTheme, theme)
+    }
+}
+
+/// `Theme` equality compares only ids, which a palette draft shares with its
+/// base theme; comparing the palette too lets each edit update the card.
+private struct DraftTheme: Equatable {
+    let theme: Theme
+
+    static func == (lhs: DraftTheme, rhs: DraftTheme) -> Bool {
+        lhs.theme.id == rhs.theme.id && lhs.theme.navigationPalette == rhs.theme.navigationPalette
     }
 }

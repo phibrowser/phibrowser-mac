@@ -799,10 +799,9 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
         let splitActions = splits.map {
             SplitEvent.SplitAction.created(
                 splitId: $0.id,
-                primaryTabId: $0.primaryTabId,
-                secondaryTabId: $0.secondaryTabId,
+                tabIds: $0.tabIds,
                 layout: $0.layout,
-                ratio: $0.ratio
+                fractions: $0.fractions
             )
         }
         newState.handleRestoredWindowSnapshot(
@@ -898,6 +897,7 @@ class SpaceSessionControllersManager: MainBrowserWindowLookup {
             if let pinnedTarget {
                 targetGUID = pinnedTarget.targetGUID
                 tab.splitPartnerGuid = pinnedTarget.targetSplitPartnerGUID
+                tab.splitPaneGuids = pinnedTarget.targetSplitPaneGUIDs ?? []
             } else if pinnedTargets.isEmpty {
                 targetGUID = receipt.mappings.bookmarkGUIDs[sourceGUID]
             } else {

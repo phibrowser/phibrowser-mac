@@ -140,13 +140,16 @@ struct SplitEvent: WindowEvent {
     let action: SplitAction
 
     enum SplitAction {
+        /// `tabIds` are the panes in slot order (two to four); `fractions`
+        /// each pane's share of the split axis in the same order.
         case created(splitId: String,
-                     primaryTabId: Int,
-                     secondaryTabId: Int,
+                     tabIds: [Int],
                      layout: SplitLayout,
-                     ratio: Double)
-        case visualsChanged(splitId: String, layout: SplitLayout, ratio: Double)
-        case contentsChanged(splitId: String, primaryTabId: Int, secondaryTabId: Int)
+                     fractions: [Double])
+        case visualsChanged(splitId: String, layout: SplitLayout, fractions: [Double])
+        /// The panes in slot order after a reorder, or after a pane joined or
+        /// left a split that stays up.
+        case contentsChanged(splitId: String, tabIds: [Int])
         case removed(splitId: String)
         case openLinkAsSplitPartner(partnerTabId: Int, url: String)
     }
@@ -282,18 +285,15 @@ class EventBus {
     @MainActor
     private func handleSplitEvent(_ event: SplitEvent, in state: BrowserState) {
         switch event.action {
-        case let .created(splitId, primaryTabId, secondaryTabId, layout, ratio):
+        case let .created(splitId, tabIds, layout, fractions):
             state.handleSplitCreated(splitId: splitId,
-                                     primaryTabId: primaryTabId,
-                                     secondaryTabId: secondaryTabId,
+                                     tabIds: tabIds,
                                      layout: layout,
-                                     ratio: ratio)
-        case let .visualsChanged(splitId, layout, ratio):
-            state.handleSplitVisualsChanged(splitId: splitId, layout: layout, ratio: ratio)
-        case let .contentsChanged(splitId, primaryTabId, secondaryTabId):
-            state.handleSplitContentsChanged(splitId: splitId,
-                                             primaryTabId: primaryTabId,
-                                             secondaryTabId: secondaryTabId)
+                                     fractions: fractions)
+        case let .visualsChanged(splitId, layout, fractions):
+            state.handleSplitVisualsChanged(splitId: splitId, layout: layout, fractions: fractions)
+        case let .contentsChanged(splitId, tabIds):
+            state.handleSplitContentsChanged(splitId: splitId, tabIds: tabIds)
         case .removed(let splitId):
             state.handleSplitRemoved(splitId: splitId)
         case let .openLinkAsSplitPartner(partnerTabId, url):

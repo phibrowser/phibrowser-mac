@@ -28,7 +28,7 @@ final class BrowserStatePinnedInsertIndexTests: XCTestCase {
         let plain = makePlainPinned("db-plain", index: 2)
         let tabs = [first, second, plain]
 
-        XCTAssertEqual(BrowserState.pinnedInsertIndexOutsideSplitPair(1, pinnedTabs: tabs), 2,
+        XCTAssertEqual(BrowserState.pinnedInsertIndexOutsideSplit(1, pinnedTabs: tabs), 2,
             "An index between the pair's records must snap past the second pane.")
     }
 
@@ -37,12 +37,26 @@ final class BrowserStatePinnedInsertIndexTests: XCTestCase {
         let plain = makePlainPinned("db-plain", index: 0)
         let tabs = [plain, first, second]
 
-        XCTAssertEqual(BrowserState.pinnedInsertIndexOutsideSplitPair(0, pinnedTabs: tabs), 0)
-        XCTAssertEqual(BrowserState.pinnedInsertIndexOutsideSplitPair(1, pinnedTabs: tabs), 1,
+        XCTAssertEqual(BrowserState.pinnedInsertIndexOutsideSplit(0, pinnedTabs: tabs), 0)
+        XCTAssertEqual(BrowserState.pinnedInsertIndexOutsideSplit(1, pinnedTabs: tabs), 1,
             "Inserting before the pair must stay put — only the pair's interior snaps.")
-        XCTAssertEqual(BrowserState.pinnedInsertIndexOutsideSplitPair(2, pinnedTabs: tabs), 3,
+        XCTAssertEqual(BrowserState.pinnedInsertIndexOutsideSplit(2, pinnedTabs: tabs), 3,
             "An index between the pair's records must snap past the second pane.")
-        XCTAssertEqual(BrowserState.pinnedInsertIndexOutsideSplitPair(3, pinnedTabs: tabs), 3,
+        XCTAssertEqual(BrowserState.pinnedInsertIndexOutsideSplit(3, pinnedTabs: tabs), 3,
             "Appending at the end must stay put.")
+    }
+
+    func testIndexInsideAWiderSplitSnapsPastItsLastPane() {
+        let tabs = ["a", "b", "c"].enumerated().map { index, db -> Tab in
+            let tab = Tab(guid: index, url: "https://\(db).example", isActive: false, index: index, customGuid: db)
+            tab.splitPaneGuids = ["a", "b", "c"]
+            return tab
+        }
+        let solo = Tab(guid: 3, url: "https://d.example", isActive: false, index: 3, customGuid: "d")
+        let pinned = tabs + [solo]
+        XCTAssertEqual(BrowserState.pinnedInsertIndexOutsideSplit(1, pinnedTabs: pinned), 3)
+        XCTAssertEqual(BrowserState.pinnedInsertIndexOutsideSplit(2, pinnedTabs: pinned), 3)
+        XCTAssertEqual(BrowserState.pinnedInsertIndexOutsideSplit(3, pinnedTabs: pinned), 3)
+        XCTAssertEqual(BrowserState.pinnedInsertIndexOutsideSplit(0, pinnedTabs: pinned), 0)
     }
 }

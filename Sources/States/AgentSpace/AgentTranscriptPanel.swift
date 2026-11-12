@@ -676,26 +676,6 @@ struct AgentTranscriptPanelView: View {
         static let claudeAccent = adaptive(
             light: NSColor(red: 0.78, green: 0.40, blue: 0.27, alpha: 1),
             dark: NSColor(red: 0.855, green: 0.467, blue: 0.337, alpha: 1))
-        // Pi's built-in light/dark theme surfaces. Keep them separate from
-        // Phi's console chrome: they are used only by mirrored Pi rows.
-        static let piUserBackgroundNS = adaptiveNS(
-            light: NSColor(red: 0.91, green: 0.91, blue: 0.91, alpha: 1),
-            dark: NSColor(red: 0.204, green: 0.208, blue: 0.255, alpha: 1))
-        static let piToolPendingBackgroundNS = adaptiveNS(
-            light: NSColor(red: 0.91, green: 0.91, blue: 0.94, alpha: 1),
-            dark: NSColor(red: 0.157, green: 0.157, blue: 0.196, alpha: 1))
-        static let piToolSuccessBackgroundNS = adaptiveNS(
-            light: NSColor(red: 0.91, green: 0.94, blue: 0.91, alpha: 1),
-            dark: NSColor(red: 0.157, green: 0.196, blue: 0.157, alpha: 1))
-        static let piToolErrorBackgroundNS = adaptiveNS(
-            light: NSColor(red: 0.94, green: 0.91, blue: 0.91, alpha: 1),
-            dark: NSColor(red: 0.235, green: 0.157, blue: 0.157, alpha: 1))
-        static let piDiffAdditionNS = adaptiveNS(
-            light: NSColor(red: 0.345, green: 0.518, blue: 0.345, alpha: 1),
-            dark: NSColor(red: 0.71, green: 0.74, blue: 0.41, alpha: 1))
-        static let piDiffDeletionNS = adaptiveNS(
-            light: NSColor(red: 0.667, green: 0.333, blue: 0.333, alpha: 1),
-            dark: NSColor(red: 0.8, green: 0.4, blue: 0.4, alpha: 1))
         /// Transcript content is monospaced; the chrome around it (header,
         /// status pill, hints) uses the UI font so controls read as controls,
         /// not as more console output.
@@ -706,7 +686,6 @@ struct AgentTranscriptPanelView: View {
         // NSFont twins for the attributed transcript document.
         static let nsFont = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
         static let nsFontBold = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .bold)
-        static let nsFontSemibold = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .semibold)
         static let nsFontSmall = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
         static let nsFontSmallBold = NSFont.monospacedSystemFont(ofSize: 10, weight: .bold)
         static let nsFontHeading = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
@@ -1077,7 +1056,7 @@ struct AgentTranscriptPanelView: View {
 
     /// The whole feed as one attributed string — the NSTextView twin of the
     /// per-row SwiftUI styling, keeping its visual language: per-agent glyphs
-    /// and colors, dim `⎿` details, italic thinking, Pi card tints, and
+    /// and colors, dim `⎿` details, italic thinking, and
     /// markdown structure (headings, bullets, code, inline emphasis).
     private func attributedTranscript() -> NSAttributedString {
         let out = NSMutableAttributedString()
@@ -1132,11 +1111,6 @@ struct AgentTranscriptPanelView: View {
             case .codex:
                 row.append(atr("▌ ", font: Palette.nsFont, color: Palette.promptNS))
                 row.append(markdownRuns(entry.text, color: Palette.textNS))
-            case .pi:
-                let start = row.length
-                row.append(markdownRuns(entry.text, color: Palette.textNS))
-                row.addAttribute(.backgroundColor, value: Palette.piUserBackgroundNS,
-                                 range: NSRange(location: start, length: row.length - start))
             default:
                 row.append(atr("> ", font: Palette.nsFontBold, color: Palette.dimNS))
                 row.append(markdownRuns(entry.text, color: Palette.textNS))
@@ -1153,18 +1127,14 @@ struct AgentTranscriptPanelView: View {
             row.append(atr(entry.text, font: Palette.nsFont, color: Palette.faintNS,
                            oblique: true))
         case .action, .status, .error, .tool:
-            if entry.kind == .tool, flavor == .pi {
-                appendPiToolCard(entry, to: row)
-            } else {
-                if let glyph = glyphNS(for: entry) {
-                    row.append(atr("\(glyph.symbol) ", font: Palette.nsFont,
-                                   color: glyph.color))
-                }
-                row.append(atr(entry.text, font: Palette.nsFont,
-                               color: kindColorNS(entry.kind)))
-                if let detail = entry.detail, !detail.isEmpty {
-                    appendDetail(row, detail, elbow: flavor == .codex ? "└" : "⎿")
-                }
+            if let glyph = glyphNS(for: entry) {
+                row.append(atr("\(glyph.symbol) ", font: Palette.nsFont,
+                               color: glyph.color))
+            }
+            row.append(atr(entry.text, font: Palette.nsFont,
+                           color: kindColorNS(entry.kind)))
+            if let detail = entry.detail, !detail.isEmpty {
+                appendDetail(row, detail, elbow: flavor == .codex ? "└" : "⎿")
             }
         }
         let style = NSMutableParagraphStyle()
@@ -1173,37 +1143,6 @@ struct AgentTranscriptPanelView: View {
         row.addAttribute(.paragraphStyle, value: style,
                          range: NSRange(location: 0, length: row.length))
         return row
-    }
-
-    /// Pi's tool execution keeps its card reading: semibold title, output and
-    /// diff lines under it, the pending/success/error tint carried as a run
-    /// background.
-    private func appendPiToolCard(_ entry: AgentTranscriptEntry,
-                                  to row: NSMutableAttributedString) {
-        let start = row.length
-        row.append(atr(entry.text, font: Palette.nsFontSemibold, color: Palette.textNS))
-        if let detail = entry.detail, !detail.isEmpty {
-            for line in detail.split(separator: "\n", omittingEmptySubsequences: false) {
-                let text = String(line)
-                let color: NSColor
-                if text.hasPrefix("+") && !text.hasPrefix("+++") {
-                    color = Palette.piDiffAdditionNS
-                } else if text.hasPrefix("-") && !text.hasPrefix("---") {
-                    color = Palette.piDiffDeletionNS
-                } else {
-                    color = Palette.dimNS
-                }
-                row.append(atr("\n\(text)", font: Palette.nsFontSmall, color: color))
-            }
-        }
-        let background: NSColor
-        switch entry.piToolState {
-        case .success: background = Palette.piToolSuccessBackgroundNS
-        case .error: background = Palette.piToolErrorBackgroundNS
-        case .pending, nil: background = Palette.piToolPendingBackgroundNS
-        }
-        row.addAttribute(.backgroundColor, value: background,
-                         range: NSRange(location: start, length: row.length - start))
     }
 
     private func appendDetail(_ row: NSMutableAttributedString, _ detail: String,
@@ -1512,14 +1451,13 @@ struct AgentTranscriptPanelView: View {
     /// nil (app/skill-authored) keeps Phi's console style; unrecognized
     /// agents get a neutral CLI look.
     private enum Flavor {
-        case claude, codex, pi, generic
+        case claude, codex, generic
 
         init?(_ agent: String?) {
             switch agent {
             case nil: return nil
             case "claude": self = .claude
             case "codex": self = .codex
-            case "pi": self = .pi
             default: self = .generic
             }
         }

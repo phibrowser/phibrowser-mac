@@ -91,18 +91,22 @@ struct SearchTabsRankingMetadata: Equatable {
     let providerOrder: Int
 }
 
+/// An open tab's place in its live split (two to four panes).
 struct SearchTabsSplitRelation: Equatable {
-    enum Role: Equatable {
-        case primary
-        case secondary
+    /// One of the other panes of the split.
+    struct Partner: Equatable {
+        let tabId: Int
+        let title: String
+        let url: String?
     }
 
     let splitId: String
     let layout: SplitLayout?
-    let role: Role
-    let partnerTabId: Int
-    let partnerTitle: String
-    let partnerURL: String?
+    /// This tab's pane index in slot order (0 = left column / top row).
+    let slot: Int
+    let paneCount: Int
+    /// Every other pane, in slot order.
+    let partners: [Partner]
 }
 
 enum SearchTabsActionTarget: Equatable {

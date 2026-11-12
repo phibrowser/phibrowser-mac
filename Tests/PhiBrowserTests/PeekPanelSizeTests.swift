@@ -124,6 +124,45 @@ final class PeekPanelSizeTests: XCTestCase {
         XCTAssertTrue(fixture.panel.pageCardView.isHiddenOrHasHiddenAncestor)
     }
 
+    /// Balanced shows the header row inside the page card. The peek and its
+    /// controls start below it, so the row's extensions and navigation stay
+    /// reachable while the peek is up.
+    func testThePeekLeavesTheBalancedHeaderRowUncovered() throws {
+        let fixture = try makeSessionWithPeek()
+        let header = try XCTUnwrap(fixture.container.currentHeaderRowView)
+        XCTAssertTrue(WebContentContainerViewController.isHeaderRowShown(header),
+                      "precondition: Balanced shows the header row")
+        let headerFrame = screenFrame(of: header)
+
+        XCTAssertLessThan(screenFrame(of: fixture.panel.pageCardView).maxY, headerFrame.minY)
+        for overlay in overlays(in: fixture) {
+            XCTAssertLessThanOrEqual(overlay.screenFrame.maxY, headerFrame.minY,
+                                     "the control column stays off the header row too")
+        }
+    }
+
+    /// Performance keeps navigation in the sidebar: with no header row in the
+    /// card, the peek keeps the card's full height, and follows the row as a
+    /// layout change shows it.
+    func testThePeekFollowsTheHeaderRowAcrossLayoutModes() throws {
+        PhiPreferences.GeneralSettings.saveLayoutMode(.performance)
+        let fixture = try makeSessionWithPeek()
+        let page = try XCTUnwrap(fixture.container.currentPageCardView)
+        let header = try XCTUnwrap(fixture.container.currentHeaderRowView)
+        XCTAssertFalse(WebContentContainerViewController.isHeaderRowShown(header),
+                       "precondition: Performance hides the header row")
+        XCTAssertEqual(screenFrame(of: fixture.panel.pageCardView).maxY,
+                       screenFrame(of: page).maxY, accuracy: 0.5)
+
+        PhiPreferences.GeneralSettings.saveLayoutMode(.balanced)
+        settle()
+        fixture.container.view.layoutSubtreeIfNeeded()
+        settle()
+        XCTAssertTrue(WebContentContainerViewController.isHeaderRowShown(header))
+        XCTAssertLessThan(screenFrame(of: fixture.panel.pageCardView).maxY,
+                          screenFrame(of: header).minY)
+    }
+
     // MARK: - Helpers
 
     func testEdgeToEdgeSettingRelayoutsAnOpenPeekAndRestoresItsFrame() throws {

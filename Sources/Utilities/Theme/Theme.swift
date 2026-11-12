@@ -447,16 +447,33 @@ struct ThemePalette: Codable, Equatable {
         value.isFinite ? min(max(value, 0), 1) : 0
     }
 
+    /// The neutral center shows no hue, so it uses the default accent rather
+    /// than one derived from the hue retained before snapping.
+    var accentColor: ColorPair {
+        guard saturation > 0 else { return DefaultColors.themeColor }
+        return ColorPair(
+            light: NSColor(hue: CGFloat(hue), saturation: 0.65, brightness: 0.6, alpha: 1),
+            dark: NSColor(hue: CGFloat(hue), saturation: 0.5, brightness: 0.85, alpha: 1)
+        )
+    }
+
+    var accentHoverColor: ColorPair {
+        guard saturation > 0 else { return DefaultColors.themeColorOnHover }
+        let accent = accentColor
+        return ColorPair(
+            light: accent.light.adjustingBrightness(percent: -5),
+            dark: accent.dark.adjustingBrightness(percent: 5)
+        )
+    }
+
     func applying(to base: Theme) -> Theme {
         let theme = base.duplicating()
         theme.navigationPalette = self
         let light = colors(for: .light)[0]
         let dark = colors(for: .dark)[0]
-        let lightAccent = NSColor(hue: CGFloat(hue), saturation: 0.65, brightness: 0.6, alpha: 1)
-        let darkAccent = NSColor(hue: CGFloat(hue), saturation: 0.5, brightness: 0.85, alpha: 1)
         theme.setColor(light: light, dark: dark, for: .windowOverlayBackground)
-        theme.setColor(light: lightAccent, dark: darkAccent, for: .themeColor)
-        theme.setColor(light: lightAccent.adjustingBrightness(percent: -5), dark: darkAccent.adjustingBrightness(percent: 5), for: .themeColorOnHover)
+        theme.setColor(accentColor, for: .themeColor)
+        theme.setColor(accentHoverColor, for: .themeColorOnHover)
         return theme
     }
 }

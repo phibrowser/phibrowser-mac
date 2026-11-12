@@ -61,8 +61,9 @@ extension Tab: ContextMenuRepresentable {
         // When the right-clicked tab is part of a split, the pin action operates
         // on the split as a unit — pin moves both panes into `pinnedTabs` and
         // marks the SplitGroup as pinned; unpin reverses that. The same
-        // `splitMembership` lookup covers all three cell shapes (live tab,
-        // pinned record with live panes, closed pinned split).
+        // `splitMembership` lookup
+        // covers all three cell shapes (live tab, pinned record with live
+        // panes, closed pinned split).
         let browserStateForMenu = contextMenuState
         let splitMembership = browserStateForMenu?.splitMembership(forCellTab: self)
         let isPinnedSplitCell = splitMembership?.isPinned == true
@@ -73,52 +74,58 @@ extension Tab: ContextMenuRepresentable {
         let isIncognitoWindow = browserStateForMenu?.isIncognito == true
 
         if !isIncognitoWindow {
-            let pinItem: NSMenuItem
+            let pinItem: NSMenuItem?
             if let membership = splitMembership, let liveGroup = membership.liveGroup {
                 let title = liveGroup.isPinned
                     ? NSLocalizedString("sidebar.tabContextMenu.unpinLiveSplit", value: "Unpin Split", comment: "Tab context menu - Remove the pin from a live split")
                     : NSLocalizedString("sidebar.tabContextMenu.pinSplit", value: "Pin Split", comment: "Tab context menu - Pin the split that contains this tab")
-                pinItem = NSMenuItem(title: title,
-                                     action: #selector(SpaceSessionController.togglePinSplit(_:)),
-                                     keyEquivalent: "")
-                pinItem.representedObject = liveGroup.id
-            } else if let pair = splitMembership?.pinnedDBPair {
-                // Closed pinned split — both panes are closed so there's no live
+                let item = NSMenuItem(title: title,
+                                      action: #selector(SpaceSessionController.togglePinSplit(_:)),
+                                      keyEquivalent: "")
+                item.representedObject = liveGroup.id
+                pinItem = item
+            } else if let dbGuids = splitMembership?.pinnedDBGuids {
+                // Closed pinned split — its panes are closed so there's no live
                 // splitId. Route through the persistence-aware unpin path that
-                // drops the pairing and reopens both URLs as a fresh non-pinned
+                // drops the link and reopens every URL as a fresh non-pinned
                 // split.
-                pinItem = NSMenuItem(title: NSLocalizedString("sidebar.tabContextMenu.unpinClosedSplit", value: "Unpin Split", comment: "Tab context menu - Remove the pin from a closed pinned split"),
-                                     action: #selector(SpaceSessionController.unpinClosedPinnedSplit(_:)),
-                                     keyEquivalent: "")
-                pinItem.representedObject = [pair.left, pair.right]
+                let item = NSMenuItem(title: NSLocalizedString("sidebar.tabContextMenu.unpinClosedSplit", value: "Unpin Split", comment: "Tab context menu - Remove the pin from a closed pinned split"),
+                                      action: #selector(SpaceSessionController.unpinClosedPinnedSplit(_:)),
+                                      keyEquivalent: "")
+                item.representedObject = dbGuids
+                pinItem = item
             } else {
-                pinItem = NSMenuItem(title: NSLocalizedString("sidebar.tabContextMenu.pinTab", value: "Pin", comment: "Tab context menu - Menu item to pin the selected tab"),
-                                     action: #selector(SpaceSessionController.togglePin(_:)),
-                                     keyEquivalent: "")
+                let item = NSMenuItem(title: NSLocalizedString("sidebar.tabContextMenu.pinTab", value: "Pin", comment: "Tab context menu - Menu item to pin the selected tab"),
+                                      action: #selector(SpaceSessionController.togglePin(_:)),
+                                      keyEquivalent: "")
                 if isPinned {
-                    pinItem.title = NSLocalizedString("sidebar.tabContextMenu.unpinTab", value: "Unpin", comment: "Tab context menu - Menu item to unpin the selected tab")
+                    item.title = NSLocalizedString("sidebar.tabContextMenu.unpinTab", value: "Unpin", comment: "Tab context menu - Menu item to unpin the selected tab")
                 }
+                pinItem = item
             }
-            items.append(pinItem)
+            if let pinItem {
+                items.append(pinItem)
+            }
         }
         
-        // Resolve the live non-pinned split URL pair (if any) so the
-        // duplicate / copy blocks can flip to split-aware variants when the
-        // right-clicked cell represents a merged pair. Pinned-split URLs are
-        // read directly off the membership panes below.
-        let nonPinnedSplitPair: (leftURL: String, rightURL: String)? = {
+        // Resolve the live non-pinned split's pane URLs (on-screen order, if
+        // any) so the duplicate / copy blocks can flip to split-aware
+        // variants when the right-clicked cell represents a merged split.
+        // Pinned-split URLs are read directly off the membership panes below.
+        let nonPinnedSplitURLs: [String]? = {
             guard let membership = splitMembership,
-                  membership.liveGroup?.isPinned == false,
-                  let leftURL = membership.leftPane.url, !leftURL.isEmpty,
-                  let rightURL = membership.rightPane.url, !rightURL.isEmpty else {
+                  membership.liveGroup?.isPinned == false else {
                 return nil
             }
-            return (leftURL, rightURL)
+            let urls = membership.panes.compactMap { pane -> String? in
+                guard let url = pane.url, !url.isEmpty else { return nil }
+                return url
+            }
+            return urls.count == membership.paneCount ? urls : nil
         }()
-        let isSplitCell = isPinnedSplitCell || nonPinnedSplitPair != nil
-
-        // Pinned and non-pinned splits both duplicate as a fresh split
-        // (both panes), not just one pane.
+        let isSplitCell = isPinnedSplitCell || nonPinnedSplitURLs != nil
+        // Pinned and non-pinned splits both duplicate as a fresh split (every
+        // pane), not just one pane.
         let duplicateItem: NSMenuItem
         if isSplitCell {
             duplicateItem = NSMenuItem(title: NSLocalizedString("sidebar.tabContextMenu.duplicateSplit", value: "Duplicate Split", comment: "Tab context menu - Duplicate both panes of a split as a new split"),
@@ -133,47 +140,48 @@ extension Tab: ContextMenuRepresentable {
         items.append(duplicateItem)
 
         // Splits expose one copy item per pane so the user can pick which
-        // side to copy without having to dissolve the split. Regular tabs
+        // pane to copy without having to dissolve the split. Regular tabs
         // keep the single "Copy Link".
-        let copyPrimaryURL: String?
-        let copySecondaryURL: String?
+        let copyPaneURLs: [String]
         if isPinnedSplitCell, let membership = splitMembership {
-            copyPrimaryURL = membership.leftPane.url
-            copySecondaryURL = membership.rightPane.url
-        } else if let pair = nonPinnedSplitPair {
-            copyPrimaryURL = pair.leftURL
-            copySecondaryURL = pair.rightURL
+            copyPaneURLs = membership.panes.compactMap { pane -> String? in
+                guard let url = pane.url, !url.isEmpty else { return nil }
+                return url
+            }
         } else {
-            copyPrimaryURL = nil
-            copySecondaryURL = nil
+            copyPaneURLs = nonPinnedSplitURLs ?? []
         }
-        if let primaryURL = copyPrimaryURL, let secondaryURL = copySecondaryURL {
+        if copyPaneURLs.count >= 2 {
             let splitLayout = splitMembership?.liveGroup?.layout
-                ?? splitMembership?.pinnedDBPair.flatMap { pair in
-                    browserStateForMenu?.pinnedSplitLayout(leftDB: pair.left, rightDB: pair.right)
+                ?? splitMembership?.pinnedDBGuids.flatMap { dbGuids in
+                    browserStateForMenu?.pinnedSplitLayout(dbGuids: dbGuids)
                 }
                 ?? .vertical
             let isStacked = splitLayout == .horizontal
-            let copyPrimaryTitle = isStacked
-                ? NSLocalizedString("sidebar.tabContextMenu.copyTopPaneURL", value: "Copy Top URL", comment: "Tab context menu - Copy the top pane's URL for a stacked split")
-                : NSLocalizedString("sidebar.tabContextMenu.copyLeftPaneURL", value: "Copy Left URL", comment: "Tab context menu - Copy the left pane's URL for a side-by-side split")
-            let copySecondaryTitle = isStacked
-                ? NSLocalizedString("sidebar.tabContextMenu.copyBottomPaneURL", value: "Copy Bottom URL", comment: "Tab context menu - Copy the bottom pane's URL for a stacked split")
-                : NSLocalizedString("sidebar.tabContextMenu.copyRightPaneURL", value: "Copy Right URL", comment: "Tab context menu - Copy the right pane's URL for a side-by-side split")
-
-            let copyPrimaryURLItem = NSMenuItem(title: copyPrimaryTitle,
-                                                action: #selector(copySplitPaneURL(_:)),
-                                                keyEquivalent: "")
-            copyPrimaryURLItem.target = self
-            copyPrimaryURLItem.representedObject = primaryURL
-            items.append(copyPrimaryURLItem)
-
-            let copySecondaryURLItem = NSMenuItem(title: copySecondaryTitle,
-                                                  action: #selector(copySplitPaneURL(_:)),
-                                                  keyEquivalent: "")
-            copySecondaryURLItem.target = self
-            copySecondaryURLItem.representedObject = secondaryURL
-            items.append(copySecondaryURLItem)
+            for (index, paneURL) in copyPaneURLs.enumerated() {
+                let title: String
+                if copyPaneURLs.count == 2, index == 0 {
+                    title = isStacked
+                        ? NSLocalizedString("sidebar.tabContextMenu.copyTopPaneURL", value: "Copy Top URL", comment: "Tab context menu - Copy the top pane's URL for a stacked split")
+                        : NSLocalizedString("sidebar.tabContextMenu.copyLeftPaneURL", value: "Copy Left URL", comment: "Tab context menu - Copy the left pane's URL for a side-by-side split")
+                } else if copyPaneURLs.count == 2 {
+                    title = isStacked
+                        ? NSLocalizedString("sidebar.tabContextMenu.copyBottomPaneURL", value: "Copy Bottom URL", comment: "Tab context menu - Copy the bottom pane's URL for a stacked split")
+                        : NSLocalizedString("sidebar.tabContextMenu.copyRightPaneURL", value: "Copy Right URL", comment: "Tab context menu - Copy the right pane's URL for a side-by-side split")
+                } else {
+                    // Three or four panes: number them in on-screen order
+                    // (left to right, or top to bottom when stacked).
+                    title = String(
+                        format: NSLocalizedString("sidebar.tabContextMenu.copyPaneURLAtPosition", value: "Copy Pane %d URL", comment: "Tab context menu - Copy one pane's URL of a split with three or four panes; %d is the pane's position counted from the left (or top when stacked), starting at 1"),
+                        index + 1)
+                }
+                let copyPaneURLItem = NSMenuItem(title: title,
+                                                 action: #selector(copySplitPaneURL(_:)),
+                                                 keyEquivalent: "")
+                copyPaneURLItem.target = self
+                copyPaneURLItem.representedObject = paneURL
+                items.append(copyPaneURLItem)
+            }
         } else {
             let copyUrlItem = NSMenuItem(title: NSLocalizedString("sidebar.tabContextMenu.copyTabURL", value: "Copy Link", comment: "Tab context menu - Menu item to copy the tab URL to clipboard"), action: #selector(SpaceSessionController.myCopyLink(_:)), keyEquivalent: "")
             if browserStateForMenu?.focusingTab?.guid == guid {
@@ -184,22 +192,63 @@ extension Tab: ContextMenuRepresentable {
 
         items.append(.separator())
 
-        // Split view: either dissolve the existing split this tab belongs to,
+        // Split view: either act on the existing split this tab belongs to,
         // or open a fresh tab paired with this one as a new split. Mutually exclusive.
         if let state = contextMenuState {
             if let existingSplit = splitMembership?.liveGroup ?? state.splitGroup(forTabId: guid) {
-                // Pinned splits don't expose "Reverse Panes" / "Remove from
-                // Split" — those are normal-split affordances. Unpinning a
-                // pinned split (via the "Unpin Split" item above) re-renders
-                // it as a normal split and the items reappear.
+                // The live pane this cell stands for: the cell's own guid for a
+                // live tab, or the pinned record's open counterpart.
+                let paneTabId = existingSplit.contains(tabId: guid)
+                    ? guid
+                    : (state.tabs.first { $0.guidInLocalDB == guidInLocalDB && existingSplit.contains(tabId: $0.guid) }?.guid ?? guid)
+                // Pinned splits don't expose "Reverse Panes" / "Move Pane" /
+                // "Remove from Split" — those are normal-split affordances.
+                // Unpinning a pinned split (via the "Unpin Split" item above)
+                // re-renders it as a normal split and the items reappear.
                 if !existingSplit.isPinned {
-                    let reverseSplitItem = NSMenuItem(
-                        title: NSLocalizedString("sidebar.tabContextMenu.reverseSplitPanes", value: "Reverse Panes", comment: "Tab context menu - Swap the left/right (or top/bottom) panes of the split this tab belongs to"),
-                        action: #selector(reverseSplitPanes(_:)),
-                        keyEquivalent: "")
-                    reverseSplitItem.target = self
-                    reverseSplitItem.representedObject = existingSplit.id
-                    items.append(reverseSplitItem)
+                    if existingSplit.isPair {
+                        let reverseSplitItem = NSMenuItem(
+                            title: NSLocalizedString("sidebar.tabContextMenu.reverseSplitPanes", value: "Reverse Panes", comment: "Tab context menu - Swap the left/right (or top/bottom) panes of the split this tab belongs to"),
+                            action: #selector(reverseSplitPanes(_:)),
+                            keyEquivalent: "")
+                        reverseSplitItem.target = self
+                        reverseSplitItem.representedObject = existingSplit.id
+                        items.append(reverseSplitItem)
+                    } else {
+                        // A wider split moves its focused pane one slot at a
+                        // time instead of reversing the whole split, whichever
+                        // pane's cell the menu opened on. An item that cannot
+                        // move — the pane is at that end, or the split has no
+                        // focused pane — carries no action so the
+                        // auto-enabling menu shows it disabled.
+                        let isStacked = existingSplit.layout == .horizontal
+                        let focusedPaneTabId = state.focusingTab.map(\.guid)
+                            .flatMap { existingSplit.contains(tabId: $0) ? $0 : nil }
+                        let focusedPaneSlot = focusedPaneTabId.flatMap { existingSplit.slot(of: $0) }
+                        let canMoveBackward = focusedPaneSlot.map { $0 > 0 } ?? false
+                        let moveBackwardItem = NSMenuItem(
+                            title: isStacked
+                                ? NSLocalizedString("sidebar.tabContextMenu.movePaneUp", value: "Move Focused Pane Up", comment: "Tab context menu - Move the focused pane one position up within a stacked split of three or four panes")
+                                : NSLocalizedString("sidebar.tabContextMenu.movePaneLeft", value: "Move Focused Pane Left", comment: "Tab context menu - Move the focused pane one position to the left within a side-by-side split of three or four panes"),
+                            action: canMoveBackward ? #selector(movePaneBackward(_:)) : nil,
+                            keyEquivalent: "")
+                        moveBackwardItem.target = self
+                        moveBackwardItem.representedObject = focusedPaneTabId
+                        moveBackwardItem.isEnabled = canMoveBackward
+                        items.append(moveBackwardItem)
+
+                        let canMoveForward = focusedPaneSlot.map { $0 < existingSplit.paneCount - 1 } ?? false
+                        let moveForwardItem = NSMenuItem(
+                            title: isStacked
+                                ? NSLocalizedString("sidebar.tabContextMenu.movePaneDown", value: "Move Focused Pane Down", comment: "Tab context menu - Move the focused pane one position down within a stacked split of three or four panes")
+                                : NSLocalizedString("sidebar.tabContextMenu.movePaneRight", value: "Move Focused Pane Right", comment: "Tab context menu - Move the focused pane one position to the right within a side-by-side split of three or four panes"),
+                            action: canMoveForward ? #selector(movePaneForward(_:)) : nil,
+                            keyEquivalent: "")
+                        moveForwardItem.target = self
+                        moveForwardItem.representedObject = focusedPaneTabId
+                        moveForwardItem.isEnabled = canMoveForward
+                        items.append(moveForwardItem)
+                    }
                 }
 
                 let convertLayoutItem = NSMenuItem(
@@ -214,16 +263,24 @@ extension Tab: ContextMenuRepresentable {
 
                 if !existingSplit.isPinned {
                     let removeSplitItem = NSMenuItem(
-                        title: NSLocalizedString("sidebar.tabContextMenu.removeFromSplit", value: "Remove from Split", comment: "Tab context menu - Dissolve the split that contains this tab"),
+                        title: NSLocalizedString("sidebar.tabContextMenu.removeFromSplit", value: "Remove from Split", comment: "Tab context menu - Dissolve the split this tab belongs to; every pane becomes a normal tab again"),
                         action: #selector(removeFromSplit(_:)),
                         keyEquivalent: "")
                     removeSplitItem.target = self
-                    removeSplitItem.representedObject = existingSplit.id
+                    removeSplitItem.representedObject = paneTabId
                     items.append(removeSplitItem)
                 }
+
+                let closeSplitItem = NSMenuItem(
+                    title: NSLocalizedString("sidebar.tabContextMenu.closeSplit", value: "Close Split", comment: "Tab context menu - Close every pane of the split that contains this tab"),
+                    action: #selector(closeSplit(_:)),
+                    keyEquivalent: "")
+                closeSplitItem.target = self
+                closeSplitItem.representedObject = existingSplit.id
+                items.append(closeSplitItem)
                 items.append(.separator())
-            } else if let pair = splitMembership?.pinnedDBPair {
-                let layout = state.pinnedSplitLayout(leftDB: pair.left, rightDB: pair.right)
+            } else if let dbGuids = splitMembership?.pinnedDBGuids {
+                let layout = state.pinnedSplitLayout(dbGuids: dbGuids)
                 let convertLayoutItem = NSMenuItem(
                     title: layout == .vertical
                         ? NSLocalizedString("sidebar.tabContextMenu.convertToVerticalSplit", value: "Convert to Vertical Split", comment: "Split context menu - Switch a side-by-side split to a stacked split")
@@ -231,7 +288,7 @@ extension Tab: ContextMenuRepresentable {
                     action: #selector(convertClosedPinnedSplitLayout(_:)),
                     keyEquivalent: "")
                 convertLayoutItem.target = self
-                convertLayoutItem.representedObject = [pair.left, pair.right]
+                convertLayoutItem.representedObject = dbGuids
                 items.append(convertLayoutItem)
                 items.append(.separator())
             } else if splitMembership == nil {
@@ -240,15 +297,13 @@ extension Tab: ContextMenuRepresentable {
                 // pinned placeholder behind) before creating the split, so
                 // splits never live inside the pinned strip.
                 //
-                // When another tab is focused (and isn't itself in a split),
-                // the action pairs this tab with the focused one instead of
-                // opening a blank new-tab pane — surfaced as "Split with
-                // Current". Right-clicking the focused tab itself keeps the
-                // blank-pane "Open as Split".
+                // When another tab is focused, and is alone or in a split
+                // with room for this tab, the action puts this tab in a split
+                // with it instead of opening a blank new-tab pane — surfaced
+                // as "Split with Current". Right-clicking the focused tab
+                // itself keeps the blank-pane "Open as Split".
                 let splitItem: NSMenuItem
-                if let focused = state.focusingTab,
-                   focused.guid != guid,
-                   state.splitGroup(forTabId: focused.guid) == nil {
+                if canSplitWithFocusedTab(in: state) {
                     splitItem = NSMenuItem(
                         title: NSLocalizedString("sidebar.tabContextMenu.splitWithCurrent", value: "Split with Current", comment: "Tab context menu - Pair this tab with the currently focused tab in a split"),
                         action: #selector(splitWithCurrent),
@@ -266,7 +321,7 @@ extension Tab: ContextMenuRepresentable {
         }
         
         // When this tab belongs to a split (normal or pinned, live or closed)
-        // offer one-click actions that persist both panes together. The
+        // offer one-click actions that persist every pane together. The
         // `splitMembership` lookup above already covers all three shapes.
         if let splitState = contextMenuState,
            !isIncognitoWindow,
@@ -312,9 +367,9 @@ extension Tab: ContextMenuRepresentable {
         }
 
         // Splits skip the single-URL "Add to Bookmark" / "Add to Folder"
-        // entries — those would persist only one pane and lose the pairing.
-        // "Add Split to Bookmark" above already covers the split case for
-        // both pinned and non-pinned splits.
+        // entries — those would persist only one pane and lose the split.
+        // "Add Split to Bookmark" above already covers split pairs, pinned
+        // and non-pinned alike.
         if !isSplitCell && !isIncognitoWindow {
             let isLegacy = contextMenuState?.layoutMode == .comfortable
             let title = isLegacy ? NSLocalizedString("sidebar.tabContextMenu.addToBookmarkBar", value: "Add to Bookmark Bar", comment: "Tab context menu - Add current tab to root bookmark bar") :
@@ -369,7 +424,20 @@ extension Tab: ContextMenuRepresentable {
         if isPinned {
             let editItem = NSMenuItem(title: NSLocalizedString("sidebar.pinnedTabContextMenu.editAction", value: "Edit...", comment: "Pinned tab context menu - Edit pinned tab menu item"), action: #selector(editPinnedTab), keyEquivalent: "")
             editItem.target = self
-            items.append(editItem)
+            if !isSplitCell {
+                let parent = NSMenuItem(title: NSLocalizedString("sidebar.pinnedTabContextMenu.editSubmenu", value: "Edit Pinned Tab", comment: "Pinned tab context menu - Submenu for editing the saved pinned tab"), action: nil, keyEquivalent: "")
+                let submenu = NSMenu()
+                submenu.autoenablesItems = false
+                submenu.addItem(editItem)
+                let replace = NSMenuItem(title: NSLocalizedString("sidebar.pinnedTabContextMenu.replaceSavedURL", value: "Replace Saved URL with Current", comment: "Pinned tab context menu - Save the open page URL as the pinned tab URL"), action: #selector(replaceSavedPinnedURL), keyEquivalent: "")
+                replace.target = self
+                replace.isEnabled = contextMenuState?.replacementURLForPinnedTab(self) != nil
+                submenu.addItem(replace)
+                parent.submenu = submenu
+                items.append(parent)
+            } else {
+                items.append(editItem)
+            }
         }
         
         if !isPinned || (isPinned && isOpenned) {
@@ -534,6 +602,11 @@ extension Tab: ContextMenuRepresentable {
 
 
     @MainActor
+    @objc private func replaceSavedPinnedURL() {
+        contextMenuState?.replaceSavedURLForPinnedTab(self)
+    }
+
+    @MainActor
     @objc private func editPinnedTab() {
         guard let windowController = contextMenuWindowController else {
             return
@@ -543,14 +616,25 @@ extension Tab: ContextMenuRepresentable {
         }
         let state = windowController.browserState
 
-        // Pinned-split cells edit both panes in a single sheet so the user
-        // doesn't have to unpin to change either side. `pinnedSplitDBPair`
-        // returns `(leftDB, rightDB)` in left→right layout order to match the
-        // primary/secondary inputs in `EditPinnedTabView`.
+        // Pinned-split cells edit every pane in a single sheet so the user
+        // doesn't have to unpin to change one of them: the first two through
+        // the primary/secondary inputs in `EditPinnedTabView`, the third and
+        // fourth through its extra-pane inputs.
         if let pinnedSelf = state.pinnedTabs.first(where: { $0.guidInLocalDB == guid }),
-           let (leftDB, rightDB) = state.pinnedSplitDBPair(forPinnedTab: pinnedSelf),
+           let dbGuids = state.pinnedSplitDBGuids(forPinnedTab: pinnedSelf),
+           dbGuids.count >= 2,
+           case let leftDB = dbGuids[0], case let rightDB = dbGuids[1],
            let leftTab = state.pinnedTabs.first(where: { $0.guidInLocalDB == leftDB }),
            let rightTab = state.pinnedTabs.first(where: { $0.guidInLocalDB == rightDB }) {
+            let extraTabs = dbGuids.dropFirst(2).compactMap { dbGuid in
+                state.pinnedTabs.first(where: { $0.guidInLocalDB == dbGuid })
+            }
+            let extraPanes = extraTabs.map { tab in
+                SplitBookmarkExtraPane(
+                    url: state.pinnedTabEditingURL(for: tab.guidInLocalDB ?? "", fallbackURL: tab.url),
+                    title: tab.storedTitle ?? tab.title
+                )
+            }
             let leftURL = state.pinnedTabEditingURL(for: leftDB, fallbackURL: leftTab.url)
             let leftTitle = leftTab.storedTitle ?? leftTab.title
             let rightURL = state.pinnedTabEditingURL(for: rightDB, fallbackURL: rightTab.url)
@@ -562,6 +646,7 @@ extension Tab: ContextMenuRepresentable {
                 urlString: leftURL,
                 secondaryUrlString: rightURL,
                 secondaryTitleString: rightTitle,
+                extraPanes: extraPanes,
                 from: windowController.window
             ) { [weak windowController, weak leftTab, weak rightTab] result in
                 guard let windowController, let leftTab, let rightTab else { return }
@@ -574,6 +659,14 @@ extension Tab: ContextMenuRepresentable {
                                         url: result.secondaryUrl,
                                         title: result.secondaryTitle,
                                         in: state)
+                // The sheet returns the extra panes in the order it was given.
+                // `applyPinnedTabEdit` skips a tab that is no longer pinned.
+                for (extraTab, pane) in zip(extraTabs, result.extraPanes ?? []) {
+                    Self.applyPinnedTabEdit(targetTab: extraTab,
+                                            url: pane.url,
+                                            title: pane.title ?? "",
+                                            in: state)
+                }
             }
             return
         }
@@ -829,26 +922,23 @@ extension Tab: ContextMenuRepresentable {
         return ordered
     }
 
-    /// Resolves both members of the non-pinned split this tab belongs to,
-    /// in primary→secondary order. Returns just `[self.guid]` when the tab
-    /// isn't part of a split. The bridge's group ops (`createGroupFromTabs`,
+    /// Resolves every pane of the non-pinned split this tab belongs to, in
+    /// slot order. Returns just `[self.guid]` when the tab isn't part of a
+    /// split. The bridge's group ops (`createGroupFromTabs`,
     /// `addTabsToGroup`, `removeTabsFromGroup`) already expand to whole-
     /// split membership Chromium-side via `ExpandIndicesToCoverSplits`, but
     /// the Mac-side optimistic update has to mirror that expansion or the
-    /// partner's `groupToken` stays stale until `tabJoinedGroup` rides the
-    /// async EventBus hop — the merged-cell invariant in
-    /// `normalSplitCollapseInfo` (both panes share the same token) fails
-    /// in the meantime and the right pane leaks as a stray chip.
+    /// other panes' `groupToken` stays stale until `tabJoinedGroup` rides
+    /// the async EventBus hop — the merged-cell invariant in
+    /// `normalSplitCollapseInfo` (every pane shares the same token) fails
+    /// in the meantime and the other panes leak as stray chips.
     private func splitAwareGroupMemberIds(state: BrowserState?) -> [NSNumber] {
-        var ids: [NSNumber] = [NSNumber(value: Int64(guid))]
         guard let state,
               let group = state.splitGroup(forTabId: guid),
-              !group.isPinned,
-              let partnerId = group.partnerTabId(of: guid) else {
-            return ids
+              !group.isPinned else {
+            return [NSNumber(value: Int64(guid))]
         }
-        ids.append(NSNumber(value: Int64(partnerId)))
-        return ids
+        return group.tabIds.map { NSNumber(value: Int64($0)) }
     }
 
     /// Sheds the bookmark binding from any bookmark-opened member before a
@@ -962,22 +1052,21 @@ extension Tab: ContextMenuRepresentable {
         }
     }
 
+    /// Re-opens a split as a fresh split.
     @MainActor
     @objc private func duplicateSplitTab() {
         guard let state = contextMenuState,
-              let membership = state.splitMembership(forCellTab: self),
-              let leftURL = membership.leftPane.url, !leftURL.isEmpty,
-              let rightURL = membership.rightPane.url, !rightURL.isEmpty else {
+              let membership = state.splitMembership(forCellTab: self) else {
+            return
+        }
+        let urls = membership.panes.compactMap { pane in pane.url.flatMap { $0.isEmpty ? nil : $0 } }
+        guard urls.count == membership.paneCount else {
             return
         }
         let layout = membership.liveGroup?.layout
-            ?? membership.pinnedDBPair.map {
-                state.pinnedSplitLayout(leftDB: $0.left, rightDB: $0.right)
-            }
+            ?? membership.pinnedDBGuids.map { state.pinnedSplitLayout(dbGuids: $0) }
             ?? .vertical
-        state.openTwoURLsAsSplit(primaryURL: leftURL,
-                                 secondaryURL: rightURL,
-                                 layout: layout)
+        state.openURLsAsSplit(urls, layout: layout)
     }
 
     @objc private func copySplitPaneURL(_ sender: NSMenuItem) {
@@ -1013,42 +1102,58 @@ extension Tab: ContextMenuRepresentable {
                 return
             }
         }
+        if state.splitGroup(forTabId: guid) == nil {
+            state.makeTabNormalOpened(tabId: guid)
+        }
         state.openNewTabAsSplit(partnerTabId: guid)
     }
 
-    /// "Split with Current": pairs this tab with the currently focused tab
-    /// as a vertical split — focused tab stays on the left, this tab takes
-    /// the right pane. Both members are normalized first so the split
-    /// doesn't inherit pinned-ness or a bookmark binding (mirrors the
-    /// drag-onto-page flows in `SplitTabDropContainer`).
+    /// "Split with Current": pairs this tab with the focused tab, or adds it
+    /// to the focused tab's split right after the focused pane.
     @MainActor
     @objc private func splitWithCurrent() {
-        guard let state = contextMenuState,
-              let focusedId = state.focusingTab?.guid,
-              state.splitGroup(forTabId: focusedId) == nil else { return }
-        // Unopened pinned cell: `guid` is synthetic, so there is no live tab
-        // to pair. Open the pinned URL as a fresh pane next to the focused
-        // tab and leave the pinned record intact (mirrors
-        // `performSplitDropFromPinned`'s closed-pinned fallback).
-        if !isOpenned, let pinnedDBGuid = guidInLocalDB, !pinnedDBGuid.isEmpty {
-            let pinnedURLString = pinnedUrl ?? url ?? ""
-            guard !pinnedURLString.isEmpty else { return }
-            state.makeTabNormalOpened(tabId: focusedId)
-            state.openNewTabAsSplit(partnerTabId: focusedId,
-                                    partnerNavigateURL: URLProcessor.processUserInput(pinnedURLString))
-            return
-        }
-        guard guid != focusedId else { return }
-        state.makeTabNormalOpened(tabId: guid)
-        state.makeTabNormalOpened(tabId: focusedId)
-        state.createSplit(leftTabId: focusedId, rightTabId: guid, layout: .vertical)
+        guard let state = contextMenuState else { return }
+        performSplitAction(in: state)
     }
 
+    /// Dissolves the split this pane belongs to, whatever its width: every
+    /// pane becomes a normal tab again. `representedObject` is the pane's
+    /// live tab id.
     @MainActor
     @objc private func removeFromSplit(_ sender: NSMenuItem) {
         guard let state = contextMenuState,
-              let splitId = sender.representedObject as? String else { return }
-        state.removeSplit(splitId)
+              let tabId = sender.representedObject as? Int else { return }
+        state.dissolveSplit(containingTabId: tabId)
+    }
+
+    /// Moves the focused pane one slot towards the first pane (left / top).
+    @MainActor
+    @objc private func movePaneBackward(_ sender: NSMenuItem) {
+        guard let state = contextMenuState,
+              let tabId = sender.representedObject as? Int,
+              let slot = state.splitGroup(forTabId: tabId)?.slot(of: tabId), slot > 0 else { return }
+        state.moveTabInSplit(tabId: tabId, toSlot: slot - 1)
+    }
+
+    /// Moves the focused pane one slot towards the last pane (right / bottom).
+    @MainActor
+    @objc private func movePaneForward(_ sender: NSMenuItem) {
+        guard let state = contextMenuState,
+              let tabId = sender.representedObject as? Int,
+              let group = state.splitGroup(forTabId: tabId),
+              let slot = group.slot(of: tabId), slot < group.paneCount - 1 else { return }
+        state.moveTabInSplit(tabId: tabId, toSlot: slot + 1)
+    }
+
+    /// Closes every pane of the split. `representedObject` is the split id.
+    @MainActor
+    @objc private func closeSplit(_ sender: NSMenuItem) {
+        guard let state = contextMenuState,
+              let splitId = sender.representedObject as? String,
+              let group = state.splitGroup(forId: splitId) else { return }
+        let panes = group.tabIds.compactMap { id in state.tabs.first { $0.guid == id } }
+        state.noteBookmarkSplitClosing(group)
+        state.closeTabs(panes)
     }
 
     @MainActor
@@ -1069,9 +1174,9 @@ extension Tab: ContextMenuRepresentable {
     @MainActor
     @objc private func convertClosedPinnedSplitLayout(_ sender: NSMenuItem) {
         guard let state = contextMenuState,
-              let pair = sender.representedObject as? [String], pair.count == 2 else { return }
-        let layout = state.pinnedSplitLayout(leftDB: pair[0], rightDB: pair[1])
-        state.updatePinnedSplitLayout(leftDB: pair[0], rightDB: pair[1], layout: layout.toggled)
+              let dbGuids = sender.representedObject as? [String], dbGuids.count >= 2 else { return }
+        let layout = state.pinnedSplitLayout(dbGuids: dbGuids)
+        state.updatePinnedSplitLayout(dbGuids: dbGuids, layout: layout.toggled)
     }
 }
 

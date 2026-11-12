@@ -63,6 +63,21 @@ class BookmarkItemView: NSView {
         return view
     }()
 
+    /// Favicons for a split bookmark's panes after the second. Zero width and
+    /// no gap when unused, so other bookmarks lay out as before.
+    private lazy var extraFaviconImageViews: [NSImageView] = (0..<(SplitGroup.maxPaneCount - 2)).map { _ in
+        let view = NSImageView()
+        view.imageScaling = .scaleProportionallyUpOrDown
+        view.wantsLayer = true
+        view.layer?.cornerRadius = 4
+        view.layer?.cornerCurve = .continuous
+        view.layer?.masksToBounds = true
+        view.isHidden = true
+        return view
+    }
+    private var extraFaviconLeadingConstraints: [Constraint] = []
+    private var extraFaviconLoadHandles: [ProfileScopedFaviconLoadHandle] = []
+
     private lazy var titleLabel: NSTextField = {
         let titleLabel = NSTextField(labelWithString: "")
         titleLabel.isEditable = false
@@ -99,6 +114,7 @@ class BookmarkItemView: NSView {
     deinit {
         faviconLoadHandle?.cancel()
         secondaryFaviconLoadHandle?.cancel()
+        extraFaviconLoadHandles.forEach { $0.cancel() }
     }
 
     // MARK: - Data Binding
@@ -215,6 +231,7 @@ class BookmarkItemView: NSView {
         guard let secondaryUrl, !secondaryUrl.isEmpty else {
             // Plain single-URL bookmark.
             setSecondaryFavicon(visible: false)
+            applyExtraPanes(bookmark: bookmark, panes: [])
             secondaryFaviconLoadHandle?.cancel()
             secondaryFaviconLoadHandle = nil
             secondaryFaviconImageView.image = nil
@@ -224,14 +241,15 @@ class BookmarkItemView: NSView {
         }
         setSecondaryFavicon(visible: true)
         loadSecondaryFavicon(bookmark: bookmark, pageUrl: secondaryUrl)
+        applyExtraPanes(bookmark: bookmark, panes: bookmark.splitExtraPanes)
         let resolvedSecondary = Self.displayName(forSecondaryTitle: secondaryTitle, url: secondaryUrl)
-        // "•" separates the two pane names so the bookmark bar makes the
-        // split nature visible without taking much extra width.
-        if resolvedSecondary.isEmpty {
-            titleLabel.stringValue = primaryTitle
-        } else {
-            titleLabel.stringValue = "\(primaryTitle) • \(resolvedSecondary)"
-        }
+        let extraNames = bookmark.splitExtraPanes
+            .map { Self.displayName(forSecondaryTitle: $0.title, url: $0.url) }
+        // "•" separates the pane names so the bookmark bar makes the split
+        // nature visible without taking much extra width.
+        titleLabel.stringValue = ([primaryTitle, resolvedSecondary] + extraNames)
+            .filter { !$0.isEmpty }
+            .joined(separator: " • ")
         invalidateIntrinsicContentSize()
     }
 
@@ -247,6 +265,30 @@ class BookmarkItemView: NSView {
         secondaryFaviconImageView.isHidden = !visible
         secondaryFaviconImageView.snp.updateConstraints { make in
             make.width.equalTo(visible ? self.faviconSize : 0)
+        }
+    }
+
+    private func applyExtraPanes(bookmark: Bookmark, panes: [SplitBookmarkExtraPane]) {
+        extraFaviconLoadHandles.forEach { $0.cancel() }
+        extraFaviconLoadHandles = []
+        for (index, view) in extraFaviconImageViews.enumerated() {
+            let isUsed = index < panes.count
+            view.isHidden = !isUsed
+            view.snp.updateConstraints { make in
+                make.width.equalTo(isUsed ? self.faviconSize : 0)
+            }
+            if index < extraFaviconLeadingConstraints.count {
+                extraFaviconLeadingConstraints[index].update(offset: isUsed ? 2 : 0)
+            }
+            guard isUsed else {
+                view.image = nil
+                continue
+            }
+            let handle = BookmarkFaviconLoader.loadFavicon(profileId: bookmark.profileId,
+                                                           pageURLString: panes[index].url) { [weak view] result in
+                view?.image = result.image
+            }
+            if let handle { extraFaviconLoadHandles.append(handle) }
         }
     }
 
@@ -292,6 +334,7 @@ class BookmarkItemView: NSView {
 
         addSubview(faviconImageView)
         addSubview(secondaryFaviconImageView)
+        extraFaviconImageViews.forEach { addSubview($0) }
         addSubview(titleLabel)
 
         faviconImageView.snp.makeConstraints { make in
@@ -312,13 +355,27 @@ class BookmarkItemView: NSView {
             make.width.equalTo(0)
         }
 
+        var rightmostFavicon: NSImageView = secondaryFaviconImageView
+        for view in extraFaviconImageViews {
+            let previous = rightmostFavicon
+            view.snp.makeConstraints { make in
+                extraFaviconLeadingConstraints.append(
+                    make.leading.equalTo(previous.snp.trailing).offset(0).constraint
+                )
+                make.centerY.equalToSuperview()
+                make.height.equalTo(self.faviconSize)
+                make.width.equalTo(0)
+            }
+            rightmostFavicon = view
+        }
+
         titleLabel.snp.makeConstraints { make in
             // Anchor to whichever favicon ends up rightmost. Hidden views
             // still participate in Auto Layout, so this constraint correctly
             // tracks the secondary favicon when it's the visible right edge
             // and collapses back when the secondary is hidden via the
             // intrinsic-size update below.
-            make.leading.equalTo(secondaryFaviconImageView.snp.trailing).offset(self.spacing)
+            make.leading.equalTo(rightmostFavicon.snp.trailing).offset(self.spacing)
             make.trailing.equalToSuperview().offset(-1 * self.horizontalPadding)
             make.centerY.equalToSuperview()
         }
@@ -405,7 +462,9 @@ class BookmarkItemView: NSView {
         let titleWidth = titleLabel.intrinsicContentSize.width
         // Secondary favicon adds 2pt gap + 16pt icon when it's visible.
         let secondaryFaviconWidth: CGFloat = isShowingSecondaryFavicon ? (2 + self.faviconSize) : 0
-        let totalWidth = self.horizontalPadding + self.faviconSize + secondaryFaviconWidth + self.spacing + titleWidth + self.horizontalPadding
+        // Each further pane's favicon adds the same.
+        let extraFaviconsWidth = CGFloat(extraFaviconImageViews.filter { !$0.isHidden }.count) * (2 + self.faviconSize)
+        let totalWidth = self.horizontalPadding + self.faviconSize + secondaryFaviconWidth + extraFaviconsWidth + self.spacing + titleWidth + self.horizontalPadding
         return NSSize(width: min(totalWidth, maxWidth), height: NSView.noIntrinsicMetric)
     }
 }

@@ -14,6 +14,7 @@ private struct PinnedTabScopeSyncVariant: Equatable {
     let partnerURL: String?
     let partnerTitle: String?
     let partnerFavicon: Data?
+    let splitPaneLineageIds: [String]
     let layout: SplitLayout?
 }
 
@@ -105,6 +106,9 @@ extension BrowserState {
             partnerURL: partner.flatMap { $0.pinnedUrl ?? $0.url },
             partnerTitle: partner?.storedTitle,
             partnerFavicon: partner?.cachedFaviconData,
+            splitPaneLineageIds: tab.splitPaneGuids.compactMap { paneGuid in
+                collection.first(where: { $0.guidInLocalDB == paneGuid })?.pinnedLineageId
+            },
             layout: tab.splitLayout ?? partner?.splitLayout
         )
     }
@@ -173,5 +177,29 @@ extension BrowserState {
             liveTab.pinnedLineageId = localTab.pinnedLineageId
             liveTab.webContentWrapper?.updateTabCustomValue(newGuid)
         }
+    }
+}
+
+@MainActor
+extension BrowserState {
+    func replacementURLForPinnedTab(_ tab: Tab) -> URL? {
+        guard !isIncognito,
+              pinnedTabs.contains(where: { $0 === tab }),
+              tab.isOpenned,
+              splitMembership(forCellTab: tab) == nil,
+              let guid = tab.guidInLocalDB,
+              let current = tab.webContentWrapper?.urlString, !current.isEmpty,
+              let url = localStore.normalizedURL(from: current),
+              url.absoluteString != pinnedTabEditingURL(for: guid, fallbackURL: tab.pinnedUrl) else { return nil }
+        return url
+    }
+
+    func replaceSavedURLForPinnedTab(_ tab: Tab) {
+        guard let url = replacementURLForPinnedTab(tab),
+              let guid = tab.guidInLocalDB else { return }
+        // Keep the initiating page in place when the persisted snapshot arrives.
+        tab.pinnedUrl = url.absoluteString
+        localStore.updatePinnedTab(resolving: guid, profileId: profileId,
+                                   spaceId: spaceId, url: url, title: nil)
     }
 }

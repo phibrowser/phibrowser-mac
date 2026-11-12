@@ -302,6 +302,9 @@ final class PeekPanelController {
     private static let paneInsetRatio: CGFloat = 0.04
     private static let minPaneInset: CGFloat = 24
     private static let paneVerticalInset: CGFloat = 0
+    /// Gap between a shown header row and the panel beneath it: room for the
+    /// card's shadow to fade before it reaches the row.
+    private static let headerClearance: CGFloat = 6
     static let cornerRadius: CGFloat = 12
 
     /// The card carries no chrome of its own (Arc's peek layout): the page
@@ -336,6 +339,12 @@ final class PeekPanelController {
     /// insets itself inside. A closure because the card view belongs to
     /// whichever `WebContentViewController` is currently displayed.
     private let cardViewProvider: () -> NSView?
+    /// Resolves the focused tab's header row, shown or not. The panel starts
+    /// below a shown row (`WebContentContainerViewController
+    /// .isHeaderRowShown`) instead of covering it: the row holds the
+    /// extensions and navigation, which must stay reachable while the peek
+    /// is up. Layouts without the row leave the panel the card's full height.
+    private let headerViewProvider: () -> NSView?
     /// Supplies the press the peek was opened from; owned by the window
     /// controller because it must record presses from before the first peek,
     /// which is when this controller is built.
@@ -366,6 +375,10 @@ final class PeekPanelController {
     /// container or window resizing (AI Chat dock, layout-mode insets).
     private var cardFrameObserver: NSObjectProtocol?
     private weak var observedCardView: NSView?
+    /// Frame observation of the header row: a layout-mode change shows or
+    /// hides it without moving the card.
+    private var headerFrameObserver: NSObjectProtocol?
+    private weak var observedHeaderView: NSView?
     private weak var backgroundContentController: WebContentContainerViewController?
     /// True between an appear flight's start and its landing; keeps the
     /// landing idempotent across the completion block and the teardown paths.
@@ -388,11 +401,13 @@ final class PeekPanelController {
          parentWindow: NSWindow,
          anchorView: NSView,
          cardViewProvider: @escaping () -> NSView?,
+         headerViewProvider: @escaping () -> NSView?,
          originTracker: PeekOriginTracker?) {
         self.browserState = browserState
         self.parentWindow = parentWindow
         self.anchorView = anchorView
         self.cardViewProvider = cardViewProvider
+        self.headerViewProvider = headerViewProvider
         self.originTracker = originTracker
         toastViewController = OverlayToastViewController(
             state: browserState, toastCenter: toastCenter, isPanel: true)
@@ -1129,12 +1144,27 @@ final class PeekPanelController {
         return window.convertToScreen(card.convert(card.bounds, to: nil))
     }
 
+    /// Screen rect of the header row while the layout shows one, nil
+    /// otherwise.
+    private func headerRowScreenRect() -> NSRect? {
+        guard let header = headerViewProvider() else { return nil }
+        refreshHeaderFrameObserverIfNeeded(for: header)
+        guard WebContentContainerViewController.isHeaderRowShown(header),
+              let window = header.window else { return nil }
+        return window.convertToScreen(header.convert(header.bounds, to: nil))
+    }
+
     private func layoutOnAnchor() {
         guard let cardRect = pageCardScreenRect() else { return }
         // Near-full card height; width follows the card (and thus the
         // window) with a proportional side margin.
         let insetX = max(Self.minPaneInset, cardRect.width * Self.paneInsetRatio)
-        let card = cardRect.insetBy(dx: insetX, dy: Self.paneVerticalInset)
+        var card = cardRect.insetBy(dx: insetX, dy: Self.paneVerticalInset)
+        // Below a shown header row, which stays uncovered and usable.
+        if let headerRect = headerRowScreenRect(), headerRect.intersects(cardRect) {
+            let top = min(card.maxY, headerRect.minY - Self.headerClearance)
+            card.size.height = max(0, top - card.minY)
+        }
         // The overlay spans the card, the control gutter to its right, and the
         // shadow margin around the lot — the card view sits back inside it at
         // exactly the inset it had before there was a shadow, so the peek
@@ -1153,6 +1183,8 @@ final class PeekPanelController {
         // wrong point and fly out of the wrong place. `setScreenFrame` above
         // also completes that layout before the flight is armed.
         onLayout?()
+        // The dim behind the panel spares the same header row.
+        backgroundContentController?.refreshPeekBackgroundPresentation()
     }
 
     /// Screen rect of the card alone: the overlay frame minus the shadow
@@ -1175,6 +1207,24 @@ final class PeekPanelController {
         observedCardView = view
         view.postsFrameChangedNotifications = true
         cardFrameObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: view,
+            queue: .main
+        ) { [weak self] _ in
+            self?.relayoutIfVisible()
+        }
+    }
+
+    /// Follows the header row of the card being covered; re-registered when
+    /// the displayed tab (and so the row) changes.
+    private func refreshHeaderFrameObserverIfNeeded(for view: NSView) {
+        guard observedHeaderView !== view else { return }
+        if let headerFrameObserver {
+            NotificationCenter.default.removeObserver(headerFrameObserver)
+        }
+        observedHeaderView = view
+        view.postsFrameChangedNotifications = true
+        headerFrameObserver = NotificationCenter.default.addObserver(
             forName: NSView.frameDidChangeNotification,
             object: view,
             queue: .main
@@ -1226,6 +1276,11 @@ final class PeekPanelController {
         }
         cardFrameObserver = nil
         observedCardView = nil
+        if let headerFrameObserver {
+            NotificationCenter.default.removeObserver(headerFrameObserver)
+        }
+        headerFrameObserver = nil
+        observedHeaderView = nil
     }
 
     /// Consumes only keys owned by this visible, focused overlay. Closing the
@@ -1307,6 +1362,11 @@ final class PeekPanelController {
                 // frame would otherwise read as a dismiss click.
                 if event.type == .leftMouseDown,
                    self.isResizeCorridorGrab(screenPoint: location) {
+                    return event
+                }
+                // The header row stays uncovered so that its controls work
+                // while the peek is up: a press there is aimed at them.
+                if let headerRect = self.headerRowScreenRect(), headerRect.contains(location) {
                     return event
                 }
                 if self.rootView.screenFrame.contains(location) {

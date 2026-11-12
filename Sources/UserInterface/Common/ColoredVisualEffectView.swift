@@ -34,6 +34,18 @@ class ColoredVisualEffectView: NSVisualEffectView {
         }
     }
     
+    private var staticPaletteColors: [NSColor]?
+
+    /// Static fill for backdrops that render an explicit theme rather than
+    /// their window's: `paletteColors` paints the navigation gradient, nil
+    /// paints `color` flat. Both land in one color update, so an appearance
+    /// ramp never starts from a half-applied fill.
+    func setStaticFill(_ color: NSColor, paletteColors: [NSColor]?) {
+        staticPaletteColors = paletteColors
+        // Assigned last: its observer runs the single color update.
+        backgroundColor = color
+    }
+
     /// Theme-driven background color. Takes precedence over `backgroundColor`.
     var themedBackgroundColor: ThemedColor? {
         didSet {
@@ -149,7 +161,7 @@ class ColoredVisualEffectView: NSVisualEffectView {
         // animation (`animateFill`), gradient or not on either side.
         let navigationColors = usesThemePalette && themedBackgroundColor != nil
             ? provider.currentTheme.navigationColors(for: appearance) ?? [makeBackgroundColor()]
-            : nil
+            : staticPaletteColors
         if let navigationColors {
             colorView.layer?.backgroundColor = nil
             paletteLayer.startPoint = CGPoint(x: 0.5, y: 1)

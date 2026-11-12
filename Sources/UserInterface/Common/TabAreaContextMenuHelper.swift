@@ -79,6 +79,17 @@ final class TabAreaContextMenuHelper: NSObject {
                 triggerScreenPoint: NSEvent.mouseLocation
             )
         }
+
+        menu.addItem(.separator())
+        let buttonsItem = NSMenuItem(
+            title: isHorizontalLayout
+                ? NSLocalizedString("common.tabAreaContextMenu.toolbarButtonsSubmenu", value: "Toolbar Buttons", comment: "Tab strip context menu - Submenu to choose which buttons the top bar shows in the Comfortable layout")
+                : NSLocalizedString("common.tabAreaContextMenu.bottomButtonsSubmenu", value: "Bottom Buttons", comment: "Tab area context menu - Submenu to choose which buttons the sidebar bottom bar shows"),
+            action: nil,
+            keyEquivalent: ""
+        )
+        buttonsItem.submenu = buildButtonsSubmenu()
+        menu.addItem(buttonsItem)
     }
 
     @objc private func newTab() {
@@ -130,7 +141,46 @@ final class TabAreaContextMenuHelper: NSObject {
         PhiPreferences.GeneralSettings.saveLayoutMode(mode)
     }
 
+    @objc private func toggleButtonVisibility(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let setting = PhiPreferences.GeneralSettings(rawValue: rawValue) else { return }
+        UserDefaults.standard.set(!setting.loadValue(), forKey: setting.rawValue)
+    }
+
     // MARK: - Private
+
+    private func buildButtonsSubmenu() -> NSMenu {
+        typealias Setting = PhiPreferences.GeneralSettings
+        var entries: [(Setting, String)] = [
+            (isHorizontalLayout ? Setting.topBarShowsProfile : .sidebarBottomBarShowsProfile,
+             NSLocalizedString("common.tabAreaContextMenu.bottomButtons.profile", value: "Profile", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the profile button")),
+            (isHorizontalLayout ? Setting.topBarShowsDownloads : .sidebarBottomBarShowsDownloads,
+             NSLocalizedString("common.tabAreaContextMenu.bottomButtons.downloads", value: "Downloads", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the downloads button")),
+        ]
+        let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
+        if phiAIEnabled, browserState?.isIncognito != true {
+            entries.append((isHorizontalLayout ? Setting.topBarShowsMemory : .sidebarBottomBarShowsMemory,
+                            NSLocalizedString("common.tabAreaContextMenu.bottomButtons.memory", value: "Memory", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the AI memory button")))
+        }
+        if !ApplicationState.shared.isGuest {
+            entries.append((isHorizontalLayout ? Setting.topBarShowsFeedback : .sidebarBottomBarShowsFeedback,
+                            NSLocalizedString("common.tabAreaContextMenu.bottomButtons.feedback", value: "Feedback", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the feedback button")))
+        }
+
+        let submenu = NSMenu()
+        for (setting, title) in entries {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(toggleButtonVisibility(_:)),
+                keyEquivalent: ""
+            )
+            item.representedObject = setting.rawValue
+            item.target = self
+            item.state = setting.loadValue() ? .on : .off
+            submenu.addItem(item)
+        }
+        return submenu
+    }
 
     private func buildLayoutSubmenu() -> NSMenu {
         let submenu = NSMenu()

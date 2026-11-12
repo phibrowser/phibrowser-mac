@@ -1035,47 +1035,64 @@ extension AgentSpaceRouter {
         }
     }
 
-    /// `agentSpace.splitView.list` — the target window's splits.
+    /// `agentSpace.splitView.list` — the target window's splits. Each entry
+    /// carries `tabIds` (the panes in slot order, two to four) and
+    /// `fractions` (each pane's share, same order); `primaryTabId`,
+    /// `secondaryTabId` and `ratio` keep the pair-era JSON shape as the first
+    /// two panes and the first pane's share.
     static func handleSplitViewList(context: ExtensionMessageContext) -> String? {
         guard let obj = json(context.payload) else { return invalid() }
         return withLayoutWindow(obj, context: context) { target in
             let splits = (target.state?.splits ?? []).map { split -> [String: Any] in
                 [
                     "splitId": split.id,
-                    "primaryTabId": split.primaryTabId,
-                    "secondaryTabId": split.secondaryTabId,
+                    "tabIds": split.tabIds,
+                    "paneCount": split.paneCount,
+                    "primaryTabId": split.tabIds[0],
+                    "secondaryTabId": split.tabIds[1],
                     "layout": split.layout.rawValue,
-                    "ratio": split.ratio,
+                    "fractions": split.fractions,
+                    "ratio": split.fractions[0],
                 ]
             }
             return encode(["ok": true, "splits": splits])
         }
     }
 
-    /// `agentSpace.splitView.create` — split two of the target window's tabs
-    /// side by side. `layout`: "vertical" (side-by-side, default) or
-    /// "horizontal" (stacked). Routes through BrowserState so the focused
-    /// tab lands in the primary argument (renderer-visibility nuance).
+    /// `agentSpace.splitView.create` — split two to four of the target
+    /// window's tabs. `tabIds` lists them in pane order (left to right, or
+    /// top to bottom); the pair-era `primaryTabId` / `secondaryTabId` are
+    /// still accepted. `layout`: "vertical" (side-by-side, default) or
+    /// "horizontal" (stacked). Routes through BrowserState, whose split
+    /// creation pivots on the active tab (renderer-visibility nuance).
     static func handleSplitViewCreate(context: ExtensionMessageContext) -> String? {
-        guard let obj = json(context.payload),
-              let primary = (obj["primaryTabId"] as? NSNumber)?.intValue,
-              let secondary = (obj["secondaryTabId"] as? NSNumber)?.intValue,
-              primary != secondary else { return invalid() }
+        guard let obj = json(context.payload) else { return invalid() }
+        let tabIds: [Int]
+        if let listed = obj["tabIds"] as? [NSNumber] {
+            tabIds = listed.map(\.intValue)
+        } else if let primary = (obj["primaryTabId"] as? NSNumber)?.intValue,
+                  let secondary = (obj["secondaryTabId"] as? NSNumber)?.intValue {
+            tabIds = [primary, secondary]
+        } else {
+            return invalid()
+        }
+        guard tabIds.count >= 2, tabIds.count <= SplitGroup.maxPaneCount,
+              Set(tabIds).count == tabIds.count else { return invalid() }
         let layoutRaw = obj["layout"] as? String ?? SplitLayout.vertical.rawValue
         guard let layout = SplitLayout(rawValue: layoutRaw) else { return invalid() }
         return withLayoutWindow(obj, context: context) { target in
             guard let state = target.state else { return failure("window_unavailable") }
-            guard let splitId = state.createSplit(leftTabId: primary,
-                                                  rightTabId: secondary,
-                                                  layout: layout) else {
+            guard let splitId = state.createSplit(tabIds: tabIds, layout: layout) else {
                 return failure("create_failed")
             }
             return encode(["ok": true, "splitId": splitId])
         }
     }
 
-    /// `agentSpace.splitView.update` — ratio (0–1, primary pane's share)
-    /// and/or layout.
+    /// `agentSpace.splitView.update` — pane shares and/or layout.
+    /// `fractions` (one share per pane, in pane order) sizes any split;
+    /// `ratio` (0–1, the first pane's share) is the pair form and is refused
+    /// for a wider split. `fractions` wins when both are given.
     static func handleSplitViewUpdate(context: ExtensionMessageContext) -> String? {
         guard let obj = json(context.payload),
               let splitId = obj["splitId"] as? String else { return invalid() }
@@ -1088,8 +1105,14 @@ extension AgentSpaceRouter {
         }
         return withLayoutWindow(obj, context: context) { target in
             guard let state = target.state,
-                  state.splitGroup(forId: splitId) != nil else { return failure("unknown_split") }
-            if let ratio = (obj["ratio"] as? NSNumber)?.doubleValue {
+                  let group = state.splitGroup(forId: splitId) else { return failure("unknown_split") }
+            if let fractions = obj["fractions"] as? [NSNumber] {
+                guard fractions.count == group.paneCount else {
+                    return failure("fraction_count_mismatch")
+                }
+                state.updateSplitFractions(splitId, fractions: fractions.map(\.doubleValue))
+            } else if let ratio = (obj["ratio"] as? NSNumber)?.doubleValue {
+                guard group.isPair else { return failure("ratio_requires_pair") }
                 state.updateSplitRatio(splitId, ratio: ratio)
             }
             if let layout {
@@ -1099,7 +1122,7 @@ extension AgentSpaceRouter {
         }
     }
 
-    /// `agentSpace.splitView.swap` — swap the two panes.
+    /// `agentSpace.splitView.swap` — reverse the pane order (a pair swaps).
     static func handleSplitViewSwap(context: ExtensionMessageContext) -> String? {
         guard let obj = json(context.payload),
               let splitId = obj["splitId"] as? String else { return invalid() }
@@ -1111,7 +1134,7 @@ extension AgentSpaceRouter {
         }
     }
 
-    /// `agentSpace.splitView.remove` — disband the split; both tabs stay open.
+    /// `agentSpace.splitView.remove` — disband the split; its tabs stay open.
     static func handleSplitViewRemove(context: ExtensionMessageContext) -> String? {
         guard let obj = json(context.payload),
               let splitId = obj["splitId"] as? String else { return invalid() }

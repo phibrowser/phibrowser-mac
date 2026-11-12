@@ -283,8 +283,8 @@ extension SidebarTabListViewController {
                ) as? SidebarCellView {
                 return cell.createDraggingImage()
             }
-            if let pair = item as? SplitPairSidebarItem,
-               pair.leftTab.guid == tabId || pair.rightTab.guid == tabId,
+            if let split = item as? SplitSidebarItem,
+               split.contains(tabId: tabId),
                let cell = outlineView.view(
                 atColumn: 0,
                 row: row,

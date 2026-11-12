@@ -402,8 +402,8 @@ final class WebContentHeaderPageColorTests: XCTestCase {
         state.tabs = [tab, partner]
         let header = WebContentHeader(browserState: state)
         header.currentTab = tab
-        state.splits = [SplitGroup(id: "page-color-split", primaryTabId: 1,
-                                  secondaryTabId: 2, layout: .vertical, ratio: 0.5)]
+        state.splits = [SplitGroup(id: "page-color-split", tabIds: [1, 2],
+                                   layout: .vertical, fractions: [0.5, 0.5])]
         drainPageColorUpdates()
         assertBackground(header, fallback(state))
         XCTAssertNil(header.appearance)

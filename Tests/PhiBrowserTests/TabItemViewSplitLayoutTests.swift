@@ -8,11 +8,11 @@ import XCTest
 @testable import Phi
 
 /// Layout-mode selection for split-merged cells: below
-/// `splitCompactModeThreshold` (2x the single-tab cutoff) the cell must
-/// fall back to the centered two-favicon compact rendering. In the
-/// 64-128pt band the per-pane normal layout has no room — hover close
-/// buttons land on top of the pane favicons, so a click meant to focus
-/// a pane closes it instead.
+/// `splitCompactModeThreshold(paneCount:)` (the single-tab cutoff once per
+/// pane) the cell must fall back to the centered favicon-row compact
+/// rendering. For a pair, in the 64-128pt band the per-pane normal layout
+/// has no room — hover close buttons land on top of the pane favicons, so
+/// a click meant to focus a pane closes it instead.
 @MainActor
 final class TabItemViewSplitLayoutTests: XCTestCase {
     private func makeMergedSplitView(width: CGFloat, partner: Tab) -> TabItemView {
@@ -24,7 +24,7 @@ final class TabItemViewSplitLayoutTests: XCTestCase {
             isActive: false,
             isPinned: false,
             isSplitGroupActive: false,
-            pinnedSplitPartner: partner,
+            mergedSplitPanes: [partner],
             sourceTab: nil
         ))
         view.frame = CGRect(x: 0, y: 0, width: width, height: TabStripMetrics.Strip.tabHeight)
@@ -101,7 +101,7 @@ final class TabItemViewSplitLayoutTests: XCTestCase {
             isActive: false,
             isPinned: true,
             isSplitGroupActive: false,
-            pinnedSplitPartner: partner,
+            mergedSplitPanes: [partner],
             sourceTab: primary
         ))
         view.frame = CGRect(x: 0, y: 0, width: 100, height: TabStripMetrics.Strip.tabHeight)
@@ -197,7 +197,7 @@ final class TabItemViewSplitLayoutTests: XCTestCase {
     /// still render the per-pane layout, not the compact favicon pair.
     func test_mergedSplitCellAtActiveSplitMinWidthRendersPerPaneLayout() {
         let partner = Tab(guid: 2, url: "https://partner.example", isActive: false, index: 1)
-        let view = makeMergedSplitView(width: TabStripMetrics.Tab.activeSplitMinWidth, partner: partner)
+        let view = makeMergedSplitView(width: TabStripMetrics.Tab.activeSplitMinWidth(paneCount: 2), partner: partner)
 
         let frames = visibleFrames(of: view)
         let faviconSize = TabStripMetrics.Content.faviconSize
@@ -234,7 +234,7 @@ final class TabItemViewSplitLayoutTests: XCTestCase {
             isActive: false,
             isPinned: false,
             isSplitGroupActive: false,
-            pinnedSplitPartner: partner,
+            mergedSplitPanes: [partner],
             sourceTab: primary
         ))
         view.frame = CGRect(x: 0, y: 0, width: 100, height: TabStripMetrics.Strip.tabHeight)
@@ -405,6 +405,122 @@ final class SplitViewLayoutTests: XCTestCase {
         XCTAssertFalse(SplitTabDropContainer.DropZone.right.isPrimarySlot)
         XCTAssertTrue(SplitTabDropContainer.DropZone.top.isPrimarySlot)
         XCTAssertFalse(SplitTabDropContainer.DropZone.bottom.isPrimarySlot)
+    }
+
+    /// In pane mode a pane zone replaces that slot and an insert zone adds a
+    /// pane there.
+    func testPaneDropZonesNameTheSlot() {
+        XCTAssertTrue(SplitTabDropContainer.DropZone.pane(0).isPrimarySlot)
+        XCTAssertFalse(SplitTabDropContainer.DropZone.pane(1).isPrimarySlot)
+        XCTAssertFalse(SplitTabDropContainer.DropZone.pane(3).isPrimarySlot)
+        XCTAssertNotEqual(SplitTabDropContainer.DropZone.pane(0), .pane(2))
+
+        XCTAssertTrue(SplitTabDropContainer.DropZone.insert(0).isPrimarySlot)
+        XCTAssertFalse(SplitTabDropContainer.DropZone.insert(2).isPrimarySlot)
+        XCTAssertNotEqual(SplitTabDropContainer.DropZone.insert(1), .pane(1))
+    }
+
+    /// Every place a pane can join has a zone: the two ends and one spanning
+    /// each boundary between neighbouring panes.
+    func testInsertZonesCoverEveryBoundaryBetweenPanes() {
+        let panes = [
+            CGRect(x: 0, y: 0, width: 100, height: 50),
+            CGRect(x: 104, y: 0, width: 100, height: 50),
+            CGRect(x: 208, y: 0, width: 100, height: 50),
+        ]
+        let zones = SplitTabDropContainer.insertZoneRects(panes: panes, layout: .vertical)
+
+        XCTAssertEqual(zones, [
+            CGRect(x: 0, y: 0, width: 25, height: 50),
+            CGRect(x: 75, y: 0, width: 54, height: 50),
+            CGRect(x: 179, y: 0, width: 54, height: 50),
+            CGRect(x: 283, y: 0, width: 25, height: 50),
+        ])
+    }
+
+    /// When a pane leaves, the others fill the split in proportion and its
+    /// divider goes with it.
+    func testRemovalPreviewFillsTheSplitWithTheOtherPanes() {
+        let total = CGRect(x: 0, y: 0, width: 1008, height: 100)
+        let preview = SplitPaneHostView.removalPreviewRects(in: total,
+                                                            layout: .vertical,
+                                                            fractions: [0.25, 0.25, 0.5],
+                                                            slot: 1)
+
+        XCTAssertEqual(preview.panes.map(\.width), [336, 0, 668])
+        XCTAssertEqual(preview.panes[2].minX, 340)
+        XCTAssertEqual(preview.dividers.count, 2)
+        XCTAssertEqual(preview.dividers[1], .zero)
+    }
+
+    /// Moving a pane shifts the ones it passes; each pane takes the slot's
+    /// rect, so widths stay with the slots.
+    func testMovePreviewShiftsThePanesThePaneCrosses() {
+        let a = CGRect(x: 0, y: 0, width: 100, height: 50)
+        let b = CGRect(x: 104, y: 0, width: 200, height: 50)
+        let c = CGRect(x: 308, y: 0, width: 100, height: 50)
+
+        XCTAssertEqual(SplitPaneHostView.movePreviewRects([a, b, c], from: 0, to: 2), [c, a, b])
+        XCTAssertEqual(SplitPaneHostView.movePreviewRects([a, b, c], from: 2, to: 0), [b, c, a])
+        XCTAssertEqual(SplitPaneHostView.movePreviewRects([a, b, c], from: 1, to: 1), [a, b, c])
+    }
+
+    /// Opening a slot mid-split shrinks the panes in proportion and leaves
+    /// the new pane an equal share, as Chromium does on the drop.
+    func testInsertionPreviewOpensAnEqualShareBetweenPanes() {
+        let total = CGRect(x: 0, y: 0, width: 1208, height: 100)
+        let preview = SplitPaneHostView.insertionPreviewRects(in: total,
+                                                              layout: .vertical,
+                                                              fractions: [0.5, 0.5],
+                                                              slot: 1)
+
+        XCTAssertEqual(preview.panes.map(\.width), [400, 400])
+        XCTAssertEqual(preview.opened, CGRect(x: 404, y: 0, width: 400, height: 100))
+        XCTAssertEqual(preview.dividers.count, 1)
+    }
+
+    /// Three columns take their shares of the width left after the two
+    /// dividers, in slot order from the left; the last pane absorbs the
+    /// rounding so it ends on the right edge.
+    func testPaneRectsLayThreeColumnsOutByTheirShares() {
+        let total = CGRect(x: 10, y: 20, width: 608, height: 400)
+        let divider = SplitPaneHostView.dividerThickness
+        XCTAssertEqual(divider, 4, "the expected rects below assume a 4pt divider")
+
+        let rects = SplitPaneHostView.paneRects(in: total,
+                                                layout: .vertical,
+                                                fractions: [0.5, 0.25, 0.25])
+
+        XCTAssertEqual(rects.panes, [
+            CGRect(x: 10, y: 20, width: 300, height: 400),
+            CGRect(x: 314, y: 20, width: 150, height: 400),
+            CGRect(x: 468, y: 20, width: 150, height: 400),
+        ])
+        XCTAssertEqual(rects.dividers, [
+            CGRect(x: 310, y: 20, width: divider, height: 400),
+            CGRect(x: 464, y: 20, width: divider, height: 400),
+        ])
+        XCTAssertEqual(rects.panes.last?.maxX, total.maxX)
+    }
+
+    /// Three rows stack from the top (slot 0 on top) with integral heights
+    /// and the last row ending on the bottom edge.
+    func testPaneRectsStackThreeRowsFromTheTop() {
+        let total = CGRect(x: 10, y: 20, width: 608, height: 400)
+
+        let rects = SplitPaneHostView.paneRects(in: total,
+                                                layout: .horizontal,
+                                                fractions: [0.5, 0.25, 0.25])
+
+        XCTAssertEqual(rects.panes.map(\.height), [196, 98, 98])
+        XCTAssertEqual(rects.panes.map(\.width), [608, 608, 608])
+        XCTAssertEqual(rects.panes[0].maxY, total.maxY)
+        XCTAssertEqual(rects.panes[2].minY, total.minY)
+        XCTAssertEqual(rects.dividers.count, 2)
+        XCTAssertEqual(rects.dividers[0].maxY, rects.panes[0].minY)
+        XCTAssertEqual(rects.dividers[0].minY, rects.panes[1].maxY)
+        XCTAssertEqual(rects.dividers[1].maxY, rects.panes[1].minY)
+        XCTAssertEqual(rects.dividers[1].minY, rects.panes[2].maxY)
     }
 
     func testCreateDropZoneRecognizesAllFourEdgesAndRejectsCenter() {
@@ -928,6 +1044,8 @@ final class SplitViewLayoutTests: XCTestCase {
                         area.minY + area.height * fraction,
                         accuracy: 0.0001
                     )
+                case .pane, .insert:
+                    XCTFail("create mode has no pane zones")
                 }
             }
         }
@@ -979,7 +1097,7 @@ final class SplitViewLayoutTests: XCTestCase {
         let start = CGPoint(x: 100, y: 100)
 
         XCTAssertEqual(
-            SplitPaneHostView.primaryPaneGrowthDistance(
+            SplitPaneHostView.leadingPaneGrowthDistance(
                 layout: .horizontal,
                 from: start,
                 to: CGPoint(x: 100, y: 140)
@@ -988,7 +1106,7 @@ final class SplitViewLayoutTests: XCTestCase {
             "Dragging upward must shrink the top pane so the divider also moves upward."
         )
         XCTAssertEqual(
-            SplitPaneHostView.primaryPaneGrowthDistance(
+            SplitPaneHostView.leadingPaneGrowthDistance(
                 layout: .horizontal,
                 from: start,
                 to: CGPoint(x: 100, y: 60)

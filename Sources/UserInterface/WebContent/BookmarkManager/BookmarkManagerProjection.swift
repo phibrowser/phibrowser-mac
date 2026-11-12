@@ -29,6 +29,7 @@ struct BookmarkManagerProjection {
         let url: String?
         let secondaryTitle: String?
         let secondaryURL: String?
+        let extraPanes: [SplitBookmarkExtraPane]
         let faviconURL: String?
         let cachedFaviconData: Data?
         let liveFaviconData: Data?
@@ -40,6 +41,7 @@ struct BookmarkManagerProjection {
             url = bookmark.url
             secondaryTitle = bookmark.secondaryTitle
             secondaryURL = bookmark.secondaryUrl
+            extraPanes = bookmark.splitExtraPanes
             faviconURL = bookmark.faviconUrl
             cachedFaviconData = bookmark.cachedFaviconData
             liveFaviconData = bookmark.liveFaviconData
@@ -153,12 +155,12 @@ struct BookmarkManagerProjection {
     }
 
     private static func matches(_ bookmark: Bookmark, query: String) -> Bool {
-        let searchableValues = [
+        let searchableValues: [String?] = [
             bookmark.title,
             bookmark.url,
             bookmark.secondaryTitle,
             bookmark.secondaryUrl,
-        ]
+        ] + bookmark.splitExtraPanes.flatMap { [$0.title, Optional($0.url)] }
         return searchableValues.compactMap { $0 }.contains { value in
             value.range(
                 of: query,

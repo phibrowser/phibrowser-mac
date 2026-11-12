@@ -149,7 +149,20 @@ extension Bookmark: ContextMenuRepresentable {
         } else {
             let editURL =  NSMenuItem(title: NSLocalizedString("sidebar.bookmarkContextMenu.editAction", value: "Edit...", comment: "Edit bookmark url menu item title"), action: #selector(edit), keyEquivalent: "")
             editURL.target = self
-            menu.addItem(editURL)
+            if source == .sidebar && (secondaryUrl ?? "").isEmpty {
+                let parent = NSMenuItem(title: NSLocalizedString("sidebar.bookmarkContextMenu.editSubmenu", value: "Edit Bookmark", comment: "Bookmark context menu - Submenu for editing the saved bookmark"), action: nil, keyEquivalent: "")
+                let submenu = NSMenu()
+                submenu.autoenablesItems = false
+                submenu.addItem(editURL)
+                let replace = NSMenuItem(title: NSLocalizedString("sidebar.bookmarkContextMenu.replaceSavedURL", value: "Replace Saved URL with Current", comment: "Bookmark context menu - Save the open page URL as the bookmark URL"), action: #selector(replaceSavedBookmarkURL), keyEquivalent: "")
+                replace.target = self
+                replace.isEnabled = contextMenuState?.replacementURLForBookmark(guid: guid) != nil
+                submenu.addItem(replace)
+                parent.submenu = submenu
+                menu.addItem(parent)
+            } else {
+                menu.addItem(editURL)
+            }
             
             // Route split-view bookmarks through a dedicated action that
             // opens a fresh duplicate split without touching the existing
@@ -314,12 +327,8 @@ extension Bookmark: ContextMenuRepresentable {
     /// the originally-tracked split rather than this duplicate.
     @MainActor
     @objc private func openSplitInNewTab() {
-        guard let url, !url.isEmpty,
-              let secondaryURL = secondaryUrl, !secondaryURL.isEmpty,
-              let state = contextMenuState else { return }
-        state.openTwoURLsAsSplit(primaryURL: url,
-                                 secondaryURL: secondaryURL,
-                                 layout: layout ?? .vertical)
+        guard let state = contextMenuState else { return }
+        state.openURLsAsSplit(splitPaneURLs, layout: layout ?? .vertical)
     }
 
     @MainActor
@@ -435,6 +444,11 @@ extension Bookmark: ContextMenuRepresentable {
     }
     
     @MainActor
+    @objc private func replaceSavedBookmarkURL() {
+        contextMenuState?.replaceSavedURLForBookmark(guid: guid)
+    }
+
+    @MainActor
     @objc private func edit() {
         guard let windowController = contextMenuWindowController else {
             return
@@ -447,12 +461,15 @@ extension Bookmark: ContextMenuRepresentable {
         // values when those rows are left untouched.
         let initialSecondaryUrl = self.secondaryUrl
         let initialSecondaryTitle = self.secondaryTitle
+        // A three- or four-pane split bookmark edits its further panes too.
+        let initialExtraPanes = self.splitExtraPanes
         EditPinnedTabPresenter.presentModal(
             mode: isFolder ? .folder : .bookmark,
             title: title,
             urlString: url ?? "",
             secondaryUrlString: initialSecondaryUrl,
             secondaryTitleString: initialSecondaryTitle,
+            extraPanes: initialExtraPanes,
             modelContainer: state.localStore.container,
             profileId: state.profileId,
             spaceId: state.spaceId,
@@ -478,7 +495,8 @@ extension Bookmark: ContextMenuRepresentable {
                 title: result.title,
                 url: result.url,
                 secondaryUrl: secondaryUrlUpdate,
-                secondaryTitle: secondaryTitleUpdate
+                secondaryTitle: secondaryTitleUpdate,
+                splitExtraPanes: result.extraPanes
             )
             if let newParentGuid = result.parentFolderGuid,
                newParentGuid != originalParentGuid {

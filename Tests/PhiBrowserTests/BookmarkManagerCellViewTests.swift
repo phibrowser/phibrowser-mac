@@ -30,6 +30,42 @@ final class BookmarkManagerCellViewTests: XCTestCase {
         )
     }
 
+    func testSplitPanesDisplayAllLanesAndClearThemOnReuse() {
+        let cell = BookmarkManagerCellView(frame: NSRect(x: 0, y: 0, width: 320, height: 116))
+        for count in [2, 3, 4, 2] {
+            let bookmark = Bookmark(
+                title: "First",
+                url: "https://first.example",
+                secondaryUrl: "https://second.example",
+                secondaryTitle: "Second",
+                splitExtraPanes: (2..<count).map {
+                    SplitBookmarkExtraPane(url: "https://pane\($0 + 1).example", title: "Pane \($0 + 1)")
+                }
+            )
+            for column in [BookmarkManagerCellView.Column.website, .address] {
+                cell.frame.size.height = CGFloat(count) * 29
+                cell.configure(bookmark: bookmark, scope: scope, column: column, onCommit: nil)
+                cell.layoutSubtreeIfNeeded()
+                let fields = cell.subviews.compactMap { $0 as? NSTextField }.filter { !$0.isHidden }
+                let expected = column == .website
+                    ? ["First", "Second"] + (2..<count).map { "Pane \($0 + 1)" }
+                    : bookmark.splitPaneURLs
+                XCTAssertEqual(fields.map(\.stringValue), expected)
+                XCTAssertEqual(fields.map(\.toolTip), expected.map { Optional($0) })
+                XCTAssertEqual(cell.subviews.compactMap { $0 as? NSBox }.filter { !$0.isHidden }.count, count - 1)
+                for index in 1..<fields.count {
+                    XCTAssertEqual(abs(fields[index].frame.midY - fields[index - 1].frame.midY), 29, accuracy: 0.5)
+                }
+            }
+        }
+        cell.prepareForReuse()
+        cell.configure(bookmark: Bookmark(title: "Single", url: "https://single.example"),
+                       scope: scope, column: .address, onCommit: nil)
+        let fields = cell.subviews.compactMap { $0 as? NSTextField }.filter { !$0.isHidden }
+        XCTAssertEqual(fields.map(\.stringValue), ["https://single.example"])
+        XCTAssertTrue(cell.subviews.compactMap { $0 as? NSBox }.allSatisfy(\.isHidden))
+    }
+
     func testAddressColumnDisplaysPhiBrandedNewTabURL() throws {
         let bookmark = Bookmark(
             guid: "new-tab",

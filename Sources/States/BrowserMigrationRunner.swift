@@ -405,10 +405,7 @@ final class BrowserMigrationRunner: ObservableObject {
             guard let secondaryGUID = pin.secondaryGUID,
                   outcomes.pinnedTabGuids.contains(pin.guid),
                   outcomes.pinnedTabGuids.contains(secondaryGUID) else { continue }
-            store.updatePinnedSplitPair(
-                primaryGuid: pin.guid,
-                secondaryGuid: secondaryGUID,
-                layout: pin.splitLayout ?? SplitLayout.vertical.rawValue)
+            store.updatePinnedSplit(guids: [pin.guid, secondaryGUID], layout: pin.splitLayout ?? SplitLayout.vertical.rawValue)
         }
         // The creation call enqueues its write rather than awaiting it, so
         // drain the store's queue before the lock goes: the Space has to still

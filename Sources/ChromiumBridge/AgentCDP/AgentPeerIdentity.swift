@@ -54,11 +54,20 @@ struct AgentIdentity: Equatable {
     /// companion connects without consent, but only on the terms its
     /// `AgentCompanion` entry sets.
     let companion: AgentCompanion?
+    /// The first-party companion app that spawned this peer, recognized by
+    /// `AgentPeerIdentity.firstPartyCompanion` from the process macOS holds
+    /// responsible for it; nil for every other peer. It settles consent — the
+    /// app is part of the product, so its agent runner is admitted without a
+    /// prompt — and nothing else: the peer is an ordinary agent, with the
+    /// agent surface rather than the companion's allowlist, named in the
+    /// roster and severed with the other agents when the master switch goes.
+    let companionLauncher: AgentCompanion?
 
-    /// The initializer every resolved peer goes through. `firstParty` and
-    /// `companion` are deliberately not parameters: being the browser's own
-    /// runtime, or one of its companion apps, is something this file
-    /// establishes from the connection, never something a caller can assert.
+    /// The initializer every resolved peer goes through. `firstParty`,
+    /// `companion` and `companionLauncher` are deliberately not parameters:
+    /// being the browser's own runtime, one of its companion apps, or a
+    /// process one spawned is something this file establishes from the
+    /// connection, never something a caller can assert.
     init(key: String, displayName: String, teamId: String?,
          signingId: String? = nil, verified: Bool,
          executablePath: String, pid: pid_t?) {
@@ -71,7 +80,7 @@ struct AgentIdentity: Equatable {
     fileprivate init(key: String, displayName: String, teamId: String?,
                      signingId: String?, verified: Bool,
                      executablePath: String, pid: pid_t?, firstParty: Bool,
-                     companion: AgentCompanion?) {
+                     companion: AgentCompanion?, companionLauncher: AgentCompanion? = nil) {
         self.key = key
         self.displayName = displayName
         self.teamId = teamId
@@ -81,6 +90,7 @@ struct AgentIdentity: Equatable {
         self.pid = pid
         self.firstParty = firstParty
         self.companion = companion
+        self.companionLauncher = companionLauncher
     }
 
     /// Key of the identity below. Its own constant because the rule attached
@@ -392,6 +402,12 @@ struct AgentCompanion: Equatable {
     /// Stable identity key, the same for every channel of the app, so the
     /// app is one principal however it was built.
     let key: String
+    /// The principal of an agent the app spawns
+    /// (`AgentPeerIdentity.companionSpawnedChild`), apart from the app's own
+    /// scoped channel: driver sessions are anchored by key and process, and
+    /// the app and its runner share a process, so one key would hand the
+    /// runner the app's session and with it the allowlist.
+    var agentKey: String { key + ":agent" }
     /// Shown wherever the driving peer is named.
     let displayName: String
     let channels: [Channel]
@@ -786,6 +802,10 @@ enum AgentPeerIdentity {
     /// in its environment. Native code signed as the app is the app, whoever
     /// launched it.
     ///
+    /// A process the companion app spawned that is signed as neither — the
+    /// phi-browser skill's runner on the user's `node` — is admitted on the
+    /// app's account as an agent it vouches for (`companionSpawnedChild`).
+    ///
     /// Returns nil for every other connection, which then resolves normally —
     /// including a companion's helper that fails (2) to (4): it is then just
     /// Phi-signed code started outside its app, and gets no pass.
@@ -849,6 +869,67 @@ enum AgentPeerIdentity {
                     firstParty: false,
                     companion: companion)
             }
+        }
+        return companionSpawnedChild(peerPID: peerPID)
+    }
+
+    /// The third shape: a process the companion app spawned that is signed
+    /// as nothing of the companion's. Folio driving Spaces through the
+    /// phi-browser skill runs the user's own `node` on the skill's runner,
+    /// straight from the app. What names that process is the kernel: the app
+    /// is held responsible for it, and the app must be what the app shape
+    /// above accepts (the channel's requirement, its bundle's main
+    /// executable, a clean environment); the child's own exec-time
+    /// environment must load no code into it either, since the app chose it.
+    ///
+    /// It is admitted as an agent the companion vouches for, not as the
+    /// companion: `companionLauncher` settles consent, `companion` stays
+    /// nil, so the runner gets the agent surface the skill needs rather than
+    /// the helper's allowlist. Left to the walk, the same connection reads as
+    /// Phi's own code started outside the browser — a team-signed app above
+    /// an unsigned runtime — and is refused without a prompt, which is the
+    /// one answer that cannot be right for a part of the product.
+    private static func companionSpawnedChild(peerPID: pid_t) -> AgentIdentity? {
+        guard let appPID = responsibleProcess(of: peerPID), appPID != peerPID else { return nil }
+        for companion in AgentCompanion.all {
+            for channel in companion.acceptedChannels
+            where isFirstPartyCode(guestAttributes: [kSecGuestAttributePid: appPID], pid: appPID,
+                                   requirement: companionRequirements[channel.appIdentifier]) {
+                guard let app = companionApp(companion, channel: channel, pid: appPID) else { return nil }
+                let executable = executablePath(peerPID) ?? recordedExecutablePath(peerPID) ?? "pid-\(peerPID)"
+                let name = (executable as NSString).lastPathComponent
+                guard let launch = processArgsAndEnv(peerPID),
+                      AgentCompanion.environmentIsClean(launch.env, runtimeVariables: true) else {
+                    AppLogWarn("[AgentCDP] \(name) (pid \(peerPID)), spawned by \(channel.appIdentifier), "
+                               + "carries a code-loading environment; not admitting it as "
+                               + "\(companion.displayName)")
+                    return nil
+                }
+                AppLogInfo("[AgentCDP] \(name) (pid \(peerPID)) is the responsibility of "
+                           + "\(channel.appIdentifier) (pid \(appPID)); an agent of \(companion.displayName)")
+                // The app is the agent: its pid is what the channel echoes
+                // for the skill's session check and what anchors the driver
+                // session, so every round the app runs shares one principal
+                // and sees the same tasks, as an agent's rounds do under the
+                // walk, which names the responsible process the same way.
+                // The key is the app's agent key, not its companion key: the
+                // app's own scoped channel is anchored on the same process.
+                return AgentIdentity(
+                    key: companion.agentKey,
+                    displayName: companion.displayName,
+                    teamId: FileSystemUtils.teamId,
+                    signingId: channel.appIdentifier,
+                    verified: true,
+                    executablePath: app.executablePath,
+                    pid: appPID,
+                    firstParty: false,
+                    companion: nil,
+                    companionLauncher: companion)
+            }
+        }
+        if isFirstPartyCode(guestAttributes: [kSecGuestAttributePid: appPID], pid: appPID) {
+            AppLogWarn("[AgentCDP] pid \(peerPID) was spawned by Phi-signed "
+                       + "\(executablePath(appPID) ?? "pid \(appPID)") which is no companion channel of this build")
         }
         return nil
     }

@@ -379,6 +379,55 @@ struct TimeMachineCatalogStore {
         }
     }
 
+    /// Removes snapshot directories no catalog record owns: staging copies and
+    /// finished snapshots left by an interrupted backup.
+    @discardableResult
+    func purgeUncatalogedSnapshots() throws -> Int {
+        let purgingNames: [POSIXFileName] = try withCatalogLock { snapshotsDirectory in
+            var catalog = try loadWithoutRecovery(from: snapshotsDirectory)
+            try recoverInterruptedDeletions(
+                catalog: &catalog,
+                snapshotsDirectory: snapshotsDirectory
+            )
+            guard let snapshotsDirectory else {
+                return []
+            }
+
+            var names: [POSIXFileName] = []
+            for entry in try snapshotsDirectory.entryNames() {
+                guard let backupID = Self.backupID(fromManagedName: entry.string, suffix: "")
+                        ?? Self.backupID(fromManagedName: entry.string, suffix: ".staging"),
+                      !catalog.backups.contains(where: {
+                          $0.id == backupID
+                              || $0.snapshotRelativePath == "\(TimeMachinePaths.snapshotsDirectoryName)/\(entry.string)"
+                      }) else {
+                    continue
+                }
+                let purgingName = Self.purgingName(for: backupID)
+                if try snapshotsDirectory.entryExists(purgingName) {
+                    continue
+                }
+                if try snapshotsDirectory.renameIfExists(from: entry, to: purgingName) {
+                    names.append(purgingName)
+                }
+            }
+            return names
+        }
+
+        var firstError: Error?
+        for purgingName in purgingNames {
+            do {
+                try removePurgingEntryIfExists(purgingName)
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        if let firstError {
+            throw firstError
+        }
+        return purgingNames.count
+    }
+
     @discardableResult
     func removeBackup(id: UUID) throws -> TimeMachineBackupRecord? {
         try withCatalogLock { snapshotsDirectory in

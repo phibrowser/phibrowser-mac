@@ -83,8 +83,8 @@ final class TabDoubleClickCloseTests: XCTestCase {
         let left = makeTab(1)
         let right = makeTab(2)
         let state = try makeState(tabs: [left, right])
-        state.splits = [SplitGroup(id: "double-click-split", primaryTabId: 1,
-                                   secondaryTabId: 2, layout: .vertical, ratio: 0.5)]
+        state.splits = [SplitGroup(id: "double-click-split", tabIds: [1, 2],
+                                   layout: .vertical, fractions: [0.5, 0.5])]
         let strip = TabStrip(browserState: state)
         strip.frame = NSRect(x: 0, y: 0, width: 900, height: 48)
         let window = host(strip)
@@ -93,7 +93,7 @@ final class TabDoubleClickCloseTests: XCTestCase {
         strip.setActive(true)
         strip.layoutSubtreeIfNeeded()
         let view = try XCTUnwrap(descendants(of: strip, as: TabItemView.self).first {
-            !$0.isHidden && $0.frame.width > 0 && $0.onSecondaryDoubleSelect != nil
+            !$0.isHidden && $0.frame.width > 0 && $0.onPaneDoubleSelect != nil
         })
         for (fraction, expectedLeft, expectedRight) in [(0.25, 1, 0), (0.75, 1, 1)] {
             let point = view.convert(NSPoint(x: view.bounds.width * fraction, y: view.bounds.midY), to: nil)
@@ -148,10 +148,10 @@ final class TabDoubleClickCloseTests: XCTestCase {
     func testSidebarSplitDoubleClickClosesOnlyClickedPane() throws {
         let left = makeTab(1)
         let right = makeTab(2)
-        let pair = SplitPairSidebarItem(groupId: "double-click-split", leftTab: left,
-                                       rightTab: right, browserState: nil)
-        let cell = SidebarSplitPairCellView(frame: NSRect(x: 0, y: 0, width: 320, height: 36))
-        cell.configure(with: pair)
+        let split = SplitSidebarItem(groupId: "double-click-split", panes: [left, right],
+                                    browserState: nil)
+        let cell = SidebarSplitCellView(frame: NSRect(x: 0, y: 0, width: 320, height: 36))
+        cell.configure(with: split)
         let window = host(cell)
         defer { window.close() }
         cell.layoutSubtreeIfNeeded()
@@ -186,10 +186,10 @@ final class TabDoubleClickCloseTests: XCTestCase {
     func testForwardedSplitDoubleClickIsNotRepeatedByChildMouseUp() throws {
         let left = makeTab(1)
         let right = makeTab(2)
-        let pair = SplitPairSidebarItem(groupId: "forwarded-split", leftTab: left,
-                                       rightTab: right, browserState: nil)
-        let cell = SidebarSplitPairCellView(frame: NSRect(x: 0, y: 0, width: 320, height: 36))
-        cell.configure(with: pair)
+        let split = SplitSidebarItem(groupId: "forwarded-split", panes: [left, right],
+                                    browserState: nil)
+        let cell = SidebarSplitCellView(frame: NSRect(x: 0, y: 0, width: 320, height: 36))
+        cell.configure(with: split)
         let window = host(cell)
         defer { window.close() }
         cell.layoutSubtreeIfNeeded()
@@ -212,8 +212,8 @@ final class TabDoubleClickCloseTests: XCTestCase {
         let left = makeTab(1)
         let right = makeTab(2)
         let state = try makeState(tabs: [left, right])
-        state.splits = [SplitGroup(id: "tracked-split", primaryTabId: 1,
-                                   secondaryTabId: 2, layout: .vertical, ratio: 0.5)]
+        state.splits = [SplitGroup(id: "tracked-split", tabIds: [1, 2],
+                                   layout: .vertical, fractions: [0.5, 0.5])]
         let controller = SidebarTabListViewController(state: state)
         controller.loadViewIfNeeded()
         controller.view.frame = NSRect(x: 0, y: 0, width: 320, height: 400)
@@ -225,10 +225,10 @@ final class TabDoubleClickCloseTests: XCTestCase {
         controller.view.layoutSubtreeIfNeeded()
         let outline = try XCTUnwrap(descendants(of: controller.view, as: SideBarOutlineView.self).first)
         let row = try XCTUnwrap((0..<outline.numberOfRows).first {
-            outline.item(atRow: $0) is SplitPairSidebarItem
+            outline.item(atRow: $0) is SplitSidebarItem
         })
         let cell = try XCTUnwrap(outline.view(atColumn: 0, row: row, makeIfNecessary: true)
-            as? SidebarSplitPairCellView)
+            as? SidebarSplitCellView)
         controller.view.layoutSubtreeIfNeeded()
         let panes = descendants(of: cell, as: HoverableView.self)
             .filter { $0.shouldClickOnMouseDown != nil }

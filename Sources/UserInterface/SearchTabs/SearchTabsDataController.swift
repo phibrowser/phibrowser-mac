@@ -49,20 +49,30 @@ final class SearchTabsDataController {
         )
     }
 
+    /// The tab's slot and the other panes, resolved from the live group's
+    /// `tabIds`. No relation while a pane is not yet a live tab (still
+    /// arriving), rather than a partial one.
     private static func splitRelation(for tabId: Int, in state: BrowserState) -> SearchTabsSplitRelation? {
         guard let group = state.splitGroup(forTabId: tabId),
-              let partnerId = group.partnerTabId(of: tabId),
-              let partner = state.tabs.first(where: { $0.guid == partnerId }) else {
+              let slot = group.slot(of: tabId) else {
             return nil
+        }
+        var partners: [SearchTabsSplitRelation.Partner] = []
+        for otherId in group.otherTabIds(of: tabId) {
+            guard let partner = state.tabs.first(where: { $0.guid == otherId }) else { return nil }
+            partners.append(SearchTabsSplitRelation.Partner(
+                tabId: otherId,
+                title: partner.title,
+                url: partner.url
+            ))
         }
 
         return SearchTabsSplitRelation(
             splitId: group.id,
             layout: group.layout,
-            role: group.primaryTabId == tabId ? .primary : .secondary,
-            partnerTabId: partnerId,
-            partnerTitle: partner.title,
-            partnerURL: partner.url
+            slot: slot,
+            paneCount: group.paneCount,
+            partners: partners
         )
     }
 }

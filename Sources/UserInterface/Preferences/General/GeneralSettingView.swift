@@ -211,6 +211,9 @@ private struct AppearanceSectionView: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .appearanceDidChange)) { _ in
+            selectedAppearance = ThemeManager.shared.userAppearanceChoice
+        }
     }
 
     private func layoutImageResource(for mode: LayoutMode) -> ImageResource {

@@ -6120,14 +6120,15 @@ final class SpaceManager: ObservableObject {
 
     enum SpaceMoveTabUnit {
         case tab(Tab)
-        case split(left: Tab, right: Tab)
+        /// A whole live split, its panes in slot order (two to four).
+        case split(panes: [Tab])
 
         var tabs: [Tab] {
             switch self {
             case .tab(let tab):
                 return [tab]
-            case .split(let left, let right):
-                return [left, right]
+            case .split(let panes):
+                return panes
             }
         }
 
@@ -6143,8 +6144,9 @@ final class SpaceManager: ObservableObject {
             switch self {
             case .tab(let tab):
                 return tab.webContentWrapper
-            case .split(let left, let right):
-                return left.webContentWrapper ?? right.webContentWrapper
+            case .split(let panes):
+                // Any pane's wrapper moves the whole split.
+                return panes.compactMap(\.webContentWrapper).first
             }
         }
 
@@ -6175,19 +6177,43 @@ final class SpaceManager: ObservableObject {
                 continue
             }
             guard !splitGroup.isPinned,
-                  !consumedSplitIds.contains(splitGroup.id),
-                  let left = sourceState.tabs.first(where: { $0.guid == splitGroup.primaryTabId }),
-                  let right = sourceState.tabs.first(where: { $0.guid == splitGroup.secondaryTabId }),
-                  !left.isPinned,
-                  !right.isPinned else {
+                  !consumedSplitIds.contains(splitGroup.id) else {
                 continue
             }
+            // Every pane must be a live, unpinned tab for the split to move as one.
+            var panes: [Tab] = []
+            for paneId in splitGroup.tabIds {
+                guard let pane = sourceState.tabs.first(where: { $0.guid == paneId }),
+                      !pane.isPinned else { break }
+                panes.append(pane)
+            }
+            guard panes.count == splitGroup.paneCount else { continue }
 
             consumedSplitIds.insert(splitGroup.id)
-            units.append(.split(left: left, right: right))
+            units.append(.split(panes: panes))
         }
 
         return units
+    }
+
+    /// Reopens a moved or cloned split's panes in `targetState` from their
+    /// URLs as a split (`openURLsAsSplit`). Returns false, opening nothing,
+    /// when a pane has no URL.
+    @MainActor
+    @discardableResult
+    private static func reopenSplitPanesFromURLs(_ panes: [Tab],
+                                                 in targetState: BrowserState,
+                                                 logContext: String) -> Bool {
+        let urls = panes.compactMap { pane in pane.url.flatMap { $0.isEmpty ? nil : $0 } }
+        guard urls.count == panes.count else {
+            AppLogWarn(
+                "[SpaceManager] \(logContext): source split " +
+                "\(panes.map(\.guid)) lost its URLs"
+            )
+            return false
+        }
+        targetState.openURLsAsSplit(urls)
+        return true
     }
 
     /// Batch variant used by multi-selection actions. The caller filters
@@ -6274,17 +6300,12 @@ final class SpaceManager: ObservableObject {
                         case .tab(let tab):
                             targetState.createTab(tab.url, focusAfterCreate: offset == movingUnits.count - 1)
                             unit.closeSourceTabsAfterCrossProfileMove()
-                        case .split(let left, let right):
-                            guard let primaryURL = left.url, !primaryURL.isEmpty,
-                                  let secondaryURL = right.url, !secondaryURL.isEmpty else {
-                                AppLogWarn(
-                                    "[SpaceManager] moveTabs: source split " +
-                                    "\(left.guid),\(right.guid) lost its URLs"
-                                )
+                        case .split(let panes):
+                            guard Self.reopenSplitPanesFromURLs(panes,
+                                                                in: targetState,
+                                                                logContext: "moveTabs") else {
                                 continue
                             }
-                            targetState.openTwoURLsAsSplit(primaryURL: primaryURL,
-                                                           secondaryURL: secondaryURL)
                             unit.closeSourceTabsAfterCrossProfileMove()
                         }
                     }
@@ -6296,7 +6317,8 @@ final class SpaceManager: ObservableObject {
     }
 
     /// Recreates a multi-selection in another Space without changing the
-    /// source tabs. Split units are opened as splits in their original order.
+    /// source tabs. Split pairs are opened as splits in their original order;
+    /// a wider split reopens as separate tabs (see `reopenSplitPanesFromURLs`).
     @discardableResult
     func cloneTabs(_ tabs: [Tab],
                    from sourceState: BrowserState,
@@ -6332,13 +6354,8 @@ final class SpaceManager: ObservableObject {
                     case .tab(let tab):
                         targetState.createTab(tab.url,
                                               focusAfterCreate: offset == cloningUnits.count - 1)
-                    case .split(let left, let right):
-                        guard let primaryURL = left.url, !primaryURL.isEmpty,
-                              let secondaryURL = right.url, !secondaryURL.isEmpty else {
-                            continue
-                        }
-                        targetState.openTwoURLsAsSplit(primaryURL: primaryURL,
-                                                       secondaryURL: secondaryURL)
+                    case .split(let panes):
+                        Self.reopenSplitPanesFromURLs(panes, in: targetState, logContext: "cloneTabs")
                     }
                 }
                 completion(true)
@@ -11280,16 +11297,17 @@ final class SpaceWindowSlot: ObservableObject {
     /// the state Chromium arrived at. The transitions this side started
     /// (`shellFullScreenWillChange`) come back through here with the state
     /// the shell is already heading for, and are no-ops. A background
-    /// session's change waits for its next present, whose
-    /// `applyWindowChrome` pushes the shell's state back to it, with one
-    /// exception: the exit of the session owning the shell's fullscreen
-    /// (`shellFullscreenOwner`). A Space leaving the shell takes its tab out
-    /// of fullscreen (`UnpresentHostedBrowser`), and Chromium asks for the
-    /// window to follow only when that tab put it there, as a real window
-    /// leaves fullscreen when its tab switches away from a fullscreen page;
-    /// the shell follows that, though the Space is in the background by
-    /// then. The user's own fullscreen (the green button, View > Enter
-    /// Full Screen, Ctrl-Cmd-F) has no owner and stays.
+    /// session is brought in step by Chromium at once (the presented
+    /// session's report is passed on to the window's other Space
+    /// instances); the push at its next present (`applyWindowChrome`) is
+    /// the fallback. One exception: the exit of the session owning the
+    /// shell's fullscreen (`shellFullscreenOwner`). A Space leaving the
+    /// shell takes its tab out of fullscreen (`UnpresentHostedBrowser`), and
+    /// Chromium asks for the window to follow only when that tab put it
+    /// there, as a real window leaves fullscreen when its tab switches away
+    /// from a fullscreen page; the shell follows that, though the Space is
+    /// in the background by then. The user's own fullscreen (the green
+    /// button, View > Enter Full Screen, Ctrl-Cmd-F) has no owner and stays.
     func sessionRequestedShellFullscreen(_ controller: SpaceSessionController,
                                          fullscreen: Bool, targetDisplayId: Int64 = -1) {
         // `isPresented` as well as `visibleController`: a session being

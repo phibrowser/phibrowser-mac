@@ -224,13 +224,18 @@ final class ContentSurfaceHostingTests: XCTestCase {
         let previous = UserDefaults.standard.object(forKey: key)
         defer { UserDefaults.standard.set(previous, forKey: key) }
         let fixture = try makeFixture()
-        fixture.state.splits = [SplitGroup(id: "edge-hint-split", primaryTabId: 2400,
-            secondaryTabId: 2401, layout: .vertical, ratio: 0.5)]
+        fixture.state.splits = [SplitGroup(id: "edge-hint-split", tabIds: [2400, 2401],
+            layout: .vertical, fractions: [0.5, 0.5])]
         fixture.state.tabs.append(Tab(guid: 2402, url: "https://dragged.example/", isActive: false, index: 2))
         fixture.state.updateNormalTabs()
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         let dropContainer = fixture.container.splitTabDropContainer
-        dropContainer.showSplitDropHints(draggedTabId: 2402)
+        // Pane mode covers only the pane under the pointer: the left one here.
+        fixture.container.view.layoutSubtreeIfNeeded()
+        let window = try XCTUnwrap(dropContainer.window)
+        let paneCenter = NSPoint(x: dropContainer.bounds.width * 0.25, y: dropContainer.bounds.midY)
+        let pointer = window.convertPoint(toScreen: dropContainer.convert(paneCenter, to: nil))
+        dropContainer.showSplitDropHints(draggedTabId: 2402, at: pointer)
         defer { dropContainer.hideSplitDropHints() }
         for (enabled, fullscreen, docked) in [(false, false, false), (true, false, false), (true, true, false), (true, true, true), (true, true, false), (false, true, false), (true, false, false)] {
             if docked {
@@ -245,7 +250,7 @@ final class ContentSurfaceHostingTests: XCTestCase {
             fixture.container.view.layoutSubtreeIfNeeded()
             let cards = descendantViews(dropContainer).compactMap { $0 as? NSGlassEffectView }
                 .filter { !$0.isHiddenOrHasHiddenAncestor }
-            XCTAssertEqual(cards.count, 2)
+            XCTAssertEqual(cards.count, 1)
             for card in cards {
                 let expected: CGFloat = enabled && fullscreen && !docked ? 0 : LiquidGlassCompatible.webContentInnerComponentsCornerRadius
                 XCTAssertEqual(card.cornerRadius, expected)
@@ -296,8 +301,8 @@ final class ContentSurfaceHostingTests: XCTestCase {
                              webContentView: partner)
         fixture.state.tabs[1] = partnerTab
         fixture.state.updateNormalTabs()
-        fixture.state.splits = [SplitGroup(id: "hosting-split", primaryTabId: 2400,
-                                           secondaryTabId: 2401, layout: .vertical, ratio: 0.5)]
+        fixture.state.splits = [SplitGroup(id: "hosting-split", tabIds: [2400, 2401],
+                                           layout: .vertical, fractions: [0.5, 0.5])]
         waitUntil { partnerView.window != nil }
         XCTAssertTrue(partnerView.window === fixture.window)
         XCTAssertFalse(partnerTab.isActive)
@@ -363,8 +368,8 @@ final class ContentSurfaceHostingTests: XCTestCase {
                               index: 2, webContentView: wrapper)
         fixture.state.tabs.append(replacement)
         fixture.state.updateNormalTabs()
-        fixture.state.splits = [SplitGroup(id: "replacement", primaryTabId: 2400,
-                                           secondaryTabId: 2402, layout: .vertical, ratio: 0.5)]
+        fixture.state.splits = [SplitGroup(id: "replacement", tabIds: [2400, 2402],
+                                           layout: .vertical, fractions: [0.5, 0.5])]
         waitUntil { replacementView.isDescendant(of: controller.hostViewForTesting) }
         XCTAssertTrue(replacementView.isDescendant(of: controller.hostViewForTesting))
         XCTAssertTrue(controller.contentSurfaceTabs.contains { $0 === replacement })
@@ -376,8 +381,8 @@ final class ContentSurfaceHostingTests: XCTestCase {
                               isActive: false, index: 3)
         fixture.state.tabs.append(unavailable)
         fixture.state.updateNormalTabs()
-        fixture.state.splits = [SplitGroup(id: "unavailable", primaryTabId: 2400,
-                                           secondaryTabId: 2403, layout: .vertical, ratio: 0.5)]
+        fixture.state.splits = [SplitGroup(id: "unavailable", tabIds: [2400, 2403],
+                                           layout: .vertical, fractions: [0.5, 0.5])]
         waitUntil { fixture.webView.superview === controller.hostViewForTesting }
         XCTAssertTrue(fixture.webView.superview === controller.hostViewForTesting)
         XCTAssertFalse(controller.contentSurfaceTabs.contains { $0 === replacement })
@@ -393,8 +398,8 @@ final class ContentSurfaceHostingTests: XCTestCase {
                           webContentView: wrapper)
         fixture.state.tabs[1] = partner
         fixture.state.updateNormalTabs()
-        fixture.state.splits = [SplitGroup(id: "hosting-split", primaryTabId: 2400,
-                                           secondaryTabId: 2401, layout: .vertical, ratio: 0.5)]
+        fixture.state.splits = [SplitGroup(id: "hosting-split", tabIds: [2400, 2401],
+                                           layout: .vertical, fractions: [0.5, 0.5])]
         let controller = try XCTUnwrap(
             fixture.container.children.compactMap { $0 as? WebContentViewController }.first)
         waitUntil { partnerView.isDescendant(of: controller.hostViewForTesting) }

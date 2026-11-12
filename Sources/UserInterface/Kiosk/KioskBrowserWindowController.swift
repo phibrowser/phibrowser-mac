@@ -141,175 +141,35 @@ enum KioskWindowPresentationGeometry {
             constrainedTo: visibleFrame
         )
     }
-}
 
-@MainActor
-final class KioskTrafficLightPositioner: NSObject {
-    private static let buttonTypes: [NSWindow.ButtonType] = [
-        .closeButton,
-        .miniaturizeButton,
-        .zoomButton,
-    ]
-
-    private weak var window: NSWindow?
-    private weak var observedTitlebarContainer: NSView?
-    private var observedTrafficLightButtons: [NSButton] = []
-    private var titleObservation: NSKeyValueObservation?
-    private let downwardOffset: CGFloat
-    private var targetTopMargin: CGFloat?
-    private var isApplying = false
-
-    init(window: NSWindow, downwardOffset: CGFloat) {
-        self.window = window
-        self.downwardOffset = downwardOffset
-        super.init()
-    }
-
-    func start() {
-        guard let window else { return }
-        window.layoutIfNeeded()
-        let notifications: [Notification.Name] = [
-            NSWindow.didBecomeKeyNotification,
-            NSWindow.didChangeOcclusionStateNotification,
-            NSWindow.didDeminiaturizeNotification,
-            NSWindow.didExitFullScreenNotification,
-            NSWindow.didResizeNotification,
-        ]
-        for notification in notifications {
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(windowLayoutDidChange),
-                name: notification,
-                object: window
-            )
-        }
-        titleObservation = window.observe(\.title, options: [.new]) {
-            [weak self] _, _ in
-            MainActor.assumeIsolated {
-                self?.apply()
-            }
-        }
-        apply()
-        DispatchQueue.main.async { [weak self] in
-            self?.apply()
-        }
-    }
-
-    func apply() {
-        guard !isApplying,
-              let window,
-              !window.styleMask.contains(.fullScreen) else { return }
-        let buttons = Self.buttonTypes.compactMap {
-            window.standardWindowButton($0)
-        }
-        guard buttons.count == Self.buttonTypes.count,
-              let closeButton = buttons.first,
-              let closeButtonSuperview = closeButton.superview,
-              let titlebarContainer = closeButton.superview?.superview,
-              let containerSuperview = titlebarContainer.superview else {
-            return
-        }
-        observeFrameChanges(
-            of: titlebarContainer,
-            trafficLightButtons: buttons
+    static func frame(
+        size: NSSize,
+        topRight: NSPoint,
+        constrainedTo visibleFrame: NSRect
+    ) -> NSRect {
+        finalFrame(
+            size: size,
+            centeredAt: NSPoint(
+                x: topRight.x - size.width / 2,
+                y: topRight.y - size.height / 2
+            ),
+            constrainedTo: visibleFrame
         )
-        isApplying = true
-        defer { isApplying = false }
-
-        let buttonHeight = closeButton.frame.height
-        if targetTopMargin == nil {
-            let closeFrameInContainer = closeButtonSuperview.convert(
-                closeButton.frame,
-                to: titlebarContainer
-            )
-            let currentTopMargin = titlebarContainer.bounds.maxY
-                - closeFrameInContainer.maxY
-            targetTopMargin = max(0, currentTopMargin + downwardOffset)
-        }
-        guard let targetTopMargin else { return }
-
-        var containerFrame = titlebarContainer.frame
-        containerFrame.size.height = buttonHeight + 2 * targetTopMargin
-        containerFrame.origin.y = containerSuperview.bounds.maxY
-            - containerFrame.height
-        titlebarContainer.setFrameOrigin(containerFrame.origin)
-        titlebarContainer.setFrameSize(containerFrame.size)
-
-        for button in buttons {
-            guard let buttonSuperview = button.superview else { continue }
-            let frameInContainer = buttonSuperview.convert(
-                button.frame,
-                to: titlebarContainer
-            )
-            let targetOriginInContainer = NSPoint(
-                x: frameInContainer.minX,
-                y: titlebarContainer.bounds.minY + targetTopMargin
-            )
-            button.setFrameOrigin(
-                buttonSuperview.convert(
-                    targetOriginInContainer,
-                    from: titlebarContainer
-                )
-            )
-            button.updateTrackingAreas()
-        }
-        titlebarContainer.updateTrackingAreas()
     }
 
-    @objc private func windowLayoutDidChange(_ notification: Notification) {
-        apply()
-    }
+    static let cascadeOffset: CGFloat = 28
 
-    @objc private func nativeTitlebarFrameDidChange(
-        _ notification: Notification
-    ) {
-        apply()
-    }
-
-    private func observeFrameChanges(
-        of titlebarContainer: NSView,
-        trafficLightButtons: [NSButton]
-    ) {
-        let hierarchyChanged = observedTitlebarContainer !== titlebarContainer
-            || observedTrafficLightButtons.count != trafficLightButtons.count
-            || !zip(observedTrafficLightButtons, trafficLightButtons)
-                .allSatisfy { $0 === $1 }
-        guard hierarchyChanged else { return }
-
-        if let observedTitlebarContainer {
-            NotificationCenter.default.removeObserver(
-                self,
-                name: NSView.frameDidChangeNotification,
-                object: observedTitlebarContainer
-            )
+    /// Shifts a new Kiosk right of the previous one; a shift past the right
+    /// edge starts again at the left edge.
+    static func frame(
+        cascadedFrom previousFrame: NSRect,
+        visibleFrame: NSRect
+    ) -> NSRect {
+        var frame = previousFrame.offsetBy(dx: cascadeOffset, dy: 0)
+        if frame.maxX > visibleFrame.maxX {
+            frame.origin.x = visibleFrame.minX
         }
-        for button in observedTrafficLightButtons {
-            NotificationCenter.default.removeObserver(
-                self,
-                name: NSView.frameDidChangeNotification,
-                object: button
-            )
-        }
-        observedTitlebarContainer = titlebarContainer
-        observedTrafficLightButtons = trafficLightButtons
-
-        // AppKit restores these frames during live resize and navigation.
-        // Reapply synchronously so its default position is never presented.
-        let observedViews = [titlebarContainer]
-            + trafficLightButtons.map { $0 as NSView }
-        for view in observedViews {
-            view.postsFrameChangedNotifications = true
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(nativeTitlebarFrameDidChange),
-                name: NSView.frameDidChangeNotification,
-                object: view
-            )
-        }
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
+        return frame
     }
 }
 
@@ -318,6 +178,7 @@ final class KioskBrowserWindowController: SpaceSessionController {
     override var centeredOmniBoxHorizontalInset: CGFloat { 20 }
 
     private static let toolbarIdentifier = NSToolbar.Identifier("KioskBrowserToolbar")
+    static let defaultContentSize = NSSize(width: 560, height: 650)
     private static let profileReplacementTimeout: TimeInterval = 1.5
     private static let profileReplacementClosePollInterval: TimeInterval = 0.5
     private static let profileReplacementHandoffDelay: TimeInterval = 0.05
@@ -335,7 +196,7 @@ final class KioskBrowserWindowController: SpaceSessionController {
     private var profileReplacementSourceCloseObserver: NSObjectProtocol?
     private var profileReplacementSourceFullscreenObserver: NSObjectProtocol?
     private var profileReplacementTargetCloseObserver: NSObjectProtocol?
-    private var trafficLightPositioner: KioskTrafficLightPositioner?
+    private var trafficLightPositioner: TrafficLightPositioner?
     private var presentationTargetFrame: NSRect?
     private var presentationOriginalMinSize: NSSize?
     private var presentationOriginalIgnoresMouseEvents: Bool?
@@ -538,6 +399,12 @@ final class KioskBrowserWindowController: SpaceSessionController {
             replacement.abortProfileReplacement()
             return
         }
+    }
+
+    /// The hidden Browser behind the standalone launch omnibox is never a
+    /// Kiosk the user opened.
+    func prepareAsLaunchOmniBoxHost() {
+        shouldCaptureKioskOpened = false
     }
 
     @MainActor
@@ -887,12 +754,9 @@ final class KioskBrowserWindowController: SpaceSessionController {
         toolbar.showsBaselineSeparator = false
         window.toolbar = toolbar
         window.toolbarStyle = .unifiedCompact
-        window.minSize = NSSize(width: 640, height: 420)
-        let restoredFrame = KioskWindowFramePersistence
-            .restoreFrame(for: window)
-        if !restoredFrame
-            && (window.frame.width < 640 || window.frame.height < 480) {
-            window.setContentSize(NSSize(width: 900, height: 640))
+        window.minSize = NSSize(width: 560, height: 420)
+        if !KioskWindowFramePersistence.restoreFrame(for: window) {
+            window.setContentSize(Self.defaultContentSize)
         }
 
         window.backgroundColor = NSColor.windowBackgroundColor
@@ -904,9 +768,9 @@ final class KioskBrowserWindowController: SpaceSessionController {
             zoomButton.target = self
             zoomButton.action = #selector(openFocusedTabInDefaultSpace(_:))
         }
-        let positioner = KioskTrafficLightPositioner(
+        let positioner = TrafficLightPositioner(
             window: window,
-            downwardOffset: KioskBrowserToolbar.titlebarVerticalShift
+            centerFromWindowTop: KioskBrowserToolbar.trafficLightCenterFromWindowTop
         )
         trafficLightPositioner = positioner
         positioner.start()
@@ -922,14 +786,23 @@ final class KioskBrowserWindowController: SpaceSessionController {
     }
 
     /// Opens without a cursor anchor (external links, menu, shortcuts, URL
-    /// rules) land on the screen the user acted on instead of the saved one.
+    /// rules) land on the screen the user acted on instead of the saved one,
+    /// shifted right of a Kiosk already there so they don't stack.
     private func placeOnPresentationScreen(_ window: NSWindow) {
         if let screen = Self.presentationScreen() {
-            let targetFrame = KioskWindowPresentationGeometry.frame(
-                window.frame,
-                placedOnScreenFrame: screen.frame,
-                visibleFrame: screen.visibleFrame
-            )
+            let targetFrame: NSRect
+            if let previousFrame = previousKioskFrame(on: screen) {
+                targetFrame = KioskWindowPresentationGeometry.frame(
+                    cascadedFrom: previousFrame,
+                    visibleFrame: screen.visibleFrame
+                )
+            } else {
+                targetFrame = KioskWindowPresentationGeometry.frame(
+                    window.frame,
+                    placedOnScreenFrame: screen.frame,
+                    visibleFrame: screen.visibleFrame
+                )
+            }
             if targetFrame != window.frame {
                 AppLogInfo("[Kiosk] Move window from \(window.frame) to \(targetFrame) on screen \(screen.localizedName)")
                 window.setFrame(targetFrame, display: false)
@@ -938,10 +811,40 @@ final class KioskBrowserWindowController: SpaceSessionController {
         KioskWindowFramePersistence.saveFrameAndEnableAutosave(for: window)
     }
 
+    /// Puts the window's top-right corner at `topRight`, kept inside that
+    /// screen's visible frame.
+    func alignTopRight(to topRight: NSPoint) {
+        guard let window,
+              let screen = NSScreen.screens.first(where: { $0.frame.contains(topRight) })
+                ?? window.screen else { return }
+        let targetFrame = KioskWindowPresentationGeometry.frame(
+            size: window.frame.size,
+            topRight: topRight,
+            constrainedTo: screen.visibleFrame
+        )
+        AppLogInfo("[Kiosk] Align window to \(targetFrame) on screen \(screen.localizedName)")
+        window.setFrame(targetFrame, display: false)
+        window.saveFrame(usingName: KioskWindowFramePersistence.autosaveName)
+    }
+
+    /// The frontmost on-screen Kiosk is the most recently opened one.
+    private func previousKioskFrame(on screen: NSScreen) -> NSRect? {
+        NSApp.orderedWindows.first { candidate in
+            candidate !== window
+                && candidate.windowController is KioskBrowserWindowController
+                && candidate.isVisible
+                && !candidate.isMiniaturized
+                && !candidate.styleMask.contains(.fullScreen)
+                && screen.frame.contains(
+                    NSPoint(x: candidate.frame.midX, y: candidate.frame.midY)
+                )
+        }?.frame
+    }
+
     /// A keyboard shortcut opens on the focused window's screen. Anything
     /// else follows the cursor: an external link activates Phi first, so the
     /// key window is just whichever Phi window was last focused.
-    private static func presentationScreen() -> NSScreen? {
+    static func presentationScreen() -> NSScreen? {
         if NSApp.currentEvent?.type == .keyDown,
            let keyWindowScreen = NSApp.keyWindow?.screen {
             return keyWindowScreen

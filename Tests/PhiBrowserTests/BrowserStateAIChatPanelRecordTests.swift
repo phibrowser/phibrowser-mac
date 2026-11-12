@@ -224,8 +224,8 @@ final class BrowserStateAIChatPanelRecordTests: XCTestCase {
     // MARK: - Split: two panes share one panel
 
     private func splitPanes(_ state: BrowserState, _ primary: Int, _ secondary: Int) {
-        state.splits = [SplitGroup(id: "split-\(primary)-\(secondary)", primaryTabId: primary,
-                                   secondaryTabId: secondary, layout: .vertical, ratio: 0.5)]
+        state.splits = [SplitGroup(id: "split-\(primary)-\(secondary)", tabIds: [primary, secondary],
+                                   layout: .vertical, fractions: [0.5, 0.5])]
     }
 
     /// Chromium files the panel tab `createAIChatTab` asked for under `identifier`.
@@ -345,8 +345,8 @@ final class BrowserStateAIChatPanelRecordTests: XCTestCase {
     /// Chromium reports the split formed, unlike `splitPanes`:
     /// `handleSplitCreated` reconciles the panels and syncs collapse.
     private func formSplit(_ state: BrowserState, _ primary: Int, _ secondary: Int) {
-        state.handleSplitCreated(splitId: "split-\(primary)-\(secondary)", primaryTabId: primary,
-                                 secondaryTabId: secondary, layout: .vertical, ratio: 0.5)
+        state.handleSplitCreated(splitId: "split-\(primary)-\(secondary)", tabIds: [primary, secondary],
+                                 layout: .vertical, fractions: [0.5, 0.5])
     }
 
     func testFormingASplitClearsTheRecordOfThePaneWhosePanelIsClosed() throws {

@@ -39,13 +39,42 @@ final class SplitTabPreviewTests: XCTestCase {
         XCTAssertEqual(rightTarget.logicalID, leftTarget.logicalID)
         XCTAssertEqual(content.id, leftTarget.logicalID)
         XCTAssertEqual(content.layout, .vertical)
-        XCTAssertEqual(content.leftPane.title, "Left page")
-        XCTAssertEqual(content.rightPane.title, "Right page")
-        XCTAssertEqual(content.leftPane.url, "https://left.example/path")
-        XCTAssertEqual(content.rightPane.url, "https://right.example/path")
-        XCTAssertNotNil(content.leftPane.image)
-        XCTAssertNotNil(content.rightPane.image)
+        XCTAssertEqual(content.panes[0].title, "Left page")
+        XCTAssertEqual(content.panes[1].title, "Right page")
+        XCTAssertEqual(content.panes[0].url, "https://left.example/path")
+        XCTAssertEqual(content.panes[1].url, "https://right.example/path")
+        XCTAssertNotNil(content.panes[0].image)
+        XCTAssertNotNil(content.panes[1].image)
         XCTAssertEqual(requestedIDs, [10, 11])
+    }
+
+    /// A wider split previews every pane in slot order with the live
+    /// group's shares.
+    func testThreePaneLiveSplitResolvesEveryPaneInSlotOrder() throws {
+        let (state, _, right) = try makeLiveSplit(layout: .vertical)
+        let third = makeTab(guid: 12, title: "Third page", url: "https://third.example/path")
+        state.tabs.append(third)
+        state.normalTabs.append(third)
+        state.splits = [
+            SplitGroup(id: "split-10-11-12", tabIds: [10, 11, 12],
+                       layout: .vertical, fractions: [0.5, 0.25, 0.25]),
+        ]
+        var requestedIDs: [Int64] = []
+        let resolver = SplitTabPreviewContentResolver { tabID in
+            requestedIDs.append(tabID)
+            return self.makeImageData()
+        }
+        let target = try XCTUnwrap(
+            SplitTabPreviewTarget.make(representing: right, in: state)
+        )
+
+        let content = try XCTUnwrap(resolver.resolve(target, in: state))
+
+        XCTAssertEqual(content.id, .live("split-10-11-12"))
+        XCTAssertEqual(content.panes.map(\.title), ["Left page", "Right page", "Third page"])
+        XCTAssertEqual(content.fractions.count, 3)
+        XCTAssertEqual(content.fractions[0], 0.5, accuracy: 1e-9)
+        XCTAssertEqual(requestedIDs, [10, 11, 12])
     }
 
     func testHorizontalLayoutIsPreservedForStackedRendering() throws {
@@ -154,10 +183,10 @@ final class SplitTabPreviewTests: XCTestCase {
         let content = try XCTUnwrap(resolver.resolve(target, in: state))
 
         XCTAssertEqual(content.mode, .standard)
-        XCTAssertNotNil(content.leftPane.image)
-        XCTAssertEqual(content.leftPane.imageSource, .thumbnail(tabID: 10))
-        XCTAssertNotNil(content.rightPane.image)
-        XCTAssertEqual(content.rightPane.imageSource, .thumbnail(tabID: 11))
+        XCTAssertNotNil(content.panes[0].image)
+        XCTAssertEqual(content.panes[0].imageSource, .thumbnail(tabID: 10))
+        XCTAssertNotNil(content.panes[1].image)
+        XCTAssertEqual(content.panes[1].imageSource, .thumbnail(tabID: 11))
         XCTAssertEqual(requestedIDs, [10, 11])
     }
 
@@ -176,12 +205,12 @@ final class SplitTabPreviewTests: XCTestCase {
         let content = try XCTUnwrap(resolver.resolve(target, in: state))
 
         XCTAssertEqual(content.mode, .standard)
-        XCTAssertEqual(content.leftPane.url, "phi://bookmarks")
-        XCTAssertNil(content.leftPane.image)
-        XCTAssertEqual(content.leftPane.imageSource, .notRequested)
-        XCTAssertEqual(content.rightPane.url, "phi://bookmarks")
-        XCTAssertNil(content.rightPane.image)
-        XCTAssertEqual(content.rightPane.imageSource, .notRequested)
+        XCTAssertEqual(content.panes[0].url, "phi://bookmarks")
+        XCTAssertNil(content.panes[0].image)
+        XCTAssertEqual(content.panes[0].imageSource, .notRequested)
+        XCTAssertEqual(content.panes[1].url, "phi://bookmarks")
+        XCTAssertNil(content.panes[1].image)
+        XCTAssertEqual(content.panes[1].imageSource, .notRequested)
     }
 
     func testActiveSplitUsesCompactTextOnlyPreviewFromEitherPane() throws {
@@ -206,14 +235,14 @@ final class SplitTabPreviewTests: XCTestCase {
 
         XCTAssertEqual(compactContent.mode, .compact)
         XCTAssertEqual(compactContentFromRightPane.mode, .compact)
-        XCTAssertEqual(compactContent.leftPane.title, "Left page")
-        XCTAssertEqual(compactContent.leftPane.url, "https://left.example/path")
-        XCTAssertEqual(compactContent.rightPane.title, "Right page")
-        XCTAssertEqual(compactContent.rightPane.url, "https://right.example/path")
-        XCTAssertNil(compactContent.leftPane.image)
-        XCTAssertNil(compactContent.rightPane.image)
-        XCTAssertEqual(compactContent.leftPane.imageSource, .notRequested)
-        XCTAssertEqual(compactContent.rightPane.imageSource, .notRequested)
+        XCTAssertEqual(compactContent.panes[0].title, "Left page")
+        XCTAssertEqual(compactContent.panes[0].url, "https://left.example/path")
+        XCTAssertEqual(compactContent.panes[1].title, "Right page")
+        XCTAssertEqual(compactContent.panes[1].url, "https://right.example/path")
+        XCTAssertNil(compactContent.panes[0].image)
+        XCTAssertNil(compactContent.panes[1].image)
+        XCTAssertEqual(compactContent.panes[0].imageSource, .notRequested)
+        XCTAssertEqual(compactContent.panes[1].imageSource, .notRequested)
         XCTAssertTrue(requestedIDs.isEmpty)
 
         state.focusingTab = nil
@@ -238,8 +267,8 @@ final class SplitTabPreviewTests: XCTestCase {
         right.url = "phi://newtab"
         let hiddenContent = try XCTUnwrap(resolver.resolve(target, in: state))
 
-        XCTAssertTrue(hiddenContent.leftPane.url.isEmpty)
-        XCTAssertTrue(hiddenContent.rightPane.url.isEmpty)
+        XCTAssertTrue(hiddenContent.panes[0].url.isEmpty)
+        XCTAssertTrue(hiddenContent.panes[1].url.isEmpty)
         XCTAssertLessThan(
             fittingSize(for: hiddenContent).height,
             fittingSize(for: visibleContent).height
@@ -264,8 +293,8 @@ final class SplitTabPreviewTests: XCTestCase {
             resolver.resolve(target, in: state, reusing: initial)
         )
 
-        XCTAssertEqual(updated.leftPane.title, "Updated left")
-        XCTAssertEqual(updated.rightPane.title, "Updated right")
+        XCTAssertEqual(updated.panes[0].title, "Updated left")
+        XCTAssertEqual(updated.panes[1].title, "Updated right")
         XCTAssertEqual(requestedIDs, [10, 11])
     }
 
@@ -356,10 +385,9 @@ final class SplitTabPreviewTests: XCTestCase {
         state.splits = [
             SplitGroup(
                 id: "opened-split-bookmark",
-                primaryTabId: primary.guid,
-                secondaryTabId: secondary.guid,
+                tabIds: [primary.guid, secondary.guid],
                 layout: .horizontal,
-                ratio: 0.5
+                fractions: [0.5, 0.5]
             ),
         ]
         state.splitBookmarkBindings[bookmark.guid] = "opened-split-bookmark"
@@ -374,10 +402,10 @@ final class SplitTabPreviewTests: XCTestCase {
 
         XCTAssertEqual(content.layout, .horizontal)
         XCTAssertEqual(content.mode, .standard)
-        XCTAssertEqual(content.leftPane.title, "Live primary")
-        XCTAssertEqual(content.leftPane.url, "https://live-primary.example")
-        XCTAssertEqual(content.rightPane.title, "Live secondary")
-        XCTAssertEqual(content.rightPane.url, "https://live-secondary.example")
+        XCTAssertEqual(content.panes[0].title, "Live primary")
+        XCTAssertEqual(content.panes[0].url, "https://live-primary.example")
+        XCTAssertEqual(content.panes[1].title, "Live secondary")
+        XCTAssertEqual(content.panes[1].url, "https://live-secondary.example")
         XCTAssertEqual(requestedIDs, [20, 21])
     }
 
@@ -403,10 +431,9 @@ final class SplitTabPreviewTests: XCTestCase {
         state.splits = [
             SplitGroup(
                 id: "opened-split-bookmark",
-                primaryTabId: primary.guid,
-                secondaryTabId: secondary.guid,
+                tabIds: [primary.guid, secondary.guid],
                 layout: .vertical,
-                ratio: 0.5
+                fractions: [0.5, 0.5]
             ),
         ]
         state.splitBookmarkBindings[bookmark.guid] = "opened-split-bookmark"
@@ -420,8 +447,8 @@ final class SplitTabPreviewTests: XCTestCase {
         let content = try XCTUnwrap(resolver.resolve(target, in: state))
 
         XCTAssertEqual(content.mode, .compact)
-        XCTAssertEqual(content.leftPane.imageSource, .notRequested)
-        XCTAssertEqual(content.rightPane.imageSource, .notRequested)
+        XCTAssertEqual(content.panes[0].imageSource, .notRequested)
+        XCTAssertEqual(content.panes[1].imageSource, .notRequested)
     }
 
     func testSplitPreviewMatchesRegularPreviewWidth() throws {
@@ -526,10 +553,9 @@ final class SplitTabPreviewTests: XCTestCase {
         state.splits = [
             SplitGroup(
                 id: "split-10-11",
-                primaryTabId: 10,
-                secondaryTabId: 11,
+                tabIds: [10, 11],
                 layout: layout,
-                ratio: 0.5
+                fractions: [0.5, 0.5]
             ),
         ]
         return (state, left, right)

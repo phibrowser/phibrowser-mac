@@ -158,7 +158,7 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
             sourceSpaceId: "space-a",
             targetProfileId: "Default",
             targetSpaceId: "space-b",
-            partnerGuidHint: "right",
+            memberGuidsHint: ["left", "right"],
             destinationIndex: 0
         )
         drainMainQueue()
@@ -229,14 +229,14 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
                     tabId: 10,
                     title: "Left",
                     url: "https://left.example",
-                    partnerTabId: 11,
+                    paneTabIds: [10, 11],
                     layout: SplitLayout.horizontal.rawValue
                 ),
                 PinnedTabCreationInput(
                     tabId: 11,
                     title: "Right",
                     url: "https://right.example",
-                    partnerTabId: 10,
+                    paneTabIds: [10, 11],
                     layout: SplitLayout.horizontal.rawValue
                 ),
             ],

@@ -43,18 +43,19 @@ final class OmniBoxThemeTests: XCTestCase {
         context.setTheme(red)
         drainThemeUpdates()
         defer {
-            controller.omniBoxHostPanel?.orderOut(nil)
             window.close()
             withExtendedLifetime(controller) {}
         }
 
-        let panel = try XCTUnwrap(controller.attachAndShowOmniBoxHostPanel())
+        // The omnibox is hosted in the browser window's own view tree.
+        window.makeKeyAndOrderFront(nil)
+        let host = try XCTUnwrap(window.contentView)
         let omnibox = OmniBoxViewController(viewModel: .init(windowState: state), state: state)
-        panel.contentView?.addSubview(omnibox.view)
+        host.addSubview(omnibox.view)
         let background = try XCTUnwrap(omnibox.view.subviews.first)
-        XCTAssertTrue(panel.themeStateProvider === context)
+        XCTAssertTrue(window.themeStateProvider === context)
         XCTAssertTrue(background.themeStateProvider === context)
-        XCTAssertEqual(panel.effectiveAppearance.phiAppearance, .dark)
+        XCTAssertEqual(omnibox.view.effectiveAppearance.phiAppearance, .dark)
         assertBackground(background, NSColor(hex: 0x383838))
 
         // Changing the active Space's theme must preserve the neutral background.
@@ -62,24 +63,21 @@ final class OmniBoxThemeTests: XCTestCase {
         drainThemeUpdates()
         assertBackground(background, NSColor(hex: 0x383838))
 
-        // Reuse the same panel and views, as the production dismiss/show path does.
+        // Reuse the same views, as the production dismiss/show path does.
         omnibox.view.removeFromSuperview()
-        window.removeChildWindow(panel)
-        panel.orderOut(nil)
         context.setTheme(red)
         drainThemeUpdates()
-        XCTAssertTrue(controller.attachAndShowOmniBoxHostPanel() === panel)
-        panel.contentView?.addSubview(omnibox.view)
-        XCTAssertEqual(panel.effectiveAppearance.phiAppearance, .dark)
+        host.addSubview(omnibox.view)
+        XCTAssertEqual(omnibox.view.effectiveAppearance.phiAppearance, .dark)
         assertBackground(background, NSColor(hex: 0x383838))
 
         context.setUserAppearanceChoice(.light)
         drainThemeUpdates()
-        XCTAssertEqual(panel.effectiveAppearance.phiAppearance, .light)
+        XCTAssertEqual(omnibox.view.effectiveAppearance.phiAppearance, .light)
         assertBackground(background, .white)
         context.setUserAppearanceChoice(.dark)
         drainThemeUpdates()
-        XCTAssertEqual(panel.effectiveAppearance.phiAppearance, .dark)
+        XCTAssertEqual(omnibox.view.effectiveAppearance.phiAppearance, .dark)
         assertBackground(background, NSColor(hex: 0x383838))
     }
 
@@ -102,14 +100,15 @@ final class OmniBoxThemeTests: XCTestCase {
                                                      profileId: state.profileId, account: store.account,
                                                      browserState: state)
         defer {
-            controller.omniBoxHostPanel?.orderOut(nil)
             window.close()
             withExtendedLifetime(controller) {}
         }
 
-        let panel = try XCTUnwrap(controller.attachAndShowOmniBoxHostPanel())
+        // The omnibox is hosted in the browser window's own view tree.
+        window.makeKeyAndOrderFront(nil)
+        let host = try XCTUnwrap(window.contentView)
         let omnibox = OmniBoxViewController(viewModel: .init(windowState: state), state: state)
-        panel.contentView?.addSubview(omnibox.view)
+        host.addSubview(omnibox.view)
         let background = try XCTUnwrap(omnibox.view.subviews.first)
         let input = try XCTUnwrap(background.subviews.flatMap(\.subviews)
             .compactMap { $0 as? OmniBoxTextField }.first)
@@ -119,7 +118,7 @@ final class OmniBoxThemeTests: XCTestCase {
 
         XCTAssertEqual(NSApp.effectiveAppearance.phiAppearance, .light)
         XCTAssertEqual(window.effectiveAppearance.phiAppearance, .dark)
-        XCTAssertEqual(panel.effectiveAppearance.phiAppearance, .dark)
+        XCTAssertEqual(omnibox.view.effectiveAppearance.phiAppearance, .dark)
         XCTAssertEqual(input.textFiled.effectiveAppearance.phiAppearance, .dark)
         XCTAssertEqual(editor.effectiveAppearance.phiAppearance, .dark)
         var textBrightness: CGFloat?

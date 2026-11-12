@@ -32,18 +32,19 @@ final class TabBackgroundLayer: CAShapeLayer {
         }
     }
 
-    /// Position within a Chromium split pair, if any. Drives merged-bar shape.
-    var splitPairPosition: SplitPairPosition? {
+    /// Position within a Chromium split, if any. Drives the merged-bar
+    /// shape: only the `.first` and `.last` cells round their outer ends.
+    var splitPanePosition: SplitPanePosition? {
         didSet {
-            if oldValue != splitPairPosition {
+            if oldValue != splitPanePosition {
                 updatePath(in: bounds)
             }
         }
     }
 
     /// True when the split this tab belongs to contains the focusing tab.
-    /// Both halves fill with the active color in that case, so the merged bar
-    /// reads as a single selected unit.
+    /// Every pane fills with the active color in that case, so the merged
+    /// bar reads as a single selected unit.
     var isSplitGroupActive: Bool = false {
         didSet {
             if oldValue != isSplitGroupActive {
@@ -74,7 +75,7 @@ final class TabBackgroundLayer: CAShapeLayer {
         if let other = layer as? TabBackgroundLayer {
             self.tabState = other.tabState
             self.isPinned = other.isPinned
-            self.splitPairPosition = other.splitPairPosition
+            self.splitPanePosition = other.splitPanePosition
             self.isSplitGroupActive = other.isSplitGroupActive
             self.activeFillColor = other.activeFillColor
         }
@@ -134,19 +135,19 @@ final class TabBackgroundLayer: CAShapeLayer {
         // unified path, so this layer only paints the fill.
         // Without a page-color override, active horizontal tabs share the
         // header's default extension surface, including while a side panel is open.
-        // Split-paired tabs: the focused half fills with the active color;
-        // its partner uses the same color muted so the bar still reads as a
-        // single selected unit while the focused half visually stands out.
-        if splitPairPosition != nil {
+        // Split panes: the focused pane fills with the active color; the
+        // other panes use the same color muted so the bar still reads as a
+        // single selected unit while the focused pane visually stands out.
+        if splitPanePosition != nil {
             if tabState == .active {
                 setFill((activeFillColor
                     ?? ThemedColor.extensionSurfaceBackground.resolve(in: sourceView)).cgColor)
                 strokeColor = NSColor.clear.cgColor
                 lineWidth = 0
             } else if isSplitGroupActive {
-                // Unfocused half of a focused split: keep the active fill
+                // Unfocused pane of a focused split: keep the active fill
                 // mostly opaque so it reads as part of the same selected
-                // group as the focused half, just slightly muted.
+                // group as the focused pane, just slightly muted.
                 setFill(ThemedColor.extensionSurfaceBackground
                     .resolve(in: sourceView)
                     .withAlphaComponent(0.7)
@@ -154,10 +155,11 @@ final class TabBackgroundLayer: CAShapeLayer {
                 strokeColor = NSColor.clear.cgColor
                 lineWidth = 0
             } else {
-                // Inactive split pair: outline each half so the merged bar
-                // reads as a single grouped unit even when the split isn't
-                // focused. The two halves' inner edges overlap at the seam
-                // and double as a thin separator between the two tabs.
+                // Inactive split: outline each pane so the merged bar reads
+                // as a single grouped unit even when the split isn't
+                // focused. Neighbouring panes' inner edges overlap at each
+                // seam and double as a thin divider between the panes — a
+                // `.middle` pane gets one on both sides.
                 setFill(ThemedColor.hover.resolve(in: sourceView).cgColor)
                 strokeColor = ThemedColor.border.resolve(in: sourceView).cgColor
                 lineWidth = 1
@@ -189,11 +191,12 @@ final class TabBackgroundLayer: CAShapeLayer {
     private func createPath(for bounds: CGRect, state: State, isPinned: Bool) -> CGPath {
         let cornerRadius = TabStripMetrics.Tab.cornerRadius
 
-        // Split-paired tabs render as half of a merged rounded bar: the
-        // corners that touch the partner are flat. Skip the Chromium-style
-        // inverse-curve outline entirely — a single horizontal bar wrapping
-        // both tabs reads more clearly than two separate pendant shapes.
-        if let position = splitPairPosition {
+        // Split panes render as one segment of a merged rounded bar: the
+        // corners that touch a neighbouring pane are flat. Skip the
+        // Chromium-style inverse-curve outline entirely — a single
+        // horizontal bar wrapping every pane reads more clearly than
+        // separate pendant shapes.
+        if let position = splitPanePosition {
             return mergedSplitPath(in: bounds,
                                    cornerRadius: cornerRadius,
                                    position: position)
@@ -217,15 +220,17 @@ final class TabBackgroundLayer: CAShapeLayer {
         return path
     }
 
-    /// Half-bar path for a split-paired tab: round the corners on the outer
-    /// edge, flatten the corners that abut the partner. The two halves
-    /// rendered edge-to-edge form a single continuous rounded bar.
+    /// Segment path for a split pane: round the corners on the bar's outer
+    /// ends (`.first` on the left, `.last` on the right), flatten every
+    /// corner that abuts a neighbouring pane — a `.middle` pane is a plain
+    /// rectangle. The segments rendered edge-to-edge form a single
+    /// continuous rounded bar.
     private func mergedSplitPath(in bounds: CGRect,
                                  cornerRadius: CGFloat,
-                                 position: SplitPairPosition) -> CGPath {
+                                 position: SplitPanePosition) -> CGPath {
         let path = CGMutablePath()
         let leftRadius: CGFloat = position == .first ? cornerRadius : 0
-        let rightRadius: CGFloat = position == .second ? cornerRadius : 0
+        let rightRadius: CGFloat = position == .last ? cornerRadius : 0
         let minX = bounds.minX
         let maxX = bounds.maxX
         let minY = bounds.minY

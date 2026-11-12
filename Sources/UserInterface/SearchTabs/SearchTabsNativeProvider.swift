@@ -34,7 +34,7 @@ struct SearchTabsNativeProvider {
         let bookmarks: [Bookmark]
         let focusingTab: Tab?
         let splits: [SplitGroup]
-        let pinnedSplitPair: (Tab) -> (String, String)?
+        let pinnedSplitMembers: (Tab) -> [String]?
     }
 
     private let input: Input
@@ -48,7 +48,7 @@ struct SearchTabsNativeProvider {
             bookmarks: state.bookmarkManager.getAllBookmarks(),
             focusingTab: state.focusingTab,
             splits: state.splits,
-            pinnedSplitPair: { tab in state.pinnedSplitDBPair(forPinnedTab: tab) }
+            pinnedSplitMembers: { tab in state.pinnedSplitDBGuids(forPinnedTab: tab) }
         )
     }
 
@@ -60,7 +60,7 @@ struct SearchTabsNativeProvider {
         bookmarks: [Bookmark] = [],
         focusingTab: Tab? = nil,
         splits: [SplitGroup] = [],
-        pinnedSplitPair: @escaping (Tab) -> (String, String)? = { _ in nil }
+        pinnedSplitMembers: @escaping (Tab) -> [String]? = { _ in nil }
     ) {
         self.input = Input(
             profileId: profileId,
@@ -70,7 +70,7 @@ struct SearchTabsNativeProvider {
             bookmarks: bookmarks,
             focusingTab: focusingTab,
             splits: splits,
-            pinnedSplitPair: pinnedSplitPair
+            pinnedSplitMembers: pinnedSplitMembers
         )
     }
 
@@ -96,11 +96,12 @@ struct SearchTabsNativeProvider {
                 continue
             }
 
-            if let (leftGuid, rightGuid) = input.pinnedSplitPair(tab),
-               let left = pinnedTab(localGuid: leftGuid),
-               let right = pinnedTab(localGuid: rightGuid) {
-                consumedGuids.insert(leftGuid)
-                consumedGuids.insert(rightGuid)
+            // A search entry shows two panes; a wider split's further panes
+            // are reached through it.
+            if let members = input.pinnedSplitMembers(tab), members.count >= 2,
+               let left = pinnedTab(localGuid: members[0]),
+               let right = pinnedTab(localGuid: members[1]) {
+                consumedGuids.formUnion(members)
                 entries.append(buildPinnedSplitEntry(left: left, right: right, providerOrder: entries.count))
             } else {
                 consumedGuids.insert(guid)

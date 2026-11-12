@@ -494,6 +494,31 @@ final class KioskBrowserStateTests: XCTestCase {
         )
     }
 
+    func testKioskCascadesRightOfPreviousKiosk() {
+        let visibleFrame = NSRect(x: 1_440, y: 0, width: 1_920, height: 1_055)
+        let offset = KioskWindowPresentationGeometry.cascadeOffset
+
+        let previousFrame = NSRect(x: 1_600, y: 100, width: 900, height: 640)
+        XCTAssertEqual(
+            KioskWindowPresentationGeometry.frame(
+                cascadedFrom: previousFrame,
+                visibleFrame: visibleFrame
+            ),
+            NSRect(x: 1_600 + offset, y: 100, width: 900, height: 640)
+        )
+
+        let rightEdgeFrame = NSRect(
+            x: visibleFrame.maxX - 900, y: 100, width: 900, height: 640
+        )
+        XCTAssertEqual(
+            KioskWindowPresentationGeometry.frame(
+                cascadedFrom: rightEdgeFrame,
+                visibleFrame: visibleFrame
+            ),
+            NSRect(x: 1_440, y: 100, width: 900, height: 640)
+        )
+    }
+
     func testKioskCursorPresentationStartsAtCursor() {
         let anchor = NSPoint(x: -300, y: 740)
         let initialFrame = KioskWindowPresentationGeometry.initialFrame(
@@ -531,6 +556,33 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertEqual(
             zoomButton.action,
             NSSelectorFromString("openFocusedTabInDefaultSpace:")
+        )
+    }
+
+    func testKioskWindowWithoutSavedFrameUsesDefaultSize() throws {
+        let autosaveName = KioskWindowFramePersistence.autosaveName
+        NSWindow.removeFrame(usingName: autosaveName)
+        defer { NSWindow.removeFrame(usingName: autosaveName) }
+
+        let state = try makeState()
+        let window = makeWindow(
+            frame: NSRect(x: 0, y: 0, width: 900, height: 640)
+        )
+        let controller = KioskBrowserWindowController(
+            window: window,
+            windowId: state.windowId,
+            browserType: .kiosk,
+            profileId: state.profileId,
+            account: state.localStore.account
+        )
+        defer {
+            window.close()
+            withExtendedLifetime(controller) {}
+        }
+
+        XCTAssertEqual(
+            window.contentRect(forFrameRect: window.frame).size,
+            KioskBrowserWindowController.defaultContentSize
         )
     }
 
@@ -697,9 +749,9 @@ final class KioskBrowserStateTests: XCTestCase {
         )
     }
 
-    func testToolbarAndNativeTrafficLightsMoveDownTogether() throws {
+    func testToolbarControlsShareTrafficLightCenterLine() throws {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
             styleMask: [
                 .titled,
                 .closable,
@@ -725,87 +777,52 @@ final class KioskBrowserStateTests: XCTestCase {
         ].map { buttonType in
             try XCTUnwrap(window.standardWindowButton(buttonType))
         }
-        let originalTrafficLightCenterYs = try trafficLightButtons.map { button in
-            let titlebarView = try XCTUnwrap(button.superview)
-            return titlebarView.convert(
-                NSPoint(x: button.frame.midX, y: button.frame.midY),
-                to: nil
-            ).y
-        }
         let originalButtonFrames = trafficLightButtons.map(\.frame)
-        let originalButtonSuperviews = try trafficLightButtons.map {
-            try XCTUnwrap($0.superview)
-        }
         let titlebarContainer = try XCTUnwrap(
             trafficLightButtons[0].superview?.superview
         )
         let originalTitlebarContainerFrame = titlebarContainer.frame
-        let closeFrameInContainer = originalButtonSuperviews[0].convert(
-            trafficLightButtons[0].frame,
-            to: titlebarContainer
-        )
-        let originalTopMargin = titlebarContainer.bounds.maxY
-            - closeFrameInContainer.maxY
 
-        let positioner = KioskTrafficLightPositioner(
+        let positioner = TrafficLightPositioner(
             window: window,
-            downwardOffset: KioskBrowserToolbar.titlebarVerticalShift
+            centerFromWindowTop: KioskBrowserToolbar.trafficLightCenterFromWindowTop
         )
         positioner.start()
 
-        func assertTrafficLightsAreShifted() throws {
-            for (button, originalCenterY) in zip(
-                trafficLightButtons,
-                originalTrafficLightCenterYs
-            ) {
+        func assertTrafficLightsAreOnToolbarCenterLine() throws {
+            for button in trafficLightButtons {
                 let titlebarView = try XCTUnwrap(button.superview)
-                let shiftedCenterY = titlebarView.convert(
+                let centerY = titlebarView.convert(
                     NSPoint(x: button.frame.midX, y: button.frame.midY),
                     to: nil
                 ).y
                 XCTAssertEqual(
-                    shiftedCenterY,
-                    originalCenterY - 6,
+                    contentView.bounds.maxY - centerY,
+                    KioskBrowserToolbar.preferredHeight / 2,
                     accuracy: 0.5
                 )
             }
+            XCTAssertEqual(
+                titlebarContainer.frame.height,
+                KioskBrowserToolbar.preferredHeight,
+                accuracy: 0.5
+            )
         }
 
-        try assertTrafficLightsAreShifted()
-        XCTAssertEqual(
-            titlebarContainer.frame.height,
-            trafficLightButtons[0].frame.height
-                + 2 * (originalTopMargin + 6),
-            accuracy: 0.5
-        )
+        try assertTrafficLightsAreOnToolbarCenterLine()
         XCTAssertEqual(
             titlebarContainer.frame.maxY,
             originalTitlebarContainerFrame.maxY,
             accuracy: 0.5
         )
-        for (button, originalSuperview) in zip(
-            trafficLightButtons,
-            originalButtonSuperviews
-        ) {
-            XCTAssertTrue(button.superview === originalSuperview)
-        }
 
         for (button, frame) in zip(trafficLightButtons, originalButtonFrames) {
             button.frame = frame
         }
-        try assertTrafficLightsAreShifted()
+        try assertTrafficLightsAreOnToolbarCenterLine()
 
         titlebarContainer.frame = originalTitlebarContainerFrame
-        try assertTrafficLightsAreShifted()
-
-        for button in trafficLightButtons {
-            button.postsFrameChangedNotifications = false
-        }
-        for (button, frame) in zip(trafficLightButtons, originalButtonFrames) {
-            button.frame = frame
-        }
-        window.title = "example.com"
-        try assertTrafficLightsAreShifted()
+        try assertTrafficLightsAreOnToolbarCenterLine()
 
         let toolbar = KioskBrowserToolbar(state: try makeState())
         toolbar.frame = NSRect(
@@ -836,6 +853,7 @@ final class KioskBrowserStateTests: XCTestCase {
                 accuracy: 0.5
             )
         }
+        positioner.stop(restoringPlacement: false)
     }
 
     private func makeWindow(frame: NSRect) -> NSWindow {
@@ -918,7 +936,7 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertFalse(regularCell.isSwitchToTabViewHiddenForTesting)
     }
 
-    func testKioskOmniBoxDismissalRestoresWindowInteraction() throws {
+    func testKioskOmniBoxMountsInTheWindowAndLeavesOnDismissal() throws {
         let state = try makeState()
         let window = makeWindow(
             frame: NSRect(x: 0, y: 0, width: 640, height: 480)
@@ -938,57 +956,16 @@ final class KioskBrowserStateTests: XCTestCase {
 
         window.makeKeyAndOrderFront(nil)
         controller.toggleOmniBox(fromAddressBar: false)
-        let hostPanel = try XCTUnwrap(controller.omniBoxHostPanel)
-        XCTAssertTrue(hostPanel.parent === window)
-        XCTAssertFalse(hostPanel.ignoresMouseEvents)
+
+        // A view of the window, never a window of its own: that would lift
+        // the omnibox out of the window's stacking and key ownership.
+        XCTAssertTrue(controller.omnibackgroundView.window === window)
+        XCTAssertTrue((window.childWindows ?? []).isEmpty)
 
         controller.omniBoxContainerViewController?.hideOmniBox()
-        let observerDrained = expectation(description: "Overlay observer drained")
-        DispatchQueue.main.async {
-            observerDrained.fulfill()
-        }
-        wait(for: [observerDrained], timeout: 1)
 
-        XCTAssertTrue(hostPanel.ignoresMouseEvents)
-    }
-
-    func testOmniBoxHostPanelSharesWindowLevelAndRetiresOnDismissal() throws {
-        let state = try makeState()
-        let window = makeWindow(
-            frame: NSRect(x: 0, y: 0, width: 640, height: 480)
-        )
-        let controller = SpaceSessionController(
-            window: window,
-            windowId: state.windowId,
-            browserType: .kiosk,
-            profileId: state.profileId,
-            account: state.localStore.account,
-            browserState: state
-        )
-        defer {
-            window.close()
-            withExtendedLifetime(controller) {}
-        }
-
-        window.makeKeyAndOrderFront(nil)
-        controller.toggleOmniBox(fromAddressBar: false)
-        let hostPanel = try XCTUnwrap(controller.omniBoxHostPanel)
-
-        // Any level above the window's own would lift the overlay out of the
-        // inter-app window order, leaving the omnibox floating over whatever
-        // app the user switches to.
-        XCTAssertEqual(hostPanel.level, window.level)
-
-        controller.omniBoxContainerViewController?.hideOmniBox()
-        let observerDrained = expectation(description: "Overlay observer drained")
-        DispatchQueue.main.async {
-            observerDrained.fulfill()
-        }
-        wait(for: [observerDrained], timeout: 1)
-
-        // A dismissed omnibox leaves no window behind.
-        XCTAssertNil(hostPanel.parent)
-        XCTAssertFalse(hostPanel.isVisible)
+        // A dismissed omnibox leaves nothing over the window.
+        XCTAssertNil(controller.omnibackgroundView.superview)
     }
 
     func testExtensionSidePanelMountsAndDetachesSynchronously() throws {

@@ -18,6 +18,10 @@ final class TabSwitchManager {
     private(set) var recentTabIDs: [Int] = []
     /// Media ordering uses actual visits only, retaining every live visited tab.
     var visitedTabIDs: [Int] { visitHistoryTabIDs }
+    /// When each `recentTabIDs` entry was last recorded, on a clock shared by
+    /// every Space's manager so the all-Spaces switcher can merge their lists.
+    private var recencyStamps: [Int: UInt64] = [:]
+    private static var recencyClock: UInt64 = 0
     private weak var browserState: BrowserState?
 
     private var session: Session?
@@ -53,6 +57,7 @@ final class TabSwitchManager {
         recentTabIDs.removeAll { $0 == tabID }
         recentTabIDs.insert(tabID, at: 0)
         recentTabIDs = Array(recentTabIDs.prefix(TabSwitchMetrics.maxRecentTabs))
+        stamp(tabID)
     }
 
     /// Admit an unvisited background tab as the next forward-switch target.
@@ -75,11 +80,33 @@ final class TabSwitchManager {
         let insertionIndex = recentTabIDs.first == state.focusingTab?.guid ? 1 : 0
         recentTabIDs.insert(tab.guid, at: min(insertionIndex, recentTabIDs.count))
         recentTabIDs = Array(recentTabIDs.prefix(TabSwitchMetrics.maxRecentTabs))
+        stamp(tab.guid)
+        // Stamped last: the focused tab was seen more recently than the
+        // background tab, which matters when another Space merges this list.
+        if let currentTab = state.focusingTab { stamp(currentTab.guid) }
+    }
+
+    /// Re-stamp this Space's focused tab when the window leaves the Space:
+    /// that is when it was last seen. A Space switch does not change each
+    /// Space's focused tab, so `recordActiveTab` never runs for it. The Space
+    /// being entered needs no stamp, as its focused tab is always listed first.
+    func noteSpaceConcealed() {
+        guard let tabID = browserState?.focusingTab?.guid,
+              recentTabIDs.contains(tabID) else { return }
+        stamp(tabID)
+    }
+
+    private func stamp(_ tabID: Int) {
+        guard recentTabIDs.contains(tabID) else { return }
+        Self.recencyClock += 1
+        recencyStamps[tabID] = Self.recencyClock
+        recencyStamps = recencyStamps.filter { recentTabIDs.contains($0.key) }
     }
 
     func removeTab(tabID: Int) {
         visitHistoryTabIDs.removeAll { $0 == tabID }
         recentTabIDs.removeAll { $0 == tabID }
+        recencyStamps.removeValue(forKey: tabID)
         snapshotCache.removeValue(forKey: tabID)
         guard var session else { return }
         session.candidateTabIDs.removeAll { $0 == tabID }
@@ -117,19 +144,24 @@ final class TabSwitchManager {
         guard !candidates.isEmpty else { return }
 
         guard let state = browserState,
-              let currentTab = state.focusingTab else { return }
+              state.focusingTab != nil
+                || PhiPreferences.GeneralSettings.tabSwitcherIncludesAllSpaces.loadValue() else { return }
 
-        let currentIndex = candidates.firstIndex(of: currentTab.guid) ?? 0
+        // With no focused tab (an empty Space when all Spaces are merged), the
+        // first step lands on the newest candidate rather than skipping it.
         let initialIndex: Int
         if candidates.count == 1 {
             initialIndex = 0
-        } else {
+        } else if let currentID = state.focusingTab?.guid,
+                  let currentIndex = candidates.firstIndex(of: currentID) {
             switch direction {
             case .forward:
                 initialIndex = (currentIndex + 1) % candidates.count
             case .backward:
                 initialIndex = (currentIndex - 1 + candidates.count) % candidates.count
             }
+        } else {
+            initialIndex = direction == .forward ? 0 : candidates.count - 1
         }
 
         // Freeze the initiating binding for this gesture. Shift can change
@@ -188,7 +220,7 @@ final class TabSwitchManager {
     }
 
     private func commitSession() {
-        guard let session, let state = browserState else {
+        guard let session, browserState != nil else {
             cancelSession()
             return
         }
@@ -196,23 +228,35 @@ final class TabSwitchManager {
         let selectedIdx = session.selectedIndex
         tearDownSession()
 
-        let resolvedTab: Tab? = {
+        let resolved: ResolvedTab? = {
             if let tabID = candidates[safe: selectedIdx],
-               let tab = state.tabs.first(where: { $0.guid == tabID }) {
-                return tab
+               let match = resolveTab(tabID) {
+                return match
             }
             for offset in 1..<candidates.count {
                 for idx in [selectedIdx + offset, selectedIdx - offset] {
                     let wrapped = ((idx % candidates.count) + candidates.count) % candidates.count
-                    if let tab = state.tabs.first(where: { $0.guid == candidates[wrapped] }) {
-                        return tab
+                    if let match = resolveTab(candidates[wrapped]) {
+                        return match
                     }
                 }
             }
             return nil
         }()
+        guard let resolved else { return }
 
-        resolvedTab?.webContentWrapper?.setAsActiveTab()
+        // A tab from another Space is focused once that Space has been
+        // swapped in, as the scripting `focus tab` path does.
+        if let owner = resolved.otherSpaceController,
+           let slot = owner.slot,
+           slot.activeSpaceId != owner.spaceId {
+            let tab = resolved.tab
+            slot.activate(spaceId: owner.spaceId, userInitiated: true, onSwapSettled: { [weak tab] in
+                tab?.webContentWrapper?.setAsActiveTab()
+            })
+            return
+        }
+        resolved.tab.webContentWrapper?.setAsActiveTab()
     }
 
     func cancelSession() {
@@ -234,12 +278,92 @@ final class TabSwitchManager {
         let validIDs = Set(state.tabs.map(\.guid))
         visitHistoryTabIDs.removeAll { !validIDs.contains($0) }
         recentTabIDs.removeAll { !validIDs.contains($0) }
+        recencyStamps = recencyStamps.filter { validIDs.contains($0.key) }
     }
 
     private func buildCandidates() -> [Int] {
-        guard browserState != nil else { return [] }
+        guard let state = browserState else { return [] }
         pruneHistory()
-        return recentTabIDs
+        let others = otherSpaceControllers()
+        guard !others.isEmpty else { return recentTabIDs }
+
+        // All-Spaces mode: the focused tab stays first, then every Space's
+        // recent tabs by when they were last recorded. Each Space keeps
+        // owning its own history; only the candidate list is merged.
+        var entries = recentTabIDs.map { (id: $0, stamp: recencyStamps[$0] ?? 0) }
+        for controller in others {
+            let manager = controller.browserState.tabSwitchManager
+            manager.pruneHistory()
+            entries += manager.recentTabIDs.map { (id: $0, stamp: manager.recencyStamps[$0] ?? 0) }
+        }
+        let currentID = state.focusingTab?.guid
+        return Self.mergedCandidates(
+            currentTabID: recentTabIDs.contains(where: { $0 == currentID }) ? currentID : nil,
+            entries: entries,
+            limit: TabSwitchMetrics.maxRecentTabs
+        )
+    }
+
+    /// Orders recent tabs from several Spaces: the focused tab first, then
+    /// newest stamp first, each tab once, capped at `limit`.
+    static func mergedCandidates(
+        currentTabID: Int?,
+        entries: [(id: Int, stamp: UInt64)],
+        limit: Int
+    ) -> [Int] {
+        var seen = Set<Int>()
+        var merged: [Int] = []
+        if let currentTabID {
+            merged.append(currentTabID)
+            seen.insert(currentTabID)
+        }
+        for entry in entries.sorted(by: { $0.stamp > $1.stamp }) where seen.insert(entry.id).inserted {
+            merged.append(entry.id)
+        }
+        return Array(merged.prefix(limit))
+    }
+
+    /// The live sessions of the window's other Spaces when the all-Spaces
+    /// setting is on; empty otherwise, which keeps the per-Space behaviour.
+    /// Only Spaces with the same profile and Incognito state are merged, and
+    /// agent Spaces never are, so no tab titles or thumbnails cross those
+    /// boundaries.
+    private func otherSpaceControllers() -> [SpaceSessionController] {
+        guard PhiPreferences.GeneralSettings.tabSwitcherIncludesAllSpaces.loadValue(),
+              let state = browserState,
+              !state.isAgentSpace,
+              let ownController = state.windowController,
+              let slot = ownController.slot else { return [] }
+        return slot.presentedSpaces.compactMap { space in
+            guard let controller = slot.windowsBySpaceId[space.spaceId],
+                  controller !== ownController,
+                  Self.canMergeHistory(of: controller.browserState, into: state) else { return nil }
+            return controller
+        }
+    }
+
+    static func canMergeHistory(of other: BrowserState, into state: BrowserState) -> Bool {
+        !other.isAgentSpace
+            && other.isIncognito == state.isIncognito
+            && other.profileId == state.profileId
+    }
+
+    private struct ResolvedTab {
+        let tab: Tab
+        /// Set when the tab lives in another Space of this window.
+        let otherSpaceController: SpaceSessionController?
+    }
+
+    private func resolveTab(_ tabID: Int) -> ResolvedTab? {
+        if let tab = browserState?.tabs.first(where: { $0.guid == tabID }) {
+            return ResolvedTab(tab: tab, otherSpaceController: nil)
+        }
+        for controller in otherSpaceControllers() {
+            if let tab = controller.browserState.tabs.first(where: { $0.guid == tabID }) {
+                return ResolvedTab(tab: tab, otherSpaceController: controller)
+            }
+        }
+        return nil
     }
 
     // MARK: - Input Monitoring
@@ -359,7 +483,7 @@ final class TabSwitchManager {
     private func buildItems(from session: Session) -> [TabSwitchItem] {
         guard let state = browserState else { return [] }
         return session.candidateTabIDs.compactMap { tabID -> TabSwitchItem? in
-            guard let tab = state.tabs.first(where: { $0.guid == tabID }) else { return nil }
+            guard let tab = resolveTab(tabID)?.tab else { return nil }
             let snapshot = resolveSnapshot(for: tab)
             let liveFavicon = resolveLiveFaviconImage(for: tab)
             let pageURL = tab.url.flatMap { $0.isEmpty ? nil : $0 }

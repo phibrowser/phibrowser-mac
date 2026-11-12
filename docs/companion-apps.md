@@ -45,6 +45,23 @@ both. The identity key is per app, not per channel:
 `phi:companion:com.phibrowser.folio`. The responsibility lookup is resolved at
 runtime and fails closed when unavailable.
 
+A third shape is a process the app spawned that is signed as nothing of the
+companion's: Folio drives Spaces through the phi-browser skill by running the
+user's own `node` on the skill's runner, straight from the app. It is admitted
+on the app's account when the process macOS holds responsible for it is an app
+that passes the app shape above (the channel's app requirement, its bundle's
+main executable, no `DYLD_*`), and its own exec-time environment has no
+`DYLD_*` and no `NODE_*` but `NODE_ENV`. It is an agent the companion vouches
+for, not the companion: its identity carries `companionLauncher` rather than
+`companion`, so `evaluate` admits it without a prompt but it gets the agent
+surface instead of the allowlist, is named in the driver roster, and is
+severed with the other agents when agent CDP access is turned off. Its pid
+is the app's, so every round the app runs shares one driver session, and its
+key is the app's agent key (`phi:companion:com.phibrowser.folio:agent`), so
+that session is never the app's own scoped one. Left to the
+ancestry walk, the same connection would read as Phi's own code started
+outside the browser and be refused without a prompt.
+
 A helper that fails (2) or (3) gets no pass and resolves like any other peer.
 
 ## What a companion is exempt from

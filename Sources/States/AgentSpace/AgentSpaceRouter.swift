@@ -421,20 +421,10 @@ enum AgentSpaceRouter {
                 // flips, round edges) — reserved so a driver cannot forge
                 // "You took control"-style entries in its console.
                 if kind == .status || kind == .round { kind = .action }
-                let agent = item["agent"] as? String
-                // Pairing metadata is reserved for Pi tool cards. Other
-                // agents retain append-only transcript semantics even if a
-                // caller sends similarly named fields.
-                let isPiTool = agent == "pi" && kind == .tool
                 AgentSpaceManager.shared.appendTranscript(
                     taskId: taskId, kind: kind, text: text,
                     detail: item["detail"] as? String,
-                    agent: agent,
-                    piToolCallId: isPiTool ? item["sourceId"] as? String : nil,
-                    piToolState: isPiTool
-                        ? (item["toolState"] as? String).flatMap(
-                            PiTranscriptToolState.init(rawValue:))
-                        : nil,
+                    agent: item["agent"] as? String,
                     timestamp: Self.clampedLogTimestamp(item["ts"] as? Double))
             }
         }
@@ -516,8 +506,8 @@ enum AgentSpaceRouter {
     /// presents them — the hidden window's own view size reads 0×0 over CDP,
     /// and measuring user tabs is unreliable (native-NTP shells). With a
     /// `windowId` (the agent's hidden Chromium window) the answer is the page
-    /// area of the Space instance behind that window, as its window presents
-    /// it or would (`pageAreaSize`); without one, or when nothing is
+    /// area of the Space instance behind that window, held steady while the
+    /// Space is hidden (`taskPageAreaSize`); without one, or when nothing is
     /// measurable there (no shell yet), it is the key window's presented
     /// instance, as before. Informational, so not origin-scoped — same class
     /// as `agentSpace.listProfiles`.
@@ -526,7 +516,7 @@ enum AgentSpaceRouter {
         let size = MainActor.assumeIsolated { () -> CGSize? in
             if let windowId, windowId != 0,
                let controller = SpaceSessionControllersManager.shared.controller(for: windowId),
-               let size = pageAreaSize(of: controller) {
+               let size = taskPageAreaSize(of: controller, windowId: windowId) {
                 return size
             }
             let slot = SpaceManager.shared.keySlot ?? SpaceManager.shared.slots.first

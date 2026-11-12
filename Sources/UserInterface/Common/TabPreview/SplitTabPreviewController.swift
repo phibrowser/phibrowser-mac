@@ -19,6 +19,8 @@ private enum SplitTabPreviewPaneID: Hashable {
     case transient(ObjectIdentifier)
     case bookmarkPrimary(String)
     case bookmarkSecondary(String)
+    /// Pane `index` of a split bookmark, counted from the third pane.
+    case bookmarkExtra(String, index: Int)
 }
 
 private enum SplitTabPreviewTargetSource {
@@ -36,11 +38,10 @@ struct SplitTabPreviewTarget {
               let logicalID = logicalID(for: membership) else {
             return nil
         }
-        let paneIDs = Set([
-            paneID(for: membership.leftPane),
-            paneID(for: membership.rightPane),
-        ])
-        guard paneIDs.count == 2 else { return nil }
+        let paneIDs = Set(membership.panes.map(paneID(for:)))
+        // Every pane must resolve to its own identity; a collision means a
+        // transient half-formed split that must not be previewed.
+        guard paneIDs.count == membership.paneCount, paneIDs.count >= 2 else { return nil }
         return SplitTabPreviewTarget(
             logicalID: logicalID,
             source: .tab(tab),
@@ -49,22 +50,25 @@ struct SplitTabPreviewTarget {
     }
 
     static func make(representing bookmark: Bookmark) -> Self? {
-        guard !bookmark.isFolder,
-              !bookmark.isEditing,
-              let primaryURL = bookmark.url,
-              !primaryURL.isEmpty,
-              let secondaryURL = bookmark.secondaryUrl,
-              !secondaryURL.isEmpty else {
+        guard !bookmark.isEditing, bookmark.splitPanes.count >= 2 else {
             return nil
         }
         return SplitTabPreviewTarget(
             logicalID: .bookmark(bookmark.guid),
             source: .bookmark(bookmark),
-            paneIDs: [
-                .bookmarkPrimary(bookmark.guid),
-                .bookmarkSecondary(bookmark.guid),
-            ]
+            paneIDs: bookmarkPaneIDs(for: bookmark)
         )
+    }
+
+    fileprivate static func bookmarkPaneIDs(for bookmark: Bookmark) -> Set<SplitTabPreviewPaneID> {
+        var paneIDs: Set<SplitTabPreviewPaneID> = [
+            .bookmarkPrimary(bookmark.guid),
+            .bookmarkSecondary(bookmark.guid),
+        ]
+        for index in bookmark.splitExtraPanes.indices {
+            paneIDs.insert(.bookmarkExtra(bookmark.guid, index: index))
+        }
+        return paneIDs
     }
 
     fileprivate static func logicalID(
@@ -73,9 +77,9 @@ struct SplitTabPreviewTarget {
         if let group = membership.liveGroup {
             return .live(group.id)
         }
-        guard let pair = membership.pinnedDBPair else { return nil }
-        let identifiers = [pair.left, pair.right].sorted()
-        return .persisted(identifiers[0], identifiers[1])
+        guard let dbGuids = membership.pinnedDBGuids, dbGuids.count >= 2 else { return nil }
+        let identifiers = dbGuids.sorted()
+        return .persisted(identifiers[0], identifiers.dropFirst().joined(separator: "|"))
     }
 
     fileprivate static func paneID(for tab: Tab) -> SplitTabPreviewPaneID {
@@ -102,8 +106,10 @@ struct SplitTabPreviewContent {
     let id: SplitTabPreviewTargetID
     let mode: SplitTabPreviewMode
     let layout: SplitLayout
-    let leftPane: SplitTabPreviewPaneContent
-    let rightPane: SplitTabPreviewPaneContent
+    /// Each pane's share of the split axis, in `panes` order; sums to 1.
+    let fractions: [Double]
+    /// The panes in on-screen order (two to four).
+    let panes: [SplitTabPreviewPaneContent]
 }
 
 enum SplitTabPreviewMode: Equatable {
@@ -149,22 +155,22 @@ struct SplitTabPreviewContentResolver {
     ) -> SplitTabPreviewContent? {
         guard let resolved = resolvedTarget(for: target, in: browserState) else { return nil }
         let mode = previewMode(for: resolved, in: browserState)
+        // Cached pane images are matched by pane identity, not by position,
+        // so a reorder keeps whichever thumbnails are still valid.
+        let panes = resolved.panes.map { pane in
+            resolvePane(
+                pane,
+                in: browserState,
+                reusing: cachedContent?.panes.first { $0.id == pane.id },
+                includesImage: mode == .standard
+            )
+        }
         return SplitTabPreviewContent(
             id: target.logicalID,
             mode: mode,
             layout: resolved.layout,
-            leftPane: resolvePane(
-                resolved.leftPane,
-                in: browserState,
-                reusing: cachedContent?.leftPane,
-                includesImage: mode == .standard
-            ),
-            rightPane: resolvePane(
-                resolved.rightPane,
-                in: browserState,
-                reusing: cachedContent?.rightPane,
-                includesImage: mode == .standard
-            )
+            fractions: resolved.fractions,
+            panes: panes
         )
     }
 
@@ -173,13 +179,15 @@ struct SplitTabPreviewContentResolver {
         in browserState: BrowserState
     ) -> [Tab] {
         guard let resolved = resolvedTarget(for: target, in: browserState) else { return [] }
-        return [resolved.leftPane.liveTab, resolved.rightPane.liveTab].compactMap { $0 }
+        return resolved.panes.compactMap(\.liveTab)
     }
 
     private struct ResolvedTarget {
         let layout: SplitLayout
-        let leftPane: ResolvedPane
-        let rightPane: ResolvedPane
+        /// One share per entry of `panes`, summing to 1.
+        let fractions: [Double]
+        /// The panes in on-screen order (two to four).
+        let panes: [ResolvedPane]
         let isOpen: Bool
     }
 
@@ -211,22 +219,35 @@ struct SplitTabPreviewContentResolver {
               SplitTabPreviewTarget.logicalID(for: membership) == target.logicalID else {
             return nil
         }
-        let currentPaneIDs = Set([
-            SplitTabPreviewTarget.paneID(for: membership.leftPane),
-            SplitTabPreviewTarget.paneID(for: membership.rightPane),
-        ])
+        let currentPaneIDs = Set(membership.panes.map(SplitTabPreviewTarget.paneID(for:)))
         guard currentPaneIDs == target.paneIDs else { return nil }
         let layout = membership.liveGroup?.layout
-            ?? membership.pinnedDBPair.map {
-                browserState.pinnedSplitLayout(leftDB: $0.left, rightDB: $0.right)
-            }
+            ?? membership.pinnedDBGuids.map { browserState.pinnedSplitLayout(dbGuids: $0) }
             ?? .vertical
         return ResolvedTarget(
             layout: layout,
-            leftPane: resolvedPane(for: membership.leftPane, in: browserState),
-            rightPane: resolvedPane(for: membership.rightPane, in: browserState),
+            fractions: fractions(for: membership),
+            panes: membership.panes.map { resolvedPane(for: $0, in: browserState) },
             isOpen: membership.liveGroup != nil
         )
+    }
+
+    /// The live group's pane shares, re-ordered to match `membership.panes`
+    /// (a pinned split lists its panes in pinned-grid order, which may differ
+    /// from slot order). Equal shares for a closed pinned split or
+    /// whenever a pane cannot be mapped back to its slot.
+    private func fractions(for membership: BrowserState.SplitMembership) -> [Double] {
+        guard let group = membership.liveGroup else {
+            return SplitGroup.equalFractions(paneCount: membership.paneCount)
+        }
+        var ordered: [Double] = []
+        for pane in membership.panes {
+            guard let slot = group.slot(of: pane.guid), slot < group.fractions.count else {
+                return SplitGroup.equalFractions(paneCount: membership.paneCount)
+            }
+            ordered.append(group.fractions[slot])
+        }
+        return ordered
     }
 
     private func resolvedBookmarkTarget(
@@ -234,47 +255,54 @@ struct SplitTabPreviewContentResolver {
         target: SplitTabPreviewTarget,
         in browserState: BrowserState
     ) -> ResolvedTarget? {
-        guard !bookmark.isFolder,
-              !bookmark.isEditing,
-              let primaryURL = bookmark.url,
-              !primaryURL.isEmpty,
-              let secondaryURL = bookmark.secondaryUrl,
-              !secondaryURL.isEmpty,
+        let paneFields = bookmark.splitPanes
+        guard !bookmark.isEditing,
+              paneFields.count >= 2,
               target.logicalID == .bookmark(bookmark.guid),
-              target.paneIDs == [
-                  .bookmarkPrimary(bookmark.guid),
-                  .bookmarkSecondary(bookmark.guid),
-              ] else {
+              target.paneIDs == SplitTabPreviewTarget.bookmarkPaneIDs(for: bookmark) else {
             return nil
         }
 
-        let livePanes: (primary: Tab?, secondary: Tab?, layout: SplitLayout) = {
-            guard let splitID = browserState.splitBookmarkBindings[bookmark.guid],
-                  let group = browserState.splits.first(where: { $0.id == splitID }) else {
-                return (nil, nil, bookmark.layout ?? .vertical)
+        // A bound live split renders its tabs and shares; a bound split whose
+        // pane count no longer matches falls back to the stored URLs with
+        // equal shares.
+        var liveTabs: [Tab?] = Array(repeating: nil, count: paneFields.count)
+        var layout = bookmark.layout ?? .vertical
+        var fractions = SplitGroup.equalFractions(paneCount: paneFields.count)
+        if let splitID = browserState.splitBookmarkBindings[bookmark.guid],
+           let group = browserState.splits.first(where: { $0.id == splitID }) {
+            layout = group.layout
+            if group.paneCount == paneFields.count {
+                liveTabs = group.tabIds.map { tabId in browserState.tabs.first(where: { $0.guid == tabId }) }
+                fractions = group.fractions
             }
-            return (
-                browserState.tabs.first(where: { $0.guid == group.primaryTabId }),
-                browserState.tabs.first(where: { $0.guid == group.secondaryTabId }),
-                group.layout
-            )
-        }()
+        }
 
         return ResolvedTarget(
-            layout: livePanes.layout,
-            leftPane: ResolvedPane(
-                id: .bookmarkPrimary(bookmark.guid),
-                fallbackTitle: bookmark.title,
-                fallbackURL: primaryURL,
-                liveTab: livePanes.primary
-            ),
-            rightPane: ResolvedPane(
-                id: .bookmarkSecondary(bookmark.guid),
-                fallbackTitle: bookmark.secondaryTitle ?? "",
-                fallbackURL: secondaryURL,
-                liveTab: livePanes.secondary
-            ),
-            isOpen: livePanes.primary != nil && livePanes.secondary != nil
+            layout: layout,
+            fractions: fractions,
+            panes: paneFields.enumerated().map { index, pane in
+                let id: SplitTabPreviewPaneID
+                let fallbackTitle: String
+                switch index {
+                case 0:
+                    id = .bookmarkPrimary(bookmark.guid)
+                    fallbackTitle = bookmark.title
+                case 1:
+                    id = .bookmarkSecondary(bookmark.guid)
+                    fallbackTitle = bookmark.secondaryTitle ?? ""
+                default:
+                    id = .bookmarkExtra(bookmark.guid, index: index - 2)
+                    fallbackTitle = bookmark.splitExtraPanes[index - 2].title ?? ""
+                }
+                return ResolvedPane(
+                    id: id,
+                    fallbackTitle: fallbackTitle,
+                    fallbackURL: pane.url,
+                    liveTab: liveTabs[index]
+                )
+            },
+            isOpen: liveTabs.allSatisfy { $0 != nil }
         )
     }
 
@@ -374,8 +402,7 @@ struct SplitTabPreviewContentResolver {
         in browserState: BrowserState
     ) -> SplitTabPreviewMode {
         guard resolved.isOpen else { return .compact }
-        let panes = [resolved.leftPane, resolved.rightPane]
-        return panes.contains { pane in
+        return resolved.panes.contains { pane in
             isForeground(liveTab: pane.liveTab, in: browserState)
         } ? .compact : .standard
     }
@@ -395,17 +422,18 @@ struct SplitTabPreviewView: View {
 
     private enum Metrics {
         static let width: CGFloat = 280
+        /// Height of the whole split's image area; the panes share it in
+        /// proportion to their fractions, so the preview keeps the 16:10
+        /// shape of the real split whatever the pane count.
         static let imageHeight: CGFloat = width * 10 / 16
-        static let stackedPaneImageHeight: CGFloat = imageHeight / 2
         static let dividerThickness: CGFloat = 1
-        static let sideBySidePaneWidth: CGFloat = (width - dividerThickness) / 2
         static let cornerRadius: CGFloat = 14
     }
 
     var body: some View {
         if let content = viewModel.content {
             previewLayout(for: content)
-                .id(content.layout.rawValue)
+                .id("\(content.layout.rawValue):\(content.panes.count)")
                 .frame(width: Metrics.width)
                 .themedBackground(.windowBackground)
                 .clipShape(RoundedRectangle(cornerRadius: Metrics.cornerRadius, style: .continuous))
@@ -423,72 +451,83 @@ struct SplitTabPreviewView: View {
         }
     }
 
+    /// Standard mode: the panes split the image area the way the real split
+    /// divides the window — columns of proportional width for a vertical
+    /// split, rows of proportional height for a horizontal one.
     @ViewBuilder
     private func paneLayout(for content: SplitTabPreviewContent) -> some View {
         switch content.layout {
         case .vertical:
-            sideBySidePanes(content)
+            let widths = Self.paneExtents(total: Metrics.width, fractions: content.fractions)
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(content.panes.enumerated()), id: \.offset) { index, paneContent in
+                    if index > 0 {
+                        Divider().frame(width: Metrics.dividerThickness)
+                    }
+                    pane(paneContent, width: widths[index], imageHeight: Metrics.imageHeight)
+                }
+            }
         case .horizontal:
-            stackedPanes(content)
+            let heights = Self.paneExtents(total: Metrics.imageHeight, fractions: content.fractions)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(content.panes.enumerated()), id: \.offset) { index, paneContent in
+                    if index > 0 {
+                        Divider().frame(height: Metrics.dividerThickness)
+                    }
+                    pane(paneContent, width: Metrics.width, imageHeight: heights[index])
+                }
+            }
         }
     }
 
-    private func sideBySidePanes(_ content: SplitTabPreviewContent) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            pane(
-                content.leftPane,
-                width: Metrics.sideBySidePaneWidth,
-                imageHeight: Metrics.imageHeight
-            )
-            Divider().frame(width: Metrics.dividerThickness)
-            pane(
-                content.rightPane,
-                width: Metrics.sideBySidePaneWidth,
-                imageHeight: Metrics.imageHeight
-            )
-        }
-    }
-
-    private func stackedPanes(_ content: SplitTabPreviewContent) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            pane(
-                content.leftPane,
-                width: Metrics.width,
-                imageHeight: Metrics.stackedPaneImageHeight
-            )
-            Divider().frame(height: Metrics.dividerThickness)
-            pane(
-                content.rightPane,
-                width: Metrics.width,
-                imageHeight: Metrics.stackedPaneImageHeight
-            )
-        }
-    }
-
+    /// Compact mode shows titles only, so the panes take equal shares: a
+    /// narrow pane's title would be unreadable at its real proportion.
     @ViewBuilder
     private func compactPaneLayout(_ content: SplitTabPreviewContent) -> some View {
         switch content.layout {
         case .vertical:
-            sideBySideCompactPanes(content)
+            let widths = Self.paneExtents(
+                total: Metrics.width,
+                fractions: SplitGroup.equalFractions(paneCount: content.panes.count)
+            )
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(content.panes.enumerated()), id: \.offset) { index, paneContent in
+                    if index > 0 {
+                        Divider().frame(width: Metrics.dividerThickness)
+                    }
+                    compactPane(paneContent, width: widths[index])
+                }
+            }
         case .horizontal:
-            stackedCompactPanes(content)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(content.panes.enumerated()), id: \.offset) { index, paneContent in
+                    if index > 0 {
+                        Divider().frame(height: Metrics.dividerThickness)
+                    }
+                    compactPane(paneContent, width: Metrics.width)
+                }
+            }
         }
     }
 
-    private func sideBySideCompactPanes(_ content: SplitTabPreviewContent) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            compactPane(content.leftPane, width: Metrics.sideBySidePaneWidth)
-            Divider().frame(width: Metrics.dividerThickness)
-            compactPane(content.rightPane, width: Metrics.sideBySidePaneWidth)
+    /// Each pane's extent along the split axis: `total` less the dividers,
+    /// shared out by `fractions` (the same arithmetic as
+    /// `SplitPaneHostView.paneRects`, with this view's divider). The last
+    /// pane absorbs the rounding remainder so the extents sum to `total`.
+    static func paneExtents(total: CGFloat, fractions: [Double]) -> [CGFloat] {
+        let count = fractions.count
+        guard count > 0 else { return [] }
+        let available = max(0, total - Metrics.dividerThickness * CGFloat(count - 1))
+        var extents: [CGFloat] = []
+        var used: CGFloat = 0
+        for (index, fraction) in fractions.enumerated() {
+            let extent = index == count - 1
+                ? max(0, available - used)
+                : max(0, floor(available * CGFloat(fraction)))
+            extents.append(extent)
+            used += extent
         }
-    }
-
-    private func stackedCompactPanes(_ content: SplitTabPreviewContent) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            compactPane(content.leftPane, width: Metrics.width)
-            Divider().frame(height: Metrics.dividerThickness)
-            compactPane(content.rightPane, width: Metrics.width)
-        }
+        return extents
     }
 
     private func pane(

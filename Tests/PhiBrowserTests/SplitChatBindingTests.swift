@@ -37,8 +37,8 @@ final class SplitChatBindingTests: XCTestCase {
     }
 
     private func splitGroup(_ p: Int, _ s: Int) -> SplitGroup {
-        SplitGroup(id: "split-\(p)-\(s)", primaryTabId: p, secondaryTabId: s,
-                   layout: .vertical, ratio: 0.5)
+        SplitGroup(id: "split-\(p)-\(s)", tabIds: [p, s],
+                   layout: .vertical, fractions: [0.5, 0.5])
     }
 
     func testResolverOutsideSplitReturnsOwnIdentifier() throws {

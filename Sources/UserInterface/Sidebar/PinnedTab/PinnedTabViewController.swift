@@ -90,8 +90,7 @@ class PinnedTabViewController: NSViewController {
                 }
                 splitItem.view.isHidden = group.containsPinnedGuid(draggedPinnedGuid)
                 splitItem.configure(
-                    leftTab: group.leftTab,
-                    rightTab: group.rightTab,
+                    panes: group.tabs,
                     browserState: browserState,
                     themeProvider: browserState?.themeContext ?? ThemeManager.shared
                 )
@@ -129,27 +128,40 @@ class PinnedTabViewController: NSViewController {
         case tabs = 1
     }
 
-    /// One pinned split represented as a single grid cell with both panes.
-    /// Identified by the split's stable Chromium id so the diffable snapshot
-    /// can detect when the same split is rebuilt with new tab instances.
+    /// One pinned split represented as a single grid cell with every pane.
+    /// Identified by the split's stable Chromium id and its panes in order,
+    /// so the diffable snapshot keeps the cell when the same split is rebuilt
+    /// with new tab instances, and replaces it when a pane leaves or the
+    /// panes are reordered: a cell is configured, and its click handler
+    /// bound, to the panes it was created with.
     struct PinnedSplitGroupItem: Hashable {
         let splitId: String
-        let leftTab: Tab
-        let rightTab: Tab
+        /// Pinned records of the panes in rendered order.
+        let tabs: [Tab]
+        /// The panes' database guids in order, captured when the item is
+        /// built: a scope migration rebinds a record's guid in place.
+        private let paneKey: String
+
+        init(splitId: String, tabs: [Tab]) {
+            self.splitId = splitId
+            self.tabs = tabs
+            paneKey = tabs.map { $0.guidInLocalDB ?? "" }.joined(separator: "|")
+        }
 
         func hash(into hasher: inout Hasher) {
             hasher.combine(splitId)
+            hasher.combine(paneKey)
         }
 
         static func == (lhs: PinnedSplitGroupItem, rhs: PinnedSplitGroupItem) -> Bool {
-            lhs.splitId == rhs.splitId
+            lhs.splitId == rhs.splitId && lhs.paneKey == rhs.paneKey
         }
 
         func containsPinnedGuid(_ guid: String?) -> Bool {
             guard let guid, !guid.isEmpty else {
                 return false
             }
-            return leftTab.guidInLocalDB == guid || rightTab.guidInLocalDB == guid
+            return tabs.contains { $0.guidInLocalDB == guid }
         }
     }
 
@@ -230,7 +242,7 @@ class PinnedTabViewController: NSViewController {
             case (.tabItem(let a), .tabItem(let b)):
                 return a.tab === b.tab
             case (.splitItem(let a), .splitItem(let b)):
-                return a.leftTab === b.leftTab && a.rightTab === b.rightTab
+                return a.tabs.count == b.tabs.count && zip(a.tabs, b.tabs).allSatisfy { $0 === $1 }
             case (.extensionItem(let a), .extensionItem(let b)):
                 return a.title == b.title && a.tooltip == b.tooltip && a.icon === b.icon
             default:
@@ -296,7 +308,7 @@ class PinnedTabViewController: NSViewController {
     private var hasAppliedInitialContentSnapshot = false
     private var isActive = false
     private var contextMenuClickRoutingEnabled = false
-    /// Last applied left|right DB-guid pair per splitId. `PinnedSplitGroupItem`
+    /// Last applied ordered DB guids per splitId. `PinnedSplitGroupItem`
     /// hashes on `splitId` alone (so a Tab-instance churn doesn't recycle the
     /// cell), which means `apply()` skips items whose pair flipped via
     /// `reverseTabsInSplit`. We compare against this and reconfigure the
@@ -692,8 +704,9 @@ class PinnedTabViewController: NSViewController {
         let pinnedSplitByLiveTabId: [Int: SplitGroup] = state.splits
             .filter(\.isPinned)
             .reduce(into: [:]) { result, group in
-                result[group.primaryTabId] = group
-                result[group.secondaryTabId] = group
+                for tabId in group.tabIds {
+                    result[tabId] = group
+                }
             }
 
         // Bidirectional persisted-partner map. Each pinned-split pane persists
@@ -723,41 +736,47 @@ class PinnedTabViewController: NSViewController {
             // splitId is used while the split is open and the diffable
             // snapshot does not flicker between live/persisted forms.
             var combined: PinnedSplitGroupItem?
-            if let liveTab = liveByDB[myDBGuid],
-               let group = pinnedSplitByLiveTabId[liveTab.guid],
-               let partnerLiveId = group.partnerTabId(of: liveTab.guid),
-               let partnerLive = state.tabs.first(where: { $0.guid == partnerLiveId }),
-               let partnerDBGuid = partnerLive.guidInLocalDB,
-               let partnerPinned = pinnedByDB[partnerDBGuid] {
-                // Mirror the rendered pane order: `SplitPaneHostView` puts
-                // `primaryTabId` on the left (vertical) / top (horizontal),
-                // so `leftTab` must be the pinned record of the primary pane.
-                // Iteration order alone would lock the icons to `pinnedTabs`
-                // order and desync after `reverseTabsInSplit`.
-                let currentIsPrimary = liveTab.guid == group.primaryTabId
-                combined = PinnedSplitGroupItem(splitId: group.id,
-                                                leftTab: currentIsPrimary ? tab : partnerPinned,
-                                                rightTab: currentIsPrimary ? partnerPinned : tab)
-                consumedDBGuids.insert(partnerDBGuid)
-            } else if let partnerDBGuid = persistedPartnerByDB[myDBGuid],
-                      !consumedDBGuids.contains(partnerDBGuid),
-                      let partnerPinned = pinnedByDB[partnerDBGuid] {
+            let liveGroup = liveByDB[myDBGuid].flatMap { pinnedSplitByLiveTabId[$0.guid] }
+            let liveMemberDBs = liveGroup?.tabIds.compactMap { tabId in
+                state.tabs.first(where: { $0.guid == tabId })?.guidInLocalDB
+            } ?? []
+            // A wider split's list, from this record or any record naming it.
+            let listedMemberDBs = tab.splitPaneGuids.isEmpty
+                ? sourcePinnedTabs.first(where: { $0.splitPaneGuids.contains(myDBGuid) })?.splitPaneGuids ?? []
+                : tab.splitPaneGuids
+            var memberDBs = Set(liveMemberDBs + listedMemberDBs)
+            if memberDBs.isEmpty, let partnerDBGuid = persistedPartnerByDB[myDBGuid] {
                 // Persisted pair (bidirectional — see `persistedPartnerByDB`).
-                // Synthesize a stable splitId from both DB guids so the
-                // diffable snapshot identifies the same item across re-renders.
-                let sortedPair = [myDBGuid, partnerDBGuid].sorted()
-                let stableId = "persisted-split:\(sortedPair[0])|\(sortedPair[1])"
-                combined = PinnedSplitGroupItem(splitId: stableId,
-                                                leftTab: tab,
-                                                rightTab: partnerPinned)
-                consumedDBGuids.insert(partnerDBGuid)
+                memberDBs = [myDBGuid, partnerDBGuid]
+            }
+            let members = sourcePinnedTabs.filter { candidate in
+                guard let db = candidate.guidInLocalDB else { return false }
+                return memberDBs.contains(db) && !consumedDBGuids.contains(db)
+            }
+            if members.count >= 2 {
+                // Mirror the rendered pane order: `SplitPaneHostView` puts
+                // slot 0 on the left (vertical) / top (horizontal). Iteration
+                // order alone would lock the icons to `pinnedTabs` order and
+                // desync after `reverseTabsInSplit`. A pane closed since the
+                // split opened has no slot, so grid order applies then.
+                let rendered: [Tab]
+                if Set(liveMemberDBs) == memberDBs {
+                    rendered = liveMemberDBs.compactMap { pinnedByDB[$0] }
+                } else {
+                    rendered = members
+                }
+                // Prefer the live SplitGroup id so the same splitId is used
+                // while the split is open; otherwise synthesize a stable one
+                // from the DB guids so the diffable snapshot identifies the
+                // same item across re-renders.
+                let stableId = liveGroup?.id
+                    ?? "persisted-split:" + members.compactMap(\.guidInLocalDB).sorted().joined(separator: "|")
+                combined = PinnedSplitGroupItem(splitId: stableId, tabs: rendered)
+                members.compactMap(\.guidInLocalDB).forEach { consumedDBGuids.insert($0) }
             }
 
             if let combined {
-                let splitGuids = Set([
-                    combined.leftTab.guidInLocalDB,
-                    combined.rightTab.guidInLocalDB
-                ].compactMap { $0 })
+                let splitGuids = Set(combined.tabs.compactMap(\.guidInLocalDB))
                 let rawIndices: [Int] = sourcePinnedTabs.enumerated().compactMap { index, candidate in
                     guard let guid = candidate.guidInLocalDB, splitGuids.contains(guid) else {
                         return nil
@@ -813,7 +832,7 @@ class PinnedTabViewController: NSViewController {
     }
 
     private func pinnedReorderStepSize(for tab: Tab, in state: BrowserState) -> Int {
-        state.pinnedSplitDBPair(forPinnedTab: tab) == nil ? 1 : 2
+        state.pinnedSplitDBGuids(forPinnedTab: tab)?.count ?? 1
     }
 
     /// Drops repeated item identifiers, keeping the first.
@@ -864,9 +883,12 @@ class PinnedTabViewController: NSViewController {
         var splitItemsToReconfigure: [Item] = []
         for item in tabSectionItems {
             guard case .splitItem(let group) = item else { continue }
-            let pairKey = "\(group.leftTab.guidInLocalDB ?? "")|\(group.rightTab.guidInLocalDB ?? "")"
+            let pairKey = group.tabs.map { $0.guidInLocalDB ?? "" }.joined(separator: "|")
             newSplitPairs[group.splitId] = pairKey
-            if let previous = lastSplitItemPairs[group.splitId], previous != pairKey {
+            // A changed pane list is a different item (`PinnedSplitGroupItem`),
+            // so only an item the previous snapshot already held is reloaded.
+            if let previous = lastSplitItemPairs[group.splitId], previous != pairKey,
+               dataSource.snapshot().indexOfItem(item) != nil {
                 splitItemsToReconfigure.append(item)
             }
         }
@@ -982,8 +1004,7 @@ class PinnedTabViewController: NSViewController {
                 }
             case .splitItem(let group):
                 if let cell = collectionView.item(at: indexPath) as? PinnedSplitItem {
-                    cell.isSelected = group.leftTab.guidInLocalDB == focusingDBGuid
-                        || group.rightTab.guidInLocalDB == focusingDBGuid
+                    cell.isSelected = group.containsPinnedGuid(focusingDBGuid)
                 }
             case .extensionItem:
                 break
@@ -1033,15 +1054,14 @@ class PinnedTabViewController: NSViewController {
     /// currently closed so the auto-pair logic can recreate the `SplitGroup`,
     /// then activates the pane the user clicked closer to.
     private func handleSplitCellClicked(group: PinnedSplitGroupItem, preferredTab: Tab?) {
-        guard let state = browserState,
-              let leftGuid = group.leftTab.guidInLocalDB,
-              let rightGuid = group.rightTab.guidInLocalDB else {
+        guard let state = browserState else {
             return
         }
-        let focusRight = preferredTab?.guidInLocalDB == rightGuid
-        state.openPinnedSplit(leftPinnedGuid: leftGuid,
-                              rightPinnedGuid: rightGuid,
-                              focusRight: focusRight)
+        let dbGuids = group.tabs.compactMap(\.guidInLocalDB)
+        guard dbGuids.count == group.tabs.count else {
+            return
+        }
+        state.openPinnedSplit(dbGuids: dbGuids, focusGuid: preferredTab?.guidInLocalDB)
     }
 
     private func handleExtensionClicked(_ item: PinnedTabItemModel, anchor view: NSView) {
@@ -1233,7 +1253,7 @@ extension PinnedTabViewController {
         case .tabItem(let snapshotItem):
             tab = snapshotItem.tab
         case .splitItem(let group):
-            tab = group.leftTab
+            tab = group.tabs[0]
         case .extensionItem(let model):
             // Pinned-extension reorder: a distinct, surface-local drag payload.
             // The engine gate (incognito, force-pinned) decides whether the
@@ -1286,7 +1306,7 @@ extension PinnedTabViewController {
             case .tabItem(let snapshotItem):
                 return (snapshotItem.tab, snapshotItem.tab.guidInLocalDB)
             case .splitItem(let group):
-                return (group.leftTab, group.leftTab.guidInLocalDB)
+                return (group.tabs[0], group.tabs[0].guidInLocalDB)
             case .extensionItem:
                 return (nil, nil)
             }
@@ -1534,8 +1554,8 @@ extension PinnedTabViewController {
     private func handleNormalTabDropToFavorites(tabGuid: Int, destinationIndex: Int) -> Bool {
         guard let state = browserState else { return false }
         // Split-aware: when the dropped tab is one pane of a split, pin the
-        // whole pair as a single pinned-split unit instead of pinning just
-        // the dropped pane and leaving the other behind in the strip.
+        // whole split as a single pinned-split unit instead of pinning just
+        // the dropped pane and leaving the others behind in the strip.
         if let splitGroup = state.splitGroup(forTabId: tabGuid) {
             state.pinSplitInsertingAtPinnedIndex(splitGroup.id, atIndex: destinationIndex)
             return true
@@ -2110,7 +2130,7 @@ extension PinnedTabViewController {
     private func moveTabToTargetWindow(_ tab: Tab) -> Bool {
         guard let targetState = browserState, let wrapper = tab.webContentWrapper else { return false }
         let insertIndex = max(0, targetState.tabs.count)
-        // Split-aware: keep both halves of a split together on cross-window
+        // Split-aware: keep every pane of a split together on cross-window
         // moves. The bridge falls back to the single-tab path for non-split
         // tabs (the common pinned-sidebar case).
         wrapper.moveSplit(toWindow: targetState.windowId.int64Value, at: insertIndex)

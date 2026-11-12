@@ -391,12 +391,12 @@ final class LocalStoreCompatibilityTests: XCTestCase {
     // CASE 2a.25: readableStoreFormatVersions lower and upper bounds.
     func testShippingReadableStoreFormatVersionBounds() throws {
         // Keep literal assertions for the production configuration; they anchor the entire chain.
-        XCTAssertEqual(LocalStore.compatibilityConfiguration.currentStoreFormatVersion, 13)
-        XCTAssertEqual(LocalStore.compatibilityConfiguration.readableStoreFormatVersions, 1...13)
+        XCTAssertEqual(LocalStore.compatibilityConfiguration.currentStoreFormatVersion, 14)
+        XCTAssertEqual(LocalStore.compatibilityConfiguration.readableStoreFormatVersions, 1...14)
 
         let controller = makeController(
-            currentStoreFormatVersion: 13,
-            readableStoreFormatVersions: 1...13
+            currentStoreFormatVersion: 14,
+            readableStoreFormatVersions: 1...14
         )
 
         // Derive the too-new case from current + 1 so future version bumps need no test change.
@@ -412,7 +412,7 @@ final class LocalStoreCompatibilityTests: XCTestCase {
             return XCTFail("Expected a store format above the readable range to require a newer app.")
         }
         XCTAssertEqual(issue.activeStoreFormatVersion, tooNewVersion)
-        XCTAssertEqual(issue.currentStoreFormatVersion, 13)
+        XCTAssertEqual(issue.currentStoreFormatVersion, 14)
 
         let oldestDirectory = try makeTemporaryStoreDirectory()
         try writeStoreFiles(in: oldestDirectory, contents: "v1")

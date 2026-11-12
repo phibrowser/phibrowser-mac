@@ -3,8 +3,8 @@ import CoreData
 import SwiftData
 import Combine
 
-typealias TabDataModel = TabDataModelSchemaV13.TabDataModel
-typealias ProfileModel = TabDataModelSchemaV13.ProfileModel
+typealias TabDataModel = TabDataModelSchemaV14.TabDataModel
+typealias ProfileModel = TabDataModelSchemaV14.ProfileModel
 func AppLogError(_ message: String) { fputs("App log: " + message + "\n", stderr) }
 /* PRODUCTION_TYPES */
 /* PRODUCTION_ACTOR */
@@ -160,7 +160,7 @@ func check(_ condition: Bool, _ message: String) {
 @main struct Evidence {
     @MainActor static func store(_ filename: String) async throws -> LocalStore {
         let url = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true).appendingPathComponent(filename)
-        let schema = Schema(TabDataModelSchemaV13.models)
+        let schema = Schema(TabDataModelSchemaV14.models)
         let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none))
         let context = container.mainContext
         let a = ProfileModel(profileId: "A"), b = ProfileModel(profileId: "B")

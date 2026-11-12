@@ -56,7 +56,7 @@ extension SpaceSessionController {
         omniBoxOwedForEmptyWindow = false
         // One turn later: placeholder entry is delivered inside Chromium's
         // strip mutation (or the spawn's synchronous bridge call), and the
-        // omnibox host panel must not attach mid-callback.
+        // omnibox must not mount mid-callback.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.browserState.isInPlaceholderMode, self.isPresentedOrLegacy,
                   self.omniBoxContainerViewController?.hasShown != true else { return }
@@ -150,70 +150,45 @@ extension SpaceSessionController {
                 addressViewPresent: addressView != nil
             )
             
-            // The omnibox normally lives in the window's own tree, like tab
-            // search, with a backdrop that owns nothing but the box: a click
-            // anywhere else lands on the real control and dismisses the
-            // omnibox at the same time. Only above a Peek or Reader panel does
-            // it need the host panel, which floats over those child windows
-            // (see attachAndShowOmniBoxHostPanel) and is shrunk to the box so
-            // outside clicks stay real there too.
-            omniBoxOverlayClicksThrough = !omniBoxNeedsFloatingHost
-            let hostView: NSView?
-            if omniBoxOverlayClicksThrough {
-                hostView = isHosted ? shellSplit?.view : contentViewController?.view
-                omnibackgroundView.clickThroughOutside = { [weak self] in
-                    self?.omniBoxContainerViewController?.omniBoxController?.view
-                }
-                omnibackgroundView.clickedThroughOutside = { [weak self] in
-                    // One turn later: the click is mid-dispatch to the view
-                    // beneath, and the overlay must not leave the hierarchy
-                    // under it.
-                    DispatchQueue.main.async {
-                        guard let container = self?.omniBoxContainerViewController,
-                              container.hasShown else { return }
-                        container.hideOmniBox()
-                    }
-                }
-            } else {
-                hostView = attachAndShowOmniBoxHostPanel()?.contentView
-                omnibackgroundView.clickThroughOutside = nil
-                omnibackgroundView.clickedThroughOutside = nil
+            // The omnibox lives in the window's own tree, like tab search and
+            // the Peek and Reader overlays it can open above. Its backdrop
+            // owns nothing but the box: a click anywhere else lands on the
+            // real control and dismisses the omnibox at the same time.
+            omnibackgroundView.clickThroughOutside = { [weak self] in
+                self?.omniBoxContainerViewController?.omniBoxController?.view
             }
-            if let hostView {
-                // Resolve the shell and address-bar geometry before mounting
-                // the overlay or asking its text field to become first responder.
-                hostView.layoutSubtreeIfNeeded()
-                if omniBoxOverlayClicksThrough {
-                    omnibackgroundView.frame = hostView.bounds
+            omnibackgroundView.clickedThroughOutside = { [weak self] in
+                // One turn later: the click is mid-dispatch to the view
+                // beneath, and the overlay must not leave the hierarchy
+                // under it.
+                DispatchQueue.main.async {
+                    guard let container = self?.omniBoxContainerViewController,
+                          container.hasShown else { return }
+                    container.hideOmniBox()
                 }
-                hostView.addSubview(omnibackgroundView)
-                if omniBoxOverlayClicksThrough {
-                    omnibackgroundView.snp.remakeConstraints { make in
-                        make.edges.equalToSuperview()
-                    }
-                } else {
-                    // The panel is sized to the box; the backdrop keeps the
-                    // content area's size and is placed by
-                    // `syncOmniBoxHostPanelFrame`, not by its superview.
-                    omnibackgroundView.snp.removeConstraints()
-                    omnibackgroundView.translatesAutoresizingMaskIntoConstraints = true
-                    omnibackgroundView.autoresizingMask = []
-                    syncOmniBoxHostPanelFrame()
-                }
-
-                // Add omniBox container to background view
-                if let containerView = omniBoxContainerViewController?.view {
-                    containerView.frame = omnibackgroundView.bounds
-                    omnibackgroundView.addSubview(containerView)
-                    containerView.snp.remakeConstraints { make in
-                        make.edges.equalToSuperview()
-                    }
-                }
-                hostView.layoutSubtreeIfNeeded()
-            } else {
+            }
+            guard let hostView = isHosted ? shellSplit?.view : contentViewController?.view else {
                 AppLogWarn("[Omnibox] cannot present without a host for window \(windowId)")
                 return
             }
+            // Resolve the shell and address-bar geometry before mounting
+            // the overlay or asking its text field to become first responder.
+            hostView.layoutSubtreeIfNeeded()
+            omnibackgroundView.frame = hostView.bounds
+            hostView.addSubview(omnibackgroundView)
+            omnibackgroundView.snp.remakeConstraints { make in
+                make.edges.equalToSuperview()
+            }
+
+            // Add omniBox container to background view
+            if let containerView = omniBoxContainerViewController?.view {
+                containerView.frame = omnibackgroundView.bounds
+                omnibackgroundView.addSubview(containerView)
+                containerView.snp.remakeConstraints { make in
+                    make.edges.equalToSuperview()
+                }
+            }
+            hostView.layoutSubtreeIfNeeded()
             if fromAddressBar {
                 if browserState.groupOverviewState != nil {
                     omniBoxContainerViewController?.omniBoxController?
@@ -312,11 +287,11 @@ extension SpaceSessionController {
         guard let tab = state.pageCommandTarget,
               let url = tab.url, !url.isEmpty else { return }
 
-        // When the focused tab is one half of a split, bookmark the whole pair
+        // When the focused tab is a pane of a split, bookmark the whole split
         // (matching the right-click "Add Split to Bookmark"), keyed off the
-        // split's primary pane so the toggle round-trips with `openBookmark`.
+        // split's first pane so the toggle round-trips with `openBookmark`.
         if let group = state.splitGroup(forTabId: tab.guid),
-           let primaryTab = state.tabs.first(where: { $0.guid == group.primaryTabId }),
+           let primaryTab = state.tabs.first(where: { $0.guid == group.firstTabId }),
            let primaryURL = primaryTab.url, !primaryURL.isEmpty {
             if let existing = state.bookmarkManager.findSplitBookmark(byPrimaryURL: primaryURL) {
                 presentBookmarkEditor(for: existing)
@@ -383,6 +358,7 @@ extension SpaceSessionController {
             urlString: bookmark.url ?? "",
             secondaryUrlString: initialSecondaryUrl,
             secondaryTitleString: initialSecondaryTitle,
+            extraPanes: bookmark.splitExtraPanes,
             modelContainer: state.localStore.container,
             profileId: state.profileId,
             spaceId: state.spaceId,
@@ -410,7 +386,8 @@ extension SpaceSessionController {
                     title: result.title,
                     url: result.url,
                     secondaryUrl: secondaryUrlUpdate,
-                    secondaryTitle: secondaryTitleUpdate
+                    secondaryTitle: secondaryTitleUpdate,
+                    splitExtraPanes: result.extraPanes
                 )
                 if let newParentGuid = result.parentFolderGuid,
                    newParentGuid != originalParentGuid {
@@ -566,22 +543,22 @@ extension SpaceSessionController: NSMenuItemValidation {
             return
         }
 
-        // Split cells render both panes as a single merged item, so Close on
-        // that cell should dispose of both live Chromium tabs (the split
+        // Split cells render every pane as a single merged item, so Close on
+        // that cell should dispose of all its live Chromium tabs (the split
         // dissolves as a side-effect). Pinned records stay in place, matching
         // Close-on-a-pinned-tab behavior.
         //   - Live path: menu fires off a live tab in a `SplitGroup` (pinned
         //     or not).
-        //   - Persisted path: menu fires off a pinned record whose partner
-        //     is tracked via `splitPartnerGuid`; either pane may be live.
+        //   - Persisted path: menu fires off a pinned record whose split is
+        //     tracked persistently; any pane may be live.
         let liveTabs: [Tab]
         if let group = browserState.splitGroup(forTabId: tab.guid) {
-            liveTabs = [group.primaryTabId, group.secondaryTabId]
+            liveTabs = group.tabIds
                 .compactMap { id in browserState.tabs.first(where: { $0.guid == id }) }
         } else if let dbGuid = tab.guidInLocalDB, !dbGuid.isEmpty,
                   let pinnedSelf = browserState.pinnedTabs.first(where: { $0.guidInLocalDB == dbGuid }),
-                  let (leftDB, rightDB) = browserState.pinnedSplitDBPair(forPinnedTab: pinnedSelf) {
-            liveTabs = [leftDB, rightDB]
+                  let dbGuids = browserState.pinnedSplitDBGuids(forPinnedTab: pinnedSelf) {
+            liveTabs = dbGuids
                 .compactMap { db in browserState.tabs.first(where: { $0.guidInLocalDB == db }) }
         } else {
             liveTabs = []
@@ -638,10 +615,10 @@ extension SpaceSessionController: NSMenuItemValidation {
     /// hasn't been recreated yet (neither pane is currently open).
     @MainActor
     @objc func unpinClosedPinnedSplit(_ item: NSMenuItem) {
-        guard let pair = item.representedObject as? [String], pair.count == 2 else {
+        guard let dbGuids = item.representedObject as? [String], dbGuids.count >= 2 else {
             return
         }
-        browserState.unpinClosedPinnedSplit(leftDB: pair[0], rightDB: pair[1])
+        browserState.unpinClosedPinnedSplit(dbGuids: dbGuids)
     }
     
     

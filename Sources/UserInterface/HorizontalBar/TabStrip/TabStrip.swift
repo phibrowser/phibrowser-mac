@@ -16,15 +16,16 @@ extension NSEvent.ModifierFlags {
 
 enum TabStripMultiSelectionUnit: Hashable {
     case tab(Int)
-    case splitPair(left: Int, right: Int)
+    /// A whole split: its pane ids in on-screen order (two to four).
+    case split(panes: [Int])
     case bookmark(String)
 
     var tabIds: Set<Int> {
         switch self {
         case let .tab(guid):
             return [guid]
-        case let .splitPair(left, right):
-            return [left, right]
+        case let .split(panes):
+            return Set(panes)
         case .bookmark:
             return []
         }
@@ -34,7 +35,7 @@ enum TabStripMultiSelectionUnit: Hashable {
         switch self {
         case let .bookmark(guid):
             return [guid]
-        case .tab, .splitPair:
+        case .tab, .split:
             return []
         }
     }
@@ -191,8 +192,10 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         case local
         case external(ExternalDropTarget)
         case tearOff
-        /// Drop landed on the same window's WebContent area in a side zone:
-        /// pair the dragged tab with the focused tab into a new vertical split.
+        /// Drop landed on the same window's WebContent area in a split drop
+        /// zone. The zone passes through unchanged: the container decides
+        /// whether it creates a new split with the focused tab or adds /
+        /// replaces a pane of the focused tab's split.
         case splitWithFocused(SplitTabDropContainer.DropZone)
     }
 
@@ -330,20 +333,61 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         let joinRunToken: String?
     }
 
+    /// One visible slot of a multi-selection drag: a standalone tab, or a
+    /// merged split's host with the other panes it renders.
     private struct NormalDragVisualUnit {
         let primary: Tab
-        let partner: Tab?
+        let panes: [Tab]
 
         func contains(tabId: Int) -> Bool {
-            primary.guid == tabId || partner?.guid == tabId
+            primary.guid == tabId || panes.contains { $0.guid == tabId }
         }
     }
 
     private struct DraggingCompanionProxy {
         let view: TabItemView
         let tab: Tab
-        let partner: Tab?
+        /// The other panes rendered inside the companion when it stands in
+        /// for a merged split; empty for a standalone tab.
+        let panes: [Tab]
         let slotOffset: Int
+    }
+
+    /// Companion proxy for one of the other panes of the dragged tab's
+    /// split, so the whole split lifts and travels together. Only built
+    /// when the strip renders the panes as separate cells (an unmerged
+    /// split); a merged split is already one proxy.
+    private struct DraggingSiblingProxy {
+        let proxy: TabItemView
+        /// Source view of the pane, hidden during the drag and revealed when
+        /// the drag ends.
+        weak var sourceView: TabItemView?
+        /// The pane's index in the source zone.
+        let index: Int
+        /// Pixel offset from the primary proxy at drag start (positive when
+        /// the pane is to the right).
+        let offsetX: CGFloat
+    }
+
+    /// Merged-cell bookkeeping for one strip section: which indices fold
+    /// into a host cell and what that cell renders. Built from the live
+    /// `SplitGroup`s for the normal section (`normalSplitCollapseInfo`) and
+    /// from the pinned pair records for the pinned section
+    /// (`pinnedSplitCollapseInfo`).
+    private struct SplitCollapseInfo {
+        /// Indices whose slot drops out of layout: every pane after the
+        /// host. The layout engine zeroes them; the views are force-hidden.
+        var collapsedIndices: Set<Int> = []
+        /// Host index → pane count of the split it renders. The pinned
+        /// layout widens these cells to one slot per pane; the normal
+        /// layout protects the active one's width per pane.
+        var hostPaneCounts: [Int: Int] = [:]
+        /// Host `uniqueId` → the other panes in on-screen order, consumed
+        /// when building `TabRenderData` so the cell renders one favicon
+        /// per pane.
+        var mergedPanes: [String: [Tab]] = [:]
+
+        static let empty = SplitCollapseInfo()
     }
 
     // Overlay used to display the dragged tab outside container clipping.
@@ -362,26 +406,21 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
     // Single stacked preview used when a multi-selection drag enters pinned tabs.
     private var pinnedMultiSelectionDragPreviewView: NSImageView?
     private var isShowingPinnedMultiSelectionDragPreview = false
-    // Companion proxy for the dragged tab's split partner so the pair lifts
-    // and travels together. nil for non-split drags.
-    private var draggingSiblingProxyView: TabItemView?
+    // Companion proxies for the other panes of the dragged tab's split so
+    // the whole split lifts and travels together. Empty for non-split
+    // drags and for merged-cell drags (the single proxy already renders
+    // every pane).
+    private var draggingSiblingProxies: [DraggingSiblingProxy] = []
     // Real source view that still owns mouse events during the drag.
     private weak var draggingSourceView: TabItemView?
-    // Source view of the split partner, hidden during the drag and revealed
-    // when the drag ends. nil for non-split drags.
-    private weak var draggingSiblingSourceView: TabItemView?
     // Additional selected source views hidden during a multi-selection drag.
     private var draggingAdditionalSourceViews: [TabItemView] = []
-    // Resolved layout for the sibling proxy: its index in the source zone and
-    // pixel offset from the primary proxy at drag start (positive when the
-    // partner is to the right). nil for non-split drags.
-    private var draggingSiblingPlacement: (index: Int, offsetX: CGFloat)?
     // Container zone currently used for drag presentation styling.
     private var draggingPresentationZone: TabContainerType?
-    // When the dragged source is the first pane of a merged split cell
-    // (normal or pinned), holds the partner pane so the proxy keeps the
-    // two-favicon merged-cell rendering after a cross-zone restyle.
-    private weak var draggingMergedPartner: Tab?
+    // When the dragged source hosts a merged split cell (normal or pinned),
+    // holds the other panes so the proxy keeps the per-pane merged-cell
+    // rendering after a cross-zone restyle. Empty otherwise.
+    private var draggingMergedPanes: [Tab] = []
     private var dragImageWindow: NSPanel?
     private var dragImageView: NSImageView?
     private var dragCountBadgeWindow: NSPanel?
@@ -580,9 +619,9 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             } else {
                 dragSlotPerTab = context?.draggedTabWidth
             }
-            // Use visible drag units for the reserved gap: split pairs count
-            // as one slot, while ordinary multi-selection blocks reserve one
-            // slot per visible tab proxy.
+            // Use visible drag units for the reserved gap: a merged split
+            // counts as one slot, while ordinary multi-selection blocks
+            // reserve one slot per visible tab proxy.
             normalGapW = (context?.targetContainerType == .normal)
                 ? dragSlotPerTab.map {
                     TabStripDragController.dragGapWidth(
@@ -621,8 +660,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                 isPinned: true,
                 excludedIndices: pinnedExcluded,
                 gapIndex: pinnedGap,
-                pinnedSplitCollapsedIndices: pinnedSplitCollapse.collapsedIndices,
-                pinnedSplitWideIndices: pinnedSplitCollapse.wideIndices
+                splitCollapse: pinnedSplitCollapse
             )
             updateLayoutOnly(
                 container: normalContainer,
@@ -635,8 +673,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                 excludedIndices: normalExcludedSet,
                 gapIndex: normalGap,
                 gapWidth: normalGapW,
-                pinnedSplitCollapsedIndices: normalSplitCollapse.collapsedIndices,
-                pinnedSplitWideIndices: normalSplitCollapse.wideIndices
+                splitCollapse: normalSplitCollapse
             )
         }
 
@@ -895,23 +932,20 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             // back to the member before it (the one z) so the path
             // ends at z.maxX rather than the proxy's cursor frame.
             //
-            // Split-pair normalization: `normalSplitCollapseInfo`
-            // gives the LOWER-index pane the wide merged frame and
-            // the HIGHER-index pane a `.zero` frame (the layout
-            // engine treats the second pane as excluded). When a
-            // run ends at the collapsed pane, `lastTabView.frame`
-            // is zero-width and `lastFrame.maxX` lands at the
-            // primary's leading edge instead of the merged bar's
-            // trailing edge — the underline visually stops short of
-            // the split. Step back to the wide partner so the path
-            // anchors on the merged frame.
+            // Split normalization: `normalSplitCollapseInfo` gives the
+            // split's first pane the merged frame and every later pane
+            // a `.zero` frame (the layout engine treats them as
+            // excluded). When a run ends inside those collapsed panes,
+            // `lastTabView.frame` is zero-width and `lastFrame.maxX`
+            // lands at the host's leading edge instead of the merged
+            // bar's trailing edge — the underline visually stops short
+            // of the split. Step back past the collapsed panes to the
+            // host so the path anchors on the merged frame.
             let lastIdx: Int = {
                 var idx = visibleMemberIndices[visibleMemberIndices.count - 1]
-                if idx > run.range.lowerBound,
-                   let view = normalTabViews[tabId(for: normalTabs[idx])],
-                   view.frame.width == 0,
-                   let prevView = normalTabViews[tabId(for: normalTabs[idx - 1])],
-                   prevView.frame.width > 0 {
+                while idx > run.range.lowerBound,
+                      let view = normalTabViews[tabId(for: normalTabs[idx])],
+                      view.frame.width == 0 {
                     idx -= 1
                 }
                 return idx
@@ -1128,7 +1162,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
            context.targetContainerType == .normal,
            let companion = draggingCompanionProxyViews.first(where: { companion in
                tabId(for: companion.tab) == id
-                   || (companion.partner.map { tabId(for: $0) == id } ?? false)
+                   || companion.panes.contains { tabId(for: $0) == id }
            }),
            companion.view.superview != nil {
             if let screenPoint = lastDragScreenPoint,
@@ -1137,16 +1171,16 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             }
             return companion.view.convert(companion.view.bounds, to: coordView)
         }
-        // During a split-pair drag the partner's source view sits at .zero
-        // because the layout engine excludes it. Use the lifted partner proxy
-        // so the content-border gap follows the active sibling correctly.
+        // During an unmerged split drag the other panes' source views sit at
+        // .zero because the layout engine excludes them. Use the lifted
+        // sibling proxy so the content-border gap follows the active pane
+        // correctly.
         if dragController.context != nil,
-           let siblingSource = draggingSiblingSourceView,
-           let siblingProxy = draggingSiblingProxyView,
-           siblingProxy.superview != nil,
-           let siblingTabId = normalTabViews.first(where: { $0.value === siblingSource })?.key,
-           siblingTabId == id {
-            return siblingProxy.convert(siblingProxy.bounds, to: coordView)
+           let sibling = draggingSiblingProxies.first(where: { sibling in
+               guard let sourceView = sibling.sourceView, sibling.proxy.superview != nil else { return false }
+               return normalTabViews.first(where: { $0.value === sourceView })?.key == id
+           }) {
+            return sibling.proxy.convert(sibling.proxy.bounds, to: coordView)
         }
         let isPinned = browserState.pinnedTabs.contains(where: { tabId(for: $0) == id })
         guard !isPinned,
@@ -1154,29 +1188,29 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
               view.superview != nil else {
             return nil
         }
-        // Split-pair higher-index pane: its own view is the `.zero`
-        // collapsed placeholder, so its converted frame is zero-width
-        // at the origin. Substitute the wide host partner's frame so
-        // callers like the WCC active-tab outline carve around the
-        // merged cell. Without this the carve targets (0, 0, 0, 0) and
-        // the group's outer border + underline collapse to a glitched
-        // straight line on every reverse-panes.
+        // Collapsed split pane: its own view is the `.zero` placeholder, so
+        // its converted frame is zero-width at the origin. Substitute the
+        // host's (the split's first pane's) frame so callers like the WCC
+        // active-tab outline carve around the merged cell. Without this the
+        // carve targets (0, 0, 0, 0) and the group's outer border +
+        // underline collapse to a glitched straight line on every
+        // reverse-panes.
         if view.frame.width == 0,
            let group = browserState.splitGroup(forTabId: tab.guid),
            !group.isPinned,
-           let partnerId = group.partnerTabId(of: tab.guid),
-           let partnerTab = browserState.normalTabs.first(where: { $0.guid == partnerId }),
-           let partnerView = normalTabViews[tabId(for: partnerTab)],
-           partnerView.superview != nil,
-           partnerView.frame.width > 0 {
-            // Delegate instead of converting `partnerView` directly: during a
-            // merged-cell drag the host partner is the dragging tab, whose
-            // source view stays parked at its drag-start frame (alpha = 0)
-            // while the proxy follows the cursor. Re-entering tabFrame lets
-            // the partner's drag-proxy and group-drag branches resolve the
-            // live frame. Bounded: the width > 0 guard above keeps the
-            // partner out of this placeholder branch.
-            return tabFrame(for: partnerTab, in: coordView)
+           group.firstTabId != tab.guid,
+           let hostTab = browserState.normalTabs.first(where: { $0.guid == group.firstTabId }),
+           let hostView = normalTabViews[tabId(for: hostTab)],
+           hostView.superview != nil,
+           hostView.frame.width > 0 {
+            // Delegate instead of converting `hostView` directly: during a
+            // merged-cell drag the host is the dragging tab, whose source
+            // view stays parked at its drag-start frame (alpha = 0) while
+            // the proxy follows the cursor. Re-entering tabFrame lets the
+            // host's drag-proxy and group-drag branches resolve the live
+            // frame. Bounded: the width > 0 guard above keeps the host out
+            // of this placeholder branch.
+            return tabFrame(for: hostTab, in: coordView)
         }
         let frame = view.convert(view.bounds, to: coordView)
         // A cell the layout engine took out of the flow carries an empty
@@ -1322,9 +1356,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             tabs: pinnedTabs,
             activeTab: activeTab,
             isPinned: true,
-            pinnedSplitPartners: pinnedSplitCollapse.partners,
-            pinnedSplitCollapsedIndices: pinnedSplitCollapse.collapsedIndices,
-            pinnedSplitWideIndices: pinnedSplitCollapse.wideIndices
+            splitCollapse: pinnedSplitCollapse
         )
 
         updateContainer(
@@ -1333,9 +1365,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             tabs: normalTabs,
             activeTab: activeTab,
             isPinned: false,
-            pinnedSplitPartners: normalSplitCollapse.partners,
-            pinnedSplitCollapsedIndices: normalSplitCollapse.collapsedIndices,
-            pinnedSplitWideIndices: normalSplitCollapse.wideIndices
+            splitCollapse: normalSplitCollapse
         )
 
         // scroll-driven and animation-driven repositioning enters here without
@@ -1374,11 +1404,13 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             appearance: appearance,
             animated: animated
         )
-        draggingSiblingProxyView?.setActivePageStyle(
-            backgroundColor: backgroundColor,
-            appearance: appearance,
-            animated: animated
-        )
+        for sibling in draggingSiblingProxies {
+            sibling.proxy.setActivePageStyle(
+                backgroundColor: backgroundColor,
+                appearance: appearance,
+                animated: animated
+            )
+        }
         for companion in draggingCompanionProxyViews {
             companion.view.setActivePageStyle(
                 backgroundColor: backgroundColor,
@@ -1686,86 +1718,68 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         chip.updateMosaic(memberFavicons: collectMosaicFaviconData(for: token))
     }
 
-    /// Pinned-split collapse info for the strip's pinned section:
-    /// - `collapsedIndices`: indices in `browserState.pinnedTabs` of the
-    ///   `.second` pane of each pinned split. The layout engine drops their
-    ///   slot; the view is force-hidden.
-    /// - `wideIndices`: indices of the `.first` panes. The layout engine
-    ///   gives them double width so two favicons fit comfortably.
-    /// - `partners`: `firstPaneUniqueId → partner Tab`, consumed when
-    ///   building `TabRenderData` so the cell knows it should render two
-    ///   favicons side-by-side.
-    /// Non-pinned split collapse info for the strip's normal section.
-    /// Mirrors `pinnedSplitCollapseInfo` but iterates `normalTabs` and the
-    /// non-pinned `SplitGroup`s. Both ungrouped and in-group splits collapse
-    /// — when a pair sits inside a tab group, the group's chip still covers
-    /// the original index range; only the second pane's slot drops out of
-    /// layout (excluded) while the first pane widens to host both favicons.
-    private func normalSplitCollapseInfo() -> (collapsedIndices: Set<Int>, wideIndices: Set<Int>, partners: [String: Tab]) {
-        var collapsed = Set<Int>()
-        var wide = Set<Int>()
-        var partners: [String: Tab] = [:]
+    /// Split collapse info for the strip's normal section, built from the
+    /// non-pinned `SplitGroup`s: a split whose panes sit at consecutive
+    /// `normalTabs` indices in slot order renders as one merged cell on its
+    /// first pane (the host) while every later pane's slot drops out of
+    /// layout. Both ungrouped and in-group splits collapse — when a split
+    /// sits inside a tab group, the group's chip still covers the original
+    /// index range; only the later panes' slots are excluded while the host
+    /// renders every pane's favicon.
+    private func normalSplitCollapseInfo() -> SplitCollapseInfo {
         let normal = browserState.normalTabs
-        guard !normal.isEmpty else { return ([], [], [:]) }
-        var consumed = Set<Int>()
-        for (idx, tab) in normal.enumerated() {
-            guard !consumed.contains(tab.guid),
-                  let group = browserState.splitGroup(forTabId: tab.guid),
-                  !group.isPinned,
-                  let partnerId = group.partnerTabId(of: tab.guid),
-                  let partner = normal.first(where: { $0.guid == partnerId }),
-                  // Both panes must share the same group affiliation (both
-                  // ungrouped, or both in the same tab group) — a split
-                  // straddling a group boundary stays as two cells.
-                  tab.groupToken == partner.groupToken,
-                  let partnerIdx = normal.firstIndex(where: { $0.guid == partnerId }),
-                  abs(idx - partnerIdx) == 1 else {
+        guard !normal.isEmpty else { return .empty }
+        var info = SplitCollapseInfo()
+        for group in browserState.splits where !group.isPinned {
+            var indices: [Int] = []
+            for tabId in group.tabIds {
+                guard let index = normal.firstIndex(where: { $0.guid == tabId }) else { break }
+                indices.append(index)
+            }
+            // Every pane present, consecutive, and in slot order — a split
+            // whose panes are transiently apart stays as separate cells.
+            guard indices.count == group.paneCount, indices.count >= 2,
+                  indices.enumerated().allSatisfy({ $1 == indices[0] + $0 }) else {
                 continue
             }
-            let (firstIdx, secondIdx) = idx < partnerIdx ? (idx, partnerIdx) : (partnerIdx, idx)
-            partners[normal[firstIdx].uniqueId] = normal[secondIdx]
-            wide.insert(firstIdx)
-            collapsed.insert(secondIdx)
-            consumed.insert(tab.guid)
-            consumed.insert(partnerId)
+            let panes = indices.map { normal[$0] }
+            // Every pane must share the same group affiliation (all
+            // ungrouped, or all in the same tab group) — a split straddling
+            // a group boundary stays as separate cells.
+            guard Set(panes.map(\.groupToken)).count == 1 else { continue }
+            info.hostPaneCounts[indices[0]] = indices.count
+            info.collapsedIndices.formUnion(indices.dropFirst())
+            info.mergedPanes[panes[0].uniqueId] = Array(panes.dropFirst())
         }
-        return (collapsed, wide, partners)
+        return info
     }
 
-    private func pinnedSplitCollapseInfo() -> (collapsedIndices: Set<Int>, wideIndices: Set<Int>, partners: [String: Tab]) {
-        var collapsed = Set<Int>()
-        var wide = Set<Int>()
-        var partners: [String: Tab] = [:]
+    /// Pinned-split collapse info for the strip's pinned section: the host is
+    /// the lowest-index pane in `browserState.pinnedTabs`, the other panes
+    /// collapse. Members come from `pinnedSplitDBGuids`.
+    private func pinnedSplitCollapseInfo() -> SplitCollapseInfo {
         let pinned = browserState.pinnedTabs
-        guard !pinned.isEmpty else { return ([], [], [:]) }
+        guard !pinned.isEmpty else { return .empty }
+        var info = SplitCollapseInfo()
         var consumed = Set<String>()
-        for (idx, tab) in pinned.enumerated() {
-            guard let dbGuid = tab.guidInLocalDB, !consumed.contains(dbGuid) else { continue }
-
-            var partnerDbGuid: String?
-            if let liveTab = browserState.tabs.first(where: { $0.guidInLocalDB == dbGuid }),
-               let group = browserState.splits.first(where: { $0.isPinned && $0.contains(tabId: liveTab.guid) }) {
-                guard let partnerLiveId = group.partnerTabId(of: liveTab.guid) else { continue }
-                partnerDbGuid = browserState.tabs.first(where: { $0.guid == partnerLiveId })?.guidInLocalDB
-            }
-            if partnerDbGuid == nil, let persisted = tab.splitPartnerGuid, !persisted.isEmpty {
-                partnerDbGuid = persisted
-            }
-            guard let resolvedPartnerDbGuid = partnerDbGuid,
-                  let partnerIdx = pinned.firstIndex(where: { $0.guidInLocalDB == resolvedPartnerDbGuid }) else {
+        for tab in pinned {
+            guard let dbGuid = tab.guidInLocalDB, !consumed.contains(dbGuid),
+                  let dbGuids = browserState.pinnedSplitDBGuids(forPinnedTab: tab) else {
                 continue
             }
-            let (firstIdx, secondIdx) = idx < partnerIdx ? (idx, partnerIdx) : (partnerIdx, idx)
-            partners[pinned[firstIdx].uniqueId] = pinned[secondIdx]
-            wide.insert(firstIdx)
-            collapsed.insert(secondIdx)
-            consumed.insert(dbGuid)
-            consumed.insert(resolvedPartnerDbGuid)
+            let indices = dbGuids.compactMap { db in
+                pinned.firstIndex(where: { $0.guidInLocalDB == db })
+            }.sorted()
+            guard indices.count == dbGuids.count, let host = indices.first else { continue }
+            info.hostPaneCounts[host] = indices.count
+            info.collapsedIndices.formUnion(indices.dropFirst())
+            info.mergedPanes[pinned[host].uniqueId] = indices.dropFirst().map { pinned[$0] }
+            consumed.formUnion(dbGuids)
         }
-        return (collapsed, wide, partners)
+        return info
     }
 
-    /// Compute split-pair position + active-group flag for the tab strip's
+    /// Compute split pane position + active-group flag for the tab strip's
     /// renderer. Returns (nil, false) when the tab is not in a split.
     ///
     /// Handles two cases:
@@ -1774,12 +1788,11 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
     /// 2. Pinned-tab records — `tab.guid` is a synthetic placeholder (the
     ///    record is built from a `TabDataModel`, not the live tab in `tabs`).
     ///    Resolve to the live Chromium tab via `guidInLocalDB`, look up the
-    ///    `SplitGroup` by that guid, and compute the pair position from
-    ///    `pinnedTabs` ordering so the merged-bar styling kicks in for the
-    ///    horizontal pinned section.
-    private func splitRenderInfo(for tab: Tab) -> (position: SplitPairPosition?, groupActive: Bool) {
+    ///    pinned `SplitGroup` by that guid, and compute the position from `pinnedTabs` ordering so the merged-bar styling kicks
+    ///    in for the horizontal pinned section.
+    private func splitRenderInfo(for tab: Tab) -> (position: SplitPanePosition?, groupActive: Bool) {
         if let group = browserState.splitGroup(forTabId: tab.guid) {
-            return (browserState.splitPairPosition(forTabId: tab.guid),
+            return (browserState.splitPanePosition(forTabId: tab.guid),
                     browserState.isSplitGroupActive(group))
         }
         guard let dbGuid = tab.guidInLocalDB, !dbGuid.isEmpty,
@@ -1788,15 +1801,18 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
               group.isPinned else {
             return (nil, false)
         }
-        guard let partnerLiveId = group.partnerTabId(of: liveTab.guid),
-              let partnerLive = browserState.tabs.first(where: { $0.guid == partnerLiveId }),
-              let partnerDbGuid = partnerLive.guidInLocalDB,
-              let myIdx = browserState.pinnedTabs.firstIndex(where: { $0.guidInLocalDB == dbGuid }),
-              let partnerIdx = browserState.pinnedTabs.firstIndex(where: { $0.guidInLocalDB == partnerDbGuid }),
-              abs(myIdx - partnerIdx) == 1 else {
+        guard let dbGuids = browserState.pinnedSplitDBGuids(forPinnedTab: tab),
+              let slot = dbGuids.firstIndex(of: dbGuid) else {
             return (nil, false)
         }
-        let position: SplitPairPosition = myIdx < partnerIdx ? .first : .second
+        let position: SplitPanePosition
+        if slot == 0 {
+            position = .first
+        } else if slot == dbGuids.count - 1 {
+            position = .last
+        } else {
+            position = .middle
+        }
         return (position, browserState.isSplitGroupActive(group))
     }
 
@@ -1821,11 +1837,12 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         // needed.
         //
         // Sample the MINIMUM qualifying width: the engine keeps
-        // active ≥ inactive and split merged cells at ~2× a single cell,
-        // so the minimum is always a plain inactive tab's width — an
-        // arbitrary dictionary hit could capture the active tab (or a
-        // merged cell) and broadcast its wider value to every inactive
-        // tab, visibly expanding the strip the moment the lock engages.
+        // active ≥ inactive and an active merged split cell at least one
+        // compact width per pane, so the minimum is always a plain inactive
+        // tab's width — an arbitrary dictionary hit could capture the
+        // active tab (or a merged cell) and broadcast its wider value to
+        // every inactive tab, visibly expanding the strip the moment the
+        // lock engages.
         // `frame != .zero` filters out collapsed-group members: they're
         // sized to zero by `layoutNormalWithGroups`, not because the strip
         // is compressed, but because the group is collapsed — they
@@ -1862,16 +1879,14 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         excludedIndices: Set<Int> = [],
         gapIndex: Int? = nil,
         gapWidth: CGFloat? = nil,
-        pinnedSplitPartners: [String: Tab] = [:],
-        pinnedSplitCollapsedIndices: Set<Int> = [],
-        pinnedSplitWideIndices: Set<Int> = []
+        splitCollapse: SplitCollapseInfo = .empty
     ) {
         guard let container = container else { return }
 
         // The layout engine already collapses positions for any index in
-        // `excludedTabIndices`; route the collapsed split-second-pane indices
+        // `excludedTabIndices`; route the collapsed split-pane indices
         // through it so their slots disappear instead of leaving a gap.
-        let combinedExcluded = excludedIndices.union(pinnedSplitCollapsedIndices)
+        let combinedExcluded = excludedIndices.union(splitCollapse.collapsedIndices)
 
         let layoutOutput = calculateLayout(
             containerWidth: container.bounds.width,
@@ -1881,7 +1896,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             excludedIndex: excludedIndex,
             excludedGroupRange: excludedGroupRange,
             excludedIndices: combinedExcluded,
-            wideIndices: pinnedSplitWideIndices,
+            wideTabPaneCounts: splitCollapse.hostPaneCounts,
             gapIndex: gapIndex,
             gapWidth: gapWidth
         )
@@ -1892,8 +1907,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             tabs: tabs,
             activeTab: activeTab,
             isPinned: isPinned,
-            pinnedSplitPartners: pinnedSplitPartners,
-            pinnedSplitCollapsedIndices: pinnedSplitCollapsedIndices
+            splitCollapse: splitCollapse
         )
 
         applyLayout(
@@ -1920,7 +1934,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         excludedIndex: Int? = nil,
         excludedGroupRange: ClosedRange<Int>? = nil,
         excludedIndices: Set<Int> = [],
-        wideIndices: Set<Int> = [],
+        wideTabPaneCounts: [Int: Int] = [:],
         gapIndex: Int? = nil,
         gapWidth: CGFloat? = nil
     ) -> TabStripLayoutOutput {
@@ -1928,19 +1942,20 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             return TabStripLayoutEngine.layoutPinned(
                 tabCount: tabs.count,
                 excludedTabIndices: excludedIndices,
-                wideTabIndices: wideIndices,
+                wideTabPaneCounts: wideTabPaneCounts,
                 gapAtIndex: gapIndex
             )
         }
 
         let activeIndex = tabs.firstIndex { isTabActive($0, activeTab: activeTab) }
-        // A merged split cell hosts two panes, so when it is the active
-        // cell its protected width must clear the split compact cutoff —
-        // at the single-tab minimum it would fall back to the two-favicon
-        // compact rendering and lose the per-pane close buttons.
-        let activeTabWidth = (activeIndex.map { wideIndices.contains($0) } ?? false)
-            ? TabStripMetrics.Tab.activeSplitMinWidth
-            : TabStripMetrics.Tab.activeMinWidth
+        // A merged split cell hosts every pane, so when it is the active
+        // cell its protected width must clear the split compact cutoff for
+        // its pane count — at the single-tab minimum it would fall back to
+        // the favicon-only compact rendering and lose the per-pane close
+        // buttons.
+        let activeTabWidth = activeIndex.flatMap { wideTabPaneCounts[$0] }
+            .map { TabStripMetrics.Tab.activeSplitMinWidth(paneCount: $0) }
+            ?? TabStripMetrics.Tab.activeMinWidth
         let runs = currentGroupRuns()
         // `gapBeforeRunStartChip` is a per-layout hint the engine
         // uses ONLY when the gap actually lands at a run's
@@ -1972,7 +1987,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             excludedTabIndex: excludedIndex,
             excludedGroupRange: isPinned ? nil : excludedGroupRange,
             excludedTabIndices: excludedIndices,
-            wideTabIndices: wideIndices,
+            wideTabPaneCounts: wideTabPaneCounts,
             gapAtIndex: gapIndex,
             gapWidth: gapWidth,
             groupRuns: isPinned ? [] : runs,
@@ -1995,8 +2010,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         tabs: [Tab],
         activeTab: Tab?,
         isPinned: Bool,
-        pinnedSplitPartners: [String: Tab] = [:],
-        pinnedSplitCollapsedIndices: Set<Int> = []
+        splitCollapse: SplitCollapseInfo = .empty
     ) {
         var nextViews: [String: TabItemView] = [:]
 
@@ -2022,22 +2036,22 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             }
 
             let splitInfo = splitRenderInfo(for: tab)
-            // The first pane of a pinned split now stands alone — its cell
-            // visually represents both panes (two favicons in one cell). The
-            // factory clears the paired-bar styling for that case so the
-            // background renders as one complete rounded pinned cell.
+            // The first pane of a merged split stands alone — its cell
+            // visually represents every pane (one favicon per pane in one
+            // cell). The factory clears the bar styling for that case so
+            // the background renders as one complete rounded cell.
             let render: TabSplitRender = {
-                if let partner = pinnedSplitPartners[id] {
-                    return .pinnedMerged(partner: partner)
+                if let panes = splitCollapse.mergedPanes[id] {
+                    return .merged(panes: panes)
                 }
                 return .standalone(position: splitInfo.position,
                                    isGroupActive: splitInfo.groupActive)
             }()
-            // Merged-cell active highlight follows EITHER pane being focused
-            // — clicking the right half flips activeTab to the partner, and
-            // the merged cell still represents both panes.
+            // Merged-cell active highlight follows ANY pane being focused —
+            // clicking another pane's column flips activeTab to that pane,
+            // and the merged cell still represents every pane.
             let cellIsActive = isTabActive(tab, activeTab: activeTab)
-                || (render.pinnedMergedPartner.map { isTabActive($0, activeTab: activeTab) } ?? false)
+                || render.mergedPanes.contains { isTabActive($0, activeTab: activeTab) }
             let cellIsMultiSelected = !isPinned
                 && multiSelectionUnit(for: tab).map(isMultiSelectionUnitSelected) == true
             let renderData = TabRenderData(
@@ -2047,9 +2061,9 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                 isActive: cellIsActive,
                 isPinned: isPinned,
                 isMultiSelected: cellIsMultiSelected,
-                splitPairPosition: render.position,
+                splitPanePosition: render.position,
                 isSplitGroupActive: render.isGroupActive,
-                pinnedSplitPartner: render.pinnedMergedPartner,
+                mergedSplitPanes: render.mergedPanes,
                 sourceTab: tab
             )
             view.configure(with: renderData, browserState: browserState)
@@ -2061,19 +2075,20 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             let isDraggingSourceView = dragController.context.map {
                 tabId(for: $0.draggingTab) == id
             } ?? false
-            // Collapsed split-second-pane: keep the view fully transparent so
-            // its layer (which does not mask to bounds) can't bleed into the
+            // Collapsed split pane: keep the view fully transparent so its
+            // layer (which does not mask to bounds) can't bleed into the
             // neighbouring cell even though `applyLayout` will zero its frame.
             //
             // For split members, snap the alpha (no implicit animation) so a
-            // pane swap (reverse) doesn't cross-fade the wide-host between the
-            // two TabItemViews — that read as the merged cell briefly vanishing
-            // and reappearing because both views animate through alpha 0.
-            let isSplitMember = pinnedSplitCollapsedIndices.contains(index)
-                || pinnedSplitPartners[id] != nil
+            // pane reorder (reverse / move) doesn't cross-fade the host
+            // between TabItemViews — that read as the merged cell briefly
+            // vanishing and reappearing because both views animate through
+            // alpha 0.
+            let isSplitMember = splitCollapse.collapsedIndices.contains(index)
+                || splitCollapse.mergedPanes[id] != nil
             if isDraggingSourceView {
                 view.alphaValue = 0
-            } else if pinnedSplitCollapsedIndices.contains(index) {
+            } else if splitCollapse.collapsedIndices.contains(index) {
                 if isSplitMember {
                     CATransaction.begin()
                     CATransaction.setDisableActions(true)
@@ -2120,33 +2135,26 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                 guard let tab else { return }
                 self?.handleTabDoubleClick(tab, isPinned: isPinned, modifierFlags: modifierFlags)
             }
-            // Split-merged cells: the right favicon represents the partner
-            // pane; clicking that half should focus the partner instead of
-            // the primary tab. Wire the secondary callback to the partner
-            // tab captured at configure time.
-            view.onSecondarySelect = { [weak self, weak partner = pinnedSplitPartners[id]] flags in
-                guard let self, let partner else { return }
-                self.handleTabClick(
-                    tab: partner,
+            // Merged split cells: each other pane's column represents that
+            // pane; clicking it should focus that pane instead of the host
+            // tab. The cell passes the pane's tab back.
+            view.onPaneSelect = { [weak self] pane, flags in
+                self?.handleTabClick(
+                    tab: pane,
                     isPinned: isPinned,
                     modifierFlags: flags
                 )
             }
-            if let partner = pinnedSplitPartners[id] {
-                view.onSecondaryDoubleSelect = { [weak self, weak partner] modifierFlags in
-                    guard let partner else { return }
-                    self?.handleTabDoubleClick(partner, isPinned: isPinned, modifierFlags: modifierFlags)
-                }
-            } else {
-                view.onSecondaryDoubleSelect = nil
+            view.onPaneDoubleSelect = { [weak self] pane, modifierFlags in
+                self?.handleTabDoubleClick(pane, isPinned: isPinned, modifierFlags: modifierFlags)
             }
             if !isPinned {
                 let capturedIndex = index
                 view.onHoverChanged = { [weak self] isHovered in
                     guard let self = self else { return }
                     self.hoveredTabIndex = isHovered ? capturedIndex : nil
-                    // Mirror `performLayout`'s split-secondary exclusion so
-                    // the recomputed separator positions match the frames
+                    // Mirror `performLayout`'s split-pane exclusion so the
+                    // recomputed separator positions match the frames
                     // actually on screen.
                     let splitCollapse = self.normalSplitCollapseInfo()
                     let output = self.calculateLayout(
@@ -2155,7 +2163,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                         activeTab: self.visibleActiveTabForChrome(),
                         isPinned: false,
                         excludedIndices: splitCollapse.collapsedIndices,
-                        wideIndices: splitCollapse.wideIndices
+                        wideTabPaneCounts: splitCollapse.hostPaneCounts
                     )
                     // Re-render separators because hover state affects visibility.
                     self.updateSeparators(
@@ -2173,18 +2181,18 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                 }
             }
 
-            // Stamp the UI-test query surface. The collapsed second pane of a
-            // split (it merges into its partner's cell) and the transparent
+            // Stamp the UI-test query surface. The collapsed panes of a
+            // split (they merge into the host's cell) and the transparent
             // drag-source stand-in must not count as separate tab cells.
             let axVisible = !isDraggingSourceView
-                && !pinnedSplitCollapsedIndices.contains(index)
+                && !splitCollapse.collapsedIndices.contains(index)
             view.configureAccessibility(
                 identifier: isPinned
                     ? TabItemView.pinnedAccessibilityIdentifier
                     : TabItemView.normalAccessibilityIdentifier,
                 title: tab.title,
                 visible: axVisible,
-                isSplitPair: pinnedSplitPartners[id] != nil)
+                isMergedSplit: splitCollapse.mergedPanes[id] != nil)
 
             nextViews[id] = view
         }
@@ -2248,24 +2256,24 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             if index < layoutOutput.tabFrames.count {
                 var frame = layoutOutput.tabFrames[index]
                 // A .zero frame is the layout engine's "excluded" placeholder.
-                // Most .zero cases (collapsed group members, pinned-split
-                // collapsed second pane, dragged-tab placeholder) must zero
-                // out the view's frame so a stale frame from the previous
-                // layout doesn't ghost on top of the active layout.
+                // Most .zero cases (collapsed group members, collapsed split
+                // panes, dragged-tab placeholder) must zero out the view's
+                // frame so a stale frame from the previous layout doesn't
+                // ghost on top of the active layout.
                 //
-                // The split-pair drag sibling is the one exception: keep its
-                // source view in place so its proxy can return to a meaningful
-                // frame on drop without snapping to (0, 0). startDragging
-                // already hid alpha there.
-                // Split-pair swap (reverse panes) flips which view holds the
-                // wide merged cell — without snapping, both views animate
-                // through alpha 0 / partial frames inside the .dataChanged
-                // animation group, which reads as the cell disappearing and
+                // The split drag siblings are the one exception: keep their
+                // source views in place so their proxies can return to a
+                // meaningful frame on drop without snapping to (0, 0).
+                // startDragging already hid alpha there.
+                // A pane reorder (reverse / move) flips which view holds the
+                // merged cell — without snapping, the views animate through
+                // alpha 0 / partial frames inside the .dataChanged animation
+                // group, which reads as the cell disappearing and
                 // reappearing. Snap frame + alpha for split members so the
-                // swap is instantaneous.
+                // reorder is instantaneous.
                 let isSplitMember = browserState.splitGroup(forTabId: tab.guid) != nil
                 if frame == .zero {
-                    if view === draggingSiblingSourceView {
+                    if draggingSiblingProxies.contains(where: { $0.sourceView === view }) {
                         continue
                     }
                     if isSplitMember {
@@ -2371,8 +2379,8 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                     // Re-render both separator pools so the chip's left
                     // separator (in `separatorViews`) and right separator
                     // (in `chipRightSeparatorViews`) react to the change.
-                    // Mirror `performLayout`'s split-secondary exclusion so
-                    // the recomputed positions match the on-screen frames.
+                    // Mirror `performLayout`'s split-pane exclusion so the
+                    // recomputed positions match the on-screen frames.
                     let splitCollapse = self.normalSplitCollapseInfo()
                     let output = self.calculateLayout(
                         containerWidth: self.normalContainer.bounds.width,
@@ -2380,7 +2388,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                         activeTab: self.visibleActiveTabForChrome(),
                         isPinned: false,
                         excludedIndices: splitCollapse.collapsedIndices,
-                        wideIndices: splitCollapse.wideIndices
+                        wideTabPaneCounts: splitCollapse.hostPaneCounts
                     )
                     self.updateSeparators(
                         in: self.normalContainer,
@@ -2717,10 +2725,10 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         let y = TabStripMetrics.Strip.bottomSpacing + (TabStripMetrics.Strip.tabHeight - sepSize.height) / 2.0
         let activeIndex = tabs.firstIndex { isTabActive($0, activeTab: activeTab) }
 
-        // Split-secondary slots are zero-width with off-screen separators,
-        // so the separator visually left of a tab can belong to an earlier
-        // index (the pair host's right edge). Every left-side rule below
-        // must use this mapping instead of the plain `idx - 1`.
+        // Collapsed split-pane slots are zero-width with off-screen
+        // separators, so the separator visually left of a tab can belong to
+        // an earlier index (the split host's right edge). Every left-side
+        // rule below must use this mapping instead of the plain `idx - 1`.
         let splitCollapsedIndices = normalSplitCollapseInfo().collapsedIndices
         let leftSeparatorIndex: (Int) -> Int = { idx in
             TabStripLayoutEngine.visibleLeftSeparatorIndex(of: idx, skippingCollapsed: splitCollapsedIndices)
@@ -2967,9 +2975,9 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
            let activeDbId = activeTab.guidInLocalDB, !activeDbId.isEmpty {
             return dbId == activeDbId
         }
-        // The strip only renders the primary of a split. When focus moves to
-        // the secondary pane, `activeTab` is the partner — match by split
-        // group so the rendered primary cell still earns the active width.
+        // The strip only renders the first pane of a merged split. When focus
+        // moves to another pane, `activeTab` is that pane — match by split
+        // group so the rendered host cell still earns the active width.
         if tab.guid > 0, activeTab.guid > 0,
            let group = browserState.splitGroup(forTabId: tab.guid),
            group.contains(tabId: activeTab.guid) {
@@ -3086,15 +3094,14 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                 return false
             }
             return browserState.toggleMultiSelection(for: tab)
-        case let .splitPair(left, right):
-            guard let leftTab = browserState.normalTabs.first(where: { $0.guid == left }),
-                  let rightTab = browserState.normalTabs.first(where: { $0.guid == right }) else {
+        case let .split(paneIds):
+            let panes = paneIds.compactMap { paneId in
+                browserState.normalTabs.first(where: { $0.guid == paneId })
+            }
+            guard panes.count == paneIds.count else {
                 return false
             }
-            return browserState.toggleMultiSelectionForSplitPair(
-                leftTab: leftTab,
-                rightTab: rightTab
-            )
+            return browserState.toggleMultiSelectionForSplit(panes: panes)
         case let .bookmark(guid):
             return browserState.toggleBookmarkMultiSelection(bookmarkGuid: guid)
         }
@@ -3127,23 +3134,26 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
 
     private func multiSelectionUnit(for tab: Tab) -> TabStripMultiSelectionUnit? {
         let tabs = browserState.normalTabs
-        guard let tabIndex = tabs.firstIndex(where: { $0.guid == tab.guid }) else {
+        guard tabs.contains(where: { $0.guid == tab.guid }) else {
             return nil
         }
 
         if let splitGroup = browserState.splitGroup(forTabId: tab.guid),
-           !splitGroup.isPinned,
-           let partnerId = splitGroup.partnerTabId(of: tab.guid),
-           let partnerIndex = tabs.firstIndex(where: { $0.guid == partnerId }) {
-            let leftTab = tabIndex < partnerIndex ? tab : tabs[partnerIndex]
-            let rightTab = tabIndex < partnerIndex ? tabs[partnerIndex] : tab
-            if let bookmarkGuid = browserState.splitBookmarkBindings.first(where: { entry in
-                entry.value == splitGroup.id &&
-                    browserState.bookmarkManager.bookmark(withGuid: entry.key) != nil
-            })?.key {
-                return .bookmark(bookmarkGuid)
+           !splitGroup.isPinned {
+            // Pane ids in strip order; a split with a pane missing from
+            // `normalTabs` (transient) falls through to a plain tab unit.
+            let paneIndices = splitGroup.tabIds.compactMap { paneId in
+                tabs.firstIndex(where: { $0.guid == paneId })
             }
-            return .splitPair(left: leftTab.guid, right: rightTab.guid)
+            if paneIndices.count == splitGroup.paneCount {
+                if let bookmarkGuid = browserState.splitBookmarkBindings.first(where: { entry in
+                    entry.value == splitGroup.id &&
+                        browserState.bookmarkManager.bookmark(withGuid: entry.key) != nil
+                })?.key {
+                    return .bookmark(bookmarkGuid)
+                }
+                return .split(panes: paneIndices.sorted().map { tabs[$0].guid })
+            }
         }
 
         if let bookmarkGuid = tab.guidInLocalDB,
@@ -3168,9 +3178,8 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         switch unit {
         case let .tab(guid):
             return browserState.multiSelection.contains(guid)
-        case let .splitPair(left, right):
-            return browserState.multiSelection.contains(left)
-                || browserState.multiSelection.contains(right)
+        case let .split(panes):
+            return panes.contains { browserState.multiSelection.contains($0) }
         case let .bookmark(guid):
             return browserState.multiSelection.containsBookmark(guid)
         }
@@ -3530,7 +3539,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
 
         draggingProxyView?.alphaValue = 0
         draggingCompanionProxyViews.forEach { $0.view.alphaValue = 0 }
-        draggingSiblingProxyView?.alphaValue = 0
+        draggingSiblingProxies.forEach { $0.proxy.alphaValue = 0 }
         cachedTabDragImage = image
         isShowingPinnedMultiSelectionDragPreview = true
     }
@@ -3552,7 +3561,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         }
         draggingProxyView?.alphaValue = 1
         draggingCompanionProxyViews.forEach { $0.view.alphaValue = 1 }
-        draggingSiblingProxyView?.alphaValue = 1
+        draggingSiblingProxies.forEach { $0.proxy.alphaValue = 1 }
     }
 
     private func pinnedMultiSelectionDragImage(tabIds: [Int], size: CGSize) -> NSImage {
@@ -3708,11 +3717,11 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             if shouldShowPinnedMultiSelectionDragPreview(for: context) {
                 draggingProxyView?.alphaValue = 0
                 draggingCompanionProxyViews.forEach { $0.view.alphaValue = 0 }
-                draggingSiblingProxyView?.alphaValue = 0
+                draggingSiblingProxies.forEach { $0.proxy.alphaValue = 0 }
             } else {
                 draggingProxyView?.alphaValue = 1
                 draggingCompanionProxyViews.forEach { $0.view.alphaValue = 1 }
-                draggingSiblingProxyView?.alphaValue = 1
+                draggingSiblingProxies.forEach { $0.proxy.alphaValue = 1 }
             }
             hideFloatingDragPreview()
             return
@@ -3739,9 +3748,9 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         guard let image else { return }
         draggingProxyView?.alphaValue = 0
         draggingCompanionProxyViews.forEach { $0.view.alphaValue = 0 }
-        // Keep the sibling proxy in sync so the pair always reads as one
+        // Keep the sibling proxies in sync so the split always reads as one
         // unit, whether shown in the strip or in the floating preview panel.
-        draggingSiblingProxyView?.alphaValue = 0
+        draggingSiblingProxies.forEach { $0.proxy.alphaValue = 0 }
 
         let panel = ensureDragImageWindow()
         dragImageView?.image = image
@@ -3991,10 +4000,10 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
     ) -> Bool {
         guard let wrapper = tab.webContentWrapper else { return false }
         // Split-aware: when the dragged tab belongs to a split, the Chromium
-        // bridge re-creates the pair atomically at the requested index. Skip
-        // the local schedule + tail-insert dance — its post-arrival per-tab
-        // moveTab callback would yank the dragged half out of the new split
-        // and break the pair.
+        // bridge re-creates the whole split atomically at the requested
+        // index. Skip the local schedule + tail-insert dance — its
+        // post-arrival per-tab moveTab callback would yank the dragged pane
+        // out of the new split and break it.
         if browserState.splitGroup(forTabId: tab.guid) != nil {
             let clampedIndex = max(0, min(index, targetState.tabs.count))
             wrapper.moveSplit(toWindow: targetState.windowId.int64Value, at: clampedIndex)
@@ -4175,26 +4184,26 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         let multiDragVisualSlotCount = multiDragIds == nil
             ? nil
             : max(1, multiDragVisualUnits.count)
-        // Resolve the dragged tab's split partner — when present, both members
-        // lift, follow the cursor, and drop together. Pinned tabs cannot
-        // currently belong to splits, so this only fires in the normal zone.
-        let siblingInfo = (!isPinned && multiDragIds == nil) ? resolveDragSibling(for: tab) : nil
-        // Merged-split source cell: the strip renders the pair as one wide
-        // cell via `pinnedSplitPartners`; the drag proxy must match that
-        // layout (two favicons + titles + divider) instead of the
-        // merged-bar style that `splitInfo.position` would produce, and
-        // the sibling proxy must be suppressed since the partner's source
-        // view is already collapsed under the merged cell.
+        // Resolve the other panes of the dragged tab's split — when present,
+        // every pane lifts, follows the cursor, and drops together. Pinned
+        // tabs cannot currently belong to splits, so this only fires in the
+        // normal zone.
+        let siblings = (!isPinned && multiDragIds == nil) ? resolveDragSiblings(for: tab) : []
+        // Merged-split source cell: the strip renders the split as one cell
+        // via `SplitCollapseInfo.mergedPanes`; the drag proxy must match
+        // that layout (one favicon + title per pane, dividers between)
+        // instead of the merged-bar style that `splitInfo.position` would
+        // produce, and the sibling proxies must be suppressed since the
+        // other panes' source views are already collapsed under the merged
+        // cell.
         let pinnedCollapse = isPinned ? pinnedSplitCollapseInfo() : nil
         let primaryVisualUnit = multiDragVisualUnits.first { $0.contains(tabId: tab.guid) }
-        let mergedSplitPartner: Tab? = {
-            if let partner = primaryVisualUnit?.partner { return partner }
-            if let collapse = normalCollapse { return collapse.partners[id] }
-            if let collapse = pinnedCollapse { return collapse.partners[id] }
-            return nil
+        let mergedSplitPanes: [Tab] = {
+            if let panes = primaryVisualUnit?.panes, !panes.isEmpty { return panes }
+            return normalCollapse?.mergedPanes[id] ?? pinnedCollapse?.mergedPanes[id] ?? []
         }()
-        draggingMergedPartner = mergedSplitPartner
-        let suppressSiblingProxy = mergedSplitPartner != nil
+        draggingMergedPanes = mergedSplitPanes
+        let suppressSiblingProxies = !mergedSplitPanes.isEmpty
         if let view = isPinned ? pinnedTabViews[id] : normalTabViews[id] {
             // Proxy view carries drag visuals so the source view can stay out of layout flow.
             let splitInfo = splitRenderInfo(for: tab)
@@ -4204,9 +4213,9 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                 url: tab.url ?? "",
                 isActive: isTabActive(tab, activeTab: browserState.focusingTab),
                 isPinned: isPinned,
-                splitPairPosition: mergedSplitPartner == nil ? splitInfo.position : nil,
-                isSplitGroupActive: mergedSplitPartner == nil ? splitInfo.groupActive : false,
-                pinnedSplitPartner: mergedSplitPartner,
+                splitPanePosition: mergedSplitPanes.isEmpty ? splitInfo.position : nil,
+                isSplitGroupActive: mergedSplitPanes.isEmpty ? splitInfo.groupActive : false,
+                mergedSplitPanes: mergedSplitPanes,
                 sourceTab: tab
             )
 
@@ -4256,46 +4265,48 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                 )
             }
 
-            // Build a sibling proxy so the partner lifts alongside the
-            // dragged tab; otherwise the user sees a single tab animate even
-            // though the data layer moves the whole split. Skipped for the
-            // collapsed merged-split case — the partner is already
-            // represented inside the single wide proxy above.
-            if let siblingInfo, !suppressSiblingProxy {
-                let siblingFrameInOverlay = dragOverlay.convert(
-                    siblingInfo.sourceView.frame,
-                    from: siblingInfo.sourceView.superview
-                )
-                let siblingRenderData = TabRenderData(
-                    id: siblingInfo.tab.uniqueId,
-                    title: siblingInfo.tab.title,
-                    url: siblingInfo.tab.url ?? "",
-                    isActive: isTabActive(siblingInfo.tab, activeTab: browserState.focusingTab),
-                    isPinned: false,
-                    splitPairPosition: browserState.splitPairPosition(forTabId: siblingInfo.tab.guid),
-                    isSplitGroupActive: splitInfo.groupActive,
-                    sourceTab: siblingInfo.tab
-                )
-                let siblingProxy = TabItemView()
-                siblingProxy.configure(with: siblingRenderData, browserState: browserState)
-                siblingProxy.setActivePageStyle(
-                    backgroundColor: activePageBackgroundColor,
-                    appearance: activePageAppearance
-                )
-                if !siblingRenderData.isActive {
-                    siblingProxy.setDragHighlighted(true)
+            // Build one sibling proxy per other pane so the whole split
+            // lifts alongside the dragged tab; otherwise the user sees a
+            // single tab animate even though the data layer moves the whole
+            // split. Skipped for the merged-cell case — the other panes are
+            // already represented inside the single proxy above.
+            if !suppressSiblingProxies {
+                for sibling in siblings {
+                    let siblingFrameInOverlay = dragOverlay.convert(
+                        sibling.sourceView.frame,
+                        from: sibling.sourceView.superview
+                    )
+                    let siblingRenderData = TabRenderData(
+                        id: sibling.tab.uniqueId,
+                        title: sibling.tab.title,
+                        url: sibling.tab.url ?? "",
+                        isActive: isTabActive(sibling.tab, activeTab: browserState.focusingTab),
+                        isPinned: false,
+                        splitPanePosition: browserState.splitPanePosition(forTabId: sibling.tab.guid),
+                        isSplitGroupActive: splitInfo.groupActive,
+                        sourceTab: sibling.tab
+                    )
+                    let siblingProxy = TabItemView()
+                    siblingProxy.configure(with: siblingRenderData, browserState: browserState)
+                    siblingProxy.setActivePageStyle(
+                        backgroundColor: activePageBackgroundColor,
+                        appearance: activePageAppearance
+                    )
+                    if !siblingRenderData.isActive {
+                        siblingProxy.setDragHighlighted(true)
+                    }
+                    siblingProxy.frame = siblingFrameInOverlay
+                    dragOverlay.addSubview(siblingProxy)
+                    draggingSiblingProxies.append(DraggingSiblingProxy(
+                        proxy: siblingProxy,
+                        sourceView: sibling.sourceView,
+                        index: sibling.index,
+                        offsetX: siblingFrameInOverlay.minX - frameInOverlay.minX
+                    ))
+                    siblingProxy.layoutSubtreeIfNeeded()
+                    sibling.sourceView.alphaValue = 0
+                    TabStripAnimationHelper.animateLift(siblingProxy)
                 }
-                siblingProxy.frame = siblingFrameInOverlay
-                dragOverlay.addSubview(siblingProxy)
-                draggingSiblingProxyView = siblingProxy
-                draggingSiblingSourceView = siblingInfo.sourceView
-                draggingSiblingPlacement = (
-                    index: siblingInfo.index,
-                    offsetX: siblingFrameInOverlay.minX - frameInOverlay.minX
-                )
-                siblingProxy.layoutSubtreeIfNeeded()
-                siblingInfo.sourceView.alphaValue = 0
-                TabStripAnimationHelper.animateLift(siblingProxy)
             }
         }
         self.dragController.startDragging(
@@ -4305,7 +4316,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             mouseLocation: mouseLoc,
             // Keep the initial frame in overlay coordinates for drag math.
             tabFrame: dragOverlay.convert(frame, from: isPinned ? pinnedContainer : normalContainer),
-            siblingSourceIndex: siblingInfo?.index,
+            siblingSourceIndices: Set(siblings.map(\.index)),
             sourceExcludedIndices: multiDragIds == nil ? nil : multiDragSourceIndices,
             draggingTabIds: multiDragIds,
             draggingVisualSlotCount: multiDragVisualSlotCount
@@ -4315,40 +4326,43 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         }
     }
 
-    /// Returns the source view, tab, and tab-strip index of the dragged tab's
-    /// split partner in the normal zone, or nil when the tab isn't paired.
-    private func resolveDragSibling(for tab: Tab) -> (tab: Tab, sourceView: TabItemView, index: Int)? {
+    /// Returns the source view, tab, and tab-strip index of each other pane
+    /// of the dragged tab's split in the normal zone, in slot order. Empty
+    /// when the tab isn't in a split; a pane without a strip view (not in
+    /// `normalTabs`) is skipped.
+    private func resolveDragSiblings(for tab: Tab) -> [(tab: Tab, sourceView: TabItemView, index: Int)] {
         guard let group = browserState.splitGroup(forTabId: tab.guid) else {
-            return nil
+            return []
         }
-        guard let partnerId = group.partnerTabId(of: tab.guid),
-              let partnerIndex = browserState.normalTabs.firstIndex(where: { $0.guid == partnerId }) else {
-            return nil
+        return group.otherTabIds(of: tab.guid).compactMap { paneId in
+            guard let paneIndex = browserState.normalTabs.firstIndex(where: { $0.guid == paneId }) else {
+                return nil
+            }
+            let pane = browserState.normalTabs[paneIndex]
+            guard let paneView = normalTabViews[pane.uniqueId] else {
+                return nil
+            }
+            return (pane, paneView, paneIndex)
         }
-        let partner = browserState.normalTabs[partnerIndex]
-        guard let partnerView = normalTabViews[partner.uniqueId] else {
-            return nil
-        }
-        return (partner, partnerView, partnerIndex)
     }
 
     private func normalDragVisualUnits(
         for tabIds: [Int],
-        splitCollapseInfo: (collapsedIndices: Set<Int>, wideIndices: Set<Int>, partners: [String: Tab])?
+        splitCollapseInfo: SplitCollapseInfo?
     ) -> [NormalDragVisualUnit] {
         let representedIds = Set(tabIds)
         let collapsedIndices = splitCollapseInfo?.collapsedIndices ?? []
-        let partners = splitCollapseInfo?.partners ?? [:]
+        let mergedPanes = splitCollapseInfo?.mergedPanes ?? [:]
         var units: [NormalDragVisualUnit] = []
         for (index, tab) in browserState.normalTabs.enumerated()
         where representedIds.contains(tab.guid) {
             if collapsedIndices.contains(index) {
                 continue
             }
-            let partner = partners[tab.uniqueId]
+            let panes = mergedPanes[tab.uniqueId] ?? []
             units.append(NormalDragVisualUnit(
                 primary: tab,
-                partner: partner.flatMap { representedIds.contains($0.guid) ? $0 : nil }
+                panes: panes.filter { representedIds.contains($0.guid) }
             ))
         }
         return units
@@ -4366,7 +4380,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         for (unitIndex, unit) in units.enumerated() where !unit.contains(tabId: draggingTab.guid) {
             let companion = TabItemView()
             let renderData = dragRenderData(for: unit.primary,
-                                            partner: unit.partner,
+                                            panes: unit.panes,
                                             isPinned: isPinned)
             companion.configure(with: renderData, browserState: browserState)
             companion.setActivePageStyle(
@@ -4386,14 +4400,14 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             draggingCompanionProxyViews.append(DraggingCompanionProxy(
                 view: companion,
                 tab: unit.primary,
-                partner: unit.partner,
+                panes: unit.panes,
                 slotOffset: unitIndex - primaryUnitIndex
             ))
         }
     }
 
     private func dragRenderData(for tab: Tab,
-                                partner: Tab?,
+                                panes: [Tab],
                                 isPinned: Bool) -> TabRenderData {
         let splitInfo = splitRenderInfo(for: tab)
         return TabRenderData(
@@ -4402,9 +4416,9 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             url: tab.url ?? "",
             isActive: isTabActive(tab, activeTab: browserState.focusingTab),
             isPinned: isPinned,
-            splitPairPosition: partner == nil ? splitInfo.position : nil,
-            isSplitGroupActive: partner == nil ? splitInfo.groupActive : false,
-            pinnedSplitPartner: partner,
+            splitPanePosition: panes.isEmpty ? splitInfo.position : nil,
+            isSplitGroupActive: panes.isEmpty ? splitInfo.groupActive : false,
+            mergedSplitPanes: panes,
             sourceTab: tab
         )
     }
@@ -4414,7 +4428,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
     }
 
     /// Indices excluded from the source zone's layout: the dragged tab and
-    /// (for split-pair drags) its partner.
+    /// (for split drags) the other panes of its split.
     private func sourceExclusionSet(for context: TabDragContext?) -> Set<Int> {
         context?.sourceExcludedIndices ?? []
     }
@@ -4534,7 +4548,7 @@ extension TabStrip: TabStripDragDelegate {
             normalScrollOffset: currentScrollOffset,
             chipFrames: chipFrames,
             draggedTabFrameInNormal: draggedTabFrameInNormal,
-            normalSplitPairLowerIndices: browserState.splitPairLowerIndicesInNormalTabs()
+            normalSplitRuns: browserState.splitRunsInNormalTabs()
         )
     }
 
@@ -4549,8 +4563,6 @@ extension TabStrip: TabStripDragDelegate {
             ctx.duration = 0.18
             ctx.timingFunction = CAMediaTimingFunction(name: .default)
             ctx.allowsImplicitAnimation = true
-            let dragPinnedSplitCollapse = pinnedSplitCollapseInfo()
-            let dragNormalSplitCollapse = normalSplitCollapseInfo()
             updateLayoutOnly(
                 container: pinnedContainer,
                 viewPool: pinnedTabViews,
@@ -4559,8 +4571,7 @@ extension TabStrip: TabStripDragDelegate {
                 isPinned: true,
                 excludedIndices: pinnedExcludedIndices,
                 gapIndex: pinnedGapIndex,
-                pinnedSplitCollapsedIndices: dragPinnedSplitCollapse.collapsedIndices,
-                pinnedSplitWideIndices: dragPinnedSplitCollapse.wideIndices
+                splitCollapse: pinnedSplitCollapseInfo()
             )
 
             updateLayoutOnly(
@@ -4572,8 +4583,7 @@ extension TabStrip: TabStripDragDelegate {
                 excludedIndices: normalExcludedIndices,
                 gapIndex: normalGapIndex,
                 gapWidth: normalGapWidth,
-                pinnedSplitCollapsedIndices: dragNormalSplitCollapse.collapsedIndices,
-                pinnedSplitWideIndices: dragNormalSplitCollapse.wideIndices
+                splitCollapse: normalSplitCollapseInfo()
             )
         }
 
@@ -4667,9 +4677,10 @@ extension TabStrip: TabStripDragDelegate {
             }
         } else {
             if toZone == .pinned {
-                // Split-aware: pin the whole pair as a single pinned-split unit
-                // when the dragged tab belongs to a live split, matching the
-                // sidebar pinned-drop path and the right-click "Pin Split" menu.
+                // Split-aware: pin the whole split as a single pinned-split
+                // unit when the dragged tab belongs to a live split, matching
+                // the sidebar pinned-drop path and the right-click "Pin Split"
+                // menu.
                 if let splitGroup = browserState.splitGroup(forTabId: tab.guid),
                    !splitGroup.isPinned {
                     browserState.pinSplitInsertingAtPinnedIndex(splitGroup.id, atIndex: toIndex)
@@ -4757,19 +4768,17 @@ extension TabStrip: TabStripDragDelegate {
                         }()
                         // Splits leave a group as a unit so the merged-row
                         // invariant survives the boundary crossing.
-                        let leavePartner: Tab? = {
+                        let leavePanes: [Tab] = {
                             guard let group = browserState.splitGroup(forTabId: tab.guid),
-                                  !group.isPinned,
-                                  let partnerId = group.partnerTabId(of: tab.guid),
-                                  let partner = browserState.tabs.first(where: { $0.guid == partnerId }),
-                                  partner.groupToken == sourceToken else {
-                                return nil
+                                  !group.isPinned else {
+                                return []
                             }
-                            return partner
+                            return group.otherTabIds(of: tab.guid).compactMap { paneId in
+                                browserState.tabs.first(where: { $0.guid == paneId })
+                            }.filter { $0.groupToken == sourceToken }
                         }()
-                        var memberIds: [NSNumber] = [NSNumber(value: Int64(tab.guid))]
-                        if let partner = leavePartner {
-                            memberIds.append(NSNumber(value: Int64(partner.guid)))
+                        let memberIds: [NSNumber] = ([tab] + leavePanes).map {
+                            NSNumber(value: Int64($0.guid))
                         }
                         AppLogDebug(
                             "[TAB_GROUPS][STRIP_DRAG] auto-leave windowId=\(browserState.windowId) " +
@@ -4793,16 +4802,13 @@ extension TabStrip: TabStripDragDelegate {
                         // and trip the contiguity assertion. Route
                         // through the batched
                         // `applyOptimisticGroupMembership(updates:)`
-                        // so both panes of a split clear their token
+                        // so every pane of a split clears its token
                         // atomically (single publish), avoiding the
                         // transient `[member, member(stale), member,
                         // non-member]` arrangement that breaks
-                        // contiguity between the two single-tab calls.
-                        var leaveUpdates: [(tabId: Int, newToken: String?)] =
-                            [(tab.guid, nil)]
-                        if let partner = leavePartner {
-                            leaveUpdates.append((partner.guid, nil))
-                        }
+                        // contiguity between per-tab calls.
+                        let leaveUpdates: [(tabId: Int, newToken: String?)] =
+                            ([tab] + leavePanes).map { ($0.guid, nil) }
                         browserState.applyOptimisticGroupMembership(
                             updates: leaveUpdates)
                     }
@@ -4855,7 +4861,7 @@ extension TabStrip: TabStripDragDelegate {
                 // bar (the tab was only opened from it, not moved out of it).
                 // `moveBookmarkIntoGroup` is the no-remove half of
                 // `moveBookmarkOut`. Splits fall through to the generic path
-                // so the partner pane travels too.
+                // so the other panes travel too.
                 if let token = joinToken,
                    let dbGuid = tab.guidInLocalDB,
                    browserState.splitGroup(forTabId: tab.guid) == nil,
@@ -4886,21 +4892,21 @@ extension TabStrip: TabStripDragDelegate {
                         return "trailingEdge"
                     }()
                     // Splits travel as a unit. When the dropped tab is in
-                    // a non-pinned split, the partner pane joins the group
-                    // with it so both panes share the token and stay
+                    // a non-pinned split, the other panes join the group
+                    // with it so every pane shares the token and stays
                     // adjacent — the merged in-group split row only
                     // renders when that invariant holds.
-                    let splitPartner: Tab? = {
+                    let splitPanes: [Tab] = {
                         guard let group = browserState.splitGroup(forTabId: tab.guid),
-                              !group.isPinned,
-                              let partnerId = group.partnerTabId(of: tab.guid) else {
-                            return nil
+                              !group.isPinned else {
+                            return []
                         }
-                        return browserState.tabs.first(where: { $0.guid == partnerId })
+                        return group.otherTabIds(of: tab.guid).compactMap { paneId in
+                            browserState.tabs.first(where: { $0.guid == paneId })
+                        }
                     }()
-                    var memberIds: [NSNumber] = [NSNumber(value: Int64(tab.guid))]
-                    if let partner = splitPartner {
-                        memberIds.append(NSNumber(value: Int64(partner.guid)))
+                    let memberIds: [NSNumber] = ([tab] + splitPanes).map {
+                        NSNumber(value: Int64($0.guid))
                     }
                     AppLogDebug(
                         "[TAB_GROUPS][STRIP_DRAG] auto-join windowId=\(browserState.windowId) " +
@@ -4923,15 +4929,12 @@ extension TabStrip: TabStripDragDelegate {
                     // two runs and tripping `currentGroupRuns()`'s
                     // contiguity assertion. Route through the batched
                     // `applyOptimisticGroupMembership(updates:)` so
-                    // both panes of a split land adjacent to existing
+                    // every pane of a split lands adjacent to existing
                     // members atomically — single publish, no
                     // transient [member, member, intruder] state
-                    // between the two single-tab calls.
-                    var joinUpdates: [(tabId: Int, newToken: String?)] =
-                        [(tab.guid, token)]
-                    if let partner = splitPartner {
-                        joinUpdates.append((partner.guid, token))
-                    }
+                    // between per-tab calls.
+                    let joinUpdates: [(tabId: Int, newToken: String?)] =
+                        ([tab] + splitPanes).map { ($0.guid, token) }
                     browserState.applyOptimisticGroupMembership(
                         updates: joinUpdates)
                 }
@@ -5140,12 +5143,14 @@ extension TabStrip: TabStripDragDelegate {
     }
 
     /// Commits a split drop against the focused tab's page. When the focused
-    /// tab is *not* a split, pairs the dragged tab with it into a new vertical
-    /// split (dragged tab takes the dropped side; dragging the focused tab
-    /// onto itself spawns a fresh new-tab-page partner). When the focused tab
-    /// *is* a split, replaces the hovered pane with the dragged tab. The
-    /// create/replace decision lives in `SplitTabDropContainer.commitSplitDrop`
-    /// so both entry points stay identical.
+    /// tab is *not* a split, pairs the dragged tab with it into a new split
+    /// (dragged tab takes the dropped side; dragging the focused tab onto
+    /// itself spawns a fresh new-tab-page partner). When the focused tab *is*
+    /// a split, an edge zone adds the dragged tab as a new pane and a
+    /// `.pane(slot)` zone replaces that pane with it. The zone passes
+    /// through unchanged: the create/pane decision lives in
+    /// `SplitTabDropContainer.commitSplitDrop` so both entry points stay
+    /// identical.
     private func performSplitWithFocused(draggedTab: Tab,
                                          fromPinnedZone: Bool,
                                          zone: SplitTabDropContainer.DropZone) {
@@ -5235,10 +5240,9 @@ extension TabStrip: TabStripDragDelegate {
         excludedIndices: Set<Int> = [],
         gapIndex: Int?,
         gapWidth: CGFloat? = nil,
-        pinnedSplitCollapsedIndices: Set<Int> = [],
-        pinnedSplitWideIndices: Set<Int> = []
+        splitCollapse: SplitCollapseInfo = .empty
     ) {
-        let combinedExcluded = excludedIndices.union(pinnedSplitCollapsedIndices)
+        let combinedExcluded = excludedIndices.union(splitCollapse.collapsedIndices)
         let layoutOutput = calculateLayout(
             containerWidth: container.bounds.width,
             tabs: tabs,
@@ -5247,7 +5251,7 @@ extension TabStrip: TabStripDragDelegate {
             excludedIndex: excludedIndex,
             excludedGroupRange: excludedGroupRange,
             excludedIndices: combinedExcluded,
-            wideIndices: pinnedSplitWideIndices,
+            wideTabPaneCounts: splitCollapse.hostPaneCounts,
             gapIndex: gapIndex,
             gapWidth: gapWidth
         )
@@ -5301,18 +5305,17 @@ extension TabStrip: TabStripDragDelegate {
             )
             companion.view.frame = companionFrame
         }
-        // Pin the partner proxy to the primary proxy at the same horizontal
-        // offset captured at drag start so the pair reads as one unit.
-        if let siblingProxy = draggingSiblingProxyView,
-           let placement = draggingSiblingPlacement {
-            siblingProxy.layer?.zPosition = 998
-            var siblingFrame = siblingProxy.frame
+        // Pin each sibling proxy to the primary proxy at the horizontal
+        // offset captured at drag start so the split reads as one unit.
+        for sibling in draggingSiblingProxies {
+            sibling.proxy.layer?.zPosition = 998
+            var siblingFrame = sibling.proxy.frame
             siblingFrame.size.height = newFrame.height
             siblingFrame.origin = CGPoint(
-                x: newFrame.origin.x + placement.offsetX,
+                x: newFrame.origin.x + sibling.offsetX,
                 y: newFrame.origin.y
             )
-            siblingProxy.frame = siblingFrame
+            sibling.proxy.frame = siblingFrame
         }
         updatePinnedMultiSelectionDragPreview(for: context, frame: newFrame)
         CATransaction.commit()
@@ -5330,22 +5333,12 @@ extension TabStrip: TabStripDragDelegate {
 
         // Only restyle the proxy; the source view stays hidden.
         guard let draggingView = draggingProxyView else { return }
-        let splitInfo = splitRenderInfo(for: tab)
-        // Merged-split source: keep the two-favicon rendering after the
+        // Merged-split source: keep the per-pane rendering after the
         // restyle so a normal-merged cell dragged into the pinned zone (or
         // vice versa) doesn't collapse to a single-favicon proxy.
-        let mergedPartner = draggingMergedPartner
-        let renderData = TabRenderData(
-            id: tab.uniqueId,
-            title: tab.title,
-            url: tab.url ?? "",
-            isActive: isTabActive(tab, activeTab: browserState.focusingTab),
-            isPinned: zone == .pinned,
-            splitPairPosition: mergedPartner == nil ? splitInfo.position : nil,
-            isSplitGroupActive: mergedPartner == nil ? splitInfo.groupActive : false,
-            pinnedSplitPartner: mergedPartner,
-            sourceTab: tab
-        )
+        let renderData = dragRenderData(for: tab,
+                                        panes: draggingMergedPanes,
+                                        isPinned: zone == .pinned)
         draggingView.configure(with: renderData, browserState: browserState)
         draggingView.setActivePageStyle(
             backgroundColor: activePageBackgroundColor,
@@ -5354,7 +5347,7 @@ extension TabStrip: TabStripDragDelegate {
         draggingView.layoutSubtreeIfNeeded()
         for companion in draggingCompanionProxyViews {
             let companionRenderData = dragRenderData(for: companion.tab,
-                                                     partner: companion.partner,
+                                                     panes: companion.panes,
                                                      isPinned: zone == .pinned)
             companion.view.configure(with: companionRenderData, browserState: browserState)
             companion.view.setActivePageStyle(
@@ -5378,15 +5371,13 @@ extension TabStrip: TabStripDragDelegate {
         switch context.targetContainerType {
         case .pinned:
             // Pinned tabs use a fixed width and centered height. Merged
-            // split cells span both panes' slots (mirrors layoutPinned's
-            // wideWidth) so the proxy matches what the drop will produce.
+            // split cells span every pane's slot (mirrors layoutPinned's
+            // merged width) so the proxy matches what the drop will produce.
             let pinnedWidth: CGFloat
-            if shouldShowPinnedMultiSelectionDragPreview(for: context) {
-                pinnedWidth = TabStripMetrics.PinnedTab.width
-            } else if draggingMergedPartner == nil {
+            if shouldShowPinnedMultiSelectionDragPreview(for: context) || draggingMergedPanes.isEmpty {
                 pinnedWidth = TabStripMetrics.PinnedTab.width
             } else {
-                pinnedWidth = TabStripMetrics.PinnedTab.width * 2 + TabStripMetrics.PinnedTab.spacing
+                pinnedWidth = TabStripMetrics.PinnedTab.mergedWidth(paneCount: draggingMergedPanes.count + 1)
             }
             frame.size = CGSize(width: pinnedWidth, height: TabStripMetrics.PinnedTab.height)
         case .normal:
@@ -5500,15 +5491,15 @@ extension TabStrip: TabStripDragDelegate {
             // Reveal the source view again.
             sourceView.alphaValue = 1
         }
-        // Reveal the split partner's source view too — it was hidden while
-        // its proxy was lifted in the overlay.
-        if let siblingSourceView = draggingSiblingSourceView {
+        // Reveal the other panes' source views too — they were hidden while
+        // their proxies were lifted in the overlay.
+        for sibling in draggingSiblingProxies {
+            guard let siblingSourceView = sibling.sourceView else { continue }
             if snapSourceToProxy,
                let context,
                context.targetContainerType == context.sourceContainerType,
-               let siblingProxy = draggingSiblingProxyView,
                context.sourceContainerType == .normal {
-                let frameInStrip = convert(siblingProxy.frame, from: dragOverlay)
+                let frameInStrip = convert(sibling.proxy.frame, from: dragOverlay)
                 let frameInContainer = normalContainer.convert(frameInStrip, from: self)
                 CATransaction.begin()
                 CATransaction.setDisableActions(true)
@@ -5528,14 +5519,12 @@ extension TabStrip: TabStripDragDelegate {
         pinnedMultiSelectionDragPreviewView?.removeFromSuperview()
         pinnedMultiSelectionDragPreviewView = nil
         isShowingPinnedMultiSelectionDragPreview = false
-        draggingSiblingProxyView?.removeFromSuperview()
-        draggingSiblingProxyView = nil
+        draggingSiblingProxies.forEach { $0.proxy.removeFromSuperview() }
+        draggingSiblingProxies.removeAll()
         draggingSourceView = nil
-        draggingSiblingSourceView = nil
         draggingAdditionalSourceViews.removeAll()
-        draggingSiblingPlacement = nil
         draggingPresentationZone = nil
-        draggingMergedPartner = nil
+        draggingMergedPanes = []
         dragOverlay.isHidden = true
         hideFloatingDragPreview()
         hideDragCountBadge()

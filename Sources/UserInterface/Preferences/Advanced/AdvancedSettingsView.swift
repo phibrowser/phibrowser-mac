@@ -25,6 +25,9 @@ struct AdvancedSettingsView: View {
     @AppStorage(PhiPreferences.GeneralSettings.showUnloadedTabIndicators.rawValue)
     private var showUnloadedTabIndicators = PhiPreferences.GeneralSettings.showUnloadedTabIndicators.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.keepPinnedTabsLoaded.rawValue)
+    private var keepPinnedTabsLoaded = PhiPreferences.GeneralSettings.keepPinnedTabsLoaded.defaultValue
+
     @AppStorage(PhiPreferences.GeneralSettings.shortHighlightLinksEnabled.rawValue)
     private var shortHighlightLinksEnabled: Bool = PhiPreferences.GeneralSettings.shortHighlightLinksEnabled.defaultValue
 
@@ -209,6 +212,30 @@ struct AdvancedSettingsView: View {
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                     .themedTint(.themeColor)
+            }
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Divider()
+
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(NSLocalizedString("settings.advanced.keepPinnedTabsLoaded.toggle", value: "Keep pinned tabs loaded", comment: "Advanced settings - Toggle title for keeping opened pinned tabs in memory instead of unloading them to free memory"))
+                        .font(.system(size: 13))
+                        .themedForeground(.textPrimary)
+                    Text(NSLocalizedString("settings.advanced.keepPinnedTabsLoaded.description", value: "Pinned tabs you have opened stay in memory instead of being unloaded to free it.", comment: "Advanced settings - Explains that, while the toggle is on, pinned tabs the user has opened are not unloaded from memory"))
+                        .font(.system(size: 11))
+                        .themedForeground(.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                Toggle("", isOn: $keepPinnedTabsLoaded)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .themedTint(.themeColor)
+                    .accessibilityLabel(NSLocalizedString("settings.advanced.keepPinnedTabsLoaded.toggle", value: "Keep pinned tabs loaded", comment: "Advanced settings - Toggle title for keeping opened pinned tabs in memory instead of unloading them to free memory"))
+                    .accessibilityIdentifier("settings.tabs.keepPinnedTabsLoaded")
             }
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)

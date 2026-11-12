@@ -85,6 +85,10 @@ struct AgentTask {
     /// Empty for phi-agent tasks and when the identity couldn't be resolved.
     /// Surfaced as a badge on the control pill and the transcript filter.
     var agentName: String = ""
+    /// The page area the agent's viewport is sized from while the Space is
+    /// hidden: the first one measured, then the last one it had on screen.
+    /// See `AgentSpaceRouter.taskPageAreaSize`.
+    var heldPageArea: CGSize? = nil
 }
 
 /// Presentation for "which code agent drives this Space": an icon plus a short
@@ -509,6 +513,19 @@ final class AgentSpaceManager: ObservableObject {
     func task(forTaskId taskId: String) -> AgentTask? {
         guard let spaceId = spaceIdByTaskId[taskId] else { return nil }
         return tasksBySpaceId[spaceId]
+    }
+
+    func task(forWindowId windowId: Int) -> AgentTask? {
+        tasksBySpaceId.values.first { $0.windowId == windowId }
+    }
+
+    /// Records `size` as the page area held by the task driving `windowId`.
+    /// No-op for a window no task drives.
+    func holdPageArea(_ size: CGSize, forWindowId windowId: Int) {
+        guard var task = task(forWindowId: windowId),
+              task.heldPageArea != size else { return }
+        task.heldPageArea = size
+        tasksBySpaceId[task.spaceId] = task
     }
 
     // MARK: - Creation
@@ -1007,7 +1024,19 @@ final class AgentSpaceManager: ObservableObject {
             onSwitch: { [weak self] in
                 AppLogInfo("[AgentSpace] handoff prompt: switch to agent Space")
                 self?.dismissHandoffPrompt()
-                SpaceManager.shared.activateInFocusedWindow(spaceId: spaceId)
+                let manager = SpaceManager.shared
+                // The slot `activateInFocusedWindow` resolves.
+                let window = (manager.keySlot ?? manager.slots.first)?.shell?.window
+                manager.activateInFocusedWindow(spaceId: spaceId)
+                // The prompt is a non-activating panel, so clicking it while
+                // another app is frontmost leaves Phi in the background: the
+                // Space swap alone would happen out of sight. The user asked
+                // to go there — bring the window and the app forward.
+                if let window {
+                    if window.isMiniaturized { window.deminiaturize(nil) }
+                    window.makeKeyAndOrderFront(nil)
+                }
+                NSApp.activate(ignoringOtherApps: true)
             },
             onLater: { [weak self] in
                 AppLogInfo("[AgentSpace] handoff prompt: dismissed (Later)")
@@ -1186,14 +1215,11 @@ final class AgentSpaceManager: ObservableObject {
     func appendTranscript(taskId: String, kind: AgentTranscriptEntry.Kind,
                           text: String, detail: String? = nil,
                           agent: String? = nil,
-                          piToolCallId: String? = nil,
-                          piToolState: PiTranscriptToolState? = nil,
                           timestamp: Date = Date()) {
         guard let spaceId = spaceIdByTaskId[taskId],
               let task = tasksBySpaceId[spaceId] else { return }
         AgentTranscriptStore.shared.append(
             taskId: taskId, kind: kind, text: text, detail: detail, agent: agent,
-            piToolCallId: piToolCallId, piToolState: piToolState,
             taskNumber: task.number, timestamp: timestamp)
     }
 
@@ -1235,8 +1261,9 @@ final class AgentSpaceManager: ObservableObject {
     /// typed into its terminal, so queued console input and hand-backs are
     /// only noticed at the session's next turn — the user has to nudge it
     /// themselves. Nil for every other driver: phi-agent's backend resumes
-    /// the agent itself, OpenClaw uses its gateway CLI, Pi uses its installed
-    /// in-process extension, and Hermes typically waits in waitForUserMessage.
+    /// the agent itself, OpenClaw uses its gateway CLI, Hermes is resumed
+    /// through its CLI, and the remaining terminal agents typically sit
+    /// blocked in waitForUserMessage rather than parked idle.
     private func terminalNudgeHint(for task: AgentTask) -> String? {
         guard task.origin == .cdp,
               AgentDriverBadge.make(agentName: task.agentName,
@@ -1266,8 +1293,8 @@ final class AgentSpaceManager: ObservableObject {
 
     /// Console setup at task (re)start: a reused persistent Space must not
     /// tail last week's transcript — but a task re-created moments after a
-    /// keep-alive reap (a driver whose harness kills rounds, Pi's 10s bash
-    /// timeout) must not lose the history the user is reading, so only a
+    /// keep-alive reap (a driver whose harness kills rounds) must not lose
+    /// the history the user is reading, so only a
     /// stale buffer is cleared. Recency is judged by APPEND time — mirrored
     /// lines carry backdated authored timestamps. The console is never opened
     /// here — the user opens it from the pip's context menu.

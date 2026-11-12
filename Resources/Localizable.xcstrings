@@ -333,6 +333,126 @@
         }
       }
     },
+    "about.conch.accessibilityLabel" : {
+      "comment" : "About window - Accessible name of the draggable conch illustration",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interaktive 3D-Muschel"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interactive 3D conch"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caracola 3D interactiva"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conque 3D interactive"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インタラクティブな3Dのほら貝"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "대화형 3D 소라"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interactieve 3D-schelp"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可交互的 3D 海螺"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "互動式 3D 海螺"
+          }
+        }
+      }
+    },
+    "about.conch.dragHint" : {
+      "comment" : "About window - Tooltip explaining how to interact with the conch",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ziehen, um die Muschel zu drehen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag to rotate the conch"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrastra para girar la caracola"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faites glisser pour faire pivoter la conque"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ドラッグしてほら貝を回転"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "드래그하여 소라 회전"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sleep om de schelp te draaien"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖移以旋转海螺"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖曳來旋轉海螺"
+          }
+        }
+      }
+    },
     "about.copyrightNotice" : {
       "comment" : "About window - Copyright notice at bottom",
       "extractionState" : "extracted_with_value",
@@ -22297,6 +22417,66 @@
         }
       }
     },
+    "app.viewMenu.appearance" : {
+      "comment" : "View menu - Submenu for choosing System, Light, or Dark color appearance",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erscheinungsbild"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Appearance"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apariencia"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apparence"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外観"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "모양"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weergave"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外观"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外觀"
+          }
+        }
+      }
+    },
     "app.viewMenu.layoutModeSectionTitle" : {
       "comment" : "View menu - Layout mode section header in View menu",
       "extractionState" : "extracted_with_value",
@@ -30521,8 +30701,308 @@
         }
       }
     },
+    "browser.splitDropHint.addBetween" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over the boundary between two panes of a split to add it there",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hier hinzufügen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Here"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agregar aquí"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter ici"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここに追加"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "여기에 추가"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voeg hier toe"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在此处添加"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入此處"
+          }
+        }
+      }
+    },
+    "browser.splitDropHint.addBottom" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over the bottom edge of a split to add a row there",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unten hinzufügen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Bottom"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agregar abajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter en bas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下に追加"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아래쪽 추가"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voeg onder toe"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在底部添加"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入下方"
+          }
+        }
+      }
+    },
+    "browser.splitDropHint.addLeft" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over the left edge of a split to add a column there",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Links hinzufügen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Left"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agregar a la izquierda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter à gauche"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左に追加"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "왼쪽 추가"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voeg links toe"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在左侧添加"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入左側"
+          }
+        }
+      }
+    },
+    "browser.splitDropHint.addRight" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over the right edge of a split to add a column there",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechts hinzufügen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Right"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agregar a la derecha"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter à droite"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右に追加"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "오른쪽 추가"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voeg rechts toe"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在右侧添加"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入右側"
+          }
+        }
+      }
+    },
+    "browser.splitDropHint.addTop" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over the top edge of a split to add a row there",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oben hinzufügen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Top"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agregar arriba"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter en haut"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上に追加"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "위쪽 추가"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voeg boven toe"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在顶部添加"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入上方"
+          }
+        }
+      }
+    },
     "browser.splitDropHint.bottom" : {
-      "comment" : "Drop-zone hint shown when dragging a tab over the bottom/secondary pane of a horizontal split to replace it",
+      "comment" : "Drop-zone hint shown when dragging a tab over the bottom pane of a horizontal split to replace it",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -30642,7 +31122,7 @@
       }
     },
     "browser.splitDropHint.leftHalf" : {
-      "comment" : "Drop-zone hint shown when dragging a tab over the left/primary pane of a vertical split to replace it",
+      "comment" : "Drop-zone hint shown when dragging a tab over the left pane of a vertical split to replace it",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -30761,8 +31241,68 @@
         }
       }
     },
+    "browser.splitDropHint.replacePane" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over a pane of a split to replace it",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ersetzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Replace"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reemplazar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplacer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "置き換え"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "바꾸기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vervang"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "替换"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取代"
+          }
+        }
+      }
+    },
     "browser.splitDropHint.rightHalf" : {
-      "comment" : "Drop-zone hint shown when dragging a tab over the right/secondary pane of a vertical split to replace it",
+      "comment" : "Drop-zone hint shown when dragging a tab over the right pane of a vertical split to replace it",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -30882,7 +31422,7 @@
       }
     },
     "browser.splitDropHint.top" : {
-      "comment" : "Drop-zone hint shown when dragging a tab over the top/primary pane of a horizontal split to replace it",
+      "comment" : "Drop-zone hint shown when dragging a tab over the top pane of a horizontal split to replace it",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -30997,6 +31537,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加入上方分割畫面"
+          }
+        }
+      }
+    },
+    "browser.splitPane.moveHandle" : {
+      "comment" : "Accessibility label of the grip at the top of a split pane that drags the pane to a new position",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bereich verschieben"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move Pane"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover panel"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacer le volet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ペインを移動"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "패널 이동"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verplaats paneel"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移动窗格"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移動窗格"
           }
         }
       }
@@ -33161,6 +33761,66 @@
         }
       }
     },
+    "common.bookmarkEditor.editMultiPaneSplitSubtitle" : {
+      "comment" : "Bookmark editor - Subtitle explaining editing of a split-view bookmark with three or four panes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bearbeite den Namen und die Adresse für jeden Bereich dieses Split-Lesezeichens."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Edit the name and address for each pane of this split-view bookmark."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edita el nombre y la dirección de cada panel de este marcador de vista dividida."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifiez le nom et l'adresse de chaque volet de ce favori Split View."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この分割表示のブックマークの各ペインの名前とアドレスを編集します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 분할 북마크의 각 패널 이름과 주소를 편집하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wijzig de naam en het adres van elk paneel van deze Split View-bladwijzer."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑此分屏书签每个窗格的名称和地址。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯這個分割畫面書籤每個窗格的名稱和網址。"
+          }
+        }
+      }
+    },
     "common.bookmarkEditor.editSplitSubtitle" : {
       "comment" : "Bookmark editor - Subtitle explaining split-view bookmark editing",
       "extractionState" : "extracted_with_value",
@@ -33997,6 +34657,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新增資料夾"
+          }
+        }
+      }
+    },
+    "common.bookmarkEditor.paneNameField.label" : {
+      "comment" : "Bookmark and pinned tab editor - Label for the name input field of one pane of a split with three or four panes. %d is the pane's position, starting at 1",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name von Bereich %d"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pane %d Name"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nombre del panel %d"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nom du volet %d"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ペイン%dの名前"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d번째 패널 이름"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Naam van paneel %d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %d 个窗格的名称"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %d 個窗格的名稱"
+          }
+        }
+      }
+    },
+    "common.bookmarkEditor.paneURLField.label" : {
+      "comment" : "Bookmark and pinned tab editor - Label for the URL input field of one pane of a split with three or four panes. %d is the pane's position, starting at 1",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL von Bereich %d"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pane %d URL"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL del panel %d"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL du volet %d"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ペイン%dのURL"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d번째 패널 URL"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL van paneel %d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %d 个窗格的网址"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %d 個窗格的網址"
           }
         }
       }
@@ -37241,6 +38021,66 @@
         }
       }
     },
+    "common.pinnedTabEditor.editMultiPaneSplitSubtitle" : {
+      "comment" : "Pinned tab editor - Subtitle explaining editing of a pinned split with three or four panes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bearbeite den Namen und die Adresse für jeden Bereich dieses angehefteten Splits."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Edit the name and address for each pane of this pinned split."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edita el nombre y la dirección de cada panel de esta vista dividida fijada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifiez le nom et l'adresse de chaque volet de cette Split View épinglée."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この固定した分割表示の各ペインの名前とアドレスを編集します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 고정 분할의 각 패널 이름과 주소를 편집하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wijzig de naam en het adres van elk paneel van deze vastgezette split."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑此固定分屏每个窗格的名称和地址。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯這個釘選分割畫面每個窗格的名稱和網址。"
+          }
+        }
+      }
+    },
     "common.pinnedTabEditor.editSplitSubtitle" : {
       "comment" : "Pinned tab editor - Subtitle explaining pinned split editing",
       "extractionState" : "extracted_with_value",
@@ -37901,6 +38741,306 @@
         }
       }
     },
+    "common.tabAreaContextMenu.bottomButtons.downloads" : {
+      "comment" : "Tab area context menu - Bottom Buttons submenu item that shows or hides the downloads button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloads"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Downloads"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Téléchargements"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロード"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다운로드"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloads"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載項目"
+          }
+        }
+      }
+    },
+    "common.tabAreaContextMenu.bottomButtons.feedback" : {
+      "comment" : "Tab area context menu - Bottom Buttons submenu item that shows or hides the feedback button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Feedback"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Feedback"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comentarios"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commentaires"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フィードバック"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "피드백"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Feedback"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "反馈"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "意見回饋"
+          }
+        }
+      }
+    },
+    "common.tabAreaContextMenu.bottomButtons.memory" : {
+      "comment" : "Tab area context menu - Bottom Buttons submenu item that shows or hides the AI memory button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browser-Erinnerungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Memory"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Memoria del navegador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mémoire du navigateur"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ブラウザメモリ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "브라우저 메모리"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browsergeheugen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "记忆"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記憶"
+          }
+        }
+      }
+    },
+    "common.tabAreaContextMenu.bottomButtons.profile" : {
+      "comment" : "Tab area context menu - Bottom Buttons submenu item that shows or hides the profile button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Profile"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロファイル"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프로필"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profiel"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "个人资料"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定檔"
+          }
+        }
+      }
+    },
+    "common.tabAreaContextMenu.bottomButtonsSubmenu" : {
+      "comment" : "Tab area context menu - Submenu to choose which buttons the sidebar bottom bar shows",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Untere Tasten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Bottom Buttons"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Botones inferiores"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Boutons du bas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下部のボタン"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "하단 버튼"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knoppen onderin"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "底部按钮"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "底部按鈕"
+          }
+        }
+      }
+    },
     "common.tabAreaContextMenu.layoutModeSubmenu" : {
       "comment" : "Tab area context menu - Switch layout mode",
       "extractionState" : "extracted_with_value",
@@ -38137,6 +39277,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新開啟已關閉的分頁"
+          }
+        }
+      }
+    },
+    "common.tabAreaContextMenu.toolbarButtonsSubmenu" : {
+      "comment" : "Tab strip context menu - Submenu to choose which buttons the top bar shows in the Comfortable layout",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Symbolleisten-Tasten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Toolbar Buttons"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Botones de la barra de herramientas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Boutons de la barre d'outils"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ツールバーのボタン"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "도구 막대 버튼"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knoppen in knoppenbalk"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工具栏按钮"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工具列按鈕"
           }
         }
       }
@@ -39162,7 +40362,7 @@
       }
     },
     "common.tabMultiSelectionContextMenu.openAsSplitAction" : {
-      "comment" : "Tab multi-selection context menu - split exactly two selected tabs into paired panes",
+      "comment" : "Tab multi-selection context menu - open the two to four selected items as the panes of one split",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -59540,6 +60740,126 @@
         }
       }
     },
+    "settings.advanced.keepPinnedTabsLoaded.description" : {
+      "comment" : "Advanced settings - Explains that, while the toggle is on, pinned tabs the user has opened are not unloaded from memory",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angeheftete Tabs, die du geöffnet hast, bleiben im Speicher, statt entladen zu werden, um Speicher freizugeben."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pinned tabs you have opened stay in memory instead of being unloaded to free it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las pestañas fijadas que has abierto permanecen en la memoria en lugar de descargarse para liberarla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les onglets épinglés que vous avez ouverts restent en mémoire au lieu d'être déchargés pour la libérer."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開いた固定タブは、メモリを空けるために解放されず、メモリに保持されたままになります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "열어 둔 고정된 탭은 메모리 확보를 위해 해제되지 않고 메모리에 계속 유지돼요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vastgezette tabbladen die je hebt geopend, blijven in het geheugen in plaats van te worden ontladen om geheugen vrij te maken."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你已打开的固定标签页会保留在内存中，而不会被卸载以释放内存。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你已開啟的釘選分頁會保留在記憶體中，不會為了釋放記憶體而被卸載。"
+          }
+        }
+      }
+    },
+    "settings.advanced.keepPinnedTabsLoaded.toggle" : {
+      "comment" : "Advanced settings - Toggle title for keeping opened pinned tabs in memory instead of unloading them to free memory",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angeheftete Tabs geladen lassen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Keep pinned tabs loaded"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mantener cargadas las pestañas fijadas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Garder les onglets épinglés chargés"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "固定タブをメモリに保持"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "고정된 탭을 메모리에 유지"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Houd vastgezette tabbladen geladen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保持固定标签页处于加载状态"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讓釘選分頁保持載入"
+          }
+        }
+      }
+    },
     "settings.advanced.miniPlayer.offOption" : {
       "comment" : "Mini Player display option - Hide the player while media continues playing",
       "extractionState" : "manual",
@@ -70303,7 +71623,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Links the skill bundled in this app into an AI coding agent’s skills folder so it can drive Phi over the DevTools Protocol. Pi also gets a companion extension that wakes idle sessions from Agent Transcript commands. Requires Node 22+."
+            "value" : "Links the skill bundled in this app into an AI coding agent’s skills folder so it can drive Phi over the DevTools Protocol. Requires Node 22+."
           }
         },
         "es" : {
@@ -70346,66 +71666,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將此 App 內建的 Skill 連結到 AI 程式開發代理的 Skill 資料夾，讓它能透過 DevTools Protocol 操控 Phi。同時也會安裝一個附屬擴充功能，能從 AI 代理逐字稿的指令喚醒閒置的工作階段。需要 Node 22 或更新版本。"
-          }
-        }
-      }
-    },
-    "settings.developer.skillInstall.missingCompanionError" : {
-      "comment" : "Developer settings - Pi companion extension missing",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dieser Build enthält die Pi-Begleiterweiterung nicht. Erstelle Phi Browser neu und versuche es erneut."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "This build doesn’t include the Pi companion extension. Rebuild Phi Browser and try again."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta compilación no incluye la extensión complementaria de Pi. Vuelve a compilar Phi Browser e inténtalo de nuevo."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cette version ne contient pas l'extension compagnon Pi. Recompilez Phi Browser et réessayez."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このビルドにはPiコンパニオン拡張機能が含まれていません。Phi Browserを再ビルドして、もう一度お試しください。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이 빌드에는 Pi 컴패니언 확장 프로그램이 없어요. Phi Browser를 다시 빌드하고 다시 시도해 주세요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deze build bevat de Pi-companionextensie niet. Bouw Phi Browser opnieuw en probeer het opnieuw."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此版本不包含 Pi 配套扩展程序。请重新构建 Phi Browser 后重试。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此版本未包含 Pi 隨附擴充功能。請重新建置 Phi Browser 後再試一次。"
           }
         }
       }
@@ -101732,6 +102992,186 @@
         }
       }
     },
+    "settings.spaces.tabSwitcherScope.allSpacesDescription" : {
+      "comment" : "Spaces settings - description under the Tab Switcher scope toggle when it is on",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Tab-Umschalter geht durch die zuletzt verwendeten Tabs aller Spaces und wechselt bei Bedarf den Space."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The Tab Switcher cycles through recent tabs in every Space and switches Spaces when needed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El selector de pestañas recorre las pestañas recientes de todos los Espacios y cambia de Espacio cuando es necesario."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le sélecteur d'onglets parcourt les onglets récents de tous les Espaces et change d'Espace si nécessaire."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タブスイッチャーはすべてのスペースの最近使ったタブを順に移動し、必要に応じてスペースを切り替えます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "탭 전환기가 모든 스페이스의 최근 탭을 차례로 전환하고, 필요하면 스페이스도 함께 전환해요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De tabbladwisselaar doorloopt recente tabbladen in elke Space en schakelt zo nodig over naar een andere Space."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签页切换器会在所有空间中最近使用的标签页之间循环切换，并在需要时切换空间。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分頁切換器會循環切換所有空間中最近使用的分頁，並在需要時切換空間。"
+          }
+        }
+      }
+    },
+    "settings.spaces.tabSwitcherScope.currentSpaceDescription" : {
+      "comment" : "Spaces settings - description under the Tab Switcher scope toggle when it is off",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Tab-Umschalter geht durch die zuletzt verwendeten Tabs im aktuellen Space."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The Tab Switcher cycles through recent tabs in the current Space."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El selector de pestañas recorre las pestañas recientes del Espacio actual."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le sélecteur d'onglets parcourt les onglets récents de l'Espace actuel."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タブスイッチャーは現在のスペースの最近使ったタブを順に移動します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "탭 전환기가 현재 스페이스의 최근 탭을 차례로 전환해요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De tabbladwisselaar doorloopt recente tabbladen in de huidige Space."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签页切换器会在当前空间中最近使用的标签页之间循环切换。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分頁切換器會循環切換目前空間中最近使用的分頁。"
+          }
+        }
+      }
+    },
+    "settings.spaces.tabSwitcherScope.title" : {
+      "comment" : "Spaces settings - toggle label for letting the Tab Switcher (Ctrl-Tab) list recent tabs from every Space in the window",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tab-Umschalter umfasst alle Spaces"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Tab Switcher includes all Spaces"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El selector de pestañas incluye todos los Espacios"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le sélecteur d'onglets inclut tous les Espaces"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タブスイッチャーにすべてのスペースを含める"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "탭 전환기에 모든 스페이스 포함"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabbladwisselaar bevat alle Spaces"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签页切换器包含所有空间"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分頁切換器包含所有空間"
+          }
+        }
+      }
+    },
     "settings.spaces.theme.colorLabel" : {
       "comment" : "Spaces settings - theme color row label",
       "extractionState" : "extracted_with_value",
@@ -102932,6 +104372,65 @@
         }
       }
     },
+    "sidebar.bookmarkContextMenu.editSubmenu" : {
+      "comment" : "Bookmark context menu - Submenu for editing the saved bookmark",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lesezeichen bearbeiten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Bookmark"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editar marcador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifier le favori"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ブックマークを編集"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "북마크 편집"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wijzig bladwijzer"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑书签"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯書籤"
+          }
+        }
+      }
+    },
     "sidebar.bookmarkContextMenu.moveToSpaceSubmenu" : {
       "comment" : "Bookmark context menu - Submenu to move this bookmark or folder to another Space",
       "extractionState" : "extracted_with_value",
@@ -103228,6 +104727,65 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新命名…"
+          }
+        }
+      }
+    },
+    "sidebar.bookmarkContextMenu.replaceSavedURL" : {
+      "comment" : "Bookmark context menu - Save the open page URL as the bookmark URL",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gespeicherte URL durch aktuelle ersetzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace Saved URL with Current"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reemplazar la URL guardada por la actual"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplacer l'URL enregistrée par l'URL actuelle"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存したURLを現在のURLに置き換え"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장된 URL을 현재 URL로 바꾸기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vervang bewaarde URL door de huidige"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将已保存的网址替换为当前网址"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以目前網址取代已儲存的網址"
           }
         }
       }
@@ -105375,6 +106933,124 @@
         }
       }
     },
+    "sidebar.pinnedTabContextMenu.editSubmenu" : {
+      "comment" : "Pinned tab context menu - Submenu for editing the saved pinned tab",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angehefteten Tab bearbeiten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Pinned Tab"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editar pestaña fijada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifier l'onglet épinglé"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "固定タブを編集"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "고정 탭 편집"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wijzig vastgezet tabblad"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑固定标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯釘選分頁"
+          }
+        }
+      }
+    },
+    "sidebar.pinnedTabContextMenu.replaceSavedURL" : {
+      "comment" : "Pinned tab context menu - Save the open page URL as the pinned tab URL",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gespeicherte URL durch aktuelle ersetzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace Saved URL with Current"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reemplazar la URL guardada por la actual"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplacer l'URL enregistrée par l'URL actuelle"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存したURLを現在のURLに置き換え"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장된 URL을 현재 URL로 바꾸기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vervang bewaarde URL door de huidige"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将已保存的网址替换为当前网址"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以目前網址取代已儲存的網址"
+          }
+        }
+      }
+    },
     "sidebar.pinnedTabs.emptyHint" : {
       "comment" : "Drag tabs here or pin them from the tab list",
       "extractionState" : "extracted_with_value",
@@ -106935,6 +108611,66 @@
         }
       }
     },
+    "sidebar.tabContextMenu.closeSplit" : {
+      "comment" : "Tab context menu - Close every pane of the split that contains this tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split schließen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close Split"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar vista dividida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer la Split View"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分割表示を閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "분할 닫기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sluit split"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭分屏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉分割畫面"
+          }
+        }
+      }
+    },
     "sidebar.tabContextMenu.closeTab" : {
       "comment" : "Tab context menu - Menu item to close the selected tab",
       "extractionState" : "extracted_with_value",
@@ -107475,6 +109211,66 @@
         }
       }
     },
+    "sidebar.tabContextMenu.copyPaneURLAtPosition" : {
+      "comment" : "Tab context menu - Copy one pane's URL of a split with three or four panes; %d is the pane's position counted from the left (or top when stacked), starting at 1",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL von Bereich %d kopieren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copy Pane %d URL"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar URL del panel %d"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copier l'URL du volet %d"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ペイン%dのURLをコピー"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d번째 패널 URL 복사"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kopieer URL van paneel %d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝第 %d 个窗格的网址"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷貝第 %d 個窗格的網址"
+          }
+        }
+      }
+    },
     "sidebar.tabContextMenu.copyRightPaneURL" : {
       "comment" : "Tab context menu - Copy the right pane's URL for a side-by-side split",
       "extractionState" : "extracted_with_value",
@@ -107771,6 +109567,246 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "複製"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.movePaneDown" : {
+      "comment" : "Tab context menu - Move the focused pane one position down within a stacked split of three or four panes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fokussierten Bereich nach unten verschieben"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Move Focused Pane Down"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover panel enfocado hacia abajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacer le volet sélectionné vers le bas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォーカス中のペインを下に移動"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "포커스된 패널 아래로 이동"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verplaats paneel met focus omlaag"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向下移动当前聚焦的窗格"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將焦點所在的窗格向下移動"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.movePaneLeft" : {
+      "comment" : "Tab context menu - Move the focused pane one position to the left within a side-by-side split of three or four panes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fokussierten Bereich nach links verschieben"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Move Focused Pane Left"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover panel enfocado a la izquierda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacer le volet sélectionné vers la gauche"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォーカス中のペインを左に移動"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "포커스된 패널 왼쪽으로 이동"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verplaats paneel met focus naar links"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向左移动当前聚焦的窗格"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將焦點所在的窗格向左移動"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.movePaneRight" : {
+      "comment" : "Tab context menu - Move the focused pane one position to the right within a side-by-side split of three or four panes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fokussierten Bereich nach rechts verschieben"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Move Focused Pane Right"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover panel enfocado a la derecha"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacer le volet sélectionné vers la droite"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォーカス中のペインを右に移動"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "포커스된 패널 오른쪽으로 이동"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verplaats paneel met focus naar rechts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向右移动当前聚焦的窗格"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將焦點所在的窗格向右移動"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.movePaneUp" : {
+      "comment" : "Tab context menu - Move the focused pane one position up within a stacked split of three or four panes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fokussierten Bereich nach oben verschieben"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Move Focused Pane Up"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover panel enfocado hacia arriba"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacer le volet sélectionné vers le haut"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォーカス中のペインを上に移動"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "포커스된 패널 위로 이동"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verplaats paneel met focus omhoog"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向上移动当前聚焦的窗格"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將焦點所在的窗格向上移動"
           }
         }
       }
@@ -108256,7 +110292,7 @@
       }
     },
     "sidebar.tabContextMenu.removeFromSplit" : {
-      "comment" : "Tab context menu - Dissolve the split that contains this tab",
+      "comment" : "Tab context menu - Dissolve the split this tab belongs to; every pane becomes a normal tab again",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {

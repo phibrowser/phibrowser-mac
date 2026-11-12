@@ -83,9 +83,12 @@ class WebContentHeaderState: ObservableObject {
         self.showAddressBar = navigationAtTop
         self.showNavigationButtons = navigationAtTop
         self.showDownloadButton = traditionalLayout
+            && PhiPreferences.GeneralSettings.topBarShowsDownloads.loadValue()
         self.showMemoryButton = traditionalLayout && phiAIEnabled
+            && PhiPreferences.GeneralSettings.topBarShowsMemory.loadValue()
         self.showFeedbackButton = traditionalLayout
             && !ApplicationState.shared.isGuest
+            && PhiPreferences.GeneralSettings.topBarShowsFeedback.loadValue()
         self.allowsWindowDrag = layoutMode == .balanced
         self.showChatButton = false
     }
@@ -136,9 +139,9 @@ class WebContentHeader: NSView {
     private let state = WebContentHeaderState()
     private let downloadViewModel = DownloadButtonViewModel()
     private var cancellables = Set<AnyCancellable>()
-    /// Subscription for the current tab's split-partner `aiChatEnabled` state,
-    /// rebuilt whenever the tab or split membership changes.
-    private var partnerAIChatEnabledCancellable: AnyCancellable?
+    /// Subscriptions to `aiChatEnabled` on the other panes of the current
+    /// tab's split, rebuilt whenever the tab or split membership changes.
+    private var partnerAIChatEnabledCancellables = Set<AnyCancellable>()
     private weak var browserState: BrowserState?
     private var didSetupHostingView = false
     private var themeObserver = ThemeObserver.shared
@@ -319,8 +322,7 @@ class WebContentHeader: NSView {
     private func setupObservers() {
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
-        partnerAIChatEnabledCancellable?.cancel()
-        partnerAIChatEnabledCancellable = nil
+        partnerAIChatEnabledCancellables.removeAll()
         setupConfigObserver()
 
         headerThemeProvider.themeAppearancePublisher
@@ -331,6 +333,19 @@ class WebContentHeader: NSView {
             .store(in: &cancellables)
 
         NotificationCenter.default.publisher(for: .browserAccessStateDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateLayoutVisibility()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .map { _ in
+                [PhiPreferences.GeneralSettings.topBarShowsDownloads,
+                 .topBarShowsMemory,
+                 .topBarShowsFeedback].map { $0.loadValue() }
+            }
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateLayoutVisibility()
@@ -351,10 +366,10 @@ class WebContentHeader: NSView {
             }
             .store(in: &cancellables)
 
-        // Split membership controls whether we treat the partner's
-        // aiChatEnabled as a fallback for the chat button. Rebind the partner
-        // observer and refresh on every splits change so the button reacts
-        // when this tab joins or leaves a split.
+        // Split membership controls whether we treat the other panes'
+        // aiChatEnabled as a fallback for the chat button. Rebind the pane
+        // observers and refresh on every splits change so the button reacts
+        // when this tab joins or leaves a split, or a pane is added/removed.
         owningBrowserState?.$splits
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -415,28 +430,31 @@ class WebContentHeader: NSView {
         observePartnerAIChatEnabled()
     }
 
-    /// Resolve the current tab's split partner, if any.
-    private func splitPartner() -> Tab? {
+    /// The other panes of the current tab's split, in slot order; empty when
+    /// the tab is not in a split.
+    private func splitPartners() -> [Tab] {
         guard let state = owningBrowserState,
               let tab = currentTab,
-              let group = state.splitGroup(forTabId: tab.guid),
-              let partnerId = group.partnerTabId(of: tab.guid) else {
-            return nil
+              let group = state.splitGroup(forTabId: tab.guid) else {
+            return []
         }
-        return state.tabs.first { $0.guid == partnerId }
+        return group.otherTabIds(of: tab.guid).compactMap { partnerId in
+            state.tabs.first { $0.guid == partnerId }
+        }
     }
 
-    /// Observe `aiChatEnabled` on the current tab's split partner so the chat
-    /// button stays visible while either pane has chat enabled.
+    /// Observe `aiChatEnabled` on the other panes of the current tab's split
+    /// so the chat button stays visible while any pane has chat enabled.
     private func observePartnerAIChatEnabled() {
-        partnerAIChatEnabledCancellable?.cancel()
-        partnerAIChatEnabledCancellable = nil
-        guard let partner = splitPartner() else { return }
-        partnerAIChatEnabledCancellable = partner.$aiChatEnabled
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateLayoutVisibility()
-            }
+        partnerAIChatEnabledCancellables.removeAll()
+        for partner in splitPartners() {
+            partner.$aiChatEnabled
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.updateLayoutVisibility()
+                }
+                .store(in: &partnerAIChatEnabledCancellables)
+        }
     }
 
     private func updateLayoutVisibility() {
@@ -448,14 +466,22 @@ class WebContentHeader: NSView {
         let isIncognito = owningBrowserState?.isIncognito ?? false
         let overviewActive = owningBrowserState?.groupOverviewState != nil
         let focusedAIChat = currentTab?.aiChatEnabled ?? false
-        // In a split the chat is shared between the two panes, so keep the
-        // button visible while either pane has chat enabled (e.g. one side
-        // is an NTP and the other is a real page).
-        let partnerAIChat = splitPartner()?.aiChatEnabled ?? false
+        // In a split the chat is shared between the panes, so keep the
+        // button visible while any pane has chat enabled (e.g. one pane
+        // is an NTP and another is a real page).
+        let partnerAIChat = splitPartners().contains { $0.aiChatEnabled }
         let aiChatEnabled = focusedAIChat || partnerAIChat
         let isInPlaceholder = owningBrowserState?.isInPlaceholderMode ?? false
         let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
         let isGuest = ApplicationState.shared.isGuest
+        // The Comfortable top bar honors its own button settings; Balanced
+        // only borrows these buttons while the sidebar is collapsed.
+        let showsTopBarDownloads = !traditionalLayout
+            || PhiPreferences.GeneralSettings.topBarShowsDownloads.loadValue()
+        let showsTopBarMemory = !traditionalLayout
+            || PhiPreferences.GeneralSettings.topBarShowsMemory.loadValue()
+        let showsTopBarFeedback = !traditionalLayout
+            || PhiPreferences.GeneralSettings.topBarShowsFeedback.loadValue()
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -466,9 +492,12 @@ class WebContentHeader: NSView {
                 (traditionalLayout || (navigationAtTop && isCollapsed))
                 && !isInPlaceholder
                 && !isGuest
+                && showsTopBarFeedback
             self.state.allowsWindowDrag = layoutMode == .balanced
             self.state.showDownloadButton = (traditionalLayout || (navigationAtTop && isCollapsed)) && !isInPlaceholder
+                && showsTopBarDownloads
             self.state.showMemoryButton = (traditionalLayout || (navigationAtTop && isCollapsed)) && phiAIEnabled && !isIncognito && !isInPlaceholder
+                && showsTopBarMemory
             self.state.showSidebarButton = !traditionalLayout && navigationAtTop && isCollapsed
             self.state.isIncognito = isIncognito
             self.state.isInPlaceholderMode = isInPlaceholder

@@ -204,7 +204,8 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     private var mediaWindowVisibilityCancellables = Set<AnyCancellable>()
     private weak var mediaObservedWindow: NSWindow?
     private var focusingTabAIChatEnabledCancellable: AnyCancellable?
-    private var focusingTabPartnerAIChatEnabledCancellable: AnyCancellable?
+    /// One subscription per other pane of the focused tab's split.
+    private var focusingTabPartnerAIChatEnabledCancellables = Set<AnyCancellable>()
     private var headerHeightConstraint: Constraint?
     private var pinnedHeightConstraint: Constraint?
     private var headerSpacerHeightConstraint: Constraint?
@@ -456,6 +457,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
 
         // 7. Bottom bar
         mainStackView.addArrangedSubview(bottomBarSwiftUI)
+        bottomBarSwiftUI.contextMenu = tabList.blankAreaContextMenu
         bottomBarSwiftUI.snp.makeConstraints { make in
             bottomBarHeightConstraint = make.height.equalTo(SidebarBottomBarState.singleRowHeight).constraint
             make.leading.trailing.equalToSuperview()
@@ -511,9 +513,10 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
             }
             .store(in: &cancellables)
 
-        // Split membership affects whether the partner pane's chat state
+        // Split membership affects whether the other panes' chat state
         // keeps the button visible. Refresh observers and visibility on every
-        // splits change so the button reacts when a tab joins or leaves a split.
+        // splits change so the button reacts when a tab joins or leaves a
+        // split, or a pane is added or removed.
         state.$splits
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -584,8 +587,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     private func observeFocusingTabAIChatEnabled(_ tab: Tab?) {
         focusingTabAIChatEnabledCancellable?.cancel()
         focusingTabAIChatEnabledCancellable = nil
-        focusingTabPartnerAIChatEnabledCancellable?.cancel()
-        focusingTabPartnerAIChatEnabledCancellable = nil
+        focusingTabPartnerAIChatEnabledCancellables.removeAll()
 
         guard let tab else { return }
 
@@ -595,32 +597,35 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
                 self?.updateChatButtonVisibility()
             }
 
-        if let partner = focusingTabSplitPartner() {
-            focusingTabPartnerAIChatEnabledCancellable = partner.$aiChatEnabled
+        for partner in focusingTabSplitPartners() {
+            partner.$aiChatEnabled
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
                     self?.updateChatButtonVisibility()
                 }
+                .store(in: &focusingTabPartnerAIChatEnabledCancellables)
         }
     }
 
-    /// Resolve the current focused tab's split partner, if any.
-    private func focusingTabSplitPartner() -> Tab? {
+    /// The other panes of the focused tab's split, in slot order; empty when
+    /// the focused tab is not in a split.
+    private func focusingTabSplitPartners() -> [Tab] {
         guard let tab = state.focusingTab,
-              let group = state.splitGroup(forTabId: tab.guid),
-              let partnerId = group.partnerTabId(of: tab.guid) else {
-            return nil
+              let group = state.splitGroup(forTabId: tab.guid) else {
+            return []
         }
-        return state.tabs.first { $0.guid == partnerId }
+        return group.otherTabIds(of: tab.guid).compactMap { partnerId in
+            state.tabs.first { $0.guid == partnerId }
+        }
     }
 
     private func updateChatButtonVisibility() {
         let navigationAtTop = PhiPreferences.GeneralSettings.loadLayoutMode().showsNavigationAtTop
         let overviewActive = state.groupOverviewState != nil
         let focusedAIChat = state.focusingTab?.aiChatEnabled ?? false
-        // Outside overview, split chat is shared with the partner pane. Keep
-        // the button visible while either pane has chat enabled.
-        let partnerAIChat = focusingTabSplitPartner()?.aiChatEnabled ?? false
+        // Outside overview, split chat is shared among the panes. Keep the
+        // button visible while any pane has chat enabled.
+        let partnerAIChat = focusingTabSplitPartners().contains { $0.aiChatEnabled }
         let aiChatEnabled = focusedAIChat || partnerAIChat
         let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
         let shouldHideChat = overviewActive || state.isIncognito || navigationAtTop || !aiChatEnabled || !phiAIEnabled

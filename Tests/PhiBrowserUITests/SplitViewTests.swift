@@ -29,6 +29,15 @@ import XCTest
 ///
 /// Each test resets to a deterministic single-tab state first
 /// (`resetToSingleTab`) rather than trusting Phi's session restore.
+private extension XCUIElement {
+    /// The tab list's rows that show something: the New Tab button, tabs and
+    /// splits, without the blank spacer row above them.
+    var tabListRows: XCUIElementQuery {
+        cells.containing(NSPredicate(format: "elementType == %d",
+                                     XCUIElement.ElementType.staticText.rawValue))
+    }
+}
+
 final class SplitViewTests: XCTestCase {
 
     /// Launched once per class and reused across tests. A cold relaunch per
@@ -170,7 +179,7 @@ final class SplitViewTests: XCTestCase {
         try runStep("Drag a sidebar tab onto the page right-third") {
             // Row 0 is the New Tab button; row 1 is the first real (non-focused) tab.
             let outline = self.app.windows.firstMatch.outlines["sidebarTabList"]
-            try self.dragSidebarTabOntoPage(sourceCell: outline.cells.element(boundBy: 1),
+            try self.dragSidebarTabOntoPage(sourceCell: outline.tabListRows.element(boundBy: 1),
                                             zone: .right)
         }
         // Drag-to-split pairs two EXISTING tabs, so the two separate tab
@@ -197,7 +206,7 @@ final class SplitViewTests: XCTestCase {
             try runStep("Drag a sidebar tab onto the page \(zone.name) third") {
                 let outline = self.app.windows.firstMatch.outlines["sidebarTabList"]
                 try self.dragSidebarTabOntoPage(
-                    sourceCell: outline.cells.element(boundBy: 1),
+                    sourceCell: outline.tabListRows.element(boundBy: 1),
                     zone: zone
                 )
             }
@@ -254,10 +263,10 @@ final class SplitViewTests: XCTestCase {
         try runStep("Focus the split, then drag the third tab onto its right pane") {
             // Replace mode requires the focused tab to BE the split, but ⌘T
             // left the third tab focused — click the split-pair row first.
-            outline.cells.element(boundBy: 1)
+            outline.tabListRows.element(boundBy: 1)
                 .coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.5)).click()
             // Drag the third tab (last row) onto the right pane.
-            try self.dragSidebarTabOntoPage(sourceCell: outline.cells.element(boundBy: 2),
+            try self.dragSidebarTabOntoPage(sourceCell: outline.tabListRows.element(boundBy: 2),
                                             zone: .right)
         }
         // The right pane held an empty new-tab page; replacing it evicts and
@@ -357,6 +366,483 @@ final class SplitViewTests: XCTestCase {
         XCTAssertTrue(waitForSidebarCellCount(equalTo: rowsBeforeDuplicate + 1, timeout: 15),
                       "Duplicate Split should add a second split-pair row")
         attachDiagnostics(label: "after-duplicate-split")
+    }
+
+    // MARK: - Three and four panes
+
+    @MainActor
+    func test_splitWithCurrent_growsToFourPanesThenStops() throws {
+        try runStep("Split four tabs") {
+            try self.seedTitledTabs(["PaneA", "PaneB", "PaneC", "PaneD", "PaneE"])
+            try self.buildSplit(["PaneA", "PaneB", "PaneC", "PaneD"])
+        }
+        assertRow(containing: "PaneA", is: ["PaneA", "PaneB", "PaneC", "PaneD"])
+
+        try runStep("A full split no longer offers Split with Current") {
+            try self.rightClickRow(containing: "PaneE")
+            XCTAssertTrue(self.app.menuItems["Open as Split"].waitForExistence(timeout: 3))
+            XCTAssertFalse(self.app.menuItems["Split with Current"].exists)
+            self.app.typeKey(.escape, modifierFlags: [])
+        }
+    }
+
+    @MainActor
+    func test_splitWithNewTab_addsPanesUntilFull() throws {
+        try runStep("One tab") { try self.seedTitledTabs(["PaneA"]) }
+        for expected in 2...4 {
+            try runStep("Split with New Tab to \(expected) panes") {
+                let item = self.tabMenuItem("Split with New Tab")
+                XCTAssertTrue(item.isEnabled)
+                item.click()
+                XCTAssertTrue(self.waitForRow(containing: "PaneA", paneCount: expected),
+                              "Expected \(expected) panes")
+            }
+        }
+        try runStep("Full split disables the command") {
+            XCTAssertFalse(self.tabMenuItem("Split with New Tab").isEnabled)
+            self.app.typeKey(.escape, modifierFlags: [])
+        }
+    }
+
+    @MainActor
+    func test_dragTabIntoPair_insertsAtFirstMiddleAndLast() throws {
+        let cases: [(dx: CGFloat, expected: [String])] = [
+            (0.06, ["PaneC", "PaneA", "PaneB"]),
+            (0.5, ["PaneA", "PaneC", "PaneB"]),
+            (0.94, ["PaneA", "PaneB", "PaneC"]),
+        ]
+        for (dx, expected) in cases {
+            try runStep("Drop at \(dx)") {
+                try self.seedTitledTabs(["PaneA", "PaneB", "PaneC"])
+                try self.buildSplit(["PaneA", "PaneB"])
+                try self.dragRow(containing: "PaneC", toPageAt: dx)
+            }
+            assertRow(containing: "PaneA", is: expected)
+        }
+    }
+
+    @MainActor
+    func test_dragTabIntoThreePanes_insertsBetweenEveryPair() throws {
+        let cases: [(dx: CGFloat, expected: [String])] = [
+            (1.0 / 3, ["PaneA", "PaneD", "PaneB", "PaneC"]),
+            (2.0 / 3, ["PaneA", "PaneB", "PaneD", "PaneC"]),
+        ]
+        for (dx, expected) in cases {
+            try runStep("Drop at \(dx)") {
+                try self.seedTitledTabs(["PaneA", "PaneB", "PaneC", "PaneD"])
+                try self.buildSplit(["PaneA", "PaneB", "PaneC"])
+                try self.dragRow(containing: "PaneD", toPageAt: dx)
+            }
+            assertRow(containing: "PaneA", is: expected)
+        }
+    }
+
+    @MainActor
+    func test_dragTabOntoMiddleOfPane_replacesThatPane() throws {
+        try runStep("Drop on the middle pane") {
+            try self.seedTitledTabs(["PaneA", "PaneB", "PaneC", "PaneD"])
+            try self.buildSplit(["PaneA", "PaneB", "PaneC"])
+            try self.dragRow(containing: "PaneD", toPageAt: 0.5)
+        }
+        assertRow(containing: "PaneA", is: ["PaneA", "PaneD", "PaneC"])
+        assertRow(containing: "PaneB", is: ["PaneB"])
+    }
+
+    @MainActor
+    func test_dragTabOntoFullSplit_onlyReplaces() throws {
+        try runStep("Drop at the very start of a full split") {
+            try self.seedTitledTabs(["PaneA", "PaneB", "PaneC", "PaneD", "PaneE"])
+            try self.buildSplit(["PaneA", "PaneB", "PaneC", "PaneD"])
+            try self.dragRow(containing: "PaneE", toPageAt: 0.04)
+        }
+        assertRow(containing: "PaneB", is: ["PaneE", "PaneB", "PaneC", "PaneD"])
+        assertRow(containing: "PaneA", is: ["PaneA"])
+    }
+
+    @MainActor
+    func test_movePaneMenu_shiftsPaneOneSlot() throws {
+        try runStep("Three panes") {
+            try self.seedTitledTabs(["PaneA", "PaneB", "PaneC"])
+            try self.buildSplit(["PaneA", "PaneB", "PaneC"])
+        }
+        try runStep("Move the first pane right") {
+            try self.rightClickRow(containing: "PaneA")
+            try self.clickMenuItem(matching: ["Move Pane Right"])
+        }
+        assertRow(containing: "PaneA", is: ["PaneB", "PaneA", "PaneC"])
+    }
+
+    @MainActor
+    func test_removeFromSplit_dissolvesAWiderSplit() throws {
+        try runStep("Three panes") {
+            try self.seedTitledTabs(["PaneA", "PaneB", "PaneC"])
+            try self.buildSplit(["PaneA", "PaneB", "PaneC"])
+        }
+        try runStep("Remove from Split on the first pane") {
+            try self.rightClickRow(containing: "PaneA")
+            try self.clickMenuItem(matching: ["Remove from Split"])
+        }
+        assertRow(containing: "PaneA", is: ["PaneA"])
+        assertRow(containing: "PaneB", is: ["PaneB"])
+        assertRow(containing: "PaneC", is: ["PaneC"])
+    }
+
+    @MainActor
+    func test_convertLayout_keepsAllThreePanes() throws {
+        try runStep("Three panes") {
+            try self.seedTitledTabs(["PaneA", "PaneB", "PaneC"])
+            try self.buildSplit(["PaneA", "PaneB", "PaneC"])
+        }
+        try runStep("Stack them") {
+            try self.rightClickRow(containing: "PaneA")
+            try self.clickMenuItem(matching: ["Convert to Vertical Split"])
+        }
+        try runStep("Stacked split offers converting back") {
+            try self.rightClickRow(containing: "PaneA")
+            XCTAssertTrue(self.app.menuItems["Convert to Horizontal Split"].waitForExistence(timeout: 5))
+            self.app.typeKey(.escape, modifierFlags: [])
+        }
+        assertRow(containing: "PaneA", is: ["PaneA", "PaneB", "PaneC"])
+    }
+
+    @MainActor
+    func test_closeSplit_closesEveryPane() throws {
+        try runStep("Four panes and a spare") {
+            try self.seedTitledTabs(["PaneA", "PaneB", "PaneC", "PaneD", "PaneE"])
+            try self.buildSplit(["PaneA", "PaneB", "PaneC", "PaneD"])
+        }
+        try runStep("Close Split") {
+            try self.rightClickRow(containing: "PaneA")
+            try self.clickMenuItem(matching: ["Close Split"])
+        }
+        XCTAssertTrue(waitForSidebarCellCount(equalTo: 2, timeout: 15),
+                      "Only the New Tab button and the spare tab should remain")
+    }
+
+    // MARK: - Dragging a pane by its grip
+
+    @MainActor
+    func test_dragPaneGrip_reordersPanes() throws {
+        try runStep("Three panes") {
+            try self.seedTitledTabs(["PaneA", "PaneB", "PaneC"])
+            try self.buildSplit(["PaneA", "PaneB", "PaneC"])
+        }
+        try runStep("Drag the first pane onto the last") {
+            let start = try self.paneGripCoordinate(slot: 0, paneCount: 3)
+            let area = try self.webArea()
+            start.press(forDuration: 0.3,
+                        thenDragTo: area.coordinate(withNormalizedOffset: CGVector(dx: 5.0 / 6, dy: 0.12)))
+        }
+        assertRow(containing: "PaneA", is: ["PaneB", "PaneC", "PaneA"])
+    }
+
+    @MainActor
+    func test_dragPaneGrip_pulledDownLeavesTheSplit() throws {
+        try runStep("Three panes") {
+            try self.seedTitledTabs(["PaneA", "PaneB", "PaneC"])
+            try self.buildSplit(["PaneA", "PaneB", "PaneC"])
+        }
+        try runStep("Pull the first pane down and drop it") {
+            let start = try self.paneGripCoordinate(slot: 0, paneCount: 3)
+            let area = try self.webArea()
+            start.press(forDuration: 0.3,
+                        thenDragTo: area.coordinate(withNormalizedOffset: CGVector(dx: 1.0 / 6, dy: 0.8)))
+        }
+        assertRow(containing: "PaneB", is: ["PaneB", "PaneC"])
+        assertRow(containing: "PaneA", is: ["PaneA"])
+    }
+
+    @MainActor
+    func test_dragPaneGrip_ontoSidebarBecomesANormalTab() throws {
+        try runStep("Three panes and a spare") {
+            try self.seedTitledTabs(["PaneA", "PaneB", "PaneC", "PaneD"])
+            try self.buildSplit(["PaneA", "PaneB", "PaneC"])
+        }
+        try runStep("Drag the first pane to the sidebar") {
+            let start = try self.paneGripCoordinate(slot: 0, paneCount: 3)
+            let target = try self.row(containing: "PaneD")
+            start.press(forDuration: 0.3,
+                        thenDragTo: target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)))
+        }
+        assertRow(containing: "PaneB", is: ["PaneB", "PaneC"])
+        assertRow(containing: "PaneA", is: ["PaneA"])
+    }
+
+    // MARK: - Pinned splits and bookmarks stay where they are
+
+    @MainActor
+    func test_pinnedSplit_dragInMovesItToNormalListAndKeepsPinnedEntry() throws {
+        try runStep("Pin three panes") { try self.pinSplit(["PaneA", "PaneB", "PaneC"], spares: ["PaneD"]) }
+        try runStep("Drop a tab at the end") { try self.dragRow(containing: "PaneD", toPageAt: 0.94) }
+
+        assertRow(containing: "PaneA", is: ["PaneA", "PaneB", "PaneC", "PaneD"])
+        assertPinnedEntry(titled: ["PaneA", "PaneB", "PaneC"])
+    }
+
+    @MainActor
+    func test_pinnedSplit_splitWithCurrentMovesItToNormalList() throws {
+        try runStep("Pin three panes") { try self.pinSplit(["PaneA", "PaneB", "PaneC"], spares: ["PaneD"]) }
+        try runStep("Split with Current") {
+            try self.rightClickRow(containing: "PaneD")
+            try self.clickMenuItem(matching: ["Split with Current"])
+        }
+        XCTAssertTrue(waitForRow(containing: "PaneA", paneCount: 4), "The split should reach the normal list")
+        assertPinnedEntry(titled: ["PaneA", "PaneB", "PaneC"])
+    }
+
+    @MainActor
+    func test_pinnedSplit_splitWithNewTabMovesItToNormalList() throws {
+        try runStep("Pin two panes") { try self.pinSplit(["PaneA", "PaneB"], spares: []) }
+        try runStep("Split with New Tab") { self.tabMenuItem("Split with New Tab").click() }
+        XCTAssertTrue(waitForRow(containing: "PaneA", paneCount: 3), "The split should reach the normal list")
+        assertPinnedEntry(titled: ["PaneA", "PaneB"])
+    }
+
+    @MainActor
+    func test_pinnedSplit_dropOnMiddleOfPaneIsRefused() throws {
+        try runStep("Pin three panes") { try self.pinSplit(["PaneA", "PaneB", "PaneC"], spares: ["PaneD"]) }
+        try runStep("Drop in the middle of a pane") { try self.dragRow(containing: "PaneD", toPageAt: 0.5) }
+
+        assertRow(containing: "PaneD", is: ["PaneD"])
+        XCTAssertEqual(sidebarPinnedTabs().count, 1)
+        XCTAssertNil(try? row(containing: "PaneA"), "A pinned split stays out of the normal list")
+    }
+
+    @MainActor
+    func test_pinnedTab_splitMovesLiveTabToNormalListAndKeepsPinnedEntry() throws {
+        try runStep("Pin one tab") {
+            try self.seedTitledTabs(["PaneA", "PaneB"])
+            try self.rightClickRow(containing: "PaneA")
+            try self.clickMenuItem(matching: ["Pin"])
+            XCTAssertTrue(self.waitForSidebarPinnedCellCount(equalTo: 1, timeout: 10))
+            self.sidebarPinnedTabs().element(boundBy: 0).click()
+        }
+        try runStep("Split with Current") {
+            try self.rightClickRow(containing: "PaneB")
+            try self.clickMenuItem(matching: ["Split with Current"])
+        }
+        assertRow(containing: "PaneA", is: ["PaneA", "PaneB"])
+        XCTAssertTrue(waitForSidebarPinnedCellCount(equalTo: 1, timeout: 5), "The pinned entry stays")
+    }
+
+    @MainActor
+    func test_closedPinnedSplit_reopensEveryPane() throws {
+        try runStep("Pin three panes") { try self.pinSplit(["PaneA", "PaneB", "PaneC"], spares: []) }
+        let liveHosts = currentSplitGroupCount()
+        try runStep("Close it and reopen it") {
+            let pinned = self.sidebarPinnedTabs().element(boundBy: 0)
+            pinned.rightClick()
+            XCTAssertTrue(self.clickContextMenuItem(["Close Split"], timeout: 3))
+            XCTAssertTrue(self.waitForSplitGroupCount(equalTo: liveHosts - 2, timeout: 15)
+                          || self.currentSplitGroupCount() < liveHosts)
+            pinned.click()
+        }
+        XCTAssertTrue(waitForSplitGroupCount(atLeast: liveHosts, timeout: 20), "All three panes should reopen")
+        assertPinnedEntry(titled: ["PaneA", "PaneB", "PaneC"])
+    }
+
+    @MainActor
+    func test_openSplitBookmark_dragInMovesItToNormalListAndKeepsBookmark() throws {
+        try runStep("Bookmark three panes, then close them") {
+            try self.seedTitledTabs(["PaneA", "PaneB", "PaneC", "PaneD"])
+            try self.buildSplit(["PaneA", "PaneB", "PaneC"])
+            try self.rightClickRow(containing: "PaneA")
+            try self.clickMenuItem(matching: ["Add Split to Bookmark"])
+            XCTAssertTrue(self.sidebarBookmarks().firstMatch.waitForExistence(timeout: 10))
+            try self.rightClickRow(containing: "PaneA")
+            try self.clickMenuItem(matching: ["Close Split"])
+            XCTAssertTrue(self.waitForSidebarCellCount(equalTo: 2, timeout: 15))
+        }
+        try runStep("Open the bookmark, then drop a tab at the end") {
+            self.sidebarBookmarks().firstMatch.click()
+            XCTAssertTrue(self.waitForSplitGroupCount(atLeast: 4, timeout: 20))
+            try self.dragRow(containing: "PaneD", toPageAt: 0.94)
+        }
+        XCTAssertTrue(waitForRow(containing: "PaneA", paneCount: 4), "The split should reach the normal list")
+        XCTAssertEqual(sidebarBookmarks().count, 1, "The bookmark stays")
+    }
+
+    // MARK: - Restart
+
+    @MainActor
+    func test_relaunch_restoresAThreePaneSplit() throws {
+        try runStep("Three panes") {
+            try self.seedTitledTabs(["PaneA", "PaneB", "PaneC"])
+            try self.buildSplit(["PaneA", "PaneB", "PaneC"])
+        }
+        try runStep("Relaunch on the same profile") {
+            self.app.terminate()
+            self.app.launch()
+            XCTAssertTrue(self.app.windows.firstMatch.waitForExistence(timeout: 120))
+            self.app.activate()
+        }
+        XCTAssertTrue(waitForRow(containing: "PaneA", paneCount: 3, timeout: 30),
+                      "Session restore should bring all three panes back as one split")
+    }
+
+    // MARK: - Three and four pane helpers
+
+    /// A page whose tab title is `title`, with no network dependency.
+    private func titledPageURL(_ title: String) -> String {
+        "data:text/html,<title>\(title)</title>"
+    }
+
+    /// One plain tab per title, in order, the last one focused.
+    @MainActor
+    private func seedTitledTabs(_ titles: [String]) throws {
+        try resetToSingleTab(url: titledPageURL(titles[0]))
+        for title in titles.dropFirst() {
+            app.typeKey("t", modifierFlags: .command)
+            app.typeKey("l", modifierFlags: .command)
+            app.typeText(titledPageURL(title))
+            app.typeKey("\r", modifierFlags: [])
+        }
+        for title in titles {
+            XCTAssertTrue(waitUntil(timeout: 15) { (try? self.row(containing: title)) != nil },
+                          "No sidebar row titled \(title)")
+        }
+    }
+
+    /// Splits the seeded tabs named by `titles`, in that pane order, leaving
+    /// the first focused: each later tab joins right after the focused pane,
+    /// so they are added last to first.
+    @MainActor
+    private func buildSplit(_ titles: [String]) throws {
+        try row(containing: titles[0]).click()
+        for (added, title) in titles.dropFirst().reversed().enumerated() {
+            try rightClickRow(containing: title)
+            try clickMenuItem(matching: ["Split with Current"])
+            XCTAssertTrue(waitForRow(containing: titles[0], paneCount: added + 2),
+                          "\(title) should have joined the split")
+        }
+    }
+
+    /// `titles` split and pinned, focused, with `spares` left as plain tabs.
+    @MainActor
+    private func pinSplit(_ titles: [String], spares: [String]) throws {
+        try seedTitledTabs(titles + spares)
+        try buildSplit(titles)
+        try rightClickRow(containing: titles[0])
+        try clickMenuItem(matching: ["Pin Split"])
+        XCTAssertTrue(waitForSidebarPinnedCellCount(equalTo: 1, timeout: 15), "The split should be pinned")
+    }
+
+    @MainActor
+    private func paneTitles(ofRow cell: XCUIElement) -> [String] {
+        cell.staticTexts.allElementsBoundByIndex
+            .map { (frame: $0.frame, text: ($0.value as? String) ?? $0.label) }
+            .filter { !$0.text.isEmpty }
+            .sorted { $0.frame.minX < $1.frame.minX }
+            .map(\.text)
+    }
+
+    /// The tab-list row showing `title`, as a split pane or a plain tab.
+    @MainActor
+    private func row(containing title: String) throws -> XCUIElement {
+        let cells = app.windows.firstMatch.outlines["sidebarTabList"].cells.allElementsBoundByIndex
+        guard let cell = cells.first(where: { paneTitles(ofRow: $0).contains(title) }) else {
+            throw NSError(domain: "SplitViewTests", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "No sidebar row titled \(title)"])
+        }
+        return cell
+    }
+
+    /// Right-click the part of the row that shows `title`.
+    @MainActor
+    private func rightClickRow(containing title: String) throws {
+        let cell = try row(containing: title)
+        let titles = paneTitles(ofRow: cell)
+        let slot = titles.firstIndex(of: title) ?? 0
+        let dx = (CGFloat(slot) + 0.3) / CGFloat(max(titles.count, 1))
+        cell.coordinate(withNormalizedOffset: CGVector(dx: dx, dy: 0.5)).rightClick()
+    }
+
+    @MainActor
+    private func waitUntil(timeout: TimeInterval, _ condition: @escaping () -> Bool) -> Bool {
+        let predicate = NSPredicate { _, _ in condition() }
+        let exp = XCTNSPredicateExpectation(predicate: predicate, object: nil)
+        return XCTWaiter.wait(for: [exp], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForRow(containing title: String, paneCount: Int, timeout: TimeInterval = 15) -> Bool {
+        waitUntil(timeout: timeout) {
+            guard let cell = try? self.row(containing: title) else { return false }
+            return self.paneTitles(ofRow: cell).count == paneCount
+        }
+    }
+
+    @MainActor
+    private func assertRow(containing title: String, is expected: [String],
+                           file: StaticString = #filePath, line: UInt = #line) {
+        let matched = waitUntil(timeout: 15) {
+            guard let cell = try? self.row(containing: title) else { return false }
+            return self.paneTitles(ofRow: cell) == expected
+        }
+        if !matched {
+            attachDiagnostics(label: "row for \(title) is not \(expected)")
+            let actual = (try? row(containing: title)).map { paneTitles(ofRow: $0) }
+            XCTFail("Row with \(title) is \(String(describing: actual)), expected \(expected)", file: file, line: line)
+        }
+    }
+
+    /// One pinned entry, whose merged cell names exactly `titles`.
+    @MainActor
+    private func assertPinnedEntry(titled titles: [String],
+                                   file: StaticString = #filePath, line: UInt = #line) {
+        let pinned = sidebarPinnedTabs()
+        let matched = waitUntil(timeout: 15) {
+            guard pinned.count == 1 else { return false }
+            let label = pinned.element(boundBy: 0).label
+            return titles.allSatisfy { label.contains($0) }
+        }
+        if !matched {
+            attachDiagnostics(label: "pinned entry is not \(titles)")
+            XCTFail("Pinned entries: \(pinned.count), first label: \(pinned.firstMatch.label)", file: file, line: line)
+        }
+    }
+
+    @MainActor
+    private func webArea() throws -> XCUIElement {
+        let area = app.windows.firstMatch.splitGroups.element(boundBy: 1)
+        guard area.waitForExistence(timeout: 5) else {
+            attachDiagnostics(label: "no web area")
+            throw NSError(domain: "SplitViewTests", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Inner web-content SplitGroup not found"])
+        }
+        return area
+    }
+
+    /// Drags the row showing `title` to the fraction `dx` across the page.
+    @MainActor
+    private func dragRow(containing title: String, toPageAt dx: CGFloat) throws {
+        let source = try row(containing: title).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let destination = try webArea().coordinate(withNormalizedOffset: CGVector(dx: dx, dy: 0.5))
+        source.press(forDuration: 0.6, thenDragTo: destination)
+    }
+
+    /// The grip at the top of pane `slot`, after hovering it into view.
+    @MainActor
+    private func paneGripCoordinate(slot: Int, paneCount: Int) throws -> XCUICoordinate {
+        let handles = app.windows.firstMatch.buttons.matching(identifier: "splitPaneMoveHandle")
+        guard waitUntil(timeout: 10, { handles.count == paneCount }) else {
+            attachDiagnostics(label: "pane grips")
+            throw NSError(domain: "SplitViewTests", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Found \(handles.count) pane grips"])
+        }
+        let handle = handles.allElementsBoundByIndex.sorted { $0.frame.minX < $1.frame.minX }[slot]
+        handle.hover()
+        return handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 9.0 / max(handle.frame.height, 1)))
+    }
+
+    /// The Tab menu's `title` item, with the menu left open.
+    @MainActor
+    private func tabMenuItem(_ title: String) -> XCUIElement {
+        let menuBarItem = app.menuBars.menuBarItems["Tab"]
+        menuBarItem.click()
+        let item = menuBarItem.menuItems[title]
+        XCTAssertTrue(item.waitForExistence(timeout: 3), "Tab menu has no \(title)")
+        return item
     }
 
     private enum PageDropZone {
@@ -478,11 +964,11 @@ final class SplitViewTests: XCTestCase {
         app.typeKey("\r", modifierFlags: [])
 
         // Verify the clean state: New Tab button row + exactly one tab, no pinned.
-        let isClean = NSPredicate { _, _ in outline.cells.count == 2 }
+        let isClean = NSPredicate { _, _ in outline.tabListRows.count == 2 }
         let exp = XCTNSPredicateExpectation(predicate: isClean, object: nil)
         if XCTWaiter.wait(for: [exp], timeout: 15) != .completed {
-            attachDiagnostics(label: "reset-not-clean (\(outline.cells.count) rows)")
-            XCTFail("Reset did not reach a single-tab state — sidebar has \(outline.cells.count) rows")
+            attachDiagnostics(label: "reset-not-clean (\(outline.tabListRows.count) rows)")
+            XCTFail("Reset did not reach a single-tab state — sidebar has \(outline.tabListRows.count) rows")
         }
         XCTAssertTrue(waitForSidebarPinnedCellCount(equalTo: 0, timeout: 5),
                       "Reset should leave no pinned tabs")
@@ -607,14 +1093,14 @@ final class SplitViewTests: XCTestCase {
             XCTFail("Sidebar outline 'sidebarTabList' not found")
             return
         }
-        guard outline.cells.firstMatch.waitForExistence(timeout: 5) else {
+        guard outline.tabListRows.firstMatch.waitForExistence(timeout: 5) else {
             attachDiagnostics(label: "no tab cell")
             XCTFail("Sidebar outline never populated a cell")
             return
         }
 
-        let count = outline.cells.count
-        let target = outline.cells.element(boundBy: count - 1)
+        let count = outline.tabListRows.count
+        let target = outline.tabListRows.element(boundBy: count - 1)
         guard target.waitForExistence(timeout: 5) else {
             attachDiagnostics(label: "last cell missing")
             XCTFail("Last sidebar cell not resolvable")
@@ -632,7 +1118,7 @@ final class SplitViewTests: XCTestCase {
     @MainActor
     private func rightClickSidebarCell(index: Int) throws {
         let outline = app.windows.firstMatch.outlines["sidebarTabList"]
-        let cell = outline.cells.element(boundBy: index)
+        let cell = outline.tabListRows.element(boundBy: index)
         guard cell.waitForExistence(timeout: 10) else {
             attachDiagnostics(label: "no sidebar cell at \(index)")
             XCTFail("No sidebar cell at index \(index)")
@@ -675,13 +1161,13 @@ final class SplitViewTests: XCTestCase {
 
     @MainActor
     private func sidebarCellCount() -> Int {
-        app.windows.firstMatch.outlines["sidebarTabList"].cells.count
+        app.windows.firstMatch.outlines["sidebarTabList"].tabListRows.count
     }
 
     @MainActor
     private func waitForSidebarCellCount(equalTo count: Int, timeout: TimeInterval) -> Bool {
         let outline = app.windows.firstMatch.outlines["sidebarTabList"]
-        let predicate = NSPredicate { _, _ in outline.cells.count == count }
+        let predicate = NSPredicate { _, _ in outline.tabListRows.count == count }
         let exp = XCTNSPredicateExpectation(predicate: predicate, object: nil)
         return XCTWaiter.wait(for: [exp], timeout: timeout) == .completed
     }

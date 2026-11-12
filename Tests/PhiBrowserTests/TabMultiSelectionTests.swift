@@ -61,6 +61,41 @@ final class TabMultiSelectionTests: XCTestCase {
         )
     }
 
+    /// A focused pane of a split with room takes the new pane right after
+    /// itself, whether the new pane is a fresh tab or the selected one.
+    func testTabSplitActionRouteAddsAPaneToTheFocusedSplitWhenItHasRoom() {
+        let insertion = TabSplitActionRoute.SplitInsertion(splitId: "split", slot: 2)
+        XCTAssertEqual(
+            TabSplitActionRoute.resolve(
+                selectedTabId: 1,
+                focusedTabId: 1,
+                selectedTabIsInSplit: true,
+                focusedTabIsInSplit: true,
+                focusedSplitInsertion: insertion
+            ),
+            .openNewPane(insertion)
+        )
+        XCTAssertEqual(
+            TabSplitActionRoute.resolve(
+                selectedTabId: 2,
+                focusedTabId: 1,
+                selectedTabIsInSplit: false,
+                focusedTabIsInSplit: true,
+                focusedSplitInsertion: insertion
+            ),
+            .joinFocusedSplit(insertion)
+        )
+        // A pinned or full split offers no insertion: nothing to do.
+        XCTAssertNil(
+            TabSplitActionRoute.resolve(
+                selectedTabId: 1,
+                focusedTabId: 1,
+                selectedTabIsInSplit: true,
+                focusedTabIsInSplit: true
+            )
+        )
+    }
+
     func testTabSplitActionRouteRejectsMissingOrSplitParticipants() {
         XCTAssertNil(
             TabSplitActionRoute.resolve(

@@ -178,7 +178,7 @@ final class SidecarAIOutputStateStore {
             return
         }
 
-        let splitTabIds = Set([split.primaryTabId, split.secondaryTabId])
+        let splitTabIds = Set(split.tabIds)
         let liveSplitTabs = browserState.tabs.filter { splitTabIds.contains($0.guid) }
         let representedSplitTabs = representedTabs(
             forLiveTabs: liveSplitTabs,
@@ -200,8 +200,18 @@ final class SidecarAIOutputStateStore {
         clear(tabs: representedSplitTabs)
     }
 
+    /// One pane left a split that stays up (three or four panes): its own
+    /// state no longer represents the split, as when the split dissolves.
+    func tabDidLeaveSplit(_ tabId: Int, in browserState: BrowserState) {
+        reconcileAfterSplitChange(tabIds: [tabId], in: browserState)
+    }
+
     func splitDidDissolve(_ split: SplitGroup, in browserState: BrowserState) {
-        for tabId in [split.primaryTabId, split.secondaryTabId] {
+        reconcileAfterSplitChange(tabIds: split.tabIds, in: browserState)
+    }
+
+    private func reconcileAfterSplitChange(tabIds: [Int], in browserState: BrowserState) {
+        for tabId in tabIds {
             guard let tab = browserState.resolveTab(tabId) else {
                 tracker.remove(tabId: tabId, windowId: browserState.windowId)
                 continue
@@ -253,7 +263,7 @@ final class SidecarAIOutputStateStore {
     private func affectedTabs(for tab: Tab, in browserState: BrowserState) -> [Tab] {
         let liveTabs: [Tab]
         if let split = browserState.splitGroup(forTabId: tab.guid) {
-            let splitTabIds = Set([split.primaryTabId, split.secondaryTabId])
+            let splitTabIds = Set(split.tabIds)
             liveTabs = browserState.tabs.filter { splitTabIds.contains($0.guid) }
         } else {
             liveTabs = [tab]

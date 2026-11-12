@@ -6,12 +6,18 @@
 import Cocoa
 
 private struct ConchAnimationColorValue: Equatable {
+    var revision: Int = 0
     let hue: CGFloat
     let saturation: CGFloat?
     let brightness: CGFloat?
 }
 
 class ConchFrameAnimationBaseViewController: NSViewController {
+    var usesTransparentBackground: Bool { false }
+    var gradientStartColor: NSColor { .white }
+    var gradientMidtoneColor: NSColor? { nil }
+    var transparentBackgroundGain: CGFloat { 256 }
+
     var imageNamagePrefix: String {
         get { "" }
     }
@@ -73,6 +79,7 @@ class ConchFrameAnimationBaseViewController: NSViewController {
     private var animationStartTime: CFTimeInterval = 0
     private var animationStartX = 0
     private var animationStartY = 0
+    private var returnAnimationTimer: Timer?
     private var isAnimating = false
     private var isPlayingHintAnimation = false
     private var hintAnimationTimer: Timer?
@@ -98,6 +105,9 @@ class ConchFrameAnimationBaseViewController: NSViewController {
     }
     
     func tearDown() {
+        returnAnimationTimer?.invalidate()
+        returnAnimationTimer = nil
+        isAnimating = false
         stopDragHintAnimation()
         
         stateQueue.sync {
@@ -154,12 +164,12 @@ class ConchFrameAnimationBaseViewController: NSViewController {
             let defaultColorValue = ConchAnimationColorValue(hue: 0.5, saturation: nil, brightness: nil)
             
             let targetColor = interpolateColor(defaultColorValue)
-            let colors = [NSColor.white, targetColor]
+            let colors = [gradientStartColor, targetColor]
             let positions: [CGFloat] = [0.0, 0.1]
             
             if let gradient = GradientMapper.makeGradient(colors: colors, positions: positions),
                let strip = GradientMapper.makeStrip(from: gradient),
-               let coloredFirst = GradientMapper.apply(to: firstFrame, using: strip) {
+               let coloredFirst = GradientMapper.apply(to: firstFrame, using: strip, transparentBackground: self.usesTransparentBackground, coverageGain: self.transparentBackgroundGain) {
                 
                 AppLogDebug("[PreAnim] loadPreAnimationImages - displaying first frame (colored with default value)")
                 CATransaction.begin()
@@ -280,6 +290,9 @@ class ConchFrameAnimationBaseViewController: NSViewController {
     }
     
     override func mouseDown(with event: NSEvent) {
+        returnAnimationTimer?.invalidate()
+        returnAnimationTimer = nil
+        isAnimating = false
         // Stop the hint animation as soon as the user starts dragging.
         stopDragHintAnimation()
         
@@ -342,7 +355,8 @@ class ConchFrameAnimationBaseViewController: NSViewController {
         animationStartY = currentY
         
         // Drive the return animation with a timer to keep updates predictable.
-        Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] timer in
+        returnAnimationTimer?.invalidate()
+        returnAnimationTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] timer in
             guard let self = self, self.isAnimating else {
                 timer.invalidate()
                 return
@@ -367,9 +381,11 @@ class ConchFrameAnimationBaseViewController: NSViewController {
             self.updateImage()
         }
     }
-    func themChanged(h: CGFloat, s: CGFloat? = nil, b: CGFloat? = nil) {
+    func themChanged(h: CGFloat, s: CGFloat? = nil, b: CGFloat? = nil, refreshMapping: Bool = false) {
         guard !isTornDownFlag() else { return }
+        let revision = stateQueue.sync { currentColorValue.revision + (refreshMapping ? 1 : 0) }
         let colorValue = ConchAnimationColorValue(
+            revision: revision,
             hue: min(max(h, 0), 1),
             saturation: s.map { min(max($0, 0), 1) },
             brightness: b.map { min(max($0, 0), 1) }
@@ -436,7 +452,7 @@ class ConchFrameAnimationBaseViewController: NSViewController {
         var coloredImages: [NSImage] = []
         if let firstImage = originalImages.first {
             autoreleasepool {
-                if let coloredFirst = GradientMapper.apply(to: firstImage, using: strip) {
+                if let coloredFirst = GradientMapper.apply(to: firstImage, using: strip, transparentBackground: self.usesTransparentBackground, coverageGain: self.transparentBackgroundGain) {
                     coloredImages.append(coloredFirst)
                     AppLogDebug("[PreAnim] colorAndPlayPreAnimation - displaying first colored frame")
                     CATransaction.begin()
@@ -450,7 +466,7 @@ class ConchFrameAnimationBaseViewController: NSViewController {
         // Color the remaining frames.
         for i in 1..<originalImages.count {
             autoreleasepool {
-                if let coloredImage = GradientMapper.apply(to: originalImages[i], using: strip) {
+                if let coloredImage = GradientMapper.apply(to: originalImages[i], using: strip, transparentBackground: self.usesTransparentBackground, coverageGain: self.transparentBackgroundGain) {
                     coloredImages.append(coloredImage)
                 }
             }
@@ -548,14 +564,16 @@ class ConchFrameAnimationBaseViewController: NSViewController {
     
     private func colorCenterImageFirst(colorValue: ConchAnimationColorValue) {
         guard !isTornDownFlag() else { return }
-        guard let originalImage = image(atRow: centerY, col: centerX) else { return }
+        let row = currentY
+        let col = currentX
+        guard let originalImage = image(atRow: row, col: col) else { return }
         
         updateGradientCache(colorValue: colorValue)
         
         guard let strip = stateQueue.sync(execute: { cachedStrip }) else { return }
         autoreleasepool {
-            if let coloredImage = GradientMapper.apply(to: originalImage, using: strip) {
-                setColoredImage(coloredImage, row: centerY, col: centerX)
+            if let coloredImage = GradientMapper.apply(to: originalImage, using: strip, transparentBackground: self.usesTransparentBackground, coverageGain: self.transparentBackgroundGain) {
+                setColoredImage(coloredImage, row: row, col: col)
                 
                 // Avoid flicker while the pre-animation is still playing.
                 guard !isPlayingHintAnimation else {
@@ -563,8 +581,8 @@ class ConchFrameAnimationBaseViewController: NSViewController {
                     return
                 }
                 
-                // Refresh immediately when the center image is currently visible.
-                if currentX == centerX && currentY == centerY {
+                // Refresh the visible viewpoint immediately, including while tuning it.
+                if currentX == col && currentY == row {
                     AppLogDebug("[PreAnim] colorCenterImageFirst - displaying colored center image")
                     CATransaction.begin()
                     CATransaction.setDisableActions(true)
@@ -591,7 +609,8 @@ class ConchFrameAnimationBaseViewController: NSViewController {
         
         colorWorkItem?.cancel()
         let capturedColorValue = colorValue
-        
+        let capturedBackgroundGain = transparentBackgroundGain
+
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
             
@@ -620,12 +639,15 @@ class ConchFrameAnimationBaseViewController: NSViewController {
 
                 guard let originalImage = self.image(atRow: row, col: col) else { continue }
 
-                if let coloredImage = GradientMapper.apply(to: originalImage, using: strip) {
+                if let coloredImage = GradientMapper.apply(to: originalImage, using: strip, transparentBackground: self.usesTransparentBackground, coverageGain: capturedBackgroundGain) {
                     self.setColoredImage(coloredImage, row: row, col: col)
                     
                     // Refresh immediately when the current frame changes underneath the viewer.
                     if row == self.currentY && col == self.currentX {
                         DispatchQueue.main.async {
+                            guard self.stateQueue.sync(execute: { self.currentColorValue == capturedColorValue }) else { return }
+                            self.lastDisplayedX = -1
+                            self.lastDisplayedY = -1
                             self.updateImage()
                         }
                     }
@@ -686,9 +708,9 @@ class ConchFrameAnimationBaseViewController: NSViewController {
         guard needsUpdate else { return }
         
         let targetColor = interpolateColor(colorValue)
-        let color0 = NSColor.white
-        let colors = [color0, targetColor]
-        let positions: [CGFloat] = [0.0, 0.1]
+        let color0 = gradientStartColor
+        let colors = gradientMidtoneColor.map { [color0, $0, targetColor] } ?? [color0, targetColor]
+        let positions: [CGFloat] = gradientMidtoneColor == nil ? [0.0, 0.1] : [0.0, 0.04, 0.1]
         
         guard let gradient = GradientMapper.makeGradient(colors: colors, positions: positions) else {
             return

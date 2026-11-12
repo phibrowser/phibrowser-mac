@@ -276,7 +276,10 @@ final class LibrarySpaceManagementController: NSViewController,
             let right = liveState?.pinnedTabs.first { $0.guidInLocalDB == item.secondaryID } ?? right
             let cell = collectionView.makeItem(withIdentifier: PinnedSplitItem.reuseIdentifier, for: indexPath) as! PinnedSplitItem
             cell.populateContextMenu = { [weak self] menu in self?.populatePinMenu(menu, item: item) }
-            cell.configure(leftTab: left, rightTab: right, browserState: liveState, themeProvider: themeSource)
+            let extras = item.extraPins.map { extra in
+                liveState?.pinnedTabs.first { $0.guidInLocalDB == extra.guidInLocalDB } ?? extra
+            }
+            cell.configure(panes: [left, right] + extras, browserState: liveState, themeProvider: themeSource)
             cell.itemDoubleClicked = { [weak self] _, _ in self?.open(itemID: item.id, isPin: true) }
             cell.itemClicked = { [weak collectionView] _ in collectionView?.selectionIndexPaths = [indexPath] }
             return cell
@@ -402,7 +405,7 @@ final class LibrarySpaceManagementController: NSViewController,
     func collectionView(_ collectionView: NSCollectionView, acceptDrop draggingInfo: NSDraggingInfo,
                         indexPath: IndexPath, dropOperation: NSCollectionView.DropOperation) -> Bool {
         guard let drag = validPinDrop(draggingInfo), let id = drag.ids.first, let store = validStore() else { return false }
-        let index = displayedPins.prefix(indexPath.item).reduce(0) { $0 + ($1.secondaryID == nil ? 1 : 2) }
+        let index = displayedPins.prefix(indexPath.item).reduce(0) { $0 + $1.memberIDs.count }
         if !drag.isPin {
             return acceptBookmarksAsPins(draggingInfo, drag: drag, index: index)
         }
@@ -531,7 +534,7 @@ final class LibrarySpaceManagementController: NSViewController,
         if samePinnedOwner(profileID: drag.profileID, spaceID: drag.spaceID), let state = source.conversionState {
             // Use the sidebar path when a runtime exists, retaining live tab and split bindings.
             source.prepareLiveBookmarksForRemoval(bookmarks, moving: true, excluding: state)
-            var afterGuid = displayedPins.flatMap { [$0.id, $0.secondaryID].compactMap { $0 } }.prefix(index).last
+            var afterGuid = displayedPins.flatMap(\.memberIDs).prefix(index).last
             for bookmark in bookmarks {
                 guard let guid = state.moveBookmarkOut(bookmark, afterPinnedGuid: afterGuid) else { return false }
                 afterGuid = guid
@@ -555,7 +558,7 @@ final class LibrarySpaceManagementController: NSViewController,
               let store = validStore() else { return false }
         if samePinnedOwner(profileID: drag.profileID, spaceID: drag.spaceID), let state = conversionState,
            let pin = state.pinnedTabs.first(where: { $0.guidInLocalDB == id }) {
-            let ids = Set([id, pin.splitPartnerGuid].compactMap { $0 })
+            let ids = Set(state.pinnedSplitDBGuids(forPinnedTab: pin) ?? [id])
             state.movePinnedTabOut(pinnedGuid: id, toBookmark: parent?.guid, index: index)
             detachRemovedPins(ids)
         } else {
@@ -812,6 +815,7 @@ final class LibrarySpaceManagementController: NSViewController,
             mode: folder ? (bookmark == nil ? .newFolder : .folder) : (bookmark == nil ? .newBookmark : .bookmark),
             title: bookmark?.title ?? "", urlString: bookmark?.url ?? "",
             secondaryUrlString: secondaryURL, secondaryTitleString: bookmark?.secondaryTitle,
+            extraPanes: bookmark?.splitExtraPanes ?? [],
             modelContainer: store.container,
             profileId: contents.scope.profileId, spaceId: contents.scope.spaceId,
             initialFolderGuid: originalParentGuid,
@@ -828,7 +832,8 @@ final class LibrarySpaceManagementController: NSViewController,
                       bookmark == nil || validBookmark(bookmark!.guid),
                       validBookmarkFolder(folder ? originalParentGuid : result.parentFolderGuid),
                       folder || store.normalizedURL(from: result.url) != nil,
-                      secondaryURL == nil || store.normalizedURL(from: result.secondaryUrl) != nil else {
+                      secondaryURL == nil || store.normalizedURL(from: result.secondaryUrl) != nil,
+                      (result.extraPanes ?? []).allSatisfy({ store.normalizedURL(from: $0.url) != nil }) else {
                     NSSound.beep()
                     return false
                 }
@@ -842,7 +847,8 @@ final class LibrarySpaceManagementController: NSViewController,
                 actionManager.updateBookmark(guid: bookmark.guid, title: result.title,
                     url: folder ? nil : result.url,
                     secondaryUrl: secondaryURL == nil ? nil : .some(result.secondaryUrl ?? ""),
-                    secondaryTitle: secondaryURL == nil ? nil : .some(result.secondaryTitle ?? ""))
+                    secondaryTitle: secondaryURL == nil ? nil : .some(result.secondaryTitle ?? ""),
+                    splitExtraPanes: result.extraPanes)
                 if !folder && parentGuid != originalParentGuid {
                     store.moveBookmark(bookmark.guid, profileId: contents.scope.profileId,
                                        to: parentGuid, newIndex: Int.max)

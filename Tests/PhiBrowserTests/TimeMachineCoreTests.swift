@@ -736,6 +736,60 @@ final class TimeMachineCoreTests: XCTestCase {
         XCTAssertEqual(try store.load().backups, [record])
     }
 
+    func testCatalogStorePurgesUncatalogedAndStagingSnapshotsOnly() throws {
+        let root = try makeTemporaryDirectory()
+        let paths = TimeMachinePaths(rootURL: root, bundleIdentifier: "com.phibrowser.Mac")
+        let catalogedID = UUID(uuidString: "00000000-0000-0000-0000-000000000627")!
+        let uncatalogedID = UUID(uuidString: "00000000-0000-0000-0000-000000000628")!
+        let stagingID = UUID(uuidString: "00000000-0000-0000-0000-000000000629")!
+        let catalogedURL = paths.snapshotURL(id: catalogedID)
+        let uncatalogedURL = paths.snapshotURL(id: uncatalogedID)
+        let stagingURL = paths.snapshotStagingURL(id: stagingID)
+        let unrelatedURL = paths.snapshotsRootURL.appendingPathComponent("unrelated", isDirectory: true)
+        for url in [catalogedURL, uncatalogedURL, stagingURL, unrelatedURL] {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
+        let record = try makeBackupRecord(
+            id: catalogedID,
+            snapshotRelativePath: paths.relativePath(for: catalogedURL)
+        )
+        let store = TimeMachineCatalogStore(paths: paths)
+        try store.save(TimeMachineCatalog(backups: [record]))
+
+        XCTAssertEqual(try store.purgeUncatalogedSnapshots(), 2)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: catalogedURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unrelatedURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: uncatalogedURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stagingURL.path))
+        XCTAssertEqual(try store.load().backups, [record])
+    }
+
+    func testCatalogStoreRejectsSymlinkedSnapshotsDirectoryWhenPurgingUncatalogedSnapshots() throws {
+        let root = try makeTemporaryDirectory()
+        let paths = TimeMachinePaths(
+            rootURL: root.appendingPathComponent("TimeMachine", isDirectory: true),
+            bundleIdentifier: "com.phibrowser.Mac"
+        )
+        let externalSnapshotsURL = root.appendingPathComponent("ExternalSnapshots", isDirectory: true)
+        let id = UUID(uuidString: "00000000-0000-0000-0000-000000000630")!
+        let externalStagingURL = externalSnapshotsURL.appendingPathComponent("\(id.uuidString).staging", isDirectory: true)
+        try FileManager.default.createDirectory(at: externalStagingURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: paths.rootURL, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: paths.snapshotsRootURL,
+            withDestinationURL: externalSnapshotsURL
+        )
+        let store = TimeMachineCatalogStore(paths: paths)
+
+        XCTAssertThrowsError(try store.purgeUncatalogedSnapshots()) { error in
+            guard case TimeMachineCatalogStoreError.unsafeManagedDirectory = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: externalStagingURL.path))
+    }
+
     func testCatalogStoreRollsBackQuarantineWhenCatalogSaveFails() throws {
         let root = try makeTemporaryDirectory()
         let paths = TimeMachinePaths(rootURL: root, bundleIdentifier: "com.phibrowser.Mac")

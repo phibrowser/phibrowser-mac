@@ -18,9 +18,9 @@ struct TabSectionChange {
     /// The consumer updates only these wrappers' cells — adding an
     /// ungrouped tab leaves this empty so unrelated groups don't repaint.
     let affectedGroupTokens: Set<String>
-    /// Split ids whose merged pair row kept its identity but changed pane
+    /// Split ids whose merged split row kept its identity but changed pane
     /// membership (drag-to-replace swaps one pane's Tab object in place on
-    /// the cached `SplitPairSidebarItem`). The row id is keyed on the split
+    /// the cached `SplitSidebarItem`). The row id is keyed on the split
     /// id alone, so the root snapshot can keep the same row identity while
     /// the consumer re-binds these rows' cells so titles/favicons/subscriptions
     /// attach to the new Tab.
@@ -43,7 +43,7 @@ struct TabSectionChange {
     }
 
     /// PHI-1099's outer-outline repair is safe only when the root change is
-    /// isolated from group membership and split-pair mutations that the outer
+    /// isolated from group membership and split-pane mutations that the outer
     /// snapshot intentionally does not represent.
     var allowsInsertedRootTabLayoutRepair: Bool {
         rootItemsChanged && affectedGroupTokens.isEmpty && affectedSplitIds.isEmpty
@@ -69,19 +69,19 @@ class TabSectionController: NSObject {
     /// `BrowserState.groups`.
     private var groupWrappers: [String: TabGroupSidebarItem] = [:]
 
-    /// Per-`SplitGroup.id` stable wrapper for the merged split-pair row.
+    /// Per-`SplitGroup.id` stable wrapper for the merged split row.
     /// `NSOutlineView` keys its drop-feedback / expansion / row-selection
     /// caches on object identity; without this cache, every `buildItems`
-    /// pass allocates a fresh `SplitPairSidebarItem` and AppKit's
+    /// pass allocates a fresh `SplitSidebarItem` and AppKit's
     /// identity lookups silently no-op, manifesting most visibly as the
     /// `.regular` between-row drop indicator failing to paint above/below
-    /// a split-pair row even after `setDropItem(nil, dropChildIndex:)`
-    /// redirects the proposal. `leftTab` / `rightTab` are mutable
-    /// properties precisely so the wrapper can be re-resolved in place
-    /// after a "Reverse Panes" swap (see `SidebarItem.swift`).
+    /// a split row even after `setDropItem(nil, dropChildIndex:)`
+    /// redirects the proposal. `panes` is a mutable property precisely so
+    /// the wrapper can be re-resolved in place after a "Reverse Panes" /
+    /// "Move Pane" reorder (see `SidebarItem.swift`).
     /// Evicted in lock-step with `groupWrappers` when the underlying
     /// split group disappears.
-    private var splitPairWrappers: [String: SplitPairSidebarItem] = [:]
+    private var splitWrappers: [String: SplitSidebarItem] = [:]
 
     /// Per-token ordered guid list captured from the previous frame's
     /// `normalTabs`. Used to detect membership / order changes inside any
@@ -90,10 +90,11 @@ class TabSectionController: NSObject {
     /// ungrouped tab).
     private var previousGroupMembers: [String: [Int]] = [:]
 
-    /// Per-split [left guid, right guid] captured from the previous frame's
-    /// emitted pair rows. Compared frame-over-frame to detect a pane being
-    /// replaced in place — the pair row's id survives the swap, so without
-    /// this the diff path never re-binds the cell to the new Tab.
+    /// Per-split pane guids (on-screen order) captured from the previous
+    /// frame's emitted split rows. Compared frame-over-frame to detect a
+    /// pane being replaced in place — the split row's id survives the
+    /// swap, so without this the diff path never re-binds the cell to the
+    /// new Tab.
     private var previousSplitMembers: [String: [Int]] = [:]
 
     /// Identity snapshot of the `normalTabs` array a restore-transaction
@@ -127,7 +128,7 @@ class TabSectionController: NSObject {
             previousGroupMembers = [:]
             previousSplitMembers = [:]
             groupWrappers.removeAll()
-            splitPairWrappers.removeAll()
+            splitWrappers.removeAll()
             return
         }
 
@@ -200,10 +201,10 @@ class TabSectionController: NSObject {
             }
             .store(in: &cancellables)
 
-        // Splits collapse two normal-tab rows into a single
-        // `SplitPairSidebarItem`. The tab list itself doesn't change on
+        // Splits collapse their panes' normal-tab rows into a single
+        // `SplitSidebarItem`. The tab list itself doesn't change on
         // split create/disband, so rebuild the section so the item
-        // count adjusts when a pair forms or splits.
+        // count adjusts when a split forms or dissolves.
         browserState.$splits
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -263,12 +264,12 @@ class TabSectionController: NSObject {
         // nil bridge result, not a stale-but-live object).
         groupWrappers = groupWrappers.filter { groups[$0.key] != nil }
         let liveSplitIds = Set(state.splits.map(\.id))
-        splitPairWrappers = splitPairWrappers.filter { liveSplitIds.contains($0.key) }
+        splitWrappers = splitWrappers.filter { liveSplitIds.contains($0.key) }
 
         var items: [SidebarItem] = [newTabButton]
         var emittedGroupTokens = Set<String>()
-        // Tab ids consumed by an emitted SplitPairSidebarItem. When we
-        // iterate to the second pane of a split we skip it so the pair
+        // Tab ids consumed by an emitted SplitSidebarItem. When we
+        // iterate to a later pane of a split we skip it so the split
         // collapses into one row in the sidebar.
         var consumedSplitTabIds = Set<Int>()
 
@@ -283,42 +284,26 @@ class TabSectionController: NSObject {
             if tab.groupToken == nil,
                let group = state.splitGroup(forTabId: tab.guid),
                !group.isPinned,
-               let partnerId = group.partnerTabId(of: tab.guid),
-               let partner = tabs.first(where: { $0.guid == partnerId }),
-               partner.groupToken == nil {
-                let leftTab: Tab
-                let rightTab: Tab
-                if let myIdx = tabs.firstIndex(where: { $0.guid == tab.guid }),
-                   let partnerIdx = tabs.firstIndex(where: { $0.guid == partnerId }),
-                   myIdx < partnerIdx {
-                    leftTab = tab
-                    rightTab = partner
-                } else {
-                    leftTab = partner
-                    rightTab = tab
-                }
+               let panes = Self.ungroupedPanes(of: group, in: tabs) {
                 // Reuse the cached wrapper so NSOutlineView's identity-keyed
                 // tracking (drop feedback, expansion state, selection) survives
                 // every `buildItems` rebuild. The `id` is keyed on `group.id`
-                // alone, so updating `leftTab` / `rightTab` in place is correct
-                // for "Reverse Panes" swaps too.
-                let pair: SplitPairSidebarItem
-                if let cached = splitPairWrappers[group.id] {
-                    cached.leftTab = leftTab
-                    cached.rightTab = rightTab
+                // alone, so updating `panes` in place is correct for
+                // "Reverse Panes" / "Move Pane" reorders too.
+                let split: SplitSidebarItem
+                if let cached = splitWrappers[group.id] {
+                    cached.panes = panes
                     cached.browserState = state
-                    pair = cached
+                    split = cached
                 } else {
-                    pair = SplitPairSidebarItem(
+                    split = SplitSidebarItem(
                         groupId: group.id,
-                        leftTab: leftTab,
-                        rightTab: rightTab,
+                        panes: panes,
                         browserState: state)
-                    splitPairWrappers[group.id] = pair
+                    splitWrappers[group.id] = split
                 }
-                items.append(pair)
-                consumedSplitTabIds.insert(tab.guid)
-                consumedSplitTabIds.insert(partnerId)
+                items.append(split)
+                consumedSplitTabIds.formUnion(panes.map(\.guid))
                 continue
             }
             guard let token = tab.groupToken else {
@@ -454,14 +439,30 @@ class TabSectionController: NSObject {
         return tokens
     }
 
-    /// Snapshot of each emitted pair row's [left guid, right guid]. Compared
-    /// frame-over-frame to identify pair rows whose membership changed while
-    /// their id (the split id) survived — drag-to-replace and the
-    /// reverse-panes swap both mutate the cached wrapper in place.
+    /// Every pane of `group` in strip order, or nil when a pane is missing
+    /// from `tabs` or sits inside a tab group (in-group splits render under
+    /// their group wrapper instead).
+    private static func ungroupedPanes(of group: SplitGroup, in tabs: [Tab]) -> [Tab]? {
+        var panes: [Tab] = []
+        for tabId in group.tabIds {
+            guard let pane = tabs.first(where: { $0.guid == tabId }),
+                  pane.groupToken == nil else { return nil }
+            panes.append(pane)
+        }
+        return panes.sorted { lhs, rhs in
+            (tabs.firstIndex(of: lhs) ?? 0) < (tabs.firstIndex(of: rhs) ?? 0)
+        }
+    }
+
+    /// Snapshot of each emitted split row's pane guids in on-screen order.
+    /// Compared frame-over-frame to identify split rows whose membership
+    /// changed while their id (the split id) survived — drag-to-replace,
+    /// pane add/remove and the reverse / move-pane reorders all mutate the
+    /// cached wrapper in place.
     private static func computeSplitMembers(items: [SidebarItem]) -> [String: [Int]] {
         var result: [String: [Int]] = [:]
-        for case let pair as SplitPairSidebarItem in items {
-            result[pair.groupId] = [pair.leftTab.guid, pair.rightTab.guid]
+        for case let split as SplitSidebarItem in items {
+            result[split.groupId] = split.panes.map(\.guid)
         }
         return result
     }

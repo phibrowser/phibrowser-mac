@@ -47,10 +47,10 @@ final class LocalStore {
 // The production Space create body against the real SwiftData schema. Only the bookmark-root
 // materialization is stubbed; it runs after the duplicate check.
 final class SpaceCreationStore {
-    typealias SpaceModel = TabDataModelSchemaV13.SpaceModel
+    typealias SpaceModel = TabDataModelSchemaV14.SpaceModel
     enum LocalStoreWriteError: Error { case spaceAlreadyExists }
     func bookmarkRoot(profileId: String, spaceId: String, in context: ModelContext,
-                      createIfNeeded: Bool) throws -> TabDataModelSchemaV13.TabDataModel? { nil }
+                      createIfNeeded: Bool) throws -> TabDataModelSchemaV14.TabDataModel? { nil }
     /* PRODUCTION_CREATE_SPACE_BODY */
     func create(spaceId: String, profileId: String, name: String, in context: ModelContext) throws {
         try createSpaceBody(profileId: profileId, name: name, colorHex: "#000000", iconName: "star",
@@ -124,12 +124,12 @@ final class SpaceCreationStore {
     /// The real current SwiftData schema must expose the same field names as the
     /// Core Data evidence reader; this also catches notification timing assumptions.
     @MainActor static func runSwiftDataEvidence() throws {
-        let container = try ModelContainer(for: TabDataModelSchemaV13.TabDataModel.self,
-            TabDataModelSchemaV13.ProfileModel.self, TabDataModelSchemaV13.SpaceModel.self,
-            TabDataModelSchemaV13.SpaceURLRule.self, TabDataModelSchemaV13.BrowserDataSettingsModel.self,
+        let container = try ModelContainer(for: TabDataModelSchemaV14.TabDataModel.self,
+            TabDataModelSchemaV14.ProfileModel.self, TabDataModelSchemaV14.SpaceModel.self,
+            TabDataModelSchemaV14.SpaceURLRule.self, TabDataModelSchemaV14.BrowserDataSettingsModel.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = container.mainContext
-        let row = TabDataModelSchemaV13.TabDataModel(title: "Original", guid: "bookmark", index: 0,
+        let row = TabDataModelSchemaV14.TabDataModel(title: "Original", guid: "bookmark", index: 0,
             url: URL(string: "https://example.com")!, favicon: nil, createdDate: Date(), updatedDate: Date())
         row.type = TabDataType.bookmark.rawValue
         context.insert(row)
@@ -151,7 +151,7 @@ final class SpaceCreationStore {
         row.lastSeen = Date()
         try context.save()
         check(saves == [false, false, true], "SwiftData must distinguish local-only saves from mixed content edits")
-        let rule = TabDataModelSchemaV13.SpaceURLRule(spaceId: "space", host: "example.com", sortOrder: 0)
+        let rule = TabDataModelSchemaV14.SpaceURLRule(spaceId: "space", host: "example.com", sortOrder: 0)
         context.insert(rule)
         try context.save()
         let ruleEvidence = SyncSaveEvidence { object in
@@ -176,9 +176,9 @@ final class SpaceCreationStore {
 
     /// `spaceId` is `@Attribute(.unique)`: an insert under a taken id would overwrite that row on save.
     @MainActor static func runDuplicateSpaceCreate() throws {
-        let container = try ModelContainer(for: TabDataModelSchemaV13.TabDataModel.self,
-            TabDataModelSchemaV13.ProfileModel.self, TabDataModelSchemaV13.SpaceModel.self,
-            TabDataModelSchemaV13.SpaceURLRule.self, TabDataModelSchemaV13.BrowserDataSettingsModel.self,
+        let container = try ModelContainer(for: TabDataModelSchemaV14.TabDataModel.self,
+            TabDataModelSchemaV14.ProfileModel.self, TabDataModelSchemaV14.SpaceModel.self,
+            TabDataModelSchemaV14.SpaceURLRule.self, TabDataModelSchemaV14.BrowserDataSettingsModel.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = container.mainContext
         let store = SpaceCreationStore()
@@ -193,7 +193,7 @@ final class SpaceCreationStore {
         }
         try context.save()
         check(threw, "creating a Space under an existing spaceId must throw")
-        let rows = try context.fetch(FetchDescriptor<TabDataModelSchemaV13.SpaceModel>())
+        let rows = try context.fetch(FetchDescriptor<TabDataModelSchemaV14.SpaceModel>())
             .filter { $0.spaceId == "space-a" }
         check(rows.count == 1 && rows[0].profileId == "Work" && rows[0].name == "Work"
                 && rows[0].sortOrder == 0,

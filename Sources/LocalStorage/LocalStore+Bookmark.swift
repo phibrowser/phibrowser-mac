@@ -36,12 +36,18 @@ extension LocalStore {
             let now = Date()
             var created: [TabDataModel] = []
             for bookmark in bookmarks {
-                let urls = [bookmark.url, bookmark.secondaryUrl].compactMap { $0 }
+                var panes: [(url: URL, title: String)] = [(bookmark.url, bookmark.title)]
+                if let secondaryUrl = bookmark.secondaryUrl {
+                    panes.append((secondaryUrl, bookmark.secondaryTitle ?? bookmark.title))
+                    panes.append(contentsOf: bookmark.decodedSplitExtraPanes.compactMap { extra in
+                        URL(string: extra.url).map { ($0, extra.title ?? bookmark.title) }
+                    })
+                }
                 var unit: [TabDataModel] = []
-                for (pane, url) in urls.enumerated() {
+                for (pane, fields) in panes.enumerated() {
                     let guid = UUID().uuidString
-                    let pin = TabDataModel(title: pane == 0 ? bookmark.title : (bookmark.secondaryTitle ?? bookmark.title),
-                        guid: guid, index: 0, url: url, favicon: pane == 0 ? bookmark.favicon : nil,
+                    let pin = TabDataModel(title: fields.title,
+                        guid: guid, index: 0, url: fields.url, favicon: pane == 0 ? bookmark.favicon : nil,
                         createdDate: now, updatedDate: now)
                     pin.dataType = .pinnedTab
                     pin.isCreatedByChromium = false
@@ -51,9 +57,8 @@ extension LocalStore {
                     context.insert(pin)
                     unit.append(pin)
                 }
-                if unit.count == 2 {
-                    unit[0].splitPartnerGuid = unit[1].guid
-                    unit[1].splitPartnerGuid = unit[0].guid
+                if unit.count >= 2 {
+                    Self.linkPinnedSplit(unit)
                     unit.forEach { $0.layout = bookmark.layout }
                 }
                 created.append(contentsOf: unit)
@@ -70,7 +75,7 @@ extension LocalStore {
         }
     }
 
-    /// Saves a pin unit as one bookmark, preserving both panes and their order.
+    /// Saves a pin unit as one bookmark, preserving every pane and their order.
     func convertPinnedTabToBookmark(_ guid: String, sourceProfileId: String, sourceSpaceId: String,
                                     targetProfileId: String, targetSpaceId: String,
                                     parentGuid: String?, destinationIndex: Int) async throws -> Set<String> {
@@ -80,7 +85,7 @@ extension LocalStore {
             guard let source = pins.first(where: { $0.guid == guid }) else {
                 throw BookmarkPinConversionError.invalidSource
             }
-            let unit = try Self.pinnedTransferUnit(containing: source, partnerGuidHint: nil, in: pins)
+            let unit = try Self.pinnedTransferUnit(containing: source, memberGuidsHint: nil, in: pins)
             guard let primary = unit.first else { throw BookmarkPinConversionError.invalidSource }
             if let parentGuid {
                 guard let folder = try self.bookmarkNode(with: parentGuid, in: context),
@@ -91,11 +96,14 @@ extension LocalStore {
                                                       spaceId: targetSpaceId, in: context) else {
                 throw BookmarkPinConversionError.invalidDestination
             }
-            let secondary = unit.count == 2 ? unit[1] : nil
-            _ = try self.insertBookmarkNode(title: primary.title, profileId: targetProfileId, url: primary.url,
+            let secondary = unit.count >= 2 ? unit[1] : nil
+            let node = try self.insertBookmarkNode(title: primary.title, profileId: targetProfileId, url: primary.url,
                 parent: parent, index: destinationIndex, guid: nil, spaceId: targetSpaceId,
                 secondaryUrl: secondary?.url, secondaryTitle: secondary?.title,
                 layout: primary.layout ?? secondary?.layout, favicon: primary.favicon, now: Date(), in: context)
+            node.decodedSplitExtraPanes = unit.dropFirst(2).map {
+                SplitBookmarkExtraPane(url: $0.url.absoluteString, title: $0.title)
+            }
             let removed = Set(unit.map(\.guid))
             unit.forEach { context.delete($0) }
             self.normalizeIndexes(for: pins.filter { !removed.contains($0.guid) })
@@ -129,6 +137,7 @@ extension LocalStore {
                         spaceId: String = LocalStore.defaultSpaceId,
                         secondaryUrl: String? = nil,
                         secondaryTitle: String? = nil,
+                        splitExtraPanes: [SplitBookmarkExtraPane] = [],
                         layout: String? = nil,
                         favicon: Data? = nil) {
         let bookmarkURL: URL
@@ -165,6 +174,7 @@ extension LocalStore {
                                                 spaceId: spaceId,
                                                 secondaryUrl: normalizedSecondary,
                                                 secondaryTitle: secondaryTitle,
+                                                splitExtraPanes: splitExtraPanes,
                                                 layout: layout,
                                                 favicon: favicon,
                                                 syncId: nil,
@@ -227,6 +237,7 @@ extension LocalStore {
                                     spaceId: String,
                                     secondaryUrl: URL?,
                                     secondaryTitle: String?,
+                                    splitExtraPanes: [SplitBookmarkExtraPane] = [],
                                     layout: String? = nil,
                                     favicon: Data?,
                                     syncId: String?,
@@ -258,6 +269,9 @@ extension LocalStore {
                                           in: context)
         // Persist the identity and row in one transaction; landing has no second write that could fail.
         node.syncId = syncId
+        if secondaryUrl != nil {
+            node.decodedSplitExtraPanes = splitExtraPanes
+        }
         return node
     }
 
@@ -406,6 +420,7 @@ extension LocalStore {
                                                    guid: String,
                                                    secondaryUrl: String?,
                                                    secondaryTitle: String?,
+                                                   splitExtraPanes: [SplitBookmarkExtraPane],
                                                    layout: String?,
                                                    favicon: Data?)]) {
         let normalizedBookmarks: [(title: String?,
@@ -413,12 +428,14 @@ extension LocalStore {
                                    guid: String,
                                    secondaryUrl: URL?,
                                    secondaryTitle: String?,
+                                   splitExtraPanes: [SplitBookmarkExtraPane],
                                    layout: String?,
                                    favicon: Data?)] = bookmarks.compactMap { bookmark -> (title: String?,
                                                                                             url: URL,
                                                                                             guid: String,
                                                                                             secondaryUrl: URL?,
                                                                                             secondaryTitle: String?,
+                                                                                            splitExtraPanes: [SplitBookmarkExtraPane],
                                                                                             layout: String?,
                                                                                             favicon: Data?)? in
             guard let primaryURL = normalizedURL(from: bookmark.url) else {
@@ -440,6 +457,7 @@ extension LocalStore {
                     guid: bookmark.guid,
                     secondaryUrl: normalizedSecondaryURL,
                     secondaryTitle: bookmark.secondaryTitle,
+                    splitExtraPanes: bookmark.splitExtraPanes,
                     layout: bookmark.layout,
                     favicon: bookmark.favicon)
         }
@@ -462,19 +480,20 @@ extension LocalStore {
                                                           now: now,
                                                           in: context)
                 for (childIndex, bookmark) in normalizedBookmarks.enumerated() {
-                    _ = try self.insertBookmarkNode(title: bookmark.title,
-                                                    profileId: profileId,
-                                                    url: bookmark.url,
-                                                    parent: folder,
-                                                    index: childIndex,
-                                                    guid: bookmark.guid,
-                                                    spaceId: folder.spaceId,
-                                                    secondaryUrl: bookmark.secondaryUrl,
-                                                    secondaryTitle: bookmark.secondaryTitle,
-                                                    layout: bookmark.layout,
-                                                    favicon: bookmark.favicon,
-                                                    now: now,
-                                                    in: context)
+                    let node = try self.insertBookmarkNode(title: bookmark.title,
+                                                           profileId: profileId,
+                                                           url: bookmark.url,
+                                                           parent: folder,
+                                                           index: childIndex,
+                                                           guid: bookmark.guid,
+                                                           spaceId: folder.spaceId,
+                                                           secondaryUrl: bookmark.secondaryUrl,
+                                                           secondaryTitle: bookmark.secondaryTitle,
+                                                           layout: bookmark.layout,
+                                                           favicon: bookmark.favicon,
+                                                           now: now,
+                                                           in: context)
+                    node.decodedSplitExtraPanes = bookmark.splitExtraPanes
                 }
             } catch {
                 AppLogError("Failed to create directory with bookmarks: \(error)")
@@ -1257,12 +1276,15 @@ extension LocalStore {
     /// clear it and turn the bookmark back into a single-URL bookmark, or
     /// `.none` to leave it untouched. Clearing `secondaryUrl` also clears
     /// `secondaryTitle` even if no explicit update was passed for the title.
+    /// `splitExtraPanes` replaces the panes after the first two of a split
+    /// bookmark; nil leaves them untouched.
     func updateBookmark(_ guid: String,
                         profileId: String,
                         title: String?,
                         url: String?,
                         secondaryUrl: String?? = nil,
                         secondaryTitle: String?? = nil,
+                        splitExtraPanes: [SplitBookmarkExtraPane]? = nil,
                         iconName: String? = nil,
                         expectedSpaceId: String? = nil) {
         // Preserve UI behavior by treating an empty title as no title update. The shared body's empty-title
@@ -1278,6 +1300,7 @@ extension LocalStore {
                                             url: url,
                                             secondaryUrl: secondaryUrl,
                                             secondaryTitle: secondaryTitle,
+                                            splitExtraPanes: splitExtraPanes,
                                             allowsEmptyTitle: false,
                                             iconName: iconName,
                                             expectedSpaceId: expectedSpaceId,
@@ -1340,6 +1363,7 @@ extension LocalStore {
                                     url: String?,
                                     secondaryUrl: String??,
                                     secondaryTitle: String??,
+                                    splitExtraPanes: [SplitBookmarkExtraPane]? = nil,
                                     allowsEmptyTitle: Bool,
                                     iconName: String? = nil,
                                     expectedSpaceId: String? = nil,
@@ -1373,6 +1397,19 @@ extension LocalStore {
             }
         }
 
+        // An extra pane with an invalid URL aborts the update like the
+        // primary and secondary URLs do.
+        var resolvedExtraPanes: [SplitBookmarkExtraPane]?
+        if let splitExtraPanes {
+            resolvedExtraPanes = try splitExtraPanes.map { pane in
+                guard let normalized = normalizedURL(from: pane.url) else {
+                    throw LocalStoreWriteError.invalidURL
+                }
+                return SplitBookmarkExtraPane(url: normalized.absoluteString,
+                                              title: (pane.title?.isEmpty == false) ? pane.title : nil)
+            }
+        }
+
         var contentDidChange = false
         if let resolvedURL, node.url != resolvedURL {
             node.url = resolvedURL
@@ -1397,6 +1434,8 @@ extension LocalStore {
         }
         if secondaryUrlClearedInThisUpdate {
             node.layout = nil
+            // A single-URL bookmark has no panes left to extend.
+            node.splitExtraPanes = nil
             if node.secondaryTitle != nil {
                 node.secondaryTitle = nil
                 contentDidChange = true
@@ -1407,6 +1446,12 @@ extension LocalStore {
                 node.secondaryTitle = newSecondaryTitle
                 contentDidChange = true
             }
+        }
+        // Extra panes extend a split, so a single-URL bookmark never gains them.
+        if let resolvedExtraPanes, node.secondaryUrl != nil,
+           node.decodedSplitExtraPanes != resolvedExtraPanes {
+            node.decodedSplitExtraPanes = resolvedExtraPanes
+            contentDidChange = true
         }
         if let iconName, node.dataType == .bookmarkFolder, node.icon != iconName {
             node.icon = iconName
@@ -2082,6 +2127,7 @@ private extension LocalStore {
                                            favicon: source.favicon,
                                            now: createdDate,
                                            in: context)
+            clone.splitExtraPanes = source.splitExtraPanes
             clone.lastSeen = source.lastSeen
         }
         clone.overrideTitle = source.overrideTitle

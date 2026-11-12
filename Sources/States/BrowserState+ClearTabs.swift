@@ -33,7 +33,8 @@ final class ClearedTabsBatch {
             Group(token: $0.token, title: $0.title, color: $0.color.rawValue, collapsed: $0.isCollapsed)
         }
         let ids = Set(tabs.map(\.guid))
-        splits = state.splits.filter { ids.contains($0.primaryTabId) && ids.contains($0.secondaryTabId) }
+        // A split is recorded only when every pane is being cleared.
+        splits = state.splits.filter { $0.tabIds.allSatisfy(ids.contains) }
     }
 }
 
@@ -44,10 +45,12 @@ extension BrowserState {
     }
 
     var canClearAllTabs: Bool {
-        // A split pair counts as one tab.
+        // A split counts as one tab.
         let ids = Set(normalTabs.map(\.guid))
-        let pairedSplits = splits.filter { ids.contains($0.primaryTabId) && ids.contains($0.secondaryTabId) }.count
-        return normalTabs.count - pairedSplits > 1
+        let mergedPanes = splits
+            .filter { $0.tabIds.allSatisfy(ids.contains) }
+            .reduce(0) { $0 + $1.paneCount - 1 }
+        return normalTabs.count - mergedPanes > 1
             && !isKioskWindow && !isRestoringClearedTabs
             && !AgentSpaceManager.shared.isAgentOwned(spaceId)
     }
@@ -122,10 +125,12 @@ extension BrowserState {
             if self.groups[group.token] != nil { return ["keys": keys, "tokenHex": group.token] }
             return ["keys": keys, "title": group.title, "color": group.color, "collapsed": group.collapsed]
         }
+        // `keys` are the panes in slot order, `fractions` their shares — the
+        // shape `restoreTabs(withWindowId:order:groups:splits:)` takes.
         let splits: [[AnyHashable: Any]] = batch.splits.compactMap { split in
-            guard pages[split.primaryTabId] != nil, pages[split.secondaryTabId] != nil else { return nil }
-            return ["primaryKey": String(split.primaryTabId), "secondaryKey": String(split.secondaryTabId),
-                    "layout": split.layout.rawValue, "ratio": split.ratio]
+            guard split.tabIds.allSatisfy({ pages[$0] != nil }) else { return nil }
+            return ["keys": split.tabIds.map { String($0) },
+                    "layout": split.layout.rawValue, "fractions": split.fractions]
         }
 
         isRestoringClearedTabs = true

@@ -1,8 +1,8 @@
 import Foundation
 import SwiftData
 
-typealias TabDataModel = TabDataModelSchemaV13.TabDataModel
-typealias ProfileModel = TabDataModelSchemaV13.ProfileModel
+typealias TabDataModel = TabDataModelSchemaV14.TabDataModel
+typealias ProfileModel = TabDataModelSchemaV14.ProfileModel
 enum TabDataType: Int { case tab, pinnedTab, bookmark, bookmarkFolder }
 func AppLogError(_ message: String) { fatalError(message) }
 
@@ -26,7 +26,7 @@ func AppLogError(_ message: String) { fatalError(message) }
     }
 
     @MainActor static func container() throws -> ModelContainer {
-        let schema = Schema(TabDataModelSchemaV13.models)
+        let schema = Schema(TabDataModelSchemaV14.models)
         let configuration: ModelConfiguration
         if let index = CommandLine.arguments.firstIndex(of: "--sqlite-directory") {
             let directory = URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)
@@ -161,7 +161,7 @@ func AppLogError(_ message: String) { fatalError(message) }
             let output: [String: Any] = ["nodes": count, "spaces": distribution.spaces,
                 "distribution": distribution.name, "fetched": spy.fetchedCount,
                 "samples_ms": samples, "median_ms": sorted[7], "min_ms": sorted[0], "max_ms": sorted[14],
-                "backend": CommandLine.arguments.contains("--sqlite-directory") ? "SwiftData SQLite V13" : "SwiftData in-memory V13",
+                "backend": CommandLine.arguments.contains("--sqlite-directory") ? "SwiftData SQLite V14" : "SwiftData in-memory V14",
                 "compiler": "swiftc \(ProcessInfo.processInfo.environment["BOOKMARK_QUERY_OPTIMIZATION"] ?? "-O")",
                 "warmups": 3]
             print(String(data: try JSONSerialization.data(withJSONObject: output, options: .sortedKeys), encoding: .utf8)!)

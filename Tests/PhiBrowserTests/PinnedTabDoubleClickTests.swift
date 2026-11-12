@@ -55,7 +55,7 @@ final class PinnedTabDoubleClickTests: XCTestCase {
         let rightTab = Tab(guid: 2, url: "https://right.example", isActive: false, index: 1)
         let item = PinnedSplitItem()
         item.view.frame = CGRect(x: 0, y: 0, width: 54, height: 54)
-        item.configure(leftTab: leftTab, rightTab: rightTab, themeProvider: ThemeManager.shared)
+        item.configure(panes: [leftTab, rightTab], themeProvider: ThemeManager.shared)
         let window = makeHostWindow(for: item.view)
         item.view.layoutSubtreeIfNeeded()
 
@@ -96,20 +96,20 @@ final class PinnedTabDoubleClickTests: XCTestCase {
             isActive: true,
             isPinned: true,
             isSplitGroupActive: true,
-            pinnedSplitPartner: rightTab,
+            mergedSplitPanes: [rightTab],
             sourceTab: leftTab
         ))
         let window = makeHostWindow(for: view)
 
         var selectedPane = ""
         var doubleClickModifierFlags: NSEvent.ModifierFlags = []
-        view.onSecondarySelect = { _ in selectedPane = "right-single" }
+        view.onPaneSelect = { _, _ in selectedPane = "right-single" }
         view.onDoubleSelect = { modifierFlags in
             selectedPane = "left"
             doubleClickModifierFlags = modifierFlags
         }
-        view.onSecondaryDoubleSelect = { modifierFlags in
-            selectedPane = "right"
+        view.onPaneDoubleSelect = { pane, modifierFlags in
+            selectedPane = pane === rightTab ? "right" : "unexpected pane"
             doubleClickModifierFlags = modifierFlags
         }
 
@@ -199,7 +199,7 @@ final class PinnedTabDoubleClickTests: XCTestCase {
         let window = makeHostWindow(for: fixture.table)
         fixture.table.reloadData()
         let cell = try XCTUnwrap(fixture.table.view(atColumn: 0, row: 0, makeIfNecessary: true)
-            as? SidebarSplitPairCellView)
+            as? SidebarSplitCellView)
         window.contentView?.layoutSubtreeIfNeeded()
         let panes = cell.subviews.flatMap(\.subviews).compactMap { $0 as? HoverableView }
             .filter { $0.shouldClickOnMouseDown != nil }
@@ -227,7 +227,7 @@ final class PinnedTabDoubleClickTests: XCTestCase {
         let window = makeHostWindow(for: fixture.table)
         fixture.table.reloadData()
         let cell = try XCTUnwrap(fixture.table.view(atColumn: 0, row: 0, makeIfNecessary: true)
-            as? SidebarSplitPairCellView)
+            as? SidebarSplitCellView)
         window.contentView?.layoutSubtreeIfNeeded()
         let pane = try XCTUnwrap(cell.subviews.flatMap(\.subviews).compactMap { $0 as? HoverableView }
             .first { $0.shouldClickOnMouseDown != nil })
@@ -253,7 +253,7 @@ final class PinnedTabDoubleClickTests: XCTestCase {
         let window = makeHostWindow(for: fixture.table)
         fixture.table.reloadData()
         let cell = try XCTUnwrap(fixture.table.view(atColumn: 0, row: 0, makeIfNecessary: true)
-            as? SidebarSplitPairCellView)
+            as? SidebarSplitCellView)
         window.contentView?.layoutSubtreeIfNeeded()
         let panes = cell.subviews.flatMap(\.subviews).compactMap { $0 as? HoverableView }
             .filter { $0.shouldClickOnMouseDown != nil }
@@ -310,7 +310,7 @@ final class PinnedTabDoubleClickTests: XCTestCase {
 private final class GroupedSplitPressFixture: NSObject, NSTableViewDataSource,
     NSTableViewDelegate, GroupTabsTableViewDelegate {
     let table = GroupTabsTableView(frame: NSRect(x: 0, y: 0, width: 320, height: 40))
-    let cell = SidebarSplitPairCellView(frame: NSRect(x: 0, y: 0, width: 320, height: 36))
+    let cell = SidebarSplitCellView(frame: NSRect(x: 0, y: 0, width: 320, height: 36))
     var rowClicks = 0
     var dragStarts = 0
 
@@ -324,6 +324,14 @@ private final class GroupedSplitPressFixture: NSObject, NSTableViewDataSource,
         table.delegate = self
         table.phiTableDelegate = self
         table.shouldSelectOnMouseDown = { true }
+        // Pane segments are built when the cell is configured with its panes.
+        cell.configure(with: SplitSidebarItem(
+            groupId: "split-1-2",
+            panes: [
+                Tab(guid: 1, url: "https://left.example", isActive: true, index: 0),
+                Tab(guid: 2, url: "https://right.example", isActive: false, index: 1),
+            ],
+            browserState: nil))
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int { 1 }

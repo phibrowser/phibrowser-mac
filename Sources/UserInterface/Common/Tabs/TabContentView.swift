@@ -158,18 +158,52 @@ struct TabCornerBadgeView: View {
     }
 }
 
+/// One corner badge for a split: every pane's status model feeds it and the
+/// pane with the highest-priority status wins, so the visual matches the
+/// single-tab badge for whichever pane currently has the strongest status.
 struct MergedTabCornerBadgeView: View {
-    @ObservedObject var primaryModel: TabStatusModel
-    @ObservedObject var secondaryModel: TabStatusModel
+    /// The panes' status models, two to four.
+    let models: [TabStatusModel]
     var isSuppressed = false
 
     var body: some View {
-        TabCornerBadgeVisual(
-            status: isSuppressed ? nil : TabCornerBadgeStatus.highestPriority([
-                primaryModel.cornerBadgeStatus,
-                secondaryModel.cornerBadgeStatus
-            ])
+        MergedTabCornerBadgeContent(
+            aggregate: MergedTabStatusAggregate(models: models),
+            isSuppressed: isSuppressed
         )
+        // A different set of panes starts a fresh aggregate.
+        .id(models.map { ObjectIdentifier($0) })
+    }
+}
+
+/// Re-publishes every pane model's change as one, so the merged badge
+/// re-resolves its winner whenever any pane's status moves.
+@MainActor
+final class MergedTabStatusAggregate: ObservableObject {
+    let models: [TabStatusModel]
+    private var cancellables = Set<AnyCancellable>()
+
+    init(models: [TabStatusModel]) {
+        self.models = models
+        for model in models {
+            model.objectWillChange
+                .sink { [weak self] _ in self?.objectWillChange.send() }
+                .store(in: &cancellables)
+        }
+    }
+
+    /// The status to show, or nil when no pane has one.
+    var winningStatus: TabCornerBadgeStatus? {
+        TabCornerBadgeStatus.highestPriority(models.map(\.cornerBadgeStatus))
+    }
+}
+
+private struct MergedTabCornerBadgeContent: View {
+    @StateObject var aggregate: MergedTabStatusAggregate
+    var isSuppressed = false
+
+    var body: some View {
+        TabCornerBadgeVisual(status: isSuppressed ? nil : aggregate.winningStatus)
     }
 }
 

@@ -623,6 +623,15 @@ final class AgentCDPListener {
             return true
         }
 
+        // An agent a companion app spawned — Folio running the phi-browser
+        // skill to drive Spaces — has its consent settled by its launcher for
+        // the same reasons, and is otherwise an ordinary agent: the agent
+        // surface, the roster, the master switch.
+        if let launcher = identity.companionLauncher {
+            logCompanionPass(identity, launcher: launcher)
+            return true
+        }
+
         // A peer we could not identify is refused here, before any grant,
         // refusal, or prompt can apply to it — whether the socket would not
         // name a process at all, or the walk found nothing but the skill's own
@@ -856,14 +865,16 @@ final class AgentCDPListener {
     /// The companion pass's counterpart of `logFirstPartyPass`: once per
     /// companion process, so a helper's many connections log one line and a
     /// restarted helper logs a fresh one.
-    private func logCompanionPass(_ identity: AgentIdentity) {
+    private func logCompanionPass(_ identity: AgentIdentity, launcher: AgentCompanion? = nil) {
         let marker = "\(identity.key)|\(identity.pid.map(String.init) ?? "?")"
         grantsLock.lock()
         let firstTime = loggedCompanionPasses.insert(marker).inserted
         grantsLock.unlock()
         guard firstTime else { return }
+        let why = launcher.map { "an agent spawned by the Phi-signed companion app \($0.displayName)" }
+            ?? "Phi-signed companion app"
         AppLogInfo("[AgentCDP] admitted \(identity.displayName) (pid \(identity.pid.map(String.init) ?? "?")) "
-                   + "on the companion pass — Phi-signed companion app, no consent required")
+                   + "on the companion pass — \(why), no consent required")
     }
 
     // MARK: - Standing refusals

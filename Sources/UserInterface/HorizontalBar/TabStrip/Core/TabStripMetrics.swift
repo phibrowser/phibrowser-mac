@@ -25,11 +25,14 @@ enum TabStripMetrics {
         static let idealWidth: CGFloat = 180
         static let minWidth: CGFloat = 36
         static let activeMinWidth: CGFloat = 100
-        // Protected width when the active cell is a split-merged pair: it
-        // must clear `Content.splitCompactModeThreshold`, otherwise the
-        // focused split would degrade to the two-favicon compact rendering
-        // and lose its per-pane close buttons.
-        static let activeSplitMinWidth: CGFloat = Content.splitCompactModeThreshold
+        /// Protected width when the active cell is a merged split of
+        /// `paneCount` panes: it must clear
+        /// `Content.splitCompactModeThreshold(paneCount:)`, otherwise the
+        /// focused split would degrade to the favicon-only compact rendering
+        /// and lose its per-pane close buttons.
+        static func activeSplitMinWidth(paneCount: Int) -> CGFloat {
+            Content.splitCompactModeThreshold(paneCount: paneCount)
+        }
         static let cornerRadius: CGFloat = 8
         static let inverseCornerRadius: CGFloat = cornerRadius
     }
@@ -39,6 +42,14 @@ enum TabStripMetrics {
         static let height: CGFloat = 28
         static let width: CGFloat = 28
         static let spacing: CGFloat = 2
+
+        /// Width of a merged pinned-split cell: it spans one slot per pane
+        /// plus the spacing that would have sat between those slots, so the
+        /// cell visually absorbs its collapsed panes' slots.
+        static func mergedWidth(paneCount: Int) -> CGFloat {
+            let count = CGFloat(max(1, paneCount))
+            return width * count + spacing * (count - 1)
+        }
     }
 
     // Layout constants for tab content.
@@ -71,10 +82,13 @@ enum TabStripMetrics {
         // FaviconLeading 6 + FaviconSize 16 + titleToCloseButton 6
         // + CloseButtonSize 24 + CloseButtonTrailing 4 = 56, with 8pt slack.
         static let compactModeThreshold: CGFloat = 64
-        // Split-merged cells lay that same content out once per pane, so the
-        // compact cutoff doubles: below this, the per-pane hover close
-        // buttons (at halfWidth - 28) would overlap the pane favicons.
-        static let splitCompactModeThreshold: CGFloat = compactModeThreshold * 2
+        /// Merged split cells lay that same content out once per pane, so
+        /// the compact cutoff scales with the pane count: below this, the
+        /// per-pane hover close buttons (at each pane's trailing edge) would
+        /// overlap the pane favicons.
+        static func splitCompactModeThreshold(paneCount: Int) -> CGFloat {
+            compactModeThreshold * CGFloat(max(1, paneCount))
+        }
     }
 
     enum NewTabButton {

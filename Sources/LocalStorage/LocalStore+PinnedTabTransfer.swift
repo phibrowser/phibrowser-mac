@@ -36,18 +36,20 @@ struct PinnedTabCreationInput: Sendable, Equatable {
     let tabId: Int
     let title: String
     let url: String
-    let partnerTabId: Int?
+    /// Every pane of the split this tab belongs to, itself included, in slot
+    /// order. Empty for a solo tab.
+    let paneTabIds: [Int]
     let layout: String?
 
     init(tabId: Int,
          title: String,
          url: String,
-         partnerTabId: Int?,
+         paneTabIds: [Int] = [],
          layout: String? = nil) {
         self.tabId = tabId
         self.title = title
         self.url = url
-        self.partnerTabId = partnerTabId
+        self.paneTabIds = paneTabIds
         self.layout = layout
     }
 }
@@ -73,7 +75,7 @@ extension LocalStore {
                 throw PinnedTabTransferError.sourceNotFound(guid)
             }
             // A missing partner must not make an orphaned pin impossible to delete.
-            let unit = (try? Self.pinnedTransferUnit(containing: source, partnerGuidHint: nil, in: tabs)) ?? [source]
+            let unit = (try? Self.pinnedTransferUnit(containing: source, memberGuidsHint: nil, in: tabs)) ?? [source]
             let ids = Set(unit.map(\.guid))
             unit.forEach { context.delete($0) }
             Self.reindexPinnedTabs(tabs.filter { !ids.contains($0.guid) }, updatedAt: Date())
@@ -91,7 +93,7 @@ extension LocalStore {
         sourceSpaceId: String,
         targetProfileId: String,
         targetSpaceId: String,
-        partnerGuidHint: String? = nil,
+        memberGuidsHint: [String]? = nil,
         destinationIndex: Int,
         destinationIndexIncludesSourceUnit: Bool = false
     ) async throws -> PinnedTabTransferResult {
@@ -119,12 +121,11 @@ extension LocalStore {
 
             let transferUnit = try Self.pinnedTransferUnit(
                 containing: source,
-                partnerGuidHint: partnerGuidHint,
+                memberGuidsHint: memberGuidsHint,
                 in: sourceTabs
             )
-            if transferUnit.count == 2 {
-                transferUnit[0].splitPartnerGuid = transferUnit[1].guid
-                transferUnit[1].splitPartnerGuid = transferUnit[0].guid
+            if transferUnit.count >= 2 {
+                Self.linkPinnedSplit(transferUnit)
             }
             let sourceGuids = Set(transferUnit.map(\.guid))
             let targetTabs = try self.pinnedTabs(
@@ -151,7 +152,7 @@ extension LocalStore {
                 return PinnedTabTransferResult(
                     guidMapping: Dictionary(uniqueKeysWithValues: transferUnit.map { ($0.guid, $0.guid) }),
                     primaryGuid: guid,
-                    isSplit: transferUnit.count == 2
+                    isSplit: transferUnit.count >= 2
                 )
             }
 
@@ -178,9 +179,8 @@ extension LocalStore {
                 copiedTabs.append(copied)
             }
 
-            if copiedTabs.count == 2 {
-                copiedTabs[0].splitPartnerGuid = copiedTabs[1].guid
-                copiedTabs[1].splitPartnerGuid = copiedTabs[0].guid
+            if copiedTabs.count >= 2 {
+                Self.linkPinnedSplit(copiedTabs)
             }
 
             var reorderedTarget = targetTabs
@@ -197,7 +197,7 @@ extension LocalStore {
             return PinnedTabTransferResult(
                 guidMapping: guidMapping,
                 primaryGuid: guidMapping[guid] ?? guid,
-                isSplit: transferUnit.count == 2
+                isSplit: transferUnit.count >= 2
             )
         }
     }
@@ -265,14 +265,16 @@ extension LocalStore {
                 createdTabs.append(model)
             }
 
-            for (input, model) in zip(inputs, createdTabs) {
-                if let partnerTabId = input.partnerTabId {
-                    guard let partnerGuid = guidByTabId[partnerTabId] else {
-                        throw PinnedTabTransferError.splitPartnerNotFound(String(partnerTabId))
+            if let paneTabIds = inputs.first(where: { !$0.paneTabIds.isEmpty })?.paneTabIds {
+                let panes = try paneTabIds.map { paneTabId -> TabDataModel in
+                    guard let guid = guidByTabId[paneTabId],
+                          let model = createdTabs.first(where: { $0.guid == guid }) else {
+                        throw PinnedTabTransferError.splitPartnerNotFound(String(paneTabId))
                     }
-                    model.splitPartnerGuid = partnerGuid
-                    model.layout = input.layout
+                    return model
                 }
+                Self.linkPinnedSplit(panes)
+                panes.forEach { $0.layout = inputs[0].layout }
             }
 
             var reordered = targetTabs
@@ -283,7 +285,7 @@ extension LocalStore {
             return PinnedTabCreationResult(
                 guidByTabId: guidByTabId,
                 primaryTabId: primaryInput.tabId,
-                isSplit: inputs.count == 2
+                isSplit: inputs.count >= 2
             )
         }
     }
@@ -303,23 +305,53 @@ extension LocalStore {
         }
     }
 
+    /// Writes the persisted form of a pinned split onto its rows: the
+    /// reciprocal partner link for a pair, the member list for a wider split.
+    static func linkPinnedSplit(_ rows: [TabDataModel]) {
+        guard rows.count >= 2 else { return }
+        for (index, row) in rows.enumerated() {
+            if rows.count == 2 {
+                row.splitPartnerGuid = rows[1 - index].guid
+                row.splitPaneGuids = nil
+            } else {
+                row.splitPartnerGuid = nil
+                row.decodedSplitPaneGuids = rows.map(\.guid)
+            }
+        }
+    }
+
     static func pinnedTransferUnit(
         containing source: TabDataModel,
-        partnerGuidHint: String?,
+        memberGuidsHint: [String]?,
         in sourceTabs: [TabDataModel]
     ) throws -> [TabDataModel] {
-        if let partnerGuidHint {
-            guard partnerGuidHint != source.guid,
-                  let hintedPartner = sourceTabs.first(where: { $0.guid == partnerGuidHint }),
-                  source.splitPartnerGuid == nil || source.splitPartnerGuid == partnerGuidHint,
-                  hintedPartner.splitPartnerGuid == nil || hintedPartner.splitPartnerGuid == source.guid else {
-                throw PinnedTabTransferError.splitPartnerNotFound(partnerGuidHint)
-            }
-            return [source, hintedPartner].sorted {
+        func inGridOrder(_ rows: [TabDataModel]) -> [TabDataModel] {
+            rows.sorted {
                 if $0.index != $1.index { return $0.index < $1.index }
                 return $0.guid < $1.guid
             }
         }
+
+        if let memberGuidsHint {
+            let members = try memberGuidsHint.map { guid -> TabDataModel in
+                guard let row = sourceTabs.first(where: { $0.guid == guid }) else {
+                    throw PinnedTabTransferError.splitPartnerNotFound(guid)
+                }
+                return row
+            }
+            guard members.contains(where: { $0.guid == source.guid }) else {
+                throw PinnedTabTransferError.splitPartnerNotFound(source.guid)
+            }
+            return inGridOrder(members)
+        }
+
+        // A wider split: any member's list names the unit. Members that no
+        // longer exist are dropped; fewer than two falls through as a solo pin.
+        let listedGuids = source.decodedSplitPaneGuids.isEmpty
+            ? sourceTabs.first(where: { $0.decodedSplitPaneGuids.contains(source.guid) })?.decodedSplitPaneGuids ?? []
+            : source.decodedSplitPaneGuids
+        let listed = sourceTabs.filter { listedGuids.contains($0.guid) }
+        if listed.count >= 2 { return inGridOrder(listed) }
 
         let partner: TabDataModel?
         if let partnerGuid = source.splitPartnerGuid {
@@ -332,10 +364,7 @@ extension LocalStore {
         }
 
         guard let partner else { return [source] }
-        return [source, partner].sorted {
-            if $0.index != $1.index { return $0.index < $1.index }
-            return $0.guid < $1.guid
-        }
+        return inGridOrder([source, partner])
     }
 
     private static func copyPinnedTab(

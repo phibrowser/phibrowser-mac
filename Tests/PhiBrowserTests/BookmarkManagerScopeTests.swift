@@ -205,10 +205,9 @@ final class BookmarkManagerScopeTests: XCTestCase {
         state.splits = [
             SplitGroup(
                 id: "live-split",
-                primaryTabId: 2,
-                secondaryTabId: 3,
+                tabIds: [2, 3],
                 layout: .vertical,
-                ratio: 0.5
+                fractions: [0.5, 0.5]
             )
         ]
         state.splitBookmarkBindings[splitGuid] = "live-split"
@@ -292,10 +291,9 @@ final class BookmarkManagerScopeTests: XCTestCase {
         state.splits = [
             SplitGroup(
                 id: "clone-live-split",
-                primaryTabId: 2,
-                secondaryTabId: 3,
+                tabIds: [2, 3],
                 layout: .vertical,
-                ratio: 0.5
+                fractions: [0.5, 0.5]
             )
         ]
         state.splitBookmarkBindings[splitGuid] = "clone-live-split"
@@ -574,10 +572,9 @@ final class BookmarkManagerScopeTests: XCTestCase {
         state.splits = [
             SplitGroup(
                 id: "group-live-split",
-                primaryTabId: 1,
-                secondaryTabId: 2,
+                tabIds: [1, 2],
                 layout: .vertical,
-                ratio: 0.5
+                fractions: [0.5, 0.5]
             )
         ]
         XCTAssertTrue(state.canCreateGroupFromBookmarks(bookmarkGuids: [liveGuid]))

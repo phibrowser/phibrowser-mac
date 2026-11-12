@@ -52,21 +52,10 @@ struct AgentTranscriptEntry: Identifiable, Equatable {
     /// >/⏺/⎿ beats vs Codex's ▌/•/└ cells). nil for app- and skill-authored
     /// lines, which keep Phi's own console style.
     let agent: String?
-    /// Pi emits a tool call and its result as separate session records. These
-    /// Pi-only fields let the result settle the original card in place,
-    /// matching Pi's live transcript instead of adding a duplicate row.
-    let piToolCallId: String?
-    let piToolState: PiTranscriptToolState?
     /// The task's pip ordinal at append time, so the merged feed can tag
     /// lines "R1"/"R2" when several tasks are live without re-resolving
     /// tasks that have since completed.
     let taskNumber: Int
-}
-
-enum PiTranscriptToolState: String {
-    case pending
-    case success
-    case error
 }
 
 /// Ephemeral Codex state displayed at the transcript tail. Unlike an
@@ -136,7 +125,6 @@ final class AgentTranscriptStore: ObservableObject {
     static let maxTerseChars = 300
     static let maxProseChars = 4000
     static let maxDetailChars = 500
-    static let maxPiToolDetailChars = 4000
 
     @Published private(set) var entriesByTaskId: [String: [AgentTranscriptEntry]] = [:]
     @Published private(set) var codexActivityByTaskId: [String: CodexTranscriptActivity] = [:]
@@ -157,53 +145,23 @@ final class AgentTranscriptStore: ObservableObject {
     /// place in the feed rather than after the actions it introduced.
     func append(taskId: String, kind: AgentTranscriptEntry.Kind,
                 text: String, detail: String? = nil, agent: String? = nil,
-                piToolCallId: String? = nil,
-                piToolState: PiTranscriptToolState? = nil,
                 taskNumber: Int, timestamp: Date = Date()) {
         let sourceAgent = agent.map { String($0.prefix(16)) }
-        let isPiTool = kind == .tool && sourceAgent == "pi"
-        let sourceId = isPiTool
-            ? piToolCallId.map {
-                Self.sanitize($0, cap: 128, keepBreaks: false)
-            }.flatMap { $0.isEmpty ? nil : $0 }
-            : nil
         // Conversation lines keep their paragraph shape; terse lines collapse
-        // to one line. Pi's tool title may itself be a multiline shell command.
+        // to one line.
         let multiline = kind == .assistant || kind == .user || kind == .narration
-            || kind == .thinking || isPiTool
+            || kind == .thinking
         let sanitizedText = Self.sanitize(
             text, cap: multiline ? Self.maxProseChars : Self.maxTerseChars,
             keepBreaks: multiline)
         let sanitizedDetail = detail.map {
+            // Codex collaboration cells carry one indented agent/status per
+            // line, so only they keep their breaks.
             Self.sanitize(
-                $0,
-                cap: isPiTool ? Self.maxPiToolDetailChars : Self.maxDetailChars,
-                keepBreaks: kind == .tool && (sourceAgent == "codex" || isPiTool))
+                $0, cap: Self.maxDetailChars,
+                keepBreaks: kind == .tool && sourceAgent == "codex")
         }
         var entries = entriesByTaskId[taskId] ?? []
-
-        // A Pi tool result replaces its pending call card. Preserve identity,
-        // ordering, and the authored-at time so the card never jumps in a
-        // merged multi-task feed when it settles.
-        if let sourceId,
-           let index = entries.lastIndex(where: {
-               $0.agent == "pi" && $0.piToolCallId == sourceId && $0.kind == .tool
-           }) {
-            let old = entries[index]
-            entries[index] = AgentTranscriptEntry(
-                id: old.id, timestamp: old.timestamp, seq: old.seq,
-                kind: kind,
-                // The result record does not repeat arguments. Preserve the
-                // pending card's native title even if the mirror daemon was
-                // restarted and lost its in-memory call-display cache.
-                text: piToolState == .pending ? sanitizedText : old.text,
-                detail: sanitizedDetail,
-                agent: sourceAgent, piToolCallId: sourceId,
-                piToolState: piToolState, taskNumber: old.taskNumber)
-            entriesByTaskId[taskId] = entries
-            lastAppendByTaskId[taskId] = Date()
-            return
-        }
 
         nextSeq += 1
         let entry = AgentTranscriptEntry(
@@ -212,13 +170,8 @@ final class AgentTranscriptStore: ObservableObject {
             seq: nextSeq,
             kind: kind,
             text: sanitizedText,
-            // Codex collaboration cells carry one indented agent/status per
-            // line; Pi tool cards carry multiline output and diffs. Preserve
-            // breaks only for those two origin-specific representations.
             detail: sanitizedDetail,
             agent: sourceAgent,
-            piToolCallId: sourceId,
-            piToolState: isPiTool ? piToolState : nil,
             taskNumber: taskNumber)
         entries.append(entry)
         if entries.count > Self.maxEntriesPerTask {

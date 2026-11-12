@@ -73,11 +73,12 @@ final class TabItemView: NSView {
 
     var onSelect: ((NSEvent.ModifierFlags) -> Void)?
     var onDoubleSelect: ((NSEvent.ModifierFlags) -> Void)?
-    /// Fires for split-merged cells when the click falls on the right half
-    /// (the partner pane's favicon). Standalone tabs leave this nil and
-    /// every click routes through `onSelect`.
-    var onSecondarySelect: ((NSEvent.ModifierFlags) -> Void)?
-    var onSecondaryDoubleSelect: ((NSEvent.ModifierFlags) -> Void)?
+    /// Fires for merged split cells when the click falls on one of the other
+    /// panes' columns, with that pane's tab. The host pane (`sourceTab`) and
+    /// standalone tabs route every click through `onSelect`; a cell whose
+    /// owner leaves this nil routes every click through `onSelect` too.
+    var onPaneSelect: ((Tab, NSEvent.ModifierFlags) -> Void)?
+    var onPaneDoubleSelect: ((Tab, NSEvent.ModifierFlags) -> Void)?
     var onHoverChanged: ((Bool) -> Void)?
 
     /// Called when a drag begins from this tab view.
@@ -122,11 +123,52 @@ final class TabItemView: NSView {
     private var activePageAppearance: Appearance?
     private var isMultiSelected = false
     private var isPinned = false
-    private var statusBadgeRepresentsMergedCell = false
-    /// Backing for the second pane of a pinned split. When non-nil this cell
-    /// renders two favicons side-by-side; the secondary view model carries
-    /// the partner's bindings so favicon updates flow independently.
-    private weak var pinnedSplitPartner: Tab?
+    /// The pane count the status badge was last built for (0 = a plain cell).
+    private var statusBadgeMergedPaneCount = 0
+
+    /// Views and bindings for one non-host pane of a merged split cell. The
+    /// host pane (`sourceTab`) renders through the cell's own favicon,
+    /// title, mute and close views; every other pane gets one of these,
+    /// created on demand by `makeMergedPaneViews()` and kept in
+    /// `mergedPanePool` for reuse across configures. Its view model carries
+    /// the pane's bindings so favicon, title and audio updates flow
+    /// independently of the host's.
+    @MainActor
+    private final class MergedPaneViews {
+        weak var tab: Tab?
+        let viewModel = TabViewModel()
+        let faviconHostingView = HitTransparentHostingView(rootView: AnyView(EmptyView()))
+        let titleHostingView = HitTransparentHostingView(rootView: AnyView(EmptyView()))
+        let muteButtonHostingView = ZeroSafeAreaHostingView(rootView: AnyView(EmptyView()))
+        let closeButtonHostingView = ZeroSafeAreaHostingView(rootView: AnyView(EmptyView()))
+        /// Thin vertical line on the pane's leading edge, separating it from
+        /// the pane before it. Sizing + color mirror the tab↔tab separator
+        /// (`TabStripMetrics.Content.separator*`) so the divider inside a
+        /// merged cell reads as the same affordance as the divider between
+        /// any two normal tabs.
+        let dividerView = NSView()
+
+        var hostingViews: [NSView] {
+            [faviconHostingView, muteButtonHostingView, titleHostingView, closeButtonHostingView]
+        }
+
+        var views: [NSView] { hostingViews + [dividerView] }
+
+        var showsMute: Bool { viewModel.isCurrentlyAudible || viewModel.isMuted }
+    }
+
+    /// Pane view sets created so far, host excluded. Entries past
+    /// `mergedPaneCount` are idle (hidden, unbound) and reused by the next
+    /// configure that needs them.
+    private var mergedPanePool: [MergedPaneViews] = []
+    /// How many pool entries are in use: the other panes of the merged split
+    /// this cell hosts (`TabRenderData.mergedSplitPanes`). 0 for a
+    /// standalone tab.
+    private var mergedPaneCount = 0
+    private var mergedPanes: ArraySlice<MergedPaneViews> { mergedPanePool.prefix(mergedPaneCount) }
+    private var isMergedSplitCell: Bool { mergedPaneCount > 0 }
+    /// Panes rendered by this cell, host included.
+    private var paneCount: Int { 1 + mergedPaneCount }
     private var isDragHighlighted = false {
         didSet {
             guard oldValue != isDragHighlighted else { return }
@@ -153,18 +195,6 @@ final class TabItemView: NSView {
         return view
     }()
 
-    /// Secondary favicon used only for the `.first` pane of a pinned split,
-    /// where the cell needs to show both panes' favicons side-by-side.
-    /// Hidden when `pinnedSplitPartner` is nil. Driven by its own view model
-    /// so its Combine subscriptions don't trample the primary tab's bindings.
-    private let secondaryFaviconViewModel = TabViewModel()
-    private lazy var secondaryFaviconHostingView: HitTransparentHostingView<AnyView> = {
-        let view = HitTransparentHostingView(rootView: makeSecondaryFaviconRootView())
-        view.layer?.backgroundColor = .clear
-        view.isHidden = true
-        return view
-    }()
-
     private lazy var openIndicatorHostingView: HitTransparentHostingView<AnyView> = {
         let view = HitTransparentHostingView(
             rootView: AnyView(TabOpenIndicatorView().phiThemeObserver(themeObserver))
@@ -180,39 +210,15 @@ final class TabItemView: NSView {
         return view
     }()
 
-    /// Right-pane title shown only when this cell renders a split-merged
-    /// pair in the normal-zone strip. Bound to `secondaryFaviconViewModel`
-    /// so its text follows the partner pane's `Tab.title` independently.
-    private lazy var secondaryTitleHostingView: HitTransparentHostingView<AnyView> = {
-        let view = HitTransparentHostingView(rootView: makeSecondaryTitleRootView())
-        view.layer?.backgroundColor = .clear
-        view.isHidden = true
-        return view
-    }()
-
     /// Cell-level Sidecar/agent status. A merged split still exposes one badge
     /// for the whole cell, using the same cross-pane priority as sidebar split
     /// cells. The host is decorative so it never intercepts tab interaction.
     private lazy var statusBadgeHostingView: HitTransparentHostingView<AnyView> = {
         let view = HitTransparentHostingView(
-            rootView: makeStatusBadgeRootView(representsMergedCell: false)
+            rootView: makeStatusBadgeRootView(mergedPaneCount: 0)
         )
         view.identifier = Self.statusBadgeViewIdentifier
         view.layer?.backgroundColor = .clear
-        return view
-    }()
-
-    /// Thin vertical line between the two halves of a split-merged cell.
-    /// Hidden when `pinnedSplitPartner` is nil.
-    ///
-    /// Sizing + color mirror the tab↔tab separator (`TabStripMetrics.Content.separator*`)
-    /// so the divider inside a merged cell reads as the same affordance as
-    /// the divider between any two normal tabs.
-    private lazy var splitDividerView: NSView = {
-        let view = NSView()
-        view.wantsLayer = true
-        view.phiLayer?.setBackgroundColor(TabStripMetrics.Content.separatorColor)
-        view.isHidden = true
         return view
     }()
 
@@ -220,16 +226,6 @@ final class TabItemView: NSView {
     private lazy var muteButtonHostingView: ZeroSafeAreaHostingView<AnyView> = {
         let view = ZeroSafeAreaHostingView(rootView: makeMuteButtonRootView())
         view.layer?.backgroundColor = .clear
-        return view
-    }()
-
-    /// Right-pane mute toggle for a split-merged cell. Bound to
-    /// `secondaryFaviconViewModel` so its icon and tap target track the
-    /// partner pane's audio state independently of the left pane's.
-    private lazy var secondaryMuteButtonHostingView: ZeroSafeAreaHostingView<AnyView> = {
-        let view = ZeroSafeAreaHostingView(rootView: makeSecondaryMuteButtonRootView())
-        view.layer?.backgroundColor = .clear
-        view.isHidden = true
         return view
     }()
 
@@ -247,32 +243,56 @@ final class TabItemView: NSView {
         return view
     }()
 
-    /// Per-pane close button for the right half of a split-merged cell.
-    /// Calls `pinnedSplitPartner.close()` instead of `sourceTab.close()`
-    /// so each side acts on its own pane.
-    private lazy var secondaryCloseButtonHostingView: ZeroSafeAreaHostingView<AnyView> = {
-        let view = ZeroSafeAreaHostingView(rootView: makeSecondaryCloseButtonRootView())
-        view.layer?.backgroundColor = .clear
-        view.isHidden = true
-        return view
-    }()
-
     // MARK: - Computed Properties
 
     private var layoutMode: LayoutMode {
         if isPinned { return .pinned }
-        let compactThreshold = pinnedSplitPartner == nil
-            ? TabStripMetrics.Content.compactModeThreshold
-            : TabStripMetrics.Content.splitCompactModeThreshold
+        let compactThreshold = isMergedSplitCell
+            ? TabStripMetrics.Content.splitCompactModeThreshold(paneCount: paneCount)
+            : TabStripMetrics.Content.compactModeThreshold
         if bounds.width < compactThreshold { return .compact }
         return .normal
     }
 
     private var shouldShowCloseButton: Bool {
-        // Split-merged cells expose one close button per pane; both fade
-        // in on hover. See the dedicated `secondaryCloseButtonHostingView`
-        // for the right-pane close routed to `pinnedSplitPartner.close()`.
+        // Merged split cells expose one close button per pane; all fade in
+        // on hover. Each `MergedPaneViews.closeButtonHostingView` closes
+        // its own pane's tab.
         layoutMode == .normal && isHovered
+    }
+
+    /// Horizontal extent of pane `index` (0 = host) when the merged cell
+    /// lays its panes out as equal columns.
+    private func paneColumn(_ index: Int) -> (minX: CGFloat, maxX: CGFloat) {
+        let width = bounds.width / CGFloat(paneCount)
+        return (width * CGFloat(index), width * CGFloat(index + 1))
+    }
+
+    /// The non-host pane whose column contains `point`, or nil when the
+    /// point falls in the host column or the cell is not a merged split.
+    private func mergedPane(at point: CGPoint) -> MergedPaneViews? {
+        guard isMergedSplitCell, bounds.width > 0 else { return nil }
+        let column = Int(point.x / (bounds.width / CGFloat(paneCount)))
+        let index = max(0, min(paneCount - 1, column))
+        guard index > 0 else { return nil }
+        return mergedPanePool[index - 1]
+    }
+
+    /// True when `point` lands on a visible close button of any pane.
+    private func isOnCloseButton(_ point: CGPoint) -> Bool {
+        if !closeButtonHostingView.isHidden && closeButtonHostingView.frame.contains(point) {
+            return true
+        }
+        return mergedPanes.contains {
+            !$0.closeButtonHostingView.isHidden && $0.closeButtonHostingView.frame.contains(point)
+        }
+    }
+
+    /// The non-host pane whose visible mute toggle contains `point`.
+    private func mergedPaneWithMuteButton(at point: CGPoint) -> MergedPaneViews? {
+        mergedPanes.first {
+            !$0.muteButtonHostingView.isHidden && $0.muteButtonHostingView.frame.contains(point)
+        }
     }
 
     // MARK: - Initialization
@@ -313,17 +333,44 @@ final class TabItemView: NSView {
         }
 
         addSubview(faviconHostingView)
-        addSubview(secondaryFaviconHostingView)
         addSubview(openIndicatorHostingView)
         addSubview(muteButtonHostingView)
-        addSubview(secondaryMuteButtonHostingView)
         addSubview(recordingIconHostingView)
         addSubview(titleHostingView)
-        addSubview(secondaryTitleHostingView)
-        addSubview(splitDividerView)
         addSubview(statusBadgeHostingView)
         addSubview(closeButtonHostingView)
-        addSubview(secondaryCloseButtonHostingView)
+    }
+
+    /// Creates the view set for one more non-host pane and installs it
+    /// below the status badge so the badge stays on top of pane content.
+    private func makeMergedPaneViews() -> MergedPaneViews {
+        let pane = MergedPaneViews()
+        pane.faviconHostingView.rootView = makeThemedRootView(
+            UnifiedTabFaviconView(viewModel: pane.viewModel)
+        )
+        pane.titleHostingView.rootView = makeThemedRootView(
+            UnifiedTabTitleView(viewModel: pane.viewModel)
+        )
+        pane.muteButtonHostingView.rootView = makeThemedRootView(
+            UnifiedTabMuteButton(viewModel: pane.viewModel)
+        )
+        // Closes this pane's own tab, not the host's.
+        pane.closeButtonHostingView.rootView = makeThemedRootView(
+            UnifiedTabCloseButton { [weak self, weak pane] in
+                self?.cancelPreviewForInteraction()
+                pane?.tab?.close()
+            }
+        )
+        for view in pane.hostingViews {
+            view.layer?.backgroundColor = .clear
+        }
+        pane.dividerView.wantsLayer = true
+        pane.dividerView.phiLayer?.setBackgroundColor(TabStripMetrics.Content.separatorColor)
+        for view in pane.views {
+            view.isHidden = true
+            addSubview(view, positioned: .below, relativeTo: statusBadgeHostingView)
+        }
+        return pane
     }
     
     override func viewDidMoveToWindow() {
@@ -344,15 +391,16 @@ final class TabItemView: NSView {
     private let separatedMergedFaviconGap: CGFloat = 7
 
     private var mergedFaviconGap: CGFloat {
-        guard let sourceTab, let pinnedSplitPartner else { return defaultMergedFaviconGap }
-        let bothShowOutlines = TabFaviconPresentation.showsDashedOutline(
-            isDiscarded: sourceTab.isDiscarded,
-            isUnloaded: sourceTab.isUnloaded
-        ) && TabFaviconPresentation.showsDashedOutline(
-            isDiscarded: pinnedSplitPartner.isDiscarded,
-            isUnloaded: pinnedSplitPartner.isUnloaded
-        )
-        return bothShowOutlines ? separatedMergedFaviconGap : defaultMergedFaviconGap
+        guard let sourceTab, isMergedSplitCell else { return defaultMergedFaviconGap }
+        let paneTabs = [sourceTab] + mergedPanes.compactMap(\.tab)
+        guard paneTabs.count == paneCount else { return defaultMergedFaviconGap }
+        let allShowOutlines = paneTabs.allSatisfy {
+            TabFaviconPresentation.showsDashedOutline(
+                isDiscarded: $0.isDiscarded,
+                isUnloaded: $0.isUnloaded
+            )
+        }
+        return allShowOutlines ? separatedMergedFaviconGap : defaultMergedFaviconGap
     }
 
     // MARK: - Layout
@@ -383,89 +431,101 @@ final class TabItemView: NSView {
         let showRecording = viewModel.isCapturingMedia
         let showMute = viewModel.isCurrentlyAudible || viewModel.isMuted
         let centerY = bounds.height / 2
+        let panes = Array(mergedPanes)
 
-        // Right-pane mute only renders inside split-merged cells; reset to
-        // hidden up front so recycled cells transitioning into non-split
-        // modes never leak the partner's mute icon.
-        secondaryMuteButtonHostingView.isHidden = true
+        // Pane mute toggles only render inside merged split cells; reset
+        // to hidden up front so recycled cells transitioning into non-split
+        // modes never leak another pane's mute icon.
+        for pane in mergedPanePool {
+            pane.muteButtonHostingView.isHidden = true
+        }
         openIndicatorHostingView.isHidden = true
         openIndicatorHostingView.alphaValue = TabFaviconPresentation.opacity(
             isDiscarded: sourceTab?.isDiscarded == true
-                || pinnedSplitPartner?.isDiscarded == true,
+                || panes.contains { $0.tab?.isDiscarded == true },
             isUnloaded: sourceTab?.isUnloaded == true
-                || pinnedSplitPartner?.isUnloaded == true
+                || panes.contains { $0.tab?.isUnloaded == true }
         )
         // Pinned and compact cells show recording as the centered icon below
-        // and hide both favicons; drop their corner badges with them.
+        // and hide every favicon; drop their corner badges with them.
         let hidesRecordingBadges = showRecording && mode != .normal
         viewModel.hidesRecordingBadge = hidesRecordingBadges
-        secondaryFaviconViewModel.hidesRecordingBadge = hidesRecordingBadges
+        for pane in panes {
+            pane.viewModel.hidesRecordingBadge = hidesRecordingBadges
+        }
+        let hideAllFavicons = {
+            self.faviconHostingView.isHidden = true
+            for pane in panes { pane.faviconHostingView.isHidden = true }
+        }
 
         switch mode {
         case .pinned, .compact:
-            // Pinned/compact cells never carry the divider; reset so a
+            // Pinned/compact cells never carry the dividers; reset so a
             // recycled view that previously rendered a normal-mode split
-            // doesn't leak its center decoration.
-            splitDividerView.isHidden = true
-            // Merged cells surface EITHER pane's audio state as ONE centered
+            // doesn't leak its column decorations.
+            for pane in mergedPanePool {
+                pane.dividerView.isHidden = true
+            }
+            // Merged cells surface ANY pane's audio state as ONE centered
             // glyph for the whole cell. Per-pane glyphs were tried and read
             // wrong: [favicon][speaker] mimics a normal tab's "favicon + its
-            // indicator" row, misattributing the partner's sound to the left
-            // pane. The glyph and its mute toggle bind to whichever pane
-            // carries the state, primary first when both do. Primary
-            // recording still outranks audio (single-tab precedence). While
-            // a centered glyph is up, the favicons — and the per-pane
+            // indicator" row, misattributing another pane's sound to the
+            // first pane. The glyph and its mute toggle bind to the first
+            // pane in slot order that carries the state, the host first.
+            // Host recording still outranks audio (single-tab precedence).
+            // While a centered glyph is up, the favicons — and the per-pane
             // recording corner badges they carry — are hidden, so a narrow
             // cell shows at most one state at a time by design.
-            let showSecondaryMute = pinnedSplitPartner != nil
-                && (secondaryFaviconViewModel.isCurrentlyAudible
-                    || secondaryFaviconViewModel.isMuted)
+            let audiblePane = panes.first { $0.showsMute }
             if showRecording {
                 recordingIconHostingView.isHidden = false
                 recordingIconHostingView.frame = centeredFrame(for: recordingIconSize)
-                faviconHostingView.isHidden = true
-                secondaryFaviconHostingView.isHidden = true
+                hideAllFavicons()
                 muteButtonHostingView.isHidden = true
             } else if showMute {
                 muteButtonHostingView.isHidden = false
                 muteButtonHostingView.frame = centeredFrame(for: muteButtonSize)
-                faviconHostingView.isHidden = true
-                secondaryFaviconHostingView.isHidden = true
+                hideAllFavicons()
                 recordingIconHostingView.isHidden = true
-            } else if showSecondaryMute {
-                secondaryMuteButtonHostingView.isHidden = false
-                secondaryMuteButtonHostingView.frame = centeredFrame(for: muteButtonSize)
-                faviconHostingView.isHidden = true
-                secondaryFaviconHostingView.isHidden = true
+            } else if let audiblePane {
+                audiblePane.muteButtonHostingView.isHidden = false
+                audiblePane.muteButtonHostingView.frame = centeredFrame(for: muteButtonSize)
+                hideAllFavicons()
                 muteButtonHostingView.isHidden = true
                 recordingIconHostingView.isHidden = true
-            } else if pinnedSplitPartner != nil {
-                // Two favicons inside one pinned/compact cell. Stack them
-                // horizontally around the cell's center so the cell still
-                // occupies a single slot in the strip's layout.
-                let centerY = bounds.height / 2
+            } else if isMergedSplitCell {
+                // One favicon per pane inside one pinned/compact cell. Stack
+                // them horizontally around the cell's center so the cell
+                // still occupies a single slot in the strip's layout.
                 let iconSize = metrics.faviconSize
                 let gap = mergedFaviconGap
-                let pairWidth = iconSize.width * 2 + gap
-                let leftX = (bounds.width - pairWidth) / 2
+                let rowWidth = iconSize.width * CGFloat(paneCount)
+                    + gap * CGFloat(paneCount - 1)
+                var iconX = (bounds.width - rowWidth) / 2
+                let iconY = centerY - iconSize.height / 2
                 faviconHostingView.isHidden = false
                 faviconHostingView.frame = CGRect(
-                    x: leftX,
-                    y: centerY - iconSize.height / 2,
+                    x: iconX,
+                    y: iconY,
                     width: iconSize.width,
                     height: iconSize.height
                 )
-                secondaryFaviconHostingView.isHidden = false
-                secondaryFaviconHostingView.frame = CGRect(
-                    x: leftX + iconSize.width + gap,
-                    y: centerY - iconSize.height / 2,
-                    width: iconSize.width,
-                    height: iconSize.height
-                )
+                var rowFrame = faviconHostingView.frame
+                for pane in panes {
+                    iconX += iconSize.width + gap
+                    pane.faviconHostingView.isHidden = false
+                    pane.faviconHostingView.frame = CGRect(
+                        x: iconX,
+                        y: iconY,
+                        width: iconSize.width,
+                        height: iconSize.height
+                    )
+                    rowFrame = rowFrame.union(pane.faviconHostingView.frame)
+                }
                 if shouldShowOpenIndicator {
                     openIndicatorHostingView.isHidden = false
                     openIndicatorHostingView.frame = openIndicatorFrame(
-                        below: faviconHostingView.frame.union(secondaryFaviconHostingView.frame),
+                        below: rowFrame,
                         centerX: bounds.midX
                     )
                 }
@@ -480,42 +540,25 @@ final class TabItemView: NSView {
                         below: faviconHostingView.frame
                     )
                 }
-                secondaryFaviconHostingView.isHidden = true
                 muteButtonHostingView.isHidden = true
                 recordingIconHostingView.isHidden = true
             }
             return 0
 
         case .normal:
-            // Split-merged cell: render two halves (favicon + title each)
-            // separated by a vertical divider. Each pane carries its own mute
-            // toggle so audible state stays addressable per-pane; recording
-            // also shows per-pane, as the corner badge UnifiedTabFaviconView
-            // overlays on each favicon — only the dedicated centered
-            // recording icon is dropped here.
-            if let _ = pinnedSplitPartner {
-                let half = bounds.width / 2
+            // Merged split cell: render one equal column per pane (favicon +
+            // title each), each non-host column led by a vertical divider.
+            // Each pane carries its own mute toggle so audible state stays
+            // addressable per-pane; recording also shows per-pane, as the
+            // corner badge UnifiedTabFaviconView overlays on each favicon —
+            // only the dedicated centered recording icon is dropped here.
+            if isMergedSplitCell {
                 faviconHostingView.isHidden = false
                 faviconHostingView.frame = CGRect(
                     x: metrics.faviconLeading,
                     y: centerY - metrics.faviconSize.height / 2,
                     width: metrics.faviconSize.width,
                     height: metrics.faviconSize.height
-                )
-                secondaryFaviconHostingView.isHidden = false
-                secondaryFaviconHostingView.frame = CGRect(
-                    x: half + metrics.faviconLeading,
-                    y: centerY - metrics.faviconSize.height / 2,
-                    width: metrics.faviconSize.width,
-                    height: metrics.faviconSize.height
-                )
-                splitDividerView.isHidden = false
-                let sepSize = TabStripMetrics.Content.separatorSize
-                splitDividerView.frame = CGRect(
-                    x: half - sepSize.width / 2,
-                    y: (bounds.height - sepSize.height) / 2,
-                    width: sepSize.width,
-                    height: sepSize.height
                 )
                 muteButtonHostingView.isHidden = !showMute
                 if showMute {
@@ -526,25 +569,44 @@ final class TabItemView: NSView {
                         height: muteButtonSize.height
                     )
                 }
-                let showSecondaryMute = secondaryFaviconViewModel.isCurrentlyAudible
-                    || secondaryFaviconViewModel.isMuted
-                secondaryMuteButtonHostingView.isHidden = !showSecondaryMute
-                if showSecondaryMute {
-                    secondaryMuteButtonHostingView.frame = CGRect(
-                        x: secondaryFaviconHostingView.frame.maxX + metrics.titleToFavicon,
-                        y: centerY - muteButtonSize.height / 2,
-                        width: muteButtonSize.width,
-                        height: muteButtonSize.height
+                let sepSize = TabStripMetrics.Content.separatorSize
+                for (offset, pane) in panes.enumerated() {
+                    let column = paneColumn(offset + 1)
+                    pane.dividerView.isHidden = false
+                    pane.dividerView.frame = CGRect(
+                        x: column.minX - sepSize.width / 2,
+                        y: (bounds.height - sepSize.height) / 2,
+                        width: sepSize.width,
+                        height: sepSize.height
                     )
+                    pane.faviconHostingView.isHidden = false
+                    pane.faviconHostingView.frame = CGRect(
+                        x: column.minX + metrics.faviconLeading,
+                        y: centerY - metrics.faviconSize.height / 2,
+                        width: metrics.faviconSize.width,
+                        height: metrics.faviconSize.height
+                    )
+                    let paneShowsMute = pane.showsMute
+                    pane.muteButtonHostingView.isHidden = !paneShowsMute
+                    if paneShowsMute {
+                        pane.muteButtonHostingView.frame = CGRect(
+                            x: pane.faviconHostingView.frame.maxX + metrics.titleToFavicon,
+                            y: centerY - muteButtonSize.height / 2,
+                            width: muteButtonSize.width,
+                            height: muteButtonSize.height
+                        )
+                    }
                 }
                 recordingIconHostingView.isHidden = true
                 return faviconHostingView.frame.maxX + metrics.titleToFavicon
             }
 
             faviconHostingView.isHidden = false
-            secondaryFaviconHostingView.isHidden = true
-            secondaryTitleHostingView.isHidden = true
-            splitDividerView.isHidden = true
+            for pane in mergedPanePool {
+                pane.faviconHostingView.isHidden = true
+                pane.titleHostingView.isHidden = true
+                pane.dividerView.isHidden = true
+            }
             faviconHostingView.frame = CGRect(
                 x: metrics.faviconLeading,
                 y: centerY - metrics.faviconSize.height / 2,
@@ -579,85 +641,47 @@ final class TabItemView: NSView {
         let metrics = TabStripMetrics.Content.self
         let mode = layoutMode
         viewModel.isHorizontalCompactMode = (mode == .compact || mode == .pinned)
-        // Mirror onto the partner pane's view model: its mute button shares
-        // the same "non-interactive in compact unless focused" gate, and it
-        // can render centered in a compact merged cell.
-        secondaryFaviconViewModel.isHorizontalCompactMode = viewModel.isHorizontalCompactMode
-        
+        // Mirror onto every other pane's view model: their mute buttons
+        // share the same "non-interactive in compact unless focused" gate,
+        // and one can render centered in a compact merged cell.
+        for pane in mergedPanes {
+            pane.viewModel.isHorizontalCompactMode = viewModel.isHorizontalCompactMode
+        }
+
         let titleStartX = layoutFaviconAndMedia(mode: mode)
 
         switch mode {
         case .pinned, .compact:
-            // Reset the right-pane title/close as well: a split-merged cell
+            // Reset every pane's title/close as well: a merged split cell
             // shrinking out of normal mode would otherwise keep their stale
-            // frames and paint the partner's title over neighboring tabs.
+            // frames and paint a pane's title over neighboring tabs.
             titleHostingView.isHidden = true
-            secondaryTitleHostingView.isHidden = true
             closeButtonHostingView.isHidden = true
-            secondaryCloseButtonHostingView.isHidden = true
+            for pane in mergedPanePool {
+                pane.titleHostingView.isHidden = true
+                pane.closeButtonHostingView.isHidden = true
+            }
 
         case .normal:
-            // Close buttons: one per pane for a split-merged cell (both
+            // Close buttons: one per pane for a merged split cell (all
             // visible on hover), single button for a regular tab.
-            if pinnedSplitPartner != nil {
-                let half = bounds.width / 2
-                let closeY = (bounds.height - metrics.closeButtonSize.height) / 2
-                let leftCloseFrame = CGRect(
-                    x: half - metrics.closeButtonTrailing - metrics.closeButtonSize.width,
-                    y: closeY,
-                    width: metrics.closeButtonSize.width,
-                    height: metrics.closeButtonSize.height
+            if isMergedSplitCell {
+                layoutMergedPaneText(
+                    column: paneColumn(0),
+                    faviconView: faviconHostingView,
+                    muteView: muteButtonHostingView,
+                    titleView: titleHostingView,
+                    closeView: closeButtonHostingView
                 )
-                let rightCloseFrame = CGRect(
-                    x: bounds.width - metrics.closeButtonTrailing - metrics.closeButtonSize.width,
-                    y: closeY,
-                    width: metrics.closeButtonSize.width,
-                    height: metrics.closeButtonSize.height
-                )
-                // A pane too narrow for both controls drops its close
-                // button in favor of the mute toggle — stacked on top of
-                // the speaker glyph, a "mute" click would close the pane.
-                let showLeftClose = shouldShowCloseButton
-                    && (muteButtonHostingView.isHidden
-                        || leftCloseFrame.minX >= muteButtonHostingView.frame.maxX)
-                let showRightClose = shouldShowCloseButton
-                    && (secondaryMuteButtonHostingView.isHidden
-                        || rightCloseFrame.minX >= secondaryMuteButtonHostingView.frame.maxX)
-                closeButtonHostingView.isHidden = !showLeftClose
-                closeButtonHostingView.frame = leftCloseFrame
-                secondaryCloseButtonHostingView.isHidden = !showRightClose
-                secondaryCloseButtonHostingView.frame = rightCloseFrame
-
-                // Titles: each pane's title is clipped against its own
-                // close button when hovered. When a pane carries a mute
-                // icon, the title shifts right past it so the speaker
-                // glyph and the page name don't overlap.
-                let leftTitleStart: CGFloat = muteButtonHostingView.isHidden
-                    ? faviconHostingView.frame.maxX + metrics.titleToFavicon
-                    : muteButtonHostingView.frame.maxX + metrics.titleToFavicon
-                let leftTitleMax: CGFloat = showLeftClose
-                    ? leftCloseFrame.minX - metrics.titleToCloseButton
-                    : half - metrics.titleTrailing
-                titleHostingView.isHidden = false
-                titleHostingView.frame = CGRect(
-                    x: leftTitleStart,
-                    y: (bounds.height - metrics.titleHeight) / 2,
-                    width: max(0, leftTitleMax - leftTitleStart),
-                    height: metrics.titleHeight
-                )
-                let rightTitleStart: CGFloat = secondaryMuteButtonHostingView.isHidden
-                    ? secondaryFaviconHostingView.frame.maxX + metrics.titleToFavicon
-                    : secondaryMuteButtonHostingView.frame.maxX + metrics.titleToFavicon
-                let rightTitleMax: CGFloat = showRightClose
-                    ? rightCloseFrame.minX - metrics.titleToCloseButton
-                    : bounds.width - metrics.titleTrailing
-                secondaryTitleHostingView.isHidden = false
-                secondaryTitleHostingView.frame = CGRect(
-                    x: rightTitleStart,
-                    y: (bounds.height - metrics.titleHeight) / 2,
-                    width: max(0, rightTitleMax - rightTitleStart),
-                    height: metrics.titleHeight
-                )
+                for (offset, pane) in mergedPanes.enumerated() {
+                    layoutMergedPaneText(
+                        column: paneColumn(offset + 1),
+                        faviconView: pane.faviconHostingView,
+                        muteView: pane.muteButtonHostingView,
+                        titleView: pane.titleHostingView,
+                        closeView: pane.closeButtonHostingView
+                    )
+                }
             } else {
                 closeButtonHostingView.isHidden = !shouldShowCloseButton
                 closeButtonHostingView.frame = CGRect(
@@ -666,9 +690,11 @@ final class TabItemView: NSView {
                     width: metrics.closeButtonSize.width,
                     height: metrics.closeButtonSize.height
                 )
-                secondaryCloseButtonHostingView.isHidden = true
                 titleHostingView.isHidden = false
-                secondaryTitleHostingView.isHidden = true
+                for pane in mergedPanePool {
+                    pane.titleHostingView.isHidden = true
+                    pane.closeButtonHostingView.isHidden = true
+                }
                 let titleMaxX = shouldShowCloseButton
                     ? closeButtonHostingView.frame.minX - metrics.titleToCloseButton
                     : bounds.width - metrics.titleTrailing
@@ -683,6 +709,47 @@ final class TabItemView: NSView {
 
         layoutStatusBadge()
         updatePaneToolTips(mode: mode)
+    }
+
+    /// Lays out one pane's title and hover close button inside its column
+    /// of a merged cell (normal mode). The title is clipped against the
+    /// close button when hovered; when the pane carries a mute icon, the
+    /// title starts past it so the speaker glyph and the page name don't
+    /// overlap.
+    private func layoutMergedPaneText(
+        column: (minX: CGFloat, maxX: CGFloat),
+        faviconView: NSView,
+        muteView: NSView,
+        titleView: NSView,
+        closeView: NSView
+    ) {
+        let metrics = TabStripMetrics.Content.self
+        let closeFrame = CGRect(
+            x: column.maxX - metrics.closeButtonTrailing - metrics.closeButtonSize.width,
+            y: (bounds.height - metrics.closeButtonSize.height) / 2,
+            width: metrics.closeButtonSize.width,
+            height: metrics.closeButtonSize.height
+        )
+        // A pane too narrow for both controls drops its close button in
+        // favor of the mute toggle — stacked on top of the speaker glyph, a
+        // "mute" click would close the pane.
+        let showClose = shouldShowCloseButton
+            && (muteView.isHidden || closeFrame.minX >= muteView.frame.maxX)
+        closeView.isHidden = !showClose
+        closeView.frame = closeFrame
+
+        let titleStart = (muteView.isHidden ? faviconView : muteView).frame.maxX
+            + metrics.titleToFavicon
+        let titleMax = showClose
+            ? closeFrame.minX - metrics.titleToCloseButton
+            : column.maxX - metrics.titleTrailing
+        titleView.isHidden = false
+        titleView.frame = CGRect(
+            x: titleStart,
+            y: (bounds.height - metrics.titleHeight) / 2,
+            width: max(0, titleMax - titleStart),
+            height: metrics.titleHeight
+        )
     }
 
     private func layoutStatusBadge() {
@@ -701,26 +768,24 @@ final class TabItemView: NSView {
     }
 
     private func hideContentForEmptyBounds() {
-        for view in [
+        let ownViews: [NSView] = [
             faviconHostingView,
-            secondaryFaviconHostingView,
             openIndicatorHostingView,
             muteButtonHostingView,
-            secondaryMuteButtonHostingView,
             recordingIconHostingView,
             titleHostingView,
-            secondaryTitleHostingView,
-            splitDividerView,
             statusBadgeHostingView,
             closeButtonHostingView,
-            secondaryCloseButtonHostingView,
-        ] {
+        ]
+        for view in ownViews + mergedPanePool.flatMap(\.views) {
             view.isHidden = true
             view.frame = .zero
         }
         // SwiftUI keeps animating a hidden host's recording badge.
         viewModel.hidesRecordingBadge = true
-        secondaryFaviconViewModel.hidesRecordingBadge = true
+        for pane in mergedPanePool {
+            pane.viewModel.hidesRecordingBadge = true
+        }
         removePaneToolTips()
     }
 
@@ -772,7 +837,7 @@ final class TabItemView: NSView {
     private var shouldShowOpenIndicator: Bool {
         isPinned && TabFaviconPresentation.showsOpenIndicator(
             isOpened: sourceTab?.hasWebContent == true
-                || pinnedSplitPartner?.hasWebContent == true,
+                || mergedPanes.contains { $0.tab?.hasWebContent == true },
             isActive: isActive
         )
     }
@@ -815,60 +880,39 @@ final class TabItemView: NSView {
         )
     }
 
-    private func makeSecondaryFaviconRootView() -> AnyView {
-        makeThemedRootView(
-            UnifiedTabFaviconView(viewModel: secondaryFaviconViewModel)
-        )
-    }
-
     private func updateStatusBadgeContent() {
-        let representsMergedCell = pinnedSplitPartner != nil
-        guard representsMergedCell != statusBadgeRepresentsMergedCell else { return }
-        statusBadgeRepresentsMergedCell = representsMergedCell
+        // One badge for the whole merged cell, fed by every pane's status
+        // model; rebuilt when the cell's pane count changes.
+        let mergedPaneCountForBadge = isMergedSplitCell ? mergedPaneCount : 0
+        guard mergedPaneCountForBadge != statusBadgeMergedPaneCount else { return }
+        statusBadgeMergedPaneCount = mergedPaneCountForBadge
         statusBadgeHostingView.rootView = makeStatusBadgeRootView(
-            representsMergedCell: representsMergedCell
+            mergedPaneCount: mergedPaneCountForBadge
         )
     }
 
-    private func makeStatusBadgeRootView(representsMergedCell: Bool) -> AnyView {
-        if representsMergedCell {
-            return makeThemedRootView(
-                MergedTabCornerBadgeView(
-                    primaryModel: viewModel.status,
-                    secondaryModel: secondaryFaviconViewModel.status
-                )
-            )
+    private func makeStatusBadgeRootView(mergedPaneCount: Int) -> AnyView {
+        // Pool entries are stable across configures, so binding the badge to
+        // their status models once per pane count is enough; each model is
+        // rebound to whichever tab occupies that pane.
+        if mergedPaneCount > 0 {
+            let models = [viewModel.status]
+                + mergedPanePool.prefix(mergedPaneCount).map { $0.viewModel.status }
+            return makeThemedRootView(MergedTabCornerBadgeView(models: models))
         }
         return makeThemedRootView(TabCornerBadgeView(model: viewModel.status))
     }
-    
+
     private func makeTitleRootView() -> AnyView {
         makeThemedRootView(UnifiedTabTitleView(viewModel: viewModel))
     }
 
-    private func makeSecondaryTitleRootView() -> AnyView {
-        makeThemedRootView(UnifiedTabTitleView(viewModel: secondaryFaviconViewModel))
-    }
-    
     private func makeMuteButtonRootView() -> AnyView {
         makeThemedRootView(UnifiedTabMuteButton(viewModel: viewModel))
     }
 
-    private func makeSecondaryMuteButtonRootView() -> AnyView {
-        makeThemedRootView(UnifiedTabMuteButton(viewModel: secondaryFaviconViewModel))
-    }
-    
     private func makeRecordingIconRootView() -> AnyView {
         makeThemedRootView(UnifiedTabRecordingIcon())
-    }
-    
-    private func makeSecondaryCloseButtonRootView() -> AnyView {
-        makeThemedRootView(
-            UnifiedTabCloseButton { [weak self] in
-                self?.cancelPreviewForInteraction()
-                self?.pinnedSplitPartner?.close()
-            }
-        )
     }
 
     private func makeCloseButtonRootView() -> AnyView {
@@ -896,10 +940,9 @@ final class TabItemView: NSView {
         isMultiSelected = data.isMultiSelected
         isPinned = data.isPinned
         sourceTab = data.sourceTab
-        pinnedSplitPartner = data.pinnedSplitPartner
         faviconHostingView.rootView = makeFaviconRootView()
-        secondaryFaviconHostingView.rootView = makeSecondaryFaviconRootView()
-        backgroundLayer.splitPairPosition = data.splitPairPosition
+        configureMergedPanes(data.mergedSplitPanes, browserState: browserState)
+        backgroundLayer.splitPanePosition = data.splitPanePosition
         backgroundLayer.isSplitGroupActive = data.isSplitGroupActive
 
         if let tab = data.sourceTab,
@@ -925,26 +968,6 @@ final class TabItemView: NSView {
             splitTabPreviewRegistration.invalidate()
         }
 
-        // Pinned-split first pane: bind the secondary view model so the right
-        // favicon renders the partner. The configure() call subscribes to the
-        // partner tab's Combine publishers; clearing back to nil drops them.
-        if let partner = data.pinnedSplitPartner {
-            secondaryFaviconViewModel.configure(with: partner, in: browserState)
-            secondaryFaviconViewModel.onToggleMute = { [weak partner] in
-                guard let partner else { return }
-                partner.toggleAudioMuted()
-            }
-            secondaryFaviconViewModel.onToolTipUpdated = { [weak self] in
-                self?.updateTitleHostingToolTips()
-            }
-            secondaryFaviconHostingView.isHidden = false
-        } else {
-            secondaryFaviconViewModel.cancelSubscriptions()
-            secondaryFaviconViewModel.onToggleMute = nil
-            secondaryFaviconViewModel.onToolTipUpdated = nil
-            secondaryFaviconHostingView.isHidden = true
-            secondaryMuteButtonHostingView.isHidden = true
-        }
         updateStatusBadgeContent()
 
         updateAppearance()
@@ -994,19 +1017,19 @@ final class TabItemView: NSView {
                 .store(in: &cancellables)
         }
 
-        // Same re-layout trigger for the partner pane so the right-side
-        // mute icon appears / disappears in sync with the partner tab's
-        // audio state, matching the left pane's behavior above.
-        if let partner = data.pinnedSplitPartner {
-            partner.$isCurrentlyAudible
-                .combineLatest(partner.audioMutePublisher)
+        // Same re-layout triggers for every other pane so its mute icon
+        // appears / disappears in sync with that tab's audio state, matching
+        // the host pane's behavior above.
+        for paneTab in mergedPanes.compactMap(\.tab) {
+            paneTab.$isCurrentlyAudible
+                .combineLatest(paneTab.audioMutePublisher)
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _, _ in
                     self?.layoutContent()
                 }
                 .store(in: &cancellables)
 
-            partner.$hasWebContent
+            paneTab.$hasWebContent
                 .removeDuplicates()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
@@ -1014,7 +1037,7 @@ final class TabItemView: NSView {
                 }
                 .store(in: &cancellables)
 
-            Publishers.CombineLatest(partner.$isDiscarded, partner.$isUnloaded)
+            Publishers.CombineLatest(paneTab.$isDiscarded, paneTab.$isUnloaded)
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _, _ in
                     self?.layoutContent()
@@ -1025,6 +1048,42 @@ final class TabItemView: NSView {
         layoutContent()
     }
 
+    /// Binds one pool entry per non-host pane of a merged split (growing
+    /// the pool on demand) and parks the rest: their view models drop the
+    /// Combine subscriptions `configure(with:)` took on the previous tab
+    /// and their views hide, so a recycled cell never shows a stale pane.
+    private func configureMergedPanes(_ panes: [Tab], browserState: BrowserState?) {
+        mergedPaneCount = panes.count
+        while mergedPanePool.count < panes.count {
+            mergedPanePool.append(makeMergedPaneViews())
+        }
+        for (index, pane) in mergedPanePool.enumerated() {
+            guard index < panes.count else {
+                pane.tab = nil
+                pane.viewModel.cancelSubscriptions()
+                pane.viewModel.onToggleMute = nil
+                pane.viewModel.onToolTipUpdated = nil
+                for view in pane.views {
+                    view.isHidden = true
+                }
+                continue
+            }
+            let tab = panes[index]
+            pane.tab = tab
+            pane.faviconHostingView.rootView = makeThemedRootView(
+                UnifiedTabFaviconView(viewModel: pane.viewModel)
+            )
+            pane.viewModel.configure(with: tab, in: browserState)
+            pane.viewModel.onToggleMute = { [weak tab] in
+                tab?.toggleAudioMuted()
+            }
+            pane.viewModel.onToolTipUpdated = { [weak self] in
+                self?.updateTitleHostingToolTips()
+            }
+            pane.faviconHostingView.isHidden = false
+        }
+    }
+
     /// Exposes this cell to UI testing as a single accessibility button.
     /// The horizontal strip otherwise has no stable query surface — the
     /// sidebar reaches its rows through an `NSOutlineView`
@@ -1032,12 +1091,13 @@ final class TabItemView: NSView {
     /// pool of plain views. This is the strip-side analog so split-view UI
     /// tests can find, count, and right-click strip tabs.
     ///
-    /// `visible` is false for the collapsed second pane of a split (it shares
-    /// one merged cell with its partner) and for the transparent drag-source
-    /// stand-in, so neither is mistaken for a separate tab cell. Pinned and
-    /// normal cells carry distinct identifiers so tests can tell a pinned
-    /// split (which lives in the pinned section) from a normal-list tab.
-    func configureAccessibility(identifier: String, title: String, visible: Bool, isSplitPair: Bool) {
+    /// `visible` is false for the collapsed non-host panes of a split (they
+    /// share one merged cell with the first pane) and for the transparent
+    /// drag-source stand-in, so none is mistaken for a separate tab cell.
+    /// Pinned and normal cells carry distinct identifiers so tests can tell
+    /// a pinned split (which lives in the pinned section) from a
+    /// normal-list tab.
+    func configureAccessibility(identifier: String, title: String, visible: Bool, isMergedSplit: Bool) {
         setAccessibilityElement(visible)
         guard visible else {
             setAccessibilityIdentifier(nil)
@@ -1047,35 +1107,43 @@ final class TabItemView: NSView {
         setAccessibilityRole(.button)
         setAccessibilityIdentifier(identifier)
         setAccessibilityLabel(title)
-        // A merged split-pair cell hosts two panes behind one cell; expose
-        // that so assistive tech (and UI tests) can tell it apart from a
-        // single-tab cell — a split that fails to merge renders as two plain
+        // A merged split cell hosts every pane behind one cell; expose that
+        // so assistive tech (and UI tests) can tell it apart from a
+        // single-tab cell — a split that fails to merge renders as plain
         // cells with no such marker.
-        setAccessibilityValue(isSplitPair ? TabItemView.splitPairAccessibilityValue : nil)
+        setAccessibilityValue(isMergedSplit ? TabItemView.mergedSplitAccessibilityValue : nil)
     }
 
     /// Identifier stamped on every visible normal-section strip tab cell.
     static let normalAccessibilityIdentifier = "tabStripTab"
     /// Identifier stamped on every visible pinned-section strip tab cell.
     static let pinnedAccessibilityIdentifier = "tabStripPinnedTab"
-    /// Accessibility value stamped on a cell that merges a split pair.
-    static let splitPairAccessibilityValue = "splitPair"
+    /// Accessibility value stamped on a cell that merges a split of any
+    /// width. The literal predates wider splits and is the token the split
+    /// UI tests match on, so it stays as is.
+    static let mergedSplitAccessibilityValue = "splitPair"
 
     private func updateTitleHostingToolTips() {
         if showsTabPreview {
             titleHostingView.toolTip = nil
-            secondaryTitleHostingView.toolTip = nil
+            for pane in mergedPanePool {
+                pane.titleHostingView.toolTip = nil
+            }
             toolTip = nil
             return
         }
         titleHostingView.toolTip = viewModel.displayTitle
-        guard pinnedSplitPartner != nil else {
+        guard isMergedSplitCell else {
             toolTip = viewModel.displayTitle
-            secondaryTitleHostingView.toolTip = nil
+            for pane in mergedPanePool {
+                pane.titleHostingView.toolTip = nil
+            }
             return
         }
         toolTip = nil
-        secondaryTitleHostingView.toolTip = secondaryFaviconViewModel.displayTitle
+        for pane in mergedPanes {
+            pane.titleHostingView.toolTip = pane.viewModel.displayTitle
+        }
     }
 
     private func updatePreviewEligibility() {
@@ -1091,7 +1159,7 @@ final class TabItemView: NSView {
 
     // MARK: - Pane ToolTips
 
-    /// Tags for the merged cell's per-half tooltip rects. Installed in
+    /// Tags for the merged cell's per-pane tooltip rects. Installed in
     /// compact/pinned modes, where the per-pane title views that normally
     /// carry the pane tooltips are hidden.
     private(set) var paneToolTipTags: [NSView.ToolTipTag] = []
@@ -1104,25 +1172,22 @@ final class TabItemView: NSView {
     private func updatePaneToolTips(mode: LayoutMode) {
         removePaneToolTips()
         guard !showsTabPreview,
-              pinnedSplitPartner != nil,
+              isMergedSplitCell,
               mode != .normal else { return }
-        let leftHalf = CGRect(x: 0, y: 0, width: bounds.width / 2, height: bounds.height)
-        let rightHalf = CGRect(x: leftHalf.maxX, y: 0,
-                               width: bounds.width - leftHalf.width, height: bounds.height)
-        paneToolTipTags = [
-            addToolTip(leftHalf, owner: self, userData: nil),
-            addToolTip(rightHalf, owner: self, userData: nil),
-        ]
+        paneToolTipTags = (0..<paneCount).map { index in
+            let column = paneColumn(index)
+            let rect = CGRect(x: column.minX, y: 0,
+                              width: column.maxX - column.minX, height: bounds.height)
+            return addToolTip(rect, owner: self, userData: nil)
+        }
     }
 
-    /// `NSViewToolTipOwner` — resolves each half of a merged compact cell
+    /// `NSViewToolTipOwner` — resolves each column of a merged compact cell
     /// to its own pane's title at hover time, so the strings stay current
     /// without re-installing the rects on every title change.
     @objc func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag,
                     point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String {
-        point.x > bounds.midX
-            ? secondaryFaviconViewModel.displayTitle
-            : viewModel.displayTitle
+        mergedPane(at: point)?.viewModel.displayTitle ?? viewModel.displayTitle
     }
 
     func setDragHighlighted(_ highlighted: Bool) {
@@ -1135,12 +1200,13 @@ final class TabItemView: NSView {
             return
         }
         cancelPreviewForInteraction()
-        // Pinned-merged split: one TabItemView hosts two panes side-by-side
-        // (`sourceTab` left, `pinnedSplitPartner` right). Route to the half
-        // the click landed in, matching the left-click split in `mouseUp`.
-        if let partner = pinnedSplitPartner {
+        // Merged split: one TabItemView hosts every pane side-by-side
+        // (`sourceTab` first, then `mergedPanes` in slot order). Route to
+        // the column the click landed in, matching the left-click routing
+        // in `mouseUp`.
+        if isMergedSplitCell {
             let point = convert(event.locationInWindow, from: nil)
-            let target = point.x > bounds.midX ? partner : sourceTab
+            let target = mergedPane(at: point)?.tab ?? sourceTab
             target?.close()
             return
         }
@@ -1208,11 +1274,8 @@ final class TabItemView: NSView {
             let point = convert(event.locationInWindow, from: nil)
             guard bounds.contains(point) else { return }
 
-            // Click check for Close Button (primary + secondary)
-            if !closeButtonHostingView.isHidden && closeButtonHostingView.frame.contains(point) {
-                return
-            }
-            if !secondaryCloseButtonHostingView.isHidden && secondaryCloseButtonHostingView.frame.contains(point) {
+            // Click check for the close buttons (host + every other pane)
+            if isOnCloseButton(point) {
                 return
             }
 
@@ -1220,26 +1283,24 @@ final class TabItemView: NSView {
             if !muteButtonHostingView.isHidden && muteButtonHostingView.frame.contains(point) && isActive {
                 return
             }
-            // Right-pane mute mirrors the same rule using the partner pane's
-            // active state — when the partner is already focused, swallow the
-            // click so the SwiftUI button just toggles mute. Otherwise let
-            // the click fall through to `onSecondarySelect` so tapping the
-            // glyph also focuses the right pane.
-            if !secondaryMuteButtonHostingView.isHidden
-                && secondaryMuteButtonHostingView.frame.contains(point)
-                && secondaryFaviconViewModel.isActive {
+            // A pane's mute mirrors the same rule using that pane's active
+            // state — when the pane is already focused, swallow the click so
+            // the SwiftUI button just toggles mute. Otherwise let the click
+            // fall through to `onPaneSelect` so tapping the glyph also
+            // focuses the pane.
+            if let pane = mergedPaneWithMuteButton(at: point), pane.viewModel.isActive {
                 return
             }
 
             cancelPreviewForInteraction()
 
-            // Split-merged cells route the right-half click to the partner
-            // pane's tab so each favicon acts as its own click target.
-            if pinnedSplitPartner != nil, point.x > bounds.midX, onSecondarySelect != nil {
-                if event.clickCount == 2, let onSecondaryDoubleSelect {
-                    onSecondaryDoubleSelect(modifierFlags)
+            // Merged split cells route a click in another pane's column to
+            // that pane's tab so each favicon acts as its own click target.
+            if let paneTab = mergedPane(at: point)?.tab, onPaneSelect != nil {
+                if event.clickCount == 2, let onPaneDoubleSelect {
+                    onPaneDoubleSelect(paneTab, modifierFlags)
                 } else {
-                    onSecondarySelect?(modifierFlags)
+                    onPaneSelect?(paneTab, modifierFlags)
                 }
             } else if event.clickCount == 2, let onDoubleSelect {
                 onDoubleSelect(modifierFlags)
@@ -1260,8 +1321,7 @@ final class TabItemView: NSView {
         let point = convert(event.locationInWindow, from: nil)
 
         let isOnMute = !muteButtonHostingView.isHidden && muteButtonHostingView.frame.contains(point)
-        let isOnClose = (!closeButtonHostingView.isHidden && closeButtonHostingView.frame.contains(point))
-            || (!secondaryCloseButtonHostingView.isHidden && secondaryCloseButtonHostingView.frame.contains(point))
+        let isOnClose = isOnCloseButton(point)
 
         // Only block press state if on functional buttons
         let isFunctionalMute = isOnMute && isActive
@@ -1270,16 +1330,15 @@ final class TabItemView: NSView {
         }
 
         // Keep mute controls on the release path: activation can change their hit behavior.
-        let isOnSecondaryMute = !secondaryMuteButtonHostingView.isHidden
-            && secondaryMuteButtonHostingView.frame.contains(point)
-        guard !isOnClose, !isOnMute, !isOnSecondaryMute,
+        let isOnPaneMute = mergedPaneWithMuteButton(at: point) != nil
+        guard !isOnClose, !isOnMute, !isOnPaneMute,
               event.clickCount == 1,
               event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
               shouldSelectOnMouseDown?() != false else { return }
         selectedOnMouseDown = true
         cancelPreviewForInteraction()
-        if pinnedSplitPartner != nil, point.x > bounds.midX, let onSecondarySelect {
-            onSecondarySelect(event.modifierFlags)
+        if let paneTab = mergedPane(at: point)?.tab, let onPaneSelect {
+            onPaneSelect(paneTab, event.modifierFlags)
         } else {
             onSelect?(event.modifierFlags)
         }
@@ -1290,8 +1349,7 @@ final class TabItemView: NSView {
 
         // Don't drag if starting from functional functional buttons
         let isOnMute = !muteButtonHostingView.isHidden && muteButtonHostingView.frame.contains(startPoint)
-        let isOnClose = (!closeButtonHostingView.isHidden && closeButtonHostingView.frame.contains(startPoint))
-            || (!secondaryCloseButtonHostingView.isHidden && secondaryCloseButtonHostingView.frame.contains(startPoint))
+        let isOnClose = isOnCloseButton(startPoint)
 
         if (isOnMute && isActive) || isOnClose {
             return

@@ -23,18 +23,18 @@ private struct GroupOverviewCardLayout {
     let columns: [GridItem]
 }
 
-/// One item in the overview grid. Non-pinned splits whose both panes
-/// are members of this group and adjacent in the strip collapse into a
-/// `.splitPair`; everything else is `.tab`. The mirror of the sidebar's
-/// `SplitPairSidebarItem`.
+/// One item in the overview grid. A non-pinned split whose every pane is a
+/// member of this group and whose panes sit at consecutive strip positions
+/// collapses into one `.split` (panes in on-screen order, two to four);
+/// everything else is `.tab`. The mirror of the sidebar's merged split item.
 enum GroupOverviewItem: Identifiable {
     case tab(Tab)
-    case splitPair(left: Tab, right: Tab, splitId: String)
+    case split(panes: [Tab], splitId: String)
 
     var id: String {
         switch self {
         case .tab(let tab): return "tab:\(tab.guid)"
-        case .splitPair(_, _, let splitId): return "split:\(splitId)"
+        case .split(_, let splitId): return "split:\(splitId)"
         }
     }
 }
@@ -80,7 +80,7 @@ final class GroupOverviewViewModel: ObservableObject {
 
         // A split forming / dissolving among adjacent group members can
         // happen without `normalTabs` reordering, so subscribe to splits
-        // directly to fold pairs into combined cards.
+        // directly to fold them into combined cards.
         browserState.$splits
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refresh() }
@@ -110,33 +110,42 @@ final class GroupOverviewViewModel: ObservableObject {
             ?? NSLocalizedString("browser.tabGroupOverview.header.missingMetadataTitle", value: "Tab Group", comment: "Tab group overview - Fallback title when group metadata is unavailable")
     }
 
-    /// Fold adjacent non-pinned split pairs whose both panes are members
-    /// of this group into a single `.splitPair` item. Other tabs surface
-    /// as `.tab`. Mirrors `TabSectionController.buildItems` for the
-    /// outer list and `TabGroupCellView.applyMembers` for the in-group
-    /// inner table.
+    /// Fold each non-pinned split whose every pane is a member of this group
+    /// at consecutive positions into a single `.split` item, panes in member
+    /// order. Other tabs surface as `.tab`. Mirrors
+    /// `TabSectionController.buildItems` for the outer list and
+    /// `TabGroupCellView.applyMembers` for the in-group inner table.
     private static func composeItems(members: [Tab], browserState: BrowserState) -> [GroupOverviewItem] {
         var result: [GroupOverviewItem] = []
         var consumed = Set<Int>()
-        for (idx, tab) in members.enumerated() {
+        for tab in members {
             if consumed.contains(tab.guid) { continue }
             if let group = browserState.splitGroup(forTabId: tab.guid),
                !group.isPinned,
-               let partnerId = group.partnerTabId(of: tab.guid),
-               let partnerIdx = members.firstIndex(where: { $0.guid == partnerId }),
-               abs(idx - partnerIdx) == 1 {
-                let partner = members[partnerIdx]
-                let leftTab = idx < partnerIdx ? tab : partner
-                let rightTab = idx < partnerIdx ? partner : tab
-                result.append(.splitPair(left: leftTab, right: rightTab, splitId: group.id))
-                consumed.insert(tab.guid)
-                consumed.insert(partnerId)
+               let panes = contiguousPanes(of: group, in: members) {
+                result.append(.split(panes: panes, splitId: group.id))
+                consumed.formUnion(panes.map(\.guid))
                 continue
             }
             result.append(.tab(tab))
             consumed.insert(tab.guid)
         }
         return result
+    }
+
+    /// The split's panes in `members` order when every pane is a member and
+    /// their positions form one unbroken run; nil otherwise, so a split with
+    /// a pane outside the group (or a tab between its panes) renders as
+    /// separate cards.
+    private static func contiguousPanes(of group: SplitGroup, in members: [Tab]) -> [Tab]? {
+        var indices: [Int] = []
+        for tabId in group.tabIds {
+            guard let index = members.firstIndex(where: { $0.guid == tabId }) else { return nil }
+            indices.append(index)
+        }
+        let sorted = indices.sorted()
+        guard let first = sorted.first, sorted == Array(first ..< first + sorted.count) else { return nil }
+        return sorted.map { members[$0] }
     }
 
     func snapshotImage(for tab: Tab) -> NSImage? {
@@ -275,18 +284,14 @@ struct GroupOverviewView: View {
                                     selectTab: { selectTab(tab) },
                                     closeTab: { closeTab(tab) }
                                 )
-                            case .splitPair(let leftTab, let rightTab, _):
-                                GroupOverviewSplitPairCard(
-                                    leftTab: leftTab,
-                                    rightTab: rightTab,
+                            case .split(let panes, _):
+                                GroupOverviewSplitCard(
+                                    panes: panes,
                                     groupColor: viewModel.color,
-                                    leftSnapshot: viewModel.snapshotImage(for: leftTab),
-                                    rightSnapshot: viewModel.snapshotImage(for: rightTab),
+                                    snapshots: panes.map { viewModel.snapshotImage(for: $0) },
                                     cardWidth: layout.width,
-                                    selectLeft: { selectTab(leftTab) },
-                                    selectRight: { selectTab(rightTab) },
-                                    closeLeft: { closeTab(leftTab) },
-                                    closeRight: { closeTab(rightTab) }
+                                    selectTab: selectTab,
+                                    closeTab: closeTab
                                 )
                             }
                         }
@@ -411,64 +416,66 @@ private struct GroupOverviewTabCard: View {
     }
 }
 
-/// Two-pane card that represents a non-pinned split as one combined
-/// tile in the group overview. Preview area shows both panes' snapshots
-/// side-by-side divided by a vertical separator; each half acts as its
-/// own click target (mirrors the sidebar merged cell).
-private struct GroupOverviewSplitPairCard: View {
-    let leftTab: Tab
-    let rightTab: Tab
+/// Card that represents a non-pinned split as one combined tile in the
+/// group overview. The preview area shows every pane's snapshot side by
+/// side, equal widths divided by vertical separators; each pane acts as its
+/// own click target (mirrors the sidebar merged cell). Two to four panes.
+private struct GroupOverviewSplitCard: View {
+    let panes: [Tab]
     let groupColor: GroupColor
-    let leftSnapshot: NSImage?
-    let rightSnapshot: NSImage?
+    /// One entry per pane, in `panes` order.
+    let snapshots: [NSImage?]
     let cardWidth: CGFloat
-    let selectLeft: () -> Void
-    let selectRight: () -> Void
-    let closeLeft: () -> Void
-    let closeRight: () -> Void
+    let selectTab: (Tab) -> Void
+    let closeTab: (Tab) -> Void
 
     @State private var isHovered = false
 
+    /// Below this pane width the footer drops the title and keeps only the
+    /// favicon and close button, so four panes still fit a narrow card.
+    private static let titledFooterMinimumPaneWidth: CGFloat = 90
+
     var body: some View {
         let previewHeight = cardWidth / GroupOverviewCardMetrics.previewAspectRatio
-        let halfWidth = (cardWidth - 1) / 2
+        let paneCount = max(1, panes.count)
+        let paneWidth = (cardWidth - CGFloat(paneCount - 1)) / CGFloat(paneCount)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 0) {
-                Button(action: selectLeft) {
-                    GroupOverviewSnapshotView(tab: leftTab, groupColor: groupColor, snapshotImage: leftSnapshot)
-                        .frame(width: halfWidth, height: previewHeight)
+                ForEach(Array(panes.enumerated()), id: \.element.guid) { index, tab in
+                    if index > 0 {
+                        Rectangle()
+                            .fill(Color(nsColor: .separatorColor).opacity(0.65))
+                            .frame(width: 1, height: previewHeight)
+                    }
+                    Button(action: { selectTab(tab) }) {
+                        GroupOverviewSnapshotView(
+                            tab: tab,
+                            groupColor: groupColor,
+                            snapshotImage: index < snapshots.count ? snapshots[index] : nil
+                        )
+                        .frame(width: paneWidth, height: previewHeight)
                         .clipped()
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-
-                Rectangle()
-                    .fill(Color(nsColor: .separatorColor).opacity(0.65))
-                    .frame(width: 1, height: previewHeight)
-
-                Button(action: selectRight) {
-                    GroupOverviewSnapshotView(tab: rightTab, groupColor: groupColor, snapshotImage: rightSnapshot)
-                        .frame(width: halfWidth, height: previewHeight)
-                        .clipped()
-                }
-                .buttonStyle(.plain)
             }
             .frame(width: cardWidth, height: previewHeight)
             .clipped()
 
             HStack(spacing: 0) {
-                splitFooterHalf(
-                    tab: leftTab,
-                    select: selectLeft,
-                    close: closeLeft
-                )
-                Rectangle()
-                    .fill(Color(nsColor: .separatorColor).opacity(0.65))
-                    .frame(width: 1, height: GroupOverviewCardMetrics.footerHeight - 12)
-                splitFooterHalf(
-                    tab: rightTab,
-                    select: selectRight,
-                    close: closeRight
-                )
+                ForEach(Array(panes.enumerated()), id: \.element.guid) { index, tab in
+                    if index > 0 {
+                        Rectangle()
+                            .fill(Color(nsColor: .separatorColor).opacity(0.65))
+                            .frame(width: 1, height: GroupOverviewCardMetrics.footerHeight - 12)
+                    }
+                    splitFooterPane(
+                        tab: tab,
+                        showsTitle: paneWidth >= Self.titledFooterMinimumPaneWidth,
+                        select: { selectTab(tab) },
+                        close: { closeTab(tab) }
+                    )
+                }
             }
             .frame(height: GroupOverviewCardMetrics.footerHeight)
             .background(Color(nsColor: .controlBackgroundColor))
@@ -483,14 +490,19 @@ private struct GroupOverviewSplitPairCard: View {
     }
 
     @ViewBuilder
-    private func splitFooterHalf(tab: Tab, select: @escaping () -> Void, close: @escaping () -> Void) -> some View {
+    private func splitFooterPane(tab: Tab,
+                                 showsTitle: Bool,
+                                 select: @escaping () -> Void,
+                                 close: @escaping () -> Void) -> some View {
         Button(action: select) {
             HStack(spacing: 6) {
                 favicon(for: tab)
-                Text(tab.title.isEmpty ? (tab.url ?? "") : tab.title)
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                if showsTitle {
+                    Text(tab.title.isEmpty ? (tab.url ?? "") : tab.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
                 Spacer(minLength: 4)
                 GroupOverviewHoverIconButton(
                     systemName: "xmark",

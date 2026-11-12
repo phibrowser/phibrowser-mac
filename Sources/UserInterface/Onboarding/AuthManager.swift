@@ -267,16 +267,263 @@ final class InMemoryCredentialsStorage: CredentialsStorage {
     }
 }
 
+/// Where the Auth0 SDK credential item lives. New writes go to the data
+/// protection keychain; the file-based item is only read once for migration
+/// and is otherwise cleared.
+enum Auth0CredentialKeychain {
+    static let service = Bundle.main.bundleIdentifier ?? FileSystemUtils.bundleId
+
+    /// Pinned to the app ID. Without an explicit group, writes land in the
+    /// first `keychain-access-groups` entry, which belongs to WebAuthn and
+    /// changes whenever that list is reordered.
+    static let accessGroup: String? = {
+        guard let task = SecTaskCreateFromSelf(nil),
+              let value = SecTaskCopyValueForEntitlement(
+                task,
+                "com.apple.application-identifier" as CFString,
+                nil
+              ) as? String,
+              !value.isEmpty else {
+            return nil
+        }
+        return value
+    }()
+
+    static var dataProtectionKeychain: SimpleKeychain {
+        SimpleKeychain(
+            service: service,
+            accessGroup: accessGroup,
+            accessibility: .afterFirstUnlockThisDeviceOnly,
+            attributes: [
+                kSecUseDataProtectionKeychain as String: true,
+                kSecAttrSynchronizable as String: false,
+            ]
+        )
+    }
+
+    /// Legacy access must set `kSecUseDataProtectionKeychain` to false: when
+    /// it is absent, macOS also matches and deletes data protection items.
+    static var fileBasedKeychain: SimpleKeychain {
+        SimpleKeychain(
+            service: service,
+            attributes: [kSecUseDataProtectionKeychain as String: false]
+        )
+    }
+
+    static func dataProtectionQuery(account: String) -> [String: Any] {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecUseDataProtectionKeychain as String: true,
+            kSecAttrSynchronizable as String: false,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        if let accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        return query
+    }
+
+    static func fileBasedQuery(account: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecUseDataProtectionKeychain as String: false,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+    }
+
+    static func clearLegacy(account: String) -> Bool {
+        Auth0KeychainCredentialsStorage.clear(
+            query: fileBasedQuery(account: account),
+            sdkClear: { fileBasedKeychain.deleteEntry(forKey: account) }
+        )
+    }
+
+    static func read(query: [String: Any]) -> Auth0CredentialStoreMigration.ReadResult {
+        var query = query
+        query[kSecReturnData as String] = true
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data else {
+                return .failed(errSecDecode)
+            }
+            return .found(data)
+        case errSecItemNotFound:
+            return .notFound
+        default:
+            return .failed(status)
+        }
+    }
+
+    /// Mirrors the attributes `dataProtectionKeychain` writes, but never
+    /// overwrites an existing item.
+    static func addToDataProtectionKeychain(_ data: Data, account: String) -> OSStatus {
+        var query = dataProtectionQuery(account: account)
+        query.removeValue(forKey: kSecMatchLimit as String)
+        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        query[kSecValueData as String] = data
+        return SecItemAdd(query as CFDictionary, nil)
+    }
+}
+
+/// Moves the Auth0 SDK credential from the file-based keychain to the data
+/// protection keychain before the SDK first reads it. The two keychains do not
+/// share items, so an unmigrated launch sees no session and shows the login
+/// window until shared-token recovery finishes asynchronously.
+enum Auth0CredentialStoreMigration {
+    enum ReadResult: Equatable {
+        case found(Data)
+        case notFound
+        case failed(OSStatus)
+    }
+
+    enum Outcome: Equatable {
+        case alreadyMigrated
+        case migrated
+        case alreadyInDataProtectionKeychain
+        case noLegacyCredential
+        case discardedLegacyCredential
+        case dataProtectionReadFailed(OSStatus)
+        case dataProtectionWriteFailed(OSStatus)
+        case dataProtectionVerificationFailed
+        case legacyReadFailed(OSStatus)
+
+        /// The legacy item may still be the only copy because nothing reached
+        /// the data protection keychain this launch.
+        var leavesLegacyCredentialAuthoritative: Bool {
+            switch self {
+            case .dataProtectionReadFailed, .dataProtectionWriteFailed, .dataProtectionVerificationFailed:
+                return true
+            case .alreadyMigrated, .migrated, .alreadyInDataProtectionKeychain,
+                 .noLegacyCredential, .discardedLegacyCredential, .legacyReadFailed:
+                return false
+            }
+        }
+    }
+
+    static func completedKey(account: String) -> String {
+        "auth0CredentialStoreMigration.\(account).completed"
+    }
+
+    static func legacyCleanupPendingKey(account: String) -> String {
+        "auth0CredentialStoreMigration.\(account).legacyCleanupPending"
+    }
+
+    /// - Parameter discardsLegacyCredential: True when automatic credential
+    ///   recovery is blocked (logout or account deletion). The legacy item is
+    ///   then deleted without being read, so it cannot revive the session.
+    static func runIfNeeded(
+        account: String,
+        defaults: UserDefaults,
+        discardsLegacyCredential: Bool,
+        readDataProtection: () -> ReadResult,
+        addToDataProtection: (Data) -> OSStatus,
+        readLegacy: () -> ReadResult,
+        clearLegacy: () -> Bool
+    ) -> Outcome {
+        let cleanupPendingKey = legacyCleanupPendingKey(account: account)
+        guard !defaults.bool(forKey: completedKey(account: account)) else {
+            if defaults.bool(forKey: cleanupPendingKey), clearLegacy() {
+                defaults.removeObject(forKey: cleanupPendingKey)
+            }
+            return .alreadyMigrated
+        }
+
+        if discardsLegacyCredential {
+            complete(account: account, defaults: defaults, clearLegacy: clearLegacy)
+            return .discardedLegacyCredential
+        }
+
+        switch readDataProtection() {
+        case .found:
+            complete(account: account, defaults: defaults, clearLegacy: clearLegacy)
+            return .alreadyInDataProtectionKeychain
+        case .failed(let status):
+            return .dataProtectionReadFailed(status)
+        case .notFound:
+            break
+        }
+
+        let legacyData: Data
+        switch readLegacy() {
+        case .found(let data):
+            legacyData = data
+        case .notFound:
+            defaults.set(true, forKey: completedKey(account: account))
+            return .noLegacyCredential
+        case .failed(let status):
+            // A failed read does not prove the credential is invalid, so keep
+            // it and retry. The retries end once a login or shared-token
+            // import writes the data protection item.
+            return .legacyReadFailed(status)
+        }
+
+        // A duplicate means another instance migrated first; keep its copy,
+        // which may already hold a rotated refresh token.
+        let addStatus = addToDataProtection(legacyData)
+        guard addStatus == errSecSuccess || addStatus == errSecDuplicateItem else {
+            return .dataProtectionWriteFailed(addStatus)
+        }
+        guard case .found = readDataProtection() else {
+            return .dataProtectionVerificationFailed
+        }
+        complete(account: account, defaults: defaults, clearLegacy: clearLegacy)
+        return .migrated
+    }
+
+    /// The pending flag is set before completion so a crash between the two
+    /// still retries the legacy cleanup on the next launch.
+    private static func complete(
+        account: String,
+        defaults: UserDefaults,
+        clearLegacy: () -> Bool
+    ) {
+        let cleanupPendingKey = legacyCleanupPendingKey(account: account)
+        defaults.set(true, forKey: cleanupPendingKey)
+        defaults.set(true, forKey: completedKey(account: account))
+        if clearLegacy() {
+            defaults.removeObject(forKey: cleanupPendingKey)
+        }
+    }
+}
+
 /// Logs Keychain failures that Auth0's default storage converts to nil or false.
 struct Auth0KeychainCredentialsStorage: CredentialsStorage {
-    private let keychain = SimpleKeychain()
+    private let keychain: SimpleKeychain
+    private let fallbackKeychain: SimpleKeychain?
+
+    /// - Parameter fallbackKeychain: Read when `keychain` has no entry. Used
+    ///   while an unfinished migration leaves the legacy item as the only
+    ///   copy, so freshness checks never mistake it for a missing credential.
+    init(
+        keychain: SimpleKeychain = Auth0CredentialKeychain.dataProtectionKeychain,
+        fallbackKeychain: SimpleKeychain? = nil
+    ) {
+        self.keychain = keychain
+        self.fallbackKeychain = fallbackKeychain
+    }
 
     func getEntry(forKey key: String) -> Data? {
+        if let data = Self.read(keychain, key: key, operation: "read") {
+            return data
+        }
+        guard let fallbackKeychain else {
+            return nil
+        }
+        return Self.read(fallbackKeychain, key: key, operation: "legacy read")
+    }
+
+    private static func read(_ keychain: SimpleKeychain, key: String, operation: String) -> Data? {
         do {
             return try keychain.data(forKey: key)
         } catch {
             if (error as? SimpleKeychainError)?.status != errSecItemNotFound {
-                logError(error, operation: "read", key: key)
+                logError(error, operation: operation, key: key)
             }
             return nil
         }
@@ -287,7 +534,7 @@ struct Auth0KeychainCredentialsStorage: CredentialsStorage {
             try keychain.set(data, forKey: key)
             return true
         } catch {
-            logError(error, operation: "write", key: key)
+            Self.logError(error, operation: "write", key: key)
             return false
         }
     }
@@ -368,7 +615,7 @@ struct Auth0KeychainCredentialsStorage: CredentialsStorage {
         return true
     }
 
-    private func logError(_ error: Error, operation: String, key: String) {
+    private static func logError(_ error: Error, operation: String, key: String) {
         if let status = (error as? SimpleKeychainError)?.status, status != errSecSuccess {
             let message = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error"
             AppLogError("[Auth] Keychain \(operation) failed: account=\(key), OSStatus=\(status) (\(message))")
@@ -467,10 +714,61 @@ class AuthManager {
         return CredentialsManager(
             authentication: authenticationClient,
             storeKey: credentialStoreKey,
-            storage: Auth0KeychainCredentialsStorage(),
+            storage: credentialStorage,
             maxRetries: 1
         )
     }()
+
+    /// Every reader of the SDK credential goes through this, so the one-time
+    /// keychain migration completes before the first read.
+    private lazy var credentialStorage: Auth0KeychainCredentialsStorage = {
+        let account = credentialStoreKey
+        let outcome = Auth0CredentialStoreMigration.runIfNeeded(
+            account: account,
+            defaults: defaults,
+            discardsLegacyCredential: blocksAutomaticCredentialRecovery,
+            readDataProtection: {
+                Auth0CredentialKeychain.read(
+                    query: Auth0CredentialKeychain.dataProtectionQuery(account: account)
+                )
+            },
+            addToDataProtection: {
+                Auth0CredentialKeychain.addToDataProtectionKeychain($0, account: account)
+            },
+            readLegacy: {
+                Auth0CredentialKeychain.read(
+                    query: Auth0CredentialKeychain.fileBasedQuery(account: account)
+                )
+            },
+            clearLegacy: { Auth0CredentialKeychain.clearLegacy(account: account) }
+        )
+        logCredentialStoreMigration(outcome, account: account)
+        return Auth0KeychainCredentialsStorage(
+            fallbackKeychain: outcome.leavesLegacyCredentialAuthoritative
+                ? Auth0CredentialKeychain.fileBasedKeychain
+                : nil
+        )
+    }()
+
+    private func logCredentialStoreMigration(
+        _ outcome: Auth0CredentialStoreMigration.Outcome,
+        account: String
+    ) {
+        let prefix = "[AuthKeychainMigration] account=\(account)"
+        switch outcome {
+        case .alreadyMigrated:
+            AppLogDebug("\(prefix) already migrated")
+        case .migrated, .alreadyInDataProtectionKeychain, .noLegacyCredential, .discardedLegacyCredential:
+            AppLogInfo("\(prefix) outcome=\(outcome), accessGroup=\(Auth0CredentialKeychain.accessGroup ?? "default")")
+        case .dataProtectionReadFailed(let status),
+             .dataProtectionWriteFailed(let status),
+             .legacyReadFailed(let status):
+            let message = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error"
+            AppLogError("\(prefix) outcome=\(outcome), OSStatus=\(status) (\(message))")
+        case .dataProtectionVerificationFailed:
+            AppLogError("\(prefix) outcome=\(outcome)")
+        }
+    }
 
     private let authSessionGeneration = AuthSessionGeneration()
     
@@ -556,19 +854,23 @@ class AuthManager {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        guard accountDeletionCredentialFence.isActive else {
-            return
+        if accountDeletionCredentialFence.isActive {
+            setAccountDeletionCredentialFenceArmed(true)
+            accountDeletionFenceAwaitingExplicitLogin = true
+            let storesCleared = clearCredentialStores(postSharedTokenChange: true)
+            if storesCleared {
+                AppLogInfo(
+                    "[AccountDeletion] Cleared fenced credentials; automatic session recovery remains blocked until explicit login"
+                )
+            } else {
+                AppLogError("[AccountDeletion] Startup credential recovery failed; login remains fenced")
+            }
         }
 
-        setAccountDeletionCredentialFenceArmed(true)
-        accountDeletionFenceAwaitingExplicitLogin = true
-        let storesCleared = clearCredentialStores(postSharedTokenChange: true)
-        if storesCleared {
-            AppLogInfo(
-                "[AccountDeletion] Cleared fenced credentials; automatic session recovery remains blocked until explicit login"
-            )
-        } else {
-            AppLogError("[AccountDeletion] Startup credential recovery failed; login remains fenced")
+        // Logged-out launches return before reading credentials, so run the
+        // migration here to discard the legacy item and retry its cleanup.
+        if blocksAutomaticCredentialRecovery {
+            _ = credentialStorage
         }
     }
 
@@ -980,13 +1282,14 @@ class AuthManager {
 
     private func clearCredentialStores(postSharedTokenChange: Bool) -> Bool {
         let localCleared = Auth0KeychainCredentialsStorage.clear(
-            query: storedAuth0CredentialQuery(),
+            query: Auth0CredentialKeychain.dataProtectionQuery(account: credentialStoreKey),
             sdkClear: { credentialManager.clear() }
         )
+        let legacyCleared = Auth0CredentialKeychain.clearLegacy(account: credentialStoreKey)
         let sharedCleared = SharedAuthTokenStore.shared.clear(
             postChangeNotification: postSharedTokenChange
         )
-        return localCleared && sharedCleared
+        return localCleared && legacyCleared && sharedCleared
     }
 
     private func storeCredentialsIfAllowed(_ credentials: Credentials) -> Bool {
@@ -996,24 +1299,8 @@ class AuthManager {
         return credentialManager.store(credentials: credentials)
     }
 
-    private func storedAuth0CredentialQuery() -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Bundle.main.bundleIdentifier ?? FileSystemUtils.bundleId,
-            kSecAttrAccount as String: credentialStoreKey,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-    }
-
     private func storedAuth0CredentialData() -> Data? {
-        var query = storedAuth0CredentialQuery()
-        query[kSecReturnData as String] = true
-
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else {
-            return nil
-        }
-        return result as? Data
+        credentialStorage.getEntry(forKey: credentialStoreKey)
     }
 
     private func retrievePersistedCredentials() -> Credentials? {
@@ -2037,6 +2324,8 @@ class AuthManager {
             self.clearLocalAccountData()
             LoginController.shared.phase = .login
             ApplicationState.shared.requireLogin()
+            // Same as a Sign out the user chose (ADR 0012).
+            ChromiumLauncher.sharedInstance().bridge?.markSignOutSessionDiscard()
             SpaceSessionControllersManager.shared.closeNonBrowserWindows()
             SpaceSessionControllersManager.shared.closeAllWindows()
             LoginController.shared.showLoginWindow()

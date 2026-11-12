@@ -165,7 +165,7 @@ final class BookmarkManagerViewController: NSViewController {
     override func loadView() {
         view = NSView()
         view.wantsLayer = true
-        view.phiLayer?.setBackgroundColor(.windowBackground)
+        view.phiLayer?.setBackgroundColor(.pair(.white, .black))
         buildLayout()
     }
 
@@ -528,6 +528,14 @@ final class BookmarkManagerViewController: NSViewController {
             completion: { [weak self] in
                 guard let self, self.projectionGeneration == generation else { return }
                 self.restoreExpandedFolders()
+                let changedRows = IndexSet(next.snapshot.reloadIDs.compactMap { id in
+                    guard let bookmark = next.snapshot.item(for: id) else { return nil }
+                    let row = self.outlineView.row(forItem: bookmark)
+                    return row >= 0 ? row : nil
+                })
+                if !changedRows.isEmpty {
+                    self.outlineView.noteHeightOfRows(withIndexesChanged: changedRows)
+                }
                 self.restoreSelection(guids: selectedGuids)
                 self.beginPendingEditIfPossible()
                 completion?()
@@ -1058,8 +1066,8 @@ final class BookmarkManagerViewController: NSViewController {
               !bookmark.isFolder,
               let primaryURL = bookmark.url,
               !primaryURL.isEmpty else { return }
-        if let secondaryURL = bookmark.secondaryUrl, !secondaryURL.isEmpty {
-            browserState.openTwoURLsAsSplit(primaryURL: primaryURL, secondaryURL: secondaryURL)
+        if bookmark.secondaryUrl?.isEmpty == false {
+            browserState.openURLsAsSplit(bookmark.splitPaneURLs)
         } else {
             browserState.createTab(primaryURL)
         }
@@ -1195,12 +1203,14 @@ final class BookmarkManagerViewController: NSViewController {
         let originalParentGuid = bookmark.parent?.guid
         let originalSecondaryURL = bookmark.secondaryUrl
         let originalSecondaryTitle = bookmark.secondaryTitle
+        let originalExtraPanes = bookmark.splitExtraPanes
         EditPinnedTabPresenter.presentModal(
             mode: .bookmark,
             title: bookmark.title,
             urlString: bookmark.url ?? "",
             secondaryUrlString: originalSecondaryURL,
             secondaryTitleString: bookmark.secondaryTitle,
+            extraPanes: originalExtraPanes,
             modelContainer: browserState.localStore.container,
             profileId: scope.profileId,
             spaceId: scope.spaceId,
@@ -1233,6 +1243,12 @@ final class BookmarkManagerViewController: NSViewController {
                         return false
                     }
                 }
+                for pane in result.extraPanes ?? [] {
+                    guard self.browserState.localStore.normalizedURL(from: pane.url) != nil else {
+                        NSSound.beep()
+                        return false
+                    }
+                }
                 return true
             }
         ) { [weak self] result in
@@ -1248,12 +1264,14 @@ final class BookmarkManagerViewController: NSViewController {
                 title: result.title,
                 url: result.url,
                 secondaryUrl: secondaryURLUpdate,
-                secondaryTitle: secondaryTitleUpdate
+                secondaryTitle: secondaryTitleUpdate,
+                splitExtraPanes: result.extraPanes
             )
             let didUpdateFields = result.title != originalTitle
                 || result.url != originalURL
                 || (originalSecondaryURL != nil && result.secondaryUrl != originalSecondaryURL)
                 || (originalSecondaryURL != nil && result.secondaryTitle != originalSecondaryTitle)
+                || (result.extraPanes != nil && result.extraPanes != originalExtraPanes)
             if didUpdateFields {
                 self.analyticsSession.markEdited()
             }
@@ -1481,7 +1499,7 @@ extension BookmarkManagerViewController: NSOutlineViewDelegate {
               bookmark.secondaryUrl?.isEmpty == false else {
             return Row.regularHeight
         }
-        return Row.splitHeight
+        return Row.splitHeight / 2 * CGFloat(min(4, 2 + bookmark.splitExtraPanes.count))
     }
 
     func outlineView(

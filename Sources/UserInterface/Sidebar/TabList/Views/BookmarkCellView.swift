@@ -19,6 +19,13 @@ protocol BookmarkCellViewDelegate: AnyObject {
     func bookmarkCellDidEndEditing(_ bookmark: Bookmark, newTitle: String)
 }
 
+private struct BookmarkExtraPaneFavicon: Identifiable {
+    let id: Int
+    let pageURL: String
+    var image: NSImage?
+    var revision = 0
+}
+
 @Observable
 private final class BookmarkCellViewState {
     var title = ""
@@ -30,6 +37,9 @@ private final class BookmarkCellViewState {
     var primaryFaviconRevision = 0
     var secondaryFaviconRevision = 0
     var showsSecondaryFavicon = false
+    /// Panes after the second of a split bookmark of three or four panes.
+    /// Static icons: only the first two panes show live tab controls.
+    var extraPaneFavicons: [BookmarkExtraPaneFavicon] = []
     /// A Peek opened from this bookmark's bound tab is alive (visible or
     /// hidden behind another tab) — drives the trailing peek indicator.
     var showsPeek = false
@@ -107,6 +117,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private var hostingView: ThemedHostingView!
     private var faviconLoadHandle: ProfileScopedFaviconLoadHandle?
     private var secondaryFaviconLoadHandle: ProfileScopedFaviconLoadHandle?
+    private var extraFaviconLoadHandles: [ProfileScopedFaviconLoadHandle] = []
     private weak var configuredBookmark: Bookmark?
     private weak var configuredPrimaryTab: Tab?
     private weak var configuredSecondaryTab: Tab?
@@ -277,6 +288,9 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewState.primaryFaviconRevision &+= 1
         viewState.secondaryFaviconRevision &+= 1
         viewState.showsSecondaryFavicon = false
+        viewState.extraPaneFavicons = []
+        extraFaviconLoadHandles.forEach { $0.cancel() }
+        extraFaviconLoadHandles = []
         viewState.showsPeek = false
         viewState.primaryTabIsLive = false
         viewState.secondaryTabIsLive = false
@@ -329,7 +343,9 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         let leadingPadding: CGFloat = viewState.isFolder ? 4 : 6
         let primaryFaviconSlotSize: CGFloat = viewState.isFolder ? 20 : 16
         let titleGap: CGFloat = viewState.isFolder ? 6 : 8
-        let secondaryFaviconOffset: CGFloat = viewState.showsSecondaryFavicon ? 24 : 0
+        let secondaryFaviconOffset: CGFloat = viewState.showsSecondaryFavicon
+            ? 24 * CGFloat(1 + viewState.extraPaneFavicons.count)
+            : 0
         let leadingOffset = WebContentConstant.edgesSpacing
             + leadingPadding
             + primaryFaviconSlotSize
@@ -643,8 +659,8 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         guard let state = resolvedBrowserState else { return (nil, nil) }
         if let splitId = state.splitBookmarkBindings[bookmark.guid],
            let group = state.splits.first(where: { $0.id == splitId }) {
-            let primary = state.tabs.first(where: { $0.guid == group.primaryTabId })
-            let secondary = state.tabs.first(where: { $0.guid == group.secondaryTabId })
+            let primary = state.tabs.first(where: { $0.guid == group.tabIds[0] })
+            let secondary = state.tabs.first(where: { $0.guid == group.tabIds[1] })
             return (primary, secondary)
         }
 
@@ -735,6 +751,9 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             viewState.secondaryFaviconRevision &+= 1
             secondaryFaviconLoadHandle?.cancel()
             secondaryFaviconLoadHandle = nil
+            viewState.extraPaneFavicons = []
+            extraFaviconLoadHandles.forEach { $0.cancel() }
+            extraFaviconLoadHandles = []
             viewState.title = primaryTitle
             viewState.editText = primaryTitle
             updateEditFieldLayout()
@@ -745,15 +764,40 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewState.secondaryPageURL = secondaryUrl
         viewState.secondaryFaviconRevision &+= 1
         loadSecondaryFavicon(bookmark: bookmark, pageUrl: secondaryUrl)
+        loadExtraPaneFavicons(bookmark: bookmark)
 
         let resolvedSecondary = Self.displayName(forSecondaryTitle: secondaryTitle, url: secondaryUrl)
-        if resolvedSecondary.isEmpty {
+        let extraNames = bookmark.splitExtraPanes
+            .map { Self.displayName(forSecondaryTitle: $0.title, url: $0.url) }
+            .filter { !$0.isEmpty }
+        if resolvedSecondary.isEmpty && extraNames.isEmpty {
             viewState.title = primaryTitle
         } else {
-            viewState.title = "\(primaryTitle) • \(resolvedSecondary)"
+            viewState.title = ([primaryTitle, resolvedSecondary] + extraNames)
+                .filter { !$0.isEmpty }
+                .joined(separator: " • ")
         }
         viewState.editText = primaryTitle
         updateEditFieldLayout()
+    }
+
+    private func loadExtraPaneFavicons(bookmark: Bookmark) {
+        extraFaviconLoadHandles.forEach { $0.cancel() }
+        viewState.extraPaneFavicons = bookmark.splitExtraPanes.enumerated().map { index, pane in
+            BookmarkExtraPaneFavicon(id: index, pageURL: pane.url)
+        }
+        extraFaviconLoadHandles = bookmark.splitExtraPanes.enumerated().compactMap { index, pane in
+            let request = ProfileScopedFaviconRequest(
+                profileId: bookmark.profileId,
+                pageURLString: pane.url,
+                snapshotData: nil
+            )
+            return ProfileScopedFaviconRepository.shared.loadFavicon(for: request) { [weak self] result in
+                guard let self, index < self.viewState.extraPaneFavicons.count else { return }
+                self.viewState.extraPaneFavicons[index].image = result.image
+                self.viewState.extraPaneFavicons[index].revision &+= 1
+            }
+        }
     }
 
     private func loadSecondaryFavicon(bookmark: Bookmark, pageUrl: String) {
@@ -992,6 +1036,15 @@ private struct SidebarBookmarkCellContentView: View {
         faviconHoverAction != nil
     }
 
+    private var showsNavigatedAwaySeparator: Bool {
+        !state.isFolder
+            && !state.showsSecondaryFavicon
+            && !state.isEditing
+            && state.primaryTabIsLive
+            && BookmarkFaviconView.hasNavigatedAway(originalURL: state.primaryPageURL,
+                                                    currentURL: primaryTabViewModel.url)
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: state.isFolder ? 6 : 8) {
             BookmarkFaviconView(
@@ -1048,6 +1101,23 @@ private struct SidebarBookmarkCellContentView: View {
                    secondaryTabViewModel.isCurrentlyAudible || secondaryTabViewModel.isMuted {
                     UnifiedTabMuteButton(viewModel: secondaryTabViewModel)
                 }
+
+                ForEach(state.extraPaneFavicons) { pane in
+                    BookmarkFaviconView(
+                        image: pane.image,
+                        pageURL: pane.pageURL,
+                        revision: pane.revision,
+                        isFolder: false,
+                        isFolderExpanded: false,
+                        folderIcon: .standard,
+                        usesStaticFolderSnapshotIcon: false,
+                        folderIconPickerRequestGeneration: 0,
+                        liveTabViewModel: nil,
+                        onNavigateToOriginalURL: { _ in },
+                        onReturnHoverChanged: { _ in },
+                        onSelectFolderIcon: { _ in }
+                    )
+                }
             }
 
             ZStack(alignment: .leading) {
@@ -1067,6 +1137,15 @@ private struct SidebarBookmarkCellContentView: View {
                 .themedForeground(.textTertiary)
                 .offset(y: 8)
                 .opacity(showBookmarkFaviconHint ? 1 : 0)
+            }
+            .padding(.leading, showsNavigatedAwaySeparator ? NavigatedAwaySeparator.titleInset : 0)
+            .overlay(alignment: .leading) {
+                if showsNavigatedAwaySeparator {
+                    NavigatedAwaySeparator()
+                        .frame(width: NavigatedAwaySeparator.titleInset)
+                        .offset(x: NavigatedAwaySeparator.centeringOffset)
+                        .opacity(primaryFaviconHoverAction == nil ? 1 : 0)
+                }
             }
             .opacity(state.isEditing ? 0 : 1)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1098,8 +1177,7 @@ private struct SidebarBookmarkCellContentView: View {
         .overlay(alignment: .topTrailing) {
             if !state.isFolder {
                 MergedTabCornerBadgeView(
-                    primaryModel: primaryTabViewModel.status,
-                    secondaryModel: secondaryTabViewModel.status,
+                    models: [primaryTabViewModel.status, secondaryTabViewModel.status],
                     isSuppressed: state.showsPeek
                 )
                 .offset(
@@ -1113,6 +1191,22 @@ private struct SidebarBookmarkCellContentView: View {
         .padding(.vertical, 2)
         .scaleEffect(state.isFolder ? 1.0 : (state.isPressed ? 0.985 : 1.0))
         .animation(.easeOut(duration: 0.08), value: state.isPressed)
+    }
+}
+
+/// Marks an open bookmark whose tab has navigated away from the saved URL.
+private struct NavigatedAwaySeparator: View {
+    static let titleInset: CGFloat = 6
+    /// The row already leaves 9 points after the favicon image (8-point stack
+    /// spacing plus the slot's 1-point inset); shift back by half to center.
+    static let centeringOffset: CGFloat = -4.5
+
+    var body: some View {
+        Capsule()
+            .themedFill(.textTertiary)
+            .frame(width: 2, height: 14)
+            .rotationEffect(.degrees(15))
+            .accessibilityHidden(true)
     }
 }
 
@@ -1185,15 +1279,16 @@ private struct BookmarkFaviconView: View {
         isFolder ? Self.folderSize : Self.faviconSlotSize
     }
 
-    private var canNavigateToOriginalURL: Bool {
-        guard !isFolder,
-              let originalURL = pageURL,
-              !originalURL.isEmpty,
-              let currentURL = liveTabViewModel?.url,
-              !currentURL.isEmpty else {
+    static func hasNavigatedAway(originalURL: String?, currentURL: String?) -> Bool {
+        guard let originalURL, !originalURL.isEmpty,
+              let currentURL, !currentURL.isEmpty else {
             return false
         }
         return !URLProcessor.areEquivalentForOriginNavigation(currentURL, originalURL)
+    }
+
+    private var canNavigateToOriginalURL: Bool {
+        !isFolder && Self.hasNavigatedAway(originalURL: pageURL, currentURL: liveTabViewModel?.url)
     }
 
     private var hoverAction: BookmarkFaviconHoverAction {

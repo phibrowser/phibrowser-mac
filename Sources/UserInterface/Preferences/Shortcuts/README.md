@@ -184,8 +184,8 @@ persistence continue to use the stored identity.
    open settings of loading or saving failures without publishing failed writes.
 
 While `KeyCaptureNSView` monitors events, it holds a suspension of Phi's global
-Kiosk shortcut. The registrar unregisters every Carbon alias and cancels pending
-activation actions so the chord can reach the recorder. Saving or changing input
+Kiosk shortcut. The registrar unregisters every Carbon alias so the chord can
+reach the recorder. Saving or changing input
 sources does not re-register it while recording is active. Finishing capture,
 losing focus, detaching, or destroying the capture view releases that suspension;
 the last release restores the current binding only if the global preference is
@@ -376,6 +376,12 @@ removes its old interception; subsequent handling still depends on the remaining
 bindings and command availability. Kiosk commands are not added to the general
 `phiInterceptedCommands` map.
 
+While a picture-in-picture window is key and alone on the current macOS desktop
+(`PictureInPictureOnlyDesktop`), a general Phi interceptor match is swallowed
+instead of dispatched. From a picture-in-picture window only New Kiosk Window
+and New Incognito Space get that far. The global Kiosk shortcut is a system hot
+key outside this path and still works.
+
 ### Context-Aware Conflict Reporting
 
 `ShortcutsViewModel.findConflictingCommands` still compares effective
@@ -420,7 +426,9 @@ events may be suppressed. Registration is all-or-nothing across those aliases. I
 the registrar removes successful aliases and reports failure. Failed cleanup
 retains its handles for retry and prevents action dispatch. Rebinding allocates
 new hotkey IDs, so queued events from an old registration cannot open a window.
-Disabling, rebinding, and invalidation also cancel pending activation actions.
+A press runs its action immediately, without activating Phi first: the New
+Kiosk omnibox asks in a non-activating panel, and Phi activates only once a
+URL is picked.
 
 The global-shortcut preference expresses intent; `KioskGlobalShortcutRegistrar`
 owns the runtime status. Navigation settings distinguishes registered,
@@ -451,6 +459,16 @@ registration; toggling the preference off and on provides an explicit retry.
     executable command ID and reach AppKit validation. Ordinary enabled-only
     menu lookup and the high/normal extension priority gates remain separate.
   - `postPerformKeyEquivalent` performs additional redispatch work.
+  - While a picture-in-picture window is key and alone on the current macOS
+    desktop (`PictureInPictureOnlyDesktop`), three points stop every command
+    except text editing, Emoji & Symbols and dictation:
+    `PhiApplication.targetForAction:to:from:` gives other main-menu items no
+    target, so AppKit greys them out and their key equivalents do nothing;
+    `CommandDispatcher.handleKeyEquivalent` swallows general Phi interceptor
+    matches; and `CommandDispatcher.dispatchCommand(_:window:)`, which
+    `prePerformKeyEquivalent` asks before executing, swallows every command it
+    is asked about, because the menu states Chromium reads may be stale and its
+    hidden shortcuts are never validated.
 - Close-command roles across window contexts:
   - `PhiAppController::updateMenuItemKeyEquivalents` adjusts Close Tab / Close
     Window title, tag, and action before matching.
@@ -692,9 +710,10 @@ Chromium C++ test sources are separate from these native tests; compiling the
 Framework does not execute that C++ test suite.
 
 Global Kiosk tests resolve OS keyboard-layout data through the shared matcher,
-inject registration and cleanup failures, and verify status/activation
-lifecycle. Recording tests cover alias release, overlapping recording sessions,
-restoration of a changed binding, cancelled activation, and unregister failure.
+inject registration and cleanup failures, and verify status lifecycle and that
+a press acts without waiting for activation. Recording tests cover alias
+release, overlapping recording sessions, restoration of a changed binding,
+rejected presses while recording, and unregister failure.
 A separate Carbon integration case reserves a temporary test chord
 to verify real conflict, recovery, and release. The ownership UI suite also
 activates Finder, invokes a custom global chord, checks Phi/Kiosk foreground

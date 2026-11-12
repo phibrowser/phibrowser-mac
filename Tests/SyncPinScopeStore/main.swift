@@ -7,8 +7,8 @@ import SwiftData
 // LocalStore+PinnedTabScope.swift. The
 // row-moving helpers the slices call are stubs: the migration's pin reshaping and the per-op bodies
 // other than create are not under test here.
-typealias TabDataModel = TabDataModelSchemaV13.TabDataModel
-typealias BrowserDataSettingsModel = TabDataModelSchemaV13.BrowserDataSettingsModel
+typealias TabDataModel = TabDataModelSchemaV14.TabDataModel
+typealias BrowserDataSettingsModel = TabDataModelSchemaV14.BrowserDataSettingsModel
 enum TabDataType: Int { case tab = 0, pinnedTab = 1, bookmark = 2, bookmarkFolder = 3 }
 
 /// The production in-flight count's two calls, with the Migration flag recording the count every time
@@ -37,7 +37,7 @@ final class LocalStore {
     var helperCalls: [String] = []
 
     init() throws {
-        container = try ModelContainer(for: Schema(TabDataModelSchemaV13.models),
+        container = try ModelContainer(for: Schema(TabDataModelSchemaV14.models),
                                        configurations: ModelConfiguration(isStoredInMemoryOnly: true))
     }
 

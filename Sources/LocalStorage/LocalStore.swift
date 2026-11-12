@@ -42,8 +42,8 @@ class LocalStore {
     static let willCloseNotification = Notification.Name("LocalStore.willClose")
     static let defaultProfileId = "Default"
     static let compatibilityConfiguration = LocalStoreCompatibilityConfiguration(
-        currentStoreFormatVersion: 13,
-        readableStoreFormatVersions: 1...13,
+        currentStoreFormatVersion: 14,
+        readableStoreFormatVersions: 1...14,
         storeFilename: "LocalStore.sqlite"
     )
 
@@ -382,66 +382,85 @@ extension LocalStore {
         }
     }
 
-    /// Persists both directions of a pinned split and its layout in one store
-    /// transaction so subscribers never observe a paired row without the
-    /// orientation that belongs to it.
-    func updatePinnedSplitPair(primaryGuid: String,
-                               secondaryGuid: String,
-                               layout: String) {
+    /// Persists a pinned split's members and layout in one store transaction
+    /// so subscribers never observe a linked row without the orientation that
+    /// belongs to it. A pair is the reciprocal `splitPartnerGuid` link, which
+    /// sync carries; a wider split is `splitPaneGuids` on every member, which
+    /// stays local, so other devices see those members as separate pins.
+    func updatePinnedSplit(guids: [String], layout: String) {
+        guard guids.count >= 2 else { return }
         performBackgroundWrite { context in
             do {
-                let primaryPredicate = #Predicate<TabDataModel> { $0.guid == primaryGuid }
-                let secondaryPredicate = #Predicate<TabDataModel> { $0.guid == secondaryGuid }
-                guard let primary = try context.fetch(
-                    FetchDescriptor<TabDataModel>(predicate: primaryPredicate)
-                ).first,
-                let secondary = try context.fetch(
-                    FetchDescriptor<TabDataModel>(predicate: secondaryPredicate)
-                ).first,
-                primary.dataType == .pinnedTab,
-                secondary.dataType == .pinnedTab else {
-                    AppLogWarn("[LocalStore] Pinned split pair not found for update")
+                let rows = try guids.compactMap { guid -> TabDataModel? in
+                    let predicate = #Predicate<TabDataModel> { $0.guid == guid }
+                    return try context.fetch(FetchDescriptor<TabDataModel>(predicate: predicate)).first
+                }
+                guard rows.count == guids.count,
+                      rows.allSatisfy({ $0.dataType == .pinnedTab }) else {
+                    AppLogWarn("[LocalStore] Pinned split rows not found for update")
                     return
                 }
                 let now = Date()
-                primary.splitPartnerGuid = secondaryGuid
-                primary.layout = layout
-                primary.updatedDate = now
-                secondary.splitPartnerGuid = primaryGuid
-                secondary.layout = layout
-                secondary.updatedDate = now
+                for (index, row) in rows.enumerated() {
+                    if guids.count == 2 {
+                        row.splitPartnerGuid = guids[1 - index]
+                        row.splitPaneGuids = nil
+                    } else {
+                        row.splitPartnerGuid = nil
+                        row.decodedSplitPaneGuids = guids
+                    }
+                    row.layout = layout
+                    row.updatedDate = now
+                }
             } catch {
-                AppLogError("[LocalStore] Failed to update pinned split pair: \(error)")
+                AppLogError("[LocalStore] Failed to update pinned split: \(error)")
+            }
+        }
+    }
+
+    /// Drops the split link and layout from pinned rows, whichever form the
+    /// link takes.
+    func clearPinnedSplit(guids: [String]) {
+        performBackgroundWrite { context in
+            do {
+                for guid in guids {
+                    let predicate = #Predicate<TabDataModel> { $0.guid == guid }
+                    guard let row = try context.fetch(FetchDescriptor<TabDataModel>(predicate: predicate)).first,
+                          row.dataType == .pinnedTab else { continue }
+                    guard row.splitPartnerGuid != nil || row.splitPaneGuids != nil || row.layout != nil else {
+                        continue
+                    }
+                    row.splitPartnerGuid = nil
+                    row.splitPaneGuids = nil
+                    row.layout = nil
+                    row.updatedDate = Date()
+                }
+            } catch {
+                AppLogError("[LocalStore] Failed to clear pinned split: \(error)")
             }
         }
     }
 
     /// Updates the layout of an existing pinned split without changing its
-    /// persisted partner linkage.
-    func updatePinnedSplitLayout(firstGuid: String,
-                                 secondGuid: String,
-                                 layout: String) {
+    /// persisted members.
+    func updatePinnedSplitLayout(guids: [String], layout: String) {
         performBackgroundWrite { context in
             do {
-                let firstPredicate = #Predicate<TabDataModel> { $0.guid == firstGuid }
-                let secondPredicate = #Predicate<TabDataModel> { $0.guid == secondGuid }
-                guard let first = try context.fetch(
-                    FetchDescriptor<TabDataModel>(predicate: firstPredicate)
-                ).first,
-                let second = try context.fetch(
-                    FetchDescriptor<TabDataModel>(predicate: secondPredicate)
-                ).first,
-                first.dataType == .pinnedTab,
-                second.dataType == .pinnedTab else {
+                let rows = try guids.compactMap { guid -> TabDataModel? in
+                    let predicate = #Predicate<TabDataModel> { $0.guid == guid }
+                    return try context.fetch(FetchDescriptor<TabDataModel>(predicate: predicate)).first
+                }
+                guard rows.count == guids.count,
+                      rows.allSatisfy({ $0.dataType == .pinnedTab }) else {
                     AppLogWarn("[LocalStore] Pinned split rows not found for layout update")
                     return
                 }
-                guard first.layout != layout || second.layout != layout else { return }
+                guard rows.contains(where: { $0.layout != layout }) else { return }
                 let now = Date()
-                first.layout = layout
-                first.updatedDate = now
-                second.layout = layout
-                second.updatedDate = now
+                for row in rows {
+                    row.layout = layout
+                    row.updatedDate = now
+                }
             } catch {
                 AppLogError("[LocalStore] Failed to update pinned split layout: \(error)")
             }

@@ -4,7 +4,7 @@
 // session and its agent Space console, in BOTH directions, with no setup:
 //
 //   session → console: tails the session transcript — the agent's JSONL
-//     file (Claude Code, Codex, Pi, OpenClaw, Cursor) or its SQLite
+//     file (Claude Code, Codex, OpenClaw, Cursor) or its SQLite
 //     transcript rows (Hermes; see lib/mirror-sqlite.mjs) — and forwards
 //     new prompt,
 //     prose, reasoning, and tool-call lines (batched, cursor-ordered),
@@ -17,10 +17,9 @@
 //     (mirror-openclaw's OpenclawConsoleBridge), Hermes through its
 //     resume-oneshot CLI (mirror-hermes's HermesConsoleBridge) — so a
 //     console command wakes an idle session instead of waiting for its
-//     next round. Pi is delivered separately by its installed in-process
-//     extension (mirror-pi-bridge.mjs), the only layer that can call
-//     pi.sendUserMessage(). The remaining terminal agents queue commands
-//     until the driver's next round.
+//     next round. The remaining agents (Claude Code, Codex, Cursor) have
+//     no delivery transport: their commands stay queued until the driver's
+//     next round.
 //
 // ensureAgentSpace spawns it detached (arg: session key) after writing the
 // session's daemon control file. Lifetime is bounded by construction —
@@ -46,7 +45,6 @@ import {
 } from './lib/mirror-core.mjs'
 import { toEntry as claudeToEntry } from './lib/mirror-claude.mjs'
 import { toEntry as codexToEntry } from './lib/mirror-codex.mjs'
-import { toEntry as piToEntry } from './lib/mirror-pi.mjs'
 import {
   toEntry as cursorToEntry, CursorConsoleNotice,
 } from './lib/mirror-cursor.mjs'
@@ -65,7 +63,7 @@ const CONTROL_TTL_MS = 30 * 60 * 1000
 const MESSAGE_SWEEP_MS = 10 * 1000
 // Between-rounds keep-alive. The skill's own long-TTL ping runs at clean
 // round end (__dispose) — but a driver whose harness SIGKILLs tool calls
-// (Pi's 10s bash timeout) never disposes, the task falls back to the app's
+// never disposes, the task falls back to the app's
 // short default TTL, and it gets reaped mid-conversation: the re-created
 // task then starts a fresh console, losing the mirrored history. The daemon
 // is the one process that KNOWS the session is still alive (agentPid), so
@@ -130,7 +128,6 @@ async function main() {
                      (since) => hermesQuery(sessionKey, since), hermesRowToItem)
     : new TranscriptTail(ctl.transcriptPath)
   const toEntry = ctl.format === 'codex' ? codexToEntry
-    : ctl.format === 'pi' ? piToEntry
     : ctl.format === 'hermes' ? hermesToEntry
     : ctl.format === 'openclaw' ? openclawToEntry
     : ctl.format === 'cursor' ? cursorToEntry

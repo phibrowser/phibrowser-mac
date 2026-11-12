@@ -156,6 +156,109 @@ final class TabAudioStateTests: XCTestCase {
 }
 
 @MainActor
+final class TabKeepLoadedTests: XCTestCase {
+    private let setting = PhiPreferences.GeneralSettings.keepPinnedTabsLoaded
+    private var originalSetting: Any?
+
+    override func setUpWithError() throws {
+        originalSetting = UserDefaults.standard.object(forKey: setting.rawValue)
+        UserDefaults.standard.set(true, forKey: setting.rawValue)
+    }
+
+    override func tearDownWithError() throws {
+        if let originalSetting {
+            UserDefaults.standard.set(originalSetting, forKey: setting.rawValue)
+        } else {
+            UserDefaults.standard.removeObject(forKey: setting.rawValue)
+        }
+    }
+
+    func testTurningTheSettingOffReleasesPinnedTabsAndTurningItOnKeepsThemAgain() {
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://mail.example")
+        let tab = makeTab(wrapper)
+        tab.isPinned = true
+        XCTAssertEqual(wrapper.keepLoadedPushes.last, true)
+        XCTAssertEqual(pushes(to: wrapper, afterSetting: false), [false])
+        XCTAssertEqual(pushes(to: wrapper, afterSetting: true), [true])
+    }
+
+    func testPinningWhileTheSettingIsOffDoesNotKeepTheTabLoaded() {
+        UserDefaults.standard.set(false, forKey: setting.rawValue)
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://mail.example")
+        let tab = makeTab(wrapper)
+        tab.isPinned = true
+        XCTAssertEqual(wrapper.keepLoadedPushes.last, false)
+    }
+
+    /// The live strip tab of a restored Pinned tab is not `isPinned`; only
+    /// the record bound to the same wrapper is. Turning the setting off and
+    /// on must not make the live tab push its `false` over the record.
+    func testSettingReachesARestoredPinnedTabThroughItsRecordOnly() {
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://chat.example")
+        let liveTab = makeTab(wrapper)
+        let record = Tab(url: wrapper.urlString, isActive: false, index: 0)
+        record.isPinned = true
+        record.setWebContentsWrapper(wrapper: wrapper)
+        XCTAssertEqual(pushes(to: wrapper, afterSetting: false), [false])
+        XCTAssertEqual(pushes(to: wrapper, afterSetting: true), [true])
+        withExtendedLifetime(liveTab) {}
+    }
+
+    func testPinningKeepsTheTabLoadedAndUnpinningReleasesIt() {
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://mail.example")
+        let tab = makeTab(wrapper)
+        tab.isPinned = true
+        XCTAssertEqual(wrapper.keepLoadedPushes.last, true)
+        tab.isPinned = false
+        XCTAssertEqual(wrapper.keepLoadedPushes.last, false)
+    }
+
+    func testNewWrapperReceivesTheCurrentValueImmediately() {
+        let tab = makeTab(PageColorTestWebContentWrapper(urlString: "https://old.example"))
+        tab.isPinned = true
+        let replacement = PageColorTestWebContentWrapper(urlString: "https://new.example")
+        tab.setWebContentsWrapper(wrapper: replacement)
+        XCTAssertEqual(replacement.keepLoadedPushes, [true])
+    }
+
+    /// A pinned tab restored, opened from its saved entry or dragged into the
+    /// pinned area is a live strip tab that is not `isPinned`, bound to the
+    /// pinned record that is.
+    func testRestoredPinnedTabIsKeptLoadedThroughItsRecordUntilUnpinned() {
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://chat.example")
+        let liveTab = makeTab(wrapper)
+        let record = Tab(url: wrapper.urlString, isActive: false, index: 0)
+        record.isPinned = true
+        record.setWebContentsWrapper(wrapper: wrapper)
+        XCTAssertEqual(wrapper.keepLoadedPushes.last, true)
+        // Every unpin path assigns `false` to the live tab.
+        liveTab.isPinned = false
+        XCTAssertEqual(wrapper.keepLoadedPushes.last, false)
+    }
+
+    func testOlderFrameworkIsNeverAsked() {
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://mail.example")
+        wrapper.supportsKeepLoaded = false
+        let tab = makeTab(wrapper)
+        tab.isPinned = true
+        XCTAssertTrue(wrapper.keepLoadedPushes.isEmpty)
+    }
+
+    private func makeTab(_ wrapper: PageColorTestWebContentWrapper) -> Tab {
+        Tab(url: wrapper.urlString, isActive: true, index: 0, webContentView: wrapper)
+    }
+
+    /// Sets the Keep pinned tabs loaded setting and returns what `wrapper`
+    /// received because of it.
+    private func pushes(to wrapper: PageColorTestWebContentWrapper, afterSetting value: Bool) -> [Bool] {
+        let before = wrapper.keepLoadedPushes.count
+        UserDefaults.standard.set(value, forKey: setting.rawValue)
+        drainPageColorUpdates()
+        return Array(wrapper.keepLoadedPushes.dropFirst(before))
+    }
+}
+
+@MainActor
 func drainPageColorUpdates() {
     let drained = XCTestExpectation(description: "Tab and header main-queue updates completed")
     DispatchQueue.main.async {
@@ -207,6 +310,8 @@ final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
     var toggleAudioMutedCallCount = 0
     var audioMuteRequests: [Bool] = []
     var supportsPageColor = true
+    var supportsKeepLoaded = true
+    private(set) var keepLoadedPushes: [Bool] = []
     private var storedPageColor: NSColor?
     private(set) var pageColorReadCount = 0
     private(set) var pageColorObservationCount = 0
@@ -220,6 +325,7 @@ final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
 
     override func responds(to selector: Selector!) -> Bool {
         if selector == NSSelectorFromString("pageColor"), !supportsPageColor { return false }
+        if selector == NSSelectorFromString("setPhiKeepLoaded:"), !supportsKeepLoaded { return false }
         if !supportsSessionMute,
            selector == NSSelectorFromString("isMediaSessionMuted")
             || selector == NSSelectorFromString("toggleAudioMuted") { return false }
@@ -280,4 +386,5 @@ final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
     func setAudioMuted(_ muted: Bool) { audioMuteRequests.append(muted) }
     func muteAudio() {}
     func unmuteAudio() {}
+    func setPhiKeepLoaded(_ keepLoaded: Bool) { keepLoadedPushes.append(keepLoaded) }
 }

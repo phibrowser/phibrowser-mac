@@ -107,13 +107,23 @@ extension PhiPreferences {
         case doubleClickToCloseTabs // Close ordinary tabs with an unmodified double-click
         case directionalTabClosingEnabled // Show and enable closing ordinary tabs before or after an anchor
         case sidebarMediaPlayerEnabled // Show controls for background page media
+        case sidebarBottomBarShowsProfile // Sidebar bottom bar entries the user can toggle from the sidebar context menu
+        case sidebarBottomBarShowsDownloads
+        case sidebarBottomBarShowsMemory
+        case sidebarBottomBarShowsFeedback
+        case topBarShowsProfile // Comfortable layout top bar entries the user can toggle from the tab strip context menu
+        case topBarShowsDownloads
+        case topBarShowsMemory
+        case topBarShowsFeedback
         case showOpenTabIndicators // Show dots on inactive open pinned tabs and bookmarks
         case showUnloadedTabIndicators // Show dashed outlines and smaller icons for unloaded or discarded tabs
+        case keepPinnedTabsLoaded // Keep opened Pinned tabs in memory instead of letting them be unloaded; per-Mac, not synced
         case shortHighlightLinksEnabled // Use the sharing service for Copy Link to Highlight
         case spacesFeatureEnabled // Master gate for Spaces + profile management UI; defaults on, no user-facing toggle
         case suppressCloseIncognitoSpaceWarning // "Do not ask again" on the close-Incognito-Space confirmation
         case peekViewEnabled // Master gate for Peek View: the context-menu item and the automatic cross-site diversion
         case autoPeekViewEnabled // Sub-gate under peekViewEnabled: the automatic cross-site diversion from pinned/bookmark-bound tabs; explicit peeks are unaffected
+        case tabSwitcherIncludesAllSpaces // Ctrl-Tab switcher lists recent tabs from every Space in the window, not only the current one
 
         var defaultValue: Bool {
             switch self {
@@ -145,9 +155,20 @@ extension PhiPreferences {
                 return true
             case .sidebarMediaPlayerEnabled:
                 return true
+            case .sidebarBottomBarShowsProfile,
+                 .sidebarBottomBarShowsDownloads,
+                 .sidebarBottomBarShowsMemory,
+                 .sidebarBottomBarShowsFeedback,
+                 .topBarShowsProfile,
+                 .topBarShowsDownloads,
+                 .topBarShowsMemory,
+                 .topBarShowsFeedback:
+                return true
             case .showOpenTabIndicators:
                 return false
             case .showUnloadedTabIndicators:
+                return true
+            case .keepPinnedTabsLoaded:
                 return true
             case .shortHighlightLinksEnabled:
                 return true
@@ -159,6 +180,8 @@ extension PhiPreferences {
                 return true
             case .autoPeekViewEnabled:
                 return true
+            case .tabSwitcherIncludesAllSpaces:
+                return false
             }
         }
 
@@ -199,6 +222,25 @@ extension PhiPreferences {
             to defaults: UserDefaults = .standard
         ) {
             defaults.set(mode.rawValue, forKey: Self.autoPictureInPictureModeKey)
+        }
+
+        /// Whether picture-in-picture windows (manual and automatic, video and
+        /// document) can also appear on other apps' fullscreen desktops.
+        /// Chromium reads it each time a picture-in-picture window is about to
+        /// show. No settings UI yet, and not synced across devices.
+        static let pictureInPictureOnFullscreenDesktopsKey = "pictureInPictureOnFullscreenDesktops"
+
+        static func loadPictureInPictureOnFullscreenDesktops(
+            from defaults: UserDefaults = .standard
+        ) -> Bool {
+            defaults.bool(forKey: pictureInPictureOnFullscreenDesktopsKey, default: true)
+        }
+
+        static func savePictureInPictureOnFullscreenDesktops(
+            _ enabled: Bool,
+            to defaults: UserDefaults = .standard
+        ) {
+            defaults.set(enabled, forKey: pictureInPictureOnFullscreenDesktopsKey)
         }
 
         static let layoutModeKey = "layoutMode"

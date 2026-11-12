@@ -11,10 +11,12 @@ protocol SidebarTabListItemOwner: AnyObject {
     func toggleItemExpanded(_ item: SidebarItem)
     func newTabClicked(_ item: SidebarItem)
     func bookmarkClicked(_ item: SidebarItem)
-    func splitPairPaneClicked(leftTab: Tab,
-                              rightTab: Tab,
-                              selectedTab: Tab,
-                              modifierFlags: NSEvent.ModifierFlags) -> Bool
+    /// A segment of a merged split row was clicked. `panes` is the split's
+    /// panes in on-screen order and `index` the clicked segment. Returns
+    /// true when the click was consumed as a multi-selection gesture.
+    func splitPaneClicked(panes: [Tab],
+                          index: Int,
+                          modifierFlags: NSEvent.ModifierFlags) -> Bool
 }
 
 enum SidebarNewTabStickyResolver {
@@ -92,15 +94,16 @@ class SidebarTabListViewController: NSViewController {
 
     private enum SidebarMultiSelectionUnit: Hashable {
         case tab(Int)
-        case splitPair(left: Int, right: Int)
+        /// A whole non-pinned split; pane guids in on-screen order.
+        case split(tabIds: [Int])
         case bookmark(String)
 
         var tabIds: Set<Int> {
             switch self {
             case let .tab(guid):
                 return [guid]
-            case let .splitPair(left, right):
-                return [left, right]
+            case let .split(tabIds):
+                return Set(tabIds)
             case .bookmark:
                 return []
             }
@@ -110,7 +113,7 @@ class SidebarTabListViewController: NSViewController {
             switch self {
             case let .bookmark(guid):
                 return [guid]
-            case .tab, .splitPair:
+            case .tab, .split:
                 return []
             }
         }
@@ -206,6 +209,14 @@ class SidebarTabListViewController: NSViewController {
     }()
     
     private lazy var contextMenu: NSMenu = {
+        let menu = NSMenu()
+        menu.delegate = self
+        return menu
+    }()
+
+    /// The tab area's blank-space menu, for sidebar regions outside the
+    /// outline such as the bottom bar.
+    private(set) lazy var blankAreaContextMenu: NSMenu = {
         let menu = NSMenu()
         menu.delegate = self
         return menu
@@ -1103,14 +1114,11 @@ class SidebarTabListViewController: NSViewController {
         if let tab = item as? Tab {
             return browserState.toggleMultiSelection(for: tab)
         }
-        if let pair = item as? SplitPairSidebarItem {
-            if let bookmarkGuid = pair.boundBookmarkGuid(in: browserState) {
+        if let split = item as? SplitSidebarItem {
+            if let bookmarkGuid = split.boundBookmarkGuid(in: browserState) {
                 return browserState.toggleBookmarkMultiSelection(bookmarkGuid: bookmarkGuid)
             }
-            return browserState.toggleMultiSelectionForSplitPair(
-                leftTab: pair.leftTab,
-                rightTab: pair.rightTab
-            )
+            return toggleMultiSelection(forSplitPanes: split.panes)
         }
         if let bookmark = bookmark(from: item) {
             return browserState.toggleBookmarkMultiSelection(bookmarkGuid: bookmark.guid)
@@ -1191,19 +1199,13 @@ class SidebarTabListViewController: NSViewController {
         var consumed = Set<Int>()
         var units: [SidebarMultiSelectionUnit] = []
 
-        for (index, tab) in members.enumerated() {
+        for tab in members {
             guard !consumed.contains(tab.guid) else { continue }
             if let splitGroup = browserState.splitGroup(forTabId: tab.guid),
                !splitGroup.isPinned,
-               let partnerId = splitGroup.partnerTabId(of: tab.guid),
-               let partnerIndex = members.firstIndex(where: { $0.guid == partnerId }),
-               abs(index - partnerIndex) == 1 {
-                let partner = members[partnerIndex]
-                let leftTab = index < partnerIndex ? tab : partner
-                let rightTab = index < partnerIndex ? partner : tab
-                units.append(multiSelectionUnitForSplitPair(leftTab: leftTab, rightTab: rightTab))
-                consumed.insert(tab.guid)
-                consumed.insert(partner.guid)
+               let panes = Self.contiguousPanes(of: splitGroup, in: members) {
+                units.append(multiSelectionUnit(forSplitPanes: panes))
+                consumed.formUnion(panes.map(\.guid))
                 continue
             }
 
@@ -1215,12 +1217,28 @@ class SidebarTabListViewController: NSViewController {
         return units
     }
 
+    /// Every pane of `group` when all of them sit at consecutive indices of
+    /// `tabs` (in that order); nil when a pane is missing or the split is
+    /// transiently torn apart, in which case the panes behave as plain tabs.
+    private static func contiguousPanes(of group: SplitGroup, in tabs: [Tab]) -> [Tab]? {
+        var indexed: [(index: Int, tab: Tab)] = []
+        for tabId in group.tabIds {
+            guard let index = tabs.firstIndex(where: { $0.guid == tabId }) else { return nil }
+            indexed.append((index, tabs[index]))
+        }
+        indexed.sort { $0.index < $1.index }
+        for (offset, entry) in indexed.enumerated() where entry.index != indexed[0].index + offset {
+            return nil
+        }
+        return indexed.map(\.tab)
+    }
+
     private func multiSelectionUnit(for item: SidebarItem) -> SidebarMultiSelectionUnit? {
         if let bookmark = bookmark(from: item) {
             return .bookmark(bookmark.guid)
         }
-        if let pair = item as? SplitPairSidebarItem {
-            return multiSelectionUnitForSplitPair(pair)
+        if let split = item as? SplitSidebarItem {
+            return multiSelectionUnit(forSplit: split)
         }
         if let tab = item as? Tab {
             return multiSelectionUnit(for: tab)
@@ -1228,16 +1246,18 @@ class SidebarTabListViewController: NSViewController {
         return nil
     }
 
-    private func multiSelectionUnitForSplitPair(_ pair: SplitPairSidebarItem) -> SidebarMultiSelectionUnit {
-        if let bookmarkGuid = pair.boundBookmarkGuid(in: browserState) {
+    private func multiSelectionUnit(forSplit split: SplitSidebarItem) -> SidebarMultiSelectionUnit {
+        if let bookmarkGuid = split.boundBookmarkGuid(in: browserState) {
             return .bookmark(bookmarkGuid)
         }
-        return .splitPair(left: pair.leftTab.guid, right: pair.rightTab.guid)
+        return .split(tabIds: split.panes.map(\.guid))
     }
 
-    private func multiSelectionUnitForSplitPair(leftTab: Tab, rightTab: Tab) -> SidebarMultiSelectionUnit {
-        let splitId = browserState.splitGroup(forTabId: leftTab.guid)?.id
-            ?? browserState.splitGroup(forTabId: rightTab.guid)?.id
+    /// Unit for a split given its panes in on-screen order: the bound
+    /// bookmark when the split is a bookmark's opened representation, the
+    /// split itself otherwise.
+    private func multiSelectionUnit(forSplitPanes panes: [Tab]) -> SidebarMultiSelectionUnit {
+        let splitId = panes.lazy.compactMap { self.browserState.splitGroup(forTabId: $0.guid)?.id }.first
         if let splitId,
            let bookmarkGuid = browserState.splitBookmarkBindings.first(where: { entry in
                entry.value == splitId &&
@@ -1245,17 +1265,21 @@ class SidebarTabListViewController: NSViewController {
            })?.key {
             return .bookmark(bookmarkGuid)
         }
-        return .splitPair(left: leftTab.guid, right: rightTab.guid)
+        return .split(tabIds: panes.map(\.guid))
     }
 
-    private func commandMultiSelectionActionForSplitPair(leftTab: Tab, rightTab: Tab) -> Bool {
-        let unit = multiSelectionUnitForSplitPair(leftTab: leftTab, rightTab: rightTab)
-        switch unit {
+    private func commandMultiSelectionAction(forSplitPanes panes: [Tab]) -> Bool {
+        switch multiSelectionUnit(forSplitPanes: panes) {
         case let .bookmark(bookmarkGuid):
             return browserState.toggleBookmarkMultiSelection(bookmarkGuid: bookmarkGuid)
-        case .tab, .splitPair:
-            return browserState.toggleMultiSelectionForSplitPair(leftTab: leftTab, rightTab: rightTab)
+        case .tab, .split:
+            return toggleMultiSelection(forSplitPanes: panes)
         }
+    }
+
+    /// Cmd-click on a merged split row toggles the whole split.
+    private func toggleMultiSelection(forSplitPanes panes: [Tab]) -> Bool {
+        browserState.toggleMultiSelectionForSplit(panes: panes)
     }
 
     private func multiSelectionUnit(for tab: Tab) -> SidebarMultiSelectionUnit? {
@@ -1266,19 +1290,14 @@ class SidebarTabListViewController: NSViewController {
         guard !tab.isPinned else { return nil }
         if let splitGroup = browserState.splitGroup(forTabId: tab.guid),
            !splitGroup.isPinned,
-           let partnerId = splitGroup.partnerTabId(of: tab.guid),
-           let partner = browserState.normalTabs.first(where: { $0.guid == partnerId }),
-           let tabIndex = browserState.normalTabs.firstIndex(where: { $0.guid == tab.guid }),
-           let partnerIndex = browserState.normalTabs.firstIndex(where: { $0.guid == partnerId }) {
+           let panes = Self.contiguousPanes(of: splitGroup, in: browserState.normalTabs) {
             if let bookmarkGuid = browserState.splitBookmarkBindings.first(where: { entry in
                 entry.value == splitGroup.id &&
                     browserState.bookmarkManager.bookmark(withGuid: entry.key) != nil
             })?.key {
                 return .bookmark(bookmarkGuid)
             }
-            return tabIndex < partnerIndex
-                ? .splitPair(left: tab.guid, right: partner.guid)
-                : .splitPair(left: partner.guid, right: tab.guid)
+            return .split(tabIds: panes.map(\.guid))
         }
         return .tab(tab.guid)
     }
@@ -1295,9 +1314,8 @@ class SidebarTabListViewController: NSViewController {
             switch unit {
             case let .tab(guid):
                 return browserState.multiSelection.contains(guid)
-            case let .splitPair(left, right):
-                return browserState.multiSelection.contains(left)
-                    || browserState.multiSelection.contains(right)
+            case let .split(tabIds):
+                return tabIds.contains { browserState.multiSelection.contains($0) }
             case let .bookmark(guid):
                 return browserState.multiSelection.containsBookmark(guid)
             }
@@ -1308,7 +1326,7 @@ class SidebarTabListViewController: NSViewController {
         let clickedRow = sender.clickedRow
         guard clickedRow != -1 else { return }
         if let cell = sender.view(atColumn: 0, row: clickedRow, makeIfNecessary: false)
-            as? SidebarSplitPairCellView,
+            as? SidebarSplitCellView,
            let event = NSApp.currentEvent,
            cell.handleDoubleClick(with: event) {
             return
@@ -1706,13 +1724,13 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             return pasteboardItem
         }
 
-        if let pair = sidebarItem as? SplitPairSidebarItem {
-            // The merged split row drags as a unit. Write the left pane's
+        if let split = sidebarItem as? SplitSidebarItem {
+            // The merged split row drags as a unit. Write the first pane's
             // guid as `.normalTab`; downstream drop handlers already detect
-            // that a dragged tab belongs to a split and move both panes
-            // together (`moveSplitPairOrderLocally`,
+            // that a dragged tab belongs to a split and move every pane
+            // together (`moveSplitOrderLocally`,
             // `pinSplitInsertingAtPinnedIndex`, `addSplitBookmarkFromTab`).
-            configureNormalTabDragPayload(pasteboardItem, startingFrom: pair.leftTab)
+            configureNormalTabDragPayload(pasteboardItem, startingFrom: split.firstPane)
             return pasteboardItem
         }
 
@@ -2047,12 +2065,12 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             }
         }
 
-        // Keep the blue drop line from landing between the two panes of a
-        // split pair. Snap to the side matching the pointer's vertical half so
+        // Keep the blue drop line from landing between two panes of a
+        // split. Snap to the side matching the pointer's vertical half so
         // the indicator and the eventual commit agree.
         if resolvedItem == nil,
            resolvedIndex != NSOutlineViewDropOnItemIndex,
-           let snapped = snapDropChildIndexOutsideSplitPair(
+           let snapped = snapDropChildIndexOutsideSplit(
                outlineView: outlineView,
                dragLocation: info.draggingLocation,
                proposedChildIndex: resolvedIndex) {
@@ -2122,7 +2140,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             // returns a flat row index that includes expanded group children,
             // but `setDropItem(_:dropChildIndex:)` expects a root-child index
             // — the helper locates the target's position in `tabItems` and
-            // snaps past any adjacent split-pair boundary.
+            // snaps past any adjacent split boundary.
             if redirectDropOntoTabIntoTabSection(
                 outlineView: outlineView,
                 info: info,
@@ -2734,8 +2752,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                 // tabs, if any) stay put — this is "open in another window",
                 // not "move".
                 if let urls = pinnedSplitURLs(in: sourceState, pinnedGuid: pinnedTabId) {
-                    browserState.openTwoURLsAsSplit(primaryURL: urls.primary,
-                                                   secondaryURL: urls.secondary)
+                    browserState.openURLsAsSplit(urls)
                     return true
                 }
                 if let openTab = findOpenTab(in: sourceState, matchingLocalGuid: pinnedTabId) {
@@ -2784,9 +2801,9 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                let draggedTab = sourceState.tabs.first(where: { $0.guid == tabGuid }) {
 
                 if let targetBookmark = resolvedItem as? Bookmark, targetBookmark.isFolder {
-                    // Split-pair tabs become a single split-view bookmark in
-                    // the destination window; fall through to `moveNormalTab`
-                    // for plain tabs.
+                    // Split-pair panes become a single split-view bookmark in
+                    // the destination window; fall
+                    // through to `moveNormalTab` for plain tabs.
                     let dropIndex = resolvedIndex == NSOutlineViewDropOnItemIndex ? 0 : resolvedIndex
                     if let targetFolder = browserState.bookmarkManager.bookmark(withGuid: targetBookmark.guid),
                        sourceState.addSplitBookmarkFromTab(draggedTab, toFolder: targetFolder, targetIndex: dropIndex) {
@@ -2881,38 +2898,25 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                 let oldIdx = browserState.normalTabs.firstIndex(of: draggedTab)
 
                 // Splits travel as a unit across the group boundary: if the
-                // dragged tab is part of a non-pinned split, the partner
-                // pane joins/leaves the group with it so the pair stays
+                // dragged tab is part of a non-pinned split, the other
+                // panes join/leave the group with it so the split stays
                 // adjacent and the merged-row presentation survives the
                 // crossing. `moveNormalTabLocally` already handles the
                 // split-as-block strip reorder; we extend the bridge
-                // membership calls to include both ids and replay the
-                // optimistic update on the partner too.
-                let splitPartner: Tab? = {
-                    guard let group = browserState.splitGroup(forTabId: draggedTab.guid),
-                          !group.isPinned,
-                          let partnerId = group.partnerTabId(of: draggedTab.guid) else {
-                        return nil
-                    }
-                    return browserState.tabs.first(where: { $0.guid == partnerId })
-                }()
+                // membership calls to include every pane id and replay the
+                // optimistic update on the other panes too.
+                let splitCompanions = splitCompanionTabs(of: draggedTab)
 
                 let membershipWillChange = oldToken != newToken
                 let shouldDeferChromiumOrderSync =
-                    membershipWillChange && splitPartner == nil
+                    membershipWillChange && splitCompanions.isEmpty
                 if let oldIdx = oldIdx, oldIdx != targetIdx {
                     browserState.moveNormalTabLocally(
                         from: oldIdx,
                         to: targetIdx,
                         syncChromiumOrder: !shouldDeferChromiumOrderSync)
                 }
-                let memberTabIds: [Int] = {
-                    var ids: [Int] = [draggedTab.guid]
-                    if let partner = splitPartner {
-                        ids.append(partner.guid)
-                    }
-                    return ids
-                }()
+                let memberTabIds: [Int] = [draggedTab.guid] + splitCompanions.map(\.guid)
                 let memberIds = memberTabIds.map { NSNumber(value: Int64($0)) }
                 if let bridge = ChromiumLauncher.sharedInstance().bridge,
                    let old = oldToken, membershipWillChange {
@@ -2939,11 +2943,8 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                 // still queued on EventBus) doesn't see the
                 // [member, non-member, member] split this drop just made.
                 if membershipWillChange {
-                    var updates: [(tabId: Int, newToken: String?)] =
-                        [(draggedTab.guid, newToken)]
-                    if let partner = splitPartner {
-                        updates.append((partner.guid, newToken))
-                    }
+                    let updates: [(tabId: Int, newToken: String?)] =
+                        memberTabIds.map { ($0, newToken) }
                     browserState.applyOptimisticGroupMembership(
                         updates: updates)
                     if shouldDeferChromiumOrderSync {
@@ -3020,10 +3021,8 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                         // fresh split in the destination. Source bookmark and
                         // any live split stay put — this is "open in another
                         // window", not "move".
-                        if let secondaryURL = draggedBookmark.secondaryUrl, !secondaryURL.isEmpty,
-                           let primaryURL = draggedBookmark.url, !primaryURL.isEmpty {
-                            browserState.openTwoURLsAsSplit(primaryURL: primaryURL,
-                                                           secondaryURL: secondaryURL)
+                        if draggedBookmark.splitPaneURLs.count >= 2 {
+                            browserState.openURLsAsSplit(draggedBookmark.splitPaneURLs)
                             return true
                         }
                         let destination = calculateTabDestinationIndex(from: resolvedIndex)
@@ -3067,15 +3066,15 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             self?.browserState.isDraggingTab = true
         }
         browserState.tabDraggingSession.attachNativeSession(session)
-        // Merged split rows are wrapped by `SplitPairSidebarItem`; the
+        // Merged split rows are wrapped by `SplitSidebarItem`; the
         // `TabDraggingSession` tear-off path branches on the item's type
         // (Bookmark / Tab.isPinned / WebContentRepresentable). Unwrap to
-        // the left pane's `Tab` so the live-wrapper path fires and
-        // `moveSplit(toNewWindow:)` carries both panes along, matching
+        // the first pane's `Tab` so the live-wrapper path fires and
+        // `moveSplit(toNewWindow:)` carries every pane along, matching
         // the bookmark / pinned-split tear-off branches.
         let sessionItem: Any?
-        if let pair = draggedItems.first as? SplitPairSidebarItem {
-            sessionItem = pair.leftTab
+        if let split = draggedItems.first as? SplitSidebarItem {
+            sessionItem = split.firstPane
         } else {
             sessionItem = draggedItems.first
         }
@@ -3103,11 +3102,11 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                 outlineView: self.outlineView
             )
             // When dragging a tab that belongs to a split, override the default
-            // single-row drag image with a composite that shows both pair members
-            // stacked in their visual order, so the animation reads as "the whole
-            // split is moving" (the drop layer already moves both members).
+            // single-row drag image with a composite that shows every pane
+            // stacked in its visual order, so the animation reads as "the whole
+            // split is moving" (the drop layer already moves every pane).
             if !didApplyMultiSelectionPreview {
-                applySplitPairDragImageIfNeeded(session: session, draggedTab: draggedTab)
+                applySplitDragImageIfNeeded(session: session, draggedTab: draggedTab)
             }
         } else if let draggedBookmark = bookmark(fromDraggingSessionItem: sessionItem) {
             _ = applyMultiSelectionDragImageIfNeeded(
@@ -3131,43 +3130,33 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     }
 
     /// If the dragged tab is part of a split, replace the dragging image with
-    /// a vertical composite of both row snapshots and expand the dragging
-    /// frame to cover the pair. No-op for non-split tabs.
-    private func applySplitPairDragImageIfNeeded(session: NSDraggingSession, draggedTab: Tab) {
+    /// a vertical composite of every pane's row snapshot and expand the
+    /// dragging frame to cover the split. No-op for non-split tabs.
+    private func applySplitDragImageIfNeeded(session: NSDraggingSession, draggedTab: Tab) {
         guard let group = browserState.splitGroup(forTabId: draggedTab.guid) else {
             return
         }
-        guard let partnerId = group.partnerTabId(of: draggedTab.guid),
-              let partner = browserState.normalTabs.first(where: { $0.guid == partnerId }) else {
-            return
+        var rows: [(row: Int, snapshot: NSImage)] = []
+        for tabId in group.tabIds {
+            guard let pane = browserState.normalTabs.first(where: { $0.guid == tabId }) else { return }
+            let row = outlineView.row(forItem: pane)
+            guard row >= 0,
+                  let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCellView,
+                  let snapshot = cell.createDraggingImage() else {
+                return
+            }
+            rows.append((row, snapshot))
         }
-        let draggedRow = outlineView.row(forItem: draggedTab)
-        let partnerRow = outlineView.row(forItem: partner)
-        guard draggedRow >= 0, partnerRow >= 0 else { return }
-        guard let draggedCell = outlineView.view(atColumn: 0, row: draggedRow, makeIfNecessary: false) as? SidebarCellView,
-              let partnerCell = outlineView.view(atColumn: 0, row: partnerRow, makeIfNecessary: false) as? SidebarCellView,
-              let draggedSnapshot = draggedCell.createDraggingImage(),
-              let partnerSnapshot = partnerCell.createDraggingImage() else {
-            return
-        }
-        let upperSnapshot: NSImage
-        let lowerSnapshot: NSImage
-        if draggedRow < partnerRow {
-            upperSnapshot = draggedSnapshot
-            lowerSnapshot = partnerSnapshot
-        } else {
-            upperSnapshot = partnerSnapshot
-            lowerSnapshot = draggedSnapshot
-        }
-        guard let composite = makeStackedSplitDragImage(upper: upperSnapshot, lower: lowerSnapshot) else {
+        rows.sort { $0.row < $1.row }
+        guard let draggedPosition = rows.firstIndex(where: { $0.row == outlineView.row(forItem: draggedTab) }),
+              let composite = makeStackedSplitDragImage(rows: rows.map(\.snapshot)) else {
             return
         }
         // Anchor the composite so the cursor stays over the originally-dragged
         // row. AppKit reports the original drag frame in window coordinates;
-        // shift its origin up by the upper row's height when the dragged row
-        // is the lower one so the pair lifts as a unit.
-        let upperHeight = upperSnapshot.size.height
-        let isDraggedUpper = draggedRow < partnerRow
+        // shift its origin up by the height of the rows above the dragged one
+        // so the split lifts as a unit.
+        let heightAbove = rows.prefix(draggedPosition).reduce(CGFloat(0)) { $0 + $1.snapshot.size.height }
         session.enumerateDraggingItems(
             options: [],
             for: nil,
@@ -3175,9 +3164,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             searchOptions: [:]
         ) { draggingItem, _, _ in
             var frame = draggingItem.draggingFrame
-            if !isDraggedUpper {
-                frame.origin.y -= upperHeight
-            }
+            frame.origin.y -= heightAbove
             frame.size = composite.size
             draggingItem.imageComponentsProvider = nil
             draggingItem.setDraggingFrame(frame, contents: composite)
@@ -3187,21 +3174,24 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         browserState.tabDraggingSession.setOriginalDragImage(composite)
     }
 
-    /// Stacks two row snapshots vertically into a single drag image, matching
-    /// the way a split pair renders as a merged rounded bar in the sidebar.
-    private func makeStackedSplitDragImage(upper: NSImage, lower: NSImage) -> NSImage? {
-        let width = max(upper.size.width, lower.size.width)
-        let height = upper.size.height + lower.size.height
+    /// Stacks row snapshots vertically (top row first) into a single drag
+    /// image, matching the way a split renders as a merged rounded bar in
+    /// the sidebar.
+    private func makeStackedSplitDragImage(rows: [NSImage]) -> NSImage? {
+        let width = rows.map(\.size.width).max() ?? 0
+        let height = rows.reduce(CGFloat(0)) { $0 + $1.size.height }
         guard width > 0, height > 0 else { return nil }
         let image = NSImage(size: NSSize(width: width, height: height))
         image.lockFocus()
         defer { image.unlockFocus() }
-        // Cocoa coordinates are flipped (origin at bottom-left), so the lower
-        // row in screen terms is drawn at y=0 and the upper row above it.
-        let lowerRect = NSRect(x: 0, y: 0, width: width, height: lower.size.height)
-        let upperRect = NSRect(x: 0, y: lower.size.height, width: width, height: upper.size.height)
-        lower.draw(in: lowerRect, from: NSRect(origin: .zero, size: lower.size), operation: .sourceOver, fraction: 1.0)
-        upper.draw(in: upperRect, from: NSRect(origin: .zero, size: upper.size), operation: .sourceOver, fraction: 1.0)
+        // Cocoa coordinates are flipped (origin at bottom-left), so the last
+        // row in screen terms is drawn at y=0 and earlier rows above it.
+        var y: CGFloat = 0
+        for row in rows.reversed() {
+            let rect = NSRect(x: 0, y: y, width: width, height: row.size.height)
+            row.draw(in: rect, from: NSRect(origin: .zero, size: row.size), operation: .sourceOver, fraction: 1.0)
+            y += row.size.height
+        }
         return image
     }
 
@@ -3294,7 +3284,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     /// A drop landed directly ON a tab row (`dropChildIndex ==
     /// NSOutlineViewDropOnItemIndex`). Redirect the indicator to "insert
     /// before that tab" in tab-section coordinates, snapping past any
-    /// adjacent split-pair boundary so the indicator and the eventual
+    /// adjacent split boundary so the indicator and the eventual
     /// commit agree. Returns true when the redirect was applied — caller
     /// should then return its drag operation. Returns false for non-tab
     /// targets or unresolvable indices, letting caller continue.
@@ -3309,20 +3299,20 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         resolvedIndex: Int
     ) -> Bool {
         guard resolvedIndex == NSOutlineViewDropOnItemIndex else { return false }
-        // SplitPair rows are merged-cell representations of two adjacent
-        // panes; without an explicit redirect AppKit reports the drop as
-        // landing ON the row and skips the gap indicator entirely, so the
-        // user cannot see the insert line on either edge of a splitview
-        // tab. Pick the leading or trailing side from the pointer's
-        // vertical half within the row.
+        // Split rows are merged-cell representations of adjacent panes;
+        // without an explicit redirect AppKit reports the drop as landing
+        // ON the row and skips the gap indicator entirely, so the user
+        // cannot see the insert line on either edge of a splitview tab.
+        // Pick the leading or trailing side from the pointer's vertical
+        // half within the row.
         //
-        // Look the pair up by `id` against the data source rather than
-        // via NSOutlineView's identity-keyed cache: `SplitPairSidebarItem`
+        // Look the split up by `id` against the data source rather than
+        // via NSOutlineView's identity-keyed cache: `SplitSidebarItem`
         // is rebuilt on every `buildItems` pass (its `id` stays stable
         // off `groupId`), so `childIndex(forItem:)` can return -1 in
         // frames where AppKit's cached reference no longer matches the
         // newly-built instance.
-        if let pair = resolvedItem as? SplitPairSidebarItem {
+        if let split = resolvedItem as? SplitSidebarItem {
             let dragInOutline = outlineView.convert(info.draggingLocation, from: nil)
             let cursorRow = outlineView.row(at: dragInOutline)
             // Resolve the row from the cursor rather than `row(forItem:)`,
@@ -3331,19 +3321,19 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             guard cursorRow >= 0 else { return false }
             let rowRect = outlineView.rect(ofRow: cursorRow)
             let rootChildren = dataSourceChildren(of: nil)
-            guard let pairChildIndex = rootChildren.firstIndex(where: { $0.id == pair.id }) else {
+            guard let splitChildIndex = rootChildren.firstIndex(where: { $0.id == split.id }) else {
                 return false
             }
             let dropAbove = outlineView.isFlipped
                 ? dragInOutline.y < rowRect.midY
                 : dragInOutline.y > rowRect.midY
-            outlineView.setDropItem(nil, dropChildIndex: dropAbove ? pairChildIndex : pairChildIndex + 1)
+            outlineView.setDropItem(nil, dropChildIndex: dropAbove ? splitChildIndex : splitChildIndex + 1)
             return true
         }
         guard let targetTab = resolvedItem as? Tab else { return false }
         let targetRootChildIndex = outlineView.childIndex(forItem: targetTab)
         guard targetRootChildIndex >= 0 else { return false }
-        let finalIndex = snapDropChildIndexOutsideSplitPair(
+        let finalIndex = snapDropChildIndexOutsideSplit(
             outlineView: outlineView,
             dragLocation: info.draggingLocation,
             proposedChildIndex: targetRootChildIndex
@@ -3352,33 +3342,33 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         return true
     }
 
-    /// If the proposed drop child index would land strictly between the two
-    /// members of an adjacent split pair in the tab section, return the
-    /// adjusted child index on whichever side the pointer's vertical half
-    /// indicates. Returns nil when the proposed index doesn't fall between a
-    /// pair (in which case the original index is fine).
-    private func snapDropChildIndexOutsideSplitPair(
+    /// If the proposed drop child index would land strictly between two
+    /// panes of a split whose panes sit at consecutive rows in the tab
+    /// section, return the adjusted child index on whichever side of the
+    /// split the pointer's vertical position indicates. Returns nil when
+    /// the proposed index doesn't fall inside a split (in which case the
+    /// original index is fine).
+    private func snapDropChildIndexOutsideSplit(
         outlineView: NSOutlineView,
         dragLocation: NSPoint,
         proposedChildIndex: Int
     ) -> Int? {
         let tabDestination = calculateTabDestinationIndex(from: proposedChildIndex)
-        let pairLowers = browserState.splitPairLowerIndicesInNormalTabs()
-        let lo = tabDestination - 1
-        guard pairLowers.contains(lo),
-              lo >= 0,
-              lo + 1 < browserState.normalTabs.count else {
+        guard let run = browserState.splitRunsInNormalTabs().first(where: {
+            tabDestination > $0.lower && tabDestination < $0.lower + $0.count
+        }), run.lower + run.count <= browserState.normalTabs.count else {
             return nil
         }
-        let loRow = outlineView.row(forItem: browserState.normalTabs[lo])
-        let hiRow = outlineView.row(forItem: browserState.normalTabs[lo + 1])
-        guard loRow >= 0, hiRow >= 0 else { return nil }
-        let pairBoundaryY = (outlineView.rect(ofRow: loRow).midY + outlineView.rect(ofRow: hiRow).midY) / 2
+        let firstRow = outlineView.row(forItem: browserState.normalTabs[run.lower])
+        let lastRow = outlineView.row(forItem: browserState.normalTabs[run.lower + run.count - 1])
+        guard firstRow >= 0, lastRow >= 0 else { return nil }
+        let runMidY = (outlineView.rect(ofRow: firstRow).midY + outlineView.rect(ofRow: lastRow).midY) / 2
         let dragInOutline = outlineView.convert(dragLocation, from: nil)
         let pointerOnUpperHalf = outlineView.isFlipped
-            ? dragInOutline.y < pairBoundaryY
-            : dragInOutline.y > pairBoundaryY
-        return pointerOnUpperHalf ? proposedChildIndex - 1 : proposedChildIndex + 1
+            ? dragInOutline.y < runMidY
+            : dragInOutline.y > runMidY
+        let snappedDestination = pointerOnUpperHalf ? run.lower : run.lower + run.count
+        return proposedChildIndex + (snappedDestination - tabDestination)
     }
 
     private func calculateTabDestinationIndex(from outlineViewIndex: Int) -> Int {
@@ -3424,13 +3414,13 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             return browserState.normalTabs.firstIndex { $0.groupToken == token }
                 ?? browserState.normalTabs.count
         }
-        if let pair = target as? SplitPairSidebarItem {
-            // The merged splitPair row represents its leading pane in the
-            // strip — "drop before pair" means "drop before leftTab".
-            // Without this branch the function falls through to the
+        if let split = target as? SplitSidebarItem {
+            // The merged split row represents its leading pane in the
+            // strip — "drop before split" means "drop before its first
+            // pane". Without this branch the function falls through to the
             // "append at end" fallback and the blue indicator line can
             // never land on the leading edge of a splitview tab.
-            return browserState.normalTabs.firstIndex(of: pair.leftTab)
+            return browserState.normalTabs.firstIndex(of: split.firstPane)
                 ?? browserState.normalTabs.count
         }
         // Unexpected item type (would be a bug elsewhere) — fall back to
@@ -3777,28 +3767,28 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         return state.tabs.first { $0.guidInLocalDB == guid }
     }
 
-    /// If `pinnedGuid` identifies one pane of a pinned split, return both
-    /// panes' URLs. Used to open the pair as a fresh split in another window
-    /// without disturbing the source's pinned record or live tabs.
-    private func pinnedSplitURLs(in state: BrowserState, pinnedGuid: String) -> (primary: String, secondary: String)? {
+    /// If `pinnedGuid` identifies one pane of a pinned split, return every
+    /// pane's URL. Used to open the split afresh in another window without
+    /// disturbing the source's pinned records or live tabs.
+    private func pinnedSplitURLs(in state: BrowserState, pinnedGuid: String) -> [String]? {
         guard let pinnedTab = state.pinnedTabs.first(where: { $0.guidInLocalDB == pinnedGuid }),
-              let partnerGuid = pinnedTab.splitPartnerGuid, !partnerGuid.isEmpty,
-              let partner = state.pinnedTabs.first(where: { $0.guidInLocalDB == partnerGuid }),
-              let primaryURL = pinnedTab.url, !primaryURL.isEmpty,
-              let secondaryURL = partner.url, !secondaryURL.isEmpty else {
+              let dbGuids = state.pinnedSplitDBGuids(forPinnedTab: pinnedTab) else {
             return nil
         }
-        return (primaryURL, secondaryURL)
+        let urls = dbGuids.compactMap { db in
+            state.pinnedTabs.first(where: { $0.guidInLocalDB == db })?.url.flatMap { $0.isEmpty ? nil : $0 }
+        }
+        return urls.count == dbGuids.count ? urls : nil
     }
     
     private func moveTabToTargetWindow(_ tab: Tab, destinationIndex: Int, scheduleNormalInsertion: Bool) -> Bool {
         guard let wrapper = tab.webContentWrapper else { return false }
         let targetState = browserState
         // Split-aware: when the dragged tab belongs to a split, the Chromium
-        // bridge re-creates the pair atomically at the requested index. Skip
-        // the local schedule + tail-insert dance — its post-arrival per-tab
-        // moveTab callback would yank the dragged half out of the new split
-        // and break the pair.
+        // bridge re-creates the whole split atomically at the requested
+        // index. Skip the local schedule + tail-insert dance — its
+        // post-arrival per-tab moveTab callback would yank the dragged pane
+        // out of the new split and break it.
         if tabIsInSplitInAnyWindow(tab) {
             let clampedIndex = max(0, min(destinationIndex, targetState.tabs.count))
             wrapper.moveSplit(toWindow: targetState.windowId.int64Value, at: clampedIndex)
@@ -3816,6 +3806,28 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         SpaceSessionControllersManager.shared.getAllWindows().contains {
             $0.browserState.splitGroup(forTabId: tab.guid) != nil
         }
+    }
+
+    /// The other panes of the non-pinned split `tab` belongs to, in slot
+    /// order; empty for a plain tab or a pinned split (pinned splits never
+    /// travel through the group-boundary drag paths).
+    private func splitCompanionTabs(of tab: Tab) -> [Tab] {
+        guard let group = browserState.splitGroup(forTabId: tab.guid), !group.isPinned else {
+            return []
+        }
+        return group.otherTabIds(of: tab.guid).compactMap { id in
+            browserState.tabs.first(where: { $0.guid == id })
+        }
+    }
+
+    /// Which pane segment of a merged split cell a horizontal position hits:
+    /// the cell width is divided evenly into `paneCount` segments (matching
+    /// `SidebarSplitCellView`'s equal-width layout), clamped to the ends.
+    static func splitSegmentIndex(at x: CGFloat, in cellRect: CGRect, paneCount: Int) -> Int {
+        guard paneCount > 1, cellRect.width > 0 else { return 0 }
+        let segmentWidth = cellRect.width / CGFloat(paneCount)
+        let index = Int(((x - cellRect.minX) / segmentWidth).rounded(.down))
+        return max(0, min(paneCount - 1, index))
     }
 }
 
@@ -3837,7 +3849,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
             // Group rows animate their height. Keep the cell attached to all
             // four edges so its header stays at the top throughout the animation.
             return InsetTableRowView(insets: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0))
-        case .spaceRoot, .tab, .newTabButton, .separator, .splitPair:
+        case .spaceRoot, .tab, .newTabButton, .separator, .split:
             let identifier = NSUserInterfaceItemIdentifier("SidebarRow")
             if let rowView = outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableRowView {
                 return rowView
@@ -3928,10 +3940,10 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
             groupCell.groupCellDelegate = self
             cellView = groupCell
 
-        case .splitPair:
-            let identifier = NSUserInterfaceItemIdentifier("SplitPairCell")
-            let splitCell = outlineView.makeView(withIdentifier: identifier, owner: self) as? SidebarSplitPairCellView ?? {
-                let c = SidebarSplitPairCellView()
+        case .split:
+            let identifier = NSUserInterfaceItemIdentifier("SplitCell")
+            let splitCell = outlineView.makeView(withIdentifier: identifier, owner: self) as? SidebarSplitCellView ?? {
+                let c = SidebarSplitCellView()
                 c.identifier = identifier
                 return c
             }()
@@ -3950,7 +3962,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
             tabCell.setActiveSuppressed(browserState.groupOverviewState != nil)
             tabCell.setHoverSuppressed(isTabHoverSuppressed)
         }
-        (cellView as? SidebarSplitPairCellView)?.setHoverSuppressed(isTabHoverSuppressed)
+        (cellView as? SidebarSplitCellView)?.setHoverSuppressed(isTabHoverSuppressed)
         if let bookmarkCell = cellView as? BookmarkCellView,
            let bookmark = sidebarItem as? Bookmark {
             bookmarkCell.setDropTargetHighlighted(bookmark.isFolder && dropFeedbackTarget == .bookmarkFolder(guid: bookmark.guid))
@@ -4228,14 +4240,13 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
         browserState.openBookmark(bookmark)
     }
 
-    func splitPairPaneClicked(leftTab: Tab,
-                              rightTab: Tab,
-                              selectedTab: Tab,
-                              modifierFlags: NSEvent.ModifierFlags) -> Bool {
+    func splitPaneClicked(panes: [Tab],
+                          index: Int,
+                          modifierFlags: NSEvent.ModifierFlags) -> Bool {
         handleModifiedMultiSelectionClick(
-            for: multiSelectionUnitForSplitPair(leftTab: leftTab, rightTab: rightTab),
+            for: multiSelectionUnit(forSplitPanes: panes),
             modifierFlags: modifierFlags,
-            commandAction: { commandMultiSelectionActionForSplitPair(leftTab: leftTab, rightTab: rightTab) }
+            commandAction: { commandMultiSelectionAction(forSplitPanes: panes) }
         )
     }
 }
@@ -4314,7 +4325,7 @@ extension SidebarTabListViewController: TabSectionDelegate {
                 // Membership, collapse, and split changes can preserve every
                 // root ID while changing their cached height and all later rows.
                 self.reconcileTabGroupRowHeightsWithoutAnimation()
-                self.pushPaneUpdatesToSplitPairCells(change.affectedSplitIds)
+                self.pushPaneUpdatesToSplitCells(change.affectedSplitIds)
                 self.updateSeparatorButtonVisibility()
                 self.clearFloatingProxyIfTabClosed()
             }
@@ -4332,7 +4343,7 @@ extension SidebarTabListViewController: TabSectionDelegate {
                 change.affectedGroupTokens,
                 animated: !outlineStructureChanged && !self.suppressesGroupUpdateAnimations
             )
-            self.pushPaneUpdatesToSplitPairCells(change.affectedSplitIds)
+            self.pushPaneUpdatesToSplitCells(change.affectedSplitIds)
             self.updateSeparatorButtonVisibility()
             self.clearFloatingProxyIfTabClosed()
         }
@@ -4363,21 +4374,21 @@ extension SidebarTabListViewController: TabSectionDelegate {
         }
     }
 
-    /// Split-pair analog of `pushMemberUpdatesToGroupCells`: a pane replace
-    /// mutates the cached `SplitPairSidebarItem` in place and the row id
-    /// survives, so the outline diff never reloads the merged cell. Re-bind
-    /// the affected cells so their titles/favicons/subscriptions attach to
-    /// the new pane's Tab.
-    private func pushPaneUpdatesToSplitPairCells(_ splitIds: Set<String>) {
+    /// Split analog of `pushMemberUpdatesToGroupCells`: a pane replace, add
+    /// or remove mutates the cached `SplitSidebarItem` in place and the row
+    /// id survives, so the outline diff never reloads the merged cell.
+    /// Re-bind the affected cells so their titles/favicons/subscriptions
+    /// attach to the current panes' Tabs.
+    private func pushPaneUpdatesToSplitCells(_ splitIds: Set<String>) {
         guard !splitIds.isEmpty else { return }
-        for case let pairItem as SplitPairSidebarItem in allItems
-            where splitIds.contains(pairItem.groupId) {
-            let row = outlineView.row(forItem: pairItem)
+        for case let splitItem as SplitSidebarItem in allItems
+            where splitIds.contains(splitItem.groupId) {
+            let row = outlineView.row(forItem: splitItem)
             guard row >= 0,
                   let cell = outlineView.view(atColumn: 0,
                                               row: row,
                                               makeIfNecessary: false)
-                            as? SidebarSplitPairCellView
+                            as? SidebarSplitCellView
             else { continue }
             cell.rebindPanesIfNeeded()
         }
@@ -4918,7 +4929,7 @@ extension SidebarTabListViewController {
                 if !suppressed {
                     cell.setHovered(false)
                 }
-            case let cell as SidebarSplitPairCellView:
+            case let cell as SidebarSplitCellView:
                 cell.setHoverSuppressed(suppressed)
                 if !suppressed {
                     cell.setHovered(false)
@@ -4949,8 +4960,8 @@ extension SidebarTabListViewController {
         switch item.itemType {
         case .tab:
             (cell as? SidebarTabCellView)?.setHovered(true)
-        case .splitPair:
-            (cell as? SidebarSplitPairCellView)?.setHovered(true)
+        case .split:
+            (cell as? SidebarSplitCellView)?.setHovered(true)
         default:
             break
         }
@@ -5103,6 +5114,12 @@ extension SidebarTabListViewController {
 // MARK: - right click menu
 extension SidebarTabListViewController: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === blankAreaContextMenu {
+            cancelVisibleTabPreviews()
+            defultMenu(on: menu)
+            disableItemsIfAgentLocked(in: menu)
+            return
+        }
         guard menu === self.contextMenu else {
             return
         }
@@ -5119,9 +5136,13 @@ extension SidebarTabListViewController: NSMenuDelegate {
             cancelVisibleTabPreviews()
         }
         populateContextMenu(menu)
-        // While the agent controls this Space the user may only watch — disable
-        // every right-click action (whichever variant was populated above).
-        // Taking control (overlay button) flips ownership and re-enables them.
+        disableItemsIfAgentLocked(in: menu)
+    }
+
+    /// While the agent controls this Space the user may only watch — disable
+    /// every right-click action. Taking control (overlay button) flips
+    /// ownership and re-enables them.
+    private func disableItemsIfAgentLocked(in menu: NSMenu) {
         let locked = AgentSpaceManager.shared.isAgentOwned(browserState.spaceId)
         menu.autoenablesItems = !locked
         if locked {
@@ -5229,6 +5250,71 @@ extension SidebarTabListViewController: TabGroupCellViewDelegate {
         browserState.showGroupOverview(token: group.token)
     }
 
+    /// Continues a split pane's drag as a normal tab drag once the pointer
+    /// is over the sidebar. Returns false while it is anywhere else.
+    func beginDraggingPaneAsTab(_ tab: Tab, event: NSEvent) -> Bool {
+        guard let sidebar = hostVC?.view, sidebar.window === event.window,
+              !sidebar.isHiddenOrHasHiddenAncestor,
+              sidebar.bounds.contains(sidebar.convert(event.locationInWindow, from: nil)) else {
+            return false
+        }
+        if browserState.multiSelection.isActive {
+            browserState.clearMultiSelection()
+        }
+        let pasteboardItem = NSPasteboardItem()
+        configureNormalTabDragPayload(pasteboardItem, startingFrom: tab)
+
+        let image = Self.paneTabDragImage(for: tab)
+        let pointer = outlineView.convert(event.locationInWindow, from: nil)
+        let draggingItem = NSDraggingItem(pasteboardWriter: pasteboardItem)
+        draggingItem.setDraggingFrame(
+            NSRect(x: pointer.x - image.size.width / 2,
+                   y: pointer.y - image.size.height / 2,
+                   width: image.size.width,
+                   height: image.size.height),
+            contents: image
+        )
+        let session = outlineView.beginDraggingSession(with: [draggingItem], event: event, source: self)
+
+        let screenPoint = event.window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
+        DispatchQueue.main.async { [weak self] in
+            self?.browserState.isDraggingTab = true
+        }
+        browserState.tabDraggingSession.attachNativeSession(session)
+        browserState.tabDraggingSession.setOriginalDragImage(image)
+        browserState.tabDraggingSession.begin(
+            draggingItem: tab,
+            screenLocation: CGPoint(x: screenPoint.x, y: screenPoint.y),
+            containerView: hostVC?.view
+        )
+        return true
+    }
+
+    /// A tab-row shaped drag image: the pane has no row in the list yet.
+    private static func paneTabDragImage(for tab: Tab) -> NSImage {
+        let size = NSSize(width: 220, height: 36)
+        let favicon = (tab.liveFaviconData ?? tab.cachedFaviconData).flatMap { NSImage(data: $0) }
+        let title = tab.title
+        return NSImage(size: size, flipped: false) { rect in
+            NSColor.windowBackgroundColor.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8).fill()
+            let iconSize: CGFloat = 16
+            favicon?.draw(in: NSRect(x: 10, y: (rect.height - iconSize) / 2, width: iconSize, height: iconSize))
+            let style = NSMutableParagraphStyle()
+            style.lineBreakMode = .byTruncatingTail
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 13),
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: style,
+            ]
+            let textHeight = ceil(NSFont.systemFont(ofSize: 13).boundingRectForFont.height)
+            (title as NSString).draw(in: NSRect(x: 34, y: (rect.height - textHeight) / 2,
+                                                width: rect.width - 44, height: textHeight),
+                                     withAttributes: attributes)
+            return true
+        }
+    }
+
     func tabGroupCell(_ cell: TabGroupCellView,
                       beginDraggingGroup group: WebContentGroupInfo,
                       from headerView: NSView,
@@ -5294,12 +5380,12 @@ extension SidebarTabListViewController: TabGroupCellViewDelegate {
     }
 
     func tabGroupCell(_ cell: TabGroupCellView,
-                      didRequestMultiSelectionFor splitPair: SplitPairSidebarItem,
+                      didRequestMultiSelectionFor split: SplitSidebarItem,
                       modifierFlags: NSEvent.ModifierFlags) -> Bool {
         handleModifiedMultiSelectionClick(
-            for: multiSelectionUnitForSplitPair(splitPair),
+            for: multiSelectionUnit(forSplit: split),
             modifierFlags: modifierFlags,
-            commandAction: { handleMultiSelectionCommandClick(for: splitPair) }
+            commandAction: { handleMultiSelectionCommandClick(for: split) }
         )
     }
 
@@ -5413,22 +5499,15 @@ extension SidebarTabListViewController: TabGroupCellViewDelegate {
         let oldIdx = browserState.normalTabs.firstIndex(of: tab)
 
         // Splits travel as a unit. When the dragged tab is part of a
-        // non-pinned split, the partner pane joins the group with it so
-        // both panes share the same group token and stay adjacent — the
+        // non-pinned split, the other panes join the group with it so
+        // every pane shares the same group token and stays adjacent — the
         // merged in-group split row only renders when that invariant
         // holds.
-        let splitPartner: Tab? = {
-            guard let group = browserState.splitGroup(forTabId: tab.guid),
-                  !group.isPinned,
-                  let partnerId = group.partnerTabId(of: tab.guid) else {
-                return nil
-            }
-            return browserState.tabs.first(where: { $0.guid == partnerId })
-        }()
+        let splitCompanions = splitCompanionTabs(of: tab)
 
         let membershipWillChange = oldToken != token
         let shouldDeferChromiumOrderSync =
-            membershipWillChange && splitPartner == nil
+            membershipWillChange && splitCompanions.isEmpty
         if let oldIdx, oldIdx != targetIdx {
             browserState.moveNormalTabLocally(
                 from: oldIdx,
@@ -5438,13 +5517,7 @@ extension SidebarTabListViewController: TabGroupCellViewDelegate {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
             return true
         }
-        let memberTabIds: [Int] = {
-            var ids: [Int] = [tab.guid]
-            if let partner = splitPartner {
-                ids.append(partner.guid)
-            }
-            return ids
-        }()
+        let memberTabIds: [Int] = [tab.guid] + splitCompanions.map(\.guid)
         let memberIds = memberTabIds.map { NSNumber(value: Int64($0)) }
         if let old = oldToken, membershipWillChange {
             AppLogDebug(
@@ -5471,11 +5544,8 @@ extension SidebarTabListViewController: TabGroupCellViewDelegate {
         // membership locally so a layout-switch race can't observe the
         // transient split.
         if membershipWillChange {
-            var updates: [(tabId: Int, newToken: String?)] =
-                [(tab.guid, token)]
-            if let partner = splitPartner {
-                updates.append((partner.guid, token))
-            }
+            let updates: [(tabId: Int, newToken: String?)] =
+                memberTabIds.map { ($0, token) }
             browserState.applyOptimisticGroupMembership(
                 updates: updates)
             if shouldDeferChromiumOrderSync {
@@ -5747,13 +5817,15 @@ extension SidebarTabListViewController: SideBarOutlineViewDelegate {
         guard row >= 0 else { return }
         cancelTabPreview(at: row, in: outlineView)
         guard let item = outlineView.item(atRow: row) as? SidebarItem else { return }
-        if let pair = item as? SplitPairSidebarItem {
-            // Merged split row renders both panes side-by-side — route the
-            // close to the pane whose half the click landed in. Use the
+        if let split = item as? SplitSidebarItem {
+            // Merged split row renders its panes side-by-side — route the
+            // close to the pane whose segment the click landed in. Use the
             // cell frame (not the row rect) so the indent area on the left
-            // doesn't shift midX into the visible left pane.
+            // doesn't shift the segment boundaries into the first pane.
             let cellRect = outlineView.frameOfCell(atColumn: 0, row: row)
-            let target = location.x < cellRect.midX ? pair.leftTab : pair.rightTab
+            let target = split.panes[Self.splitSegmentIndex(at: location.x,
+                                                            in: cellRect,
+                                                            paneCount: split.paneCount)]
             tabSectionController.closeTab(target)
             return
         }

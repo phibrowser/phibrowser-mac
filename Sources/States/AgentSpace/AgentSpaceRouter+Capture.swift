@@ -76,6 +76,25 @@ extension AgentSpaceRouter {
         return mountedPageAreaSize(of: presented)
     }
 
+    /// The page area an agent's viewport is sized from. A hidden Space shares
+    /// its shell with the Space the user is working in, so measuring it would
+    /// reflow the agent's page whenever the user collapses that sidebar, opens
+    /// a panel, or resizes the window, moving what the agent has just located.
+    /// A hidden Space therefore answers with the size it holds, and only a
+    /// presented one, or one with nothing held yet, is measured.
+    @MainActor
+    static func taskPageAreaSize(of controller: SpaceSessionController,
+                                 windowId: Int) -> CGSize? {
+        let manager = AgentSpaceManager.shared
+        if !controller.isPresentedOrLegacy,
+           let held = manager.task(forWindowId: windowId)?.heldPageArea {
+            return held
+        }
+        guard let size = pageAreaSize(of: controller) else { return nil }
+        manager.holdPageArea(size, forWindowId: windowId)
+        return size
+    }
+
     private static func mountedPageAreaSize(of controller: SpaceSessionController) -> CGSize? {
         let split = controller.mainSplitViewController
         guard split.isViewLoaded else { return nil }

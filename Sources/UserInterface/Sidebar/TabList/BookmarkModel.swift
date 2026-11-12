@@ -21,6 +21,9 @@ class Bookmark: WebContentRepresentable {
     /// even when `secondaryUrl` is set — callers fall back to the secondary
     /// URL's host when this is nil/empty.
     @Published var secondaryTitle: String?
+    /// The panes after `secondaryUrl` of a split-view bookmark of three or
+    /// four panes. Mirrors `TabDataModel.splitExtraPanes`.
+    @Published var splitExtraPanes: [SplitBookmarkExtraPane] = []
     /// Layout restored when this split-view bookmark is opened. Nil for a
     /// regular bookmark; legacy split bookmarks default to side-by-side.
     @Published var layout: SplitLayout?
@@ -62,6 +65,7 @@ class Bookmark: WebContentRepresentable {
          url: String? = nil,
          secondaryUrl: String? = nil,
          secondaryTitle: String? = nil,
+         splitExtraPanes: [SplitBookmarkExtraPane] = [],
          layout: SplitLayout? = nil,
          profileId: String? = nil,
          faviconData: Data? = nil,
@@ -76,6 +80,7 @@ class Bookmark: WebContentRepresentable {
         self.url = url
         self.secondaryUrl = secondaryUrl
         self.secondaryTitle = secondaryTitle
+        self.splitExtraPanes = splitExtraPanes
         self.layout = layout
         self.cachedFaviconData = faviconData
         self.folderIconName = folderIconName
@@ -415,6 +420,7 @@ class BookmarkManager: ObservableObject {
                   left.url == right.url,
                   left.secondaryUrl == right.secondaryUrl,
                   left.secondaryTitle == right.secondaryTitle,
+                  left.splitExtraPanes == right.splitExtraPanes,
                   left.profileId == right.profileId,
                   left.cachedFaviconData == right.cachedFaviconData,
                   left.isFolder == right.isFolder,
@@ -468,11 +474,77 @@ class BookmarkManager: ObservableObject {
         localStore?.updateBookmarkSplitLayout(guid, layout: layout.rawValue)
     }
     
+    /// Where one pane of a split-view bookmark's new pane list comes from.
+    enum SplitPaneSource {
+        /// The pane currently saved at this index.
+        case saved(Int)
+        /// A page that was not saved in the bookmark before.
+        case page(url: String, title: String)
+    }
+
+    /// Replaces the saved panes of a split-view bookmark with `panes`, two
+    /// to four in slot order, to follow its live split after panes were
+    /// reordered, replaced or removed. Ignored unless the bookmark currently
+    /// saves `savedPaneCount` panes, so a split that is still opening its
+    /// panes leaves the bookmark alone. Nothing navigates: the live panes
+    /// already are what gets saved.
+    func updateSplitPanes(guid: String, to panes: [SplitPaneSource], savedPaneCount: Int) {
+        guard let bookmark = bookmarkIndex[guid], !bookmark.isFolder,
+              let primaryURL = bookmark.url, !primaryURL.isEmpty,
+              let secondaryURL = bookmark.secondaryUrl, !secondaryURL.isEmpty else {
+            return
+        }
+        // A pane saved without a title repeats the first pane's.
+        let primaryTitle = bookmark.title
+        let saved: [(url: String, title: String)] =
+            [(primaryURL, primaryTitle), (secondaryURL, bookmark.secondaryTitle ?? primaryTitle)]
+            + bookmark.splitExtraPanes.map { ($0.url, $0.title ?? primaryTitle) }
+        guard saved.count == savedPaneCount,
+              (2...SplitGroup.maxPaneCount).contains(panes.count) else {
+            return
+        }
+        var updated: [(url: String, title: String)] = []
+        for pane in panes {
+            switch pane {
+            case .saved(let index):
+                guard saved.indices.contains(index) else { return }
+                updated.append(saved[index])
+            case .page(let url, let title):
+                updated.append((url, title.isEmpty ? url : title))
+            }
+        }
+        guard updated.map(\.url) != saved.map(\.url) || updated.map(\.title) != saved.map(\.title) else {
+            return
+        }
+        let title = updated[0].title
+        func paneTitle(_ paneTitle: String) -> String? {
+            paneTitle == title ? nil : paneTitle
+        }
+        let secondaryTitle = paneTitle(updated[1].title)
+        let extraPanes = updated.dropFirst(2).map {
+            SplitBookmarkExtraPane(url: $0.url, title: paneTitle($0.title))
+        }
+        bookmark.title = title
+        bookmark.url = updated[0].url
+        bookmark.secondaryUrl = updated[1].url
+        bookmark.secondaryTitle = secondaryTitle
+        bookmark.splitExtraPanes = extraPanes
+        localStore?.updateBookmark(guid,
+                                   profileId: scope.profileId,
+                                   title: title,
+                                   url: updated[0].url,
+                                   secondaryUrl: .some(updated[1].url),
+                                   secondaryTitle: .some(secondaryTitle),
+                                   splitExtraPanes: extraPanes,
+                                   expectedSpaceId: scope.spaceId)
+    }
+
     func updateBookmark(guid: String,
                         title: String? = nil,
                         url: String? = nil,
                         secondaryUrl: String?? = nil,
-                        secondaryTitle: String?? = nil) {
+                        secondaryTitle: String?? = nil,
+                        splitExtraPanes: [SplitBookmarkExtraPane]? = nil) {
         guard localStore != nil else { return }
         let profileId = scope.profileId
         localStore?.updateBookmark(guid,
@@ -481,6 +553,7 @@ class BookmarkManager: ObservableObject {
                                                 url: url,
                                                 secondaryUrl: secondaryUrl,
                                                 secondaryTitle: secondaryTitle,
+                                                splitExtraPanes: splitExtraPanes,
                                                 expectedSpaceId: scope.spaceId)
 
         guard let state = browserState else { return }
@@ -494,15 +567,28 @@ class BookmarkManager: ObservableObject {
             if let url,
                let newPrimary = state.localStore.normalizedURL(from: url)?.absoluteString,
                newPrimary != current?.url,
-               let primaryTab = state.tabs.first(where: { $0.guid == group.primaryTabId }) {
+               let primaryTab = state.tabs.first(where: { $0.guid == group.tabIds[0] }) {
                 navigateSplitPane(primaryTab, to: newPrimary)
             }
             if let secondaryUrlOpt = secondaryUrl, let rawSecondary = secondaryUrlOpt,
                !rawSecondary.isEmpty,
                let newSecondary = state.localStore.normalizedURL(from: rawSecondary)?.absoluteString,
                newSecondary != current?.secondaryUrl,
-               let secondaryTab = state.tabs.first(where: { $0.guid == group.secondaryTabId }) {
+               let secondaryTab = state.tabs.first(where: { $0.guid == group.tabIds[1] }) {
                 navigateSplitPane(secondaryTab, to: newSecondary)
+            }
+            // Panes after the first two sit at the same offset in the live
+            // split as in the bookmark.
+            let currentExtraPanes = current?.splitExtraPanes ?? []
+            for (index, pane) in (splitExtraPanes ?? []).enumerated() {
+                let paneIndex = index + 2
+                guard paneIndex < group.tabIds.count,
+                      let newURL = state.localStore.normalizedURL(from: pane.url)?.absoluteString,
+                      index >= currentExtraPanes.count || newURL != currentExtraPanes[index].url,
+                      let paneTab = state.tabs.first(where: { $0.guid == group.tabIds[paneIndex] }) else {
+                    continue
+                }
+                navigateSplitPane(paneTab, to: newURL)
             }
             return
         }
@@ -843,11 +929,28 @@ extension BookmarkManager {
 }
 
 extension Bookmark {
+    /// Every pane of a split-view bookmark in slot order, two to four. Empty
+    /// for a folder or a single-URL bookmark. A pane without a title falls
+    /// back to its URL.
+    var splitPanes: [(url: String, title: String)] {
+        guard !isFolder,
+              let url, !url.isEmpty,
+              let secondaryUrl, !secondaryUrl.isEmpty else { return [] }
+        return [(url, title), (secondaryUrl, secondaryTitle ?? secondaryUrl)]
+            + splitExtraPanes.map { ($0.url, $0.title ?? $0.url) }
+    }
+
+    var splitPaneURLs: [String] { splitPanes.map(\.url) }
+
+    /// How many tabs this bookmark opens.
+    var representedTabCount: Int { max(1, splitPanes.count) }
+
     convenience init(_ model: TabDataModel) {
         let isFolder = (model.dataType == .bookmarkFolder)
         let resolvedURL = isFolder ? nil : model.url.absoluteString
         let resolvedSecondary = isFolder ? nil : model.secondaryUrl?.absoluteString
         let resolvedSecondaryTitle = isFolder ? nil : model.secondaryTitle
+        let resolvedExtraPanes = resolvedSecondary == nil ? [] : model.decodedSplitExtraPanes
         let resolvedLayout: SplitLayout? = resolvedSecondary == nil
             ? nil
             : model.layout.flatMap(SplitLayout.init(rawValue:)) ?? .vertical
@@ -856,6 +959,7 @@ extension Bookmark {
                   url: resolvedURL,
                   secondaryUrl: resolvedSecondary,
                   secondaryTitle: resolvedSecondaryTitle,
+                  splitExtraPanes: resolvedExtraPanes,
                   layout: resolvedLayout,
                   profileId: model.profile?.profileId ?? model.profileId,
                   faviconData: model.favicon,
@@ -871,6 +975,7 @@ extension Bookmark {
         url = isFolder ? nil : model.url.absoluteString
         secondaryUrl = isFolder ? nil : model.secondaryUrl?.absoluteString
         secondaryTitle = isFolder ? nil : model.secondaryTitle
+        splitExtraPanes = secondaryUrl == nil ? [] : model.decodedSplitExtraPanes
         layout = secondaryUrl == nil
             ? nil
             : model.layout.flatMap(SplitLayout.init(rawValue:)) ?? .vertical

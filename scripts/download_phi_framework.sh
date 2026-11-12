@@ -3,18 +3,42 @@
 set -eu
 
 repository="phibrowser/phibrowser-framework"
-asset_name="Phi.Framework.zip"
-requested_tag=""
+# Overridable for testing against a local fixture server. The value is the
+# GitHub "releases" collection endpoint; "/tags/<tag>" and "?per_page=" are
+# appended to it.
+releases_api_url=${PHI_FRAMEWORK_RELEASES_API:-"https://api.github.com/repos/$repository/releases"}
+
+# macOS releases are tagged mac-vX.Y.Z and ship phi-browser-framework-mac.zip.
+# Releases published before Windows frameworks joined the repository are tagged
+# vX.Y.Z and ship Phi.Framework.zip; both are still accepted. Windows releases
+# (win-vX.Y.Z) are never selected.
+asset_name="phi-browser-framework-mac.zip"
+legacy_asset_name="Phi.Framework.zip"
+mac_tag_prefix="mac-v"
+legacy_tag_prefix="v"
+max_release_pages=10
+requested_version=""
 
 usage() {
     cat <<EOF
 Usage: ${0##*/} [--version <version>]
 
-Download and install Phi Framework from GitHub Releases.
+Download and install the macOS Phi Framework from GitHub Releases
+($repository).
+
+Without --version, installs the newest published macOS release: the newest
+mac-vX.Y.Z release, or the newest legacy vX.Y.Z release if no mac-v release
+exists yet. Windows (win-v*) releases are ignored.
 
 Options:
-  --version <version>  Install a specific release, for example v2.9.0.
+  --version <version>  Install a specific macOS release. Accepts 2.17.0,
+                       v2.17.0 or mac-v2.17.0; mac-v<version> is tried first,
+                       then the legacy v<version> tag.
   -h, --help           Show this help message.
+
+Environment:
+  PHI_FRAMEWORK_RELEASES_API  Override the releases API endpoint
+                              (default: https://api.github.com/repos/$repository/releases).
 EOF
 }
 
@@ -25,7 +49,7 @@ while [ "$#" -gt 0 ]; do
                 echo "error: --version requires a value" >&2
                 exit 2
             fi
-            requested_tag=$2
+            requested_version=$2
             shift 2
             ;;
         -h|--help)
@@ -40,14 +64,23 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-if [ -n "$requested_tag" ]; then
-    case "$requested_tag" in
-        v*) ;;
-        *) requested_tag="v$requested_tag" ;;
+if [ -n "$requested_version" ]; then
+    original_requested_version=$requested_version
+    case "$requested_version" in
+        win-*)
+            echo "error: $requested_version is a Windows release; this script installs the macOS framework" >&2
+            echo "       pass a macOS version such as 2.17.0, v2.17.0 or mac-v2.17.0" >&2
+            exit 2
+            ;;
+        "$mac_tag_prefix"*) requested_version=${requested_version#"$mac_tag_prefix"} ;;
+        "$legacy_tag_prefix"*) requested_version=${requested_version#"$legacy_tag_prefix"} ;;
     esac
-    release_api_url="https://api.github.com/repos/$repository/releases/tags/$requested_tag"
-else
-    release_api_url="https://api.github.com/repos/$repository/releases/latest"
+    case "$requested_version" in
+        ""|*[!0-9A-Za-z.+-]*)
+            echo "error: invalid version: $original_requested_version" >&2
+            exit 2
+            ;;
+    esac
 fi
 
 script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -80,18 +113,104 @@ trap 'exit 1' HUP INT TERM
 
 temporary_directory=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/phi-framework.XXXXXX")
 release_metadata="$temporary_directory/release.json"
-archive_path="$temporary_directory/$asset_name"
 extracted_directory="$temporary_directory/extracted"
 
+# Prints the HTTP status code; the response body is written to $2.
+fetch_json() {
+    /usr/bin/curl \
+        --location \
+        --silent \
+        --show-error \
+        --retry 3 \
+        --header "Accept: application/vnd.github+json" \
+        --output "$2" \
+        --write-out '%{http_code}' \
+        "$1"
+}
+
+# Downloads the release tagged $1 into $release_metadata.
+# Returns 0 when found, 1 when the tag does not exist; exits on other errors.
+fetch_release_by_tag() {
+    status=$(fetch_json "$releases_api_url/tags/$1" "$release_metadata") || {
+        echo "error: failed to query GitHub for release $1" >&2
+        exit 1
+    }
+    case "$status" in
+        200) return 0 ;;
+        404) return 1 ;;
+        *)
+            echo "error: GitHub returned HTTP $status for release $1" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# Selects the newest published macOS release into $release_metadata.
+# GitHub lists releases newest first (by creation date), so the first
+# non-draft, non-prerelease mac-v* entry wins; the first legacy v* entry is
+# remembered as a fallback while no mac-v* release has been published yet.
+select_latest_release() {
+    release_list="$temporary_directory/releases.json"
+    fallback_index=""
+    page=1
+    while [ "$page" -le "$max_release_pages" ]; do
+        status=$(fetch_json "$releases_api_url?per_page=100&page=$page" "$release_list") || {
+            echo "error: failed to list Phi Framework releases" >&2
+            exit 1
+        }
+        if [ "$status" != "200" ]; then
+            echo "error: GitHub returned HTTP $status while listing releases" >&2
+            exit 1
+        fi
+
+        index=0
+        while :; do
+            tag=$(/usr/bin/plutil -extract "$index.tag_name" raw -o - "$release_list" 2>/dev/null) || break
+            draft=$(/usr/bin/plutil -extract "$index.draft" raw -o - "$release_list" 2>/dev/null || echo false)
+            prerelease=$(/usr/bin/plutil -extract "$index.prerelease" raw -o - "$release_list" 2>/dev/null || echo false)
+
+            if [ "$draft" != "true" ] && [ "$prerelease" != "true" ]; then
+                case "$tag" in
+                    "$mac_tag_prefix"[0-9]*)
+                        /usr/bin/plutil -extract "$index" json -o "$release_metadata" "$release_list"
+                        return 0
+                        ;;
+                    "$legacy_tag_prefix"[0-9]*)
+                        if [ -z "$fallback_index" ]; then
+                            fallback_index=$index
+                            /usr/bin/plutil -extract "$index" json -o "$release_metadata" "$release_list"
+                        fi
+                        ;;
+                esac
+            fi
+            index=$((index + 1))
+        done
+
+        if [ "$index" -lt 100 ]; then
+            break
+        fi
+        page=$((page + 1))
+    done
+
+    if [ -n "$fallback_index" ]; then
+        return 0
+    fi
+
+    echo "error: no published macOS release (${mac_tag_prefix}X.Y.Z or ${legacy_tag_prefix}X.Y.Z) found in $repository" >&2
+    exit 1
+}
+
 echo "Fetching Phi Framework release metadata..."
-/usr/bin/curl \
-    --fail \
-    --location \
-    --silent \
-    --show-error \
-    --retry 3 \
-    --output "$release_metadata" \
-    "$release_api_url"
+if [ -n "$requested_version" ]; then
+    if ! fetch_release_by_tag "$mac_tag_prefix$requested_version" \
+        && ! fetch_release_by_tag "$legacy_tag_prefix$requested_version"; then
+        echo "error: no macOS release for version $requested_version in $repository" >&2
+        echo "       tried tags: $mac_tag_prefix$requested_version, $legacy_tag_prefix$requested_version" >&2
+        exit 1
+    fi
+else
+    select_latest_release
+fi
 
 release_tag=$(/usr/bin/plutil -extract tag_name raw -o - "$release_metadata" 2>/dev/null || true)
 if [ -z "$release_tag" ]; then
@@ -99,31 +218,38 @@ if [ -z "$release_tag" ]; then
     exit 1
 fi
 
+# Prefers the current asset name and falls back to the legacy one.
 asset_url=""
 asset_digest=""
-asset_index=0
-while :; do
-    current_asset_name=$(/usr/bin/plutil \
-        -extract "assets.$asset_index.name" raw -o - "$release_metadata" 2>/dev/null || true)
-    if [ -z "$current_asset_name" ]; then
-        break
-    fi
+selected_asset_name=""
+for candidate_asset_name in "$asset_name" "$legacy_asset_name"; do
+    asset_index=0
+    while :; do
+        current_asset_name=$(/usr/bin/plutil \
+            -extract "assets.$asset_index.name" raw -o - "$release_metadata" 2>/dev/null || true)
+        if [ -z "$current_asset_name" ]; then
+            break
+        fi
 
-    if [ "$current_asset_name" = "$asset_name" ]; then
-        asset_url=$(/usr/bin/plutil \
-            -extract "assets.$asset_index.browser_download_url" raw -o - "$release_metadata")
-        asset_digest=$(/usr/bin/plutil \
-            -extract "assets.$asset_index.digest" raw -o - "$release_metadata" 2>/dev/null || true)
-        break
-    fi
+        if [ "$current_asset_name" = "$candidate_asset_name" ]; then
+            selected_asset_name=$current_asset_name
+            asset_url=$(/usr/bin/plutil \
+                -extract "assets.$asset_index.browser_download_url" raw -o - "$release_metadata")
+            asset_digest=$(/usr/bin/plutil \
+                -extract "assets.$asset_index.digest" raw -o - "$release_metadata" 2>/dev/null || true)
+            break 2
+        fi
 
-    asset_index=$((asset_index + 1))
+        asset_index=$((asset_index + 1))
+    done
 done
 
 if [ -z "$asset_url" ]; then
-    echo "error: release $release_tag does not contain $asset_name" >&2
+    echo "error: release $release_tag does not contain $asset_name (or legacy $legacy_asset_name)" >&2
     exit 1
 fi
+
+archive_path="$temporary_directory/$selected_asset_name"
 
 case "$asset_digest" in
     sha256:*) expected_sha256=${asset_digest#sha256:} ;;
@@ -133,7 +259,7 @@ case "$asset_digest" in
         ;;
 esac
 
-echo "Downloading Phi Framework $release_tag..."
+echo "Downloading Phi Framework $release_tag ($selected_asset_name)..."
 /usr/bin/curl \
     --fail \
     --location \
@@ -145,7 +271,7 @@ echo "Downloading Phi Framework $release_tag..."
 
 actual_sha256=$(/usr/bin/shasum -a 256 "$archive_path" | /usr/bin/awk '{print $1}')
 if [ "$actual_sha256" != "$expected_sha256" ]; then
-    echo "error: SHA-256 verification failed for $asset_name" >&2
+    echo "error: SHA-256 verification failed for $selected_asset_name" >&2
     exit 1
 fi
 
@@ -158,7 +284,7 @@ framework_executable="$extracted_framework/Versions/Current/Phi Framework"
 if [ ! -d "$extracted_framework" ] \
     || [ ! -d "$extracted_framework/Versions/Current" ] \
     || [ ! -f "$framework_executable" ]; then
-    echo "error: $asset_name does not contain a complete Phi Framework.framework" >&2
+    echo "error: $selected_asset_name does not contain a complete Phi Framework.framework" >&2
     exit 1
 fi
 

@@ -55,8 +55,8 @@ Do not present a build of your own as the application we distribute.
 ### Steps
 1. Check out this repository.
 2. Install the latest `Phi Framework` using either method:
-   - **Automatically:** Run `./scripts/download_phi_framework.sh` from the repository root. The script downloads the latest release, verifies its SHA-256 digest, and installs it into `Frameworks/`.
-   - **Manually:** Download `Phi.Framework.zip` from [phibrowser/phibrowser-framework releases](https://github.com/phibrowser/phibrowser-framework/releases), extract it, and place `Phi Framework.framework` into the root `Frameworks/` directory.
+   - **Automatically:** Run `./scripts/download_phi_framework.sh` from the repository root. The script downloads the latest macOS release, verifies its SHA-256 digest, and installs it into `Frameworks/`. Pass `--version 2.17.0` to install a specific release.
+   - **Manually:** From [phibrowser/phibrowser-framework releases](https://github.com/phibrowser/phibrowser-framework/releases), pick the newest macOS release (tagged `mac-vX.Y.Z`, titled "Phi Browser Framework for macOS vX.Y.Z") and download `phi-browser-framework-mac.zip`. Older macOS releases are tagged `vX.Y.Z` and ship `Phi.Framework.zip`; `win-v*` releases are for Windows. Extract the zip and place `Phi Framework.framework` into the root `Frameworks/` directory.
 3. Open `Phi.xcodeproj` in Xcode and let Swift Package Manager resolve dependencies.
 4. Select the `PhiBrowser-OpenSource` scheme.
 5. Build.

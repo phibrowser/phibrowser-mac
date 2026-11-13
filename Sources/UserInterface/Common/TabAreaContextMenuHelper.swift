@@ -89,6 +89,15 @@ final class TabAreaContextMenuHelper: NSObject {
         }
 
         menu.addItem(.separator())
+        if !isHorizontalLayout {
+            let topButtonsItem = NSMenuItem(
+                title: NSLocalizedString("common.tabAreaContextMenu.topButtonsSubmenu", value: "Top Buttons", comment: "Tab area context menu - Submenu to choose which buttons the sidebar header shows"),
+                action: nil,
+                keyEquivalent: ""
+            )
+            topButtonsItem.submenu = buildTopButtonsSubmenu()
+            menu.addItem(topButtonsItem)
+        }
         let buttonsItem = NSMenuItem(
             title: isHorizontalLayout
                 ? NSLocalizedString("common.tabAreaContextMenu.toolbarButtonsSubmenu", value: "Toolbar Buttons", comment: "Tab strip context menu - Submenu to choose which buttons the top bar shows in the Comfortable layout")
@@ -161,6 +170,20 @@ final class TabAreaContextMenuHelper: NSObject {
 
     // MARK: - Private
 
+    /// The sidebar header's buttons. Search Tabs is listed only in the layout
+    /// whose header shows it.
+    private func buildTopButtonsSubmenu() -> NSMenu {
+        typealias Setting = PhiPreferences.GeneralSettings
+        var entries: [(Setting, String)] = []
+        if browserState?.layoutMode == .balanced {
+            entries.append((.sidebarHeaderShowsSearchTabs,
+                            NSLocalizedString("common.tabAreaContextMenu.topButtons.searchTabs", value: "Search Tabs", comment: "Tab area context menu - Top Buttons submenu item that shows or hides the sidebar header's Search Tabs button")))
+        }
+        entries.append((.sidebarHeaderShowsSidebarToggle,
+                        NSLocalizedString("common.tabAreaContextMenu.topButtons.sidebarToggle", value: "Toggle Sidebar", comment: "Tab area context menu - Top Buttons submenu item that shows or hides the sidebar header's button that shows or hides the sidebar")))
+        return buildToggleSubmenu(entries)
+    }
+
     private func buildButtonsSubmenu() -> NSMenu {
         typealias Setting = PhiPreferences.GeneralSettings
         var entries: [(Setting, String)] = [
@@ -179,6 +202,10 @@ final class TabAreaContextMenuHelper: NSObject {
                             NSLocalizedString("common.tabAreaContextMenu.bottomButtons.feedback", value: "Feedback", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the feedback button")))
         }
 
+        return buildToggleSubmenu(entries)
+    }
+
+    private func buildToggleSubmenu(_ entries: [(PhiPreferences.GeneralSettings, String)]) -> NSMenu {
         let submenu = NSMenu()
         for (setting, title) in entries {
             let item = NSMenuItem(

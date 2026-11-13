@@ -476,6 +476,10 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         }
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         spacesStripHostingView = hostingView
+        headerView.onSpaceSwitchPlacementChanged = { [weak self, weak stripGeometry] sitsInControlRow in
+            stripGeometry?.sitsInControlRow = sitsInControlRow
+            self?.updateHeaderHeight()
+        }
         headerView.mountSpaceSwitch(hostingView)
         spacesStripRowView = hostingView
         updateHeaderHeight()
@@ -762,7 +766,9 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         // setupStackView).
         let base = headerView.controlRowTopOffset + (addressInSidebar ? 71 : 27)
         let spacesBandHeight = SidebarHeaderView.spaceSwitchBandHeight(addressInSidebar: addressInSidebar)
-        let headerHeight = base + (spacesEnabled ? spacesBandHeight : 0)
+        // A row moved up into the control row adds no height of its own.
+        let reservesSpacesBand = spacesEnabled && !headerView.spaceSwitchSitsInControlRow
+        let headerHeight = base + (reservesSpacesBand ? spacesBandHeight : 0)
         headerHeightConstraint?.update(offset: headerHeight)
     }
 

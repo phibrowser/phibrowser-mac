@@ -40,3 +40,35 @@ class PhiSplitViewController: NSSplitViewController {
         }
     }
 }
+
+extension NSSplitViewItem {
+    /// Expands a collapsed item at exactly `width`, instead of the width it
+    /// had when it collapsed, which AppKit restores on its own. The sidebar
+    /// column docks this way after its floating panel was resized while the
+    /// column was collapsed. The item's thickness limits are pinned to
+    /// `width` for the expansion, so the animation runs to that width, and
+    /// restored once it has finished.
+    func expand(atWidth width: CGFloat, animated: Bool, in splitView: NSSplitView) {
+        guard isCollapsed else { return }
+        let minimum = minimumThickness
+        let maximum = maximumThickness
+        minimumThickness = width
+        maximumThickness = width
+        let restoreLimits = { [weak self] in
+            self?.minimumThickness = minimum
+            self?.maximumThickness = maximum
+        }
+        if animated {
+            // The expand animation runs to the collapsed view's own size,
+            // regardless of the limits.
+            viewController.view.setFrameSize(NSSize(width: width, height: viewController.view.frame.height))
+            NSAnimationContext.runAnimationGroup({ _ in
+                self.animator().isCollapsed = false
+            }, completionHandler: restoreLimits)
+        } else {
+            isCollapsed = false
+            splitView.layoutSubtreeIfNeeded()
+            restoreLimits()
+        }
+    }
+}

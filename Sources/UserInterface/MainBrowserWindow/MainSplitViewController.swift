@@ -118,6 +118,9 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     private func updateSidebarPosition() {
         let right = SidebarPosition.isOnRight
         guard sidebarOnRight != right else { return }
+        // A width the floating panel left belongs to the side it was set on;
+        // the destination side keeps its own.
+        pendingDockWidth = nil
         let destinationWidth = AccountController.shared.localDataAccount?.userDefaults
             .lastKnownSidebarWidth(for: SidebarPosition.effective) ?? 0
         isReorderingSidebar = true
@@ -197,6 +200,17 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
                     }
                     return
                 }
+                // Expanded some other way than `setSidebarCollapsed`: still
+                // dock at the width the floating panel left.
+                if !isCollapsed, let width = self.pendingDockWidth {
+                    self.pendingDockWidth = nil
+                    DispatchQueue.main.async { [weak self] in
+                        guard let splitView = self?.splitViewController.splitView else { return }
+                        splitView.setPosition(SidebarPosition.isOnRight
+                            ? splitView.bounds.width - splitView.dividerThickness - width
+                            : width, ofDividerAt: 0)
+                    }
+                }
             }
             .store(in: &cancellables)
 
@@ -271,10 +285,28 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
             shellSplit?.setSidebarGeometry(width: width, collapsed: collapsed)
             return
         }
+        // An explicit width wins over the one the floating panel left.
+        if width != nil { pendingDockWidth = nil }
         setSidebarCollapsed(collapsed, animated: false)
         guard !collapsed, let width, width > 0 else { return }
         let clamped = min(max(width, Self.leftItemMinWidth), Self.leftItemMaxWidth)
         splitViewController.splitView.setPosition(SidebarPosition.isOnRight ? splitViewController.splitView.bounds.width - splitViewController.splitView.dividerThickness - clamped : clamped, ofDividerAt: 0)
+    }
+
+    /// Standalone: the width the column docks at when it next expands, set by
+    /// resizing the floating panel while the column is collapsed.
+    private var pendingDockWidth: CGFloat?
+
+    /// Takes the floating panel's width, resized by the user while the column
+    /// is collapsed, as the column's width. A standalone window writes it to
+    /// the account only once the column docks, as it does for divider drags.
+    func adoptFloatingSidebarWidth(_ width: CGFloat) {
+        if isHosted {
+            shellSplit?.adoptFloatingSidebarWidth(width)
+            return
+        }
+        guard let item = sideBarSplitViewItem, item.isCollapsed else { return }
+        pendingDockWidth = min(max(width, Self.leftItemMinWidth), Self.leftItemMaxWidth)
     }
 
     func toggleAIChat(_ sender: Any?) {
@@ -367,6 +399,12 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
         loadViewIfNeeded()
         let target = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional || collapsed
         guard sideBarSplitViewItem.isCollapsed != target else { return }
+        if !target, let width = pendingDockWidth {
+            pendingDockWidth = nil
+            sideBarSplitViewItem.expand(atWidth: width, animated: animated, in: splitViewController.splitView)
+            updateSidebarWidth()
+            return
+        }
         if animated {
             sideBarSplitViewItem.animator().isCollapsed = target
         } else {

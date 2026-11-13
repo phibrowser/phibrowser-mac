@@ -212,6 +212,8 @@ class Tab: WebContentRepresentable {
     /// Stable logical identity retained when a pinned record is copied to a
     /// different scope and receives a new physical database guid.
     var pinnedLineageId: String?
+    @Published var pinnedIcon: String?
+    var pinnedIconPopover: NSPopover?
     var profileId: String?
     /// Whether a profile-scoped repository result can update this tab's
     /// persisted favicon snapshot. App-scoped pinned rows have no profile
@@ -223,6 +225,7 @@ class Tab: WebContentRepresentable {
     /// records carry no `windowId`, and the key window's Space is not the
     /// right-clicked one when the click lands in another window.
     weak var contextMenuOwnerState: BrowserState?
+    weak var contextMenuAnchorView: NSView?
     var isOpenned = true
     /// DB-persisted title that bypasses title KVO from `webContentWrapper`.
     var storedTitle: String?
@@ -1065,6 +1068,7 @@ extension Tab {
             dbModel.profile != nil || dbModel.profileId?.isEmpty == false
         self.storedTitle = dbModel.title
         if dbModel.dataType == .pinnedTab {
+            self.pinnedIcon = dbModel.icon == "default" ? nil : dbModel.icon
             self.pinnedLineageId = dbModel.pinLineageId ?? dbModel.guid
             self.pinnedUrl = dbModel.url.absoluteString
             self.pinnedCreatedDate = dbModel.createdDate

@@ -72,8 +72,8 @@ enum TabDataModelSchemaV14: VersionedSchema {
         /// Nil keeps existing records compatible and defaults to side-by-side.
         var layout: String?
         var lastSeen: Date?
-        /// Stable resource identifier. Bookmark folders currently consume it;
-        /// other tab kinds retain the default until they add icon support.
+        /// Stable resource identifier for bookmark folders and pinned-tab icon overrides.
+        /// Other tab kinds retain the default.
         var icon = "default"
         /// Stable logical identity shared by copies of the same pinned tab.
         /// `guid` remains the unique physical record id used by Chromium.

@@ -400,6 +400,12 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
             }
             .store(in: &cancellables)
 
+        tab.$pinnedIcon
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.setupFavicon() }
+            .store(in: &cancellables)
+
         tab.$url
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -530,6 +536,27 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         faviconLoadHandle = nil
         self.isSelected = tab.isActive
 
+        if let icon = tab.pinnedIcon,
+           let selection = IconPickerSelection.fromStorageValue(icon) {
+            switch selection {
+            case .phiIcon(let id):
+                iconImageView.image = NSImage(named: NSImage.Name(PhiIconCatalog.canonicalId(for: id) ?? id))
+            case .emoji(_, let value):
+                let size = NSSize(width: Self.faviconSize, height: Self.faviconSize)
+                iconImageView.image = NSImage(size: size, flipped: false) { rect in
+                    let text = value as NSString
+                    let font = NSFont.systemFont(ofSize: Self.faviconSize - 2)
+                    let attributes: [NSAttributedString.Key: Any] = [.font: font]
+                    let textSize = text.size(withAttributes: attributes)
+                    text.draw(at: NSPoint(x: (rect.width - textSize.width) / 2,
+                                          y: (rect.height - textSize.height) / 2),
+                              withAttributes: attributes)
+                    return true
+                }
+            }
+            return
+        }
+
         if let liveFaviconData = tab.liveFaviconData,
            let image = NSImage(data: liveFaviconData) {
             iconImageView.image = image
@@ -575,6 +602,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     
     func menuNeedsUpdate(_ menu: NSMenu) {
         tabPreviewRegistration.cancelForInteraction()
+        tab?.contextMenuAnchorView = view
         if let populateContextMenu { populateContextMenu(menu) }
         else { tab?.makeContextMenu(on: menu) }
     }

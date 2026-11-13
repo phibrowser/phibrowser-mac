@@ -37841,6 +37841,18 @@
         }
       }
     },
+    "common.iconPicker.reset" : {
+      "comment" : "Icon picker - Restore the original icon",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Reset Icon"
+          }
+        }
+      }
+    },
     "common.iconPicker.searchEmptyMessage" : {
       "comment" : "Icon picker - Empty state when search has no matching icons",
       "extractionState" : "extracted_with_value",
@@ -106953,6 +106965,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新增分頁"
+          }
+        }
+      }
+    },
+    "sidebar.pinnedTabContextMenu.changeIcon" : {
+      "comment" : "Pinned tab context menu - Open the emoji and icon picker",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Change Icon…"
           }
         }
       }

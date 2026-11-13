@@ -519,7 +519,10 @@ struct UnifiedTabFaviconView: View {
 
     var body: some View {
         Group {
-            if let liveFaviconImage = viewModel.liveFaviconImage {
+            if let icon = viewModel.pinnedIcon,
+               let selection = IconPickerSelection.fromStorageValue(icon) {
+                IconPickerSelectionView(selection: selection, size: Self.faviconSize)
+            } else if let liveFaviconImage = viewModel.liveFaviconImage {
                 Image(nsImage: liveFaviconImage)
                     .resizable()
                     .scaledToFit()

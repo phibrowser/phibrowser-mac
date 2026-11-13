@@ -544,6 +544,19 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// with respondsToSelector: (skew).
 - (BOOL)isPeekLinkSurfaceEnabled;
 
+/// Whether the new foreground tab that the tab identified by `sourceTabId`
+/// opens for `url` will open in the Peek panel on the client's own initiative
+/// (the automatic Peek of a pinned tab's or Bookmark Tab's link to another
+/// site). Chromium asks as it creates the tab, before the client hears of it:
+/// the client marks a Peek only after the tab's load has started, so while
+/// this returns YES Chromium keeps that load in its window
+/// (phi::PhiLinkTabMarker), and a URL rule cannot take a redirect of it away
+/// from the Peek. Called synchronously on the UI thread. Callers must guard
+/// with respondsToSelector: (skew).
+- (BOOL)opensAutoPeekForLinkFromTabId:(int64_t)sourceTabId
+                                  url:(NSString *)url
+                             windowId:(int64_t)windowId;
+
 /// Right-click "Open in Reading Mode" — Chromium asks Mac to show Reader View
 /// for the tab identified by `tabId`. Reader View is the Mac client's: it
 /// extracts the article and swaps a native surface over the tab's content, so

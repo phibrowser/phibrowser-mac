@@ -3900,6 +3900,25 @@ class BrowserState {
             }
     }
 
+    /// Whether a new foreground tab that `openerTabId` opens for `urlString`
+    /// opens in the Peek panel on its own: the automatic path of
+    /// `maybeDivertPeekCandidate` and `resolvePeekCandidate`, answered before
+    /// the tab exists. Chromium asks as it creates such a tab and keeps its
+    /// first load in this window when the answer is yes, because the Peek is
+    /// marked only after that load has started. Keep in step with those two.
+    func opensAutoPeek(forLinkFrom openerTabId: Int, urlString: String) -> Bool {
+        let isAgentSpaceWindow = MainActor.assumeIsolated {
+            AgentSpaceManager.shared.isAgentSpace(spaceId)
+        }
+        guard !isIncognito, !isAgentSpaceWindow, !layoutMode.isTraditional,
+              PhiPreferences.GeneralSettings.peekViewEnabled.loadValue(),
+              PhiPreferences.GeneralSettings.autoPeekViewEnabled.loadValue(),
+              let boundURLString = boundURLStringForPeekOpener(openerTabId) else { return false }
+        let scheme = URL(string: urlString)?.scheme?.lowercased() ?? ""
+        guard scheme == "http" || scheme == "https" else { return false }
+        return !peekIsSameSite(boundURLString, urlString)
+    }
+
     /// Diverts a freshly arrived Chromium tab into the Peek pipeline when it
     /// is a foreground link child of a bookmark- or pinned-bound opener.
     /// Returns true when the tab was taken over (kept out of `tabs`).

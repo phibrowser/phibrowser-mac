@@ -3936,6 +3936,17 @@ extension PhiChromiumCoordinator {
             && !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
     }
 
+    // Synchronous query from Chromium as it creates the new foreground tab of
+    // a link: whether that tab opens in the Peek panel on its own. Chromium
+    // keeps the tab's first load in its window when it does.
+    func opensAutoPeekForLink(fromTabId sourceTabId: Int64,
+                              url: String,
+                              windowId: Int64) -> Bool {
+        SpaceSessionControllersManager.shared
+            .getBrowserState(for: windowId.intValue)?
+            .opensAutoPeek(forLinkFrom: sourceTabId.intValue, urlString: url) ?? false
+    }
+
     // Content blocking of a profile published a new rule generation or
     // changed status; the Privacy pane's facade re-reads on this.
     func contentBlockingStatusChanged(_ profileId: String) {

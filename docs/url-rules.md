@@ -135,6 +135,21 @@ one are routed as in any other tab. Reload, back/forward and session restore
 neither route nor remove it. A plain click, in the current tab or on a
 `target=_blank` link, is routed at every hop.
 
+A page in the Peek panel is not routed. An explicit Peek (Shift-click, "Open
+Link in Peek View") opens with the one-shot exemption, which covers every
+server redirect of its first load; once the client presents the Peek it marks
+the tab (`phi::PhiPeekTabMarker`), and no navigation in it is routed. An
+automatic Peek (a cross-site link of a pinned tab or Bookmark Tab, in the same
+tab or `target=_blank`) is presented only after its load has started. Chromium
+therefore asks the client as it creates the link's tab whether it will become
+an automatic Peek (`opensAutoPeekForLinkFromTabId:url:windowId:`, answered by
+`BrowserState.opensAutoPeek(forLinkFrom:urlString:)`, which applies the same
+rule as the Peek pipeline), and if so marks the tab as a link tab: its first
+load and every redirect of it stay in the current Space, whatever rule
+matches. A Peek opened as a tab or split pane loses both marks and is routed
+as any other tab. A link that does not become an automatic Peek (automatic
+Peek off, a same-site link, an unbound tab) is not marked.
+
 When a rule re-homes the jump a Redirector page makes, the tab that showed the
 Redirector page is put back the way it was before it, so no blank page is left
 in the Space. This holds for every rule kind and however the Redirector page

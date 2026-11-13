@@ -6468,26 +6468,28 @@ class BrowserState {
         }
     }
     
-    func updateTabTitle(tabId: Int, newTitle: String) {
+    /// `sentAt`: when Chromium sent the title (uptime nanoseconds); the
+    /// default never counts as older than the wrapper's title.
+    func updateTabTitle(tabId: Int, newTitle: String, sentAt: UInt64 = .max) {
         guard let tab = tabs.first(where: { $0.guid == tabId }) else {
             // Off-strip peek tabs still take titles: the panel header shows
             // them live, and the title must already be current when the tab
             // is later adopted (expand / split).
             if let peekTab = peekState.peekTab(withId: tabId) {
-                peekTab.title = newTitle
+                peekTab.takePageTitle(newTitle, sentAt: sentAt)
             } else if let candidateTab = peekCandidate?.tab, candidateTab.guid == tabId {
-                candidateTab.title = newTitle
+                candidateTab.takePageTitle(newTitle, sentAt: sentAt)
             } else if let readerTab = readerOverlayState.readerTab(withId: tabId) {
                 // Off-strip reader-surface tabs take titles too: the title
                 // must already be current when the tab is later adopted
                 // (link click inside the reader).
-                readerTab.title = newTitle
+                readerTab.takePageTitle(newTitle, sentAt: sentAt)
             } else if let candidateTab = readerOverlayCandidate?.tab, candidateTab.guid == tabId {
-                candidateTab.title = newTitle
+                candidateTab.takePageTitle(newTitle, sentAt: sentAt)
             } else if let paneTab = libraryPaneTab, paneTab.guid == tabId {
                 // The Library's Folio pane tab too: current when adopted
                 // (link click inside the library page).
-                paneTab.title = newTitle
+                paneTab.takePageTitle(newTitle, sentAt: sentAt)
             } else {
                 AppLogWarn("tab not found for id: \(tabId)")
             }
@@ -6513,7 +6515,7 @@ class BrowserState {
             // Chromium's UI thread — so with enough continuously-active
             // renderers the queue behind it grew until `agentSpace.*` calls
             // (and CDP) blew past their client timeouts.
-            tab.title = displayTitle
+            tab.takePageTitle(displayTitle, sentAt: sentAt)
         }
     }
     

@@ -3348,9 +3348,11 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     
     
     func tabTitleUpdated(_ tabId: Int64, title: String, windowId: Int64) {
+        // Stamped with the send time: see `Tab.takePageTitle(_:sentAt:)`.
         EventBus.shared
             .send(TabEvent(browserId: windowId.intValue,
-                           action: .updateTabTitle(tabId: tabId.intValue, newTitle: title)))
+                           action: .updateTabTitle(tabId: tabId.intValue, newTitle: title,
+                                                   sentAt: DispatchTime.now().uptimeNanoseconds)))
     }
     
     @objc func initApplication() {

@@ -100,6 +100,9 @@ class Tab: WebContentRepresentable {
     /// by `BrowserState.handleTabJoinedGroup` / `handleTabLeftGroup`.
     @Published var groupToken: String?
     @Published var title: String = ""
+    /// When the wrapper last reported a title (uptime nanoseconds, 0 before
+    /// its first report). See `takePageTitle(_:sentAt:)`.
+    private var wrapperTitleReportedAt: UInt64 = 0
     @Published var url: String?
     @Published private(set) var securityInfo: TabSecurityInfo = .empty
     
@@ -528,6 +531,14 @@ class Tab: WebContentRepresentable {
             }
             .store(in: &cancellables)
         
+        // The first value is the wrapper's title when bound, not a report.
+        wrapper.publisher(for: \.title)
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.wrapperTitleReportedAt = DispatchTime.now().uptimeNanoseconds
+            }
+            .store(in: &cancellables)
+
         wrapper.publisher(for: \.urlString)
             .sink { [weak self] urlString in
                 guard let self else { return }
@@ -676,6 +687,19 @@ class Tab: WebContentRepresentable {
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
     
+    /// Shows a title the page set, which Chromium sent at `sentAt` (uptime
+    /// nanoseconds), unless the wrapper has reported a title since. The
+    /// wrapper's title, set by each navigation's metadata, reaches the tab
+    /// within Chromium's call, while page titles come through EventBus a
+    /// main-queue turn later; the wrapper's later report is Chromium's newer
+    /// title. Going back to an entry whose title is unchanged sends no new
+    /// page title, so an older one landing last would stay (a redirector
+    /// page's, when its jump is re-homed and the tab goes back).
+    func takePageTitle(_ title: String, sentAt: UInt64) {
+        guard wrapperTitleReportedAt <= sentAt else { return }
+        self.title = title
+    }
+
     /// Applies a stored custom title. The title observer reads this value on every update.
     func applyStoredTitle(_ title: String) {
         storedTitle = title

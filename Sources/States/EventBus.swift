@@ -40,7 +40,7 @@ struct TabEvent: WindowEvent {
         case focusTabWithTabId(_ tabId: Int)
         case createTab(_ url: String)
         case openTab(_ url: String)
-        case updateTabTitle(tabId: Int, newTitle: String)
+        case updateTabTitle(tabId: Int, newTitle: String, sentAt: UInt64)
         case updateTabIndex(_ indexesMap: [Int: Int])
         case updateTabRelationships(_ snapshot: NativeTabRelationshipSnapshot)
         case move(tab: Tab, toNewIndex: Int, selectAfterMove: Bool)
@@ -218,8 +218,8 @@ class EventBus {
             state.createTab(url)
         case .openTab(let url):
             state.openTab(url)
-        case .updateTabTitle(let tabId, let newTitle):
-            state.updateTabTitle(tabId: tabId, newTitle: newTitle)
+        case .updateTabTitle(let tabId, let newTitle, let sentAt):
+            state.updateTabTitle(tabId: tabId, newTitle: newTitle, sentAt: sentAt)
         case .updateTabIndex(let indexesMap):
             state.reorderTabs(indexesMap)
         case .updateTabRelationships(let snapshot):

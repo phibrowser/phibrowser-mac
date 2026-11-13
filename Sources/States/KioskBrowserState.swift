@@ -137,8 +137,8 @@ final class KioskBrowserState: BrowserState {
         }
     }
 
-    override func updateTabTitle(tabId: Int, newTitle: String) {
-        tabs.first(where: { $0.guid == tabId })?.title = newTitle
+    override func updateTabTitle(tabId: Int, newTitle: String, sentAt: UInt64 = .max) {
+        tabs.first(where: { $0.guid == tabId })?.takePageTitle(newTitle, sentAt: sentAt)
     }
 
     override func handleTabReadyToDisplay(tabId: Int) {

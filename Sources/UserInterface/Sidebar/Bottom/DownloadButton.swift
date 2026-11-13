@@ -4,18 +4,16 @@
 // found in the LICENSE file.
 
 // A download button with progress indicator for the sidebar bottom bar.
-// Designed for extensibility (future Lottie animation support).
 
 import SwiftUI
 import Combine
-import Lottie
 
 // MARK: - Download Button View Model
 
 class DownloadButtonViewModel: ObservableObject {
     @Published var progress: Double = 0.0
     @Published var hasActiveDownloads: Bool = false
-    /// Trigger to play the Lottie animation once (incremented on each new download)
+    /// Trigger to play the arrow animation once (incremented on each new download)
     @Published var animationPlayCount: Int = 0
     
     private var cancellables = Set<AnyCancellable>()
@@ -71,10 +69,10 @@ struct DownloadButtonView: View {
     @ObservedObject var viewModel: DownloadButtonViewModel
     @Environment(\.phiTheme) private var theme
     @Environment(\.phiAppearance) private var appearance
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
-    @State private var playbackMode: LottiePlaybackMode = .paused(at: .progress(0))
     
-    /// Lottie icon tint color (themed)
+    /// Download icon tint color (themed)
     var iconTintColor: ThemedColor = .textPrimary
 
     /// When true, the hover background renders as a circle instead of a rounded rectangle.
@@ -84,44 +82,51 @@ struct DownloadButtonView: View {
     
     /// Button size (matches other sidebar buttons)
     private let buttonSize: CGFloat = 24
-    /// Progress bar dimensions
-    private let progressBarWidth: CGFloat = 14
-    private let progressBarHeight: CGFloat = 2
+    /// Including the stroke, the ring is approximately 18 points across.
+    private let ringDiameter: CGFloat = 16.8
+    private let ringLineWidth: CGFloat = 1.27
     /// Corner radius for hover background
     private let cornerRadius: CGFloat = 6
     
     var body: some View {
         Button(action: onTap) {
-            ZStack(alignment: .bottom) {
+            ZStack {
                 hoverBackground
                     .fill(isHovered ? Color(nsColor: .sidebarTabHovered) : Color.clear)
 
-                iconView
-                
-                PhiProgressView(
-                    progress: viewModel.progress,
-                    style: .linear,
-                    progressColor: .phiPrimary,
-                    trackColor: Color.phiPrimary.opacity(0.2),
-                    lineWidth: progressBarHeight,
-                    showGradientFade: false
-                )
-                .frame(width: progressBarWidth, height: progressBarHeight)
-                .offset(y: -1)
-                .opacity(viewModel.hasActiveDownloads ? 1 : 0)
+                ZStack {
+                    Circle()
+                        .stroke(Color(nsColor: resolvedTintColor), lineWidth: ringLineWidth)
+                        .opacity(viewModel.hasActiveDownloads ? 0 : 1)
+
+                    PhiProgressView(
+                        progress: viewModel.progress,
+                        style: .circular,
+                        progressColor: .phiPrimary,
+                        trackColor: Color.phiPrimary.opacity(0.2),
+                        lineWidth: ringLineWidth
+                    )
+                    .opacity(viewModel.hasActiveDownloads ? 1 : 0)
+                }
+                .frame(width: ringDiameter, height: ringDiameter)
                 .animation(.easeInOut(duration: 0.2), value: viewModel.hasActiveDownloads)
+
+                arrowView
             }
             .frame(width: buttonSize, height: buttonSize)
+            .contentShape(Rectangle())
         }
         .buttonStyle(PlainButtonStyle())
+        .accessibilityLabel(NSLocalizedString(
+            "browser.headerMoreMenu.downloadsAction",
+            value: "Downloads",
+            comment: "Header more menu - Downloads action"
+        ))
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovered = hovering
             }
         }
-        .onChange(of: viewModel.animationPlayCount, { _, _ in
-            triggerAnimation()
-        })
     }
     
     private var hoverBackground: AnyShape {
@@ -133,27 +138,25 @@ struct DownloadButtonView: View {
         iconTintColor.resolver(theme, appearance)
     }
     
-    /// The download icon with Lottie animation
-    @ViewBuilder
-    private var iconView: some View {
-        LottieView(animation: .named("download-button", bundle: .main, subdirectory: "LottieFiles"))
-            .configuration(LottieConfiguration(renderingEngine: .mainThread))
-            .playbackMode(playbackMode)
-            .animationDidFinish { _ in
-                playbackMode = .paused(at: .progress(0))
-            }
-            .configure { animationView in
-                let colorProvider = ColorValueProvider(resolvedTintColor.lottieColor)
-                animationView.setValueProvider(colorProvider, keypath: AnimationKeypath(keypath: "**.Fill 1.Color"))
-                animationView.setValueProvider(colorProvider, keypath: AnimationKeypath(keypath: "**.Stroke 1.Color"))
-            }
-            .id("\(theme.id)-\(appearance.description)")
-            .frame(width: 24, height: 24)
-    }
-    
-    /// Trigger a single play of the download animation
-    private func triggerAnimation() {
-        playbackMode = .playing(.toProgress(1, loopMode: .playOnce))
+    private var arrowView: some View {
+        Path { path in
+            path.move(to: CGPoint(x: 12, y: 6.9))
+            path.addLine(to: CGPoint(x: 12, y: 16.3))
+            path.move(to: CGPoint(x: 8.7, y: 13))
+            path.addLine(to: CGPoint(x: 12, y: 16.3))
+            path.addLine(to: CGPoint(x: 15.3, y: 13))
+        }
+        .stroke(
+            Color(nsColor: resolvedTintColor),
+            style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round)
+        )
+        .frame(width: buttonSize, height: buttonSize)
+        .scaleEffect(0.875)
+        .phaseAnimator([CGFloat.zero, 1.5, 0], trigger: viewModel.animationPlayCount) { content, offset in
+            content.offset(y: reduceMotion ? 0 : offset)
+        } animation: { offset in
+            offset == 0 ? .easeOut(duration: 0.2) : .easeIn(duration: 0.15)
+        }
     }
     
 }

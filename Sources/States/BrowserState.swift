@@ -339,6 +339,12 @@ class BrowserState {
     /// Split panes Chromium announced it is removing whose `closeTab` has not
     /// run yet. See `splitPaneWillBeRemoved(_:)`.
     var splitPaneIdsBeingRemoved: Set<Int> = []
+    /// The panes, in slot order, of the split each tab just left. Closing a
+    /// pane, Chromium takes it out of the split before it reports the tab
+    /// removed, so `prepareForActiveTabClose` reads the split here to keep
+    /// focus inside it. Kept only until the current burst of Chromium events
+    /// has been handled. See `noteSplitPanesLeft(_:previousTabIds:)`.
+    var splitPaneTabIdsJustLeft: [Int: [Int]] = [:]
     var aiChatCollapseWatches: [ObjectIdentifier: (tabId: Int, watch: AnyCancellable)] = [:]
     var aiChatPanelURLWatches: [ObjectIdentifier: AnyCancellable] = [:]
     var aiChatPanelRecordSubscriptions = Set<AnyCancellable>()
@@ -5674,13 +5680,26 @@ class BrowserState {
             "graph={openers=\(nativeRelationGraph.openerByTabId), " +
             "localFix=\(nativeRelationGraph.locallyFixedOpenerTabIds)}"
         )
-        var targetTabId = NativeTabDecisionEngine.selectionTarget(
+        // A pane closing out of a split that stays up hands focus to another
+        // of its panes, ahead of every opener and neighbor rule: the split,
+        // not the tab after it, stays the active tab. By the time Chromium
+        // reports the removal it has already taken the pane out of the split,
+        // so the split it just left counts too.
+        let splitPaneTarget = (splitGroup(forTabId: tabId)?.tabIds ?? splitPaneTabIdsJustLeft[tabId]).flatMap {
+            NativeTabDecisionEngine.splitPaneSelectionTarget(
+                splitPaneTabIds: $0,
+                closingTabId: tabId,
+                visibleNormalTabIds: visibleIds
+            )
+        }
+        var targetTabId = splitPaneTarget ?? NativeTabDecisionEngine.selectionTarget(
             visibleNormalTabIds: visibleIds,
             closingTabId: tabId,
             relationGraph: nativeRelationGraph
         )
 
-        if let target = targetTabId,
+        if splitPaneTarget == nil,
+           let target = targetTabId,
            nativeRelationGraph.openerByTabId[tabId] != nil,
            !isOpenerRelated(target: target, closingTabId: tabId) {
             if let pinnedTarget = findPinnedOrBookmarkAncestor(of: tabId),

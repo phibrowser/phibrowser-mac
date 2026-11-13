@@ -526,6 +526,25 @@ enum NativeTabDecisionEngine {
         return insertAfterIndex.map { $0 + 1 } ?? 0
     }
 
+    /// The pane that takes focus when the focused pane of a split closes and
+    /// the split stays up (two or more other panes remain): the next
+    /// remaining pane in slot order, else the previous one. `nil` when the
+    /// close dissolves the split, so the ordinary `selectionTarget` applies.
+    /// `splitPaneTabIds` are the split's panes in slot order; a pane absent
+    /// from `visibleNormalTabIds` (closing in the same batch) is skipped.
+    static func splitPaneSelectionTarget(
+        splitPaneTabIds: [Int],
+        closingTabId: Int,
+        visibleNormalTabIds: [Int]
+    ) -> Int? {
+        guard let slot = splitPaneTabIds.firstIndex(of: closingTabId) else { return nil }
+        let visible = Set(visibleNormalTabIds)
+        let isRemaining: (Int) -> Bool = { $0 != closingTabId && visible.contains($0) }
+        guard splitPaneTabIds.filter(isRemaining).count >= 2 else { return nil }
+        return splitPaneTabIds[(slot + 1)...].first(where: isRemaining)
+            ?? splitPaneTabIds[..<slot].last(where: isRemaining)
+    }
+
     static func selectionTarget(
         visibleNormalTabIds: [Int],
         closingTabId: Int,

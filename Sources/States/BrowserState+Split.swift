@@ -641,6 +641,25 @@ extension BrowserState {
         persistRepresentedSplitLayout(splitId: splitId, layout: layout)
     }
 
+    /// Remembers the split `departed` panes just left, for a removal of a
+    /// focused pane that follows in the same burst of Chromium events (see
+    /// `splitPaneTabIdsJustLeft`). Dropped once that burst has been handled,
+    /// so a pane dragged out of the split and closed later is a plain tab.
+    @MainActor
+    private func noteSplitPanesLeft(_ departed: [Int], previousTabIds: [Int]) {
+        let leaving = departed.filter { tabId in tabs.contains { $0.guid == tabId } }
+        guard !leaving.isEmpty else { return }
+        for tabId in leaving {
+            splitPaneTabIdsJustLeft[tabId] = previousTabIds
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for tabId in leaving where self.splitPaneTabIdsJustLeft[tabId] == previousTabIds {
+                self.splitPaneTabIdsJustLeft.removeValue(forKey: tabId)
+            }
+        }
+    }
+
     /// The split's panes changed: a reorder, or a pane joined or left a
     /// split that stays up. `tabIds` is the full new membership in slot
     /// order.
@@ -662,6 +681,7 @@ extension BrowserState {
             for tabId in departed {
                 SidecarAIOutputStateStore.shared.tabDidLeaveSplit(tabId, in: self)
             }
+            noteSplitPanesLeft(departed, previousTabIds: previous.tabIds)
             tabsAwaitingSplit.subtract(joined)
             splitPaneIdsOpeningBehindBookmark.subtract(joined)
             reconcileSplitChatBinding(splits[index])

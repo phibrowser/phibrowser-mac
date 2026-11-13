@@ -212,6 +212,7 @@ When the active normal tab is closed, the Mac side pre-computes the next selecti
 
 **Selection priority** (`NativeTabDecisionEngine.selectionTarget`):
 
+0. **Split pane** — when the closing tab is a pane of a split that stays up (two or more other panes remain), the nearest remaining pane in slot order (right-first), via `splitPaneSelectionTarget`; it skips the rules below and the pinned/bookmark-ancestor redirect
 1. **Child** — a tab whose opener is the closing tab (right-first)
 2. **Sibling** — a tab sharing the same opener (right-first)
 3. **Opener** — the closing tab's opener itself

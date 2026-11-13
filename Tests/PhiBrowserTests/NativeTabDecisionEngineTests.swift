@@ -390,6 +390,46 @@ final class NativeTabDecisionEngineTests: XCTestCase {
         )
     }
 
+    /// A pane closing out of a split that stays up keeps focus inside the
+    /// split: the next pane, or the previous one for the last pane, rather
+    /// than the tab after the split. A close that dissolves the split, or
+    /// takes the other panes with it, leaves the choice to `selectionTarget`.
+    func testSplitPaneSelectionKeepsFocusInASplitThatStaysUp() {
+        let panes = [1, 2, 3, 4]
+        let visible = [1, 2, 3, 4, 5]
+
+        XCTAssertEqual(
+            NativeTabDecisionEngine.splitPaneSelectionTarget(
+                splitPaneTabIds: panes, closingTabId: 4, visibleNormalTabIds: visible),
+            3,
+            "The last pane hands focus back to the pane before it, not to tab 5"
+        )
+        XCTAssertEqual(
+            NativeTabDecisionEngine.splitPaneSelectionTarget(
+                splitPaneTabIds: panes, closingTabId: 2, visibleNormalTabIds: visible),
+            3
+        )
+        XCTAssertEqual(
+            NativeTabDecisionEngine.splitPaneSelectionTarget(
+                splitPaneTabIds: [1, 2, 3], closingTabId: 3, visibleNormalTabIds: [1, 2, 3, 5]),
+            2
+        )
+        XCTAssertNil(
+            NativeTabDecisionEngine.splitPaneSelectionTarget(
+                splitPaneTabIds: [1, 2], closingTabId: 2, visibleNormalTabIds: [1, 2, 5]),
+            "Closing a pane of a pair dissolves the split"
+        )
+        XCTAssertNil(
+            NativeTabDecisionEngine.splitPaneSelectionTarget(
+                splitPaneTabIds: panes, closingTabId: 4, visibleNormalTabIds: [3, 4, 5]),
+            "Panes closing in the same batch do not count as remaining"
+        )
+        XCTAssertNil(
+            NativeTabDecisionEngine.splitPaneSelectionTarget(
+                splitPaneTabIds: panes, closingTabId: 5, visibleNormalTabIds: visible)
+        )
+    }
+
     func testFixOpenersAfterMovingTabRehangsDirectChildrenToMovedTabOpener() {
         let relationGraph = NativeTabRelationGraph(
             openerByTabId: [

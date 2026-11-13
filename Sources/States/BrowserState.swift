@@ -134,6 +134,7 @@ class BrowserState {
     /// tab-index echo caught up. Protected tabs keep their native slot for
     /// one Chromium order echo, then return to normal Chromium resequencing.
     private var nativeOrderProtectedTabIds: Set<Int> = []
+    private var newTabPlacementReconciler = NativeTabPlacementReconciler()
     
     /// Pending requests to mark the next created tab as a native NTP (incognito only).
     private var pendingNativeNtpCount: Int = 0
@@ -277,6 +278,12 @@ class BrowserState {
 
     private var lastLegacyLayout: Bool?
     @Published var layoutMode: LayoutMode = .performance
+
+    /// Evaluate on the destination window when the creation arrives. A source
+    /// Space's layout must not override the target's insertion policy.
+    var opensNewTabsAtTop: Bool {
+        !layoutMode.isTraditional && PhiPreferences.GeneralSettings.newTabsAtTop.loadValue()
+    }
     @Published var lastPhiAIEnabled: Bool = PhiPreferences.AISettings.phiAIEnabled.loadValue()
     private var lastSentinelOnLogin: Bool = PhiPreferences.AISettings.launchSentinelOnLogin.loadValue()
     
@@ -3838,10 +3845,9 @@ class BrowserState {
     private var pendingExplicitPeek: PendingExplicitPeek?
 
     /// Address-bar submission in flight from a bookmark/pinned-bound row.
-    /// Chromium reports the tab the omnibox spawns as a link-FOREGROUND child
-    /// of the submitting tab — indistinguishable at arrival from a real link
-    /// click — so without this the Peek pipeline would divert it into a peek,
-    /// which is precisely the surface the submission is meant to escape.
+    /// Older frameworks report omnibox-created tabs as link-foreground
+    /// children, indistinguishable from real link clicks. Newer frameworks
+    /// identify typed arrivals explicitly, but must still consume this claim.
     /// One-shot, consumed by the first arrival from that opener.
     private struct PendingAddressBarTab {
         let openerTabId: Int
@@ -3924,8 +3930,13 @@ class BrowserState {
     /// is a foreground link child of a bookmark- or pinned-bound opener.
     /// Returns true when the tab was taken over (kept out of `tabs`).
     private func maybeDivertPeekCandidate(_ tab: Tab, context: NativeTabCreationContext?) -> Bool {
-        // Tab arrivals are delivered on the main thread (EventBus hops via
-        // Task { @MainActor }); assumeIsolated mirrors the focuseTab pattern.
+        // Consume before the kind and preference gates: a typed arrival must
+        // not leave a stale claim that suppresses the next genuine link.
+        let isAddressBarArrival = context?.openerTabId.map {
+            consumeAddressBarNewTab(openerTabId: $0)
+        } ?? false
+        // Tab arrivals are delivered on the main queue by EventBus;
+        // assumeIsolated mirrors the focuseTab pattern.
         let isAgentSpaceWindow = MainActor.assumeIsolated {
             AgentSpaceManager.shared.isAgentSpace(spaceId)
         }
@@ -3950,7 +3961,7 @@ class BrowserState {
         if let customGuid = tab.guidInLocalDB, !customGuid.isEmpty { return false }
         // An address-bar submission from a bound row asked for a plain new
         // tab; Chromium just reports it like a link child. Never peek it.
-        if consumeAddressBarNewTab(openerTabId: openerTabId) {
+        if isAddressBarArrival {
             AppLogInfo("👀 [Peek] tabId=\(tab.guid) is an address-bar new tab from opener=\(openerTabId) — not a candidate")
             return false
         }
@@ -5344,6 +5355,30 @@ class BrowserState {
             return
         }
 
+        let isOrdinaryCreation = (context?.creationKind == .typedNewTab
+            || context?.creationKind == .typedNavigation)
+            && restoreTransactionPendingGuids == nil
+            && (tab.guidInLocalDB?.isEmpty ?? true)
+            && tab.groupToken == nil
+            && splitGroup(forTabId: tab.guid) == nil
+        if isOrdinaryCreation {
+            if opensNewTabsAtTop {
+                placeOrdinaryNewTabAtStart(tab)
+            } else {
+                // Eligible ordinary creations already append in Chromium.
+                // Do not issue a manual move: it can rewrite opener children.
+                insertIntoNormalTabOrder(tabGuid: tab.guid, at: normalTabOrder.count)
+            }
+            return
+        }
+        // Typed tabs with structural ownership (for example a split seed)
+        // retain their Chromium placement rather than inheriting the default.
+        var placementContext = context
+        if placementContext?.creationKind == .typedNewTab
+            || placementContext?.creationKind == .typedNavigation {
+            placementContext?.creationKind = .explicitInsert
+        }
+
         let shouldSyncHiddenOpenerOrder: Bool = {
             guard let context,
                   let openerTabId = context.openerTabId,
@@ -5355,7 +5390,7 @@ class BrowserState {
 
         if let insertionIndex = NativeTabDecisionEngine.insertionIndex(
             visibleNormalTabIds: visibleNormalTabIds,
-            context: context,
+            context: placementContext,
             relationGraph: nativeRelationGraph,
             splitLastTabIdByMember: splitLastTabIdByMemberMap(),
             hiddenOpenerTabIds: hiddenOpenerTabIds
@@ -5369,6 +5404,33 @@ class BrowserState {
 
         AppLogDebug("[NativeTab] handleNewTabFromChromium falling back to updateNormalTabs for tabId=\(tab.guid)")
         updateNormalTabs()
+    }
+
+    private func placeOrdinaryNewTabAtStart(_ tab: Tab) {
+        let bridge = ChromiumLauncher.sharedInstance().bridge
+        if let bridge,
+           !bridge.responds(to: #selector(PhiChromiumBridgeProtocol.placeNewTab(withWindowId:tabId:beforeTabId:))) {
+            AppLogWarn("[NativeTab] new-tab placement requires the matching Chromium framework")
+            updateNormalTabs()
+            return
+        }
+        insertIntoNormalTabOrder(tabGuid: tab.guid, at: 0)
+        guard let bridge,
+              normalTabOrder.contains(tab.guid),
+              let move = normalTabRelativeOrderSyncMove(tabId: tab.guid),
+              case .before(let anchorTabId) = move.anchor else { return }
+        let token = newTabPlacementReconciler.begin(tabId: tab.guid)
+        bridge.placeNewTab(withWindowId: windowId.int64Value,
+                          tabId: tab.guid.int64Value,
+                          beforeTabId: anchorTabId.int64Value)
+        // The bridge emits its final full-strip snapshot synchronously, even
+        // for a rejected/no-op move. EventBus and this completion use the same
+        // FIFO main queue, outside Chromium's mutation stack.
+        EventBus.shared.enqueue { [weak self] in
+            guard let self,
+                  let indices = self.newTabPlacementReconciler.finish(tabId: tab.guid, token: token) else { return }
+            self.reorderTabs(indices)
+        }
     }
 
     /// Applies one restored-window snapshot as a single transaction (T3B):
@@ -6442,6 +6504,42 @@ class BrowserState {
         }
     }
 
+    func createOrdinaryTab(_ url: String) {
+        let windowId = self.windowId.int64Value
+        performWithBrowser {
+            guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
+            if bridge.responds(to: #selector(PhiChromiumBridgeProtocol.createOrdinaryTab(withUrl:windowId:activateWindow:bypassSpaceRouting:))) {
+                if !bridge.createOrdinaryTab(withUrl: url, windowId: windowId,
+                                             activateWindow: true, bypassSpaceRouting: false) {
+                    Self.reportOrdinaryTabOpenFailure()
+                }
+            } else {
+                bridge.createNewTab(withUrl: url, windowId: windowId,
+                                    customGuid: nil, focusAfterCreate: true)
+            }
+        }
+    }
+
+    /// Do not reopen a failed destination in an unrelated profile. Defer UI
+    /// until after the Chromium call unwinds; alerts must not nest its run loop.
+    static func reportOrdinaryTabOpenFailure() {
+        DispatchQueue.main.async {
+            let title = NSLocalizedString("tabs.openFailed.title", value: "Couldn’t open tab", comment: "Tab open failure title")
+            let message = NSLocalizedString("tabs.openFailed.message", value: "The destination window is no longer available. Open a window in the intended Space and try again.", comment: "Tab open failure recovery")
+            if OverlayToastCenter.shared.show(title: title, message: message, in: .activeWindow) != nil {
+                return
+            }
+            let alert = NSAlert()
+            alert.messageText = title
+            alert.informativeText = message
+            if let window = NSApp.keyWindow, window.isVisible {
+                alert.beginSheetModal(for: window)
+            } else {
+                alert.runModal()
+            }
+        }
+    }
+
     func createQuickLookupTab(customGuid: String? = nil) {
         let focusingTabText = focusingTab?.guid ?? -1
         AppLogDebug(
@@ -6521,6 +6619,7 @@ class BrowserState {
     }
     
     func reorderTabs(_ indexesMap: [Int: Int]) {
+        newTabPlacementReconciler.record(indices: indexesMap)
         tabs.forEach { tab in
             if let index = indexesMap[tab.guid] {
                 tab.setIndex(index)
@@ -6541,27 +6640,12 @@ class BrowserState {
         let cachedSet = Set(normalTabOrder)
         let resequenced = tabs.compactMap { cachedSet.contains($0.guid) ? $0.guid : nil }
         let protectedTabIds = nativeOrderProtectedTabIds.intersection(cachedSet)
-        if resequenced == normalTabOrder {
-            nativeOrderProtectedTabIds.subtract(protectedTabIds)
-        } else if protectedTabIds.isEmpty {
-            normalTabOrder = resequenced
-        } else {
-            var mergedOrder = resequenced.filter { !protectedTabIds.contains($0) }
-            let protectedPositions = normalTabOrder.enumerated()
-                .filter { protectedTabIds.contains($0.element) }
-            for (index, tabId) in protectedPositions {
-                mergedOrder.insert(tabId, at: min(index, mergedOrder.count))
-            }
-            if mergedOrder != normalTabOrder {
-                normalTabOrder = mergedOrder
-            }
-            AppLogDebug(
-                "[NativeTab] reorderTabs preserved protected native slots " +
-                "protected=\(Array(protectedTabIds).sorted()) resequenced=\(resequenced) " +
-                "normalOrder=\(normalTabOrder)"
-            )
-            nativeOrderProtectedTabIds.subtract(protectedTabIds)
-        }
+        normalTabOrder = newTabPlacementReconciler.reconcile(
+            localOrder: normalTabOrder,
+            physicalOrder: resequenced,
+            additionallyProtected: protectedTabIds
+        )
+        nativeOrderProtectedTabIds.subtract(protectedTabIds)
         updateNormalTabs()
     }
     
@@ -8006,7 +8090,7 @@ class BrowserState {
     /// `bridge.removeTabsFromGroup` / `bridge.createGroupFromTabs` all
     /// return synchronously, but the corresponding
     /// `TabGroupEvent.tabJoinedGroup` / `tabLeftGroup` ride the
-    /// `EventBus.send → Task { @MainActor }` queue and don't land until
+    /// `EventBus.send` FIFO main queue and don't land until
     /// at least the next runloop tick. If the caller also synchronously
     /// repositioned the tab (e.g. sidebar drag dropped it inside a
     /// group's child range via `moveNormalTabLocally`), the strip ends

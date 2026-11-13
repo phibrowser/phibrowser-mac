@@ -442,7 +442,17 @@ final class BrowserStateRestoredSnapshotTransactionTests: XCTestCase {
     }
 
     func testTransactionUnlatchesAndNormalUpdatesFlow() throws {
+        let preferenceKey = PhiPreferences.GeneralSettings.newTabsAtTop.rawValue
+        let previousPreference = UserDefaults.standard.object(forKey: preferenceKey)
+        UserDefaults.standard.set(true, forKey: preferenceKey)
+        defer { UserDefaults.standard.set(previousPreference, forKey: preferenceKey) }
+        // This fixture owns no real Chromium window. Keep the post-restore
+        // placement independent of the installed framework's optional API.
+        let bridge = ChromiumLauncher.sharedInstance().bridge
+        ChromiumLauncher.sharedInstance().bridge = nil
+        defer { ChromiumLauncher.sharedInstance().bridge = bridge }
         let state = try makeBrowserState()
+        state.layoutMode = .performance
         state.handleRestoredWindowSnapshot(
             BrowserState.RestoredWindowSnapshot(tabs: makeItems([RestoreTabSpec(guid: 95)]),
                                                activeTabId: nil,
@@ -461,7 +471,7 @@ final class BrowserStateRestoredSnapshotTransactionTests: XCTestCase {
             context: NativeTabCreationContext(creationKind: .typedNewTab))
 
         XCTAssertGreaterThanOrEqual(publishCount, 1)
-        XCTAssertEqual(state.normalTabs.map(\.guid), [95, 96])
+        XCTAssertEqual(state.normalTabs.map(\.guid), [96, 95])
     }
     func testRemovedBatchPublishesSurvivorsOnceAndIgnoresRepeatedIDs() throws {
         let state = try makeBrowserState()

@@ -1,6 +1,54 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "settings.general.newTabsAtTop.description" : {
+      "comment" : "General settings - New tab position applies only to sidebar layouts",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "In sidebar layouts, place new tabs at the top of the tab list. Comfortable always opens new tabs at the end."
+          }
+        }
+      }
+    },
+    "settings.general.newTabsAtTop.title" : {
+      "comment" : "General settings - Ordinary new tab position toggle",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open new tabs at top"
+          }
+        }
+      }
+    },
+    "tabs.openFailed.message" : {
+      "comment" : "Tab open failure recovery",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The destination window is no longer available. Open a window in the intended Space and try again."
+          }
+        }
+      }
+    },
+    "tabs.openFailed.title" : {
+      "comment" : "Tab open failure title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn’t open tab"
+          }
+        }
+      }
+    },
     "settings.general.sidebarPosition.left" : {
       "comment" : "General settings - Left sidebar position",
       "extractionState" : "manual",

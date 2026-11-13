@@ -106,6 +106,7 @@ enum PhiPreferences: String {
 extension PhiPreferences {
     enum GeneralSettings: String, CaseIterable {
         case openNewTabPageOnCmdT
+        case newTabsAtTop // Sidebar layouts only; Comfortable always appends ordinary new tabs
         case openExternalLinksInKiosk
         case openKioskOnCommandOptionClick
         case openKioskWithGlobalShortcut
@@ -142,6 +143,8 @@ extension PhiPreferences {
             switch self {
             case .openNewTabPageOnCmdT:
                 return true
+            case .newTabsAtTop:
+                return false
             case .openExternalLinksInKiosk:
                 return false
             case .openKioskOnCommandOptionClick:

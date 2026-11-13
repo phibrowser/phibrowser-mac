@@ -4791,7 +4791,7 @@ extension TabStrip: TabStripDragDelegate {
                         // Optimistic local update — symmetric with the
                         // auto-join site below. The bridge returns
                         // synchronously but `tabLeftGroup` rides the
-                        // EventBus -> Task { @MainActor } async hop,
+                        // EventBus -> FIFO main-queue async hop,
                         // so without clearing the token here, T would
                         // sit at its new position outside the source
                         // group's range while still carrying
@@ -4920,7 +4920,7 @@ extension TabStrip: TabStripDragDelegate {
                     )
                     // Optimistic local update: the bridge returns
                     // synchronously but `tabJoinedGroup` rides the
-                    // EventBus -> Task { @MainActor } async hop, so
+                    // EventBus -> FIFO main-queue async hop, so
                     // T.groupToken would still be stale (nil or old
                     // group) when the `performLayout(.dataChanged)`
                     // below runs. For sandwich auto-join that

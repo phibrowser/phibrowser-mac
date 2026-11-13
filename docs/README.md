@@ -25,6 +25,8 @@ contracts, failure modes and verification entry points. Start with the repositor
 - [Guest mode and migration](architecture/guest-mode.md)
 - [Download profile scope](architecture/download-profile-scope.md)
 - [Tab search](tab-search.md)
+- [Tab order and selection design](../Sources/States/TabOrder/README.md)
+- [Tab order and selection specification](../Sources/States/TabOrder/tab-order-spec.md)
 
 ## Features and integration boundaries
 

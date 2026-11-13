@@ -121,6 +121,7 @@ enum SyncableSettings {
 
     private static let generalBoolCases: [PhiPreferences.GeneralSettings] = [
         .openNewTabPageOnCmdT,
+        .newTabsAtTop,
         .alwaysShowURLPath,
         .alwaysShowBookmarkBar,
         .showBookmarkBarOnNewTabPage,

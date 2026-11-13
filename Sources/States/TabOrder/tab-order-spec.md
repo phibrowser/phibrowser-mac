@@ -1,3 +1,7 @@
+# Tab Order and Selection Specification
+
+See [the technical design](README.md) for ownership and bridge contracts.
+
 ## 1. Core Concepts
 
 ### 1.1 Opener
@@ -46,7 +50,7 @@ The tab arrangement order the user sees in the sidebar or TabStrip. References t
 | 1 | Explicitly specified (e.g. moving back from pinned/bookmark, drag-drop target) | Specified position |
 | 2 | Foreground link open | Immediately to the right of the opener |
 | 3 | Background link open | After the opener's last visible descendant |
-| 4 | Cmd+T / menu new tab | Appended to the end |
+| 4 | Ordinary Cmd+T / menu / address-bar new-tab creation | First normal position when top insertion is enabled in a sidebar layout; otherwise the end |
 | 5 | Fallback | Appended to the end |
 
 ### 2.2 Examples
@@ -90,7 +94,7 @@ Result: A  A1  A1a  A2  B  C
                     ↑ A2 inserted after A's last visible descendant (A1a)
 ```
 
-**Example 4: Cmd+T**
+**Example 4: Cmd+T with the default bottom preference**
 
 ```
 Initial order: A  B  C
@@ -115,6 +119,30 @@ After restoring:      A  B  C  D
                             ↑ P moves to the pinned section; C and D keep
                               their place after B
 ```
+
+### 2.4 Position Preference and Structural Boundaries
+
+General → Browsing → **Open new tabs at top** controls ordinary new-tab position.
+The preference defaults off and is synchronized. Comfortable always opens at
+the end, even when the preference is on; switching back to a sidebar layout
+restores the stored choice. Existing tabs are never reordered by this setting.
+
+With top insertion enabled, `A B C` becomes `NTP A B C`. With it disabled, or
+in Comfortable, it becomes `A B C NTP`. The decision belongs to the final
+Space/window after routing, not the source window. In-place navigation does not
+change position. Restore, transfer, explicit insertion, group/split creation,
+and pin/bookmark promotion keep their own placement rules.
+
+The sidebar New Tab button follows the same choice: above normal tabs in top
+mode, after them in bottom mode. It sticks to the corresponding viewport edge
+when scrolled out of view; short lists keep it in normal flow. The off default
+preserves tail creation but changes the historical button position to the bottom.
+
+Pins and bookmarks are not a fixed physical prefix. Their open/closed and bound
+states can change while the app runs. Placement uses the current normal-tab
+projection and live-tab anchors, not a cached count. A split is indivisible:
+new tabs go before or after the entire two-, three-, or four-pane unit, including
+a split promoted from pins/bookmarks or with reordered panes.
 
 ## 3. Tab Selection After Closing
 
@@ -212,7 +240,7 @@ Triggered when the following types of navigation occur in a tab:
 | Bookmark click | Bookmark navigation |
 | Search suggestion navigation | Address bar search suggestion |
 
-**NTP tail exemption**: If the navigation occurs in an NTP (New Tab Page) at the **very end** of the tab list, and that NTP has only 1 history entry, the trigger is **suppressed**. This protects the opener relationship in the Cmd+T → type URL in address bar workflow.
+**Quick-lookup exemption**: An eligible NTP at the physical tail with one history entry retains the existing first-navigation exemption. A newly created quick-lookup tab initially placed at the top retains equivalent eligibility through a narrow marker, while its opener/reset state remains valid. This preserves Cmd+T → first typed navigation → close without exempting ordinary manual moves or subsequent navigation.
 
 #### Trigger Path 3: User gesture switches to a different task chain
 
@@ -317,7 +345,7 @@ Initial: Order A B C, A is active
 
 ### 4.3 FixOpeners (Fix Child Tab Openers When a Tab is Removed/Closed)
 
-When a tab is **closed, moved away, or reordered by dragging**, its child tabs need to be fixed. The rule is **grandparent inheritance**: the child's opener is changed to the removed tab's opener.
+When a tab is **closed, moved away, or reordered by dragging**, its child tabs need to be fixed. The rule is **grandparent inheritance**: the child's opener is changed to the removed tab's opener. Initial placement of a newly created tab is not a user reorder and preserves its opener children.
 
 **Example 1: Closing a middle node**
 

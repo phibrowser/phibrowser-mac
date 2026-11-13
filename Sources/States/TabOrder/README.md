@@ -1,6 +1,7 @@
 # Native Tab Order & Selection — Technical Guide
 
-> For Mac-side engineers working on Phi tab management.
+> Overall design of Phi tab order, creation, and close selection.
+> User-visible rules are defined in [the tab-order specification](tab-order-spec.md).
 
 ## 1. Background
 
@@ -16,7 +17,7 @@ Phi maintains its own **visible tab order** (`normalTabOrder`) independently fro
 | Active tab after close | **Mac** (overrides Chromium) |
 | Active tab for all other scenarios | Chromium (Mac accepts) |
 
-The core challenge: when the user reorders tabs via drag-and-drop in the native UI, Chromium knows nothing about the change. Its own close-selection algorithm (`DetermineNewSelectedIndex`) still operates on the old strip order, producing results that conflict with the user's visual expectation.
+Visible order is a projection, not a second physical strip. Phi mirrors normal-tab moves through live-tab anchors so Chromium and native order converge, while retaining native close-selection policy for the visible projection.
 
 ## 2. Architecture Overview
 
@@ -41,7 +42,7 @@ The core challenge: when the user reorders tabs via drag-and-drop in the native 
 
 | File | Purpose |
 |------|---------|
-| `NativeTabDecisionEngine.swift` | Data models, insertion/selection algorithms, opener graph |
+| `NativeTabDecisionEngine.swift` | Data models, insertion/selection algorithms, opener graph, placement reconciler |
 | `BrowserState.swift` | Integration point: new tab insertion, close handling, drag fix, snapshot merge |
 | `PhiChromiumCoordinator.swift` | Parses `NativeTabCreationContext` and `NativeTabRelationshipSnapshot` from bridge callbacks |
 | `PhiChromiumBridgeHeader.h` | Bridge protocol: snapshot callback, `createQuickLookupTab` |
@@ -49,7 +50,7 @@ The core challenge: when the user reorders tabs via drag-and-drop in the native 
 | `Tab.swift` | `close()` calls `prepareForActiveTabClose` before sending `IDC_CLOSE_TAB` |
 | `SpaceSessionController+Actions.swift` | Cmd+T routed to `createQuickLookupTab` |
 
-## 3. Chromium-Side Modifications
+## 3. Chromium Integration Design
 
 ### Bulk tab changes
 
@@ -90,7 +91,7 @@ When Chromium creates a new tab, `buildCreationContextForWebContents` in `PhiChr
 | `resetOpenerOnActiveTabChange` | Bool | Whether this tab's opener should clear when the user switches away |
 | `didForgetAllOpenersBeforeCreate` | Bool | Whether `ForgetAllOpeners` was called during this creation |
 
-The `creationKind` classification logic checks `resetOpenerOnActiveTabChange` to distinguish `typedNewTab` (Cmd+T) from `linkForeground`.
+The `creationKind` classification honors explicit ordinary-creation intent and quick-lookup state before generic bridge or link classification. `resetOpenerOnActiveTabChange` distinguishes typed quick-lookup lifecycle from ordinary link creation.
 
 ### 3.2 `NativeTabRelationshipSnapshot` (via bridge)
 
@@ -110,47 +111,27 @@ Cmd+T now routes through `createQuickLookupTab(windowId:)` → `chrome::NewTab(k
 
 ### 3.4 `bridgeCreate`
 
-Tabs the Mac client asks for — every `BrowserState.createTab`, the
-routing-exempt opens behind it, and external opens (`open -a Phi <url>`,
-forwarded through `-application:openURLs:`) — report
-`creationKind = bridgeCreate`.
+Generic client-created tabs use `creationKind = bridgeCreate`, distinct from
+page-originated link creation even when Chromium assigns the active tab as opener.
+Restore, promotion, external opens, and cross-profile transfer must not inherit
+ordinary user-new-tab placement solely because they share a bridge API.
 
-Both routes hand the new tab the window's *currently active tab* as its opener:
+Explicit ordinary creation carries a one-shot intent to the final WebContents.
+Cmd+T and address-bar new-tab submissions can therefore use typed creation
+semantics without reclassifying generic bridge calls. URL routing carries this
+intent through automatic and Ask-every-time destinations; the destination
+BrowserState decides position using its own layout. Existing-tab navigation is
+not a request to reorder that tab. Eligible new-NTP navigation can carry the
+intent when routing creates a replacement tab in another Space.
 
-- `TabsProxy::NewTabWithUrlInternal` reaches the strip through
-  `TabStripModel::AppendWebContents`, which passes `ADD_INHERIT_OPENER` for a
-  foreground tab.
-- `OpenUrlsInBrowserWithProfile` (external opens) reaches it through
-  `Navigate()`, which defaults `source_contents` to the target window's active
-  tab and `user_gesture` to `true` — together enough to `set_opener` even
-  though `StartupBrowserCreatorImpl` never asks for opener inheritance.
+Routing inserts the destination tab before loading its URL and exempts that
+initial destination navigation from repeat routing. Hidden windows are not
+activated merely by background creation. A missing or closing destination fails
+closed with native feedback rather than opening in an unspecified profile.
+Internal URLs disallowed in incognito retain the existing regular-profile
+rehome behavior.
 
-Read literally, the context builder would then describe every client-created
-tab as `linkForeground` with an `openerTabId` — indistinguishable from a link
-clicked in the active tab. `PhiChromiumBridge.pendingAppBridgeCreation` (a flag
-held across the creation call, mirroring `pendingQuickLookupCreation`) marks
-the difference. It is public on the bridge because the external-open call sites
-live in `phi_app_controller_mac.mm`; one flag with one meaning, set at every
-client-driven creation site.
-
-The opener relationship is genuine — it is still reported here and in the
-relationship snapshot, and Chromium still uses it to pick the next active tab
-on close. Only the KIND is corrected, and consumers that mean "the page opened
-this" key off the kind:
-
-- `NativeTabDecisionEngine.insertionIndex` places `bridgeCreate` by
-  `insertAfterTabId`, the tab's real strip neighbour, instead of anchoring it
-  to an opener it never came from.
-- `BrowserState.maybeDivertPeekCandidate` accepts `linkForeground` only. While
-  client-created tabs claimed that kind, a cross-profile Space move — which
-  recreates the page with `createTab` — landed beside a bookmark/pinned-bound
-  active tab and opened in the Peek panel instead of as a normal tab, and an
-  externally opened link landed in the Peek panel of a pinned active tab.
-
-Explicit "Open Link in Peek View" is unaffected: it matches its own pending
-request, not `creationKind`.
-
-## 4. Mac-Side Implementation
+## 4. Native Ordering Design
 
 ### 4.1 Data Models
 
@@ -188,23 +169,22 @@ Stores the Mac-side computed selection target before a close operation:
 |----------------|-------|
 | `linkForeground` | Right after opener in visible order; fallback to `insertAfterTabId` |
 | `linkBackground` | After the opener's last visible descendant; fallback to `insertAfterTabId` |
-| `typedNewTab` / `typedNavigation` | Append to end |
+| `typedNewTab` / `typedNavigation` | Top-placement helper returns the first normal position. BrowserState applies `newTabsAtTop` and destination layout first: bottom/Comfortable appends without a move; structural/restore arrivals stay excluded |
 | `restore` | `insertAfterTabId` + 1 when the anchor resolves in the visible list. No anchor at all → `0`, because that payload is the strip's first restored tab and belongs ahead of any placeholder the window already shows. Anchor present but **absent from the visible list** → nil (caller appends) |
 | `explicitInsert` / `moveFromOtherWindow` / `bridgeCreate` / `unknown` | Use `insertAfterTabId` if present; otherwise nil (caller appends) |
 
 A `restore` anchor can be missing from the visible list while still existing in Chromium's strip: the Mac side hides tabs bound to a pinned tab or an open bookmark, split-bookmark members, AI chat payloads (never added to `tabs`), and duplicate-guid payloads the restored-window transaction drops. Appending in that case keeps the surviving tabs in strip order — returning `0` would throw this tab, and every tab restored after it, ahead of the ones already placed.
 
-The head-insert fallback predates the feature that exposed it. `.restore` used to fire only on incidental paths (undo-close-tab, cross-window moves), where the `tabIndicesUpdated` echo that follows every insert re-sequenced the order anyway. Restoring the previous session replays a whole window through `.restore` on every cold start and window reopen, and the restored-window snapshot suppresses that echo while its batch is open — so a wrong order now survives until the next tab insert instead of being corrected immediately.
-
-Split-pair adjustment: if the opener is in a split with a partner at a higher tab-strip index, the insertion anchor shifts from the opener to the partner. This keeps the split pair contiguous — link clicks from a split tab land after the whole pair instead of between its two panes.
+Whole-split adjustment: if the opener belongs to a split, the insertion anchor advances to the last member of that split. The split may have two, three, or four panes; pane order and the physical strip indices, not a fixed pair offset, determine the boundary. Link clicks land after the complete split.
 
 Integration in `BrowserState.handleNewTabFromChromium`:
 
 1. Parse `NativeTabCreationContext` from bridge payload
 2. Optimistically update `nativeRelationGraph` via `applyOptimisticCreation`
 3. If `didForgetAllOpenersBeforeCreate`, clear all openers in the graph
-4. Call `insertionIndex` to get the position
-5. Insert into `normalTabOrder` at the computed index
+4. Resolve structural/explicit insertion ownership before ordinary placement
+5. Apply the destination new-tab policy or the creation-kind insertion rule
+6. Publish normal order and synchronize physical placement where required
 
 ### 4.3 Close Selection Override
 
@@ -282,6 +262,89 @@ When an existing pinned/bookmark-backed tab is moved into normal tabs, or a clos
 
 This ensures that subsequent Chromium snapshots will not overwrite the Mac-side corrections, while Chromium still receives enough ordering information for normal-tab restore.
 
+### 4.6 Ordinary New-Tab Policy and Sidebar Button
+
+`newTabsAtTop` is a synchronized global Boolean under General → Browsing,
+defaulting to false. `BrowserState.opensNewTabsAtTop` combines this preference
+with the destination layout. Comfortable always appends without changing the
+stored choice. Toggling the preference does not reorder existing tabs.
+
+Only ordinary typed creation is eligible. Pending explicit/group insertion,
+persisted custom IDs, existing group/split membership, and synchronous restore
+replay take precedence. Link children retain opener/descendant placement.
+Bottom mode appends in both native and Chromium order without an extra manual
+move. Top mode uses the initial-placement transaction described below.
+
+The sidebar uses the same effective policy and one stable New Tab item. Top
+mode places it before normal rows and preserves top-edge sticking. Bottom mode
+places it after normal rows, sticking at the viewport bottom only while that
+row overflows. Short lists keep the button in flow. The default preserves tail
+creation but intentionally moves the historical top button to the bottom.
+
+Preference and layout changes update projection, sticky geometry, content masks,
+and scroll insets together. Preference notifications deduplicate the raw Boolean,
+not the layout-derived policy; layout has its own subscription. This avoids a
+stale derived-value cache when destination layout changes first. Focus scrolling
+excludes the overlay so a newly selected tab remains visible. Dragging suppresses
+the floating overlay; drop positions use actual projected items rather than a
+fixed New Tab row offset. Before-button and end-of-list drops append in bottom
+mode; direct drop-on-button remains an unsupported, non-mutating action.
+
+### 4.7 Dynamic Boundaries and Physical Placement
+
+A normal-list index is never a Chromium strip index. Opened pin/bookmark tabs
+can be interleaved with normal tabs, while closed persistent items have no
+WebContents. Physical `[hidden A, normal B, hidden C, normal D]` projects to
+`[B, D]`; adding a hidden-tab count to a normal index cannot locate B or D.
+
+Top placement names the first eligible live normal tab with
+`placeNewTabWithWindowId:tabId:beforeTabId:`. Chromium resolves IDs against the
+current destination strip, treating an anchor's split or foreign group as a
+whole unit. Two-, three-, and four-pane boundaries use actual membership and
+pane order, never a fixed pair offset. Pin/bookmark promotion and pane reordering
+therefore change the next anchor naturally. A missing/moved anchor or structural
+constraint does not authorize splitting or moving unrelated tabs.
+
+With no existing normal tab, no relative move is needed: the new tab is the sole
+normal entry even if hidden live tabs precede it physically.
+
+### 4.8 Placement Transaction and Convergence
+
+EventBus delivers window events FIFO on the main dispatch queue after the
+Chromium mutation stack unwinds. `NativeTabPlacementReconciler` protects only
+an in-flight tab's native slot, not the entire strip:
+
+1. Publish its intended normal position and record a per-tab request token.
+2. Invoke synchronous initial placement. Chromium emits a final full-strip index
+   map even for a no-op or rejected placement.
+3. Drain older queued maps without overwriting protected slots; other tabs still
+   follow authoritative Chromium order.
+4. Queue completion behind the operation's callbacks on the same main queue.
+5. Release only the matching token and reconcile using the latest full-strip map.
+
+An old completion cannot release a newer request. Closed or transferred tabs
+are not reintroduced by a delayed completion. Rejected placement eventually
+converges rather than leaving a permanently protected native position.
+
+This is an ordered in-process contract, not an unordered transport protocol.
+Asynchronous transport or nested run loops within mutation/snapshot-suppression
+scopes would require explicit acknowledgement or revision ordering. Synchronous
+restore replay never invokes ordinary placement. Frameworks without the selector
+retain existing physical order rather than receiving an unsupported call.
+
+### 4.9 Quick-Lookup Opener Preservation
+
+Initial placement is not a user reorder. It must preserve opener children instead
+of invoking the ordinary move's `FixOpeners` semantics. A narrow Chromium marker
+preserves first-navigation eligibility for a newly placed quick-lookup NTP even
+when it is no longer physically last. This requires the eligible NTP/history and
+opener/reset state; it is not a blanket exception for every NTP or drag.
+
+Navigation, activation changes, subsequent manual moves, and detach clear or
+consume eligibility according to the opener lifecycle. Placement never invents
+an opener or permanently suppresses resets. Close-selection policy remains the
+same regardless of whether the new tab was inserted at the top or bottom.
+
 ## 5. Chromium Opener Change Scenarios
 
 Understanding when Chromium modifies opener relationships is critical for debugging.
@@ -290,7 +353,7 @@ Understanding when Chromium modifies opener relationships is critical for debugg
 
 Triggered by:
 - **Foreground tab creation with `ADD_INHERIT_OPENER`**: link-open foreground, Cmd+T, `AppendWebContents(foreground=true)`
-- **Non-link navigation**: user types URL in address bar, clicks bookmark, etc. (NTP-at-end is exempt)
+- **Non-link navigation**: user types URL in address bar, clicks bookmark, etc. (eligible first-navigation NTPs retain their quick-lookup exemption)
 - **User gesture switching to a different task chain**: clicking a tab unrelated to the current opener chain
 
 ### 5.2 `ForgetOpener` — clears a SINGLE tab's opener
@@ -301,7 +364,7 @@ Triggered by:
 ### 5.3 `FixOpeners` — re-parents children to grandparent
 
 Triggered by:
-- Same-window move (`MoveTabToIndexImpl`)
+- User same-window move (`MoveTabToIndexImpl`), excluding initial new-tab placement
 - Batch move (`PrepareTabsToMoveToIndex`)
 - Close/remove (`DetachTabImpl`)
 - Cross-window detach (`ProcessTabsForDetach`)
@@ -337,7 +400,7 @@ Tab and group context menus resolve directional close targets from `normalTabs`,
 the native strip projection. Horizontal bars present left/right actions; vertical
 bars present above/below actions. The clicked tab is the anchor, and a group-header
 anchor protects the full member range. Collapsed members still participate.
-Splits are complete units for range closing: both anchor panes survive and both
+Splits are complete units for range closing: all anchor panes survive and all
 target panes are submitted. A split containing a protected pane is excluded.
 
 Range closing and Close Other Tabs exclude pins and bookmark-bound pages outside
@@ -358,28 +421,3 @@ both tab and group menu entries and suppresses directional shortcut execution.
 Close Other Tabs remains independently available. Double-click closing keeps its
 existing preference key and default-off behavior. Both preferences apply without
 restarting the application.
-
-### What neither side handles (known gaps)
-
-- `pinned/bookmark → normal` opener policy is not finalized
-- Dangling window (pre-login tabs) loses `creationContext` during replay — negligible impact as those tabs use `restore`/`typedNewTab` which append to end
-
-## 7. Debugging
-
-All native tab order logs use the `[NativeTab]` prefix. Key log points:
-
-| Location | Log content |
-|----------|-------------|
-| `insertionIndex` | Full context, graph state, computed index |
-| `prepareForActiveTabClose` | Visible order, closing tab, computed target |
-| `handleChromiumActiveTabChanged` | Override state, chromium choice, final decision |
-| `apply(snapshot:)` | Snapshot version, merge decisions |
-| `fixOpenersAfterMovingTab` | Affected children, new openers |
-| `moveNormalTabLocally` | Children added to `locallyFixedOpenerTabIds`; Chromium normal-order sync |
-| `insertIntoNormalTabOrder` | Optional Chromium normal-order sync for pinned/bookmark/cross-window insertions |
-| `closeTab` | Children state, graph before/after |
-
-Filter logs with:
-```
-[NativeTab]
-```

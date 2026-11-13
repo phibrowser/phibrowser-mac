@@ -161,8 +161,8 @@ class EventBus {
     func send<T: AppEvent>(_ event: T) {
              switch event.scope {
              case .window(let windowId):
-                 Task { @MainActor in
-                     handleWindowEvent(event, windowId: windowId)
+                 enqueue {
+                     self.handleWindowEvent(event, windowId: windowId)
                  }
 
              case .profile:
@@ -172,6 +172,14 @@ class EventBus {
              }
     }
     
+    /// Bridge callbacks and mutation completions share one FIFO queue. Never
+    /// run inline: a handler may call back into Chromium after its stack unwinds.
+    func enqueue(_ action: @escaping @MainActor () -> Void) {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { action() }
+        }
+    }
+
     @MainActor
     private func handleWindowEvent<T: AppEvent>(_ event: T, windowId: Int) {
         guard let browserState = SpaceSessionControllersManager.shared

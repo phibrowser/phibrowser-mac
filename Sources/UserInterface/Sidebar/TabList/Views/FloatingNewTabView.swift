@@ -12,6 +12,9 @@ import Cocoa
 /// Space-switch ramp) shows through.
 class FloatingNewTabView: NSView {
     let cellView = NewTabButtonCellView(frame: .zero)
+    var sticksToTop = true {
+        didSet { if oldValue != sticksToTop { needsLayout = true } }
+    }
     private let separatorView = NSView()
     private var trackingArea: NSTrackingArea?
     var hoverStateChanged: ((Bool) -> Void)?
@@ -32,7 +35,8 @@ class FloatingNewTabView: NSView {
     override func layout() {
         super.layout()
         cellView.frame = bounds
-        separatorView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: 1)
+        separatorView.frame = NSRect(x: 0, y: sticksToTop ? 0 : max(0, bounds.height - 1),
+                                     width: bounds.width, height: 1)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {

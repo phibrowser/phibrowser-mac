@@ -542,52 +542,66 @@ final class SidebarTabSectionFastPathTests: XCTestCase {
     }
 
     func testCreateSpaceOverlaySuppressionHidesFloatingNewTabAcrossLayoutAndRecreation() throws {
-        let state = try makeState()
-        state.tabs = (0..<40).map { index in
-            Tab(guid: 1000 + index, url: "https://tab.example/\(index)",
-                isActive: false, index: index, title: "Tab \(index)")
+        let key = "newTabsAtTop"
+        let layoutKey = PhiPreferences.GeneralSettings.layoutModeKey
+        let oldPreference = UserDefaults.standard.object(forKey: key)
+        let oldLayout = UserDefaults.standard.object(forKey: layoutKey)
+        defer {
+            UserDefaults.standard.set(oldPreference, forKey: key)
+            UserDefaults.standard.set(oldLayout, forKey: layoutKey)
         }
-        state.updateNormalTabs()
-        let (controller, outlineView) = try makeActiveSidebar(for: state)
-        defer { controller.setActive(false) }
-        let scrollView = try XCTUnwrap(outlineView.enclosingScrollView)
-        guard waitUntil({ outlineView.numberOfRows >= 41 }) else { return }
-        controller.view.layoutSubtreeIfNeeded()
-        let newTabRow = try XCTUnwrap((0..<outlineView.numberOfRows).first {
-            (outlineView.item(atRow: $0) as? SidebarItem)?.itemType == .newTabButton
-        })
-        let floatingOffset = outlineView.rect(ofRow: newTabRow).maxY + 1
+        PhiPreferences.GeneralSettings.saveLayoutMode(.performance)
+        for atTop in [true, false] {
+            UserDefaults.standard.set(atTop, forKey: key)
+            let state = try makeState()
+            state.tabs = (0..<40).map { index in
+                Tab(guid: 1000 + index, url: "https://tab.example/\(index)",
+                    isActive: false, index: index, title: "Tab \(index)")
+            }
+            state.updateNormalTabs()
+            let (controller, outlineView) = try makeActiveSidebar(for: state)
+            defer { controller.setActive(false) }
+            let scrollView = try XCTUnwrap(outlineView.enclosingScrollView)
+            guard waitUntil({ outlineView.numberOfRows >= 41 }) else { return }
+            controller.view.layoutSubtreeIfNeeded()
+            let newTabRow = try XCTUnwrap((0..<outlineView.numberOfRows).first {
+                (outlineView.item(atRow: $0) as? SidebarItem)?.itemType == .newTabButton
+            })
+            let buttonRect = outlineView.rect(ofRow: newTabRow)
+            let floatingOffset = atTop ? buttonRect.maxY + 1 : 0
+            let inlineOffset = atTop ? 0 : max(0, buttonRect.maxY - scrollView.contentView.bounds.height)
 
-        func scroll(to offset: CGFloat) {
-            scrollView.contentView.scroll(to: NSPoint(x: 0, y: offset))
-            scrollView.reflectScrolledClipView(scrollView.contentView)
+            func scroll(to offset: CGFloat) {
+                scrollView.contentView.scroll(to: NSPoint(x: 0, y: offset))
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+                controller.viewDidLayout()
+            }
+
+            scroll(to: floatingOffset)
+            let floatingView = try XCTUnwrap(
+                controller.view.subviews.compactMap { $0 as? FloatingNewTabView }.first
+            )
+            XCTAssertFalse(floatingView.isHidden)
+
+            controller.setCreateSpaceOverlayInteractionSuppressed(true)
+            XCTAssertTrue(floatingView.isHidden)
+            XCTAssertFalse(controller.view.isHidden)
             controller.viewDidLayout()
+            XCTAssertTrue(floatingView.isHidden)
+
+            scroll(to: inlineOffset)
+            XCTAssertNil(floatingView.superview)
+            scroll(to: floatingOffset)
+            let recreatedView = try XCTUnwrap(
+                controller.view.subviews.compactMap { $0 as? FloatingNewTabView }.first
+            )
+            XCTAssertTrue(recreatedView.isHidden)
+            XCTAssertTrue(recreatedView.cellView.isHiddenOrHasHiddenAncestor)
+
+            controller.setCreateSpaceOverlayInteractionSuppressed(false)
+            XCTAssertFalse(recreatedView.isHidden)
+            XCTAssertFalse(scrollView.isHidden)
         }
-
-        scroll(to: floatingOffset)
-        let floatingView = try XCTUnwrap(
-            controller.view.subviews.compactMap { $0 as? FloatingNewTabView }.first
-        )
-        XCTAssertFalse(floatingView.isHidden)
-
-        controller.setCreateSpaceOverlayInteractionSuppressed(true)
-        XCTAssertTrue(floatingView.isHidden)
-        XCTAssertFalse(controller.view.isHidden)
-        controller.viewDidLayout()
-        XCTAssertTrue(floatingView.isHidden)
-
-        scroll(to: 0)
-        XCTAssertNil(floatingView.superview)
-        scroll(to: floatingOffset)
-        let recreatedView = try XCTUnwrap(
-            controller.view.subviews.compactMap { $0 as? FloatingNewTabView }.first
-        )
-        XCTAssertTrue(recreatedView.isHidden)
-        XCTAssertTrue(recreatedView.cellView.isHiddenOrHasHiddenAncestor)
-
-        controller.setCreateSpaceOverlayInteractionSuppressed(false)
-        XCTAssertFalse(recreatedView.isHidden)
-        XCTAssertFalse(scrollView.isHidden)
     }
 
     func testCreateSpaceOverlaySuppressionHidesBottomBarHostingContentOnly() throws {
@@ -692,6 +706,126 @@ final class SidebarTabSectionFastPathTests: XCTestCase {
         XCTAssertFalse((0..<outlineView.numberOfRows).contains { row in
             (outlineView.item(atRow: row) as? Tab) === oldTab
         })
+    }
+
+    func testBottomNewTabPreferencePlacesStableButtonAfterTabs() throws {
+        let key = "newTabsAtTop"
+        let previous = UserDefaults.standard.object(forKey: key)
+        UserDefaults.standard.set(false, forKey: key)
+        defer { UserDefaults.standard.set(previous, forKey: key) }
+        let state = try makeState()
+        _ = seedActiveTab(in: state, guid: 901)
+        let section = TabSectionController()
+        section.browserState = state
+        XCTAssertEqual(section.tabItems.first?.itemType, .tab)
+        XCTAssertEqual(section.tabItems.last?.itemType, .newTabButton)
+    }
+
+    func testNewTabButtonMovesLiveWithPreferenceAndDestinationLayout() throws {
+        let key = "newTabsAtTop"
+        let oldPreference = UserDefaults.standard.object(forKey: key)
+        let layoutKey = PhiPreferences.GeneralSettings.layoutModeKey
+        let oldLayout = UserDefaults.standard.object(forKey: layoutKey)
+        UserDefaults.standard.set(false, forKey: key)
+        PhiPreferences.GeneralSettings.saveLayoutMode(.performance)
+        defer {
+            UserDefaults.standard.set(oldPreference, forKey: key)
+            UserDefaults.standard.set(oldLayout, forKey: layoutKey)
+        }
+        let state = try makeState()
+        _ = seedActiveTab(in: state, guid: 902)
+        let section = TabSectionController()
+        section.browserState = state
+        let button = try XCTUnwrap(section.tabItems.last)
+        XCTAssertEqual(button.itemType, .newTabButton)
+        UserDefaults.standard.set(true, forKey: key)
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+        guard waitUntil({ section.tabItems.first?.itemType == .newTabButton }) else { return }
+        XCTAssertTrue(section.tabItems.first === button)
+        state.layoutMode = .comfortable
+        guard waitUntil({ section.tabItems.last?.itemType == .newTabButton }) else { return }
+        XCTAssertTrue(section.tabItems.last === button)
+        state.layoutMode = .performance
+        guard waitUntil({ section.tabItems.first?.itemType == .newTabButton }) else { return }
+        XCTAssertTrue(section.tabItems.first === button)
+    }
+
+    func testPreferenceChangeAfterDestinationLayoutChangeDoesNotUseStalePolicyCache() throws {
+        let key = PhiPreferences.GeneralSettings.newTabsAtTop.rawValue
+        let layoutKey = PhiPreferences.GeneralSettings.layoutModeKey
+        let oldPreference = UserDefaults.standard.object(forKey: key)
+        let oldLayout = UserDefaults.standard.object(forKey: layoutKey)
+        defer {
+            UserDefaults.standard.set(oldPreference, forKey: key)
+            UserDefaults.standard.set(oldLayout, forKey: layoutKey)
+        }
+        UserDefaults.standard.set(true, forKey: key)
+        PhiPreferences.GeneralSettings.saveLayoutMode(.performance)
+        let state = try makeState()
+        _ = seedActiveTab(in: state, guid: 903)
+        state.layoutMode = .comfortable
+        let section = TabSectionController()
+        section.browserState = state
+        XCTAssertEqual(section.tabItems.last?.itemType, .newTabButton)
+        state.layoutMode = .performance
+        guard waitUntil({ section.tabItems.first?.itemType == .newTabButton }) else { return }
+        UserDefaults.standard.set(false, forKey: key)
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+        guard waitUntil({ section.tabItems.last?.itemType == .newTabButton }) else { return }
+    }
+
+    func testBottomButtonDropMappingDoesNotTreatSecondTabAsFirst() throws {
+        let key = "newTabsAtTop"
+        let previous = UserDefaults.standard.object(forKey: key)
+        UserDefaults.standard.set(false, forKey: key)
+        defer { UserDefaults.standard.set(previous, forKey: key) }
+        let state = try makeState()
+        let tabs = (1...3).map { Tab(guid: $0, url: "https://tab.example/\($0)", isActive: false, index: $0 - 1) }
+        state.tabs = tabs
+        state.updateNormalTabs()
+        let (controller, outline) = try makeActiveSidebar(for: state)
+        defer { controller.setActive(false) }
+        guard waitUntil({ outline.row(forItem: tabs[1]) >= 0 }) else { return }
+        XCTAssertEqual(controller.calculateTabDestinationIndex(from: outline.row(forItem: tabs[1])), 1)
+        let buttonRow = try XCTUnwrap((0..<outline.numberOfRows).first {
+            (outline.item(atRow: $0) as? SidebarItem)?.itemType == .newTabButton
+        })
+        XCTAssertEqual(controller.calculateTabDestinationIndex(from: buttonRow), 3)
+        XCTAssertEqual(controller.calculateTabDestinationIndex(from: buttonRow + 1), 3)
+    }
+
+    func testButtonDropMappingPreservesFourPaneBoundaryAndEmptyList() throws {
+        let key = "newTabsAtTop"
+        let previous = UserDefaults.standard.object(forKey: key)
+        let layoutKey = PhiPreferences.GeneralSettings.layoutModeKey
+        let oldLayout = UserDefaults.standard.object(forKey: layoutKey)
+        PhiPreferences.GeneralSettings.saveLayoutMode(.performance)
+        defer {
+            UserDefaults.standard.set(previous, forKey: key)
+            UserDefaults.standard.set(oldLayout, forKey: layoutKey)
+        }
+        for atTop in [false, true] {
+            UserDefaults.standard.set(atTop, forKey: key)
+            let state = try makeState()
+            let tabs = (1...4).map { Tab(guid: $0, url: "https://tab.example/\($0)", isActive: false, index: $0 - 1) }
+            state.tabs = tabs
+            state.splits = [SplitGroup(id: "four", tabIds: [1, 2, 3, 4], layout: .vertical,
+                                      fractions: SplitGroup.equalFractions(paneCount: 4))]
+            state.updateNormalTabs()
+            let (controller, outline) = try makeActiveSidebar(for: state)
+            defer { controller.setActive(false) }
+            guard waitUntil({ (0..<outline.numberOfRows).contains { outline.item(atRow: $0) is SplitSidebarItem } }) else { return }
+            let splitRow = try XCTUnwrap((0..<outline.numberOfRows).first { outline.item(atRow: $0) is SplitSidebarItem })
+            XCTAssertEqual(controller.calculateTabDestinationIndex(from: splitRow), 0)
+            XCTAssertEqual(controller.calculateTabDestinationIndex(from: splitRow + 1), 4)
+            state.tabs = []
+            state.updateNormalTabs()
+            guard waitUntil({ !(0..<outline.numberOfRows).contains { outline.item(atRow: $0) is SplitSidebarItem } }) else { return }
+            let buttonRow = try XCTUnwrap((0..<outline.numberOfRows).first {
+                (outline.item(atRow: $0) as? SidebarItem)?.itemType == .newTabButton
+            })
+            XCTAssertEqual(controller.calculateTabDestinationIndex(from: buttonRow), 0)
+        }
     }
 
     func testPlainTabInsertionProducesIsolatedLayoutRepairProvenance() throws {

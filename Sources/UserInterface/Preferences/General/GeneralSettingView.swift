@@ -408,6 +408,9 @@ private struct BrowsingSectionView: View {
     @AppStorage(PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.rawValue)
     private var openNewTabPageOnCmdT: Bool = PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.newTabsAtTop.rawValue)
+    private var newTabsAtTop: Bool = PhiPreferences.GeneralSettings.newTabsAtTop.defaultValue
+
     private var selectedBehavior: Binding<NewTabBehaviour> {
         Binding(
             get: { openNewTabPageOnCmdT ? .newTabPage : .omnibox },
@@ -441,6 +444,19 @@ private struct BrowsingSectionView: View {
                     }
                     .padding(.vertical, 12)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                GeneralContainerView {
+                    GeneralRowView(
+                        title: NSLocalizedString("settings.general.newTabsAtTop.title", value: "Open new tabs at top", comment: "General settings - Ordinary new tab position toggle"),
+                        subtitle: NSLocalizedString("settings.general.newTabsAtTop.description", value: "In sidebar layouts, place new tabs at the top of the tab list. Comfortable always opens new tabs at the end.", comment: "General settings - New tab position applies only to sidebar layouts")
+                    ) {
+                        Toggle("", isOn: $newTabsAtTop)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                            .themedTint(.themeColor)
+                            .accessibilityLabel(NSLocalizedString("settings.general.newTabsAtTop.title", value: "Open new tabs at top", comment: "General settings - Ordinary new tab position toggle"))
+                    }
                 }
             }
         }

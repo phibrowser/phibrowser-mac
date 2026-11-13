@@ -7721,11 +7721,11 @@ final class SpaceManager: ObservableObject {
     /// any other id is brought to the front as a Space destination.
     ///
     /// The matching navigation was already cancelled on the Chromium side, so
-    /// this always opens *something* — if the chosen Space's window can't be
-    /// resolved (rare cold-spawn race), it falls back to the source window so
-    /// the URL is never silently dropped.
+    /// unresolved Space windows may fall back to the source window. If the
+    /// final ordinary-tab destination has disappeared, report failure rather
+    /// than reopening in an unrelated profile or re-entering the routing rule.
     @MainActor
-    func routeAskedURL(_ urlString: String, toSpaceId spaceId: String?, sourceWindowId: Int64, sourceIsNewTab: Bool) {
+    func routeAskedURL(_ urlString: String, toSpaceId spaceId: String?, sourceWindowId: Int64, sourceIsNewTab: Bool, ordinaryNewTab: Bool = false) {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
         // Bypass space routing for the re-open: the URL matched an ask-rule,
         // so a plain new tab would be caught by the same rule and prompt
@@ -7739,8 +7739,16 @@ final class SpaceManager: ObservableObject {
         // switch is choreographing the window (same-Space opens and the
         // spawn-failure fallback), where surfacing is the point.
         let open: (_ windowId: Int64, _ activateWindow: Bool) -> Void = { windowId, activateWindow in
-            bridge.openTabBypassingSpaceRouting(
-                withUrl: urlString, windowId: windowId, activateWindow: activateWindow)
+            if ordinaryNewTab,
+               bridge.responds(to: #selector(PhiChromiumBridgeProtocol.createOrdinaryTab(withUrl:windowId:activateWindow:bypassSpaceRouting:))) {
+                if !bridge.createOrdinaryTab(withUrl: urlString, windowId: windowId,
+                                             activateWindow: activateWindow, bypassSpaceRouting: true) {
+                    BrowserState.reportOrdinaryTabOpenFailure()
+                }
+            } else {
+                bridge.openTabBypassingSpaceRouting(
+                    withUrl: urlString, windowId: windowId, activateWindow: activateWindow)
+            }
         }
 
         let sourceController = SpaceSessionControllersManager.shared
@@ -7758,7 +7766,7 @@ final class SpaceManager: ObservableObject {
         // `sourceIsNewTab` covers the regular web NTP path, and the Swift
         // focusing-tab fallback covers the native incognito NTP path.
         let sourceIsStranded = sourceIsNewTab
-            || (sourceController?.browserState.focusingTab.map(Self.isStrandedNewTab) ?? false)
+            || (!ordinaryNewTab && (sourceController?.browserState.focusingTab.map(Self.isStrandedNewTab) ?? false))
 
         if spaceId == Self.kioskRuleTargetId {
             let selector = NSSelectorFromString("openURLInKiosk:sourceWindowId:")

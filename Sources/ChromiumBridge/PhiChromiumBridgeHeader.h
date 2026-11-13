@@ -459,6 +459,18 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)askSpaceForURL:(NSString *)urlString
         defaultSpaceId:(NSString *)defaultSpaceId
         sourceWindowId:(int64_t)sourceWindowId
+        sourceIsNewTab:(BOOL)sourceIsNewTab
+        ordinaryNewTab:(BOOL)ordinaryNewTab;
+
+- (void)routeURLInSpace:(NSString *)spaceId
+                    url:(NSString *)urlString
+         sourceWindowId:(int64_t)sourceWindowId
+         ordinaryNewTab:(BOOL)ordinaryNewTab
+         sourceIsNewTab:(BOOL)sourceIsNewTab;
+
+- (void)askSpaceForURL:(NSString *)urlString
+        defaultSpaceId:(NSString *)defaultSpaceId
+        sourceWindowId:(int64_t)sourceWindowId
         sourceIsNewTab:(BOOL)sourceIsNewTab;
 
 /// The user picked a Space from the web-content right-click "Open link as"
@@ -1116,6 +1128,19 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (BOOL)createNewTabStrictlyWithUrl:(NSString *)urlString
                            windowId:(int64_t)windowId
                    focusAfterCreate:(BOOL)focus;
+- (void)placeNewTabWithWindowId:(int64_t)windowId
+                         tabId:(int64_t)tabId
+                   beforeTabId:(int64_t)anchorTabId;
+
+- (BOOL)createOrdinaryTabWithUrl:(NSString *)url
+                         windowId:(int64_t)windowId
+                   activateWindow:(BOOL)activateWindow
+               bypassSpaceRouting:(BOOL)bypassSpaceRouting;
+
+- (BOOL)routeURLIfSpaceRuleMatches:(NSString *)url
+                          windowId:(int64_t)windowId
+                    ordinaryNewTab:(BOOL)ordinaryNewTab;
+
 - (void)createQuickLookupTabWithWindowId:(int64_t)windowId
                                customGuid:(NSString* _Nullable)customGuid;
 /// Same missing-window rule as the `focusAfterCreate:` variant above: a tab

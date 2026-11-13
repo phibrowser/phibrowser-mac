@@ -9,8 +9,17 @@ import XCTest
 @MainActor
 final class BrowserStateHiddenOpenerInsertionTests: XCTestCase {
     private var tempDirectories: [URL] = []
+    private var previousAutoPeek: Any?
+
+    override func setUpWithError() throws {
+        let key = PhiPreferences.GeneralSettings.autoPeekViewEnabled.rawValue
+        previousAutoPeek = UserDefaults.standard.object(forKey: key)
+        // These fixtures exercise normal-tab insertion, not automatic Peek.
+        UserDefaults.standard.set(false, forKey: key)
+    }
 
     override func tearDownWithError() throws {
+        UserDefaults.standard.set(previousAutoPeek, forKey: PhiPreferences.GeneralSettings.autoPeekViewEnabled.rawValue)
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
         }

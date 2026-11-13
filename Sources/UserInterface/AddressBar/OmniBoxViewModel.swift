@@ -68,8 +68,8 @@ class OmniBoxViewModel: ObservableObject {
     }
 
     /// Claims the tab this submission is about to spawn so the Peek pipeline
-    /// leaves it alone. Chromium parents an omnibox-opened foreground tab to
-    /// whatever is focused and reports it as a link-foreground child, which on
+    /// leaves it alone. Older frameworks report an omnibox-opened foreground
+    /// tab as a link-foreground child of the focused tab, which on
     /// a bookmark/pinned-bound row is indistinguishable from a link click —
     /// and would become a Peek. An omnibox submission never means "peek this".
     ///
@@ -498,7 +498,7 @@ class OmniBoxViewModel: ObservableObject {
             if commandKeyPressed {
                 browserState.openTab(url)
             } else {
-                browserState.createTab(url)
+                browserState.createOrdinaryTab(url)
             }
         } else if navigatesCurrentTab {
             navigateCurrentTab(to: url)
@@ -511,8 +511,8 @@ class OmniBoxViewModel: ObservableObject {
             // Resolve the rule up front so both ask and auto-route behave like
             // the live-tab path.
             claimUpcomingNewTab()
-            if !routeIfSpaceRuleMatches(url) {
-                browserState.createTab(url)
+            if !routeIfSpaceRuleMatches(url, ordinaryNewTab: true) {
+                browserState.createOrdinaryTab(url)
             }
         }
         finishNavigationAction()
@@ -523,8 +523,13 @@ class OmniBoxViewModel: ObservableObject {
     /// open-in-window) and this returns `true`, meaning the caller must not open
     /// the URL locally. Needed for the empty-Space paths (native NTP / no tab),
     /// whose navigation runs on a detached WebContents the throttle can't see.
-    private func routeIfSpaceRuleMatches(_ url: String) -> Bool {
-        chromiumBridge?.routeURLIfSpaceRuleMatches(url, windowId: browserState.windowId.int64Value) ?? false
+    private func routeIfSpaceRuleMatches(_ url: String, ordinaryNewTab: Bool = false) -> Bool {
+        guard let chromiumBridge else { return false }
+        if chromiumBridge.responds(to: #selector(PhiChromiumBridgeProtocol.routeURLIfSpaceRuleMatches(_:windowId:ordinaryNewTab:))) {
+            return chromiumBridge.routeURLIfSpaceRuleMatches(
+                url, windowId: browserState.windowId.int64Value, ordinaryNewTab: ordinaryNewTab)
+        }
+        return chromiumBridge.routeURLIfSpaceRuleMatches(url, windowId: browserState.windowId.int64Value)
     }
 
     private func navigateCurrentTab(to url: String) {

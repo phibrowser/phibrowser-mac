@@ -20,18 +20,32 @@ protocol SidebarTabListItemOwner: AnyObject {
 }
 
 enum SidebarNewTabStickyResolver {
-    static func shouldShowFloatingNewTab(rowRect: CGRect, visibleRect: CGRect) -> Bool {
-        rowRect.minY < visibleRect.minY
+    static func shouldShowFloatingNewTab(rowRect: CGRect, visibleRect: CGRect,
+                                         atTop: Bool = true) -> Bool {
+        atTop ? rowRect.minY < visibleRect.minY : rowRect.maxY > visibleRect.maxY
     }
 
     static func visibleRectExcludingTopOverlay(visibleRect: CGRect, overlayHeight: CGFloat) -> CGRect {
+        visibleRectExcludingOverlay(visibleRect: visibleRect, overlayHeight: overlayHeight, atTop: true)
+    }
+
+    static func visibleRectExcludingOverlay(visibleRect: CGRect, overlayHeight: CGFloat,
+                                            atTop: Bool, isFlipped: Bool = true) -> CGRect {
         let hiddenHeight = max(0, min(overlayHeight, visibleRect.height))
         return CGRect(
             x: visibleRect.origin.x,
-            y: visibleRect.origin.y + hiddenHeight,
+            y: visibleRect.origin.y + (atTop == isFlipped ? hiddenHeight : 0),
             width: visibleRect.width,
             height: visibleRect.height - hiddenHeight
         )
+    }
+
+    static func floatingFrame(scrollFrame: CGRect, contentWidth: CGFloat, rowHeight: CGFloat,
+                              atTop: Bool, containerIsFlipped: Bool) -> CGRect {
+        let height = max(0, min(rowHeight, scrollFrame.height))
+        return CGRect(x: scrollFrame.minX,
+                      y: atTop == containerIsFlipped ? scrollFrame.minY : scrollFrame.maxY - height,
+                      width: contentWidth, height: height)
     }
 }
 
@@ -3371,7 +3385,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         return proposedChildIndex + (snappedDestination - tabDestination)
     }
 
-    private func calculateTabDestinationIndex(from outlineViewIndex: Int) -> Int {
+    func calculateTabDestinationIndex(from outlineViewIndex: Int) -> Int {
         // Translate an NSOutlineView root-row index (drop position) into a
         // `normalTabs` insertion index.
         //
@@ -3394,17 +3408,18 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         let positionInTabItems = max(0, outlineViewIndex - currentTabSectionStart())
         let items = tabSectionController.tabItems
 
-        // Drop at or before the New-Tab-button row → very front of
-        // `normalTabs`. (`tabItems[0]` is always the New-Tab-button.)
-        if positionInTabItems <= 1 {
-            return 0
-        }
+        // The New Tab row can occupy either edge; never subtract a fixed
+        // button offset from the visual position (groups/splits also fold rows).
+        if positionInTabItems == 0 { return 0 }
         // Drop past the last tab-section item → append to `normalTabs`.
         if positionInTabItems >= items.count {
             return browserState.normalTabs.count
         }
 
         let target = items[positionInTabItems]
+        if target.itemType == .newTabButton {
+            return browserState.opensNewTabsAtTop ? 0 : browserState.normalTabs.count
+        }
         if let tab = target as? Tab {
             return browserState.normalTabs.firstIndex(of: tab)
                 ?? browserState.normalTabs.count
@@ -4806,7 +4821,8 @@ extension SidebarTabListViewController {
         let visibleRect = scrollView.contentView.documentVisibleRect
         let shouldShow = SidebarNewTabStickyResolver.shouldShowFloatingNewTab(
             rowRect: rowRect,
-            visibleRect: visibleRect
+            visibleRect: visibleRect,
+            atTop: browserState.opensNewTabsAtTop
         )
 
         if shouldShow {
@@ -4815,7 +4831,7 @@ extension SidebarTabListViewController {
             removeFloatingNewTabCell()
         }
 
-        outlineView.dragAutoscrollTopObstructionHeight = shouldShow ? rowRect.height : 0
+        outlineView.dragAutoscrollTopObstructionHeight = shouldShow && browserState.opensNewTabsAtTop ? rowRect.height : 0
         setOriginalNewTabCellHidden(shouldShow)
     }
 
@@ -4829,7 +4845,6 @@ extension SidebarTabListViewController {
         // masking the scroll view hides the rows under it without the row.
         if floatingView.superview == nil {
             view.addSubview(floatingView, positioned: .above, relativeTo: scrollView)
-            scrollView.scrollerInsets.top = rowRect.height
         }
 
         layoutFloatingNewTabView(floatingView, rowHeight: rowRect.height)
@@ -4849,23 +4864,17 @@ extension SidebarTabListViewController {
     }
 
     private func layoutFloatingNewTabView(_ floatingView: FloatingNewTabView, rowHeight: CGFloat) {
-        let scrollFrame = scrollView.frame
-        let height = max(0, rowHeight)
-        let y = view.isFlipped ? scrollFrame.minY : scrollFrame.maxY - height
-        floatingView.frame = NSRect(
-            x: scrollFrame.minX,
-            y: y,
-            width: scrollView.contentSize.width,
-            height: height
-        )
-
-        let bounds = scrollView.bounds
-        let visibleContentRect = NSRect(
-            x: bounds.minX,
-            y: scrollView.isFlipped ? bounds.minY + height : bounds.minY,
-            width: bounds.width,
-            height: max(0, bounds.height - height)
-        )
+        let atTop = browserState.opensNewTabsAtTop
+        floatingView.sticksToTop = atTop
+        floatingView.frame = SidebarNewTabStickyResolver.floatingFrame(
+            scrollFrame: scrollView.frame, contentWidth: scrollView.contentSize.width,
+            rowHeight: rowHeight, atTop: atTop, containerIsFlipped: view.isFlipped)
+        let height = floatingView.frame.height
+        scrollView.scrollerInsets.top = atTop ? height : 0
+        scrollView.scrollerInsets.bottom = atTop ? 0 : height
+        let visibleContentRect = SidebarNewTabStickyResolver.visibleRectExcludingOverlay(
+            visibleRect: scrollView.bounds, overlayHeight: height,
+            atTop: atTop, isFlipped: scrollView.isFlipped)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         floatingNewTabContentMask.frame = visibleContentRect
@@ -4880,6 +4889,7 @@ extension SidebarTabListViewController {
         floatingNewTabView = nil
         scrollView.layer?.mask = nil
         scrollView.scrollerInsets.top = 0
+        scrollView.scrollerInsets.bottom = 0
         setOriginalNewTabCellHidden(false)
     }
 
@@ -4910,7 +4920,7 @@ extension SidebarTabListViewController {
         cell.isHidden = hidden
     }
 
-    private var floatingNewTabTopOverlayHeight: CGFloat {
+    private var floatingNewTabOverlayHeight: CGFloat {
         guard floatingNewTabView?.superview != nil else { return 0 }
         if let height = floatingNewTabView?.bounds.height, height > 0 {
             return height
@@ -4996,17 +5006,21 @@ extension SidebarTabListViewController {
 
         let rowRect = outlineView.rect(ofRow: row)
         let visibleRect = clipView.documentVisibleRect
-        let topOverlayHeight = floatingNewTabTopOverlayHeight
-        let unobscuredVisibleRect = SidebarNewTabStickyResolver.visibleRectExcludingTopOverlay(
-            visibleRect: visibleRect,
-            overlayHeight: topOverlayHeight
-        )
+        // A newly inserted row can overflow before the deferred sticky refresh.
+        // Resolve the overlay first so focus scrolling leaves the row unobscured.
+        updateFloatingNewTabVisibility()
+        let overlayHeight = floatingNewTabOverlayHeight
+        let atTop = browserState.opensNewTabsAtTop
+        let topOverlayHeight = atTop ? overlayHeight : 0
+        let bottomOverlayHeight = atTop ? 0 : overlayHeight
+        let unobscuredVisibleRect = SidebarNewTabStickyResolver.visibleRectExcludingOverlay(
+            visibleRect: visibleRect, overlayHeight: overlayHeight, atTop: atTop)
 
         var targetY = visibleRect.origin.y
         if rowRect.minY < unobscuredVisibleRect.minY {
             targetY = rowRect.minY - topOverlayHeight
         } else if rowRect.maxY > unobscuredVisibleRect.maxY {
-            targetY = rowRect.maxY - visibleRect.height
+            targetY = rowRect.maxY - visibleRect.height + bottomOverlayHeight
         } else {
             return
         }

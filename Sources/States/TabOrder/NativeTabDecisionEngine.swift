@@ -473,10 +473,9 @@ enum NativeTabDecisionEngine {
             }
         case .typedNewTab, .typedNavigation:
             AppLogDebug(
-                "[NativeTab] insertionIndex chose append for kind=\(context.creationKind.rawValue) " +
-                "result=\(visibleNormalTabIds.count)"
+                "[NativeTab] insertionIndex chose head for kind=\(context.creationKind.rawValue)"
             )
-            return visibleNormalTabIds.count
+            return 0
         case .explicitInsert, .moveFromOtherWindow, .restore, .bridgeCreate, .unknown:
             if let insertAfterTabId = context.insertAfterTabId,
                let anchorIndex = visibleNormalTabIds.firstIndex(of: insertAfterTabId) {
@@ -657,5 +656,39 @@ enum NativeTabDecisionEngine {
         }
 
         return false
+    }
+}
+
+/// Protects only native creation placements while their synchronous bridge
+/// mutations and queued full-strip echoes drain. Chromium wins at completion.
+struct NativeTabPlacementReconciler {
+    private var requests: [Int: UUID] = [:]
+    private var latestIndices: [Int: Int]?
+
+    var protectedTabIds: Set<Int> { Set(requests.keys) }
+
+    mutating func begin(tabId: Int) -> UUID {
+        let token = UUID()
+        requests[tabId] = token
+        return token
+    }
+
+    mutating func record(indices: [Int: Int]) {
+        latestIndices = indices
+    }
+
+    mutating func finish(tabId: Int, token: UUID) -> [Int: Int]? {
+        guard requests[tabId] == token else { return nil }
+        requests.removeValue(forKey: tabId)
+        return latestIndices
+    }
+
+    func reconcile(localOrder: [Int], physicalOrder: [Int], additionallyProtected: Set<Int> = []) -> [Int] {
+        let protected = protectedTabIds.union(additionallyProtected).intersection(localOrder)
+        var result = physicalOrder.filter { !protected.contains($0) }
+        for (index, tabId) in localOrder.enumerated() where protected.contains(tabId) {
+            result.insert(tabId, at: min(index, result.count))
+        }
+        return result
     }
 }

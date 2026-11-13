@@ -2016,7 +2016,7 @@ extension BrowserState {
             // partner, leaving Mac's state (sidebar selection, address-bar
             // routing) stuck on the partner.
             // `focuseTab` is statically @MainActor but at runtime this whole flow
-            // arrives via EventBus's `Task { @MainActor in ... }` dispatch.
+            // arrives via EventBus's FIFO main-queue dispatch.
             MainActor.assumeIsolated {
                 focuseTab(tab)
             }

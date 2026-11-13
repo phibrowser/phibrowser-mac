@@ -25,7 +25,8 @@ import SwiftUI
     /// the source window closes, since nothing is left to host them.
     private var pendingChooserRequests: [Int64: [(urlString: String,
                                                   defaultSpaceId: String,
-                                                  sourceIsNewTab: Bool)]] = [:]
+                                                  sourceIsNewTab: Bool,
+                                                  ordinaryNewTab: Bool)]] = [:]
     /// `willClose` observers for the source windows hosting an active chooser,
     /// keyed the same way. Drained in lockstep with `activeChoosers` so a
     /// source window closing mid-prompt can't leak its overlay NSWindow (the
@@ -2098,13 +2099,23 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
     }
 
+    @objc(askSpaceForURL:defaultSpaceId:sourceWindowId:sourceIsNewTab:ordinaryNewTab:)
+    func askSpace(forURL urlString: String, defaultSpaceId: String, sourceWindowId: Int64,
+                  sourceIsNewTab: Bool, ordinaryNewTab: Bool) {
+        Task { @MainActor in
+            self.presentChooser(forURL: urlString, defaultSpaceId: defaultSpaceId,
+                                sourceWindowId: sourceWindowId, sourceIsNewTab: sourceIsNewTab,
+                                ordinaryNewTab: ordinaryNewTab)
+        }
+    }
+
     @MainActor
-    private func presentChooser(forURL urlString: String, defaultSpaceId: String, sourceWindowId: Int64, sourceIsNewTab: Bool) {
+    private func presentChooser(forURL urlString: String, defaultSpaceId: String, sourceWindowId: Int64, sourceIsNewTab: Bool, ordinaryNewTab: Bool = false) {
         if activeChoosers[sourceWindowId] != nil {
             pendingChooserRequests[sourceWindowId, default: []].append(
                 (urlString: urlString,
                  defaultSpaceId: defaultSpaceId,
-                 sourceIsNewTab: sourceIsNewTab))
+                 sourceIsNewTab: sourceIsNewTab, ordinaryNewTab: ordinaryNewTab))
             return
         }
         let manager = SpaceManager.shared
@@ -2126,7 +2137,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                     manager.routeAskedURL(urlString,
                                           toSpaceId: manager.currentDefaultSpaceId,
                                           sourceWindowId: sourceWindowId,
-                                          sourceIsNewTab: sourceIsNewTab)
+                                          sourceIsNewTab: sourceIsNewTab, ordinaryNewTab: ordinaryNewTab)
                 }
                 return
             }
@@ -2135,7 +2146,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             manager.routeAskedURL(urlString,
                                   toSpaceId: spaces.isEmpty ? nil : defaultSpaceId,
                                   sourceWindowId: sourceWindowId,
-                                  sourceIsNewTab: sourceIsNewTab)
+                                  sourceIsNewTab: sourceIsNewTab, ordinaryNewTab: ordinaryNewTab)
             return
         }
         // Hosted mode: `window` is the shell, which shows another Space
@@ -2147,7 +2158,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             manager.routeAskedURL(urlString,
                                   toSpaceId: nil,
                                   sourceWindowId: sourceWindowId,
-                                  sourceIsNewTab: sourceIsNewTab)
+                                  sourceIsNewTab: sourceIsNewTab, ordinaryNewTab: ordinaryNewTab)
             return
         }
 
@@ -2222,7 +2233,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             SpaceManager.shared.routeAskedURL(urlString,
                                               toSpaceId: chosen,
                                               sourceWindowId: sourceWindowId,
-                                              sourceIsNewTab: sourceIsNewTab)
+                                              sourceIsNewTab: sourceIsNewTab, ordinaryNewTab: ordinaryNewTab)
             self?.presentNextQueuedChooser(windowId: sourceWindowId)
         }
 
@@ -2248,7 +2259,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             SpaceManager.shared.routeAskedURL(urlString,
                                               toSpaceId: nil,
                                               sourceWindowId: sourceWindowId,
-                                              sourceIsNewTab: sourceIsNewTab)
+                                              sourceIsNewTab: sourceIsNewTab, ordinaryNewTab: ordinaryNewTab)
         }
         // Tear the prompt down if the source window closes underneath it,
         // so a stranded entry can't accumulate for the session. The token
@@ -2278,7 +2289,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             presentChooser(forURL: next.urlString,
                            defaultSpaceId: next.defaultSpaceId,
                            sourceWindowId: windowId,
-                           sourceIsNewTab: next.sourceIsNewTab)
+                           sourceIsNewTab: next.sourceIsNewTab, ordinaryNewTab: next.ordinaryNewTab)
         }
     }
 
@@ -2326,6 +2337,17 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
     }
 
+    @objc(routeURLInSpace:url:sourceWindowId:ordinaryNewTab:sourceIsNewTab:)
+    func routeURL(inSpace spaceId: String, url urlString: String, sourceWindowId: Int64,
+                  ordinaryNewTab: Bool, sourceIsNewTab: Bool) {
+        Task { @MainActor in
+            SpaceManager.shared.routeAskedURL(urlString, toSpaceId: spaceId,
+                                              sourceWindowId: sourceWindowId,
+                                              sourceIsNewTab: sourceIsNewTab,
+                                              ordinaryNewTab: ordinaryNewTab)
+        }
+    }
+
     /// A Space URL rule routed a new-tab navigation to a different Space (the
     /// URL opened elsewhere). Reset the source window's active new-tab page back
     /// to a clean state. Used by the auto-route-to-an-open-window path, which is
@@ -2354,7 +2376,8 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 SpaceManager.shared.routeAskedURL(request.urlString,
                                                   toSpaceId: nil,
                                                   sourceWindowId: windowId,
-                                                  sourceIsNewTab: request.sourceIsNewTab)
+                                                  sourceIsNewTab: request.sourceIsNewTab,
+                                                  ordinaryNewTab: request.ordinaryNewTab)
             }
         }
     }
@@ -3286,7 +3309,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         // Detach the closing tab's native view from Peek or Reader SYNCHRONOUSLY,
         // before the async EventBus close dispatch. This bridge callback runs on
         // the UI/main thread inside Chromium's synchronous close turn while the
-        // WebContents is still alive; the EventBus close (Task { @MainActor }) runs
+        // WebContents is still alive; the EventBus close (FIFO main-queue dispatch) runs
         // only AFTER Chromium has destroyed it. MainActor.assumeIsolated mirrors
         // windowDidEnterPlaceholderMode's synchronous-detach pattern.
         // The contract above holds today (BrowserThread::UI = the AppKit main thread =

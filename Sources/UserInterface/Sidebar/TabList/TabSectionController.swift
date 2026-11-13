@@ -190,6 +190,30 @@ class TabSectionController: NSObject {
             }
             .store(in: &cancellables)
 
+        // The same destination-window policy controls creation and the button.
+        // Preference/layout changes move only this stable row, not existing tabs.
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: DispatchQueue.main)
+            // Deduplicate the raw preference, not a layout-derived value.
+            // Layout has its own subscription, so notification order cannot
+            // leave this cache stale after a destination layout changes.
+            .map { _ in PhiPreferences.GeneralSettings.newTabsAtTop.loadValue() }
+            .prepend(PhiPreferences.GeneralSettings.newTabsAtTop.loadValue())
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.refreshTabItems(self?.browserState?.normalTabs ?? [])
+            }
+            .store(in: &cancellables)
+
+        browserState.$layoutMode
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshTabItems(self?.browserState?.normalTabs ?? [])
+            }
+            .store(in: &cancellables)
+
         // Initial inner-group subscription (covers groups already present
         // when the controller takes a state).
         subscribeToGroupContents()
@@ -266,7 +290,7 @@ class TabSectionController: NSObject {
         let liveSplitIds = Set(state.splits.map(\.id))
         splitWrappers = splitWrappers.filter { liveSplitIds.contains($0.key) }
 
-        var items: [SidebarItem] = [newTabButton]
+        var items: [SidebarItem] = state.opensNewTabsAtTop ? [newTabButton] : []
         var emittedGroupTokens = Set<String>()
         // Tab ids consumed by an emitted SplitSidebarItem. When we
         // iterate to a later pane of a split we skip it so the split
@@ -326,6 +350,7 @@ class TabSectionController: NSObject {
             items.append(wrapper)
             emittedGroupTokens.insert(token)
         }
+        if !state.opensNewTabsAtTop { items.append(newTabButton) }
         return items
     }
 

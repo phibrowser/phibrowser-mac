@@ -666,6 +666,13 @@ extension BrowserState {
             splitPaneIdsOpeningBehindBookmark.subtract(joined)
             reconcileSplitChatBinding(splits[index])
             syncSplitAIChatCollapsed(splits[index])
+            // A pane joining a bound split is focused before it lands here
+            // (the 3rd/4th pane of a split bookmark), so the focus change
+            // computed the bookmark inactive against the old pane set and
+            // focus does not move again. Recompute against the fresh panes.
+            for (bookmarkGuid, boundSplitId) in splitBookmarkBindings where boundSplitId == splitId {
+                syncSplitBookmarkOpenedState(bookmarkGuid: bookmarkGuid)
+            }
         }
         notifyTravelBackSceneChanged(tabIds: Array(Set(previous.tabIds + tabIds)))
         if !joined.isEmpty {

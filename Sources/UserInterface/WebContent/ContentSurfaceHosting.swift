@@ -14,7 +14,8 @@ import Cocoa
 /// layout pass, docking DevTools and opening the AI Chat panel can each
 /// change what the surface has to be told, an animation that moves only a
 /// web view's ancestors (the AI Chat panel's slide) changes it every frame,
-/// and a web view the surface attaches again starts out square and on top;
+/// a web view the surface attaches again starts out square and on top, and
+/// one moved to another host has placed itself where it joined the window;
 /// mounted controllers supply candidate pages through `contentSurfaceTabs`,
 /// alongside the placeholder wrapper. Each pass checks their actual ancestry
 /// and geometry. New mounting paths must expose their pages as candidates,
@@ -43,6 +44,13 @@ final class ContentSurfaceHosting {
     private struct Sent {
         weak var address: NSObject?
         var hosting: Hosting
+        /// The web view's superview when `hosting` was sent. A web view moved
+        /// to another host since, e.g. the AI Chat panel shared by the two
+        /// panes of a split, reported its bounds on joining the window, before
+        /// that host was laid out, and the surface placed it there. So
+        /// `hosting` no longer holds, even when the web view ends up where it
+        /// was.
+        weak var superview: NSView?
     }
 
     private weak var container: NSView?
@@ -172,7 +180,8 @@ final class ContentSurfaceHosting {
                 hosting.clip = .zero
             }
             let key = ObjectIdentifier(item.address)
-            if sent[key]?.address !== item.address || sent[key]?.hosting != hosting {
+            if sent[key]?.address !== item.address || sent[key]?.hosting != hosting
+                || (sendsPlacement && sent[key]?.superview !== item.webView.superview) {
                 if let sendForTesting {
                     sendForTesting(item.address, hosting)
                 } else if let wrapper = item.address as? WebContentWrapper {
@@ -211,7 +220,8 @@ final class ContentSurfaceHosting {
                                               zOrder: hosting.zOrder)
                 }
             }
-            nowSent[key] = Sent(address: item.address, hosting: hosting)
+            nowSent[key] = Sent(address: item.address, hosting: hosting,
+                                superview: item.webView.superview)
         }
         sent = nowSent
     }

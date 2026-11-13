@@ -1165,13 +1165,18 @@ final class PeekPanelController {
             let top = min(card.maxY, headerRect.minY - Self.headerClearance)
             card.size.height = max(0, top - card.minY)
         }
+        // The proportional margin is a fraction of a point for most window
+        // widths. Chromium lays the page out in whole points, so a card on a
+        // fractional edge leaves a hairline of the card's own background
+        // showing past the page down its right side.
+        card = NSIntegralRectWithOptions(card, .alignAllEdgesNearest)
         // The overlay spans the card, the control gutter to its right, and the
         // shadow margin around the lot — the card view sits back inside it at
         // exactly the inset it had before there was a shadow, so the peek
         // keeps its place on the page. The gutter is taken out of the card's
         // own right margin; a margin too narrow to hold it narrows the card
         // instead of pushing the controls off the page pane.
-        let maxX = min(card.maxX + Self.controlGutterWidth + Self.shadowMargin, cardRect.maxX)
+        let maxX = min(card.maxX + Self.controlGutterWidth + Self.shadowMargin, cardRect.maxX.rounded(.down))
         let originX = card.minX - Self.shadowMargin
         rootView.setScreenFrame(CGRect(x: originX,
                               y: card.minY - Self.verticalShadowMargin,

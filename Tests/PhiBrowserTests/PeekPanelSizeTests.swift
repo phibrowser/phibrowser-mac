@@ -163,6 +163,30 @@ final class PeekPanelSizeTests: XCTestCase {
                           screenFrame(of: header).minY)
     }
 
+    /// The card's side margin is a share of the page width, which for most
+    /// window widths is a fraction of a point. Chromium sizes the page in
+    /// whole points, so a fractional card left the card's own background
+    /// showing as a hairline down its right edge (PHI-1991). Whatever the
+    /// window width, the card sits on whole points.
+    func testThePeekCardSitsOnWholePointsAtAnyWindowWidth() throws {
+        let fixture = try makeSessionWithPeek()
+        let window = try XCTUnwrap(fixture.session.window)
+        for width in [1213.0, 1337.0, 1099.0, 1250.0] {
+            var frame = window.frame
+            frame.size.width = width
+            window.setFrame(frame, display: true)
+            settle()
+            fixture.container.view.layoutSubtreeIfNeeded()
+            fixture.panel.relayoutIfVisible()
+            fixture.panel.pageCardView.superview?.layoutSubtreeIfNeeded()
+            let card = screenFrame(of: fixture.panel.pageCardView)
+            XCTAssertEqual(card.minX, card.minX.rounded(), "minX at window width \(width)")
+            XCTAssertEqual(card.width, card.width.rounded(), "width at window width \(width)")
+            XCTAssertEqual(card.minY, card.minY.rounded(), "minY at window width \(width)")
+            XCTAssertEqual(card.height, card.height.rounded(), "height at window width \(width)")
+        }
+    }
+
     // MARK: - Helpers
 
     func testEdgeToEdgeSettingRelayoutsAnOpenPeekAndRestoresItsFrame() throws {

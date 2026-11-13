@@ -116,6 +116,10 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         }
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         spacesStripHostingView = hostingView
+        headerView.onSpaceSwitchPlacementChanged = { [weak self, weak stripGeometry] sitsInControlRow in
+            stripGeometry?.sitsInControlRow = sitsInControlRow
+            self?.updateHeaderHeight()
+        }
         headerView.mountSpaceSwitch(hostingView)
         spacesStripRowView = hostingView
         updateHeaderHeight()
@@ -886,7 +890,9 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         // bases leave 3pt under the last header row, as the docked one does.
         let base: CGFloat = showInSidebar ? 79 : 35
         let spacesBandHeight = SidebarHeaderView.spaceSwitchBandHeight(addressInSidebar: showInSidebar)
-        let headerHeight = base + (spacesEnabled ? spacesBandHeight : 0)
+        // A row moved up into the control row adds no height of its own.
+        let reservesSpacesBand = spacesEnabled && !headerView.spaceSwitchSitsInControlRow
+        let headerHeight = base + (reservesSpacesBand ? spacesBandHeight : 0)
         headerHeightConstraint?.update(offset: headerHeight)
     }
 

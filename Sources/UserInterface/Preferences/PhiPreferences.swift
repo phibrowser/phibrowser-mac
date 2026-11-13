@@ -121,6 +121,8 @@ extension PhiPreferences {
         case directionalTabClosingEnabled // Show and enable closing ordinary tabs before or after an anchor
         case groupTabsOpenedFromLinks // A link opened in a new tab on purpose forms a tab group with its Opener
         case sidebarMediaPlayerEnabled // Show controls for background page media
+        case sidebarHeaderShowsSearchTabs // Sidebar header buttons the user can toggle from the sidebar context menu
+        case sidebarHeaderShowsSidebarToggle
         case sidebarBottomBarShowsProfile // Sidebar bottom bar entries the user can toggle from the sidebar context menu
         case sidebarBottomBarShowsDownloads
         case sidebarBottomBarShowsMemory
@@ -173,7 +175,9 @@ extension PhiPreferences {
                 return false
             case .sidebarMediaPlayerEnabled:
                 return true
-            case .sidebarBottomBarShowsProfile,
+            case .sidebarHeaderShowsSearchTabs,
+                 .sidebarHeaderShowsSidebarToggle,
+                 .sidebarBottomBarShowsProfile,
                  .sidebarBottomBarShowsDownloads,
                  .sidebarBottomBarShowsMemory,
                  .sidebarBottomBarShowsFeedback,

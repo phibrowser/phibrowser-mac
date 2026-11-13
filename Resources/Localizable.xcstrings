@@ -39496,6 +39496,42 @@
         }
       }
     },
+    "common.tabAreaContextMenu.topButtons.searchTabs" : {
+      "comment" : "Tab area context menu - Top Buttons submenu item that shows or hides the sidebar header's Search Tabs button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Search Tabs"
+          }
+        }
+      }
+    },
+    "common.tabAreaContextMenu.topButtons.sidebarToggle" : {
+      "comment" : "Tab area context menu - Top Buttons submenu item that shows or hides the sidebar header's button that shows or hides the sidebar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Toggle Sidebar"
+          }
+        }
+      }
+    },
+    "common.tabAreaContextMenu.topButtonsSubmenu" : {
+      "comment" : "Tab area context menu - Submenu to choose which buttons the sidebar header shows",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Top Buttons"
+          }
+        }
+      }
+    },
     "common.tabMultiSelectionContextMenu.addToBookmarksAction" : {
       "comment" : "Tab multi-selection context menu - add selected tabs to the root bookmark location",
       "extractionState" : "extracted_with_value",

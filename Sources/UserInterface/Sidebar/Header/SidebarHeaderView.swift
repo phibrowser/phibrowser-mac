@@ -22,6 +22,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     private lazy var cancellables = Set<AnyCancellable>()
     private var sidebarButtonLeftConstraint: Constraint?
     private var upgradeButtonLeftConstraint: Constraint?
+    private var searchTabsButtonRightConstraint: Constraint?
     private var addressViewHeightConstraint: Constraint?
     private var spaceSwitchTopConstraint: Constraint?
     static func controlRowTopOffset(
@@ -79,6 +80,14 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     /// The mounted Spaces-switch row (owned by the sidebar view controller);
     /// the header positions it and toggles its visibility with the feature flag.
     private weak var spaceSwitchView: NSView?
+    /// The Spaces-switch row sits in the control row instead of its own row:
+    /// in the Balanced layout, once the user has hidden every button that
+    /// row holds. Its owner reclaims the row's height and right-aligns the
+    /// strip's icons while this is true.
+    private(set) var spaceSwitchSitsInControlRow = false
+    /// Called when `spaceSwitchSitsInControlRow` changes.
+    var onSpaceSwitchPlacementChanged: ((Bool) -> Void)?
+    private var spaceSwitchControlRowLeading: CGFloat?
     /// Last-applied switch visibility, so the toggle observer only remakes
     /// constraints when the master Spaces flag actually flips.
     private var spaceSwitchVisible: Bool?
@@ -320,7 +329,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
 
         searchTabsButton.snp.makeConstraints { make in
             make.centerY.equalTo(sidebarButton)
-            make.right.equalTo(sidebarButton.snp.left).offset(-2)
+            searchTabsButtonRightConstraint = make.right.equalTo(sidebarButton.snp.left).offset(-2).constraint
             make.size.equalTo(NSSize(width: 24, height: 24))
         }
 
@@ -402,6 +411,8 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
                 addressViewHeightConstraint = make.height.equalTo(addressViewHeight).constraint
             }
         } else {
+            spaceSwitchControlRowLeading = nil
+            setSpaceSwitchSitsInControlRow(false)
             view.snp.remakeConstraints { make in
                 make.leading.trailing.equalToSuperview()
                 make.top.equalTo(stackView.snp.bottom)
@@ -501,6 +512,23 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.updateLayoutVisibility(layoutMode: self.browserState?.layoutMode ?? .performance)
+            }
+            .store(in: &cancellables)
+
+        // The header buttons the user hides from the sidebar's context menu.
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .map { _ in }
+            .prepend(())
+            .map { _ in
+                [PhiPreferences.GeneralSettings.sidebarHeaderShowsSearchTabs,
+                 .sidebarHeaderShowsSidebarToggle].map { $0.loadValue() }
+            }
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                updateUpgradeAndSidebarVisibility(layoutMode: self.browserState?.layoutMode ?? .performance)
             }
             .store(in: &cancellables)
 
@@ -821,20 +849,64 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     }
 
     private func updateUpgradeAndSidebarVisibility(layoutMode: LayoutMode) {
-        sidebarButton.isHidden = false
+        let showsSidebarToggle = PhiPreferences.GeneralSettings.sidebarHeaderShowsSidebarToggle.loadValue()
+        sidebarButton.isHidden = !showsSidebarToggle
         searchTabsButton.isHidden = layoutMode != .balanced
+            || !PhiPreferences.GeneralSettings.sidebarHeaderShowsSearchTabs.loadValue()
+        // Search Tabs sits just before the sidebar button, and takes its
+        // place when the user hides it.
+        searchTabsButtonRightConstraint?.update(offset: showsSidebarToggle ? -2 : Self.sidebarButtonWidth)
 
         let upgradeLeftOffset = upgradeButtonLeftOffset(layoutMode: layoutMode)
         upgradeButtonLeftConstraint?.update(offset: upgradeLeftOffset)
         upgradeButton.isHidden = availableUpdateVersion == nil
             || !hasRoomForUpgradeButton(layoutMode: layoutMode, leftOffset: upgradeLeftOffset)
+        updateSpaceSwitchPlacement(layoutMode: layoutMode)
+    }
+
+    /// Moves the Spaces-switch row up into the control row once nothing else
+    /// is left in it, after the traffic lights, and back into its own row
+    /// when a button returns. Only the Balanced layout qualifies: the
+    /// Performance row keeps back, forward, and reload.
+    private func updateSpaceSwitchPlacement(layoutMode: LayoutMode) {
+        guard let view = spaceSwitchView, spaceSwitchVisible == true else { return }
+        let inControlRow = layoutMode == .balanced
+            && sidebarButton.isHidden && searchTabsButton.isHidden && upgradeButton.isHidden
+        let leading = (leadingChromeMaxX() ?? sidebarButtonLeftOffset - 10) + 10
+        if inControlRow {
+            guard !spaceSwitchSitsInControlRow || spaceSwitchControlRowLeading != leading else { return }
+            spaceSwitchControlRowLeading = leading
+            spaceSwitchTopConstraint = nil
+            view.snp.remakeConstraints { make in
+                make.leading.equalToSuperview().offset(leading)
+                make.trailing.equalToSuperview()
+                make.centerY.equalTo(sidebarButton)
+                make.height.equalTo(SpacesStripView.sidebarHeight)
+            }
+        } else {
+            guard spaceSwitchSitsInControlRow else { return }
+            spaceSwitchControlRowLeading = nil
+            view.snp.remakeConstraints { make in
+                make.leading.trailing.equalToSuperview()
+                spaceSwitchTopConstraint = make.top.equalTo(stackView.snp.bottom)
+                    .offset(Self.spaceSwitchTopOffset(addressInSidebar: isSidebarLayout(layoutMode))).constraint
+                make.height.equalTo(SpacesStripView.sidebarHeight)
+            }
+        }
+        setSpaceSwitchSitsInControlRow(inControlRow)
+    }
+
+    private func setSpaceSwitchSitsInControlRow(_ sits: Bool) {
+        guard spaceSwitchSitsInControlRow != sits else { return }
+        spaceSwitchSitsInControlRow = sits
+        onSpaceSwitchPlacementChanged?(sits)
     }
 
     /// Performance keeps the sidebar button after the traffic lights, so
     /// Update follows it; elsewhere the sidebar button sits at the trailing
     /// edge and Update takes the slot after the traffic lights.
     private func upgradeButtonLeftOffset(layoutMode: LayoutMode) -> CGFloat {
-        guard isSidebarLayout(layoutMode) else { return sidebarButtonLeftOffset }
+        guard isSidebarLayout(layoutMode), !sidebarButton.isHidden else { return sidebarButtonLeftOffset }
         return sidebarButtonLeftOffset + Self.sidebarButtonWidth + Self.upgradeButtonSpacing
     }
 

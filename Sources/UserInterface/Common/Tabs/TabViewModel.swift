@@ -7,6 +7,16 @@ import SwiftUI
 import Combine
 import AppKit
 
+enum TabSplitDropSide: Equatable {
+    case left
+    case right
+}
+
+struct TabSplitDropTarget: Equatable {
+    let tabId: Int
+    let side: TabSplitDropSide
+}
+
 enum TabCornerBadgeStatus: Int, CaseIterable {
     case chat
     case inputting
@@ -201,6 +211,7 @@ final class TabViewModel {
     /// True when this tab is part of the temporary multi-selection (the active
     /// tab is implicitly included but never carries this flag).
     var isMultiSelected: Bool = false
+    var splitDropSide: TabSplitDropSide?
     var isHovered: Bool = false
     var isHoverSuppressed: Bool = false
     var showsTabPreview: Bool = false
@@ -279,6 +290,7 @@ final class TabViewModel {
         isActive = false
         isActiveSuppressed = false
         isMultiSelected = false
+        splitDropSide = nil
         isHovered = false
         isHoverSuppressed = false
         showsTabPreview = false

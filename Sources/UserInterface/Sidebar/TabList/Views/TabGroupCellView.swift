@@ -396,6 +396,7 @@ final class TabGroupCellView: SidebarCellView {
     /// on after the user switched away from one of the panes.
     private var splitsByKey: [Int: SplitSidebarItem] = [:]
     private var activeDragTabGuid: Int?
+    private var splitDropTarget: TabSplitDropTarget?
 
     private var isDropTargetHighlighted = false
     private var isHovered = false
@@ -433,6 +434,7 @@ final class TabGroupCellView: SidebarCellView {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        clearSplitDropTarget()
         viewModel.cancelSubscriptions()
         collapseSubscription?.cancel()
         collapseSubscription = nil
@@ -613,6 +615,9 @@ final class TabGroupCellView: SidebarCellView {
             }
             cell.delegate = self
             cell.configure(with: tab)
+            cell.setSplitDropTargetHighlighted(
+                self.splitDropTarget?.tabId == tab.guid
+                    ? self.splitDropTarget?.side : nil)
             cell.setActiveSuppressed(isOverviewSelected)
             return cell
         }
@@ -1064,6 +1069,10 @@ extension TabGroupCellView: NSTableViewDelegate {
 // MARK: - GroupTabsTableViewDelegate
 
 extension TabGroupCellView: GroupTabsTableViewDelegate {
+    func tableViewDidEndDragDestination(_ tableView: GroupTabsTableView) {
+        clearSplitDropTarget()
+    }
+
     func tableView(_ tableView: GroupTabsTableView,
                    beginDraggingRow row: Int,
                    with event: NSEvent) {
@@ -1281,6 +1290,7 @@ extension TabGroupCellView: GroupTabsDragSource {
     func groupTabsDraggingEnded(session: NSDraggingSession,
                                 at screenPoint: NSPoint,
                                 operation: NSDragOperation) {
+        clearSplitDropTarget()
         AppLogDebug(
             "[TAB_GROUPS][INNER_DRAG] dataSource.ended screen=\(screenPoint) " +
             "operation=\(operation.rawValue)"
@@ -1328,6 +1338,20 @@ extension TabGroupCellView: GroupTabsDragSource {
                                proposedRow: Int,
                                proposedDropOperation dropOperation: NSTableView.DropOperation) -> NSDragOperation {
         let pasteboard = info.draggingPasteboard
+        if let (_, target) = groupedSplitDropTabs(from: pasteboard,
+                                                  ontoRow: proposedRow,
+                                                  operation: dropOperation) {
+            let side = groupedSplitDropSide(
+                at: info.draggingLocation, row: proposedRow)
+            setSplitDropTarget(TabSplitDropTarget(
+                tabId: target.guid, side: side))
+            if let group = configuredGroup {
+                groupCellDelegate?.tabGroupCell(
+                    self, didUpdateDropTargetHighlight: false, for: group)
+            }
+            return .move
+        }
+        clearSplitDropTarget()
         let insertionRow = resolvedInnerInsertionRow(
             proposedRow: proposedRow,
             dropOperation: dropOperation,
@@ -1392,6 +1416,25 @@ extension TabGroupCellView: GroupTabsDragSource {
     func groupTabsAcceptDrop(_ info: NSDraggingInfo,
                              row: Int,
                              dropOperation: NSTableView.DropOperation) -> Bool {
+        defer { clearSplitDropTarget() }
+        if let (dragged, target) = groupedSplitDropTabs(
+            from: info.draggingPasteboard,
+            ontoRow: row,
+            operation: dropOperation
+        ), let state = configuredBrowserState {
+            let side: TabSplitDropSide
+            if let highlightedTarget = splitDropTarget,
+               highlightedTarget.tabId == target.guid {
+                side = highlightedTarget.side
+            } else {
+                side = groupedSplitDropSide(at: info.draggingLocation, row: row)
+            }
+            return state.createSplit(
+                leftTabId: side == .left ? dragged.guid : target.guid,
+                rightTabId: side == .left ? target.guid : dragged.guid,
+                layout: .vertical
+            ) != nil
+        }
         let insertionRow = resolvedInnerInsertionRow(
             proposedRow: row,
             dropOperation: dropOperation,
@@ -1471,6 +1514,60 @@ extension TabGroupCellView: GroupTabsDragSource {
         }
         AppLogDebug("[TAB_GROUPS][INNER_DRAG] inner.acceptDrop -> \(accepted)")
         return accepted
+    }
+
+    private func setSplitDropTarget(_ target: TabSplitDropTarget?) {
+        guard splitDropTarget != target else { return }
+        let previous = splitDropTarget
+        splitDropTarget = target
+        for (candidate, side) in [(previous, nil), (target, target?.side)] {
+            guard let candidate,
+                  let row = currentMemberOrder.firstIndex(of: candidate.tabId),
+                  let cell = innerTable.view(
+                    atColumn: 0, row: row, makeIfNecessary: false
+                  ) as? SidebarTabCellView else {
+                continue
+            }
+            cell.setSplitDropTargetHighlighted(side)
+        }
+    }
+
+    private func clearSplitDropTarget() {
+        setSplitDropTarget(nil)
+    }
+
+    private func groupedSplitDropSide(
+        at windowPoint: NSPoint,
+        row: Int
+    ) -> TabSplitDropSide {
+        let point = innerTable.convert(windowPoint, from: nil)
+        return point.x < innerTable.rect(ofRow: row).midX ? .left : .right
+    }
+
+    private func groupedSplitDropTabs(
+        from pasteboard: NSPasteboard,
+        ontoRow row: Int,
+        operation: NSTableView.DropOperation
+    ) -> (dragged: Tab, target: Tab)? {
+        guard operation == .on,
+              currentMemberOrder.indices.contains(row),
+              let state = configuredBrowserState,
+              let group = configuredGroup,
+              pasteboard.string(forType: .sourceWindowId) == String(state.windowId),
+              pasteboard.string(forType: .phiBookmark) == nil,
+              pasteboard.phiBookmarkGuids().isEmpty,
+              pasteboard.phiNormalTabIds().count <= 1,
+              let draggedId = pasteboard.string(forType: .normalTab).flatMap(Int.init),
+              let target = tabsByGuid[currentMemberOrder[row]],
+              target.guid != draggedId,
+              let dragged = state.normalTabs.first(where: { $0.guid == draggedId }),
+              dragged.groupToken == group.token,
+              target.groupToken == group.token,
+              state.splitGroup(forTabId: draggedId) == nil,
+              state.splitGroup(forTabId: target.guid) == nil else {
+            return nil
+        }
+        return (dragged, target)
     }
 
     private func resolvedInnerInsertionRow(

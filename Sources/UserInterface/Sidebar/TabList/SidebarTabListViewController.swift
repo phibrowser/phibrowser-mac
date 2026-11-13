@@ -262,8 +262,8 @@ class SidebarTabListViewController: NSViewController {
     /// Set while the Space root is opened only so autosave can restore its folders.
     private var isRestoringAutosavedExpansion = false
 
-    /// Drop-target visual feedback: at most one of bookmark folder
-    /// or tab-group is highlighted at a time. Replaces the older
+    /// Drop-target visual feedback: at most one bookmark folder,
+    /// tab group, or split partner is highlighted at a time. Replaces the older
     /// `dropFeedbackFolderGuid: String?` single-purpose flag so the
     /// new tab-group highlight (Phase 3) can ride the same state
     /// machine without parallel bookkeeping.
@@ -271,6 +271,7 @@ class SidebarTabListViewController: NSViewController {
         case none
         case bookmarkFolder(guid: String)
         case tabGroup(token: String)
+        case splitTab(TabSplitDropTarget)
         case spaceRoot
     }
     private var dropFeedbackTarget: DropFeedbackTarget = .none
@@ -1970,6 +1971,15 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             return .move
         }
 
+        if let (_, target) = splitDropTabs(from: pasteboard,
+                                          onto: originalResolvedItem,
+                                          childIndex: index) {
+            let side = splitDropSide(in: outlineView, at: info.draggingLocation)
+            setDropFeedback(.splitTab(TabSplitDropTarget(
+                tabId: target.guid, side: side)))
+            return .move
+        }
+
         let bookmarkBatch = draggedBookmarkBatch(from: pasteboard)
         let bookmarkBatchContainsFolder = bookmarkBatch.contains { $0.isFolder }
         if bookmarkBatchContainsFolder {
@@ -2619,7 +2629,27 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             return false
         }
 
+        let splitFeedback = dropFeedbackTarget
         browserState.tabDraggingSession.end()
+
+        if let (draggedTab, targetTab) = splitDropTabs(
+            from: pasteboard,
+            onto: resolvedItem,
+            childIndex: resolvedIndex
+        ) {
+            let side: TabSplitDropSide
+            if case .splitTab(let highlightedTarget) = splitFeedback,
+               highlightedTarget.tabId == targetTab.guid {
+                side = highlightedTarget.side
+            } else {
+                side = splitDropSide(in: outlineView, at: info.draggingLocation)
+            }
+            return browserState.createSplit(
+                leftTabId: side == .left ? draggedTab.guid : targetTab.guid,
+                rightTabId: side == .left ? targetTab.guid : draggedTab.guid,
+                layout: .vertical
+            ) != nil
+        }
 
         // Mirror of the validateDrop off-the-record guard, for redirected
         // drops that land here with a bookmark target anyway.
@@ -3281,6 +3311,44 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         return isRowInBookmarkSection(proposedRow)
     }
     
+    /// A single opened tab dropped on another opened tab forms a split.
+    /// Keep gap drops, cross-window transfers, multi-selection drags, and
+    /// existing split pairs on their current reorder paths. Split members
+    /// must share group membership so the merged sidebar row remains valid.
+    private func splitDropTabs(
+        from pasteboard: NSPasteboard,
+        onto item: Any?,
+        childIndex: Int
+    ) -> (dragged: Tab, target: Tab)? {
+        guard childIndex == NSOutlineViewDropOnItemIndex,
+              dragSourceWindowId(from: pasteboard) == browserState.windowId,
+              pasteboard.string(forType: .tabGroup) == nil,
+              pasteboard.string(forType: .phiBookmark) == nil,
+              pasteboard.phiBookmarkGuids().isEmpty,
+              pasteboard.phiNormalTabIds().count <= 1,
+              let draggedId = pasteboard.string(forType: .normalTab).flatMap(Int.init),
+              let target = item as? Tab,
+              target.guid != draggedId,
+              let dragged = browserState.normalTabs.first(where: { $0.guid == draggedId }),
+              browserState.normalTabs.contains(where: { $0.guid == target.guid }),
+              dragged.groupToken == target.groupToken,
+              browserState.splitGroup(forTabId: draggedId) == nil,
+              browserState.splitGroup(forTabId: target.guid) == nil else {
+            return nil
+        }
+        return (dragged, target)
+    }
+
+    private func splitDropSide(
+        in outlineView: NSOutlineView,
+        at windowPoint: NSPoint
+    ) -> TabSplitDropSide {
+        let point = outlineView.convert(windowPoint, from: nil)
+        let row = outlineView.row(at: point)
+        guard row >= 0 else { return .right }
+        return point.x < outlineView.rect(ofRow: row).midX ? .left : .right
+    }
+
     /// A drop landed directly ON a tab row (`dropChildIndex ==
     /// NSOutlineViewDropOnItemIndex`). Redirect the indicator to "insert
     /// before that tab" in tab-section coordinates, snapping past any
@@ -3669,6 +3737,8 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             updateFolderDropFeedbackCell(guid: guid, highlighted: highlighted)
         case .tabGroup(let token):
             updateTabGroupDropFeedbackCell(token: token, highlighted: highlighted)
+        case .splitTab(let target):
+            updateSplitTabDropFeedbackCell(target: target, highlighted: highlighted)
         case .spaceRoot:
             updateSpaceRootDropFeedbackCell(highlighted: highlighted)
         }
@@ -3681,6 +3751,23 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             return
         }
         cell.setDropTargetHighlighted(highlighted)
+    }
+
+    private func updateSplitTabDropFeedbackCell(
+        target: TabSplitDropTarget,
+        highlighted: Bool
+    ) {
+        guard let tab = browserState.normalTabs.first(where: { $0.guid == target.tabId }) else {
+            return
+        }
+        let row = outlineView.row(forItem: tab)
+        guard row >= 0,
+              let cell = outlineView.view(
+                atColumn: 0, row: row, makeIfNecessary: false
+              ) as? SidebarTabCellView else {
+            return
+        }
+        cell.setSplitDropTargetHighlighted(highlighted ? target.side : nil)
     }
 
     private func updateFolderDropFeedbackCell(guid: String, highlighted: Bool) {
@@ -3961,6 +4048,14 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         if let tabCell = cellView as? SidebarTabCellView {
             tabCell.setActiveSuppressed(browserState.groupOverviewState != nil)
             tabCell.setHoverSuppressed(isTabHoverSuppressed)
+            if let tab = sidebarItem as? Tab {
+                if case .splitTab(let target) = dropFeedbackTarget,
+                   target.tabId == tab.guid {
+                    tabCell.setSplitDropTargetHighlighted(target.side)
+                } else {
+                    tabCell.setSplitDropTargetHighlighted(nil)
+                }
+            }
         }
         (cellView as? SidebarSplitCellView)?.setHoverSuppressed(isTabHoverSuppressed)
         if let bookmarkCell = cellView as? BookmarkCellView,
@@ -5689,10 +5784,12 @@ extension SidebarTabListViewController: SideBarOutlineViewDelegate {
     }
 
     func outlineView(_ outlineView: NSOutlineView, draggingExited sender: (any NSDraggingInfo)?) {
+        clearDropFeedback()
         endOutlineDestinationDrag()
     }
 
     func outlineView(_ outlineView: NSOutlineView, draggingEnded sender: any NSDraggingInfo) {
+        clearDropFeedback()
         endOutlineDestinationDrag()
     }
     

@@ -30,6 +30,13 @@ final class FloatingSidebarHostViewController: NSViewController {
     private var floatingSidebarOcclusionObserver: NSObjectProtocol?
     private var isPointerInsideFloatingSidebar = false
     private var isPointerInsideFloatingSidebarTrigger = false
+    /// The strip along the panel's inner edge (the one facing the page)
+    /// that resizes it.
+    private(set) var floatingSidebarResizeHandle: FloatingSidebarResizeHandleView?
+    private var resizeHandleVisibility: AnyCancellable?
+    /// The panel stays open while its edge is dragged, wherever the pointer is.
+    private(set) var isResizingFloatingSidebar = false
+    private var floatingSidebarResizeStartWidth: CGFloat = 0
     private var isSwitchingSpace = false
     private var visibilityGeneration = 0
     /// The presented Space's content was made the panel's while the panel
@@ -280,6 +287,12 @@ final class FloatingSidebarHostViewController: NSViewController {
     /// hidden panel follows it; shorter than the trigger's enable delay after
     /// a collapse, so a deferred sync lands before the panel can first show.
     static let floatingSidebarWidthSyncDelay: TimeInterval = 0.25
+    /// The resize strip is as wide as the docked column's divider, half of it
+    /// inside the panel and half past its edge.
+    static let floatingSidebarResizeHandleWidth: CGFloat = PhiSplitViewController.dividerHitThickness
+    /// How far past the panel's inner edge the pointer can stray before the
+    /// panel closes. It covers the resize strip's outer half.
+    static let floatingSidebarEdgeBufferWidth: CGFloat = 10
 
     /// The column's last expanded width as the bound state reported it; the
     /// source for a host outside a shell (a standalone Incognito window),
@@ -406,6 +419,27 @@ final class FloatingSidebarHostViewController: NSViewController {
             make.bottom.equalToSuperview().offset(-Self.floatingSidebarInset)
             floatingSidebarWidthConstraint = make.width.equalTo(currentFloatingWidth + Self.floatingSidebarInset).constraint
         }
+
+        // Centered on the panel's inner edge, reaching past it as far as
+        // into it, like the docked column's divider. A sibling of the panel
+        // rather than its subview, so the half outside the panel takes
+        // clicks too; it follows the panel's visibility.
+        let resizeHandle = FloatingSidebarResizeHandleView()
+        resizeHandle.wantsLayer = true
+        resizeHandle.layer?.zPosition = WebContentContainerViewController.LayerZIndex.floatingSidebar
+        resizeHandle.onBegin = { [weak self] in self?.beginFloatingSidebarResize() }
+        resizeHandle.onDrag = { [weak self] offset in
+            guard let self else { return }
+            resizeFloatingSidebar(toWidth: Self.floatingSidebarWidth(
+                from: floatingSidebarResizeStartWidth, dragOffset: offset, sidebarOnRight: sidebarOnRight))
+        }
+        resizeHandle.onEnd = { [weak self] in self?.endFloatingSidebarResize() }
+        view.addSubview(resizeHandle, positioned: .above, relativeTo: interactionContainerView)
+        floatingSidebarResizeHandle = resizeHandle
+        layoutResizeHandle(on: interactionContainerView)
+        resizeHandleVisibility = interactionContainerView.publisher(for: \.isHidden)
+            .sink { [weak resizeHandle] isHidden in resizeHandle?.isHidden = isHidden }
+
         view.layoutSubtreeIfNeeded()
         interactionContainerView.isHidden = true
         interactionContainerView.alphaValue = 1
@@ -494,7 +528,49 @@ final class FloatingSidebarHostViewController: NSViewController {
                 make.left.equalToSuperview().offset(right ? 0 : Self.floatingSidebarInset)
                 make.right.equalToSuperview().offset(right ? -Self.floatingSidebarInset : 0)
             }
+            layoutResizeHandle(on: panel)
         }
+    }
+
+    /// Centers the resize strip on the panel's inner edge: its right edge
+    /// with the sidebar on the left, its left edge with the sidebar on the
+    /// right.
+    private func layoutResizeHandle(on panel: NSView) {
+        guard let handle = floatingSidebarResizeHandle else { return }
+        handle.snp.remakeConstraints { make in
+            make.top.bottom.equalTo(panel)
+            make.centerX.equalTo(sidebarOnRight ? panel.snp.left : panel.snp.right)
+            make.width.equalTo(Self.floatingSidebarResizeHandleWidth)
+        }
+    }
+
+    /// Starts a resize of the panel by its inner edge.
+    func beginFloatingSidebarResize() {
+        isResizingFloatingSidebar = true
+        floatingSidebarResizeStartWidth = currentFloatingWidth
+        cancelFloatingSidebarHide()
+    }
+
+    /// Resizes the panel to `width`, within the docked column's limits. The
+    /// panel and the column share one width, so the column's owner takes it
+    /// as well: the column docks at it.
+    func resizeFloatingSidebar(toWidth width: CGFloat) {
+        let clamped = min(max(width, MainSplitViewController.leftItemMinWidth),
+                          MainSplitViewController.leftItemMaxWidth)
+        if let split = parent as? ShellSplitViewController {
+            split.adoptFloatingSidebarWidth(clamped)
+        } else {
+            lastExpandedWidthOutsideShell = clamped
+            browserState?.windowController?.mainSplitViewController.adoptFloatingSidebarWidth(clamped)
+        }
+        applyFloatingSidebarWidth()
+    }
+
+    /// Ends a resize. The panel closes as usual if the pointer is outside it.
+    func endFloatingSidebarResize() {
+        guard isResizingFloatingSidebar else { return }
+        isResizingFloatingSidebar = false
+        scheduleFloatingSidebarHide()
     }
 
     func updateFloatingSidebarAvailability() {
@@ -646,7 +722,9 @@ final class FloatingSidebarHostViewController: NSViewController {
 
     func scheduleFloatingSidebarHide() {
         cancelFloatingSidebarHide()
-        guard !isSwitchingSpace else { return }
+        // A resize drag can outrun the panel's edge; the panel waits for the
+        // drag to end (`endFloatingSidebarResize` schedules again).
+        guard !isSwitchingSpace, !isResizingFloatingSidebar else { return }
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
             // The inline create-Space form pins the panel open: a pointer
@@ -659,6 +737,14 @@ final class FloatingSidebarHostViewController: NSViewController {
             guard isPointerInsideFloatingSidebar == false else { return }
             guard isPointerInsideFloatingSidebarTrigger == false else { return }
             if floatingSidebarShownFromRightToLeft, isMouseAtFloatingSidebarLeftSide() {
+                return
+            }
+            // Slipping just past the inner edge is forgiven: the panel waits
+            // while the pointer is in the buffer, checking again as long as
+            // it stays there, and closes only once it has moved on.
+            if let window = view.window,
+               floatingSidebarEdgeBufferContains(window.mouseLocationOutsideOfEventStream) {
+                scheduleFloatingSidebarHide()
                 return
             }
             hideFloatingSidebar(animated: true)
@@ -711,6 +797,33 @@ final class FloatingSidebarHostViewController: NSViewController {
         return withinY && (sidebarOnRight ? mouseLocationInWindow.x > panelFrameInWindow.maxX - Self.floatingSidebarInset : mouseLocationInWindow.x < visiblePanelMinX)
     }
 
+    /// Whether `pointInWindow` lies in the strip just past the open panel's
+    /// inner edge, where the pointer can slip off without closing it.
+    func floatingSidebarEdgeBufferContains(_ pointInWindow: NSPoint) -> Bool {
+        guard let panel = floatingSidebarContainerView, panel.isHidden == false else { return false }
+        return Self.edgeBuffer(of: panel.convert(panel.bounds, to: nil), sidebarOnRight: sidebarOnRight,
+                               contains: pointInWindow)
+    }
+
+    /// Whether `point` lies in the strip just past the inner edge of a panel
+    /// at `panelFrame`: right of it with the sidebar on the left, left of it
+    /// with the sidebar on the right.
+    static func edgeBuffer(of panelFrame: NSRect, sidebarOnRight: Bool, contains point: NSPoint) -> Bool {
+        let withinY = point.y >= panelFrame.minY && point.y <= panelFrame.maxY
+        let withinX = sidebarOnRight
+            ? point.x < panelFrame.minX && point.x >= panelFrame.minX - floatingSidebarEdgeBufferWidth
+            : point.x > panelFrame.maxX && point.x <= panelFrame.maxX + floatingSidebarEdgeBufferWidth
+        return withinX && withinY
+    }
+
+    /// The panel's width after its inner edge has been dragged `dragOffset`
+    /// points to the right from where it was at `startWidth`. With the
+    /// sidebar on the right the inner edge is the panel's left edge, so
+    /// dragging left widens it.
+    static func floatingSidebarWidth(from startWidth: CGFloat, dragOffset: CGFloat, sidebarOnRight: Bool) -> CGFloat {
+        startWidth + (sidebarOnRight ? -dragOffset : dragOffset)
+    }
+
     func isMouseInsideFloatingSidebarVisibleRegion() -> Bool {
         guard let panel = floatingSidebarContainerView, panel.isHidden == false else { return false }
         guard let window = panel.window else { return false }
@@ -755,6 +868,61 @@ final class MouseTrackingAreaView: NSView {
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         onMouseExited?(event)
+    }
+}
+
+/// The strip along the floating panel's inner edge. Dragging it resizes the
+/// panel, as dragging the divider resizes the docked column.
+final class FloatingSidebarResizeHandleView: NSView {
+    var onBegin: (() -> Void)?
+    /// The pointer's horizontal distance from where the drag started.
+    var onDrag: ((CGFloat) -> Void)?
+    var onEnd: (() -> Void)?
+
+    private var dragStartX: CGFloat?
+    private var cursorTrackingArea: NSTrackingArea?
+
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let cursorTrackingArea {
+            removeTrackingArea(cursorTrackingArea)
+        }
+        // A tracking area rather than a cursor rect: the page under the panel
+        // sets its own cursor, and only `cursorUpdate` wins over it.
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.cursorUpdate, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        cursorTrackingArea = area
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        NSCursor.resizeLeftRight.set()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        dragStartX = event.locationInWindow.x
+        NSCursor.resizeLeftRight.set()
+        onBegin?()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let dragStartX else { return }
+        NSCursor.resizeLeftRight.set()
+        onDrag?(event.locationInWindow.x - dragStartX)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard dragStartX != nil else { return }
+        dragStartX = nil
+        onEnd?()
     }
 }
 

@@ -37,6 +37,9 @@ final class ShellSplitViewController: NSViewController {
     private func updateSidebarPosition() {
         let right = SidebarPosition.isOnRight
         guard sidebarOnRight != right else { return }
+        // A width the floating panel left belongs to the side it was set on;
+        // the destination side keeps its own.
+        pendingDockWidth = nil
         // `repositionSidebarItem` saves the outgoing side's current width;
         // a pending write from before the move would overwrite it later.
         sidebarWidthPersistWorkItem?.cancel()
@@ -134,6 +137,18 @@ final class ShellSplitViewController: NSViewController {
                     }
                     return
                 }
+                // Expanded some other way than `setSidebarCollapsed` (state
+                // restoration, a drag out of the edge): still dock at the
+                // width the floating panel left.
+                if !isCollapsed, let width = self.pendingDockWidth {
+                    self.pendingDockWidth = nil
+                    DispatchQueue.main.async { [weak self] in
+                        guard let splitView = self?.splitViewController.splitView else { return }
+                        splitView.setPosition(SidebarPosition.isOnRight
+                            ? splitView.bounds.width - splitView.dividerThickness - width
+                            : width, ofDividerAt: 0)
+                    }
+                }
                 self.recordSidebarWidth()
             }
             .store(in: &cancellables)
@@ -183,6 +198,11 @@ final class ShellSplitViewController: NSViewController {
     func setSidebarCollapsed(_ collapsed: Bool, animated: Bool) {
         let target = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional || collapsed
         guard sidebarSplitViewItem.isCollapsed != target else { return }
+        if !target, let width = pendingDockWidth {
+            pendingDockWidth = nil
+            sidebarSplitViewItem.expand(atWidth: width, animated: animated, in: splitViewController.splitView)
+            return
+        }
         if animated {
             sidebarSplitViewItem.animator().isCollapsed = target
         } else {
@@ -195,6 +215,8 @@ final class ShellSplitViewController: NSViewController {
     /// the one on screen.
     func setSidebarGeometry(width: CGFloat?, collapsed: Bool) {
         guard !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional else { return }
+        // An explicit width wins over the one the floating panel left.
+        if width != nil { pendingDockWidth = nil }
         if sidebarSplitViewItem.isCollapsed != collapsed {
             sidebarSplitViewItem.isCollapsed = collapsed
         }
@@ -220,7 +242,25 @@ final class ShellSplitViewController: NSViewController {
     }
 
     /// The column's width the last time it was expanded, or 0 before any.
+    /// Resizing the floating panel while the column is collapsed sets it too:
+    /// the panel and the column share one width.
     private(set) var lastExpandedSidebarWidth: CGFloat = 0
+
+    /// The width the column docks at when it next expands, set by resizing
+    /// the floating panel while the column is collapsed. AppKit would
+    /// otherwise restore the width the column had when it collapsed.
+    private var pendingDockWidth: CGFloat?
+
+    /// Takes the floating panel's width, resized by the user while the column
+    /// is collapsed, as the column's width: the panel opens at it from now on
+    /// and the column docks at it.
+    func adoptFloatingSidebarWidth(_ width: CGFloat) {
+        guard sidebarSplitViewItem.isCollapsed else { return }
+        let clamped = min(max(width, Self.leftItemMinWidth), Self.leftItemMaxWidth)
+        lastExpandedSidebarWidth = clamped
+        pendingDockWidth = clamped
+        persistSidebarWidth(clamped)
+    }
 
     private var sidebarWidthPersistWorkItem: DispatchWorkItem?
     private var lastRecordedSidebarWidth: CGFloat?
@@ -241,6 +281,12 @@ final class ShellSplitViewController: NSViewController {
             lastExpandedSidebarWidth = width
         }
         guard width != Self.leftItemMinWidth else { return }
+        persistSidebarWidth(width)
+    }
+
+    /// Writes `width` to the account's defaults once no newer width has
+    /// arrived for `sidebarWidthPersistDelay`.
+    private func persistSidebarWidth(_ width: CGFloat) {
         sidebarWidthPersistWorkItem?.cancel()
         let side = SidebarPosition.effective
         let workItem = DispatchWorkItem {

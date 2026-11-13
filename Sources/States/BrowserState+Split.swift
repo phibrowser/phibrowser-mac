@@ -506,6 +506,10 @@ extension BrowserState {
             }
             saveBoundBookmarkPanes(group, previousTabIds: swap.tabIds)
         }
+        // After the swap above has bound the split again, and after a
+        // restore has (`bindRestoredSplitToItsBookmark` runs first): a split
+        // still unbound here is a normal split.
+        dropSavedSplitBookmarkBindingIfUnbound(splitId: splitId)
         // After `splits`, so the page container mounts the waiting pane with
         // its split. Checked first: a restore replays every split here, and
         // each write would publish.

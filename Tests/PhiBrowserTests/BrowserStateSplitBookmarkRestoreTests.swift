@@ -60,7 +60,7 @@ final class BrowserStateSplitBookmarkRestoreTests: XCTestCase {
 
     func testRestoredSplitIsBoundToItsBookmarkAgain() throws {
         let (state, bookmark) = try makeStateWithSplitBookmark(guid: "restored-bookmark")
-        savePreviousRunBindings(["split-1": bookmark.guid], for: state)
+        writeSavedBindings(["split-1": bookmark.guid], for: state)
 
         restoreWindow(into: state, splitId: "split-1")
 
@@ -78,7 +78,7 @@ final class BrowserStateSplitBookmarkRestoreTests: XCTestCase {
         // No run-loop turn between the window and its restore, as at a
         // launch: the store has not delivered yet.
         let state = BrowserState(windowId: 7, localStore: store, profileId: "Default")
-        savePreviousRunBindings(["split-1": guid], for: state)
+        writeSavedBindings(["split-1": guid], for: state)
 
         restoreWindow(into: state, splitId: "split-1")
         XCTAssertFalse(state.bookmarkManager.didApplyFirstStoreDelivery)
@@ -92,7 +92,7 @@ final class BrowserStateSplitBookmarkRestoreTests: XCTestCase {
     func testRestoredSplitWhoseBookmarkIsGoneStaysANormalSplit() throws {
         let state = try makeState()
         XCTAssertTrue(waitUntil { state.bookmarkManager.didApplyFirstStoreDelivery })
-        savePreviousRunBindings(["split-1": "deleted-bookmark"], for: state)
+        writeSavedBindings(["split-1": "deleted-bookmark"], for: state)
 
         restoreWindow(into: state, splitId: "split-1")
 
@@ -103,7 +103,7 @@ final class BrowserStateSplitBookmarkRestoreTests: XCTestCase {
 
     func testRestoredSplitIsUnboundOnceTheStoreDeliversWithoutItsBookmark() throws {
         let state = try makeState()
-        savePreviousRunBindings(["split-1": "deleted-bookmark"], for: state)
+        writeSavedBindings(["split-1": "deleted-bookmark"], for: state)
 
         restoreWindow(into: state, splitId: "split-1")
         XCTAssertFalse(state.bookmarkManager.didApplyFirstStoreDelivery)
@@ -118,7 +118,7 @@ final class BrowserStateSplitBookmarkRestoreTests: XCTestCase {
         PhiPreferences.GeneralSettings.saveLayoutMode(.comfortable)
         let (state, bookmark) = try makeStateWithSplitBookmark(guid: "comfortable-bookmark")
         XCTAssertTrue(waitUntil { state.layoutMode == .comfortable })
-        savePreviousRunBindings(["split-1": bookmark.guid], for: state)
+        writeSavedBindings(["split-1": bookmark.guid], for: state)
 
         restoreWindow(into: state, splitId: "split-1")
 
@@ -129,7 +129,7 @@ final class BrowserStateSplitBookmarkRestoreTests: XCTestCase {
 
     func testBindingWhoseSplitDoesNotComeBackIsNotKept() throws {
         let (state, bookmark) = try makeStateWithSplitBookmark(guid: "unrestored-bookmark")
-        savePreviousRunBindings(["split-gone": bookmark.guid], for: state)
+        writeSavedBindings(["split-gone": bookmark.guid], for: state)
 
         restoreWindow(into: state, splitId: nil)
 
@@ -138,13 +138,98 @@ final class BrowserStateSplitBookmarkRestoreTests: XCTestCase {
         XCTAssertEqual(savedBindings(of: state), [:])
     }
 
+    // MARK: - Reopening a window in the same run
+
+    /// Closing a window takes its splits apart; reopening it without a quit
+    /// restores them under the same ids, into a new window state.
+    func testSplitOfAWindowReopenedInTheSameRunIsBoundAgain() throws {
+        let (closed, bookmark) = try makeStateWithSplitBookmark(guid: "reopened-window-bookmark")
+        bindSplitThenCloseIt(in: closed, to: bookmark)
+
+        let reopened = BrowserState(windowId: 8, localStore: closed.localStore, profileId: "Default")
+        XCTAssertTrue(waitUntil { reopened.bookmarkManager.bookmark(withGuid: bookmark.guid) != nil })
+        restoreWindow(into: reopened, splitId: "split-1")
+
+        XCTAssertEqual(reopened.splitBookmarkBindings, [bookmark.guid: "split-1"])
+        XCTAssertEqual(reopened.normalTabs.map(\.guid), [50])
+        XCTAssertEqual(savedBindings(of: reopened), ["split-1": bookmark.guid])
+    }
+
+    /// A split reopened after closing arrives under its id outside a
+    /// restore: it is a normal split and stays one at the next restore.
+    func testSplitComingBackOutsideARestoreDropsItsSavedBinding() throws {
+        let (state, bookmark) = try makeStateWithSplitBookmark(guid: "came-back-bookmark")
+        bindSplitThenCloseIt(in: state, to: bookmark)
+        XCTAssertEqual(savedBindings(of: state), ["split-1": bookmark.guid])
+
+        state.handleSplitCreated(splitId: "split-1", tabIds: [51, 52],
+                                 layout: .vertical, fractions: [0.5, 0.5])
+
+        XCTAssertEqual(state.splitBookmarkBindings, [:])
+        XCTAssertEqual(savedBindings(of: state), [:])
+    }
+
+    /// Two windows each hold a split bound to the same bookmark; closing and
+    /// reopening one leaves the other's binding alone.
+    func testReopeningOneWindowKeepsAnotherWindowsBindingToTheSameBookmark() throws {
+        let (closed, bookmark) = try makeStateWithSplitBookmark(guid: "two-window-bookmark")
+        let other = BrowserState(windowId: 9, localStore: closed.localStore, profileId: "Default")
+        other.tabs = [61, 62].map { Tab(guid: $0, url: "https://o\($0).example", isActive: false, index: $0) }
+        other.handleSplitCreated(splitId: "split-other", tabIds: [61, 62],
+                                 layout: .vertical, fractions: [0.5, 0.5])
+        other.splitBookmarkBindings[bookmark.guid] = "split-other"
+        bindSplitThenCloseIt(in: closed, to: bookmark)
+
+        let reopened = BrowserState(windowId: 8, localStore: closed.localStore, profileId: "Default")
+        XCTAssertTrue(waitUntil { reopened.bookmarkManager.bookmark(withGuid: bookmark.guid) != nil })
+        restoreWindow(into: reopened, splitId: "split-1")
+
+        XCTAssertEqual(reopened.splitBookmarkBindings, [bookmark.guid: "split-1"])
+        XCTAssertEqual(other.splitBookmarkBindings, [bookmark.guid: "split-other"])
+        XCTAssertEqual(savedBindings(of: reopened),
+                       ["split-1": bookmark.guid, "split-other": bookmark.guid])
+    }
+
+    /// The same split id saved by both runs: the binding made in this run wins.
+    func testBindingSavedInThisRunWinsOverThePreviousRuns() throws {
+        let store = try makeStore()
+        try saveSplitBookmark(guid: "old-bookmark", in: store)
+        try saveSplitBookmark(guid: "new-bookmark", in: store)
+        let first = BrowserState(windowId: 7, localStore: store, profileId: "Default")
+        writeSavedBindings(["split-1": "old-bookmark"], for: first)
+        // Takes the previous run's bindings without bringing the split back.
+        restoreWindow(into: first, splitId: nil)
+        // Read once already, so this is a binding saved by this run.
+        writeSavedBindings(["split-1": "new-bookmark"], for: first)
+
+        let reopened = BrowserState(windowId: 8, localStore: store, profileId: "Default")
+        XCTAssertTrue(waitUntil { reopened.bookmarkManager.bookmark(withGuid: "new-bookmark") != nil })
+        restoreWindow(into: reopened, splitId: "split-1")
+
+        XCTAssertEqual(reopened.splitBookmarkBindings, ["new-bookmark": "split-1"])
+    }
+
+    func testSplitOfAWindowReopenedInTheComfortableLayoutLosesItsSavedBinding() throws {
+        let (closed, bookmark) = try makeStateWithSplitBookmark(guid: "reopened-comfortable-bookmark")
+        bindSplitThenCloseIt(in: closed, to: bookmark)
+
+        PhiPreferences.GeneralSettings.saveLayoutMode(.comfortable)
+        let reopened = BrowserState(windowId: 8, localStore: closed.localStore, profileId: "Default")
+        XCTAssertTrue(waitUntil { reopened.layoutMode == .comfortable })
+        restoreWindow(into: reopened, splitId: "split-1")
+
+        XCTAssertEqual(reopened.splitBookmarkBindings, [:])
+        XCTAssertEqual(savedBindings(of: reopened), [:])
+    }
+
     func testSplitCreatedOutsideARestoreIsNotBound() throws {
         let (state, bookmark) = try makeStateWithSplitBookmark(guid: "reopened-bookmark")
-        savePreviousRunBindings(["split-1": bookmark.guid], for: state)
+        writeSavedBindings(["split-1": bookmark.guid], for: state)
 
         state.handleInsertedTabsSnapshot(windowSnapshot(splitId: "split-1"))
 
         XCTAssertEqual(state.splitBookmarkBindings, [:])
+        XCTAssertEqual(savedBindings(of: state), [:])
         XCTAssertEqual(state.normalTabs.map(\.guid), [50, 51, 52])
     }
 
@@ -199,8 +284,19 @@ final class BrowserStateSplitBookmarkRestoreTests: XCTestCase {
         return state
     }
 
-    /// What a previous run left in the account's defaults.
-    private func savePreviousRunBindings(_ bindings: [String: String], for state: BrowserState) {
+    /// Binds tabs 51 and 52 to `bookmark` as the split "split-1", then
+    /// takes the split apart the way a closing window does.
+    private func bindSplitThenCloseIt(in state: BrowserState, to bookmark: Bookmark) {
+        state.tabs = [51, 52].map { Tab(guid: $0, url: "https://e\($0).example", isActive: false, index: $0) }
+        state.handleSplitCreated(splitId: "split-1", tabIds: [51, 52],
+                                 layout: .vertical, fractions: [0.5, 0.5])
+        state.splitBookmarkBindings[bookmark.guid] = "split-1"
+        state.handleSplitRemoved(splitId: "split-1")
+    }
+
+    /// Writes the account's saved bindings: what a previous run left, when
+    /// nothing has read them in this run yet.
+    private func writeSavedBindings(_ bindings: [String: String], for state: BrowserState) {
         state.localStore.account.userDefaults.set(bindings,
                                                   forKey: BrowserState.savedSplitBookmarkBindingsKey)
     }

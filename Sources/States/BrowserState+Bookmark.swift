@@ -512,8 +512,12 @@ extension BrowserState {
 /// under the same split id, with nothing on its panes that names the
 /// bookmark. The bindings are therefore saved with the account as
 /// [split id: bookmark guid], and a restored split takes its bookmark back by
-/// id. A saved binding lives at most until the end of the run after the one
-/// that wrote it.
+/// id. A saved binding is settled the first time its split shows up again:
+/// a restore that brings the split back binds it, and the binding stays
+/// saved; a split that arrives any other way, or that the restore declines to
+/// bind, is a normal split and the saved binding is dropped. One whose split
+/// never shows up lives at most until the end of the run after the one that
+/// wrote it.
 extension BrowserState {
     static let savedSplitBookmarkBindingsKey = "splitBookmarkBindingsBySplitId"
 
@@ -525,8 +529,14 @@ extension BrowserState {
 
     /// The saved bindings, as [split id: bookmark guid].
     private var savedSplitBookmarkBindings: [String: String] {
-        localStore.account.userDefaults
-            .object(forKey: Self.savedSplitBookmarkBindingsKey) as? [String: String] ?? [:]
+        get {
+            localStore.account.userDefaults
+                .object(forKey: Self.savedSplitBookmarkBindingsKey) as? [String: String] ?? [:]
+        }
+        set {
+            localStore.account.userDefaults.set(newValue.isEmpty ? nil : newValue,
+                                                forKey: Self.savedSplitBookmarkBindingsKey)
+        }
     }
 
     /// Runs when a window is restored, whether or not it holds a split, so
@@ -537,9 +547,7 @@ extension BrowserState {
               Self.splitBookmarkBindingsFromPreviousRun[account.userID] == nil else { return }
         let saved = savedSplitBookmarkBindings
         Self.splitBookmarkBindingsFromPreviousRun[account.userID] = saved
-        if !saved.isEmpty {
-            account.userDefaults.set(nil, forKey: Self.savedSplitBookmarkBindingsKey)
-        }
+        if !saved.isEmpty { savedSplitBookmarkBindings = [:] }
     }
 
     /// Saves what changed in `splitBookmarkBindings` since `old`.
@@ -552,8 +560,9 @@ extension BrowserState {
         // the next launch. One that ends because its split is gone is kept:
         // quit and a closing window take every split apart before the
         // session is saved, and nothing tells those apart from the user
-        // closing the split. A split that is really gone is not restored,
-        // so its binding goes unused and is dropped by the next run.
+        // closing the split. Whichever it was, the binding is settled when
+        // the split next shows up (`bindRestoredSplitToItsBookmark`,
+        // `dropSavedSplitBookmarkBindingIfUnbound`).
         for (bookmarkGuid, splitId) in old
         where splitBookmarkBindings[bookmarkGuid] != splitId
             && saved[splitId] == bookmarkGuid
@@ -563,28 +572,45 @@ extension BrowserState {
         for (bookmarkGuid, splitId) in splitBookmarkBindings where old[bookmarkGuid] != splitId {
             saved[splitId] = bookmarkGuid
         }
-        localStore.account.userDefaults.set(saved.isEmpty ? nil : saved,
-                                            forKey: Self.savedSplitBookmarkBindingsKey)
+        savedSplitBookmarkBindings = saved
     }
 
     /// Binds a split a session restore is bringing back to the bookmark it
-    /// was bound to when the previous run ended. A split restored in the
-    /// comfortable layout, or whose bookmark is gone, stays a normal split.
+    /// was bound to: when the previous run ended, or, for a window closed and
+    /// reopened without a quit, when that window closed. A split restored in
+    /// the comfortable layout, whose bookmark is gone, or whose bookmark
+    /// already holds another split in this window, stays a normal split;
+    /// `handleSplitCreated` then drops its saved binding.
     func bindRestoredSplitToItsBookmark(splitId: String) {
-        guard !isIncognito,
-              let bookmarkGuid = Self.splitBookmarkBindingsFromPreviousRun[localStore.account.userID]?
-                  .removeValue(forKey: splitId),
-              !layoutMode.isTraditional,
+        guard !isIncognito else { return }
+        let fromPreviousRun = Self.splitBookmarkBindingsFromPreviousRun[localStore.account.userID]?
+            .removeValue(forKey: splitId)
+        // This run's binding is the newer one when both runs saved one.
+        guard let bookmarkGuid = savedSplitBookmarkBindings[splitId] ?? fromPreviousRun else { return }
+        let isBookmarkGone = bookmarkManager.didApplyFirstStoreDelivery
+            && bookmarkManager.bookmark(withGuid: bookmarkGuid) == nil
+        guard !layoutMode.isTraditional, !isBookmarkGone,
               splitBookmarkBindings[bookmarkGuid] == nil else { return }
-        if bookmarkManager.didApplyFirstStoreDelivery {
-            guard bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil else { return }
-        } else {
+        if !bookmarkManager.didApplyFirstStoreDelivery {
             // The bookmarks are not loaded yet: bind now so the panes never
             // show as rows, and check once they are
             // (`unbindRestoredSplitsWhoseBookmarkIsGone`).
             restoredSplitBookmarkGuidsAwaitingStore.insert(bookmarkGuid)
         }
         splitBookmarkBindings[bookmarkGuid] = splitId
+    }
+
+    /// A split that has arrived without a bookmark is a normal split: a
+    /// binding saved for it must not bind it at a later restore. Covers a
+    /// split that comes back under its id outside a restore (reopened after
+    /// closing) and one a restore declined to bind. No-op for a bound split.
+    func dropSavedSplitBookmarkBindingIfUnbound(splitId: String) {
+        guard !isIncognito, !splitBookmarkBindings.values.contains(splitId) else { return }
+        Self.splitBookmarkBindingsFromPreviousRun[localStore.account.userID]?
+            .removeValue(forKey: splitId)
+        if savedSplitBookmarkBindings[splitId] != nil {
+            savedSplitBookmarkBindings.removeValue(forKey: splitId)
+        }
     }
 
     /// Called when the bookmark store delivers, before the bookmarks' open

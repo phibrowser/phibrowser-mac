@@ -71,6 +71,82 @@ final class PinnedTabScopeTests: XCTestCase {
         )
     }
 
+    func testPinnedTabIconCanBeChangedAndResetWithoutChangingOtherPins() async throws {
+        let store = try makeStore()
+        let fixture = try seedProfilesAndSpaces(in: store)
+        try insertPinnedTab(
+            in: store,
+            guid: "first-pin",
+            lineageId: "first-lineage",
+            profile: fixture.defaultProfile,
+            title: "First",
+            url: "https://first.example"
+        )
+        try insertPinnedTab(
+            in: store,
+            guid: "second-pin",
+            lineageId: "second-lineage",
+            profile: fixture.defaultProfile,
+            title: "Second",
+            url: "https://second.example"
+        )
+
+        store.updatePinnedTabIcon(
+            resolving: "first-pin", profileId: "Default", spaceId: "space-a", icon: "emoji:1F680"
+        )
+        await flushWrites(store)
+
+        XCTAssertEqual(store.getTab(by: "first-pin")?.icon, "emoji:1F680")
+        XCTAssertEqual(store.getTab(by: "second-pin")?.icon, "default")
+
+        store.updatePinnedTabIcon(
+            resolving: "first-pin", profileId: "Default", spaceId: "space-a", icon: "default"
+        )
+        await flushWrites(store)
+
+        XCTAssertEqual(store.getTab(by: "first-pin")?.icon, "default")
+        XCTAssertEqual(store.getTab(by: "second-pin")?.icon, "default")
+    }
+
+    func testPinnedTabIconSurvivesScopeCopyAndStaleGuidUpdatesOnlySelectedSpace() async throws {
+        let store = try makeStore()
+        let fixture = try seedProfilesAndSpaces(in: store)
+        try insertPinnedTab(
+            in: store,
+            guid: "profile-pin",
+            lineageId: "shared-lineage",
+            profile: fixture.defaultProfile,
+            title: "Shared",
+            url: "https://shared.example"
+        )
+        store.updatePinnedTabIcon(
+            resolving: "profile-pin", profileId: "Default", spaceId: "space-a", icon: "emoji:1F680"
+        )
+        await flushWrites(store)
+
+        try await store.changePinnedTabScope(
+            to: .space,
+            preferredProfileId: "Default",
+            preferredSpaceId: "space-a"
+        )
+        try drainMainQueue()
+
+        let spaceA = try XCTUnwrap(store.getAllPinnedTabs(for: "Default", spaceId: "space-a").first)
+        let spaceB = try XCTUnwrap(store.getAllPinnedTabs(for: "Default", spaceId: "space-b").first)
+        XCTAssertEqual(spaceA.icon, "emoji:1F680")
+        XCTAssertEqual(spaceB.icon, "emoji:1F680")
+        XCTAssertNotEqual(spaceA.guid, "profile-pin")
+
+        store.updatePinnedTabIcon(
+            resolving: "profile-pin", profileId: "Default", spaceId: "space-a", icon: "emoji:1F3AF"
+        )
+        await flushWrites(store)
+
+        XCTAssertEqual(store.getTab(by: spaceA.guid)?.icon, "emoji:1F3AF")
+        XCTAssertEqual(store.getTab(by: spaceB.guid)?.icon, "emoji:1F680")
+        XCTAssertEqual(store.getTab(by: "profile-pin")?.icon, "emoji:1F680")
+    }
+
     func testProfileToSpaceCopiesRowsWithIndependentGuidsAndRemappedSplitPartners() async throws {
         let store = try makeStore()
         let fixture = try seedProfilesAndSpaces(in: store)

@@ -157,9 +157,12 @@ joined by ` | ` and the entity URL is the first pane's.
   and keeps the best pane per entity. A split is never inline, its quality is
   at most Q2 (a URL alone never takes the top slot), and it never hides an
   ordinary row of one of its pages.
-- Execution opens or focuses the split through the sidebar paths
+- Switching opens or focuses the split through the sidebar paths
   (`openPinnedSplit`, `openBookmark`) and focuses the first pane. A split that
   is still being created or recreated, or has a grouped member, is refused.
+- Otherwise the split opens as a new, unbound copy in a new foreground tab,
+  as Duplicate Split does (`duplicateOmniboxSplit` → `openURLsAsSplit`, with the
+  pin's or bookmark's layout). A copy does not update last-seen or learning.
 
 ### Snapshot
 
@@ -300,7 +303,7 @@ offers the same commands; they act on the NTP tab.
 | Row | Path |
 | --- | --- |
 | Ordinary | `FrozenNavigation` saved with the snapshot: URL, input, transition and dispositions. Selection never reads the live controller. |
-| Pin or bookmark | Chromium calls `executeNativeOmniboxSession` with the frozen entity. Phi validates it in the FIFO, then `BrowserState.dispatchOmniboxEntity` revalidates the binding and scope and focuses the bound tab or creates a tab bound to the entity (`createOmniboxEntityTab` / `activateOmniboxEntityTab`). A split goes through `openPinnedSplit` or `openBookmark` instead. |
+| Pin or bookmark | Chromium calls `executeNativeOmniboxSession` with the frozen entity. Phi validates it in the FIFO, then `BrowserState.dispatchOmniboxEntity` revalidates the binding and scope and focuses the bound tab or creates a tab bound to the entity (`createOmniboxEntityTab` / `activateOmniboxEntityTab`). A split goes through `openPinnedSplit` or `openBookmark` instead, or with `duplicateSplit` through `duplicateOmniboxSplit`. |
 | Command | `executeNativeOmniboxCommand` → `BrowserState.scheduleOmniboxCommand`. |
 
 `accepted` means the action was submitted once, not that it completed. A pin is
@@ -312,10 +315,12 @@ targets are rejected as unsupported.
 bookmark, Chromium also offers the row's ordinary intents from a
 `FrozenNavigation` of its URL; the client sends `openEntity` for ⌘ and the
 ordinary intent otherwise, which opens an unbound page like any ordinary row. A
-split offers only `openEntity`, and commands only `runCommand`; modifiers change
-neither. The Mac Omnibox opens a split chosen without ⌘ as a new, unbound split
-itself (`duplicateOmniboxSplit`, as Duplicate Split does) instead of selecting
-the row.
+split offers `openEntity` and `currentTab`, `newForegroundTab` and
+`newBackgroundTab`; any of these asks Phi for a new copy of the split
+(`executeNativeOmniboxSession` with `duplicateSplit`), always in a new
+foreground tab, and an NTP source is left in place. Commands offer only
+`runCommand`; modifiers do not change it. Phi's `opened_split` effect is
+reported as accepted.
 
 ## Mac Omnibox
 

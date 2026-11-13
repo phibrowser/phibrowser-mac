@@ -146,6 +146,7 @@ extension PhiChromiumCoordinator {
     func executeNativeOmniboxSession(_ sessionID: String, bindingToken: String, request: UInt64,
                                     windowId: Int64, frozenEntityJSON: String,
                                     mutationEpoch: String, pinScope: String, learningText: String,
+                                    duplicateSplit: Bool,
                                     completion: @escaping (String, String?) -> Void) {
         guard Thread.isMainThread, let windowID = Int(exactly: windowId),
               frozenEntityJSON.utf8.count <= 512 * 1024, learningText.utf8.count <= 256,
@@ -168,7 +169,7 @@ extension PhiChromiumCoordinator {
             Task { @MainActor in
                 let effect = await adapter.execute(sessionID: sessionID, token: bindingToken,
                     request: request, entity: entity, expectedEpoch: mutationEpoch,
-                    expectedPinScope: pinScope, learningText: learningText)
+                    expectedPinScope: pinScope, learningText: learningText, duplicateSplit: duplicateSplit)
                 AppLogDebug("[OmniboxNative] execute request=\(request) effect=\(effect?.rawValue ?? "nil")")
                 completion(effect == nil ? "stale" : "accepted", effect?.rawValue)
             }

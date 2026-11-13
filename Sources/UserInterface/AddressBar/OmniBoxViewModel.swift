@@ -631,13 +631,6 @@ class OmniBoxViewModel: ObservableObject {
         if deferV2EnterIfNeeded(for: suggestion, commandKeyPressed: commandKeyPressed) {
             return
         }
-        // Without ⌘ a split pin or bookmark opens as a new split, like Duplicate Split.
-        if !commandKeyPressed, suggestion.isNativeSplit, let panes = suggestion.v2Panes {
-            AppLogDebug("omni: duplicating split line: \(suggestion.index)")
-            browserState.duplicateOmniboxSplit(kind: suggestion.v2Kind, paneURLs: panes.map(\.url))
-            finishNavigationAction()
-            return
-        }
         let disposition = suggestionDisposition(for: suggestion, commandKeyPressed: commandKeyPressed)
         AppLogDebug("omni: select suggestion line: \(suggestion.index), disposition: \(disposition.rawValue)")
         if disposition == .currentTab, let currentTab {

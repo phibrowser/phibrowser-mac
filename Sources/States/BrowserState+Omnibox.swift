@@ -100,11 +100,17 @@ extension BrowserState {
     func dispatchOmniboxEntity(_ entity: OmniboxNativeEntity,
                               binding: OmniboxNativeContextAuthority.Binding,
                               ticket: OmniboxQueryTicket,
+                              duplicatesSplit: Bool = false,
                               isBindingCurrent: () -> Bool) -> OmniboxNativeDispatchEffect? {
         guard ticket.isValid(atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds),
               isBindingCurrent(), currentOmniboxNativeScope() == binding.scope else {
             AppLogDebug("[OmniboxNative] dispatch rejected: binding or scope changed")
             return nil
+        }
+        if duplicatesSplit {
+            guard entity.isSplit else { return nil }
+            duplicateOmniboxSplit(entity)
+            return .openedSplit
         }
         if let tab = focusingTab, splitGroup(forTabId: tab.guid) != nil { return nil }
         if entity.isSplit {

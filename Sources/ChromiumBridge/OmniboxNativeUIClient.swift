@@ -359,8 +359,7 @@ final class OmniboxNativeUIClient {
                 // A single page may also open as an ordinary row; a split only
                 // opens the entity.
                 validAction = action == "openEntity" && intents.contains("openEntity") &&
-                    !intents.contains("runCommand") && !intents.contains("switchToTab") &&
-                    (item["panes"] == nil || intents == ["openEntity"])
+                    !intents.contains("runCommand") && !intents.contains("switchToTab")
             }
             guard validAction else {
                 close(reason: "invalid_session"); return

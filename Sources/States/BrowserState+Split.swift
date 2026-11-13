@@ -2227,17 +2227,16 @@ extension BrowserState {
 
     /// Opens a split pin or bookmark's pages as a new, unbound split, like Duplicate Split.
     @MainActor
-    func duplicateOmniboxSplit(kind: String?, paneURLs urls: [String]) {
-        let layout: SplitLayout?
-        switch kind {
-        case "pin":
-            layout = pinnedTabs.first { $0.pinnedUrl == urls.first && $0.splitLayout != nil }?.splitLayout
-        case "bookmark":
-            layout = bookmarkManager.getAllBookmarks().first { $0.splitPaneURLs == urls }?.layout
-        default:
-            layout = nil
+    func duplicateOmniboxSplit(_ entity: OmniboxNativeEntity) {
+        guard let urls = entity.panes?.map(\.url) else { return }
+        let layout: SplitLayout
+        switch entity.kind {
+        case .pin:
+            layout = pinnedSplitLayout(dbGuids: [entity.entityID])
+        case .bookmark:
+            layout = bookmarkManager.getAllBookmarks().first { $0.guid == entity.entityID }?.layout ?? .vertical
         }
-        openURLsAsSplit(urls, layout: layout ?? .vertical)
+        openURLsAsSplit(urls, layout: layout)
     }
 
     /// Timeout cleanup shared by the two primary-split openers: if the new

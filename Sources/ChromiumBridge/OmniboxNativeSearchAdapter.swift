@@ -363,7 +363,8 @@ final class OmniboxNativeSearchAdapter {
 
     func execute(sessionID: String, token: String, request: UInt64,
                  entity: OmniboxNativeEntity, expectedEpoch: String,
-                 expectedPinScope: String, learningText: String) async -> OmniboxNativeDispatchEffect? {
+                 expectedPinScope: String, learningText: String,
+                 duplicateSplit: Bool) async -> OmniboxNativeDispatchEffect? {
         guard let state, let binding = authority.binding, binding.token == token,
               let session = sessions[sessionID] else {
             AppLogDebug("[OmniboxNative] execute rejected: no binding or session")
@@ -392,10 +393,12 @@ final class OmniboxNativeSearchAdapter {
                 profileID: binding.scope.profileID, spaceID: binding.scope.spaceID, ticket: ticket,
                 dispatch: { [weak self, weak state, weak session] entity -> OmniboxNativeDispatchEffect? in
                     guard let self, let state, let session else { return nil }
-                    let effect = state.dispatchOmniboxEntity(entity, binding: binding, ticket: ticket) {
+                    let effect = state.dispatchOmniboxEntity(entity, binding: binding, ticket: ticket,
+                                                             duplicatesSplit: duplicateSplit) {
                         self.isCurrent(binding, sessionID: sessionID, session: session)
                     }
-                    if effect != nil { state.recordOmniboxSelection(entity, learningText: learningText) }
+                    // A copy of a split is not a visit to the pin or bookmark.
+                    if effect != nil, !duplicateSplit { state.recordOmniboxSelection(entity, learningText: learningText) }
                     return effect
                 })
         } catch {

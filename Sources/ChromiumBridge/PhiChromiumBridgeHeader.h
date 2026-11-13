@@ -621,8 +621,9 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
     windowId:(int64_t)windowId frozenEntityJSON:(NSString*)frozenEntityJSON
     mutationEpoch:(NSString*)mutationEpoch pinScope:(NSString*)pinScope
     learningText:(NSString*)learningText
+    duplicateSplit:(BOOL)duplicateSplit
     completion:(void (^)(NSString* status, NSString* _Nullable effect))completion
-    NS_SWIFT_NAME(executeNativeOmniboxSession(_:bindingToken:request:windowId:frozenEntityJSON:mutationEpoch:pinScope:learningText:completion:));
+    NS_SWIFT_NAME(executeNativeOmniboxSession(_:bindingToken:request:windowId:frozenEntityJSON:mutationEpoch:pinScope:learningText:duplicateSplit:completion:));
 /// Runs a Phi command chosen from the native omnibox. `status` is
 /// "accepted" once Phi has taken the command, otherwise "rejected" or "stale".
 - (void)executeNativeOmniboxCommand:(NSString*)sessionID

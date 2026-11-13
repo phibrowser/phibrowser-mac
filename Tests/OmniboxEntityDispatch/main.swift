@@ -142,6 +142,7 @@ final class BrowserState {
         opened.append("pinnedSplit|\(dbGuids.joined(separator: ","))|\(focusGuid ?? "nil")")
     }
     func openBookmark(_ bookmark: Bookmark) { opened.append("bookmark|\(bookmark.guid)") }
+    func duplicateOmniboxSplit(_ entity: OmniboxNativeEntity) { opened.append("copy|\(entity.entityID)") }
     func omniboxCommandCatalog() -> OmniboxNativeCommandSnapshot { .init(status: .complete, entities: []) }
     static func isPeekTabGuid(_ value: String?) -> Bool { value?.hasPrefix("phi-peek:") == true }
     func clearMultiSelection() { clearedSelection += 1 }
@@ -235,8 +236,8 @@ enum OmniboxEntityDispatchTests {
               let splitBinding = splitAuthority.finishBinding(splitScope) else {
             fatalError("Fixture must have an eligible context")
         }
-        func dispatchSplit(_ value: OmniboxNativeEntity) -> OmniboxNativeDispatchEffect? {
-            state.dispatchOmniboxEntity(value, binding: splitBinding, ticket: ticket,
+        func dispatchSplit(_ value: OmniboxNativeEntity, copy: Bool = false) -> OmniboxNativeDispatchEffect? {
+            state.dispatchOmniboxEntity(value, binding: splitBinding, ticket: ticket, duplicatesSplit: copy,
                                        isBindingCurrent: { splitAuthority.binding == splitBinding })
         }
         let panes = [OmniboxNativePane(title: "One", url: "https://one.test/"),
@@ -263,6 +264,16 @@ enum OmniboxEntityDispatchTests {
         precondition(dispatchSplit(pinSplit) == .openedSplit)
         precondition(state.opened == ["pinnedSplit|a,b|nil"] && bridge.calls.isEmpty)
         precondition(store.lastSeen == ["a", "b"])
+        state.opened.removeAll()
+
+        // A copy needs no free membership and leaves the pin unvisited.
+        store.lastSeen.removeAll()
+        state.pendingPinnedSplitRecreateGuids = ["b"]
+        precondition(dispatchSplit(pinSplit, copy: true) == .openedSplit)
+        precondition(state.opened == ["copy|a"] && store.lastSeen.isEmpty && bridge.calls.isEmpty)
+        state.pendingPinnedSplitRecreateGuids = []
+        let solo = OmniboxNativeEntity(kind: .pin, entityID: "a", title: "One", url: "https://one.test/")
+        precondition(dispatchSplit(solo, copy: true) == nil, "Only a split has a copy")
         state.opened.removeAll()
 
         let bookmarkSplit = OmniboxNativeEntity(kind: .bookmark, entityID: "s", title: "One | Two",

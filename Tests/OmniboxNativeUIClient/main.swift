@@ -223,13 +223,17 @@ private struct NativeClientTests {
             precondition(fixture.transport.take("select").payload["intent"] as? String == sent)
             fixture.client.close()
         }
-        let split = Fixture()
+        // A split opens the entity for a switch and a copy of itself otherwise.
         var splitRow = row("pin", native: true)
-        splitRow["allowedIntents"] = ["openEntity", "auto"]
+        splitRow["allowedIntents"] = ["openEntity", "currentTab", "newForegroundTab", "newBackgroundTab"]
         splitRow["panes"] = [["title": "A", "url": "https://a.test/"], ["title": "B", "url": "https://b.test/"]]
-        let splitRequest = split.client.query(text: "pin", preventInline: false)!
-        split.transport.take("start").reply(envelope(splitRequest, rows: [splitRow]))
-        precondition(split.client.mode == .closed, "A split opens only its entity")
+        for (ordinary, sent) in [("switchToTab", "openEntity"), ("newForegroundTab", "newForegroundTab")] {
+            let fixture = Fixture()
+            let request = fixture.start(rows: [row("default"), splitRow], defaultID: "default")
+            precondition(fixture.client.select(fixture.token("pin", request: request), ordinaryIntent: ordinary) == "submitted")
+            precondition(fixture.transport.take("select").payload["intent"] as? String == sent)
+            fixture.client.close()
+        }
 
         let command = Fixture()
         let commandRequest = command.start("split", rows: [row("default"), commandRow("newSplitView")], defaultID: "default")

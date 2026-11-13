@@ -114,7 +114,8 @@ final class PhiChromiumCoordinator {}
         try snapshot.withRuntimeMetadata(ticket: ticket) { _ in (false, nil) }
     }
     func dispatchOmniboxEntity(_ entity: OmniboxNativeEntity, binding: OmniboxNativeContextAuthority.Binding,
-                              ticket: OmniboxQueryTicket, isBindingCurrent: () -> Bool) -> OmniboxNativeDispatchEffect? {
+                              ticket: OmniboxQueryTicket, duplicatesSplit: Bool,
+                              isBindingCurrent: () -> Bool) -> OmniboxNativeDispatchEffect? {
         guard isBindingCurrent(), ticket.isValid(atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds) else { return nil }
         dispatches += 1
         return .createdTab
@@ -156,13 +157,15 @@ final class PhiChromiumCoordinator {}
         let entity = OmniboxNativeEntity(kind: .pin, entityID: "pin", title: "Saved", url: "https://saved.test/")
         let pending = Task { @MainActor in
             await adapter.execute(sessionID: "two", token: second.token, request: 1,
-                entity: entity, expectedEpoch: "0", expectedPinScope: "space", learningText: "sav")
+                entity: entity, expectedEpoch: "0", expectedPinScope: "space", learningText: "sav",
+                duplicateSplit: false)
         }
         for _ in 0..<10 { await Task.yield() }
         precondition(state.localStore.selections.count == 1)
         adapter.query(sessionID: "two", token: second.token, request: 2) { _ in }
         let duplicate = await adapter.execute(sessionID: "two", token: second.token, request: 2,
-            entity: entity, expectedEpoch: "0", expectedPinScope: "space", learningText: "sav")
+            entity: entity, expectedEpoch: "0", expectedPinScope: "space", learningText: "sav",
+                duplicateSplit: false)
         precondition(duplicate == nil && state.localStore.selections.count == 1)
         state.localStore.selections.removeFirst()()
         let cancelled = await pending.value
@@ -190,7 +193,7 @@ final class PhiChromiumCoordinator {}
         var badActionRejected = false
         bridge.executeNativeOmniboxSession("two", bindingToken: second.token, request: 4,
             windowId: 1, frozenEntityJSON: "{}", mutationEpoch: "0", pinScope: "space",
-            learningText: "sav") { status, effect in
+            learningText: "sav", duplicateSplit: false) { status, effect in
             badActionRejected = status == "stale" && effect == nil
         }
         precondition(badActionRejected && state.dispatches == 0)
@@ -205,7 +208,8 @@ final class PhiChromiumCoordinator {}
         adapter.query(sessionID: "two", token: second.token, request: 5) { _ in }
         let accepted = Task { @MainActor in
             await adapter.execute(sessionID: "two", token: second.token, request: 5,
-                entity: entity, expectedEpoch: "0", expectedPinScope: "space", learningText: "sav")
+                entity: entity, expectedEpoch: "0", expectedPinScope: "space", learningText: "sav",
+                duplicateSplit: false)
         }
         for _ in 0..<10 { await Task.yield() }
         state.localStore.selections.removeFirst()()

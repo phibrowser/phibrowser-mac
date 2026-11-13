@@ -355,6 +355,7 @@ class BookmarkManager: ObservableObject {
                         self.rootFolder = Bookmark(title: "Bookmarks", children: reused)
                         self.rebuildIndex()
                     }
+                    self.browserState?.unbindRestoredSplitsWhoseBookmarkIsGone()
                     self.browserState?.syncAllBookmarksOpenedState()
                     self.browserState?.pruneMultiSelectionBookmarks()
                     self.noteFirstStoreDelivery()

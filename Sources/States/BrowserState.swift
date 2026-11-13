@@ -490,9 +490,16 @@ class BrowserState {
     /// bookmark.guid → splitId of the split that was opened from that
     /// split-view bookmark. Lets `openBookmark` detect that the bookmark is
     /// already open (and re-activate its primary pane) instead of creating
-    /// another duplicate split. Cleared when the split is removed. Not
-    /// persisted — window-scoped.
-    @Published var splitBookmarkBindings: [String: String] = [:]
+    /// another duplicate split. Cleared when the split is removed.
+    /// Window-scoped; saved with the account so a session restore can bind
+    /// the split again (`saveSplitBookmarkBindings`).
+    @Published var splitBookmarkBindings: [String: String] = [:] {
+        didSet { saveSplitBookmarkBindings(since: oldValue) }
+    }
+
+    /// Bookmarks a restored split was bound to before the bookmark store's
+    /// first delivery could confirm they still exist.
+    var restoredSplitBookmarkGuidsAwaitingStore: Set<String> = []
 
     let imagePreviewState: BrowserImagePreviewState
     /// Peek popup state (bound-tab cross-site previews); see the
@@ -5482,6 +5489,7 @@ class BrowserState {
         // no matter how this unwinds.
         restoreTransactionPendingGuids = Set(batch.map { $0.tab.guid })
         defer { restoreTransactionPendingGuids = nil }
+        if isRestore { takeSplitBookmarkBindingsFromPreviousRunIfNeeded() }
 
         if let indices = snapshot.indices {
             let combined = tabs + batch.map { $0.tab }
@@ -5522,6 +5530,9 @@ class BrowserState {
         for action in snapshot.splitActions {
             switch action {
             case let .created(splitId, tabIds, layout, fractions):
+                // Before the split lands, so it hides its panes behind the
+                // bookmark in this same transaction.
+                if isRestore { bindRestoredSplitToItsBookmark(splitId: splitId) }
                 handleSplitCreated(splitId: splitId,
                                    tabIds: tabIds,
                                    layout: layout,

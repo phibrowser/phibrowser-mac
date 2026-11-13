@@ -77,6 +77,8 @@ struct OmniBoxSuggestion: Equatable {
     var v2RowKey: String?
     /// Live tab URL of an open pin or bookmark, which may differ from `url`.
     var v2CurrentURL: String?
+    /// The panes of a split pin or bookmark, in layout order.
+    var v2Panes: [OmniboxNativePane]?
     // Keyword-search metadata from a Chromium autocomplete match.
     var keywordSearchEngine: OmniBoxKeywordSearchEngine?
     var keywordSearchQuery: String?
@@ -203,6 +205,12 @@ struct OmniBoxSuggestion: Equatable {
             if let current = chromiumDic["currentURL"] as? String, !current.isEmpty {
                 self.v2CurrentURL = current
             }
+            if let panes = chromiumDic["phiPanes"] as? [[String: String]] {
+                self.v2Panes = panes.compactMap { pane in
+                    guard let title = pane["title"], let url = pane["url"] else { return nil }
+                    return OmniboxNativePane(title: title, url: url)
+                }
+            }
         }
         self.allowedToBeDefault = selectionEngine == nil && allowdToBeDefault
         self.keywordSearchEngine = engine
@@ -221,6 +229,8 @@ struct OmniBoxSuggestion: Equatable {
     var isSupportedType: Bool { type != .pedal /*&& type != .searchEngine*/ }
 
     var isNativeEntity: Bool { v2Kind == "pin" || v2Kind == "bookmark" }
+
+    var isNativeSplit: Bool { isNativeEntity && v2Panes != nil }
 
     var faviconPageURL: URL? {
         if isNativeEntity { return URL(string: v2CurrentURL ?? url) }

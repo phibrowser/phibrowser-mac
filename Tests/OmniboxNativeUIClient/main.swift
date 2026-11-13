@@ -125,7 +125,8 @@ private struct NativeClientTests {
         missingCapabilitiesFallbackOnlyInitially()
         commandCannotBeDefault()
         await lateSnapshotOfOldQueryIsIgnored()
-        print("12 native UI client tests passed")
+        splitPanesReachDisplayOnlyOnEntities()
+        print("13 native UI client tests passed")
     }
 
     @MainActor
@@ -140,6 +141,38 @@ private struct NativeClientTests {
         precondition(fixture.transport.count("end") == 1)
         precondition(fixture.transport.calls.last?.payload["session"] as? String == "late-owned")
         precondition(fixture.transport.count("start") == 0)
+    }
+
+    @MainActor
+    static func splitPanesReachDisplayOnlyOnEntities() {
+        let panes: [[String: Any]] = [["title": "One", "url": "https://one.test/"],
+                                      ["title": "", "url": "https://two.test/"]]
+        let fixture = Fixture()
+        var split = row("split", native: true)
+        split["panes"] = panes
+        fixture.start(rows: [row("default"), split], defaultID: "default")
+        precondition(fixture.displayed[1]["phiPanes"] as? [[String: String]] ==
+                     [["title": "One", "url": "https://one.test/"], ["title": "", "url": "https://two.test/"]])
+        precondition(fixture.displayed[0]["phiPanes"] == nil)
+        fixture.client.close()
+
+        for invalid: [String: Any] in [
+            ["panes": [["title": "One", "url": "https://one.test/"]]],
+            ["panes": panes, "kind": "navigation"],
+            ["panes": panes, "inline": true],
+        ] {
+            let failing = Fixture()
+            var bad = row("split", native: invalid["kind"] == nil)
+            bad["panes"] = invalid["panes"]
+            if invalid["inline"] != nil {
+                var display = match(bad)
+                display["inlineAutocompletion"] = "x"
+                display["allowedToBeDefaultMatch"] = true
+                bad["match"] = display
+            }
+            failing.start(rows: [bad], defaultID: "split")
+            precondition(failing.closed == ["invalid_session"])
+        }
     }
 
     @MainActor
@@ -179,6 +212,24 @@ private struct NativeClientTests {
         precondition(entity.transport.count("select") == 1)
         selected.reply(["status": "accepted", "actionId": "a", "dispatchEffect": "focusedExisting"])
         precondition(entity.finished == ["accepted"])
+
+        // A single page with ordinary intents opens the entity only for a switch.
+        var single = row("pin", native: true)
+        single["allowedIntents"] = ["openEntity", "auto", "currentTab", "newForegroundTab"]
+        for (ordinary, sent) in [("switchToTab", "openEntity"), ("newForegroundTab", "newForegroundTab")] {
+            let fixture = Fixture()
+            let request = fixture.start(rows: [row("default"), single], defaultID: "default")
+            precondition(fixture.client.select(fixture.token("pin", request: request), ordinaryIntent: ordinary) == "submitted")
+            precondition(fixture.transport.take("select").payload["intent"] as? String == sent)
+            fixture.client.close()
+        }
+        let split = Fixture()
+        var splitRow = row("pin", native: true)
+        splitRow["allowedIntents"] = ["openEntity", "auto"]
+        splitRow["panes"] = [["title": "A", "url": "https://a.test/"], ["title": "B", "url": "https://b.test/"]]
+        let splitRequest = split.client.query(text: "pin", preventInline: false)!
+        split.transport.take("start").reply(envelope(splitRequest, rows: [splitRow]))
+        precondition(split.client.mode == .closed, "A split opens only its entity")
 
         let command = Fixture()
         let commandRequest = command.start("split", rows: [row("default"), commandRow("newSplitView")], defaultID: "default")

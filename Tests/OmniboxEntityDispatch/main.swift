@@ -103,6 +103,7 @@ struct Pending {
     func partnerTabIds(in state: BrowserState) -> [Int] { [partnerTabId] }
 }
 struct Layout { var isTraditional = false }
+struct SplitGroup { var id: String }
 final class BrowserState {
     let windowId = 1
     let profileId = "profile"
@@ -130,9 +131,17 @@ final class BrowserState {
     var bookmarkReads = 0
     var bookmarkManager: BookmarkManager { bookmarkReads += 1; return manager }
     var clearedSelection = 0
+    var splits: [SplitGroup] = []
+    var pinnedSplitMembers: [String]?
+    var opened: [String] = []
     init(_ store: LocalStore) { localStore = store }
     func visiblePeek(focusingTab: Tab?) -> Bool? { peekVisible ? true : nil }
     func splitGroup(forTabId id: Int) -> Bool? { splitTabs.contains(id) ? true : nil }
+    func pinnedSplitDBGuids(forPinnedTab tab: Tab) -> [String]? { pinnedSplitMembers }
+    func openPinnedSplit(dbGuids: [String], focusGuid: String?) {
+        opened.append("pinnedSplit|\(dbGuids.joined(separator: ","))|\(focusGuid ?? "nil")")
+    }
+    func openBookmark(_ bookmark: Bookmark) { opened.append("bookmark|\(bookmark.guid)") }
     func omniboxCommandCatalog() -> OmniboxNativeCommandSnapshot { .init(status: .complete, entities: []) }
     static func isPeekTabGuid(_ value: String?) -> Bool { value?.hasPrefix("phi-peek:") == true }
     func clearMultiSelection() { clearedSelection += 1 }
@@ -218,6 +227,55 @@ enum OmniboxEntityDispatchTests {
         precondition(dispatch(saved) == .createdTab, "Submitted effect survives synchronous teardown")
         precondition(store.lastSeen.count == before, "Old state gets no housekeeping after reentrant close")
         precondition(dispatch(saved) == nil)
+        bridge.reenter = nil
+
+        // A fresh authority: the previous one was closed above.
+        let splitAuthority = OmniboxNativeContextAuthority()
+        guard let splitScope = state.currentOmniboxNativeScope(),
+              let splitBinding = splitAuthority.finishBinding(splitScope) else {
+            fatalError("Fixture must have an eligible context")
+        }
+        func dispatchSplit(_ value: OmniboxNativeEntity) -> OmniboxNativeDispatchEffect? {
+            state.dispatchOmniboxEntity(value, binding: splitBinding, ticket: ticket,
+                                       isBindingCurrent: { splitAuthority.binding == splitBinding })
+        }
+        let panes = [OmniboxNativePane(title: "One", url: "https://one.test/"),
+                     OmniboxNativePane(title: "Two", url: "https://two.test/")]
+        bridge.calls.removeAll()
+        state.manager.entries = []
+
+        let pinSplit = OmniboxNativeEntity(kind: .pin, entityID: "a", title: "One | Two",
+                                           url: "https://one.test/", panes: panes)
+        let lead = Tab()
+        lead.guidInLocalDB = "a"
+        state.pinnedTabs = [lead]
+        precondition(dispatchSplit(pinSplit) == nil, "No persisted split membership")
+        state.pinnedSplitMembers = ["a", "b"]
+        state.pendingPinnedSplitRecreateGuids = ["b"]
+        precondition(dispatchSplit(pinSplit) == nil, "A split being recreated is refused")
+        state.pendingPinnedSplitRecreateGuids = []
+        let grouped = Tab()
+        grouped.guid = 9; grouped.guidInLocalDB = "b"; grouped.groupToken = "group"
+        state.tabs = [grouped]
+        precondition(dispatchSplit(pinSplit) == nil, "A grouped member is refused")
+        state.tabs = []
+        store.lastSeen.removeAll()
+        precondition(dispatchSplit(pinSplit) == .openedSplit)
+        precondition(state.opened == ["pinnedSplit|a,b|nil"] && bridge.calls.isEmpty)
+        precondition(store.lastSeen == ["a", "b"])
+        state.opened.removeAll()
+
+        let bookmarkSplit = OmniboxNativeEntity(kind: .bookmark, entityID: "s", title: "One | Two",
+                                                url: "https://one.test/", panes: panes)
+        precondition(dispatchSplit(bookmarkSplit) == nil, "Unknown bookmark")
+        let splitBookmark = Bookmark()
+        splitBookmark.guid = "s"; splitBookmark.secondaryUrl = "https://two.test/"
+        state.manager.entries = [splitBookmark]
+        state.pendingPrimarySplitTargetByGuid["pending"] = Pending(boundBookmarkGuid: "s")
+        precondition(dispatchSplit(bookmarkSplit) == nil, "A split being opened is refused")
+        state.pendingPrimarySplitTargetByGuid.removeAll()
+        precondition(dispatchSplit(bookmarkSplit) == .openedSplit)
+        precondition(state.opened == ["bookmark|s"] && bridge.calls.isEmpty)
         print("OmniboxEntityDispatch: actual helper scope/binding/submission checks passed")
     }
 }

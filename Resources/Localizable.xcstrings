@@ -1,6 +1,30 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "addressBar.suggestions.holdCommandToSwitchToBookmarkHint" : {
+      "comment" : "Omnibox suggestion - Trailing hint on a bookmark result; choosing it with Command held opens or focuses that bookmark, without it opens the page in a new tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Hold ⌘ to switch to Bookmark →"
+          }
+        }
+      }
+    },
+    "addressBar.suggestions.holdCommandToSwitchToPinHint" : {
+      "comment" : "Omnibox suggestion - Trailing hint on a pinned tab result; choosing it with Command held opens or focuses that pin, without it opens the page in a new tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Hold ⌘ to switch to Pin →"
+          }
+        }
+      }
+    },
     "settings.general.newTabsAtTop.description" : {
       "comment" : "General settings - New tab position applies only to sidebar layouts",
       "extractionState" : "extracted_with_value",
@@ -4592,18 +4616,6 @@
         }
       }
     },
-    "addressBar.suggestions.switchToBookmarkHint" : {
-      "comment" : "Omnibox suggestion - Trailing hint on a bookmark result; choosing it opens or focuses that bookmark",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Switch to Bookmark →"
-          }
-        }
-      }
-    },
     "addressBar.suggestions.switchToOpenTabHint" : {
       "comment" : "Omnibox suggestion - Hint shown for suggestions that can switch to an open tab",
       "extractionState" : "extracted_with_value",
@@ -4660,18 +4672,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "按住 ⌘ 切換 →"
-          }
-        }
-      }
-    },
-    "addressBar.suggestions.switchToPinHint" : {
-      "comment" : "Omnibox suggestion - Trailing hint on a pinned tab result; choosing it opens or focuses that pin",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Switch to Pin →"
           }
         }
       }

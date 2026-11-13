@@ -103,6 +103,7 @@ enum OmniboxLocalStoreTests {
         precondition(afterSelection == afterNoOp + 1,
                      "Selection must not save/advance epoch; its queued follow-up write must")
         try await scopedSnapshot(store)
+        try await splitSnapshot(store)
         let _: Bool = try await store.performFinalBackgroundOperationAndClose { _ in true }
         do {
             _ = try await epoch(store, coordinator)
@@ -135,8 +136,8 @@ enum OmniboxLocalStoreTests {
                 ("pin", a, "S", .pinnedTab),
                 ("profile-pin", a, nil, .pinnedTab),
                 ("app-pin", nil, nil, .pinnedTab),
-                ("split-left", a, "S", .pinnedTab),
-                ("split-right", a, "S", .pinnedTab)
+                ("split-left", a, "T", .pinnedTab),
+                ("split-right", a, "T", .pinnedTab)
             ]
             for (id, profile, space, type) in fixtures {
                 let row = TabDataModel(title: id, guid: id, index: 0,
@@ -161,8 +162,7 @@ enum OmniboxLocalStoreTests {
         precondition(storedScopeSnapshot.pins.entities.map(\.entityID) == ["profile-pin"])
         let snapshot = try await snapshot(store, coordinator, pinScope: .space)
         precondition(snapshot.bookmarks.entities.map(\.entityID) == ["bookmark"])
-        precondition(snapshot.pins.entities.map(\.entityID) == ["pin"],
-                     "Both halves of a one-way split must be excluded")
+        precondition(snapshot.pins.entities.map(\.entityID) == ["pin"])
         precondition(snapshot.bookmarks.status == .complete && snapshot.pins.status == .complete,
                      "Foreign scope records must not consume native candidate budget")
         let profile = try await self.snapshot(store, coordinator, pinScope: .profile)
@@ -252,17 +252,86 @@ enum OmniboxLocalStoreTests {
         } catch OmniboxNativeQueryError.cancelled {}
     }
 
+    /// Space T of profile A: a one-way pinned pair (from `scopedSnapshot`), a
+    /// three-pane pinned split whose list is on one member only, a damaged
+    /// split, and a four-pane split bookmark.
+    @MainActor
+    static func splitSnapshot(_ store: LocalStore) async throws {
+        await store.performBackgroundWriteAndWait { context in
+            let profiles = try! context.fetch(FetchDescriptor<ProfileModel>())
+            func insert(_ id: String, index: Int, type: TabDataType) -> TabDataModel {
+                let row = TabDataModel(title: id, guid: id, index: index,
+                    url: URL(string: "https://example.com/\(id)")!, favicon: nil,
+                    createdDate: Date(), updatedDate: Date())
+                context.insert(row)
+                row.profile = profiles.first { $0.profileId == "A" }
+                row.profileId = "A"
+                row.spaceId = "T"
+                row.type = type.rawValue
+                return row
+            }
+            _ = insert("tri-c", index: 3, type: .pinnedTab)
+            insert("tri-b", index: 2, type: .pinnedTab).splitPaneGuids = #"["tri-a","tri-b","tri-c"]"#
+            _ = insert("tri-a", index: 1, type: .pinnedTab)
+            insert("broken", index: 4, type: .pinnedTab).splitPaneGuids = #"["broken","missing"]"#
+            let bookmark = insert("quad", index: 0, type: .bookmark)
+            bookmark.secondaryUrl = URL(string: "https://example.com/second")
+            bookmark.secondaryTitle = "Second"
+            bookmark.splitExtraPanes = #"[{"url":"https://example.com/third","title":"Third"},{"url":"https://example.com/fourth"}]"#
+        }
+        let coordinator: OmniboxNativeQueryCoordinator<OmniboxNativeSearchSnapshot> = store.makeOmniboxQueryCoordinator()
+        let snapshot = try await self.snapshot(store, coordinator, pinScope: .space, spaceID: "T",
+            limits: .init(candidatesPerKind: 1024, bytesPerKind: 512 * 1024))
+        precondition(snapshot.pins.status == .complete && snapshot.bookmarks.status == .complete,
+                     "A damaged split leaves out one row, not the kind")
+        let pins = Dictionary(uniqueKeysWithValues: snapshot.pins.entities.map { ($0.entityID, $0) })
+        precondition(Set(pins.keys) == ["split-left", "tri-a"], "Each split is offered once, by its first member")
+        precondition(pins["split-left"]?.panes?.map(\.title) == ["split-left", "split-right"])
+        precondition(pins["split-left"]?.title == "split-left | split-right")
+        precondition(pins["tri-a"]?.panes?.map(\.title) == ["tri-a", "tri-b", "tri-c"],
+                     "Members follow sidebar order")
+        precondition(pins["tri-a"]?.url == "https://example.com/tri-a")
+        let bookmarks = snapshot.bookmarks.entities.filter(\.isSplit)
+        precondition(bookmarks.map(\.entityID) == ["quad"])
+        precondition(bookmarks.first?.panes?.map(\.title) == ["quad", "Second", "Third", "example.com"],
+                     "A pane without a title falls back to its host")
+        precondition(snapshot.bookmarks.entities.contains { $0.entityID == "other-space" && !$0.isSplit })
+
+        guard let selected = pins["tri-a"] else { fatalError("Missing split") }
+        let ticket = OmniboxQueryTicket(deadlineUptimeNanoseconds: UInt64.max)
+        let validated = try await store.performOmniboxSelection(ticket: ticket,
+            validate: { context, epoch in
+                try OmniboxNativeSnapshotReader.validate(selected, expectedEpoch: snapshot.mutationEpoch,
+                    expectedPinScope: snapshot.pinScope, context: context, profileID: "A", spaceID: "T",
+                    pinScope: .space, epoch: epoch, ticket: ticket)
+            }, dispatch: { $0 })
+        precondition(validated == selected)
+        await store.performBackgroundWriteAndWait { context in
+            let rows = try! context.fetch(FetchDescriptor<TabDataModel>())
+            rows.first { $0.guid == "tri-c" }?.title = "renamed"
+        }
+        do {
+            let _: OmniboxNativeEntity = try await store.performOmniboxSelection(ticket: ticket,
+                validate: { context, epoch in
+                    try OmniboxNativeSnapshotReader.validate(selected, expectedEpoch: snapshot.mutationEpoch,
+                        expectedPinScope: snapshot.pinScope, context: context, profileID: "A", spaceID: "T",
+                        pinScope: .space, epoch: epoch, ticket: ticket)
+                }, dispatch: { _ in fatalError("A changed split must not dispatch") })
+            fatalError("Expected a changed member to make the split stale")
+        } catch OmniboxNativeQueryError.unavailable {}
+    }
+
     @MainActor
     static func snapshot(_ store: LocalStore,
                          _ coordinator: OmniboxNativeQueryCoordinator<OmniboxNativeSearchSnapshot>,
-                         pinScope: PinnedTabScope,
+                         pinScope: PinnedTabScope, spaceID: String = "S",
                          limits: OmniboxNativeSnapshotReader.Limits = .init(candidatesPerKind: 1, bytesPerKind: 512 * 1024)
     ) async throws -> OmniboxNativeSearchSnapshot {
         try await withCheckedThrowingContinuation { continuation in
             let ticket = OmniboxQueryTicket(deadlineUptimeNanoseconds: UInt64.max)
             coordinator.submit(ticket: ticket, read: {
                 try await store.readForOmnibox { context, epoch in
-                    try OmniboxNativeSnapshotReader.read(context: context, profileID: "A", spaceID: "S",
+                    try OmniboxNativeSnapshotReader.read(context: context, profileID: "A", spaceID: spaceID,
                         pinScope: pinScope, epoch: epoch, ticket: ticket,
                         limits: limits)
                 }

@@ -42,6 +42,8 @@ class OmniBoxSuggestionCellView: NSTableCellView {
         imageView.imageScaling = .scaleProportionallyUpOrDown
         return imageView
     }()
+
+    private lazy var splitFaviconView = OmniboxSplitFaviconView()
     
     private lazy var titleLabel: NSTextField = {
         let label = NSTextField()
@@ -121,9 +123,9 @@ class OmniBoxSuggestionCellView: NSTableCellView {
     private var entityHint: String? {
         switch suggestion?.v2Kind {
         case "pin":
-            return NSLocalizedString("addressBar.suggestions.switchToPinHint", value: "Switch to Pin →", comment: "Omnibox suggestion - Trailing hint on a pinned tab result; choosing it opens or focuses that pin")
+            return NSLocalizedString("addressBar.suggestions.holdCommandToSwitchToPinHint", value: "Hold ⌘ to switch to Pin →", comment: "Omnibox suggestion - Trailing hint on a pinned tab result; choosing it with Command held opens or focuses that pin, without it opens the page in a new tab")
         case "bookmark":
-            return NSLocalizedString("addressBar.suggestions.switchToBookmarkHint", value: "Switch to Bookmark →", comment: "Omnibox suggestion - Trailing hint on a bookmark result; choosing it opens or focuses that bookmark")
+            return NSLocalizedString("addressBar.suggestions.holdCommandToSwitchToBookmarkHint", value: "Hold ⌘ to switch to Bookmark →", comment: "Omnibox suggestion - Trailing hint on a bookmark result; choosing it with Command held opens or focuses that bookmark, without it opens the page in a new tab")
         default:
             return nil
         }
@@ -137,6 +139,7 @@ class OmniBoxSuggestionCellView: NSTableCellView {
         wantsLayer = true
         addSubview(hoverableBg)
         hoverableBg.addSubview(iconImageView)
+        hoverableBg.addSubview(splitFaviconView)
         hoverableBg.addSubview(titleLabel)
         hoverableBg.addSubview(subtitleLabel)
         hoverableBg.addSubview(deleteButton)
@@ -151,7 +154,14 @@ class OmniBoxSuggestionCellView: NSTableCellView {
             make.centerY.equalToSuperview()
             make.width.height.equalTo(14)
         }
-        
+
+        // Larger than the 14pt icon so four panes stay legible; centered on
+        // it so titles stay aligned with the other rows.
+        splitFaviconView.snp.makeConstraints { make in
+            make.center.equalTo(iconImageView)
+            make.width.height.equalTo(18)
+        }
+
         titleLabel.snp.makeConstraints { make in
             make.leading.equalTo(iconImageView.snp.trailing).offset(5)
             make.centerY.equalToSuperview()
@@ -159,7 +169,9 @@ class OmniBoxSuggestionCellView: NSTableCellView {
         }
         
         titleLabel.setContentHuggingPriority(.required, for: .horizontal)
-        titleLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        // Below the row's width so an uncapped split title truncates instead of widening the row;
+        // above the subtitle so the subtitle truncates first.
+        titleLabel.setContentCompressionResistancePriority(.defaultLow + 1, for: .horizontal)
         
         subtitleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         
@@ -242,20 +254,22 @@ class OmniBoxSuggestionCellView: NSTableCellView {
         self.index = index
         
         let title = suggestion.swapContentsAndDescription ? suggestion.subtitle : suggestion.title
-        let subtitle = suggestion.swapContentsAndDescription ? suggestion.title : suggestion.subtitle
+        // A split's joined title names its pages; one pane's URL would mislead.
+        let subtitle = suggestion.isNativeSplit ? nil
+            : suggestion.swapContentsAndDescription ? suggestion.title : suggestion.subtitle
         titleLabel.stringValue = title ?? ""
-        
+
         let titleSize = titleLabel.sizeThatFits(NSSize(width: CGFloat.greatestFiniteMagnitude, height: titleLabel.frame.height))
         let maxTitleWidth: CGFloat = 200
-        
+
         titleLabel.snp.remakeConstraints { make in
             make.leading.equalTo(iconImageView.snp.trailing).offset(5)
             make.centerY.equalToSuperview()
-            if titleSize.width > maxTitleWidth {
+            if !suggestion.isNativeSplit, titleSize.width > maxTitleWidth {
                 make.width.equalTo(maxTitleWidth)
             }
         }
-        
+
         if let subtitle, !subtitle.isEmpty {
             subtitleLabel.stringValue = "- \(subtitle)"
             subtitleLabel.isHidden = false
@@ -265,9 +279,20 @@ class OmniBoxSuggestionCellView: NSTableCellView {
         }
         
         deleteButton.isHidden = !suggestion.canDelete
-        
-        OmniSuggestionIconProvier.updateImage(for: iconImageView, with: suggestion)
-        
+
+        if let panes = suggestion.v2Panes, suggestion.isNativeSplit {
+            iconImageView.kf.cancelDownloadTask()
+            iconImageView.image = nil
+            iconImageView.isHidden = true
+            splitFaviconView.isHidden = false
+            splitFaviconView.configure(pageURLs: panes.map(\.url))
+        } else {
+            iconImageView.isHidden = false
+            splitFaviconView.isHidden = true
+            splitFaviconView.configure(pageURLs: [])
+            OmniSuggestionIconProvier.updateImage(for: iconImageView, with: suggestion)
+        }
+
         updateAppearance()
     }
     
@@ -342,6 +367,69 @@ class OmniBoxSuggestionCellView: NSTableCellView {
     override func viewDidMoveToSuperview() {
         super.viewDidMoveToSuperview()
         updateAppearance()
+    }
+}
+
+/// The favicons of a split's panes in one tile: two side by side, three as a
+/// stacked pair beside the third, four in a grid.
+final class OmniboxSplitFaviconView: NSView {
+    private var pageURLs: [String] = []
+    private var imageViews: [NSImageView] = []
+
+    override var isFlipped: Bool { true }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 3
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(pageURLs: [String]) {
+        let urls = Array(pageURLs.prefix(4))
+        guard urls != self.pageURLs else { return }
+        self.pageURLs = urls
+        imageViews.forEach {
+            $0.kf.cancelDownloadTask()
+            $0.removeFromSuperview()
+        }
+        imageViews = urls.map { url in
+            let imageView = NSImageView()
+            imageView.imageScaling = .scaleProportionallyUpOrDown
+            imageView.setFavicon(for: url, configuration: .noCornerRadius)
+            addSubview(imageView)
+            return imageView
+        }
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        for (imageView, frame) in zip(imageViews, Self.paneFrames(count: imageViews.count, in: bounds)) {
+            imageView.frame = frame
+        }
+    }
+
+    static func paneFrames(count: Int, in bounds: NSRect, gap: CGFloat = 1) -> [NSRect] {
+        let width = (bounds.width - gap) / 2
+        let height = (bounds.height - gap) / 2
+        let left = NSRect(x: 0, y: 0, width: width, height: bounds.height)
+        let right = NSRect(x: width + gap, y: 0, width: width, height: bounds.height)
+        let topLeft = NSRect(x: 0, y: 0, width: width, height: height)
+        let topRight = NSRect(x: width + gap, y: 0, width: width, height: height)
+        let bottomLeft = NSRect(x: 0, y: height + gap, width: width, height: height)
+        let bottomRight = NSRect(x: width + gap, y: height + gap, width: width, height: height)
+        switch count {
+        case 2: return [left, right]
+        case 3: return [topLeft, bottomLeft, right]
+        case 4: return [topLeft, topRight, bottomLeft, bottomRight]
+        default: return []
+        }
     }
 }
 

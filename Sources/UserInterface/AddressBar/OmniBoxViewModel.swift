@@ -631,6 +631,13 @@ class OmniBoxViewModel: ObservableObject {
         if deferV2EnterIfNeeded(for: suggestion, commandKeyPressed: commandKeyPressed) {
             return
         }
+        // Without ⌘ a split pin or bookmark opens as a new split, like Duplicate Split.
+        if !commandKeyPressed, suggestion.isNativeSplit, let panes = suggestion.v2Panes {
+            AppLogDebug("omni: duplicating split line: \(suggestion.index)")
+            browserState.duplicateOmniboxSplit(kind: suggestion.v2Kind, paneURLs: panes.map(\.url))
+            finishNavigationAction()
+            return
+        }
         let disposition = suggestionDisposition(for: suggestion, commandKeyPressed: commandKeyPressed)
         AppLogDebug("omni: select suggestion line: \(suggestion.index), disposition: \(disposition.rawValue)")
         if disposition == .currentTab, let currentTab {
@@ -657,8 +664,8 @@ class OmniBoxViewModel: ObservableObject {
         // Chromium hands the tab this disposition spawns to the Mac side as a
         // link-foreground child of `currentTab`; on a bound row that would be
         // diverted straight into a Peek. Claim it as an address-bar tab first.
-        // Pins, bookmarks and commands are opened by Phi, never as a new Chromium tab.
-        if disposition == .newForegroundTab, !suggestion.isNativeEntity, suggestion.v2Kind != "command" {
+        // Splits and commands are opened by Phi, never as a new Chromium tab.
+        if disposition == .newForegroundTab, !suggestion.isNativeSplit, suggestion.v2Kind != "command" {
             claimUpcomingNewTab()
         }
         if routesOmniboxV2 {
@@ -688,7 +695,9 @@ class OmniBoxViewModel: ObservableObject {
         for suggestion: OmniBoxSuggestion,
         commandKeyPressed: Bool
     ) -> PhiOmniboxSuggestionDisposition {
-        if suggestion.hasTabMatch && commandKeyPressed {
+        // A pin or bookmark switches like an open tab; the client opens the
+        // entity for it.
+        if commandKeyPressed, suggestion.hasTabMatch || suggestion.isNativeEntity {
             return .switchToTab
         }
         if navigatesCurrentTab {

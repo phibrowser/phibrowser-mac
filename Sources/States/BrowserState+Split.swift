@@ -2225,6 +2225,21 @@ extension BrowserState {
         schedulePendingPrimarySplitCleanup(pendingGuid: pendingGuid)
     }
 
+    /// Opens a split pin or bookmark's pages as a new, unbound split, like Duplicate Split.
+    @MainActor
+    func duplicateOmniboxSplit(kind: String?, paneURLs urls: [String]) {
+        let layout: SplitLayout?
+        switch kind {
+        case "pin":
+            layout = pinnedTabs.first { $0.pinnedUrl == urls.first && $0.splitLayout != nil }?.splitLayout
+        case "bookmark":
+            layout = bookmarkManager.getAllBookmarks().first { $0.splitPaneURLs == urls }?.layout
+        default:
+            layout = nil
+        }
+        openURLsAsSplit(urls, layout: layout ?? .vertical)
+    }
+
     /// Timeout cleanup shared by the two primary-split openers: if the new
     /// tab never arrives, drop the pending record so it can't fire a stale
     /// split later. Mirrors the 5s cleanup in `openNewTabPendingSplit` and

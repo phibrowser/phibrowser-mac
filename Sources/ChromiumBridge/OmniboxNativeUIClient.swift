@@ -216,8 +216,11 @@ final class OmniboxNativeUIClient {
         guard canSelect(token), let query = currentQuery, let handle = session,
               let row = rows.first(where: { $0.id == token.resultID }) else { return "stale" }
         guard !row.intents.isEmpty else { return "unavailable" }
+        // A pin or bookmark opens its entity for a switch; otherwise a single
+        // page opens like an ordinary row. A split only opens the entity.
         let intent = row.kind == "command" ? "runCommand" :
-            Self.entityKinds.contains(row.kind) ? "openEntity" :
+            Self.entityKinds.contains(row.kind) ?
+                (ordinaryIntent == "switchToTab" || row.intents == ["openEntity"] ? "openEntity" : ordinaryIntent) :
             row.action == "action" && row.intents == ["auto"] ? "auto" : ordinaryIntent
         guard row.intents.contains(intent) else { return "unsupported_intent" }
         consumed = true
@@ -352,7 +355,12 @@ final class OmniboxNativeUIClient {
             case "navigation":
                 validAction = ["navigate", "action"].contains(action) &&
                     !intents.contains("openEntity") && !intents.contains("runCommand")
-            default: validAction = action == "openEntity" && intents == ["openEntity"]
+            default:
+                // A single page may also open as an ordinary row; a split only
+                // opens the entity.
+                validAction = action == "openEntity" && intents.contains("openEntity") &&
+                    !intents.contains("runCommand") && !intents.contains("switchToTab") &&
+                    (item["panes"] == nil || intents == ["openEntity"])
             }
             guard validAction else {
                 close(reason: "invalid_session"); return
@@ -379,6 +387,16 @@ final class OmniboxNativeUIClient {
                     guard currentURL is String else { close(reason: "invalid_session"); return }
                     display["currentURL"] = currentURL
                 }
+                if let value = item["panes"] {
+                    // A split is never inline: its text would name one pane only.
+                    guard let panes = Self.panes(value),
+                          (display["inlineAutocompletion"] as? String ?? "").isEmpty else {
+                        close(reason: "invalid_session"); return
+                    }
+                    display["phiPanes"] = panes
+                }
+            } else if item["panes"] != nil {
+                close(reason: "invalid_session"); return
             }
             if parsed.isEmpty, !(nextDefault == "ready" && defaultID == id) {
                 // Only a ready service default may be the omnibox default.
@@ -447,6 +465,16 @@ final class OmniboxNativeUIClient {
         guard let number = value as? NSNumber,
               CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
         return number.boolValue
+    }
+    /// Two to four `{title, url}` panes of a split row.
+    private static func panes(_ value: Any) -> [[String: String]]? {
+        guard let items = value as? [[String: Any]], (2...4).contains(items.count) else { return nil }
+        var panes: [[String: String]] = []
+        for item in items {
+            guard let title = item["title"] as? String, let url = nonemptyString(item["url"]) else { return nil }
+            panes.append(["title": title, "url": url])
+        }
+        return panes
     }
     private static func counter(_ value: Any?, allowZero: Bool = false) -> UInt64? {
         guard let number = value as? NSNumber,

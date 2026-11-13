@@ -22,7 +22,7 @@ Phi decides whether the feature is on. Nothing else does.
 | Phi | `UnifiedOmnibox.isEnabled` in [PhiChromiumCoordinator+OmniboxV2.swift](../Sources/ChromiumBridge/PhiChromiumCoordinator+OmniboxV2.swift). On in Nightly builds whose bundle ID is `com.phibrowser.canary.Mac`; off everywhere else. Plain Debug also defines `NIGHTLY_BUILD`, so the bundle ID is what tells Canary apart. |
 | Bridge | `PhiChromiumBridgeDelegate.isUnifiedOmniboxEnabled` (optional). Phi returns `UnifiedOmnibox.isEnabled`. |
 | Chromium | `phi::IsUnifiedOmniboxEnabled()` → `PhiBridgeWrapper::IsUnifiedOmniboxEnabled()`. False when the delegate lacks the selector and on non-Mac builds (stub). There is no Chromium feature flag. |
-| Sidecar | The NTP calls the unified session only when built with `VITE_PHI_OMNIBOX_V2_VALIDATION=1` (`src/lib/feature-flags.ts`). Otherwise it uses the legacy NTP autocomplete regardless of Phi. |
+| Sidecar | The NTP always calls `begin` and follows its capabilities. It has no switch of its own. |
 
 Chromium checks the switch when a session begins:
 
@@ -140,6 +140,27 @@ a revoke with an old token cannot close a newer binding.
 When the focused tab is in a split, bookmarks and pins are reported as
 `unavailable`; commands are still offered.
 
+### Split pins and bookmarks
+
+A split pin or bookmark is one row. Phi sends its panes (two to four
+`{title, url}`, in layout order) as `panes`; the entity title is the pane titles
+joined by ` | ` and the entity URL is the first pane's.
+
+- A pinned split is offered by its first member in sidebar order (`index`);
+  the other members are left out. Membership comes from the persisted
+  `splitPaneGuids` (on any member) or `splitPartnerGuid` (either direction).
+- A split bookmark reads `secondaryUrl`, `secondaryTitle` and
+  `splitExtraPanes`. A pane without a title shows its host.
+- A damaged split (a missing member, more than four panes, a non-HTTP pane)
+  leaves out that row only.
+- Chromium indexes one node per pane, so any pane's title or URL finds the row,
+  and keeps the best pane per entity. A split is never inline, its quality is
+  at most Q2 (a URL alone never takes the top slot), and it never hides an
+  ordinary row of one of its pages.
+- Execution opens or focuses the split through the sidebar paths
+  (`openPinnedSplit`, `openBookmark`) and focuses the first pane. A split that
+  is still being created or recreated, or has a grouped member, is refused.
+
 ### Snapshot
 
 Chromium reads one snapshot per session, on the session's first `start`, and
@@ -151,8 +172,9 @@ matches every keystroke against an in-memory `TitledUrlIndex`.
   kind (`limit_exceeded`), not the other. The whole packet is at most
   1 MiB + 16 KiB.
 - Phi decorates the snapshot with runtime state: whether a pin or bookmark is
-  open and its current URL, the command catalog and the learning entries. The
-  focused tab's own entity is excluded.
+  open and its current URL (for a split, whether its split view is live), the
+  command catalog and the learning entries. The focused tab's own entity is
+  excluded.
 - 300 ms after a LocalStore write is submitted while sessions are live, Phi
   calls `refreshOmniboxNativeData(windowId:expectedBindingToken:)`. Chromium
   re-reads, swaps the index and recomposes the current result.
@@ -271,19 +293,29 @@ are sent.
 
 A command is never the default and never inline. Selecting it closes the
 Omnibox; Phi validates it again and runs it on a later main-actor turn. The NTP
-offers no commands.
+offers the same commands; they act on the NTP tab.
 
 ## Selection and execution
 
 | Row | Path |
 | --- | --- |
 | Ordinary | `FrozenNavigation` saved with the snapshot: URL, input, transition and dispositions. Selection never reads the live controller. |
-| Pin or bookmark | Chromium calls `executeNativeOmniboxSession` with the frozen entity. Phi validates it in the FIFO, then `BrowserState.dispatchOmniboxEntity` revalidates the binding and scope and focuses the bound tab or creates a tab bound to the entity (`createOmniboxEntityTab` / `activateOmniboxEntityTab`). |
+| Pin or bookmark | Chromium calls `executeNativeOmniboxSession` with the frozen entity. Phi validates it in the FIFO, then `BrowserState.dispatchOmniboxEntity` revalidates the binding and scope and focuses the bound tab or creates a tab bound to the entity (`createOmniboxEntityTab` / `activateOmniboxEntityTab`). A split goes through `openPinnedSplit` or `openBookmark` instead. |
 | Command | `executeNativeOmniboxCommand` → `BrowserState.scheduleOmniboxCommand`. |
 
 `accepted` means the action was submitted once, not that it completed. A pin is
-always open-or-focus: it is never navigated back to its pinned URL. Split and
-grouped targets are rejected as unsupported.
+always open-or-focus: it is never navigated back to its pinned URL. Grouped
+targets are rejected as unsupported.
+
+**Switch or open.** A pin or bookmark switches like an open tab: ⌘-Enter or
+⌘-click switches, the plain choice opens a new page. For a single-page pin or
+bookmark, Chromium also offers the row's ordinary intents from a
+`FrozenNavigation` of its URL; the client sends `openEntity` for ⌘ and the
+ordinary intent otherwise, which opens an unbound page like any ordinary row. A
+split offers only `openEntity`, and commands only `runCommand`; modifiers change
+neither. The Mac Omnibox opens a split chosen without ⌘ as a new, unbound split
+itself (`duplicateOmniboxSplit`, as Duplicate Split does) instead of selecting
+the row.
 
 ## Mac Omnibox
 
@@ -298,6 +330,13 @@ submission opens a new tab or replaces a blank one: Cmd+T and other
 non-address-bar opens, and Cmd+L on an NTP or `about:blank`. Cmd+L on a page,
 a presented Peek, the split pane picker and group overview use legacy
 suggestions. The route is re-evaluated when the Omnibox target changes.
+
+**Split rows.** A row with `panes` shows the joined title without a URL, a
+composed favicon (two panes side by side; three as panes 1 and 2 stacked beside
+pane 3; four in a grid).
+
+**Hints.** Open tabs show "Hold ⌘ to switch →", pins and bookmarks, single or
+split, "Hold ⌘ to switch to Pin/Bookmark →".
 
 **Enter before rows are selectable.** If the chosen row belongs to an older
 request, or the current request has no settled default, Enter is held. When the
@@ -320,9 +359,15 @@ primary main frame of an activated tab in a normal, non-incognito window. The
 session is bound to the document: navigation, deactivation, renderer loss or
 destruction closes it, and a BFCache restore needs a new `begin`.
 
-NTP sessions get pins and bookmarks from Phi but offer no commands and no row
-deletion. The NTP keeps its own selection state; see `docs/sidecar-omnibox-v2.md`
-in `phi-ai`.
+NTP sessions get pins, bookmarks and commands from Phi but offer no row
+deletion. Like the legacy NTP, they get no site-search rows or Tab-to-search
+hints; those stay in the Mac Omnibox. Pin and bookmark rows show the same hints as the Mac Omnibox; split
+rows show the joined title and the pane favicons. The NTP keeps its own
+selection state; see `docs/sidecar-omnibox-v2.md` in `phi-ai`.
+
+After an accepted pin or bookmark selection that did not open a split, Chromium
+closes the NTP tab when it has no back history and is not bound to a Phi entity,
+like Chromium's own switch-to-tab closes an orphaned NTP.
 
 ## Lifecycle
 
@@ -365,16 +410,15 @@ rebound to another account or the LocalStore closes. A new session needs a new
 
 ## Known gaps
 
-- The NTP needs a Sidecar build with `VITE_PHI_OMNIBOX_V2_VALIDATION=1`; it does
-  not follow Phi's switch on its own.
 - An open pin is not matched on its current page's URL or title.
 - `dispatchOmniboxEntity` does not reuse `openBookmark` or
-  `openOrFocusPinnedTab`; split bookmarks and grouped targets are rejected.
-- After a native selection on the NTP, the blank NTP tab is not closed or
-  replaced.
+  `openOrFocusPinnedTab` for a single page; grouped targets are rejected.
 - The NTP list keys rows by `resultId`, so rows remount on every keystroke.
 - `searchbox_stats` positions and controller metrics see only the ordinary
   result.
+- Split rows never inline. Inlining one when the input's last choice is that
+  split is a possible improvement; the inline text would still name only one
+  pane while Enter focuses the first.
 - No browser test covers the glue between the stock controller, the composer
   and publication. The Mac view model's unified paths (held Enter, restart)
   have no automated test.

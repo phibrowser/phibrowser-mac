@@ -10,15 +10,31 @@ enum OmniboxNativeEntityKind: String, Codable, Sendable {
     case pin
 }
 
+struct OmniboxNativePane: Codable, Equatable, Sendable {
+    let title: String
+    let url: String
+}
+
 struct OmniboxNativeEntity: Codable, Equatable, Sendable {
     let kind: OmniboxNativeEntityKind
+    /// The bookmark, or for a pinned split the first pane's record.
     let entityID: String
+    /// For a split, the pane titles joined by `OmniboxNativePane.titleSeparator`.
     let title: String
+    /// For a split, the first pane's URL.
     let url: String
     var isOpen = false
     var currentURL: String?
     /// Seconds since 1970; ranks native rows against each other only.
     var lastSeen: Double?
+    /// Two to four panes, in layout order, for a split; nil otherwise.
+    var panes: [OmniboxNativePane]?
+
+    var isSplit: Bool { panes != nil }
+}
+
+extension OmniboxNativePane {
+    static let titleSeparator = " | "
 }
 
 struct OmniboxNativeKindSnapshot: Codable, Sendable {
@@ -177,19 +193,124 @@ enum OmniboxNativeSnapshotReader {
     private static func entity(_ row: TabDataModel, kind: OmniboxNativeEntityKind,
                                context: ModelContext, profileID: String, spaceID: String,
                                pinScope: PinnedTabScope) throws -> OmniboxNativeEntity? {
-        guard !row.guid.isEmpty, row.secondaryUrl == nil, row.splitPartnerGuid == nil,
-              row.splitPaneGuids == nil,
-              let scheme = row.url.scheme?.lowercased(), ["http", "https"].contains(scheme),
-              row.url.host?.isEmpty == false else { return nil }
-        if kind == .pin {
-            var incoming = descriptor(.pin, profileID: profileID, spaceID: spaceID,
-                                      pinScope: pinScope, partnerID: row.guid)
-            incoming.fetchLimit = 1
-            if !(try context.fetch(incoming)).isEmpty { return nil }
+        guard !row.guid.isEmpty, isEntityURL(row.url) else { return nil }
+        let split: Split?
+        do {
+            switch kind {
+            case .bookmark:
+                split = try bookmarkSplit(row)
+            case .pin:
+                split = try pinnedSplit(row, context: context, profileID: profileID,
+                                        spaceID: spaceID, pinScope: pinScope)
+            }
+        } catch SplitError.skip {
+            return nil
+        }
+        guard let split else {
+            return OmniboxNativeEntity(kind: kind, entityID: row.guid, title: displayTitle(row),
+                url: row.url.absoluteString, lastSeen: row.lastSeen?.timeIntervalSince1970)
         }
         return OmniboxNativeEntity(kind: kind, entityID: row.guid,
-            title: row.overrideTitle.flatMap { $0.isEmpty ? nil : $0 } ?? row.title,
-            url: row.url.absoluteString, lastSeen: row.lastSeen?.timeIntervalSince1970)
+            title: split.panes.map(\.title).joined(separator: OmniboxNativePane.titleSeparator),
+            url: row.url.absoluteString, lastSeen: split.lastSeen?.timeIntervalSince1970,
+            panes: split.panes)
+    }
+
+    private struct Split {
+        let panes: [OmniboxNativePane]
+        let lastSeen: Date?
+    }
+
+    /// Leaves out one row: a damaged split, or a member that is not the first.
+    private enum SplitError: Error { case skip }
+
+    private struct ExtraPane: Decodable {
+        let url: String
+        let title: String?
+    }
+
+    /// Nil for a single page. Mirrors `BookmarkModel.splitPanes`.
+    private static func bookmarkSplit(_ row: TabDataModel) throws -> Split? {
+        guard let secondary = row.secondaryUrl, !secondary.absoluteString.isEmpty else { return nil }
+        // Undecodable extra panes read as none, as in `SplitPaneColumnCoding`.
+        let extras = row.splitExtraPanes
+            .flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONDecoder().decode([ExtraPane].self, from: $0) } ?? []
+        var urls = [row.url, secondary]
+        var titles: [String?] = [displayTitle(row), row.secondaryTitle]
+        for extra in extras {
+            guard let url = URL(string: extra.url) else { throw SplitError.skip }
+            urls.append(url)
+            titles.append(extra.title)
+        }
+        guard urls.count <= 4, urls.allSatisfy(isEntityURL) else { throw SplitError.skip }
+        let panes = zip(urls, titles).map { url, title in
+            OmniboxNativePane(title: paneTitle(title, url: url), url: url.absoluteString)
+        }
+        return Split(panes: panes, lastSeen: row.lastSeen)
+    }
+
+    /// Nil for a solo pin. A pinned split is offered once, by its first member in
+    /// sidebar order; the other members are skipped. Membership follows
+    /// `BrowserState.pinnedSplitDBGuids`, reading persisted links only.
+    private static func pinnedSplit(_ row: TabDataModel, context: ModelContext, profileID: String,
+                                    spaceID: String, pinScope: PinnedTabScope) throws -> Split? {
+        func pins(partnerID: String? = nil, entityID: String? = nil) throws -> [TabDataModel] {
+            try context.fetch(descriptor(.pin, profileID: profileID, spaceID: spaceID, pinScope: pinScope,
+                                         partnerID: partnerID, entityID: entityID))
+        }
+        var members = paneGuids(row.splitPaneGuids)
+        if members.isEmpty {
+            // A half-written list may be missing from this row.
+            members = try context.fetch(paneListDescriptor(profileID: profileID, spaceID: spaceID,
+                                                           pinScope: pinScope))
+                .map { paneGuids($0.splitPaneGuids) }
+                .first { $0.contains(row.guid) } ?? []
+        }
+        if members.isEmpty {
+            if let partner = row.splitPartnerGuid, !partner.isEmpty {
+                members = [row.guid, partner]
+            } else if let incoming = try pins(partnerID: row.guid).first {
+                members = [row.guid, incoming.guid]
+            }
+        }
+        guard !members.isEmpty else { return nil }
+        var seen = Set<String>()
+        members = members.filter { seen.insert($0).inserted }
+        guard (2...4).contains(members.count), members.contains(row.guid) else { throw SplitError.skip }
+        var rows: [TabDataModel] = []
+        for guid in members {
+            let found = guid == row.guid ? [row] : try pins(entityID: guid)
+            guard found.count == 1, let member = found.first else { throw SplitError.skip }
+            rows.append(member)
+        }
+        rows.sort { ($0.index, $0.guid) < ($1.index, $1.guid) }
+        guard rows.first?.guid == row.guid else { throw SplitError.skip }
+        guard rows.allSatisfy({ isEntityURL($0.url) }) else { throw SplitError.skip }
+        let panes = rows.map {
+            OmniboxNativePane(title: paneTitle(displayTitle($0), url: $0.url), url: $0.url.absoluteString)
+        }
+        return Split(panes: panes, lastSeen: rows.compactMap(\.lastSeen).max())
+    }
+
+    private static func paneGuids(_ text: String?) -> [String] {
+        guard let data = text?.data(using: .utf8),
+              let guids = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return guids.filter { !$0.isEmpty }
+    }
+
+    private static func displayTitle(_ row: TabDataModel) -> String {
+        row.overrideTitle.flatMap { $0.isEmpty ? nil : $0 } ?? row.title
+    }
+
+    private static func paneTitle(_ title: String?, url: URL) -> String {
+        guard let title, !title.isEmpty else { return url.host ?? url.absoluteString }
+        return title
+    }
+
+    private static func isEntityURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) else { return false }
+        return url.host?.isEmpty == false
     }
 
     private static func readKind(_ kind: OmniboxNativeEntityKind, context: ModelContext,
@@ -290,5 +411,29 @@ enum OmniboxNativeSnapshotReader {
             }
         }
         return FetchDescriptor(predicate: predicate, sortBy: [SortDescriptor(\.guid), SortDescriptor(\.createdDate)])
+    }
+
+    /// Pins of the scope that carry a split pane list.
+    private static func paneListDescriptor(profileID: String, spaceID: String,
+                                           pinScope: PinnedTabScope) -> FetchDescriptor<TabDataModel> {
+        let rawType = TabDataType.pinnedTab.rawValue
+        let predicate: Predicate<TabDataModel>
+        switch pinScope {
+        case .space:
+            predicate = #Predicate<TabDataModel> {
+                $0.type == rawType && ($0.profileId == profileID || $0.profile?.profileId == profileID)
+                && $0.spaceId == spaceID && $0.splitPaneGuids != nil
+            }
+        case .profile:
+            predicate = #Predicate<TabDataModel> {
+                $0.type == rawType && ($0.profileId == profileID || $0.profile?.profileId == profileID)
+                && $0.spaceId == nil && $0.splitPaneGuids != nil
+            }
+        case .app:
+            predicate = #Predicate<TabDataModel> {
+                $0.type == rawType && $0.profileId == nil && $0.spaceId == nil && $0.splitPaneGuids != nil
+            }
+        }
+        return FetchDescriptor(predicate: predicate, sortBy: [SortDescriptor(\.guid)])
     }
 }

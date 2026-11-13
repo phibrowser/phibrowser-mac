@@ -7,6 +7,7 @@ import Foundation
 enum OmniboxNativeDispatchEffect: String, Sendable {
     case focusedExisting = "focused_existing"
     case createdTab = "created_tab"
+    case openedSplit = "opened_split"
 }
 
 extension BrowserState {
@@ -29,6 +30,7 @@ extension BrowserState {
         // entities do not repeatedly scan the bookmark cache during this pass.
         let liveIDs = Set(tabs.compactMap { $0.guidInLocalDB })
         var decorated = try snapshot.excluding(entityID: focusingTab?.guidInLocalDB).withRuntimeMetadata(ticket: ticket) { entity in
+            if entity.isSplit { return (isOmniboxSplitOpen(entity), nil) }
             guard liveIDs.contains(entity.entityID),
                   case .focus(let tabID) = omniboxRuntimeAction(for: entity),
                   let tab = tabs.first(where: { $0.guid == tabID }) else { return (false, nil) }
@@ -105,6 +107,13 @@ extension BrowserState {
             return nil
         }
         if let tab = focusingTab, splitGroup(forTabId: tab.guid) != nil { return nil }
+        if entity.isSplit {
+            guard openOmniboxSplit(entity) else {
+                AppLogDebug("[OmniboxNative] dispatch rejected: split unavailable kind=\(entity.kind.rawValue)")
+                return nil
+            }
+            return .openedSplit
+        }
         guard let bridge = ChromiumLauncher.sharedInstance().bridge,
               bridge.responds(to: #selector(PhiChromiumBridgeProtocol.createOmniboxEntityTab(url:windowId:customGuid:))),
               bridge.responds(to: #selector(PhiChromiumBridgeProtocol.activateOmniboxEntityTab(tabId:windowId:expectedCustomGuid:))) else {
@@ -198,5 +207,47 @@ extension BrowserState {
                 "traditional=\(layoutMode.isTraditional) cache=\(describe(cache)) live=\(describe(live))")
         }
         return action
+    }
+
+    @MainActor
+    private func isOmniboxSplitOpen(_ entity: OmniboxNativeEntity) -> Bool {
+        switch entity.kind {
+        case .pin:
+            guard let tab = tabs.first(where: { $0.guidInLocalDB == entity.entityID }) else { return false }
+            return splitGroup(forTabId: tab.guid) != nil
+        case .bookmark:
+            guard let splitID = splitBookmarkBindings[entity.entityID] else { return false }
+            return splits.contains { $0.id == splitID }
+        }
+    }
+
+    /// Opens or focuses a split through the sidebar's own paths, focusing the
+    /// first pane. A split still being created is refused.
+    @MainActor
+    private func openOmniboxSplit(_ entity: OmniboxNativeEntity) -> Bool {
+        switch entity.kind {
+        case .pin:
+            guard let pin = pinnedTabs.first(where: { $0.guidInLocalDB == entity.entityID }), pin.isPinned,
+                  let members = pinnedSplitDBGuids(forPinnedTab: pin),
+                  !members.contains(where: {
+                      pendingPinnedSplitRecreateGuids.contains($0) || pendingSplitAfterPinnedOpen.contains($0)
+                  }),
+                  !tabs.contains(where: { tab in
+                      guard let id = tab.guidInLocalDB, members.contains(id) else { return false }
+                      return tab.windowId != windowId || tab.groupToken != nil || tabsAwaitingSplit.contains(tab.guid)
+                  }) else { return false }
+            members.forEach { localStore.updateLastSeen($0) }
+            clearMultiSelection()
+            openPinnedSplit(dbGuids: members, focusGuid: nil)
+            return true
+        case .bookmark:
+            let pending = pendingPrimarySplitTargetByGuid.values.contains { $0.boundBookmarkGuid == entity.entityID } ||
+                pendingSplitPartnerByCustomGuid.values.contains { $0.boundBookmarkGuid == entity.entityID }
+            guard !pending,
+                  let bookmark = bookmarkManager.getAllBookmarks().first(where: { $0.guid == entity.entityID }),
+                  !bookmark.isFolder, bookmark.secondaryUrl?.isEmpty == false else { return false }
+            openBookmark(bookmark)
+            return true
+        }
     }
 }

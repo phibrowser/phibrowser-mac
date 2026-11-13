@@ -49,6 +49,15 @@ final class FloatingTrafficLightsView: NSView {
     private var isGroupHovered = false {
         didSet {
             dotViews.forEach { $0.isGroupHovered = isGroupHovered }
+            updateOptionKeyTracking()
+        }
+    }
+    private var modifierMonitor: Any?
+    /// Option is held over the lights: the zoom light offers to zoom the
+    /// window instead of entering full screen, as the titlebar's does.
+    private(set) var isOptionKeyHeld = false {
+        didSet {
+            dotViews.forEach { $0.isOptionKeyHeld = isOptionKeyHeld }
         }
     }
 
@@ -75,6 +84,7 @@ final class FloatingTrafficLightsView: NSView {
     deinit {
         stopObservingWindowState()
         if let pointerMonitor { NSEvent.removeMonitor(pointerMonitor) }
+        if let modifierMonitor { NSEvent.removeMonitor(modifierMonitor) }
         hideWorkItem?.cancel()
     }
 
@@ -98,6 +108,21 @@ final class FloatingTrafficLightsView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         if placement == .topBand { updateStripFromPointer() }
+    }
+
+    /// Watches the Option key only while the pointer is over the lights.
+    private func updateOptionKeyTracking() {
+        let tracks = placement == .sidebarHeader && isGroupHovered
+        if tracks, modifierMonitor == nil {
+            modifierMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+                self?.isOptionKeyHeld = event.modifierFlags.contains(.option)
+                return event
+            }
+        } else if !tracks, let monitor = modifierMonitor {
+            NSEvent.removeMonitor(monitor)
+            modifierMonitor = nil
+        }
+        isOptionKeyHeld = tracks && NSEvent.modifierFlags.contains(.option)
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -416,6 +441,11 @@ private final class FloatingTrafficLightDotView: NSView {
             drawingView.isGroupHovered = isGroupHovered
         }
     }
+    var isOptionKeyHeld = false {
+        didSet {
+            drawingView.showsZoomInPlaceGlyph = role == .zoom && isOptionKeyHeld
+        }
+    }
     var isWindowActive = true {
         didSet {
             drawingView.isWindowActive = isWindowActive
@@ -488,18 +518,18 @@ private final class FloatingTrafficLightDotView: NSView {
         guard bounds.contains(convert(event.locationInWindow, from: nil)) else {
             return
         }
-        performWindowButtonAction()
+        performWindowButtonAction(optionKeyHeld: event.modifierFlags.contains(.option))
     }
 
     override func accessibilityPerformPress() -> Bool {
         guard isControlEnabled else {
             return false
         }
-        performWindowButtonAction()
+        performWindowButtonAction(optionKeyHeld: false)
         return true
     }
 
-    private func performWindowButtonAction() {
+    private func performWindowButtonAction(optionKeyHeld: Bool) {
         guard let window else {
             return
         }
@@ -515,6 +545,12 @@ private final class FloatingTrafficLightDotView: NSView {
             return
         }
 
+        // The titlebar's zoom button zooms instead of entering full screen
+        // when Option is held. A forwarded click carries no modifier keys.
+        if role == .zoom, optionKeyHeld {
+            window.zoom(nil)
+            return
+        }
         button.performClick(nil)
     }
 }
@@ -522,6 +558,12 @@ private final class FloatingTrafficLightDotView: NSView {
 private final class FloatingTrafficLightDrawingView: NSView {
     private let role: FloatingTrafficLightRole
     var isGroupHovered = false {
+        didSet {
+            needsDisplay = true
+        }
+    }
+    /// Draws the zoom light's plus, shown while Option is held.
+    var showsZoomInPlaceGlyph = false {
         didSet {
             needsDisplay = true
         }
@@ -618,8 +660,14 @@ private final class FloatingTrafficLightDrawingView: NSView {
             path.move(to: NSPoint(x: rect.minX + 3.8, y: rect.midY))
             path.line(to: NSPoint(x: rect.maxX - 3.8, y: rect.midY))
         case .zoom:
-            drawZoomGlyph(in: rect, color: color)
-            return
+            guard showsZoomInPlaceGlyph else {
+                drawZoomGlyph(in: rect, color: color)
+                return
+            }
+            path.move(to: NSPoint(x: rect.minX + 3.8, y: rect.midY))
+            path.line(to: NSPoint(x: rect.maxX - 3.8, y: rect.midY))
+            path.move(to: NSPoint(x: rect.midX, y: rect.minY + 3.8))
+            path.line(to: NSPoint(x: rect.midX, y: rect.maxY - 3.8))
         }
 
         path.stroke()

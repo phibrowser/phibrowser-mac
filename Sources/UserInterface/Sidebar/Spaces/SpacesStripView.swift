@@ -200,6 +200,11 @@ final class SpacesStripGeometry: ObservableObject {
     }
     @Published var swipeSelection: SwipeSelection?
 
+    /// The row sits in the sidebar header's control row
+    /// (`SidebarHeaderView.spaceSwitchSitsInControlRow`): the pips line up at
+    /// the trailing edge, and the "+" stays shown so no gap opens beside them.
+    @Published var sitsInControlRow = false
+
     /// Keep the leaving selection visible while a newly created Space's
     /// icon is rendered and its content is prepared for the band slide.
     @Published var pendingSelection: PendingSelection?
@@ -707,9 +712,10 @@ struct SpacesStripView: View {
         _ = fittedPipCount
         let visibleCount = visiblePipCount(availableWidth: measuredRowWidth)
         let hasOverflow = visibleCount < stripPipCount
+        let sitsInControlRow = stripGeometry.sitsInControlRow
         return HStack(spacing: Self.stripSpacing) {
             pipsViewport(visibleCount: visibleCount)
-            if !hasOverflow { Spacer(minLength: 4) }
+            if !hasOverflow, !sitsInControlRow { Spacer(minLength: 4) }
             if hasOverflow {
                 moreButton
             } else {
@@ -897,6 +903,7 @@ struct SpacesStripView: View {
         // Overflow pips keep their own hit testing off; `peekHitTarget`
         // covers only their visible intersections with the viewport.
         let peek = Self.stripItemWidth / 2 + Self.stripSpacing
+        let sitsInControlRow = stripGeometry.sitsInControlRow
         let swipe = stripGeometry.swipeSelection
         let targetIndex = swipe.flatMap { swipe in spaces.firstIndex { $0.spaceId == swipe.target } }
         let targetStart = targetIndex.map { max(0, min($0 - visibleCount / 2, pipCount - visibleCount)) } ?? start
@@ -905,6 +912,18 @@ struct SpacesStripView: View {
         let leadingPeek = (start > 0 ? peek : 0) * (1 - progress) + (targetStart > 0 ? peek : 0) * progress
         let trailingPeek = (start + visibleCount < pipCount ? peek : 0) * (1 - progress)
             + (targetStart + visibleCount < pipCount ? peek : 0) * progress
+        // In the header's control row the row slides continuously instead
+        // of by whole pips: `SpacesStripCenteringLayout` keeps the active pip
+        // centered, within the row's ends, at whatever width layout gives it.
+        let centersActive = sitsInControlRow
+        let activePip: CGFloat = {
+            if isCreating { return CGFloat(insertion) }
+            let selected = CGFloat(selectedIndex ?? 0)
+            guard let targetIndex else { return selected }
+            return selected + (CGFloat(targetIndex) - selected) * progress
+        }()
+        let activeCenter = activePip * step + Self.stripItemWidth / 2
+        let rowWidth = pipRowWidth(pipCount)
         HStack(spacing: Self.stripSpacing) {
             ForEach(Array(spaces.enumerated()), id: \.element.spaceId) { index, space in
                 if isCreating && index == insertion {
@@ -926,7 +945,7 @@ struct SpacesStripView: View {
                     // `.clipped()` below is visual only — pips beyond the
                     // window would still swallow clicks/hovers aimed at the
                     // Spacer and the trailing button without this.
-                    .allowsHitTesting(pipIndex >= start && pipIndex < start + visibleCount)
+                    .allowsHitTesting(centersActive || (pipIndex >= start && pipIndex < start + visibleCount))
                     .onDrop(of: [.text], delegate: SpaceRowDropDelegate(
                         targetSpaceId: space.spaceId,
                         draggingSpaceId: $slot.stripReorderDraggingId,
@@ -949,7 +968,7 @@ struct SpacesStripView: View {
             SpacesStripReorderSurface(
                 slot: slot,
                 orderedSpaceIds: spaces.map(\.spaceId),
-                visibleRange: start..<min(start + visibleCount, spaces.count),
+                visibleRange: centersActive ? 0..<spaces.count : start..<min(start + visibleCount, spaces.count),
                 // The create form's strip is read-only: it must not vend a
                 // reorder payload, and leaving the slots unclaimed keeps the
                 // pips' hover cards and their click guard exactly as they are.
@@ -999,21 +1018,59 @@ struct SpacesStripView: View {
                     .transition(.identity)
             }
         }
-        .offset(x: -viewportStart * step + leadingPeek)
-        // Fill the space up to the menu so overflowing icons fade beside it
-        // instead of stopping before a flexible blank gap.
-        .frame(width: hasOverflow ? nil : pipRowWidth(visibleCount), alignment: .leading)
-        .frame(minWidth: 0, maxWidth: hasOverflow ? .infinity : nil, alignment: .leading)
+        .modifier(SpacesStripViewportPlacement(
+            centeredOn: centersActive ? activeCenter : nil,
+            // Fill the space up to the menu so overflowing icons fade beside
+            // it instead of stopping before a flexible blank gap.
+            offset: -viewportStart * step + leadingPeek,
+            width: hasOverflow ? nil : pipRowWidth(visibleCount),
+            fillsRow: hasOverflow
+        ))
         // Leave vertical room for the expanded entrance outline.
         .padding(.vertical, Self.stripItemHeight * 0.2)
         .clipped()
         .mask {
-            HStack(spacing: 0) {
-                Color.black
-                if trailingPeek > 0 {
-                    LinearGradient(colors: [.black, .clear],
-                                   startPoint: .leading, endPoint: .trailing)
-                        .frame(width: 2 * step)
+            if centersActive {
+                // Fade each edge only while pips run past it, so a row
+                // resting against an end never dims the pip there.
+                GeometryReader { proxy in
+                    let x = SpacesStripCenteringLayout.offset(
+                        rowWidth: rowWidth, viewportWidth: proxy.size.width, activeCenter: activeCenter)
+                    HStack(spacing: 0) {
+                        if x < -0.5 {
+                            LinearGradient(colors: [.clear, .black],
+                                           startPoint: .leading, endPoint: .trailing)
+                                .frame(width: peek)
+                        }
+                        Color.black
+                        if x + rowWidth > proxy.size.width + 0.5 {
+                            LinearGradient(colors: [.black, .clear],
+                                           startPoint: .leading, endPoint: .trailing)
+                                .frame(width: peek)
+                        }
+                    }
+                }
+            } else {
+                // Both edges fade only the peeking neighbors, never a pip the
+                // row shows in full.
+                HStack(spacing: 0) {
+                    if leadingPeek > 0 || trailingPeek > 0 {
+                        if leadingPeek > 0 {
+                            LinearGradient(colors: [.clear, .black],
+                                           startPoint: .leading, endPoint: .trailing)
+                                .frame(width: leadingPeek)
+                        }
+                        Color.black
+                            .frame(width: pipRowWidth(visibleCount))
+                        if trailingPeek > 0 {
+                            LinearGradient(colors: [.black, .clear],
+                                           startPoint: .leading, endPoint: .trailing)
+                        } else {
+                            Color.black
+                        }
+                    } else {
+                        Color.black
+                    }
                 }
             }
         }
@@ -1028,7 +1085,7 @@ struct SpacesStripView: View {
         // hit regions inside the viewport and clear of the trailing menu.
         .overlay(alignment: .leading) {
             GeometryReader { proxy in
-                if swipe == nil {
+                if swipe == nil, !centersActive {
                     // Only edge pips need stand-ins; avoid walking every Space
                     // again whenever SwiftUI lays out the sliding viewport.
                     let first = max(0, start - 1)
@@ -1611,7 +1668,12 @@ struct SpacesStripView: View {
     /// Space with the active Space's profile so it lands in the same context.
     /// Shown only while the pointer is over the strip's row — hidden via
     /// opacity rather than removed, so it keeps the slot `visiblePipCount`
-    /// reserves for it and the pips never reflow on hover.
+    /// reserves for it and the pips never reflow on hover. In the header's
+    /// control row it stays shown: the pips sit right beside it there.
+    private var showsAddButton: Bool {
+        slot.isStripRowHovered || stripGeometry.sitsInControlRow
+    }
+
     private var addButton: some View {
         Button {
             CreateSpacePanel.requestCreation(initialProfileId: activeSpace?.profileId)
@@ -1629,11 +1691,11 @@ struct SpacesStripView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .opacity(slot.isStripRowHovered ? 1 : 0)
-        .disabled(!slot.isStripRowHovered)
-        .allowsHitTesting(slot.isStripRowHovered)
-        .accessibilityHidden(!slot.isStripRowHovered)
-        .animation(.easeInOut(duration: 0.15), value: slot.isStripRowHovered)
+        .opacity(showsAddButton ? 1 : 0)
+        .disabled(!showsAddButton)
+        .allowsHitTesting(showsAddButton)
+        .accessibilityHidden(!showsAddButton)
+        .animation(.easeInOut(duration: 0.15), value: showsAddButton)
 //        .offset(x: -2)
         .onHover { isAddButtonHovered = $0 }
         .help(NSLocalizedString("sidebar.spacesStrip.addSpaceButtonTooltip", value: "New Space", comment: "Tooltip for the add-Space button in the sidebar Spaces strip"))
@@ -2963,5 +3025,62 @@ final class SpacesStripPresence {
             ancestor = current.superview
         }
         return true
+    }
+}
+
+/// Places the Spaces strip's pip row in the sidebar header's control row:
+/// flush right while every pip fits, otherwise centered on the active pip but
+/// never past either end of the row. It reads the width layout gives it on
+/// every pass, so the row slides continuously as the sidebar is resized,
+/// without re-rendering the pips.
+struct SpacesStripCenteringLayout: Layout {
+    /// The active pip's center, from the row's leading edge.
+    var activeCenter: CGFloat
+
+    /// A Space switch slides the row along with the selection chip.
+    var animatableData: CGFloat {
+        get { activeCenter }
+        set { activeCenter = newValue }
+    }
+
+    /// The row's leading edge, from the viewport's.
+    static func offset(rowWidth: CGFloat, viewportWidth: CGFloat, activeCenter: CGFloat) -> CGFloat {
+        guard rowWidth > viewportWidth else { return viewportWidth - rowWidth }
+        return min(0, max(viewportWidth - rowWidth, viewportWidth / 2 - activeCenter))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let row = subviews.first?.sizeThatFits(.unspecified) ?? .zero
+        return CGSize(width: proposal.width ?? row.width, height: row.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let row = subviews.first else { return }
+        let size = row.sizeThatFits(.unspecified)
+        let x = Self.offset(rowWidth: size.width, viewportWidth: bounds.width, activeCenter: activeCenter)
+        row.place(at: CGPoint(x: bounds.minX + x, y: bounds.midY), anchor: .leading,
+                  proposal: ProposedViewSize(size))
+    }
+}
+
+/// Positions the pip row inside the strip's viewport: by whole-pip window in
+/// the strip's own row, or by `SpacesStripCenteringLayout` in the header's
+/// control row.
+private struct SpacesStripViewportPlacement: ViewModifier {
+    let centeredOn: CGFloat?
+    let offset: CGFloat
+    let width: CGFloat?
+    let fillsRow: Bool
+
+    func body(content: Content) -> some View {
+        if let centeredOn {
+            SpacesStripCenteringLayout(activeCenter: centeredOn) { content }
+                .frame(minWidth: 0, maxWidth: .infinity)
+        } else {
+            content
+                .offset(x: offset)
+                .frame(width: width, alignment: .leading)
+                .frame(minWidth: 0, maxWidth: fillsRow ? .infinity : nil, alignment: .leading)
+        }
     }
 }

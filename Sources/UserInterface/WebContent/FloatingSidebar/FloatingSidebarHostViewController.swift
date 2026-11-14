@@ -28,6 +28,11 @@ final class FloatingSidebarHostViewController: NSViewController {
     private var floatingSidebarLastShownAt: Date?
     private var floatingSidebarShownFromRightToLeft = false
     private var floatingSidebarOcclusionObserver: NSObjectProtocol?
+    /// Popovers opened from the panel, an icon picker say. Hover can't follow
+    /// the pointer into a popover's own window, so each one holds the panel
+    /// open while it is up, as the inline create-Space form does.
+    private let floatingSidebarPopovers = NSHashTable<NSPopover>.weakObjects()
+    private var floatingSidebarPopoverObservers: [NSObjectProtocol] = []
     private var isPointerInsideFloatingSidebar = false
     private var isPointerInsideFloatingSidebarTrigger = false
     private var isSwitchingSpace = false
@@ -49,6 +54,7 @@ final class FloatingSidebarHostViewController: NSViewController {
     }
 
     var isVisible: Bool { floatingSidebarContainerView?.isHidden == false }
+    var isHeldOpenByPopover: Bool { !floatingSidebarPopovers.allObjects.isEmpty }
 
     override func loadView() {
         let overlay = FloatingSidebarOverlayView()
@@ -267,6 +273,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         if let observer = floatingSidebarOcclusionObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        floatingSidebarPopoverObservers.forEach(NotificationCenter.default.removeObserver)
     }
 
     static let floatingSidebarDefaultWidth: CGFloat = MainSplitViewController.leftItemMinWidth
@@ -427,6 +434,65 @@ final class FloatingSidebarHostViewController: NSViewController {
         }
     }
 
+    private func ensureFloatingSidebarPopoverObservers() {
+        guard floatingSidebarPopoverObservers.isEmpty else { return }
+        let center = NotificationCenter.default
+        floatingSidebarPopoverObservers = [
+            center.addObserver(forName: NSPopover.willShowNotification, object: nil, queue: .main) { [weak self] note in
+                guard let popover = note.object as? NSPopover else { return }
+                self?.holdOpen(whileOpening: popover)
+            },
+            center.addObserver(forName: NSPopover.didShowNotification, object: nil, queue: .main) { [weak self] note in
+                guard let popover = note.object as? NSPopover else { return }
+                self?.confirmHold(of: popover)
+            },
+            center.addObserver(forName: NSPopover.didCloseNotification, object: nil, queue: .main) { [weak self] note in
+                guard let popover = note.object as? NSPopover else { return }
+                self?.releaseHold(of: popover)
+            },
+        ]
+    }
+
+    /// A popover posts its show only once it has animated in, and a pointer
+    /// leaving the panel meanwhile would hide it first. Until then its
+    /// window can't say where it is, so any popover starting to open over
+    /// the shown panel holds it; `confirmHold(of:)` keeps only the panel's.
+    private func holdOpen(whileOpening popover: NSPopover) {
+        guard isVisible else { return }
+        floatingSidebarPopovers.add(popover)
+        cancelFloatingSidebarHide()
+    }
+
+    private func confirmHold(of popover: NSPopover) {
+        guard isPanelPopover(popover) else {
+            releaseHold(of: popover)
+            return
+        }
+        floatingSidebarPopovers.add(popover)
+        cancelFloatingSidebarHide()
+    }
+
+    /// A popover is the panel's when it is up over the shown panel from this
+    /// window: AppKit makes a popover's window a child of the window its
+    /// anchor is in, and puts it beside that anchor.
+    private func isPanelPopover(_ popover: NSPopover) -> Bool {
+        guard isVisible,
+              let window = view.window,
+              let popoverWindow = popover.contentViewController?.view.window,
+              popoverWindow.parent === window,
+              let panel = floatingSidebarContainerView else { return false }
+        let panelFrame = window.convertToScreen(panel.convert(panel.bounds, to: nil))
+        return popoverWindow.frame.intersects(panelFrame)
+    }
+
+    private func releaseHold(of popover: NSPopover) {
+        guard floatingSidebarPopovers.contains(popover) else { return }
+        floatingSidebarPopovers.remove(popover)
+        // Re-run the pointer-driven hide so the panel retracts if the
+        // pointer has already left.
+        scheduleFloatingSidebarHide()
+    }
+
     /// Syncs the hidden panel to the docked column's width.
     ///
     /// While the column is expanded the panel cannot show, and a divider drag
@@ -550,6 +616,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         flushPendingFloatingSidebarWidthSync()
         ensureFloatingSidebarIfNeeded()
         ensureFloatingSidebarOcclusionObserver()
+        ensureFloatingSidebarPopoverObservers()
         cancelFloatingSidebarHide()
 
         guard let panel = floatingSidebarContainerView else { return }
@@ -596,6 +663,11 @@ final class FloatingSidebarHostViewController: NSViewController {
         // Pointer-driven hides are already blocked while the form is up
         // (see scheduleFloatingSidebarHide), so this only fires on forced paths.
         floatingSidebarViewController?.dismissCreateSpaceOverlay()
+        // Its popovers go with it rather than float over the page. Released
+        // first, so closing them doesn't schedule another hide.
+        let popovers = floatingSidebarPopovers.allObjects
+        floatingSidebarPopovers.removeAllObjects()
+        popovers.forEach { $0.close() }
         visibilityGeneration += 1
         let generation = visibilityGeneration
         floatingSidebarLeadingConstraint?.update(offset: floatingSidebarHiddenLeading)
@@ -655,6 +727,9 @@ final class FloatingSidebarHostViewController: NSViewController {
             // re-runs this scheduling).
             guard !isSwitchingSpace,
                   floatingSidebarViewController?.hasCreateSpaceOverlay != true else { return }
+            // A popover opened from the panel pins it the same way; its
+            // close re-runs this scheduling.
+            guard !isHeldOpenByPopover else { return }
             refreshFloatingSidebarPointerState()
             guard isPointerInsideFloatingSidebar == false else { return }
             guard isPointerInsideFloatingSidebarTrigger == false else { return }

@@ -19,7 +19,7 @@ enum SidebarHandOffKind {
 final class FloatingSidebarHostViewController: NSViewController {
     private(set) weak var browserState: BrowserState?
     private var subscriptions = Set<AnyCancellable>()
-    private let floatingSidebarTriggerView = MouseTrackingAreaView()
+    let floatingSidebarTriggerView = MouseTrackingAreaView()
     private(set) var floatingSidebarContainerView: NSView?
     private(set) var floatingSidebarViewController: FloatingSidebarViewController?
     private var trafficLightStrip: FloatingTrafficLightsView?
@@ -33,7 +33,22 @@ final class FloatingSidebarHostViewController: NSViewController {
     private var floatingSidebarEnableWorkItem: DispatchWorkItem?
     private var floatingSidebarWidthSyncWorkItem: DispatchWorkItem?
     private var floatingSidebarLastShownAt: Date?
-    private var floatingSidebarShownFromRightToLeft = false
+    /// The pointer has been on the panel or its strip since the panel last
+    /// showed. Running on out of the window from there keeps the panel open
+    /// (`pointerReachedFloatingSidebar`). Cleared when the panel hides.
+    private var pointerTouchedFloatingSidebar = false
+    /// The pointer came into the window through the strip and hasn't moved
+    /// on into the panel: it is passing by from outside the window, say from
+    /// another display, rather than coming from the page.
+    private var pointerEnteredWindowThroughStrip = false
+    /// The panel is sliding out. Until it is gone, a pointer that would
+    /// reveal it brings it back.
+    private var isFloatingSidebarHideAnimating = false
+    /// Where the pointer is, in window coordinates, for every hover check.
+    /// Read at each check; tests replace it.
+    lazy var pointerLocationInWindow: () -> NSPoint? = { [weak self] in
+        self?.view.window?.mouseLocationOutsideOfEventStream
+    }
     private var floatingSidebarOcclusionObserver: NSObjectProtocol?
     private var floatingSidebarGeometryObservers: [NSObjectProtocol] = []
     private var isPointerInsideFloatingSidebar = false
@@ -75,10 +90,25 @@ final class FloatingSidebarHostViewController: NSViewController {
 
     var isVisible: Bool { floatingSidebarContainerView?.isHidden == false }
 
+    /// The pointer reached the panel from inside the window, so running on
+    /// past the window's edge keeps the panel open.
+    var pointerReachedFloatingSidebar: Bool {
+        pointerTouchedFloatingSidebar && !pointerEnteredWindowThroughStrip
+    }
+
+    /// Up, or on its way up: not hidden, and not sliding out.
+    private var isShownOrShowing: Bool { isVisible && !isFloatingSidebarHideAnimating }
+
     override func loadView() {
         let overlay = FloatingSidebarOverlayView()
         overlay.isOverFullscreenPage = { [weak self] in
             self?.browserState?.focusingTab?.isInContentFullscreen == true
+        }
+        overlay.onPointerEnteredWindow = { [weak self] event in
+            self?.pointerEnteredWindow(at: event.locationInWindow)
+        }
+        overlay.onPointerLeftWindow = { [weak self] event in
+            self?.pointerLeftWindow(at: event.locationInWindow)
         }
         view = overlay
     }
@@ -867,16 +897,45 @@ final class FloatingSidebarHostViewController: NSViewController {
         floatingSidebarTriggerView.onMouseEntered = { [weak self] event in
             guard let self else { return }
             isPointerInsideFloatingSidebarTrigger = true
-            let enterPoint = floatingSidebarTriggerView.convert(event.locationInWindow, from: nil)
-            floatingSidebarShownFromRightToLeft = sidebarOnRight ? enterPoint.x <= (Self.floatingSidebarTriggerWidth * 0.5) : enterPoint.x >= (Self.floatingSidebarTriggerWidth * 0.5)
+            pointerTouchedFloatingSidebar = true
             showFloatingSidebar()
         }
 
-        floatingSidebarTriggerView.onMouseExited = { [weak self] _ in
+        floatingSidebarTriggerView.onMouseExited = { [weak self] event in
             guard let self else { return }
             isPointerInsideFloatingSidebarTrigger = false
+            if isInsideFloatingSidebarVisibleRegion(event.locationInWindow) {
+                pointerEnteredWindowThroughStrip = false
+            }
             scheduleFloatingSidebarHide()
         }
+    }
+
+    /// The pointer crossed the window's edge into it (`FloatingSidebarOverlayView`).
+    func pointerEnteredWindow(at location: NSPoint) {
+        let strip = floatingSidebarTriggerView.convert(floatingSidebarTriggerView.bounds, to: nil)
+        pointerEnteredWindowThroughStrip = strip.contains(location)
+    }
+
+    /// A fast pointer can cross the strip between two mouse events and leave
+    /// the window without the strip seeing it. Leaving past the sidebar's
+    /// edge, level with the strip, still reveals the panel, as a slower
+    /// pointer crossing the strip on its way out does.
+    func pointerLeftWindow(at location: NSPoint) {
+        guard !isShownOrShowing, !floatingSidebarTriggerView.isHidden else { return }
+        let strip = floatingSidebarTriggerView.convert(floatingSidebarTriggerView.bounds, to: nil)
+        guard Self.isPastFloatingSidebarEdge(location, strip: strip, sidebarOnRight: sidebarOnRight) else { return }
+        pointerTouchedFloatingSidebar = true
+        pointerEnteredWindowThroughStrip = false
+        showFloatingSidebar()
+        scheduleFloatingSidebarHide()
+    }
+
+    /// Whether `location` lies past the window's edge on the sidebar's side,
+    /// level with the strip at `strip`.
+    static func isPastFloatingSidebarEdge(_ location: NSPoint, strip: NSRect, sidebarOnRight: Bool) -> Bool {
+        let level = location.y >= strip.minY && location.y <= strip.maxY
+        return level && (sidebarOnRight ? location.x >= strip.maxX : location.x < strip.minX)
     }
 
     func shouldEnableFloatingSidebar() -> Bool {
@@ -899,11 +958,12 @@ final class FloatingSidebarHostViewController: NSViewController {
         guard floatingSidebarContainerView == nil else { return }
         updateSidebarPosition()
         let interactionContainerView = MouseTrackingAreaView()
-        interactionContainerView.onMouseEntered = { [weak self] _ in
+        interactionContainerView.onMouseEntered = { [weak self] event in
             guard let self else { return }
             refreshFloatingSidebarPointerState()
-            if !isPointerInsideFloatingSidebarTrigger && floatingSidebarShownFromRightToLeft {
-                floatingSidebarShownFromRightToLeft = false
+            if isInsideFloatingSidebarVisibleRegion(event.locationInWindow) {
+                pointerTouchedFloatingSidebar = true
+                pointerEnteredWindowThroughStrip = false
             }
             if isPointerInsideFloatingSidebar {
                 cancelFloatingSidebarHide()
@@ -1187,7 +1247,6 @@ final class FloatingSidebarHostViewController: NSViewController {
             floatingSidebarTriggerView.isHidden = true
             isPointerInsideFloatingSidebar = false
             isPointerInsideFloatingSidebarTrigger = false
-            floatingSidebarShownFromRightToLeft = false
             floatingSidebarViewController?.setContentActive(false)
             hideFloatingSidebar(animated: false)
         } else if floatingSidebarTriggerView.isHidden {
@@ -1237,7 +1296,18 @@ final class FloatingSidebarHostViewController: NSViewController {
         guard panel.isHidden else {
             floatingSidebarViewController?.setMediaPresented(true)
             floatingSidebarLeadingConstraint?.update(offset: 0)
-            view.layoutSubtreeIfNeeded()
+            if isFloatingSidebarHideAnimating {
+                // Slide back from where the hide got to, rather than jump.
+                isFloatingSidebarHideAnimating = false
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = Self.floatingSidebarShowDuration
+                    context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    context.allowsImplicitAnimation = true
+                    self.view.layoutSubtreeIfNeeded()
+                }
+            } else {
+                view.layoutSubtreeIfNeeded()
+            }
             return
         }
 
@@ -1288,6 +1358,9 @@ final class FloatingSidebarHostViewController: NSViewController {
         visibilityGeneration += 1
         let generation = visibilityGeneration
         floatingSidebarLeadingConstraint?.update(offset: floatingSidebarHiddenLeading)
+        isFloatingSidebarHideAnimating = animated
+        pointerTouchedFloatingSidebar = false
+        pointerEnteredWindowThroughStrip = false
 
         if animated, !prefersReducedMotion() {
             NSAnimationContext.runAnimationGroup { context in
@@ -1297,15 +1370,14 @@ final class FloatingSidebarHostViewController: NSViewController {
                 self.view.layoutSubtreeIfNeeded()
             } completionHandler: {
                 guard self.visibilityGeneration == generation else { return }
+                self.isFloatingSidebarHideAnimating = false
                 panel.isHidden = true
                 self.floatingSidebarLastShownAt = nil
-                self.floatingSidebarShownFromRightToLeft = false
             }
         } else {
             view.layoutSubtreeIfNeeded()
             panel.isHidden = true
             floatingSidebarLastShownAt = nil
-            floatingSidebarShownFromRightToLeft = false
         }
     }
 
@@ -1351,14 +1423,18 @@ final class FloatingSidebarHostViewController: NSViewController {
             refreshFloatingSidebarPointerState()
             guard isPointerInsideFloatingSidebar == false else { return }
             guard isPointerInsideFloatingSidebarTrigger == false else { return }
-            if floatingSidebarShownFromRightToLeft, isMouseAtFloatingSidebarLeftSide() {
+            // A pointer that ran on out of the window from the panel keeps it
+            // open wherever it goes outside. The panel looks again until the
+            // pointer is back, and then hides over the page.
+            if pointerReachedFloatingSidebar, let window = view.window, let location = pointerLocationInWindow(),
+               !NSRect(origin: .zero, size: window.frame.size).contains(location) {
+                scheduleFloatingSidebarHide()
                 return
             }
             // Slipping just past the inner edge is forgiven: the panel waits
             // while the pointer is in the buffer, checking again as long as
             // it stays there, and closes only once it has moved on.
-            if let window = view.window,
-               floatingSidebarEdgeBufferContains(window.mouseLocationOutsideOfEventStream) {
+            if let location = pointerLocationInWindow(), floatingSidebarEdgeBufferContains(location) {
                 scheduleFloatingSidebarHide()
                 return
             }
@@ -1395,27 +1471,18 @@ final class FloatingSidebarHostViewController: NSViewController {
     }
 
     func isMouseInside(view targetView: NSView) -> Bool {
-        guard let window = targetView.window else { return false }
-        let mouseLocationInWindow = window.mouseLocationOutsideOfEventStream
+        guard targetView.window != nil, let mouseLocationInWindow = pointerLocationInWindow() else { return false }
         let locationInView = targetView.convert(mouseLocationInWindow, from: nil)
         return targetView.bounds.contains(locationInView)
     }
 
-    func isMouseAtFloatingSidebarLeftSide() -> Bool {
-        guard let panel = floatingSidebarContainerView, panel.isHidden == false else { return false }
-        guard let window = panel.window else { return false }
-        let mouseLocationInWindow = window.mouseLocationOutsideOfEventStream
-        let panelFrameInWindow = panel.convert(panel.bounds, to: nil)
-
-        let withinY = (mouseLocationInWindow.y >= panelFrameInWindow.minY) && (mouseLocationInWindow.y <= panelFrameInWindow.maxY)
-        let visiblePanelMinX = panelFrameInWindow.minX + Self.floatingSidebarInset
-        return withinY && (sidebarOnRight ? mouseLocationInWindow.x > panelFrameInWindow.maxX - Self.floatingSidebarInset : mouseLocationInWindow.x < visiblePanelMinX)
+    func isMouseInsideFloatingSidebarVisibleRegion() -> Bool {
+        guard let location = pointerLocationInWindow() else { return false }
+        return isInsideFloatingSidebarVisibleRegion(location)
     }
 
-    func isMouseInsideFloatingSidebarVisibleRegion() -> Bool {
+    func isInsideFloatingSidebarVisibleRegion(_ mouseLocationInWindow: NSPoint) -> Bool {
         guard let panel = floatingSidebarContainerView, panel.isHidden == false else { return false }
-        guard let window = panel.window else { return false }
-        let mouseLocationInWindow = window.mouseLocationOutsideOfEventStream
         let panelFrameInWindow = panel.convert(panel.bounds, to: nil)
 
         let visiblePanelMinX = panelFrameInWindow.minX + Self.floatingSidebarInset
@@ -1590,6 +1657,32 @@ class FloatingSidebarResizeHandleView: NSView {
 /// the inset left of the glass) reach the page too.
 private final class FloatingSidebarOverlayView: NSView {
     var isOverFullscreenPage: () -> Bool = { false }
+    /// The pointer crossing the window's edge, which the strip and the panel
+    /// miss when a fast pointer goes around or past them.
+    var onPointerEnteredWindow: ((NSEvent) -> Void)?
+    var onPointerLeftWindow: ((NSEvent) -> Void)?
+    private var windowEdgeTrackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let windowEdgeTrackingArea { removeTrackingArea(windowEdgeTrackingArea) }
+        let area = NSTrackingArea(rect: bounds, options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        windowEdgeTrackingArea = area
+    }
+
+    // The strip's and the panel's own entries and exits pass up the
+    // responder chain to here; only the window's edge counts.
+    override func mouseEntered(with event: NSEvent) {
+        guard let area = windowEdgeTrackingArea, event.trackingArea === area else { return super.mouseEntered(with: event) }
+        onPointerEnteredWindow?(event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard let area = windowEdgeTrackingArea, event.trackingArea === area else { return super.mouseExited(with: event) }
+        onPointerLeftWindow?(event)
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)

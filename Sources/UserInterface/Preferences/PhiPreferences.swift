@@ -411,6 +411,7 @@ extension PhiPreferences {
         private static let disallowedAgentProfilesKey = "PhiAgentDisallowedProfileIds"
         private static let agentFallbackProfileKey = "PhiAgentFallbackProfileId"
         private static let unstyledOperatingPageKey = "PhiAgentUnstyledOperatingPage"
+        private static let remoteAgentsKey = "PhiRemoteAgentsEnabled"
 
         /// Master gate for the developer surfaces — the Developer settings tab
         /// and the features configured there. Driven by the "Developer mode"
@@ -531,6 +532,19 @@ extension PhiPreferences {
         /// nothing, the in-page recolor (`AgentPageTheme`) is not injected,
         /// and the control pill starts minimised. Read live; a change posts
         /// `.agentUnstyledOperatingPageDidChange`. Default `false`.
+        /// Settings ▸ Developer ▸ Agent control: show agent Spaces of the
+        /// user's other Macs here and this Mac's there (`AgentRemotePresence`).
+        /// Default off. Independent of agent CDP access: a Mac that only
+        /// watches runs no agents.
+        static var remoteAgentsEnabled: Bool {
+            get { UserDefaults.standard.bool(forKey: remoteAgentsKey) }
+            set {
+                UserDefaults.standard.set(newValue, forKey: remoteAgentsKey)
+                NotificationCenter.default.post(
+                    name: .agentRemotePresenceSettingDidChange, object: nil)
+            }
+        }
+
         static var unstyledOperatingPageEnabled: Bool {
             get { UserDefaults.standard.bool(forKey: unstyledOperatingPageKey) }
             set {

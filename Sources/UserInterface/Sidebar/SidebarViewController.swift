@@ -479,6 +479,42 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         headerView.mountSpaceSwitch(hostingView)
         spacesStripRowView = hostingView
         updateHeaderHeight()
+        bindRemoteTabList()
+    }
+
+    // MARK: - Remote agent tabs
+
+    private var remoteTabsView: ThemedHostingView?
+    private var remoteMirrorCancellable: AnyCancellable?
+
+    /// While the window mirrors an agent Space of the user's other Mac, its
+    /// tabs replace this Space's pinned and regular tabs in the sidebar.
+    private func bindRemoteTabList() {
+        guard remoteTabsView == nil, bottomBarSwiftUI.superview != nil,
+              let slot = spacesStripSlot else { return }
+        let hosting = ThemedHostingView(rootView: AgentRemoteTabListView(slot: slot),
+                                        themeSource: state.themeContext)
+        // The band's size comes from the sidebar; an empty list must not
+        // pull the header and the bottom bar together.
+        hosting.sizingOptions = []
+        hosting.isHidden = true
+        view.addSubview(hosting)
+        hosting.snp.makeConstraints { make in
+            make.top.equalTo(headerView.snp.bottom)
+            make.leading.trailing.equalToSuperview()
+            make.bottom.equalTo(bottomBarSwiftUI.snp.top)
+        }
+        remoteTabsView = hosting
+        remoteMirrorCancellable = slot.$remoteMirror
+            .map { $0 != nil }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] mirroring in
+                guard let self else { return }
+                remoteTabsView?.isHidden = !mirroring
+                tabList.view.alphaValue = mirroring ? 0 : 1
+                if !state.isIncognito { pinnedTabContainerView.alphaValue = mirroring ? 0 : 1 }
+            }
     }
 
     /// The Spaces strip row's AppKit view, resolved live by the slot's
@@ -751,7 +787,8 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         // empty 32pt gap below the address bar for a row that isn't shown.
         let spacesEnabled = PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue()
             && state.participatesInSpaces
-            && (SpaceManager.shared.spaces.count > 1 || headerView.forcesSpaceSwitchVisible)
+            && (SpaceManager.shared.spaces.count > 1 || headerView.forcesSpaceSwitchVisible
+                || !AgentRemotePresence.shared.peers.isEmpty)
         // Base = nav row (+ address bar in sidebar layouts). The Spaces switch
         // adds its band (see SidebarHeaderView.spaceSwitchBandHeight) only
         // while it is shown, so the header reclaims it when it is hidden.
@@ -805,6 +842,16 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         // manager's published list, not UserDefaults.
         SpaceManager.shared.$spaces
             .map(\.count)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.headerView.updateSpaceSwitchVisibility()
+                self?.updateHeaderHeight()
+            }
+            .store(in: &cancellables)
+        // Remote agent pips keep the row up even with a single local Space.
+        AgentRemotePresence.shared.$peers
+            .map(\.isEmpty)
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -966,6 +1013,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
 
         let bottomSpacer = createSpacer(height: 8)
         mainStackView.addArrangedSubview(bottomSpacer)
+        bindRemoteTabList()
     }
     
     private func setupFavoriteContainer() {

@@ -189,6 +189,7 @@ import PostHog
         // while it is off gets a consent prompt offering to turn it on, rather
         // than an endpoint that isn't there (see AgentCDPListener).
         AgentCDPListener.shared.start()
+        AgentRemotePresence.shared.refresh()
         // The Folio app connecting or quitting flips Folio's flag the way a
         // flag load does (see SaveForLaterService.featureEnabled).
         NotificationCenter.default.addObserver(self,

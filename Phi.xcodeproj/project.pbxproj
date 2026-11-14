@@ -446,9 +446,12 @@
 		ACDC00000000000000000B04 /* AppDevToolsPageSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDC00000000000000000A04 /* AppDevToolsPageSession.swift */; };
 		ACDC00000000000000000B05 /* PageActionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDC00000000000000000A05 /* PageActionRegistry.swift */; };
 		AE00FFFE0000000000000002 /* PhiAgentEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE00FFFE0000000000000001 /* PhiAgentEndpointResolver.swift */; };
+		A9E7A0000000000000000008 /* AgentRemoteChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E7A0000000000000000007 /* AgentRemoteChannel.swift */; };
 		AE00FFFE0000000000000004 /* PhiAgentTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE00FFFE0000000000000003 /* PhiAgentTransport.swift */; };
+		A9E7A0000000000000000002 /* AgentRemotePresence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E7A0000000000000000001 /* AgentRemotePresence.swift */; };
 		AE5ACE000000000000000011 /* AgentSpaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000001 /* AgentSpaceManager.swift */; };
 		AE5ACE000000000000000012 /* AgentSpaceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000002 /* AgentSpaceRouter.swift */; };
+		A9E7A0000000000000000004 /* AgentRemoteMirrorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E7A0000000000000000003 /* AgentRemoteMirrorView.swift */; };
 		AE5ACE000000000000000013 /* AgentSpaceOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000003 /* AgentSpaceOverlayView.swift */; };
 		AE5ACE000000000000000014 /* AgentSpaceRouter+Management.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000004 /* AgentSpaceRouter+Management.swift */; };
 		AE5ACE000000000000000015 /* AgentSpaceRouter+Capture.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000005 /* AgentSpaceRouter+Capture.swift */; };
@@ -574,6 +577,7 @@
 		CC5025FE2E702603004223DC /* NSFont+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC5025FD2E702603004223DC /* NSFont+Extension.swift */; };
 		CC59CE000001000000000001 /* SpaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000001000000000002 /* SpaceManager.swift */; };
 		CC59CE0000010000000000A1 /* Space.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE0000010000000000A2 /* Space.swift */; };
+		A9E7A0000000000000000006 /* AgentRemoteTabListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E7A0000000000000000005 /* AgentRemoteTabListView.swift */; };
 		CC59CE000002000000000001 /* SpacesStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000002000000000002 /* SpacesStripView.swift */; };
 		CC59CE0000020000000000A1 /* SpaceSwitchBandSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE0000020000000000A2 /* SpaceSwitchBandSurface.swift */; };
 		CC59CE000003000000000001 /* ProfileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000003000000000002 /* ProfileManager.swift */; };
@@ -1324,9 +1328,12 @@
 		ACDC00000000000000000A05 /* PageActionRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageActionRegistry.swift; sourceTree = "<group>"; };
 		AE00FFFE0000000000000001 /* PhiAgentEndpointResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiAgentEndpointResolver.swift; sourceTree = "<group>"; };
 		AE00FFFE0000000000000003 /* PhiAgentTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiAgentTransport.swift; sourceTree = "<group>"; };
+		A9E7A0000000000000000007 /* AgentRemoteChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteChannel.swift; sourceTree = "<group>"; };
 		AE5ACE000000000000000001 /* AgentSpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSpaceManager.swift; sourceTree = "<group>"; };
+		A9E7A0000000000000000001 /* AgentRemotePresence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemotePresence.swift; sourceTree = "<group>"; };
 		AE5ACE000000000000000002 /* AgentSpaceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSpaceRouter.swift; sourceTree = "<group>"; };
 		AE5ACE000000000000000003 /* AgentSpaceOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSpaceOverlayView.swift; sourceTree = "<group>"; };
+		A9E7A0000000000000000003 /* AgentRemoteMirrorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteMirrorView.swift; sourceTree = "<group>"; };
 		AE5ACE000000000000000004 /* AgentSpaceRouter+Management.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentSpaceRouter+Management.swift"; sourceTree = "<group>"; };
 		AE5ACE000000000000000005 /* AgentSpaceRouter+Capture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentSpaceRouter+Capture.swift"; sourceTree = "<group>"; };
 		AE5ACE000000000000000006 /* AgentTranscriptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTranscriptStore.swift; sourceTree = "<group>"; };
@@ -1448,6 +1455,7 @@
 		CC59CE000001000000000002 /* SpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceManager.swift; sourceTree = "<group>"; };
 		CC59CE0000010000000000A2 /* Space.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Space.swift; sourceTree = "<group>"; };
 		CC59CE000002000000000002 /* SpacesStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesStripView.swift; sourceTree = "<group>"; };
+		A9E7A0000000000000000005 /* AgentRemoteTabListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteTabListView.swift; sourceTree = "<group>"; };
 		CC59CE0000020000000000A2 /* SpaceSwitchBandSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceSwitchBandSurface.swift; sourceTree = "<group>"; };
 		CC59CE000003000000000002 /* ProfileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileManager.swift; sourceTree = "<group>"; };
 		CC5C51F52FB5C5560044D255 /* credits.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = credits.html; sourceTree = "<group>"; };
@@ -1890,6 +1898,7 @@
 				EAD000000000000000000027 /* ReaderImageInliner.swift */,
 				AE00FFFE0000000000000001 /* PhiAgentEndpointResolver.swift */,
 				AE00FFFE0000000000000003 /* PhiAgentTransport.swift */,
+				A9E7A0000000000000000007 /* AgentRemoteChannel.swift */,
 			);
 			path = Networking;
 			sourceTree = "<group>";
@@ -2554,6 +2563,7 @@
 			isa = PBXGroup;
 			children = (
 				AE5ACE000000000000000001 /* AgentSpaceManager.swift */,
+				A9E7A0000000000000000001 /* AgentRemotePresence.swift */,
 				AE5ACE000000000000000002 /* AgentSpaceRouter.swift */,
 				AE5ACE000000000000000004 /* AgentSpaceRouter+Management.swift */,
 				B17DE0000000000000000025 /* AgentSpaceRouter+Credentials.swift */,
@@ -3000,6 +3010,7 @@
 			isa = PBXGroup;
 			children = (
 				CC59CE000002000000000002 /* SpacesStripView.swift */,
+				A9E7A0000000000000000005 /* AgentRemoteTabListView.swift */,
 				CC59CE0000020000000000A2 /* SpaceSwitchBandSurface.swift */,
 				CC4F00030000000000000002 /* SpaceURLRulesEditor.swift */,
 				CC4F00040000000000000002 /* CreateSpacePanel.swift */,
@@ -3293,6 +3304,7 @@
 				37BA3EA12F866864003A8A53 /* EdgeFogOverlayView.swift */,
 				37BA3EA32F866870003A8A53 /* AgentAnimationManager.swift */,
 				AE5ACE000000000000000003 /* AgentSpaceOverlayView.swift */,
+				A9E7A0000000000000000003 /* AgentRemoteMirrorView.swift */,
 			);
 			path = WebContent;
 			sourceTree = "<group>";
@@ -4153,6 +4165,7 @@
 				3769C6ED2EFA6CBE00A94DE0 /* GaussianEffectView.swift in Sources */,
 				B0F370B92E430CA5000B51F9 /* WebContentViewController.swift in Sources */,
 				AE5ACE000000000000000011 /* AgentSpaceManager.swift in Sources */,
+				A9E7A0000000000000000002 /* AgentRemotePresence.swift in Sources */,
 				AE5ACE000000000000000012 /* AgentSpaceRouter.swift in Sources */,
 				AE5ACE000000000000000014 /* AgentSpaceRouter+Management.swift in Sources */,
 				B17DE000000000000000000B /* AgentSpaceRouter+Credentials.swift in Sources */,
@@ -4168,6 +4181,7 @@
 				AE5ACE000000000000000016 /* AgentTranscriptStore.swift in Sources */,
 				AE5ACE000000000000000017 /* AgentTranscriptPanel.swift in Sources */,
 				AE5ACE000000000000000013 /* AgentSpaceOverlayView.swift in Sources */,
+				A9E7A0000000000000000004 /* AgentRemoteMirrorView.swift in Sources */,
 				CC6336052E4EE55300A176DA /* FileSystemUtils.swift in Sources */,
 				A1B2C3D4E5F60718293A4B56 /* SharedAuthTokenStore.swift in Sources */,
 				378AFF622F78E5EA0016B334 /* BrowserThemeContext.swift in Sources */,
@@ -4208,6 +4222,7 @@
 				CC59CE0000010000000000A1 /* Space.swift in Sources */,
 				CC59CE000001000000000001 /* SpaceManager.swift in Sources */,
 				CC59CE000002000000000001 /* SpacesStripView.swift in Sources */,
+				A9E7A0000000000000000006 /* AgentRemoteTabListView.swift in Sources */,
 				CC59CE0000020000000000A1 /* SpaceSwitchBandSurface.swift in Sources */,
 				CC59CE000003000000000001 /* ProfileManager.swift in Sources */,
 				747241560000000000000021 /* ProfileChatArchiveJournal.swift in Sources */,
@@ -4230,6 +4245,7 @@
 				FBD200012FD0000000000003 /* FeedbackV2.swift in Sources */,
 				AE00FFFE0000000000000002 /* PhiAgentEndpointResolver.swift in Sources */,
 				AE00FFFE0000000000000004 /* PhiAgentTransport.swift in Sources */,
+				A9E7A0000000000000000008 /* AgentRemoteChannel.swift in Sources */,
 				5B0000010000000000000001 /* ServiceBrokerTypes.swift in Sources */,
 				5B0000010000000000000002 /* ServiceBrokerSocketPath.swift in Sources */,
 				3751E249305D18AE004D82C7 /* LibraryViewModule.swift in Sources */,

@@ -216,6 +216,35 @@ final class FloatingSidebarHostViewController: NSViewController {
         if !retainingPrevious { finishSpaceSwitch() }
     }
 
+    // MARK: - Slide-in spring
+
+    /// The hover slide-in lands with a small overshoot: damping ratio 0.8,
+    /// about 1.5% past rest (~5 pt on a ~345 pt slide), peaking at ~0.12 s.
+    static let floatingSidebarSpringStiffness: CGFloat = 2000
+    static let floatingSidebarSpringDamping: CGFloat = 72
+    static let floatingSidebarSpringMass: CGFloat = 1
+    static let floatingSidebarSlideInAnimationKey = "floatingSidebarSlideIn"
+
+    /// With Reduce Motion on, the slide-in keeps its plain ease-out.
+    var prefersReducedMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    /// Lays the panel out at rest, then plays the travel from the window edge
+    /// as a spring on the layer. The model frame is final at once, so the
+    /// panel is hit-testable where it lands.
+    private func springFloatingSidebarIntoPlace(_ panel: NSView) {
+        view.layoutSubtreeIfNeeded()
+        guard let layer = panel.layer else { return }
+        let spring = CASpringAnimation(keyPath: "transform.translation.x")
+        spring.stiffness = Self.floatingSidebarSpringStiffness
+        spring.damping = Self.floatingSidebarSpringDamping
+        spring.mass = Self.floatingSidebarSpringMass
+        spring.fromValue = (sidebarOnRight ? 1 : -1) * panel.frame.width
+        spring.toValue = CGFloat(0)
+        spring.duration = spring.settlingDuration
+        spring.isRemovedOnCompletion = true
+        layer.add(spring, forKey: Self.floatingSidebarSlideInAnimationKey)
+    }
+
     /// Keep each session's content resident and active, like the docked
     /// sidebar. Initial layout runs when the session is hosted, not on return.
     func host(_ state: BrowserState) {
@@ -701,6 +730,10 @@ final class FloatingSidebarHostViewController: NSViewController {
         }
 
         floatingSidebarLeadingConstraint?.update(offset: 0)
+        guard prefersReducedMotion() else {
+            springFloatingSidebarIntoPlace(panel)
+            return
+        }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.floatingSidebarShowDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -713,6 +746,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         cancelFloatingSidebarHide()
         guard let panel = floatingSidebarContainerView else { return }
         guard panel.isHidden == false else { return }
+        panel.layer?.removeAnimation(forKey: Self.floatingSidebarSlideInAnimationKey)
         returnKeyboardToFullscreenPage(from: panel)
         floatingSidebarViewController?.setMediaPresented(false)
         // A forced hide (sidebar expanding, window ordering out) takes the

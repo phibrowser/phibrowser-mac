@@ -131,6 +131,14 @@ extension AppController {
         
         clearDataMenuItem.submenu = clearDataSubmenu
         debugMenu.addItem(clearDataMenuItem)
+
+        #if DEBUG && !PHI_OSS_BUILD // destructive server call: internal debug builds only
+        let resetSyncItem = NSMenuItem(title: "Force Reset Account Sync Data…",
+                                       action: #selector(debugForceResetAccountSync(_:)),
+                                       keyEquivalent: "")
+        resetSyncItem.target = self
+        debugMenu.addItem(resetSyncItem)
+        #endif
         
         let sendCardItem = NSMenuItem(
             title: "Send Test Notification Card",
@@ -859,3 +867,72 @@ extension UserAppearanceChoice {
         }
     }
 }
+
+#if DEBUG && !PHI_OSS_BUILD
+
+/// Debug-only escape hatch for a test account whose last active sync device is
+/// gone (an erased VM, a lost Mac), so nobody can reach **Reset sync** and the
+/// recovery code is lost. `PUT /keys/v1/reset-operations/{op}` authorizes by the
+/// signed-in account (JWT `sub`) and only checks that `device_key_id` is the
+/// account's single active device, so this Mac names that device itself:
+/// revoke every active device but one, then reset with the remaining one.
+/// Server side only; this Mac's local sync state is left as it is.
+///
+/// Compiled into internal debug builds only (Debug, Debug-Canary). Release,
+/// Release-Canary and OpenSource (`PHI_OSS_BUILD`) builds do not contain it.
+extension AppController {
+    @MainActor @objc func debugForceResetAccountSync(_ sender: Any?) {
+        guard AccountController.shared.account != nil else {
+            Self.debugSyncResetAlert("Sign in first", "Force reset needs the account's sign-in.")
+            return
+        }
+        let api = KeyEnvelopeAPIClient(tokenProvider: { AuthManager.shared.getAccessTokenSyncly() })
+        Task { @MainActor in
+            do {
+                let active = try await api.listDevices().filter { $0.status == "active" && $0.revokedAt == nil }
+                let names = active
+                    .map { "• \($0.name) (\($0.platform), \($0.deviceKeyID.prefix(8)))" }
+                    .joined(separator: "\n")
+                let confirm = NSAlert()
+                confirm.alertStyle = .critical
+                confirm.messageText = "Delete all sync data for this account?"
+                confirm.informativeText = """
+                    Server: \(KeyEnvelopeAPIClient.syncBaseURL)
+                    Active devices (\(active.count)):
+                    \(names.isEmpty ? "none" : names)
+
+                    Every device is removed and all sync data stored on the server for \
+                    this account is deleted. This cannot be undone.
+                    """
+                confirm.addButton(withTitle: "Delete All Sync Data")
+                confirm.buttons.first?.hasDestructiveAction = true
+                confirm.addButton(withTitle: "Cancel")
+                guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+                for device in active.dropLast() {
+                    try await api.revokeDevice(deviceKeyId: device.deviceKeyID)
+                }
+                // No active device: the server still answers `reset` when the account
+                // has no key state either, and 404 `device_not_found` when it does.
+                let target = active.last?.deviceKeyID ?? "none"
+                let operation = UUID()
+                try await api.resetAccount(operationId: operation, deviceKeyId: target)
+                AppLogInfo("[debug-sync-reset] reset operation=\(operation) device=\(target) revoked=\(max(active.count - 1, 0))")
+                Self.debugSyncResetAlert("Sync data deleted",
+                                         "The account's sync data is gone. Quit and relaunch Phi, then set up sync on this Mac as the first device.")
+            } catch {
+                AppLogError("[debug-sync-reset] failed: \(error)")
+                Self.debugSyncResetAlert("Force reset failed", "\(error)")
+            }
+        }
+    }
+
+    @MainActor
+    private static func debugSyncResetAlert(_ title: String, _ body: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = body
+        alert.runModal()
+    }
+}
+#endif

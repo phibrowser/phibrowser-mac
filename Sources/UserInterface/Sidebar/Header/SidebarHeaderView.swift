@@ -96,6 +96,8 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
 
     private var isFloating: Bool = false
     private lazy var floatingTrafficLightsView = FloatingTrafficLightsView(browserState: browserState)
+    /// The drawn lights take the window's own pitch once the header is in it.
+    private var floatingTrafficLightsWidthConstraint: Constraint?
     
     private lazy var sidebarButton: HoverableButtonNSView = {
         let config = HoverableButtonConfig(image: .leftSidebarToggle,
@@ -313,8 +315,8 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             floatingTrafficLightsView.snp.makeConstraints { make in
                 make.leading.equalToSuperview().offset(FloatingTrafficLightMetrics.leading)
                 make.centerY.equalTo(sidebarButton)
-                make.size.equalTo(NSSize(width: FloatingTrafficLightMetrics.width,
-                                         height: FloatingTrafficLightMetrics.size))
+                floatingTrafficLightsWidthConstraint = make.width.equalTo(FloatingTrafficLightMetrics.width(in: nil)).constraint
+                make.height.equalTo(FloatingTrafficLightMetrics.size)
             }
         }
 
@@ -549,7 +551,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             if browserState?.isInFullScreenMode == true {
                 return 0
             }
-            return FloatingTrafficLightMetrics.maxX
+            return FloatingTrafficLightMetrics.maxX(in: window)
         }
         return windowButtonMaxX(button: .zoomButton)
             ?? windowButtonMaxX(button: .closeButton)
@@ -576,6 +578,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     /// Updates the left constraint for `sidebarButton` based on the right edge of the leading chrome.
     private func updateSidebarButtonLeftConstraint() {
         observeFrameChanges(zoomButton: isFloating ? nil : window?.standardWindowButton(.zoomButton))
+        floatingTrafficLightsWidthConstraint?.update(offset: FloatingTrafficLightMetrics.width(in: window))
         guard let x = leadingChromeMaxX() else {
             AppLogDebug("[SidebarHeader] updateSidebarButtonLeftConstraint maxX=nil (window buttons unavailable)")
             return

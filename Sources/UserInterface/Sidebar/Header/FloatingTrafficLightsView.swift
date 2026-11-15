@@ -11,9 +11,23 @@ enum FloatingTrafficLightMetrics {
     static let leading: CGFloat = 12
     static let size: CGFloat = 16
     static let circleInset: CGFloat = 1
-    static let spacing: CGFloat = 9
-    static let width: CGFloat = size * 3 + spacing * 2
-    static let maxX: CGFloat = leading + width
+    /// The titlebar's pitch from one light to the next when there is no
+    /// window to ask: macOS 26's.
+    static let defaultPitch: CGFloat = 23
+    /// The gap between drawn lights that gives them `window`'s own pitch,
+    /// read from its close and minimize buttons: 23 pt on macOS 26, 20 pt on
+    /// macOS 14 and 15.
+    static func spacing(in window: NSWindow?) -> CGFloat {
+        var pitch = defaultPitch
+        if let close = window?.standardWindowButton(.closeButton),
+           let minimize = window?.standardWindowButton(.miniaturizeButton),
+           minimize.frame.midX - close.frame.midX > size {
+            pitch = minimize.frame.midX - close.frame.midX
+        }
+        return pitch - size
+    }
+    static func width(in window: NSWindow?) -> CGFloat { size * 3 + spacing(in: window) * 2 }
+    static func maxX(in window: NSWindow?) -> CGFloat { leading + width(in: window) }
     /// Height of the right-sidebar layout's top band, which carries the
     /// native lights on its centre line.
     static let bandHeight: CGFloat = 32
@@ -65,7 +79,7 @@ final class FloatingTrafficLightsView: NSView {
         let stack = NSStackView(views: dotViews)
         stack.orientation = .horizontal
         stack.alignment = .centerY
-        stack.spacing = FloatingTrafficLightMetrics.spacing
+        stack.spacing = FloatingTrafficLightMetrics.spacing(in: nil)
         return stack
     }()
 
@@ -137,6 +151,9 @@ final class FloatingTrafficLightsView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if placement == .sidebarHeader {
+            stackView.spacing = FloatingTrafficLightMetrics.spacing(in: window)
+        }
         if placement == .topBand, pointerMonitor == nil, window != nil {
             pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
                 guard let self, event.window === self.window else { return event }

@@ -95,7 +95,50 @@ final class FloatingTrafficLightsOptionZoomTests: XCTestCase {
         XCTAssertFalse(window.styleMask.contains(.fullScreen), "and does not enter full screen")
     }
 
+    // MARK: - Spacing
+
+    /// The drawn lights stand in for the titlebar's, so they keep its pitch:
+    /// 23 pt on macOS 26, 20 pt on macOS 14 and 15.
+    func testTheLightsAreSpacedLikeTheWindowsOwn() throws {
+        let slot = try makeSlot()
+        let lights = try trafficLights(in: showPanel(in: slot))
+        let window = try XCTUnwrap(lights.window)
+        let native = try [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].map { type in
+            try XCTUnwrap(window.standardWindowButton(type)).frame.midX
+        }
+        let drawn = try dots(of: lights).map { $0.convert(NSPoint(x: $0.bounds.midX, y: 0), to: nil).x }
+
+        XCTAssertEqual(drawn[1] - drawn[0], native[1] - native[0], accuracy: 0.5, "close to minimize")
+        XCTAssertEqual(drawn[2] - drawn[1], native[2] - native[1], accuracy: 0.5, "minimize to zoom")
+    }
+
+    func testTheSidebarButtonKeepsItsGapAfterTheLights() throws {
+        let slot = try makeSlot()
+        let panel = try showPanel(in: slot)
+        let zoomLight = try XCTUnwrap(dots(of: trafficLights(in: panel)).last)
+        let button = try XCTUnwrap(view(identified: "sidebarHeader.sidebarButton", in: panel))
+
+        let zoomMaxX = zoomLight.convert(zoomLight.bounds, to: nil).maxX
+        XCTAssertEqual(button.convert(button.bounds, to: nil).minX, zoomMaxX + 10, accuracy: 0.5,
+                       "10 pt after the zoom light")
+    }
+
     // MARK: - Helpers
+
+    private func dots(of lights: FloatingTrafficLightsView,
+                      file: StaticString = #filePath,
+                      line: UInt = #line) throws -> [NSView] {
+        let dots = try XCTUnwrap(lights.subviews.compactMap { $0 as? NSStackView }.first?.arrangedSubviews,
+                                 file: file, line: line)
+        XCTAssertEqual(dots.count, 3, file: file, line: line)
+        return dots
+    }
+
+    /// The visible view with `identifier` under `root`.
+    private func view(identified identifier: String, in root: NSView) -> NSView? {
+        if root.accessibilityIdentifier() == identifier, !root.isHiddenOrHasHiddenAncestor { return root }
+        return root.subviews.lazy.compactMap { self.view(identified: identifier, in: $0) }.first
+    }
 
     private func click(_ view: NSView, modifierFlags: NSEvent.ModifierFlags) {
         let window = view.window!

@@ -158,6 +158,7 @@ enum CommandWrapper: Int, Equatable {
     case PHI_CAPTURE_AREA            = 90029
     case PHI_SPLIT_WITH_NEW_TAB      = 90030
     case PHI_CLEAR_ALL_TABS          = 90031
+    case PHI_TOGGLE_BALANCED_LAYOUT  = 90032
 
     // System Preserved
     case IDS_HIDE_OTHERS_MAC         = 110
@@ -714,6 +715,8 @@ extension Shortcuts {
         .PHI_SELECT_SPACE_7: .init(characters: "8", modifiers: .control),
         .PHI_SELECT_SPACE_8: .init(characters: "9", modifiers: .control),
         .PHI_CLEAR_ALL_TABS: .init(characters: "k", modifiers: [.command, .shift]),
+        // Cmd-Shift-L is a Chromium hidden accelerator; Ctrl-Shift-L is free.
+        .PHI_TOGGLE_BALANCED_LAYOUT: .init(characters: "l", modifiers: [.control, .shift]),
         .PHI_FARRINGDON_TOGGLE: .init(characters: "g", modifiers: [.control, .shift]),
         .PHI_COPY_URL: .init(characters: "c", modifiers: [.command, .shift]),
         // Phi owns Cmd-Option-R for Reader View. The Phi Framework omits

@@ -692,6 +692,8 @@ private extension CommandWrapper {
             return NSLocalizedString("settings.shortcuts.command.openDeveloperConsole", value: "Dev Tools Console", comment: "Shortcuts settings - Command title for opening the developer tools console")
         case .PHI_TOGGLE_SIDEBAR:
             return NSLocalizedString("settings.shortcuts.command.toggleSidebar", value: "Toggle Sidebar", comment: "Shortcuts settings - Command title for showing or hiding the sidebar")
+        case .PHI_TOGGLE_BALANCED_LAYOUT:
+            return NSLocalizedString("settings.shortcuts.command.toggleBalancedLayout", value: "Toggle Balanced Layout", comment: "Shortcuts settings - Command title for switching to the Balanced layout, or to the Performance layout when Balanced is already active; Balanced is a layout option name")
         case .PHI_TOGGLE_CHATBAR:
             return NSLocalizedString("settings.shortcuts.command.toggleChatbar", value: "Toggle Chatbar", comment: "Shortcuts settings - Command title for showing or hiding the Chatbar")
         case .PHI_NEW_CONVERSATION:

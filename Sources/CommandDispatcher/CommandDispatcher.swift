@@ -27,6 +27,7 @@ struct CommandDispatcher {
         .PHI_SELECT_PREVIOUS_SPACE,
         .PHI_FARRINGDON_TOGGLE,
         .PHI_CLEAR_ALL_TABS,
+        .PHI_TOGGLE_BALANCED_LAYOUT,
         .PHI_COPY_URL,
         .PHI_TOGGLE_READER,
         .PHI_NEW_KIOSK_WINDOW,
@@ -143,6 +144,12 @@ struct CommandDispatcher {
         switch command {
         case .PHI_CLEAR_ALL_TABS:
             windowController.browserState.clearAllTabs()
+            return true
+        case .PHI_TOGGLE_BALANCED_LAYOUT:
+            // Balanced is the target from any other layout; pressing again
+            // from Balanced returns to Performance, never to Comfortable.
+            let mode = PhiPreferences.GeneralSettings.loadLayoutMode()
+            PhiPreferences.GeneralSettings.saveLayoutMode(mode == .balanced ? .performance : .balanced)
             return true
         case .IDC_WINDOW_CLOSE_OTHER_TABS:
             let state = windowController.browserState

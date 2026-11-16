@@ -90583,6 +90583,18 @@
         }
       }
     },
+    "settings.shortcuts.command.toggleBalancedLayout" : {
+      "comment" : "Shortcuts settings - Command title for switching to the Balanced layout, or to the Performance layout when Balanced is already active; Balanced is a layout option name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Toggle Balanced Layout"
+          }
+        }
+      }
+    },
     "settings.shortcuts.command.toggleBookmarkBar" : {
       "comment" : "Shortcuts settings - Command title for showing or hiding the bookmarks bar",
       "localizations" : {
@@ -97413,6 +97425,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檢視瀏覽器工作及其資源使用情況。"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.description.toggleBalancedLayout" : {
+      "comment" : "Shortcuts settings - Description of the command that switches between two layout options; Balanced and Performance are the layout option names",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Switch to the Balanced layout, or to Performance when Balanced is already active."
           }
         }
       }

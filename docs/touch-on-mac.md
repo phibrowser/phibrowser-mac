@@ -20,6 +20,13 @@ until Chromium handles direct touch; it relies on AppKit's mouse emulation.
 - Never add a direct-touch recognizer to an ancestor of the web content (for
   example the window's content view). Doing so made taps on web pages stop
   working (TOUCH-011).
+- A direct-touch recognizer that begins on touch-down (for example an
+  `NSPressGestureRecognizer` with `minimumPressDuration = 0`) stops mouse
+  emulation for its view: click, double-click, drag and touch-and-hold
+  right-click all go missing, and each would have to be rebuilt by hand
+  (TOUCH-001, TOUCH-012). Recognizers that only observe, or recognize on
+  touch-up and simultaneously with others, have not caused this. Inferred
+  from device tests, not stated by Apple.
 
 References: Adopting gesture recognizers in your app, Handling AppKit
 gestures, TN3212, TN3216, HIG Pointing devices ("Touch support for hidden
@@ -33,6 +40,9 @@ controls") and Gestures.
   recognizes simultaneously with everything else, so mouse input and the
   view's own click handling are untouched. Its optional `onTouchBegan` runs
   when a finger lands, before that touch's tap or emulated click is handled.
+- `TouchPressObserver` — reports a direct touch landing and lifting off (or
+  moving more than 5 pt) for press feedback. It never leaves the possible
+  state, so the view keeps mouse emulation.
 - `PointerMotionObserver` — fires once when the physical pointer moves again;
   ends touch-revealed UI. Motion that stays at the last touch location is
   ignored in case AppKit places the cursor under the finger.
@@ -56,40 +66,35 @@ build alone is not verification.
 
 | ID | Area | Change | Status |
 | --- | --- | --- | --- |
-| TOUCH-001 | Sidebar bookmark rows | Press-scale recognizer sets `allowedTouchTypes = []`; tab rows use PR #324 instead | Built, not verified with touch |
+| TOUCH-001 | Sidebar tab and bookmark rows | Press-scale recognizer sets `allowedTouchTypes = []`; both rows animate on touch through `TouchPressObserver` | Tab rows verified with touch; bookmark animation not yet |
 | TOUCH-002 | Common | Added `TouchTapObserver` and `PointerMotionObserver` | Built, not verified with touch |
 | TOUCH-003 | Sidebar | A tap reveals the tapped row's close control and the sidebar hover controls | Built, not verified with touch |
 | TOUCH-004 | Tab strip (Comfortable) | Touch input shows the active tab's close button; a touch outside the strip unlocks the close layout | Built, not verified with touch |
-| TOUCH-005 | Sidebar tab group header | Tap reveals the group close button; it closes only once revealed | Built, not verified with touch |
+| TOUCH-005 | Sidebar tab group header | Tap reveals the group close button; it closes only once revealed; 36 pt close target under touch | Built, not verified with touch |
 | TOUCH-006 | Sidebar Peek indicator | Touch-revealed rows show the indicator's minus glyph | Built, not verified with touch |
 | TOUCH-007 | Downloads list rows | Direct-touch tap reveals the row's action buttons for 4 s | Built, not verified with touch |
 | TOUCH-008 | Split pane move grip | Grip pill shows while a finger is on it, hides after 3 s unless dragging | Built, not verified with touch |
 | TOUCH-009 | Sidebar bookmark context menu | Added "Close Tab" for opened bookmarks | Built, not verified |
-| TOUCH-010 | Extensions list pin button | No change: pin/unpin is in the extension context menu | Reviewed |
+| TOUCH-010 | Extensions list | Touch and hold opens the extension context menu (pin/unpin) | Built, not verified with touch |
 | TOUCH-011 | Sidebar, tab strip | Fix: removed the window-level tap recognizers that broke taps on web content | Built, not verified with touch |
+| TOUCH-012 | Sidebar tab rows | Replaced PR #324's touch handling with TOUCH-001; touch and hold opens the menu again | Verified with touch |
 
 ### TOUCH-001 — Keep press-scale recognizers off direct touch
 
-- Files: `BookmarkCellView.swift` (`setupPressAnimation`). The tab row part
-  (`SidebarTabCellView.setupPressAnimation`) was dropped in favor of PR #324,
-  see below.
+- Files: `BookmarkCellView.swift` and `SidebarCellViews.swift`
+  (`setupPressAnimation`), `TouchInteraction.swift` (`TouchPressObserver`).
 - Problem: both rows add an `NSPressGestureRecognizer` with
   `minimumPressDuration = 0` purely for the press-scale animation. From
   macOS 27 it also accepts direct touches and begins on touch-down, where it
   can win against the row's click emulation and against sidebar scrolling.
 - Change: `allowedTouchTypes = []`, the pre-macOS 27 default. Mouse behavior
-  is unchanged; under touch the row has no press-scale animation.
-- Verify: tap a sidebar tab and a bookmark row (selects), pan the tab list
-  (scrolls), touch-hold-drag a row (reorders).
-- PR #324 (issue #323, verified on a touchscreen MacBook Pro by its author)
-  fixes the same tab-row symptom differently: the press recognizer keeps
-  direct touch with `isCancellableByScrollGesture = true`, and a touch-only
-  `NSClickGestureRecognizer` on the row activates the tab through
-  `TabCellDelegate.tabCellDidRequestActivation`. It was merged into this
-  branch; the merge conflict in `setupPressAnimation` was resolved to the
-  PR's code. Open: bookmark rows still use this entry's approach; check on
-  device whether a tap opens a bookmark, and if not, give them the PR's
-  touch tap.
+  is unchanged. Both rows get the press-scale animation under touch from a
+  `TouchPressObserver`, which does not take the touch. A touch press on a
+  bookmark row also closes its folder preview, as a mouse press does; folder
+  rows do not scale, as with the mouse.
+- Verified with touch (2026-11-16, tab rows): tap selects with the press
+  animation, panning scrolls, hold-then-move reorders, touch and hold opens
+  the menu. Bookmark row animation: built, not yet verified.
 
 ### TOUCH-002 — Shared touch helpers
 
@@ -121,6 +126,9 @@ build alone is not verification.
     do not hide them.
   - It ends on pointer motion or the sidebar leaving the window. A touch
     outside the sidebar no longer ends it (TOUCH-011).
+  - A tab row drops its reveal when its tab stops being active, so a link
+    tapped on the page that opens a new tab hides the old row's close
+    button (device test 2026-11-16, B6).
 - Tab group header close and the Peek indicator follow in TOUCH-005 and
   TOUCH-006.
 - Verify: tap row A (selects, close appears), tap row B (A's close hides),
@@ -161,6 +169,10 @@ build alone is not verification.
   `isCloseArmedForTouch`; the close-zone press is accepted when the header is
   hovered or the close was armed. The first tap on a hidden close button only
   reveals it; the header still gets that tap as before.
+- 36 pt target: the close zone is 24 pt. While the close is armed for
+  touch, `TabGroupHeaderHitTargetResolver` expands it to 36 pt around the
+  button (device test 2026-11-16, D2: "hard to hit"). The pointer keeps the
+  24 pt zone.
 - Verify: tap a group header (reveals close, does not close), tap close
   (closes), tap a row elsewhere then this group's close spot (reveals only).
 
@@ -208,12 +220,22 @@ build alone is not verification.
   from the sidebar and only while the bookmark has an open tab or bound split.
 - Product check: wording "Close Tab".
 
-### TOUCH-010 — Extensions list pin button (no change)
+### TOUCH-010 — Extensions list: touch and hold opens the context menu
 
+- Files: `ExtensionList.swift` (`ExtensionGridItem`).
 - The pin button in the extensions popover appears only on hover, but a tap
   on an extension runs it and dismisses the popover, so a reveal tap cannot
-  work there. Pin/Unpin is in the extension's context menu (touch and hold),
-  which covers the HIG requirement.
+  work there. Pin/Unpin is in the extension's context menu.
+- Problem (device test 2026-11-16, H1): touch and hold opened no menu. The
+  right-click overlay `SecondaryClickPassthroughNSView` only claims a hit
+  test while `NSApp.currentEvent` is a right mouse event, and the item is
+  SwiftUI, which takes touch natively instead of through mouse emulation.
+- Change: on macOS 27 a high-priority `LongPressGesture(inputKinds:
+  .directTouch)` calls the same `onSecondaryTap` as a right-click.
+- Open: the menu is placed at `ExtensionPopupAnchor.mouseFallback()`, the
+  cursor location; check where it appears after a touch.
+- Verify: touch and hold an extension (menu with Pin/Unpin), tap it (runs as
+  before), tap the pin badge of a pinned extension (unpins).
 
 ### TOUCH-011 — Fix: taps on web content stopped working
 
@@ -237,6 +259,30 @@ build alone is not verification.
   sidebar reveal. Pointer motion still ends both.
 - Verify: tap links, buttons and text fields on a web page in each layout,
   with and without a sidebar reveal showing.
+
+### TOUCH-012 — Sidebar tab rows: replace PR #324's touch handling
+
+- Files: `SidebarCellViews.swift` (`SidebarTabCellView`, `TabCellDelegate`),
+  `SidebarTabListViewController.swift`, `TabGroupCellView.swift`.
+- PR #324 (issue #323) fixed tab activation and sidebar scrolling under
+  touch by keeping the press recognizer on direct touch
+  (`isCancellableByScrollGesture = true`) and adding a touch-only
+  `NSClickGestureRecognizer` that activated the tab through
+  `TabCellDelegate.tabCellDidRequestActivation`.
+- Problem (device test 2026-11-16): with the PR, touch and hold on a tab row
+  opened no menu (B5), and double-click-to-close did not work by touch.
+  Bookmark rows, which use TOUCH-001, opened the menu (C3).
+- Cause (inference): the press recognizer begins on touch-down and stops
+  mouse emulation for the row. The PR rebuilt activation and scrolling by
+  hand; the right-click and double-click that emulation also provided were
+  not rebuilt. A touch-only long press that popped the menu by hand did not
+  help either (cause unknown).
+- Change: tab rows use TOUCH-001. The PR's tap recognizer, gesture delegate
+  methods and both `tabCellDidRequestActivation` implementations are removed.
+- Verified with touch (2026-11-16): tap selects (with press animation, see
+  TOUCH-001), panning scrolls, a tab in a group selects, hold-then-move
+  reorders, touch and hold opens the menu. Double-click-to-close by touch is
+  not yet checked.
 
 ## Context menu audit
 
@@ -268,9 +314,9 @@ Hidden actions and where touch reaches them (touch and hold opens the menu):
 - Back/forward swipe on web content (HistorySwiper, `PhiApplication`
   `NSEventTypeSwipe`), Space swipe and media-card swipe driven by
   `scrollWheel`.
-- Top address bar hover buttons (memory, copy URL, `…`): hidden with
-  `opacity(0)` but still hit-testable. Whether a touch reaches them or the
-  `WebContentAddressBarDragView` above depends on the `currentEvent` gate.
+- Top address bar hover buttons (memory, copy URL, `…`): device test
+  2026-11-16 (I1) confirms touch cannot reveal them. How to reveal them
+  needs a decision: a tap on the bar opens the omnibox.
 
 ## Pending, needs a design decision
 
@@ -278,4 +324,7 @@ Hidden actions and where touch reaches them (touch and hold opens the menu):
 - Custom traffic lights: glyphs only on hover, 16 pt targets; the right-side
   sidebar's hover-revealed window-controls bar (dev #308) has the same issue.
 - 36 pt touch targets for 24 pt and smaller controls: touch only, or larger
-  for the pointer too.
+  for the pointer too. Group header close is done for touch (TOUCH-005).
+- Split divider (4 pt, `DividerHandle`): device test 2026-11-16 (F2) found it
+  hard to resize by touch. A touch-only wider target needs a recognizer on
+  the divider or a wider divider for the pointer too.

@@ -254,11 +254,12 @@ private final class TabGroupHeaderHostingView: NSHostingView<TabGroupHeaderView>
     override func mouseDown(with event: NSEvent) {
         pendingMouseDownEvent = event
         pendingMouseDownPoint = convert(event.locationInWindow, from: nil)
+        let viewModel = rootView.viewModel
         pendingHitTarget = TabGroupHeaderHitTargetResolver.target(
             at: pendingMouseDownPoint ?? .zero,
-            in: bounds
+            in: bounds,
+            expandsCloseForTouch: viewModel.isCloseArmedForTouch
         )
-        let viewModel = rootView.viewModel
         if pendingHitTarget == .closeGroup,
            !viewModel.isHeaderHovered, !viewModel.isCloseArmedForTouch {
             pendingHitTarget = nil
@@ -299,7 +300,11 @@ private final class TabGroupHeaderHostingView: NSHostingView<TabGroupHeaderView>
         // hit zone. A drift off the button cancels (no toggle either).
         if pendingHitTarget == .closeGroup {
             let upPoint = convert(event.locationInWindow, from: nil)
-            let upTarget = TabGroupHeaderHitTargetResolver.target(at: upPoint, in: bounds)
+            let upTarget = TabGroupHeaderHitTargetResolver.target(
+                at: upPoint,
+                in: bounds,
+                expandsCloseForTouch: rootView.viewModel.isCloseArmedForTouch
+            )
             if upTarget == .closeGroup {
                 dragDelegate?.tabGroupHeaderHostingViewDidRequestCloseGroup(self)
             }
@@ -1656,11 +1661,6 @@ extension TabGroupCellView: GroupTabsDragSource {
 // MARK: - TabCellDelegate
 
 extension TabGroupCellView: TabCellDelegate {
-    func tabCellDidRequestActivation(_ tab: Tab, modifierFlags: NSEvent.ModifierFlags) {
-        guard let row = currentMemberOrder.firstIndex(of: tab.guid) else { return }
-        tableView(innerTable, didClickRow: row, clickCount: 1, modifierFlags: modifierFlags)
-    }
-
     func tabCellDidRequestClose(_ tab: Tab) {
         groupCellDelegate?.tabGroupCell(self, tabDidRequestClose: tab)
     }

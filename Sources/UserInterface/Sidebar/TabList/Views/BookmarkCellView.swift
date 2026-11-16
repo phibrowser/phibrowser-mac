@@ -110,6 +110,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private let peekTabViewModel = TabViewModel()
     private let hoverRegionView = SidebarTabHoverRegionView()
     private let folderPreview = BookmarkFolderPreview()
+    private var touchPressObserver: TouchPressObserver?
     private let tabPreviewRegistration = TabPreviewRegistration()
     private let splitTabPreviewRegistration = SplitTabPreviewRegistration()
     // Keep the rename field in AppKit instead of the SwiftUI subtree.
@@ -298,6 +299,12 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         // touch-down ahead of the row's click emulation and sidebar scrolling.
         press.allowedTouchTypes = []
         addGestureRecognizer(press)
+        touchPressObserver = TouchPressObserver(view: self) { [weak self] pressed in
+            if pressed {
+                self?.folderPreview.invalidate()
+            }
+            self?.viewState.isPressed = pressed
+        }
     }
 
     override func setTouchRevealed(_ revealed: Bool) {

@@ -274,7 +274,7 @@ private final class SidebarTabHoverDeadZoneView: NSView {
 }
 
 // MARK: - Tab Cell View (reused from existing)
-class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling, NSGestureRecognizerDelegate {
+class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private var hostingView: ThemedHostingView!
     private let hoverRegionView = SidebarTabHoverRegionView()
     private let hoverDeadZoneView = SidebarTabHoverDeadZoneView()
@@ -285,8 +285,7 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling, NSGe
     private let tabPreviewRegistration = TabPreviewRegistration()
     private weak var configuredTab: Tab?
     private var activeSuppressed = false
-    private var pressRecognizer: NSPressGestureRecognizer?
-    private var touchTapRecognizer: NSClickGestureRecognizer?
+    private var touchPressObserver: TouchPressObserver?
     weak var delegate: TabCellDelegate?
 
 
@@ -420,43 +419,13 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling, NSGe
         press.allowableMovement = 5
         // Don't delay events — let them reach NSHostingView's SwiftUI Button simultaneously
         press.delaysPrimaryMouseButtonEvents = false
-        if #available(macOS 27.0, *) {
-            press.isCancellableByScrollGesture = true
-            press.delegate = self
-        }
-        pressRecognizer = press
+        // macOS 27 defaults to direct touches; a zero-duration press would claim
+        // touch-down ahead of the row's click emulation and sidebar scrolling.
+        press.allowedTouchTypes = []
         addGestureRecognizer(press)
-
-        if #available(macOS 27.0, *) {
-            let tap = NSClickGestureRecognizer(target: self, action: #selector(handleTouchTap(_:)))
-            tap.buttonMask = 0
-            tap.allowedTouchTypes = .direct
-            tap.isCancellableByScrollGesture = true
-            tap.delegate = self
-            touchTapRecognizer = tap
-            addGestureRecognizer(tap)
+        touchPressObserver = TouchPressObserver(view: self) { [weak self] pressed in
+            self?.viewModel.isPressed = pressed
         }
-    }
-
-    @available(macOS 27.0, *)
-    @objc private func handleTouchTap(_ recognizer: NSClickGestureRecognizer) {
-        guard recognizer.state == .ended,
-              bounds.contains(recognizer.location(in: self)),
-              let tab = configuredTab else { return }
-        delegate?.tabCellDidRequestActivation(tab, modifierFlags: recognizer.modifierFlags)
-    }
-
-    func gestureRecognizer(_ gestureRecognizer: NSGestureRecognizer,
-                           shouldRecognizeSimultaneouslyWith otherGestureRecognizer: NSGestureRecognizer) -> Bool {
-        gestureRecognizer === pressRecognizer || otherGestureRecognizer === pressRecognizer
-    }
-
-    func gestureRecognizer(_ gestureRecognizer: NSGestureRecognizer,
-                           shouldRequireFailureOf otherGestureRecognizer: NSGestureRecognizer) -> Bool {
-        guard gestureRecognizer === touchTapRecognizer,
-              let otherView = otherGestureRecognizer.view,
-              otherView !== self else { return false }
-        return otherView.isDescendant(of: self)
     }
     
     @objc private func handlePress(_ recognizer: NSPressGestureRecognizer) {
@@ -516,6 +485,16 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling, NSGe
             tabPreviewRegistration.invalidate()
         }
         viewModel.setActiveSuppressed(activeSuppressed, activeValue: tab.isActive)
+        // A tab that stops being active, for example when a link opens a new
+        // tab, drops its touch reveal: the finger has moved on to the page.
+        tab.$isActive
+            .removeDuplicates()
+            .filter { !$0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.viewModel.isTouchRevealed = false
+            }
+            .store(in: &cancellables)
         viewModel.onToggleMute = { [weak tab] in
             guard let tab else { return }
             tab.toggleAudioMuted()
@@ -1874,6 +1853,5 @@ class SeparatorCellView: SidebarCellView {
 }
 
 protocol TabCellDelegate: AnyObject {
-    func tabCellDidRequestActivation(_ tab: Tab, modifierFlags: NSEvent.ModifierFlags)
     func tabCellDidRequestClose(_ tab: Tab)
 }

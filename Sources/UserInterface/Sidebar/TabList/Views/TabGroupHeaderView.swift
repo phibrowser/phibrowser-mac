@@ -209,15 +209,25 @@ enum TabGroupHeaderHitTarget {
 struct TabGroupHeaderHitTargetResolver {
     static let controlSize: CGFloat = 24
     static let horizontalInset: CGFloat = 6
+    /// Minimum touch target on macOS.
+    static let touchTargetSize: CGFloat = 36
 
-    static func target(at point: CGPoint, in bounds: CGRect) -> TabGroupHeaderHitTarget? {
+    static func target(
+        at point: CGPoint,
+        in bounds: CGRect,
+        expandsCloseForTouch: Bool = false
+    ) -> TabGroupHeaderHitTarget? {
         let originY = bounds.midY - controlSize * 0.5
-        let closeRect = CGRect(
+        var closeRect = CGRect(
             x: bounds.maxX - horizontalInset - controlSize,
             y: originY,
             width: controlSize,
             height: controlSize
         )
+        if expandsCloseForTouch {
+            let outset = (touchTargetSize - controlSize) * 0.5
+            closeRect = closeRect.insetBy(dx: -outset, dy: -outset)
+        }
         if closeRect.contains(point) {
             return .closeGroup
         }

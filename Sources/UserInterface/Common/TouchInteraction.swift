@@ -62,6 +62,87 @@ final class TouchTapObserver: NSObject, NSGestureRecognizerDelegate {
     }
 }
 
+/// Reports a direct touch landing on a view and lifting off, for press
+/// feedback.
+///
+/// It never leaves the possible state, so it does not take the touch: AppKit
+/// keeps turning it into mouse events for the view's own click, double-click,
+/// drag and context-menu handling. A recognizer that begins on touch-down
+/// stops that emulation for the view.
+@MainActor
+final class TouchPressObserver: NSGestureRecognizer, NSGestureRecognizerDelegate {
+    private static let movementTolerance: CGFloat = 5
+
+    private let onPressChanged: (Bool) -> Void
+    private var touchStartLocation: NSPoint?
+
+    init(view: NSView, onPressChanged: @escaping (Bool) -> Void) {
+        self.onPressChanged = onPressChanged
+        super.init(target: nil, action: nil)
+        allowedTouchTypes = .direct
+        delegate = self
+        view.addGestureRecognizer(self)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func touchesBegan(with event: NSEvent) {
+        super.touchesBegan(with: event)
+        guard touchStartLocation == nil,
+              let view,
+              let touch = event.touches(matching: .began, in: view).first else { return }
+        touchStartLocation = touch.location(in: view)
+        onPressChanged(true)
+    }
+
+    override func touchesMoved(with event: NSEvent) {
+        super.touchesMoved(with: event)
+        guard let touchStartLocation,
+              let view,
+              let touch = event.touches(matching: .moved, in: view).first else { return }
+        let location = touch.location(in: view)
+        if hypot(location.x - touchStartLocation.x, location.y - touchStartLocation.y)
+            > Self.movementTolerance {
+            fail()
+        }
+    }
+
+    override func touchesEnded(with event: NSEvent) {
+        super.touchesEnded(with: event)
+        fail()
+    }
+
+    override func touchesCancelled(with event: NSEvent) {
+        super.touchesCancelled(with: event)
+        fail()
+    }
+
+    override func reset() {
+        super.reset()
+        release()
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: NSGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: NSGestureRecognizer
+    ) -> Bool {
+        true
+    }
+
+    private func fail() {
+        release()
+        state = .failed
+    }
+
+    private func release() {
+        guard touchStartLocation != nil else { return }
+        touchStartLocation = nil
+        onPressChanged(false)
+    }
+}
+
 /// Reports, once, that the physical pointer moved inside a view after a touch.
 ///
 /// Ends touch-revealed UI when someone goes back to the mouse or trackpad.

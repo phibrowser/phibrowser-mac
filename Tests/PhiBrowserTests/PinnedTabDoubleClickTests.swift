@@ -347,4 +347,5 @@ private final class GroupedSplitPressFixture: NSObject, NSTableViewDataSource,
                    at location: NSPoint) {}
     func tableView(_ tableView: GroupTabsTableView, didRequest target: GroupTabsTableInteractionTarget,
                    row: Int) {}
+    func tableViewDidEndDragDestination(_ tableView: GroupTabsTableView) {}
 }

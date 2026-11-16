@@ -137,15 +137,18 @@ final class GroupTabsTableView: NSTableView {
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {
         enclosingSidebarOutlineView()?.hideDragAutoscrollCue()
+        phiTableDelegate?.tableViewDidEndDragDestination(self)
         super.draggingExited(sender)
     }
 
     override func draggingEnded(_ sender: any NSDraggingInfo) {
         enclosingSidebarOutlineView()?.hideDragAutoscrollCue()
+        phiTableDelegate?.tableViewDidEndDragDestination(self)
     }
 
     override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
         enclosingSidebarOutlineView()?.hideDragAutoscrollCue()
+        phiTableDelegate?.tableViewDidEndDragDestination(self)
         super.concludeDragOperation(sender)
     }
 
@@ -243,6 +246,7 @@ enum GroupTabsTableInteractionTarget: String {
 }
 
 protocol GroupTabsTableViewDelegate: AnyObject {
+    func tableViewDidEndDragDestination(_ tableView: GroupTabsTableView)
     func tableView(_ tableView: GroupTabsTableView,
                    beginDraggingRow row: Int,
                    with event: NSEvent)

@@ -312,12 +312,13 @@ extension BrowserState {
     }
 
     /// Preserves a bookmark pane's current page as a normal background tab,
-    /// then returns the bookmark pane to its stored URL.
+    /// then returns the bookmark pane to its stored URL. The page's load
+    /// stays in this Space even when a URL rule matches it.
     func separateBookmarkTabFromCurrentURL(_ tab: Tab, bookmark: Bookmark) {
         guard let context = bookmarkOriginNavigationContext(for: tab, bookmark: bookmark) else {
             return
         }
-        createTab(context.currentURL, customGuid: nil, focusAfterCreate: false)
+        openBackgroundTabBypassingSpaceRouting(context.currentURL)
         performBookmarkOriginNavigation(context)
     }
 

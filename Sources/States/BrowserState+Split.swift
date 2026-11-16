@@ -497,8 +497,10 @@ extension BrowserState {
             splits.append(group)
         }
         // The split a pane was just replaced in, back under its id: its
-        // bookmark takes it again and saves the new pane.
-        if let swap = pendingBoundSplitPaneSwaps.removeValue(forKey: splitId),
+        // bookmark takes it again and saves the new pane. The note goes
+        // after the binding is back, so the panes stay marked bound
+        // throughout (`syncSplitBookmarkPaneMarks`).
+        if let swap = pendingBoundSplitPaneSwaps[splitId],
            swap.tabIds.count == tabIds.count {
             for bookmarkGuid in swap.bookmarkGuids
             where bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil {
@@ -506,6 +508,7 @@ extension BrowserState {
             }
             saveBoundBookmarkPanes(group, previousTabIds: swap.tabIds)
         }
+        pendingBoundSplitPaneSwaps.removeValue(forKey: splitId)
         // After the swap above has bound the split again, and after a
         // restore has (`bindRestoredSplitToItsBookmark` runs first): a split
         // still unbound here is a normal split.
@@ -1109,7 +1112,7 @@ extension BrowserState {
         // new pane into the bookmark.
         let boundBookmarkGuids = splitBookmarkBindings.compactMap { $0.value == splitId ? $0.key : nil }
         if !boundBookmarkGuids.isEmpty, let group = splitGroup(forId: splitId) {
-            pendingBoundSplitPaneSwaps[splitId] = (boundBookmarkGuids, group.tabIds)
+            pendingBoundSplitPaneSwaps[splitId] = (boundBookmarkGuids, group.tabIds, otherTabId)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.pendingBoundSplitPaneSwaps.removeValue(forKey: splitId)
             }

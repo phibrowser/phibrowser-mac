@@ -110,7 +110,9 @@ class BrowserState {
     }
 
     /// Tabs mirrored from Chromium, including their order.
-    @Published var tabs: [Tab] = []
+    @Published var tabs: [Tab] = [] {
+        didSet { syncSplitBookmarkPaneMarks() }
+    }
     /// Non-pinned tabs shown in the sidebar list.
     @Published var normalTabs: [Tab] = []
     /// Pinned tabs managed on the native side.
@@ -229,7 +231,9 @@ class BrowserState {
     /// the split back a moment after its panes arrive, so `updateNormalTabs`
     /// keeps them out of the tab list meanwhile: listed, each would flash a
     /// row that vanishes once the split lands behind the bookmark cell.
-    var splitPaneIdsOpeningBehindBookmark: Set<Int> = []
+    var splitPaneIdsOpeningBehindBookmark: Set<Int> = [] {
+        didSet { syncSplitBookmarkPaneMarks() }
+    }
 
     /// Panes of a bookmark-bound split the user is closing whole, from the
     /// close request until each is removed. See
@@ -273,9 +277,12 @@ class BrowserState {
     /// reports the split created or grown.
     var pendingSplitAdditionalPaneURLsById: [String: [String]] = [:]
 
-    /// splitId → the bookmarks bound to a split and its panes, noted just
-    /// before one of the panes is replaced. See `swapTabInSplit`.
-    var pendingBoundSplitPaneSwaps: [String: (bookmarkGuids: [String], tabIds: [Int])] = [:]
+    /// splitId → the bookmarks bound to a split, its panes and the tab
+    /// taking one pane's place, noted just before the pane is replaced. See
+    /// `swapTabInSplit`.
+    var pendingBoundSplitPaneSwaps: [String: (bookmarkGuids: [String], tabIds: [Int], incomingTabId: Int)] = [:] {
+        didSet { syncSplitBookmarkPaneMarks() }
+    }
 
     /// "Split with New Tab" under the Omnibox new-tab behavior: the focused
     /// tab is shown beside a blank pane while the omnibox picks the partner.
@@ -476,7 +483,9 @@ class BrowserState {
     @Published var isDraggingTab = false
 
     /// Side-by-side tab splits, mirrored from Chromium (source of truth).
-    @Published var splits: [SplitGroup] = []
+    @Published var splits: [SplitGroup] = [] {
+        didSet { syncSplitBookmarkPaneMarks() }
+    }
 
     /// Pinned-tab DB guids that the user just asked to reopen as a split via
     /// `openPinnedSplit`. Auto-recreation only fires for guids in this set so
@@ -510,8 +519,18 @@ class BrowserState {
     /// Window-scoped; saved with the account so a session restore can bind
     /// the split again (`saveSplitBookmarkBindings`).
     @Published var splitBookmarkBindings: [String: String] = [:] {
-        didSet { saveSplitBookmarkBindings(since: oldValue) }
+        didSet {
+            saveSplitBookmarkBindings(since: oldValue)
+            syncSplitBookmarkPaneMarks()
+        }
     }
+
+    /// Tab id → the wrapper this window last told Chromium the tab is a
+    /// Split Bookmark pane through (`syncSplitBookmarkPaneMarks`). Kept by
+    /// wrapper so a pane that leaves the window, still alive, is unmarked.
+    /// `addressBarNavigationOpensNewTab(for:)` reads it too, so exactly the
+    /// marked panes keep their page on an address-bar submission.
+    private var markedSplitBookmarkPaneWrappers: [Int: WebContentWrapper & NSObject] = [:]
 
     /// Bookmarks a restored split was bound to before the bookmark store's
     /// first delivery could confirm they still exist.
@@ -1424,13 +1443,14 @@ class BrowserState {
     }
 
     /// Preserves a pinned tab's current page as a normal background tab,
-    /// then returns the pinned tab to its stored URL.
+    /// then returns the pinned tab to its stored URL. The page's load stays
+    /// in this Space even when a URL rule matches it.
     func separatePinnedTabFromCurrentURL(_ tab: Tab) {
         guard let context = pinnedTabOriginNavigationContext(for: tab) else {
             return
         }
 
-        createTab(context.currentURL, customGuid: nil, focusAfterCreate: false)
+        openBackgroundTabBypassingSpaceRouting(context.currentURL)
         navigateOpenPinnedTab(context.tab, to: context.originalURL)
     }
 
@@ -4146,15 +4166,18 @@ class BrowserState {
     }
 
     /// Whether an address-bar submission made while `tab` is focused must
-    /// open a NEW tab instead of navigating `tab` itself. True for the
-    /// sidebar rows that stand for a stored URL — a bookmark's tab and a
-    /// pinned tab — in the vertical layouts: navigating them in place either
-    /// bounces the load into a Peek (bookmark) or re-points the pinned row
-    /// and its icon at whatever was typed. The traditional (Comfortable)
-    /// layout has neither surface and keeps plain same-tab navigation.
+    /// open a NEW tab instead of navigating `tab` itself. True in the
+    /// vertical layouts for the bound tabs. A bookmark's tab or pinned tab
+    /// navigated in place would bounce the load into a Peek (bookmark) or
+    /// re-point the pinned row and its icon at whatever was typed. A Split
+    /// Bookmark pane would load the typed URL past Space URL rules; a pane
+    /// counts when its mark was pushed to Chromium, so the two agree. The
+    /// traditional (Comfortable) layout has no Bookmark Tab or Split
+    /// Bookmark and keeps plain same-tab navigation, pinned tabs included.
     func addressBarNavigationOpensNewTab(for tab: Tab) -> Bool {
         guard !layoutMode.isTraditional else { return false }
         return boundRecordURLString(for: tab) != nil
+            || markedSplitBookmarkPaneWrappers[tab.guid] != nil
     }
 
     /// Completes the pending candidate's decision: same site (unless the
@@ -5686,12 +5709,59 @@ class BrowserState {
         // into the session snapshot.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            // The marks the transaction changed (a restored split bound to
+            // its bookmark), held back from the replay stack.
+            self.syncSplitBookmarkPaneMarks()
             for (tab, _) in batch {
                 self.consumePendingSplitPartner(for: tab)
                 self.consumePendingPrimarySplit(for: tab)
                 self.consumePendingSplitSlotSwap(for: tab)
             }
         }
+    }
+
+    // MARK: - Split Bookmark pane marks
+
+    /// Tells Chromium which tabs are Split Bookmark panes, so Space URL rules
+    /// leave every navigation inside them in place, as they do for a pinned
+    /// tab or Bookmark Tab (whose custom value already says so; a pane has
+    /// none). The marked tabs are the live panes of every split bound to a
+    /// Split Bookmark, plus the panes on their way into or through one, so a
+    /// pane stays marked while the binding is briefly missing:
+    /// - a pane opening behind its bookmark is marked as it arrives, in the
+    ///   same turn its split-pending marker is cleared;
+    ///   `consumePendingPrimarySplit` clears the first pane's before the
+    ///   split even exists;
+    /// - a bound split replacing a pane keeps its panes and the incoming tab
+    ///   marked while Chromium removes the split and creates it again under
+    ///   its id (`swapTabInSplit`); the incoming tab may have just lost its
+    ///   own marker (`consumePendingSplitSlotSwap`).
+    ///
+    /// Runs whenever these inputs or the tab list change, and pushes only the
+    /// difference. A restore transaction runs in Chromium's replay stack, so
+    /// it pushes nothing; its epilogue syncs on the next turn. A restored pane
+    /// does not load until it is shown, and that load is a restore, which the
+    /// rules leave alone.
+    private func syncSplitBookmarkPaneMarks() {
+        if restoreTransactionPendingGuids != nil { return }
+        var paneIds = splitPaneIdsOpeningBehindBookmark
+        for splitId in splitBookmarkBindings.values {
+            paneIds.formUnion(splitGroup(forId: splitId)?.tabIds ?? [])
+        }
+        for swap in pendingBoundSplitPaneSwaps.values {
+            paneIds.formUnion(swap.tabIds + [swap.incomingTabId])
+        }
+        var marked: [Int: WebContentWrapper & NSObject] = [:]
+        for tab in tabs where paneIds.contains(tab.guid) {
+            marked[tab.guid] = tab.webContentWrapper
+        }
+        for (tabId, wrapper) in markedSplitBookmarkPaneWrappers where marked[tabId] !== wrapper {
+            wrapper.setPhiBoundTab?(false)
+        }
+        for (tabId, wrapper) in marked where markedSplitBookmarkPaneWrappers[tabId] !== wrapper {
+            wrapper.setPhiBoundTab?(true)
+        }
+        markedSplitBookmarkPaneWrappers = marked
     }
 
     private func preseedHiddenOpenerInsertionIfNeeded(
@@ -6540,6 +6610,24 @@ class BrowserState {
             } else {
                 bridge.createNewTab(withUrl: url, windowId: windowId,
                                     customGuid: nil, focusAfterCreate: true)
+            }
+        }
+    }
+
+    /// Opens `url` as a background tab that Chromium treats as a ⌘-clicked
+    /// link's: its load, the load's redirects and the page's own redirects
+    /// without a user gesture stay in this window even when a URL rule
+    /// matches them. The first other navigation in the tab is routed.
+    func openBackgroundTabBypassingSpaceRouting(_ url: String) {
+        let windowId = self.windowId.int64Value
+        performWithBrowser {
+            guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
+            if bridge.responds(to: #selector(PhiChromiumBridgeProtocol.openBackgroundTabBypassingSpaceRouting(withUrl:windowId:))) {
+                bridge.openBackgroundTabBypassingSpaceRouting?(withUrl: url, windowId: windowId)
+            } else {
+                // An older framework: an ordinary background tab, which is routed.
+                bridge.createNewTab(withUrl: url, windowId: windowId,
+                                    customGuid: nil, focusAfterCreate: false)
             }
         }
     }

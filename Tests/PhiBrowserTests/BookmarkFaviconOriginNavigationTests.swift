@@ -98,6 +98,7 @@ final class BookmarkFaviconOriginNavigationTests: XCTestCase {
         XCTAssertTrue(wrapper.inPlaceNavigatedURLs.isEmpty)
         XCTAssertTrue(wrapper.customValues.isEmpty)
         XCTAssertTrue(state.createTabRequests.isEmpty)
+        XCTAssertTrue(state.routingExemptBackgroundTabURLs.isEmpty)
     }
 
     func testDoesNotNavigateForEquivalentWWWBookmarkURL() throws {
@@ -129,9 +130,10 @@ final class BookmarkFaviconOriginNavigationTests: XCTestCase {
         XCTAssertTrue(wrapper.inPlaceNavigatedURLs.isEmpty)
         XCTAssertTrue(wrapper.customValues.isEmpty)
         XCTAssertTrue(state.createTabRequests.isEmpty)
+        XCTAssertTrue(state.routingExemptBackgroundTabURLs.isEmpty)
     }
 
-    func testSeparatesCurrentURLInBackgroundBeforeReturningBookmarkToStoredURL() throws {
+    func testSeparatesCurrentURLIntoRoutingExemptBackgroundTabBeforeReturningBookmarkToStoredURL() throws {
         let state = try makeState()
         let bookmark = try createBookmark(
             in: state,
@@ -139,8 +141,8 @@ final class BookmarkFaviconOriginNavigationTests: XCTestCase {
             url: "https://bookmark.example/original"
         )
         var events: [String] = []
-        state.onCreateTab = { url in
-            events.append("create:\(url ?? "")")
+        state.onOpenRoutingExemptBackgroundTab = { url in
+            events.append("open:\(url)")
         }
         let wrapper = BookmarkOriginTestWebContentWrapper(
             urlString: "https://other.example/current",
@@ -162,16 +164,8 @@ final class BookmarkFaviconOriginNavigationTests: XCTestCase {
 
         state.separateBookmarkTabFromCurrentURL(tab, bookmark: bookmark)
 
-        XCTAssertEqual(
-            state.createTabRequests,
-            [
-                .init(
-                    url: "https://other.example/current",
-                    customGuid: nil,
-                    focusAfterCreate: false
-                )
-            ]
-        )
+        XCTAssertEqual(state.routingExemptBackgroundTabURLs, ["https://other.example/current"])
+        XCTAssertTrue(state.createTabRequests.isEmpty)
         XCTAssertEqual(state.focusingTab?.guid, tab.guid)
         XCTAssertTrue(waitUntil {
             wrapper.inPlaceNavigatedURLs == ["https://bookmark.example/original"]
@@ -180,7 +174,7 @@ final class BookmarkFaviconOriginNavigationTests: XCTestCase {
         XCTAssertEqual(
             events,
             [
-                "create:https://other.example/current",
+                "open:https://other.example/current",
                 "navigate:https://bookmark.example/original"
             ]
         )
@@ -371,7 +365,8 @@ private final class BookmarkOriginRecordingBrowserState: BrowserState {
     }
 
     private(set) var createTabRequests: [CreateTabRequest] = []
-    var onCreateTab: ((String?) -> Void)?
+    private(set) var routingExemptBackgroundTabURLs: [String] = []
+    var onOpenRoutingExemptBackgroundTab: ((String) -> Void)?
 
     override func createTab(
         _ url: String?,
@@ -385,7 +380,11 @@ private final class BookmarkOriginRecordingBrowserState: BrowserState {
                 focusAfterCreate: focusAfterCreate
             )
         )
-        onCreateTab?(url)
+    }
+
+    override func openBackgroundTabBypassingSpaceRouting(_ url: String) {
+        routingExemptBackgroundTabURLs.append(url)
+        onOpenRoutingExemptBackgroundTab?(url)
     }
 }
 

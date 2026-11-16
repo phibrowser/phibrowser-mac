@@ -42,12 +42,12 @@ class OmniBoxViewModel: ObservableObject {
     private var keywordSearchDestination: (query: String, url: String)?
     
     var opennedFromCurrentTab = false
-    /// A bookmark's tab and a pinned tab stand for their stored URL: an
-    /// address-bar submission there opens a NEW tab rather than navigating
-    /// the row in place (which bounces the bookmark tab into a Peek and
-    /// re-points the pinned row and its icon). Tracked separately from
-    /// `opennedFromCurrentTab`, which still describes where the omnibox was
-    /// opened from — the Cmd+L toggle reads that.
+    /// Whether an address-bar submission opens a NEW tab instead of
+    /// navigating the focused tab in place, so a bound tab keeps its page
+    /// (`BrowserState.addressBarNavigationOpensNewTab(for:)` says which).
+    /// Tracked separately from `opennedFromCurrentTab`, which still
+    /// describes where the omnibox was opened from — the Cmd+L toggle reads
+    /// that.
     private var opensSubmissionInNewTab = false
     /// The tab an address-bar open describes and a submission navigates:
     /// the page in front of the user (`BrowserState.pageCommandTarget`), so

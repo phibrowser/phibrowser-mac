@@ -489,7 +489,7 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
         XCTAssertTrue(wrapper.customValues.isEmpty)
     }
 
-    func testPinnedTabSeparationOpensCurrentURLInBackgroundBeforeReturningToOrigin() throws {
+    func testPinnedTabSeparationOpensCurrentURLInRoutingExemptBackgroundTabBeforeReturningToOrigin() throws {
         let store = try makeStore()
         try seedPinnedTab(in: store, guid: "pinned-guid", url: "https://www.google.com/")
 
@@ -505,21 +505,40 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
         )
         pinnedTab.isOpenned = true
         pinnedTab.setWebContentsWrapper(wrapper: wrapper)
+        var navigationsBeforeOpen: [String]?
+        state.onOpenRoutingExemptBackgroundTab = { _ in
+            navigationsBeforeOpen = wrapper.inPlaceNavigatedURLs
+        }
 
         state.separatePinnedTabFromCurrentURL(pinnedTab)
 
-        XCTAssertEqual(
-            state.createTabRequests,
-            [
-                .init(
-                    url: "https://www.google.com/search?q=1",
-                    customGuid: nil,
-                    focusAfterCreate: false
-                )
-            ]
-        )
+        XCTAssertEqual(state.routingExemptBackgroundTabURLs, ["https://www.google.com/search?q=1"])
+        XCTAssertTrue(state.createTabRequests.isEmpty)
+        XCTAssertEqual(navigationsBeforeOpen, [])
         XCTAssertEqual(wrapper.inPlaceNavigatedURLs, ["https://www.google.com/"])
         XCTAssertTrue(wrapper.customValues.isEmpty)
+    }
+
+    func testPinnedTabSeparationDoesNothingAtOriginalURL() throws {
+        let store = try makeStore()
+        try seedPinnedTab(in: store, guid: "pinned-guid", url: "https://www.google.com/")
+
+        let state = PinnedOriginRecordingBrowserState(
+            windowId: 1,
+            localStore: store,
+            profileId: "Default",
+            spaceId: "space-a"
+        )
+        let pinnedTab = try XCTUnwrap(state.pinnedTabs.first)
+        let wrapper = PinnedEditWebContentWrapperSpy(urlString: "https://www.google.com/")
+        pinnedTab.isOpenned = true
+        pinnedTab.setWebContentsWrapper(wrapper: wrapper)
+
+        state.separatePinnedTabFromCurrentURL(pinnedTab)
+
+        XCTAssertTrue(state.routingExemptBackgroundTabURLs.isEmpty)
+        XCTAssertTrue(state.createTabRequests.isEmpty)
+        XCTAssertTrue(wrapper.inPlaceNavigatedURLs.isEmpty)
     }
 
     func testScopeMigrationRebindsOpenPinnedTabWithoutReplacingRuntimeObject() async throws {
@@ -858,6 +877,8 @@ private final class PinnedOriginRecordingBrowserState: BrowserState {
     }
 
     private(set) var createTabRequests: [CreateTabRequest] = []
+    private(set) var routingExemptBackgroundTabURLs: [String] = []
+    var onOpenRoutingExemptBackgroundTab: ((String) -> Void)?
 
     override func createTab(
         _ url: String?,
@@ -871,6 +892,11 @@ private final class PinnedOriginRecordingBrowserState: BrowserState {
                 focusAfterCreate: focusAfterCreate
             )
         )
+    }
+
+    override func openBackgroundTabBypassingSpaceRouting(_ url: String) {
+        routingExemptBackgroundTabURLs.append(url)
+        onOpenRoutingExemptBackgroundTab?(url)
     }
 }
 

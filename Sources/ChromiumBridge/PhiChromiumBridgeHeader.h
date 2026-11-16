@@ -2594,6 +2594,19 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (BOOL)isPictureInPictureWindow:(NSWindow *)window
     NS_SWIFT_NAME(isPictureInPictureWindow(_:));
 
+/// Appends `url` as a background tab: the window's active tab stays, and the
+/// window is not activated. Chromium marks the tab as a link tab before its
+/// load starts, as it does a Cmd-clicked link's: a URL rule leaves the load,
+/// every server redirect of it and the page's own redirects without a user
+/// gesture (location.replace, a meta refresh) in this window, and routes the
+/// first other navigation in the tab, such as a click or a typed URL. Used
+/// when a pinned tab or Bookmark Tab is separated into a normal tab, so the
+/// page the user kept stays in the current Space even when a URL rule matches
+/// it. Optional so the client can fall back to an ordinary background tab on
+/// an older framework.
+- (void)openBackgroundTabBypassingSpaceRoutingWithUrl:(NSString *)url
+                                             windowId:(int64_t)windowId;
+
 @end
 
 typedef NS_ENUM(NSInteger, PhiMediaControlAction) {
@@ -2803,6 +2816,15 @@ typedef NS_ENUM(NSInteger, PhiMediaControlAction) {
 /// wrapper and whenever the value changes. The Mac client is the only writer.
 /// Optional so a newer client keeps working with an older framework.
 - (void)setPhiKeepLoaded:(BOOL)keepLoaded;
+/// Whether this tab is bound in a way its custom value cannot carry: today a
+/// pane of an open Split Bookmark. While YES, Space URL rules leave every
+/// navigation inside the tab in place, as they do for a pinned tab or
+/// Bookmark Tab; nothing else treats it as bound, so its cross-site
+/// navigations still load in it. Every new WebContents starts at NO and the
+/// value is not saved with the session, so the client pushes it again when it
+/// binds a restored split. The Mac client is the only writer. Optional so a
+/// newer client keeps working with an older framework.
+- (void)setPhiBoundTab:(BOOL)bound;
 @end
 
 @protocol BookmarkWrapper <NSObject>

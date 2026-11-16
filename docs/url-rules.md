@@ -39,7 +39,8 @@ change and syncs as an ordinary host string.
 
 ## Where each kind applies
 
-- **Host and URL rules** apply to every navigation, through Chromium.
+- **Host and URL rules** apply to every navigation, through Chromium, except
+  where [Precedence and exemption](#precedence-and-exemption) says otherwise.
 - **App rules** apply only to external opens that arrive through
   `application(_:open:)`. The URL matcher skips them, and
   `pushRoutingTableToChromium()` never sends them to Chromium. A link clicked
@@ -123,6 +124,68 @@ Chromium's `PhiURLRouter`, which checks ask before the Kiosk target. The tab it 
 `openTabBypassingSpaceRouting`, a one-shot exemption, so Chromium's host rules
 do not re-route it. Later navigations in that tab are routed normally.
 
+A pinned tab or Bookmark Tab stays in its Space: no navigation inside it is
+routed, whatever the rule's destination (a Space, Incognito, a Kiosk or "Ask
+every time"). Opening it, from the sidebar or from the address bar, a
+same-site click, a server redirect, the page's own redirect, going back to its
+saved URL and loading again as an Unloaded tab all stay in the tab. Chromium
+(`PhiSpaceRoutingNavigationThrottle`) exempts a tab whose custom value is set
+and is not a Peek marker, the same test `CrossDomainNewTabNavigationThrottle`
+uses. That covers a pinned tab, each pane of a pinned split and a Bookmark
+Tab. The panes of an open Split Bookmark carry no custom value, so the client
+marks them bound instead (`setPhiBoundTab:`, Chromium's `PhiBoundTabMark`).
+Only the routing throttle reads that mark: a cross-site navigation in such a
+pane still loads in it. `BrowserState.syncSplitBookmarkPaneMarks()` derives
+the marked tabs, the live panes of every split bound to a Split Bookmark plus
+the panes still opening behind one, whenever the bindings, a split's panes or
+the tab list change, and pushes only the changes. A pane is marked as it
+arrives, in the same turn that clears its split-pending marker. The mark is
+not saved with the session; a restored split is marked again once the
+restore binds it to its bookmark, after the restore transaction. A Split
+Bookmark reopened from the recently closed list comes back as an ordinary
+split, unbound and routed. Breaking up the split, removing the Split Bookmark
+or replacing a pane unmarks the panes that leave; while a pane is being
+replaced, which Chromium does by removing the split and creating it again,
+the remaining panes and the incoming tab stay marked. The test runs at each
+navigation, so pinning, unpinning, bookmarking or removing the bookmark takes
+effect on the tab's next navigation. Only the Mac client has this exemption.
+
+What leaves such a tab is not exempt. A cross-site link that would load in
+the tab opens in a new, unbound tab instead
+(`CrossDomainNewTabNavigationThrottle` runs first), and that tab is routed
+like any other. Chromium puts it in the window before starting its load, as
+it does a `target=_blank` link's tab, so the rules see the load from its
+first hop. A rule that sends the page elsewhere closes the new tab, so
+nothing is left in the current Space. An automatic Peek is covered below.
+
+A URL typed in the address bar while such a tab has focus depends on the
+layout. In Balanced and Performance, a pinned tab, a pane of a pinned split, a
+Bookmark Tab and a pane of a Split Bookmark open it in a new tab, which is
+routed, and keep their own page. The client recognizes a Split Bookmark pane
+by the marks it has pushed to Chromium
+(`BrowserState.addressBarNavigationOpensNewTab(for:)`). In Comfortable, a
+pinned tab navigates in place: a cross-site URL is split off into a new tab,
+which is routed, and a same-site URL stays in the pinned tab, unrouted. The
+Comfortable layout has no Bookmark Tab: a bookmark there is an ordinary link
+and is routed, and so is a bookmark opened in a new tab, from the bookmark
+manager or as a duplicate.
+
+Separating a pinned tab or Bookmark Tab into a normal tab keeps its page in
+the current Space, as a background tab, even when a rule matches it. The
+client opens that tab with `openBackgroundTabBypassingSpaceRoutingWithUrl:`,
+which Chromium opens as a link tab (`phi::PhiLinkTabMarker`, below), and then
+returns the bound tab to its saved URL. The separated tab behaves like a
+⌘-clicked link's: its load, every server redirect of it and the page's own
+redirects without a user gesture stay in it, and the first other navigation
+in it is routed.
+
+The custom-value test also matches markers that are not bindings. This is
+accepted. A transient creation marker is still on a tab when its first load
+starts, so that load, and possibly its redirects, stays in the current Space
+for a new split pane from any source, a page Travel Back reopens and a tab
+group's seed tab. The AI connector authorization tab never loses its marker,
+so it is never routed.
+
 A link the user opens in a new tab stays in the current Space through its
 redirects, until the user navigates in it. This covers ⌘-click, middle-click,
 ⌘⇧-click, "Open Link in New Tab", and a ⌘- or middle-click on a link whose
@@ -163,8 +226,9 @@ gesture, started within 5 seconds of the page appearing. The tab then:
   result of a submitted form, the tab is left on the Redirector page instead;
 - with no earlier page, is closed, and does not enter the recently-closed
   list. It is reset to the New Tab page instead when the Redirector page's
-  address was typed into it, or when it is its window's last tab. A pinned tab
-  or Bookmark Tab is never closed or reset.
+  address was typed into it, or when it is its window's last tab. A pinned
+  tab or Bookmark Tab is never routed (see above), so it is never closed or
+  reset.
 
 With "Ask every time" this happens before the chooser appears, and the pick
 then opens as it does after a server redirect: in a new tab, or in place when

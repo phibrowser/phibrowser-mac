@@ -32,6 +32,13 @@ final class FloatingSidebarHostViewController: NSViewController {
     private var isPointerInsideFloatingSidebarTrigger = false
     private var isSwitchingSpace = false
     private var visibilityGeneration = 0
+    /// Popovers shown from inside the panel: the pinned-tab, folder and
+    /// Space icon pickers, among others. Each is a window of its own, so
+    /// the panel's tracking area loses the pointer once it moves onto one.
+    /// While any is up the panel stays pinned open, as for the inline
+    /// create-Space form; the last one closing re-runs the hide scheduling.
+    private let panelPopovers = NSHashTable<NSPopover>.weakObjects()
+    private var popoverObservers: [NSObjectProtocol] = []
     /// The presented Space's content was made the panel's while the panel
     /// was hidden, without activation or layout; `installContent` runs
     /// before the panel next shows or is realized off screen.
@@ -69,6 +76,43 @@ final class FloatingSidebarHostViewController: NSViewController {
             make.width.equalTo(Self.floatingSidebarTriggerWidth)
         }
         setupFloatingSidebarTrigger()
+        observePanelPopovers()
+    }
+
+    /// Tracks popovers anchored in the panel (see `panelPopovers`). The pin
+    /// starts at will-show, so it also holds while a popover is still
+    /// animating open; the anchor is already set by then.
+    private func observePanelPopovers() {
+        let center = NotificationCenter.default
+        popoverObservers.append(center.addObserver(forName: NSPopover.willShowNotification, object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let popover = note.object as? NSPopover,
+                      self.isAnchoredInPanel(popover) else { return }
+                self.panelPopovers.add(popover)
+                self.cancelFloatingSidebarHide()
+            }
+        })
+        popoverObservers.append(center.addObserver(forName: NSPopover.didCloseNotification, object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let popover = note.object as? NSPopover,
+                      self.panelPopovers.contains(popover) else { return }
+                self.panelPopovers.remove(popover)
+                if self.panelPopovers.count == 0, self.isVisible {
+                    self.scheduleFloatingSidebarHide()
+                }
+            }
+        })
+    }
+
+    /// Whether `popover` is anchored to a view inside the visible panel.
+    /// NSPopover keeps its anchor in `positioningView`, which it doesn't
+    /// publish; probed so a future AppKit without it falls back to the
+    /// unpinned behavior instead of raising.
+    private func isAnchoredInPanel(_ popover: NSPopover) -> Bool {
+        guard isVisible, let panel = floatingSidebarContainerView,
+              popover.responds(to: NSSelectorFromString("positioningView")),
+              let anchor = popover.value(forKey: "positioningView") as? NSView else { return false }
+        return anchor.isDescendant(of: panel)
     }
 
     func install(in parent: NSViewController) {
@@ -267,6 +311,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         if let observer = floatingSidebarOcclusionObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        popoverObservers.forEach { NotificationCenter.default.removeObserver($0) }
     }
 
     static let floatingSidebarDefaultWidth: CGFloat = MainSplitViewController.leftItemMinWidth
@@ -596,6 +641,11 @@ final class FloatingSidebarHostViewController: NSViewController {
         // Pointer-driven hides are already blocked while the form is up
         // (see scheduleFloatingSidebarHide), so this only fires on forced paths.
         floatingSidebarViewController?.dismissCreateSpaceOverlay()
+        // Likewise any popover the panel pinned itself open for: left up,
+        // it would float over the page with its anchor gone.
+        let popovers = panelPopovers.allObjects
+        panelPopovers.removeAllObjects()
+        popovers.forEach { $0.close() }
         visibilityGeneration += 1
         let generation = visibilityGeneration
         floatingSidebarLeadingConstraint?.update(offset: floatingSidebarHiddenLeading)
@@ -652,9 +702,11 @@ final class FloatingSidebarHostViewController: NSViewController {
             // The inline create-Space form pins the panel open: a pointer
             // excursion outside the panel must not tear the form down
             // mid-input. The pin lifts when the form closes (its dismiss
-            // re-runs this scheduling).
+            // re-runs this scheduling). A popover from the panel pins it the
+            // same way (`panelPopovers`).
             guard !isSwitchingSpace,
-                  floatingSidebarViewController?.hasCreateSpaceOverlay != true else { return }
+                  floatingSidebarViewController?.hasCreateSpaceOverlay != true,
+                  panelPopovers.count == 0 else { return }
             refreshFloatingSidebarPointerState()
             guard isPointerInsideFloatingSidebar == false else { return }
             guard isPointerInsideFloatingSidebarTrigger == false else { return }

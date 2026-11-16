@@ -2665,6 +2665,38 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         )
     }
 
+    /// How long after discarding a window on a profile no Space uses the app
+    /// is checked for being left without any window. Long enough for a cold
+    /// start's other profiles to have replayed theirs.
+    private static let discardedWindowReplacementDelay: TimeInterval = 2
+
+    /// Retires a normal window Chromium opened on a profile no Space is bound
+    /// to (`SpaceManager.hasNoSpace(boundTo:)`): it gets no slot, no session
+    /// and no shell, is kept off screen, and is closed through Chromium.
+    ///
+    /// Registered as unmanaged so the tab and extension events Chromium keeps
+    /// routing for it until the close lands are dropped quietly. The close is
+    /// deferred a turn: this runs inside `Browser::Create`, and closing there
+    /// would re-enter a Browser still under construction. Chromium's
+    /// post-construction `Show()` runs in that gap, which is why the window
+    /// is made transparent first rather than ordered out.
+    private func discardWindowOnProfileWithoutSpace(_ window: NSWindow, windowId: Int64, profileId: String) {
+        AppLogWarn("🌐 [Chromium] No Space is bound to profile \(profileId); closing window \(windowId) instead of presenting it as another profile's Space")
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+        SpaceSessionControllersManager.shared.registerUnmanagedWindow(window, windowId: Int(windowId))
+        DispatchQueue.main.async {
+            if let bridge = ChromiumLauncher.sharedInstance().bridge {
+                bridge.executeCommand(Int32(CommandWrapper.IDC_CLOSE_WINDOW.rawValue), windowId: windowId)
+            } else {
+                window.close()
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.discardedWindowReplacementDelay) {
+            SpaceManager.shared.openPersistedSpaceIfDiscardLeftNoWindow()
+        }
+    }
+
     private func handleMainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?, presentationContext: [String: Any]?) {
         AppLogInfo("🌐 [Chromium] mainBrowserWindowCreated called - windowId: \(windowId), restoredFrom: \(restoredFromWindowId), restoredSpace: \(restoredSpaceId ?? "nil"), type: \(browserType.rawValue)")
         // This callback runs synchronously inside Browser::Create; hosted
@@ -2742,6 +2774,13 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 resolvedSlot = claim.slot
                 spaceId = SpaceManager.shared.spaceId(boundTo: profileId,
                                                       preferring: claim.spaceId)
+            } else if browserType == .normal,
+                      SpaceManager.shared.hasNoSpace(boundTo: profileId) {
+                // A window Chromium opened on its own, on a profile no Space
+                // is bound to. Every branch below would pair it with a Space
+                // of another profile, so it is never given a slot.
+                discardWindowOnProfileWithoutSpace(window, windowId: windowId, profileId: profileId)
+                return
             } else if let restoredSpace = SpaceManager.shared.restoredSpaceTarget(
                 restoredSpaceId, profileId: profileId) {
                 // Tab-restore path ("Reopen Closed Window"): the restore entry

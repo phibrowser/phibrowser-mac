@@ -39,6 +39,16 @@ struct ProfileDetailSettingsView: View {
 
     private var profileManager: ProfileManager { .shared }
 
+    /// Observed for whether any Space is bound to this profile: the data &
+    /// settings links open in a browser window of the profile, and only a
+    /// Space can host one.
+    @ObservedObject private var spaceManager = SpaceManager.shared
+
+    /// Same reading as the Profiles list's "Not used" tag.
+    private var hasSpace: Bool {
+        spaceManager.spaces.contains { $0.profileId == profileId }
+    }
+
     var body: some View {
         let _ = companionRevision
         VStack(alignment: .leading, spacing: 16) {
@@ -265,6 +275,17 @@ struct ProfileDetailSettingsView: View {
                     if index > 0 { SettingsRowDivider() }
                     dataLinkRow(link)
                 }
+            }
+            // Each link opens a page in a browser window of this profile.
+            // With no Space bound to it there is no window to open it in.
+            .disabled(!hasSpace)
+            .opacity(hasSpace ? 1 : 0.5)
+            if !hasSpace {
+                Text(NSLocalizedString("settings.profiles.dataLinks.unavailableWithoutSpace", value: "No Space uses this profile. Assign it to a Space to manage its data and settings.", comment: "Profiles settings - note under the disabled data & settings links of a profile that no Space is bound to"))
+                    .font(.system(size: 11))
+                    .themedForeground(.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 2)
             }
         }
     }

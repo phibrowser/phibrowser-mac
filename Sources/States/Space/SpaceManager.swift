@@ -2195,8 +2195,11 @@ final class SpaceManager: ObservableObject {
             // window is gone": predicted parked, never actually parked.
             AppLogWarn("[SpaceManager] ghost receipt: dropped \(reconciliation.unparked.count) predicted ghost(s) chromium never parked \(reconciliation.unparked)")
         }
-        if !reconciliation.unmapped.isEmpty {
-            AppLogError("[SpaceManager] ghost receipt: chromium parked \(reconciliation.unmapped.count) window(s) no Space maps to \(reconciliation.unmapped) — unreachable until the next full restore brings them back")
+        let retired = dropUnmappedGhostsOfProfilesWithoutSpace(
+            reconciliation.unmapped, windowIdsByProfileId: receipt.windowIdsByProfileId)
+        let unmapped = reconciliation.unmapped.filter { !retired.contains($0) }
+        if !unmapped.isEmpty {
+            AppLogError("[SpaceManager] ghost receipt: chromium parked \(unmapped.count) window(s) no Space maps to \(unmapped) — unreachable until the next full restore brings them back")
         }
         if receipt.eagerFilterMatchedNothing {
             AppLogError("[SpaceManager] ghost receipt: the eager set matched no saved window — every window parked and none came back")
@@ -4109,20 +4112,57 @@ final class SpaceManager: ObservableObject {
                 AppLogWarn("[SpaceManager] \(reason): no profile resolves for ghost \(windowId) (Space \(spaceId)) — dropped Mac-side only")
                 continue
             }
-            bridge.ensureProfileLoaded(profileId) { success in
-                guard success else {
-                    AppLogWarn("[SpaceManager] \(reason): profile \(profileId) failed to load — ghost \(windowId) dropped Mac-side only")
-                    return
-                }
-                bridge.dropGhostWindow(Int32(windowId), profileId: profileId) { ok in
-                    if ok {
-                        AppLogInfo("[SpaceManager] \(reason): dropped ghost window \(windowId) (Space \(spaceId))")
-                    } else {
-                        AppLogWarn("[SpaceManager] \(reason): chromium held no ghost \(windowId) (Space \(spaceId)) — record was stale")
-                    }
+            dropChromiumGhostRecord(windowId: windowId, profileId: profileId,
+                                    owner: "Space \(spaceId)", reason: reason, bridge: bridge)
+        }
+    }
+
+    /// The chromium half of retiring one parked ghost: its store entry and
+    /// its window in the profile's session file, once the profile is loaded.
+    /// `owner` only names the ghost in the log lines.
+    private func dropChromiumGhostRecord(windowId: Int, profileId: String, owner: String,
+                                         reason: String, bridge: PhiChromiumBridgeProtocol) {
+        bridge.ensureProfileLoaded(profileId) { success in
+            guard success else {
+                AppLogWarn("[SpaceManager] \(reason): profile \(profileId) failed to load — ghost \(windowId) dropped Mac-side only")
+                return
+            }
+            bridge.dropGhostWindow(Int32(windowId), profileId: profileId) { ok in
+                if ok {
+                    AppLogInfo("[SpaceManager] \(reason): dropped ghost window \(windowId) (\(owner))")
+                } else {
+                    AppLogWarn("[SpaceManager] \(reason): chromium held no ghost \(windowId) (\(owner)) — record was stale")
                 }
             }
         }
+    }
+
+    /// Retires the parked windows of profiles no Space is bound to, among
+    /// the ghosts a receipt reports that no Space maps to. Such a window is
+    /// one the coordinator discarded when it was live
+    /// (`discardWindowOnProfileWithoutSpace`): its close never left the
+    /// session file, so each launch would park it again, and a full restore
+    /// would replay it only to have it discarded again. Returns the window
+    /// ids it retired.
+    private func dropUnmappedGhostsOfProfilesWithoutSpace(
+        _ unmapped: [Int], windowIdsByProfileId: [String: [Int]]
+    ) -> Set<Int> {
+        guard !unmapped.isEmpty,
+              let bridge = ChromiumLauncher.sharedInstance().bridge,
+              bridge.responds(to: #selector(PhiChromiumBridgeProtocol
+                  .dropGhostWindow(_:profileId:completion:))) else { return [] }
+        let unmappedIds = Set(unmapped)
+        var dropped: Set<Int> = []
+        for (profileId, windowIds) in windowIdsByProfileId.sorted(by: { $0.key < $1.key })
+        where hasNoSpace(boundTo: profileId) {
+            for windowId in windowIds.sorted() where unmappedIds.contains(windowId) {
+                dropChromiumGhostRecord(windowId: windowId, profileId: profileId,
+                                        owner: "profile \(profileId), which no Space uses",
+                                        reason: "ghost receipt", bridge: bridge)
+                dropped.insert(windowId)
+            }
+        }
+        return dropped
     }
 
     /// Where the coordinator's fallback mint may land, as a pure rule:
@@ -4301,6 +4341,81 @@ final class SpaceManager: ObservableObject {
         ensureDefaultSpaceForCurrentAccountIfReady()
     }
 
+    /// The Spaces a Chromium-initiated window is attributed against.
+    ///
+    /// `spaces` is fed by an async publisher chain (`bind`'s Task →
+    /// SwiftData publisher → main queue) and the first Chromium windows
+    /// of a launch reliably arrive before it delivers — checking the
+    /// cache alone would no-op exactly on the cold-launch path the
+    /// profile-consistency rule exists for. Fall back to a direct
+    /// main-context fetch; every caller is on the main thread (Chromium's
+    /// window-created callback), the same assumption `applyResolvedTheme`
+    /// makes.
+    private func spacesKnownForWindowAttribution() -> [Space] {
+        if !spaces.isEmpty { return spaces }
+        guard let account = boundAccount else { return [] }
+        return MainActor.assumeIsolated {
+            account.localStorage.getAllSpaces()
+        }
+    }
+
+    /// Whether a normal window on `profileId` has no Space it could be
+    /// presented as: the account's Spaces are known, and none of them is
+    /// bound to that profile.
+    ///
+    /// Chromium opens such a window on its own — a profile's settings page
+    /// when that profile has no browser, a session replay of an earlier one,
+    /// the startup fallback for a last-active profile — and presenting it as
+    /// whichever Space happens to be preferred would show that profile's
+    /// logins and pinned tabs under another profile's Space. The coordinator
+    /// discards the window instead (`discardWindowOnProfileWithoutSpace`).
+    ///
+    /// False while no user Space is known: before the account binds, and on
+    /// a first launch or a Guest session whose default Space is created from
+    /// this very window's profile (`observeNormalWindowProfileForDefaultSpace`).
+    func hasNoSpace(boundTo profileId: String) -> Bool {
+        Self.isProfileWithoutSpace(
+            profileId: profileId,
+            knownSpaces: spacesKnownForWindowAttribution().map {
+                (profileId: $0.profileId,
+                 isUserSpace: !Self.isIncognitoSpaceId($0.spaceId) && !$0.isAgentSpace)
+            })
+    }
+
+    /// The pure half of `hasNoSpace(boundTo:)`. Any Space bound to the
+    /// profile keeps its window, an agent or Incognito Space included: only
+    /// the case `spaceId(boundTo:preferring:)` cannot resolve is discarded.
+    /// Pure and static so the rule is pinned by table.
+    static func isProfileWithoutSpace(
+        profileId: String,
+        knownSpaces: [(profileId: String, isUserSpace: Bool)]
+    ) -> Bool {
+        guard !profileId.isEmpty,
+              knownSpaces.contains(where: \.isUserSpace) else { return false }
+        return !knownSpaces.contains { $0.profileId == profileId }
+    }
+
+    /// Opens the persisted last-active Space when discarding a window on a
+    /// profile no Space uses left the app with no browser window and none on
+    /// its way. That window can be the only one a launch opens (Chromium's
+    /// last-active profile list naming just that profile), and the Dock
+    /// reopen cannot recover from it: with no slot window ever hosted it
+    /// stays with Chromium's handler, which opens the same profile again.
+    ///
+    /// Called a moment after the discard rather than at once, so a launch's
+    /// other profiles have replayed their windows before this reads the app
+    /// as windowless.
+    func openPersistedSpaceIfDiscardLeftNoWindow() {
+        let liveWindows = liveNonShadowWindowCount
+        let heldSlots = slotOccupancy.filter(Self.slotHoldsOrAwaitsWindow).count
+        guard !isSessionRestoreInFlight, liveWindows == 0, heldSlots == 0 else {
+            AppLogInfo("[SpaceManager] discarding a window on a profile no Space uses left other windows in place: liveNonShadowWindows=\(liveWindows), slotsHoldingWindows=\(heldSlots), restoreInFlight=\(isSessionRestoreInFlight)")
+            return
+        }
+        let spawned = spawnPersistedSpaceWindow()
+        AppLogInfo("[SpaceManager] no window left after discarding one on a profile no Space uses; persisted Space \(spawned ? "spawn requested" : "did not resolve")")
+    }
+
     /// Resolves the Space a normal window whose Chromium profile is
     /// `profileId` may be tagged with. A window must only be presented as a
     /// Space bound to its own profile: pinned tabs (and bookmarks) are
@@ -4323,19 +4438,7 @@ final class SpaceManager: ObservableObject {
     /// restoredFromWindowId == 0).
     func spaceId(boundTo profileId: String, preferring preferred: String) -> String {
         guard !profileId.isEmpty else { return preferred }
-        // `spaces` is fed by an async publisher chain (`bind`'s Task →
-        // SwiftData publisher → main queue) and the first Chromium windows
-        // of a launch reliably arrive before it delivers — checking the
-        // cache alone would no-op exactly on the cold-launch path this
-        // invariant exists for. Fall back to a direct main-context fetch;
-        // every caller is on the main thread (Chromium's window-created
-        // callback), the same assumption `applyResolvedTheme` makes.
-        var known = spaces
-        if known.isEmpty, let account = boundAccount {
-            known = MainActor.assumeIsolated {
-                account.localStorage.getAllSpaces()
-            }
-        }
+        let known = spacesKnownForWindowAttribution()
         func boundProfileId(of spaceId: String?) -> String? {
             guard let spaceId else { return nil }
             return known.first(where: { $0.spaceId == spaceId })?.profileId
@@ -4391,14 +4494,7 @@ final class SpaceManager: ObservableObject {
     /// profile's pinned tabs), matching every other resolution path.
     func restoredSpaceTarget(_ restoredSpaceId: String?, profileId: String) -> String? {
         guard let restoredSpaceId, !restoredSpaceId.isEmpty else { return nil }
-        // Same cold-launch caveat as `spaceId(boundTo:preferring:)`: the first
-        // windows of a launch arrive before the `spaces` publisher delivers.
-        var known = spaces
-        if known.isEmpty, let account = boundAccount {
-            known = MainActor.assumeIsolated {
-                account.localStorage.getAllSpaces()
-            }
-        }
+        let known = spacesKnownForWindowAttribution()
         guard let model = known.first(where: { $0.spaceId == restoredSpaceId }),
               isAutomaticSwitchTarget(model) else { return nil }
         // Validate what we are about to RETURN, not just what was asked for:

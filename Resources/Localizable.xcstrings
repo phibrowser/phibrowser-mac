@@ -83105,6 +83105,18 @@
         }
       }
     },
+    "settings.profiles.dataLinks.unavailableWithoutSpace" : {
+      "comment" : "Profiles settings - note under the disabled data & settings links of a profile that no Space is bound to",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No Space uses this profile. Assign it to a Space to manage its data and settings."
+          }
+        }
+      }
+    },
     "settings.profiles.deleteButtonTooltip" : {
       "comment" : "Profiles settings - delete profile tooltip",
       "extractionState" : "extracted_with_value",

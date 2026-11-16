@@ -1248,9 +1248,9 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         guard shouldActivate, !state.isIncognito else { return }
 
         pinnedTabViewController.$contentHeight
-            .combineLatest(state.$isDraggingTab)
+            .combineLatest(state.$isDraggingTab, pinnedTabViewController.$isEmptyDropZoneRevealed)
             .debounce(for: .seconds(0.01), scheduler: DispatchQueue.main)
-            .sink { [weak self] newHeight, draggingTab in
+            .sink { [weak self] newHeight, draggingTab, _ in
                 self?.updateFavoriteHeight(newHeight, isDragging: draggingTab)
             }
             .store(in: &contentCancellables)
@@ -1337,7 +1337,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     
     private func updateFavoriteHeight(_ newHeight: CGFloat, isDragging: Bool = false) {
         let clampedHeight: CGFloat
-        if newHeight < 20 && isDragging {
+        if newHeight < 20 && pinnedTabViewController.isEmptyDropZoneRevealed {
             clampedHeight = 100
         } else {
             clampedHeight = newHeight

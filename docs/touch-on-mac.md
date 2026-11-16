@@ -78,6 +78,7 @@ build alone is not verification.
 | TOUCH-010 | Extensions list | Touch and hold opens the extension context menu (pin/unpin) | Built, not verified with touch |
 | TOUCH-011 | Sidebar, tab strip | Fix: removed the window-level tap recognizers that broke taps on web content | Built, not verified with touch |
 | TOUCH-012 | Sidebar tab rows | Replaced PR #324's touch handling with TOUCH-001; touch and hold opens the menu again | Verified with touch |
+| TOUCH-013 | Top address bar (Balanced, Comfortable) | A tap on the trailing controls' area puts the bar in its hover state for 4 s | Verified with touch |
 
 ### TOUCH-001 — Keep press-scale recognizers off direct touch
 
@@ -284,6 +285,29 @@ build alone is not verification.
   reorders, touch and hold opens the menu. Double-click-to-close by touch is
   not yet checked.
 
+### TOUCH-013 — Top address bar trailing controls
+
+- File: `WebContentAddressBar.swift`.
+- Problem (device test 2026-11-16, I1): Reader, Site Memory, Copy URL and
+  the "…" menu button show only while the pointer hovers the bar. Site
+  Memory and the "…" menu have no other entry point in these layouts.
+- Rule (HIG, "Touch support for hidden controls"): a tap on a hidden
+  control's general location reveals it without activating it; hide it when
+  the person finishes or after a few seconds.
+- Change (macOS 27): a transparent surface over the trailing controls takes
+  a direct-touch tap while they are hidden and sets `isTouchRevealed`. The
+  bar's hover state is `isHovering || isTouchRevealed`, so the whole bar
+  highlights and the controls appear. Once shown, the surface stops hit
+  testing and taps reach the controls. The reveal ends after 4 s; while the
+  Site Memory or "…" menu is open the bar stays in hover state, and the
+  countdown restarts when the menu closes.
+- Known: with Reader View active its button is visible, yet the first tap on
+  it only reveals the others.
+- Verify: tap the trailing area (bar highlights, buttons appear, nothing
+  runs); tap "…" within 4 s (menu opens, bar stays highlighted until it
+  closes, then hides after 4 s); tap Copy URL (copies); with a mouse, hover
+  and click behave as before, also in a background window.
+
 ## Context menu audit
 
 Hidden actions and where touch reaches them (touch and hold opens the menu):
@@ -314,9 +338,6 @@ Hidden actions and where touch reaches them (touch and hold opens the menu):
 - Back/forward swipe on web content (HistorySwiper, `PhiApplication`
   `NSEventTypeSwipe`), Space swipe and media-card swipe driven by
   `scrollWheel`.
-- Top address bar hover buttons (memory, copy URL, `…`): device test
-  2026-11-16 (I1) confirms touch cannot reveal them. How to reveal them
-  needs a decision: a tap on the bar opens the omnibox.
 
 ## Pending, needs a design decision
 

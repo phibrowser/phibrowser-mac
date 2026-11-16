@@ -254,11 +254,14 @@ private final class TabGroupHeaderHostingView: NSHostingView<TabGroupHeaderView>
     override func mouseDown(with event: NSEvent) {
         pendingMouseDownEvent = event
         pendingMouseDownPoint = convert(event.locationInWindow, from: nil)
+        let viewModel = rootView.viewModel
         pendingHitTarget = TabGroupHeaderHitTargetResolver.target(
             at: pendingMouseDownPoint ?? .zero,
-            in: bounds
+            in: bounds,
+            expandsCloseForTouch: viewModel.isCloseArmedForTouch
         )
-        if pendingHitTarget == .closeGroup, rootView.viewModel.isHeaderHovered == false {
+        if pendingHitTarget == .closeGroup,
+           !viewModel.isHeaderHovered, !viewModel.isCloseArmedForTouch {
             pendingHitTarget = nil
         }
         manualDragInProgress = false
@@ -297,7 +300,11 @@ private final class TabGroupHeaderHostingView: NSHostingView<TabGroupHeaderView>
         // hit zone. A drift off the button cancels (no toggle either).
         if pendingHitTarget == .closeGroup {
             let upPoint = convert(event.locationInWindow, from: nil)
-            let upTarget = TabGroupHeaderHitTargetResolver.target(at: upPoint, in: bounds)
+            let upTarget = TabGroupHeaderHitTargetResolver.target(
+                at: upPoint,
+                in: bounds,
+                expandsCloseForTouch: rootView.viewModel.isCloseArmedForTouch
+            )
             if upTarget == .closeGroup {
                 dragDelegate?.tabGroupHeaderHostingViewDidRequestCloseGroup(self)
             }
@@ -451,6 +458,7 @@ final class TabGroupCellView: SidebarCellView {
         isHovered = false
         isOverviewSelected = false
         viewModel.isHeaderHovered = false
+        viewModel.isTouchRevealed = false
         viewModel.isOverviewSelected = false
         isTemporarilyCollapsedForDrag = false
         configuredGroup = nil
@@ -928,6 +936,14 @@ final class TabGroupCellView: SidebarCellView {
         guard isHovered != hovered else { return }
         isHovered = hovered
         applyHighlightVisuals()
+    }
+
+    override func setTouchRevealed(_ revealed: Bool) {
+        viewModel.isTouchRevealed = revealed
+    }
+
+    override func touchWillBegin() {
+        viewModel.isCloseArmedForTouch = viewModel.isTouchRevealed
     }
 
     /// Resolves the context-menu owner for a right-click at `point` in

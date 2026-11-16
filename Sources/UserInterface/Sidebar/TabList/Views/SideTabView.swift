@@ -100,12 +100,13 @@ struct SideTabView: View {
 
             if model.showsPeek, let peekModel {
                 SidebarPeekIndicatorView(viewModel: peekModel,
+                                         isTouchRevealed: model.isTouchRevealed,
                                          onClose: { onClosePeek?() })
             }
 
             // While a peek is attached, the row's only close affordance is
             // the peek indicator's "minus" (same rule as the bookmark row).
-            if model.isHovered, !model.showsPeek, model.splitDropSide == nil {
+            if model.isHovered || model.isTouchRevealed, !model.showsPeek, model.splitDropSide == nil {
                 UnifiedTabCloseButton { onClose?() }
             }
         }

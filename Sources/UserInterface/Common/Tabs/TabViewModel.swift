@@ -232,6 +232,8 @@ final class TabViewModel {
     var splitDropSide: TabSplitDropSide?
     var isHovered: Bool = false
     var isHoverSuppressed: Bool = false
+    /// A touch revealed the row's hover-only controls (touch has no hover).
+    var isTouchRevealed: Bool = false
     var showsTabPreview: Bool = false
     /// A live Peek is attached to this tab — drives the trailing peek
     /// indicator on the sidebar row.
@@ -312,6 +314,7 @@ final class TabViewModel {
         splitDropSide = nil
         isHovered = false
         isHoverSuppressed = false
+        isTouchRevealed = false
         showsTabPreview = false
         showsPeek = false
         isPressed = false

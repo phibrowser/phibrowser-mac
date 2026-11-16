@@ -36,7 +36,15 @@ class SidebarCellView: NSTableCellView {
         cancellables.removeAll()
         item = nil
     }
-    
+
+    /// Shows the row's hover-only controls for a touch, which has no hover.
+    func setTouchRevealed(_ revealed: Bool) {}
+
+    /// A new touch is starting in the sidebar. A row whose controls act on
+    /// the press records here which of them were visible, so a tap on a
+    /// hidden control's spot only reveals it.
+    func touchWillBegin() {}
+
     func configure(with item: SidebarItem) {
         self.item = item
         configureAppearance()
@@ -277,6 +285,7 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private let tabPreviewRegistration = TabPreviewRegistration()
     private weak var configuredTab: Tab?
     private var activeSuppressed = false
+    private var touchPressObserver: TouchPressObserver?
     weak var delegate: TabCellDelegate?
 
 
@@ -301,6 +310,7 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewModel.setActiveSuppressed(false, activeValue: false)
         viewModel.setHovered(false)
         viewModel.splitDropSide = nil
+        viewModel.isTouchRevealed = false
         viewModel.isPressed = false
         // Peek attachment is tab identity, not preservable visual state — a
         // reused row must never show the previous tab's peek indicator.
@@ -338,6 +348,10 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         if side != nil {
             tabPreviewRegistration.cancelForInteraction()
         }
+    }
+
+    override func setTouchRevealed(_ revealed: Bool) {
+        viewModel.isTouchRevealed = revealed
     }
 
     func cancelTabPreviewForInteraction() {
@@ -405,7 +419,13 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         press.allowableMovement = 5
         // Don't delay events — let them reach NSHostingView's SwiftUI Button simultaneously
         press.delaysPrimaryMouseButtonEvents = false
+        // macOS 27 defaults to direct touches; a zero-duration press would claim
+        // touch-down ahead of the row's click emulation and sidebar scrolling.
+        press.allowedTouchTypes = []
         addGestureRecognizer(press)
+        touchPressObserver = TouchPressObserver(view: self) { [weak self] pressed in
+            self?.viewModel.isPressed = pressed
+        }
     }
     
     @objc private func handlePress(_ recognizer: NSPressGestureRecognizer) {
@@ -465,6 +485,16 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
             tabPreviewRegistration.invalidate()
         }
         viewModel.setActiveSuppressed(activeSuppressed, activeValue: tab.isActive)
+        // A tab that stops being active, for example when a link opens a new
+        // tab, drops its touch reveal: the finger has moved on to the page.
+        tab.$isActive
+            .removeDuplicates()
+            .filter { !$0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.viewModel.isTouchRevealed = false
+            }
+            .store(in: &cancellables)
         viewModel.onToggleMute = { [weak tab] in
             guard let tab else { return }
             tab.toggleAudioMuted()
@@ -622,6 +652,12 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             updateHoverChrome()
         }
     }
+    private var isTouchRevealed = false {
+        didSet {
+            guard oldValue != isTouchRevealed else { return }
+            updateHoverChrome()
+        }
+    }
     private var isHoverSuppressed = false
     /// Controller that owns the outline view. Routed through so a click
     /// on any segment triggers the same selection flow as a normal tab
@@ -680,6 +716,7 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
         splitTabPreviewRegistration.invalidate()
         outerBackground.isSelected = false
         isCellHovered = false
+        isTouchRevealed = false
         setCloseButtonSpaceReserved(false)
     }
 
@@ -1015,10 +1052,15 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
         segments[index].tab?.close()
     }
 
+    override func setTouchRevealed(_ revealed: Bool) {
+        isTouchRevealed = revealed
+    }
+
     private func updateHoverChrome() {
-        setCloseButtonSpaceReserved(isCellHovered)
+        let showsCloseButtons = isCellHovered || isTouchRevealed
+        setCloseButtonSpaceReserved(showsCloseButtons)
         for segment in visibleSegments {
-            segment.closeHost.isHidden = !isCellHovered
+            segment.closeHost.isHidden = !showsCloseButtons
         }
     }
 

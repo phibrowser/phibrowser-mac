@@ -622,6 +622,7 @@
 		CCBF0FA02ECEC1AE005E729B /* AppController+Deeplink.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF0F9F2ECEC1AE005E729B /* AppController+Deeplink.swift */; };
 		CCBF8F352E61AB3A00B9A99E /* SideAddressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F342E61AB3A00B9A99E /* SideAddressBar.swift */; };
 		CCBF8F392E653A8C00B9A99E /* HoverableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F382E653A8C00B9A99E /* HoverableView.swift */; };
+		7C0C4A012FE0000000000002 /* TouchInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C4A012FE0000000000001 /* TouchInteraction.swift */; };
 		CCBF8F422E653D9600B9A99E /* SidebarBottomBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F412E653D9600B9A99E /* SidebarBottomBar.swift */; };
 		CCBF8F442E653F3400B9A99E /* SidebarItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F432E653F3400B9A99E /* SidebarItem.swift */; };
 		CCBF8F462E653F6900B9A99E /* BookmarkModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F452E653F6900B9A99E /* BookmarkModel.swift */; };
@@ -1500,6 +1501,7 @@
 		CCBF0F9F2ECEC1AE005E729B /* AppController+Deeplink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppController+Deeplink.swift"; sourceTree = "<group>"; };
 		CCBF8F342E61AB3A00B9A99E /* SideAddressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideAddressBar.swift; sourceTree = "<group>"; };
 		CCBF8F382E653A8C00B9A99E /* HoverableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverableView.swift; sourceTree = "<group>"; };
+		7C0C4A012FE0000000000001 /* TouchInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchInteraction.swift; sourceTree = "<group>"; };
 		CCBF8F412E653D9600B9A99E /* SidebarBottomBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarBottomBar.swift; sourceTree = "<group>"; };
 		CCBF8F432E653F3400B9A99E /* SidebarItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarItem.swift; sourceTree = "<group>"; };
 		CCBF8F452E653F6900B9A99E /* BookmarkModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkModel.swift; sourceTree = "<group>"; };
@@ -3155,6 +3157,7 @@
 				B0F370D92E433F0E000B51F9 /* OverlayWindowController.swift */,
 				B0F370C82E43242F000B51F9 /* PhiSplitView.swift */,
 				CCBF8F382E653A8C00B9A99E /* HoverableView.swift */,
+				7C0C4A012FE0000000000001 /* TouchInteraction.swift */,
 				CCEB64C82E98BFD40036C763 /* ColoredVisualEffectView.swift */,
 				CC71BAB82E9E2E74006C7238 /* EventBlockBgView.swift */,
 				CC450ACC2EA251D3004EE144 /* HoverableButton.swift */,
@@ -3882,6 +3885,7 @@
 				B0F370C92E43242F000B51F9 /* PhiSplitView.swift in Sources */,
 				CCEB64C92E98BFD40036C763 /* ColoredVisualEffectView.swift in Sources */,
 				CCBF8F392E653A8C00B9A99E /* HoverableView.swift in Sources */,
+				7C0C4A012FE0000000000002 /* TouchInteraction.swift in Sources */,
 				CC98F89F2E8BC79B00DAD237 /* AccountSettingViewController.swift in Sources */,
 				CC6B000F2E77E04800D4F133 /* AboutView.swift in Sources */,
 				8E4C94962F10AEED00B09A80 /* TabBackgroundLayer.swift in Sources */,

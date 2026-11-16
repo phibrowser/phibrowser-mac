@@ -16,21 +16,26 @@ import XCTest
 final class BrowserStateAutoPeekLinkTests: XCTestCase {
     private let peekKey = PhiPreferences.GeneralSettings.peekViewEnabled.rawValue
     private let autoPeekKey = PhiPreferences.GeneralSettings.autoPeekViewEnabled.rawValue
+    private let sameSiteKey = PhiPreferences.GeneralSettings.autoPeekSameSiteLinksEnabled.rawValue
     private var originalPeek: Any?
     private var originalAutoPeek: Any?
+    private var originalSameSite: Any?
     private var tempDirectories: [URL] = []
 
     override func setUpWithError() throws {
         try super.setUpWithError()
         originalPeek = UserDefaults.standard.object(forKey: peekKey)
         originalAutoPeek = UserDefaults.standard.object(forKey: autoPeekKey)
+        originalSameSite = UserDefaults.standard.object(forKey: sameSiteKey)
         UserDefaults.standard.set(true, forKey: peekKey)
         UserDefaults.standard.set(true, forKey: autoPeekKey)
+        UserDefaults.standard.removeObject(forKey: sameSiteKey)
     }
 
     override func tearDownWithError() throws {
         restore(originalPeek, forKey: peekKey)
         restore(originalAutoPeek, forKey: autoPeekKey)
+        restore(originalSameSite, forKey: sameSiteKey)
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
         }
@@ -50,6 +55,41 @@ final class BrowserStateAutoPeekLinkTests: XCTestCase {
 
         XCTAssertFalse(state.opensAutoPeek(forLinkFrom: Self.openerId,
                                            urlString: "https://www.example.com/next"))
+    }
+
+    func testSameSiteLinkOfABookmarkTabOpensAPeekWithTheSameSiteOption() throws {
+        let state = try makeStateWithBookmarkTab()
+        UserDefaults.standard.set(true, forKey: sameSiteKey)
+
+        XCTAssertTrue(state.opensAutoPeek(forLinkFrom: Self.openerId,
+                                          urlString: "https://www.example.com/next"))
+    }
+
+    func testSameSiteOptionLeavesCrossSiteLinksPeeking() throws {
+        let state = try makeStateWithBookmarkTab()
+        UserDefaults.standard.set(true, forKey: sameSiteKey)
+
+        XCTAssertTrue(state.opensAutoPeek(forLinkFrom: Self.openerId,
+                                          urlString: "https://other.test/page"))
+    }
+
+    /// The option widens the automatic Peek; it does not stand in for it.
+    func testSameSiteOptionWithAutomaticPeekOffDoesNot() throws {
+        let state = try makeStateWithBookmarkTab()
+        UserDefaults.standard.set(true, forKey: sameSiteKey)
+        UserDefaults.standard.set(false, forKey: autoPeekKey)
+
+        XCTAssertFalse(state.opensAutoPeek(forLinkFrom: Self.openerId,
+                                           urlString: "https://www.example.com/next"))
+    }
+
+    func testSameSiteOptionStillSkipsAnUnboundTab() throws {
+        let state = try makeState()
+        state.tabs = [makeTab(customGuid: nil)]
+        UserDefaults.standard.set(true, forKey: sameSiteKey)
+
+        XCTAssertFalse(state.opensAutoPeek(forLinkFrom: Self.openerId,
+                                           urlString: "https://example.com/next"))
     }
 
     func testLinkToAPageThatIsNotOnTheWebDoesNot() throws {

@@ -76482,6 +76482,78 @@
         }
       }
     },
+    "settings.navigations.peek.sameSiteToggle.title" : {
+      "comment" : "Navigations settings - Toggle title for also opening same-site new-tab links from pinned tabs and bookmarks in Peek View",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Also peek links to the same site"
+          }
+        }
+      }
+    },
+    "settings.navigations.peek.sameSiteToggle.description" : {
+      "comment" : "Navigations settings - Explanation of the toggle that extends automatic Peek to same-site links that open a new tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Links in a pinned tab or bookmark that would open a new tab open in a Peek panel, even when they stay on the same site."
+          }
+        }
+      }
+    },
+    "settings.navigations.peek.size.title" : {
+      "comment" : "Navigations settings - Row title for choosing how wide the Peek panel is over the page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Peek panel size"
+          }
+        }
+      }
+    },
+    "settings.navigations.peek.size.largeOption" : {
+      "comment" : "Peek panel size option - The panel covers nearly the full width of the page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Large"
+          }
+        }
+      }
+    },
+    "settings.navigations.peek.size.mediumOption" : {
+      "comment" : "Peek panel size option - The panel leaves wider margins on both sides of the page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Medium"
+          }
+        }
+      }
+    },
+    "settings.navigations.peek.size.smallOption" : {
+      "comment" : "Peek panel size option - The panel leaves the widest margins on both sides of the page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Small"
+          }
+        }
+      }
+    },
     "settings.navigations.peek.autoToggle.title" : {
       "comment" : "Navigations settings - Toggle title for automatically opening cross-site links from pinned tabs and bookmarks in Peek View",
       "extractionState" : "extracted_with_value",

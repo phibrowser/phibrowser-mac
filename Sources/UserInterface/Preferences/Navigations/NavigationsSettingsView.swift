@@ -22,6 +22,12 @@ struct NavigationsSettingsView: View {
     @AppStorage(PhiPreferences.GeneralSettings.autoPeekViewEnabled.rawValue)
     private var autoPeekViewEnabled: Bool = PhiPreferences.GeneralSettings.autoPeekViewEnabled.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.autoPeekSameSiteLinksEnabled.rawValue)
+    private var autoPeekSameSiteLinksEnabled: Bool = PhiPreferences.GeneralSettings.autoPeekSameSiteLinksEnabled.defaultValue
+
+    @AppStorage(PhiPreferences.GeneralSettings.peekPanelSizeKey)
+    private var peekPanelSize: PeekPanelSize = .large
+
     @State private var kioskShortcutDescription =
         NavigationsSettingsView.currentKioskShortcutDescription
     @State private var kioskShortcutStatus = AppController.shared?.kioskGlobalShortcutStatus ?? .disabled
@@ -94,6 +100,39 @@ struct NavigationsSettingsView: View {
                         )
                         .disabled(!peekViewEnabled)
                         .opacity(peekViewEnabled ? 1.0 : 0.4)
+
+                        SettingsRowDivider()
+
+                        NavigationsSettingsToggleRow(
+                            title: NSLocalizedString("settings.navigations.peek.sameSiteToggle.title", value: "Also peek links to the same site", comment: "Navigations settings - Toggle title for also opening same-site new-tab links from pinned tabs and bookmarks in Peek View"),
+                            description: NSLocalizedString("settings.navigations.peek.sameSiteToggle.description", value: "Links in a pinned tab or bookmark that would open a new tab open in a Peek panel, even when they stay on the same site.", comment: "Navigations settings - Explanation of the toggle that extends automatic Peek to same-site links that open a new tab"),
+                            isOn: $autoPeekSameSiteLinksEnabled,
+                            onChange: { _ in }
+                        )
+                        .disabled(!peekViewEnabled || !autoPeekViewEnabled)
+                        .opacity(peekViewEnabled && autoPeekViewEnabled ? 1.0 : 0.4)
+
+                        SettingsRowDivider()
+
+                        HStack(alignment: .center, spacing: 12) {
+                            Text(peekPanelSizeTitle)
+                                .font(.system(size: 13))
+                                .themedForeground(.textPrimary)
+                            Spacer(minLength: 12)
+                            Picker("", selection: $peekPanelSize) {
+                                ForEach(PeekPanelSize.allCases) { size in
+                                    Text(size.displayName).tag(size)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                            .fixedSize()
+                            .accessibilityLabel(peekPanelSizeTitle)
+                        }
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .disabled(!peekViewEnabled)
+                        .opacity(peekViewEnabled ? 1.0 : 0.4)
                     }
                 }
 
@@ -145,6 +184,10 @@ struct NavigationsSettingsView: View {
             kioskShortcutDescription = Self.currentKioskShortcutDescription
             kioskShortcutStatus = AppController.shared?.kioskGlobalShortcutStatus ?? .disabled
         }
+    }
+
+    private var peekPanelSizeTitle: String {
+        NSLocalizedString("settings.navigations.peek.size.title", value: "Peek panel size", comment: "Navigations settings - Row title for choosing how wide the Peek panel is over the page")
     }
 
     static func globalShortcutStatusDescription(_ status: KioskGlobalShortcutRegistrar.Status) -> String? {

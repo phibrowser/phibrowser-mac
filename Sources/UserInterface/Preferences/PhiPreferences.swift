@@ -71,6 +71,36 @@ enum AutoPictureInPictureMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// Width of the Peek panel over the page it floats on. Height always spans
+/// the page; only the side margins change.
+enum PeekPanelSize: String, CaseIterable, Identifiable {
+    case large   // near the page's full width (default)
+    case medium
+    case small
+
+    var id: String { rawValue }
+
+    /// Share of the page card's width the panel takes.
+    var widthFraction: CGFloat {
+        switch self {
+        case .large: return 0.92
+        case .medium: return 0.8
+        case .small: return 0.68
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .large:
+            return NSLocalizedString("settings.navigations.peek.size.largeOption", value: "Large", comment: "Peek panel size option - The panel covers nearly the full width of the page")
+        case .medium:
+            return NSLocalizedString("settings.navigations.peek.size.mediumOption", value: "Medium", comment: "Peek panel size option - The panel leaves wider margins on both sides of the page")
+        case .small:
+            return NSLocalizedString("settings.navigations.peek.size.smallOption", value: "Small", comment: "Peek panel size option - The panel leaves the widest margins on both sides of the page")
+        }
+    }
+}
+
 /// The stored presentation preference is retained while the player is disabled.
 enum SidebarMediaPresentationMode: String, CaseIterable, Identifiable {
     case alwaysExpanded
@@ -137,6 +167,7 @@ extension PhiPreferences {
         case suppressCloseIncognitoSpaceWarning // "Do not ask again" on the close-Incognito-Space confirmation
         case peekViewEnabled // Master gate for Peek View: the context-menu item and the automatic cross-site diversion
         case autoPeekViewEnabled // Sub-gate under peekViewEnabled: the automatic cross-site diversion from pinned/bookmark-bound tabs; explicit peeks are unaffected
+        case autoPeekSameSiteLinksEnabled // Widens autoPeekViewEnabled: new-tab links that stay on the bound tab's site peek too
         case tabSwitcherIncludesAllSpaces // Ctrl-Tab switcher lists recent tabs from every Space in the window, not only the current one
 
         var defaultValue: Bool {
@@ -198,6 +229,8 @@ extension PhiPreferences {
                 return true
             case .autoPeekViewEnabled:
                 return true
+            case .autoPeekSameSiteLinksEnabled:
+                return false
             case .tabSwitcherIncludesAllSpaces:
                 return false
             }
@@ -221,6 +254,13 @@ extension PhiPreferences {
             to defaults: UserDefaults = .standard
         ) {
             defaults.set(mode.rawValue, forKey: sidebarMediaPresentationModeKey)
+        }
+
+        /// Per-Mac, not synced: the right width depends on this Mac's display.
+        static let peekPanelSizeKey = "peekPanelSize"
+
+        static func loadPeekPanelSize(from defaults: UserDefaults = .standard) -> PeekPanelSize {
+            defaults.string(forKey: peekPanelSizeKey).flatMap(PeekPanelSize.init(rawValue:)) ?? .large
         }
 
         static let autoPictureInPictureModeKey = "autoPictureInPictureMode"

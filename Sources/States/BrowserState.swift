@@ -3938,7 +3938,15 @@ class BrowserState {
               let boundURLString = boundURLStringForPeekOpener(openerTabId) else { return false }
         let scheme = URL(string: urlString)?.scheme?.lowercased() ?? ""
         guard scheme == "http" || scheme == "https" else { return false }
-        return !peekIsSameSite(boundURLString, urlString)
+        return autoPeeksLink(boundURLString: boundURLString, targetURLString: urlString)
+    }
+
+    /// The site rule of the automatic Peek: a link leaving the bound row's
+    /// site peeks; one staying on it peeks only while the same-site option
+    /// is on. Shared by `opensAutoPeek` and `resolvePeekCandidate`.
+    private func autoPeeksLink(boundURLString: String, targetURLString: String) -> Bool {
+        PhiPreferences.GeneralSettings.autoPeekSameSiteLinksEnabled.loadValue()
+            || !peekIsSameSite(boundURLString, targetURLString)
     }
 
     /// Diverts a freshly arrived Chromium tab into the Peek pipeline when it
@@ -4149,8 +4157,9 @@ class BrowserState {
         return boundRecordURLString(for: tab) != nil
     }
 
-    /// Completes the pending candidate's decision: same site (or non-web
-    /// target) → adopt as a normal tab; cross-site → present the Peek panel.
+    /// Completes the pending candidate's decision: same site (unless the
+    /// same-site option is on) or non-web target → adopt as a normal tab;
+    /// otherwise → present the Peek panel.
     /// Always entered on a clean main turn.
     private func resolvePeekCandidate(targetURLString: String) {
         guard let candidate = peekCandidate else { return }
@@ -4187,12 +4196,12 @@ class BrowserState {
         let isWebURL = scheme == "http" || scheme == "https"
         if !isWebURL || layoutMode.isTraditional
             || !PhiPreferences.GeneralSettings.autoPeekViewEnabled.loadValue()
-            || peekIsSameSite(candidate.boundURLString, targetURLString) {
+            || !autoPeeksLink(boundURLString: candidate.boundURLString, targetURLString: targetURLString) {
             AppLogInfo("👀 [Peek] tabId=\(candidate.tab.guid) url=\(targetURLString) adopting as normal tab")
             adoptPeekTabIntoStrip(candidate.tab, context: candidate.context, activate: true)
             return
         }
-        AppLogInfo("👀 [Peek] tabId=\(candidate.tab.guid) url=\(targetURLString) cross-site — presenting peek")
+        AppLogInfo("👀 [Peek] tabId=\(candidate.tab.guid) url=\(targetURLString) auto — presenting peek")
         presentPeek(candidate.tab,
                     context: candidate.context,
                     openerTabId: candidate.openerTabId,

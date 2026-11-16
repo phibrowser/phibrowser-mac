@@ -31,20 +31,38 @@ enum SidebarNewTabStickyResolver {
 
     static func visibleRectExcludingOverlay(visibleRect: CGRect, overlayHeight: CGFloat,
                                             atTop: Bool, isFlipped: Bool = true) -> CGRect {
-        let hiddenHeight = max(0, min(overlayHeight, visibleRect.height))
+        visibleRectExcludingOverlays(visibleRect: visibleRect,
+                                     topHeight: atTop ? overlayHeight : 0,
+                                     bottomHeight: atTop ? 0 : overlayHeight,
+                                     isFlipped: isFlipped)
+    }
+
+    /// The part of `visibleRect` left uncovered by the pinned rows at both
+    /// edges: the Space name and a top New Tab row stack at the top, a
+    /// bottom New Tab row sits at the bottom. Each band is clamped so the
+    /// result never has a negative height.
+    static func visibleRectExcludingOverlays(visibleRect: CGRect, topHeight: CGFloat,
+                                             bottomHeight: CGFloat, isFlipped: Bool = true) -> CGRect {
+        let top = max(0, min(topHeight, visibleRect.height))
+        let bottom = max(0, min(bottomHeight, visibleRect.height - top))
         return CGRect(
             x: visibleRect.origin.x,
-            y: visibleRect.origin.y + (atTop == isFlipped ? hiddenHeight : 0),
+            y: visibleRect.origin.y + (isFlipped ? top : bottom),
             width: visibleRect.width,
-            height: visibleRect.height - hiddenHeight
+            height: visibleRect.height - top - bottom
         )
     }
 
+    /// `edgeOffset` moves the frame inward from its anchored edge, so a
+    /// top New Tab row stacks under the pinned Space name row.
     static func floatingFrame(scrollFrame: CGRect, contentWidth: CGFloat, rowHeight: CGFloat,
-                              atTop: Bool, containerIsFlipped: Bool) -> CGRect {
+                              atTop: Bool, containerIsFlipped: Bool,
+                              edgeOffset: CGFloat = 0) -> CGRect {
         let height = max(0, min(rowHeight, scrollFrame.height))
         return CGRect(x: scrollFrame.minX,
-                      y: atTop == containerIsFlipped ? scrollFrame.minY : scrollFrame.maxY - height,
+                      y: atTop == containerIsFlipped
+                          ? scrollFrame.minY + edgeOffset
+                          : scrollFrame.maxY - height - edgeOffset,
                       width: contentWidth, height: height)
     }
 }
@@ -222,7 +240,10 @@ class SidebarTabListViewController: NSViewController {
     
     private var outlineView: SideBarOutlineView!
     private var scrollView: NSScrollView!
-    private var floatingNewTabView: FloatingNewTabView?
+    private var floatingNewTabView: FloatingSidebarRowView?
+    /// Copy of the Space name row locked to the top while the real row
+    /// exists; see `updateFloatingSpaceRootVisibility`.
+    private var floatingSpaceRootView: FloatingSidebarRowView?
     /// Arrow at the list's top or bottom edge while the active tab is
     /// scrolled out of view; created the first time it is needed.
     private var activeTabArrowView: SidebarActiveTabArrowView?
@@ -238,13 +259,13 @@ class SidebarTabListViewController: NSViewController {
     var prefersReducedMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     /// Tab and split rows scrolled under the hovered floating New Tab row still
     /// get tracking-area hovers; new and reused cells pick this up on configure.
-    private var isTabHoverSuppressed = false
+    private(set) var isTabHoverSuppressed = false
     /// Rebuilding a group's inner table is the costliest part of scrolling
     /// a group row into view, so each group keeps its own cell instead of
     /// taking whichever one the outline's reuse queue hands out. The cells
     /// carry no identifier, so the outline never queues them for reuse.
     private var groupCellsByToken: [String: TabGroupCellView] = [:]
-    private let floatingNewTabContentMask: CALayer = {
+    private let floatingRowsContentMask: CALayer = {
         let layer = CALayer()
         layer.backgroundColor = NSColor.black.cgColor
         return layer
@@ -418,7 +439,7 @@ class SidebarTabListViewController: NSViewController {
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        updateFloatingNewTabVisibility()
+        updateFloatingRowsVisibility()
     }
     
     private func setupOutlineView() {
@@ -514,6 +535,7 @@ class SidebarTabListViewController: NSViewController {
         }
         scrollView.isHidden = suppressed
         floatingNewTabView?.isHidden = suppressed
+        floatingSpaceRootView?.isHidden = suppressed
         updateActiveTabArrow()
     }
     
@@ -551,9 +573,10 @@ class SidebarTabListViewController: NSViewController {
             for: NSView.boundsDidChangeNotification,
             object: scrollView.contentView
         )
-        .receive(on: DispatchQueue.main)
+        // In the same turn as the scroll: a main-queue hop let a fast scroll
+        // draw a frame with rows sliding under a row that was about to pin.
         .sink { [weak self] _ in
-            self?.updateFloatingNewTabVisibility()
+            self?.updateFloatingRowsVisibility()
             self?.cancelVisibleTabPreviews()
             self?.updateActiveTabArrow()
         }
@@ -565,7 +588,7 @@ class SidebarTabListViewController: NSViewController {
         )
         .receive(on: DispatchQueue.main)
         .sink { [weak self] _ in
-            self?.updateFloatingNewTabVisibility()
+            self?.updateFloatingRowsVisibility()
             self?.cancelVisibleTabPreviews()
             self?.updateActiveTabArrow()
         }
@@ -716,7 +739,7 @@ class SidebarTabListViewController: NSViewController {
         isFocusScrollAnimating = false
         lastSelectedItem = nil
         userInitiatedToggleFolderGuid = nil
-        removeFloatingNewTabCell()
+        removeFloatingRows()
         outlineView.deselectAll(nil)
         outlineView.reloadData()
         outlineView.resetDiffableSnapshot()
@@ -809,7 +832,7 @@ class SidebarTabListViewController: NSViewController {
                         self.reconcileTabGroupRowHeightsWithoutAnimation()
                     }
                     self.updateVisibleBookmarkTabs()
-                    self.updateFloatingNewTabVisibility()
+                    self.updateFloatingRowsVisibility()
                     afterReload?(outlineStructureChanged)
                 }
             }
@@ -4086,11 +4109,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
                 self.toggleItemExpanded(self.spaceRootItem)
             }
             rootCell.makeMoreMenu = { [weak self] in
-                let menu = NSMenu()
-                guard let self else { return menu }
-                self.contextMenuHelper.populateSpaceRootMenu(menu)
-                self.disableItemsIfAgentLocked(in: menu)
-                return menu
+                self?.makeSpaceRootMoreMenu() ?? NSMenu()
             }
             cellView = rootCell
         case .bookmark, .bookmarkFolder:
@@ -4155,9 +4174,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         
         cellView.isHidden = false
         cellView.configure(with: sidebarItem)
-        if sidebarItem.itemType == .newTabButton {
-            updateOriginalNewTabCellVisibility(cellView)
-        }
+        updateOriginalCellVisibility(cellView, for: sidebarItem)
         if let tabCell = cellView as? SidebarTabCellView {
             tabCell.setActiveSuppressed(browserState.groupOverviewState != nil)
             tabCell.setHoverSuppressed(isTabHoverSuppressed)
@@ -4179,6 +4196,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
                 splitCell.setPaneDropSlotHighlighted(nil)
             }
         }
+        (cellView as? BookmarkCellView)?.setHoverSuppressed(isTabHoverSuppressed)
         if let bookmarkCell = cellView as? BookmarkCellView,
            let bookmark = sidebarItem as? Bookmark {
             bookmarkCell.setDropTargetHighlighted(bookmark.isFolder && dropFeedbackTarget == .bookmarkFolder(guid: bookmark.guid))
@@ -4554,7 +4572,7 @@ extension SidebarTabListViewController: TabSectionDelegate {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.updateVisibleBookmarkTabs()
-                self.updateFloatingNewTabVisibility()
+                self.updateFloatingRowsVisibility()
                 self.pushMemberUpdatesToGroupCells(change.affectedGroupTokens, animated: true)
                 // Off-screen groups have no cell to send a height callback.
                 // Membership, collapse, and split changes can preserve every
@@ -5022,115 +5040,256 @@ extension SidebarTabListViewController {
         tabSectionController.tabItems.first { $0.itemType == .newTabButton }
     }
 
-    private func updateFloatingNewTabVisibility() {
+    /// Locks the Space name row to the top and pins the New Tab row to its
+    /// edge while its real row is scrolled out of view, then masks the list
+    /// under them. A top New Tab row stacks under the Space name row.
+    private func updateFloatingRowsVisibility() {
+        let spaceRootHeight = updateFloatingSpaceRootVisibility()
+        let newTabHeight = updateFloatingNewTabVisibility(belowTopHeight: spaceRootHeight)
+        let atTop = browserState.opensNewTabsAtTop
+        if atTop && newTabHeight > 0 {
+            floatingSpaceRootView?.showsSeparator = false
+        }
+        layoutFloatingRowsMask(topHeight: spaceRootHeight + (atTop ? newTabHeight : 0),
+                               bottomHeight: atTop ? 0 : newTabHeight)
+        let newTabRowHeight = newTabRowHeightIfPinnable
+        layoutScrollerInsets(topHeight: spaceRootHeight + (atTop ? newTabRowHeight : 0),
+                             bottomHeight: atTop ? 0 : newTabRowHeight)
+    }
+
+    /// The New Tab row's height while it is in the list and may pin, else 0.
+    private var newTabRowHeightIfPinnable: CGFloat {
+        guard isViewLoaded, isActive, let item = newTabButtonItem else { return 0 }
+        let row = outlineView.row(forItem: item)
+        return row >= 0 ? outlineView.rect(ofRow: row).height : 0
+    }
+
+    /// Insets the scroller by every row that can pin, pinned right now or
+    /// not. Insetting only while a row is pinned moved the scroller track as
+    /// the row pinned, so a knob dragged across that point jumped the list,
+    /// which unpinned the row and jumped it back.
+    private func layoutScrollerInsets(topHeight: CGFloat, bottomHeight: CGFloat) {
+        guard isViewLoaded else { return }
+        if scrollView.scrollerInsets.top != topHeight { scrollView.scrollerInsets.top = topHeight }
+        if scrollView.scrollerInsets.bottom != bottomHeight { scrollView.scrollerInsets.bottom = bottomHeight }
+    }
+
+    /// Returns the locked Space name row's height, or 0 when the Space has no
+    /// such row (no pins, bookmarks hidden, Incognito).
+    ///
+    /// The copy stays up at every scroll offset, including the top and a
+    /// rubber-band past it, and through drags, so the row never moves.
+    /// Pinning only once the real row crossed the top let it slide for a
+    /// frame on a fast scroll, since this runs a main-queue turn after the
+    /// bounds change.
+    private func updateFloatingSpaceRootVisibility() -> CGFloat {
+        guard isViewLoaded, isActive else {
+            removeFloatingSpaceRootCell()
+            return 0
+        }
+        let row = outlineView.row(forItem: spaceRootItem)
+        guard row >= 0 else {
+            removeFloatingSpaceRootCell()
+            return 0
+        }
+        let rowRect = outlineView.rect(ofRow: row)
+        let floatingView = floatingSpaceRootView ?? makeFloatingSpaceRootView()
+        floatingSpaceRootView = floatingView
+        showFloatingRow(floatingView)
+        // The hairline marks list content under the row; at rest there is none.
+        floatingView.showsSeparator = scrollView.contentView.documentVisibleRect.minY > rowRect.minY
+        floatingView.frame = SidebarNewTabStickyResolver.floatingFrame(
+            scrollFrame: scrollView.frame, contentWidth: scrollView.contentSize.width,
+            rowHeight: rowRect.height, atTop: true, containerIsFlipped: view.isFlipped)
+        setOriginalCellHidden(true, for: spaceRootItem)
+        return floatingView.frame.height
+    }
+
+    /// Returns the pinned New Tab row's height, or 0 while it is in view.
+    /// `topHeight` is the pinned Space name row above it: a top New Tab row
+    /// pins once it reaches that row's lower edge, not the list's top.
+    private func updateFloatingNewTabVisibility(belowTopHeight topHeight: CGFloat) -> CGFloat {
         guard isViewLoaded, isActive, !suppressesFloatingNewTabDuringDrag, let item = newTabButtonItem else {
             removeFloatingNewTabCell()
-            outlineView.dragAutoscrollTopObstructionHeight = 0
-            return
+            return 0
         }
 
         let row = outlineView.row(forItem: item)
         guard row >= 0 else {
             removeFloatingNewTabCell()
-            outlineView.dragAutoscrollTopObstructionHeight = 0
-            return
+            return 0
         }
 
         let rowRect = outlineView.rect(ofRow: row)
-        let visibleRect = scrollView.contentView.documentVisibleRect
+        let atTop = browserState.opensNewTabsAtTop
+        let visibleRect = SidebarNewTabStickyResolver.visibleRectExcludingOverlays(
+            visibleRect: scrollView.contentView.documentVisibleRect,
+            topHeight: atTop ? topHeight : 0, bottomHeight: 0)
         let shouldShow = SidebarNewTabStickyResolver.shouldShowFloatingNewTab(
             rowRect: rowRect,
             visibleRect: visibleRect,
-            atTop: browserState.opensNewTabsAtTop
+            atTop: atTop
         )
 
         if shouldShow {
-            showFloatingNewTabCell(for: item, rowRect: rowRect)
+            showFloatingNewTabCell(for: item, rowRect: rowRect, edgeOffset: atTop ? topHeight : 0)
         } else {
             removeFloatingNewTabCell()
         }
 
-        outlineView.dragAutoscrollTopObstructionHeight = shouldShow && browserState.opensNewTabsAtTop ? rowRect.height : 0
-        setOriginalNewTabCellHidden(shouldShow)
+        setOriginalCellHidden(shouldShow, for: item)
+        return shouldShow ? floatingNewTabView?.frame.height ?? 0 : 0
     }
 
-    private func showFloatingNewTabCell(for item: SidebarItem, rowRect: NSRect) {
+    private func showFloatingNewTabCell(for item: SidebarItem, rowRect: NSRect, edgeOffset: CGFloat) {
         let floatingView = floatingNewTabView ?? makeFloatingNewTabView(for: item)
         floatingNewTabView = floatingView
-        // Layout can create this sibling while the create-Space form is open.
-        floatingView.isHidden = scrollView.isHidden
+        showFloatingRow(floatingView)
 
-        // A sibling above the scroll view rather than a floating subview, so
-        // masking the scroll view hides the rows under it without the row.
-        if floatingView.superview == nil {
-            view.addSubview(floatingView, positioned: .above, relativeTo: scrollView)
-        }
-
-        layoutFloatingNewTabView(floatingView, rowHeight: rowRect.height)
-    }
-
-    private func makeFloatingNewTabView(for item: SidebarItem) -> FloatingNewTabView {
-        let floatingView = FloatingNewTabView(frame: .zero)
-        floatingView.scrollView = scrollView
-        floatingView.cellView.configure(with: item)
-        floatingView.cellView.clickAction = { [weak self] in
-            self?.browserState.windowController?.newBrowserTab(nil)
-        }
-        floatingView.hoverStateChanged = { [weak self] hovering in
-            self?.setVisibleTabHoverSuppressed(hovering)
-        }
-        return floatingView
-    }
-
-    private func layoutFloatingNewTabView(_ floatingView: FloatingNewTabView, rowHeight: CGFloat) {
         let atTop = browserState.opensNewTabsAtTop
         floatingView.sticksToTop = atTop
         floatingView.frame = SidebarNewTabStickyResolver.floatingFrame(
             scrollFrame: scrollView.frame, contentWidth: scrollView.contentSize.width,
-            rowHeight: rowHeight, atTop: atTop, containerIsFlipped: view.isFlipped)
-        let height = floatingView.frame.height
-        scrollView.scrollerInsets.top = atTop ? height : 0
-        scrollView.scrollerInsets.bottom = atTop ? 0 : height
-        let visibleContentRect = SidebarNewTabStickyResolver.visibleRectExcludingOverlay(
-            visibleRect: scrollView.bounds, overlayHeight: height,
-            atTop: atTop, isFlipped: scrollView.isFlipped)
+            rowHeight: rowRect.height, atTop: atTop, containerIsFlipped: view.isFlipped,
+            edgeOffset: edgeOffset)
+    }
+
+    /// Mounts a pinned row as a sibling above the scroll view rather than a
+    /// floating subview, so masking the scroll view hides the rows under it
+    /// without the row.
+    private func showFloatingRow(_ floatingView: FloatingSidebarRowView) {
+        // Layout can create this sibling while the create-Space form is open.
+        floatingView.isHidden = scrollView.isHidden
+        if floatingView.superview == nil {
+            view.addSubview(floatingView, positioned: .above, relativeTo: scrollView)
+        }
+    }
+
+    private func makeFloatingNewTabView(for item: SidebarItem) -> FloatingSidebarRowView {
+        let cellView = NewTabButtonCellView(frame: .zero)
+        cellView.configure(with: item)
+        cellView.clickAction = { [weak self] in
+            self?.browserState.windowController?.newBrowserTab(nil)
+        }
+        let floatingView = FloatingSidebarRowView(cellView: cellView)
+        floatingView.scrollView = scrollView
+        floatingView.hoverStateChanged = { [weak self] _ in
+            self?.updateFloatingRowsHoverSuppression()
+        }
+        return floatingView
+    }
+
+    /// The Space folder row's "…" menu, for the real row and its pinned copy.
+    private func makeSpaceRootMoreMenu() -> NSMenu {
+        let menu = NSMenu()
+        contextMenuHelper.populateSpaceRootMenu(menu)
+        disableItemsIfAgentLocked(in: menu)
+        return menu
+    }
+
+    /// The pinned copy folds and unfolds the pins like the real row, and its
+    /// cell keeps the real row's chevron state and folded-Space preview.
+    private func makeFloatingSpaceRootView() -> FloatingSidebarRowView {
+        let cellView = SpaceRootCellView()
+        cellView.configure(with: spaceRootItem)
+        let toggle: () -> Void = { [weak self] in
+            guard let self else { return }
+            self.toggleItemExpanded(self.spaceRootItem)
+        }
+        cellView.onToggle = toggle
+        cellView.makeMoreMenu = { [weak self] in
+            self?.makeSpaceRootMoreMenu() ?? NSMenu()
+        }
+        let floatingView = FloatingSidebarRowView(cellView: cellView)
+        floatingView.clickAction = toggle
+        // The real row's right-click menu, which the copy now always covers.
+        floatingView.menu = blankAreaContextMenu
+        floatingView.scrollView = scrollView
+        floatingView.dragAutoscrollTarget = outlineView
+        floatingView.hoverStateChanged = { [weak self] _ in
+            self?.updateFloatingRowsHoverSuppression()
+        }
+        return floatingView
+    }
+
+    /// Masks the list under the pinned rows and keeps drag autoscroll clear
+    /// of them; both heights 0 removes the mask.
+    private func layoutFloatingRowsMask(topHeight: CGFloat, bottomHeight: CGFloat) {
+        guard isViewLoaded else { return }
+        outlineView.dragAutoscrollTopObstructionHeight = topHeight
+        guard topHeight > 0 || bottomHeight > 0 else {
+            scrollView.layer?.mask = nil
+            return
+        }
+        let visibleContentRect = SidebarNewTabStickyResolver.visibleRectExcludingOverlays(
+            visibleRect: scrollView.bounds, topHeight: topHeight,
+            bottomHeight: bottomHeight, isFlipped: scrollView.isFlipped)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        floatingNewTabContentMask.frame = visibleContentRect
-        scrollView.layer?.mask = floatingNewTabContentMask
+        floatingRowsContentMask.frame = visibleContentRect
+        scrollView.layer?.mask = floatingRowsContentMask
         CATransaction.commit()
     }
 
     private func removeFloatingNewTabCell() {
         guard floatingNewTabView != nil else { return }
-        setVisibleTabHoverSuppressed(false)
         floatingNewTabView?.removeFromSuperview()
         floatingNewTabView = nil
-        scrollView.layer?.mask = nil
-        scrollView.scrollerInsets.top = 0
-        scrollView.scrollerInsets.bottom = 0
-        setOriginalNewTabCellHidden(false)
+        updateFloatingRowsHoverSuppression()
+        setOriginalCellHidden(false, for: newTabButtonItem)
     }
 
+    private func removeFloatingSpaceRootCell() {
+        guard floatingSpaceRootView != nil else { return }
+        floatingSpaceRootView?.removeFromSuperview()
+        floatingSpaceRootView = nil
+        updateFloatingRowsHoverSuppression()
+        setOriginalCellHidden(false, for: spaceRootItem)
+    }
+
+    /// Rows scrolled under the pinned rows stay hover-suppressed while the
+    /// pointer is on either pinned row, whichever of them changed last.
+    private func updateFloatingRowsHoverSuppression() {
+        let hovered = [floatingSpaceRootView, floatingNewTabView].contains {
+            $0?.superview != nil && $0?.isHovered == true
+        }
+        guard hovered != isTabHoverSuppressed else { return }
+        setVisibleTabHoverSuppressed(hovered)
+    }
+
+    /// Takes both pinned rows down and unmasks the list.
+    private func removeFloatingRows() {
+        removeFloatingSpaceRootCell()
+        removeFloatingNewTabCell()
+        layoutFloatingRowsMask(topHeight: 0, bottomHeight: 0)
+        layoutScrollerInsets(topHeight: 0, bottomHeight: 0)
+    }
+
+    /// New Tab steps aside so its row can take drops; the Space name row
+    /// stays locked and keeps the drag autoscroll clear of it.
     private func beginOutlineDestinationDrag() {
         guard suppressesFloatingNewTabDuringDrag == false else { return }
         suppressesFloatingNewTabDuringDrag = true
-        removeFloatingNewTabCell()
-        outlineView.dragAutoscrollTopObstructionHeight = 0
+        updateFloatingRowsVisibility()
     }
 
     private func endOutlineDestinationDrag() {
         guard suppressesFloatingNewTabDuringDrag else { return }
         suppressesFloatingNewTabDuringDrag = false
-        updateFloatingNewTabVisibility()
+        updateFloatingRowsVisibility()
     }
 
-    private func updateOriginalNewTabCellVisibility(_ cell: NSView) {
-        cell.isHidden = floatingNewTabView?.superview != nil
+    /// A real row reused or created while its copy is pinned stays hidden.
+    private func updateOriginalCellVisibility(_ cell: NSView, for item: SidebarItem) {
+        switch item.itemType {
+        case .newTabButton: cell.isHidden = floatingNewTabView?.superview != nil
+        case .spaceRoot: cell.isHidden = floatingSpaceRootView?.superview != nil
+        default: break
+        }
     }
 
-    private func setOriginalNewTabCellHidden(_ hidden: Bool) {
-        guard let item = newTabButtonItem else { return }
+    private func setOriginalCellHidden(_ hidden: Bool, for item: SidebarItem?) {
+        guard let item else { return }
         let row = outlineView.row(forItem: item)
         guard row >= 0,
               let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) else {
@@ -5139,14 +5298,11 @@ extension SidebarTabListViewController {
         cell.isHidden = hidden
     }
 
-    private var floatingNewTabOverlayHeight: CGFloat {
-        guard floatingNewTabView?.superview != nil else { return 0 }
-        if let height = floatingNewTabView?.bounds.height, height > 0 {
-            return height
-        }
-        guard let item = newTabButtonItem else { return 0 }
-        let row = outlineView.row(forItem: item)
-        return row >= 0 ? outlineView.rect(ofRow: row).height : 0
+    /// Heights of the pinned rows at the list's top and bottom edges.
+    private var floatingRowsOverlayHeights: (top: CGFloat, bottom: CGFloat) {
+        let spaceRoot = floatingSpaceRootView?.superview != nil ? floatingSpaceRootView?.frame.height ?? 0 : 0
+        let newTab = floatingNewTabView?.superview != nil ? floatingNewTabView?.frame.height ?? 0 : 0
+        return browserState.opensNewTabsAtTop ? (spaceRoot + newTab, 0) : (spaceRoot, newTab)
     }
 
     private func setVisibleTabHoverSuppressed(_ suppressed: Bool) {
@@ -5163,6 +5319,8 @@ extension SidebarTabListViewController {
                 if !suppressed {
                     cell.setHovered(false)
                 }
+            case let cell as BookmarkCellView:
+                cell.setHoverSuppressed(suppressed)
             default:
                 continue
             }
@@ -5294,11 +5452,9 @@ extension SidebarTabListViewController {
             return
         }
         let visibleRect = scrollView.contentView.documentVisibleRect
-        let unobscuredRect = SidebarNewTabStickyResolver.visibleRectExcludingOverlay(
-            visibleRect: visibleRect,
-            overlayHeight: floatingNewTabOverlayHeight,
-            atTop: browserState.opensNewTabsAtTop,
-            isFlipped: outlineView.isFlipped)
+        let (topOverlayHeight, bottomOverlayHeight) = floatingRowsOverlayHeights
+        let unobscuredRect = SidebarNewTabStickyResolver.visibleRectExcludingOverlays(
+            visibleRect: visibleRect, topHeight: topOverlayHeight, bottomHeight: bottomOverlayHeight)
         // The clip follows the New Tab row even while the arrow slides out.
         if let arrow = activeTabArrowView {
             layoutActiveTabArrow(arrow, visibleRect: visibleRect)
@@ -5331,10 +5487,16 @@ extension SidebarTabListViewController {
             let row = outlineView.row(forItem: item)
             return row >= 0 ? outlineView.rect(ofRow: row) : nil
         }
+        // The locked Space row covers the top of the list; the arrow never
+        // draws under it.
+        let spaceRootHeight = floatingSpaceRootView?.superview != nil ? floatingSpaceRootView?.frame.height ?? 0 : 0
+        let newTabHeight = floatingNewTabView?.superview != nil ? floatingNewTabView?.frame.height ?? 0 : 0
+        let belowSpaceRow = SidebarNewTabStickyResolver.visibleRectExcludingOverlays(
+            visibleRect: visibleRect, topHeight: spaceRootHeight, bottomHeight: 0)
         arrow.clipRect = arrow.convert(
             SidebarActiveTabArrowResolver.clipRect(
-                visibleRect: visibleRect,
-                overlayHeight: floatingNewTabOverlayHeight,
+                visibleRect: belowSpaceRow,
+                overlayHeight: newTabHeight,
                 newTabRowRect: newTabRowRect,
                 newTabAtTop: browserState.opensNewTabsAtTop),
             from: outlineView)
@@ -5378,13 +5540,10 @@ extension SidebarTabListViewController {
         let visibleRect = clipView.documentVisibleRect
         // A newly inserted row can overflow before the deferred sticky refresh.
         // Resolve the overlay first so focus scrolling leaves the row unobscured.
-        updateFloatingNewTabVisibility()
-        let overlayHeight = floatingNewTabOverlayHeight
-        let atTop = browserState.opensNewTabsAtTop
-        let topOverlayHeight = atTop ? overlayHeight : 0
-        let bottomOverlayHeight = atTop ? 0 : overlayHeight
-        let unobscuredVisibleRect = SidebarNewTabStickyResolver.visibleRectExcludingOverlay(
-            visibleRect: visibleRect, overlayHeight: overlayHeight, atTop: atTop)
+        updateFloatingRowsVisibility()
+        let (topOverlayHeight, bottomOverlayHeight) = floatingRowsOverlayHeights
+        let unobscuredVisibleRect = SidebarNewTabStickyResolver.visibleRectExcludingOverlays(
+            visibleRect: visibleRect, topHeight: topOverlayHeight, bottomHeight: bottomOverlayHeight)
 
         var targetY = visibleRect.origin.y
         if rowRect.minY < unobscuredVisibleRect.minY {

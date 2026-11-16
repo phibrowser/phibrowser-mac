@@ -38,7 +38,9 @@ final class SidebarActiveTabArrowTests: XCTestCase {
         let arrow = try XCTUnwrap(arrow(in: harness))
         XCTAssertEqual(arrow.edge, .bottom)
         harness.pump(0.3)
-        let sticky = try XCTUnwrap(harness.controller.view.subviews.first { $0 is FloatingNewTabView })
+        let sticky = try XCTUnwrap(harness.controller.view.subviews.first {
+            ($0 as? FloatingSidebarRowView)?.cellView is NewTabButtonCellView
+        })
         let button = try XCTUnwrap(arrow.subviews.compactMap { $0 as? NSButton }.first)
         let buttonFrame = arrow.convert(button.frame, to: harness.controller.view)
         XCTAssertFalse(buttonFrame.intersects(sticky.frame), "arrow covers the sticky New Tab row")

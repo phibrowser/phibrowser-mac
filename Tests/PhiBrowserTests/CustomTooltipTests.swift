@@ -1140,6 +1140,41 @@ final class CustomTooltipTests: XCTestCase {
         XCTAssertEqual(presenter.presentCount, 1)
     }
 
+    func testInWindowOverlayAppearingHidesTooltipInThatWindowOnly() {
+        let fixture = makeWindow()
+        let otherWindow = makeWindow().window
+        let scheduler = ManualScheduler()
+        let presenter = RecordingPresenter()
+        let controller = makeController(
+            fixture: fixture,
+            scheduler: scheduler,
+            presenter: presenter
+        )
+
+        controller.pointerEntered(
+            ownerID: UUID(),
+            anchorView: fixture.host,
+            content: AnyView(Text("Visible")),
+            configuration: CustomTooltipConfiguration(showDelay: 0, displayDuration: nil)
+        )
+        for (object, visible) in [(otherWindow, true), (fixture.window, false)] {
+            NotificationCenter.default.post(
+                name: .phiInWindowOverlayVisibilityChanged,
+                object: object,
+                userInfo: ["visible": visible, "surface": "omnibox"]
+            )
+        }
+        XCTAssertTrue(presenter.isVisible, "Another window's overlay or a hiding overlay keeps the tooltip")
+
+        NotificationCenter.default.post(
+            name: .phiInWindowOverlayVisibilityChanged,
+            object: fixture.window,
+            userInfo: ["visible": true, "surface": "omnibox"]
+        )
+        XCTAssertFalse(presenter.isVisible)
+        XCTAssertNil(controller.activeOwnerID)
+    }
+
     func testApplicationResignHidesTooltip() {
         let fixture = makeWindow()
         let scheduler = ManualScheduler()

@@ -782,6 +782,19 @@ final class CustomTooltipController {
             )
         }
 
+        // The window stays key under the omnibox and other in-window
+        // overlays, so their appearance is a dismissal of its own.
+        lifecycleObservers.append(
+            center.addObserver(
+                forName: .phiInWindowOverlayVisibilityChanged, object: window, queue: .main
+            ) { [weak self] notification in
+                guard notification.userInfo?["visible"] as? Bool == true else { return }
+                MainActor.assumeIsolated {
+                    self?.dismissAll()
+                }
+            }
+        )
+
         let applicationNotifications: [Notification.Name] = [
             NSApplication.didResignActiveNotification,
             NSApplication.didHideNotification,

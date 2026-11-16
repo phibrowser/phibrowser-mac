@@ -107,6 +107,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private let secondaryTabViewModel = TabViewModel()
     private let peekTabViewModel = TabViewModel()
     private let hoverRegionView = SidebarTabHoverRegionView()
+    private let folderPreview = BookmarkFolderPreview()
     private let tabPreviewRegistration = TabPreviewRegistration()
     private let splitTabPreviewRegistration = SplitTabPreviewRegistration()
     // Keep the rename field in AppKit instead of the SwiftUI subtree.
@@ -123,6 +124,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private weak var configuredSecondaryTab: Tab?
     private var usesSplitTabPreview = false
     private var isEditingActive = false
+    private var isPointerHovered = false
 
     /// Standalone management surfaces must not resolve actions through another Space.
     var usesActiveBrowserStateFallback = true
@@ -142,6 +144,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        folderPreview.invalidate()
         faviconLoadHandle?.cancel()
         faviconLoadHandle = nil
         secondaryFaviconLoadHandle?.cancel()
@@ -161,7 +164,13 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         resetState()
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { folderPreview.invalidate() }
+    }
+
     func cancelTabPreviewForInteraction() {
+        folderPreview.invalidate()
         tabPreviewRegistration.cancelForInteraction()
         splitTabPreviewRegistration.cancelForInteraction()
     }
@@ -243,8 +252,17 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             self?.viewState.showsTabPreview = isEligible
         }
 
+        folderPreview.onPresentationChange = { [weak self] _ in
+            self?.updateHoverAppearance()
+        }
         hoverRegionView.onHoverChanged = { [weak self] isHovered in
-            self?.viewState.isHovered = isHovered
+            self?.isPointerHovered = isHovered
+            self?.updateHoverAppearance()
+            if let self, let bookmark = self.configuredBookmark,
+               let browserState = self.browserState, self.usesActiveBrowserStateFallback {
+                self.folderPreview.setHovering(isHovered, source: .folder(bookmark), anchor: self,
+                                               anchorInsets: Self.rowBackgroundInsets, browserState: browserState)
+            }
             if self?.usesSplitTabPreview == true {
                 self?.splitTabPreviewRegistration.setHovering(isHovered)
             } else {
@@ -259,6 +277,16 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         setupPressAnimation()
     }
 
+    /// Insets of the SwiftUI row background inside the cell.
+    private static let rowBackgroundInsets = NSEdgeInsets(top: 2, left: WebContentConstant.edgesSpacing,
+                                                          bottom: 2, right: WebContentConstant.edgesSpacing)
+
+    /// The folder row stays highlighted while its preview is open, even after
+    /// the pointer moves into the preview.
+    private func updateHoverAppearance() {
+        viewState.isHovered = isPointerHovered || folderPreview.isPresented
+    }
+
     private func setupPressAnimation() {
         let press = NSPressGestureRecognizer(target: self, action: #selector(handlePress(_:)))
         press.minimumPressDuration = 0
@@ -270,6 +298,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     @objc private func handlePress(_ recognizer: NSPressGestureRecognizer) {
         switch recognizer.state {
         case .began:
+            folderPreview.invalidate()
             viewState.isPressed = true
         case .ended, .cancelled, .failed:
             viewState.isPressed = false
@@ -301,6 +330,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewState.folderIconPickerRequestGeneration = 0
         viewState.isActive = false
         viewState.isOpened = false
+        isPointerHovered = false
         viewState.isHovered = false
         viewState.isPressed = false
         viewState.isEditing = false
@@ -361,6 +391,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     override func configureAppearance() {
         guard let bookmark = resolvedBookmark else { return }
+        folderPreview.invalidate()
         configuredBookmark = bookmark
 
         // Expose to UI testing as a button so the test reset can find and
@@ -506,6 +537,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             .dropFirst()
             .sink { [weak self] isExpanded in
                 self?.viewState.isFolderExpanded = isExpanded
+                if isExpanded { self?.folderPreview.invalidate() }
             }
             .store(in: &cancellables)
 

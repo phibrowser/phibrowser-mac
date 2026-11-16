@@ -105080,6 +105080,100 @@
         }
       }
     },
+    "sidebar.folderPreview.lastOpened.days" : {
+      "comment" : "Sidebar folder preview - Time since a bookmarked page was last opened, shown on the second line of its row under the title; %d is the number of calendar days",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d day ago"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d days ago"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sidebar.folderPreview.lastOpened.hours" : {
+      "comment" : "Sidebar folder preview - Time since a bookmarked page was last opened earlier today, shown on the second line of its row under the title; %d is the number of hours",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d hour ago"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d hours ago"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sidebar.folderPreview.lastOpened.minutes" : {
+      "comment" : "Sidebar folder preview - Time since a bookmarked page was last opened, shown on the second line of its row under the title; %d is the number of minutes (1-59)",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%d min ago"
+          }
+        }
+      }
+    },
+    "sidebar.folderPreview.lastOpened.yesterday" : {
+      "comment" : "Sidebar folder preview - Shown on the second line of a page row, under the title, when the page was last opened yesterday",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Yesterday"
+          }
+        }
+      }
+    },
+    "sidebar.folderPreview.noResults" : {
+      "comment" : "Sidebar folder preview - Shown in place of the page list when no page title or URL in the folder or Space matches the search",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No Matching Pages"
+          }
+        }
+      }
+    },
+    "sidebar.folderPreview.searchPlaceholder" : {
+      "comment" : "Sidebar folder preview - Placeholder of the search field shown when hovering a closed bookmark folder or Space header; searches page titles and URLs in the folder or Space, including subfolders. %@ is the folder or Space name.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Search %@…"
+          }
+        }
+      }
+    },
     "sidebar.media.dismiss" : {
       "comment" : "Sidebar media player - Hide this media source without changing playback",
       "localizations" : {

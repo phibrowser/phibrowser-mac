@@ -77,6 +77,7 @@ final class SpaceRootCellView: SidebarCellView {
     var onToggle: (() -> Void)?
     private let chevron = SpaceRootChevronView()
     private let titleLabel = NSTextField(labelWithString: "")
+    private let folderPreview = BookmarkFolderPreview()
     private var expanded: Bool?
 
     override init(frame frameRect: NSRect) {
@@ -98,6 +99,9 @@ final class SpaceRootCellView: SidebarCellView {
         backgoundView.layer?.cornerRadius = 8
         backgoundView.shadow = nil
         backgoundView.responseToClickAction = false
+        folderPreview.onPresentationChange = { [weak self] isPresented in
+            self?.backgoundView.isHoverPinned = isPresented
+        }
         backgoundView.snp.makeConstraints {
             $0.leading.trailing.equalToSuperview().inset(WebContentConstant.edgesSpacing)
             $0.top.bottom.equalToSuperview().inset(2)
@@ -127,8 +131,14 @@ final class SpaceRootCellView: SidebarCellView {
     override func configure(with item: SidebarItem) {
         cancellables.removeAll()
         expanded = nil
+        folderPreview.invalidate()
         super.configure(with: item)
         guard let root = item as? SpaceRootSidebarItem, let state = root.browserState else { return }
+        backgoundView.hoverStateChanged = { [weak self, weak root, weak state] isHovered in
+            guard let self, let root, let state else { return }
+            self.folderPreview.setHovering(isHovered, source: .space(root), anchor: self.backgoundView,
+                                           browserState: state)
+        }
         chevron.phi(source: state.themeContext)[\.tintColor] = ThemedColor.textMuted.nsColorMapper
         titleLabel.phi(source: state.themeContext).setTextColor(.textMuted)
         updateTitle(root.title)
@@ -156,6 +166,7 @@ final class SpaceRootCellView: SidebarCellView {
         guard expanded != value else { return }
         let animate = expanded != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         expanded = value
+        if value { folderPreview.invalidate() }
         chevron.setExpanded(value, animated: animate)
         setAccessibilityValue(value ? 1 : 0)
         NSAccessibility.post(element: self, notification: .valueChanged)
@@ -171,8 +182,15 @@ final class SpaceRootCellView: SidebarCellView {
         return onToggle != nil
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { folderPreview.invalidate() }
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
+        folderPreview.invalidate()
+        backgoundView.hoverStateChanged = nil
         onToggle = nil
         expanded = nil
         backgoundView.isSelected = false

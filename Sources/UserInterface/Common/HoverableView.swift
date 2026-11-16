@@ -35,6 +35,14 @@ class HoverableView: NSView {
         }
     }
 
+    /// Paints the hovered color while the pointer is elsewhere, such as over
+    /// a preview opened from this view.
+    var isHoverPinned = false {
+        didSet {
+            needsDisplay = true
+        }
+    }
+
     var responseToClickAction = true
     var enableClickAnimation = false
     
@@ -96,7 +104,7 @@ class HoverableView: NSView {
             context.duration = 0.15
             if isSelected {
                 layer?.backgroundColor = selectedColor.cgColor
-            } else if mouseEntered && !isHoverSuppressed {
+            } else if (mouseEntered || isHoverPinned) && !isHoverSuppressed {
                 layer?.backgroundColor = hoveredColor.cgColor
             } else {
                 layer?.backgroundColor = backgroundColor.cgColor

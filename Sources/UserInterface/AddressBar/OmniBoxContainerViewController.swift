@@ -279,9 +279,28 @@ final class OmniBoxContainerViewController: NSViewController {
         } else {
             showOmniboxReletiveToAdressView(omniBoxController?.contentSize ?? .zero)
         }
+        reclaimKeyFromChildWindow()
         omniBoxController?.focusTextField()
         observeFocusingTabChange()
         postInWindowOverlayVisibility(true)
+    }
+
+    /// A shortcut pressed while a child window of this window holds key (the
+    /// sidebar folder preview, the find bar) never reaches this window's
+    /// `sendEvent`, which is where an explicit interaction reclaims key, and
+    /// `ShellWindow` refuses first-responder changes while a child is key.
+    /// Opening the omnibox is such an interaction, so it takes key back here.
+    /// Key held by another top-level window is left alone.
+    private func reclaimKeyFromChildWindow() {
+        guard let window = view.window, let keyWindow = NSApp.keyWindow, keyWindow !== window else { return }
+        var ancestor = keyWindow.parent
+        while let current = ancestor {
+            if current === window {
+                window.makeKey()
+                return
+            }
+            ancestor = current.parent
+        }
     }
 
     private func postInWindowOverlayVisibility(_ visible: Bool) {

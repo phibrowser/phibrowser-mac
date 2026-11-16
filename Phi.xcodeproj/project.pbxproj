@@ -728,6 +728,7 @@
 		F01D3A000000000000000001 /* bookmark-folder-open.svg in Resources */ = {isa = PBXBuildFile; fileRef = F01D3A000000000000000011 /* bookmark-folder-open.svg */; };
 		F01D3A000000000000000002 /* bookmark-folder-closed.svg in Resources */ = {isa = PBXBuildFile; fileRef = F01D3A000000000000000012 /* bookmark-folder-closed.svg */; };
 		F02B00010000000000000001 /* BookmarkFolderIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02B00110000000000000001 /* BookmarkFolderIcon.swift */; };
+		F19440010000000000000001 /* BookmarkFolderPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19440110000000000000001 /* BookmarkFolderPreview.swift */; };
 		F02B00020000000000000002 /* TabDataModelSchemaV10.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02B00120000000000000002 /* TabDataModelSchemaV10.swift */; };
 		F02B00040000000000000004 /* BookmarkFolderIcons in Copy LottieFiles */ = {isa = PBXBuildFile; fileRef = F02B00140000000000000004 /* BookmarkFolderIcons */; };
 		F10920260921000000000001 /* FloatingSidebarHostViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10920260921000000000002 /* FloatingSidebarHostViewController.swift */; };
@@ -1601,6 +1602,7 @@
 		F01D3A000000000000000011 /* bookmark-folder-open.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; path = "bookmark-folder-open.svg"; sourceTree = "<group>"; };
 		F01D3A000000000000000012 /* bookmark-folder-closed.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; path = "bookmark-folder-closed.svg"; sourceTree = "<group>"; };
 		F02B00110000000000000001 /* BookmarkFolderIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkFolderIcon.swift; sourceTree = "<group>"; };
+		F19440110000000000000001 /* BookmarkFolderPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkFolderPreview.swift; sourceTree = "<group>"; };
 		F02B00120000000000000002 /* TabDataModelSchemaV10.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV10.swift; sourceTree = "<group>"; };
 		F02B00140000000000000004 /* BookmarkFolderIcons */ = {isa = PBXFileReference; lastKnownFileType = folder; path = BookmarkFolderIcons; sourceTree = "<group>"; };
 		F10920260921000000000002 /* FloatingSidebarHostViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingSidebarHostViewController.swift; sourceTree = "<group>"; };
@@ -3204,6 +3206,7 @@
 				CCBF8F4A2E6543E800B9A99E /* SidebarCellViews.swift */,
 				8E5A0C112FB0000100A1B2C3 /* SpaceRootCellView.swift */,
 				F02B00110000000000000001 /* BookmarkFolderIcon.swift */,
+				F19440110000000000000001 /* BookmarkFolderPreview.swift */,
 				376581F82EEA9BB200D3E031 /* BookmarkCellView.swift */,
 				376581FA2EEA9D6200D3E031 /* BookmarkRowView.swift */,
 				CCBF8F612E65719600B9A99E /* SideBarOutlineView.swift */,
@@ -3736,6 +3739,7 @@
 				7A5B00A02EF0000000000001 /* MemoryButton.swift in Sources */,
 				376581F92EEA9BB200D3E031 /* BookmarkCellView.swift in Sources */,
 				F02B00010000000000000001 /* BookmarkFolderIcon.swift in Sources */,
+				F19440010000000000000001 /* BookmarkFolderPreview.swift in Sources */,
 				8EF36C082F4EA95B00FCC91E /* SideTabView.swift in Sources */,
 				CCB53DCE2E6EC437004BF233 /* OmniBoxModels.swift in Sources */,
 				37C1B28F2EE1364D00DD4496 /* EnvironmentChecker.swift in Sources */,

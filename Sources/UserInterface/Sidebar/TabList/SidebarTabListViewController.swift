@@ -49,6 +49,26 @@ enum SidebarNewTabStickyResolver {
     }
 }
 
+/// Keeps a root-level drop on the tab side of the New Tab row, so the drop
+/// line never draws past the button: below it when the button closes the
+/// list, above it when it opens the tab section.
+enum SidebarNewTabDropResolver {
+    static func rootDropIndex(proposed: Int, newTabButtonIndex: Int?, buttonAtTop: Bool) -> Int {
+        guard let newTabButtonIndex else { return proposed }
+        if buttonAtTop {
+            return proposed == newTabButtonIndex ? newTabButtonIndex + 1 : proposed
+        }
+        return min(proposed, newTabButtonIndex)
+    }
+
+    /// The row takes no drop of its own: a drag over it lands in the tab
+    /// slot next to it, the last one when it ends the list and the first one
+    /// when it starts the tab section.
+    static func rootDropIndex(forDropOnButtonAt newTabButtonIndex: Int, buttonAtTop: Bool) -> Int {
+        buttonAtTop ? newTabButtonIndex + 1 : newTabButtonIndex
+    }
+}
+
 enum SidebarBookmarkFolderDropTarget: Equatable {
     case keepOriginal
     case dropOnFolder
@@ -1871,6 +1891,15 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     }
 
     private func _validateDropImpl(_ outlineView: NSOutlineView, info: NSDraggingInfo, proposedItem item: Any?, proposedChildIndex index: Int) -> NSDragOperation {
+        var item = item
+        var index = index
+        if (item as? SidebarItem)?.itemType == .newTabButton,
+           let buttonIndex = dataSourceChildren(of: nil).firstIndex(where: { $0.itemType == .newTabButton }) {
+            item = nil
+            index = SidebarNewTabDropResolver.rootDropIndex(
+                forDropOnButtonAt: buttonIndex, buttonAtTop: browserState.opensNewTabsAtTop)
+            outlineView.setDropItem(nil, dropChildIndex: index)
+        }
         let originalResolvedItem: Any? = {
             if let provider = item as? UnderlyingBookmarkProviding { return provider.underlyingBookmark }
             return item
@@ -2074,7 +2103,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         }
         updateDropFeedbackFolder(in: outlineView, with: resolvedItem, childIndex: resolvedIndex, pasteboard: pasteboardItem)
         
-        let maxRootDropIndex = maxRootDropChildIndex()
+        let maxRootDropIndex = clampedRootDropIndex(maxRootDropChildIndex())
         
         if resolvedItem == nil {
             // NSOutlineView has a quirky behavior: dragging an item past the last row
@@ -2110,6 +2139,14 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                proposedChildIndex: resolvedIndex) {
             outlineView.setDropItem(nil, dropChildIndex: snapped)
             resolvedIndex = snapped
+        }
+
+        if resolvedItem == nil, resolvedIndex != NSOutlineViewDropOnItemIndex {
+            let clamped = clampedRootDropIndex(resolvedIndex)
+            if clamped != resolvedIndex {
+                outlineView.setDropItem(nil, dropChildIndex: clamped)
+                resolvedIndex = clamped
+            }
         }
 
         if pasteboard.string(forType: .pinnedTab) != nil {
@@ -3317,6 +3354,14 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     /// UI-only focused bookmark proxy that may be present.
     private func maxRootDropChildIndex() -> Int {
         dataSourceChildren(of: nil).count
+    }
+
+    /// See `SidebarNewTabDropResolver`.
+    private func clampedRootDropIndex(_ proposed: Int) -> Int {
+        SidebarNewTabDropResolver.rootDropIndex(
+            proposed: proposed,
+            newTabButtonIndex: dataSourceChildren(of: nil).firstIndex { $0.itemType == .newTabButton },
+            buttonAtTop: browserState.opensNewTabsAtTop)
     }
 
     private func isDragLocationPastLastRow(in outlineView: NSOutlineView, dragY: CGFloat, lastRowRect: NSRect) -> Bool {

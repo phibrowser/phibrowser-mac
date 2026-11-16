@@ -746,8 +746,7 @@ final class TabGroupCellView: SidebarCellView {
         // — `-min(pane guids)` — can survive when the kept pane has the
         // smallest guid; a pane add/remove likewise). The diffable snapshot
         // sees the same item id and skips the cell provider, so the inner
-        // cell would stay bound to the stale panes; reloadItems below
-        // forces the re-bind.
+        // cell would stay bound to the stale panes; it is re-bound below.
         var changedSplitKeys: [Int] = []
         for tab in newMembers {
             if consumed.contains(tab.guid) { continue }
@@ -791,10 +790,19 @@ final class TabGroupCellView: SidebarCellView {
         var snap = NSDiffableDataSourceSnapshot<Section, Int>()
         snap.appendSections([.members])
         snap.appendItems(currentMemberOrder, toSection: .members)
-        if !changedSplitKeys.isEmpty {
-            snap.reloadItems(changedSplitKeys)
-        }
         dataSource.apply(snap, animatingDifferences: animated)
+        // Re-bind in place rather than reloading the row: a reload leaves the
+        // row blank when the same update also moves it, as when the member
+        // above a split joins it as the first pane.
+        for key in changedSplitKeys {
+            guard let row = currentMemberOrder.firstIndex(of: key),
+                  let cell = innerTable.view(
+                    atColumn: 0, row: row, makeIfNecessary: false
+                  ) as? SidebarSplitCellView else {
+                continue
+            }
+            cell.rebindPanesIfNeeded()
+        }
 
         groupCellDelegate?.tabGroupCellNeedsHeightUpdate(
             self,

@@ -87,13 +87,13 @@ final class ShellSplitViewController: NSViewController {
             splitViewController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
 
-        if #available(macOS 26.0, *) {
-            sidebarSplitViewItem = NSSplitViewItem(viewController: sidebarHost)
-        } else if !SidebarPosition.isOnRight {
-            sidebarSplitViewItem = NSSplitViewItem(sidebarWithViewController: sidebarHost)
-        } else {
-            sidebarSplitViewItem = NSSplitViewItem(viewController: sidebarHost)
-        }
+        // A plain item on every OS and side, never `sidebarWithViewController:`.
+        // Before macOS 26 AppKit reveals a collapsed sidebar-behavior item by
+        // itself when the pointer reaches the screen edge in full screen. That
+        // edge is also the floating sidebar's trigger, and the reveal reports
+        // the column as expanded, which hides the floating panel and moves the
+        // top bar's borrowed buttons away while the pointer is still there.
+        sidebarSplitViewItem = NSSplitViewItem(viewController: sidebarHost)
         sidebarSplitViewItem.minimumThickness = Self.leftItemMinWidth
         sidebarSplitViewItem.maximumThickness = Self.leftItemMaxWidth
         sidebarSplitViewItem.canCollapse = true
@@ -557,9 +557,9 @@ extension NSSplitViewController {
         if #available(macOS 26.0, *) {
             item = previous
         } else {
-            // AppKit's legacy sidebar behavior is leading-only; trailing columns need a plain item.
-            item = onRight ? NSSplitViewItem(viewController: previous.viewController)
-                : NSSplitViewItem(sidebarWithViewController: previous.viewController)
+            // Before macOS 26 the move rebuilds the item. It is a plain item
+            // on both sides; see `ShellSplitViewController.viewDidLoad`.
+            item = NSSplitViewItem(viewController: previous.viewController)
             item.minimumThickness = previous.minimumThickness
             item.maximumThickness = previous.maximumThickness
             item.holdingPriority = previous.holdingPriority

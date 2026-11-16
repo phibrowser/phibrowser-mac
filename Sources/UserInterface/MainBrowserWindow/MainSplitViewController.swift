@@ -318,13 +318,10 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     }
 
     private func setupLeftSplitViewItem() {
-        if #available(macOS 26.0, *) {
-            sideBarSplitViewItem = NSSplitViewItem(viewController: verticalTabListViewController)
-        } else if !SidebarPosition.isOnRight {
-            sideBarSplitViewItem = NSSplitViewItem(sidebarWithViewController: verticalTabListViewController)
-        } else {
-            sideBarSplitViewItem = NSSplitViewItem(viewController: verticalTabListViewController)
-        }
+        // A plain item on every OS and side; see
+        // `ShellSplitViewController.viewDidLoad` for why this is never a
+        // sidebar-behavior item.
+        sideBarSplitViewItem = NSSplitViewItem(viewController: verticalTabListViewController)
         sideBarSplitViewItem.minimumThickness = Self.leftItemMinWidth
         sideBarSplitViewItem.maximumThickness = Self.leftItemMaxWidth
         sideBarSplitViewItem.canCollapse = true

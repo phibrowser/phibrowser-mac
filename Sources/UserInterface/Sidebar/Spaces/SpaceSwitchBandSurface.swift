@@ -65,9 +65,9 @@ protocol SpaceSwitchBandSurface: NSViewController {
 
     /// Switches to the previous/next Space for a mouse back/forward side
     /// button pressed over this surface (`sideButtonSpaceStep(for:)`).
-    /// `ShellWindow.sendEvent` routes the event here when the pointer is
-    /// over the surface. Returns false when the surface doesn't take it, so
-    /// the window dispatches it as usual.
+    /// `ShellWindow.routeSideButtonToSidebar` sends the event here when the
+    /// pointer is over the surface. Returns false when the surface doesn't
+    /// take it, so the event is dispatched as usual.
     func handleSideButtonSpaceSwitch(_ event: NSEvent) -> Bool
 }
 
@@ -200,10 +200,7 @@ extension SpaceSwitchBandSurface {
     /// - `otherMouseDown` with button 3 (back) / 4 (forward): plain mice,
     ///   LinearMouse, Logi Options+ "Generic button".
     /// - a `swipe` event, `deltaX` +1 (back) / -1 (forward): the shape Logi
-    ///   Options+ "Back/Forward" and SensibleSideButtons post. A swipe that
-    ///   carries a direction is currently taken as page Back/Forward before
-    ///   it reaches `ShellWindow.sendEvent`, so this case only applies to
-    ///   swipes that do reach the window.
+    ///   Options+ "Back/Forward" and SensibleSideButtons post.
     func sideButtonSpaceStep(for event: NSEvent) -> Int? {
         switch event.type {
         case .otherMouseDown where event.buttonNumber == 3: return -1

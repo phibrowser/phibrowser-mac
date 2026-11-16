@@ -229,9 +229,12 @@ final class ShellWindow: NSWindow {
     /// of up the responder chain because the sidebar's own views swallow
     /// `otherMouseDown` rather than passing it on: the tab list's
     /// NSOutlineView and the SwiftUI hosting views (Spaces strip, rows,
-    /// bottom bar) all keep it. Returns false when the pointer isn't over a
-    /// sidebar, or the sidebar didn't take the event.
-    private func routeSideButtonToSidebar(_ event: NSEvent) -> Bool {
+    /// bottom bar) all keep it. `sendEvent` calls it for the button shape;
+    /// `PhiApplication.sendEvent` calls it for the swipe shape, which it
+    /// turns into page Back/Forward before any window sees it. Returns false
+    /// when the pointer isn't over a sidebar, or the sidebar didn't take the
+    /// event.
+    @objc func routeSideButtonToSidebar(_ event: NSEvent) -> Bool {
         guard event.type == .otherMouseDown || event.type == .swipe,
               let hit = contentView?.superview?.hitTest(event.locationInWindow) else { return false }
         let surface = sequence(first: hit as NSResponder, next: { $0.nextResponder })

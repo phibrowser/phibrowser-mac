@@ -10,6 +10,7 @@ import SwiftUI
 struct SpacePairingStepView: View {
     @ObservedObject var viewModel: PairingWizardViewModel
     let model: SpacePairingModel
+    @Environment(\.colorScheme) private var colorScheme
 
     /// Localized unresolved-name display; pure logic returns nil.
     static let unresolvedName = NSLocalizedString("sync.pairing.spaces.unknownName",
@@ -137,10 +138,14 @@ struct SpacePairingStepView: View {
                                                           comment: "Sync setup Space matching - picker option for an account Space; %1$@ is the Space name, %2$@ its profile"),
                                 summary.name, model.profileName(for: summary) ?? Self.unresolvedName))
                         } icon: {
-                            // Reuse the left column's icon component: icons quickly show that a local Space
-                            // corresponds to the account Space.
-                            SpaceIconView(storedValue: summary.iconName, size: 14,
-                                          symbolWeight: .regular, tint: Color.primary)
+                            // Show the left column's icon: icons quickly show that a local Space corresponds
+                            // to the account Space. A menu item keeps only an image and a title, so
+                            // SpaceIconView itself cannot go here: its frame is dropped, leaving a phi-icon
+                            // unsized (it has shown stretched across the button), and an emoji icon replaces
+                            // the title.
+                            if let icon = menuIcon(for: summary) {
+                                Image(nsImage: icon)
+                            }
                         }
                         .tag(SpacePairingModel.Assignment?.some(.existing(syncUuid: summary.syncUuid)))
                     }
@@ -199,6 +204,14 @@ struct SpacePairingStepView: View {
                                       value: "Space “%@” is the default Space and is already in your account",
                                       comment: "Sync setup Space matching - VoiceOver label for the default Space row; %@ is the Space name"),
             local.name))
+    }
+
+    /// The fixed-size icon the other Space menus use. Phi-icons and emoji come back as a bitmap in the
+    /// current appearance's ink, so read the color scheme to redraw them when the appearance flips while
+    /// this step is up.
+    private func menuIcon(for summary: PhiAccountSpaceSummary) -> NSImage? {
+        _ = colorScheme
+        return SpaceIconView.menuImage(for: summary.iconName)
     }
 
     /// Read via model.assignment(for:) so stale selections display Choose… rather than a blank Picker, as with

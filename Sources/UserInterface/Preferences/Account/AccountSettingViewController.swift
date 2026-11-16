@@ -1165,6 +1165,22 @@ class AccountCardView: SettingItemBackgroundView {
         return btn
     }()
 
+    /// The in-place name editor while the name is being changed; nil otherwise.
+    private var nameEditField: InlineRenameTextField?
+
+    /// The inline red message for an invalid name, shown on the email line
+    /// while editing. It wraps to a second line: the column beside Sign out is
+    /// too narrow for the longer messages on one.
+    private let nameErrorLabel: NSTextField = {
+        let tf = NSTextField(wrappingLabelWithString: "")
+        tf.font = .systemFont(ofSize: 11, weight: .regular)
+        tf.textColor = .systemRed
+        tf.maximumNumberOfLines = 2
+        tf.cell?.truncatesLastVisibleLine = true
+        tf.isHidden = true
+        return tf
+    }()
+
     private let emailLabel: NSTextField = {
         let tf = NSTextField(labelWithString: "")
         tf.font = .systemFont(ofSize: 11, weight: .regular)
@@ -1365,6 +1381,11 @@ class AccountCardView: SettingItemBackgroundView {
             make.size.equalTo(11)
         }
 
+        // Double-clicking the name edits it in place, like the pencil.
+        let nameDoubleClick = NSClickGestureRecognizer(target: self, action: #selector(nameEditTapped))
+        nameDoubleClick.numberOfClicksRequired = 2
+        nameLabel.addGestureRecognizer(nameDoubleClick)
+
         // Email label
         addSubview(emailLabel)
         emailLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -1372,6 +1393,15 @@ class AccountCardView: SettingItemBackgroundView {
             make.left.equalTo(avatarContainerView.snp.right).offset(12)
             make.top.equalTo(snp.centerY).offset(2)
             make.right.lessThanOrEqualTo(logoutButton.snp.left).offset(-8)
+        }
+
+        addSubview(nameErrorLabel)
+        nameErrorLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        nameErrorLabel.snp.makeConstraints { make in
+            make.left.equalTo(emailLabel)
+            make.top.equalTo(snp.centerY).offset(2)
+            // A fixed width, so the label wraps instead of growing.
+            make.right.equalTo(logoutButton.snp.left).offset(-8)
         }
 
         addSubview(logoutStatusLabel)
@@ -1489,6 +1519,7 @@ class AccountCardView: SettingItemBackgroundView {
     private func updateLoadingState(_ isLoading: Bool) {
         guard !isGuestPresentation else { return }
         if isLoading {
+            endNameEditing()
             loadingIndicator.startAnimation(nil)
             loadingIndicator.isHidden = false
             logoutButton.isHidden = true
@@ -1515,6 +1546,7 @@ class AccountCardView: SettingItemBackgroundView {
 
     func updateGuestPresentation(_ isGuest: Bool) {
         guard isGuestPresentation != isGuest else { return }
+        endNameEditing()
         isGuestPresentation = isGuest
         updateNameLayout(isGuest: isGuest)
         avatarRevalidateTask?.cancel()
@@ -1669,7 +1701,7 @@ class AccountCardView: SettingItemBackgroundView {
             animateAlpha(of: avatarEditButton, to: 1)
         } else if zone == "name" {
             isNameHovered = true
-            animateAlpha(of: nameEditIconButton, to: 1)
+            if nameEditField == nil { animateAlpha(of: nameEditIconButton, to: 1) }
         }
     }
 
@@ -1702,51 +1734,73 @@ class AccountCardView: SettingItemBackgroundView {
     // MARK: Name editing
 
     @objc private func nameEditTapped() {
-        guard canEdit else { return }
-        showRenameDialog()
+        guard canEdit, !isGuestPresentation, nameEditField == nil, !nameLabel.isHidden else { return }
+        beginNameEditing()
     }
 
-    private func showRenameDialog() {
-        let alert = NSAlert()
-        alert.messageText = NSLocalizedString("settings.account.renameDialog.title", value: "Change Name", comment: "Account settings - Dialog title for changing user name")
-        alert.addButton(withTitle: NSLocalizedString("settings.account.renameDialog.saveButton", value: "Save", comment: "Account settings - Save button in rename dialog"))
-        alert.addButton(withTitle: NSLocalizedString("settings.account.renameDialog.cancelButton", value: "Cancel", comment: "Account settings - Cancel button in rename dialog"))
-
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        textField.stringValue = viewModel.userName
-        alert.accessoryView = textField
-        alert.window.initialFirstResponder = textField
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-
-        let newValue = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if newValue.isEmpty {
-            let errorAlert = NSAlert()
-            errorAlert.messageText = NSLocalizedString("settings.account.renameDialog.emptyNameError.title", value: "Invalid Input", comment: "Account settings - Alert title for invalid input")
-            errorAlert.informativeText = NSLocalizedString("settings.account.renameDialog.emptyNameError.message", value: "Name cannot be empty", comment: "Account settings - Error message when user name is empty")
-            errorAlert.alertStyle = .warning
-            errorAlert.addButton(withTitle: NSLocalizedString("settings.account.renameDialog.emptyNameError.dismissButton", value: "OK", comment: "Account settings - OK button"))
-            errorAlert.runModal()
-            return
+    /// Swaps the name label for an in-place field with the name selected.
+    /// Enter saves, Escape or a click outside cancels.
+    private func beginNameEditing() {
+        let field = InlineRenameTextField(text: viewModel.userName, font: nameLabel.font ?? .systemFont(ofSize: 16, weight: .medium))
+        field.onTextChange = { [weak self] text in self?.showNameError(Self.userNameError(for: text)) }
+        field.onSubmit = { [weak self] text in self?.commitNameEditing(text) ?? true }
+        field.onCancel = { [weak self] in self?.endNameEditing() }
+        nameEditField = field
+        nameLabel.isHidden = true
+        nameEditIconButton.isHidden = true
+        nameHoverArea.addSubview(field)
+        field.snp.makeConstraints { make in
+            make.left.equalToSuperview().offset(10)
+            make.right.equalToSuperview().offset(-8)
+            make.centerY.equalTo(nameLabel)
         }
+    }
 
-        if newValue.count > Self.maxUserNameLength {
-            let errorAlert = NSAlert()
-            errorAlert.messageText = NSLocalizedString("settings.account.renameDialog.nameTooLongError.title", value: "Invalid Input", comment: "Account settings - Alert title for invalid input")
-            errorAlert.informativeText = String(format: NSLocalizedString("settings.account.renameDialog.nameTooLongError.message", value: "Name cannot exceed %d characters", comment: "Account settings - Error message when user name is too long"), Self.maxUserNameLength)
-            errorAlert.alertStyle = .warning
-            errorAlert.addButton(withTitle: NSLocalizedString("settings.account.renameDialog.nameTooLongError.dismissButton", value: "OK", comment: "Account settings - OK button"))
-            errorAlert.runModal()
-            return
+    /// Restores the name label. Safe to call when no edit is in progress.
+    private func endNameEditing() {
+        guard let field = nameEditField else { return }
+        nameEditField = nil
+        field.removeFromSuperview()
+        nameEditIconButton.isHidden = false
+        nameEditIconButton.alphaValue = isNameHovered && canEdit ? 1 : 0
+        nameLabel.isHidden = !loadingIndicator.isHidden && !isGuestPresentation
+        showNameError(nil)
+    }
+
+    /// Enter in the field. Returns false, keeping the field open with the error
+    /// shown, while the name is empty or too long.
+    private func commitNameEditing(_ text: String) -> Bool {
+        let newValue = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let error = Self.userNameError(for: newValue) {
+            showNameError(error)
+            return false
         }
-
+        endNameEditing()
         if newValue != viewModel.userName {
             onUserNameUpdated?(newValue)
             Task {
                 await viewModel.updateUserName(newValue)
             }
         }
+        return true
+    }
+
+    private static func userNameError(for text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return NSLocalizedString("settings.account.renameDialog.emptyNameError.message", value: "Name cannot be empty", comment: "Account settings - Error message when user name is empty")
+        }
+        if trimmed.count > maxUserNameLength {
+            return String(format: NSLocalizedString("settings.account.renameDialog.nameTooLongError.message", value: "Name cannot exceed %d characters", comment: "Account settings - Error message when user name is too long"), maxUserNameLength)
+        }
+        return nil
+    }
+
+    /// Shows `error` in red on the email line, or restores the email line.
+    private func showNameError(_ error: String?) {
+        nameErrorLabel.stringValue = error ?? ""
+        nameErrorLabel.isHidden = error == nil
+        emailLabel.alphaValue = error == nil ? 1 : 0
     }
 
     // MARK: Logout

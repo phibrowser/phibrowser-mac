@@ -36,6 +36,9 @@ struct SpacesSettingsView: View {
     /// renumbering is written once, on drop, via `SpaceManager.reorder`.
     @State private var draggingSpaceId: String?
     @State private var orderedIds: [String] = []
+    /// The Space whose name is being edited in place (`InlineRenameField`).
+    @State private var renamingSpaceId: String?
+    @FocusState private var isListFocused: Bool
 
     private static let spaceListPanelWidth: CGFloat = 280
     private static let detailPanelWidth: CGFloat = 312
@@ -90,6 +93,7 @@ struct SpacesSettingsView: View {
         }
         .onChange(of: spaceManager.storeIdentifier) { _, _ in
             draggingSpaceId = nil
+            renamingSpaceId = nil
             orderedIds = listedSpaces.map(\.spaceId)
             selectedSpaceId = nil
             selectInitialSpace()
@@ -144,13 +148,30 @@ struct SpacesSettingsView: View {
 
             SettingsRowDivider()
 
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(orderedSpaces, id: \.spaceId) { space in
-                        spaceListRow(space)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(orderedSpaces, id: \.spaceId) { space in
+                            spaceListRow(space)
+                                .id(space.spaceId)
+                        }
                     }
+                    .padding(6)
                 }
-                .padding(6)
+                // Finder-style list keys: Enter renames the selected Space, the
+                // arrows move the selection. The rename field consumes these
+                // itself while it is editing.
+                .focusable()
+                .focusEffectDisabled()
+                .focused($isListFocused)
+                .onKeyPress(.return) {
+                    guard renamingSpaceId == nil, let space = selectedSpace,
+                          orderedSpaces.contains(where: { $0.spaceId == space.spaceId }) else { return .ignored }
+                    beginRename(space)
+                    return .handled
+                }
+                .onKeyPress(.upArrow) { moveSelection(by: -1, proxy: proxy) }
+                .onKeyPress(.downArrow) { moveSelection(by: 1, proxy: proxy) }
             }
 
             SettingsRowDivider()
@@ -215,21 +236,37 @@ struct SpacesSettingsView: View {
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 12, weight: .medium))
                 .themedForeground(isSelected ? ThemedColor(.white) : .textSecondary)
-            Button {
-                select(space.spaceId)
-            } label: {
+            if renamingSpaceId == space.spaceId {
                 HStack(spacing: 8) {
                     spaceSwatch(space, size: 20, isSelected: isSelected)
-                    Text(space.name)
-                        .font(.system(size: 13))
-                        .themedForeground(isSelected ? ThemedColor(.white) : .textPrimary)
-                        .lineLimit(1)
-                        .customTooltip(space.name)
-                    Spacer(minLength: 4)
+                    InlineRenameField(
+                        initialText: space.name,
+                        onTextChange: { _ in },
+                        onSubmit: { commitRename(space, text: $0) },
+                        onCancel: { endRename(space.spaceId) }
+                    )
+                    .frame(maxWidth: .infinity)
                 }
-                .contentShape(Rectangle())
+            } else {
+                Button {
+                    select(space.spaceId)
+                } label: {
+                    HStack(spacing: 8) {
+                        spaceSwatch(space, size: 20, isSelected: isSelected)
+                        Text(space.name)
+                            .font(.system(size: 13))
+                            .themedForeground(isSelected ? ThemedColor(.white) : .textPrimary)
+                            .lineLimit(1)
+                            .customTooltip(space.name)
+                        Spacer(minLength: 4)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                // Simultaneous, so the single click still selects at once with
+                // no double-click delay.
+                .simultaneousGesture(TapGesture(count: 2).onEnded { beginRename(space) })
             }
-            .buttonStyle(.plain)
             Picker("", selection: profileBinding(space.spaceId)) {
                 ForEach(profileManager.userAssignableProfiles, id: \.profileId) { profile in
                     Text(profile.displayName).tag(profile.profileId)
@@ -701,7 +738,21 @@ struct SpacesSettingsView: View {
     }
 
     private func select(_ spaceId: String) {
+        // Selecting another row cancels an edit in progress.
+        if renamingSpaceId != spaceId { renamingSpaceId = nil }
         selectedSpaceId = spaceId
+        isListFocused = true
+    }
+
+    private func moveSelection(by offset: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
+        guard renamingSpaceId == nil, draggingSpaceId == nil else { return .ignored }
+        let ids = orderedSpaces.map(\.spaceId)
+        guard !ids.isEmpty else { return .ignored }
+        let current = selectedSpaceId.flatMap { ids.firstIndex(of: $0) } ?? (offset > 0 ? -1 : ids.count)
+        let next = min(max(current + offset, 0), ids.count - 1)
+        select(ids[next])
+        proxy.scrollTo(ids[next])
+        return .handled
     }
 
     // MARK: - Detail bindings
@@ -741,27 +792,33 @@ struct SpacesSettingsView: View {
 
     private func renameSelected() {
         guard let space = selectedSpace else { return }
-        renameSpace(space)
+        beginRename(space)
     }
 
-    private func renameSpace(_ space: Space) {
-        let alert = NSAlert()
-        alert.messageText = NSLocalizedString("settings.spaces.renameDialog.title", value: "Rename Space", comment: "Title of the rename-Space dialog")
-        alert.informativeText = NSLocalizedString("settings.spaces.renameDialog.message", value: "Enter a new name for this Space.", comment: "Body of the rename-Space dialog")
-        alert.addButton(withTitle: NSLocalizedString("settings.spaces.renameDialog.renameButton", value: "Rename", comment: "Rename button"))
-        alert.addButton(withTitle: NSLocalizedString("settings.spaces.renameDialog.cancelButton", value: "Cancel", comment: "Cancel button"))
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
-        textField.stringValue = space.name
-        textField.placeholderString = space.name
-        alert.accessoryView = textField
-        DispatchQueue.main.async {
-            textField.window?.makeFirstResponder(textField)
-            textField.selectText(nil)
-        }
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let trimmed = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != space.name else { return }
+    // MARK: - Rename in place
+
+    private func beginRename(_ space: Space) {
+        guard draggingSpaceId == nil else { return }
+        selectedSpaceId = space.spaceId
+        renamingSpaceId = space.spaceId
+    }
+
+    /// Ends the edit of `spaceId` only: a field torn down because another row
+    /// started editing must not end that row's edit.
+    private func endRename(_ spaceId: String) {
+        guard renamingSpaceId == spaceId else { return }
+        renamingSpaceId = nil
+        isListFocused = true
+    }
+
+    /// Enter in the field. An empty or unchanged name ends the edit without
+    /// renaming.
+    private func commitRename(_ space: Space, text: String) -> Bool {
+        endRename(space.spaceId)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != space.name else { return true }
         spaceManager.renameSpace(spaceId: space.spaceId, to: trimmed, expectedStoreIdentifier: space.storeIdentifier)
+        return true
     }
 
     private func changeSpaceProfile(spaceId: String, to profile: PhiBrowserProfile) {

@@ -1142,7 +1142,7 @@ extension AppController {
     }
 
     @objc func newProfile(_ sender: Any?) {
-        guard let name = ProfileNameFieldValidator.present(.create) else { return }
+        guard let name = ProfileNameFieldValidator.presentCreate() else { return }
         ProfileManager.shared.createProfile(displayName: name) { _ in }
     }
 

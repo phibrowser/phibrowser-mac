@@ -300,6 +300,7 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewModel.setHoverSuppressed(false)
         viewModel.setActiveSuppressed(false, activeValue: false)
         viewModel.setHovered(false)
+        viewModel.splitDropSide = nil
         viewModel.isPressed = false
         // Peek attachment is tab identity, not preservable visual state — a
         // reused row must never show the previous tab's peek indicator.
@@ -330,6 +331,13 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
     func setHovered(_ hovered: Bool) {
         viewModel.setHovered(hovered)
         tabPreviewRegistration.setHovering(hovered && !viewModel.isHoverSuppressed)
+    }
+
+    func setSplitDropTargetHighlighted(_ side: TabSplitDropSide?) {
+        viewModel.splitDropSide = side
+        if side != nil {
+            tabPreviewRegistration.cancelForInteraction()
+        }
     }
 
     func cancelTabPreviewForInteraction() {

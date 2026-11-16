@@ -224,6 +224,21 @@ final class ShellWindow: NSWindow {
         }
     }
 
+    /// Mouse back/forward side buttons over a sidebar (docked or floating)
+    /// switch Space; over the page they still navigate. Routed here instead
+    /// of up the responder chain because the sidebar's own views swallow
+    /// `otherMouseDown` rather than passing it on: the tab list's
+    /// NSOutlineView and the SwiftUI hosting views (Spaces strip, rows,
+    /// bottom bar) all keep it. Returns false when the pointer isn't over a
+    /// sidebar, or the sidebar didn't take the event.
+    private func routeSideButtonToSidebar(_ event: NSEvent) -> Bool {
+        guard event.type == .otherMouseDown || event.type == .swipe,
+              let hit = contentView?.superview?.hitTest(event.locationInWindow) else { return false }
+        let surface = sequence(first: hit as NSResponder, next: { $0.nextResponder })
+            .lazy.compactMap { $0 as? any SpaceSwitchBandSurface }.first
+        return surface?.handleSideButtonSpaceSwitch(event) == true
+    }
+
     override func sendEvent(_ event: NSEvent) {
         if let target = redispatchTarget(for: event) {
             // Nothing took the second pass: the Chromium window's
@@ -231,6 +246,7 @@ final class ShellWindow: NSWindow {
             target.sendEvent(event)
             return
         }
+        if routeSideButtonToSidebar(event) { return }
         switch event.type {
         case .keyDown:
             // AppKit does not run performKeyEquivalent for Option-only keys;

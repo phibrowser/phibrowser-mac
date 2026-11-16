@@ -706,6 +706,13 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         }
     }
 
+    /// Mouse back/forward side buttons over the sidebar switch Space.
+    /// Skipped while the create-Space overlay is up, like the swipe.
+    func handleSideButtonSpaceSwitch(_ event: NSEvent) -> Bool {
+        guard createSpaceOverlay == nil, let step = sideButtonSpaceStep(for: event) else { return false }
+        return activateAdjacentSpace(by: step, state: state)
+    }
+
     /// Update chat button visibility based on configuration and current tab's aiChatEnabled
     private func updateChatButtonVisibility() {
         let navigationAtTop = PhiPreferences.GeneralSettings.loadLayoutMode().showsNavigationAtTop

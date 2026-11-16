@@ -62,6 +62,13 @@ protocol SpaceSwitchBandSurface: NSViewController {
     /// surfaces already expose it for the slot's pointer-vs-row test; the
     /// chip flight below rides the same reference.
     var spacesStripRowView: NSView? { get }
+
+    /// Switches to the previous/next Space for a mouse back/forward side
+    /// button pressed over this surface (`sideButtonSpaceStep(for:)`).
+    /// `ShellWindow.sendEvent` routes the event here when the pointer is
+    /// over the surface. Returns false when the surface doesn't take it, so
+    /// the window dispatches it as usual.
+    func handleSideButtonSpaceSwitch(_ event: NSEvent) -> Bool
 }
 
 extension SpaceSwitchBandSurface {
@@ -161,24 +168,49 @@ extension SpaceSwitchBandSurface {
     /// suppressed and the window never joins a slot), and without the guard
     /// the `keySlot` fallback below would switch the Space of a DIFFERENT
     /// (normal) window from a swipe in the incognito sidebar.
-    func activateAdjacentSpace(by step: Int, state: BrowserState) {
+    ///
+    /// Returns false when this window doesn't switch Spaces at all, so the
+    /// caller can hand the event on; true once it switched or bounced.
+    @discardableResult
+    func activateAdjacentSpace(by step: Int, state: BrowserState) -> Bool {
         guard !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional,
               PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
-              state.participatesInSpaces else { return }
-        guard let slot = state.windowController?.slot ?? SpaceManager.shared.keySlot else { return }
+              state.participatesInSpaces else { return false }
+        guard let slot = state.windowController?.slot ?? SpaceManager.shared.keySlot else { return false }
         // The slot's own list: agent Spaces hosted by other windows are not
         // swiped through here (`SpaceWindowSlot.presents`).
         let spaces = slot.presentedSpaces
         guard let currentId = slot.activeSpaceId,
-              let currentIdx = spaces.firstIndex(where: { $0.spaceId == currentId }) else { return }
+              let currentIdx = spaces.firstIndex(where: { $0.spaceId == currentId }) else { return false }
         let targetIdx = currentIdx + step
         guard spaces.indices.contains(targetIdx) else {
             // Already at the first/last Space (or only one exists) — there's
             // nowhere to switch, so play the rubber-band end effect instead of
             // silently swallowing the swipe.
             bounceSpaceSwitchBand(forward: step > 0)
-            return
+            return true
         }
         slot.activate(spaceId: spaces[targetIdx].spaceId, userInitiated: true)
+        return true
+    }
+
+    /// The Space step a mouse back/forward side button asks for: -1 for
+    /// back, +1 for forward, nil for any other event. Mice reach the app in
+    /// one of two shapes:
+    /// - `otherMouseDown` with button 3 (back) / 4 (forward): plain mice,
+    ///   LinearMouse, Logi Options+ "Generic button".
+    /// - a `swipe` event, `deltaX` +1 (back) / -1 (forward): the shape Logi
+    ///   Options+ "Back/Forward" and SensibleSideButtons post. A swipe that
+    ///   carries a direction is currently taken as page Back/Forward before
+    ///   it reaches `ShellWindow.sendEvent`, so this case only applies to
+    ///   swipes that do reach the window.
+    func sideButtonSpaceStep(for event: NSEvent) -> Int? {
+        switch event.type {
+        case .otherMouseDown where event.buttonNumber == 3: return -1
+        case .otherMouseDown where event.buttonNumber == 4: return 1
+        case .swipe where event.deltaX > 0: return -1
+        case .swipe where event.deltaX < 0: return 1
+        default: return nil
+        }
     }
 }

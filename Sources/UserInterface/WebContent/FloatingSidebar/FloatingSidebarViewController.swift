@@ -330,6 +330,13 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         }
     }
 
+    /// Mouse back/forward side buttons over the panel switch Space,
+    /// mirroring the docked sidebar.
+    func handleSideButtonSpaceSwitch(_ event: NSEvent) -> Bool {
+        guard createSpaceOverlay == nil, let step = sideButtonSpaceStep(for: event) else { return false }
+        return activateAdjacentSpace(by: step, state: state)
+    }
+
     deinit {
         tabList.tearDown()
     }

@@ -258,7 +258,9 @@ private final class TabGroupHeaderHostingView: NSHostingView<TabGroupHeaderView>
             at: pendingMouseDownPoint ?? .zero,
             in: bounds
         )
-        if pendingHitTarget == .closeGroup, rootView.viewModel.isHeaderHovered == false {
+        let viewModel = rootView.viewModel
+        if pendingHitTarget == .closeGroup,
+           !viewModel.isHeaderHovered, !viewModel.isCloseArmedForTouch {
             pendingHitTarget = nil
         }
         manualDragInProgress = false
@@ -450,6 +452,7 @@ final class TabGroupCellView: SidebarCellView {
         isHovered = false
         isOverviewSelected = false
         viewModel.isHeaderHovered = false
+        viewModel.isTouchRevealed = false
         viewModel.isOverviewSelected = false
         isTemporarilyCollapsedForDrag = false
         configuredGroup = nil
@@ -916,6 +919,14 @@ final class TabGroupCellView: SidebarCellView {
         guard isHovered != hovered else { return }
         isHovered = hovered
         applyHighlightVisuals()
+    }
+
+    override func setTouchRevealed(_ revealed: Bool) {
+        viewModel.isTouchRevealed = revealed
+    }
+
+    override func touchWillBegin() {
+        viewModel.isCloseArmedForTouch = viewModel.isTouchRevealed
     }
 
     /// Resolves the context-menu owner for a right-click at `point` in

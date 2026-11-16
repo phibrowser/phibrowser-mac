@@ -53,6 +53,8 @@ private final class BookmarkCellViewState {
     var isActive = false
     var isOpened = false
     var isHovered = false
+    /// A touch revealed the row's hover-only controls (touch has no hover).
+    var isTouchRevealed = false
     var isPressed = false
     var isEditing = false
     var isMultiSelected = false
@@ -292,7 +294,14 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         press.minimumPressDuration = 0
         press.allowableMovement = 5
         press.delaysPrimaryMouseButtonEvents = false
+        // macOS 27 defaults to direct touches; a zero-duration press would claim
+        // touch-down ahead of the row's click emulation and sidebar scrolling.
+        press.allowedTouchTypes = []
         addGestureRecognizer(press)
+    }
+
+    override func setTouchRevealed(_ revealed: Bool) {
+        viewState.isTouchRevealed = revealed
     }
 
     @objc private func handlePress(_ recognizer: NSPressGestureRecognizer) {
@@ -332,6 +341,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewState.isOpened = false
         isPointerHovered = false
         viewState.isHovered = false
+        viewState.isTouchRevealed = false
         viewState.isPressed = false
         viewState.isEditing = false
         viewState.isMultiSelected = false
@@ -1057,7 +1067,8 @@ private struct SidebarBookmarkCellContentView: View {
         // While a peek is attached, the row's only close affordance is the
         // peek indicator's "minus" — hide the tab close button so hover
         // doesn't show two close controls side by side.
-        state.isOpened && state.isHovered && !state.isEditing && !state.showsPeek
+        state.isOpened && (state.isHovered || state.isTouchRevealed)
+            && !state.isEditing && !state.showsPeek
     }
 
     private var faviconHoverAction: BookmarkFaviconHoverAction? {
@@ -1186,6 +1197,7 @@ private struct SidebarBookmarkCellContentView: View {
 
             if state.showsPeek, !state.isEditing {
                 SidebarPeekIndicatorView(viewModel: peekTabViewModel,
+                                         isTouchRevealed: state.isTouchRevealed,
                                          onClose: onClosePeek)
             }
 
@@ -1247,8 +1259,12 @@ private struct NavigatedAwaySeparator: View {
 /// close button on hover (mirrors UnifiedTabCloseButton's styling).
 struct SidebarPeekIndicatorView: View {
     let viewModel: TabViewModel
+    /// The row was touch-revealed; show the minus as hover would.
+    var isTouchRevealed = false
     let onClose: () -> Void
     @State private var isHovered = false
+
+    private var showsMinus: Bool { isHovered || isTouchRevealed }
 
     var body: some View {
         Button(action: onClose) {
@@ -1256,10 +1272,10 @@ struct SidebarPeekIndicatorView: View {
                 // On hover the favicon stays visible, dimmed, behind the
                 // minus glyph — the icon still says which page the peek is.
                 UnifiedTabFaviconView(viewModel: viewModel)
-                    .opacity(isHovered ? 0.25 : 1)
+                    .opacity(showsMinus ? 0.25 : 1)
                 Image(systemName: "minus")
                     .font(.system(size: 11, weight: .semibold))
-                    .opacity(isHovered ? 1 : 0)
+                    .opacity(showsMinus ? 1 : 0)
             }
             .frame(width: 24, height: 24)
             .contentShape(Rectangle())

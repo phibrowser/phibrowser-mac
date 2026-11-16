@@ -186,6 +186,15 @@ final class TabItemView: NSView {
         }
     }
 
+    /// Touch has no hover: while touch is the current input, the active tab
+    /// keeps its close button visible (HIG, tabbed windows). Set by the strip.
+    var revealsCloseButtonForTouch = false {
+        didSet {
+            guard oldValue != revealsCloseButtonForTouch else { return }
+            layoutContent()
+        }
+    }
+
     // MARK: - Subviews
 
     // Favicon & Title (Non-interactive parts)
@@ -258,7 +267,7 @@ final class TabItemView: NSView {
         // Merged split cells expose one close button per pane; all fade in
         // on hover. Each `MergedPaneViews.closeButtonHostingView` closes
         // its own pane's tab.
-        layoutMode == .normal && isHovered
+        layoutMode == .normal && (isHovered || (revealsCloseButtonForTouch && isActive))
     }
 
     /// Horizontal extent of pane `index` (0 = host) when the merged cell

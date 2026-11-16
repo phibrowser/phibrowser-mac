@@ -73,6 +73,18 @@
         }
       }
     },
+    "sidebar.bookmarkContextMenu.closeOpenTabAction" : {
+      "comment" : "Sidebar bookmark context menu - Closes the tab currently open from this bookmark; the bookmark itself stays",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close Tab"
+          }
+        }
+      }
+    },
     "settings.general.sidebarPosition.left" : {
       "comment" : "General settings - Left sidebar position",
       "extractionState" : "manual",

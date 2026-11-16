@@ -541,6 +541,9 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     private var isSidebarContentActive = false
     private var lastPersistedFavoriteHeight: CGFloat?
     private var sidebarTrackingArea: NSTrackingArea?
+    private var touchTapObserver: TouchTapObserver?
+    private var pointerMotionObserver: PointerMotionObserver?
+    private weak var touchRevealedCell: SidebarCellView?
 
     
     init(browserState: BrowserState, mediaController: SidebarMediaController) {
@@ -601,6 +604,11 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         updateMemoryButtonVisibility()
         updateSidebarContentActivation()
         updateSpaceTintGradient()
+        touchTapObserver = TouchTapObserver(
+            view: view,
+            onTouchBegan: { [weak self] in self?.touchRevealedCell?.touchWillBegin() },
+            onTap: { [weak self] location in self?.handleTouch(at: location) }
+        )
     }
 
     override func viewDidLayout() {
@@ -635,6 +643,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         mediaController.setActive(false, on: mediaSurface)
         // A concealed Space's sidebar keeps its hover state for its next reveal.
         guard view.window == nil else { return }
+        endTouchReveal()
         setHoverControlsVisible(false, animated: false)
     }
 
@@ -653,7 +662,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         }
         // A Space switch swapping sessions under a still pointer sends the
         // leaving sidebar an exit; keep its controls for its next reveal.
-        guard !view.isHiddenOrHasHiddenAncestor, !isPointerInside else { return }
+        guard !view.isHiddenOrHasHiddenAncestor, !isPointerInside, !isTouchRevealActive else { return }
         setHoverControlsVisible(false)
     }
 
@@ -667,7 +676,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     /// its controls as they already were, not fade them in from nothing.
     private func updateHoverControlsForCurrentMouseLocation() {
         // A concealed session's sidebar keeps its state until it shows again.
-        guard !view.isHiddenOrHasHiddenAncestor else { return }
+        guard !view.isHiddenOrHasHiddenAncestor, !isTouchRevealActive else { return }
         setHoverControlsVisible(isPointerInside, animated: false)
     }
 
@@ -675,6 +684,59 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         guard let window = view.window else { return false }
         let point = view.convert(window.mouseLocationOutsideOfEventStream, from: nil)
         return view.visibleRect.contains(point)
+    }
+
+    // MARK: - Touch
+
+    private var isTouchRevealActive: Bool { pointerMotionObserver != nil }
+
+    /// Touch has no hover, so a tap in the sidebar reveals the controls the
+    /// pointer would: the sidebar's hover controls plus the tapped row's own.
+    /// They stay until the pointer moves again or the sidebar leaves the
+    /// window. A touch outside the sidebar is not observed: a direct-touch
+    /// recognizer on an ancestor of the web content stops AppKit's
+    /// touch-to-mouse emulation for Chromium.
+    private func handleTouch(at locationInWindow: NSPoint) {
+        guard let contentView = view.window?.contentView else { return }
+        let cell = sidebarCell(at: locationInWindow)
+        if touchRevealedCell !== cell {
+            touchRevealedCell?.setTouchRevealed(false)
+            touchRevealedCell = cell
+        }
+        // A reused cell drops its reveal; set it on every tap.
+        cell?.setTouchRevealed(true)
+        setHoverControlsVisible(true)
+
+        if let pointerMotionObserver {
+            pointerMotionObserver.noteTouch(at: locationInWindow)
+        } else {
+            pointerMotionObserver = PointerMotionObserver(
+                view: contentView,
+                touchLocationInWindow: locationInWindow
+            ) { [weak self] in
+                self?.endTouchReveal()
+            }
+        }
+    }
+
+    private func endTouchReveal() {
+        touchRevealedCell?.setTouchRevealed(false)
+        touchRevealedCell = nil
+        pointerMotionObserver?.invalidate()
+        pointerMotionObserver = nil
+        updateHoverControlsForCurrentMouseLocation()
+    }
+
+    private func sidebarCell(at locationInWindow: NSPoint) -> SidebarCellView? {
+        guard let superview = view.superview else { return nil }
+        var candidate = view.hitTest(superview.convert(locationInWindow, from: nil))
+        while let current = candidate, current !== view {
+            if let cell = current as? SidebarCellView {
+                return cell
+            }
+            candidate = current.superview
+        }
+        return nil
     }
 
     /// Binds the bottom bar's download button to the downloads manager exactly

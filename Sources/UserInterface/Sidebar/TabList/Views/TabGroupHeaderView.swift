@@ -26,6 +26,16 @@ final class TabGroupHeaderViewModel {
     /// `TabGroupHeaderHostingView`'s hit-test guard so a click in the
     /// close zone is only counted when the button is visible.
     var isHeaderHovered: Bool = false
+    /// A touch revealed the close button (touch has no hover).
+    var isTouchRevealed: Bool = false {
+        didSet {
+            if !isTouchRevealed { isCloseArmedForTouch = false }
+        }
+    }
+    /// The close button was already touch-revealed when the current touch
+    /// began, so a tap on it closes instead of only revealing it.
+    var isCloseArmedForTouch: Bool = false
+    var showsCloseButton: Bool { isHeaderHovered || isTouchRevealed }
     /// Mirrors `WebContentGroupInfo.isCollapsed` so the inline chevron
     /// in `TabGroupHeaderView` can rotate without driving the state.
     var isCollapsed: Bool = false
@@ -141,7 +151,7 @@ struct TabGroupHeaderView: View {
                     .font(.system(size: 11, weight: .semibold))
             }
             .frame(width: 24, height: 24)
-            .opacity(viewModel.isHeaderHovered ? 1 : 0)
+            .opacity(viewModel.showsCloseButton ? 1 : 0)
             .onHover { hovering in
                 isCloseButtonHovered = hovering && viewModel.isHeaderHovered
             }

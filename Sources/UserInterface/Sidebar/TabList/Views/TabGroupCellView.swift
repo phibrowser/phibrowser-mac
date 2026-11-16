@@ -397,6 +397,7 @@ final class TabGroupCellView: SidebarCellView {
     private var splitsByKey: [Int: SplitSidebarItem] = [:]
     private var activeDragTabGuid: Int?
     private var splitDropTarget: TabSplitDropTarget?
+    private var splitPaneDropTarget: SplitPaneDropTarget?
 
     private var isDropTargetHighlighted = false
     private var isHovered = false
@@ -599,6 +600,9 @@ final class TabGroupCellView: SidebarCellView {
                 cell.browserState = self.configuredBrowserState
                 cell.owner = self.groupCellDelegate as? SidebarTabListItemOwner
                 cell.configure(with: split)
+                cell.setPaneDropSlotHighlighted(
+                    self.splitPaneDropTarget?.splitId == split.groupId
+                        ? self.splitPaneDropTarget?.slot : nil)
                 return cell
             }
             guard let tab = self.tabsByGuid[key] else {
@@ -1343,8 +1347,21 @@ extension TabGroupCellView: GroupTabsDragSource {
                                                   operation: dropOperation) {
             let side = groupedSplitDropSide(
                 at: info.draggingLocation, row: proposedRow)
+            setSplitPaneDropTarget(nil)
             setSplitDropTarget(TabSplitDropTarget(
                 tabId: target.guid, side: side))
+            if let group = configuredGroup {
+                groupCellDelegate?.tabGroupCell(
+                    self, didUpdateDropTargetHighlight: false, for: group)
+            }
+            return .move
+        }
+        if let (_, target) = groupedSplitPaneDrop(from: pasteboard,
+                                                  ontoRow: proposedRow,
+                                                  operation: dropOperation,
+                                                  at: info.draggingLocation) {
+            setSplitDropTarget(nil)
+            setSplitPaneDropTarget(target)
             if let group = configuredGroup {
                 groupCellDelegate?.tabGroupCell(
                     self, didUpdateDropTargetHighlight: false, for: group)
@@ -1434,6 +1451,21 @@ extension TabGroupCellView: GroupTabsDragSource {
                 rightTabId: side == .left ? target.guid : dragged.guid,
                 layout: .vertical
             ) != nil
+        }
+        if let (dragged, target) = groupedSplitPaneDrop(
+            from: info.draggingPasteboard,
+            ontoRow: row,
+            operation: dropOperation,
+            at: info.draggingLocation
+        ), let state = configuredBrowserState {
+            let slot: Int
+            if let highlightedTarget = splitPaneDropTarget,
+               highlightedTarget.splitId == target.splitId {
+                slot = highlightedTarget.slot
+            } else {
+                slot = target.slot
+            }
+            return state.addTabToSplit(target.splitId, tabId: dragged.guid, slot: slot)
         }
         let insertionRow = resolvedInnerInsertionRow(
             proposedRow: row,
@@ -1532,8 +1564,29 @@ extension TabGroupCellView: GroupTabsDragSource {
         }
     }
 
+    private func setSplitPaneDropTarget(_ target: SplitPaneDropTarget?) {
+        guard splitPaneDropTarget != target else { return }
+        let previous = splitPaneDropTarget
+        splitPaneDropTarget = target
+        for (candidate, slot) in [(previous, nil), (target, target?.slot)] {
+            guard let candidate,
+                  let row = currentMemberOrder.firstIndex(where: {
+                      splitsByKey[$0]?.groupId == candidate.splitId
+                  }),
+                  let cell = innerTable.view(
+                    atColumn: 0, row: row, makeIfNecessary: false
+                  ) as? SidebarSplitCellView else {
+                continue
+            }
+            cell.setPaneDropSlotHighlighted(slot)
+        }
+    }
+
+    /// Clears both split drop previews: the half-row on a tab and the pane
+    /// slot on a split row.
     private func clearSplitDropTarget() {
         setSplitDropTarget(nil)
+        setSplitPaneDropTarget(nil)
     }
 
     private func groupedSplitDropSide(
@@ -1568,6 +1621,65 @@ extension TabGroupCellView: GroupTabsDragSource {
             return nil
         }
         return (dragged, target)
+    }
+
+    /// The grouped counterpart of the outline's pane drop: a single member
+    /// tab dropped on a split row of this group joins that split.
+    private func groupedSplitPaneDrop(
+        from pasteboard: NSPasteboard,
+        ontoRow row: Int,
+        operation: NSTableView.DropOperation,
+        at windowPoint: NSPoint
+    ) -> (dragged: Tab, target: SplitPaneDropTarget)? {
+        guard operation == .on,
+              currentMemberOrder.indices.contains(row),
+              let state = configuredBrowserState,
+              pasteboard.string(forType: .sourceWindowId) == String(state.windowId),
+              pasteboard.string(forType: .phiBookmark) == nil,
+              pasteboard.phiBookmarkGuids().isEmpty,
+              pasteboard.phiNormalTabIds().count <= 1,
+              let draggedId = pasteboard.string(forType: .normalTab).flatMap(Int.init),
+              let split = splitsByKey[currentMemberOrder[row]],
+              state.canAddNormalTabToSplit(split.groupId, tabId: draggedId),
+              let dragged = state.normalTabs.first(where: { $0.guid == draggedId }) else {
+            return nil
+        }
+        return (dragged, SplitPaneDropTarget(
+            splitId: split.groupId,
+            slot: groupedSplitPaneDropSlot(at: windowPoint, row: row, paneCount: split.paneCount)))
+    }
+
+    private func groupedSplitPaneDropSlot(
+        at windowPoint: NSPoint,
+        row: Int,
+        paneCount: Int
+    ) -> Int {
+        SplitPaneDropTarget.slot(
+            atX: innerTable.convert(windowPoint, from: nil).x,
+            in: innerTable.rect(ofRow: row),
+            paneCount: paneCount)
+    }
+
+    /// The inner table validates a drop again only when the proposed row or
+    /// operation changes, so a preview that depends on where in the row the
+    /// pointer is gets updated here as the drag moves sideways.
+    func tableView(_ tableView: GroupTabsTableView,
+                   draggingUpdatedWith info: NSDraggingInfo) {
+        if let target = splitDropTarget,
+           let row = currentMemberOrder.firstIndex(of: target.tabId) {
+            setSplitDropTarget(TabSplitDropTarget(
+                tabId: target.tabId,
+                side: groupedSplitDropSide(at: info.draggingLocation, row: row)))
+        } else if let target = splitPaneDropTarget,
+                  let row = currentMemberOrder.firstIndex(where: {
+                      splitsByKey[$0]?.groupId == target.splitId
+                  }),
+                  let split = splitsByKey[currentMemberOrder[row]] {
+            setSplitPaneDropTarget(SplitPaneDropTarget(
+                splitId: target.splitId,
+                slot: groupedSplitPaneDropSlot(
+                    at: info.draggingLocation, row: row, paneCount: split.paneCount)))
+        }
     }
 
     private func resolvedInnerInsertionRow(

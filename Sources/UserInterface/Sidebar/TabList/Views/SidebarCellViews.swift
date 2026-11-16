@@ -600,6 +600,11 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private var statusBadgeHost: TabDecorativeHostingView?
     private var configuredPaneCount = 0
     private var configuredSplitId: String?
+    /// Slot where a dragged tab would join as a new pane, nil while no such
+    /// drop hovers the row. The placeholder stands in that slot.
+    private var paneDropSlot: Int?
+    private let paneDropPlaceholder = TabDecorativeHostingView(
+        rootView: TabSplitDropPlaceholder(cornerRadius: 6))
     private let splitTabPreviewRegistration = SplitTabPreviewRegistration()
     private var showsSplitTabPreview = false
     private var themeObserver = ThemeObserver.shared
@@ -671,6 +676,7 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
         }
         toolTip = nil
         configuredSplitId = nil
+        setPaneDropSlotHighlighted(nil)
         splitTabPreviewRegistration.invalidate()
         outerBackground.isSelected = false
         isCellHovered = false
@@ -844,6 +850,24 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
         guard count != configuredPaneCount else { return }
         configuredPaneCount = count
         for index in 0..<count { _ = segment(at: index) }
+        layoutPaneColumns()
+        installStatusBadge(models: segments.prefix(count).map(\.statusModel))
+    }
+
+    /// Shows the placeholder for a dragged tab that would join this split
+    /// as pane `slot`, or removes it for nil.
+    func setPaneDropSlotHighlighted(_ slot: Int?) {
+        guard slot != paneDropSlot else { return }
+        paneDropSlot = slot
+        guard configuredPaneCount > 0 else { return }
+        layoutPaneColumns()
+    }
+
+    /// Lays the configured segments out as equal-width columns, with the
+    /// drop placeholder as one more column in its slot while a tab hovers
+    /// the row.
+    private func layoutPaneColumns() {
+        let count = configuredPaneCount
         for (index, segment) in segments.enumerated() {
             segment.pane.isHidden = index >= count
             segment.pane.snp.removeConstraints()
@@ -852,23 +876,35 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             divider.isHidden = index >= count - 1
             divider.snp.removeConstraints()
         }
-        for index in 0..<count {
-            let pane = segments[index].pane
-            pane.snp.makeConstraints { make in
+        var columns: [NSView] = segments.prefix(count).map(\.pane)
+        let dropSlot = paneDropSlot.map { max(0, min($0, count)) }
+        paneDropPlaceholder.snp.removeConstraints()
+        paneDropPlaceholder.isHidden = dropSlot == nil
+        if let dropSlot {
+            if paneDropPlaceholder.superview == nil {
+                outerBackground.addSubview(paneDropPlaceholder)
+            }
+            columns.insert(paneDropPlaceholder, at: dropSlot)
+        }
+        for (index, column) in columns.enumerated() {
+            column.snp.makeConstraints { make in
                 make.top.bottom.equalToSuperview().inset(2)
                 if index == 0 {
                     make.leading.equalToSuperview().inset(2)
                 } else {
-                    make.leading.equalTo(segments[index - 1].pane.snp.trailing)
+                    make.leading.equalTo(columns[index - 1].snp.trailing)
                         .offset(Self.segmentSpacing)
-                    make.width.equalTo(segments[0].pane)
+                    make.width.equalTo(columns[0])
                 }
-                if index == count - 1 {
+                if index == columns.count - 1 {
                     make.trailing.equalToSuperview().inset(2)
                 }
             }
         }
         for index in 0..<(count - 1) {
+            // The placeholder's own fill sets it apart, so the seam it
+            // would sit against is dropped.
+            dividers[index].isHidden = dropSlot == index + 1
             dividers[index].snp.makeConstraints { make in
                 make.centerX.equalTo(segments[index].pane.snp.trailing)
                     .offset(Self.segmentSpacing / 2)
@@ -877,7 +913,6 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
                 make.height.equalTo(16)
             }
         }
-        installStatusBadge(models: segments.prefix(count).map(\.statusModel))
     }
 
     /// Treat the split as one tab for chat and agent status. Each pane feeds

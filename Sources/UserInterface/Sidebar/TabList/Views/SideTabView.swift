@@ -83,13 +83,7 @@ struct SideTabView: View {
     }
 
     private var splitPlaceholder: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(Color.primary.opacity(0.08))
-            .overlay {
-                Image(systemName: "rectangle.split.2x1")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.secondary.opacity(0.65))
-            }
+        TabSplitDropPlaceholder(cornerRadius: cornerRadius)
     }
 
     private var tabContent: some View {
@@ -184,4 +178,20 @@ struct SideTabView: View {
     }
     .padding(12)
     .frame(width: 320)
+}
+
+/// Stands where a dragged tab would land as a pane: beside a tab row it
+/// would split with, or inside a split row it would join.
+struct TabSplitDropPlaceholder: View {
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(Color.primary.opacity(0.08))
+            .overlay {
+                Image(systemName: "rectangle.split.2x1")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.secondary.opacity(0.65))
+            }
+    }
 }

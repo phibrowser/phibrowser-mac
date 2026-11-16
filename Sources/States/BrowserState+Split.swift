@@ -1040,6 +1040,20 @@ extension BrowserState {
         return true
     }
 
+    /// Whether the open normal tab `tabId` may join `splitId` by a drop on
+    /// the split's sidebar row: the split has room, the tab is in no split,
+    /// and both sit in the same tab group (or in none), so the merged row
+    /// stays inside one group.
+    func canAddNormalTabToSplit(_ splitId: String, tabId: Int) -> Bool {
+        guard let group = splitGroup(forId: splitId), group.canAddPane, !group.isPinned,
+              splitGroup(forTabId: tabId) == nil,
+              let tab = normalTabs.first(where: { $0.guid == tabId }),
+              let firstPane = normalTabs.first(where: { $0.guid == group.firstTabId }) else {
+            return false
+        }
+        return tab.groupToken == firstPane.groupToken
+    }
+
     /// Whether the user may move a pane of `group` to another slot or take
     /// one out of it. Not while a pinned tab or a bookmark stands for the
     /// split in the sidebar: the split then shows what that entry saved.

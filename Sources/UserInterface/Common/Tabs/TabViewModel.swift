@@ -17,6 +17,23 @@ struct TabSplitDropTarget: Equatable {
     let side: TabSplitDropSide
 }
 
+/// A dragged tab hovering a split's sidebar row: the split it would join
+/// and the pane slot it would take.
+struct SplitPaneDropTarget: Equatable {
+    let splitId: String
+    let slot: Int
+
+    /// The slot for a pointer at `x` over a split row spanning `rowFrame`
+    /// with `paneCount` panes. Slots follow the pane boundaries of the row
+    /// at rest: the leading half of a pane inserts before it and the
+    /// trailing half after it.
+    static func slot(atX x: CGFloat, in rowFrame: CGRect, paneCount: Int) -> Int {
+        guard paneCount > 0, rowFrame.width > 0 else { return max(0, paneCount) }
+        let fraction = (x - rowFrame.minX) / rowFrame.width
+        return max(0, min(paneCount, Int((fraction * CGFloat(paneCount)).rounded())))
+    }
+}
+
 enum TabCornerBadgeStatus: Int, CaseIterable {
     case chat
     case inputting

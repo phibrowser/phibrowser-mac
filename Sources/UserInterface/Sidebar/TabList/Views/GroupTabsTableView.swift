@@ -117,6 +117,7 @@ final class GroupTabsTableView: NSTableView {
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
         let operation = super.draggingUpdated(sender)
+        phiTableDelegate?.tableView(self, draggingUpdatedWith: sender)
         // The inner table is not scroll-backed, so keep the outer outline view
         // responsible for edge cue visibility and autoscroll.
         enclosingSidebarOutlineView()?.updateDragAutoscrollCueVisibility()
@@ -247,6 +248,8 @@ enum GroupTabsTableInteractionTarget: String {
 
 protocol GroupTabsTableViewDelegate: AnyObject {
     func tableViewDidEndDragDestination(_ tableView: GroupTabsTableView)
+    func tableView(_ tableView: GroupTabsTableView,
+                   draggingUpdatedWith info: NSDraggingInfo)
     func tableView(_ tableView: GroupTabsTableView,
                    beginDraggingRow row: Int,
                    with event: NSEvent)

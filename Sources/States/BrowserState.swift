@@ -3630,7 +3630,10 @@ class BrowserState {
             consumePendingSplitSlotSwap(for: tab)
         }
 
-        if consumePendingNativeNTP() {
+        // A standalone incognito window's first tab is seeded by Chromium
+        // (`NewEmptyWindow`) rather than `createQuickLookupTab`, so nothing
+        // enqueued it.
+        if consumePendingNativeNTP() || (isIncognito && tabs.isEmpty && tab.isNTP) {
             tab.usesNativeNTP = true
         }
 

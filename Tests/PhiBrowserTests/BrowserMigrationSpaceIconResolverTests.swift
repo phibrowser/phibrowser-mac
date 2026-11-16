@@ -12,12 +12,13 @@ import XCTest
 /// whose point is the catalogs the app actually ships.
 final class BrowserMigrationSpaceIconResolverTests: XCTestCase {
 
-    /// Four items in the shipped catalog's own shape: one plain; one the
+    /// Five items in the shipped catalog's own shape: two plain; one the
     /// catalog holds fully qualified (❤️ is `2764-FE0F`); one it holds
     /// unqualified (✅ is `2705`); and one with a skin-tone variant.
     private let catalog = try! JSONDecoder().decode(EmojiCatalog.self, from: Data("""
     { "version": "17.0", "date": "", "source": "", "groups": [ { "name": "Test", "items": [
       { "id": "1F3E2", "text": "🏢", "name": "office building", "subgroup": "place-building", "skinVariants": [] },
+      { "id": "1F355", "text": "🍕", "name": "pizza", "subgroup": "food-prepared", "skinVariants": [] },
       { "id": "2764-FE0F", "text": "\u{2764}\u{FE0F}", "name": "red heart", "subgroup": "heart", "skinVariants": [] },
       { "id": "2705", "text": "\u{2705}", "name": "check mark button", "subgroup": "other-symbol", "skinVariants": [] },
       { "id": "1F44D", "text": "👍", "name": "thumbs up", "subgroup": "hand-fingers-closed", "skinVariants": [
@@ -92,17 +93,17 @@ final class BrowserMigrationSpaceIconResolverTests: XCTestCase {
     }
 
     func testAnArcNameThatLandsOnAnEmojiResolvesToThatEmoji() {
-        XCTAssertEqual(resolve(arcName: "thumbsUp"), "emoji:1F44D")
+        XCTAssertEqual(resolve(arcName: "pizza"), "emoji:1F355")
     }
 
     func testAnArcNameNotInTheTableResolvesToNothing() {
         XCTAssertNil(resolve(arcName: "unicorn"))
     }
 
-    /// An emoji target takes the same catalog check a source emoji does: ⭐ is
-    /// not in this fixture, so `star` has nowhere to land.
+    /// An emoji target takes the same catalog check a source emoji does: 💀 is
+    /// not in this fixture, so `skull` has nowhere to land.
     func testAnArcNameWhoseTargetEmojiTheCatalogLacksResolvesToNothing() {
-        XCTAssertNil(resolve(arcName: "star"))
+        XCTAssertNil(resolve(arcName: "skull"))
     }
 
     /// Arc's built-in icon names, as its own model encodes them (61 in Arc's
@@ -146,7 +147,7 @@ final class BrowserMigrationSpaceIconResolverTests: XCTestCase {
     }
 
     func testAZenNameThatLandsOnAnEmojiResolvesToThatEmoji() {
-        XCTAssertEqual(resolve(zenName: "checkbox"), "emoji:2705")
+        XCTAssertEqual(resolve(zenName: "pizza"), "emoji:1F355")
     }
 
     func testAZenNameNotInTheTableResolvesToNothing() {

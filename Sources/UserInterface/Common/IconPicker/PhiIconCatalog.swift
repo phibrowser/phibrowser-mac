@@ -28,8 +28,11 @@ enum PhiIconCatalog {
         }
     }
 
-    /// Current Figma order. Legacy numbers are matched by icon shape rather
-    /// than position because the semantic catalog uses a different order.
+    /// Picker order: the original icons in Figma order, the icons added with
+    /// the Heroicons v2 artwork, then characters. Legacy numbers are matched
+    /// by icon shape rather than position because the semantic catalog uses a
+    /// different order. `scripts/generate-phi-icons.py` draws the picture
+    /// icons and keeps the same list.
     static let all: [Icon] = [
         Icon("mail", legacyNumber: 47),
         Icon("color-swatch", legacyNumber: 46),
@@ -79,6 +82,84 @@ enum PhiIconCatalog {
         Icon("identification", legacyNumber: 2),
         Icon("rss", legacyNumber: 1),
         Icon("map", legacyNumber: 48),
+        // General
+        Icon("home"),
+        Icon("star"),
+        Icon("flag"),
+        Icon("heart"),
+        Icon("fire"),
+        Icon("bookmark"),
+        Icon("tag"),
+        Icon("squares-2x2"),
+        Icon("check-badge"),
+        Icon("hand-thumb-up"),
+        Icon("face-smile"),
+        Icon("trophy"),
+        Icon("rocket-launch"),
+        // Work and productivity
+        Icon("calendar-days"),
+        Icon("clock"),
+        Icon("document-text"),
+        Icon("folder"),
+        Icon("pencil-square"),
+        Icon("clipboard-document-check"),
+        Icon("inbox"),
+        Icon("rectangle-stack"),
+        Icon("calculator"),
+        Icon("paper-clip"),
+        Icon("chart-bar"),
+        // People and chat
+        Icon("chat-bubble-left-right"),
+        Icon("users"),
+        Icon("user-group"),
+        Icon("at-symbol"),
+        Icon("phone"),
+        Icon("video-camera"),
+        Icon("megaphone"),
+        Icon("microphone"),
+        // Reading and help
+        Icon("newspaper"),
+        Icon("book-open"),
+        Icon("language"),
+        Icon("lifebuoy"),
+        // Money and shopping
+        Icon("shopping-cart"),
+        Icon("shopping-bag"),
+        Icon("building-storefront"),
+        Icon("banknotes"),
+        Icon("wallet"),
+        Icon("currency-dollar"),
+        Icon("currency-euro"),
+        Icon("receipt-percent"),
+        Icon("arrow-trending-up"),
+        Icon("scale"),
+        // Tech and dev
+        Icon("code-bracket"),
+        Icon("command-line"),
+        Icon("cube"),
+        Icon("computer-desktop"),
+        Icon("device-tablet"),
+        Icon("wifi"),
+        Icon("signal"),
+        Icon("finger-print"),
+        Icon("key"),
+        Icon("shield-check"),
+        Icon("bug-ant"),
+        Icon("wrench-screwdriver"),
+        Icon("puzzle-piece"),
+        // Media and creative
+        Icon("tv"),
+        Icon("radio"),
+        Icon("speaker-wave"),
+        Icon("paint-brush"),
+        Icon("scissors"),
+        Icon("eye"),
+        Icon("cursor-arrow-rays"),
+        // Places
+        Icon("map-pin"),
+        Icon("globe-americas"),
+        Icon("globe-europe-africa"),
+        Icon("globe-asia-australia"),
         Icon("1", assetSlug: "number-1"),
         Icon("2", assetSlug: "number-2"),
         Icon("3", assetSlug: "number-3"),

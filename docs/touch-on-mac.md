@@ -9,9 +9,14 @@ until Chromium handles direct touch; it relies on AppKit's mouse emulation.
 - Direct touches reach AppKit only through gesture recognizers. Event
   monitors, `sendEvent(_:)` and the responder chain never see them.
 - Views that override `mouseDown(with:)` get single-finger mouse emulation:
-  a tap is a click, touch-hold-then-move is a drag. Non-AppKit content
-  (Chromium) also gets one-finger momentum scroll, long press as right click,
-  and two-finger pinch/rotate as trackpad magnify/rotate.
+  a tap is a click, touch-hold-then-move is a drag, and touch and hold is a
+  right click (seen on the sidebar list and tab strip tabs, 2026-11-16).
+  Non-AppKit content (Chromium) also gets one-finger momentum scroll and
+  two-finger pinch/rotate as trackpad magnify/rotate.
+- Emulated mouse events reach local event monitors: tapping another split
+  pane moves focus (monitor in `SplitPaneHostView`) and tapping the page
+  closes the omnibox dropdown (device test 2026-11-16, I4/I5; inference
+  from those results).
 - Touch has no hover. `NSTrackingArea`, `mouseEntered` and `.onHover` are
   pointer-only.
 - `NSGestureRecognizer.allowedTouchTypes` defaults to `.direct` from macOS 27.
@@ -27,6 +32,13 @@ until Chromium handles direct touch; it relies on AppKit's mouse emulation.
   (TOUCH-001, TOUCH-012). Recognizers that only observe, or recognize on
   touch-up and simultaneously with others, have not caused this. Inferred
   from device tests, not stated by Apple.
+- Touch and hold is emulated as a left mouse down at touch-down, then a
+  right mouse down about 0.7 s later. Each is hit-tested with
+  `NSApp.currentEvent` set to it (the left mouse down has pressure 0). If
+  the view hit for the left mouse down hands it to the system titlebar, the
+  titlebar takes the touch and no right mouse down follows (probe logs,
+  2026-11-16). No `NSEvent` property marks a mouse event as coming from
+  touch.
 
 References: Adopting gesture recognizers in your app, Handling AppKit
 gestures, TN3212, TN3216, HIG Pointing devices ("Touch support for hidden
@@ -41,8 +53,9 @@ controls") and Gestures.
   view's own click handling are untouched. Its optional `onTouchBegan` runs
   when a finger lands, before that touch's tap or emulated click is handled.
 - `TouchPressObserver` — reports a direct touch landing and lifting off (or
-  moving more than 5 pt) for press feedback. It never leaves the possible
-  state, so the view keeps mouse emulation.
+  moving more than 5 pt) for press feedback. It never begins; it fails when
+  the touch lifts, moves or is cancelled, so the view keeps mouse emulation.
+  It ignores mouse input.
 - `PointerMotionObserver` — fires once when the physical pointer moves again;
   ends touch-revealed UI. Motion that stays at the last touch location is
   ignored in case AppKit places the cursor under the finger.
@@ -67,16 +80,16 @@ build alone is not verification.
 | ID | Area | Change | Status |
 | --- | --- | --- | --- |
 | TOUCH-001 | Sidebar tab and bookmark rows | Press-scale recognizer sets `allowedTouchTypes = []`; both rows animate on touch through `TouchPressObserver` | Tab rows verified with touch; bookmark animation not yet |
-| TOUCH-002 | Common | Added `TouchTapObserver` and `PointerMotionObserver` | Built, not verified with touch |
-| TOUCH-003 | Sidebar | A tap reveals the tapped row's close control and the sidebar hover controls | Built, not verified with touch |
-| TOUCH-004 | Tab strip (Comfortable) | Touch input shows the active tab's close button; a touch outside the strip unlocks the close layout | Built, not verified with touch |
-| TOUCH-005 | Sidebar tab group header | Tap reveals the group close button; it closes only once revealed; 36 pt close target under touch | Built, not verified with touch |
+| TOUCH-002 | Common | Added `TouchTapObserver`, `TouchPressObserver`, `PointerMotionObserver` and `revealsOnTouchTap` | Covered by the entries that use them |
+| TOUCH-003 | Sidebar | A tap reveals the tapped row's close control and the sidebar hover controls | Verified with touch (B6, C2, D1); D3–D6 not checked |
+| TOUCH-004 | Tab strip (Comfortable) | Touch input shows the active tab's close button | Tab taps, drags and menus unaffected (E1–E3); close reveal (E4) not checked |
+| TOUCH-005 | Sidebar tab group header | Tap reveals the group close button; it closes only once revealed; 36 pt close target under touch | Verified with touch (D2) |
 | TOUCH-006 | Sidebar Peek indicator | Touch-revealed rows show the indicator's minus glyph | Built, not verified with touch |
 | TOUCH-007 | Downloads list rows | Direct-touch tap reveals the row's action buttons for 4 s | Built, not verified with touch |
-| TOUCH-008 | Split pane move grip | Grip pill shows while a finger is on it, hides after 3 s unless dragging | Built, not verified with touch |
-| TOUCH-009 | Sidebar bookmark context menu | Added "Close Tab" for opened bookmarks | Built, not verified |
+| TOUCH-008 | Split pane move grip | Grip pill shows while a finger is on it, hides after 3 s unless dragging | Not verified; see Known issues |
+| TOUCH-009 | Sidebar bookmark context menu | Added "Close Tab" for opened bookmarks | Verified with touch (C3) |
 | TOUCH-010 | Extensions list | Touch and hold opens the extension context menu (pin/unpin) | Built, not verified with touch |
-| TOUCH-011 | Sidebar, tab strip | Fix: removed the window-level tap recognizers that broke taps on web content | Built, not verified with touch |
+| TOUCH-011 | Sidebar, tab strip | Fix: removed the window-level tap recognizers that broke taps on web content | Verified with touch (A1, A3) |
 | TOUCH-012 | Sidebar tab rows | Replaced PR #324's touch handling with TOUCH-001; touch and hold opens the menu again | Verified with touch |
 | TOUCH-013 | Top address bar (Balanced, Comfortable) | A tap on the trailing controls' area puts the bar in its hover state for 4 s | Verified with touch |
 
@@ -322,30 +335,85 @@ Hidden actions and where touch reaches them (touch and hold opens the menu):
 | Extension pin | Pin / Unpin (Chromium extension menu) |
 | Split pane move grip | Move Focused Pane … |
 
+## Known issues
+
+### Split pane drag by touch (F2): left as is
+
+- Decision (2026-11-16): no change to split pane dragging for now.
+- Device test (F2): resizing with the 4 pt divider is hard by touch.
+- Incident (2026-11-16, Sidecar, while testing split drags; no repro steps):
+  the Phi Canary window stopped responding to touch and clicks, and clicks
+  did not make it key.
+  - Facts from the logs: after the split was created (15:11:40) and panes
+    were tapped (15:12:16–18), key left the window at 15:12:27. No click made
+    it key again for about seven minutes. At 15:19:44 a Dock reopen
+    (`applicationShouldHandleReopen`, `_handleActivatedEvent`) made it key
+    and it recovered. The main thread was idle the whole time (no modal or
+    tracking loop). No pane-to-sidebar drag session (`beginDraggingPaneAsTab`)
+    was logged. No gesture recognizer errors were logged.
+  - Inference (unconfirmed): a stuck gesture recognizer holding its exclusive
+    view matches the symptom (macOS 27 release notes). It does not match
+    AppKit's automatic cancel of stuck gestures after a few seconds.
+    Candidates near the split: `TouchTapObserver` on `PaneMoveHandle`
+    (TOUCH-008) and `TouchPressObserver` (TOUCH-001), which never reaches a
+    terminal state for mouse input.
+  - To diagnose a recurrence, set these before relaunching, then remove
+    them:
+    `defaults write com.phibrowser.canary.Mac NSCrashOnStuckGestureTimeout -int 2`
+    and
+    `defaults write com.phibrowser.canary.Mac NSGestureRecognizerCrashOnMissingOverrides -bool YES`.
+
+### Tab strip empty area: no touch-and-hold menu (Comfortable)
+
+- Symptom (2026-11-16): touch and hold opens the strip context menu over the
+  right-button cluster and the Space chip, but not over the empty strip next
+  to the New Tab button.
+- Cause: the empty strip hands a left mouse down to the system titlebar
+  (`TabStrip.shouldConsumeHitTest`) so it can drag and zoom the window. Touch
+  and hold starts with a left mouse down, so the titlebar takes it and the
+  right mouse down never comes (see Platform rules).
+- Decision (2026-11-16): keep it. Dragging the window from the strip matters
+  more; the same menu opens from the right-button cluster and the Space chip.
+  Claiming the area for touch would need a touch marker on the event, which
+  AppKit does not provide, and would lose touch window drag and double-tap
+  zoom there.
+
 ## Pending, needs on-device facts first
 
-- `hitTest` overrides gated on `NSApp.currentEvent?.type` (top address bar
-  drag view, Spaces strip, pinned extensions, tab strip titlebar regions,
-  `HoverableButton` secondary-click containers, `EventBlockBgView`). What
-  `currentEvent` holds when a touch is hit-tested decides whether these
-  become untappable. Widening the gate blindly risks drag-and-drop and
-  titlebar behavior with the mouse.
-- Mouse-down monitors and `sendEvent(_:)` logic: split-pane focus on click,
-  taking key back from the omnibox/find child window
-  (`ShellWindowController`, Chromium `browser_native_widget_window_mac.mm`),
-  Peek/Reader/theme-editor outside-click handling. Needs to know whether
-  emulated mouse events pass through `NSApp.sendEvent`.
-- Back/forward swipe on web content (HistorySwiper, `PhiApplication`
-  `NSEventTypeSwipe`), Space swipe and media-card swipe driven by
-  `scrollWheel`.
+- `hitTest` overrides gated on `NSApp.currentEvent?.type`. A touch is
+  hit-tested with the emulated left mouse down, then, for touch and hold,
+  the right mouse down (see Platform rules). Checked on device: Space chip
+  and strip, pinned extension icons (I2), titlebar drag and double-tap zoom
+  (I3), top address bar (TOUCH-013). Not checked: `HoverableButton`
+  secondary-click containers (touch-and-hold menus) and `EventBlockBgView`.
+- Outside-tap handling for Peek, Reader View and the theme editor (I6).
+- Space swipe and media-card swipe driven by `scrollWheel` (I8).
+  Back/forward swipe on web content works (I7).
 
 ## Pending, needs a design decision
 
-- Collapsed sidebar reveal (10 pt hover strip).
+- TODO: floating sidebar under touch (collapsed sidebar, Balanced and
+  Performance). It shows only when the pointer enters the 10 pt edge strip
+  (`FloatingSidebarHostViewController.floatingSidebarTriggerView`, an
+  `NSTrackingArea`) and hides when the pointer leaves, so touch can neither
+  open nor close it. A tried and reverted approach (2026-11-16, not tested
+  on device):
+  - Show: a `TouchTapObserver` on the edge strip. The strip sits in the
+    overlay beside the page, so this is safe for the page's mouse emulation
+    (TOUCH-011). Keep the strip at 10 pt; a wider one would take page clicks
+    at the edge from the mouse.
+  - While touch keeps it open (a `PointerMotionObserver`), skip the
+    pointer-driven hide. Close it on a tap outside the panel (the overlay
+    takes that click so it does not reach the page; only the overlay's own
+    hits, since strip and panel-inset clicks reach it through the responder
+    chain), on a focused-tab change, or on pointer motion.
+  - Later, maybe an inward swipe from the edge; check first that the system
+    takes no edge gesture there.
 - Custom traffic lights: glyphs only on hover, 16 pt targets; the right-side
   sidebar's hover-revealed window-controls bar (dev #308) has the same issue.
 - 36 pt touch targets for 24 pt and smaller controls: touch only, or larger
   for the pointer too. Group header close is done for touch (TOUCH-005).
 - Split divider (4 pt, `DividerHandle`): device test 2026-11-16 (F2) found it
   hard to resize by touch. A touch-only wider target needs a recognizer on
-  the divider or a wider divider for the pointer too.
+  the divider or a wider divider for the pointer too. On hold, see Known
+  issues.

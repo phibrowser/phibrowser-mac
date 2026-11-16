@@ -81,9 +81,10 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     /// the header positions it and toggles its visibility with the feature flag.
     private weak var spaceSwitchView: NSView?
     /// The Spaces-switch row sits in the control row instead of its own row:
-    /// in the Balanced layout, once the user has hidden every button that
-    /// row holds. Its owner reclaims the row's height and right-aligns the
-    /// strip's icons while this is true.
+    /// in the Balanced and Performance layouts, once the user has hidden
+    /// every button that row holds (the Update button does not count; the
+    /// row starts after it). Its owner reclaims the row's height and
+    /// right-aligns the strip's icons while this is true.
     private(set) var spaceSwitchSitsInControlRow = false
     /// Called when `spaceSwitchSitsInControlRow` changes.
     var onSpaceSwitchPlacementChanged: ((Bool) -> Void)?
@@ -278,15 +279,19 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     }
     
     private weak var browserState: BrowserState?
-    
-    init(state: BrowserState?, isFloating: Bool = false) {
+    /// Holds the header-button preferences the sidebar's context menu writes.
+    private let defaults: UserDefaults
+
+    init(state: BrowserState?, isFloating: Bool = false, defaults: UserDefaults = .standard) {
         self.browserState = state
         self.isFloating = isFloating
+        self.defaults = defaults
         super.init(frame: .zero)
         setupViews()
     }
-    
+
     required init?(coder: NSCoder) {
+        self.defaults = .standard
         super.init(coder: coder)
         setupViews()
     }
@@ -519,12 +524,12 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
             .map { _ in }
             .prepend(())
-            .map { _ in
+            .map { [defaults] _ in
                 [PhiPreferences.GeneralSettings.sidebarHeaderShowsSearchTabs,
                  .sidebarHeaderShowsSidebarToggle,
                  .sidebarHeaderShowsBack,
                  .sidebarHeaderShowsForward,
-                 .sidebarHeaderShowsReload].map { $0.loadValue() }
+                 .sidebarHeaderShowsReload].map { $0.loadValue(from: defaults) }
             }
             .removeDuplicates()
             .dropFirst()
@@ -856,20 +861,24 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     /// shell (no tab to act on) or once none is left.
     private func updateNavigationButtonsVisibility(layoutMode: LayoutMode) {
         typealias Setting = PhiPreferences.GeneralSettings
-        backButton.isHidden = !Setting.sidebarHeaderShowsBack.loadValue()
-        forwardButton.isHidden = !Setting.sidebarHeaderShowsForward.loadValue()
-        refreshStopButtonContainer.isHidden = !Setting.sidebarHeaderShowsReload.loadValue()
-        let holdsNavigation = !(backButton.isHidden && forwardButton.isHidden && refreshStopButtonContainer.isHidden)
+        backButton.isHidden = !Setting.sidebarHeaderShowsBack.loadValue(from: defaults)
+        forwardButton.isHidden = !Setting.sidebarHeaderShowsForward.loadValue(from: defaults)
+        refreshStopButtonContainer.isHidden = !Setting.sidebarHeaderShowsReload.loadValue(from: defaults)
         let inPlaceholder = browserState?.isInPlaceholderMode ?? false
-        stackView.isHidden = !isSidebarLayout(layoutMode) || inPlaceholder || !holdsNavigation
+        stackView.isHidden = !isSidebarLayout(layoutMode) || inPlaceholder || !keepsNavigationButton
+    }
+
+    /// Whether the user keeps any of back, forward, and reload.
+    private var keepsNavigationButton: Bool {
+        !(backButton.isHidden && forwardButton.isHidden && refreshStopButtonContainer.isHidden)
     }
 
     private func updateUpgradeAndSidebarVisibility(layoutMode: LayoutMode) {
         updateNavigationButtonsVisibility(layoutMode: layoutMode)
-        let showsSidebarToggle = PhiPreferences.GeneralSettings.sidebarHeaderShowsSidebarToggle.loadValue()
+        let showsSidebarToggle = PhiPreferences.GeneralSettings.sidebarHeaderShowsSidebarToggle.loadValue(from: defaults)
         sidebarButton.isHidden = !showsSidebarToggle
         searchTabsButton.isHidden = layoutMode != .balanced
-            || !PhiPreferences.GeneralSettings.sidebarHeaderShowsSearchTabs.loadValue()
+            || !PhiPreferences.GeneralSettings.sidebarHeaderShowsSearchTabs.loadValue(from: defaults)
         // Search Tabs sits just before the sidebar button, and takes its
         // place when the user hides it.
         searchTabsButtonRightConstraint?.update(offset: showsSidebarToggle ? -2 : Self.sidebarButtonWidth)
@@ -881,17 +890,19 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         updateSpaceSwitchPlacement(layoutMode: layoutMode)
     }
 
-    /// Moves the Spaces-switch row up into the control row once nothing else
-    /// is left in it, after the traffic lights, and back into its own row
-    /// when a button returns. In Performance the row also holds back,
-    /// forward, and reload, so those must be hidden too.
+    /// Moves the Spaces-switch row up into the control row once the user has
+    /// hidden every button in it, and back into its own row when one returns.
+    /// In Performance the row also holds back, forward, and reload, so those
+    /// must be hidden too. The Update button comes and goes with the
+    /// sidebar's width, so it never decides the row: the Spaces row starts
+    /// after it instead, and a resize never changes the header's height.
     private func updateSpaceSwitchPlacement(layoutMode: LayoutMode) {
         guard let view = spaceSwitchView, spaceSwitchVisible == true else { return }
         let inControlRow = layoutMode != .comfortable
-            && sidebarButton.isHidden && searchTabsButton.isHidden && upgradeButton.isHidden
+            && sidebarButton.isHidden && searchTabsButton.isHidden
             && !holdsNavigationButtons(layoutMode: layoutMode)
-        let leading = (leadingChromeMaxX() ?? sidebarButtonLeftOffset - 10) + 10
         if inControlRow {
+            let leading = spaceSwitchControlRowLeadingOffset(layoutMode: layoutMode)
             guard !spaceSwitchSitsInControlRow || spaceSwitchControlRowLeading != leading else { return }
             spaceSwitchControlRowLeading = leading
             spaceSwitchTopConstraint = nil
@@ -918,8 +929,18 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     /// placeholder shell does not count: it hides the stack for a moment, and
     /// the Spaces row should not jump with it.
     private func holdsNavigationButtons(layoutMode: LayoutMode) -> Bool {
-        guard isSidebarLayout(layoutMode) else { return false }
-        return !(backButton.isHidden && forwardButton.isHidden && refreshStopButtonContainer.isHidden)
+        isSidebarLayout(layoutMode) && keepsNavigationButton
+    }
+
+    /// Where the Spaces row starts in the control row: after the leading
+    /// chrome, or after the Update button while it shows. The docked header
+    /// reuses the traffic-light offset `updateSidebarButtonLeftConstraint`
+    /// keeps current, so a width change measures no window buttons.
+    private func spaceSwitchControlRowLeadingOffset(layoutMode: LayoutMode) -> CGFloat {
+        let chromeLeading = isFloating ? (leadingChromeMaxX() ?? 0) + 10 : sidebarButtonLeftOffset
+        guard !upgradeButton.isHidden else { return chromeLeading }
+        let upgradeMaxX = upgradeButtonLeftOffset(layoutMode: layoutMode) + Self.upgradeButtonSize.width
+        return max(chromeLeading, upgradeMaxX + Self.upgradeButtonSpacing)
     }
 
     private func setSpaceSwitchSitsInControlRow(_ sits: Bool) {

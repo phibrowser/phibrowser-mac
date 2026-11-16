@@ -9,10 +9,13 @@ final class TabAreaContextMenuHelper: NSObject {
 
     private weak var browserState: BrowserState?
     private let isHorizontalLayout: Bool
+    /// Holds the button-visibility preferences the submenus toggle.
+    private let defaults: UserDefaults
 
-    init(browserState: BrowserState, isHorizontalLayout: Bool = false) {
+    init(browserState: BrowserState, isHorizontalLayout: Bool = false, defaults: UserDefaults = .standard) {
         self.browserState = browserState
         self.isHorizontalLayout = isHorizontalLayout
+        self.defaults = defaults
     }
 
     func populate(_ menu: NSMenu) {
@@ -165,7 +168,7 @@ final class TabAreaContextMenuHelper: NSObject {
     @objc private func toggleButtonVisibility(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? String,
               let setting = PhiPreferences.GeneralSettings(rawValue: rawValue) else { return }
-        UserDefaults.standard.set(!setting.loadValue(), forKey: setting.rawValue)
+        defaults.set(!setting.loadValue(from: defaults), forKey: setting.rawValue)
     }
 
     // MARK: - Private
@@ -224,7 +227,7 @@ final class TabAreaContextMenuHelper: NSObject {
             )
             item.representedObject = setting.rawValue
             item.target = self
-            item.state = setting.loadValue() ? .on : .off
+            item.state = setting.loadValue(from: defaults) ? .on : .off
             submenu.addItem(item)
         }
         return submenu

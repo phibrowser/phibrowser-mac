@@ -21,19 +21,19 @@ final class SidebarHeaderButtonVisibilityTests: XCTestCase {
         .sidebarHeaderShowsSearchTabs, .sidebarHeaderShowsSidebarToggle,
         .sidebarHeaderShowsBack, .sidebarHeaderShowsForward, .sidebarHeaderShowsReload,
     ]
-    private var previousValues: [Setting: Any?] = [:]
+    /// A private suite: every header in the app reads these keys, so writing
+    /// them to the standard defaults would reach other suites' headers, in
+    /// this process and in the parallel ones that share its domain.
+    private var defaults: UserDefaults!
+    private var defaultsSuiteName: String!
     private var nextWindowId = 423458789
     private var windows: [NSWindow] = []
     /// Menu items hold their target weakly; the sidebar holds its helper.
     private var helpers: [TabAreaContextMenuHelper] = []
 
     override func setUp() async throws {
-        // Only this suite reads these keys, so holding them at other values
-        // here cannot reach the suites running in parallel processes.
-        for setting in Self.headerSettings {
-            previousValues[setting] = UserDefaults.standard.object(forKey: setting.rawValue)
-            UserDefaults.standard.removeObject(forKey: setting.rawValue)
-        }
+        defaultsSuiteName = "SidebarHeaderButtonVisibilityTests.\(UUID().uuidString)"
+        defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsSuiteName))
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let account = Account(userID: "sidebar-header-buttons-test-\(UUID().uuidString)")
@@ -55,9 +55,9 @@ final class SidebarHeaderButtonVisibilityTests: XCTestCase {
         where FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
         }
-        for (setting, value) in previousValues {
-            UserDefaults.standard.set(value, forKey: setting.rawValue)
-        }
+        defaults.removePersistentDomain(forName: defaultsSuiteName)
+        defaults = nil
+        defaultsSuiteName = nil
         try await super.tearDown()
     }
 
@@ -244,7 +244,7 @@ final class SidebarHeaderButtonVisibilityTests: XCTestCase {
         })
 
         toggle.menu?.performActionForItem(at: try XCTUnwrap(toggle.menu?.index(of: toggle)))
-        XCTAssertFalse(Setting.sidebarHeaderShowsSidebarToggle.loadValue())
+        XCTAssertFalse(Setting.sidebarHeaderShowsSidebarToggle.loadValue(from: defaults))
 
         let reopened = try XCTUnwrap(topButtons(in: menu(for: state)).first {
             $0.representedObject as? String == Setting.sidebarHeaderShowsSidebarToggle.rawValue
@@ -254,7 +254,7 @@ final class SidebarHeaderButtonVisibilityTests: XCTestCase {
 
     func testTheHorizontalTabStripMenuHasNoTopButtons() {
         let state = makeState(layoutMode: .comfortable)
-        let helper = TabAreaContextMenuHelper(browserState: state, isHorizontalLayout: true)
+        let helper = TabAreaContextMenuHelper(browserState: state, isHorizontalLayout: true, defaults: defaults)
         helpers.append(helper)
         let menu = NSMenu()
         helper.populate(menu)
@@ -265,7 +265,7 @@ final class SidebarHeaderButtonVisibilityTests: XCTestCase {
     // MARK: - Helpers
 
     private func set(_ setting: Setting, _ value: Bool) {
-        UserDefaults.standard.set(value, forKey: setting.rawValue)
+        defaults.set(value, forKey: setting.rawValue)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
     }
 
@@ -294,7 +294,7 @@ final class SidebarHeaderButtonVisibilityTests: XCTestCase {
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         windows.append(window)
-        let header = SidebarHeaderView(state: state)
+        let header = SidebarHeaderView(state: state, defaults: defaults)
         header.frame = NSRect(x: 0, y: 200, width: 300, height: 100)
         window.contentView?.addSubview(header)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
@@ -326,7 +326,7 @@ final class SidebarHeaderButtonVisibilityTests: XCTestCase {
     }
 
     private func menu(for state: BrowserState) -> NSMenu {
-        let helper = TabAreaContextMenuHelper(browserState: state)
+        let helper = TabAreaContextMenuHelper(browserState: state, defaults: defaults)
         helpers.append(helper)
         let menu = NSMenu()
         helper.populate(menu)

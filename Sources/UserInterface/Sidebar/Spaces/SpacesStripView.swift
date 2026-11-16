@@ -302,6 +302,12 @@ struct SpacesStripView: View {
     /// only this count re-renders the row: a sidebar divider drag changes the
     /// width every frame while the count changes a handful of times.
     @State private var fittedPipCount = 0
+    /// The pips the header's control row shows in full at its measured
+    /// width. That row slides continuously as the width changes, so this
+    /// re-renders it (as `fittedPipCount` does) whenever a pip crosses an
+    /// edge, keeping a clipped pip's accessibility element from covering the
+    /// "+" or "…" beside it.
+    @State private var controlRowShownPips: Range<Int> = 0..<0
 
     /// Index of the first pip inside the strip's sliding viewport. The row
     /// slides to keep the active Space's pip centered in the visible window,
@@ -710,6 +716,7 @@ struct SpacesStripView: View {
         // outside SwiftUI state; `fittedPipCount` is what re-renders the row,
         // and only when the number of pips that fit changes.
         _ = fittedPipCount
+        _ = controlRowShownPips
         let visibleCount = visiblePipCount(availableWidth: measuredRowWidth)
         let hasOverflow = visibleCount < stripPipCount
         let sitsInControlRow = stripGeometry.sitsInControlRow
@@ -758,6 +765,15 @@ struct SpacesStripView: View {
                 fittedPipCount = count
             }
             reanchorViewport(animated: false)
+            if stripGeometry.sitsInControlRow {
+                let centeredPip = clampedStripStart(visibleCount: count) + count / 2
+                let shown = fullyShownControlRowPips(rowWidth: measuredRowWidth,
+                                                     centeredPip: CGFloat(centeredPip),
+                                                     pipCount: stripPipCount)
+                if shown != controlRowShownPips {
+                    controlRowShownPips = shown
+                }
+            }
         }
         .onChange(of: stripOrderedSpaces.map(\.spaceId)) { _ in
             // A delete/reorder can push the active pip out of the window
@@ -913,17 +929,22 @@ struct SpacesStripView: View {
         let trailingPeek = (start + visibleCount < pipCount ? peek : 0) * (1 - progress)
             + (targetStart + visibleCount < pipCount ? peek : 0) * progress
         // In the header's control row the row slides continuously instead
-        // of by whole pips: `SpacesStripCenteringLayout` keeps the active pip
-        // centered, within the row's ends, at whatever width layout gives it.
+        // of by whole pips: `SpacesStripCenteringLayout` centers the window's
+        // middle pip, within the row's ends, at whatever width layout gives
+        // it. The window is the shared one `ensureActivePipVisible` centers
+        // on the active pip and wheel scrolling steps, so both keep working
+        // here, and a swipe slides it with the gesture.
         let centersActive = sitsInControlRow
-        let activePip: CGFloat = {
-            if isCreating { return CGFloat(insertion) }
-            let selected = CGFloat(selectedIndex ?? 0)
-            guard let targetIndex else { return selected }
-            return selected + (CGFloat(targetIndex) - selected) * progress
-        }()
-        let activeCenter = activePip * step + Self.stripItemWidth / 2
+        let centeredPip = viewportStart + CGFloat(visibleCount / 2)
+        let activeCenter = centeredPip * step + Self.stripItemWidth / 2
         let rowWidth = pipRowWidth(pipCount)
+        // Accessibility sees only the pips the row shows in full: a clipped
+        // pip's element keeps its whole frame, which would cover the "+" or
+        // "…" for VoiceOver and other hit-testing clients. The peeking
+        // neighbors keep their `peekHitTarget` stand-ins, sized to what shows.
+        let accessiblePips = centersActive
+            ? fullyShownControlRowPips(rowWidth: measuredRowWidth, centeredPip: centeredPip, pipCount: pipCount)
+            : start..<min(start + visibleCount, pipCount)
         HStack(spacing: Self.stripSpacing) {
             ForEach(Array(spaces.enumerated()), id: \.element.spaceId) { index, space in
                 if isCreating && index == insertion {
@@ -942,6 +963,7 @@ struct SpacesStripView: View {
                         }
                     }
                     .opacity(stripDraggingId == space.spaceId ? 0.5 : 1)
+                    .accessibilityHidden(!accessiblePips.contains(pipIndex))
                     // `.clipped()` below is visual only — pips beyond the
                     // window would still swallow clicks/hovers aimed at the
                     // Spacer and the trailing button without this.
@@ -1031,25 +1053,7 @@ struct SpacesStripView: View {
         .clipped()
         .mask {
             if centersActive {
-                // Fade each edge only while pips run past it, so a row
-                // resting against an end never dims the pip there.
-                GeometryReader { proxy in
-                    let x = SpacesStripCenteringLayout.offset(
-                        rowWidth: rowWidth, viewportWidth: proxy.size.width, activeCenter: activeCenter)
-                    HStack(spacing: 0) {
-                        if x < -0.5 {
-                            LinearGradient(colors: [.clear, .black],
-                                           startPoint: .leading, endPoint: .trailing)
-                                .frame(width: peek)
-                        }
-                        Color.black
-                        if x + rowWidth > proxy.size.width + 0.5 {
-                            LinearGradient(colors: [.black, .clear],
-                                           startPoint: .leading, endPoint: .trailing)
-                                .frame(width: peek)
-                        }
-                    }
-                }
+                SpacesStripEdgeFadeMask(activeCenter: activeCenter, rowWidth: rowWidth, fadeWidth: peek)
             } else {
                 // Both edges fade only the peeking neighbors, never a pip the
                 // row shows in full.
@@ -1075,6 +1079,11 @@ struct SpacesStripView: View {
             }
         }
         .padding(.vertical, -Self.stripItemHeight * 0.2)
+        // The control row's pips all keep hit testing (it slides by fractions
+        // of a pip, so no whole-pip range says which show), and `.clipped()`
+        // is visual only: bound hover, clicks, and drops to the viewport so
+        // the pips past its edge leave the "+" and "…" beside it alone.
+        .modifier(SpacesStripViewportHitClip(isEnabled: centersActive))
         // The clip frame bounds where the chip flight may fly (its layer is
         // not subject to the `.clipped()` above).
         .background(publishGeometry { geometry, frame in
@@ -1111,6 +1120,25 @@ struct SpacesStripView: View {
     /// Width of `count` uniform strip items plus the gaps between them.
     private func pipRowWidth(_ count: Int) -> CGFloat {
         count <= 0 ? 0 : CGFloat(count) * Self.stripItemWidth + CGFloat(count - 1) * Self.stripSpacing
+    }
+
+    /// The pips the header's control row shows in full, by pip index, when
+    /// the row is `rowWidth` wide and `SpacesStripCenteringLayout` centers
+    /// pip `centeredPip`. The viewport is the row less the trailing "+" or
+    /// "…" and the gap before it.
+    private func fullyShownControlRowPips(rowWidth: CGFloat, centeredPip: CGFloat, pipCount: Int) -> Range<Int> {
+        guard pipCount > 0 else { return 0..<0 }
+        let viewportWidth = rowWidth - Self.stripItemWidth - Self.stripSpacing
+        let pipsWidth = pipRowWidth(pipCount)
+        // Every pip fits (this also covers the unmeasured, unbounded width).
+        guard pipsWidth > viewportWidth else { return 0..<pipCount }
+        let step = Self.stripItemWidth + Self.stripSpacing
+        let x = SpacesStripCenteringLayout.offset(
+            rowWidth: pipsWidth, viewportWidth: viewportWidth,
+            activeCenter: centeredPip * step + Self.stripItemWidth / 2)
+        let first = max(0, Int(((-x - 0.5) / step).rounded(.up)))
+        let last = min(pipCount - 1, Int(((viewportWidth + 0.5 - Self.stripItemWidth - x) / step).rounded(.down)))
+        return first <= last ? first..<(last + 1) : 0..<0
     }
 
     /// Thin vertical rule splitting the strip into the user-Space and
@@ -2190,13 +2218,35 @@ final class SpacesStripReorderView: NSView {
     /// the SwiftUI row underneath. Drop-destination discovery does not consult
     /// `hitTest`, so returning nil never blocks an in-flight reorder drop.
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard super.hitTest(point) != nil else { return nil }
+        guard super.hitTest(point) != nil, isInsideViewport(point) else { return nil }
         switch NSApp.currentEvent?.type {
         case .leftMouseDown, .leftMouseUp, .leftMouseDragged:
             return claimableIndex(atX: convert(point, from: superview).x) == nil ? nil : self
         default:
             return nil
         }
+    }
+
+    /// Whether `point` (in the superview's coordinates) falls inside the
+    /// pip viewport's clip. This view spans the whole pip row, and the clip
+    /// is SwiftUI's alone, so a slot past the clip can sit under the "+" or
+    /// "…" beside it; `visibleRange` excludes those slots only for a window
+    /// that slides by whole pips, not for the header's control-row row,
+    /// which slides continuously. Strips outside a sidebar hosting view
+    /// publish no viewport and keep the range check alone.
+    private func isInsideViewport(_ point: NSPoint) -> Bool {
+        guard let superview else { return true }
+        var ancestor: NSView? = superview
+        while let view = ancestor, !(view is SpacesStripHostingView) {
+            ancestor = view.superview
+        }
+        guard let host = ancestor as? SpacesStripHostingView,
+              let viewport = host.stripGeometry?.viewportFrame,
+              !viewport.isEmpty else { return true }
+        // The viewport frame is in the strip's root space, which matches the
+        // hosting view's bounds; only x matters, and flipping leaves it alone.
+        let x = superview.convert(point, to: host).x
+        return x >= viewport.minX && x <= viewport.maxX
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -3029,12 +3079,13 @@ final class SpacesStripPresence {
 }
 
 /// Places the Spaces strip's pip row in the sidebar header's control row:
-/// flush right while every pip fits, otherwise centered on the active pip but
-/// never past either end of the row. It reads the width layout gives it on
-/// every pass, so the row slides continuously as the sidebar is resized,
+/// flush right while every pip fits, otherwise centered on the middle pip of
+/// the shared viewport window (the active pip, unless the user has scrolled)
+/// but never past either end of the row. It reads the width layout gives it
+/// on every pass, so the row slides continuously as the sidebar is resized,
 /// without re-rendering the pips.
 struct SpacesStripCenteringLayout: Layout {
-    /// The active pip's center, from the row's leading edge.
+    /// The centered pip's center, from the row's leading edge.
     var activeCenter: CGFloat
 
     /// A Space switch slides the row along with the selection chip.
@@ -3081,6 +3132,57 @@ private struct SpacesStripViewportPlacement: ViewModifier {
                 .offset(x: offset)
                 .frame(width: width, alignment: .leading)
                 .frame(minWidth: 0, maxWidth: fillsRow ? .infinity : nil, alignment: .leading)
+        }
+    }
+}
+
+/// Limits the viewport's hit testing to its own frame, which `.clipped()`
+/// does not. Only the control row needs it: the strip's own row turns hit
+/// testing off for every pip outside its whole-pip window instead.
+private struct SpacesStripViewportHitClip: ViewModifier {
+    let isEnabled: Bool
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.contentShape(Rectangle())
+        } else {
+            content
+        }
+    }
+}
+
+/// The control row's viewport mask: fades each edge only while pips run
+/// past it, so a row resting against an end never dims the pip there.
+/// Animates `activeCenter` as `SpacesStripCenteringLayout` does, so the
+/// fades follow the row through a Space switch instead of jumping to where
+/// it lands.
+private struct SpacesStripEdgeFadeMask: View, Animatable {
+    var activeCenter: CGFloat
+    let rowWidth: CGFloat
+    let fadeWidth: CGFloat
+
+    var animatableData: CGFloat {
+        get { activeCenter }
+        set { activeCenter = newValue }
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let x = SpacesStripCenteringLayout.offset(
+                rowWidth: rowWidth, viewportWidth: proxy.size.width, activeCenter: activeCenter)
+            HStack(spacing: 0) {
+                if x < -0.5 {
+                    LinearGradient(colors: [.clear, .black],
+                                   startPoint: .leading, endPoint: .trailing)
+                        .frame(width: fadeWidth)
+                }
+                Color.black
+                if x + rowWidth > proxy.size.width + 0.5 {
+                    LinearGradient(colors: [.black, .clear],
+                                   startPoint: .leading, endPoint: .trailing)
+                        .frame(width: fadeWidth)
+                }
+            }
         }
     }
 }

@@ -69,6 +69,15 @@ enum SidebarNewTabDropResolver {
     }
 }
 
+/// macOS slides a cancelled drag image back to where its row sat on screen
+/// when the drag began. Once the list scrolls under the drag, that spot no
+/// longer holds the row, so the image fades where it was released instead.
+enum SidebarDragSlideBack {
+    static func animatesBack(startOffset: CGFloat, currentOffset: CGFloat) -> Bool {
+        abs(currentOffset - startOffset) < 0.5
+    }
+}
+
 enum SidebarBookmarkFolderDropTarget: Equatable {
     case keepOriginal
     case dropOnFolder
@@ -332,6 +341,9 @@ class SidebarTabListViewController: NSViewController {
     private var wholeGroupSidebarEndFinalizeDone = false
 
     private var suppressesFloatingNewTabDuringDrag = false
+    /// List scroll offset at the first move of the current drag from this
+    /// list; cleared when it ends. See `SidebarDragSlideBack`.
+    private var dragStartScrollOffset: CGFloat?
     private var scrollAnimationGeneration: Int = 0
     private var scrollScheduleGeneration: Int = 0
     private var isActive = false
@@ -3326,6 +3338,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             "[SIDEBAR_TAB_DRAG_THRESHOLD] outline.ended " +
             "screen=\(screenPoint) operation=\(operation.rawValue)"
         )
+        dragStartScrollOffset = nil
         finalizeWholeGroupSidebarTearOffIfNeeded(
             session: session,
             screenPoint: screenPoint,
@@ -5156,6 +5169,18 @@ extension SidebarTabListViewController {
         setOriginalNewTabCellHidden(false)
     }
 
+    /// Keeps the cancel slide-back only while the list sits where it did
+    /// when the drag started; see `SidebarDragSlideBack`.
+    private func updateSlideBack(for session: NSDraggingSession) {
+        let offset = scrollView.contentView.bounds.origin.y
+        guard let startOffset = dragStartScrollOffset else {
+            dragStartScrollOffset = offset
+            return
+        }
+        session.animatesToStartingPositionsOnCancelOrFail = SidebarDragSlideBack.animatesBack(
+            startOffset: startOffset, currentOffset: offset)
+    }
+
     private func beginOutlineDestinationDrag() {
         guard suppressesFloatingNewTabDuringDrag == false else { return }
         suppressesFloatingNewTabDuringDrag = true
@@ -5985,6 +6010,7 @@ extension SidebarTabListViewController: SideBarOutlineViewDelegate {
     }
     
     func outlineView(_ outlineView: NSOutlineView, draggingSession session: NSDraggingSession, movedTo screenPoint: NSPoint) {
+        updateSlideBack(for: session)
         browserState.tabDraggingSession.attachNativeSession(session)
         browserState.tabDraggingSession.update(
             screenLocation: CGPoint(x: screenPoint.x, y: screenPoint.y)
@@ -6142,6 +6168,7 @@ extension SidebarTabListViewController: NSDraggingSource {
         AppLogDebug(
             "[TAB_GROUPS][INNER_DRAG] controller.sourceMoved screen=\(screenPoint)"
         )
+        updateSlideBack(for: session)
         browserState.tabDraggingSession.attachNativeSession(session)
         browserState.tabDraggingSession.update(
             screenLocation: CGPoint(x: screenPoint.x, y: screenPoint.y))
@@ -6154,6 +6181,7 @@ extension SidebarTabListViewController: NSDraggingSource {
             "[TAB_GROUPS][INNER_DRAG] controller.sourceEnded screen=\(screenPoint) " +
             "op=\(operation.rawValue)"
         )
+        dragStartScrollOffset = nil
         finalizeWholeGroupSidebarTearOffIfNeeded(
             session: session,
             screenPoint: screenPoint,

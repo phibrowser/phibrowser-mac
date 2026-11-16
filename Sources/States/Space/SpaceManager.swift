@@ -6206,7 +6206,12 @@ final class SpaceManager: ObservableObject {
                             }
                         }
                     } else {
-                        targetState.createTab(url, focusAfterCreate: true)
+                        guard let url,
+                              Self.reopenMovedTab(url, in: targetState,
+                                                  focusAfterCreate: true) else {
+                            AppLogWarn("[SpaceManager] moveTab: target URL handoff failed")
+                            return
+                        }
                         if sourceState.isKioskWindow {
                             self?.captureKioskOpenedInSpace()
                         }
@@ -6221,6 +6226,24 @@ final class SpaceManager: ObservableObject {
         PostHogSDK.shared.capture("kiosk_opened_in_space", properties: [
             "total_spaces": spaces.count,
         ])
+    }
+
+    /// A cross-profile move must recreate the page, but the destination was
+    /// explicitly chosen by the user. Keep URL rules out of that recreation.
+    @MainActor
+    private static func reopenMovedTab(_ url: String, in targetState: BrowserState,
+                                       focusAfterCreate: Bool) -> Bool {
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return false }
+        let targetWindowId = targetState.windowId.int64Value
+        if kioskURLHandoffNeedsRoutingBypass(url) {
+            bridge.openTabBypassingSpaceRouting(withUrl: url,
+                                                windowId: targetWindowId,
+                                                activateWindow: false)
+            return true
+        }
+        return bridge.createNewTabStrictly(withUrl: url,
+                                           windowId: targetWindowId,
+                                           focusAfterCreate: focusAfterCreate)
     }
 
     enum SpaceMoveTabUnit {
@@ -6389,6 +6412,7 @@ final class SpaceManager: ObservableObject {
                         }
                     }
                 } else {
+                    var allMovesSucceeded = true
                     for (offset, unit) in movingUnits.enumerated() {
                         if sourceState.travelBackAllowed,
                            let sidebar = unit.tabs.compactMap({ sourceState.carriedConversationSidebar(for: $0) }).first {
@@ -6403,17 +6427,26 @@ final class SpaceManager: ObservableObject {
                         }
                         switch unit {
                         case .tab(let tab):
-                            targetState.createTab(tab.url, focusAfterCreate: offset == movingUnits.count - 1)
+                            guard let url = tab.url,
+                                  Self.reopenMovedTab(url, in: targetState,
+                                                      focusAfterCreate: offset == movingUnits.count - 1) else {
+                                AppLogWarn("[SpaceManager] moveTabs: target URL handoff failed")
+                                allMovesSucceeded = false
+                                continue
+                            }
                             unit.closeSourceTabsAfterCrossProfileMove()
                         case .split(let panes):
                             guard Self.reopenSplitPanesFromURLs(panes,
                                                                 in: targetState,
                                                                 logContext: "moveTabs") else {
+                                allMovesSucceeded = false
                                 continue
                             }
                             unit.closeSourceTabsAfterCrossProfileMove()
                         }
                     }
+                    completion(allMovesSucceeded)
+                    return
                 }
                 completion(true)
             }

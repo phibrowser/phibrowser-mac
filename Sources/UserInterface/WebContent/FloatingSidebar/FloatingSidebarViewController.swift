@@ -893,14 +893,30 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
             && state.participatesInSpaces
             && (SpaceManager.shared.spaces.count > 1 || headerView.forcesSpaceSwitchVisible)
         // The floating header keeps its nav row 8pt from the top in every
-        // layout (see SidebarHeaderView.sidebarButtonTopOffset), so both
-        // bases leave 3pt under the last header row, as the docked one does.
-        let base: CGFloat = showInSidebar ? 79 : 35
+        // layout, or the column's offset in docked metrics (see
+        // SidebarHeaderView.controlRowTopOffset); both bases leave 3pt under
+        // the last header row, as the docked one does.
+        let base = headerView.controlRowTopOffset + (showInSidebar ? 71 : 27)
         let spacesBandHeight = SidebarHeaderView.spaceSwitchBandHeight(addressInSidebar: showInSidebar)
         // A row moved up into the control row adds no height of its own.
         let reservesSpacesBand = spacesEnabled && !headerView.spaceSwitchSitsInControlRow
         let headerHeight = base + (reservesSpacesBand ? spacesBandHeight : 0)
         headerHeightConstraint?.update(offset: headerHeight)
+    }
+
+    /// While the panel covers the docked column during a dock or undock, its
+    /// header lays out like the column's (see
+    /// `SidebarHeaderView.usesDockedMetrics`). The caller lays out.
+    /// Keeps the header's lights through a hand-off; see
+    /// `SidebarHeaderView.keepsTrafficLightsForHandOff`.
+    func setKeepsTrafficLightsForHandOff(_ keeps: Bool) {
+        headerView.keepsTrafficLightsForHandOff = keeps
+    }
+
+    func setUsesDockedHeaderMetrics(_ docked: Bool) {
+        guard headerView.usesDockedMetrics != docked else { return }
+        headerView.usesDockedMetrics = docked
+        updateHeaderHeight()
     }
 
     // MARK: - Create Space Overlay
@@ -1175,5 +1191,13 @@ extension FloatingSidebarViewController: SpaceSwitchBandSurface {
             paletteBackdropLayer.removeAnimation(forKey: "phi.fillRamp")
             updatePaletteBackdrop()
         }
+    }
+}
+
+extension FloatingSidebarViewController {
+    /// See `SidebarTabListViewController.scrollOffset`.
+    var tabListScrollOffset: NSPoint {
+        get { tabList.scrollOffset }
+        set { tabList.scrollOffset = newValue }
     }
 }

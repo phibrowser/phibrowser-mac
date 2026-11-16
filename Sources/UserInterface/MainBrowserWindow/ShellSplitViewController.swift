@@ -252,10 +252,16 @@ final class ShellSplitViewController: NSViewController {
     }
 
     func setSidebarCollapsed(_ collapsed: Bool, animated: Bool) {
+        // A toggle during a hand-off starts from the hand-off's end state.
+        floatingSidebarHost.finishSidebarHandOffImmediately()
+        sidebarHost.setResidentsHidden(false)
         let target = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional || collapsed
         guard sidebarSplitViewItem.isCollapsed != target else { return }
         let dockWidth = pendingDockWidth
         if !target { pendingDockWidth = nil }
+        // A column that opens at a panel-resized width (`pendingDockWidth`)
+        // expands there instead of handing off.
+        if animated, target || dockWidth == nil, handOffSidebar(collapsing: target) { return }
         splitViewController.setSidebarCollapsed(target, item: sidebarSplitViewItem, animated: animated,
                                                 dockWidth: dockWidth)
     }
@@ -343,6 +349,76 @@ final class ShellSplitViewController: NSViewController {
         sidebarWidthPersistWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.sidebarWidthPersistDelay, execute: workItem)
     }
+
+    // MARK: - Dock hand-off
+
+    private var sidebarHandOffRun = 0
+
+    /// Where the pointer is, in window coordinates. A test seam.
+    lazy var pointerLocationInWindow: () -> NSPoint? = { [weak self] in
+        self?.view.window?.mouseLocationOutsideOfEventStream
+    }
+
+    /// The event that asked for this toggle. A test seam.
+    lazy var currentEventType: () -> NSEvent.EventType? = { NSApp.currentEvent?.type }
+
+    /// The pointer is on the open column. Tests the column's resting rect:
+    /// while it slides open its frame is still moving in.
+    private func isPointerOnDockedSidebar() -> Bool {
+        guard !sidebarSplitViewItem.isCollapsed, let point = pointerLocationInWindow() else { return false }
+        let bounds = view.bounds
+        let width = sidebarHost.view.frame.width
+        let column = NSRect(x: sidebarOnRight ? bounds.maxX - width : bounds.minX, y: bounds.minY,
+                            width: width, height: bounds.height)
+        return view.convert(column, to: nil).contains(point)
+    }
+
+    /// Pinning from the visible floating panel docks it in place; unpinning
+    /// with the shortcut while the pointer is on the column turns the column
+    /// into the panel in place. Both run the column change and the panel's
+    /// change in one group. Returns false when this toggle is not a hand-off.
+    ///
+    /// A click on the sidebar button also has the pointer on the column, but
+    /// it means put the sidebar away, so only a key press keeps it up.
+    private func handOffSidebar(collapsing collapsed: Bool) -> Bool {
+        let kind: SidebarHandOffKind?
+        if collapsed {
+            kind = currentEventType() == .keyDown && isPointerOnDockedSidebar() ? .undock : nil
+        } else {
+            kind = floatingSidebarHost.isVisible ? .dock : nil
+        }
+        guard let kind, floatingSidebarHost.beginSidebarHandOff(kind) else { return false }
+        if kind == .dock {
+            // A collapsed column expands back to its own frame's width. A
+            // toggle that cut AppKit's animation short leaves that at the
+            // in-flight width; the column must open where the panel is.
+            let width = floatingSidebarHost.currentFloatingWidth
+            if sidebarHost.view.frame.width != width {
+                sidebarHost.view.setFrameSize(NSSize(width: width, height: sidebarHost.view.frame.height))
+            }
+        }
+        sidebarHandOffRun += 1
+        let run = sidebarHandOffRun
+        // The panel covers the column throughout; the column's own rows
+        // would slide in or out under it.
+        sidebarHost.setResidentsHidden(true)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = FloatingSidebarHostViewController.sidebarHandOffDuration
+            context.timingFunction = SidebarToggleAnimation.timingFunction
+            context.allowsImplicitAnimation = true
+            // The toggle's own route: its speed and curve, which the panel's
+            // glide matches, and the window's lights held until it opens.
+            splitViewController.setSidebarCollapsed(collapsed, item: sidebarSplitViewItem,
+                                                    animated: true, dockWidth: nil)
+            floatingSidebarHost.animateSidebarHandOff()
+        } completionHandler: { [weak self] in
+            // A later toggle already finished this hand-off and may run its own.
+            guard let self, sidebarHandOffRun == run else { return }
+            sidebarHost.setResidentsHidden(false)
+            floatingSidebarHost.finishSidebarHandOff()
+        }
+        return true
+    }
 }
 
 /// The sidebar column: the vibrancy material and themed fill every Space's
@@ -414,6 +490,15 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
     /// too, so with every resident following, a divider drag re-laid out
     /// every Space's sidebar on every frame. They are caught up well before
     /// a switch can present one, so presenting stays a flag flip.
+    /// Hides the residents, leaving the backdrop, while the floating panel
+    /// covers the column in a hand-off
+    /// (`ShellSplitViewController.handOffSidebar(collapsing:)`).
+    func setResidentsHidden(_ hidden: Bool) {
+        for resident in view.subviews where residentWidthConstraints[ObjectIdentifier(resident)] != nil {
+            resident.alphaValue = hidden ? 0 : 1
+        }
+    }
+
     func host(_ sidebarView: NSView) {
         guard sidebarView.superview !== view else { return }
         sidebarView.removeFromSuperview()

@@ -488,6 +488,20 @@ final class ContentSurfaceHostingTests: XCTestCase {
         XCTAssertEqual(fixture.surfaceRect(), try fixture.pagePanelRect())
     }
 
+    /// A late frame from a differently shaped page area would fill the
+    /// card's corners square until Chromium draws its own rounded one, as
+    /// when the sidebar is pinned or unpinned, so the clip follows the card's
+    /// corners too.
+    func testTheSurfaceViewClipsToTheCardsRoundedCorners() throws {
+        let fixture = try makeFixture()
+        let layer = try XCTUnwrap(fixture.surfaceView.layer)
+
+        XCTAssertTrue(layer.masksToBounds)
+        XCTAssertEqual(layer.cornerRadius, WebContentLayout(browserState: fixture.container.browserState).containerCornerRadius)
+        XCTAssertGreaterThan(layer.cornerRadius, 0, "precondition: the card has rounded corners")
+        XCTAssertEqual(layer.cornerCurve, .continuous)
+    }
+
     func testTheSurfaceViewCoversThePagePanelAgainAfterASidePanelSlide() throws {
         WebContentContainerViewController.panelSlideDurationForTesting = 0.05
         let fixture = try makeFixture()

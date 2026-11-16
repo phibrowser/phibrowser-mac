@@ -37,7 +37,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     }
 
     var controlRowTopOffset: CGFloat {
-        isFloating ? 8 : Self.controlRowTopOffset(
+        usesFloatingMetrics ? 8 : Self.controlRowTopOffset(
             for: browserState?.layoutMode ?? .performance,
             edgeToEdgeEnabled: WebContentLayout(browserState: browserState).edgeToEdgeEnabled
         )
@@ -106,6 +106,46 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
 
     private var isFloating: Bool = false
     private let floatingTrafficLightsView = SidebarTrafficLightsView()
+    /// The floating header's own close-button centre
+    /// (`SidebarTrafficLightsView.firstCenter`).
+    private static let floatingFirstCenter: CGFloat = 20
+
+    /// A floating header lays out like the docked column's while the
+    /// floating panel covers the column during a dock or undock: the nav row
+    /// at the column's offset, the sidebar button after the window's own
+    /// lights, and its lights on the window's. The panel then matches the
+    /// column it replaces, and morphs to its own spacing.
+    var usesDockedMetrics = false {
+        didSet {
+            guard isFloating, usesDockedMetrics != oldValue else { return }
+            updateLayoutVisibility(layoutMode: browserState?.layoutMode ?? .performance)
+            updateSidebarButtonLeftConstraint()
+            floatingTrafficLightsView.firstCenter = trafficLightsFirstCenter
+        }
+    }
+
+    /// Keeps the floating header's lights through a hand-off: on an undock
+    /// they are there before the column collapses, on a dock until the
+    /// window's own show, once the column has opened
+    /// (`PhiSplitViewController.isSidebarExpanding`).
+    var keepsTrafficLightsForHandOff = false {
+        didSet {
+            guard keepsTrafficLightsForHandOff != oldValue else { return }
+            updateFloatingTrafficLights(layoutMode: browserState?.layoutMode ?? .performance)
+        }
+    }
+
+    private var usesFloatingMetrics: Bool { isFloating && !usesDockedMetrics }
+
+    /// The close button's centre: the header's own spacing, or, in docked
+    /// metrics, on the window's close button. The header then sits at the
+    /// window's leading edge, so window x is header x.
+    private var trafficLightsFirstCenter: CGFloat {
+        guard !usesFloatingMetrics, let close = window?.titlebarButton(.closeButton) else {
+            return Self.floatingFirstCenter
+        }
+        return close.convert(close.bounds, to: nil).midX
+    }
     
     private lazy var sidebarButton: HoverableButtonNSView = {
         let config = HoverableButtonConfig(image: .leftSidebarToggle,
@@ -456,7 +496,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
 
         // Adjust sidebarButton position
         sidebarButton.snp.remakeConstraints { make in
-            make.top.equalToSuperview().offset(isFloating ? 8 : Self.controlRowTopOffset(
+            make.top.equalToSuperview().offset(usesFloatingMetrics ? 8 : Self.controlRowTopOffset(
                 for: layoutMode,
                 edgeToEdgeEnabled: WebContentLayout(browserState: browserState).edgeToEdgeEnabled
             ))
@@ -592,7 +632,8 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     private func updateFloatingTrafficLights(layoutMode: LayoutMode) {
         guard isFloating else { return }
         floatingTrafficLightsView.isActive = !SidebarPosition.isOnRight && !layoutMode.isTraditional
-            && browserState?.sidebarCollapsed == true && browserState?.isInFullScreenMode != true
+            && (browserState?.sidebarCollapsed == true || keepsTrafficLightsForHandOff)
+            && browserState?.isInFullScreenMode != true
     }
 
     /// Returns the maxX of the leading chrome controls in this header.
@@ -600,7 +641,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         // The right-sidebar layout keeps the lights in the window's top band,
         // not in this header.
         if SidebarPosition.isOnRight { return 0 }
-        if isFloating {
+        if usesFloatingMetrics {
             if browserState?.isInFullScreenMode == true {
                 return 0
             }

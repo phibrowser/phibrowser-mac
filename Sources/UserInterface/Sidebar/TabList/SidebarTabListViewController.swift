@@ -6247,3 +6247,19 @@ extension SidebarTabListViewController: NSDraggingSource {
 /// - `shouldExpandItem` blocks expansion when `isDraggingTab == true`;
 ///   `expandFloatingBookmarkParentsIfNeeded` temporarily sets `allowExpandDuringDrag = true` to bypass.
 /// - Folders stay expanded after drag ends; no restoration needed.
+
+extension SidebarTabListViewController {
+    /// Where the list is scrolled. The floating panel and the docked column
+    /// each have a list; a dock or undock gives the one taking over the
+    /// other's position, so the rows stay put.
+    var scrollOffset: NSPoint {
+        get { scrollView?.contentView.bounds.origin ?? .zero }
+        set {
+            guard let scrollView else { return }
+            let clip = scrollView.contentView
+            let target = clip.constrainBoundsRect(NSRect(origin: newValue, size: clip.bounds.size)).origin
+            clip.scroll(to: target)
+            scrollView.reflectScrolledClipView(clip)
+        }
+    }
+}

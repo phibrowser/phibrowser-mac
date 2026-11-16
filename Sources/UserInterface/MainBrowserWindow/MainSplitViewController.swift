@@ -534,3 +534,12 @@ class TitlebarTransparentView: NSView {
         return heightFromTop <= titlebarHeight
     }
 }
+
+extension MainSplitViewController {
+    /// The docked sidebar's tab list position; see
+    /// `SidebarTabListViewController.scrollOffset`.
+    var sidebarTabListScrollOffset: NSPoint {
+        get { verticalTabListViewController.tabListScrollOffset }
+        set { verticalTabListViewController.tabListScrollOffset = newValue }
+    }
+}

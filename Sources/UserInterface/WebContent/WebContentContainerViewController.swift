@@ -1705,6 +1705,12 @@ class WebContentContainerViewController: NSViewController {
             make.edges.equalTo(pageAreaBackdrop)
         }
         hostingView.clipsToBounds = true
+        // Clipped to the card's rounded shape, not its rectangle: a late
+        // frame would otherwise fill the card's corners square until
+        // Chromium draws its own rounded one.
+        hostingView.wantsLayer = true
+        hostingView.layer?.cornerCurve = .continuous
+        hostingView.layer?.cornerRadius = contentLayout.containerCornerRadius
     }
 
     /// Lends the surface's view to the page entering content fullscreen
@@ -2342,6 +2348,9 @@ class WebContentContainerViewController: NSViewController {
         updatePageAreaBackdropLeadingInset()
         pageAreaBackdropTrailingBottomConstraint?.update(inset: contentLayout.edgeSpacing)
         pageAreaBackdrop.layer?.cornerRadius = contentLayout.containerCornerRadius
+        if let contentSurfaceView, contentSurfaceView.superview === contentContainer {
+            contentSurfaceView.layer?.cornerRadius = contentLayout.containerCornerRadius
+        }
         extensionSidePanelFrameBackdrop?.layer?.cornerRadius = contentLayout.containerCornerRadius
         remakeContentLayout()
         contentContainer.needsLayout = true

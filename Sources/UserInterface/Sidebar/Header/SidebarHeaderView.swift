@@ -874,6 +874,26 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
                 .store(in: &cancellables)
         }
 
+        // The header's lights follow full screen through the deferred
+        // `isInFullScreenMode` sink, which runs after AppKit has captured the
+        // window for its animation, so the old lights could stay in it until
+        // it ended: the floating header's, and the docked header's with the
+        // sidebar on the right. The window controller marks the Browser as
+        // the transition starts; check the lights again in that same turn.
+        if window != nil {
+            NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)
+                .merge(with: NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification))
+                .filter { [weak self] notification in
+                    guard let self, let window = self.window else { return false }
+                    return notification.object as? NSWindow === window
+                }
+                .sink { [weak self] _ in
+                    guard let self else { return }
+                    updateTrafficLights(layoutMode: browserState?.layoutMode ?? .performance)
+                }
+                .store(in: &cancellables)
+        }
+
         #if !PHI_OSS_BUILD
         // Show the upgrade button once Sparkle reports a downloaded update.
         NotificationCenter.default.publisher(for: .sparkleDidDownloadUpdate)

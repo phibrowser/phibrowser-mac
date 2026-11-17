@@ -84,9 +84,18 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     /// in the Balanced and Performance layouts, once the user has hidden
     /// every button that row holds (the Update button does not count; the
     /// row starts after it). Its owner reclaims the row's height and
-    /// right-aligns the strip's icons while this is true.
+    /// right-aligns the strip's icons while this is true, unless
+    /// `spaceSwitchAlignsLeading`.
     private(set) var spaceSwitchSitsInControlRow = false
-    /// Called when `spaceSwitchSitsInControlRow` changes.
+    /// The Spaces-switch row starts at the left of the control row instead
+    /// of the right: no traffic lights sit before it. The window's top band
+    /// holds them with the sidebar on the right, and full screen has none.
+    /// Its owner gives the strip its own row's layout there, the icons at
+    /// the left and the "+" at the far end. Full screen flips this as its
+    /// animation starts, which covers the icons' move.
+    private(set) var spaceSwitchAlignsLeading = false
+    /// Called when `spaceSwitchSitsInControlRow` or
+    /// `spaceSwitchAlignsLeading` changes, with the first.
     var onSpaceSwitchPlacementChanged: ((Bool) -> Void)?
     private var spaceSwitchControlRowLeading: CGFloat?
     /// Last-applied switch visibility, so the toggle observer only remakes
@@ -419,7 +428,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             }
         } else {
             spaceSwitchControlRowLeading = nil
-            setSpaceSwitchSitsInControlRow(false)
+            setSpaceSwitchPlacement(sitsInControlRow: false, alignsLeading: false)
             view.snp.remakeConstraints { make in
                 make.leading.trailing.equalToSuperview()
                 make.top.equalTo(stackView.snp.bottom)
@@ -574,6 +583,18 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
                 if self.isSidebarLayout(layoutMode) {
                     self.updateSidebarButtonLeftConstraint()
                 }
+            }
+            .store(in: &cancellables)
+
+        // AppKit captures the window for its full screen animation right
+        // after resizing it, before the deferred observer above runs. Place
+        // the Spaces row again as the transition starts, so it moves inside
+        // the animation (`spaceSwitchAlignsLeading`).
+        NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)
+            .merge(with: NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification))
+            .sink { [weak self] notification in
+                guard let self, let window, notification.object as? NSWindow === window else { return }
+                updateUpgradeAndSidebarVisibility(layoutMode: self.browserState?.layoutMode ?? .performance)
             }
             .store(in: &cancellables)
     }
@@ -904,9 +925,11 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         let inControlRow = layoutMode != .comfortable
             && sidebarButton.isHidden && searchTabsButton.isHidden
             && !holdsNavigationButtons(layoutMode: layoutMode)
+        let alignsLeading = inControlRow && !holdsTrafficLights(layoutMode: layoutMode)
         if inControlRow {
-            let leading = spaceSwitchControlRowLeadingOffset(layoutMode: layoutMode)
-            guard !spaceSwitchSitsInControlRow || spaceSwitchControlRowLeading != leading else { return }
+            let leading = spaceSwitchControlRowLeadingOffset(layoutMode: layoutMode, alignsLeading: alignsLeading)
+            guard !spaceSwitchSitsInControlRow || spaceSwitchControlRowLeading != leading
+                || spaceSwitchAlignsLeading != alignsLeading else { return }
             spaceSwitchControlRowLeading = leading
             spaceSwitchTopConstraint = nil
             view.snp.remakeConstraints { make in
@@ -925,7 +948,16 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
                 make.height.equalTo(SpacesStripView.sidebarHeight)
             }
         }
-        setSpaceSwitchSitsInControlRow(inControlRow)
+        setSpaceSwitchPlacement(sitsInControlRow: inControlRow, alignsLeading: alignsLeading)
+    }
+
+    /// Whether the traffic lights sit in this header, before the control row.
+    /// The window's top band holds them with the sidebar on the right, and
+    /// full screen has none.
+    private func holdsTrafficLights(layoutMode: LayoutMode) -> Bool {
+        let sidebarOnRight = !layoutMode.isTraditional
+            && PhiPreferences.GeneralSettings.loadSidebarPosition(from: defaults) == .right
+        return !sidebarOnRight && browserState?.isInFullScreenMode != true
     }
 
     /// Whether the control row keeps a back, forward, or reload button. The
@@ -938,17 +970,25 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     /// Where the Spaces row starts in the control row: after the leading
     /// chrome, or after the Update button while it shows. The docked header
     /// reuses the traffic-light offset `updateSidebarButtonLeftConstraint`
-    /// keeps current, so a width change measures no window buttons.
-    private func spaceSwitchControlRowLeadingOffset(layoutMode: LayoutMode) -> CGFloat {
-        let chromeLeading = isFloating ? (leadingChromeMaxX() ?? 0) + 10 : sidebarButtonLeftOffset
+    /// keeps current, so a width change measures no window buttons. A row
+    /// that `alignsLeading` has no lights to clear and starts at the header's
+    /// edge, as in its own row, so its icons line up with the rows below.
+    private func spaceSwitchControlRowLeadingOffset(layoutMode: LayoutMode, alignsLeading: Bool) -> CGFloat {
+        let chromeLeading: CGFloat
+        if alignsLeading {
+            chromeLeading = 0
+        } else {
+            chromeLeading = isFloating ? (leadingChromeMaxX() ?? 0) + 10 : sidebarButtonLeftOffset
+        }
         guard !upgradeButton.isHidden else { return chromeLeading }
         let upgradeMaxX = upgradeButtonLeftOffset(layoutMode: layoutMode) + Self.upgradeButtonSize.width
         return max(chromeLeading, upgradeMaxX + Self.upgradeButtonSpacing)
     }
 
-    private func setSpaceSwitchSitsInControlRow(_ sits: Bool) {
-        guard spaceSwitchSitsInControlRow != sits else { return }
+    private func setSpaceSwitchPlacement(sitsInControlRow sits: Bool, alignsLeading: Bool) {
+        guard spaceSwitchSitsInControlRow != sits || spaceSwitchAlignsLeading != alignsLeading else { return }
         spaceSwitchSitsInControlRow = sits
+        spaceSwitchAlignsLeading = alignsLeading
         onSpaceSwitchPlacementChanged?(sits)
     }
 

@@ -477,7 +477,9 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         spacesStripHostingView = hostingView
         headerView.onSpaceSwitchPlacementChanged = { [weak self, weak stripGeometry] sitsInControlRow in
+            // A row the header starts at the left keeps its own row's layout.
             stripGeometry?.sitsInControlRow = sitsInControlRow
+                && self?.headerView.spaceSwitchAlignsLeading == false
             self?.updateHeaderHeight()
         }
         headerView.mountSpaceSwitch(hostingView)

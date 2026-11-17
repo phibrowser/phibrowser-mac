@@ -172,6 +172,96 @@ final class SidebarHeaderButtonVisibilityTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(stack).isHidden)
     }
 
+    func testBesideTheTrafficLightsTheSpacesRowKeepsToTheRight() throws {
+        for (layoutMode, isFloating) in Self.controlRowHeaders {
+            let label = "\(layoutMode)\(isFloating ? " floating" : "")"
+            let (header, state) = makeHeader(layoutMode: layoutMode, isFloating: isFloating)
+            let strip = mountSpacesRow(in: header)
+            hideControlRowButtons(keeping: state)
+            header.layoutSubtreeIfNeeded()
+
+            XCTAssertTrue(header.spaceSwitchSitsInControlRow, "\(label): precondition: the row sits in the control row")
+            XCTAssertFalse(header.spaceSwitchAlignsLeading, "\(label): the lights sit before it, so it keeps to the right")
+            XCTAssertGreaterThan(strip.frame.minX, header.bounds.minX, "\(label): it starts after the lights")
+            showControlRowButtons(keeping: state)
+        }
+    }
+
+    func testInFullScreenTheSpacesRowStartsAtTheLeft() throws {
+        for (layoutMode, isFloating) in Self.controlRowHeaders {
+            let (header, state) = makeHeader(layoutMode: layoutMode, isFloating: isFloating)
+            let strip = mountSpacesRow(in: header)
+            hideControlRowButtons(keeping: state)
+            var heardAlignments: [Bool] = []
+            header.onSpaceSwitchPlacementChanged = { [weak header] _ in
+                heardAlignments.append(header?.spaceSwitchAlignsLeading ?? false)
+            }
+
+            setFullScreen(true, keeping: state)
+            XCTAssertTrue(header.spaceSwitchSitsInControlRow, "\(layoutMode)\(isFloating ? " floating" : ""): it stays in the control row")
+            XCTAssertTrue(header.spaceSwitchAlignsLeading,
+                          "\(layoutMode)\(isFloating ? " floating" : ""): full screen has no lights, so the row starts at the left")
+            XCTAssertEqual(heardAlignments.last, true, "\(layoutMode)\(isFloating ? " floating" : ""): the owner hears the row move left")
+            header.layoutSubtreeIfNeeded()
+            XCTAssertEqual(strip.frame.minX, header.bounds.minX, accuracy: 0.5,
+                           "\(layoutMode)\(isFloating ? " floating" : ""): it starts at the header's edge, as in its own row")
+
+            setFullScreen(false, keeping: state)
+            XCTAssertTrue(header.spaceSwitchSitsInControlRow, "\(layoutMode)\(isFloating ? " floating" : ""): it stays in the control row")
+            XCTAssertFalse(header.spaceSwitchAlignsLeading,
+                           "\(layoutMode)\(isFloating ? " floating" : ""): the lights return, so the row keeps to the right")
+            XCTAssertEqual(heardAlignments.last, false, "\(layoutMode)\(isFloating ? " floating" : ""): the owner hears the row move right")
+            showControlRowButtons(keeping: state)
+        }
+    }
+
+    func testTheSpacesRowMovesAsTheWindowStartsIntoOrOutOfFullScreen() throws {
+        for (layoutMode, isFloating) in Self.controlRowHeaders {
+            let label = "\(layoutMode)\(isFloating ? " floating" : "")"
+            let (header, state) = makeHeader(layoutMode: layoutMode, isFloating: isFloating)
+            _ = mountSpacesRow(in: header)
+            hideControlRowButtons(keeping: state)
+            let window = try XCTUnwrap(header.window)
+
+            // The window controller marks the Browser full screen as the
+            // transition starts; AppKit captures the window before the run
+            // loop turns again.
+            state.toggleFullScreenMode(true)
+            NotificationCenter.default.post(name: NSWindow.willEnterFullScreenNotification, object: window)
+            XCTAssertTrue(header.spaceSwitchAlignsLeading, "\(label): the row starts at the left before the run loop turns")
+
+            state.toggleFullScreenMode(false)
+            NotificationCenter.default.post(name: NSWindow.willExitFullScreenNotification, object: window)
+            XCTAssertFalse(header.spaceSwitchAlignsLeading, "\(label): the row keeps to the right again before the run loop turns")
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            state.layoutMode = layoutMode
+            showControlRowButtons(keeping: state)
+        }
+    }
+
+    func testWithTheSidebarOnTheRightTheSpacesRowStartsAtTheLeft() throws {
+        for (layoutMode, isFloating) in Self.controlRowHeaders {
+            let (header, state) = makeHeader(layoutMode: layoutMode, isFloating: isFloating)
+            let strip = mountSpacesRow(in: header)
+            setSidebarPosition(.right, keeping: state)
+            hideControlRowButtons(keeping: state)
+
+            XCTAssertTrue(header.spaceSwitchSitsInControlRow,
+                          "\(layoutMode)\(isFloating ? " floating" : ""): precondition: the row sits in the control row")
+            XCTAssertTrue(header.spaceSwitchAlignsLeading,
+                          "\(layoutMode)\(isFloating ? " floating" : ""): the lights sit in the window's top band, so the row starts at the left")
+            header.layoutSubtreeIfNeeded()
+            XCTAssertEqual(strip.frame.minX, header.bounds.minX, accuracy: 0.5,
+                           "\(layoutMode)\(isFloating ? " floating" : ""): it starts at the header's edge, as in its own row")
+
+            showControlRowButtons(keeping: state)
+            XCTAssertFalse(header.spaceSwitchSitsInControlRow, "\(layoutMode)\(isFloating ? " floating" : ""): a returning button sends the row back down")
+            XCTAssertFalse(header.spaceSwitchAlignsLeading,
+                           "\(layoutMode)\(isFloating ? " floating" : ""): below the control row it keeps its own row's layout")
+            setSidebarPosition(.left, keeping: state)
+        }
+    }
+
     func testHidingANavigationButtonHidesOnlyThatButton() throws {
         let (header, state) = makeHeader(layoutMode: .performance)
         let back = try button("sidebarHeader.backButton", in: header)
@@ -280,6 +370,36 @@ final class SidebarHeaderButtonVisibilityTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
     }
 
+    /// Hides every button the control row can hold, in any layout.
+    private func hideControlRowButtons(keeping state: BrowserState) {
+        for setting in Self.headerSettings { set(setting, false, keeping: state) }
+    }
+
+    private func showControlRowButtons(keeping state: BrowserState) {
+        for setting in Self.headerSettings { set(setting, true, keeping: state) }
+    }
+
+    /// Enters or leaves full screen, then gives `state` back its layout: the
+    /// header lays out for full screen with the app-wide layout preference,
+    /// which this suite leaves alone.
+    private func setFullScreen(_ fullScreen: Bool, keeping state: BrowserState) {
+        let layoutMode = state.layoutMode
+        state.toggleFullScreenMode(fullScreen)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        state.layoutMode = layoutMode
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    /// Writes the sidebar's side to this suite's defaults, then gives `state`
+    /// back its layout, which lays the header out again.
+    private func setSidebarPosition(_ position: SidebarPosition, keeping state: BrowserState) {
+        let layoutMode = state.layoutMode
+        PhiPreferences.GeneralSettings.saveSidebarPosition(position, to: defaults)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        state.layoutMode = layoutMode
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+
     private func makeState(layoutMode: LayoutMode) -> BrowserState {
         nextWindowId += 1
         let state = BrowserState(windowId: nextWindowId, localStore: store, profileId: "Default")
@@ -287,14 +407,20 @@ final class SidebarHeaderButtonVisibilityTests: XCTestCase {
         return state
     }
 
-    private func makeHeader(layoutMode: LayoutMode) -> (SidebarHeaderView, BrowserState) {
+    /// Every header the Spaces row can move up in: Balanced and Performance,
+    /// docked and on the floating panel.
+    private static let controlRowHeaders: [(LayoutMode, Bool)] = [
+        (.balanced, false), (.performance, false), (.balanced, true), (.performance, true),
+    ]
+
+    private func makeHeader(layoutMode: LayoutMode, isFloating: Bool = false) -> (SidebarHeaderView, BrowserState) {
         let state = makeState(layoutMode: layoutMode)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         windows.append(window)
-        let header = SidebarHeaderView(state: state, defaults: defaults)
+        let header = SidebarHeaderView(state: state, isFloating: isFloating, defaults: defaults)
         header.frame = NSRect(x: 0, y: 200, width: 300, height: 100)
         window.contentView?.addSubview(header)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))

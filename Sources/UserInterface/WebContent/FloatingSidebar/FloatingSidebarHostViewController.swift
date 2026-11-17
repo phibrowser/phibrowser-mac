@@ -46,6 +46,14 @@ final class FloatingSidebarHostViewController: NSViewController {
     /// create-Space form; the last one closing re-runs the hide scheduling.
     private let panelPopovers = NSHashTable<NSPopover>.weakObjects()
     private var popoverObservers: [NSObjectProtocol] = []
+    /// The window's resize and full screen observers
+    /// (`ensureFloatingSidebarWindowObservers`).
+    private var windowObservers: [NSObjectProtocol] = []
+    /// The window is animating into or out of full screen. Its frame jumps
+    /// to the new size as the animation starts; the pointer check waits for
+    /// the animation to end, so a panel the pointer is no longer on slides
+    /// out in view rather than vanishing behind it.
+    private var isWindowInFullScreenTransition = false
     /// The presented Space's content was made the panel's while the panel
     /// was hidden, without activation or layout; `installContent` runs
     /// before the panel next shows or is realized off screen.
@@ -348,6 +356,7 @@ final class FloatingSidebarHostViewController: NSViewController {
             NotificationCenter.default.removeObserver(observer)
         }
         popoverObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        windowObservers.forEach { NotificationCenter.default.removeObserver($0) }
     }
 
     static let floatingSidebarDefaultWidth: CGFloat = MainSplitViewController.leftItemMinWidth
@@ -527,7 +536,17 @@ final class FloatingSidebarHostViewController: NSViewController {
 
     /// Window occlusion may dismiss the panel; changing the presented Space
     /// does not occlude or replace this window-owned view.
-    private func ensureFloatingSidebarOcclusionObserver() {
+    ///
+    /// A resize (the full screen light, a zoom) can carry the panel away
+    /// from a pointer that has not moved since. AppKit rebuilds the panel's
+    /// tracking area at the new frame without reporting the pointer leaving,
+    /// so the panel would stay open until the pointer crossed it again. The
+    /// resize re-runs the hide scheduling instead, which reads the pointer
+    /// where it now is; into or out of full screen, once the animation has
+    /// ended (`isWindowInFullScreenTransition`). Should AppKit not post the
+    /// matching did-notification, the flag only keeps resizes from re-checking
+    /// until the next transition ends.
+    private func ensureFloatingSidebarWindowObservers() {
         guard floatingSidebarOcclusionObserver == nil, let window = view.window else { return }
         floatingSidebarOcclusionObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didChangeOcclusionStateNotification,
@@ -537,6 +556,31 @@ final class FloatingSidebarHostViewController: NSViewController {
             guard let self, self.view.window?.isVisible == false else { return }
             self.hideFloatingSidebar(animated: false)
         }
+        let center = NotificationCenter.default
+        for name in [NSWindow.willEnterFullScreenNotification, NSWindow.willExitFullScreenNotification] {
+            windowObservers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.isWindowInFullScreenTransition = true
+                    self.cancelFloatingSidebarHide()
+                }
+            })
+        }
+        for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
+            windowObservers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.isWindowInFullScreenTransition = false
+                    if self.isVisible { self.scheduleFloatingSidebarHide() }
+                }
+            })
+        }
+        windowObservers.append(center.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isVisible, !self.isWindowInFullScreenTransition else { return }
+                self.scheduleFloatingSidebarHide()
+            }
+        })
     }
 
     /// Syncs the hidden panel to the docked column's width.
@@ -703,7 +747,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         guard shouldEnableFloatingSidebar() else { return }
         flushPendingFloatingSidebarWidthSync()
         ensureFloatingSidebarIfNeeded()
-        ensureFloatingSidebarOcclusionObserver()
+        ensureFloatingSidebarWindowObservers()
         cancelFloatingSidebarHide()
 
         guard let panel = floatingSidebarContainerView else { return }

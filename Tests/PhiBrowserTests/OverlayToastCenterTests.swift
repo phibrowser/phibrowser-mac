@@ -9,6 +9,91 @@ import class SwiftUI.NSHostingView
 import XCTest
 @testable import Phi
 
+@MainActor
+final class BackgroundTabToastTests: XCTestCase {
+    private final class CollapsibleBrowserState: BrowserState {
+        var collapsed = true
+        override var sidebarCollapsed: Bool { collapsed }
+    }
+
+    private var directory: URL!
+    private var store: LocalStore!
+    private var state: CollapsibleBrowserState!
+
+    override func setUp() async throws {
+        directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        store = LocalStore(account: Account(userID: UUID().uuidString), storeDirectoryURL: directory)
+        state = CollapsibleBrowserState(windowId: -986120, localStore: store, profileId: LocalStore.defaultProfileId)
+        state.layoutMode = .performance
+        state.tabs = [Tab(guid: 1, url: "https://example.test", isActive: true, index: 0)]
+        state.updateNormalTabs()
+        state.focuseTab(state.tabs[0])
+    }
+
+    override func tearDown() async throws {
+        OverlayToastCenter.shared.clearWindow(windowId: state.windowId)
+        state = nil
+        try await store.closeForAccountDirectoryRemoval()
+        store = nil
+        try FileManager.default.removeItem(at: directory)
+    }
+
+    private func arrive(kind: NativeTabCreationKind = .linkBackground, active: Bool = false) -> Tab {
+        let tab = Tab(guid: state.tabs.count + 1, url: "https://example.test/link", isActive: active, index: state.tabs.count)
+        state.handleNewTabFromChromium(tab, context: NativeTabCreationContext(
+            isActiveAtCreation: active, creationKind: kind, openerTabId: 1))
+        return tab
+    }
+
+    func testBackgroundLinkShowsOnlyWithCollapsedVerticalSidebar() {
+        for layout in LayoutMode.allCases {
+            for collapsed in [false, true] {
+                OverlayToastCenter.shared.clearWindow(windowId: state.windowId)
+                state.layoutMode = layout
+                state.collapsed = collapsed
+                _ = arrive()
+                let toasts = OverlayToastCenter.shared.visibleToasts(for: state.windowId)
+                XCTAssertEqual(toasts.count, collapsed && !layout.isTraditional ? 1 : 0,
+                               "layout=\(layout), collapsed=\(collapsed)")
+                XCTAssertEqual(state.focusingTab?.guid, 1)
+            }
+        }
+    }
+
+    func testForegroundRestoreAndMoveDoNotShowToast() {
+        for kind: NativeTabCreationKind in [.linkForeground, .restore, .moveFromOtherWindow, .unknown] {
+            _ = arrive(kind: kind)
+            XCTAssertTrue(OverlayToastCenter.shared.visibleToasts(for: state.windowId).isEmpty)
+        }
+        _ = arrive(active: true)
+        XCTAssertTrue(OverlayToastCenter.shared.visibleToasts(for: state.windowId).isEmpty)
+    }
+
+    func testLatestToastActivatesItsOwnTab() throws {
+        _ = arrive()
+        let latest = arrive()
+        let toasts = OverlayToastCenter.shared.visibleToasts(for: state.windowId)
+        XCTAssertEqual(toasts.count, 1)
+        let toast = try XCTUnwrap(toasts.first)
+        XCTAssertEqual(toast.placement, .topTrailing)
+        XCTAssertEqual(toast.action?.usesWholeToast, true)
+        let action = try XCTUnwrap(toast.action)
+        action.handler()
+        XCTAssertTrue(state.focusingTab === latest)
+    }
+
+    func testClickAfterTabRemovalDoesNotChangeFocus() throws {
+        let tab = arrive()
+        let action = try XCTUnwrap(OverlayToastCenter.shared.visibleToasts(for: state.windowId).first?.action)
+        state.tabs.removeAll { $0 === tab }
+        state.updateNormalTabs()
+        action.handler()
+        XCTAssertEqual(state.focusingTab?.guid, 1)
+    }
+
+}
+
 final class OverlayToastCenterTests: XCTestCase {
     private final class PreviewTab: Tab {
         let previewView = NSView()

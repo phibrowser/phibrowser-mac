@@ -3718,6 +3718,7 @@ class BrowserState {
         if let context, context.creationKind == .linkBackground, !context.isActiveAtCreation {
             MainActor.assumeIsolated {
                 tabSwitchManager.recordBackgroundTab(tab)
+                OverlayToastCenter.shared.showBackgroundTabCreation(tab, in: self)
             }
         }
         restoreAIChatPanel(of: tab, isActiveAtCreation: context?.isActiveAtCreation == true)

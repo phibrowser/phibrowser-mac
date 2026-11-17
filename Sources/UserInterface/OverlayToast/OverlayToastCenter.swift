@@ -287,6 +287,30 @@ final class OverlayToastCenter: ObservableObject {
 }
 
 extension OverlayToastCenter {
+    @MainActor
+    @discardableResult
+    func showBackgroundTabCreation(_ tab: Tab, in browserState: BrowserState) -> UUID? {
+        guard !browserState.isKioskWindow,
+              !browserState.layoutMode.isTraditional,
+              browserState.sidebarCollapsed,
+              browserState.windowController?.isPresentedOrLegacy != false,
+              browserState.normalTabs.contains(where: { $0 === tab }) else { return nil }
+
+        let title = NSLocalizedString(
+            "tabs.backgroundCreation.confirmation",
+            value: "New Tab Created",
+            comment: "Clickable toast shown when a link opens in a background tab while the sidebar is collapsed; clicking switches to the new tab")
+        return show(
+            title: title,
+            placement: .topTrailing,
+            in: .windowId(browserState.windowId),
+            action: OverlayToastAction(title: title, usesWholeToast: true) { [weak browserState, weak tab] in
+                guard let browserState, let tab,
+                      browserState.tabs.contains(where: { $0 === tab }) else { return }
+                browserState.focuseTab(tab)
+            })
+    }
+
     @discardableResult
     func showClearedTabsConfirmation(in browserState: BrowserState) -> UUID? {
         let shortcut = "⌘Z"

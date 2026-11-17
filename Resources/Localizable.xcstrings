@@ -131305,6 +131305,17 @@
         }
       }
     },
+    "tabs.backgroundCreation.confirmation" : {
+      "comment" : "Clickable toast shown when a link opens in a background tab while the sidebar is collapsed; clicking switches to the new tab",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Tab Created"
+          }
+        }
+      }
+    },
     "tabs.clearAll.confirmation" : {
       "comment" : "Tab cleanup toast - Confirmation after tabs close; %@ is the Undo keyboard shortcut",
       "localizations" : {

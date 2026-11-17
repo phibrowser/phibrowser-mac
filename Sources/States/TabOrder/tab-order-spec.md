@@ -148,12 +148,16 @@ a split promoted from pins/bookmarks or with reordered panes.
 
 ### 3.1 Prerequisites
 
-- Selection decision is only needed when closing the **currently selected normal tab**
+- Selection decision is only needed when closing the **currently selected tab** (a normal tab, or an open pinned or bookmark tab)
 - Closing a non-selected tab does not affect the current selection
 
 ### 3.2 Selection Priority
 
-After closing the active tab, the next selected tab is determined by the following priority:
+After closing the active tab, the **most recently used** remaining tab is selected: the tab the user had focused before the closed one, including an open pinned or bookmark tab. With recent tabs A, B, C (A focused), closing A selects B.
+
+When the closed tab is a pane of a split that stays up (two or more other panes remain), the nearest remaining pane of that split is selected instead, so the split stays on screen. A two-pane split dissolves when one pane closes, and the most recently used rule applies.
+
+Only when no previously used tab remains (for example, every other tab was opened in the background and never visited) is the next selected tab determined by the following priority. This fallback applies only to a tab in the normal strip; closing a pinned tab (or a bookmark tab outside the traditional layout) with no previously used tab keeps Chromium's choice.
 
 | Priority | Candidate | Description |
 |----------|-----------|-------------|
@@ -166,6 +170,8 @@ After closing the active tab, the next selected tab is determined by the followi
 **Direction rule**: When looking for child and sibling candidates, prefer the **right side** of the closed tab first, then the left side.
 
 ### 3.3 Examples
+
+These examples show the fallback priority, which applies when no previously used tab remains.
 
 **Example 1: Child takes priority**
 

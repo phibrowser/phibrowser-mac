@@ -5863,8 +5863,9 @@ class BrowserState {
     }
 
     func prepareForActiveTabClose(tabId: Int) {
-        guard focusingTab?.guid == tabId else { return }
-        guard normalTabs.contains(where: { $0.guid == tabId }) else { return }
+        guard focusingTab?.guid == tabId,
+              tabs.contains(where: { $0.guid == tabId }) else { return }
+        let isNormalTab = normalTabs.contains(where: { $0.guid == tabId })
         let visibleIds = normalTabs.map(\.guid).filter {
             $0 == tabId || applyingRemovalIDs?.contains($0) != true
         }
@@ -5875,28 +5876,43 @@ class BrowserState {
             "localFix=\(nativeRelationGraph.locallyFixedOpenerTabIds)}"
         )
         // A pane closing out of a split that stays up hands focus to another
-        // of its panes, ahead of every opener and neighbor rule: the split,
-        // not the tab after it, stays the active tab. By the time Chromium
-        // reports the removal it has already taken the pane out of the split,
-        // so the split it just left counts too.
-        let splitPaneTarget = (splitGroup(forTabId: tabId)?.tabIds ?? splitPaneTabIdsJustLeft[tabId]).flatMap {
-            NativeTabDecisionEngine.splitPaneSelectionTarget(
-                splitPaneTabIds: $0,
-                closingTabId: tabId,
-                visibleNormalTabIds: visibleIds
-            )
-        }
-        var targetTabId = splitPaneTarget ?? NativeTabDecisionEngine.selectionTarget(
-            visibleNormalTabIds: visibleIds,
+        // of its panes, ahead of every other rule: the split, not the tab
+        // after it, stays the active tab. By the time Chromium reports the
+        // removal it has already taken the pane out of the split, so the
+        // split it just left counts too.
+        let splitPaneTarget = isNormalTab
+            ? (splitGroup(forTabId: tabId)?.tabIds ?? splitPaneTabIdsJustLeft[tabId]).flatMap {
+                NativeTabDecisionEngine.splitPaneSelectionTarget(
+                    splitPaneTabIds: $0,
+                    closingTabId: tabId,
+                    visibleNormalTabIds: visibleIds
+                )
+            }
+            : nil
+        // Otherwise focus returns to the tab used before the closing one,
+        // including an open pinned or bookmark tab.
+        var targetTabId = splitPaneTarget ?? NativeTabDecisionEngine.recentSelectionTarget(
+            visitedTabIds: MainActor.assumeIsolated { tabSwitchManager.visitedTabIDs },
             closingTabId: tabId,
-            relationGraph: nativeRelationGraph
+            selectableTabIds: Set(tabs.map(\.guid))
+                .subtracting(applyingRemovalIDs ?? [])
+                .subtracting(splitPaneIdsBeingRemoved)
+                .subtracting(splitPaneIdsClosingBehindBookmark)
         )
 
-        if splitPaneTarget == nil,
-           let target = targetTabId,
-           nativeRelationGraph.openerByTabId[tabId] != nil,
-           !isOpenerRelated(target: target, closingTabId: tabId) {
-            if let pinnedTarget = findPinnedOrBookmarkAncestor(of: tabId),
+        // No visited tab survives: the strip-relative rule, which applies
+        // only to a normal tab.
+        if targetTabId == nil {
+            guard isNormalTab else { return }
+            targetTabId = NativeTabDecisionEngine.selectionTarget(
+                visibleNormalTabIds: visibleIds,
+                closingTabId: tabId,
+                relationGraph: nativeRelationGraph
+            )
+            if let target = targetTabId,
+               nativeRelationGraph.openerByTabId[tabId] != nil,
+               !isOpenerRelated(target: target, closingTabId: tabId),
+               let pinnedTarget = findPinnedOrBookmarkAncestor(of: tabId),
                applyingRemovalIDs?.contains(pinnedTarget) != true {
                 AppLogDebug("[NativeTab] prepareForActiveTabClose redirecting to pinned/bookmark ancestor \(pinnedTarget)")
                 targetTabId = pinnedTarget

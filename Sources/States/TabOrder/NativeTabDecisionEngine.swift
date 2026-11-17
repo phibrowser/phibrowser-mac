@@ -525,6 +525,17 @@ enum NativeTabDecisionEngine {
         return insertAfterIndex.map { $0 + 1 } ?? 0
     }
 
+    /// The tab to select when the focused tab closes: the most recently
+    /// visited tab that can take focus. nil when none survives; the caller
+    /// then falls back to `selectionTarget`.
+    static func recentSelectionTarget(
+        visitedTabIds: [Int],
+        closingTabId: Int,
+        selectableTabIds: Set<Int>
+    ) -> Int? {
+        visitedTabIds.first { $0 != closingTabId && selectableTabIds.contains($0) }
+    }
+
     /// The pane that takes focus when the focused pane of a split closes and
     /// the split stays up (two or more other panes remain): the next
     /// remaining pane in slot order, else the previous one. `nil` when the

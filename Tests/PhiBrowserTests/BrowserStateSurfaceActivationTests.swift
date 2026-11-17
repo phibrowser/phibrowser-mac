@@ -23,8 +23,9 @@ final class BrowserStateSurfaceActivationTests: XCTestCase {
         tempDirectories.removeAll()
     }
 
-    /// PHI-1858. A pinned opener is not a normal tab, so closing the only
-    /// normal tab sets no override and Chromium's pick stands.
+    /// PHI-1858. No other tab was visited and a pinned opener is not a normal
+    /// tab, so closing the only normal tab sets no override and Chromium's
+    /// pick stands.
     func testClosingTheOnlyNormalTabWhenChromiumPicksAPinnedTabsPeekActivatesTheOpener() throws {
         let state = try makeState()
         let opener = makeTab(1)

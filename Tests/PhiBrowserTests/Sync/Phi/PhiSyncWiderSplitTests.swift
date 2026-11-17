@@ -127,13 +127,14 @@ final class PhiSyncWiderSplitTests: XCTestCase {
         XCTAssertEqual(landed.splitExtraPanes, extraPanes, "The receiver lands all four panes")
     }
 
-    /// A 2-pane split (and every plain bookmark) publishes the same bytes an older client does:
-    /// the new field stays absent, so the upgrade republishes nothing.
+    /// A side-by-side 2-pane split (and every plain bookmark) publishes the same bytes an older
+    /// client does: the new fields stay absent, so the upgrade republishes nothing. An explicit
+    /// "vertical" is the default too.
     func testATwoPaneSplitBookmarkLeavesTheExtraPanesFieldAbsent() async throws {
         let client = FakePhiSyncClient()
         let sender = FakeBookmarkAccess(rows: [
             .fixture(guid: "g1", spaceId: "s-1", url: URL(string: "https://a.example/")!,
-                     secondaryUrl: URL(string: "https://b.example/")!),
+                     secondaryUrl: URL(string: "https://b.example/")!, splitLayout: "vertical"),
         ])
         let deviceA = makeDevice("A", client: client,
                                  ownedKinds: [.bookmarks(access: sender, store: MemoryOwnedItemStore())])
@@ -143,6 +144,7 @@ final class PhiSyncWiderSplitTests: XCTestCase {
         let published = try XCTUnwrap(committedBookmarks(client).first)
         XCTAssertEqual(published.secondaryURL.stringValue, "https://b.example/")
         XCTAssertFalse(published.hasSplitExtraPanes)
+        XCTAssertFalse(published.hasSplitLayout, "The default orientation is not on the wire")
     }
 
     /// An older client republishing its own edit drops the field it does not know. That payload
@@ -226,7 +228,7 @@ final class PhiSyncWiderSplitTests: XCTestCase {
         let client = FakePhiSyncClient()
         let sender = FakePinAccess(scope: .profile, account: .profile, rows: [
             .fixture(lineageId: "LA", guid: "p0", profileId: "Default", index: 0,
-                     splitPartnerLineageId: "LB"),
+                     splitPartnerLineageId: "LB", splitLayout: "vertical"),
             .fixture(lineageId: "LB", guid: "p1", profileId: "Default", index: 1,
                      url: URL(string: "https://b.example")!, splitPartnerLineageId: "LA"),
         ])
@@ -238,6 +240,7 @@ final class PhiSyncWiderSplitTests: XCTestCase {
         let published = committedPins(client)
         XCTAssertEqual(published.count, 2)
         XCTAssertTrue(published.allSatisfy { !$0.hasSplitPaneUuids })
+        XCTAssertTrue(published.allSatisfy { !$0.hasSplitLayout }, "Side by side is not on the wire")
         XCTAssertEqual(Set(published.map(\.splitPartnerUuid.stringValue)), ["la", "lb"])
     }
 
@@ -339,5 +342,200 @@ final class PhiSyncWiderSplitTests: XCTestCase {
         XCTAssertEqual(mergedHere.title.stringValue, "renamed")
         XCTAssertEqual(mergedHere, mergedThere)
         XCTAssertFalse(PinKind.merge(local: older, remote: older).hasSplitPaneUuids)
+    }
+
+    // MARK: - Split orientation (split_layout)
+
+    private func stackedPinRows() -> [PhiLocalPin] {
+        let pair: [PhiLocalPin] = [
+            .fixture(lineageId: "LA", guid: "p0", profileId: "Default", index: 0, title: "A",
+                     url: URL(string: "https://a.example/")!, splitPartnerLineageId: "LB",
+                     splitLayout: "horizontal", createdDate: Date(timeIntervalSince1970: 1)),
+            .fixture(lineageId: "LB", guid: "p1", profileId: "Default", index: 1, title: "B",
+                     url: URL(string: "https://b.example/")!, splitPartnerLineageId: "LA",
+                     splitLayout: "horizontal", createdDate: Date(timeIntervalSince1970: 1)),
+        ]
+        let wide = ["LC", "LD", "LE", "LF"]
+        return pair + wide.enumerated().map { index, lineage in
+            .fixture(lineageId: lineage, guid: "p\(index + 2)", profileId: "Default", index: index + 2,
+                     title: lineage, url: URL(string: "https://\(lineage.lowercased()).example/")!,
+                     splitPaneLineageIds: wide, splitLayout: "horizontal",
+                     createdDate: Date(timeIntervalSince1970: 1))
+        }
+    }
+
+    /// Stacked 2-pane and 4-pane split bookmarks arrive stacked.
+    func testStackedSplitBookmarksReachTheOtherDeviceStacked() async throws {
+        let client = FakePhiSyncClient()
+        let sender = FakeBookmarkAccess(rows: [
+            .fixture(guid: "g1", spaceId: "s-1", index: 0, title: "Pair",
+                     url: URL(string: "https://a.example/")!,
+                     secondaryUrl: URL(string: "https://b.example/")!, splitLayout: "horizontal"),
+            .fixture(guid: "g2", spaceId: "s-1", index: 1, title: "Four",
+                     url: URL(string: "https://a.example/")!,
+                     secondaryUrl: URL(string: "https://b.example/")!, splitExtraPanes: extraPanes,
+                     splitLayout: "horizontal"),
+        ])
+        let deviceA = makeDevice("A", client: client,
+                                 ownedKinds: [.bookmarks(access: sender, store: MemoryOwnedItemStore())])
+        await deviceA.setSpaceSyncEnabled(true)
+        await deviceA.pullOnce()
+
+        let published = committedBookmarks(client)
+        XCTAssertEqual(published.count, 2)
+        XCTAssertTrue(published.allSatisfy { $0.splitLayout.stringValue == "horizontal" })
+
+        let receiver = FakeBookmarkAccess()
+        let deviceB = makeDevice("B", client: client,
+                                 ownedKinds: [.bookmarks(access: receiver, store: MemoryOwnedItemStore())])
+        await deviceB.setSpaceSyncEnabled(true)
+        await deviceB.pullOnce()
+
+        XCTAssertEqual(receiver.rows.count, 2)
+        XCTAssertTrue(receiver.rows.allSatisfy { $0.splitLayout == "horizontal" })
+        XCTAssertEqual(receiver.rows.first { $0.title == "Four" }?.splitExtraPanes, extraPanes)
+    }
+
+    /// A stacked pinned pair and a stacked 4-pane pinned split arrive stacked on every member.
+    func testStackedPinnedSplitsReachTheOtherDeviceStacked() async throws {
+        let client = FakePhiSyncClient()
+        let sender = FakePinAccess(scope: .profile, account: .profile, rows: stackedPinRows())
+        let deviceA = makeDevice("A", client: client,
+                                 ownedKinds: [.pins(access: sender, store: MemoryOwnedItemStore())])
+        await deviceA.setSpaceSyncEnabled(true)
+        await deviceA.pullOnce()
+
+        let published = committedPins(client)
+        XCTAssertEqual(published.count, 6)
+        XCTAssertTrue(published.allSatisfy { $0.splitLayout.stringValue == "horizontal" })
+
+        let receiver = FakePinAccess(scope: .profile, account: .profile)
+        let deviceB = makeDevice("B", client: client,
+                                 ownedKinds: [.pins(access: receiver, store: MemoryOwnedItemStore())])
+        await deviceB.setSpaceSyncEnabled(true)
+        await deviceB.pullOnce()
+
+        XCTAssertEqual(receiver.rows.count, 6)
+        for row in receiver.rows {
+            XCTAssertEqual(row.splitLayout, "horizontal", "\(row.lineageId) lands stacked")
+        }
+        XCTAssertEqual(Set(receiver.rows.compactMap(\.splitPartnerLineageId).map(PinKind.lineageKey)),
+                       ["la", "lb"])
+    }
+
+    /// Changing the orientation after the first sync publishes it, and the peer applies it; going
+    /// back to side by side publishes the stamped "" and the peer follows.
+    func testAnOrientationChangeAfterTheFirstSyncPropagates() async throws {
+        let client = FakePhiSyncClient()
+        let bookmarks = FakeBookmarkAccess(rows: [
+            .fixture(guid: "g1", spaceId: "s-1", url: URL(string: "https://a.example/")!,
+                     secondaryUrl: URL(string: "https://b.example/")!),
+        ])
+        var rows = stackedPinRows()
+        for index in rows.indices { rows[index].splitLayout = nil }
+        let pins = FakePinAccess(scope: .profile, account: .profile, rows: rows)
+        let deviceA = makeDevice("A", client: client, ownedKinds: [
+            .bookmarks(access: bookmarks, store: MemoryOwnedItemStore()),
+            .pins(access: pins, store: MemoryOwnedItemStore()),
+        ])
+        let receivedBookmarks = FakeBookmarkAccess()
+        let receivedPins = FakePinAccess(scope: .profile, account: .profile)
+        let deviceB = makeDevice("B", client: client, ownedKinds: [
+            .bookmarks(access: receivedBookmarks, store: MemoryOwnedItemStore()),
+            .pins(access: receivedPins, store: MemoryOwnedItemStore()),
+        ])
+        await deviceA.setSpaceSyncEnabled(true)
+        await deviceB.setSpaceSyncEnabled(true)
+        await deviceA.pullOnce()
+        await deviceB.pullOnce()
+        XCTAssertEqual(receivedPins.rows.count, 6)
+        XCTAssertTrue(committedPins(client).allSatisfy { !$0.hasSplitLayout })
+
+        bookmarks.rows[0].splitLayout = "horizontal"
+        for index in pins.rows.indices { pins.rows[index].splitLayout = "horizontal" }
+        await deviceA.pullOnce()
+        await deviceB.pullOnce()
+
+        XCTAssertEqual(receivedBookmarks.rows.first?.splitLayout, "horizontal")
+        XCTAssertTrue(receivedPins.rows.allSatisfy { $0.splitLayout == "horizontal" },
+                      "Every member of both pinned splits is stacked")
+
+        bookmarks.rows[0].splitLayout = "vertical"
+        for index in pins.rows.indices { pins.rows[index].splitLayout = "vertical" }
+        await deviceA.pullOnce()
+        await deviceB.pullOnce()
+
+        XCTAssertEqual(wireSplitLayout(receivedBookmarks.rows.first?.splitLayout), "")
+        XCTAssertTrue(receivedPins.rows.allSatisfy { wireSplitLayout($0.splitLayout).isEmpty },
+                      "Side by side again on every member")
+    }
+
+    /// Members of one split whose own fields disagree land one orientation: the anchor's (the
+    /// pair's smaller lineage), whichever member names it.
+    func testThePairsAnchorDecidesTheOrientationOfBothMembers() async throws {
+        for anchorStacked in [true, false] {
+            var la = pinPayload(lineage: "la", title: "la", url: "https://la.example/", splitPartner: "lb")
+            var lb = pinPayload(lineage: "lb", title: "lb", url: "https://lb.example/", splitPartner: "la")
+            if anchorStacked {
+                la.splitLayout = stamped("horizontal", at: 100)
+            } else {
+                lb.splitLayout = stamped("horizontal", at: 900)
+            }
+            let client = FakePhiSyncClient()
+            client.scriptedPages = [page([
+                remoteEntity(envelope(la), tag: PhiSyncEntity.pinClientTag("la", ownerKey: "pu-1"),
+                             version: 10, entityId: "srv-la", key: key),
+                remoteEntity(envelope(lb), tag: PhiSyncEntity.pinClientTag("lb", ownerKey: "pu-1"),
+                             version: 11, entityId: "srv-lb", key: key),
+            ], marker: "11")]
+            let receiver = FakePinAccess(scope: .profile, account: .profile)
+            let device = makeDevice("B", client: client,
+                                    ownedKinds: [.pins(access: receiver, store: MemoryOwnedItemStore())])
+            await device.setSpaceSyncEnabled(true)
+            await device.pullOnce()
+
+            XCTAssertEqual(receiver.rows.count, 2)
+            let layouts = Set(receiver.rows.map { wireSplitLayout($0.splitLayout) })
+            XCTAssertEqual(layouts, [anchorStacked ? "horizontal" : ""],
+                           "Both members follow la, the anchor, even when lb's own value is newer")
+        }
+    }
+
+    /// An older client's payload has no orientation; it never erases a stamped one.
+    func testAnOlderClientsPayloadWithoutTheOrientationLosesToTheStampedValue() {
+        var newerBookmark = bookmarkPayload(uuid: "b1", contentStamp: 100)
+        newerBookmark.secondaryURL = stamped("https://b.example/", at: 100)
+        newerBookmark.splitLayout = stamped("horizontal", at: 100)
+        var olderBookmark = bookmarkPayload(uuid: "b1", title: "renamed", contentStamp: 900)
+        olderBookmark.secondaryURL = stamped("https://b.example/", at: 900)
+        let bookmarkHere = BookmarkKind.merge(local: newerBookmark, remote: olderBookmark)
+        XCTAssertEqual(bookmarkHere.splitLayout.stringValue, "horizontal")
+        XCTAssertEqual(bookmarkHere, BookmarkKind.merge(local: olderBookmark, remote: newerBookmark))
+
+        var newerPin = pinPayload(lineage: "la", splitPartner: "lb")
+        newerPin.splitLayout = stamped("horizontal", at: 100)
+        let olderPin = pinPayload(lineage: "la", title: "renamed", splitPartner: "lb", contentStamp: 900)
+        let pinHere = PinKind.merge(local: newerPin, remote: olderPin)
+        XCTAssertEqual(pinHere.splitLayout.stringValue, "horizontal")
+        XCTAssertEqual(pinHere, PinKind.merge(local: olderPin, remote: newerPin))
+        XCTAssertFalse(PinKind.merge(local: olderPin, remote: olderPin).hasSplitLayout)
+    }
+
+    /// A member still waiting for its partner (unlinked locally) re-emits the baseline's
+    /// orientation rather than publishing side by side.
+    func testAPinWaitingForItsPartnerKeepsTheBaselineOrientation() {
+        var baseline = pinPayload(lineage: "lx", splitPartner: "lb")
+        baseline.splitLayout = stamped("horizontal", at: 100)
+        let waiting = PhiLocalPin.fixture(lineageId: "LX", guid: "p1", profileId: "Default",
+                                          splitPartnerLineageId: nil, splitLayout: nil)
+        let projected = PinKind.project(waiting, resolve: OwnerResolver.fixture(), scope: .profile,
+                                        parentIdentity: nil)
+
+        let entity = projected.map {
+            PinKind.stamp($0, baseline: baseline, local: waiting, rank: "V", now: 5_000)
+        }
+
+        XCTAssertEqual(entity?.splitLayout.stringValue, "horizontal")
+        XCTAssertEqual(entity?.splitLayout.updatedAtMs, 100, "Not a local change")
     }
 }

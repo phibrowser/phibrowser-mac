@@ -651,17 +651,20 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
             .create(.fixture(guid: "g-split", syncId: "b-split", spaceId: Self.otherSpaceId,
                              profileId: Self.profileId, title: "Split",
                              secondaryUrl: URL(string: "https://b.example/"),
-                             splitExtraPanes: panes)),
+                             splitExtraPanes: panes, splitLayout: "horizontal")),
         ])
+        XCTAssertEqual(try row("g-split", in: store)?.layout, "horizontal", "The orientation lands too")
         let landed = try row("g-split", in: store)?.decodedSplitExtraPanes
         XCTAssertEqual(landed, [SplitBookmarkExtraPane(url: "https://c.example/", title: "C"),
                                 SplitBookmarkExtraPane(url: "https://d.example/", title: nil)])
 
         try await store.applyBookmarkSyncBatchThrowing([
-            .update(guid: "g-split", fields: BookmarkFieldPatch(splitExtraPanes: [])),
+            .update(guid: "g-split", fields: BookmarkFieldPatch(splitExtraPanes: [],
+                                                                splitLayout: .some(nil))),
         ])
         let cleared = try row("g-split", in: store)
         XCTAssertEqual(cleared?.decodedSplitExtraPanes, [])
+        XCTAssertNil(cleared?.layout, "Back to the default orientation")
         XCTAssertNotNil(cleared?.secondaryUrl, "Clearing the extra panes leaves the pair intact")
     }
 

@@ -1462,10 +1462,12 @@ extension LocalStore {
                 let url = fields.url.flatMap { $0 }
                 let changesSplitPartner = fields.splitPartnerLineageId != nil
                 let changesSplitPanes = fields.splitPaneLineageIds != nil
+                let changesSplitLayout = fields.splitLayout != nil
                 // A patch with no effective change is a caller bug (M4). Check the resolved values, not
                 // outer optionals: a present URL unit with nil inside means unchanged too. The §4.9 baseline
                 // guarantee requires nonthrowing completion to mean actual landing.
-                guard title != nil || url != nil || changesSplitPartner || changesSplitPanes else {
+                guard title != nil || url != nil || changesSplitPartner || changesSplitPanes
+                        || changesSplitLayout else {
                     throw LocalStoreWriteError.noCandidateSurvived
                 }
                 if title != nil || url != nil {
@@ -1480,6 +1482,9 @@ extension LocalStore {
                 }
                 if let paneLineageIds = fields.splitPaneLineageIds {
                     try applyPinSplitPanesBody(guid: guid, paneLineageIds: paneLineageIds, in: context)
+                }
+                if let layout = fields.splitLayout {
+                    try applyPinSplitLayoutBody(guid: guid, layout: layout, in: context)
                 }
 
             case .delete(let guid):
@@ -1631,6 +1636,21 @@ extension LocalStore {
         tab.decodedSplitPaneGuids = paneGuids
         // Leaving a wider split drops its layout too, unless the row is still half of a pair.
         if paneGuids.isEmpty, tab.splitPartnerGuid == nil { tab.layout = nil }
+        tab.updatedDate = Date()
+    }
+
+    /// Land `split_layout`: the orientation of the split this pin belongs to (nil is the default, side by
+    /// side). The engine sends the split anchor's value to every member, so all members agree. nil and
+    /// "vertical" are the same orientation and never rewrite each other.
+    private func applyPinSplitLayoutBody(guid: String, layout: String?, in context: ModelContext) throws {
+        guard let tab = try pinnedTabRow(with: guid, in: context) else {
+            throw LocalStoreWriteError.rowNotFound
+        }
+        guard pinnedTab(tab, belongsTo: try pinnedTabScope(in: context)) else {
+            throw LocalStoreWriteError.rowNotInActiveScope
+        }
+        guard wireSplitLayout(tab.layout) != wireSplitLayout(layout) else { return }
+        tab.layout = layout
         tab.updatedDate = Date()
     }
 

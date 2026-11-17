@@ -504,6 +504,23 @@ nonisolated struct Phi_PhiBookmarkEntity: @unchecked Sendable {
   /// Clears the value of `splitExtraPanes`. Subsequent reads from it will return its default value.
   mutating func clearSplitExtraPanes() {_uniqueStorage()._splitExtraPanes = nil}
 
+  /// string_value. The orientation of a split bookmark's panes, the local
+  /// `TabDataModel.layout` verbatim: "horizontal" (stacked); "" = the default,
+  /// side by side (local nil or "vertical"). Divider positions are per-device and
+  /// never synced. Meaningless while `secondary_url` is "".
+  ///
+  /// Same presence rule as `split_extra_panes`: absent until the bookmark is first
+  /// stacked, so every side-by-side split keeps the bytes an older client writes,
+  /// and present (as "" once back to side by side) after that.
+  var splitLayout: Phi_PhiSettingValue {
+    get {_storage._splitLayout ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._splitLayout = newValue}
+  }
+  /// Returns true if `splitLayout` has been explicitly set.
+  var hasSplitLayout: Bool {_storage._splitLayout != nil}
+  /// Clears the value of `splitLayout`. Subsequent reads from it will return its default value.
+  mutating func clearSplitLayout() {_uniqueStorage()._splitLayout = nil}
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -643,6 +660,25 @@ nonisolated struct Phi_PhiPinTabEntity: Sendable {
   /// Clears the value of `splitPaneUuids`. Subsequent reads from it will return its default value.
   mutating func clearSplitPaneUuids() {self._splitPaneUuids = nil}
 
+  /// string_value. The orientation of the split this pin belongs to, the local
+  /// `TabDataModel.layout` verbatim: "horizontal" (stacked); "" = the default,
+  /// side by side. Same presence rule as `split_pane_uuids`.
+  ///
+  /// Every member carries the value its device holds for the whole split, but on
+  /// receipt only the split's ANCHOR decides: the first of `split_pane_uuids`, or
+  /// for a pair the smaller of `pin_uuid` and `split_partner_uuid`. Landing writes
+  /// the anchor's value to every member, so members cannot disagree even when their
+  /// own fields were merged from different writers. A pin not in a split re-emits
+  /// its baseline's value, like a member still waiting for its partner.
+  var splitLayout: Phi_PhiSettingValue {
+    get {_splitLayout ?? Phi_PhiSettingValue()}
+    set {_splitLayout = newValue}
+  }
+  /// Returns true if `splitLayout` has been explicitly set.
+  var hasSplitLayout: Bool {self._splitLayout != nil}
+  /// Clears the value of `splitLayout`. Subsequent reads from it will return its default value.
+  mutating func clearSplitLayout() {self._splitLayout = nil}
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   /// Ownership, three-way, matching the ACCOUNT-LEVEL pinned-tab scope (D8).
@@ -670,6 +706,7 @@ nonisolated struct Phi_PhiPinTabEntity: Sendable {
   fileprivate var _url: Phi_PhiSettingValue? = nil
   fileprivate var _splitPartnerUuid: Phi_PhiSettingValue? = nil
   fileprivate var _splitPaneUuids: Phi_PhiSettingValue? = nil
+  fileprivate var _splitLayout: Phi_PhiSettingValue? = nil
 }
 
 /// One URL routing rule. Entity identity is the client tag
@@ -1240,7 +1277,7 @@ nonisolated extension Phi_PhiSpaceEntity: SwiftProtobuf.Message, SwiftProtobuf._
 
 nonisolated extension Phi_PhiBookmarkEntity: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".PhiBookmarkEntity"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}bookmark_uuid\0\u{3}space_uuid\0\u{3}parent_uuid\0\u{1}rank\0\u{3}is_folder\0\u{1}title\0\u{1}url\0\u{3}secondary_url\0\u{3}secondary_title\0\u{1}source\0\u{3}created_at_ms\0\u{4}\u{5}split_extra_panes\0\u{c}\u{c}\u{4}")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}bookmark_uuid\0\u{3}space_uuid\0\u{3}parent_uuid\0\u{1}rank\0\u{3}is_folder\0\u{1}title\0\u{1}url\0\u{3}secondary_url\0\u{3}secondary_title\0\u{1}source\0\u{3}created_at_ms\0\u{4}\u{5}split_extra_panes\0\u{3}split_layout\0\u{c}\u{c}\u{4}")
 
   fileprivate class _StorageClass {
     var _bookmarkUuid: String = String()
@@ -1255,6 +1292,7 @@ nonisolated extension Phi_PhiBookmarkEntity: SwiftProtobuf.Message, SwiftProtobu
     var _source: Int32 = 0
     var _createdAtMs: Int64 = 0
     var _splitExtraPanes: Phi_PhiSettingValue? = nil
+    var _splitLayout: Phi_PhiSettingValue? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -1277,6 +1315,7 @@ nonisolated extension Phi_PhiBookmarkEntity: SwiftProtobuf.Message, SwiftProtobu
       _source = source._source
       _createdAtMs = source._createdAtMs
       _splitExtraPanes = source._splitExtraPanes
+      _splitLayout = source._splitLayout
     }
   }
 
@@ -1307,6 +1346,7 @@ nonisolated extension Phi_PhiBookmarkEntity: SwiftProtobuf.Message, SwiftProtobu
         case 10: try { try decoder.decodeSingularInt32Field(value: &_storage._source) }()
         case 11: try { try decoder.decodeSingularInt64Field(value: &_storage._createdAtMs) }()
         case 16: try { try decoder.decodeSingularMessageField(value: &_storage._splitExtraPanes) }()
+        case 17: try { try decoder.decodeSingularMessageField(value: &_storage._splitLayout) }()
         default: break
         }
       }
@@ -1355,6 +1395,9 @@ nonisolated extension Phi_PhiBookmarkEntity: SwiftProtobuf.Message, SwiftProtobu
       try { if let v = _storage._splitExtraPanes {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 16)
       } }()
+      try { if let v = _storage._splitLayout {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 17)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1376,6 +1419,7 @@ nonisolated extension Phi_PhiBookmarkEntity: SwiftProtobuf.Message, SwiftProtobu
         if _storage._source != rhs_storage._source {return false}
         if _storage._createdAtMs != rhs_storage._createdAtMs {return false}
         if _storage._splitExtraPanes != rhs_storage._splitExtraPanes {return false}
+        if _storage._splitLayout != rhs_storage._splitLayout {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -1387,7 +1431,7 @@ nonisolated extension Phi_PhiBookmarkEntity: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Phi_PhiPinTabEntity: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".PhiPinTabEntity"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}pin_uuid\0\u{3}space_uuid\0\u{3}profile_uuid\0\u{1}rank\0\u{1}title\0\u{1}url\0\u{3}split_partner_uuid\0\u{1}source\0\u{3}created_at_ms\0\u{4}\u{5}split_pane_uuids\0\u{c}\u{a}\u{4}")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}pin_uuid\0\u{3}space_uuid\0\u{3}profile_uuid\0\u{1}rank\0\u{1}title\0\u{1}url\0\u{3}split_partner_uuid\0\u{1}source\0\u{3}created_at_ms\0\u{4}\u{5}split_pane_uuids\0\u{3}split_layout\0\u{c}\u{a}\u{4}")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1419,6 +1463,7 @@ nonisolated extension Phi_PhiPinTabEntity: SwiftProtobuf.Message, SwiftProtobuf.
       case 8: try { try decoder.decodeSingularInt32Field(value: &self.source) }()
       case 9: try { try decoder.decodeSingularInt64Field(value: &self.createdAtMs) }()
       case 14: try { try decoder.decodeSingularMessageField(value: &self._splitPaneUuids) }()
+      case 15: try { try decoder.decodeSingularMessageField(value: &self._splitLayout) }()
       default: break
       }
     }
@@ -1464,6 +1509,9 @@ nonisolated extension Phi_PhiPinTabEntity: SwiftProtobuf.Message, SwiftProtobuf.
     try { if let v = self._splitPaneUuids {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 14)
     } }()
+    try { if let v = self._splitLayout {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 15)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1477,6 +1525,7 @@ nonisolated extension Phi_PhiPinTabEntity: SwiftProtobuf.Message, SwiftProtobuf.
     if lhs.source != rhs.source {return false}
     if lhs.createdAtMs != rhs.createdAtMs {return false}
     if lhs._splitPaneUuids != rhs._splitPaneUuids {return false}
+    if lhs._splitLayout != rhs._splitLayout {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

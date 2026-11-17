@@ -6891,10 +6891,10 @@ actor PhiSyncEngine {
         case .bookmark(let entity):
             observeStamps([entity.spaceUuid, entity.parentUuid, entity.rank, entity.title,
                            entity.url, entity.secondaryURL, entity.secondaryTitle,
-                           entity.splitExtraPanes])
+                           entity.splitExtraPanes, entity.splitLayout])
         case .pinTab(let entity):
             observeStamps([entity.rank, entity.title, entity.url, entity.splitPartnerUuid,
-                           entity.splitPaneUuids])
+                           entity.splitPaneUuids, entity.splitLayout])
         case .urlRule(let entity):
             observeStamps([entity.host, entity.pathPrefix, entity.ask, entity.targetSpaceUuid,
                            entity.rank])
@@ -7734,6 +7734,7 @@ private func landBookmarks(_ input: OwnedLandingInput,
                 secondaryTitle: entity.secondaryTitle.stringValue.isEmpty
                     ? nil : entity.secondaryTitle.stringValue,
                 splitExtraPanes: BookmarkKind.extraPanes(of: entity),
+                splitLayout: localSplitLayout(entity.splitLayout.stringValue),
                 source: Int(entity.source),
                 createdDate: Date(timeIntervalSince1970: Double(entity.createdAtMs) / 1000),
                 contentUpdatedDate: nil, locationUpdatedDate: nil)
@@ -7958,7 +7959,8 @@ private func bookmarkPatch(_ entity: Phi_PhiBookmarkEntity) -> BookmarkFieldPatc
         secondaryUrl: .some(URL(string: entity.secondaryURL.stringValue)),
         secondaryTitle: .some(entity.secondaryTitle.stringValue.isEmpty
                               ? nil : entity.secondaryTitle.stringValue),
-        splitExtraPanes: BookmarkKind.extraPanes(of: entity))
+        splitExtraPanes: BookmarkKind.extraPanes(of: entity),
+        splitLayout: .some(localSplitLayout(entity.splitLayout.stringValue)))
 }
 
 // MARK: - PinKind adapter
@@ -8064,8 +8066,10 @@ final class PinSyncRoundState {
     /// lists of wider splits follow the same rule.
     func noteSplitPartnerWrites(linked: [String: String], cleared: Set<String>,
                                 linkedPanes: [String: [String]] = [:],
-                                clearedPanes: Set<String> = []) {
+                                clearedPanes: Set<String> = [],
+                                layouts: [String: String?] = [:]) {
         guard !linked.isEmpty || !cleared.isEmpty || !linkedPanes.isEmpty || !clearedPanes.isEmpty
+                || !layouts.isEmpty
         else { return }
         for index in locals.indices {
             let guid = locals[index].guid
@@ -8082,6 +8086,10 @@ final class PinSyncRoundState {
                 changed = true
             } else if clearedPanes.contains(guid) {
                 locals[index].splitPaneLineageIds = []
+                changed = true
+            }
+            if let layout = layouts[guid] {
+                locals[index].splitLayout = layout
                 changed = true
             }
             if changed { rowByGuid[guid] = locals[index] }
@@ -8168,6 +8176,44 @@ private func landPinSplitPanes(_ entity: Phi_PhiPinTabEntity, identity: String, 
         outcome.pendingPartnerLineages[memberIdentity] = ""
     }
     return ""
+}
+
+/// The local orientation writes a pin landing round needs (guid to layout, nil for side by side).
+///
+/// One split has one orientation, but every member carries its own `split_layout`, merged on its
+/// own. Only the split's anchor decides (`PinKind.layoutAnchor`): its payload from this batch, or
+/// else its landed baseline. Its value is written to every member that exists under the owner and
+/// holds a different one, so the members can never disagree locally, and the next snapshot
+/// republishes a member whose own field still names another value. An anchor this device has
+/// never landed decides nothing yet.
+@MainActor
+private func pinSplitLayoutWrites(_ arrivals: [(identity: String, ownerKey: String,
+                                               entity: Phi_PhiPinTabEntity)],
+                                  payloadOf: [String: Data], parked: Set<String>,
+                                  projected: [String: PhiLocalPin],
+                                  ownerOfGuid: [String: String],
+                                  table: PhiOwnedItemTable) -> [String: String?] {
+    func entity(_ bytes: Data?) -> Phi_PhiPinTabEntity? {
+        guard let bytes, let envelope = try? Phi_PhiEntity(serializedBytes: bytes) else { return nil }
+        return PinKind.entity(from: envelope)
+    }
+    var writes: [String: String?] = [:]
+    for arrival in arrivals {
+        let members = PinKind.splitMembers(of: arrival.entity)
+        guard let anchor = members.first else { continue }
+        let anchorIdentity = anchor + ":" + arrival.ownerKey
+        let anchorEntity = parked.contains(anchorIdentity)
+            ? entity(table.cursors[anchorIdentity]?.reconciled)
+            : entity(payloadOf[anchorIdentity]) ?? entity(table.cursors[anchorIdentity]?.reconciled)
+        guard let anchorEntity else { continue }
+        let wanted = localSplitLayout(anchorEntity.splitLayout.stringValue)
+        for row in projected.values where ownerOfGuid[row.guid] == arrival.ownerKey
+            && members.contains(PinKind.lineageKey(row.lineageId))
+            && wireSplitLayout(row.splitLayout) != wireSplitLayout(wanted) {
+            writes[row.guid] = wanted
+        }
+    }
+    return writes
 }
 
 /// Split pin identity lineage:ownerKey at the first colon. isNormalizedLineage rejects colons so
@@ -8903,6 +8949,22 @@ private func landPins(_ input: OwnedLandingInput,
     }
     // Append reverse-link patches in phase 2 after patches for the arriving side.
     ops.append(contentsOf: reverseLinks)
+    // The split's orientation goes last, after every link the patches above set or cleared.
+    let layoutWrites = pinSplitLayoutWrites(
+        planned.compactMap { item -> (identity: String, ownerKey: String,
+                                      entity: Phi_PhiPinTabEntity)? in
+            guard item.step.kind != .delete, let entity = item.entity,
+                  guidOf[item.identity] != nil, !outcome.parked.contains(item.identity) else {
+                return nil
+            }
+            return (item.identity, item.ownerKey, entity)
+        },
+        payloadOf: payloadOf, parked: outcome.parked, projected: projected,
+        ownerOfGuid: ownerOfGuid, table: input.table)
+    for guid in layoutWrites.keys.sorted() {
+        guard let layout = layoutWrites[guid] else { continue }
+        ops.append(.update(guid: guid, fields: PinFieldPatch(splitLayout: .some(layout))))
+    }
 
     // Phase 3: deletion.
     for item in planned where item.step.kind == .delete {
@@ -8961,7 +9023,8 @@ private func landPins(_ input: OwnedLandingInput,
     // Reflect transactionally written split links in the round projection immediately, preventing
     // publication from misreading a newly received link as a local unlink (section 7.4).
     state.noteSplitPartnerWrites(linked: linkedPartners, cleared: clearedPartners,
-                                 linkedPanes: linkedPanes, clearedPanes: clearedPanes)
+                                 linkedPanes: linkedPanes, clearedPanes: clearedPanes,
+                                 layouts: layoutWrites)
 
     // Recheck post-landing rows before baseline write-back (section 4.5). apply rebuilds its cache,
     // so this observes committed state.

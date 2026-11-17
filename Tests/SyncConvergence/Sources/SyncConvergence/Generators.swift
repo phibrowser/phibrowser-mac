@@ -161,6 +161,7 @@ struct Generators {
         entity.secondaryTitle = text()
         // Absent on most payloads, as on every 2-pane split and every older client's payload.
         if rng.chance(3) { entity.splitExtraPanes = text(Pool.texts + [""]) }
+        if rng.chance(3) { entity.splitLayout = text(["horizontal", ""]) }
         entity.source = rng.pick(Pool.sources)
         entity.createdAtMs = rng.pick(Pool.createdAt)
         return maybeUnknown(entity, reserved: 14)
@@ -179,6 +180,7 @@ struct Generators {
         entity.splitPartnerUuid = text(Pool.uuids + [""])
         // Absent on most payloads, as on every pair and every older client's payload.
         if rng.chance(3) { entity.splitPaneUuids = text(Pool.texts + [""]) }
+        if rng.chance(3) { entity.splitLayout = text(["horizontal", ""]) }
         entity.source = rng.pick(Pool.sources)
         entity.createdAtMs = rng.pick(Pool.createdAt)
         return maybeUnknown(entity, reserved: 12)

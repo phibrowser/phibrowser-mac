@@ -1364,6 +1364,7 @@ extension LocalStore {
                                     secondaryUrl: String??,
                                     secondaryTitle: String??,
                                     splitExtraPanes: [SplitBookmarkExtraPane]? = nil,
+                                    layout: String?? = nil,
                                     allowsEmptyTitle: Bool,
                                     iconName: String? = nil,
                                     expectedSpaceId: String? = nil,
@@ -1452,6 +1453,11 @@ extension LocalStore {
            node.decodedSplitExtraPanes != resolvedExtraPanes {
             node.decodedSplitExtraPanes = resolvedExtraPanes
             contentDidChange = true
+        }
+        // The orientation is not content: `updateBookmarkSplitLayout` stamps no edit date either. nil and
+        // "vertical" are the same default and never rewrite each other.
+        if let layout, node.secondaryUrl != nil, wireSplitLayout(node.layout) != wireSplitLayout(layout) {
+            node.layout = layout
         }
         if let iconName, node.dataType == .bookmarkFolder, node.icon != iconName {
             node.icon = iconName
@@ -2427,6 +2433,8 @@ extension LocalStore {
         var secondaryTitle: String?
         /// A wider split's panes after the first two; stored only when `secondaryUrl` is set.
         var splitExtraPanes: [SplitBookmarkExtraPane]
+        /// The split's orientation (`TabDataModel.layout`); stored only when `secondaryUrl` is set.
+        var layout: String?
         /// The `TabSource` raw value.
         var source: Int
 
@@ -2444,6 +2452,7 @@ extension LocalStore {
              secondaryUrl: URL? = nil,
              secondaryTitle: String? = nil,
              splitExtraPanes: [SplitBookmarkExtraPane] = [],
+             layout: String? = nil,
              source: Int = 0) {
             self.guid = guid
             self.syncId = syncId
@@ -2459,6 +2468,7 @@ extension LocalStore {
             self.secondaryUrl = secondaryUrl
             self.secondaryTitle = secondaryTitle
             self.splitExtraPanes = splitExtraPanes
+            self.layout = layout
             self.source = source
         }
     }
@@ -2549,6 +2559,7 @@ extension LocalStore {
             node.secondaryTitle = row.secondaryTitle
             if row.secondaryUrl != nil {
                 node.decodedSplitExtraPanes = row.splitExtraPanes
+                node.layout = row.layout
             }
             node.source = row.source
             node.syncId = row.syncId
@@ -2710,6 +2721,7 @@ extension LocalStore {
                                        splitExtraPanes: fields.splitExtraPanes.map { panes in
                                            panes.map { SplitBookmarkExtraPane(url: $0.url, title: $0.title) }
                                        },
+                                       layout: fields.splitLayout,
                                        allowsEmptyTitle: true,
                                        in: context)
 
@@ -2788,6 +2800,7 @@ extension LocalStore {
                            splitExtraPanes: row.splitExtraPanes.map {
                                SplitBookmarkExtraPane(url: $0.url, title: $0.title)
                            },
+                           layout: row.splitLayout,
                            source: row.source)
     }
 }

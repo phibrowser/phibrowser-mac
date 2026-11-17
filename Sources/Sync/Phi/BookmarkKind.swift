@@ -98,6 +98,11 @@ enum BookmarkKind: OwnedItemKind {
         if local.secondaryUrl != nil, !local.splitExtraPanes.isEmpty {
             entity.splitExtraPanes = string(encodeExtraPanes(local.splitExtraPanes))
         }
+        // Likewise absent while a split keeps the default side-by-side orientation.
+        if local.secondaryUrl != nil {
+            let layout = wireSplitLayout(local.splitLayout)
+            if !layout.isEmpty { entity.splitLayout = string(layout) }
+        }
         entity.source = Int32(truncatingIfNeeded: local.source)
         entity.createdAtMs = milliseconds(local.createdDate)
         return entity
@@ -119,6 +124,8 @@ enum BookmarkKind: OwnedItemKind {
         }
         out.append(entity.isFolder ? 1 : 0)
         out.append(contentsOf: Array(entity.splitExtraPanes.stringValue.utf8))
+        out.append(0)
+        out.append(contentsOf: Array(entity.splitLayout.stringValue.utf8))
         return out
     }
 
@@ -137,7 +144,7 @@ enum BookmarkKind: OwnedItemKind {
     static func contentStamp(of entity: Phi_PhiBookmarkEntity) -> Int64 {
         max(entity.title.updatedAtMs, entity.url.updatedAtMs,
             entity.secondaryURL.updatedAtMs, entity.secondaryTitle.updatedAtMs,
-            entity.splitExtraPanes.updatedAtMs)
+            entity.splitExtraPanes.updatedAtMs, entity.splitLayout.updatedAtMs)
     }
 
     /// Ruling C5-a: the folder that lost a move cycle, put back where the account last agreed it was.
@@ -192,6 +199,9 @@ enum BookmarkKind: OwnedItemKind {
         if !out.hasSplitExtraPanes, baseline?.hasSplitExtraPanes == true {
             out.splitExtraPanes = string("")
         }
+        if !out.hasSplitLayout, baseline?.hasSplitLayout == true {
+            out.splitLayout = string("")
+        }
         let contentStamp = PhiHybridClock.corrected(
             wallMs: milliseconds(local.contentUpdatedDate ?? local.createdDate),
             offsetMs: wallOffsetMs)
@@ -213,6 +223,9 @@ enum BookmarkKind: OwnedItemKind {
             out.secondaryURL.updatedAtMs = created
             out.secondaryTitle.updatedAtMs = created
             if out.hasSplitExtraPanes { out.splitExtraPanes.updatedAtMs = created }
+            // The orientation has no edit-date column (`updateBookmarkSplitLayout` writes none), so it
+            // takes the round's hybrid-logical stamp, like a pin's split link.
+            if out.hasSplitLayout { out.splitLayout.updatedAtMs = now }
             return out
         }
 
@@ -257,6 +270,9 @@ enum BookmarkKind: OwnedItemKind {
         if out.hasSplitExtraPanes {
             out.splitExtraPanes.updatedAtMs = restamped(out.splitExtraPanes, baseline.splitExtraPanes,
                                                         contentStamp)
+        }
+        if out.hasSplitLayout {
+            out.splitLayout.updatedAtMs = restamped(out.splitLayout, baseline.splitLayout, now)
         }
         return out
     }
@@ -318,6 +334,9 @@ enum BookmarkKind: OwnedItemKind {
         if local.hasSplitExtraPanes || remote.hasSplitExtraPanes {
             merged.splitExtraPanes = SyncableSettings.lwwWinner(local.splitExtraPanes,
                                                                 remote.splitExtraPanes)
+        }
+        if local.hasSplitLayout || remote.hasSplitLayout {
+            merged.splitLayout = SyncableSettings.lwwWinner(local.splitLayout, remote.splitLayout)
         }
         // Not LWW: prefer nonzero; if both are nonzero and differ, choose the smaller value.
         merged.source = mergedSource(local.source, remote.source)
@@ -466,4 +485,17 @@ enum BookmarkKind: OwnedItemKind {
     private static func milliseconds(_ date: Date) -> Int64 {
         Int64((date.timeIntervalSince1970 * 1000).rounded())
     }
+}
+
+/// The wire form of a split's local `TabDataModel.layout`, shared by bookmarks and pins: "" for the
+/// default side-by-side orientation (nil or "vertical"), otherwise the stored value verbatim, so an
+/// orientation a newer build adds round-trips unchanged.
+func wireSplitLayout(_ layout: String?) -> String {
+    guard let layout, !layout.isEmpty, layout != "vertical" else { return "" }
+    return layout
+}
+
+/// The local `TabDataModel.layout` for a wire `split_layout`: nil for the default.
+func localSplitLayout(_ wire: String) -> String? {
+    wire.isEmpty ? nil : wire
 }

@@ -223,6 +223,10 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
             if let panes = fields.splitExtraPanes {
                 rows[index].splitExtraPanes = rows[index].secondaryUrl == nil ? [] : panes
             }
+            if let layout = fields.splitLayout, rows[index].secondaryUrl != nil,
+               wireSplitLayout(rows[index].splitLayout) != wireSplitLayout(layout) {
+                rows[index].splitLayout = layout
+            }
         case .delete(let guid):
             rows.removeAll { $0.guid == guid }
         }
@@ -414,6 +418,7 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
             if let panes = fields.splitPaneLineageIds {
                 rows[index].splitPaneLineageIds = panes
             }
+            if let layout = fields.splitLayout { rows[index].splitLayout = layout }
         case .delete(let guid):
             rows.removeAll { $0.guid == guid }
         }
@@ -952,6 +957,7 @@ extension PhiLocalBookmark {
                         secondaryUrl: URL? = nil,
                         secondaryTitle: String? = nil,
                         splitExtraPanes: [PhiLocalBookmark.ExtraPane] = [],
+                        splitLayout: String? = nil,
                         source: Int = 0,
                         createdDate: Date = Date(timeIntervalSince1970: 1_000),
                         contentUpdatedDate: Date? = nil,
@@ -960,7 +966,7 @@ extension PhiLocalBookmark {
                          parentGuid: parentGuid, index: index, isFolder: isFolder,
                          title: title, url: url, secondaryUrl: secondaryUrl,
                          secondaryTitle: secondaryTitle, splitExtraPanes: splitExtraPanes,
-                         source: source,
+                         splitLayout: splitLayout, source: source,
                          createdDate: createdDate, contentUpdatedDate: contentUpdatedDate,
                          locationUpdatedDate: locationUpdatedDate)
     }
@@ -976,6 +982,7 @@ extension PhiLocalPin {
                         url: URL = URL(string: "https://e.example")!,
                         splitPartnerLineageId: String? = nil,
                         splitPaneLineageIds: [String] = [],
+                        splitLayout: String? = nil,
                         source: Int = 0,
                         createdDate: Date = Date(timeIntervalSince1970: 1_000),
                         contentUpdatedDate: Date? = nil,
@@ -983,7 +990,7 @@ extension PhiLocalPin {
         PhiLocalPin(lineageId: lineageId, guid: guid, spaceId: spaceId, profileId: profileId,
                     index: index, title: title, url: url,
                     splitPartnerLineageId: splitPartnerLineageId,
-                    splitPaneLineageIds: splitPaneLineageIds, source: source,
+                    splitPaneLineageIds: splitPaneLineageIds, splitLayout: splitLayout, source: source,
                     createdDate: createdDate, contentUpdatedDate: contentUpdatedDate,
                     isDormant: isDormant)
     }

@@ -30,6 +30,9 @@ struct PhiLocalPin: Equatable, Sendable {
     /// Member lineages, in pane order and this pin's own included, of a split of three or four pins; empty
     /// for a solo pin or a pair. Like the partner, never the physical `splitPaneGuids`.
     var splitPaneLineageIds: [String] = []
+    /// Raw `TabDataModel.layout` (pane orientation of the split this pin belongs to). nil and "vertical"
+    /// both mean the default, side by side.
+    var splitLayout: String? = nil
     /// TabSource raw value.
     var source: Int
     var createdDate: Date
@@ -48,6 +51,8 @@ struct PinFieldPatch: Equatable {
     /// nil leaves the wider-split membership unchanged; an empty list clears it. Otherwise the member
     /// lineages in pane order, written only when every member resolves under the pin's owner.
     var splitPaneLineageIds: [String]? = nil
+    /// Outer nil leaves the orientation unchanged; inner nil is the default, side by side.
+    var splitLayout: String?? = nil
 }
 
 /// One local write for landing a remote pin.
@@ -382,6 +387,7 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
                     url: model.url,
                     splitPartnerLineageId: model.splitPartnerGuid.flatMap { lineageByGuid[$0] },
                     splitPaneLineageIds: paneLineages(of: model, lineageByGuid: lineageByGuid),
+                    splitLayout: model.layout,
                     source: model.source,
                     createdDate: model.createdDate,
                     contentUpdatedDate: model.contentUpdatedDate,

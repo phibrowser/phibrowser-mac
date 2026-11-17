@@ -1005,6 +1005,16 @@ final class PinnedTabScopeTests: XCTestCase {
             .map { ($0.guid, $0.decodedSplitPaneGuids) })
         XCTAssertEqual(after["G0"], ["G0", "G1", "G2"], "A list naming a missing member writes nothing")
         XCTAssertEqual(after["G1"], [], "An empty list clears the membership")
+
+        try await access.apply(PinApplyBatch(unordered: [
+            .update(guid: "G0", fields: PinFieldPatch(splitLayout: .some("horizontal"))),
+            .update(guid: "G2", fields: PinFieldPatch(splitLayout: .some(nil))),
+        ]), expectedGeneration: access.pinScopeGeneration(), expectedScope: access.currentScope())
+        try drainMainQueue()
+        let layouts = Dictionary(uniqueKeysWithValues: store.getAllPinnedTabs(for: "Default")
+            .map { ($0.guid, $0.layout) })
+        XCTAssertEqual(layouts["G0"] ?? nil, "horizontal", "A landed orientation is stored on the row")
+        XCTAssertEqual(try access.allPins().first { $0.guid == "G0" }?.splitLayout, "horizontal")
     }
 
     /// CASE 8.5e: startup repair cleans an already-corrupt store.

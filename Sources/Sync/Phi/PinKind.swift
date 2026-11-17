@@ -158,6 +158,12 @@ enum PinKind: OwnedItemKind {
         if !local.splitPaneLineageIds.isEmpty {
             entity.splitPaneUuids = string(encodePaneLineages(local.splitPaneLineageIds.map(lineageKey)))
         }
+        // The orientation, absent while the split keeps the default side by side. Only a pin in a split
+        // has one; `stamp` makes any other pin re-emit its baseline's.
+        if isInSplit(local) {
+            let layout = wireSplitLayout(local.splitLayout)
+            if !layout.isEmpty { entity.splitLayout = string(layout) }
+        }
         entity.source = Int32(truncatingIfNeeded: local.source)
         entity.createdAtMs = milliseconds(local.createdDate)
         return entity
@@ -179,7 +185,8 @@ enum PinKind: OwnedItemKind {
     /// deletion exactly as a remote reorder out of a deleted scope already did.
     static func contentStamp(of entity: Phi_PhiPinTabEntity) -> Int64 {
         max(entity.title.updatedAtMs, entity.url.updatedAtMs,
-            entity.splitPartnerUuid.updatedAtMs, entity.splitPaneUuids.updatedAtMs)
+            entity.splitPartnerUuid.updatedAtMs, entity.splitPaneUuids.updatedAtMs,
+            entity.splitLayout.updatedAtMs)
     }
 
     /// Value bytes of the three content fields with timestamps zeroed, like SyncableSettings.signature(of:).
@@ -195,6 +202,8 @@ enum PinKind: OwnedItemKind {
             out.append(0)
         }
         out.append(contentsOf: Array(entity.splitPaneUuids.stringValue.utf8))
+        out.append(0)
+        out.append(contentsOf: Array(entity.splitLayout.stringValue.utf8))
         return out
     }
 
@@ -241,6 +250,14 @@ enum PinKind: OwnedItemKind {
                 out.splitPaneUuids = string("")
             }
         }
+        // split_layout: a pin in a split publishes its own orientation ("" once a baseline carried the
+        // field). A pin in no split locally - unsplit, or a member still waiting for its partner -
+        // has no opinion and re-emits the baseline's value unchanged.
+        if isInSplit(local) {
+            if !out.hasSplitLayout, baseline?.hasSplitLayout == true { out.splitLayout = string("") }
+        } else if let baseline, baseline.hasSplitLayout {
+            out.splitLayout = baseline.splitLayout
+        }
 
         guard let baseline else {
             let created = PhiHybridClock.editStamp(editWallMs: contentStamp,
@@ -250,6 +267,7 @@ enum PinKind: OwnedItemKind {
             out.url.updatedAtMs = created
             out.splitPartnerUuid.updatedAtMs = now
             if out.hasSplitPaneUuids { out.splitPaneUuids.updatedAtMs = now }
+            if out.hasSplitLayout { out.splitLayout.updatedAtMs = now }
             return out
         }
         // R-exec-16, as in BookmarkKind.stamp: created_at_ms and source do not use LWW, while PinFieldPatch
@@ -268,6 +286,10 @@ enum PinKind: OwnedItemKind {
         // contentUpdatedDate, so it takes `now`.
         if out.hasSplitPaneUuids {
             out.splitPaneUuids.updatedAtMs = restamped(out.splitPaneUuids, baseline.splitPaneUuids, now)
+        }
+        // The orientation is written by `updatePinnedSplit(Layout)`, which sets no contentUpdatedDate.
+        if out.hasSplitLayout {
+            out.splitLayout.updatedAtMs = restamped(out.splitLayout, baseline.splitLayout, now)
         }
         return out
     }
@@ -294,6 +316,9 @@ enum PinKind: OwnedItemKind {
         // change the bytes of every pin that never joined a wider split.
         if local.hasSplitPaneUuids || remote.hasSplitPaneUuids {
             merged.splitPaneUuids = SyncableSettings.lwwWinner(local.splitPaneUuids, remote.splitPaneUuids)
+        }
+        if local.hasSplitLayout || remote.hasSplitLayout {
+            merged.splitLayout = SyncableSettings.lwwWinner(local.splitLayout, remote.splitLayout)
         }
         // Not LWW: nonzero wins; if both are nonzero and differ, choose the smaller value, as for bookmarks.
         merged.source = mergedSource(local.source, remote.source)
@@ -419,6 +444,29 @@ enum PinKind: OwnedItemKind {
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         guard let data = try? encoder.encode(lineages) else { return "" }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Whether the local row is in a split: half of a pair or a member of a wider split.
+    static func isInSplit(_ local: PhiLocalPin) -> Bool {
+        local.splitPartnerLineageId != nil || !local.splitPaneLineageIds.isEmpty
+    }
+
+    /// The normalized lineages of the split `entity` belongs to, in pane order, or [] for a pin in no
+    /// split. A pair lists the smaller lineage first.
+    static func splitMembers(of entity: Phi_PhiPinTabEntity) -> [String] {
+        let panes = paneLineages(of: entity)
+        if !panes.isEmpty { return panes }
+        let partner = lineageKey(entity.splitPartnerUuid.stringValue)
+        guard !partner.isEmpty else { return [] }
+        let own = lineageKey(entity.pinUuid)
+        return own < partner ? [own, partner] : [partner, own]
+    }
+
+    /// The split's anchor, whose `split_layout` decides the whole split's orientation on receipt: the
+    /// first member in pane order, or a pair's smaller lineage. Every member names the same anchor, so
+    /// members cannot disagree however their own fields were merged. nil for a pin in no split.
+    static func layoutAnchor(of entity: Phi_PhiPinTabEntity) -> String? {
+        splitMembers(of: entity).first
     }
 
     /// The normalized member lineages `entity` names. Absent, "" and text that does not decode all read as

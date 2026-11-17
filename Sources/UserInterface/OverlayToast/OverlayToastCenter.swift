@@ -307,7 +307,7 @@ extension OverlayToastCenter {
             action: OverlayToastAction(title: title, usesWholeToast: true) { [weak browserState, weak tab] in
                 guard let browserState, let tab,
                       browserState.tabs.contains(where: { $0 === tab }) else { return }
-                browserState.focuseTab(tab)
+                tab.makeSelfActive()
             })
     }
 

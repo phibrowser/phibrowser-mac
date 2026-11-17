@@ -39,8 +39,10 @@ final class BackgroundTabToastTests: XCTestCase {
         try FileManager.default.removeItem(at: directory)
     }
 
-    private func arrive(kind: NativeTabCreationKind = .linkBackground, active: Bool = false) -> Tab {
-        let tab = Tab(guid: state.tabs.count + 1, url: "https://example.test/link", isActive: active, index: state.tabs.count)
+    private func arrive(kind: NativeTabCreationKind = .linkBackground, active: Bool = false,
+                        wrapper: PageColorTestWebContentWrapper? = nil) -> Tab {
+        let tab = Tab(guid: state.tabs.count + 1, url: "https://example.test/link", isActive: active,
+                      index: state.tabs.count, webContentView: wrapper)
         state.handleNewTabFromChromium(tab, context: NativeTabCreationContext(
             isActiveAtCreation: active, creationKind: kind, openerTabId: 1))
         return tab
@@ -70,9 +72,11 @@ final class BackgroundTabToastTests: XCTestCase {
         XCTAssertTrue(OverlayToastCenter.shared.visibleToasts(for: state.windowId).isEmpty)
     }
 
-    func testLatestToastActivatesItsOwnTab() throws {
-        _ = arrive()
-        let latest = arrive()
+    func testLatestToastRequestsChromiumActivationBeforeChangingFocus() throws {
+        let firstWrapper = PageColorTestWebContentWrapper(urlString: "https://example.test/link")
+        let latestWrapper = PageColorTestWebContentWrapper(urlString: "https://example.test/link")
+        _ = arrive(wrapper: firstWrapper)
+        let latest = arrive(wrapper: latestWrapper)
         let toasts = OverlayToastCenter.shared.visibleToasts(for: state.windowId)
         XCTAssertEqual(toasts.count, 1)
         let toast = try XCTUnwrap(toasts.first)
@@ -80,15 +84,24 @@ final class BackgroundTabToastTests: XCTestCase {
         XCTAssertEqual(toast.action?.usesWholeToast, true)
         let action = try XCTUnwrap(toast.action)
         action.handler()
+        XCTAssertEqual(firstWrapper.setAsActiveTabCallCount, 0)
+        XCTAssertEqual(latestWrapper.setAsActiveTabCallCount, 1)
+        XCTAssertEqual(state.focusingTab?.guid, 1)
+        XCTAssertEqual(state.focusingTab?.url, "https://example.test")
+
+        // Native selection follows Chromium's active-tab notification.
+        state.handleChromiumActiveTabChanged(latest.guid)
         XCTAssertTrue(state.focusingTab === latest)
     }
 
-    func testClickAfterTabRemovalDoesNotChangeFocus() throws {
-        let tab = arrive()
+    func testClickAfterTabRemovalDoesNotRequestActivationOrChangeFocus() throws {
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://example.test/link")
+        let tab = arrive(wrapper: wrapper)
         let action = try XCTUnwrap(OverlayToastCenter.shared.visibleToasts(for: state.windowId).first?.action)
         state.tabs.removeAll { $0 === tab }
         state.updateNormalTabs()
         action.handler()
+        XCTAssertEqual(wrapper.setAsActiveTabCallCount, 0)
         XCTAssertEqual(state.focusingTab?.guid, 1)
     }
 

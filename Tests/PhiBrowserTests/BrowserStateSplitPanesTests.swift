@@ -297,13 +297,18 @@ final class BrowserStateSplitPanesTests: XCTestCase {
         for rowWidth: CGFloat in [193, 173] {
             let cell = SidebarSplitCellView(frame: NSRect(x: 0, y: 0, width: rowWidth, height: 36))
             cell.configure(with: SplitSidebarItem(groupId: "narrow", panes: tabs, browserState: nil))
-            let window = NSWindow(contentRect: cell.frame, styleMask: [], backing: .buffered, defer: false)
+            // A table pins its cell's width. As a window's content view the
+            // cell could widen the window instead of running out of room.
+            let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 36))
+            container.addSubview(cell)
+            let window = NSWindow(contentRect: container.frame, styleMask: [], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
-            window.contentView = cell
+            window.contentView = container
             defer { window.close() }
 
             cell.setHovered(true)
-            cell.layoutSubtreeIfNeeded()
+            container.layoutSubtreeIfNeeded()
+            XCTAssertEqual(cell.frame.width, rowWidth, "The row keeps the width under test")
 
             for index in tabs.indices {
                 let layout = try XCTUnwrap(cell.closeButtonLayout(paneIndex: index))

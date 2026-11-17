@@ -45,6 +45,9 @@ final class FloatingSidebarHostViewController: NSViewController {
     /// While any is up the panel stays pinned open, as for the inline
     /// create-Space form; the last one closing re-runs the hide scheduling.
     private let panelPopovers = NSHashTable<NSPopover>.weakObjects()
+    /// Folder and Space previews shown from inside the panel. Each is a
+    /// child panel rather than a popover and pins the panel the same way.
+    private let panelFolderPreviews = NSHashTable<BookmarkFolderPreview>.weakObjects()
     private var popoverObservers: [NSObjectProtocol] = []
     /// The presented Space's content was made the panel's while the panel
     /// was hidden, without activation or layout; `installContent` runs
@@ -86,9 +89,9 @@ final class FloatingSidebarHostViewController: NSViewController {
         observePanelPopovers()
     }
 
-    /// Tracks popovers anchored in the panel (see `panelPopovers`). The pin
-    /// starts at will-show, so it also holds while a popover is still
-    /// animating open; the anchor is already set by then.
+    /// Tracks popovers and folder previews anchored in the panel (see
+    /// `panelPopovers`). The pin starts at will-show, so it also holds while
+    /// a popover is still animating open; the anchor is already set by then.
     private func observePanelPopovers() {
         let center = NotificationCenter.default
         popoverObservers.append(center.addObserver(forName: NSPopover.willShowNotification, object: nil, queue: .main) { [weak self] note in
@@ -104,11 +107,35 @@ final class FloatingSidebarHostViewController: NSViewController {
                 guard let self, let popover = note.object as? NSPopover,
                       self.panelPopovers.contains(popover) else { return }
                 self.panelPopovers.remove(popover)
-                if self.panelPopovers.count == 0, self.isVisible {
-                    self.scheduleFloatingSidebarHide()
-                }
+                self.panelOverlayDidClose()
             }
         })
+        popoverObservers.append(center.addObserver(forName: .bookmarkFolderPreviewWillShow, object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let preview = note.object as? BookmarkFolderPreview,
+                      let anchor = preview.anchor, self.isInsideVisiblePanel(anchor) else { return }
+                self.panelFolderPreviews.add(preview)
+                self.cancelFloatingSidebarHide()
+            }
+        })
+        popoverObservers.append(center.addObserver(forName: .bookmarkFolderPreviewDidClose, object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let preview = note.object as? BookmarkFolderPreview,
+                      self.panelFolderPreviews.contains(preview) else { return }
+                self.panelFolderPreviews.remove(preview)
+                self.panelOverlayDidClose()
+            }
+        })
+    }
+
+    private var hasPanelOverlay: Bool {
+        !panelPopovers.allObjects.isEmpty || !panelFolderPreviews.allObjects.isEmpty
+    }
+
+    private func panelOverlayDidClose() {
+        if !hasPanelOverlay, isVisible {
+            scheduleFloatingSidebarHide()
+        }
     }
 
     /// Whether `popover` is anchored to a view inside the visible panel.
@@ -116,10 +143,14 @@ final class FloatingSidebarHostViewController: NSViewController {
     /// publish; probed so a future AppKit without it falls back to the
     /// unpinned behavior instead of raising.
     private func isAnchoredInPanel(_ popover: NSPopover) -> Bool {
-        guard isVisible, let panel = floatingSidebarContainerView,
-              popover.responds(to: NSSelectorFromString("positioningView")),
+        guard popover.responds(to: NSSelectorFromString("positioningView")),
               let anchor = popover.value(forKey: "positioningView") as? NSView else { return false }
-        return anchor.isDescendant(of: panel)
+        return isInsideVisiblePanel(anchor)
+    }
+
+    private func isInsideVisiblePanel(_ view: NSView) -> Bool {
+        guard isVisible, let panel = floatingSidebarContainerView else { return false }
+        return view.isDescendant(of: panel)
     }
 
     func install(in parent: NSViewController) {
@@ -760,6 +791,9 @@ final class FloatingSidebarHostViewController: NSViewController {
         let popovers = panelPopovers.allObjects
         panelPopovers.removeAllObjects()
         popovers.forEach { $0.close() }
+        let previews = panelFolderPreviews.allObjects
+        panelFolderPreviews.removeAllObjects()
+        previews.forEach { $0.invalidate() }
         visibilityGeneration += 1
         let generation = visibilityGeneration
         floatingSidebarLeadingConstraint?.update(offset: floatingSidebarHiddenLeading)
@@ -818,11 +852,11 @@ final class FloatingSidebarHostViewController: NSViewController {
             // The inline create-Space form pins the panel open: a pointer
             // excursion outside the panel must not tear the form down
             // mid-input. The pin lifts when the form closes (its dismiss
-            // re-runs this scheduling). A popover from the panel pins it the
-            // same way (`panelPopovers`).
+            // re-runs this scheduling). A popover or folder preview from the
+            // panel pins it the same way (`panelPopovers`).
             guard !isSwitchingSpace,
                   floatingSidebarViewController?.hasCreateSpaceOverlay != true,
-                  panelPopovers.count == 0 else { return }
+                  !hasPanelOverlay else { return }
             refreshFloatingSidebarPointerState()
             guard isPointerInsideFloatingSidebar == false else { return }
             guard isPointerInsideFloatingSidebarTrigger == false else { return }

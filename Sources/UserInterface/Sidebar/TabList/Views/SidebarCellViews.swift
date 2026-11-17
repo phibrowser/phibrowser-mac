@@ -284,6 +284,9 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private let peekTabViewModel = TabViewModel()
     private let tabPreviewRegistration = TabPreviewRegistration()
     private weak var configuredTab: Tab?
+    /// Resolving the preview target costs every row scrolled into view, so
+    /// it waits for the first hover after the cell is reused.
+    private var isTabPreviewConfigured = false
     private var activeSuppressed = false
     private var touchPressObserver: TouchPressObserver?
     weak var delegate: TabCellDelegate?
@@ -317,6 +320,7 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewModel.showsPeek = false
         peekTabViewModel.prepareForReuse()
         tabPreviewRegistration.invalidate()
+        isTabPreviewConfigured = false
         configuredTab = nil
         activeSuppressed = false
     }
@@ -340,6 +344,9 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     func setHovered(_ hovered: Bool) {
         viewModel.setHovered(hovered)
+        if hovered, !isTabPreviewConfigured {
+            configureTabPreview()
+        }
         tabPreviewRegistration.setHovering(hovered && !viewModel.isHoverSuppressed)
     }
 
@@ -461,28 +468,10 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         let state = SpaceSessionControllersManager.shared
             .controller(for: tab.windowId)?.browserState
         viewModel.configure(with: tab, in: state)
-        if let state {
-            tabPreviewRegistration.configure(
-                anchorView: self,
-                target: .tab(tab),
-                browserState: state,
-                placement: .rightTopAttached,
-                anchorRectProvider: { [weak tab] view in
-                    let bounds = view.bounds
-                    let leadingInset = WebContentConstant.edgesSpacing
-                    let trailingInset = tab?.groupToken == nil
-                        ? WebContentConstant.edgesSpacing
-                        : 2
-                    return CGRect(
-                        x: bounds.minX + leadingInset,
-                        y: bounds.minY + 2,
-                        width: max(0, bounds.width - leadingInset - trailingInset),
-                        height: max(0, bounds.height - 4)
-                    )
-                }
-            )
-        } else {
-            tabPreviewRegistration.invalidate()
+        // A cell reconfigured in place keeps a registration that may be
+        // showing a preview; rebind it as before.
+        if isTabPreviewConfigured {
+            configureTabPreview()
         }
         viewModel.setActiveSuppressed(activeSuppressed, activeValue: tab.isActive)
         // A tab that stops being active, for example when a link opens a new
@@ -512,6 +501,35 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         } else {
             updatePeekIndicator(peekTab: nil, browserState: nil)
         }
+    }
+
+    private func configureTabPreview() {
+        guard let tab = configuredTab,
+              let state = SpaceSessionControllersManager.shared
+                .controller(for: tab.windowId)?.browserState else {
+            tabPreviewRegistration.invalidate()
+            return
+        }
+        isTabPreviewConfigured = true
+        tabPreviewRegistration.configure(
+            anchorView: self,
+            target: .tab(tab),
+            browserState: state,
+            placement: .rightTopAttached,
+            anchorRectProvider: { [weak tab] view in
+                let bounds = view.bounds
+                let leadingInset = WebContentConstant.edgesSpacing
+                let trailingInset = tab?.groupToken == nil
+                    ? WebContentConstant.edgesSpacing
+                    : 2
+                return CGRect(
+                    x: bounds.minX + leadingInset,
+                    y: bounds.minY + 2,
+                    width: max(0, bounds.width - leadingInset - trailingInset),
+                    height: max(0, bounds.height - 4)
+                )
+            }
+        )
     }
 
     /// Shows the trailing peek indicator when a live Peek belongs to this

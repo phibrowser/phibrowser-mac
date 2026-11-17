@@ -207,6 +207,11 @@ class SidebarTabListViewController: NSViewController {
     /// Tab and split rows scrolled under the hovered floating New Tab row still
     /// get tracking-area hovers; new and reused cells pick this up on configure.
     private var isTabHoverSuppressed = false
+    /// Rebuilding a group's inner table is the costliest part of scrolling
+    /// a group row into view, so each group keeps its own cell instead of
+    /// taking whichever one the outline's reuse queue hands out. The cells
+    /// carry no identifier, so the outline never queues them for reuse.
+    private var groupCellsByToken: [String: TabGroupCellView] = [:]
     private let floatingNewTabContentMask: CALayer = {
         let layer = CALayer()
         layer.backgroundColor = NSColor.black.cgColor
@@ -4116,15 +4121,8 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
             cellView = separatorCell!
 
         case .tabGroup:
-            let identifier = NSUserInterfaceItemIdentifier("TabGroupCell")
-            let groupCell: TabGroupCellView
-            if let existing = outlineView.makeView(
-                withIdentifier: identifier, owner: self) as? TabGroupCellView {
-                groupCell = existing
-            } else {
-                groupCell = TabGroupCellView()
-                groupCell.identifier = identifier
-            }
+            let groupCell = (sidebarItem as? TabGroupSidebarItem)
+                .map { cachedGroupCell(for: $0.group.token) } ?? TabGroupCellView()
             groupCell.groupCellDelegate = self
             cellView = groupCell
 
@@ -4183,7 +4181,22 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         }
         return cellView
     }
-    
+
+    private func cachedGroupCell(for token: String) -> TabGroupCellView {
+        // A cell still shown in a row, as while a reload replaces that row,
+        // can't be placed in a second one.
+        if let cell = groupCellsByToken[token], cell.superview?.superview == nil {
+            return cell
+        }
+        let liveTokens = Set(tabSectionController.tabItems.compactMap {
+            ($0 as? TabGroupSidebarItem)?.group.token
+        })
+        groupCellsByToken = groupCellsByToken.filter { liveTokens.contains($0.key) }
+        let cell = TabGroupCellView()
+        groupCellsByToken[token] = cell
+        return cell
+    }
+
     func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
         guard let sidebarItem = item as? SidebarItem else { return 32.0 }
         

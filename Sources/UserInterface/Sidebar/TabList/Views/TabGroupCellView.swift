@@ -740,6 +740,9 @@ final class TabGroupCellView: SidebarCellView {
     /// delegate so the outer outline can request a coordinated row
     /// resize.
     func applyMembers(_ newMembers: [Tab], animated: Bool) {
+        let previousOrder = currentMemberOrder
+        let previousTabsByGuid = tabsByGuid
+        let previousSplitsByKey = splitsByKey
         tabsByGuid = Dictionary(
             uniqueKeysWithValues: newMembers.map { ($0.guid, $0) })
         // Detect non-pinned splits whose every pane lives in this group at
@@ -795,10 +798,21 @@ final class TabGroupCellView: SidebarCellView {
         splitsByKey = splits
         currentMemberOrder = order
 
-        var snap = NSDiffableDataSourceSnapshot<Section, Int>()
-        snap.appendSections([.members])
-        snap.appendItems(currentMemberOrder, toSection: .members)
-        dataSource.apply(snap, animatingDifferences: animated)
+        // Applying even an identical snapshot reloads and rebuilds every
+        // member row, as when this group's row scrolls back into view.
+        let rowsUnchanged = previousOrder == currentMemberOrder
+            && currentMemberOrder.allSatisfy { key in
+                if let split = splitsByKey[key] {
+                    return previousSplitsByKey[key] === split
+                }
+                return previousTabsByGuid[key] === tabsByGuid[key]
+            }
+        if !rowsUnchanged {
+            var snap = NSDiffableDataSourceSnapshot<Section, Int>()
+            snap.appendSections([.members])
+            snap.appendItems(currentMemberOrder, toSection: .members)
+            dataSource.apply(snap, animatingDifferences: animated)
+        }
         // Re-bind in place rather than reloading the row: a reload leaves the
         // row blank when the same update also moves it, as when the member
         // above a split joins it as the first pane.

@@ -519,6 +519,9 @@ class SpaceSessionController: NSWindowController {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
+        // See `ShellWindowController.init`: keeps sidebar rows from each
+        // forcing an extra layout to rebuild the key view loop.
+        window.autorecalculatesKeyViewLoop = true
         window.animationBehavior = .none
         // Do NOT let AppKit secure-state restoration bring these windows back in
         // fullscreen. On a slot that owned several Space windows in one

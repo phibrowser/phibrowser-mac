@@ -562,6 +562,10 @@ final class ShellWindowController: NSObject, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.title = "Phi"
         window.isMovableByWindowBackground = true
+        // Otherwise a table view rebuilds the key view loop of every row it
+        // adds, forcing an extra layout of the row's SwiftUI content; when
+        // the window recalculates the loop itself, it does so only on Tab.
+        window.autorecalculatesKeyViewLoop = true
         window.animationBehavior = .none
         // Chromium owns session restore and the slot owns frame continuity,
         // exactly as for the adopted Chromium windows (see

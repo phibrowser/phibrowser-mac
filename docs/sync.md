@@ -2481,8 +2481,12 @@ axis in pane order, which the fields above already carry. Divider positions
   pinned-split writes, the store is the source of truth for an open pinned
   split (`reconcilePinnedSplitPartners`): the open split adopts a landed
   orientation (Chromium re-lays it out) instead of writing its own back, and a
-  landed membership change is not undone. Only a half-written pair, whose one
-  record names exactly the open members, is completed. While a write of this
+  landed membership change is not undone: outside its own writes the window
+  never writes membership. A split linked on some members only is a landing
+  still in progress (a wider unsplit clears each member's list in its own
+  batch), and the window's own writes link every member in one transaction.
+  The orientation is adopted only once every linked member holds the same
+  value. While a write of this
   window is in flight (`pinnedSplitWritesInFlight`, at most a few seconds) the
   open split still wins, so a pinned-tabs emission computed before that write
   cannot undo it. A divider drag reports an unchanged orientation and writes

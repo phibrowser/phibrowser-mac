@@ -1347,9 +1347,11 @@ extension BrowserState {
     /// the source of truth and the live split follows it: a sync landing may
     /// change the members or the orientation of a split open here, and writing
     /// the live state back would undo it (and republish the undo). Then the
-    /// live split adopts a landed orientation, a link only one record of the
-    /// live members carries is completed (a half-written pair), and any other
-    /// membership difference is left to the store.
+    /// live split adopts a landed orientation once every member agrees on it,
+    /// and never writes membership: a landing that unlinks a wider split
+    /// clears each member's list in its own batch, so a half-linked split is a
+    /// landing in progress, not a write to repair. This window's own writes
+    /// always link every member in one transaction (`persistPinnedSplit`).
     ///
     /// Safe to over-call: it only writes when a live pane is missing from the
     /// record or the layout differs. A record with more panes than the live
@@ -1391,16 +1393,12 @@ extension BrowserState {
                 return db
             }
             guard liveDBs.contains(where: { pinnedSplitWritesInFlight[$0] != nil }) else {
-                // The links the records carry, a record with none adding nothing.
-                let linked = Set(records.flatMap { record -> [String] in
-                    guard let db = record.guidInLocalDB else { return [] }
-                    if !record.splitPaneGuids.isEmpty { return record.splitPaneGuids }
-                    return record.splitPartnerGuid.map { [db, $0] } ?? []
-                })
-                if linked == Set(liveDBs), !isLinked {
-                    persistPinnedSplit(dbGuids: dbGuids, layout: group.layout)
-                } else if isLinked, (records.first?.splitLayout ?? .vertical) != group.layout {
-                    adoptStoredPinnedSplitLayout(group.id, layout: records.first?.splitLayout ?? .vertical)
+                // Adopt only an orientation every linked member agrees on: a
+                // landing still in progress may have written some members only.
+                let storedLayouts = Set(records.map { $0.splitLayout ?? .vertical })
+                if isLinked, storedLayouts.count == 1, let stored = storedLayouts.first,
+                   stored != group.layout {
+                    adoptStoredPinnedSplitLayout(group.id, layout: stored)
                 }
                 continue
             }

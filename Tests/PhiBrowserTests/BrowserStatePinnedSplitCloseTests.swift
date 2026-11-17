@@ -299,17 +299,54 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
         XCTAssertEqual(records.map(\.splitPaneGuids), [[], [], []], "The removed pane stays out")
     }
 
-    /// A pair only one record of which carries the link (a half-written
-    /// pair) is still completed from the open split.
-    func testAnOpenHalfLinkedPinnedPairIsCompleted() throws {
+    /// A pinned pair open here whose unlink has landed for one record only
+    /// (the other still names it) is a landing in progress: it is not
+    /// relinked, and nothing is written. This replaces the earlier
+    /// "half-linked pair is completed" test, whose repair undid such unlinks;
+    /// this window's own pair writes always link both records at once.
+    func testAnOpenPinnedPairHalfUnlinkedByALandingIsNotRelinked() throws {
         let state = try makeState()
         let records = seedOpenPinnedSplit(state, dbs: ["db-a", "db-b"], liveLayout: .vertical)
         records[1].splitPartnerGuid = "db-a"
 
         state.reconcilePinnedSplitPartners()
 
-        XCTAssertEqual(records[0].splitPartnerGuid, "db-b")
+        XCTAssertNil(records[0].splitPartnerGuid)
         XCTAssertEqual(records[1].splitPartnerGuid, "db-a")
+        XCTAssertTrue(state.pinnedSplitWritesInFlight.isEmpty, "Reconcile made no store write")
+    }
+
+    /// The same for a three-pane split whose unsplit cleared the first
+    /// member's list before the others' lists landed.
+    func testAnOpenThreePaneSplitHalfUnsplitByALandingIsNotRelinked() throws {
+        let state = try makeState()
+        let records = seedOpenPinnedSplit(state, dbs: ["db-a", "db-b", "db-c"], liveLayout: .vertical)
+        records[1].splitPaneGuids = ["db-a", "db-b", "db-c"]
+        records[2].splitPaneGuids = ["db-a", "db-b", "db-c"]
+
+        state.reconcilePinnedSplitPartners()
+
+        XCTAssertEqual(records.map(\.splitPaneGuids), [[], ["db-a", "db-b", "db-c"], ["db-a", "db-b", "db-c"]])
+        XCTAssertTrue(state.pinnedSplitWritesInFlight.isEmpty, "Reconcile made no store write")
+    }
+
+    /// While a landing has written the new orientation to some members only,
+    /// the open split keeps its orientation; it adopts once all agree.
+    func testAnOpenPinnedSplitAdoptsAnOrientationOnlyOnceEveryMemberHoldsIt() throws {
+        let state = try makeState()
+        let records = seedOpenPinnedSplit(state, dbs: ["db-a", "db-b", "db-c"], liveLayout: .vertical)
+        records.forEach { $0.splitPaneGuids = ["db-a", "db-b", "db-c"] }
+        records[0].splitLayout = .horizontal
+        records[1].splitLayout = .vertical
+        records[2].splitLayout = .vertical
+
+        state.reconcilePinnedSplitPartners()
+        XCTAssertEqual(state.splits.first?.layout, .vertical, "Members disagree: no adoption")
+
+        records.forEach { $0.splitLayout = .horizontal }
+        state.reconcilePinnedSplitPartners()
+        XCTAssertEqual(state.splits.first?.layout, .horizontal)
+        XCTAssertTrue(state.pinnedSplitWritesInFlight.isEmpty, "Adoption writes nothing back")
     }
 
     /// A pinned split of three panes is one unit from any of its records,

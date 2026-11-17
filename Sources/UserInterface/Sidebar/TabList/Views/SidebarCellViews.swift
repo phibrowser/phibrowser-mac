@@ -586,7 +586,7 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             // by reusing `UnifiedTabCloseButton`. Hosted inside the segment
             // so the SwiftUI button receives its own hover events.
             closeHost = ZeroSafeAreaHostingView(rootView: AnyView(
-                UnifiedTabCloseButton(action: closeTapped)
+                UnifiedTabCloseButton(shrinksToFit: true, action: closeTapped)
                     .phiThemeObserver(themeObserver)
             ))
             closeHost.isHidden = true
@@ -858,11 +858,21 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             segment.muteWidth = make.width.equalTo(0).constraint
         }
 
+        // A pane can be narrower than a favicon plus a full close button
+        // (four panes at the minimum sidebar width). The button then gives
+        // up its trailing inset, then its width, so it stays inside the
+        // pane beside the favicon. Requiring the full size here made the
+        // layout unsatisfiable; AppKit dropped the width and left a button
+        // that was drawn but could not be hovered or clicked.
         pane.addSubview(segment.closeHost)
         segment.closeHost.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
-            make.trailing.equalToSuperview().offset(-2)
-            make.size.equalTo(CGSize(width: Self.closeButtonSize, height: Self.closeButtonSize))
+            make.height.equalTo(Self.closeButtonSize)
+            make.width.lessThanOrEqualTo(Self.closeButtonSize)
+            make.width.equalTo(Self.closeButtonSize).priority(.high)
+            make.trailing.lessThanOrEqualToSuperview()
+            make.trailing.equalToSuperview().offset(-2).priority(600)
+            make.leading.greaterThanOrEqualTo(icon.snp.trailing).priority(999)
         }
 
         title.snp.makeConstraints { make in
@@ -872,10 +882,12 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             // text when the title actually reaches the segment or close
             // button. The title's low compression resistance lets mute/close
             // controls keep their required widths as this region shrinks.
+            // Below the close button's priorities, so a pane with no room
+            // left for a title collapses it instead of moving the button.
             segment.titlePaneTrailing = make.trailing.equalToSuperview()
-                .offset(-Self.titleTrailingSpacing).constraint
+                .offset(-Self.titleTrailingSpacing).priority(.medium).constraint
             segment.titleCloseTrailing = make.trailing.equalTo(segment.closeHost.snp.leading)
-                .offset(-Self.titleTrailingSpacing).constraint
+                .offset(-Self.titleTrailingSpacing).priority(.medium).constraint
         }
         segment.titleCloseTrailing?.deactivate()
     }
@@ -1311,6 +1323,16 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
     func isRecordingIndicatorVisible(paneIndex: Int) -> Bool {
         guard paneIndex < configuredPaneCount else { return false }
         return !segments[paneIndex].recordingHost.isHidden
+    }
+
+    /// Test seam: frames of the given pane, its favicon and its close
+    /// button, in the cell's coordinates.
+    func closeButtonLayout(paneIndex: Int) -> (pane: NSRect, favicon: NSRect, button: NSRect)? {
+        guard paneIndex < configuredPaneCount else { return nil }
+        let segment = segments[paneIndex]
+        return (segment.pane.convert(segment.pane.bounds, to: self),
+                segment.iconView.convert(segment.iconView.bounds, to: self),
+                segment.closeHost.convert(segment.closeHost.bounds, to: self))
     }
 
     /// Test seam: current memory-reclaimed opacity for the given pane's favicon.

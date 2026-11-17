@@ -563,6 +563,9 @@ struct UnifiedTabFaviconView: View {
 
 struct UnifiedTabCloseButton: View {
     var systemImage = "xmark"
+    /// Lets the button narrow below 24 points with its host, for a split
+    /// pane too narrow for the full button.
+    var shrinksToFit = false
     let action: () -> Void
     @State private var isHovered = false
 
@@ -570,7 +573,8 @@ struct UnifiedTabCloseButton: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 11, weight: .semibold))
-                .frame(width: 24, height: 24)
+                .frame(minWidth: shrinksToFit ? 0 : 24, idealWidth: 24, maxWidth: 24)
+                .frame(height: 24)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

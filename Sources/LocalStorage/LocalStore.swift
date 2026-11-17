@@ -406,7 +406,7 @@ extension LocalStore {
     /// so subscribers never observe a linked row without the orientation that
     /// belongs to it. A pair is the reciprocal `splitPartnerGuid` link, which
     /// sync carries; a wider split is `splitPaneGuids` on every member, which
-    /// stays local, so other devices see those members as separate pins.
+    /// sync carries as member lineages (`split_pane_uuids`).
     func updatePinnedSplit(guids: [String], layout: String) {
         guard guids.count >= 2 else { return }
         performBackgroundWrite { context in

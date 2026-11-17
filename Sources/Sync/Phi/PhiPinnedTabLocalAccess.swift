@@ -27,6 +27,12 @@ struct PhiLocalPin: Equatable, Sendable {
     var url: URL
     /// Partner lineage, nil when not split. Never the device/copy-specific physical splitPartnerGuid.
     var splitPartnerLineageId: String?
+    /// Member lineages, in pane order and this pin's own included, of a split of three or four pins; empty
+    /// for a solo pin or a pair. Like the partner, never the physical `splitPaneGuids`.
+    var splitPaneLineageIds: [String] = []
+    /// Raw `TabDataModel.layout` (pane orientation of the split this pin belongs to). nil and "vertical"
+    /// both mean the default, side by side.
+    var splitLayout: String? = nil
     /// TabSource raw value.
     var source: Int
     var createdDate: Date
@@ -42,6 +48,11 @@ struct PinFieldPatch: Equatable {
     var title: String?? = nil
     var url: URL?? = nil
     var splitPartnerLineageId: String?? = nil
+    /// nil leaves the wider-split membership unchanged; an empty list clears it. Otherwise the member
+    /// lineages in pane order, written only when every member resolves under the pin's owner.
+    var splitPaneLineageIds: [String]? = nil
+    /// Outer nil leaves the orientation unchanged; inner nil is the default, side by side.
+    var splitLayout: String?? = nil
 }
 
 /// One local write for landing a remote pin.
@@ -354,6 +365,14 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
         snapshotIsLoaded = true
     }
 
+    /// A wider split's member lineages. A member whose row is gone drops out; fewer than two left is no
+    /// wider split at all.
+    private static func paneLineages(of model: TabDataModel,
+                                     lineageByGuid: [String: String]) -> [String] {
+        let lineages = model.decodedSplitPaneGuids.compactMap { lineageByGuid[$0] }
+        return lineages.count >= 2 ? lineages : []
+    }
+
     /// Value snapshots, never model objects: SwiftData refreshes instances in place and object deduplication
     /// would swallow edits (§4.8). Preserve raw lineage bytes (P11); normalize only at comparison boundaries
     /// to avoid false read-time changes.
@@ -367,6 +386,8 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
                     title: model.title,
                     url: model.url,
                     splitPartnerLineageId: model.splitPartnerGuid.flatMap { lineageByGuid[$0] },
+                    splitPaneLineageIds: paneLineages(of: model, lineageByGuid: lineageByGuid),
+                    splitLayout: model.layout,
                     source: model.source,
                     createdDate: model.createdDate,
                     contentUpdatedDate: model.contentUpdatedDate,

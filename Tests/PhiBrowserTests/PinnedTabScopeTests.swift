@@ -962,6 +962,61 @@ final class PinnedTabScopeTests: XCTestCase {
         XCTAssertFalse(rows.contains { $0.guid == "H" }, "Other operations in the batch roll back with the transaction")
     }
 
+    /// PHI-2046: a sync batch that creates the members of a 3-pane pinned split and lands their
+    /// member list writes it as physical `splitPaneGuids` in pane order, and the next snapshot
+    /// projects the same lineages back. A list naming a pin this owner lacks writes nothing, and
+    /// an empty list clears.
+    func testASyncLandingBatchStoresAWiderPinnedSplitByPhysicalGuid() async throws {
+        let store = try makeStore()
+        _ = try seedProfilesAndSpaces(in: store)
+        let suite = "PinnedTabScopeTests.PHI-2046.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let access = AccountPhiPinnedTabAccess(store: store, defaults: defaults)
+        let members = ["la", "lb", "lc"]
+        var ops: [PinApplyOp] = []
+        for (index, lineage) in members.enumerated() {
+            ops.append(.create(.fixture(lineageId: lineage, guid: "G\(index)", spaceId: nil,
+                                        profileId: "Default", index: index, title: lineage,
+                                        url: try XCTUnwrap(URL(string: "https://\(lineage).example")))))
+            ops.append(.update(guid: "G\(index)", fields: PinFieldPatch(splitPaneLineageIds: members)))
+        }
+
+        try await access.apply(PinApplyBatch(unordered: ops),
+                               expectedGeneration: access.pinScopeGeneration(),
+                               expectedScope: access.currentScope())
+        try drainMainQueue()
+
+        let rows = store.getAllPinnedTabs(for: "Default")
+        for row in rows {
+            XCTAssertEqual(row.decodedSplitPaneGuids, ["G0", "G1", "G2"], "\(row.guid) names every member")
+            XCTAssertNil(row.splitPartnerGuid)
+        }
+        let projected = try access.allPins()
+        XCTAssertEqual(projected.map(\.splitPaneLineageIds), Array(repeating: members, count: 3))
+
+        try await access.apply(PinApplyBatch(unordered: [
+            .update(guid: "G0", fields: PinFieldPatch(splitPaneLineageIds: ["la", "lb", "lz"])),
+            .update(guid: "G1", fields: PinFieldPatch(splitPaneLineageIds: [])),
+        ]), expectedGeneration: access.pinScopeGeneration(), expectedScope: access.currentScope())
+        try drainMainQueue()
+
+        let after = Dictionary(uniqueKeysWithValues: store.getAllPinnedTabs(for: "Default")
+            .map { ($0.guid, $0.decodedSplitPaneGuids) })
+        XCTAssertEqual(after["G0"], ["G0", "G1", "G2"], "A list naming a missing member writes nothing")
+        XCTAssertEqual(after["G1"], [], "An empty list clears the membership")
+
+        try await access.apply(PinApplyBatch(unordered: [
+            .update(guid: "G0", fields: PinFieldPatch(splitLayout: .some("horizontal"))),
+            .update(guid: "G2", fields: PinFieldPatch(splitLayout: .some(nil))),
+        ]), expectedGeneration: access.pinScopeGeneration(), expectedScope: access.currentScope())
+        try drainMainQueue()
+        let layouts = Dictionary(uniqueKeysWithValues: store.getAllPinnedTabs(for: "Default")
+            .map { ($0.guid, $0.layout) })
+        XCTAssertEqual(layouts["G0"] ?? nil, "horizontal", "A landed orientation is stored on the row")
+        XCTAssertEqual(try access.allPins().first { $0.guid == "G0" }?.splitLayout, "horizontal")
+    }
+
     /// CASE 8.5e: startup repair cleans an already-corrupt store.
     /// Keep the lowest-index row among shared guids and one exact same-identity duplicate.
     /// Preserve content-divergent variants: A11 mints separate lineages for them, and deleting

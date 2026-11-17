@@ -368,6 +368,11 @@ class BrowserState {
     /// focus inside it. Kept only until the current burst of Chromium events
     /// has been handled. See `noteSplitPanesLeft(_:previousTabIds:)`.
     var splitPaneTabIdsJustLeft: [Int: [Int]] = [:]
+    /// Pinned-split writes this window sent to the store that no pinned-tabs
+    /// emission has shown yet, by record guid. While one is pending the live
+    /// split is the source of truth; otherwise the store is. See
+    /// `reconcilePinnedSplitPartners()`.
+    var pinnedSplitWritesInFlight: [String: PinnedSplitWriteInFlight] = [:]
     var aiChatCollapseWatches: [ObjectIdentifier: (tabId: Int, watch: AnyCancellable)] = [:]
     var aiChatPanelURLWatches: [ObjectIdentifier: AnyCancellable] = [:]
     var aiChatPanelRecordSubscriptions = Set<AnyCancellable>()
@@ -1079,10 +1084,13 @@ class BrowserState {
 
         // Re-sync every pinned tab against the currently open Chromium tabs.
         syncAllPinnedTabsState()
+        // The records now hold the store's values: retire this window's
+        // writes the store has caught up with.
+        confirmPinnedSplitWritesInFlight()
         // Stamp the pinned-split partner linkage from any live `isPinned`
         // group now that the records exist, so closing a just-pinned split
         // can't strand the pair unlinked while the store write is still in
-        // flight.
+        // flight; adopt what sync landed otherwise.
         reconcilePinnedSplitPartners()
         updateNormalTabs()
     }

@@ -26,6 +26,12 @@ struct PhiLocalBookmark: Equatable, Sendable {
     var url: URL
     var secondaryUrl: URL?
     var secondaryTitle: String?
+    /// The panes of a split of three or four panes after `url` and `secondaryUrl`, in pane order; empty for
+    /// every other bookmark. Mirrors `TabDataModel.splitExtraPanes` without the LocalStorage type.
+    var splitExtraPanes: [ExtraPane] = []
+    /// Raw `TabDataModel.layout` of a split bookmark (pane orientation); nil for a single-URL bookmark.
+    /// nil and "vertical" both mean the default, side by side.
+    var splitLayout: String? = nil
     /// TabSource raw value: 0 phi, 1 chromium, 2 safari, 3 arc.
     var source: Int
     var createdDate: Date
@@ -35,15 +41,25 @@ struct PhiLocalBookmark: Equatable, Sendable {
     /// recorded move — a create, a pre-V13 row, or a row whose location only ever arrived from a peer — and
     /// `BookmarkKind.stamp` then falls back to the round clock as it did before V13.
     var locationUpdatedDate: Date?
+
+    /// One pane of a wider split bookmark. `url` is the stored absolute URL string.
+    struct ExtraPane: Equatable, Sendable {
+        var url: String
+        var title: String?
+    }
 }
 
 /// Fields and values for one update. Nested optionals: outer selects whether to change, inner selects the
-/// value, with nil clearing it. All four default to nil, supporting title-only patches.
+/// value, with nil clearing it. Every field defaults to nil, supporting title-only patches.
 struct BookmarkFieldPatch: Equatable {
     var title: String?? = nil
     var url: URL?? = nil
     var secondaryUrl: URL?? = nil
     var secondaryTitle: String?? = nil
+    /// nil leaves the extra panes unchanged; an empty list clears them.
+    var splitExtraPanes: [PhiLocalBookmark.ExtraPane]? = nil
+    /// Outer nil leaves the orientation unchanged; inner nil is the default, side by side.
+    var splitLayout: String?? = nil
 }
 
 /// One local write required to land a remote bookmark.
@@ -447,6 +463,11 @@ final class AccountPhiBookmarkAccess: PhiBookmarkLocalAccess {
                          url: model.url,
                          secondaryUrl: model.secondaryUrl,
                          secondaryTitle: model.secondaryTitle,
+                         // Extra panes only extend a split; a single-URL row never carries them.
+                         splitExtraPanes: model.secondaryUrl == nil ? [] : model.decodedSplitExtraPanes.map {
+                             PhiLocalBookmark.ExtraPane(url: $0.url, title: $0.title)
+                         },
+                         splitLayout: model.secondaryUrl == nil ? nil : model.layout,
                          source: model.source,
                          createdDate: model.createdDate,
                          contentUpdatedDate: model.contentUpdatedDate,

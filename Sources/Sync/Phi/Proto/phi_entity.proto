@@ -217,6 +217,32 @@ message PhiBookmarkEntity {
   int64 created_at_ms = 11;
 
   reserved 12 to 15;  // M3-4 / M4. Do not reuse.
+
+  // string_value. The panes of a split bookmark of three or four panes that
+  // come after `url` and `secondary_url`, in pane order: a JSON array of
+  // objects {"url": <absolute URL>, "title": <display name, omitted when none>}
+  // with sorted keys. "" = the split has no further panes (the explicit cleared
+  // encoding).
+  //
+  // The one bookmark field that is NOT always emitted: it is absent until the
+  // bookmark first has a third pane, and stays present (as "" once cleared)
+  // after that. Absent therefore means "no further panes" for every 2-pane split,
+  // so their bytes stay identical to an older client's and adding this field
+  // republishes nothing. An older client keeps the field in unknownFields when it
+  // merges, shows the first two panes, and drops the field only when it
+  // republishes its own edit; that payload carries no timestamp for the field, so
+  // a newer device's stamped value wins the merge and is republished.
+  PhiSettingValue split_extra_panes = 16;
+
+  // string_value. The orientation of a split bookmark's panes, the local
+  // `TabDataModel.layout` verbatim: "horizontal" (stacked); "" = the default,
+  // side by side (local nil or "vertical"). Divider positions are per-device and
+  // never synced. Meaningless while `secondary_url` is "".
+  //
+  // Same presence rule as `split_extra_panes`: absent until the bookmark is first
+  // stacked, so every side-by-side split keeps the bytes an older client writes,
+  // and present (as "" once back to side by side) after that.
+  PhiSettingValue split_layout = 17;
 }
 
 // One pinned tab IN ONE OWNER. Entity identity is the client tag
@@ -282,6 +308,35 @@ message PhiPinTabEntity {
   int64 created_at_ms = 9;
 
   reserved 10 to 13;  // M3-4 / M4. Do not reuse.
+
+  // string_value: the members of a split of three or four pinned tabs, as a
+  // JSON array of their pin_uuids in pane order, this pin's own included; ""
+  // for a pin that is not in such a split (the explicit cleared encoding). A
+  // pair keeps using `split_partner_uuid` and leaves this field absent, and a
+  // member of a wider split publishes `split_partner_uuid` "". Every member is
+  // in the SAME owner, like a partner.
+  //
+  // Not always emitted, for the same reason as PhiBookmarkEntity
+  // .split_extra_panes: absent until the pin first joins a wider split, present
+  // (as "" once cleared) after that. An older client keeps the field in
+  // unknownFields and shows the members as separate pins.
+  //
+  // Landing follows the partner rules (design §7.4): a member list that names a
+  // pin not landed yet waits on `pendingPartnerLineage` and re-emits the
+  // baseline's list rather than "".
+  PhiSettingValue split_pane_uuids = 14;
+
+  // string_value. The orientation of the split this pin belongs to, the local
+  // `TabDataModel.layout` verbatim: "horizontal" (stacked); "" = the default,
+  // side by side. Same presence rule as `split_pane_uuids`.
+  //
+  // Every member carries the value its device holds for the whole split, but on
+  // receipt only the split's ANCHOR decides: the first of `split_pane_uuids`, or
+  // for a pair the smaller of `pin_uuid` and `split_partner_uuid`. Landing writes
+  // the anchor's value to every member, so members cannot disagree even when their
+  // own fields were merged from different writers. A pin not in a split re-emits
+  // its baseline's value, like a member still waiting for its partner.
+  PhiSettingValue split_layout = 15;
 }
 
 // One URL routing rule. Entity identity is the client tag

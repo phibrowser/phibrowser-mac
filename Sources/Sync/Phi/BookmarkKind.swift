@@ -94,6 +94,15 @@ enum BookmarkKind: OwnedItemKind {
         entity.url = string(local.url.absoluteString)
         entity.secondaryURL = string(local.secondaryUrl?.absoluteString ?? "")
         entity.secondaryTitle = string(local.secondaryTitle ?? "")
+        // Absent unless the split has a third pane; `stamp` turns absent into "" once a baseline has it.
+        if local.secondaryUrl != nil, !local.splitExtraPanes.isEmpty {
+            entity.splitExtraPanes = string(encodeExtraPanes(local.splitExtraPanes))
+        }
+        // Likewise absent while a split keeps the default side-by-side orientation.
+        if local.secondaryUrl != nil {
+            let layout = wireSplitLayout(local.splitLayout)
+            if !layout.isEmpty { entity.splitLayout = string(layout) }
+        }
         entity.source = Int32(truncatingIfNeeded: local.source)
         entity.createdAtMs = milliseconds(local.createdDate)
         return entity
@@ -101,9 +110,12 @@ enum BookmarkKind: OwnedItemKind {
 
     static func rank(of entity: Phi_PhiBookmarkEntity) -> String { entity.rank.stringValue }
 
-    /// Bytes of the four content values with timestamps zeroed, as in SyncableSettings.signature. Exclude
-    /// location/rank, carried by move, to avoid empty content patches for pure moves. Comparing the whole
-    /// entity would also treat remote restamping as content edits.
+    /// Bytes of the four content values with timestamps zeroed, as in SyncableSettings.signature, plus the
+    /// extra panes. Exclude location/rank, carried by move, to avoid empty content patches for pure moves.
+    /// Comparing the whole entity would also treat remote restamping as content edits.
+    ///
+    /// The extra panes contribute their text only, so an absent field and "" sign the same: both mean "no
+    /// further panes", and an older client's payload must not read as a content change.
     static func contentSignature(of entity: Phi_PhiBookmarkEntity) -> Data {
         var out = Data()
         for value in [entity.title, entity.url, entity.secondaryURL, entity.secondaryTitle] {
@@ -111,6 +123,9 @@ enum BookmarkKind: OwnedItemKind {
             out.append(0)
         }
         out.append(entity.isFolder ? 1 : 0)
+        out.append(contentsOf: Array(entity.splitExtraPanes.stringValue.utf8))
+        out.append(0)
+        out.append(contentsOf: Array(entity.splitLayout.stringValue.utf8))
         return out
     }
 
@@ -123,12 +138,13 @@ enum BookmarkKind: OwnedItemKind {
             : entity.parentUuid.updatedAtMs
     }
 
-    /// A9's content half (C4-a): the newest of the four content stamps. Unlike location this is
-    /// a max rather than a designated carrier, because content fields are four independent
+    /// A9's content half (C4-a): the newest of the content stamps. Unlike location this is
+    /// a max rather than a designated carrier, because content fields are independent
     /// merge units and any one of them being newer than the deletion is a user edit.
     static func contentStamp(of entity: Phi_PhiBookmarkEntity) -> Int64 {
         max(entity.title.updatedAtMs, entity.url.updatedAtMs,
-            entity.secondaryURL.updatedAtMs, entity.secondaryTitle.updatedAtMs)
+            entity.secondaryURL.updatedAtMs, entity.secondaryTitle.updatedAtMs,
+            entity.splitExtraPanes.updatedAtMs, entity.splitLayout.updatedAtMs)
     }
 
     /// Ruling C5-a: the folder that lost a move cycle, put back where the account last agreed it was.
@@ -178,6 +194,14 @@ enum BookmarkKind: OwnedItemKind {
                       hlcMax: Int64 = 0, wallOffsetMs: Int64 = 0) -> Phi_PhiBookmarkEntity {
         var out = projected
         out.rank = string(rank)
+        // split_extra_panes stays absent until a third pane exists; once a baseline carries it, no extra
+        // panes is the explicit "" so that removing them reaches the peers.
+        if !out.hasSplitExtraPanes, baseline?.hasSplitExtraPanes == true {
+            out.splitExtraPanes = string("")
+        }
+        if !out.hasSplitLayout, baseline?.hasSplitLayout == true {
+            out.splitLayout = string("")
+        }
         let contentStamp = PhiHybridClock.corrected(
             wallMs: milliseconds(local.contentUpdatedDate ?? local.createdDate),
             offsetMs: wallOffsetMs)
@@ -198,6 +222,10 @@ enum BookmarkKind: OwnedItemKind {
             out.url.updatedAtMs = created
             out.secondaryURL.updatedAtMs = created
             out.secondaryTitle.updatedAtMs = created
+            if out.hasSplitExtraPanes { out.splitExtraPanes.updatedAtMs = created }
+            // The orientation has no edit-date column (`updateBookmarkSplitLayout` writes none), so it
+            // takes the round's hybrid-logical stamp, like a pin's split link.
+            if out.hasSplitLayout { out.splitLayout.updatedAtMs = now }
             return out
         }
 
@@ -239,6 +267,13 @@ enum BookmarkKind: OwnedItemKind {
                                                  contentStamp)
         out.secondaryTitle.updatedAtMs = restamped(out.secondaryTitle, baseline.secondaryTitle,
                                                    contentStamp)
+        if out.hasSplitExtraPanes {
+            out.splitExtraPanes.updatedAtMs = restamped(out.splitExtraPanes, baseline.splitExtraPanes,
+                                                        contentStamp)
+        }
+        if out.hasSplitLayout {
+            out.splitLayout.updatedAtMs = restamped(out.splitLayout, baseline.splitLayout, now)
+        }
         return out
     }
 
@@ -294,6 +329,15 @@ enum BookmarkKind: OwnedItemKind {
         merged.secondaryURL = SyncableSettings.lwwWinner(local.secondaryURL, remote.secondaryURL)
         merged.secondaryTitle = SyncableSettings.lwwWinner(local.secondaryTitle,
                                                            remote.secondaryTitle)
+        // Only when a side carries it: assigning the winner of two absent fields would emit an empty
+        // message, changing the bytes of every 2-pane and plain bookmark.
+        if local.hasSplitExtraPanes || remote.hasSplitExtraPanes {
+            merged.splitExtraPanes = SyncableSettings.lwwWinner(local.splitExtraPanes,
+                                                                remote.splitExtraPanes)
+        }
+        if local.hasSplitLayout || remote.hasSplitLayout {
+            merged.splitLayout = SyncableSettings.lwwWinner(local.splitLayout, remote.splitLayout)
+        }
         // Not LWW: prefer nonzero; if both are nonzero and differ, choose the smaller value.
         merged.source = mergedSource(local.source, remote.source)
         // Not LWW: preserve the earliest creation time.
@@ -316,6 +360,10 @@ enum BookmarkKind: OwnedItemKind {
         guard SyncableSpaces.isLegalRank(entity.rank.stringValue) else { return .illegalRank }
         if entity.parentUuid.stringValue == uuid { return .selfReference }
         if !entity.isFolder, URL(string: entity.url.stringValue) == nil { return .invalidURL }
+        // Landing stores every pane URL; one that cannot form a URL would fail the whole batch.
+        if !entity.isFolder, extraPanes(of: entity).contains(where: { URL(string: $0.url) == nil }) {
+            return .invalidURL
+        }
         if let baseline, baseline.isFolder != entity.isFolder { return .isFolderMismatch }
         return nil
     }
@@ -335,6 +383,40 @@ enum BookmarkKind: OwnedItemKind {
         var out: [String: Int] = [:]
         for (index, row) in ordered.enumerated() { out[row.guid] = index }
         return out
+    }
+
+    // MARK: - Wider splits (split_extra_panes)
+
+    /// Wire form of one extra pane. Encoded with sorted keys and `title` omitted when nil, so equal panes
+    /// always produce equal bytes and an unchanged split never reads as an edit.
+    private struct WireExtraPane: Codable {
+        var title: String?
+        var url: String
+    }
+
+    /// The `split_extra_panes` text for `panes`, or "" for none.
+    static func encodeExtraPanes(_ panes: [PhiLocalBookmark.ExtraPane]) -> String {
+        guard !panes.isEmpty else { return "" }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let wire = panes.map {
+            WireExtraPane(title: ($0.title?.isEmpty == false) ? $0.title : nil, url: $0.url)
+        }
+        guard let data = try? encoder.encode(wire) else { return "" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// The extra panes `entity` carries. Absent, "" and text that does not decode all read as none, the
+    /// same fallback the local column uses.
+    static func extraPanes(of entity: Phi_PhiBookmarkEntity) -> [PhiLocalBookmark.ExtraPane] {
+        let text = entity.splitExtraPanes.stringValue
+        guard !text.isEmpty,
+              let wire = try? JSONDecoder().decode([WireExtraPane].self, from: Data(text.utf8)) else {
+            return []
+        }
+        return wire.map {
+            PhiLocalBookmark.ExtraPane(url: $0.url, title: ($0.title?.isEmpty == false) ? $0.title : nil)
+        }
     }
 
     // MARK: - Private helpers
@@ -403,4 +485,17 @@ enum BookmarkKind: OwnedItemKind {
     private static func milliseconds(_ date: Date) -> Int64 {
         Int64((date.timeIntervalSince1970 * 1000).rounded())
     }
+}
+
+/// The wire form of a split's local `TabDataModel.layout`, shared by bookmarks and pins: "" for the
+/// default side-by-side orientation (nil or "vertical"), otherwise the stored value verbatim, so an
+/// orientation a newer build adds round-trips unchanged.
+func wireSplitLayout(_ layout: String?) -> String {
+    guard let layout, !layout.isEmpty, layout != "vertical" else { return "" }
+    return layout
+}
+
+/// The local `TabDataModel.layout` for a wire `split_layout`: nil for the default.
+func localSplitLayout(_ wire: String) -> String? {
+    wire.isEmpty ? nil : wire
 }

@@ -233,13 +233,60 @@ private struct ThemeEditorWindowDragSurface: NSViewRepresentable {
                   hypot(event.locationInWindow.x - mouseDownLocation.x,
                         event.locationInWindow.y - mouseDownLocation.y) >= 3 else { return }
             self.mouseDownLocation = nil
+            // On macOS 27.2 WindowServer moves a dragged child window about
+            // 10 times a second, against about 100 for the same panel
+            // unparented, so the panel leaves its browser window for the
+            // drag and rejoins it on release.
+            let parent = window.parent
+            parent?.removeChildWindow(window)
             // Start after the drag threshold: on macOS 27 a mouse-down
             // performDrag call can return before tracking begins.
             window.performDrag(with: event)
+            guard let parent else { return }
+            if NSEvent.pressedMouseButtons & 1 == 0 {
+                reattach(window, to: parent)
+            } else {
+                awaitDragEnd(reattaching: window, to: parent)
+            }
         }
 
         override func mouseUp(with event: NSEvent) {
             mouseDownLocation = nil
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            super.viewWillMove(toWindow: newWindow)
+            if newWindow == nil { removeDragEndMonitor() }
+        }
+
+        /// Watches for the release of a window drag. On macOS 27 performDrag
+        /// returns while the button is still down, and the release reaches
+        /// no view, only a local monitor. The monitor removes itself on that
+        /// release, or when the editor closes first.
+        private var dragEndMonitor: Any?
+
+        private func awaitDragEnd(reattaching window: NSWindow, to parent: NSWindow) {
+            removeDragEndMonitor()
+            dragEndMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self, weak window, weak parent] event in
+                MainActor.assumeIsolated {
+                    self?.removeDragEndMonitor()
+                    if let window, let parent { self?.reattach(window, to: parent) }
+                }
+                return event
+            }
+        }
+
+        private func removeDragEndMonitor() {
+            guard let dragEndMonitor else { return }
+            NSEvent.removeMonitor(dragEndMonitor)
+            self.dragEndMonitor = nil
+        }
+
+        /// Rejoins the browser window unless the editor closed during the
+        /// drag: adding a child orders it in, which would bring it back.
+        private func reattach(_ window: NSWindow, to parent: NSWindow) {
+            guard window.isVisible, window.parent == nil, parent.isVisible else { return }
+            parent.addChildWindow(window, ordered: .above)
         }
     }
 }

@@ -2485,8 +2485,10 @@ axis in pane order, which the fields above already carry. Divider positions
   never writes membership. A split linked on some members only is a landing
   still in progress (a wider unsplit clears each member's list in its own
   batch), and the window's own writes link every member in one transaction.
-  The orientation is adopted only once every linked member holds the same
-  value. While a write of this
+  The orientation is adopted only once every open member holds the same
+  value and the stored links still make the open panes one split (a one-way
+  pair from an older build counts; a split whose links were all cleared does
+  not, so a landed unsplit leaves the open panes' orientation alone). While a write of this
   window is in flight (`pinnedSplitWritesInFlight`, at most a few seconds) the
   open split still wins, so a pinned-tabs emission computed before that write
   cannot undo it. A divider drag reports an unchanged orientation and writes

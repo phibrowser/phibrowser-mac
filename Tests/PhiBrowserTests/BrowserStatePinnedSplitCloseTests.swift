@@ -349,6 +349,37 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
         XCTAssertTrue(state.pinnedSplitWritesInFlight.isEmpty, "Adoption writes nothing back")
     }
 
+    /// A one-way pair from an older build (only B names A) still opens as one
+    /// split, and adopts an orientation another window wrote to both records.
+    func testAnOpenOneWayLegacyPairAdoptsAnOrientationOnBothRecords() throws {
+        let state = try makeState()
+        let records = seedOpenPinnedSplit(state, dbs: ["db-a", "db-b"], liveLayout: .vertical)
+        records[1].splitPartnerGuid = "db-a"
+        records.forEach { $0.splitLayout = .horizontal }
+
+        state.reconcilePinnedSplitPartners()
+
+        XCTAssertEqual(state.splits.first?.layout, .horizontal)
+        XCTAssertNil(records[0].splitPartnerGuid, "No membership write")
+        XCTAssertTrue(state.pinnedSplitWritesInFlight.isEmpty, "Reconcile made no store write")
+    }
+
+    /// After a landed unsplit has cleared every link, all rows hold the
+    /// default orientation; the panes still open together keep theirs.
+    func testAFullyUnlinkedOpenSplitKeepsItsOrientation() throws {
+        for dbs in [["db-a", "db-b"], ["db-a", "db-b", "db-c"]] {
+            let state = try makeState()
+            let records = seedOpenPinnedSplit(state, dbs: dbs, liveLayout: .horizontal)
+            records.forEach { $0.splitLayout = nil }
+
+            state.reconcilePinnedSplitPartners()
+
+            XCTAssertEqual(state.splits.first?.layout, .horizontal, "\(dbs.count) panes")
+            XCTAssertTrue(records.allSatisfy { $0.splitPartnerGuid == nil && $0.splitPaneGuids.isEmpty })
+            XCTAssertTrue(state.pinnedSplitWritesInFlight.isEmpty, "Reconcile made no store write")
+        }
+    }
+
     /// A pinned split of three panes is one unit from any of its records,
     /// including a record whose copy of the list has not landed yet.
     func test_widerPinnedSplitResolvesEveryPaneFromAnyRecord() throws {

@@ -1393,11 +1393,20 @@ extension BrowserState {
                 return db
             }
             guard liveDBs.contains(where: { pinnedSplitWritesInFlight[$0] != nil }) else {
-                // Adopt only an orientation every linked member agrees on: a
-                // landing still in progress may have written some members only.
+                // Adopt only an orientation every member agrees on (a landing
+                // still in progress may have written some members only), and
+                // only while the stored links still make the open panes one
+                // split. A one-way legacy pair counts, as on the read side
+                // (`pinnedSplitDBGuids`); a split whose links were all cleared
+                // does not, though its rows all hold the default.
+                let storedLinks = Set(records.flatMap { record -> [String] in
+                    guard let db = record.guidInLocalDB else { return [] }
+                    if !record.splitPaneGuids.isEmpty { return record.splitPaneGuids }
+                    return record.splitPartnerGuid.map { [db, $0] } ?? []
+                })
                 let storedLayouts = Set(records.map { $0.splitLayout ?? .vertical })
-                if isLinked, storedLayouts.count == 1, let stored = storedLayouts.first,
-                   stored != group.layout {
+                if Set(liveDBs).isSubset(of: storedLinks), storedLayouts.count == 1,
+                   let stored = storedLayouts.first, stored != group.layout {
                     adoptStoredPinnedSplitLayout(group.id, layout: stored)
                 }
                 continue

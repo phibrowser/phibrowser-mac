@@ -75,14 +75,13 @@ extension NSSplitViewItem {
     /// caller rather than the item: an expansion cut short would otherwise
     /// leave the pinned width behind as the item's own limits.
     func expand(atWidth width: CGFloat, animated: Bool, in splitView: NSSplitView,
-                limits: ClosedRange<CGFloat>, completion: (() -> Void)? = nil) {
+                limits: ClosedRange<CGFloat>) {
         guard isCollapsed else { return }
         minimumThickness = width
         maximumThickness = width
         let restoreLimits = { [weak self] in
             self?.minimumThickness = limits.lowerBound
             self?.maximumThickness = limits.upperBound
-            completion?()
         }
         if animated {
             // The expand animation runs to the collapsed view's own size,
@@ -94,44 +93,5 @@ extension NSSplitViewItem {
             splitView.layoutSubtreeIfNeeded()
             restoreLimits()
         }
-    }
-}
-
-/// Tracks the sidebar column's collapse/expand animation, so a toggle that
-/// arrives while one is running can be dropped instead of reversing it from
-/// a half-way frame.
-final class SidebarToggleAnimationGate {
-    /// How long past the animation's duration a missing completion is waited
-    /// for. AppKit can skip it, and the column must not stay locked then.
-    private static let completionGrace: TimeInterval = 0.5
-
-    private(set) var isAnimating = false
-    private var generation = 0
-
-    /// Marks an animation as running and returns the handler that ends it.
-    /// The handler does nothing once a later `begin` or `reset` has
-    /// superseded this animation.
-    func begin() -> () -> Void {
-        generation += 1
-        isAnimating = true
-        let generation = generation
-        let end = { [weak self] in
-            guard let self, generation == self.generation else { return }
-            self.isAnimating = false
-        }
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + SidebarToggleAnimation.duration + Self.completionGrace
-        ) { [weak self] in
-            guard let self, generation == self.generation, self.isAnimating else { return }
-            AppLogDebug("[SidebarToggle] animation completion never arrived; unlocking")
-            end()
-        }
-        return end
-    }
-
-    /// A non-animated change takes over from whatever animation was running.
-    func reset() {
-        generation += 1
-        isAnimating = false
     }
 }

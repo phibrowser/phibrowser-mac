@@ -396,30 +396,21 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
         loadViewIfNeeded()
         let target = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional || collapsed
         guard sideBarSplitViewItem.isCollapsed != target else { return }
-        if animated, sidebarToggleGate.isAnimating {
-            AppLogDebug("[SidebarToggle] dropped toggle to collapsed=\(target): previous animation still running")
-            return
-        }
-        let animationDidEnd = animated ? sidebarToggleGate.begin() : nil
-        if !animated { sidebarToggleGate.reset() }
         if !target, let width = pendingDockWidth {
             pendingDockWidth = nil
             sideBarSplitViewItem.expand(atWidth: width, animated: animated,
                                         in: splitViewController.splitView,
-                                        limits: Self.leftItemMinWidth...Self.leftItemMaxWidth,
-                                        completion: animationDidEnd)
+                                        limits: Self.leftItemMinWidth...Self.leftItemMaxWidth)
             updateSidebarWidth()
             return
         }
         if animated {
-            sideBarSplitViewItem.setCollapsedAnimated(target, completion: animationDidEnd)
+            sideBarSplitViewItem.setCollapsedAnimated(target)
         } else {
             sideBarSplitViewItem.isCollapsed = target
         }
         updateSidebarWidth()
     }
-
-    private let sidebarToggleGate = SidebarToggleAnimationGate()
 
     #if DEBUG
     private func applySidebarHeaderWidthOverrideForUITestsIfNeeded() {

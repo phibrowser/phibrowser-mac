@@ -249,28 +249,19 @@ final class ShellSplitViewController: NSViewController {
     func setSidebarCollapsed(_ collapsed: Bool, animated: Bool) {
         let target = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional || collapsed
         guard sidebarSplitViewItem.isCollapsed != target else { return }
-        if animated, sidebarToggleGate.isAnimating {
-            AppLogDebug("[SidebarToggle] dropped toggle to collapsed=\(target): previous animation still running")
-            return
-        }
-        let animationDidEnd = animated ? sidebarToggleGate.begin() : nil
-        if !animated { sidebarToggleGate.reset() }
         if !target, let width = pendingDockWidth {
             pendingDockWidth = nil
             sidebarSplitViewItem.expand(atWidth: width, animated: animated,
                                         in: splitViewController.splitView,
-                                        limits: Self.leftItemMinWidth...Self.leftItemMaxWidth,
-                                        completion: animationDidEnd)
+                                        limits: Self.leftItemMinWidth...Self.leftItemMaxWidth)
             return
         }
         if animated {
-            sidebarSplitViewItem.setCollapsedAnimated(target, completion: animationDidEnd)
+            sidebarSplitViewItem.setCollapsedAnimated(target)
         } else {
             sidebarSplitViewItem.isCollapsed = target
         }
     }
-
-    private let sidebarToggleGate = SidebarToggleAnimationGate()
 
     /// Aligns the column to `width` / `collapsed`. The column persists across
     /// Spaces, so this only matters when a caller wants a shape other than
@@ -280,7 +271,6 @@ final class ShellSplitViewController: NSViewController {
         // An explicit width wins over the one the floating panel left.
         if width != nil { pendingDockWidth = nil }
         if sidebarSplitViewItem.isCollapsed != collapsed {
-            sidebarToggleGate.reset()
             sidebarSplitViewItem.isCollapsed = collapsed
         }
         guard !collapsed, let width, width > 0 else { return }

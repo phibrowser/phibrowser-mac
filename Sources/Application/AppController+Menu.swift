@@ -1422,6 +1422,11 @@ extension AppController {
     }
     
     @objc func toggleSidebar(_ sender: Any?) {
+        // Holding the shortcut toggles once, not on every key repeat.
+        // `isARepeat` asserts on anything but a key event.
+        if let event = NSApp.currentEvent, event.type == .keyDown, event.isARepeat {
+            return
+        }
         guard let state = SpaceSessionControllersManager.shared
             .activeWindowController?.browserState,
               !state.isKioskWindow else {

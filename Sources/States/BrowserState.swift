@@ -658,8 +658,9 @@ class BrowserState {
     /// phi::IsPhiPeekMarkerValue, which must match these prefixes.
     static let peekTabGuidPrefix = "phi-peek:"
 
-    /// customGuid stamped on a NORMAL opener tab while it carries a peek:
-    /// "phi-peek-opener:" + a pair UUID (normal tabs have no record guid to
+    /// customGuid stamped on an UNBOUND opener tab while it carries a peek —
+    /// a normal tab, or a pane of a split that is not pinned:
+    /// "phi-peek-opener:" + a pair UUID (such tabs have no record guid to
     /// address them across restarts). The peek's marker embeds this whole
     /// string as its opener key, so restore matching is a plain equality
     /// check either way. Also given by `setBinding` to an opener whose
@@ -782,9 +783,7 @@ class BrowserState {
         migrateAIChatTab(for: tab, toNewIdentifier: newBinding)
         let peek = peekState.peek(forOpener: tab.guid)
         var stored = newBinding
-        // Same exclusion as `presentPeek`: a split pane never carries an
-        // opener marker.
-        if stored == nil, peek != nil, splitGroup(forTabId: tab.guid) == nil {
+        if stored == nil, peek != nil {
             stored = Self.isPeekOpenerGuid(tab.guidInLocalDB)
                 ? tab.guidInLocalDB
                 : Self.peekOpenerGuidPrefix + UUID().uuidString
@@ -794,7 +793,7 @@ class BrowserState {
             tab.webContentWrapper?.updateTabCustomValue(stored ?? "")
         }
         guard let peek else { return }
-        // An AI Chat id is not an opener key (`presentPeek`).
+        // An AI Chat id is not an opener key (`stampPeekRestoreBinding`).
         let marker = stored.flatMap { Self.isAIChatId($0) ? nil : Self.peekTabGuidPrefix + $0 }
         peek.guidInLocalDB = marker
         if writeToChromium {
@@ -4307,37 +4306,7 @@ class BrowserState {
            wrapper.responds(to: #selector(WebContentWrapper.updateIsPeekSurface(_:))) {
             wrapper.updateIsPeekSurface(true)
         }
-        // Persist the opener binding for session restore: the markers ride
-        // Chromium's session commands and come back as the restored tabs'
-        // customGuid (see peekTabGuidPrefix). Bookmark/pinned openers are
-        // addressed by their stable record guid; a normal opener gets a
-        // paired one-shot marker of its own, reused across peek
-        // replacements.
-        if let opener = tabs.first(where: { $0.guid == openerTabId }) {
-            var openerKey: String?
-            if let localGuid = opener.guidInLocalDB, !localGuid.isEmpty {
-                if !Self.isAIChatId(localGuid) {
-                    openerKey = localGuid
-                }
-            } else if splitGroup(forTabId: openerTabId) == nil {
-                // Not for a split pane: split operations read a pane's
-                // guidInLocalDB as a binding and clear it, and a restored
-                // peek is never re-bound to a split pane anyway
-                // (presentRestoredPeek).
-                let pairKey = Self.peekOpenerGuidPrefix + UUID().uuidString
-                opener.guidInLocalDB = pairKey
-                opener.webContentWrapper?.updateTabCustomValue(pairKey)
-                openerKey = pairKey
-            }
-            if let openerKey {
-                let marker = Self.peekTabGuidPrefix + openerKey
-                if tab.guidInLocalDB != marker {
-                    tab.guidInLocalDB = marker
-                    tab.webContentWrapper?.updateTabCustomValue(marker)
-                }
-                AppLogInfo("👀 [Peek] restore binding stamped: peek=\(tab.guid) openerKey=\(openerKey)")
-            }
-        }
+        stampPeekRestoreBinding(on: tab, openerTabId: openerTabId)
         installPeekOpenerWatchIfNeeded()
         peekState.present(tab, openerTabId: openerTabId)
         MainActor.assumeIsolated {
@@ -4353,21 +4322,48 @@ class BrowserState {
         }
     }
 
+    /// Persists the opener binding of the peek `tab` for session restore:
+    /// the markers ride Chromium's session commands and come back as the
+    /// restored tabs' customGuid (see peekTabGuidPrefix). Bookmark/pinned
+    /// openers are addressed by their stable record guid; an unbound opener
+    /// — a normal tab, or a pane of a split that is not pinned — gets a
+    /// paired one-shot marker of its own, reused across peek replacements.
+    func stampPeekRestoreBinding(on tab: Tab, openerTabId: Int) {
+        guard let opener = tabs.first(where: { $0.guid == openerTabId }) else { return }
+        var openerKey: String?
+        if let localGuid = opener.guidInLocalDB, !localGuid.isEmpty {
+            if !Self.isAIChatId(localGuid) {
+                openerKey = localGuid
+            }
+        } else {
+            let pairKey = Self.peekOpenerGuidPrefix + UUID().uuidString
+            opener.guidInLocalDB = pairKey
+            opener.webContentWrapper?.updateTabCustomValue(pairKey)
+            openerKey = pairKey
+        }
+        guard let openerKey else { return }
+        let marker = Self.peekTabGuidPrefix + openerKey
+        if tab.guidInLocalDB != marker {
+            tab.guidInLocalDB = marker
+            tab.webContentWrapper?.updateTabCustomValue(marker)
+        }
+        AppLogInfo("👀 [Peek] restore binding stamped: peek=\(tab.guid) openerKey=\(openerKey)")
+    }
+
     /// Re-binds a restored peek tab (identified by its `peekTabGuidPrefix`
-    /// customGuid) to its live opener. Entered deferred, on a clean main
-    /// turn — never from the restore replay stack (presentPeek reaches the
-    /// bridge synchronously). Falls back to adopting the page as a plain
-    /// tab when the opener is gone, in a split, already carrying a peek, or
-    /// Peek is unavailable — the restored page must never die with its
-    /// marker. The snapshot's `activeTabId` stays the focus authority
-    /// (`activatesOpener: false`).
+    /// customGuid) to its live opener, a split pane included: the split is
+    /// replayed before this runs. Entered deferred, on a clean main turn —
+    /// never from the restore replay stack (presentPeek reaches the bridge
+    /// synchronously). Falls back to adopting the page as a plain tab when
+    /// the opener is gone, already carrying a peek, or Peek is unavailable
+    /// — the restored page must never die with its marker. The snapshot's
+    /// `activeTabId` stays the focus authority (`activatesOpener: false`).
     private func presentRestoredPeek(_ tab: Tab,
                                      context: NativeTabCreationContext?,
                                      openerTabId: Int) {
         guard PhiPreferences.GeneralSettings.peekViewEnabled.loadValue(),
               !layoutMode.isTraditional,
               tabs.contains(where: { $0.guid == openerTabId }),
-              splitGroup(forTabId: openerTabId) == nil,
               peekState.peek(forOpener: openerTabId) == nil else {
             AppLogInfo("👀 [Peek] restored peek tabId=\(tab.guid) cannot re-bind to opener=\(openerTabId) — adopting as a normal tab")
             if peekState.peek(forOpener: openerTabId) == nil {

@@ -729,10 +729,14 @@ class SpaceSessionController: NSWindowController {
             self.contentViewController = mainSplitViewController
         }
 
-        mainSplitViewController.addChild(toastContainerViewController)
-        mainSplitViewController.view.addSubview(toastContainerViewController.view)
-        toastContainerViewController.view.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
+        // A hosted Space shows its toasts in the shell's shared overlay
+        // (`ShellSplitViewController.presentToastOverlay(for:)`).
+        if !isHosted {
+            mainSplitViewController.addChild(toastContainerViewController)
+            mainSplitViewController.view.addSubview(toastContainerViewController.view)
+            toastContainerViewController.view.snp.makeConstraints { make in
+                make.edges.equalToSuperview()
+            }
         }
 
         mainSplitViewController.addChild(imagePreviewOverlayViewController)
@@ -1177,6 +1181,7 @@ class SpaceSessionController: NSWindowController {
     func completePresentationInShell() {
         guard isPresented else { return }
         applyWindowChrome()
+        shellSplit?.presentToastOverlay(for: browserState)
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isPresented, self.window?.isKeyWindow == true else { return }
             self.mainSplitViewController.webContentContainerViewController.restoreFocusAfterPresentation()
@@ -1428,11 +1433,18 @@ class SpaceSessionController: NSWindowController {
         let hideTrafficLights = !fullScreen && !traditionalLayout
             && (SidebarPosition.isOnRight ? !bandVisible : collapsed)
 
-        window.standardWindowButton(.closeButton)?.isHidden = hideTrafficLights
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = hideTrafficLights
-        window.standardWindowButton(.zoomButton)?.isHidden = hideTrafficLights
+        // This runs on every defaults change, and a set of `isHidden` or
+        // `titlebarAppearsTransparent` retiles the titlebar, so only actual
+        // changes are applied.
+        for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            guard let button = window.standardWindowButton(kind),
+                  button.isHidden != hideTrafficLights else { continue }
+            button.isHidden = hideTrafficLights
+        }
 
-        window.titlebarAppearsTransparent = !fullScreen
+        if window.titlebarAppearsTransparent == fullScreen {
+            window.titlebarAppearsTransparent = !fullScreen
+        }
         updateTrafficLightPlacement(fullScreen: fullScreen)
     }
 

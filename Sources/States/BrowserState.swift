@@ -807,6 +807,9 @@ class BrowserState {
     private(set) lazy var  bookmarkManager: BookmarkManager = { .init(with: self) }()
     private(set) lazy var  extensionManager: ExtensionManager = { .init(browserState: self) }()
     private(set) lazy var  downloadsManager: DownloadsManager = { .init(browserState: self) }()
+    /// This Space's download toasts, kept while another Space is presented
+    /// in the shell's shared overlay.
+    private(set) lazy var livingDownloadsManager = LivingDownloadsManager(downloadsManager: downloadsManager)
     
     // Rebind read-only window publishers when a controller is attached. The
     // subject carries no sidebar value and does not retain the controller.

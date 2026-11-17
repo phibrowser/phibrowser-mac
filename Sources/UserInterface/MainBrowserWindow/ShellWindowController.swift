@@ -365,12 +365,21 @@ final class ShellWindow: NSWindow {
 
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
         noteWindowActionDuringTitlebarDoubleClick()
+        logProgrammaticResize(to: frameRect)
         super.setFrame(frameRect, display: flag)
     }
 
     override func setFrame(_ frameRect: NSRect, display displayFlag: Bool, animate animateFlag: Bool) {
         noteWindowActionDuringTitlebarDoubleClick()
+        logProgrammaticResize(to: frameRect)
         super.setFrame(frameRect, display: displayFlag, animate: animateFlag)
+    }
+
+    /// Expanding the sidebar column makes AppKit widen the window when the
+    /// page area can't give up the column's width.
+    private func logProgrammaticResize(to frameRect: NSRect) {
+        guard !inLiveResize, frameRect.size != frame.size else { return }
+        AppLogDebug("[SidebarToggle] window frame \(frame) -> \(frameRect)")
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {

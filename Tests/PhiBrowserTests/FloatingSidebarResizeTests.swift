@@ -192,6 +192,52 @@ final class FloatingSidebarResizeTests: XCTestCase {
         XCTAssertEqual(split.sidebarWidth, 220, accuracy: 0.5, "the column's own limits are back")
     }
 
+    /// A toggle that arrives while the column is still animating is dropped;
+    /// a non-animated change is not.
+    func testAToggleDuringTheColumnsAnimationIsDropped() throws {
+        let slot = try makeSlot()
+        let split = try XCTUnwrap(slot.shell?.split)
+        split.setSidebarCollapsed(true, animated: false)
+
+        split.setSidebarCollapsed(false, animated: true)
+        XCTAssertFalse(split.isSidebarCollapsed)
+        split.setSidebarCollapsed(true, animated: true)
+        XCTAssertFalse(split.isSidebarCollapsed, "the column is still expanding")
+
+        RunLoop.main.run(until: Date().addingTimeInterval(1))
+        split.setSidebarCollapsed(true, animated: true)
+        XCTAssertTrue(split.isSidebarCollapsed, "the expansion has finished")
+
+        split.setSidebarCollapsed(false, animated: false)
+        XCTAssertFalse(split.isSidebarCollapsed, "a non-animated change is never dropped")
+        split.setSidebarCollapsed(true, animated: true)
+        XCTAssertTrue(split.isSidebarCollapsed, "and it ends the animation it interrupted")
+    }
+
+    /// AppKit ignores `NSAnimationContext.duration` for `isCollapsed`; the
+    /// item's own "collapsed" animation sets it.
+    func testTheColumnTogglesWithTheSidebarAnimationsDuration() throws {
+        let item = NSSplitViewItem(viewController: NSViewController())
+        item.viewController.view = NSView()
+
+        item.setCollapsedAnimated(true)
+
+        let animation = try XCTUnwrap(item.animations["collapsed"] as? CABasicAnimation)
+        XCTAssertEqual(animation.duration, SidebarToggleAnimation.duration, accuracy: 0.0001)
+        XCTAssertEqual(SidebarToggleAnimation.duration, 0.125, accuracy: 0.0001)
+
+        let slot = try makeSlot()
+        let split = try XCTUnwrap(slot.shell?.split)
+        split.setSidebarCollapsed(true, animated: false)
+        // Keeps the fixture's first layout pass out of the timed expansion.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        split.setSidebarCollapsed(false, animated: true)
+        // AppKit's default 0.25s would still be running.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.22))
+        split.setSidebarCollapsed(true, animated: true)
+        XCTAssertTrue(split.isSidebarCollapsed, "the expansion has finished within 0.22s")
+    }
+
     func testThePanelStaysOpenWhileItsEdgeIsDragged() throws {
         let slot = try makeSlot()
         let split = try XCTUnwrap(slot.shell?.split)

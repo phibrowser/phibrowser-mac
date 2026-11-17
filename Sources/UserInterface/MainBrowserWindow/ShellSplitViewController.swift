@@ -162,6 +162,57 @@ final class ShellSplitViewController: NSViewController {
             .store(in: &cancellables)
         updateLayoutForHorizontalTabs()
         floatingSidebarHost.install(in: self)
+        contentHost.view.postsFrameChangedNotifications = true
+        NotificationCenter.default.publisher(for: NSView.frameDidChangeNotification, object: contentHost.view)
+            .sink { [weak self] _ in self?.scheduleToastOverlayInsetsUpdate() }
+            .store(in: &cancellables)
+    }
+
+    /// The window's one toast overlay, over the split and below the floating
+    /// panel, showing the presented Space's toasts. It keeps the window's
+    /// size, so a column animation never lays it out; it takes the page
+    /// area's insets once the column has settled.
+    private var toastOverlay: OverlayToastViewController?
+    private var toastOverlayInsetsWorkItem: DispatchWorkItem?
+    /// Quiet period after the page area's last frame change before the
+    /// overlay takes its insets.
+    private static let toastOverlayInsetsDelay: TimeInterval = 0.15
+
+    func presentToastOverlay(for state: BrowserState) {
+        if let toastOverlay {
+            toastOverlay.present(state)
+            return
+        }
+        let overlay = OverlayToastViewController(state: state)
+        addChild(overlay)
+        view.addSubview(overlay.view, positioned: .below, relativeTo: floatingSidebarHost.view)
+        overlay.view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            overlay.view.topAnchor.constraint(equalTo: view.topAnchor),
+            overlay.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            overlay.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlay.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        toastOverlay = overlay
+        updateToastOverlayInsets()
+    }
+
+    private func scheduleToastOverlayInsetsUpdate() {
+        guard toastOverlay != nil else { return }
+        toastOverlayInsetsWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.toastOverlayInsetsWorkItem = nil
+            self?.updateToastOverlayInsets()
+        }
+        toastOverlayInsetsWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.toastOverlayInsetsDelay, execute: workItem)
+    }
+
+    private func updateToastOverlayInsets() {
+        guard let toastOverlay else { return }
+        let pageArea = contentHost.view.convert(contentHost.view.bounds, to: view)
+        toastOverlay.setContentInsets(NSEdgeInsets(
+            top: 0, left: pageArea.minX, bottom: 0, right: view.bounds.width - pageArea.maxX))
     }
 
     /// Observes the actual split item, including AppKit collapse/restore.
@@ -198,17 +249,28 @@ final class ShellSplitViewController: NSViewController {
     func setSidebarCollapsed(_ collapsed: Bool, animated: Bool) {
         let target = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional || collapsed
         guard sidebarSplitViewItem.isCollapsed != target else { return }
+        if animated, sidebarToggleGate.isAnimating {
+            AppLogDebug("[SidebarToggle] dropped toggle to collapsed=\(target): previous animation still running")
+            return
+        }
+        let animationDidEnd = animated ? sidebarToggleGate.begin() : nil
+        if !animated { sidebarToggleGate.reset() }
         if !target, let width = pendingDockWidth {
             pendingDockWidth = nil
-            sidebarSplitViewItem.expand(atWidth: width, animated: animated, in: splitViewController.splitView)
+            sidebarSplitViewItem.expand(atWidth: width, animated: animated,
+                                        in: splitViewController.splitView,
+                                        limits: Self.leftItemMinWidth...Self.leftItemMaxWidth,
+                                        completion: animationDidEnd)
             return
         }
         if animated {
-            sidebarSplitViewItem.animator().isCollapsed = target
+            sidebarSplitViewItem.setCollapsedAnimated(target, completion: animationDidEnd)
         } else {
             sidebarSplitViewItem.isCollapsed = target
         }
     }
+
+    private let sidebarToggleGate = SidebarToggleAnimationGate()
 
     /// Aligns the column to `width` / `collapsed`. The column persists across
     /// Spaces, so this only matters when a caller wants a shape other than
@@ -218,6 +280,7 @@ final class ShellSplitViewController: NSViewController {
         // An explicit width wins over the one the floating panel left.
         if width != nil { pendingDockWidth = nil }
         if sidebarSplitViewItem.isCollapsed != collapsed {
+            sidebarToggleGate.reset()
             sidebarSplitViewItem.isCollapsed = collapsed
         }
         guard !collapsed, let width, width > 0 else { return }

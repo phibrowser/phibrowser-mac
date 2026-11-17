@@ -367,15 +367,11 @@ class Tab: WebContentRepresentable {
         // A new WebContents starts out not kept loaded.
         pushKeepLoaded()
 
-        // The notification comes on whichever thread wrote a default (the sync
-        // engine writes off the main thread), so hop before comparing values.
-        let keepLoadedSetting = PhiPreferences.GeneralSettings.keepPinnedTabsLoaded
-        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
-            .receive(on: DispatchQueue.main)
-            .map { _ in keepLoadedSetting.loadValue() }
-            .prepend(keepLoadedSetting.loadValue())
-            .removeDuplicates()
+        // A change can come on whichever thread wrote it (the sync engine
+        // writes off the main thread).
+        PhiPreferences.GeneralSettings.keepPinnedTabsLoaded.sharedValuePublisher
             .dropFirst()
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self, self.isPinned else { return }
                 self.pushKeepLoaded()

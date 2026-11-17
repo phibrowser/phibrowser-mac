@@ -14,7 +14,7 @@ class OverlayToastViewController: NSViewController {
         return ThemedHostingController(rootView: OverlayToastContainer(viewModel: viewModel), themeSource: state.themeContext)
     }()
     
-    let state: BrowserState
+    private(set) var state: BrowserState
     private let toastCenter: OverlayToastCenter
     private let isPanel: Bool
     
@@ -29,6 +29,23 @@ class OverlayToastViewController: NSViewController {
         fatalError("init(coder:) has not been implemented")
     }
     
+    /// Shows `state`'s toasts, in its theme. A shell window shares one
+    /// overlay across its Spaces and calls this when a Space is presented.
+    func present(_ state: BrowserState) {
+        guard state !== self.state else { return }
+        self.state = state
+        viewModel.bind(to: state)
+        toastContainerViewController.rebindThemeSource(state.themeContext)
+    }
+
+    /// Lays the toasts out within these insets of the overlay.
+    func setContentInsets(_ insets: NSEdgeInsets) {
+        let edgeInsets = EdgeInsets(top: insets.top, leading: insets.left,
+                                    bottom: insets.bottom, trailing: insets.right)
+        guard viewModel.contentInsets != edgeInsets else { return }
+        viewModel.contentInsets = edgeInsets
+    }
+
     override func loadView() {
         let bgView = BgView()
         bgView.viewModel = viewModel

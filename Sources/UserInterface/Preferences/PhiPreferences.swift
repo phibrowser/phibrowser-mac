@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import AppKit
+import Combine
 import Foundation
 
 extension UserDefaults {
@@ -248,6 +249,15 @@ extension PhiPreferences {
 
         func loadValue(from defaults: UserDefaults = .standard) -> Bool {
             defaults.bool(forKey: rawValue, default: defaultValue)
+        }
+
+        /// The value on subscribe and on each change, on the thread that wrote
+        /// it. Every subscriber shares one read per defaults change:
+        /// `UserDefaults.didChangeNotification` fires for any key, including
+        /// the split view frames AppKit autosaves on each frame of a sidebar
+        /// resize, and a read per subscriber scales with the number of tabs.
+        var sharedValuePublisher: AnyPublisher<Bool, Never> {
+            SharedGeneralSettingValues.subject(for: self).eraseToAnyPublisher()
         }
 
         static let sidebarMediaPresentationModeKey = "sidebarMediaPresentationMode"
@@ -959,4 +969,28 @@ extension Notification.Name {
     /// flips, so masks and pills already on screen follow it.
     static let agentUnstyledOperatingPageDidChange =
         Notification.Name("agentUnstyledOperatingPageDidChange")
+}
+
+/// Backs `PhiPreferences.GeneralSettings.sharedValuePublisher`: one subject
+/// and one defaults observer per setting, kept for the app's lifetime.
+private enum SharedGeneralSettingValues {
+    private static let lock = NSLock()
+    private static var subjects: [PhiPreferences.GeneralSettings: CurrentValueSubject<Bool, Never>] = [:]
+
+    static func subject(for setting: PhiPreferences.GeneralSettings) -> CurrentValueSubject<Bool, Never> {
+        lock.lock()
+        defer { lock.unlock() }
+        if let subject = subjects[setting] { return subject }
+        let subject = CurrentValueSubject<Bool, Never>(setting.loadValue())
+        _ = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            let value = setting.loadValue()
+            if subject.value != value { subject.send(value) }
+        }
+        subjects[setting] = subject
+        return subject
+    }
 }

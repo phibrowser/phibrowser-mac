@@ -232,6 +232,19 @@ final class FloatingTrafficLightsView: NSView {
                 self?.updateWindowActiveState()
             }
         }
+        // AppKit captures the window for its full screen animation right
+        // after resizing it, before the deferred `isInFullScreenMode`
+        // observer runs. Check again as the transition starts, so the
+        // capture already has the lights gone (or back), and once it ends.
+        let fullScreenNotifications: [Notification.Name] = [
+            NSWindow.willEnterFullScreenNotification, NSWindow.didEnterFullScreenNotification,
+            NSWindow.willExitFullScreenNotification, NSWindow.didExitFullScreenNotification,
+        ]
+        notificationObservers += fullScreenNotifications.map { name in
+            center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                self?.syncWindowButtonAvailability()
+            }
+        }
         if placement == .topBand {
             // A resize can carry the band away from a pointer that has not
             // moved since, so no mouse event re-checks it.

@@ -1520,6 +1520,9 @@ class SpaceSessionController: NSWindowController {
     @objc private func myWindowWillExitFullScreen(_ noti: Notification) {
         if noti.object as? NSWindow === self.window {
             browserState.toggleFullScreenMode(false)
+            // Now rather than in the deferred observer, as a hosted Space's
+            // does (`SpaceWindowSlot.shellFullScreenWillChange`).
+            refreshTrafficLightVisibility()
             // Back to a normal window — restore the sibling-follow behavior.
             slot?.windowFullScreenStateChanged(isFullScreen: false)
         }

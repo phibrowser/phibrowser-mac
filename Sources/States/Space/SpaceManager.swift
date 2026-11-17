@@ -11263,6 +11263,16 @@ final class SpaceWindowSlot: ObservableObject {
             windowedFrameBeforeFullscreen = shell?.window.frame
         }
         visibleController?.browserState.toggleFullScreenMode(isFullScreen)
+        // On the way out the title bar takes its windowed look now rather
+        // than in the session's deferred observer: AppKit captures the
+        // window for its animation right after resizing it, and the full
+        // screen title bar would stay in the animation until it ends. On the
+        // way in it waits for that observer: switching it as the transition
+        // starts sometimes left the window's old contents, at their old
+        // size, in the animation.
+        if !isFullScreen {
+            visibleController?.refreshTrafficLightVisibility()
+        }
         // Chromium sees no transition on its hidden window; the presented
         // Browser learns the shell's state here (a no-op for the
         // transitions Chromium asked for itself).

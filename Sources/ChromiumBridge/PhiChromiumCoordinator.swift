@@ -2318,15 +2318,15 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
     }
 
-    /// A silent Space URL rule auto-routed `urlString` to `spaceId`, but that
-    /// Space had no open window, so Chromium cancelled the navigation and asked
-    /// us to surface the Space. Reuse the ask-Space routing path, which
+    /// A silent Space URL rule auto-routed `urlString` to `spaceId`, a Space
+    /// the source window is not in, so Chromium cancelled the navigation and
+    /// asked us to surface the Space. Reuse the ask-Space routing path, which
     /// activates (cold-spawning if needed) the target Space's window in the
     /// source window's slot and opens the URL there, bypassing Space URL
     /// routing for the re-open so the same rule doesn't re-match in a loop.
     func routeURL(inSpace spaceId: String, url urlString: String, sourceWindowId: Int64) {
         Task { @MainActor in
-            // Silent auto-route to a Space with no open window. The stranded
+            // Silent auto-route to a Space the source window is not in. The stranded
             // source NTP (if any) is reset on the Chromium side via
             // `refreshNewTabInWindow`, so pass false here to avoid resetting it
             // twice; this path is always a Space switch, never an in-place open.

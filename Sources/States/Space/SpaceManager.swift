@@ -7728,8 +7728,8 @@ final class SpaceManager: ObservableObject {
                 || liveTargets.contains(spaceId))
     }
 
-    /// Flattens the rules and the live spaceId→windowId
-    /// map and hands both to the Chromium bridge via the new
+    /// Flattens the rules and the windows Chromium may route into directly
+    /// and hands both to the Chromium bridge via the new
     /// `setSpaceRoutingTable:spaceWindowMap:` method. Idempotent — Chromium
     /// replaces its table atomically — so it's safe to call on every change
     /// without diffing. Invoked from:
@@ -7780,7 +7780,19 @@ final class SpaceManager: ObservableObject {
         // Already publisher-ordered; canonicalize anyway so all three push
         // paths share one explicit ordering invariant.
         Self.canonicalizeRulesPayloadOrder(&rulesPayload)
-        let windowMapPayload = mapping.mapValues { NSNumber(value: $0) }
+        // Chromium opens a routed URL straight into any window listed here
+        // (`PhiURLRouter` kRoute, `Navigate(kShowWindow)`), wherever that
+        // window is. Spaces are left out, so a rule match for another Space
+        // always comes back through `routeAskedURL`, which moves the SOURCE
+        // window's slot to the target Space: the link opens in the window it
+        // was clicked in even when another window is showing that Space, and
+        // the slot's fullscreen-aware swap runs. Chromium knows a window is
+        // already in the target Space from `setWindowSpace`. Only the generic
+        // Incognito target is listed, because no window carries that id as its
+        // Space.
+        let windowMapPayload = mapping
+            .filter { $0.key == Self.incognitoRuleTargetId }
+            .mapValues { NSNumber(value: $0) }
         bridge.setSpaceRoutingTable(rulesPayload, spaceWindowMap: windowMapPayload)
     }
 
@@ -7820,8 +7832,8 @@ final class SpaceManager: ObservableObject {
 
     /// Opens `urlString` after a URL rule routed it here: an "ask first" match
     /// the user resolved in `PhiChromiumCoordinator`'s prompt, the right-click
-    /// "Open link as" submenu, or a silent auto-route to a Space with no open
-    /// window (`routeURL`). `spaceId == nil` means "keep it here"; the Kiosk
+    /// "Open link as" submenu, or a silent auto-route to a Space the source
+    /// window is not in (`routeURL`). `spaceId == nil` means "keep it here"; the Kiosk
     /// sentinel opens a new Kiosk inheriting the source Browser's exact profile;
     /// any other id is brought to the front as a Space destination.
     ///
@@ -8098,22 +8110,15 @@ final class SpaceManager: ObservableObject {
 
     /// Picks one windowId per Space that is currently VISIBLE on screen. A
     /// Space can be active in multiple slots simultaneously; the keySlot wins
-    /// the tiebreak so cross-Space routing lands in the window the user just had
-    /// focused.
+    /// the tiebreak.
     ///
     /// Only each slot's visible window is reported — never a non-visible sibling
     /// (a Space whose window the slot keeps off-screen, e.g. a session-restored
-    /// window the slot hides behind the active Space). This is what makes the
-    /// C++ router (`PhiURLRouter`) treat routing to a non-visible Space as
-    /// `kRouteToSpace` (hand to `routeAskedURL`) instead of `kRoute` (surface
-    /// the window directly via `Navigate(kShowWindow)`). The direct path
-    /// bypasses the slot's swap logic: in fullscreen a restored sibling window
-    /// is detached from the native tab group, so surfacing it that way strands
-    /// it in its own macOS Space (a stray window over the fullscreen). Routing
-    /// through `routeAskedURL` re-enters the slot's fullscreen-aware swap, which
-    /// re-attaches the window into the fullscreen Space before surfacing it.
-    /// `visibleController`'s didSet re-pushes this map so a Space switch keeps it
-    /// fresh.
+    /// window the slot hides behind the active Space).
+    ///
+    /// Feeds the "Open Link In Space" menu, and the one window the URL routing
+    /// table lists (see `pushRoutingTableToChromium`). `visibleController`'s
+    /// didSet re-pushes both so a Space switch keeps them fresh.
     private func currentSpaceWindowMap() -> [String: Int] {
         var result: [String: Int] = [:]
         var ordered: [SpaceWindowSlot] = []

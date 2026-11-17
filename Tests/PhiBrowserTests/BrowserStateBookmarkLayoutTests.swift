@@ -302,6 +302,26 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
         })
     }
 
+    /// PHI-2046 (b): a divider drag in a split opened from a bookmark reports
+    /// the unchanged orientation; it must not write it over the orientation
+    /// sync landed for the bookmark.
+    func testADividerDragDoesNotWriteTheOrientationOverTheBookmark() throws {
+        let state = try makeState()
+        let bookmark = try createBookmark(in: state,
+                                          guid: "landed-layout-bookmark",
+                                          url: "https://primary.example",
+                                          secondaryUrl: "https://secondary.example",
+                                          layout: .horizontal)
+        state.splits = [SplitGroup(id: "split-bound", tabIds: [910, 911], layout: .vertical,
+                                   fractions: [0.5, 0.5])]
+        state.splitBookmarkBindings[bookmark.guid] = "split-bound"
+
+        state.handleSplitVisualsChanged(splitId: "split-bound", layout: .vertical, fractions: [0.3, 0.7])
+
+        XCTAssertEqual(bookmark.layout, .horizontal)
+        XCTAssertEqual(state.splits.first?.fractions, [0.3, 0.7])
+    }
+
     func testSwitchingToComfortableClearsPrimaryPendingSplitBookmarkBinding() throws {
         let state = try makeState()
         let bookmarkGuid = "split-bookmark-primary-pending"

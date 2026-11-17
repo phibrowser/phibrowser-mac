@@ -217,6 +217,8 @@ Only three of `SyncEnums`' fourteen enums are kept; every value keeps its upstre
 | `PhiBookmarkEntity` | `secondary_title` | 9 | `PhiSettingValue` |
 | `PhiBookmarkEntity` | `source` | 10 | `int32` (`TabSource` raw value; written once, merged deterministically) |
 | `PhiBookmarkEntity` | `created_at_ms` | 11 | `int64` (merged with `min()`, not LWW) |
+| `PhiBookmarkEntity` | `split_extra_panes` | 16 | `PhiSettingValue` (JSON array of the panes after `secondary_url`; absent until a third pane, `""` once cleared) |
+| `PhiBookmarkEntity` | `split_layout` | 17 | `PhiSettingValue` (`TabDataModel.layout`: `"horizontal"`, or `""` for side by side; absent until first stacked) |
 | `PhiPinTabEntity` | `pin_uuid` | 1 | `string` (lowercase-normalized `pinLineageId`; not unique by itself) |
 | `PhiPinTabEntity` | `owner.space_uuid` | 2 | `string` (oneof `owner`, Space scope) |
 | `PhiPinTabEntity` | `owner.profile_uuid` | 3 | `string` (oneof `owner`, Profile scope) |
@@ -226,6 +228,8 @@ Only three of `SyncEnums`' fourteen enums are kept; every value keeps its upstre
 | `PhiPinTabEntity` | `split_partner_uuid` | 7 | `PhiSettingValue` (the PARTNER's `pin_uuid`; `""` = not split) |
 | `PhiPinTabEntity` | `source` | 8 | `int32` (same rule as `PhiBookmarkEntity.source`) |
 | `PhiPinTabEntity` | `created_at_ms` | 9 | `int64` (merged with `min()`, not LWW) |
+| `PhiPinTabEntity` | `split_pane_uuids` | 14 | `PhiSettingValue` (JSON array of the member `pin_uuid`s of a split of three or four pins; absent until then, `""` once cleared) |
+| `PhiPinTabEntity` | `split_layout` | 15 | `PhiSettingValue` (the split's orientation, as the bookmark field; on receipt the split's anchor member decides for every member) |
 | `PhiURLRuleEntity` | `rule_uuid` | 1 | `string` (lowercase, minted once; never the local `id`) |
 | `PhiURLRuleEntity` | `host` | 2 | `PhiSettingValue` (content-group; carries the group's shared timestamp) |
 | `PhiURLRuleEntity` | `path_prefix` | 3 | `PhiSettingValue` (content-group; timestamp shared with `host`, ignored on receipt) |
@@ -255,9 +259,14 @@ re-encode verbatim. That probe cannot detect a *re-declared* number — a build 
 known fields it asserts on. The `reserved` keyword is the guard; the test only pins the
 preservation half.
 
-`PhiPinTabEntity.owner` is the one field in this schema that is **not** always emitted: an
-absent `owner` IS the App scope, because absence here is one of three exhaustive values rather
-than "an older client never knew about it".
+`PhiPinTabEntity.owner` is not always emitted: an absent `owner` IS the App scope, because
+absence here is one of three exhaustive values rather than "an older client never knew about
+it". The split fields `split_extra_panes`, `split_pane_uuids` and both `split_layout` fields are
+the other exception: absent until an item first has a third pane (or is first stacked), so a
+side-by-side pair or a plain item keeps the bytes an older client writes, and present (as `""`
+once cleared) after that. Their merges assign the field only when one side carries it; see
+`docs/sync.md`, "Splits of three or four panes, and split orientation". They take numbers after the reserved ranges, so
+those ranges stay free for their planned use.
 
 **Reserved-field preservation is a contract, not a side effect.** A build that does not know a
 reserved field must still hand it back untouched, or two clients of different versions strip

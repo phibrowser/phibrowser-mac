@@ -85,108 +85,117 @@ enum BookmarkFolderIcon: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-struct BookmarkFolderIconView: View {
-    let icon: BookmarkFolderIcon
-    let isExpanded: Bool
-    let usesStaticSnapshotIcon: Bool
-
-    @Environment(\.phiTheme) private var theme
-    @Environment(\.phiAppearance) private var appearance
-    @State private var playbackMode: LottiePlaybackMode
-    /// Latest requested state. Kept in `@State` because the finish handler is
-    /// captured when its stroke starts and would otherwise read a stale value.
-    @State private var requestedExpanded: Bool
+/// A folder row's icon: a Lottie folder that opens and closes with the
+/// folder, recolored for the theme.
+final class BookmarkFolderIconView: NSView {
+    private var animationView: Lottie.LottieAnimationView?
+    private var fallbackView: NSImageView?
+    private var renderedKey: String?
+    private var icon = BookmarkFolderIcon.standard
+    /// Latest requested state; a stroke already playing finishes first.
+    private var requestedExpanded = false
     /// End state of the stroke being played, or nil while the icon is at rest.
-    @State private var strokeTarget: Bool?
+    private var strokeTarget: Bool?
+    private var usesStaticSnapshotIcon = false
+    /// The next render shows its state without a stroke, as for a row that
+    /// now shows another folder.
+    private var snapsToNextState = true
 
-    init(icon: BookmarkFolderIcon, isExpanded: Bool, usesStaticSnapshotIcon: Bool = false) {
-        self.icon = icon
-        self.isExpanded = isExpanded
-        self.usesStaticSnapshotIcon = usesStaticSnapshotIcon
-        _playbackMode = State(
-            initialValue: .paused(
-                at: .progress(BookmarkFolderIcon.animationProgress(isExpanded: isExpanded))
-            )
-        )
-        _requestedExpanded = State(initialValue: isExpanded)
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func showNextStateWithoutAnimation() {
+        snapsToNextState = true
     }
 
-    var body: some View {
-        Group {
-            if let animation = LottieAnimation.named(
-                icon.resources.animationResourceName,
-                bundle: .main,
-                subdirectory: "LottieFiles/BookmarkFolderIcons"
-            ) {
-                if usesStaticSnapshotIcon {
-                    LottieView(animation: animation)
-                        .configuration(LottieConfiguration(renderingEngine: .mainThread))
-                        .playbackMode(.paused(at: .progress(
-                            BookmarkFolderIcon.animationProgress(isExpanded: isExpanded)
-                        )))
-                        .configure { animationView in
-                            applyPalette(to: animationView)
-                            animationView.forceDisplayUpdate()
-                        }
-                } else {
-                    LottieView(animation: animation)
-                        .configuration(LottieConfiguration(renderingEngine: .mainThread))
-                        .playbackMode(playbackMode)
-                        .animationDidFinish { completed in
-                            guard completed else { return }
-                            if let strokeTarget, strokeTarget != requestedExpanded {
-                                playStroke(toExpanded: requestedExpanded)
-                            } else {
-                                pauseAtCurrentState()
-                            }
-                        }
-                        .configure { animationView in
-                            applyPalette(to: animationView)
-                        }
-                }
-            } else {
-                Image(isExpanded ? .folderOpen : .folderClose)
-                    .resizable()
-                    .scaledToFit()
+    /// - Parameter usesStaticSnapshotIcon: Holds the icon still at its
+    ///   resting frame so an AppKit snapshot of the row captures it.
+    func render(icon: BookmarkFolderIcon,
+                isExpanded: Bool,
+                usesStaticSnapshotIcon: Bool,
+                theme: Theme?,
+                appearance: Appearance) {
+        let key = "\(icon.rawValue)-\(theme?.id ?? "")-\(appearance.description)"
+        if key != renderedKey || snapsToNextState {
+            renderedKey = key
+            snapsToNextState = false
+            self.icon = icon
+            requestedExpanded = isExpanded
+            rebuild(theme: theme, appearance: appearance)
+        } else if isExpanded != requestedExpanded {
+            requestedExpanded = isExpanded
+            // A toggle that arrives mid-stroke (e.g. a double-click) lets the
+            // running stroke reach its end, then plays back to the latest
+            // state, so the icon opens and closes like the rows do.
+            if strokeTarget == nil, !usesStaticSnapshotIcon {
+                playStroke(toExpanded: isExpanded)
             }
         }
-        .id("\(icon.rawValue)-\(theme.id)-\(appearance.description)")
-        .onChange(of: icon) { _, _ in
-            pauseAtCurrentState()
+        if usesStaticSnapshotIcon != self.usesStaticSnapshotIcon {
+            self.usesStaticSnapshotIcon = usesStaticSnapshotIcon
+            if usesStaticSnapshotIcon {
+                pauseAtRequestedState()
+                animationView?.forceDisplayUpdate()
+            }
         }
-        .onChange(of: isExpanded) { oldValue, newValue in
-            guard oldValue != newValue else { return }
-            requestedExpanded = newValue
-            // A toggle that arrives mid-stroke (e.g. a double-click) lets the
-            // running stroke reach its end, then the finish handler plays back
-            // to the latest state — so the icon visibly opens and closes like
-            // the rows do instead of twitching.
-            guard strokeTarget == nil else { return }
-            playStroke(toExpanded: newValue)
+        fallbackView?.image = NSImage(resource: requestedExpanded ? .folderOpen : .folderClose)
+    }
+
+    private func rebuild(theme: Theme?, appearance: Appearance) {
+        animationView?.removeFromSuperview()
+        animationView = nil
+        fallbackView?.removeFromSuperview()
+        fallbackView = nil
+        strokeTarget = nil
+
+        let content: NSView
+        if let animation = LottieAnimation.named(
+            icon.resources.animationResourceName,
+            bundle: .main,
+            subdirectory: "LottieFiles/BookmarkFolderIcons"
+        ) {
+            let view = Lottie.LottieAnimationView(
+                animation: animation,
+                configuration: LottieConfiguration(renderingEngine: .mainThread)
+            )
+            if let theme {
+                applyPalette(BookmarkFolderIconPalette(theme: theme, appearance: appearance), to: view)
+            }
+            animationView = view
+            content = view
+            pauseAtRequestedState()
+        } else {
+            let view = NSImageView()
+            view.imageScaling = .scaleProportionallyUpOrDown
+            fallbackView = view
+            content = view
         }
-        .accessibilityHidden(true)
+        content.frame = bounds
+        content.autoresizingMask = [.width, .height]
+        addSubview(content)
     }
 
     private func playStroke(toExpanded expanded: Bool) {
         strokeTarget = expanded
-        playbackMode = .playing(
-            .fromProgress(
-                nil,
-                toProgress: BookmarkFolderIcon.animationProgress(isExpanded: expanded),
-                loopMode: .playOnce
-            )
-        )
+        animationView?.play(
+            toProgress: BookmarkFolderIcon.animationProgress(isExpanded: expanded),
+            loopMode: .playOnce
+        ) { [weak self] completed in
+            guard let self, completed, self.strokeTarget != nil else { return }
+            if self.strokeTarget != self.requestedExpanded, !self.usesStaticSnapshotIcon {
+                self.playStroke(toExpanded: self.requestedExpanded)
+            } else {
+                self.pauseAtRequestedState()
+            }
+        }
     }
 
-    private func pauseAtCurrentState() {
+    private func pauseAtRequestedState() {
         strokeTarget = nil
-        playbackMode = .paused(
-            at: .progress(BookmarkFolderIcon.animationProgress(isExpanded: requestedExpanded))
-        )
+        animationView?.pause()
+        animationView?.currentProgress = BookmarkFolderIcon.animationProgress(isExpanded: requestedExpanded)
     }
 
-    private func applyPalette(to animationView: Lottie.LottieAnimationView) {
-        let palette = BookmarkFolderIconPalette(theme: theme, appearance: appearance)
+    private func applyPalette(_ palette: BookmarkFolderIconPalette, to animationView: Lottie.LottieAnimationView) {
         var colors: [(NSColor, String)] = [
             (palette.frontFill, "Folder1.Rectangle 4.Fill 1.Color"),
             (palette.stroke, "Folder1.Rectangle 4.Stroke 1.Color"),

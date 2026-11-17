@@ -201,6 +201,42 @@ final class SidebarRowReuseTests: XCTestCase {
         }
     }
 
+    func testGroupMemberRowSpanLocatesTheMemberInsideALongGroup() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        tempDirectories.append(directory)
+        let store = LocalStore(account: Account(userID: UUID().uuidString), storeDirectoryURL: directory)
+        let state = BrowserState(windowId: 743, localStore: store, profileId: "Default")
+        state.tabs = (0..<30).map {
+            Tab(guid: 7430 + $0, url: "data:text/html,\($0)", isActive: false,
+                index: $0, title: "Member \($0)")
+        }
+        state.tabs.forEach { $0.groupToken = "long-group" }
+        state.updateNormalTabs()
+        let group = WebContentGroupInfo(token: "long-group", title: "Group",
+                                       color: .blue, isCollapsed: false)
+        let item = TabGroupSidebarItem(group: group, browserState: state)
+
+        let span = try XCTUnwrap(TabGroupCellView.memberRowSpan(of: state.tabs[25], in: item,
+                                                                browserState: state))
+        let expectedMinY = TabGroupCellView.containerVerticalInset
+            + TabGroupCellView.headerHeight
+            + TabGroupCellView.innerTableTopInset
+            + 25 * TabGroupCellView.memberRowHeight
+        XCTAssertEqual(span.minY, expectedMinY, accuracy: 0.5)
+        XCTAssertEqual(span.height, TabGroupCellView.memberRowHeight, accuracy: 0.5)
+        XCTAssertLessThanOrEqual(span.minY + span.height,
+                                 TabGroupCellView.desiredHeight(for: item, browserState: state))
+
+        let collapsed = TabGroupSidebarItem(
+            group: WebContentGroupInfo(token: "long-group", title: "Group",
+                                       color: .blue, isCollapsed: true),
+            browserState: state)
+        XCTAssertNil(TabGroupCellView.memberRowSpan(of: state.tabs[25], in: collapsed,
+                                                    browserState: state))
+    }
+
     func testTabContentFillsItsRowAfterResizeAndReuse() throws {
         let cell = SidebarTabCellView(frame: NSRect(x: 0, y: 0, width: 240, height: 36))
         let window = NSWindow(contentRect: cell.frame, styleMask: [.titled, .resizable],

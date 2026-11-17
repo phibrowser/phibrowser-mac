@@ -5179,22 +5179,31 @@ extension SidebarTabListViewController {
         }
     }
 
-    private func scheduleScrollToVisible(forItem item: Any?) {
+    /// `groupMember` scrolls only that member's inner row of the group `item`
+    /// into view; a long group can be taller than the visible area.
+    private func scheduleScrollToVisible(forItem item: Any?, groupMember: Tab? = nil) {
         guard let item else { return }
         scrollScheduleGeneration += 1
         let generation = scrollScheduleGeneration
         DispatchQueue.main.async { [weak self] in
             guard let self, generation == self.scrollScheduleGeneration else { return }
             let row = outlineView.row(forItem: item)
-            if row >= 0 {
-                animateScrollRowToVisible(row)
+            guard row >= 0 else { return }
+            var targetRect = outlineView.rect(ofRow: row)
+            if let groupMember,
+               let groupItem = item as? TabGroupSidebarItem,
+               let span = TabGroupCellView.memberRowSpan(of: groupMember,
+                                                         in: groupItem,
+                                                         browserState: browserState) {
+                targetRect.origin.y += span.minY
+                targetRect.size.height = span.height
             }
+            animateScrollRectToVisible(targetRect)
         }
     }
 
-    private func animateScrollRowToVisible(_ row: Int) {
-        guard row >= 0,
-              let scrollView = outlineView.enclosingScrollView else {
+    private func animateScrollRectToVisible(_ rowRect: NSRect) {
+        guard let scrollView = outlineView.enclosingScrollView else {
             return
         }
 
@@ -5206,7 +5215,6 @@ extension SidebarTabListViewController {
             layer.removeAllAnimations()
         }
 
-        let rowRect = outlineView.rect(ofRow: row)
         let visibleRect = clipView.documentVisibleRect
         // A newly inserted row can overflow before the deferred sticky refresh.
         // Resolve the overlay first so focus scrolling leaves the row unobscured.
@@ -5266,8 +5274,7 @@ extension SidebarTabListViewController {
 
         // Grouped tabs render inside `TabGroupCellView`'s inner table —
         // no outline child to select. If the focusing tab belongs to a
-        // visible group, scroll the group's row into view so the user
-        // sees the active tab inside the cell, but skip outline
+        // visible group, scroll its member row into view, but skip outline
         // selection (the inner table drives its own active highlight
         // via SwiftUI).
         for case let groupItem as TabGroupSidebarItem in allItems
@@ -5276,7 +5283,7 @@ extension SidebarTabListViewController {
         }) {
             if shouldScroll {
                 lastScrolledFocusingTabId = tab.id
-                scheduleScrollToVisible(forItem: groupItem)
+                scheduleScrollToVisible(forItem: groupItem, groupMember: tab)
             }
             selectItem(nil)
             return

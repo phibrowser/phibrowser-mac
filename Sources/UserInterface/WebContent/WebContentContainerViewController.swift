@@ -1049,6 +1049,25 @@ class WebContentContainerViewController: NSViewController {
             }
             .store(in: &cancellables)
 
+        // The pages are masked to their cards while the window moves into or
+        // out of full screen (`fullScreenTransitionMask`). SYNCHRONOUS (no
+        // `.receive(on:)`): AppKit snapshots the window before the main
+        // queue turns.
+        let fullScreenStarts = [NSWindow.willEnterFullScreenNotification,
+                                NSWindow.willExitFullScreenNotification]
+        let fullScreenEnds = [NSWindow.didEnterFullScreenNotification,
+                              NSWindow.didExitFullScreenNotification]
+        Publishers.MergeMany((fullScreenStarts + fullScreenEnds)
+            .map { NotificationCenter.default.publisher(for: $0) })
+            .filter { [weak self] notification in
+                guard let window = self?.view.window else { return false }
+                return notification.object as? NSWindow === window
+            }
+            .sink { [weak self] notification in
+                self?.setPagesMaskedForFullScreenTransition(fullScreenStarts.contains(notification.name))
+            }
+            .store(in: &cancellables)
+
         browserState?.sidebarCollapsedPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -1126,6 +1145,9 @@ class WebContentContainerViewController: NSViewController {
         // window showing the Space picker); a standalone Incognito window and
         // a single-Space window got none. Settle the page subtree first.
         contentContainer.layoutSubtreeIfNeeded()
+        // AppKit snapshots the window for a full screen animation after this
+        // pass.
+        updateFullScreenTransitionMask()
         if isPeekBackgroundDeemphasized {
             updatePeekBackgroundPresentation(animated: false)
         }
@@ -1696,6 +1718,70 @@ class WebContentContainerViewController: NSViewController {
         hostingView.snp.remakeConstraints { make in
             make.edges.equalToSuperview()
         }
+    }
+
+    // MARK: - Full Screen Transition Mask
+
+    /// Limits the content surface to the pages' cards while the window moves
+    /// into or out of full screen, each card to where its page drew as the
+    /// transition started. AppKit snapshots the window for its animation in
+    /// the pass that resizes it, before Chromium draws the pages at their
+    /// new size, so the animation showed the surface's last frame past the
+    /// cards' edges leaving full screen, and the left page of a split across
+    /// both panes. The live window, laid out anew, takes over when the
+    /// animation ends. Off otherwise, where Chromium alone clips and rounds
+    /// the pages.
+    private var masksPagesForFullScreenTransition = false
+    /// Where each page drew as the transition started
+    /// (`ContentSurfaceHosting.pageClips`).
+    private var pageClipsBeforeFullScreenTransition: [ObjectIdentifier: CGRect] = [:]
+    /// The cards' shapes (`ContentSurfaceHosting.pageShapes`).
+    private let fullScreenTransitionMask = CAShapeLayer()
+    /// Ends a mask left by a transition that never posts its did-
+    /// notification (AppKit failing it). The animation is a snapshot, so the
+    /// live window hidden behind it loses nothing when this comes first.
+    private var fullScreenTransitionMaskTimeout: DispatchWorkItem?
+    private static let fullScreenTransitionMaskTimeout: TimeInterval = 2
+    static var fullScreenTransitionMaskTimeoutForTesting: TimeInterval?
+
+    private func setPagesMaskedForFullScreenTransition(_ masked: Bool) {
+        fullScreenTransitionMaskTimeout?.cancel()
+        fullScreenTransitionMaskTimeout = nil
+        if masked, !masksPagesForFullScreenTransition {
+            pageClipsBeforeFullScreenTransition = contentSurfaceHosting?.pageClips() ?? [:]
+        } else if !masked {
+            pageClipsBeforeFullScreenTransition = [:]
+        }
+        masksPagesForFullScreenTransition = masked
+        updateFullScreenTransitionMask()
+        guard masked else { return }
+        let timeout = DispatchWorkItem { [weak self] in
+            self?.setPagesMaskedForFullScreenTransition(false)
+        }
+        fullScreenTransitionMaskTimeout = timeout
+        let delay = Self.fullScreenTransitionMaskTimeoutForTesting ?? Self.fullScreenTransitionMaskTimeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: timeout)
+    }
+
+    /// Puts the mask on the surface's view, shaped to the pages as they are
+    /// laid out now, or takes it off.
+    private func updateFullScreenTransitionMask() {
+        guard let contentSurfaceView, let layer = contentSurfaceView.layer else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        guard masksPagesForFullScreenTransition, let contentSurfaceHosting else {
+            if layer.mask === fullScreenTransitionMask {
+                layer.mask = nil
+            }
+            return
+        }
+        let cards = CGMutablePath()
+        contentSurfaceHosting.pageShapes(in: contentSurfaceView, keptTo: pageClipsBeforeFullScreenTransition)
+            .forEach { cards.addPath($0) }
+        fullScreenTransitionMask.frame = layer.bounds
+        fullScreenTransitionMask.path = cards
+        layer.mask = fullScreenTransitionMask
     }
 
     /// Lends the surface's view to the page entering content fullscreen

@@ -8,6 +8,7 @@ import SwiftUI
 
 final class SpacesSettingHostingViewController: NSViewController {
     private var hostingController: ThemedHostingController<SpacesSettingsView>?
+    private let listFocus = SettingsListFocus()
 
     override func loadView() {
         view = NSView()
@@ -21,7 +22,7 @@ final class SpacesSettingHostingViewController: NSViewController {
     }
 
     private func setupSwiftUIView() {
-        let hostingController = ThemedHostingController(rootView: SpacesSettingsView())
+        let hostingController = ThemedHostingController(rootView: SpacesSettingsView(listFocus: listFocus))
 
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(hostingController)
@@ -40,5 +41,11 @@ final class SpacesSettingHostingViewController: NSViewController {
     override func viewWillAppear() {
         super.viewWillAppear()
         hostingController?.view.needsLayout = true
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        guard let hostingView = hostingController?.view else { return }
+        listFocus.paneDidAppear(in: hostingView)
     }
 }

@@ -38,7 +38,9 @@ struct SpacesSettingsView: View {
     @State private var orderedIds: [String] = []
     /// The Space whose name is being edited in place (`InlineRenameField`).
     @State private var renamingSpaceId: String?
-    @FocusState private var isListFocused: Bool
+    /// Gives the list the keyboard each time the pane is shown.
+    @ObservedObject var listFocus: SettingsListFocus
+    @FocusState private var focusedListGeneration: Int?
 
     private static let spaceListPanelWidth: CGFloat = 280
     private static let detailPanelWidth: CGFloat = 312
@@ -163,7 +165,10 @@ struct SpacesSettingsView: View {
                 // itself while it is editing.
                 .focusable()
                 .focusEffectDisabled()
-                .focused($isListFocused)
+                .focused($focusedListGeneration, equals: listFocus.generation)
+                .onChange(of: listFocus.generation) { _, generation in
+                    focusedListGeneration = generation
+                }
                 .onKeyPress(.return) {
                     guard renamingSpaceId == nil, let space = selectedSpace,
                           orderedSpaces.contains(where: { $0.spaceId == space.spaceId }) else { return .ignored }
@@ -741,7 +746,7 @@ struct SpacesSettingsView: View {
         // Selecting another row cancels an edit in progress.
         if renamingSpaceId != spaceId { renamingSpaceId = nil }
         selectedSpaceId = spaceId
-        isListFocused = true
+        focusedListGeneration = listFocus.generation
     }
 
     private func moveSelection(by offset: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
@@ -808,7 +813,7 @@ struct SpacesSettingsView: View {
     private func endRename(_ spaceId: String) {
         guard renamingSpaceId == spaceId else { return }
         renamingSpaceId = nil
-        isListFocused = true
+        focusedListGeneration = listFocus.generation
     }
 
     /// Enter in the field. An empty or unchanged name ends the edit without

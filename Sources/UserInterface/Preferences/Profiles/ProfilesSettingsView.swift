@@ -21,7 +21,9 @@ struct ProfilesSettingsView: View {
     /// The profile whose name is being edited in place, and the field's text.
     @State private var renamingProfileId: String?
     @State private var renameDraft = ""
-    @FocusState private var isListFocused: Bool
+    /// Gives the list the keyboard each time the pane is shown.
+    @ObservedObject var listFocus: SettingsListFocus
+    @FocusState private var focusedListGeneration: Int?
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
@@ -76,7 +78,10 @@ struct ProfilesSettingsView: View {
                 // these itself while it is editing.
                 .focusable()
                 .focusEffectDisabled()
-                .focused($isListFocused)
+                .focused($focusedListGeneration, equals: listFocus.generation)
+                .onChange(of: listFocus.generation) { _, generation in
+                    focusedListGeneration = generation
+                }
                 .onKeyPress(.return) {
                     guard renamingProfileId == nil, let profile = selectedProfile else { return .ignored }
                     beginRename(profile)
@@ -253,7 +258,7 @@ struct ProfilesSettingsView: View {
         // Selecting another row cancels an edit in progress.
         if renamingProfileId != profileId { renamingProfileId = nil }
         selectedProfileId = profileId
-        isListFocused = true
+        focusedListGeneration = listFocus.generation
     }
 
     private func moveSelection(by offset: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
@@ -316,7 +321,7 @@ struct ProfilesSettingsView: View {
     private func endRename(_ profileId: String) {
         guard renamingProfileId == profileId else { return }
         renamingProfileId = nil
-        isListFocused = true
+        focusedListGeneration = listFocus.generation
     }
 
     /// The inline red message under the field: only a duplicate shows one. An

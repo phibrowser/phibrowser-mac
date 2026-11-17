@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import SwiftData
 import XCTest
 @testable import Phi
 
@@ -537,5 +538,71 @@ final class PhiSyncWiderSplitTests: XCTestCase {
 
         XCTAssertEqual(entity?.splitLayout.stringValue, "horizontal")
         XCTAssertEqual(entity?.splitLayout.updatedAtMs, 100, "Not a local change")
+    }
+
+    /// Review finding P2: a stacked pinned pair that a peer expanded to three panes. Landing unlinks
+    /// the pair in the store, which resets both rows' orientation, so the orientation must be written
+    /// after that, against the state the links leave behind. Runs on a real `LocalStore`, whose link
+    /// writes are what reset the orientation.
+    func testAStackedPinnedPairExpandedToThreePanesStaysStackedOnEveryMember() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = LocalStore(account: Account(userID: UUID().uuidString),
+                               storeDirectoryURL: directory, presentsCompatibilityAlerts: false)
+        let context = try XCTUnwrap(store.getMainContext())
+        if try context.fetch(FetchDescriptor<ProfileModel>()).isEmpty {
+            context.insert(ProfileModel(profileId: "Default"))
+            try context.save()
+        }
+        let suite = "PhiSyncWiderSplitTests.store.\(UUID().uuidString)"
+        suites.append(suite)
+        let access = AccountPhiPinnedTabAccess(store: store, defaults: UserDefaults(suiteName: suite)!)
+        _ = try access.allPins()
+        // The receiver's stacked pair, as an earlier round landed it.
+        try await access.apply(PinApplyBatch(unordered: [
+            .create(.fixture(lineageId: "la", guid: "G-a", spaceId: nil, profileId: "Default", index: 0,
+                             title: "la", url: URL(string: "https://la.example/")!)),
+            .create(.fixture(lineageId: "lb", guid: "G-b", spaceId: nil, profileId: "Default", index: 1,
+                             title: "lb", url: URL(string: "https://lb.example/")!)),
+            .update(guid: "G-a", fields: PinFieldPatch(splitPartnerLineageId: .some("lb"),
+                                                       splitLayout: .some("horizontal"))),
+            .update(guid: "G-b", fields: PinFieldPatch(splitLayout: .some("horizontal"))),
+        ]), expectedGeneration: access.pinScopeGeneration(), expectedScope: access.currentScope())
+        let pinStore = MemoryOwnedItemStore()
+        for (index, lineage) in ["la", "lb"].enumerated() {
+            var baseline = pinPayload(lineage: lineage, rank: ["V", "W"][index], title: lineage,
+                                      url: "https://\(lineage).example/",
+                                      splitPartner: lineage == "la" ? "lb" : "la")
+            baseline.splitLayout = stamped("horizontal", at: 100)
+            pinStore.table.cursors["\(lineage):pu-1"] = ownedCursor(
+                reconciled: baselineBytes(baseline), server: baselineBytes(baseline),
+                entityId: "srv-\(lineage)", version: 1, ownerUuid: "pu-1")
+        }
+        // The peer's three-pane split, still stacked.
+        let members = ["la", "lb", "lc"]
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page(members.enumerated().map { index, lineage in
+            var payload = widerSplitPin(lineage, members: members)
+            payload.rank = stamped(["V", "W", "X"][index], at: 500)
+            payload.splitPartnerUuid = stamped("", at: 500)
+            payload.splitLayout = stamped("horizontal", at: 500)
+            return remoteEntity(envelope(payload),
+                                tag: PhiSyncEntity.pinClientTag(lineage, ownerKey: "pu-1"),
+                                version: Int64(10 + index), entityId: "srv-\(lineage)", key: key)
+        }, marker: "12")]
+        let device = makeDevice("B", client: client, ownedKinds: [.pins(access: access, store: pinStore)])
+        await device.setSpaceSyncEnabled(true)
+        await device.pullOnce()
+
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        let rows = store.getAllPinnedTabs(for: "Default").sorted { $0.index < $1.index }
+        XCTAssertEqual(rows.count, 3)
+        for row in rows {
+            XCTAssertEqual(row.decodedSplitPaneGuids.count, 3, "\(row.guid) is a member of the three-pane split")
+            XCTAssertNil(row.splitPartnerGuid)
+            XCTAssertEqual(row.layout, "horizontal", "\(row.guid) stays stacked")
+        }
     }
 }

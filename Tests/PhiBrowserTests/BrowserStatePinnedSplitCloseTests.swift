@@ -53,6 +53,9 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
                               isActive: false, index: 1, customGuid: rightDB)
         leftPinned.isOpenned = true
         rightPinned.isOpenned = true
+        // The pin wrote the membership before the records existed, so the
+        // write is in flight and its in-memory patch found nothing to patch.
+        state.persistPinnedSplit(dbGuids: [leftDB, rightDB], layout: .vertical)
         state.pinnedTabs = [leftPinned, rightPinned]
 
         let leftLive = Tab(guid: 100, url: "https://left.example",
@@ -215,6 +218,98 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
         XCTAssertEqual(right.splitLayout, .horizontal)
         XCTAssertEqual(state.pinnedSplitLayout(dbGuids: ["db-left", "db-right"]),
                        .horizontal)
+    }
+
+    /// An open pinned pair whose records hold `records`' links and layouts,
+    /// with no write of this window in flight: the state after a sync landing.
+    private func seedOpenPinnedSplit(_ state: BrowserState, dbs: [String],
+                                     liveLayout: SplitLayout) -> [Tab] {
+        let records = dbs.enumerated().map { index, db -> Tab in
+            let record = Tab(guid: 700 + index, url: "https://\(db).example",
+                             isActive: index == 0, index: index, customGuid: db)
+            record.isOpenned = true
+            return record
+        }
+        state.pinnedTabs = records
+        state.tabs = dbs.enumerated().map { index, db -> Tab in
+            let tab = Tab(guid: 700 + index, url: "https://\(db).example",
+                          isActive: index == 0, index: index, customGuid: db)
+            tab.isPinned = true
+            return tab
+        }
+        state.splits = [SplitGroup(id: "split-open", tabIds: dbs.indices.map { 700 + $0 },
+                                   layout: liveLayout,
+                                   fractions: Array(repeating: 1.0 / Double(dbs.count), count: dbs.count),
+                                   isPinned: true)]
+        return records
+    }
+
+    /// PHI-2046: sync landed a stacked orientation for a pinned pair that is
+    /// open side by side here. The open split adopts it; the records are not
+    /// overwritten with the live orientation.
+    func testAnOpenPinnedSplitAdoptsALandedOrientation() throws {
+        let state = try makeState()
+        let records = seedOpenPinnedSplit(state, dbs: ["db-a", "db-b"], liveLayout: .vertical)
+        records[0].splitPartnerGuid = "db-b"
+        records[1].splitPartnerGuid = "db-a"
+        records.forEach { $0.splitLayout = .horizontal }
+
+        state.reconcilePinnedSplitPartners()
+
+        XCTAssertEqual(state.splits.first?.layout, .horizontal, "The open split takes the landed orientation")
+        XCTAssertEqual(records.map(\.splitLayout), [.horizontal, .horizontal],
+                       "The landed orientation is not written over")
+    }
+
+    /// A local orientation change whose store write has not been seen yet
+    /// still wins over a pinned-tabs emission that predates it.
+    func testALocalOrientationChangeInFlightSurvivesAStaleEmission() throws {
+        let state = try makeState()
+        let records = seedOpenPinnedSplit(state, dbs: ["db-a", "db-b"], liveLayout: .vertical)
+        records[0].splitPartnerGuid = "db-b"
+        records[1].splitPartnerGuid = "db-a"
+        records.forEach { $0.splitLayout = .vertical }
+
+        // Chromium reports the user's change; it is persisted and in flight.
+        state.handleSplitVisualsChanged(splitId: "split-open", layout: .horizontal, fractions: [0.5, 0.5])
+        // An emission computed before that write lands puts the old value back.
+        records.forEach { $0.splitLayout = .vertical }
+        state.confirmPinnedSplitWritesInFlight()
+        state.reconcilePinnedSplitPartners()
+
+        XCTAssertEqual(state.splits.first?.layout, .horizontal)
+        XCTAssertEqual(records.map(\.splitLayout), [.horizontal, .horizontal],
+                       "The live orientation is written back while its own write is in flight")
+    }
+
+    /// PHI-2046 (a): sync shrank a 3-pane pinned split that is open here to a
+    /// pair. The open split does not relink the removed pane.
+    func testAnOpenPinnedSplitDoesNotUndoALandedMembershipChange() throws {
+        let state = try makeState()
+        let records = seedOpenPinnedSplit(state, dbs: ["db-a", "db-b", "db-c"], liveLayout: .vertical)
+        records[0].splitPartnerGuid = "db-b"
+        records[1].splitPartnerGuid = "db-a"
+        records.forEach { $0.splitLayout = .vertical }
+
+        state.reconcilePinnedSplitPartners()
+
+        XCTAssertEqual(records[0].splitPartnerGuid, "db-b")
+        XCTAssertEqual(records[1].splitPartnerGuid, "db-a")
+        XCTAssertNil(records[2].splitPartnerGuid)
+        XCTAssertEqual(records.map(\.splitPaneGuids), [[], [], []], "The removed pane stays out")
+    }
+
+    /// A pair only one record of which carries the link (a half-written
+    /// pair) is still completed from the open split.
+    func testAnOpenHalfLinkedPinnedPairIsCompleted() throws {
+        let state = try makeState()
+        let records = seedOpenPinnedSplit(state, dbs: ["db-a", "db-b"], liveLayout: .vertical)
+        records[1].splitPartnerGuid = "db-a"
+
+        state.reconcilePinnedSplitPartners()
+
+        XCTAssertEqual(records[0].splitPartnerGuid, "db-b")
+        XCTAssertEqual(records[1].splitPartnerGuid, "db-a")
     }
 
     /// A pinned split of three panes is one unit from any of its records,

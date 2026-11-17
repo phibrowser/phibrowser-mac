@@ -2474,6 +2474,21 @@ axis in pane order, which the fields above already carry. Divider positions
   baseline) to every member under the owner, and the next snapshot republishes
   any member whose own field still differs. A pin in no split locally, unsplit
   or still waiting for its partner, re-emits its baseline's value unchanged.
+  A link write in the same landing (unlinking a pair, emptying a member list)
+  resets `layout` in the store, so a member it touches is written whatever
+  orientation it held before the batch.
+- **A split open in a window.** Once the store has shown this window's own
+  pinned-split writes, the store is the source of truth for an open pinned
+  split (`reconcilePinnedSplitPartners`): the open split adopts a landed
+  orientation (Chromium re-lays it out) instead of writing its own back, and a
+  landed membership change is not undone. Only a half-written pair, whose one
+  record names exactly the open members, is completed. While a write of this
+  window is in flight (`pinnedSplitWritesInFlight`, at most a few seconds) the
+  open split still wins, so a pinned-tabs emission computed before that write
+  cannot undo it. A divider drag reports an unchanged orientation and writes
+  nothing, so it cannot overwrite a landed orientation of the pinned record or
+  bookmark the split stands for. A split open from a bookmark keeps its live
+  orientation and panes until it is reopened.
 - **Stamps.** `split_extra_panes` is content and takes `contentUpdatedDate`.
   `split_pane_uuids` and both `split_layout` fields take `hlcNow()`: the local
   writers (`updatePinnedSplit`, `updatePinnedSplitLayout`,

@@ -8186,13 +8186,18 @@ private func landPinSplitPanes(_ entity: Phi_PhiPinTabEntity, identity: String, 
 /// holds a different one, so the members can never disagree locally, and the next snapshot
 /// republishes a member whose own field still names another value. An anchor this device has
 /// never landed decides nothing yet.
+///
+/// A member in `linkTouched` gets a link write earlier in the same transaction, which may reset
+/// its orientation to the default; it is written whenever the wanted orientation is not the
+/// default, whatever it held before the batch.
 @MainActor
 private func pinSplitLayoutWrites(_ arrivals: [(identity: String, ownerKey: String,
                                                entity: Phi_PhiPinTabEntity)],
                                   payloadOf: [String: Data], parked: Set<String>,
                                   projected: [String: PhiLocalPin],
                                   ownerOfGuid: [String: String],
-                                  table: PhiOwnedItemTable) -> [String: String?] {
+                                  table: PhiOwnedItemTable,
+                                  linkTouched: Set<String>) -> [String: String?] {
     func entity(_ bytes: Data?) -> Phi_PhiPinTabEntity? {
         guard let bytes, let envelope = try? Phi_PhiEntity(serializedBytes: bytes) else { return nil }
         return PinKind.entity(from: envelope)
@@ -8207,9 +8212,11 @@ private func pinSplitLayoutWrites(_ arrivals: [(identity: String, ownerKey: Stri
             : entity(payloadOf[anchorIdentity]) ?? entity(table.cursors[anchorIdentity]?.reconciled)
         guard let anchorEntity else { continue }
         let wanted = localSplitLayout(anchorEntity.splitLayout.stringValue)
+        let wantedWire = wireSplitLayout(wanted)
         for row in projected.values where ownerOfGuid[row.guid] == arrival.ownerKey
             && members.contains(PinKind.lineageKey(row.lineageId))
-            && wireSplitLayout(row.splitLayout) != wireSplitLayout(wanted) {
+            && (wireSplitLayout(row.splitLayout) != wantedWire
+                || (linkTouched.contains(row.guid) && !wantedWire.isEmpty)) {
             writes[row.guid] = wanted
         }
     }
@@ -8949,7 +8956,21 @@ private func landPins(_ input: OwnedLandingInput,
     }
     // Append reverse-link patches in phase 2 after patches for the arriving side.
     ops.append(contentsOf: reverseLinks)
-    // The split's orientation goes last, after every link the patches above set or cleared.
+    // The split's orientation goes last, after every link the patches above set or cleared. A link
+    // write in this batch can clear a row's orientation in the store (unlinking a pair or emptying a
+    // member list resets `layout`), including the old partner whose back link the store clears, so
+    // those rows cannot be judged by the orientation they hold before the batch.
+    var linkTouched: Set<String> = []
+    for case .update(let guid, let fields) in ops
+    where fields.splitPartnerLineageId != nil || fields.splitPaneLineageIds != nil {
+        linkTouched.insert(guid)
+        guard let partner = state.rowByGuid[guid]?.splitPartnerLineageId.map(PinKind.lineageKey),
+              let owner = ownerOfGuid[guid] else { continue }
+        for row in projected.values where ownerOfGuid[row.guid] == owner
+            && PinKind.lineageKey(row.lineageId) == partner {
+            linkTouched.insert(row.guid)
+        }
+    }
     let layoutWrites = pinSplitLayoutWrites(
         planned.compactMap { item -> (identity: String, ownerKey: String,
                                       entity: Phi_PhiPinTabEntity)? in
@@ -8960,7 +8981,7 @@ private func landPins(_ input: OwnedLandingInput,
             return (item.identity, item.ownerKey, entity)
         },
         payloadOf: payloadOf, parked: outcome.parked, projected: projected,
-        ownerOfGuid: ownerOfGuid, table: input.table)
+        ownerOfGuid: ownerOfGuid, table: input.table, linkTouched: linkTouched)
     for guid in layoutWrites.keys.sorted() {
         guard let layout = layoutWrites[guid] else { continue }
         ops.append(.update(guid: guid, fields: PinFieldPatch(splitLayout: .some(layout))))

@@ -8,6 +8,16 @@ import Cocoa
 
 /// Orientation of a Chromium split.
 /// Serialized over the bridge as `"vertical"` / `"horizontal"`.
+/// A pinned-split write a window sent to the store and has not yet seen in a
+/// pinned-tabs emission (`BrowserState.pinnedSplitWritesInFlight`).
+struct PinnedSplitWriteInFlight: Equatable {
+    /// The written members in pane order; nil for an orientation-only write.
+    var members: [String]?
+    var layout: SplitLayout
+    /// Identifies the write, so a later one is not expired by an earlier timer.
+    var token: UUID
+}
+
 enum SplitLayout: String {
     /// Side-by-side columns, divided by vertical bars.
     case vertical
@@ -641,11 +651,17 @@ extension BrowserState {
     @MainActor
     func handleSplitVisualsChanged(splitId: String, layout: SplitLayout, fractions: [Double]) {
         guard let index = splits.firstIndex(where: { $0.id == splitId }) else { return }
+        let layoutChanged = splits[index].layout != layout
         splits[index].layout = layout
         splits[index].fractions = SplitGroup.normalizedFractions(
             fractions, paneCount: splits[index].paneCount)
         notifyTravelBackSceneChanged(tabIds: splits[index].tabIds)
-        persistRepresentedSplitLayout(splitId: splitId, layout: layout)
+        // A divider drag reports the unchanged orientation; writing it would
+        // put this window's value back over one sync landed for the pinned
+        // record or bookmark the split stands for.
+        if layoutChanged {
+            persistRepresentedSplitLayout(splitId: splitId, layout: layout)
+        }
     }
 
     /// Remembers the split `departed` panes just left, for a removal of a
@@ -836,6 +852,17 @@ extension BrowserState {
                                                                     layout: layout.rawValue,
                                                                     windowId: windowId.int64Value)
         persistRepresentedSplitLayout(splitId: splitId, layout: layout)
+    }
+
+    /// Lay out the live pinned split `splitId` in the orientation its records
+    /// hold, without writing it back: the store already has it (sync landed
+    /// it). Chromium's visuals echo then finds the orientation unchanged.
+    private func adoptStoredPinnedSplitLayout(_ splitId: String, layout: SplitLayout) {
+        guard let index = splits.firstIndex(where: { $0.id == splitId }) else { return }
+        splits[index].layout = layout
+        ChromiumLauncher.sharedInstance().bridge?.updateSplitLayout(splitId,
+                                                                    layout: layout.rawValue,
+                                                                    windowId: windowId.int64Value)
     }
 
     /// Close Tab on a pane of a split that a bookmark or a pinned record
@@ -1265,6 +1292,7 @@ extension BrowserState {
     func persistPinnedSplit(dbGuids: [String], layout: SplitLayout) {
         guard dbGuids.count >= 2, dbGuids.allSatisfy({ !$0.isEmpty }) else { return }
         localStore.updatePinnedSplit(guids: dbGuids, layout: layout.rawValue)
+        markPinnedSplitWritesInFlight(dbGuids: dbGuids, members: dbGuids, layout: layout)
         for (index, db) in dbGuids.enumerated() {
             guard let record = pinnedTabs.first(where: { $0.guidInLocalDB == db }) else { continue }
             record.splitPartnerGuid = dbGuids.count == 2 ? dbGuids[1 - index] : nil
@@ -1293,6 +1321,7 @@ extension BrowserState {
     func updatePinnedSplitLayout(dbGuids: [String], layout: SplitLayout) {
         guard dbGuids.allSatisfy({ !$0.isEmpty }) else { return }
         localStore.updatePinnedSplitLayout(guids: dbGuids, layout: layout.rawValue)
+        markPinnedSplitWritesInFlight(dbGuids: dbGuids, members: nil, layout: layout)
         for db in dbGuids {
             pinnedTabs.first(where: { $0.guidInLocalDB == db })?.splitLayout = layout
         }
@@ -1312,6 +1341,15 @@ extension BrowserState {
     /// pinned tabs. Reconciling from the live group throughout the split's
     /// life — and once more at the instant it is removed — makes the linkage
     /// durable in memory before the group can disappear.
+    ///
+    /// That holds only while this window's own write is in flight
+    /// (`pinnedSplitWritesInFlight`). Once the store has shown it, the store is
+    /// the source of truth and the live split follows it: a sync landing may
+    /// change the members or the orientation of a split open here, and writing
+    /// the live state back would undo it (and republish the undo). Then the
+    /// live split adopts a landed orientation, a link only one record of the
+    /// live members carries is completed (a half-written pair), and any other
+    /// membership difference is left to the store.
     ///
     /// Safe to over-call: it only writes when a live pane is missing from the
     /// record or the layout differs. A record with more panes than the live
@@ -1352,11 +1390,63 @@ extension BrowserState {
                       persisted.contains(db) || liveDBs.contains(db) else { return nil }
                 return db
             }
+            guard liveDBs.contains(where: { pinnedSplitWritesInFlight[$0] != nil }) else {
+                // The links the records carry, a record with none adding nothing.
+                let linked = Set(records.flatMap { record -> [String] in
+                    guard let db = record.guidInLocalDB else { return [] }
+                    if !record.splitPaneGuids.isEmpty { return record.splitPaneGuids }
+                    return record.splitPartnerGuid.map { [db, $0] } ?? []
+                })
+                if linked == Set(liveDBs), !isLinked {
+                    persistPinnedSplit(dbGuids: dbGuids, layout: group.layout)
+                } else if isLinked, (records.first?.splitLayout ?? .vertical) != group.layout {
+                    adoptStoredPinnedSplitLayout(group.id, layout: records.first?.splitLayout ?? .vertical)
+                }
+                continue
+            }
             if !isLinked || !Set(liveDBs).isSubset(of: persisted) {
                 persistPinnedSplit(dbGuids: dbGuids, layout: group.layout)
             } else if records.contains(where: { $0.splitLayout != group.layout }) {
                 updatePinnedSplitLayout(dbGuids: dbGuids, layout: group.layout)
             }
+        }
+    }
+
+    /// Record a pinned-split write this window just sent to the store, for
+    /// every record it touches. `members` is nil for an orientation-only
+    /// write. An entry the store never shows is dropped after a short wait,
+    /// and the reconcile then follows the store.
+    private func markPinnedSplitWritesInFlight(dbGuids: [String], members: [String]?,
+                                               layout: SplitLayout) {
+        let token = UUID()
+        for db in dbGuids {
+            pinnedSplitWritesInFlight[db] = PinnedSplitWriteInFlight(
+                members: members ?? pinnedSplitWritesInFlight[db]?.members,
+                layout: layout, token: token)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self else { return }
+            let expired = dbGuids.filter { self.pinnedSplitWritesInFlight[$0]?.token == token }
+            guard !expired.isEmpty else { return }
+            for db in expired { self.pinnedSplitWritesInFlight.removeValue(forKey: db) }
+            self.reconcilePinnedSplitPartners()
+        }
+    }
+
+    /// Retire the in-flight writes a pinned-tabs emission shows: every record
+    /// it names now holds the written members and orientation.
+    func confirmPinnedSplitWritesInFlight() {
+        guard !pinnedSplitWritesInFlight.isEmpty else { return }
+        for (db, write) in pinnedSplitWritesInFlight {
+            guard let record = pinnedTabs.first(where: { $0.guidInLocalDB == db }),
+                  (record.splitLayout ?? .vertical) == write.layout else { continue }
+            if let members = write.members {
+                let holds = members.count == 2
+                    ? record.splitPartnerGuid == members.first(where: { $0 != db })
+                    : record.splitPaneGuids == members
+                guard holds else { continue }
+            }
+            pinnedSplitWritesInFlight.removeValue(forKey: db)
         }
     }
 

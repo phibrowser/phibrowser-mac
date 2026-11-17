@@ -70,18 +70,11 @@ private final class SpaceThemeEditorPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-private enum SpaceThemeEditorPanelPlacement {
-    case nearTrigger(NSPoint)
-    case windowTop
-}
-
 private final class SpaceThemeEditorMenuContext {
     weak var browserState: BrowserState?
-    let placement: SpaceThemeEditorPanelPlacement
 
-    init(browserState: BrowserState?, placement: SpaceThemeEditorPanelPlacement) {
+    init(browserState: BrowserState?) {
         self.browserState = browserState
-        self.placement = placement
     }
 }
 
@@ -97,7 +90,6 @@ private final class SpaceThemeEditorPanelPresenter {
     func present(
         spaceId: String,
         from window: NSWindow,
-        placement: SpaceThemeEditorPanelPlacement,
         themeSource: ThemeStateProvider
     ) {
         dismiss()
@@ -145,71 +137,27 @@ private final class SpaceThemeEditorPanelPresenter {
                   self.panel === panel,
                   window.isVisible else { return }
 
-            let origin = self.initialOrigin(
-                panelSize: panel.frame.size,
-                placement: placement,
-                window: window
-            )
-            panel.setFrameOrigin(origin)
+            panel.setFrameOrigin(self.initialOrigin(panelSize: panel.frame.size, window: window))
             window.addChildWindow(panel, ordered: .above)
             panel.makeKeyAndOrderFront(nil)
             self.installDismissMonitors()
         }
     }
 
-    private func initialOrigin(
-        panelSize: NSSize,
-        placement: SpaceThemeEditorPanelPlacement,
-        window: NSWindow
-    ) -> NSPoint {
+    /// Centers the editor on its browser window, whichever menu opened it,
+    /// and keeps it on screen when the window hangs off a display edge.
+    private func initialOrigin(panelSize: NSSize, window: NSWindow) -> NSPoint {
         let margin: CGFloat = 8
-
-        switch placement {
-        case .windowTop:
-            let visibleFrame = window.screen?.visibleFrame ?? window.frame
-            let topInset: CGFloat = 12
-            let x = min(
-                max(
-                    window.frame.midX - panelSize.width / 2,
-                    visibleFrame.minX + margin
-                ),
-                visibleFrame.maxX - panelSize.width - margin
-            )
-            let y = min(
-                max(
-                    window.frame.maxY - panelSize.height - topInset,
-                    visibleFrame.minY + margin
-                ),
-                visibleFrame.maxY - panelSize.height - margin
-            )
-            return NSPoint(x: x, y: y)
-
-        case let .nearTrigger(triggerScreenPoint):
-            let screen = NSScreen.screens.first { $0.frame.contains(triggerScreenPoint) }
-                ?? window.screen
-            let visibleFrame = screen?.visibleFrame ?? window.frame
-            let gap: CGFloat = 12
-
-            var x = triggerScreenPoint.x + gap
-            if x + panelSize.width > visibleFrame.maxX - margin {
-                x = triggerScreenPoint.x - panelSize.width - gap
-            }
-
-            var y = triggerScreenPoint.y - panelSize.height - gap
-            if y < visibleFrame.minY + margin {
-                y = triggerScreenPoint.y + gap
-            }
-
-            x = min(
-                max(x, visibleFrame.minX + margin),
-                visibleFrame.maxX - panelSize.width - margin
-            )
-            y = min(
-                max(y, visibleFrame.minY + margin),
-                visibleFrame.maxY - panelSize.height - margin
-            )
-            return NSPoint(x: x, y: y)
-        }
+        let visibleFrame = window.screen?.visibleFrame ?? window.frame
+        let x = min(
+            max(window.frame.midX - panelSize.width / 2, visibleFrame.minX + margin),
+            visibleFrame.maxX - panelSize.width - margin
+        )
+        let y = min(
+            max(window.frame.midY - panelSize.height / 2, visibleFrame.minY + margin),
+            visibleFrame.maxY - panelSize.height - margin
+        )
+        return NSPoint(x: x.rounded(), y: y.rounded())
     }
 
     func dismiss() {
@@ -2243,8 +2191,7 @@ extension AppController {
     /// Items target the controller and act on the currently active Space.
     func appendActiveSpaceMenuItems(
         to menu: NSMenu,
-        browserState: BrowserState? = nil,
-        triggerScreenPoint: NSPoint? = nil
+        browserState: BrowserState? = nil
     ) {
         let targetSlot = browserState?.windowController?.slot ?? currentSpacesSlot()
         let activeSpaceId = targetSlot?.activeSpaceId ?? SpaceManager.shared.activeSpaceId
@@ -2287,11 +2234,7 @@ extension AppController {
             keyEquivalent: ""
         )
         editThemeItem.target = self
-        editThemeItem.representedObject = SpaceThemeEditorMenuContext(
-            browserState: browserState,
-            placement: triggerScreenPoint.map(SpaceThemeEditorPanelPlacement.nearTrigger)
-                ?? .windowTop
-        )
+        editThemeItem.representedObject = SpaceThemeEditorMenuContext(browserState: browserState)
         menu.addItem(editThemeItem)
 
         let changeProfileParent = NSMenuItem(
@@ -2534,10 +2477,7 @@ extension AppController {
         )
         editThemeItem.tag = AppController.spacesChangeThemeParentTag
         editThemeItem.target = self
-        editThemeItem.representedObject = SpaceThemeEditorMenuContext(
-            browserState: nil,
-            placement: .windowTop
-        )
+        editThemeItem.representedObject = SpaceThemeEditorMenuContext(browserState: nil)
         menu.addItem(editThemeItem)
 
         let changeProfileParent = NSMenuItem(
@@ -2797,7 +2737,6 @@ extension AppController {
         SpaceThemeEditorPanelPresenter.shared.present(
             spaceId: spaceId,
             from: window,
-            placement: context?.placement ?? .windowTop,
             themeSource: controller.browserState.themeContext
         )
     }

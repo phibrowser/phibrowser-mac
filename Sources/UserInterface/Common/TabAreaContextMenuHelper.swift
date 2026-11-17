@@ -86,8 +86,7 @@ final class TabAreaContextMenuHelper: NSObject {
             menu.addItem(.separator())
             AppController.shared?.appendActiveSpaceMenuItems(
                 to: menu,
-                browserState: browserState,
-                triggerScreenPoint: NSEvent.mouseLocation
+                browserState: browserState
             )
         }
 

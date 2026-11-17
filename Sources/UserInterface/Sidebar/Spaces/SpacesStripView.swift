@@ -203,7 +203,14 @@ final class SpacesStripGeometry: ObservableObject {
     /// The row sits in the sidebar header's control row
     /// (`SidebarHeaderView.spaceSwitchSitsInControlRow`): the pips line up at
     /// the trailing edge, and the "+" stays shown so no gap opens beside them.
+    /// Stays false for a row the header starts at the left there
+    /// (`SidebarHeaderView.spaceSwitchAlignsLeading`), which keeps its own
+    /// row's layout: the pips at the left, the "+" at the far end on hover.
     @Published var sitsInControlRow = false
+    /// A left-aligned row in the mirrored header
+    /// (`SidebarHeaderView.spaceSwitchKeepsAddButtonBesidePips`): the "+"
+    /// stays shown right after the pips instead of at the far end.
+    @Published var keepsAddButtonBesidePips = false
     @Published var showsPagination = false
 
     /// Keep the leaving selection visible while a newly created Space's
@@ -736,7 +743,7 @@ struct SpacesStripView: View {
         let sitsInControlRow = stripGeometry.sitsInControlRow
         return HStack(spacing: Self.stripSpacing) {
             pipsViewport(visibleCount: visibleCount)
-            if !hasOverflow, !sitsInControlRow { Spacer(minLength: 4) }
+            if !hasOverflow, !sitsInControlRow, !stripGeometry.keepsAddButtonBesidePips { Spacer(minLength: 4) }
             if hasOverflow {
                 moreButton
             } else {
@@ -1699,7 +1706,7 @@ struct SpacesStripView: View {
     /// reserves for it and the pips never reflow on hover. In the header's
     /// control row it stays shown: the pips sit right beside it there.
     private var showsAddButton: Bool {
-        slot.isStripRowHovered || stripGeometry.sitsInControlRow
+        slot.isStripRowHovered || stripGeometry.sitsInControlRow || stripGeometry.keepsAddButtonBesidePips
     }
 
     private var addButton: some View {
@@ -1723,7 +1730,11 @@ struct SpacesStripView: View {
         .disabled(!showsAddButton)
         .allowsHitTesting(showsAddButton)
         .accessibilityHidden(!showsAddButton)
-        .animation(.easeInOut(duration: 0.15), value: showsAddButton)
+        // Hover fades it; the header moving the row in or out of the control
+        // row shows or hides it at once. A row moved for full screen moves
+        // as the transition starts, and a fade still running then would sit
+        // in AppKit's capture of the window for the whole animation.
+        .animation(.easeInOut(duration: 0.15), value: slot.isStripRowHovered)
 //        .offset(x: -2)
         .onHover { isAddButtonHovered = $0 }
         .help(NSLocalizedString("sidebar.spacesStrip.addSpaceButtonTooltip", value: "New Space", comment: "Tooltip for the add-Space button in the sidebar Spaces strip"))

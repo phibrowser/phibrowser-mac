@@ -592,6 +592,8 @@ class SidebarTabListViewController: NSViewController {
         // already-applied store delivery, which opens the restore gate and
         // paints — and that paint has to find both sections filled.
         tabSectionController.browserState = browserState
+        // Groups removed while inactive never reached `tabSectionDidUpdate`.
+        pruneGroupCells()
         bookmarkSectionController.setActive(true)
         refreshAllItems()
     }
@@ -4188,13 +4190,19 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         if let cell = groupCellsByToken[token], cell.superview?.superview == nil {
             return cell
         }
+        let cell = TabGroupCellView()
+        groupCellsByToken[token] = cell
+        return cell
+    }
+
+    /// Drops the cells of groups that are gone. A cached cell holds its
+    /// members' `Tab`s, so it must not outlive the group.
+    private func pruneGroupCells() {
+        guard !groupCellsByToken.isEmpty else { return }
         let liveTokens = Set(tabSectionController.tabItems.compactMap {
             ($0 as? TabGroupSidebarItem)?.group.token
         })
         groupCellsByToken = groupCellsByToken.filter { liveTokens.contains($0.key) }
-        let cell = TabGroupCellView()
-        groupCellsByToken[token] = cell
-        return cell
     }
 
     func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
@@ -4520,6 +4528,9 @@ extension SidebarTabListViewController: TabSectionDelegate {
     
     func tabSectionDidUpdate(with change: TabSectionChange) {
         guard isActive else { return }
+        if change.rootItemsChanged {
+            pruneGroupCells()
+        }
         // Only the restore transaction can deliver a whole window's tabs
         // before this window's bookmarks exist; tabs arriving one at a time
         // in steady state are never gated.

@@ -119,6 +119,9 @@ extension LocalStore {
     private func applyPinSplitPartnerBody(guid: String, partnerLineageId: String?, in context: ModelContext) throws {
         fatalError("not exercised")
     }
+    private func applyPinSplitPanesBody(guid: String, paneLineageIds: [String], in context: ModelContext) throws {
+        fatalError("not exercised")
+    }
     private func clearSplitPartnerBackReferenceBody(of tab: TabDataModel, in context: ModelContext) throws {
         fatalError("not exercised")
     }

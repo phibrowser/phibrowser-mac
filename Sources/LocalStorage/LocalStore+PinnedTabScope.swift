@@ -1461,10 +1461,11 @@ extension LocalStore {
                 let title = fields.title.map { $0 ?? "" }
                 let url = fields.url.flatMap { $0 }
                 let changesSplitPartner = fields.splitPartnerLineageId != nil
-                // A patch with no effective change is a caller bug (M4). Check the three resolved values, not
+                let changesSplitPanes = fields.splitPaneLineageIds != nil
+                // A patch with no effective change is a caller bug (M4). Check the resolved values, not
                 // outer optionals: a present URL unit with nil inside means unchanged too. The §4.9 baseline
                 // guarantee requires nonthrowing completion to mean actual landing.
-                guard title != nil || url != nil || changesSplitPartner else {
+                guard title != nil || url != nil || changesSplitPartner || changesSplitPanes else {
                     throw LocalStoreWriteError.noCandidateSurvived
                 }
                 if title != nil || url != nil {
@@ -1476,6 +1477,9 @@ extension LocalStore {
                     try applyPinSplitPartnerBody(guid: guid,
                                                  partnerLineageId: partnerLineageId,
                                                  in: context)
+                }
+                if let paneLineageIds = fields.splitPaneLineageIds {
+                    try applyPinSplitPanesBody(guid: guid, paneLineageIds: paneLineageIds, in: context)
                 }
 
             case .delete(let guid):
@@ -1586,6 +1590,48 @@ extension LocalStore {
         if let resolvedPartnerGuid {
             try updateTabSplitPartnerBody(resolvedPartnerGuid, partnerGuid: guid, in: context)
         }
+    }
+
+    /// Land `split_pane_uuids`: the members of a split of three or four pins, as `splitPaneGuids` in pane
+    /// order (§7.4 for wider splits). Each member lands its own list; an empty list clears it.
+    ///
+    /// The engine sends a list only once every member resolves under this pin's owner, so a member that no
+    /// longer resolves here leaves the row as it is rather than writing a partial list: the engine still
+    /// sees the row unlisted and keeps waiting. Members are matched by normalized lineage under the same
+    /// owner, as `applyPinSplitPartnerBody` matches a partner.
+    private func applyPinSplitPanesBody(guid: String,
+                                        paneLineageIds: [String],
+                                        in context: ModelContext) throws {
+        guard let tab = try pinnedTabRow(with: guid, in: context) else {
+            throw LocalStoreWriteError.rowNotFound
+        }
+        let scope = try pinnedTabScope(in: context)
+        guard pinnedTab(tab, belongsTo: scope) else {
+            throw LocalStoreWriteError.rowNotInActiveScope
+        }
+
+        var paneGuids: [String] = []
+        if !paneLineageIds.isEmpty {
+            let siblings = try pinnedTabs(
+                profileId: tab.profileId ?? tab.profile?.profileId ?? Self.defaultProfileId,
+                spaceId: tab.spaceId ?? Self.defaultSpaceId,
+                scope: scope,
+                in: context
+            )
+            var guidByLineage: [String: String] = [:]
+            for sibling in siblings {
+                let lineage = PinKind.lineageKey(sibling.pinLineageId ?? sibling.guid)
+                if guidByLineage[lineage] == nil { guidByLineage[lineage] = sibling.guid }
+            }
+            paneGuids = paneLineageIds.compactMap { guidByLineage[PinKind.lineageKey($0)] }
+            guard paneGuids.count == paneLineageIds.count else { return }
+        }
+
+        guard tab.decodedSplitPaneGuids != paneGuids else { return }
+        tab.decodedSplitPaneGuids = paneGuids
+        // Leaving a wider split drops its layout too, unless the row is still half of a pair.
+        if paneGuids.isEmpty, tab.splitPartnerGuid == nil { tab.layout = nil }
+        tab.updatedDate = Date()
     }
 
     /// Clear the link pointing back to this row in the same transaction before split-pin deletion. Write only

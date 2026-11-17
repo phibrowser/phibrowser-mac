@@ -2034,9 +2034,10 @@ stamp of the value it overwrites:
 - URL rules — content takes `contentUpdatedDate`, the target takes
   `targetUpdatedDate`; both use edit time raised above the overwritten stamp,
   which closes the same slow-clock hole. `rank` uses `hlcNow()`.
-- pin `split_partner_uuid` stays on `hlcNow()`. It is separate from the content stamp because `updateTabSplitPartnerBody` is shared with sync
+- pin `split_partner_uuid` and `split_pane_uuids` stay on `hlcNow()`. They are separate from the content stamp because `updateTabSplitPartnerBody` is shared with sync
   landing, so setting `contentUpdatedDate` there would restamp landed remote
-  links as local edits.
+  links as local edits. A bookmark's `split_extra_panes` is ordinary content and
+  takes `contentUpdatedDate` like `secondary_url`.
 - Spaces — there is no edit-date column to take, so the edit time is *recorded*
   instead, in the cursor's `pendingProjection` (see "Marker persistence
   boundary"). `SpaceModel` has no such column and `theme_id`, the overlay
@@ -2078,7 +2079,7 @@ Everything else is still stamped at publish time, on `hlcNow()`:
 | quantity | why it has no edit time |
 | --- | --- |
 | every **rank**, on every kind | a drag has no edit-date column on any kind. A Space rank is the one that comes closest: the stamping pass runs from the drag's own debounced round, so its `hlcNow()` is taken within the debounce of the drag rather than at the next successful pull. That is a consequence of where the pass sits, not a promise — the stamp is still an `hlcNow()`, not a recorded drag time, and it is the pass's clock that a peer compares against |
-| pin `split_partner_uuid` | the only column it could borrow is shared with sync landing (above) |
+| pin `split_partner_uuid`, `split_pane_uuids` | the only column they could borrow is shared with sync landing (above) |
 | a Space with no `reconciled` baseline | first publication is wholesale, so there is no per-field history to preserve; the same applies to a parked Space, which `snapshot` excludes |
 
 ### Where `maxSeen` lives, and why it is not beside the marker
@@ -2428,6 +2429,40 @@ receives a tombstone for a bookmark it has just edited still hard-deletes it and
 loses the edit — nothing regresses, the guarantee is simply not yet universal.
 There is no cursor-file format change. After a yield, a downgrade leaves the row
 live and unpublished until the build is upgraded or the tombstone cursor expires.
+
+## Splits of three or four panes
+
+A pair keeps its original encoding: a bookmark's `secondary_url` and
+`secondary_title`, and a pin's `split_partner_uuid`. A wider split adds one
+field to the encrypted payload (`Sources/Sync/Phi/Proto/phi_entity.proto`); the
+server stores the ciphertext and needs no change.
+
+| Kind | Field | Value |
+| --- | --- | --- |
+| bookmark | `split_extra_panes` (16) | JSON array of `{"url", "title"}` for the panes after `secondary_url`, in pane order; `""` once cleared |
+| pin | `split_pane_uuids` (14) | JSON array of every member's `pin_uuid`, in pane order, own included; `""` once cleared. Members share one owner. `split_partner_uuid` is `""` |
+
+- **Presence.** Unlike every other mutable field, these are absent until the
+  item first has a third pane, and stay present (as `""` once cleared)
+  afterwards. A 2-pane split and a plain item therefore serialize exactly as
+  before, and upgrading republishes nothing. The merge assigns the field only
+  when one side carries it, and the content signature compares its text only,
+  so absent and `""` mean the same "no further panes".
+- **Pin landing** follows the pair rules (section 7.4). Each member lands its
+  own list, written as physical `splitPaneGuids` only once every member exists
+  under the owner. Until then the row is left alone, the cursor waits on the
+  first missing member in `pendingPartnerLineage`, and the snapshot re-emits the
+  baseline's list rather than `""`. The member that completes the list also
+  writes it to members still waiting for that same list, in the same
+  transaction. A genuine local unsplit is published by the same baseline
+  doctoring as an unlinked pair (`clearedPinSplitPartner`).
+- **Mixed versions.** An older client keeps the field in `unknownFields` when it
+  merges, so it never erases it by landing. It shows the first two bookmark
+  panes, and a wider pin split as separate pins, which is what it showed before.
+  When it republishes its own edit of such an item the payload loses the field;
+  that payload carries no timestamp for it, so a newer device's stamped value
+  wins the merge and the newer device republishes it. A device with no newer
+  peer online shows the older client's view until one appears.
 
 ## Refusals, retries and account switches
 

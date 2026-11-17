@@ -154,6 +154,10 @@ enum PinKind: OwnedItemKind {
         entity.title = string(local.title)
         entity.url = string(local.url.absoluteString)
         entity.splitPartnerUuid = string(local.splitPartnerLineageId.map(lineageKey) ?? "")
+        // Absent unless the pin is in a wider split; `stamp` turns absent into "" once a baseline has it.
+        if !local.splitPaneLineageIds.isEmpty {
+            entity.splitPaneUuids = string(encodePaneLineages(local.splitPaneLineageIds.map(lineageKey)))
+        }
         entity.source = Int32(truncatingIfNeeded: local.source)
         entity.createdAtMs = milliseconds(local.createdDate)
         return entity
@@ -170,25 +174,27 @@ enum PinKind: OwnedItemKind {
         entity.rank.updatedAtMs
     }
 
-    /// A9's content half (C4-a): the newest of the three content stamps, matching
+    /// A9's content half (C4-a): the newest of the content stamps, matching
     /// `contentSignature`'s field set. A remote rename or retitle now cancels a local pending
     /// deletion exactly as a remote reorder out of a deleted scope already did.
     static func contentStamp(of entity: Phi_PhiPinTabEntity) -> Int64 {
         max(entity.title.updatedAtMs, entity.url.updatedAtMs,
-            entity.splitPartnerUuid.updatedAtMs)
+            entity.splitPartnerUuid.updatedAtMs, entity.splitPaneUuids.updatedAtMs)
     }
 
     /// Value bytes of the three content fields with timestamps zeroed, like SyncableSettings.signature(of:).
     /// Exclude rank because move carries it through PinApplyOp.move(guid:index:); including it would add an
     /// empty field patch for every reorder. Include split_partner_uuid, carried by
     /// PinFieldPatch.splitPartnerLineageId, so a split-link-only change produces a step and keeps both
-    /// devices' pairs consistent.
+    /// devices' pairs consistent. split_pane_uuids joins for the same reason; it contributes its text only,
+    /// so an absent field and "" sign the same, as for `BookmarkKind`'s extra panes.
     static func contentSignature(of entity: Phi_PhiPinTabEntity) -> Data {
         var out = Data()
         for value in [entity.title, entity.url, entity.splitPartnerUuid] {
             out.append(SyncableSettings.signature(of: value))
             out.append(0)
         }
+        out.append(contentsOf: Array(entity.splitPaneUuids.stringValue.utf8))
         return out
     }
 
@@ -225,6 +231,16 @@ enum PinKind: OwnedItemKind {
            let baseline, !baseline.splitPartnerUuid.stringValue.isEmpty {
             out.splitPartnerUuid = baseline.splitPartnerUuid
         }
+        // The same §7.4 rule for a wider split's members: a list whose members have not all landed is not
+        // a local unsplit. A genuine one reaches here with the baseline already cleared by
+        // `clearedPinSplitPartner`, and is then the explicit "" a baseline that carried the field needs.
+        if out.splitPaneUuids.stringValue.isEmpty, let baseline {
+            if !baseline.splitPaneUuids.stringValue.isEmpty {
+                out.splitPaneUuids = baseline.splitPaneUuids
+            } else if baseline.hasSplitPaneUuids {
+                out.splitPaneUuids = string("")
+            }
+        }
 
         guard let baseline else {
             let created = PhiHybridClock.editStamp(editWallMs: contentStamp,
@@ -233,6 +249,7 @@ enum PinKind: OwnedItemKind {
             out.title.updatedAtMs = created
             out.url.updatedAtMs = created
             out.splitPartnerUuid.updatedAtMs = now
+            if out.hasSplitPaneUuids { out.splitPaneUuids.updatedAtMs = now }
             return out
         }
         // R-exec-16, as in BookmarkKind.stamp: created_at_ms and source do not use LWW, while PinFieldPatch
@@ -247,6 +264,11 @@ enum PinKind: OwnedItemKind {
         out.url.updatedAtMs = restamped(out.url, baseline.url, contentStamp)
         out.splitPartnerUuid.updatedAtMs = restamped(out.splitPartnerUuid,
                                                      baseline.splitPartnerUuid, now)
+        // Like split_partner_uuid, membership is written by a split gesture that does not set
+        // contentUpdatedDate, so it takes `now`.
+        if out.hasSplitPaneUuids {
+            out.splitPaneUuids.updatedAtMs = restamped(out.splitPaneUuids, baseline.splitPaneUuids, now)
+        }
         return out
     }
 
@@ -268,6 +290,11 @@ enum PinKind: OwnedItemKind {
         merged.url = SyncableSettings.lwwWinner(local.url, remote.url)
         merged.splitPartnerUuid = SyncableSettings.lwwWinner(local.splitPartnerUuid,
                                                              remote.splitPartnerUuid)
+        // Only when a side carries it: the winner of two absent fields would emit an empty message and
+        // change the bytes of every pin that never joined a wider split.
+        if local.hasSplitPaneUuids || remote.hasSplitPaneUuids {
+            merged.splitPaneUuids = SyncableSettings.lwwWinner(local.splitPaneUuids, remote.splitPaneUuids)
+        }
         // Not LWW: nonzero wins; if both are nonzero and differ, choose the smaller value, as for bookmarks.
         merged.source = mergedSource(local.source, remote.source)
         // Not LWW: retain the earliest creation time.
@@ -359,7 +386,8 @@ enum PinKind: OwnedItemKind {
     }
 
     /// Pin equivalence uses only synced fields.
-    /// Match LocalStore's PinnedTabVariantSignature (§7.1 / R-M3-3-16): title, url, and split partner. The
+    /// Match LocalStore's PinnedTabVariantSignature (§7.1 / R-M3-3-16): title, url, split partner and
+    /// wider-split members. The
     /// local structure also includes partner content, unavailable here because PhiLocalPin references a
     /// partner lineage, not a row. The partner's identity publishes its content changes separately. Copies
     /// whose partner content changed without a lineage change remain the same pin, as intended.
@@ -369,6 +397,7 @@ enum PinKind: OwnedItemKind {
         let title: String
         let url: String
         let splitPartnerLineage: String?
+        let splitPaneLineages: [String]
     }
 
     private static func variantSignature(of local: PhiLocalPin) -> PinVariantSignature {
@@ -376,7 +405,31 @@ enum PinKind: OwnedItemKind {
                             url: local.url.absoluteString,
                             // The local partner value may be uppercase (legacy guid fallback, P11); normalize
                             // before comparison.
-                            splitPartnerLineage: local.splitPartnerLineageId.map(lineageKey))
+                            splitPartnerLineage: local.splitPartnerLineageId.map(lineageKey),
+                            splitPaneLineages: local.splitPaneLineageIds.map(lineageKey))
+    }
+
+    // MARK: - Wider splits (split_pane_uuids)
+
+    /// The `split_pane_uuids` text for already-normalized member lineages: a JSON array of strings, or
+    /// "" for none.
+    static func encodePaneLineages(_ lineages: [String]) -> String {
+        guard !lineages.isEmpty else { return "" }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(lineages) else { return "" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// The normalized member lineages `entity` names. Absent, "" and text that does not decode all read as
+    /// no wider split, the same fallback the local column uses.
+    static func paneLineages(of entity: Phi_PhiPinTabEntity) -> [String] {
+        let text = entity.splitPaneUuids.stringValue
+        guard !text.isEmpty,
+              let lineages = try? JSONDecoder().decode([String].self, from: Data(text.utf8)) else {
+            return []
+        }
+        return lineages.map(lineageKey)
     }
 
     // MARK: - Private

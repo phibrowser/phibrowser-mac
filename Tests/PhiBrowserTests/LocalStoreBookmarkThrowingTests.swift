@@ -640,6 +640,31 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         XCTAssertEqual(landed?.parent?.guid, root, "the landed row hangs off the freshly materialized root")
     }
 
+    // PHI-2046: a landed split bookmark of four panes keeps the panes after the first two, and
+    // a later patch without them clears them.
+    func testLandingASplitBookmarkStoresAndClearsItsExtraPanes() async throws {
+        let store = try await makeStoreWithSpaces()
+        let panes = [PhiLocalBookmark.ExtraPane(url: "https://c.example/", title: "C"),
+                     PhiLocalBookmark.ExtraPane(url: "https://d.example/", title: nil)]
+
+        try await store.applyBookmarkSyncBatchThrowing([
+            .create(.fixture(guid: "g-split", syncId: "b-split", spaceId: Self.otherSpaceId,
+                             profileId: Self.profileId, title: "Split",
+                             secondaryUrl: URL(string: "https://b.example/"),
+                             splitExtraPanes: panes)),
+        ])
+        let landed = try row("g-split", in: store)?.decodedSplitExtraPanes
+        XCTAssertEqual(landed, [SplitBookmarkExtraPane(url: "https://c.example/", title: "C"),
+                                SplitBookmarkExtraPane(url: "https://d.example/", title: nil)])
+
+        try await store.applyBookmarkSyncBatchThrowing([
+            .update(guid: "g-split", fields: BookmarkFieldPatch(splitExtraPanes: [])),
+        ])
+        let cleared = try row("g-split", in: store)
+        XCTAssertEqual(cleared?.decodedSplitExtraPanes, [])
+        XCTAssertNotNil(cleared?.secondaryUrl, "Clearing the extra panes leaves the pair intact")
+    }
+
     // F2, positive control: empty folders remain deletable.
     func testDeletingAnEmptyFolderStillSucceeds() async throws {
         let store = try await makeStoreWithSpaces()

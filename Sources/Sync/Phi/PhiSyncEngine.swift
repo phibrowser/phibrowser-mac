@@ -6890,9 +6890,11 @@ actor PhiSyncEngine {
         switch envelope.kind {
         case .bookmark(let entity):
             observeStamps([entity.spaceUuid, entity.parentUuid, entity.rank, entity.title,
-                           entity.url, entity.secondaryURL, entity.secondaryTitle])
+                           entity.url, entity.secondaryURL, entity.secondaryTitle,
+                           entity.splitExtraPanes])
         case .pinTab(let entity):
-            observeStamps([entity.rank, entity.title, entity.url, entity.splitPartnerUuid])
+            observeStamps([entity.rank, entity.title, entity.url, entity.splitPartnerUuid,
+                           entity.splitPaneUuids])
         case .urlRule(let entity):
             observeStamps([entity.host, entity.pathPrefix, entity.ask, entity.targetSpaceUuid,
                            entity.rank])
@@ -7731,6 +7733,7 @@ private func landBookmarks(_ input: OwnedLandingInput,
                 secondaryUrl: URL(string: entity.secondaryURL.stringValue),
                 secondaryTitle: entity.secondaryTitle.stringValue.isEmpty
                     ? nil : entity.secondaryTitle.stringValue,
+                splitExtraPanes: BookmarkKind.extraPanes(of: entity),
                 source: Int(entity.source),
                 createdDate: Date(timeIntervalSince1970: Double(entity.createdAtMs) / 1000),
                 contentUpdatedDate: nil, locationUpdatedDate: nil)
@@ -7945,7 +7948,8 @@ private func landBookmarks(_ input: OwnedLandingInput,
     return outcome
 }
 
-/// Convert the entity's four content fields to one local field patch.
+/// Convert the entity's content fields to one local field patch. The extra panes are always part of
+/// it: an absent `split_extra_panes` means no further panes, exactly like "".
 @MainActor
 private func bookmarkPatch(_ entity: Phi_PhiBookmarkEntity) -> BookmarkFieldPatch {
     BookmarkFieldPatch(
@@ -7953,7 +7957,8 @@ private func bookmarkPatch(_ entity: Phi_PhiBookmarkEntity) -> BookmarkFieldPatc
         url: .some(URL(string: entity.url.stringValue)),
         secondaryUrl: .some(URL(string: entity.secondaryURL.stringValue)),
         secondaryTitle: .some(entity.secondaryTitle.stringValue.isEmpty
-                              ? nil : entity.secondaryTitle.stringValue))
+                              ? nil : entity.secondaryTitle.stringValue),
+        splitExtraPanes: BookmarkKind.extraPanes(of: entity))
 }
 
 // MARK: - PinKind adapter
@@ -8055,19 +8060,31 @@ final class PinSyncRoundState {
 
     /// Reflect persisted split links in the in-memory projection without another fetch. Otherwise
     /// snapshot doctoring would see the newly accepted baseline link but an old unlinked local row,
-    /// misclassify it as a local unlink, and split the peer's pair in the same round.
-    func noteSplitPartnerWrites(linked: [String: String], cleared: Set<String>) {
-        guard !linked.isEmpty || !cleared.isEmpty else { return }
+    /// misclassify it as a local unlink, and split the peer's pair in the same round. The member
+    /// lists of wider splits follow the same rule.
+    func noteSplitPartnerWrites(linked: [String: String], cleared: Set<String>,
+                                linkedPanes: [String: [String]] = [:],
+                                clearedPanes: Set<String> = []) {
+        guard !linked.isEmpty || !cleared.isEmpty || !linkedPanes.isEmpty || !clearedPanes.isEmpty
+        else { return }
         for index in locals.indices {
             let guid = locals[index].guid
+            var changed = false
             if let partner = linked[guid] {
                 locals[index].splitPartnerLineageId = partner
+                changed = true
             } else if cleared.contains(guid) {
                 locals[index].splitPartnerLineageId = nil
-            } else {
-                continue
+                changed = true
             }
-            rowByGuid[guid] = locals[index]
+            if let panes = linkedPanes[guid] {
+                locals[index].splitPaneLineageIds = panes
+                changed = true
+            } else if clearedPanes.contains(guid) {
+                locals[index].splitPaneLineageIds = []
+                changed = true
+            }
+            if changed { rowByGuid[guid] = locals[index] }
         }
     }
 
@@ -8083,6 +8100,74 @@ final class PinSyncRoundState {
         }
         return false
     }
+
+    /// `stillCarriesSplitLink` for a wider split's member list.
+    func stillCarriesSplitPanes(_ identity: String, maps: OwnedOwnerMaps) -> Bool {
+        let resolve = maps.resolver
+        for row in locals where !row.splitPaneLineageIds.isEmpty {
+            if PinKind.identity(of: row, resolve: resolve, scope: localScope) == identity {
+                return true
+            }
+        }
+        return false
+    }
+}
+
+/// Section 7.4 for a split of three or four pins: resolve `entity`'s member list against the round's
+/// landing projection and return the member lineage it still waits for, "" when it waits for none.
+///
+/// A list whose members all exist under `ownerKey` goes into `fields` (each member lands its own
+/// list). A member that arrived in an earlier round, could not resolve then and is still waiting
+/// for this same list gets it here too, in the same transaction, like a pair's reverse link: a
+/// member arriving in this batch is left to its own arrival. A list that names a member not landed
+/// yet leaves the row untouched; `PinKind.stamp` then re-emits the baseline's list rather than "".
+/// An empty list clears a local one.
+@MainActor
+private func landPinSplitPanes(_ entity: Phi_PhiPinTabEntity, identity: String, guid: String,
+                               ownerKey: String, projected: [String: PhiLocalPin],
+                               ownerOfGuid: [String: String], state: PinSyncRoundState,
+                               table: PhiOwnedItemTable, plannedIdentities: Set<String>,
+                               fields: inout PinFieldPatch, reverseLinks: inout [PinApplyOp],
+                               linkedPanes: inout [String: [String]],
+                               clearedPanes: inout Set<String>,
+                               outcome: inout OwnedLandingOutcome) -> String {
+    let panes = PinKind.paneLineages(of: entity)
+    let localPanes = (state.rowByGuid[guid]?.splitPaneLineageIds ?? []).map(PinKind.lineageKey)
+    guard !panes.isEmpty else {
+        if !localPanes.isEmpty {
+            fields.splitPaneLineageIds = .some([])
+            clearedPanes.insert(guid)
+        }
+        return ""
+    }
+    var memberOf: [String: PhiLocalPin] = [:]
+    for row in projected.values where ownerOfGuid[row.guid] == ownerKey {
+        let lineage = PinKind.lineageKey(row.lineageId)
+        if memberOf[lineage] == nil { memberOf[lineage] = row }
+    }
+    if let missing = panes.first(where: { memberOf[$0] == nil }) { return missing }
+
+    if panes != localPanes {
+        fields.splitPaneLineageIds = .some(panes)
+        linkedPanes[guid] = panes
+    }
+    let thisLineage = PinKind.lineageKey(pinIdentityHalves(identity).lineage)
+    for lineage in panes where lineage != thisLineage {
+        guard let member = memberOf[lineage], linkedPanes[member.guid] == nil else { continue }
+        let memberIdentity = lineage + ":" + ownerKey
+        guard !plannedIdentities.contains(memberIdentity),
+              let cursor = table.cursors[memberIdentity], cursor.pendingPartnerLineage != nil,
+              let bytes = cursor.reconciled,
+              let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
+              let baseline = PinKind.entity(from: envelope),
+              PinKind.paneLineages(of: baseline) == panes,
+              member.splitPaneLineageIds.map(PinKind.lineageKey) != panes else { continue }
+        reverseLinks.append(.update(guid: member.guid,
+                                    fields: PinFieldPatch(splitPaneLineageIds: .some(panes))))
+        linkedPanes[member.guid] = panes
+        outcome.pendingPartnerLineages[memberIdentity] = ""
+    }
+    return ""
 }
 
 /// Split pin identity lineage:ownerKey at the first colon. isNormalizedLineage rejects colons so
@@ -8124,20 +8209,31 @@ func clearedPinSplitPartners(_ baselines: [String: Data], now: Int64, maps: Owne
 /// link. Do not clear intact pairs merely because pendingPartnerLineage is nil: they also finished
 /// waiting. Doing so would restamp/rebroadcast every intact pair each round, consuming the
 /// publication budget on both devices.
+///
+/// A wider split's member list (split_pane_uuids) is cleared by the same rule, independently of the
+/// partner: a split that shrinks to a pair gains a partner and loses its list.
 @MainActor
 func clearedPinSplitPartner(_ bytes: Data, now: Int64, maps: OwnedOwnerMaps,
                             state: PinSyncRoundState) -> Data? {
     guard let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
-          var entity = PinKind.entity(from: envelope),
-          !entity.splitPartnerUuid.stringValue.isEmpty else { return nil }
-    // A locally intact link is not an unlink; preserve its bytes.
-    guard !state.stillCarriesSplitLink(PinKind.identity(of: entity), maps: maps) else {
-        return nil
-    }
+          var entity = PinKind.entity(from: envelope) else { return nil }
+    let identity = PinKind.identity(of: entity)
     var cleared = Phi_PhiSettingValue()
     cleared.stringValue = ""
     cleared.updatedAtMs = now
-    entity.splitPartnerUuid = cleared
+    var changed = false
+    // A locally intact link is not an unlink; preserve its bytes.
+    if !entity.splitPartnerUuid.stringValue.isEmpty,
+       !state.stillCarriesSplitLink(identity, maps: maps) {
+        entity.splitPartnerUuid = cleared
+        changed = true
+    }
+    if !entity.splitPaneUuids.stringValue.isEmpty,
+       !state.stillCarriesSplitPanes(identity, maps: maps) {
+        entity.splitPaneUuids = cleared
+        changed = true
+    }
+    guard changed else { return nil }
     return try? PinKind.envelope(entity).serializedData()
 }
 
@@ -8739,6 +8835,9 @@ private func landPins(_ input: OwnedLandingInput,
     var reverseLinks: [PinApplyOp] = []
     var linkedPartners: [String: String] = [:]
     var clearedPartners: Set<String> = []
+    var linkedPanes: [String: [String]] = [:]
+    var clearedPanes: Set<String> = []
+    let plannedIdentities = Set(planned.map(\.identity))
     for item in planned where item.step.kind != .delete {
         guard let entity = item.entity, let guid = guidOf[item.identity],
               !outcome.parked.contains(item.identity) else { continue }
@@ -8748,6 +8847,9 @@ private func landPins(_ input: OwnedLandingInput,
             fields.url = .some(URL(string: entity.url.stringValue))
         }
         let partner = PinKind.lineageKey(entity.splitPartnerUuid.stringValue)
+        // The lineage this arrival still waits for, "" for none; the pair and the wider-split checks
+        // below share the one cursor field.
+        var partnerWait = ""
         if partner.isEmpty {
             // A remote unlink clears the local link and pending wait. If the row is already
             // unlinked, avoid a redundant patch and updatedDate write.
@@ -8755,7 +8857,6 @@ private func landPins(_ input: OwnedLandingInput,
                 fields.splitPartnerLineageId = .some(nil)
                 clearedPartners.insert(guid)
             }
-            outcome.pendingPartnerLineages[item.identity] = ""
         } else {
             let partnerRow = projected.values.first {
                 $0.guid != guid && ownerOfGuid[$0.guid] == item.ownerKey
@@ -8765,7 +8866,7 @@ private func landPins(_ input: OwnedLandingInput,
             linkedPartners[guid] = partner
             // Record the missing partner lineage for a partially landed pair; empty means no longer
             // waiting.
-            outcome.pendingPartnerLineages[item.identity] = partnerRow == nil ? partner : ""
+            partnerWait = partnerRow == nil ? partner : ""
             // Repair the reverse link in the same transaction (section 7.4). The partner may have
             // arrived in an earlier round and still be waiting; updating only this arrival would
             // leave peer displays inconsistent until another local change.
@@ -8783,7 +8884,20 @@ private func landPins(_ input: OwnedLandingInput,
                 }
             }
         }
+        // A split of three or four pins (split_pane_uuids) lands by the same rules: write the
+        // member list only when every member exists under this owner, otherwise leave the row
+        // untouched and wait on the first missing member.
+        let panesWait = landPinSplitPanes(entity, identity: item.identity, guid: guid,
+                                          ownerKey: item.ownerKey, projected: projected,
+                                          ownerOfGuid: ownerOfGuid, state: state,
+                                          table: input.table,
+                                          plannedIdentities: plannedIdentities,
+                                          fields: &fields, reverseLinks: &reverseLinks,
+                                          linkedPanes: &linkedPanes, clearedPanes: &clearedPanes,
+                                          outcome: &outcome)
+        outcome.pendingPartnerLineages[item.identity] = partnerWait.isEmpty ? panesWait : partnerWait
         guard fields.title != nil || fields.url != nil || fields.splitPartnerLineageId != nil
+                || fields.splitPaneLineageIds != nil
         else { continue }
         ops.append(.update(guid: guid, fields: fields))
     }
@@ -8846,7 +8960,8 @@ private func landPins(_ input: OwnedLandingInput,
     }
     // Reflect transactionally written split links in the round projection immediately, preventing
     // publication from misreading a newly received link as a local unlink (section 7.4).
-    state.noteSplitPartnerWrites(linked: linkedPartners, cleared: clearedPartners)
+    state.noteSplitPartnerWrites(linked: linkedPartners, cleared: clearedPartners,
+                                 linkedPanes: linkedPanes, clearedPanes: clearedPanes)
 
     // Recheck post-landing rows before baseline write-back (section 4.5). apply rebuilds its cache,
     // so this observes committed state.

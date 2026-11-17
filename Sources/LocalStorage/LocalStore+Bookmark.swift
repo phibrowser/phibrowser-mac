@@ -2425,6 +2425,8 @@ extension LocalStore {
         var contentUpdatedDate: Date?
         var secondaryUrl: URL?
         var secondaryTitle: String?
+        /// A wider split's panes after the first two; stored only when `secondaryUrl` is set.
+        var splitExtraPanes: [SplitBookmarkExtraPane]
         /// The `TabSource` raw value.
         var source: Int
 
@@ -2441,6 +2443,7 @@ extension LocalStore {
              contentUpdatedDate: Date? = nil,
              secondaryUrl: URL? = nil,
              secondaryTitle: String? = nil,
+             splitExtraPanes: [SplitBookmarkExtraPane] = [],
              source: Int = 0) {
             self.guid = guid
             self.syncId = syncId
@@ -2455,6 +2458,7 @@ extension LocalStore {
             self.contentUpdatedDate = contentUpdatedDate
             self.secondaryUrl = secondaryUrl
             self.secondaryTitle = secondaryTitle
+            self.splitExtraPanes = splitExtraPanes
             self.source = source
         }
     }
@@ -2543,6 +2547,9 @@ extension LocalStore {
             node.isCreatedByChromium = false
             node.secondaryUrl = row.secondaryUrl
             node.secondaryTitle = row.secondaryTitle
+            if row.secondaryUrl != nil {
+                node.decodedSplitExtraPanes = row.splitExtraPanes
+            }
             node.source = row.source
             node.syncId = row.syncId
             node.contentUpdatedDate = row.contentUpdatedDate
@@ -2700,6 +2707,9 @@ extension LocalStore {
                                        url: fields.url.flatMap { $0?.absoluteString },
                                        secondaryUrl: fields.secondaryUrl.map { $0?.absoluteString },
                                        secondaryTitle: fields.secondaryTitle,
+                                       splitExtraPanes: fields.splitExtraPanes.map { panes in
+                                           panes.map { SplitBookmarkExtraPane(url: $0.url, title: $0.title) }
+                                       },
                                        allowsEmptyTitle: true,
                                        in: context)
 
@@ -2775,6 +2785,9 @@ extension LocalStore {
                            contentUpdatedDate: row.contentUpdatedDate,
                            secondaryUrl: row.secondaryUrl,
                            secondaryTitle: row.secondaryTitle,
+                           splitExtraPanes: row.splitExtraPanes.map {
+                               SplitBookmarkExtraPane(url: $0.url, title: $0.title)
+                           },
                            source: row.source)
     }
 }

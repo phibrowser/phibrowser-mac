@@ -28,6 +28,7 @@ final class FloatingSidebarHostViewController: NSViewController {
     private var floatingSidebarLastShownAt: Date?
     private var floatingSidebarShownFromRightToLeft = false
     private var floatingSidebarOcclusionObserver: NSObjectProtocol?
+    private var floatingSidebarGeometryObservers: [NSObjectProtocol] = []
     private var isPointerInsideFloatingSidebar = false
     private var isPointerInsideFloatingSidebarTrigger = false
     /// The strip along the panel's inner edge (the one facing the page)
@@ -378,6 +379,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         if let observer = floatingSidebarOcclusionObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        floatingSidebarGeometryObservers.forEach { NotificationCenter.default.removeObserver($0) }
         popoverObservers.forEach { NotificationCenter.default.removeObserver($0) }
     }
 
@@ -570,6 +572,35 @@ final class FloatingSidebarHostViewController: NSViewController {
         }
     }
 
+    /// A window resize (zoom, entering or leaving full screen) can move the
+    /// panel out from under a stationary pointer. macOS 27 rebuilds the
+    /// tracking areas for the new geometry without sending the exit the
+    /// pointer's departure implies, so the panel would stay up until the
+    /// pointer crossed it again; it re-reads the pointer itself instead.
+    private func ensureFloatingSidebarGeometryObservers() {
+        guard floatingSidebarGeometryObservers.isEmpty, let window = view.window else { return }
+        let names: [Notification.Name] = [
+            NSWindow.didResizeNotification,
+            NSWindow.didEnterFullScreenNotification,
+            NSWindow.didExitFullScreenNotification,
+        ]
+        floatingSidebarGeometryObservers = names.map { name in
+            NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                self?.floatingSidebarWindowGeometryDidChange()
+            }
+        }
+    }
+
+    private func floatingSidebarWindowGeometryDidChange() {
+        guard let panel = floatingSidebarContainerView, panel.isHidden == false else { return }
+        refreshFloatingSidebarPointerState()
+        guard !isPointerInsideFloatingSidebar, !isPointerInsideFloatingSidebarTrigger else { return }
+        // The delayed hide checks the pointer again when it fires; a later
+        // resize in the same transition replaces it, so the settled geometry
+        // decides.
+        scheduleFloatingSidebarHide()
+    }
+
     /// Syncs the hidden panel to the docked column's width.
     ///
     /// While the column is expanded the panel cannot show, and a divider drag
@@ -735,6 +766,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         flushPendingFloatingSidebarWidthSync()
         ensureFloatingSidebarIfNeeded()
         ensureFloatingSidebarOcclusionObserver()
+        ensureFloatingSidebarGeometryObservers()
         cancelFloatingSidebarHide()
 
         guard let panel = floatingSidebarContainerView else { return }

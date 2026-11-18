@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import Cocoa
+import Combine
 
 class PhiSplitView: NSSplitView {
 
@@ -23,6 +24,43 @@ class PhiSplitView: NSSplitView {
 /// resize cursor.
 class PhiSplitViewController: NSSplitViewController {
     static let dividerHitThickness: CGFloat = 14
+
+    let sidebarExpansionDidFinish = PassthroughSubject<Void, Never>()
+    private var sidebarTargetCollapsed = false
+    private var sidebarTransitions = 0
+    private var pendingExpansion: Int?
+    /// An animated expansion has started and not finished. AppKit publishes
+    /// the expanded state as soon as the animation starts.
+    var isSidebarExpanding: Bool { pendingExpansion != nil }
+
+    func setSidebarCollapsed(_ collapsed: Bool, item: NSSplitViewItem, animated: Bool,
+                             dockWidth: CGFloat?) {
+        sidebarTargetCollapsed = collapsed
+        sidebarTransitions += 1
+        let transition = sidebarTransitions
+        pendingExpansion = animated && !collapsed ? transition : nil
+        let finished = { [weak self] in
+            guard let self, self.pendingExpansion == transition else { return }
+            self.pendingExpansion = nil
+            self.sidebarExpansionDidFinish.send()
+        }
+
+        if !collapsed, let dockWidth {
+            item.expand(atWidth: dockWidth, animated: animated, in: splitView,
+                        limits: MainSplitViewController.leftItemMinWidth...MainSplitViewController.leftItemMaxWidth,
+                        completion: finished)
+        } else if animated {
+            item.setCollapsedAnimated(collapsed) { [weak self, weak item] in
+                // AppKit can hide the column when a superseded collapse completes.
+                if collapsed, self?.sidebarTargetCollapsed == false, let item, item.isCollapsed {
+                    item.isCollapsed = false
+                }
+                finished()
+            }
+        } else {
+            item.isCollapsed = collapsed
+        }
+    }
 
     override func splitView(_ splitView: NSSplitView,
                             effectiveRect proposedEffectiveRect: NSRect,
@@ -75,8 +113,11 @@ extension NSSplitViewItem {
     /// caller rather than the item: an expansion cut short would otherwise
     /// leave the pinned width behind as the item's own limits.
     func expand(atWidth width: CGFloat, animated: Bool, in splitView: NSSplitView,
-                limits: ClosedRange<CGFloat>) {
-        guard isCollapsed else { return }
+                limits: ClosedRange<CGFloat>, completion: (() -> Void)? = nil) {
+        guard isCollapsed else {
+            completion?()
+            return
+        }
         minimumThickness = width
         maximumThickness = width
         let restoreLimits = { [weak self] in
@@ -87,11 +128,15 @@ extension NSSplitViewItem {
             // The expand animation runs to the collapsed view's own size,
             // regardless of the limits.
             viewController.view.setFrameSize(NSSize(width: width, height: viewController.view.frame.height))
-            setCollapsedAnimated(false, completion: restoreLimits)
+            setCollapsedAnimated(false) {
+                restoreLimits()
+                completion?()
+            }
         } else {
             isCollapsed = false
             splitView.layoutSubtreeIfNeeded()
             restoreLimits()
+            completion?()
         }
     }
 }

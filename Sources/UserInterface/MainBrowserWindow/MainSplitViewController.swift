@@ -24,6 +24,10 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     private var shellSplit: ShellSplitViewController? { state.windowController?.shellSplit }
     private let sidebarGeometryChanges = PassthroughSubject<Void, Never>()
 
+    var windowSplitViewController: PhiSplitViewController {
+        shellSplit?.splitViewController ?? splitViewController
+    }
+
     var isSidebarCollapsed: Bool {
         if isHosted { return shellSplit?.isSidebarCollapsed ?? false }
         return sideBarSplitViewItem?.isCollapsed
@@ -396,19 +400,10 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
         loadViewIfNeeded()
         let target = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional || collapsed
         guard sideBarSplitViewItem.isCollapsed != target else { return }
-        if !target, let width = pendingDockWidth {
-            pendingDockWidth = nil
-            sideBarSplitViewItem.expand(atWidth: width, animated: animated,
-                                        in: splitViewController.splitView,
-                                        limits: Self.leftItemMinWidth...Self.leftItemMaxWidth)
-            updateSidebarWidth()
-            return
-        }
-        if animated {
-            sideBarSplitViewItem.setCollapsedAnimated(target)
-        } else {
-            sideBarSplitViewItem.isCollapsed = target
-        }
+        let dockWidth = pendingDockWidth
+        if !target { pendingDockWidth = nil }
+        splitViewController.setSidebarCollapsed(target, item: sideBarSplitViewItem, animated: animated,
+                                                dockWidth: dockWidth)
         updateSidebarWidth()
     }
 

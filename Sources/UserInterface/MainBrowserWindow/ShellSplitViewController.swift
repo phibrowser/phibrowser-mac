@@ -60,7 +60,7 @@ final class ShellSplitViewController: NSViewController {
         recordSidebarWidth()
     }
 
-    private let splitViewController = PhiSplitViewController()
+    let splitViewController = PhiSplitViewController()
     let sidebarHost = ShellSidebarHostViewController()
     let contentHost = ShellContentHostViewController()
     let floatingSidebarHost = FloatingSidebarHostViewController()
@@ -255,18 +255,10 @@ final class ShellSplitViewController: NSViewController {
     func setSidebarCollapsed(_ collapsed: Bool, animated: Bool) {
         let target = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional || collapsed
         guard sidebarSplitViewItem.isCollapsed != target else { return }
-        if !target, let width = pendingDockWidth {
-            pendingDockWidth = nil
-            sidebarSplitViewItem.expand(atWidth: width, animated: animated,
-                                        in: splitViewController.splitView,
-                                        limits: Self.leftItemMinWidth...Self.leftItemMaxWidth)
-            return
-        }
-        if animated {
-            sidebarSplitViewItem.setCollapsedAnimated(target)
-        } else {
-            sidebarSplitViewItem.isCollapsed = target
-        }
+        let dockWidth = pendingDockWidth
+        if !target { pendingDockWidth = nil }
+        splitViewController.setSidebarCollapsed(target, item: sidebarSplitViewItem, animated: animated,
+                                                dockWidth: dockWidth)
     }
 
     /// Aligns the column to `width` / `collapsed`. The column persists across
@@ -276,9 +268,7 @@ final class ShellSplitViewController: NSViewController {
         guard !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional else { return }
         // An explicit width wins over the one the floating panel left.
         if width != nil { pendingDockWidth = nil }
-        if sidebarSplitViewItem.isCollapsed != collapsed {
-            sidebarSplitViewItem.isCollapsed = collapsed
-        }
+        setSidebarCollapsed(collapsed, animated: false)
         guard !collapsed, let width, width > 0 else { return }
         let clamped = min(max(width, Self.leftItemMinWidth), Self.leftItemMaxWidth)
         splitViewController.splitView.setPosition(SidebarPosition.isOnRight ? splitViewController.splitView.bounds.width - splitViewController.splitView.dividerThickness - clamped : clamped, ofDividerAt: 0)

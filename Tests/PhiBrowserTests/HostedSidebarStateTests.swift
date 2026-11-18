@@ -707,6 +707,64 @@ final class HostedSidebarStateTests: XCTestCase {
         session.omniBoxContainerViewController?.hideOmniBox()
     }
 
+    func testTrafficLightsFollowTheLatestAnimatedSidebarToggle() async throws {
+        let slot = makeSlot()
+        let session = makeSession(in: slot, spaceId: "sidebar-toggle")
+        session.presentInShell(deferringChromium: true)
+        let split = try XCTUnwrap(slot.shell?.split)
+        let window = try XCTUnwrap(slot.shell?.window)
+        window.orderFront(nil)
+        await drainPresentationUpdates()
+        let buttons = try [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].map {
+            try XCTUnwrap(window.standardWindowButton($0))
+        }
+        func assertHidden(_ hidden: Bool, line: UInt = #line) {
+            for button in buttons { XCTAssertEqual(button.isHidden, hidden, line: line) }
+        }
+
+        split.view.layoutSubtreeIfNeeded()
+        split.setSidebarCollapsed(true, animated: false)
+        session.refreshTrafficLightVisibility()
+        assertHidden(true)
+
+        split.toggleSidebar()
+        session.refreshTrafficLightVisibility()
+        assertHidden(true)
+        split.toggleSidebar()
+        try await Task.sleep(for: .seconds(SidebarToggleAnimation.duration * 2))
+        assertHidden(true)
+
+        split.setSidebarCollapsed(false, animated: false)
+        session.refreshTrafficLightVisibility()
+        assertHidden(false)
+        split.toggleSidebar()
+        session.refreshTrafficLightVisibility()
+        assertHidden(true)
+
+        // Reverse again while the first opening's reveal is still pending.
+        split.toggleSidebar()
+        XCTAssertFalse(split.isSidebarCollapsed)
+        try await Task.sleep(for: .seconds(SidebarToggleAnimation.duration / 4))
+        XCTAssertFalse(split.isSidebarCollapsed)
+        split.toggleSidebar()
+        XCTAssertTrue(split.isSidebarCollapsed)
+        let column = split.splitViewController.splitView.subviews[0]
+        var widthAtReveal: CGFloat?
+        let observation = buttons[0].observe(\.isHidden, options: [.new]) { _, change in
+            if change.newValue == false, widthAtReveal == nil { widthAtReveal = column.frame.width }
+        }
+        split.toggleSidebar()
+        XCTAssertFalse(split.isSidebarCollapsed)
+        session.refreshTrafficLightVisibility()
+        assertHidden(true)
+        try await Task.sleep(for: .seconds(SidebarToggleAnimation.duration * 2))
+        observation.invalidate()
+        XCTAssertFalse(split.isSidebarCollapsed)
+        assertHidden(false)
+        // Shown once the column has opened, never on the way.
+        XCTAssertEqual(try XCTUnwrap(widthAtReveal), column.frame.width, accuracy: 0.5)
+    }
+
     func testPresentedShellMatchesTrafficLightInsetsAcrossLayoutChanges() async throws {
         let slot = makeSlot()
         let session = makeSession(in: slot, spaceId: "traffic-light-layouts")

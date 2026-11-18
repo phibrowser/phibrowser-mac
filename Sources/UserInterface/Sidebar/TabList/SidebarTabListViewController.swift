@@ -372,7 +372,7 @@ class SidebarTabListViewController: NSViewController {
     /// Tracks the identity of the focusing tab we last scrolled to.
     /// Scroll is skipped when the focusing tab hasn't changed (e.g. bookmark expand/collapse).
     /// Update only when scheduling a scroll; clear when focus has no representable sidebar row.
-    private var lastScrolledFocusingTabId: AnyHashable?
+    private var lastScrolledFocusingItemId: AnyHashable?
 
     /// Flag to control whether bookmarks are shown in the sidebar
     private var showBookmarks: Bool = true
@@ -671,7 +671,7 @@ class SidebarTabListViewController: NSViewController {
         suppressesGroupUpdateAnimations = false
         scrollAnimationGeneration += 1
         scrollScheduleGeneration += 1
-        lastScrolledFocusingTabId = nil
+        lastScrolledFocusingItemId = nil
         lastSelectedItem = nil
         userInitiatedToggleFolderGuid = nil
         removeFloatingNewTabCell()
@@ -1028,7 +1028,7 @@ class SidebarTabListViewController: NSViewController {
     }
 
     private func clearFocusingSelection() {
-        lastScrolledFocusingTabId = nil
+        lastScrolledFocusingItemId = nil
         selectItem(nil)
     }
     
@@ -4399,8 +4399,7 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
             // insert proxy, then collapse — so the bookmark doesn't animate "into" the folder.
             if let folder = item as? Bookmark, folder.isFolder,
                let focusingTab = browserState.focusingTab,
-               let localGuid = focusingTab.guidInLocalDB,
-               let focusingBookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid),
+               let focusingBookmark = backingBookmark(of: focusingTab),
                isBookmark(focusingBookmark, descendantOf: folder) {
                 
                 let desired = computeFocusedBookmarkPresentation(for: focusingTab, treatingFolderAsCollapsed: folder)
@@ -4429,8 +4428,7 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
         } else {
             if let folder = item as? Bookmark, folder.isFolder,
                let focusingTab = browserState.focusingTab,
-               let localGuid = focusingTab.guidInLocalDB,
-               let focusingBookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid),
+               let focusingBookmark = backingBookmark(of: focusingTab),
                isBookmark(focusingBookmark, descendantOf: folder) {
                 
                 // Single-child shortcut: if the proxy occupies the same visual slot as the real child
@@ -4713,10 +4711,13 @@ extension SidebarTabListViewController: TabSectionDelegate {
     }
 
     private var focusingBookmarkHiddenUnderCollapsedFolder: Bookmark? {
-        guard let localGuid = browserState.focusingTab?.guidInLocalDB,
-              let bookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid),
+        guard let bookmark = browserState.focusingTab.flatMap(backingBookmark(of:)),
               isHiddenUnderCollapsedFolder(bookmark) else { return nil }
         return bookmark
+    }
+
+    private func backingBookmark(of tab: Tab) -> Bookmark? {
+        browserState.bookmarkGuidBacking(tab).flatMap { browserState.bookmarkManager.bookmark(withGuid: $0) }
     }
 }
 
@@ -4764,8 +4765,7 @@ extension SidebarTabListViewController {
             restoreSpaceRootExpansion(animated: animated)
             refreshAllItems(animated: animated)
         } else {
-            let bookmark = browserState.focusingTab?.guidInLocalDB
-                .flatMap { browserState.bookmarkManager.bookmark(withGuid: $0) }
+            let bookmark = browserState.focusingTab.flatMap(backingBookmark(of:))
                 ?? floatingBookmarkGuid.flatMap { browserState.bookmarkManager.bookmark(withGuid: $0) }
             let presentation = bookmark.map { rootFloatingPresentation(for: $0, hiddenBookmarkGuid: $0.guid) }
                 ?? .cleared
@@ -4859,7 +4859,7 @@ extension SidebarTabListViewController {
         // folder still gets one, so a freshly built outline (e.g. a re-activated list) shows it.
         let hiddenFocusingGuid = browserState.isBookmarkRootExpanded
             ? focusingBookmarkHiddenUnderCollapsedFolder?.guid
-            : browserState.focusingTab?.guidInLocalDB
+            : browserState.focusingTab.flatMap(backingBookmark(of:))?.guid
         guard let bookmarkGuid = floatingBookmarkGuid ?? hiddenFocusingGuid,
               let bookmark = browserState.bookmarkManager.bookmark(withGuid: bookmarkGuid) else {
             return .cleared
@@ -5009,9 +5009,7 @@ extension SidebarTabListViewController {
             return nil
         }
         
-        guard let localGuid = tab.guidInLocalDB,
-              let bookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid),
-              !bookmark.isFolder else {
+        guard let bookmark = backingBookmark(of: tab), !bookmark.isFolder else {
             return nil
         }
         
@@ -5324,12 +5322,15 @@ extension SidebarTabListViewController {
             return
         }
         
-        let shouldScroll = tab.id != lastScrolledFocusingTabId
+        // Panes of one split share a bookmark row; switching between them must not rescroll.
+        let bookmark = backingBookmark(of: tab)
+        let scrollTargetId: AnyHashable = bookmark?.id ?? tab.id
+        let shouldScroll = scrollTargetId != lastScrolledFocusingItemId
 
         if let item = allItems.first(where: { $0.id == tab.id }) {
             selectItem(item, clearSelectionFirst: true)
             if shouldScroll {
-                lastScrolledFocusingTabId = tab.id
+                lastScrolledFocusingItemId = scrollTargetId
                 scheduleScrollToVisible(forItem: item)
             }
             return
@@ -5345,7 +5346,7 @@ extension SidebarTabListViewController {
             $0.guid == tab.guid && $0.groupToken == groupItem.group.token
         }) {
             if shouldScroll {
-                lastScrolledFocusingTabId = tab.id
+                lastScrolledFocusingItemId = scrollTargetId
                 scheduleScrollToVisible(forItem: groupItem, groupMember: tab)
             }
             selectItem(nil)
@@ -5353,13 +5354,13 @@ extension SidebarTabListViewController {
         }
         
         if let presentation = focusedBookmarkPresentation,
-           let guid = tab.guidInLocalDB,
-           presentation.proxy.underlyingBookmark.guid == guid {
+           let bookmark,
+           presentation.proxy.underlyingBookmark.guid == bookmark.guid {
             let row = outlineView.row(forItem: presentation.proxy)
             if row >= 0 {
                 outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 if shouldScroll {
-                    lastScrolledFocusingTabId = tab.id
+                    lastScrolledFocusingItemId = scrollTargetId
                     scheduleScrollToVisible(forItem: presentation.proxy)
                 }
             } else {
@@ -5368,8 +5369,7 @@ extension SidebarTabListViewController {
             return
         }
         
-        guard let localGuid = tab.guidInLocalDB,
-              let bookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid) else {
+        guard let bookmark else {
             clearFocusingSelection()
             return
         }
@@ -5388,7 +5388,7 @@ extension SidebarTabListViewController {
         if row >= 0 {
             outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             if shouldScroll {
-                lastScrolledFocusingTabId = tab.id
+                lastScrolledFocusingItemId = scrollTargetId
                 scheduleScrollToVisible(forItem: bookmark)
             }
         } else {

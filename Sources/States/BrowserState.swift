@@ -2014,7 +2014,9 @@ class BrowserState {
         bookmarkGuidBacking(tab) != nil
     }
 
-    private func bookmarkGuidBacking(_ tab: Tab) -> String? {
+    /// The bookmark `tab` is opened from: its own bookmark, or the split-view
+    /// bookmark bound to its split.
+    func bookmarkGuidBacking(_ tab: Tab) -> String? {
         guard !tab.isPinned else { return nil }
         if let guid = tab.guidInLocalDB, !guid.isEmpty,
            bookmarkManager.bookmark(withGuid: guid) != nil {

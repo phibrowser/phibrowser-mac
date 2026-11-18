@@ -1693,9 +1693,18 @@ class WebContentContainerViewController: NSViewController {
     /// Just above `pageAreaBackdrop`, below every tab's view.
     private func placeContentSurface(_ hostingView: NSView) {
         contentContainer.addSubview(hostingView, positioned: .above, relativeTo: pageAreaBackdrop)
+        pinContentSurfaceToPagePanel(hostingView)
+    }
+
+    /// Over the page panel only, and clipped to it. Chromium draws a layout
+    /// some frames after AppKit shows it, and until then the surface shows
+    /// its last frame at its old size: one from a larger page area would
+    /// run over the margins around the panel.
+    private func pinContentSurfaceToPagePanel(_ hostingView: NSView) {
         hostingView.snp.remakeConstraints { make in
-            make.edges.equalToSuperview()
+            make.edges.equalTo(pageAreaBackdrop)
         }
+        hostingView.clipsToBounds = true
     }
 
     /// Lends the surface's view to the page entering content fullscreen
@@ -1753,9 +1762,7 @@ class WebContentContainerViewController: NSViewController {
         guard let contentSurfaceHosting, contentSurfaceHosting.isHeld else { return }
         contentSurfaceHosting.isHeld = false
         guard let contentSurfaceView, contentSurfaceView.superview === contentContainer else { return }
-        contentSurfaceView.snp.remakeConstraints { make in
-            make.edges.equalToSuperview()
-        }
+        pinContentSurfaceToPagePanel(contentSurfaceView)
     }
 
     /// Over a content surface the page card is clear and this backdrop shows

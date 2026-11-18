@@ -394,11 +394,10 @@ final class ReopenLoadingWindowPlacementTests: XCTestCase {
         // is the number the correction is measured against.
         //
         // Phi itself never moves the browser window's buttons, so the fork is
-        // the whole of the difference: the sidebar's floating lights are a
-        // separate view that DRAWS lights and forwards clicks
-        // (`FloatingTrafficLightsView.performWindowButtonAction`), deliberately
-        // leaving the real ones in the titlebar, and the only thing Chromium
-        // does to them directly is reset their alpha.
+        // the whole of the difference: the sidebar's lights are separate
+        // buttons (`SidebarTrafficLightsView`), leaving the titlebar's own
+        // where they are, and the only thing Chromium does to them directly is
+        // reset their alpha.
         guard #available(macOS 26, *) else {
             throw XCTSkip("paired with the test above")
         }

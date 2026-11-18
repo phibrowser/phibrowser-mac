@@ -1423,7 +1423,7 @@ class SpaceSessionController: NSWindowController {
     /// and, in hosted mode, re-applied when a session is presented (the sink
     /// is silent for background sessions).
     /// In the right-sidebar layout the lights live in the top band and show
-    /// only while it is revealed (`FloatingTrafficLightsView.Placement.topBand`).
+    /// only while it is revealed (`FloatingTrafficLightsView`).
     private func applyTrafficLightVisibility(collapsed: Bool, fullScreen: Bool) {
         guard let window else { return }
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
@@ -1435,11 +1435,7 @@ class SpaceSessionController: NSWindowController {
         // This runs on every defaults change, and a set of `isHidden` or
         // `titlebarAppearsTransparent` retiles the titlebar, so only actual
         // changes are applied.
-        for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            guard let button = window.standardWindowButton(kind),
-                  button.isHidden != hideTrafficLights else { continue }
-            button.isHidden = hideTrafficLights
-        }
+        window.setTitlebarButtonsHidden(hideTrafficLights)
 
         if window.titlebarAppearsTransparent == fullScreen {
             window.titlebarAppearsTransparent = !fullScreen

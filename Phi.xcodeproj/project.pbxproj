@@ -658,6 +658,7 @@
 		CD1100090000000000000001 /* IconPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD1100040000000000000001 /* IconPicker.swift */; };
 		CD11000B0000000000000001 /* Emoji/emoji-catalog.json in Resources */ = {isa = PBXBuildFile; fileRef = CD11000A0000000000000001 /* Emoji/emoji-catalog.json */; };
 		CD4F3A012E56000100FACC01 /* FloatingTrafficLightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD4F3A002E56000100FACC01 /* FloatingTrafficLightsView.swift */; };
+		5A1D7E1100000000000000A2 /* SidebarTrafficLightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1D7E1100000000000000A1 /* SidebarTrafficLightsView.swift */; };
 		CDA11ED500000000000000B1 /* phi-browser-skill in Resources */ = {isa = PBXBuildFile; fileRef = CDA11ED500000000000000A1 /* phi-browser-skill */; };
 		CFB79D62ABD7EBCAD4DC829E /* sync.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC893A52AE13C67C3BD60CA5 /* sync.pb.swift */; };
 		D10000000000000000000001 /* BrowserImagePreviewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000011 /* BrowserImagePreviewState.swift */; };
@@ -1537,6 +1538,7 @@
 		CD1100040000000000000001 /* IconPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconPicker.swift; sourceTree = "<group>"; };
 		CD11000A0000000000000001 /* Emoji/emoji-catalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "Emoji/emoji-catalog.json"; sourceTree = "<group>"; };
 		CD4F3A002E56000100FACC01 /* FloatingTrafficLightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingTrafficLightsView.swift; sourceTree = "<group>"; };
+		5A1D7E1100000000000000A1 /* SidebarTrafficLightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarTrafficLightsView.swift; sourceTree = "<group>"; };
 		CDA11ED500000000000000A1 /* phi-browser-skill */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "phi-browser-skill"; path = "tools/phi-browser-skill"; sourceTree = SOURCE_ROOT; };
 		CE7E61A49E8A472DB330779E /* TabGroupCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabGroupCellView.swift; sourceTree = "<group>"; };
 		D10000000000000000000011 /* BrowserImagePreviewState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserImagePreviewState.swift; sourceTree = "<group>"; };
@@ -2876,6 +2878,7 @@
 			children = (
 				CD4F3A002E56000100FACC01 /* FloatingTrafficLightsView.swift */,
 				CC288A6A2E4F12EC004A6C1C /* SidebarHeaderView.swift */,
+				5A1D7E1100000000000000A1 /* SidebarTrafficLightsView.swift */,
 				CCBF8F332E61AB2A00B9A99E /* AddressBar */,
 			);
 			path = Header;
@@ -3875,6 +3878,7 @@
 				8E5A0C122FB0000100A1B2C3 /* SpaceRootCellView.swift in Sources */,
 				CD4F3A012E56000100FACC01 /* FloatingTrafficLightsView.swift in Sources */,
 				CC288A6B2E4F12EC004A6C1C /* SidebarHeaderView.swift in Sources */,
+				5A1D7E1100000000000000A2 /* SidebarTrafficLightsView.swift in Sources */,
 				CC6336032E4EE43200A176DA /* PhiLogging.m in Sources */,
 				CC2708982E7959DF00B65AB8 /* PinnedTabLayout.swift in Sources */,
 				CC4351CC2ECAD650009D8FC3 /* OnboardingWindowController.swift in Sources */,

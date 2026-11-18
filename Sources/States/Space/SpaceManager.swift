@@ -14105,12 +14105,12 @@ extension Notification.Name {
 ///   far heavier than three 8pt layers — at +7.5ms on this same metric, and
 ///   that is a cross-batch number.
 /// - **Traffic lights need nothing known about the window** beyond where they
-///   go. Phi leaves the browser window's own buttons in the titlebar —
-///   `FloatingTrafficLightsView` draws its own and forwards clicks rather than
-///   reparenting them — and only hides them for a collapsed sidebar in a
-///   non-traditional layout, which a freshly restored window is not. What they
-///   are NOT is free: their position had to be measured, because the style
-///   mask alone does not reproduce it. See `trafficLightOrigin(remembered:)`.
+///   go. Phi leaves the browser window's own buttons in the titlebar — the
+///   floating sidebar holds separate ones (`SidebarTrafficLightsView`) — and
+///   only hides them for a collapsed sidebar in a non-traditional layout, which
+///   a freshly restored window is not. What they are NOT is free: their
+///   position had to be measured, because the style mask alone does not
+///   reproduce it. See `trafficLightOrigin(remembered:)`.
 /// - **The sidebar band needs one number, and it must be the real one.** A
 ///   guessed width would put the boundary somewhere the restored window's
 ///   sidebar does not end, and the band would step sideways at the hand-off —
@@ -14679,7 +14679,7 @@ final class ReopenLoadingWindow: NSWindow {
         // The close button specifically, not whichever one exists: the origin
         // describes the LEADING light, so reading any other would shift the
         // group by a whole 23pt pitch.
-        guard let leading = window.standardWindowButton(.closeButton),
+        guard let leading = window.titlebarButton(.closeButton),
               let titlebar = leading.superview else { return nil }
         let height = window.frame.height
         guard height > 0 else { return nil }

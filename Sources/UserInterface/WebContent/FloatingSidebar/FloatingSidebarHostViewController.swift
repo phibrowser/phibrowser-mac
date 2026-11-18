@@ -56,7 +56,7 @@ final class FloatingSidebarHostViewController: NSViewController {
     private var needsContentInstall = false
 
     /// Whether the right-sidebar layout's top band is revealed. See
-    /// `FloatingTrafficLightsView.Placement.topBand`.
+    /// `FloatingTrafficLightsView`.
     var isTrafficLightBandVisible: Bool { trafficLightStrip?.isStripVisible == true }
 
     /// Shows or hides the native lights on the band. The band overlays the
@@ -184,7 +184,7 @@ final class FloatingSidebarHostViewController: NSViewController {
             browserState = state
             let bandWasVisible = isTrafficLightBandVisible
             trafficLightStrip?.removeFromSuperview()
-            let strip = FloatingTrafficLightsView(browserState: state, placement: .topBand)
+            let strip = FloatingTrafficLightsView(browserState: state)
             strip.onStripVisibilityChanged = { [weak self] visible in
                 self?.trafficLightBandVisibilityChanged(visible)
             }

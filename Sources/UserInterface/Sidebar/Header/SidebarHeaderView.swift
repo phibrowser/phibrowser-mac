@@ -105,9 +105,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     }
 
     private var isFloating: Bool = false
-    private lazy var floatingTrafficLightsView = FloatingTrafficLightsView(browserState: browserState)
-    /// The drawn lights take the window's own pitch once the header is in it.
-    private var floatingTrafficLightsWidthConstraint: Constraint?
+    private let floatingTrafficLightsView = SidebarTrafficLightsView()
     
     private lazy var sidebarButton: HoverableButtonNSView = {
         let config = HoverableButtonConfig(image: .leftSidebarToggle,
@@ -327,10 +325,9 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         if isFloating {
             addSubview(floatingTrafficLightsView)
             floatingTrafficLightsView.snp.makeConstraints { make in
-                make.leading.equalToSuperview().offset(FloatingTrafficLightMetrics.leading)
+                make.leading.equalToSuperview()
                 make.centerY.equalTo(sidebarButton)
-                floatingTrafficLightsWidthConstraint = make.width.equalTo(FloatingTrafficLightMetrics.width(in: nil)).constraint
-                make.height.equalTo(FloatingTrafficLightMetrics.size)
+                make.height.equalTo(24)
             }
         }
 
@@ -441,6 +438,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     /// Update view visibility based on configuration
     private func updateLayoutVisibility(layoutMode: LayoutMode) {
         sidebarButton.isImageMirrored = SidebarPosition.isOnRight
+        updateFloatingTrafficLights(layoutMode: layoutMode)
         let showInSidebar = isSidebarLayout(layoutMode)
         let inPlaceholder = browserState?.isInPlaceholderMode ?? false
         AppLogDebug("[SidebarHeader] updateLayoutVisibility showInSidebar=\(showInSidebar) inPlaceholder=\(inPlaceholder)")
@@ -542,6 +540,17 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             }
             .store(in: &cancellables)
 
+        if isFloating {
+            browserState.sidebarCollapsedPublisher
+                .removeDuplicates()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    guard let self else { return }
+                    updateFloatingTrafficLights(layoutMode: self.browserState?.layoutMode ?? .performance)
+                }
+                .store(in: &cancellables)
+        }
+
         browserState.$layoutMode
             .receive(on: DispatchQueue.main)
             .sink {  [weak self] mode in
@@ -578,6 +587,14 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             .store(in: &cancellables)
     }
     
+    /// The window's own buttons in the floating header while the column is
+    /// collapsed, in the left-sidebar Balanced and Performance layouts.
+    private func updateFloatingTrafficLights(layoutMode: LayoutMode) {
+        guard isFloating else { return }
+        floatingTrafficLightsView.isActive = !SidebarPosition.isOnRight && !layoutMode.isTraditional
+            && browserState?.sidebarCollapsed == true && browserState?.isInFullScreenMode != true
+    }
+
     /// Returns the maxX of the leading chrome controls in this header.
     private func leadingChromeMaxX() -> CGFloat? {
         // The right-sidebar layout keeps the lights in the window's top band,
@@ -587,7 +604,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             if browserState?.isInFullScreenMode == true {
                 return 0
             }
-            return FloatingTrafficLightMetrics.maxX(in: window)
+            return floatingTrafficLightsView.trailingEdge
         }
         return windowButtonMaxX(button: .zoomButton)
             ?? windowButtonMaxX(button: .closeButton)
@@ -605,7 +622,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             return 0
         }
 
-        guard let window, let btn = window.standardWindowButton(type) else { return nil }
+        guard let window, let btn = window.titlebarButton(type) else { return nil }
         let maxX = btn.convert(btn.bounds, to: nil).maxX
         AppLogDebug("[SidebarHeader] windowButtonMaxX type=\(type.rawValue) maxX=\(maxX)")
         return maxX
@@ -613,8 +630,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
 
     /// Updates the left constraint for `sidebarButton` based on the right edge of the leading chrome.
     private func updateSidebarButtonLeftConstraint() {
-        observeFrameChanges(zoomButton: isFloating ? nil : window?.standardWindowButton(.zoomButton))
-        floatingTrafficLightsWidthConstraint?.update(offset: FloatingTrafficLightMetrics.width(in: window))
+        observeFrameChanges(zoomButton: isFloating ? nil : window?.titlebarButton(.zoomButton))
         guard let x = leadingChromeMaxX() else {
             AppLogDebug("[SidebarHeader] updateSidebarButtonLeftConstraint maxX=nil (window buttons unavailable)")
             return
@@ -775,7 +791,8 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             return
         }
 
-        floatingTrafficLightsView.refreshWindowButtons()
+        updateFloatingTrafficLights(layoutMode: browserState?.layoutMode ?? .performance)
+        floatingTrafficLightsView.refresh()
     }
 
     #if DEBUG

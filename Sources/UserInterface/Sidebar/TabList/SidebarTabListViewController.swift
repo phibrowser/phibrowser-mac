@@ -1937,6 +1937,13 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         // this sidebar's tab strip: `sourceState.moveGroupSliceToWindow`
         // mirrors `TabStrip.groupDragControllerCommitMoveCrossWindow`.
         if pasteboard.string(forType: .tabGroup) != nil {
+            if originalResolvedItem == nil, index != NSOutlineViewDropOnItemIndex {
+                let clamped = clampedRootDropIndex(index)
+                if clamped != index {
+                    outlineView.setDropItem(nil, dropChildIndex: clamped)
+                    index = clamped
+                }
+            }
             if isCrossWindowDrag(pasteboard) {
                 guard let sourceState = sourceBrowserState(for: pasteboard),
                       browserState.canAcceptCrossWindowDrag(from: sourceState),

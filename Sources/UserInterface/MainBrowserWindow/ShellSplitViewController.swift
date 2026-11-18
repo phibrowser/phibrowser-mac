@@ -122,6 +122,12 @@ final class ShellSplitViewController: NSViewController {
         // at the user's width; every expanded-column frame updates it.
         lastExpandedSidebarWidth = AccountController.shared.localDataAccount?
             .userDefaults.lastKnownSidebarWidth(for: SidebarPosition.effective) ?? 0
+        // The autosaved frames keep the width the column had when it
+        // collapsed; a floating panel resize after that is only in the
+        // account, so a restored collapsed column docks at the account's width.
+        if sidebarSplitViewItem.isCollapsed, lastExpandedSidebarWidth >= Self.leftItemMinWidth {
+            pendingDockWidth = min(lastExpandedSidebarWidth, Self.leftItemMaxWidth)
+        }
 
         $sidebarSplitViewItem
             .compactMap { $0 }

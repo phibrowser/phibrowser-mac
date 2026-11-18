@@ -331,7 +331,6 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
         let splitView = PhiSplitView()
         splitView.isVertical = true
         splitView.dividerStyle = .thick
-        splitView.delegate = self
 
         splitViewController.splitView = splitView
 
@@ -470,19 +469,7 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     }
 }
 
-extension MainSplitViewController: NSSplitViewDelegate {
-    func splitView(_ splitView: NSSplitView, constrainSplitPosition proposedPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
-        return proposedPosition
-    }
-
-    func splitView(_ splitView: NSSplitView, shouldHideDividerAt dividerIndex: Int) -> Bool {
-        return true
-    }
-
-    func splitViewDidResizeSubviews(_ notification: Notification) {
-        updateSidebarWidth()
-    }
-
+extension MainSplitViewController {
     private func updateSidebarWidth() {
         guard !isReorderingSidebar else { return }
         guard sideBarSplitViewItem != nil else { return }

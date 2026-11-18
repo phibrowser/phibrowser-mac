@@ -78,7 +78,6 @@ final class ShellSplitViewController: NSViewController {
         let splitView = PhiSplitView()
         splitView.isVertical = true
         splitView.dividerStyle = .thick
-        splitView.delegate = self
         splitViewController.splitView = splitView
         addChild(splitViewController)
         view.addSubview(splitViewController.view)
@@ -343,20 +342,6 @@ final class ShellSplitViewController: NSViewController {
         }
         sidebarWidthPersistWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.sidebarWidthPersistDelay, execute: workItem)
-    }
-}
-
-extension ShellSplitViewController: NSSplitViewDelegate {
-    func splitView(_ splitView: NSSplitView, constrainSplitPosition proposedPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
-        proposedPosition
-    }
-
-    func splitView(_ splitView: NSSplitView, shouldHideDividerAt dividerIndex: Int) -> Bool {
-        true
-    }
-
-    func splitViewDidResizeSubviews(_ notification: Notification) {
-        recordSidebarWidth()
     }
 }
 

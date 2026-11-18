@@ -7,14 +7,6 @@ import Cocoa
 import Combine
 
 class PhiSplitView: NSSplitView {
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-    }
-
-//    override func drawDivider(in rect: NSRect) {
-//
-//    }
     override var dividerColor: NSColor { .clear }
     override var dividerThickness: CGFloat { 0 }
 }

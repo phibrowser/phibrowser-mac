@@ -317,7 +317,8 @@ final class AppModalPairingHost: NSObject, ProfilePairingModalHost, NSWindowDele
             pairableLocalSpaces: pairableLocalSpaces,
             themeDisplayName: themeDisplayName,
             localReset: localReset)
-        let setup = KeyLayerViewModel(manager: controller.manager)
+        let setup = KeyLayerViewModel(manager: controller.manager,
+                                      resetJournal: controller.resetRequestJournal)
         self.setupModel = setup
         let root = SyncSetupView(keyModel: setup, wizard: viewModel, controller: controller,
                                  onDismiss: { [weak self] in self?.deferSetup() })

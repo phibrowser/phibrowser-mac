@@ -442,6 +442,20 @@ final class KeyLayerViewModelTests: XCTestCase {
         func putDomainKey(domain: String, envelope: Data) async throws -> Bool {
             try await inner.putDomainKey(domain: domain, envelope: envelope)
         }
+        func putResetRequest(operationId: UUID, deviceKeyId: String, publicKey: Data,
+                             name: String, platform: String) async throws -> ResetRequestDTO {
+            try await inner.putResetRequest(operationId: operationId, deviceKeyId: deviceKeyId,
+                                            publicKey: publicKey, name: name, platform: platform)
+        }
+        func getResetRequest(operationId: UUID) async throws -> ResetRequestDTO {
+            try await inner.getResetRequest(operationId: operationId)
+        }
+        func cancelResetRequest(operationId: UUID, deviceKeyId: String) async throws {
+            try await inner.cancelResetRequest(operationId: operationId, deviceKeyId: deviceKeyId)
+        }
+        func executeResetRequest(operationId: UUID, deviceKeyId: String) async throws {
+            try await inner.executeResetRequest(operationId: operationId, deviceKeyId: deviceKeyId)
+        }
     }
 
     /// A key stack whose account listing hangs forever, with the ARK unlocked so

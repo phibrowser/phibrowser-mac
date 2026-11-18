@@ -204,7 +204,8 @@ the shared `Response<T>` envelope handling. Authentication stays centralized in
 `AuthManager`; only the transport is local.
 
 `KeyEnvelopeAPIClient` also owns the device-lifecycle calls on that backend
-(`POST /keys/v1/devices/{id}/revoke`, M3-2's self-revoke). No second client is
+(`POST /keys/v1/devices/{id}/revoke`, M3-2's self-revoke) and the reset-request
+routes (`/keys/v1/reset-requests/...`, PHI-2002). No second client is
 introduced for them: the exception is per BACKEND, not per endpoint, and the
 bearer token still comes from `AuthManager`.
 

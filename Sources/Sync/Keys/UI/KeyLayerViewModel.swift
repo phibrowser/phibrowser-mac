@@ -22,6 +22,17 @@ enum KeyLayerStrings {
     static let tooManyJoinRequests = NSLocalizedString("sync.setup.tooManyJoinRequests", value: "Too many pending requests. Try again later or use a recovery code.", comment: "Sync setup error shown when the account already has too many pending requests to join from a new device")
 }
 
+/// Why a request to start sync over did not go ahead (docs/sync.md, "Starting over from a Mac
+/// that is not set up for sync"). Each one has cleared the journal.
+enum ResetRefusal: Equatable {
+    /// 409 `devices_active` on the request or at execution, or a `blocked` status.
+    case devicesActive(lastActiveAt: Date?)
+    /// 409 `reset_request_exists`: another Mac's request is pending.
+    case requestExists(executeAfter: Date?)
+    case denied
+    case expired
+}
+
 enum KeyLayerPhase: Equatable {
     case idle
     case introduction
@@ -40,6 +51,14 @@ enum KeyLayerPhase: Equatable {
     /// profile and more than one unclaimed remote profile — `resolveMappings()`
     /// can't disambiguate on its own, so the user picks.
     case pairingProfiles(locals: [PairingLocal], remotes: [RemoteProfile])
+    /// Starting over without the old data (docs/sync.md, "Starting over from a Mac that is not
+    /// set up for sync"): the explanation page, the fresh sign-in in the browser, the waiting
+    /// page, a refusal, and an error that keeps the journal for Retry.
+    case resetExplanation
+    case resetSigningIn
+    case waitingForReset(executeAfter: Date)
+    case resetRefused(ResetRefusal)
+    case resetError(String)
 
     /// True while the window must not be closed by the user (review A9). `bootstrap()` has
     /// already initialized the account on the server by the time the recovery code is on
@@ -99,7 +118,11 @@ final class KeyLayerViewModel: ObservableObject {
     }
 
     func cancelFlow() {
+        // Closing the window during the fresh sign-in abandons it; the journal and any
+        // request already on the server stay (Close keeps the request).
+        let wasSigningIn = phase == .resetSigningIn
         cancelJoin()
+        if wasSigningIn { cancelReauthentication() }
         pairingLoad?.cancel()
         recoveryInput = ""
         unconfirmedRecoveryCode = nil
@@ -154,7 +177,15 @@ final class KeyLayerViewModel: ObservableObject {
     init(manager: AccountKeyManager, loadDeadline: Duration = .seconds(45),
          beginEnrollment: @escaping @MainActor () throws -> Void = { try ProfilePairingGate.shared.beginEnrollment() },
          recoveryConfirmationRequired: @escaping @MainActor () -> Bool = { ProfilePairingGate.shared.requiresRecoveryConfirmation },
-         setRecoveryConfirmationRequired: @escaping @MainActor (Bool) throws -> Void = { try ProfilePairingGate.shared.setRecoveryConfirmationRequired($0) }) {
+         setRecoveryConfirmationRequired: @escaping @MainActor (Bool) throws -> Void = { try ProfilePairingGate.shared.setRecoveryConfirmationRequired($0) },
+         resetJournal: SyncResetRequestJournalStore? = nil,
+         reauthenticate: @escaping @MainActor () async -> InteractiveReauthenticationResult = { await AuthManager.shared.reauthenticateInteractively() },
+         cancelReauthentication: @escaping @MainActor () -> Void = { AuthManager.shared.cancelOngoingWebAuthentication() },
+         resetPollInterval: TimeInterval = 60) {
+        self.resetJournal = resetJournal
+        self.reauthenticate = reauthenticate
+        self.cancelReauthentication = cancelReauthentication
+        self.resetPollInterval = resetPollInterval
         self.recoveryConfirmationRequired = recoveryConfirmationRequired
         self.setRecoveryConfirmationRequired = setRecoveryConfirmationRequired
         self.beginEnrollment = beginEnrollment
@@ -179,14 +210,25 @@ final class KeyLayerViewModel: ObservableObject {
             guard generation == operationGeneration, flowIsCurrent else { return }
             switch result {
             case .unlocked:
+                accountExistsWithoutEnvelope = false
+                discardResetJournalAfterEnrollment()
                 if recoveryConfirmationRequired() { phase = .confirmingRecoveryCode }
                 else if ProfilePairingGate.shared.isPaired { phase = .done }
                 else { try beginEnrollment(); verified() }
             case .notSignedIn:
                 phase = .error(KeyLayerStrings.signInRequired)
             case .needsJoin:
+                // A journaled reset request wins: the window lands on its waiting page and
+                // asks the server where the request stands.
+                if let journal = resetJournal?.load() {
+                    accountExistsWithoutEnvelope = true
+                    resumeReset(journal)
+                    await pollResetOnce()
+                    return
+                }
                 let exists = try await manager.accountExists()
                 guard generation == operationGeneration, flowIsCurrent else { return }
+                accountExistsWithoutEnvelope = exists
                 phase = exists ? (recoveryConfirmationRequired() ? .confirmingRecoveryCode : .chooseJoinMethod) : .introduction
             }
         } catch {
@@ -323,6 +365,7 @@ final class KeyLayerViewModel: ObservableObject {
             phase = .showingRecoveryCode(code)
         } catch AccountKeyError.alreadyInitialized {
             guard generation == operationGeneration, flowIsCurrent else { return }
+            accountExistsWithoutEnvelope = true
             do { try setRecoveryConfirmationRequired(false); phase = .chooseJoinMethod }
             catch { phase = .error(KeyLayerStrings.saveFailed) }
         } catch {
@@ -397,6 +440,457 @@ final class KeyLayerViewModel: ObservableObject {
             guard generation == operationGeneration, flowIsCurrent else { return }
             inputError = KeyLayerStrings.connectionFailed
         }
+    }
+
+    // MARK: - Starting over without the old data (docs/sync.md, "Starting over from a Mac that is not set up for sync")
+
+    /// The account's `sync.resetRequest` journal. Nil when the flow was built without one
+    /// (previews, the pairing wizard's own key model); the third join choice is then hidden.
+    private let resetJournal: SyncResetRequestJournalStore?
+    /// `AuthManager.reauthenticateInteractively()`, injected so tests need no Auth0.
+    private let reauthenticate: @MainActor () async -> InteractiveReauthenticationResult
+    /// Ends a fresh sign-in still waiting in the browser; the pending `reauthenticate()` then
+    /// answers `.cancelled`.
+    private let cancelReauthentication: @MainActor () -> Void
+    /// How often the waiting page asks the server where the request stands.
+    private let resetPollInterval: TimeInterval
+    /// Set when the account probe answered that the account exists while this Mac holds no
+    /// envelope (`.needsJoin`), the only situation the third join choice is offered in.
+    private var accountExistsWithoutEnvelope = false
+
+    /// Whether the join-method page offers **Start over without the old data**.
+    var canStartOver: Bool { resetJournal != nil && accountExistsWithoutEnvelope }
+
+    /// The third join choice: withdraws any approval request this flow holds and shows the
+    /// explanation page.
+    func showStartOver() {
+        guard canStartOver, !workingOperation else { return }
+        cancelJoin()
+        phase = .resetExplanation
+    }
+
+    /// Continue on the explanation page: the fresh sign-in, then the request.
+    func continueStartOver() async {
+        guard phase == .resetExplanation, !workingOperation else { return }
+        await signInThenRequestReset(staleRetryLeft: true)
+    }
+
+    /// Cancel while the fresh sign-in waits in the browser: back to the explanation page.
+    func cancelStartOverSignIn() {
+        guard phase == .resetSigningIn else { return }
+        operationGeneration += 1
+        cancelReauthentication()
+        inputError = nil
+        phase = .resetExplanation
+    }
+
+    /// Back from the explanation, refusal and error pages. The journal is untouched: a request
+    /// whose outcome is unknown stays journaled, and the next window opens on its waiting page.
+    func leaveStartOver() {
+        guard !workingOperation else { return }
+        cancelJoin()
+    }
+
+    private func signInThenRequestReset(staleRetryLeft: Bool) async {
+        operationGeneration += 1
+        let generation = operationGeneration
+        inputError = nil
+        phase = .resetSigningIn
+        let outcome = await reauthenticate()
+        guard generation == operationGeneration, flowIsCurrent else { return }
+        switch outcome {
+        case .signedIn:
+            await sendResetRequest(staleRetryLeft: staleRetryLeft)
+        case .cancelled:
+            phase = .resetExplanation
+        case .wrongAccount:
+            inputError = ResetRequestStrings.signInWrongAccount
+            phase = .resetExplanation
+        case .failed:
+            inputError = ResetRequestStrings.signInFailed
+            phase = .resetExplanation
+        }
+    }
+
+    /// Withdraws this device's join tickets, journals the operation, then sends it: journal
+    /// first, request second. A journal left by an earlier attempt whose outcome is unknown is
+    /// sent again under the same operation, which the server replays.
+    private func sendResetRequest(staleRetryLeft: Bool) async {
+        guard let store = resetJournal else { return }
+        operationGeneration += 1
+        let generation = operationGeneration
+        workingOperation = true
+        defer { if generation == operationGeneration { workingOperation = false } }
+        inputError = nil
+        phase = .working
+        do {
+            try await manager.withdrawOutstandingJoinRequests()
+        } catch {
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogWarn("[phi-sync] reset request: join withdrawal failed: \(PhiSyncLog.describe(error))")
+            phase = .resetError(ResetRequestStrings.requestFailed)
+            return
+        }
+        guard generation == operationGeneration, flowIsCurrent else { return }
+        let journal: SyncResetRequestJournal
+        do {
+            if let existing = store.load() {
+                journal = existing
+            } else {
+                journal = SyncResetRequestJournal(operationId: UUID(),
+                                                  deviceKeyID: try manager.currentDeviceKeyId(),
+                                                  createdAt: Date())
+                try store.save(journal)
+            }
+        } catch {
+            AppLogWarn("[phi-sync] reset request: journal write failed: \(PhiSyncLog.describe(error))")
+            phase = .resetError(KeyLayerStrings.saveFailed)
+            return
+        }
+        let operation = journal.operationId.uuidString.lowercased()
+        do {
+            let request = try await manager.requestSyncReset(operationId: journal.operationId,
+                                                             deviceKeyId: journal.deviceKeyID)
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogInfo("[phi-sync] reset request \(operation) answered: \(request.status)")
+            await apply(request, journal: journal, store: store, generation: generation)
+        } catch ResetRequestError.staleAuthentication {
+            // Nothing was created: the journal goes, and a second attempt is a new operation.
+            store.clear()
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogWarn("[phi-sync] reset request \(operation) refused: stale_authentication; sign-in retry left: \(staleRetryLeft)")
+            if staleRetryLeft {
+                workingOperation = false
+                await signInThenRequestReset(staleRetryLeft: false)
+            } else {
+                phase = .resetError(ResetRequestStrings.staleSignIn)
+            }
+        } catch ResetRequestError.devicesActive(let lastActiveAt, _) {
+            store.clear()
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogInfo("[phi-sync] reset request \(operation) refused: devices_active")
+            phase = .resetRefused(.devicesActive(lastActiveAt: lastActiveAt))
+        } catch ResetRequestError.requestExists(let executeAfter) {
+            store.clear()
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogInfo("[phi-sync] reset request \(operation) refused: reset_request_exists")
+            phase = .resetRefused(.requestExists(executeAfter: executeAfter))
+        } catch ResetRequestError.accountNotFound {
+            // The account is already empty: first-device setup.
+            store.clear()
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogInfo("[phi-sync] reset request \(operation) refused: account_not_found; routing to first-device setup")
+            accountExistsWithoutEnvelope = false
+            phase = .introduction
+        } catch let error as ResetRequestError {
+            // A definitive refusal (`device_known`, `reset_request_conflict`, 400): the server
+            // holds nothing for this operation, so the journal goes and Retry starts afresh.
+            store.clear()
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogWarn("[phi-sync] reset request \(operation) refused: \(error)")
+            phase = .resetError(ResetRequestStrings.requestFailed)
+        } catch {
+            // Transport or server failure: the outcome is unknown, so the journal stays.
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogWarn("[phi-sync] reset request \(operation) failed: \(PhiSyncLog.describe(error))")
+            phase = .resetError(ResetRequestStrings.requestFailed)
+        }
+    }
+
+    /// Lands on the waiting page for a journaled request (window reopened, Retry) and starts the
+    /// poll. Without a confirmed date the page waits for the first answer in `.working`.
+    private func resumeReset(_ journal: SyncResetRequestJournal) {
+        inputError = nil
+        if let executeAfter = journal.executeAfter {
+            phase = .waitingForReset(executeAfter: executeAfter)
+            startResetPollTimer()
+        } else {
+            phase = .working
+        }
+    }
+
+    /// One `GET /keys/v1/reset-requests/{operation}`: every 60 seconds while the waiting page
+    /// is open, and on each (re)open.
+    func pollResetOnce() async {
+        guard let store = resetJournal, let journal = store.load(),
+              !pollingInFlight, !workingOperation else { return }
+        pollingInFlight = true
+        defer { pollingInFlight = false }
+        let generation = operationGeneration
+        let operation = journal.operationId.uuidString.lowercased()
+        do {
+            let request = try await manager.syncResetStatus(operationId: journal.operationId)
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            await apply(request, journal: journal, store: store, generation: generation)
+        } catch ResetRequestError.notFound {
+            // Gone with the account (another reset or a purge), or never created. The account
+            // probe decides where setup goes from here.
+            store.clear()
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogInfo("[phi-sync] reset request \(operation) not found; re-running the account probe")
+            await rerunAccountProbe()
+        } catch ResetRequestError.notRequester {
+            store.clear()
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogWarn("[phi-sync] reset request \(operation) belongs to another device key; journal dropped")
+            stopPolling()
+            phase = .chooseJoinMethod
+        } catch {
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogWarn("[phi-sync] reset request \(operation) status failed: \(PhiSyncLog.describe(error))")
+            if let executeAfter = journal.executeAfter {
+                if phase != .waitingForReset(executeAfter: executeAfter) {
+                    phase = .waitingForReset(executeAfter: executeAfter)
+                    startResetPollTimer()
+                }
+                inputError = KeyLayerStrings.connectionFailed
+            } else {
+                stopPolling()
+                phase = .resetError(KeyLayerStrings.connectionFailed)
+            }
+        }
+    }
+
+    /// Acts on a request's status, from the `PUT`, a poll or a re-read after `not_pending`.
+    private func apply(_ request: ResetRequestDTO, journal: SyncResetRequestJournal,
+                       store: SyncResetRequestJournalStore, generation: Int) async {
+        let operation = journal.operationId.uuidString.lowercased()
+        inputError = nil
+        switch request.status {
+        case "pending":
+            let confirmed = journal.confirmed(executeAfter: request.executeAfter,
+                                              joinRequestId: request.joinRequestId)
+            if confirmed != journal {
+                do { try store.save(confirmed) }
+                catch { AppLogWarn("[phi-sync] reset request \(operation): journal update failed: \(PhiSyncLog.describe(error))") }
+            }
+            if Date() >= request.executeAfter {
+                await executeReset(confirmed, store: store, generation: generation)
+            } else {
+                if phase != .waitingForReset(executeAfter: request.executeAfter) {
+                    phase = .waitingForReset(executeAfter: request.executeAfter)
+                }
+                if pollTimer == nil { startResetPollTimer() }
+            }
+        case "approved":
+            await completeApprovedReset(journal: journal, joinRequestId: request.joinRequestId,
+                                        executeAfter: request.executeAfter, store: store, generation: generation)
+        case "denied":
+            finishReset(store, operation: operation, status: request.status)
+            phase = .resetRefused(.denied)
+        case "blocked":
+            finishReset(store, operation: operation, status: request.status)
+            phase = .resetRefused(.devicesActive(lastActiveAt: nil))
+        case "expired":
+            finishReset(store, operation: operation, status: request.status)
+            phase = .resetRefused(.expired)
+        case "cancelled":
+            finishReset(store, operation: operation, status: request.status)
+            phase = .chooseJoinMethod
+        case "executed":
+            finishReset(store, operation: operation, status: request.status)
+            await rerunAccountProbe()
+        default:
+            stopPolling()
+            AppLogWarn("[phi-sync] reset request \(operation) has an unknown status: \(request.status)")
+            phase = .resetError(ResetRequestStrings.requestFailed)
+        }
+    }
+
+    /// A terminal status: the journal goes and the poll stops.
+    private func finishReset(_ store: SyncResetRequestJournalStore, operation: String, status: String) {
+        stopPolling()
+        store.clear()
+        AppLogInfo("[phi-sync] reset request \(operation) ended: \(status)")
+    }
+
+    /// An enrolled Mac said "Yes, it was me": it approved the request's join row, so this Mac
+    /// completes the ordinary approved join (`verified()`), then pairing. Nothing is deleted.
+    private func completeApprovedReset(journal: SyncResetRequestJournal, joinRequestId: String,
+                                       executeAfter: Date, store: SyncResetRequestJournalStore,
+                                       generation: Int) async {
+        let operation = journal.operationId.uuidString.lowercased()
+        stopPolling()
+        do {
+            try beginEnrollment()
+        } catch {
+            phase = .resetError(KeyLayerStrings.saveFailed)
+            return
+        }
+        do {
+            let result = try await manager.pollJoin(requestId: joinRequestId)
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            switch result {
+            case .approved:
+                finishReset(store, operation: operation, status: "approved")
+                verified()
+            case .denied:
+                finishReset(store, operation: operation, status: "denied")
+                phase = .resetRefused(.denied)
+            case .expired:
+                finishReset(store, operation: operation, status: "expired")
+                phase = .resetRefused(.expired)
+            case .pending:
+                phase = .waitingForReset(executeAfter: executeAfter)
+                startResetPollTimer()
+            }
+        } catch {
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogWarn("[phi-sync] reset request \(operation): approved join failed: \(PhiSyncLog.describe(error))")
+            phase = .waitingForReset(executeAfter: executeAfter)
+            inputError = KeyLayerStrings.connectionFailed
+            startResetPollTimer()
+        }
+    }
+
+    /// `POST .../execute` once `execute_after` has passed. 200 and 404 both mean the account is
+    /// empty: the journal goes and the account probe routes to first-device setup.
+    private func executeReset(_ journal: SyncResetRequestJournal, store: SyncResetRequestJournalStore,
+                              generation: Int) async {
+        let operation = journal.operationId.uuidString.lowercased()
+        stopPolling()
+        workingOperation = true
+        defer { if generation == operationGeneration { workingOperation = false } }
+        phase = .working
+        do {
+            try await manager.executeSyncReset(operationId: journal.operationId, deviceKeyId: journal.deviceKeyID)
+            finishReset(store, operation: operation, status: "executed")
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            workingOperation = false
+            await rerunAccountProbe()
+        } catch ResetRequestError.notFound {
+            finishReset(store, operation: operation, status: "executed (404)")
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            workingOperation = false
+            await rerunAccountProbe()
+        } catch ResetRequestError.tooEarly(let serverExecuteAfter) {
+            // Clock skew: keep waiting and show the server's date.
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogInfo("[phi-sync] reset request \(operation) execute refused: too_early")
+            let executeAfter = serverExecuteAfter ?? journal.executeAfter ?? Date().addingTimeInterval(resetPollInterval)
+            if let joinRequestId = journal.joinRequestId {
+                try? store.save(journal.confirmed(executeAfter: executeAfter, joinRequestId: joinRequestId))
+            }
+            phase = .waitingForReset(executeAfter: executeAfter)
+            startResetPollTimer()
+        } catch ResetRequestError.devicesActive(let lastActiveAt, _) {
+            finishReset(store, operation: operation, status: "blocked")
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            phase = .resetRefused(.devicesActive(lastActiveAt: lastActiveAt))
+        } catch ResetRequestError.notPending {
+            // Resolved underneath (an approval or a denial won the race): read the status.
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogInfo("[phi-sync] reset request \(operation) execute refused: not_pending; re-reading the status")
+            do {
+                let request = try await manager.syncResetStatus(operationId: journal.operationId)
+                guard generation == operationGeneration, flowIsCurrent else { return }
+                guard request.status != "pending" else {
+                    phase = .resetError(ResetRequestStrings.executeFailed)
+                    return
+                }
+                workingOperation = false
+                await apply(request, journal: journal, store: store, generation: generation)
+            } catch {
+                guard generation == operationGeneration, flowIsCurrent else { return }
+                phase = .resetError(ResetRequestStrings.executeFailed)
+            }
+        } catch ResetRequestError.notRequester {
+            finishReset(store, operation: operation, status: "not_requester")
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            phase = .chooseJoinMethod
+        } catch {
+            // Unknown outcome: the journal stays and Retry asks again.
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogWarn("[phi-sync] reset request \(operation) execute failed: \(PhiSyncLog.describe(error))")
+            phase = .resetError(ResetRequestStrings.executeFailed)
+        }
+    }
+
+    /// The account probe again, as when the window opens: after the account was emptied it
+    /// answers 404 and `beginSetup` routes to `.introduction`.
+    private func rerunAccountProbe() async {
+        stopPolling()
+        await beginSetup(controller: flowController)
+    }
+
+    /// **Cancel request** on the waiting page. Answers that leave nothing to withdraw count as
+    /// done (`AccountKeyManager.cancelSyncReset`); a transport failure keeps the request, the
+    /// journal and the page.
+    func cancelResetRequest() async {
+        guard !workingOperation else { return }
+        guard let store = resetJournal, let journal = store.load() else {
+            cancelJoin()
+            return
+        }
+        operationGeneration += 1
+        let generation = operationGeneration
+        workingOperation = true
+        defer { if generation == operationGeneration { workingOperation = false } }
+        stopPolling()
+        inputError = nil
+        let operation = journal.operationId.uuidString.lowercased()
+        do {
+            try await manager.cancelSyncReset(operationId: journal.operationId, deviceKeyId: journal.deviceKeyID)
+            store.clear()
+            AppLogInfo("[phi-sync] reset request \(operation) cancelled")
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            workingOperation = false
+            cancelJoin()
+        } catch {
+            guard generation == operationGeneration, flowIsCurrent else { return }
+            AppLogWarn("[phi-sync] reset request \(operation) cancel failed: \(PhiSyncLog.describe(error))")
+            inputError = ResetRequestStrings.cancelFailed
+            startResetPollTimer()
+        }
+    }
+
+    /// Try again on a start over error page: a journaled request whose creation was never
+    /// confirmed is sent again under the same operation; a confirmed one is asked about; with
+    /// no journal the flow starts again from the explanation.
+    func retryReset() async {
+        guard !workingOperation else { return }
+        guard let journal = resetJournal?.load() else {
+            inputError = nil
+            phase = .resetExplanation
+            return
+        }
+        if journal.executeAfter == nil {
+            await sendResetRequest(staleRetryLeft: true)
+        } else {
+            resumeReset(journal)
+            await pollResetOnce()
+        }
+    }
+
+    /// The expired page's **Start over again**.
+    func startOverAgain() {
+        guard !workingOperation else { return }
+        cancelJoin()
+        phase = .resetExplanation
+    }
+
+    /// This Mac holds an envelope again (an approval completed, possibly in an earlier session
+    /// that stopped before clearing): a journal left behind is withdrawn best effort and dropped.
+    private func discardResetJournalAfterEnrollment() {
+        guard let store = resetJournal, let journal = store.load() else { return }
+        store.clear()
+        AppLogInfo("[phi-sync] reset request \(journal.operationId.uuidString.lowercased()) dropped: this Mac is set up for sync")
+        Task { [manager] in
+            do { try await manager.cancelSyncReset(operationId: journal.operationId, deviceKeyId: journal.deviceKeyID) }
+            catch { AppLogWarn("[phi-sync] leftover reset request withdrawal failed: \(PhiSyncLog.describe(error))") }
+        }
+    }
+
+    private func startResetPollTimer() {
+        stopPolling()
+        let timer = Timer(timeInterval: resetPollInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, case .waitingForReset = self.phase else { return }
+                await self.pollResetOnce()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pollTimer = timer
     }
 
     // MARK: - Semi-automatic profile pairing (M2-4 Task 5)
@@ -690,6 +1184,16 @@ struct PreviewKeyEnvelopeAPI: KeyEnvelopeAPI {
     func putProfileKey(uuid: String, envelope: Data) async throws -> Bool { true }
     func getDomainKey(domain: String) async throws -> Data? { nil }
     func putDomainKey(domain: String, envelope: Data) async throws -> Bool { true }
+    func putResetRequest(operationId: UUID, deviceKeyId: String, publicKey: Data,
+                         name: String, platform: String) async throws -> ResetRequestDTO {
+        ResetRequestDTO(operationId: operationId.uuidString.lowercased(), status: "pending", createdAt: Date(),
+                        executeAfter: Date().addingTimeInterval(48 * 3600), joinRequestId: "preview")
+    }
+    func getResetRequest(operationId: UUID) async throws -> ResetRequestDTO {
+        throw ResetRequestError.notFound
+    }
+    func cancelResetRequest(operationId: UUID, deviceKeyId: String) async throws {}
+    func executeResetRequest(operationId: UUID, deviceKeyId: String) async throws {}
 }
 
 /// No-op `DeviceKeyProviding` fake used only to drive SwiftUI previews for the

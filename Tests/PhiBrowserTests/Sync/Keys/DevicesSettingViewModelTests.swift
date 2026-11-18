@@ -27,6 +27,39 @@ final class DevicesSettingViewModelTests: XCTestCase {
         await vm.stopPolling()
     }
 
+    /// PHI-2002: the **Start over pending** row follows the journal, and its Cancel request
+    /// keeps the row (with an error) when the withdrawal fails.
+    func testStartOverPendingRowFollowsTheJournalAndCancels() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        let svc = DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider)
+        let executeAfter = Date(timeIntervalSince1970: 1_800_000_000)
+        var journal: SyncResetRequestJournal? = SyncResetRequestJournal(
+            operationId: UUID(), deviceKeyID: "dev", createdAt: Date())
+            .confirmed(executeAfter: executeAfter, joinRequestId: "jr")
+        var cancelError: Error? = KeyAPIError.transport(URLError(.notConnectedToInternet))
+        let vm = DevicesSettingViewModel(manager: mgr, approvals: svc)
+        vm.resetRequestJournal = { journal }
+        vm.cancelResetRequestAction = {
+            if let cancelError { throw cancelError }
+            journal = nil
+        }
+        await vm.loadAll()
+        XCTAssertEqual(vm.unlockState, .needsJoin)
+        XCTAssertEqual(vm.startOverPending?.executeAfter, journal?.executeAfter)
+
+        await vm.cancelStartOver()
+        XCTAssertNotNil(vm.startOverPending, "a failed withdrawal keeps the row")
+        XCTAssertEqual(vm.startOverError, ResetRequestStrings.cancelFailed)
+
+        cancelError = nil
+        await vm.cancelStartOver()
+        XCTAssertNil(vm.startOverPending)
+        XCTAssertNil(vm.startOverError)
+        await vm.stopPolling()
+    }
+
     func testMappingCompletionDoesNotPublishAfterThePaneStops() async throws {
         let (_, mgr, svc, _) = try await unlockedStack()
         let vm = DevicesSettingViewModel(manager: mgr, approvals: svc)

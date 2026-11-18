@@ -173,6 +173,55 @@ struct JoinRequestDTO: Decodable {
     }
 }
 
+/// Refusals of the reset-request routes (docs/sync.md, "Starting over from a Mac that is not
+/// set up for sync"). Matched on the error envelope's `code`; the dates and the device name come
+/// from its `details` object. `notFound` is the route's 404 `reset_request_not_found`, which the
+/// execute route also answers once the account is already empty.
+enum ResetRequestError: Error, Equatable {
+    case accountNotFound
+    case deviceKnown
+    case devicesActive(lastActiveAt: Date?, deviceName: String?)
+    case requestExists(executeAfter: Date?)
+    case conflict
+    case staleAuthentication
+    case notFound
+    case tooEarly(executeAfter: Date?)
+    case notPending(status: String?)
+    case notRequester
+    case invalidRequest
+}
+
+/// A reset request as `PUT` and `GET /keys/v1/reset-requests/{operation}` return it. The
+/// requester's public key and display name are not kept: the client already knows them.
+struct ResetRequestDTO: Decodable, Equatable {
+    let operationId: String
+    let status: String
+    let createdAt: Date
+    let executeAfter: Date
+    let joinRequestId: String
+
+    enum CodingKeys: String, CodingKey {
+        case operationId = "operation_id", status, createdAt = "created_at"
+        case executeAfter = "execute_after", joinRequestId = "join_request_id"
+    }
+    init(operationId: String, status: String, createdAt: Date, executeAfter: Date, joinRequestId: String) {
+        self.operationId = operationId; self.status = status; self.createdAt = createdAt
+        self.executeAfter = executeAfter; self.joinRequestId = joinRequestId
+    }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        operationId = try c.decode(String.self, forKey: .operationId)
+        status = try c.decode(String.self, forKey: .status)
+        joinRequestId = try c.decode(String.self, forKey: .joinRequestId)
+        guard let created = KeyEnvelopeAPIClient.parseRFC3339(try c.decode(String.self, forKey: .createdAt)),
+              let after = KeyEnvelopeAPIClient.parseRFC3339(try c.decode(String.self, forKey: .executeAfter)) else {
+            throw KeyAPIError.decode
+        }
+        createdAt = created
+        executeAfter = after
+    }
+}
+
 /// Response item for `GET /keys/v1/profiles`.
 struct ProfileSummaryDTO: Decodable {
     let profileUuid: String
@@ -367,6 +416,13 @@ final class KeyEnvelopeAPIClient {
         }
     }
 
+    /// The `details` object of a `/keys/v1` error body: structured, metadata-only fields a
+    /// refusal carries (for example the time a refused request may be retried). Empty when absent.
+    static func errorDetails(in data: Data) -> [String: Any] {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+        return object["details"] as? [String: Any] ?? [:]
+    }
+
     /// `PUT /keys/v1/reset-operations/{operation}`: the account's last active device
     /// deletes every server-side sync row of the account. The server keeps no receipt;
     /// a retry with the same `operationId` is answered from the account's state, so a
@@ -512,6 +568,71 @@ final class KeyEnvelopeAPIClient {
     func denyJoinRequest(id: String) async throws {
         let (status, data) = try await request("POST", "/keys/v1/join-requests/\(id)/deny")
         guard status == 200 || status == 204 else { throw mapJoinError(status, data) }
+    }
+}
+
+// MARK: - Reset requests (docs/sync.md, "Starting over from a Mac that is not set up for sync")
+
+extension KeyEnvelopeAPIClient {
+    private static func resetPath(_ operationId: UUID) -> String {
+        "/keys/v1/reset-requests/\(operationId.uuidString.lowercased())"
+    }
+
+    /// Maps a refusal of a reset-request route to `ResetRequestError` by its `code`, with the
+    /// structured fields from `details`; anything else stays an HTTP error.
+    static func mapResetRequestError(_ status: Int, _ data: Data) -> Error {
+        let details = errorDetails(in: data)
+        let date: (String) -> Date? = { key in (details[key] as? String).flatMap(parseRFC3339) }
+        switch (status, errorCode(in: data)) {
+        case (404, "account_not_found"): return ResetRequestError.accountNotFound
+        case (404, "reset_request_not_found"): return ResetRequestError.notFound
+        case (400, "device_known"): return ResetRequestError.deviceKnown
+        case (400, "invalid_request"): return ResetRequestError.invalidRequest
+        case (409, "devices_active"):
+            return ResetRequestError.devicesActive(lastActiveAt: date("last_active_at"),
+                                                   deviceName: details["device_name"] as? String)
+        case (409, "reset_request_exists"): return ResetRequestError.requestExists(executeAfter: date("execute_after"))
+        case (409, "reset_request_conflict"): return ResetRequestError.conflict
+        case (409, "too_early"): return ResetRequestError.tooEarly(executeAfter: date("execute_after"))
+        case (409, "not_pending"): return ResetRequestError.notPending(status: details["status"] as? String)
+        case (403, "stale_authentication"): return ResetRequestError.staleAuthentication
+        case (403, "not_requester"): return ResetRequestError.notRequester
+        default: return KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    /// `PUT /keys/v1/reset-requests/{operation}`. Needs a fresh interactive sign-in (the token's
+    /// `auth_time`); the same operation with the same body replays the row in any status.
+    func putResetRequest(operationId: UUID, deviceKeyId: String, publicKey: Data,
+                         name: String, platform: String) async throws -> ResetRequestDTO {
+        let (status, data) = try await request("PUT", Self.resetPath(operationId), body: [
+            "device_key_id": deviceKeyId, "requesting_public_key": publicKey.base64EncodedString(),
+            "name": name, "platform": platform])
+        guard status == 200 else { throw Self.mapResetRequestError(status, data) }
+        return try JSONDecoder().decode(ResetRequestDTO.self, from: data)
+    }
+
+    /// `GET /keys/v1/reset-requests/{operation}`: the row with its status, `expired` computed by
+    /// the server. 404 (`ResetRequestError.notFound`) when the row is gone or never existed.
+    func getResetRequest(operationId: UUID) async throws -> ResetRequestDTO {
+        let (status, data) = try await request("GET", Self.resetPath(operationId))
+        guard status == 200 else { throw Self.mapResetRequestError(status, data) }
+        return try JSONDecoder().decode(ResetRequestDTO.self, from: data)
+    }
+
+    /// `POST /keys/v1/reset-requests/{operation}/cancel`, by the requester.
+    func cancelResetRequest(operationId: UUID, deviceKeyId: String) async throws {
+        let (status, data) = try await request("POST", Self.resetPath(operationId) + "/cancel",
+                                               body: ["device_key_id": deviceKeyId])
+        guard status == 200 else { throw Self.mapResetRequestError(status, data) }
+    }
+
+    /// `POST /keys/v1/reset-requests/{operation}/execute`, by the requester once
+    /// `execute_after` has passed. 200 means the account's sync data was deleted.
+    func executeResetRequest(operationId: UUID, deviceKeyId: String) async throws {
+        let (status, data) = try await request("POST", Self.resetPath(operationId) + "/execute",
+                                               body: ["device_key_id": deviceKeyId])
+        guard status == 200 else { throw Self.mapResetRequestError(status, data) }
     }
 }
 

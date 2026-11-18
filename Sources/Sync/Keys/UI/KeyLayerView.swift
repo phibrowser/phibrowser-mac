@@ -63,6 +63,22 @@ struct KeyLayerView: View {
                 message(NSLocalizedString("sync.setup.joinExpired.title", value: "Request expired", comment: "Sync setup - title shown when this device's join request timed out"),
                         NSLocalizedString("sync.setup.joinExpired.message", value: "This request timed out. You can try again.", comment: "Sync setup - message shown when this device's join request timed out"),
                         retry: true)
+            case .resetExplanation:
+                ResetExplanationView(viewModel: viewModel)
+            case .resetSigningIn:
+                ResetSigningInView(viewModel: viewModel)
+            case .waitingForReset(let executeAfter):
+                // Close keeps the request. Deferred like `.done` below, so the window never
+                // closes from inside the button's mouse-tracking loop.
+                WaitingForResetView(viewModel: viewModel, executeAfter: executeAfter, onClose: {
+                    RunLoop.main.perform(inModes: Self.finishDeliveryModes) {
+                        MainActor.assumeIsolated { onFinish() }
+                    }
+                })
+            case .resetRefused(let refusal):
+                ResetRefusalView(viewModel: viewModel, refusal: refusal)
+            case .resetError(let m):
+                ResetErrorView(viewModel: viewModel, message: m)
             case .error(let m):
                 message(NSLocalizedString("sync.setup.error.title", value: "Something went wrong", comment: "Sync setup - title of the error page"), m,
                         retry: true, retryRoutesFromStart: true)

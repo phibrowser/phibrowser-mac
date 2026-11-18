@@ -40,6 +40,23 @@ enum SyncHelpLinks {
         open(forgotRecoveryCodeURL(), target: target())
     }
 
+    /// The anchor of the "Start over without the old data" section. Provisional until the
+    /// Help Center article is rewritten; change it here only.
+    static let startOverAnchor = "start-over-without-the-old-data"
+
+    /// The "Start over without the old data" article, in the language Phi's UI is currently
+    /// running in, under the same locale rule as `forgotRecoveryCodeURL`.
+    static func startOverURL(
+        for language: SupportedAppLanguage = PhiPreferences.GeneralSettings.activeProcessAppLanguage()
+    ) -> URL {
+        URL(string: helpRoot + localePathPrefix(for: language) + "sync/#" + startOverAnchor)!
+    }
+
+    /// Opens the start over article where it can be read while the setup window stays open.
+    static func openStartOver() {
+        open(startOverURL(), target: target())
+    }
+
     /// `.defaultBrowser` only when web links are handled by an application
     /// other than this one. When the default browser is this app, or cannot
     /// be determined, the article must not land behind the modal setup

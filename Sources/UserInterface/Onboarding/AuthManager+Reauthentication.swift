@@ -97,6 +97,18 @@ enum AuthReauthenticationWebAuthRunner {
     }
 }
 
+/// Outcome of `AuthManager.reauthenticateInteractively()`. `cancelled` is distinct so the
+/// flow that asked can return to the page it came from.
+enum InteractiveReauthenticationResult: Equatable {
+    /// The new credentials, for the same account, are stored.
+    case signedIn
+    /// The sign-in was abandoned (`cancelOngoingWebAuthentication()` or the user agent).
+    case cancelled
+    /// The browser signed in to another account; nothing was stored.
+    case wrongAccount
+    case failed
+}
+
 private struct PersistedAuthReauthenticationState {
     let reason: AuthReauthenticationReason
     let firstDetectedAt: Date

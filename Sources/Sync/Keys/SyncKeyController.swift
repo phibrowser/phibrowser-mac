@@ -132,6 +132,10 @@ final class SyncKeyController {
     /// The account's `sync.pairingLocalReset` marker (docs/sync.md, "Replacing this Mac's data at
     /// pairing"). Nil means unwired/test construction.
     private let localResetMarker: SyncPairingLocalResetMarkerStore?
+    /// The account's `sync.resetRequest` journal (docs/sync.md, "Starting over from a Mac that
+    /// is not set up for sync"), read by the setup window and Settings → Sync. Nil means
+    /// unwired/test construction.
+    let resetRequestJournal: SyncResetRequestJournalStore?
     /// Local data access for the pairing reset, wired by the coordinator. Nil means unwired/test
     /// construction, and `localDataReset()` then answers nil.
     private let localResetAccess: PhiLocalDataReset.LocalAccess?
@@ -284,6 +288,7 @@ final class SyncKeyController {
          runtimeRequiresReconfiguration: @escaping () -> Bool = { false },
          runtimeRemovalPending: @escaping () -> Bool = { false },
          localResetMarker: SyncPairingLocalResetMarkerStore? = nil,
+         resetRequestJournal: SyncResetRequestJournalStore? = nil,
          localResetAccess: PhiLocalDataReset.LocalAccess? = nil,
          profileDeletionIntents: @escaping @MainActor () -> (any PhiProfileDeletionIntentStore)? = {
              PhiSpaceSyncState.shared.profileDeletionIntentStore
@@ -314,6 +319,7 @@ final class SyncKeyController {
         self.markerStore = markerStore
         self.clearAllSyncIds = clearAllSyncIds
         self.localResetMarker = localResetMarker
+        self.resetRequestJournal = resetRequestJournal
         self.localResetAccess = localResetAccess
         self.profileDeletionIntents = profileDeletionIntents
     }
@@ -442,6 +448,18 @@ final class SyncKeyController {
 
     func allSpaceMappings() -> [String: String] {
         spaceKeys?.allMappings() ?? [:]
+    }
+
+    // MARK: - Starting over from a Mac that is not set up for sync (docs/sync.md)
+
+    /// Settings → Sync's **Cancel request**: withdraws the journaled reset request and drops
+    /// the journal. Answers that leave nothing to withdraw count as done
+    /// (`AccountKeyManager.cancelSyncReset`); a transport failure throws and keeps the journal.
+    func cancelResetRequest() async throws {
+        guard let resetRequestJournal, let journal = resetRequestJournal.load() else { return }
+        try await manager.cancelSyncReset(operationId: journal.operationId, deviceKeyId: journal.deviceKeyID)
+        resetRequestJournal.clear()
+        AppLogInfo("[phi-sync] reset request \(journal.operationId.uuidString.lowercased()) cancelled from Settings")
     }
 
     // MARK: - Replacing this Mac's data at pairing (docs/sync.md, "Enrollment and setup")

@@ -234,8 +234,13 @@ final class KeyLayerResetRequestTests: XCTestCase {
         let kept = try XCTUnwrap(f.journal.store.load())
         XCTAssertNil(kept.executeAfter)
 
+        // The lost PUT may have created the request: its join row is now this key's pending ticket.
+        let ownKey = try f.provider.loadOrCreatePrivateKey().publicKey.rawRepresentation
+        f.api.pendingSummaries = [JoinRequestSummaryDTO(requestId: "reset-join", requestingPublicKey: ownKey, name: "Mac",
+                                                        platform: "macos", status: "pending", createdAt: Date())]
         await f.model.retryReset()
         XCTAssertEqual(f.signIns.calls, 1, "a replay needs no second sign-in while it is fresh")
+        XCTAssertEqual(f.api.denyCalls, [], "a replay withdraws nothing: the request's own join row must survive")
         XCTAssertEqual(f.api.resetRequestPuts.map(\.operationId), [kept.operationId, kept.operationId])
         guard case .waitingForReset = f.model.phase else { return XCTFail("Retry reaches the waiting page") }
         f.model.stopPolling()

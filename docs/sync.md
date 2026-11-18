@@ -481,7 +481,10 @@ store, which only the setup window's model receives from the gate.
    withdrawal is not account activity), write the journal, then
    `PUT /keys/v1/reset-requests/{operation}` with `device_key_id`,
    `requesting_public_key` (base64), `name` and `platform`, the values a join
-   request sends. Journal first, request second.
+   request sends. Journal first, request second. A replay of a journaled
+   operation (Try again after a lost answer) withdraws nothing: the earlier
+   attempt already did, and the pending ticket for this key may by then be the
+   request's own join row, which the join route's deny would end as `denied`.
 4. `.waitingForReset(executeAfter)`: "Sync will start over on <date>…", with
    **Cancel request** and **Close**. Close keeps the request. The page polls
    `GET /keys/v1/reset-requests/{operation}` every 60 seconds while open, and the

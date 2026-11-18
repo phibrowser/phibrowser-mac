@@ -514,7 +514,10 @@ final class KeyLayerViewModel: ObservableObject {
 
     /// Withdraws this device's join tickets, journals the operation, then sends it: journal
     /// first, request second. A journal left by an earlier attempt whose outcome is unknown is
-    /// sent again under the same operation, which the server replays.
+    /// sent again under the same operation, which the server replays; that attempt already
+    /// withdrew the old tickets, and the only pending ticket for this key may now be the
+    /// request's own join row, which a withdrawal through the join route would end as denied.
+    /// So a journaled operation withdraws nothing.
     private func sendResetRequest(staleRetryLeft: Bool) async {
         guard let store = resetJournal else { return }
         operationGeneration += 1
@@ -523,18 +526,21 @@ final class KeyLayerViewModel: ObservableObject {
         defer { if generation == operationGeneration { workingOperation = false } }
         inputError = nil
         phase = .working
-        do {
-            try await manager.withdrawOutstandingJoinRequests()
-        } catch {
+        let existing = store.load()
+        if existing == nil {
+            do {
+                try await manager.withdrawOutstandingJoinRequests()
+            } catch {
+                guard generation == operationGeneration, flowIsCurrent else { return }
+                AppLogWarn("[phi-sync] reset request: join withdrawal failed: \(PhiSyncLog.describe(error))")
+                phase = .resetError(ResetRequestStrings.requestFailed)
+                return
+            }
             guard generation == operationGeneration, flowIsCurrent else { return }
-            AppLogWarn("[phi-sync] reset request: join withdrawal failed: \(PhiSyncLog.describe(error))")
-            phase = .resetError(ResetRequestStrings.requestFailed)
-            return
         }
-        guard generation == operationGeneration, flowIsCurrent else { return }
         let journal: SyncResetRequestJournal
         do {
-            if let existing = store.load() {
+            if let existing {
                 journal = existing
             } else {
                 journal = SyncResetRequestJournal(operationId: UUID(),

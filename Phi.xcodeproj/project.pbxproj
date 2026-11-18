@@ -533,6 +533,9 @@
 		181700000000000000000006 /* LocalStore+Omnibox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 181700000000000000000005 /* LocalStore+Omnibox.swift */; };
 		CC2708A62E7A65E500B65AB8 /* TabDataModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2708A32E7A65E500B65AB8 /* TabDataModel.swift */; };
 		CC2708A92E7A675C00B65AB8 /* Account.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2708A72E7A675C00B65AB8 /* Account.swift */; };
+		EE5A00022F11000000000001 /* EnterpriseSSOIdentityProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE5A00012F11000000000001 /* EnterpriseSSOIdentityProvider.swift */; };
+		EE5A00022F11000000000002 /* EnterpriseSSOHeaderProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE5A00012F11000000000002 /* EnterpriseSSOHeaderProvider.swift */; };
+		EE5A00022F11000000000003 /* EnterpriseSSOHeaders.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE5A00012F11000000000003 /* EnterpriseSSOHeaders.swift */; };
 		CC288A692E4F12CB004A6C1C /* SidebarViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC288A662E4F12CB004A6C1C /* SidebarViewController.swift */; };
 		CC288A6B2E4F12EC004A6C1C /* SidebarHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC288A6A2E4F12EC004A6C1C /* SidebarHeaderView.swift */; };
 		CC288A8A2E5333CC004A6C1C /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = CC288A892E5333CC004A6C1C /* main.m */; };
@@ -1408,6 +1411,9 @@
 		181700000000000000000005 /* LocalStore+Omnibox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalStore+Omnibox.swift"; sourceTree = "<group>"; };
 		CC2708A32E7A65E500B65AB8 /* TabDataModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModel.swift; sourceTree = "<group>"; };
 		CC2708A72E7A675C00B65AB8 /* Account.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Account.swift; sourceTree = "<group>"; };
+		EE5A00012F11000000000001 /* EnterpriseSSOIdentityProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnterpriseSSOIdentityProvider.swift; sourceTree = "<group>"; };
+		EE5A00012F11000000000002 /* EnterpriseSSOHeaderProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnterpriseSSOHeaderProvider.swift; sourceTree = "<group>"; };
+		EE5A00012F11000000000003 /* EnterpriseSSOHeaders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnterpriseSSOHeaders.swift; sourceTree = "<group>"; };
 		CC288A662E4F12CB004A6C1C /* SidebarViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarViewController.swift; sourceTree = "<group>"; };
 		CC288A6A2E4F12EC004A6C1C /* SidebarHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarHeaderView.swift; sourceTree = "<group>"; };
 		CC288A892E5333CC004A6C1C /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
@@ -2575,6 +2581,16 @@
 			path = AgentSpace;
 			sourceTree = "<group>";
 		};
+		EE5A00032F11000000000001 /* EnterpriseSSO */ = {
+			isa = PBXGroup;
+			children = (
+				EE5A00012F11000000000001 /* EnterpriseSSOIdentityProvider.swift */,
+				EE5A00012F11000000000002 /* EnterpriseSSOHeaderProvider.swift */,
+				EE5A00012F11000000000003 /* EnterpriseSSOHeaders.swift */,
+			);
+			path = EnterpriseSSO;
+			sourceTree = "<group>";
+		};
 		B02586F42E42FD97001B08FC /* Sources */ = {
 			isa = PBXGroup;
 			children = (
@@ -2582,6 +2598,7 @@
 				B0F370CE2E4326EB000B51F9 /* Application */,
 				B02586F92E42FDA9001B08FC /* ChromiumBridge */,
 				37C1B0D62ED6D49D00DD4496 /* CommandDispatcher */,
+				EE5A00032F11000000000001 /* EnterpriseSSO */,
 				CC2708A42E7A65E500B65AB8 /* LocalStorage */,
 				376CE4112F2897D30093D937 /* Networking */,
 				376CE3FF2F2891670093D937 /* Notifications */,
@@ -4148,6 +4165,9 @@
 				CC98F89C2E8BC71800DAD237 /* Settings.swift in Sources */,
 				376CE4092F28917C0093D937 /* NotificationMessageCardView.swift in Sources */,
 				CC2708A92E7A675C00B65AB8 /* Account.swift in Sources */,
+				EE5A00022F11000000000001 /* EnterpriseSSOIdentityProvider.swift in Sources */,
+				EE5A00022F11000000000002 /* EnterpriseSSOHeaderProvider.swift in Sources */,
+				EE5A00022F11000000000003 /* EnterpriseSSOHeaders.swift in Sources */,
 				374BD1062F739D5F0043C656 /* NativeTabDecisionEngine.swift in Sources */,
 				37C1B4F72EE6CE8A00DD4496 /* GeneralSettingHostingViewController.swift in Sources */,
 				37C1B4F82EE6CE8A00DD4496 /* GeneralSettingViewController.swift in Sources */,

@@ -2,42 +2,43 @@
 
 # Phi Browser
 
-**The AI browser for macOS.** Agentic, local-first, native Swift.
+**A crafted front door to the internet.**
 
-Phi is a Chromium-based browser built as a real native macOS app (AppKit + SwiftUI), with an AI agent that acts in the page, a memory that lives in a file you can read, and the option to run AI entirely on your own machine. It is built for something new: a browser a person and an AI agent can use *together*, in the same window and the same session, each a first-class user.
+*Simple until asked for more, made for humans and whichever AI tools they use, and local first so data and privacy stay where they belong.*
 
-**Download Phi** (free, Apple Silicon): **[phibrowser.com](https://phibrowser.com)**
-If this is your kind of thing, a ⭐ helps a lot.
+Phi Browser is a Chromium-based browser built as a real native macOS app (AppKit + SwiftUI). It is a clean everyday browser first, with the power tools one reach away. AI is welcome and never required: AI agents can work in it beside you, what it remembers stays in a file on your Mac that you can read, and the models can run entirely on your own machine.
+
+**Download Phi Browser** (free, Apple Silicon): [**phibrowser.com**](https://phibrowser.com)  
+Like it? A ⭐ helps a lot.
 
 <br>
 
-## What makes it different
+## Why Phi Browser
 
-- **Built for people who live in a browser.** Phi is an everyday browser made for heavy, all-day use, with the productivity power-ups that implies. It is also built so an AI agent can work beside you: seeing what you are working on, carrying the thread forward, and handing it back, in the same window and the same session rather than boxed off in a sandbox.
-- **Simple until you want more.** Phi opens as a clean tabbed browser that feels properly at home on macOS, and nothing is in your way until you reach for it. Then it unfolds: spaces, profiles, split views, tab groups, URL rules, keyboard shortcuts, Raycast support, picture-in-picture, and plenty more.
-- **The AI goes as deep as you want it to.** Persistent memory that builds up as you work. An assistant you can shape to how you think. Scheduled tasks that run without you. Private AI, where models run on your own Mac and nothing leaves it. A local guardrail that screens credentials out before anything reaches memory. Phi Sentinel, a separate daemon that oversees the AI work rather than burying it in the browser process. Your memory exposed over MCP. A command-line interface. And the ability to hand Phi to another agent entirely and let it drive.
-- **An agent with the same reach you have.** The agent sees what you see and picks up from where you are, so you rarely have to spell out every step. Inside a browser window today most things are full applications rather than pages, and the agent operates them the way you would, with the same capabilities as a human operator and a visible record of every action it took. Not a chat panel bolted onto a browser.
-- **Memory you can actually read.** Phi's memory of your browsing is created and stored on your device and stays your property. You can open it, edit it, delete entries, or wipe it. We do not collect it and we do not upload it. We do not train AI models on your content.
-- **Your AI, your choice of where it runs.** Point Phi at models on your own Mac or your own hardware through LM Studio or Ollama, and no account is involved. Or use Phi Cloud. Or switch AI off entirely and use Phi as a plain browser.
-- **Skills it builds for itself.** Show the agent a workflow once and it condenses what you did into a reusable skill, ready the next time you need it.
-- **Independent, and nothing to lock you into.** Phinomenon is a small independent software house. We do not run a search business, an ad network, or a cloud we need to keep you inside, so our incentive is simply that you like the browser enough to keep it. Bring your own models, use ours, or use none.
-- **A real browser underneath.** A genuine Chromium engine with a native macOS client on top, AppKit and SwiftUI. A full browser that holds up as one, fast and at home on the Mac.
+- **Simple.** It opens clean and fast. Nothing in your way.
+- **Powerful when you ask.** Spaces, profiles, split views, tab groups, URL rules, shortcuts, Raycast, picture-in-picture. All there. None of it in your face.
+- **A real Mac app.** Native AppKit and SwiftUI on a real Chromium engine. Fast, and at home on your Mac.
+- **AI is optional.** On or off, your call. It is a great browser either way.
+- **Any AI is welcome.** Use ours. Run your own models on your own Mac with LM Studio or Ollama, no account needed. Or let the AI tools you already use drive Phi Browser for you.
+- **Your data stays home.** Its memory lives on your device, in a file you can read, edit or wipe. We don't collect it. We don't train on it.
+- **No lock-in.** No ad business. No search business. We win only if you like the browser.
+- **Open source.** The Phi Browser you download is built from this repo. Read it, build it, fix it.
 
 <br>
 
 ## What this repository is
 
-This is the source of the Phi Browser macOS client, published under Apache 2.0. It is not a mirror or a snapshot: the Phi you download from phibrowser.com is built from this repository, from these commits. A fix that lands here lands in the browser people are actually using.
+This is the source of the Phi Browser macOS client, published under Apache 2.0. It is not a mirror or a snapshot: the Phi Browser you download from phibrowser.com is built from this repository, from these commits. A fix that lands here lands in the browser people are actually using.
 
 We publish it for a fairly simple reason. A browser sees everything you do, and we would rather you could read the code that runs it than take our word for how it behaves. Developing in the open tends to produce better software too: bugs get found that we would have missed, and people who care about one detail more than we ever could come and fix it properly.
 
-Not all of Phi is here, and we would rather point at the line than let you discover it. The browser engine is our own Chromium build. We release it as a built binary you can download and link against, and you need it to build this repository, but its source is not published. The server side stays with us as well: the models, the prompts, and the pipelines behind the AI features. Phinomenon Inc. is a company rather than a foundation, and that shapes where the boundary sits. Section 1 of our [Terms of Use](https://phibrowser.com/terms/) sets out the same boundary in legal language.
+Not all of Phi Browser is here, and we would rather point at the line than let you discover it. The browser engine is our own Chromium build. We release it as a built binary you can download and link against, and you need it to build this repository, but its source is not published. The server side stays with us as well: the models, the prompts, and the pipelines behind the AI features. Phinomenon Inc. is a company rather than a foundation, and that shapes where the boundary sits. Section 1 of our [Terms of Use](https://phibrowser.com/terms/) sets out the same boundary in legal language.
 
 ### A build you make yourself
 
-The Apache licence gives you the right to build this source, change it, and ship it. A build you make is your own browser. It is not the Phi we distribute, and the two are not interchangeable.
+The Apache licence gives you the right to build this source, change it, and ship it. A build you make is your own browser. It is not the Phi Browser we distribute, and the two are not interchangeable.
 
-A self-built Phi does not sign in to a Phi account, does not reach Phi Cloud, does not sync, and does not use our connectors or messaging relay. It does not receive our updates: the updater is part of what we ship, not part of what we publish. It carries your signature or none.
+A self-built Phi Browser does not sign in to a Phi account, does not reach Phi Cloud, does not sync, and does not use our connectors or messaging relay. It does not receive our updates: the updater is part of what we ship, not part of what we publish. It carries your signature or none.
 
 Our [Terms of Use](https://phibrowser.com/terms/) and [Privacy Statement](https://phibrowser.com/privacy/) cover the application we distribute from phibrowser.com. They do not cover a build you made.
 
@@ -65,19 +66,19 @@ Do not present a build of your own as the application we distribute.
 
 ## Contributing
 
-Because the Phi we distribute is built from this repository, a contribution accepted here reaches everyone using Phi. You are not patching a side project or a public mirror; you are changing the browser that ships.
+Because the Phi Browser we distribute is built from this repository, a contribution accepted here reaches everyone using Phi Browser. You are not patching a side project or a public mirror; you are changing the browser that ships.
 
 Contributions are welcome: bug reports, feature requests, documentation, and pull requests. Found a bug or have an idea? Open an issue first. To contribute code, send a PR with a clear description of the change and the motivation behind it.
 
 ### Getting in touch
 
-- **Discord** for community chat, and for talking to the people who build Phi in something close to real time: [discord.com/invite/aj7rumAMgC](https://discord.com/invite/aj7rumAMgC)
+- **Discord** for community chat, and for talking to the people who build Phi Browser in something close to real time: [discord.com/invite/aj7rumAMgC](https://discord.com/invite/aj7rumAMgC)
 - **X** for development news as it happens: [@phibrowser](https://x.com/phibrowser)
 - **Security issues: please tell us privately first, at [hi@phi.cc](mailto:hi@phi.cc).** Not in an issue, not in a PR, not on Discord. Give us the chance to fix it before it is public.
 
 ### Translations
 
-Phi ships in 8 languages, currently machine-seeded and waiting for native speakers to make them feel right. If you can read a JSON file, you can help: every user-visible string in the Phi product family lives in [phibrowser/phi-i18n](https://github.com/phibrowser/phi-i18n), each with context on where it appears and what it does. Translations merged there flow into the next Phi build automatically, credited to you. Prefer a web UI over git? Our Weblate is live at [i18n.phibrowser.com](https://i18n.phibrowser.com): browse every string without an account, sign in to translate, with a shared glossary and context for each one.
+Phi Browser ships in 8 languages, currently machine-seeded and waiting for native speakers to make them feel right. If you can read a JSON file, you can help: every user-visible string in the Phi product family lives in [phibrowser/phi-i18n](https://github.com/phibrowser/phi-i18n), each with context on where it appears and what it does. Translations merged there flow into the next Phi Browser build automatically, credited to you. Prefer a web UI over git? Our Weblate is live at [i18n.phibrowser.com](https://i18n.phibrowser.com): browse every string without an account, sign in to translate, with a shared glossary and context for each one.
 
 <br>
 

@@ -65,8 +65,8 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         return hosting
     }()
     private lazy var headerView = SidebarHeaderView(state: state, isFloating: true)
-    private lazy var pinnedTabViewController = PinnedTabViewController(state: state)
-    private lazy var tabList = SidebarTabListViewController(state: state)
+    private lazy var pinnedTabViewController = PinnedTabViewController(state: state, hostVC: self)
+    private lazy var tabList = SidebarTabListViewController(state: state, hostVC: self)
 
     private lazy var pinnedTabsContainerView: NSView = {
         let view = NSView()

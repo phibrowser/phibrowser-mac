@@ -597,14 +597,14 @@ private struct POSIXFileName: Equatable {
         bytes = Array(string.utf8CString)
     }
 
-    init(directoryEntry: dirent) {
-        let length = Int(directoryEntry.d_namlen)
-        var entry = directoryEntry
-        bytes = withUnsafePointer(to: &entry.d_name) { pointer in
-            pointer.withMemoryRebound(to: CChar.self, capacity: length + 1) {
-                Array(UnsafeBufferPointer(start: $0, count: length)) + [0]
-            }
-        }
+    init(directoryEntry: UnsafePointer<dirent>) {
+        let length = Int(directoryEntry.pointee.d_namlen)
+        // readdir returns variable-sized records, not sizeof(dirent) bytes.
+        // Read the name in place and own its bytes before the next readdir call.
+        let name = UnsafeRawPointer(directoryEntry)
+            .advanced(by: MemoryLayout<dirent>.offset(of: \.d_name)!)
+            .assumingMemoryBound(to: CChar.self)
+        bytes = Array(UnsafeBufferPointer(start: name, count: length)) + [0]
     }
 
     var string: String {
@@ -1243,7 +1243,7 @@ private final class TimeMachineManagedSnapshotsDirectory {
                 }
                 break
             }
-            let name = POSIXFileName(directoryEntry: entry.pointee)
+            let name = POSIXFileName(directoryEntry: entry)
             if !name.isDotEntry {
                 names.append(name)
             }

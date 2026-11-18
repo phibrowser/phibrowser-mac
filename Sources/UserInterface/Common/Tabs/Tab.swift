@@ -1036,9 +1036,11 @@ extension Tab: Equatable {
 }
 
 extension Tab: Hashable {
+    // `guidInLocalDB` changes while a tab is live (pin, bookmark, split), and
+    // AppKit hash tables such as NSOutlineView's item map bridge to this hash.
+    // Hashing a mutable field strands their entries and crashes later lookups.
     func hash(into hasher: inout Hasher) {
         hasher.combine(guid)
-        hasher.combine(guidInLocalDB)
     }
 }
 

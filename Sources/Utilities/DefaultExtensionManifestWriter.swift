@@ -7,6 +7,11 @@ import Foundation
 struct DefaultExtensionManifestWriter {
     enum Extension: CaseIterable {
         case onePassword, icloudPasswords
+        /// Bitwarden's desktop app bridge, which the Bitwarden extension uses
+        /// to unlock with Touch ID. The desktop app writes this manifest only
+        /// into the browsers it knows; the content matches the one it writes
+        /// for Chrome.
+        case bitwarden
         
         var content: String {
             switch self {
@@ -37,6 +42,21 @@ struct DefaultExtensionManifestWriter {
                       "allowed_origins": ["chrome-extension://pejdijmoenmkgeppbflobdenhhabjlaj/"]
                     }
                     """
+            case .bitwarden:
+                return """
+                    {
+                      "name": "com.8bit.bitwarden",
+                      "description": "Bitwarden desktop <-> browser bridge",
+                      "path": "/Applications/Bitwarden.app/Contents/MacOS/desktop_proxy",
+                      "type": "stdio",
+                      "allowed_origins": [
+                        "chrome-extension://nngceckbapebfimnlniiiahkandclblb/",
+                        "chrome-extension://hccnnhgbibccigepcmlgppchkpfdophk/",
+                        "chrome-extension://jbkfoedolllekgbhcbcoahefnbanhhlh/",
+                        "chrome-extension://ccnckbpmaceehanjmeomladnmlffdjgn/"
+                      ]
+                    }
+                    """
             }
         }
         
@@ -46,6 +66,8 @@ struct DefaultExtensionManifestWriter {
                 return "com.1password.1password.json"
             case .icloudPasswords:
                 return "com.apple.passwordmanager.json"
+            case .bitwarden:
+                return "com.8bit.bitwarden.json"
             }
         }
     }

@@ -74898,122 +74898,38 @@
         }
       }
     },
-    "settings.general.newTabsAtTop.description" : {
-      "comment" : "General settings - New tab position applies only to sidebar layouts",
+    "settings.general.newTabPosition.bottomOption" : {
+      "comment" : "General settings - Option to place new tabs at the bottom of the sidebar tab list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Platziert neue Tabs in Layouts mit Seitenleiste oben in der Tab-Liste. Im Layout „Komfortabel“ werden neue Tabs immer am Ende geöffnet."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "In sidebar layouts, place new tabs at the top of the tab list. Comfortable always opens new tabs at the end."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En los diseños con barra lateral, coloca las pestañas nuevas en la parte superior de la lista de pestañas. El diseño Cómodo siempre abre las pestañas nuevas al final."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dans les dispositions avec barre latérale, place les nouveaux onglets en haut de la liste des onglets. La disposition Confortable ouvre toujours les nouveaux onglets à la fin."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "サイドバーのあるレイアウトでは、新しいタブをタブリストの一番上に配置します。ゆったりレイアウトでは、新しいタブは常に末尾に開きます。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "사이드바 레이아웃에서는 새 탭을 탭 목록 맨 위에 배치해요. 여유 레이아웃에서는 새 탭이 항상 맨 끝에 열려요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Plaats nieuwe tabbladen in lay-outs met een zijbalk boven aan de tabbladenlijst. In Comfortabel worden nieuwe tabbladen altijd aan het einde geopend."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在侧边栏布局中，将新标签页放在标签页列表顶部。「舒适」布局始终在末尾打开新标签页。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在側邊欄版面配置中，將新分頁放在分頁列表的頂端。「舒適」版面配置一律在尾端開啟新分頁。"
+            "value" : "At the bottom"
           }
         }
       }
     },
-    "settings.general.newTabsAtTop.title" : {
-      "comment" : "General settings - Ordinary new tab position toggle",
+    "settings.general.newTabPosition.title" : {
+      "comment" : "General settings - Row title for choosing where new tabs are placed in the sidebar tab list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Neue Tabs oben öffnen"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Open new tabs at top"
+            "value" : "Open new tabs"
           }
-        },
-        "es" : {
+        }
+      }
+    },
+    "settings.general.newTabPosition.topOption" : {
+      "comment" : "General settings - Option to place new tabs at the top of the sidebar tab list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abrir las pestañas nuevas arriba"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrir les nouveaux onglets en haut"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新しいタブを一番上に開く"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "새 탭을 맨 위에 열기"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open nieuwe tabbladen bovenaan"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在顶部打开新标签页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在頂端開啟新分頁"
+            "state" : "new",
+            "value" : "At the top"
           }
         }
       }

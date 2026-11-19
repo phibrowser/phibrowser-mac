@@ -72,12 +72,14 @@ class PhiSplitViewController: NSSplitViewController {
 }
 
 enum SidebarToggleAnimation {
-    static let duration: TimeInterval = 0.125
+    static let duration: TimeInterval = 0.11
+    static let timingFunction = CAMediaTimingFunction(controlPoints: 0.1, 0.4, 0.6, 1)
 }
 
 extension NSSplitViewItem {
     /// AppKit animates `isCollapsed` with the item's "collapsed" animation and
-    /// ignores `NSAnimationContext.duration`, so the duration is set there.
+    /// ignores `NSAnimationContext`'s duration and timing function, so both
+    /// are set there.
     func setCollapsedAnimated(_ collapsed: Bool,
                               duration: TimeInterval = SidebarToggleAnimation.duration,
                               completion: (() -> Void)? = nil) {
@@ -87,9 +89,9 @@ extension NSSplitViewItem {
             animation = copy
         } else {
             animation = CABasicAnimation()
-            animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         }
         animation.duration = duration
+        animation.timingFunction = SidebarToggleAnimation.timingFunction
         animations["collapsed"] = animation
         NSAnimationContext.runAnimationGroup({ _ in
             self.animator().isCollapsed = collapsed

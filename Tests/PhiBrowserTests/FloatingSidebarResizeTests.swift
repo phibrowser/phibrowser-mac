@@ -220,7 +220,8 @@ final class FloatingSidebarResizeTests: XCTestCase {
 
         let animation = try XCTUnwrap(item.animations["collapsed"] as? CABasicAnimation)
         XCTAssertEqual(animation.duration, SidebarToggleAnimation.duration, accuracy: 0.0001)
-        XCTAssertEqual(SidebarToggleAnimation.duration, 0.125, accuracy: 0.0001)
+        XCTAssertEqual(SidebarToggleAnimation.duration, 0.11, accuracy: 0.0001)
+        XCTAssertEqual(animation.timingFunction, SidebarToggleAnimation.timingFunction)
     }
 
     func testThePanelStaysOpenWhileItsEdgeIsDragged() throws {

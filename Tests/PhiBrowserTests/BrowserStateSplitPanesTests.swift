@@ -323,6 +323,123 @@ final class BrowserStateSplitPanesTests: XCTestCase {
         }
     }
 
+    // MARK: - Drop button
+
+    func testTheDropButtonPointsToTheSidebarsSideWhileOptionIsDown() {
+        XCTAssertEqual(SidebarSplitCellView.dropSymbol(optionKeyDown: true, allowsPaneRemoval: true,
+                                                       sidebarOnRight: false), "arrow.down.left")
+        XCTAssertEqual(SidebarSplitCellView.dropSymbol(optionKeyDown: true, allowsPaneRemoval: true,
+                                                       sidebarOnRight: true), "arrow.down.right")
+        XCTAssertNil(SidebarSplitCellView.dropSymbol(optionKeyDown: false, allowsPaneRemoval: true,
+                                                     sidebarOnRight: false), "Without Option it closes")
+        XCTAssertNil(SidebarSplitCellView.dropSymbol(optionKeyDown: true, allowsPaneRemoval: false,
+                                                     sidebarOnRight: false), "A held split keeps its panes")
+    }
+
+    func testHoldingOptionOverASplitRowTurnsEveryCloseButtonIntoADropButton() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2, 3])
+        state.splits = [SplitGroup(id: "s", tabIds: [1, 2, 3], layout: .vertical,
+                                   fractions: SplitGroup.equalFractions(paneCount: 3))]
+        let cell = SidebarSplitCellView(frame: NSRect(x: 0, y: 0, width: 320, height: 36))
+        // The cell holds its item weakly.
+        let item = SplitSidebarItem(groupId: "s", panes: state.tabs, browserState: state)
+        cell.configure(with: item)
+        let expected = SidebarSplitCellView.dropSymbol(optionKeyDown: true, allowsPaneRemoval: true,
+                                                       sidebarOnRight: SidebarPosition.isOnRight)
+
+        cell.optionKeyChanged(true)
+        XCTAssertNil(cell.closeButtonDropSymbol(paneIndex: 0), "Option off the row changes nothing")
+
+        cell.setHovered(true)
+        cell.optionKeyChanged(true)
+        for index in 0..<3 {
+            XCTAssertEqual(cell.closeButtonDropSymbol(paneIndex: index), expected, "pane \(index)")
+        }
+
+        cell.optionKeyChanged(false)
+        XCTAssertNil(cell.closeButtonDropSymbol(paneIndex: 0), "Releasing Option brings the close buttons back")
+
+        cell.optionKeyChanged(true)
+        cell.setHovered(false)
+        XCTAssertNil(cell.closeButtonDropSymbol(paneIndex: 0), "Leaving the row brings the close buttons back")
+    }
+
+    func testABookmarkBoundSplitRowKeepsItsCloseButtonsWithOptionDown() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        state.splits = [SplitGroup(id: "s", tabIds: [1, 2], layout: .vertical, fractions: [0.5, 0.5])]
+        state.splitBookmarkBindings["bookmark"] = "s"
+        let cell = SidebarSplitCellView(frame: NSRect(x: 0, y: 0, width: 320, height: 36))
+        // The cell holds its item weakly.
+        let item = SplitSidebarItem(groupId: "s", panes: state.tabs, browserState: state)
+        cell.configure(with: item)
+
+        cell.setHovered(true)
+        cell.optionKeyChanged(true)
+
+        XCTAssertNil(cell.closeButtonDropSymbol(paneIndex: 0))
+        XCTAssertNil(cell.closeButtonDropSymbol(paneIndex: 1))
+    }
+
+    func testOnlyASinglePaneLeavingIsFoundAsLeaving() {
+        XCTAssertEqual(SidebarSplitCellView.leavingPaneIndex(from: [1, 2, 3], to: [1, 3]), 1)
+        XCTAssertEqual(SidebarSplitCellView.leavingPaneIndex(from: [1, 2, 3], to: [2, 3]), 0)
+        XCTAssertEqual(SidebarSplitCellView.leavingPaneIndex(from: [1, 2, 3, 4], to: [1, 2, 3]), 3)
+        XCTAssertNil(SidebarSplitCellView.leavingPaneIndex(from: [1, 2, 3], to: [3, 1]), "a reorder too")
+        XCTAssertNil(SidebarSplitCellView.leavingPaneIndex(from: [1, 2, 3], to: [1, 4]), "a replace too")
+        XCTAssertNil(SidebarSplitCellView.leavingPaneIndex(from: [1, 2], to: [1, 2, 3]), "a pane joining")
+        XCTAssertNil(SidebarSplitCellView.leavingPaneIndex(from: [1, 2, 3, 4], to: [1, 4]), "two leaving")
+    }
+
+    /// A pane leaving narrows out of the row, then the row rebinds to the
+    /// panes left. In place, the columns jumped to the new count.
+    func testAPaneLeavingNarrowsOutBeforeTheRowRebinds() throws {
+        let tabs = (1...3).map { Tab(guid: $0, url: "https://e\($0).example", isActive: false, index: $0 - 1) }
+        let item = SplitSidebarItem(groupId: "s", panes: tabs, browserState: nil)
+        let cell = SidebarSplitCellView(frame: NSRect(x: 0, y: 0, width: 320, height: 36))
+        cell.configure(with: item)
+        let window = NSWindow(contentRect: cell.frame, styleMask: [], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = cell
+        defer { window.close() }
+        cell.layoutSubtreeIfNeeded()
+        let startWidth = try XCTUnwrap(cell.closeButtonLayout(paneIndex: 1)).pane.width
+
+        item.panes = [tabs[0], tabs[2]]
+        cell.rebindPanesIfNeeded()
+        cell.layoutSubtreeIfNeeded()
+
+        XCTAssertNotNil(cell.closeButtonLayout(paneIndex: 2), "all three panes stay while it narrows")
+        XCTAssertEqual(try XCTUnwrap(cell.closeButtonLayout(paneIndex: 1)).pane.width, startWidth, accuracy: 0.5,
+                       "it narrows from its own width, not from nothing")
+        let deadline = Date().addingTimeInterval(1)
+        while cell.closeButtonLayout(paneIndex: 2) != nil, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        XCTAssertNil(cell.closeButtonLayout(paneIndex: 2), "then the row holds two panes")
+        let endWidth = try XCTUnwrap(cell.closeButtonLayout(paneIndex: 1)).pane.width
+        XCTAssertGreaterThan(endWidth, startWidth, "the panes left share the room")
+    }
+
+    func testTheRowLetsGoOfSelectionAsTheActivePaneStartsLeaving() throws {
+        let tabs = (1...3).map { Tab(guid: $0, url: "https://e\($0).example", isActive: $0 == 2, index: $0 - 1) }
+        let item = SplitSidebarItem(groupId: "s", panes: tabs, browserState: nil)
+        let cell = SidebarSplitCellView(frame: NSRect(x: 0, y: 0, width: 320, height: 36))
+        cell.configure(with: item)
+        let window = NSWindow(contentRect: cell.frame, styleMask: [], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = cell
+        defer { window.close() }
+        XCTAssertTrue(cell.showsSelection, "precondition: the active pane selects the row")
+
+        item.panes = [tabs[0], tabs[2]]
+        cell.rebindPanesIfNeeded()
+
+        XCTAssertNotNil(cell.closeButtonLayout(paneIndex: 2), "precondition: the pane is still narrowing")
+        XCTAssertFalse(cell.showsSelection, "the row lets go at once, not when the pane is gone")
+    }
+
     // MARK: - SplitGroup
 
     func testNormalizedFractionsScaleSharesToOneAndFallBackToEqualShares() {

@@ -340,6 +340,9 @@ extension AccountUserDefaults {
         /// Local per-Space linked color palettes, encoded using the shared
         /// account-preference transport rather than changing the Space schema.
         case spaceThemePalettes
+        /// Local per-Space pinned tab grid styles (`PinnedTabGridStyle`):
+        /// tiles per row and the gap between them.
+        case spacePinnedTabGridStyles
         /// Snapshot of the slot/window/Space layout written on every
         /// `SpaceWindowSlot.registerWindow`. Read on the next launch by
         /// `SpaceManager` so Chromium-restored windows reattach to the
@@ -458,6 +461,16 @@ extension AccountUserDefaults {
     @discardableResult
     func setSpaceThemePalettes(_ map: [String: ThemePalette]) -> Bool {
         set(map, forCodableKey: DefaultsKey.spaceThemePalettes.rawValue)
+    }
+
+    func spacePinnedTabGridStyles() -> [String: PinnedTabGridStyle] {
+        guard let data = data(forKey: DefaultsKey.spacePinnedTabGridStyles.rawValue) else { return [:] }
+        return (try? JSONDecoder().decode([String: PinnedTabGridStyle].self, from: data)) ?? [:]
+    }
+
+    @discardableResult
+    func setSpacePinnedTabGridStyles(_ map: [String: PinnedTabGridStyle]) -> Bool {
+        set(map, forCodableKey: DefaultsKey.spacePinnedTabGridStyles.rawValue)
     }
 
     /// The Migration Sources this account has completed a Migration from.

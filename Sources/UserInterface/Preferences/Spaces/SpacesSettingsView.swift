@@ -54,7 +54,8 @@ struct SpacesSettingsView: View {
                         .frame(width: Self.detailPanelWidth)
                         .frame(maxHeight: .infinity, alignment: .top)
                 }
-                .frame(height: 431)
+                // The pinned tabs card adds its height here, so the Icon card keeps its own.
+                .frame(height: 540)
                 SettingsDetailCard {
                     pinnedTabScopeRow
                 }
@@ -425,6 +426,11 @@ struct SpacesSettingsView: View {
                         title: NSLocalizedString("settings.spaces.theme.colorLabel", value: "Color", comment: "Spaces settings - theme color row label")
                     )
                     .id(space.spaceId)
+                }
+
+                SettingsDetailCard {
+                    PinnedTabGridSettingsRows(space: space)
+                        .id(space.spaceId)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -861,6 +867,121 @@ struct SpacesSettingsView: View {
                 comment: "Body of the change-Space-profile confirmation with App-scoped pinned tabs"
             )
         }
+    }
+}
+
+/// The selected Space's pinned tab grid: tiles per row and the gap between
+/// tiles. Each Space keeps its own style
+/// (`SpaceManager.pinnedTabGridStyle(forSpaceId:)`). Beside each setting a
+/// button copies this Space's value to all of them once, and shows a
+/// checkmark while every Space already uses it.
+private struct PinnedTabGridSettingsRows: View {
+    let space: Space
+    @State private var style: PinnedTabGridStyle
+    /// Bumped when any Space's style changes, so the buttons re-read
+    /// whether every Space matches.
+    @State private var revision = 0
+
+    init(space: Space) {
+        self.space = space
+        _style = State(initialValue: SpaceManager.shared.pinnedTabGridStyle(forSpaceId: space.spaceId))
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            row(NSLocalizedString("settings.spaces.pinnedGrid.columns.title", value: "Pinned tabs per row",
+                                  comment: "Spaces settings - row label for how many pinned tabs share a row in this Space's sidebar"),
+                part: .columns) {
+                Picker("", selection: Binding(get: { style.columns }, set: { save(columns: $0) })) {
+                    Text(NSLocalizedString("settings.spaces.pinnedGrid.columns.automatic", value: "Automatic",
+                                           comment: "Spaces settings - pinned tabs per row option that follows the sidebar's width"))
+                        .tag(Int?.none)
+                    ForEach(Array(PinnedTabGridStyle.columnChoices), id: \.self) { count in
+                        Text(count, format: .number).tag(Int?.some(count))
+                    }
+                }
+            }
+            SettingsRowDivider()
+            row(NSLocalizedString("settings.spaces.pinnedGrid.spacing.title", value: "Pinned tab spacing",
+                                  comment: "Spaces settings - row label for the gap between pinned tabs in this Space's sidebar"),
+                part: .spacing) {
+                Picker("", selection: Binding(get: { style.spacing }, set: { save(spacing: $0) })) {
+                    Text(NSLocalizedString("settings.spaces.pinnedGrid.spacing.standard", value: "Default",
+                                           comment: "Spaces settings - pinned tab spacing option keeping the usual gap"))
+                        .tag(PinnedTabGridStyle.Spacing.standard)
+                    Text(NSLocalizedString("settings.spaces.pinnedGrid.spacing.compact", value: "Compact",
+                                           comment: "Spaces settings - pinned tab spacing option with a tighter gap"))
+                        .tag(PinnedTabGridStyle.Spacing.compact)
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pinnedTabGridStyleDidChange)) { _ in
+            style = SpaceManager.shared.pinnedTabGridStyle(forSpaceId: space.spaceId)
+            revision += 1
+        }
+    }
+
+    /// A setting with its picker and, after it, a copy button that gives
+    /// every Space this Space's value. The picker hugs its content and the
+    /// button, so the pickers line up against the buttons. The button keeps
+    /// its place so the picker never moves; once every Space matches it turns
+    /// into a checkmark and stays off, and its tooltip says so.
+    private func row<Control: View>(_ title: String, part: PinnedTabGridStyle.Parts,
+                                    @ViewBuilder picker: () -> Control) -> some View {
+        let matches = everySpaceMatches(part)
+        let help = matches
+            ? NSLocalizedString("settings.spaces.pinnedGrid.allSpacesMatch", value: "All Spaces match",
+                                comment: "Spaces settings - tooltip and accessibility label of the checkmark beside a pinned tab setting when every Space uses the same value")
+            : NSLocalizedString("settings.spaces.pinnedGrid.applyToAllSpaces", value: "Apply to All Spaces",
+                                comment: "Spaces settings - tooltip and accessibility label of the button beside a pinned tab setting that copies this Space's value of that setting to every Space once")
+        return SettingsDetailRow(title) {
+            HStack(spacing: 8) {
+                picker()
+                    .labelsHidden()
+                    .fixedSize()
+                Button {
+                    SpaceManager.shared.applyPinnedTabGridStyleToAllSpaces(
+                        from: space.spaceId, parts: part, expectedStoreIdentifier: space.storeIdentifier)
+                } label: {
+                    Image(systemName: matches ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 13))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .disabled(matches)
+                .help(help)
+                .accessibilityLabel(help)
+            }
+        }
+    }
+
+    private func everySpaceMatches(_ parts: PinnedTabGridStyle.Parts) -> Bool {
+        _ = revision
+        let manager = SpaceManager.shared
+        return manager.spaces
+            .filter { !SpaceManager.isIncognitoSpaceId($0.spaceId) }
+            .allSatisfy {
+                let other = manager.pinnedTabGridStyle(forSpaceId: $0.spaceId)
+                return other.copying(parts, from: style) == other
+            }
+    }
+
+    private func save(columns: Int?) {
+        var next = style
+        next.columns = columns
+        save(next)
+    }
+
+    private func save(spacing: PinnedTabGridStyle.Spacing) {
+        var next = style
+        next.spacing = spacing
+        save(next)
+    }
+
+    private func save(_ next: PinnedTabGridStyle) {
+        style = next
+        SpaceManager.shared.setPinnedTabGridStyle(next, forSpaceId: space.spaceId, expectedStoreIdentifier: space.storeIdentifier)
     }
 }
 

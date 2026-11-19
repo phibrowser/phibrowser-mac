@@ -279,6 +279,13 @@ class WebContentContainerViewController: NSViewController {
         return currentWebContentController?.addressBarAnchorView
     }
 
+    /// Opens Customize Toolbar on the focused pane's header. The empty-window
+    /// placeholder has nothing to customize.
+    func beginCustomizingToolbar() {
+        guard placeholderShell == nil else { return }
+        currentWebContentController?.beginCustomizingToolbar()
+    }
+
     // =========================================================================
     // Tab switch: the mount is the switch (chromium ADR 0015, mac ADR 0011)
     //

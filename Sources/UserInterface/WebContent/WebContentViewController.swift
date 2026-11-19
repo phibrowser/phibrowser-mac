@@ -360,6 +360,10 @@ class WebContentViewController: NSViewController {
     private var splitLoginRequiredViews: [Int: LoginRequiredOverlayView] = [:]
 
     var addressBarAnchorView: NSView? { headerView.addressBarAnchorView }
+
+    func beginCustomizingToolbar() {
+        headerView.beginCustomizingToolbar()
+    }
     /// The header row, shown or not (`WebContentContainerViewController
     /// .isHeaderRowShown`). A Peek leaves a shown row uncovered.
     var headerRowView: NSView { headerView }

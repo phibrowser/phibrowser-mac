@@ -77,7 +77,6 @@ final class ShellSplitViewController: NSViewController {
         super.viewDidLoad()
         let splitView = PhiSplitView()
         splitView.isVertical = true
-        splitView.dividerStyle = .thick
         splitViewController.splitView = splitView
         addChild(splitViewController)
         view.addSubview(splitViewController.view)

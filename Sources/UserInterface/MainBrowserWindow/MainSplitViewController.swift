@@ -330,7 +330,6 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     private func setupChildSplitViewController() {
         let splitView = PhiSplitView()
         splitView.isVertical = true
-        splitView.dividerStyle = .thick
 
         splitViewController.splitView = splitView
 

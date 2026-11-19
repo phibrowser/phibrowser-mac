@@ -7,6 +7,18 @@ import Cocoa
 import Combine
 
 class PhiSplitView: NSSplitView {
+    /// The thick and pane-splitter styles draw a dimple at the divider's
+    /// center even when its thickness is zero.
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        dividerStyle = .thin
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        dividerStyle = .thin
+    }
+
     override var dividerColor: NSColor { .clear }
     override var dividerThickness: CGFloat { 0 }
 }

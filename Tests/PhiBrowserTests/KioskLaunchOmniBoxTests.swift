@@ -306,6 +306,21 @@ final class KioskLaunchOmniBoxTests: XCTestCase {
         XCTAssertEqual(clamped.minY + margin, small.minY, accuracy: 1)
     }
 
+    func testCenteredPanelPutsTheBoxMidScreenAThirdOfTheWayDown() {
+        let visible = NSRect(x: 1440, y: 0, width: 1920, height: 1055)
+        let margin = KioskLaunchOmniBoxPanelController.shadowMargin
+        let width = OmniBoxViewController.boxWidth
+        let frame = KioskLaunchOmniBoxPanelController.centeredFrame(onVisibleFrame: visible, boxWidth: width)
+
+        XCTAssertEqual(frame.size, KioskLaunchOmniBoxPanelController.panelSize(boxWidth: width))
+        XCTAssertEqual(frame.width - margin * 2, width, accuracy: 0.5)
+        XCTAssertEqual(frame.midX, visible.midX, accuracy: 1)
+        XCTAssertEqual(frame.maxY - margin, visible.maxY - visible.height / 3, accuracy: 1)
+        XCTAssertEqual(KioskLaunchOmniBoxPanelController.panelSize,
+                       KioskLaunchOmniBoxPanelController.panelSize(boxWidth: KioskLaunchOmniBoxPanelController.boxWidth),
+                       "Kiosk's own panel keeps its width")
+    }
+
     func testKioskTopRightFollowsTheOmniBox() {
         let visible = NSRect(x: 1440, y: 0, width: 1920, height: 1055)
         let topRight = KioskLaunchOmniBoxPanelController.boxTopRight(onVisibleFrame: visible)

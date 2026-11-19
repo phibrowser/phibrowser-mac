@@ -2956,6 +2956,59 @@ extension AppController {
         }
     }
 
+    func openAddressBarFromGlobalShortcut() {
+        MainActor.assumeIsolated {
+            presentAddressBarFromAnyApp()
+        }
+    }
+
+    /// "Open Address Bar from Any App": shows the browser's own omnibox in
+    /// the floating, non-activating panel the New Kiosk shortcut uses, so it
+    /// appears over whatever app is in front without bringing Phi forward.
+    /// It sits centered on the screen the pointer is on, as wide as the
+    /// in-window omnibox. Picking a result activates Phi and opens it in a
+    /// new tab of the browser window; Escape, or the shortcut again, leaves
+    /// the user where they were. The omnibox takes its suggestions from a
+    /// browser window, so with none open the shortcut does nothing.
+    @MainActor
+    func presentAddressBarFromAnyApp() {
+        if let panel = addressBarLaunchOmniBoxPanel, !panel.isFinished {
+            panel.dismiss()
+            return
+        }
+        addressBarLaunchOmniBoxPanel = nil
+        let manager = SpaceSessionControllersManager.shared
+        guard let host = manager.activeWindowController, !host.isDormant,
+              host.window?.isVisible == true || host.window?.isMiniaturized == true else { return }
+        // One omnibox at a time: one already up in the window ends now, so
+        // its hide hands key back before the panel takes it.
+        if let container = host.omniBoxContainerViewController, container.hasShown {
+            container.hideOmniBox()
+        }
+        let pointer = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(pointer) } ?? NSScreen.main
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.addressBarLaunchOmniBoxPanel == nil else { return }
+            let panel = KioskLaunchOmniBoxPanelController(
+                browserState: host.browserState,
+                hostWindow: host.lifecycleWindow,
+                boxWidth: OmniBoxViewController.boxWidth
+            ) { [weak self] url in
+                self?.addressBarLaunchOmniBoxPanel = nil
+                guard let url else { return }
+                KioskLaunchActivation().perform {
+                    if let window = host.window {
+                        if window.isMiniaturized { window.deminiaturize(nil) }
+                        window.makeKeyAndOrderFront(nil)
+                    }
+                    host.browserState.createTab(url)
+                }
+            }
+            self.addressBarLaunchOmniBoxPanel = panel
+            panel.present(on: screen, centered: true)
+        }
+    }
+
     /// The empty New Kiosk commands: shows the omnibox before any Kiosk
     /// exists, then opens the submitted URL through `openNewKioskWindow`.
     /// The omnibox always asks in the standalone panel, on the screen of

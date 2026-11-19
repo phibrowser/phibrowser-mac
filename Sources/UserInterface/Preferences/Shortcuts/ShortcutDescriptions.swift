@@ -194,6 +194,8 @@ extension CommandWrapper {
             return NSLocalizedString("settings.shortcuts.description.copyURL", value: "Copy the current page's URL to the clipboard.", comment: "Shortcuts settings - Description of the copyURL command")
         case .PHI_TOGGLE_READER:
             return NSLocalizedString("settings.shortcuts.description.reader", value: "Open or close Reader for the current page.", comment: "Shortcuts settings - Description of the reader command")
+        case .PHI_OPEN_ADDRESS_BAR_FROM_ANY_APP:
+            return NSLocalizedString("settings.shortcuts.description.openAddressBarFromAnyApp", value: "Show the address bar over any app and open the result in a new tab.", comment: "Shortcuts settings - Description of the system-wide command that shows the address bar while another app is in front")
         case .PHI_NEW_KIOSK_WINDOW:
             return NSLocalizedString("settings.shortcuts.description.newKiosk", value: "Open a new Kiosk window.", comment: "Shortcuts settings - Description of the newKiosk command")
         case .PHI_NEW_INCOGNITO_SPACE:

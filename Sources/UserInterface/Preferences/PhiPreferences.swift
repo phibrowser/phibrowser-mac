@@ -141,6 +141,7 @@ extension PhiPreferences {
         case openExternalLinksInKiosk
         case openKioskOnCommandOptionClick
         case openKioskWithGlobalShortcut
+        case openAddressBarWithGlobalShortcut // System-wide "Open Address Bar from Any App"
         case edgeToEdgeWebContent // Remove outer page margins; square page corners in fullscreen
         case navigationAtTop  // Whether to show navigation and address bar in content header (Layout 2)
         case traditionalLayout  // Traditional layout, show tabs and (maybe) bookmark bar at  top (Layout 3)
@@ -187,6 +188,8 @@ extension PhiPreferences {
             case .openKioskOnCommandOptionClick:
                 return true
             case .openKioskWithGlobalShortcut:
+                return false
+            case .openAddressBarWithGlobalShortcut:
                 return false
             case .edgeToEdgeWebContent:
                 return false

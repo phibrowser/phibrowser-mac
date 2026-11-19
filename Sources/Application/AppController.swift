@@ -99,6 +99,14 @@ import PostHog
         KioskGlobalShortcutRegistrar { [weak self] in
             self?.newKioskWindowFromGlobalShortcut()
         }
+    /// The floating address bar shown by "Open Address Bar from Any App";
+    /// see `presentAddressBarFromAnyApp`.
+    var addressBarLaunchOmniBoxPanel: KioskLaunchOmniBoxPanelController?
+    private lazy var addressBarGlobalShortcutRegistrar = KioskGlobalShortcutRegistrar(
+        action: { [weak self] in self?.openAddressBarFromGlobalShortcut() },
+        shortcut: { Shortcuts.key(for: .PHI_OPEN_ADDRESS_BAR_FROM_ANY_APP) },
+        hotKeySignature: 0x50484142 // PHAB
+    )
 
     override init() {
         super.init()
@@ -250,6 +258,9 @@ import PostHog
                                                name: .activeBrowserWindowDidChange,
                                                object: nil)
         kioskGlobalShortcutRegistrar.start()
+        addressBarGlobalShortcutRegistrar.start(
+            enabled: PhiPreferences.GeneralSettings.openAddressBarWithGlobalShortcut.loadValue()
+        )
         
         if permitsSentinelLaunch,
            ApplicationState.shared.isAuthenticated {
@@ -374,6 +385,7 @@ import PostHog
         pendingHotKioskPresentationWorkItem?.cancel()
         pendingHotKioskPresentationWorkItem = nil
         kioskGlobalShortcutRegistrar.invalidate()
+        addressBarGlobalShortcutRegistrar.invalidate()
         AppLogInfo("-------applicationWillTerminate----")
         MainActor.assumeIsolated {
             LoginController.shared.recordOOBEAppTermination()
@@ -1379,8 +1391,23 @@ import PostHog
         kioskGlobalShortcutRegistrar.status
     }
 
+    func setOpenAddressBarWithGlobalShortcutEnabled(_ enabled: Bool) {
+        addressBarGlobalShortcutRegistrar.setEnabled(enabled)
+    }
+
+    var addressBarGlobalShortcutStatus: KioskGlobalShortcutRegistrar.Status {
+        addressBarGlobalShortcutRegistrar.status
+    }
+
+    /// Releases every system-wide shortcut while a shortcut is recorded, so
+    /// the recorder sees those keys too.
     func suspendKioskGlobalShortcutForRecording() -> () -> Void {
-        kioskGlobalShortcutRegistrar.suspendForShortcutRecording()
+        let resumeKiosk = kioskGlobalShortcutRegistrar.suspendForShortcutRecording()
+        let resumeAddressBar = addressBarGlobalShortcutRegistrar.suspendForShortcutRecording()
+        return {
+            resumeKiosk()
+            resumeAddressBar()
+        }
     }
 
     @MainActor

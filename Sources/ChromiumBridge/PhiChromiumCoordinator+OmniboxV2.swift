@@ -7,12 +7,7 @@ import Foundation
 /// Ranks Phi pins, bookmarks and commands with Chromium's results, in the Mac
 /// omnibox and in the NTP search box. Chromium reads this through the bridge.
 enum UnifiedOmnibox {
-    #if NIGHTLY_BUILD
-    // Plain Debug also defines NIGHTLY_BUILD, so canary is told by bundle ID.
-    static let isEnabled = Bundle.main.bundleIdentifier == "com.phibrowser.canary.Mac"
-    #else
-    static let isEnabled = false
-    #endif
+    static let isEnabled = true
 }
 
 extension PhiChromiumCoordinator {

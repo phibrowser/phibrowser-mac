@@ -29,8 +29,10 @@ import { discoverCursorTranscript } from './mirror-cursor.mjs'
 // bookmark bar and AI Chat panel, reported by the app itself via
 // agentSpace.panelSize (see agentPageArea) — so the agent renders exactly
 // what the user sees when surfacing the Space. The page area is re-measured
-// before each action, so a Sidebar toggle, a bar, a panel or a window resize
-// is picked up at the next action (see maybeTrackPageArea).
+// before each action and, for the whole round, about once a second in the
+// background, so a Sidebar toggle, a bar, a panel, a window resize or the
+// user switching to the Space to watch is picked up even while the agent
+// sits idle (see maybeTrackPageArea and followPageArea).
 // Browser.getWindowForTarget bounds (which include the chrome) are only a
 // fallback, and FALLBACK_VIEWPORT the last resort when nothing can be
 // measured. On normal sites the viewport is never changed; setViewport()
@@ -84,6 +86,8 @@ const state = {
   pageAreaCheckedAt: 0,      // when it was last re-checked — see maybeTrackPageArea
   lastPingAt: 0,             // epoch ms of the last keep-alive ping (see maybePing)
   pingTimer: null,           // round-long heartbeat interval (see ensureAgentSpace)
+  pageAreaTimer: null,       // round-long page-area follower (see followPageArea)
+  pageAreaFollowing: false,  // a followPageArea check is in flight
   explicitTtl: null,         // {taskId, deadline} bought by ping(ttlSeconds) —
                              // honored over the default round-end grace while
                              // the deadline lies ahead (see releaseTtlSeconds)
@@ -539,6 +543,13 @@ async function enterAgentContext(name, { profile = '', persistent = false } = {}
   if (!state.pingTimer) {
     state.pingTimer = setInterval(() => { maybePing() }, 15000)
     state.pingTimer.unref?.()
+  }
+  // Round-long page-area follower, for the same reason: per-action tracking
+  // leaves the viewport at a stale size through a silent stretch, which a
+  // watching user sees as a blank band along the page's edge.
+  if (!state.pageAreaTimer) {
+    state.pageAreaTimer = setInterval(followPageArea, 1000)
+    state.pageAreaTimer.unref?.()
   }
   // A round is starting: mark the Space busy (paired with the idle flip in
   // __dispose when the heredoc ends) — unless the USER is driving: a round
@@ -1010,6 +1021,24 @@ async function maybeTrackPageArea() {
       await cdpClient(), state.sessionId, state.targetId,
       state.viewportByTarget.get(state.targetId)?.request ?? null)
   } catch {}
+}
+
+/**
+ * `maybeTrackPageArea` on the round-long timer (see ensureAgentSpace). The
+ * emulated viewport otherwise follows the page area only when a helper runs,
+ * so a page area that grows while the agent is idle — a window resized while
+ * the Space was hidden, chrome that differs from the Space it was first
+ * measured through — stays a stale, shorter viewport under a user who switches
+ * in to watch, with the uncovered strip painted blank. One check at a time;
+ * maybeTrackPageArea's own throttle keeps it to one app message a second
+ * shared with the per-action path.
+ */
+function followPageArea() {
+  if (state.pageAreaFollowing) return
+  state.pageAreaFollowing = true
+  maybeTrackPageArea()
+    .catch(() => {})
+    .finally(() => { state.pageAreaFollowing = false })
 }
 
 /**
@@ -7714,6 +7743,10 @@ export async function __dispose() {
   if (state.pingTimer) {
     clearInterval(state.pingTimer)
     state.pingTimer = null
+  }
+  if (state.pageAreaTimer) {
+    clearInterval(state.pageAreaTimer)
+    state.pageAreaTimer = null
   }
   // The heredoc round ended: if the agent still owns a live Space, mark it idle
   // (it stays idle until the next round's ensureAgentSpace/takeOver). Skip when

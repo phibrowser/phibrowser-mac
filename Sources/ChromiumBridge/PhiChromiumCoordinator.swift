@@ -25,7 +25,8 @@ import SwiftUI
     /// the source window closes, since nothing is left to host them.
     private var pendingChooserRequests: [Int64: [(urlString: String,
                                                   defaultSpaceId: String,
-                                                  sourceIsNewTab: Bool)]] = [:]
+                                                  sourceIsNewTab: Bool,
+                                                  ordinaryNewTab: Bool)]] = [:]
     /// `willClose` observers for the source windows hosting an active chooser,
     /// keyed the same way. Drained in lockstep with `activeChoosers` so a
     /// source window closing mid-prompt can't leak its overlay NSWindow (the
@@ -2098,13 +2099,23 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
     }
 
+    @objc(askSpaceForURL:defaultSpaceId:sourceWindowId:sourceIsNewTab:ordinaryNewTab:)
+    func askSpace(forURL urlString: String, defaultSpaceId: String, sourceWindowId: Int64,
+                  sourceIsNewTab: Bool, ordinaryNewTab: Bool) {
+        Task { @MainActor in
+            self.presentChooser(forURL: urlString, defaultSpaceId: defaultSpaceId,
+                                sourceWindowId: sourceWindowId, sourceIsNewTab: sourceIsNewTab,
+                                ordinaryNewTab: ordinaryNewTab)
+        }
+    }
+
     @MainActor
-    private func presentChooser(forURL urlString: String, defaultSpaceId: String, sourceWindowId: Int64, sourceIsNewTab: Bool) {
+    private func presentChooser(forURL urlString: String, defaultSpaceId: String, sourceWindowId: Int64, sourceIsNewTab: Bool, ordinaryNewTab: Bool = false) {
         if activeChoosers[sourceWindowId] != nil {
             pendingChooserRequests[sourceWindowId, default: []].append(
                 (urlString: urlString,
                  defaultSpaceId: defaultSpaceId,
-                 sourceIsNewTab: sourceIsNewTab))
+                 sourceIsNewTab: sourceIsNewTab, ordinaryNewTab: ordinaryNewTab))
             return
         }
         let manager = SpaceManager.shared
@@ -2126,7 +2137,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                     manager.routeAskedURL(urlString,
                                           toSpaceId: manager.currentDefaultSpaceId,
                                           sourceWindowId: sourceWindowId,
-                                          sourceIsNewTab: sourceIsNewTab)
+                                          sourceIsNewTab: sourceIsNewTab, ordinaryNewTab: ordinaryNewTab)
                 }
                 return
             }
@@ -2135,7 +2146,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             manager.routeAskedURL(urlString,
                                   toSpaceId: spaces.isEmpty ? nil : defaultSpaceId,
                                   sourceWindowId: sourceWindowId,
-                                  sourceIsNewTab: sourceIsNewTab)
+                                  sourceIsNewTab: sourceIsNewTab, ordinaryNewTab: ordinaryNewTab)
             return
         }
         // Hosted mode: `window` is the shell, which shows another Space
@@ -2147,7 +2158,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             manager.routeAskedURL(urlString,
                                   toSpaceId: nil,
                                   sourceWindowId: sourceWindowId,
-                                  sourceIsNewTab: sourceIsNewTab)
+                                  sourceIsNewTab: sourceIsNewTab, ordinaryNewTab: ordinaryNewTab)
             return
         }
 
@@ -2222,7 +2233,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             SpaceManager.shared.routeAskedURL(urlString,
                                               toSpaceId: chosen,
                                               sourceWindowId: sourceWindowId,
-                                              sourceIsNewTab: sourceIsNewTab)
+                                              sourceIsNewTab: sourceIsNewTab, ordinaryNewTab: ordinaryNewTab)
             self?.presentNextQueuedChooser(windowId: sourceWindowId)
         }
 
@@ -2248,7 +2259,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             SpaceManager.shared.routeAskedURL(urlString,
                                               toSpaceId: nil,
                                               sourceWindowId: sourceWindowId,
-                                              sourceIsNewTab: sourceIsNewTab)
+                                              sourceIsNewTab: sourceIsNewTab, ordinaryNewTab: ordinaryNewTab)
         }
         // Tear the prompt down if the source window closes underneath it,
         // so a stranded entry can't accumulate for the session. The token
@@ -2278,7 +2289,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             presentChooser(forURL: next.urlString,
                            defaultSpaceId: next.defaultSpaceId,
                            sourceWindowId: windowId,
-                           sourceIsNewTab: next.sourceIsNewTab)
+                           sourceIsNewTab: next.sourceIsNewTab, ordinaryNewTab: next.ordinaryNewTab)
         }
     }
 
@@ -2307,15 +2318,15 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
     }
 
-    /// A silent Space URL rule auto-routed `urlString` to `spaceId`, but that
-    /// Space had no open window, so Chromium cancelled the navigation and asked
-    /// us to surface the Space. Reuse the ask-Space routing path, which
+    /// A silent Space URL rule auto-routed `urlString` to `spaceId`, a Space
+    /// the source window is not in, so Chromium cancelled the navigation and
+    /// asked us to surface the Space. Reuse the ask-Space routing path, which
     /// activates (cold-spawning if needed) the target Space's window in the
     /// source window's slot and opens the URL there, bypassing Space URL
     /// routing for the re-open so the same rule doesn't re-match in a loop.
     func routeURL(inSpace spaceId: String, url urlString: String, sourceWindowId: Int64) {
         Task { @MainActor in
-            // Silent auto-route to a Space with no open window. The stranded
+            // Silent auto-route to a Space the source window is not in. The stranded
             // source NTP (if any) is reset on the Chromium side via
             // `refreshNewTabInWindow`, so pass false here to avoid resetting it
             // twice; this path is always a Space switch, never an in-place open.
@@ -2323,6 +2334,17 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                                               toSpaceId: spaceId,
                                               sourceWindowId: sourceWindowId,
                                               sourceIsNewTab: false)
+        }
+    }
+
+    @objc(routeURLInSpace:url:sourceWindowId:ordinaryNewTab:sourceIsNewTab:)
+    func routeURL(inSpace spaceId: String, url urlString: String, sourceWindowId: Int64,
+                  ordinaryNewTab: Bool, sourceIsNewTab: Bool) {
+        Task { @MainActor in
+            SpaceManager.shared.routeAskedURL(urlString, toSpaceId: spaceId,
+                                              sourceWindowId: sourceWindowId,
+                                              sourceIsNewTab: sourceIsNewTab,
+                                              ordinaryNewTab: ordinaryNewTab)
         }
     }
 
@@ -2354,7 +2376,8 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 SpaceManager.shared.routeAskedURL(request.urlString,
                                                   toSpaceId: nil,
                                                   sourceWindowId: windowId,
-                                                  sourceIsNewTab: request.sourceIsNewTab)
+                                                  sourceIsNewTab: request.sourceIsNewTab,
+                                                  ordinaryNewTab: request.ordinaryNewTab)
             }
         }
     }
@@ -2642,6 +2665,38 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         )
     }
 
+    /// How long after discarding a window on a profile no Space uses the app
+    /// is checked for being left without any window. Long enough for a cold
+    /// start's other profiles to have replayed theirs.
+    private static let discardedWindowReplacementDelay: TimeInterval = 2
+
+    /// Retires a normal window Chromium opened on a profile no Space is bound
+    /// to (`SpaceManager.hasNoSpace(boundTo:)`): it gets no slot, no session
+    /// and no shell, is kept off screen, and is closed through Chromium.
+    ///
+    /// Registered as unmanaged so the tab and extension events Chromium keeps
+    /// routing for it until the close lands are dropped quietly. The close is
+    /// deferred a turn: this runs inside `Browser::Create`, and closing there
+    /// would re-enter a Browser still under construction. Chromium's
+    /// post-construction `Show()` runs in that gap, which is why the window
+    /// is made transparent first rather than ordered out.
+    private func discardWindowOnProfileWithoutSpace(_ window: NSWindow, windowId: Int64, profileId: String) {
+        AppLogWarn("🌐 [Chromium] No Space is bound to profile \(profileId); closing window \(windowId) instead of presenting it as another profile's Space")
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+        SpaceSessionControllersManager.shared.registerUnmanagedWindow(window, windowId: Int(windowId))
+        DispatchQueue.main.async {
+            if let bridge = ChromiumLauncher.sharedInstance().bridge {
+                bridge.executeCommand(Int32(CommandWrapper.IDC_CLOSE_WINDOW.rawValue), windowId: windowId)
+            } else {
+                window.close()
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.discardedWindowReplacementDelay) {
+            SpaceManager.shared.openPersistedSpaceIfDiscardLeftNoWindow()
+        }
+    }
+
     private func handleMainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?, presentationContext: [String: Any]?) {
         AppLogInfo("🌐 [Chromium] mainBrowserWindowCreated called - windowId: \(windowId), restoredFrom: \(restoredFromWindowId), restoredSpace: \(restoredSpaceId ?? "nil"), type: \(browserType.rawValue)")
         // This callback runs synchronously inside Browser::Create; hosted
@@ -2719,6 +2774,13 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 resolvedSlot = claim.slot
                 spaceId = SpaceManager.shared.spaceId(boundTo: profileId,
                                                       preferring: claim.spaceId)
+            } else if browserType == .normal,
+                      SpaceManager.shared.hasNoSpace(boundTo: profileId) {
+                // A window Chromium opened on its own, on a profile no Space
+                // is bound to. Every branch below would pair it with a Space
+                // of another profile, so it is never given a slot.
+                discardWindowOnProfileWithoutSpace(window, windowId: windowId, profileId: profileId)
+                return
             } else if let restoredSpace = SpaceManager.shared.restoredSpaceTarget(
                 restoredSpaceId, profileId: profileId) {
                 // Tab-restore path ("Reopen Closed Window"): the restore entry
@@ -3286,7 +3348,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         // Detach the closing tab's native view from Peek or Reader SYNCHRONOUSLY,
         // before the async EventBus close dispatch. This bridge callback runs on
         // the UI/main thread inside Chromium's synchronous close turn while the
-        // WebContents is still alive; the EventBus close (Task { @MainActor }) runs
+        // WebContents is still alive; the EventBus close (FIFO main-queue dispatch) runs
         // only AFTER Chromium has destroyed it. MainActor.assumeIsolated mirrors
         // windowDidEnterPlaceholderMode's synchronous-detach pattern.
         // The contract above holds today (BrowserThread::UI = the AppKit main thread =
@@ -3348,9 +3410,11 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     
     
     func tabTitleUpdated(_ tabId: Int64, title: String, windowId: Int64) {
+        // Stamped with the send time: see `Tab.takePageTitle(_:sentAt:)`.
         EventBus.shared
             .send(TabEvent(browserId: windowId.intValue,
-                           action: .updateTabTitle(tabId: tabId.intValue, newTitle: title)))
+                           action: .updateTabTitle(tabId: tabId.intValue, newTitle: title,
+                                                   sentAt: DispatchTime.now().uptimeNanoseconds)))
     }
     
     @objc func initApplication() {
@@ -3934,6 +3998,17 @@ extension PhiChromiumCoordinator {
     func isPeekLinkSurfaceEnabled() -> Bool {
         PhiPreferences.GeneralSettings.peekViewEnabled.loadValue()
             && !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
+    }
+
+    // Synchronous query from Chromium as it creates the new foreground tab of
+    // a link: whether that tab opens in the Peek panel on its own. Chromium
+    // keeps the tab's first load in its window when it does.
+    func opensAutoPeekForLink(fromTabId sourceTabId: Int64,
+                              url: String,
+                              windowId: Int64) -> Bool {
+        SpaceSessionControllersManager.shared
+            .getBrowserState(for: windowId.intValue)?
+            .opensAutoPeek(forLinkFrom: sourceTabId.intValue, urlString: url) ?? false
     }
 
     // Content blocking of a profile published a new rule generation or

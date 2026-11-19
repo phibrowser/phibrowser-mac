@@ -136,6 +136,11 @@ class WebContentHeader: NSView {
     private weak var sidebarButtonAnchorView: NSView?
     private weak var chatButtonAnchorView: NSView?
     private var hostingView: ZeroSafeAreaHostingView<AnyView>?
+    /// The hosting view follows the header's width only in the layouts that
+    /// show the header. Hidden (Performance), it holds its width, so a page
+    /// area resized by the sidebar does not lay its SwiftUI content out.
+    private var hostingTrailingConstraint: NSLayoutConstraint?
+    private var hostingHeldWidthConstraint: NSLayoutConstraint?
     private let state = WebContentHeaderState()
     private let downloadViewModel = DownloadButtonViewModel()
     private var cancellables = Set<AnyCancellable>()
@@ -209,14 +214,17 @@ class WebContentHeader: NSView {
         hosting.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting)
 
+        let trailing = hosting.trailingAnchor.constraint(equalTo: trailingAnchor)
         NSLayoutConstraint.activate([
             hosting.topAnchor.constraint(equalTo: topAnchor),
             hosting.leadingAnchor.constraint(equalTo: leadingAnchor),
-            hosting.trailingAnchor.constraint(equalTo: trailingAnchor),
+            trailing,
             hosting.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
 
         self.hostingView = hosting
+        hostingTrailingConstraint = trailing
+        hostingHeldWidthConstraint = hosting.widthAnchor.constraint(equalToConstant: 0)
 
         addSubview(bottomSeparator)
         bottomSeparator.translatesAutoresizingMaskIntoConstraints = false
@@ -378,6 +386,14 @@ class WebContentHeader: NSView {
             }
             .store(in: &cancellables)
 
+        owningBrowserState?.$pendingSplitPreview
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updatePageColor()
+            }
+            .store(in: &cancellables)
+
         state.loadingProgress = 0
         state.isLoading = false
         state.isProgressVisible = false
@@ -457,9 +473,25 @@ class WebContentHeader: NSView {
         }
     }
 
+    private func updateHostingWidthTracking(layoutMode: LayoutMode) {
+        guard let hostingView, let trailing = hostingTrailingConstraint,
+              let heldWidth = hostingHeldWidthConstraint else { return }
+        let followsWidth = layoutMode.showsNavigationAtTop
+        guard trailing.isActive != followsWidth else { return }
+        if followsWidth {
+            heldWidth.isActive = false
+            trailing.isActive = true
+        } else {
+            heldWidth.constant = hostingView.frame.width
+            trailing.isActive = false
+            heldWidth.isActive = true
+        }
+    }
+
     private func updateLayoutVisibility() {
         updatePageColor()
         let layoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
+        updateHostingWidthTracking(layoutMode: layoutMode)
         let navigationAtTop = layoutMode.showsNavigationAtTop
         let traditionalLayout = layoutMode.isTraditional
         let isCollapsed = owningBrowserState?.sidebarCollapsed ?? false
@@ -511,7 +543,11 @@ class WebContentHeader: NSView {
         let theme = provider.currentTheme
         let fallbackAppearance = provider.currentAppearance
         let fallback = theme.extensionSurfaceBackground(for: fallbackAppearance)
-        let tab = currentTab
+        // The blank split pane has no page color while its URL is being chosen.
+        let isSplitPreview = currentTab.map {
+            owningBrowserState?.pendingSplitPreview?.partnerTabId == $0.guid
+        } ?? false
+        let tab = isSplitPreview ? nil : currentTab
         let canApplyPageStyle = tab?.hasWebContent == true
             && tab?.crashState == nil
             && !BookmarkManagerRoute.matches(tab?.url)

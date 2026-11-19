@@ -8,6 +8,7 @@ import SwiftUI
 
 final class ProfilesSettingHostingViewController: NSViewController {
     private var hostingController: ThemedHostingController<ProfilesSettingsView>?
+    private let listFocus = SettingsListFocus()
 
     override func loadView() {
         view = NSView()
@@ -21,7 +22,7 @@ final class ProfilesSettingHostingViewController: NSViewController {
     }
 
     private func setupSwiftUIView() {
-        let hostingController = ThemedHostingController(rootView: ProfilesSettingsView())
+        let hostingController = ThemedHostingController(rootView: ProfilesSettingsView(listFocus: listFocus))
 
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(hostingController)
@@ -40,5 +41,11 @@ final class ProfilesSettingHostingViewController: NSViewController {
     override func viewWillAppear() {
         super.viewWillAppear()
         hostingController?.view.needsLayout = true
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        guard let hostingView = hostingController?.view else { return }
+        listFocus.paneDidAppear(in: hostingView)
     }
 }

@@ -316,6 +316,13 @@ class PinnedTabViewController: NSViewController {
     private var lastSplitItemPairs: [String: String] = [:]
 
     @Published var contentHeight: CGFloat = 0
+
+    /// With nothing pinned the band stays collapsed when a drag starts, so the
+    /// tab rows below it keep their place under the cursor. It opens as a
+    /// drop zone once the dragged item is carried above the band, over the
+    /// sidebar header, and stays open until the drag ends. Hosts size the
+    /// band from this.
+    @Published private(set) var isEmptyDropZoneRevealed = false
     
     init(state: BrowserState?, hostVC: NSViewController? = nil) {
         self.browserState = state
@@ -463,10 +470,18 @@ class PinnedTabViewController: NSViewController {
             }
             .store(in: &cancellables)
 
+        browserState.tabDraggingSession.events
+            .sink { [weak self] event in
+                guard case .moved(let snapshot) = event else { return }
+                self?.revealEmptyDropZoneIfDragIsAboveBand(at: snapshot.screenLocation)
+            }
+            .store(in: &cancellables)
+
         browserState.$isDraggingTab
             .receive(on: DispatchQueue.main)
             .sink { [weak self] dragging in
-                self?.updateEmptyViewVisibility(isDraggingTab: dragging)
+                guard !dragging else { return }
+                self?.concealEmptyDropZone()
             }
             .store(in: &cancellables)
         
@@ -557,7 +572,7 @@ class PinnedTabViewController: NSViewController {
         pinnedTabs = browserState.pinnedTabs
         pinnedExtensionItems = visibleExtensionItems(currentPinnedExtensionsForDisplay())
         applySnapshot(animatingDifferences: false, skippingUnchangedSnapshot: skippingUnchangedSnapshot)
-        updateEmptyViewVisibility(isDraggingTab: browserState.isDraggingTab)
+        updateEmptyViewVisibility()
         updateAllItemsSelectionState(browserState.focusingTab)
     }
 
@@ -583,7 +598,7 @@ class PinnedTabViewController: NSViewController {
         isExternalDrag = false
         hasAppliedInitialContentSnapshot = false
         applySnapshot(animatingDifferences: false)
-        updateEmptyViewVisibility(isDraggingTab: false)
+        concealEmptyDropZone()
         collectionView.visibleItems().forEach {
             $0.isSelected = false
             $0.view.isHidden = false
@@ -962,12 +977,39 @@ class PinnedTabViewController: NSViewController {
         return tab.guidInLocalDB == draggedPinnedGuid
     }
 
-    private func updateEmptyViewVisibility(isDraggingTab: Bool? = nil) {
+    private func updateEmptyViewVisibility() {
         let isEmpty = pinnedTabs.isEmpty && pinnedExtensionItems.isEmpty
-        let draggingTab = isDraggingTab ?? browserState?.isDraggingTab ?? false
-        let showEmptyView = isEmpty && draggingTab
+        let showEmptyView = isEmpty && isEmptyDropZoneRevealed
         emptyView.isHidden = !showEmptyView
         collectionView.isHidden = showEmptyView
+    }
+
+    private func revealEmptyDropZoneIfDragIsAboveBand(at screenLocation: CGPoint?) {
+        guard !isEmptyDropZoneRevealed,
+              pinnedTabs.isEmpty, pinnedExtensionItems.isEmpty,
+              let screenLocation,
+              let window = view.window,
+              !view.isHiddenOrHasHiddenAncestor else {
+            return
+        }
+        // Window coordinates grow upward, so the header is everything from
+        // the band's top edge to the top of the window.
+        let point = window.convertPoint(fromScreen: screenLocation)
+        let band = view.convert(view.bounds, to: nil)
+        guard band.width > 1,
+              point.x >= band.minX, point.x <= band.maxX,
+              point.y >= band.maxY, point.y <= window.frame.height else {
+            return
+        }
+        isEmptyDropZoneRevealed = true
+        updateEmptyViewVisibility()
+    }
+
+    private func concealEmptyDropZone() {
+        if isEmptyDropZoneRevealed {
+            isEmptyDropZoneRevealed = false
+        }
+        updateEmptyViewVisibility()
     }
 
     private func updateAllItemsSelectionState(_ focusing: Tab?) {
@@ -1379,7 +1421,7 @@ extension PinnedTabViewController {
         }
         pinnedExtensionItems = visibleExtensionItems(currentPinnedExtensionsForDisplay())
         applySnapshot(animatingDifferences: true)
-        updateEmptyViewVisibility(isDraggingTab: false)
+        concealEmptyDropZone()
         refreshExtensionReorderSourceVisibility()
 
         // Unhide all items to ensure the dragged item reappears and the UI is clean.

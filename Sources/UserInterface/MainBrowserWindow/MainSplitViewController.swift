@@ -24,6 +24,10 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     private var shellSplit: ShellSplitViewController? { state.windowController?.shellSplit }
     private let sidebarGeometryChanges = PassthroughSubject<Void, Never>()
 
+    var windowSplitViewController: PhiSplitViewController {
+        shellSplit?.splitViewController ?? splitViewController
+    }
+
     var isSidebarCollapsed: Bool {
         if isHosted { return shellSplit?.isSidebarCollapsed ?? false }
         return sideBarSplitViewItem?.isCollapsed
@@ -82,7 +86,7 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
 
     let webContentContainerViewController: WebContentContainerViewController
 
-    private var sideBarSplitViewItem: NSSplitViewItem!
+    @Published private var sideBarSplitViewItem: NSSplitViewItem!
     private var webContentSplitViewItem: NSSplitViewItem!
     private lazy var cancellables = Set<AnyCancellable>()
 
@@ -108,7 +112,30 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
         self.view = isHosted ? NSView() : TitlebarTransparentView()
     }
 
-    private static let splitViewAutosaveName = "phiMainBrowserSplitView"
+    private static var splitViewAutosaveName: String {
+        SidebarPosition.isOnRight ? "phiMainBrowserSplitViewRight" : "phiMainBrowserSplitView"
+    }
+
+    private var sidebarOnRight = false
+    private var isReorderingSidebar = false
+
+    private func updateSidebarPosition() {
+        let right = SidebarPosition.isOnRight
+        guard sidebarOnRight != right else { return }
+        // A width the floating panel left belongs to the side it was set on;
+        // the destination side keeps its own.
+        pendingDockWidth = nil
+        let destinationWidth = AccountController.shared.localDataAccount?.userDefaults
+            .lastKnownSidebarWidth(for: SidebarPosition.effective) ?? 0
+        isReorderingSidebar = true
+        sideBarSplitViewItem = splitViewController.repositionSidebarItem(
+            sideBarSplitViewItem, onRight: right, width: destinationWidth,
+            autosaveName: Self.splitViewAutosaveName
+        )
+        sidebarOnRight = right
+        isReorderingSidebar = false
+        updateSidebarWidth()
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -162,7 +189,10 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
         cancellables.removeAll()
         guard !isHosted else { return }
 
-        sideBarSplitViewItem.publisher(for: \.isCollapsed)
+        $sideBarSplitViewItem
+            .compactMap { $0 }
+            .map { $0.publisher(for: \.isCollapsed) }
+            .switchToLatest()
             .sink { [weak self] isCollapsed in
                 guard let self else { return }
                 self.updateSidebarWidth()
@@ -173,6 +203,17 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
                         self.sideBarSplitViewItem.isCollapsed = true
                     }
                     return
+                }
+                // Expanded some other way than `setSidebarCollapsed`: still
+                // dock at the width the floating panel left.
+                if !isCollapsed, let width = self.pendingDockWidth {
+                    self.pendingDockWidth = nil
+                    DispatchQueue.main.async { [weak self] in
+                        guard let splitView = self?.splitViewController.splitView else { return }
+                        splitView.setPosition(SidebarPosition.isOnRight
+                            ? splitView.bounds.width - splitView.dividerThickness - width
+                            : width, ofDividerAt: 0)
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -248,10 +289,28 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
             shellSplit?.setSidebarGeometry(width: width, collapsed: collapsed)
             return
         }
+        // An explicit width wins over the one the floating panel left.
+        if width != nil { pendingDockWidth = nil }
         setSidebarCollapsed(collapsed, animated: false)
         guard !collapsed, let width, width > 0 else { return }
         let clamped = min(max(width, Self.leftItemMinWidth), Self.leftItemMaxWidth)
-        splitViewController.splitView.setPosition(clamped, ofDividerAt: 0)
+        splitViewController.splitView.setPosition(SidebarPosition.isOnRight ? splitViewController.splitView.bounds.width - splitViewController.splitView.dividerThickness - clamped : clamped, ofDividerAt: 0)
+    }
+
+    /// Standalone: the width the column docks at when it next expands, set by
+    /// resizing the floating panel while the column is collapsed.
+    private var pendingDockWidth: CGFloat?
+
+    /// Takes the floating panel's width, resized by the user while the column
+    /// is collapsed, as the column's width. A standalone window writes it to
+    /// the account only once the column docks, as it does for divider drags.
+    func adoptFloatingSidebarWidth(_ width: CGFloat) {
+        if isHosted {
+            shellSplit?.adoptFloatingSidebarWidth(width)
+            return
+        }
+        guard let item = sideBarSplitViewItem, item.isCollapsed else { return }
+        pendingDockWidth = min(max(width, Self.leftItemMinWidth), Self.leftItemMaxWidth)
     }
 
     func toggleAIChat(_ sender: Any?) {
@@ -271,8 +330,6 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     private func setupChildSplitViewController() {
         let splitView = PhiSplitView()
         splitView.isVertical = true
-        splitView.dividerStyle = .thick
-        splitView.delegate = self
 
         splitViewController.splitView = splitView
 
@@ -291,17 +348,18 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     private func setupSplitViewItems() {
         setupLeftSplitViewItem()
         setupWebContentSplitViewItem()
+        updateSidebarPosition()
     }
 
     private func setupLeftSplitViewItem() {
-        if #available(macOS 26.0, *) {
-            sideBarSplitViewItem = NSSplitViewItem(viewController: verticalTabListViewController)
-        } else {
-            sideBarSplitViewItem = NSSplitViewItem(sidebarWithViewController: verticalTabListViewController)
-        }
+        // A plain item on every OS and side; see
+        // `ShellSplitViewController.viewDidLoad` for why this is never a
+        // sidebar-behavior item.
+        sideBarSplitViewItem = NSSplitViewItem(viewController: verticalTabListViewController)
         sideBarSplitViewItem.minimumThickness = Self.leftItemMinWidth
         sideBarSplitViewItem.maximumThickness = Self.leftItemMaxWidth
         sideBarSplitViewItem.canCollapse = true
+        sideBarSplitViewItem.collapseBehavior = SidebarPosition.isOnRight ? .preferResizingSiblingsWithFixedSplitView : .default
         sideBarSplitViewItem.holdingPriority = .init(rawValue: 260)
         
         if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
@@ -319,6 +377,7 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
 
     /// Updates the split-view layout based on the current tab-bar mode.
     private func updateLayoutForHorizontalTabs() {
+        if !isHosted { updateSidebarPosition() }
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
         if lastUseHorizontalTabs != nil && traditionalLayout == lastUseHorizontalTabs {
             return
@@ -339,11 +398,10 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
         loadViewIfNeeded()
         let target = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional || collapsed
         guard sideBarSplitViewItem.isCollapsed != target else { return }
-        if animated {
-            sideBarSplitViewItem.animator().isCollapsed = target
-        } else {
-            sideBarSplitViewItem.isCollapsed = target
-        }
+        let dockWidth = pendingDockWidth
+        if !target { pendingDockWidth = nil }
+        splitViewController.setSidebarCollapsed(target, item: sideBarSplitViewItem, animated: animated,
+                                                dockWidth: dockWidth)
         updateSidebarWidth()
     }
 
@@ -410,27 +468,16 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     }
 }
 
-extension MainSplitViewController: NSSplitViewDelegate {
-    func splitView(_ splitView: NSSplitView, constrainSplitPosition proposedPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
-        return proposedPosition
-    }
-
-    func splitView(_ splitView: NSSplitView, shouldHideDividerAt dividerIndex: Int) -> Bool {
-        return true
-    }
-
-    func splitViewDidResizeSubviews(_ notification: Notification) {
-        updateSidebarWidth()
-    }
-
+extension MainSplitViewController {
     private func updateSidebarWidth() {
+        guard !isReorderingSidebar else { return }
         guard sideBarSplitViewItem != nil else { return }
         let width = sidebarWidth
         sidebarGeometryChanges.send(())
         guard width != Self.leftItemMinWidth else {
             return
         }
-        AccountController.shared.localDataAccount?.userDefaults.setLastKnownSidebarWidth(width)
+        AccountController.shared.localDataAccount?.userDefaults.setLastKnownSidebarWidth(width, for: SidebarPosition.effective)
     }
 }
 
@@ -484,5 +531,14 @@ class TitlebarTransparentView: NSView {
         let titlebarHeight = max(0, window.frame.height - window.contentLayoutRect.height)
         let heightFromTop = bounds.height - point.y
         return heightFromTop <= titlebarHeight
+    }
+}
+
+extension MainSplitViewController {
+    /// The docked sidebar's tab list position; see
+    /// `SidebarTabListViewController.scrollOffset`.
+    var sidebarTabListScrollOffset: NSPoint {
+        get { verticalTabListViewController.tabListScrollOffset }
+        set { verticalTabListViewController.tabListScrollOffset = newValue }
     }
 }

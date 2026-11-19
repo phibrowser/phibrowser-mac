@@ -388,6 +388,21 @@ extension LocalStore {
         }
     }
 
+    func updatePinnedTabIcon(resolving guid: String, profileId: String, spaceId: String, icon: String) {
+        performBackgroundWrite { context in
+            do {
+                guard let tab = try self.activePinnedTab(
+                    resolving: guid, profileId: profileId, spaceId: spaceId, in: context
+                ) else { return }
+                guard tab.icon != icon else { return }
+                tab.icon = icon
+                tab.updatedDate = Date()
+            } catch {
+                AppLogError("[LocalStore] Failed to update pinned tab icon: \(error)")
+            }
+        }
+    }
+
     /// Executes an Agent/API mutation only while its exact physical guid is
     /// still part of the selected scope. Unlike a window-owned UI action, an
     /// API call has no unambiguous child Space to target after a narrowing
@@ -1446,10 +1461,13 @@ extension LocalStore {
                 let title = fields.title.map { $0 ?? "" }
                 let url = fields.url.flatMap { $0 }
                 let changesSplitPartner = fields.splitPartnerLineageId != nil
-                // A patch with no effective change is a caller bug (M4). Check the three resolved values, not
+                let changesSplitPanes = fields.splitPaneLineageIds != nil
+                let changesSplitLayout = fields.splitLayout != nil
+                // A patch with no effective change is a caller bug (M4). Check the resolved values, not
                 // outer optionals: a present URL unit with nil inside means unchanged too. The §4.9 baseline
                 // guarantee requires nonthrowing completion to mean actual landing.
-                guard title != nil || url != nil || changesSplitPartner else {
+                guard title != nil || url != nil || changesSplitPartner || changesSplitPanes
+                        || changesSplitLayout else {
                     throw LocalStoreWriteError.noCandidateSurvived
                 }
                 if title != nil || url != nil {
@@ -1461,6 +1479,12 @@ extension LocalStore {
                     try applyPinSplitPartnerBody(guid: guid,
                                                  partnerLineageId: partnerLineageId,
                                                  in: context)
+                }
+                if let paneLineageIds = fields.splitPaneLineageIds {
+                    try applyPinSplitPanesBody(guid: guid, paneLineageIds: paneLineageIds, in: context)
+                }
+                if let layout = fields.splitLayout {
+                    try applyPinSplitLayoutBody(guid: guid, layout: layout, in: context)
                 }
 
             case .delete(let guid):
@@ -1571,6 +1595,63 @@ extension LocalStore {
         if let resolvedPartnerGuid {
             try updateTabSplitPartnerBody(resolvedPartnerGuid, partnerGuid: guid, in: context)
         }
+    }
+
+    /// Land `split_pane_uuids`: the members of a split of three or four pins, as `splitPaneGuids` in pane
+    /// order (§7.4 for wider splits). Each member lands its own list; an empty list clears it.
+    ///
+    /// The engine sends a list only once every member resolves under this pin's owner, so a member that no
+    /// longer resolves here leaves the row as it is rather than writing a partial list: the engine still
+    /// sees the row unlisted and keeps waiting. Members are matched by normalized lineage under the same
+    /// owner, as `applyPinSplitPartnerBody` matches a partner.
+    private func applyPinSplitPanesBody(guid: String,
+                                        paneLineageIds: [String],
+                                        in context: ModelContext) throws {
+        guard let tab = try pinnedTabRow(with: guid, in: context) else {
+            throw LocalStoreWriteError.rowNotFound
+        }
+        let scope = try pinnedTabScope(in: context)
+        guard pinnedTab(tab, belongsTo: scope) else {
+            throw LocalStoreWriteError.rowNotInActiveScope
+        }
+
+        var paneGuids: [String] = []
+        if !paneLineageIds.isEmpty {
+            let siblings = try pinnedTabs(
+                profileId: tab.profileId ?? tab.profile?.profileId ?? Self.defaultProfileId,
+                spaceId: tab.spaceId ?? Self.defaultSpaceId,
+                scope: scope,
+                in: context
+            )
+            var guidByLineage: [String: String] = [:]
+            for sibling in siblings {
+                let lineage = PinKind.lineageKey(sibling.pinLineageId ?? sibling.guid)
+                if guidByLineage[lineage] == nil { guidByLineage[lineage] = sibling.guid }
+            }
+            paneGuids = paneLineageIds.compactMap { guidByLineage[PinKind.lineageKey($0)] }
+            guard paneGuids.count == paneLineageIds.count else { return }
+        }
+
+        guard tab.decodedSplitPaneGuids != paneGuids else { return }
+        tab.decodedSplitPaneGuids = paneGuids
+        // Leaving a wider split drops its layout too, unless the row is still half of a pair.
+        if paneGuids.isEmpty, tab.splitPartnerGuid == nil { tab.layout = nil }
+        tab.updatedDate = Date()
+    }
+
+    /// Land `split_layout`: the orientation of the split this pin belongs to (nil is the default, side by
+    /// side). The engine sends the split anchor's value to every member, so all members agree. nil and
+    /// "vertical" are the same orientation and never rewrite each other.
+    private func applyPinSplitLayoutBody(guid: String, layout: String?, in context: ModelContext) throws {
+        guard let tab = try pinnedTabRow(with: guid, in: context) else {
+            throw LocalStoreWriteError.rowNotFound
+        }
+        guard pinnedTab(tab, belongsTo: try pinnedTabScope(in: context)) else {
+            throw LocalStoreWriteError.rowNotInActiveScope
+        }
+        guard wireSplitLayout(tab.layout) != wireSplitLayout(layout) else { return }
+        tab.layout = layout
+        tab.updatedDate = Date()
     }
 
     /// Clear the link pointing back to this row in the same transaction before split-pin deletion. Write only

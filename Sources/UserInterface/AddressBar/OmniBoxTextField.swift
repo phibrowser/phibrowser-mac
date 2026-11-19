@@ -188,7 +188,7 @@ class OmniBoxTextField: NSView {
         textFiled.cell?.wraps = false
         textFiled.delegate = self
 
-        let placeholder = NSMutableAttributedString(string: NSLocalizedString("addressBar.input.placeholder", value: "Search or Enter URL", comment: "Address bar - Text field placeholder prompting the user to search or enter a URL"))
+        let placeholder = NSMutableAttributedString(string: NSLocalizedString("addressBar.input.placeholder", value: "Search or enter URL", comment: "Address bar - Text field placeholder prompting the user to search or enter a URL"))
         placeholder.addAttributes([
             .foregroundColor: NSColor.placeholderTextColor,
             .font: NSFont.systemFont(ofSize: 16)
@@ -214,10 +214,15 @@ class OmniBoxTextField: NSView {
         self.stringValue = text
     }
 
-    func updateSearchPlaceholder(engineName: String?) {
-        let placeholder = engineName == nil
-            ? NSLocalizedString("addressBar.input.placeholder", value: "Search or Enter URL", comment: "Address bar - Text field placeholder prompting the user to search or enter a URL")
-            : NSLocalizedString("addressBar.keywordSearch.queryPlaceholder", value: "Search…", comment: "Address bar - Empty query placeholder beside the selected search engine badge")
+    func updateSearchPlaceholder(engineName: String?, isChoosingSplitPane: Bool = false) {
+        let placeholder: String
+        if isChoosingSplitPane {
+            placeholder = NSLocalizedString("addressBar.input.createSplitPlaceholder", value: "Search or enter URL to create split", comment: "Address bar - Placeholder while choosing the page for a new split pane")
+        } else if engineName == nil {
+            placeholder = NSLocalizedString("addressBar.input.placeholder", value: "Search or enter URL", comment: "Address bar - Text field placeholder prompting the user to search or enter a URL")
+        } else {
+            placeholder = NSLocalizedString("addressBar.keywordSearch.queryPlaceholder", value: "Search…", comment: "Address bar - Empty query placeholder beside the selected search engine badge")
+        }
         textFiled.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
             .foregroundColor: NSColor.placeholderTextColor,
             .font: NSFont.systemFont(ofSize: 16)

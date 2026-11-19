@@ -418,6 +418,23 @@ struct ExtensionGridItem: View {
         .onTapGesture {
             onTap(ext)
         }
+        .modifier(TouchLongPressModifier { onSecondaryTap(ext) })
+    }
+}
+
+/// `SecondaryClickPassthrough` only claims real right-clicks, so a touch and
+/// hold, which AppKit does not turn into one here, opens the menu instead.
+private struct TouchLongPressModifier: ViewModifier {
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        if #available(macOS 27, *) {
+            content.highPriorityGesture(
+                LongPressGesture(inputKinds: .directTouch).onEnded { _ in action() }
+            )
+        } else {
+            content
+        }
     }
 }
 

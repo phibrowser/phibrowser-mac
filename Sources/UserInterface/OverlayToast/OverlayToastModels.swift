@@ -15,12 +15,13 @@ enum OverlayToastTarget: Equatable {
     case windowId(Int)
 }
 
-/// One optional action button on a toast ("Undo", "Show in Finder").
+/// One optional action on a toast ("Undo", "Show in Finder", or the whole card).
 /// Excluded from equality: the closure has no identity, and two toasts with
 /// the same id are the same toast.
 struct OverlayToastAction {
     let title: String
     var isBordered: Bool = false
+    var usesWholeToast: Bool = false
     let handler: @MainActor () -> Void
 }
 
@@ -43,5 +44,6 @@ struct OverlayToastItem: Identifiable, Equatable {
             && lhs.placement == rhs.placement
             && lhs.shareURLs == rhs.shareURLs
             && (lhs.action == nil) == (rhs.action == nil)
+            && lhs.action?.usesWholeToast == rhs.action?.usesWholeToast
     }
 }

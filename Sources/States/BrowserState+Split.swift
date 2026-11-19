@@ -8,6 +8,16 @@ import Cocoa
 
 /// Orientation of a Chromium split.
 /// Serialized over the bridge as `"vertical"` / `"horizontal"`.
+/// A pinned-split write a window sent to the store and has not yet seen in a
+/// pinned-tabs emission (`BrowserState.pinnedSplitWritesInFlight`).
+struct PinnedSplitWriteInFlight: Equatable {
+    /// The written members in pane order; nil for an orientation-only write.
+    var members: [String]?
+    var layout: SplitLayout
+    /// Identifies the write, so a later one is not expired by an earlier timer.
+    var token: UUID
+}
+
 enum SplitLayout: String {
     /// Side-by-side columns, divided by vertical bars.
     case vertical
@@ -497,8 +507,10 @@ extension BrowserState {
             splits.append(group)
         }
         // The split a pane was just replaced in, back under its id: its
-        // bookmark takes it again and saves the new pane.
-        if let swap = pendingBoundSplitPaneSwaps.removeValue(forKey: splitId),
+        // bookmark takes it again and saves the new pane. The note goes
+        // after the binding is back, so the panes stay marked bound
+        // throughout (`syncSplitBookmarkPaneMarks`).
+        if let swap = pendingBoundSplitPaneSwaps[splitId],
            swap.tabIds.count == tabIds.count {
             for bookmarkGuid in swap.bookmarkGuids
             where bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil {
@@ -506,6 +518,11 @@ extension BrowserState {
             }
             saveBoundBookmarkPanes(group, previousTabIds: swap.tabIds)
         }
+        pendingBoundSplitPaneSwaps.removeValue(forKey: splitId)
+        // After the swap above has bound the split again, and after a
+        // restore has (`bindRestoredSplitToItsBookmark` runs first): a split
+        // still unbound here is a normal split.
+        dropSavedSplitBookmarkBindingIfUnbound(splitId: splitId)
         // After `splits`, so the page container mounts the waiting pane with
         // its split. Checked first: a restore replays every split here, and
         // each write would publish.
@@ -634,11 +651,36 @@ extension BrowserState {
     @MainActor
     func handleSplitVisualsChanged(splitId: String, layout: SplitLayout, fractions: [Double]) {
         guard let index = splits.firstIndex(where: { $0.id == splitId }) else { return }
+        let layoutChanged = splits[index].layout != layout
         splits[index].layout = layout
         splits[index].fractions = SplitGroup.normalizedFractions(
             fractions, paneCount: splits[index].paneCount)
         notifyTravelBackSceneChanged(tabIds: splits[index].tabIds)
-        persistRepresentedSplitLayout(splitId: splitId, layout: layout)
+        // A divider drag reports the unchanged orientation; writing it would
+        // put this window's value back over one sync landed for the pinned
+        // record or bookmark the split stands for.
+        if layoutChanged {
+            persistRepresentedSplitLayout(splitId: splitId, layout: layout)
+        }
+    }
+
+    /// Remembers the split `departed` panes just left, for a removal of a
+    /// focused pane that follows in the same burst of Chromium events (see
+    /// `splitPaneTabIdsJustLeft`). Dropped once that burst has been handled,
+    /// so a pane dragged out of the split and closed later is a plain tab.
+    @MainActor
+    private func noteSplitPanesLeft(_ departed: [Int], previousTabIds: [Int]) {
+        let leaving = departed.filter { tabId in tabs.contains { $0.guid == tabId } }
+        guard !leaving.isEmpty else { return }
+        for tabId in leaving {
+            splitPaneTabIdsJustLeft[tabId] = previousTabIds
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for tabId in leaving where self.splitPaneTabIdsJustLeft[tabId] == previousTabIds {
+                self.splitPaneTabIdsJustLeft.removeValue(forKey: tabId)
+            }
+        }
     }
 
     /// The split's panes changed: a reorder, or a pane joined or left a
@@ -662,10 +704,18 @@ extension BrowserState {
             for tabId in departed {
                 SidecarAIOutputStateStore.shared.tabDidLeaveSplit(tabId, in: self)
             }
+            noteSplitPanesLeft(departed, previousTabIds: previous.tabIds)
             tabsAwaitingSplit.subtract(joined)
             splitPaneIdsOpeningBehindBookmark.subtract(joined)
             reconcileSplitChatBinding(splits[index])
             syncSplitAIChatCollapsed(splits[index])
+            // A pane joining a bound split is focused before it lands here
+            // (the 3rd/4th pane of a split bookmark), so the focus change
+            // computed the bookmark inactive against the old pane set and
+            // focus does not move again. Recompute against the fresh panes.
+            for (bookmarkGuid, boundSplitId) in splitBookmarkBindings where boundSplitId == splitId {
+                syncSplitBookmarkOpenedState(bookmarkGuid: bookmarkGuid)
+            }
         }
         notifyTravelBackSceneChanged(tabIds: Array(Set(previous.tabIds + tabIds)))
         if !joined.isEmpty {
@@ -802,6 +852,17 @@ extension BrowserState {
                                                                     layout: layout.rawValue,
                                                                     windowId: windowId.int64Value)
         persistRepresentedSplitLayout(splitId: splitId, layout: layout)
+    }
+
+    /// Lay out the live pinned split `splitId` in the orientation its records
+    /// hold, without writing it back: the store already has it (sync landed
+    /// it). Chromium's visuals echo then finds the orientation unchanged.
+    private func adoptStoredPinnedSplitLayout(_ splitId: String, layout: SplitLayout) {
+        guard let index = splits.firstIndex(where: { $0.id == splitId }) else { return }
+        splits[index].layout = layout
+        ChromiumLauncher.sharedInstance().bridge?.updateSplitLayout(splitId,
+                                                                    layout: layout.rawValue,
+                                                                    windowId: windowId.int64Value)
     }
 
     /// Close Tab on a pane of a split that a bookmark or a pinned record
@@ -1009,6 +1070,20 @@ extension BrowserState {
         return true
     }
 
+    /// Whether the open normal tab `tabId` may join `splitId` by a drop on
+    /// the split's sidebar row: the split has room, the tab is in no split,
+    /// and both sit in the same tab group (or in none), so the merged row
+    /// stays inside one group.
+    func canAddNormalTabToSplit(_ splitId: String, tabId: Int) -> Bool {
+        guard let group = splitGroup(forId: splitId), group.canAddPane, !group.isPinned,
+              splitGroup(forTabId: tabId) == nil,
+              let tab = normalTabs.first(where: { $0.guid == tabId }),
+              let firstPane = normalTabs.first(where: { $0.guid == group.firstTabId }) else {
+            return false
+        }
+        return tab.groupToken == firstPane.groupToken
+    }
+
     /// Whether the user may move a pane of `group` to another slot or take
     /// one out of it. Not while a pinned tab or a bookmark stands for the
     /// split in the sidebar: the split then shows what that entry saved.
@@ -1064,7 +1139,7 @@ extension BrowserState {
         // new pane into the bookmark.
         let boundBookmarkGuids = splitBookmarkBindings.compactMap { $0.value == splitId ? $0.key : nil }
         if !boundBookmarkGuids.isEmpty, let group = splitGroup(forId: splitId) {
-            pendingBoundSplitPaneSwaps[splitId] = (boundBookmarkGuids, group.tabIds)
+            pendingBoundSplitPaneSwaps[splitId] = (boundBookmarkGuids, group.tabIds, otherTabId)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.pendingBoundSplitPaneSwaps.removeValue(forKey: splitId)
             }
@@ -1217,6 +1292,7 @@ extension BrowserState {
     func persistPinnedSplit(dbGuids: [String], layout: SplitLayout) {
         guard dbGuids.count >= 2, dbGuids.allSatisfy({ !$0.isEmpty }) else { return }
         localStore.updatePinnedSplit(guids: dbGuids, layout: layout.rawValue)
+        markPinnedSplitWritesInFlight(dbGuids: dbGuids, members: dbGuids, layout: layout)
         for (index, db) in dbGuids.enumerated() {
             guard let record = pinnedTabs.first(where: { $0.guidInLocalDB == db }) else { continue }
             record.splitPartnerGuid = dbGuids.count == 2 ? dbGuids[1 - index] : nil
@@ -1245,6 +1321,7 @@ extension BrowserState {
     func updatePinnedSplitLayout(dbGuids: [String], layout: SplitLayout) {
         guard dbGuids.allSatisfy({ !$0.isEmpty }) else { return }
         localStore.updatePinnedSplitLayout(guids: dbGuids, layout: layout.rawValue)
+        markPinnedSplitWritesInFlight(dbGuids: dbGuids, members: nil, layout: layout)
         for db in dbGuids {
             pinnedTabs.first(where: { $0.guidInLocalDB == db })?.splitLayout = layout
         }
@@ -1264,6 +1341,17 @@ extension BrowserState {
     /// pinned tabs. Reconciling from the live group throughout the split's
     /// life — and once more at the instant it is removed — makes the linkage
     /// durable in memory before the group can disappear.
+    ///
+    /// That holds only while this window's own write is in flight
+    /// (`pinnedSplitWritesInFlight`). Once the store has shown it, the store is
+    /// the source of truth and the live split follows it: a sync landing may
+    /// change the members or the orientation of a split open here, and writing
+    /// the live state back would undo it (and republish the undo). Then the
+    /// live split adopts a landed orientation once every member agrees on it,
+    /// and never writes membership: a landing that unlinks a wider split
+    /// clears each member's list in its own batch, so a half-linked split is a
+    /// landing in progress, not a write to repair. This window's own writes
+    /// always link every member in one transaction (`persistPinnedSplit`).
     ///
     /// Safe to over-call: it only writes when a live pane is missing from the
     /// record or the layout differs. A record with more panes than the live
@@ -1304,11 +1392,68 @@ extension BrowserState {
                       persisted.contains(db) || liveDBs.contains(db) else { return nil }
                 return db
             }
+            guard liveDBs.contains(where: { pinnedSplitWritesInFlight[$0] != nil }) else {
+                // Adopt only an orientation every member agrees on (a landing
+                // still in progress may have written some members only), and
+                // only while the stored links still make the open panes one
+                // split. A one-way legacy pair counts, as on the read side
+                // (`pinnedSplitDBGuids`); a split whose links were all cleared
+                // does not, though its rows all hold the default.
+                let storedLinks = Set(records.flatMap { record -> [String] in
+                    guard let db = record.guidInLocalDB else { return [] }
+                    if !record.splitPaneGuids.isEmpty { return record.splitPaneGuids }
+                    return record.splitPartnerGuid.map { [db, $0] } ?? []
+                })
+                let storedLayouts = Set(records.map { $0.splitLayout ?? .vertical })
+                if Set(liveDBs).isSubset(of: storedLinks), storedLayouts.count == 1,
+                   let stored = storedLayouts.first, stored != group.layout {
+                    adoptStoredPinnedSplitLayout(group.id, layout: stored)
+                }
+                continue
+            }
             if !isLinked || !Set(liveDBs).isSubset(of: persisted) {
                 persistPinnedSplit(dbGuids: dbGuids, layout: group.layout)
             } else if records.contains(where: { $0.splitLayout != group.layout }) {
                 updatePinnedSplitLayout(dbGuids: dbGuids, layout: group.layout)
             }
+        }
+    }
+
+    /// Record a pinned-split write this window just sent to the store, for
+    /// every record it touches. `members` is nil for an orientation-only
+    /// write. An entry the store never shows is dropped after a short wait,
+    /// and the reconcile then follows the store.
+    private func markPinnedSplitWritesInFlight(dbGuids: [String], members: [String]?,
+                                               layout: SplitLayout) {
+        let token = UUID()
+        for db in dbGuids {
+            pinnedSplitWritesInFlight[db] = PinnedSplitWriteInFlight(
+                members: members ?? pinnedSplitWritesInFlight[db]?.members,
+                layout: layout, token: token)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self else { return }
+            let expired = dbGuids.filter { self.pinnedSplitWritesInFlight[$0]?.token == token }
+            guard !expired.isEmpty else { return }
+            for db in expired { self.pinnedSplitWritesInFlight.removeValue(forKey: db) }
+            self.reconcilePinnedSplitPartners()
+        }
+    }
+
+    /// Retire the in-flight writes a pinned-tabs emission shows: every record
+    /// it names now holds the written members and orientation.
+    func confirmPinnedSplitWritesInFlight() {
+        guard !pinnedSplitWritesInFlight.isEmpty else { return }
+        for (db, write) in pinnedSplitWritesInFlight {
+            guard let record = pinnedTabs.first(where: { $0.guidInLocalDB == db }),
+                  (record.splitLayout ?? .vertical) == write.layout else { continue }
+            if let members = write.members {
+                let holds = members.count == 2
+                    ? record.splitPartnerGuid == members.first(where: { $0 != db })
+                    : record.splitPaneGuids == members
+                guard holds else { continue }
+            }
+            pinnedSplitWritesInFlight.removeValue(forKey: db)
         }
     }
 
@@ -1508,8 +1653,7 @@ extension BrowserState {
             // `CrossDomainNewTabNavigationThrottle` stops treating the tab
             // as bookmark-bound, then re-sync bookmark state so the
             // bookmark cell stops rendering as opened.
-            tab.guidInLocalDB = nil
-            tab.webContentWrapper?.updateTabCustomValue("")
+            setBinding(nil, for: tab)
             syncAllBookmarksOpenedState()
         }
     }
@@ -1676,23 +1820,24 @@ extension BrowserState {
     }
 
     /// Tab menu / shortcut "Split with New Tab": keeps the focused tab on the
-    /// left. Under the New Tab Page behavior the right pane is a new-tab page;
+    /// left by default. The requested new pane is a new-tab page under that behavior;
     /// under Omnibox it is previewed blank and the omnibox's submission
     /// becomes the pane (`commitSplitPreview`). A focused pane of a split
     /// gets a new-tab page as the pane right after it (no omnibox preview:
     /// the preview host shows a pair).
     @discardableResult
-    func splitFocusedTabWithNewTab() -> Bool {
+    func splitFocusedTabWithNewTab(newTabSlot: SplitSlot = .right,
+                                   layout: SplitLayout = .vertical) -> Bool {
         guard canSplitFocusedTabWithNewTab, let tab = focusingTab else { return false }
         if let group = splitGroup(forTabId: tab.guid), let slot = group.slot(of: tab.guid) {
             return openNewTabIntoSplit(splitId: group.id, slot: slot + 1, navigateURL: nil)
         }
         if PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.loadValue() {
             makeTabNormalOpened(tabId: tab.guid)
-            return openNewTabAsSplit(partnerTabId: tab.guid)
+            return openNewTabAsSplit(partnerTabId: tab.guid, newTabSlot: newTabSlot, layout: layout)
         }
         guard let windowController else { return false }
-        pendingSplitPreview = PendingSplitPreview(partnerTabId: tab.guid)
+        pendingSplitPreview = PendingSplitPreview(partnerTabId: tab.guid, newTabSlot: newTabSlot, layout: layout)
         // Next turn, after the page container has mounted the preview.
         DispatchQueue.main.async { [weak self, weak windowController] in
             guard self?.pendingSplitPreview?.isCommitted == false else { return }
@@ -1710,7 +1855,8 @@ extension BrowserState {
         // Keep the bookmark binding while previewing; release it only on submission.
         makeTabNormalOpened(tabId: preview.partnerTabId)
         guard openNewTabAsSplit(partnerTabId: preview.partnerTabId,
-                                partnerNavigateURL: url) else {
+                                newTabSlot: preview.newTabSlot,
+                                partnerNavigateURL: url, layout: preview.layout) else {
             pendingSplitPreview = nil
             return false
         }
@@ -1729,8 +1875,10 @@ extension BrowserState {
               }) else { return false }
         makeTabNormalOpened(tabId: match.guid)
         makeTabNormalOpened(tabId: preview.partnerTabId)
-        guard createSplit(leftTabId: preview.partnerTabId, rightTabId: match.guid,
-                          layout: .vertical) != nil else { return false }
+        let newTabIsPrimary = preview.newTabSlot == .left
+        guard createSplit(leftTabId: newTabIsPrimary ? match.guid : preview.partnerTabId,
+                          rightTabId: newTabIsPrimary ? preview.partnerTabId : match.guid,
+                          layout: preview.layout) != nil else { return false }
         preview.isCommitted = true
         pendingSplitPreview = preview
         expireCommittedSplitPreview(preview)
@@ -1986,7 +2134,7 @@ extension BrowserState {
             // partner, leaving Mac's state (sidebar selection, address-bar
             // routing) stuck on the partner.
             // `focuseTab` is statically @MainActor but at runtime this whole flow
-            // arrives via EventBus's `Task { @MainActor in ... }` dispatch.
+            // arrives via EventBus's FIFO main-queue dispatch.
             MainActor.assumeIsolated {
                 focuseTab(tab)
             }
@@ -2191,6 +2339,20 @@ extension BrowserState {
         schedulePendingPrimarySplitCleanup(pendingGuid: pendingGuid)
     }
 
+    /// Opens a split pin or bookmark's pages as a new, unbound split, like Duplicate Split.
+    @MainActor
+    func duplicateOmniboxSplit(_ entity: OmniboxNativeEntity) {
+        guard let urls = entity.panes?.map(\.url) else { return }
+        let layout: SplitLayout
+        switch entity.kind {
+        case .pin:
+            layout = pinnedSplitLayout(dbGuids: [entity.entityID])
+        case .bookmark:
+            layout = bookmarkManager.getAllBookmarks().first { $0.guid == entity.entityID }?.layout ?? .vertical
+        }
+        openURLsAsSplit(urls, layout: layout)
+    }
+
     /// Timeout cleanup shared by the two primary-split openers: if the new
     /// tab never arrives, drop the pending record so it can't fire a stale
     /// split later. Mirrors the 5s cleanup in `openNewTabPendingSplit` and
@@ -2292,6 +2454,8 @@ enum SplitSlot {
 struct PendingSplitPreview: Equatable {
     /// The focused tab shown beside the blank pane.
     let partnerTabId: Int
+    var newTabSlot: SplitSlot = .right
+    var layout: SplitLayout = .vertical
     /// The omnibox submitted; the real split is on its way.
     var isCommitted = false
 }

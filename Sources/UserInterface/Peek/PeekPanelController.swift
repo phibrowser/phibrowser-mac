@@ -297,10 +297,14 @@ final class PeekPanelController {
         }
     }
 
-    /// Horizontal margin between the page card's edges and the panel; the
-    /// panel spans the card's height minus a small fixed breathing margin.
-    private static let paneInsetRatio: CGFloat = 0.04
+    /// Horizontal margin between the page card's edges and the panel: what
+    /// the chosen `PeekPanelSize` leaves of the card's width, split between
+    /// both sides. The panel spans the card's height minus a small fixed
+    /// breathing margin.
     private static let minPaneInset: CGFloat = 24
+    /// Narrowest panel a smaller size shrinks to on a narrow window; below
+    /// it the margins give way first.
+    private static let minReducedPaneWidth: CGFloat = 480
     private static let paneVerticalInset: CGFloat = 0
     /// Gap between a shown header row and the panel beneath it: room for the
     /// card's shadow to fade before it reaches the row.
@@ -451,6 +455,16 @@ final class PeekPanelController {
         .store(in: &geometryCancellables)
 
         NotificationCenter.default.publisher(for: NSWindow.didResizeNotification, object: parentWindow)
+            .sink { [weak self] _ in self?.pageGeometryDidChange() }
+            .store(in: &geometryCancellables)
+
+        // Settings › Navigations resizes an open panel in place.
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .map { _ in PhiPreferences.GeneralSettings.loadPeekPanelSize() }
+            .prepend(PhiPreferences.GeneralSettings.loadPeekPanelSize())
+            .removeDuplicates()
+            .dropFirst()
             .sink { [weak self] _ in self?.pageGeometryDidChange() }
             .store(in: &geometryCancellables)
 
@@ -1158,20 +1172,26 @@ final class PeekPanelController {
         guard let cardRect = pageCardScreenRect() else { return }
         // Near-full card height; width follows the card (and thus the
         // window) with a proportional side margin.
-        let insetX = max(Self.minPaneInset, cardRect.width * Self.paneInsetRatio)
+        let insetX = Self.paneInsetX(cardWidth: cardRect.width,
+                                     size: PhiPreferences.GeneralSettings.loadPeekPanelSize())
         var card = cardRect.insetBy(dx: insetX, dy: Self.paneVerticalInset)
         // Below a shown header row, which stays uncovered and usable.
         if let headerRect = headerRowScreenRect(), headerRect.intersects(cardRect) {
             let top = min(card.maxY, headerRect.minY - Self.headerClearance)
             card.size.height = max(0, top - card.minY)
         }
+        // The proportional margin is a fraction of a point for most window
+        // widths. Chromium lays the page out in whole points, so a card on a
+        // fractional edge leaves a hairline of the card's own background
+        // showing past the page down its right side.
+        card = NSIntegralRectWithOptions(card, .alignAllEdgesNearest)
         // The overlay spans the card, the control gutter to its right, and the
         // shadow margin around the lot — the card view sits back inside it at
         // exactly the inset it had before there was a shadow, so the peek
         // keeps its place on the page. The gutter is taken out of the card's
         // own right margin; a margin too narrow to hold it narrows the card
         // instead of pushing the controls off the page pane.
-        let maxX = min(card.maxX + Self.controlGutterWidth + Self.shadowMargin, cardRect.maxX)
+        let maxX = min(card.maxX + Self.controlGutterWidth + Self.shadowMargin, cardRect.maxX.rounded(.down))
         let originX = card.minX - Self.shadowMargin
         rootView.setScreenFrame(CGRect(x: originX,
                               y: card.minY - Self.verticalShadowMargin,
@@ -1185,6 +1205,16 @@ final class PeekPanelController {
         onLayout?()
         // The dim behind the panel spares the same header row.
         backgroundContentController?.refreshPeekBackgroundPresentation()
+    }
+
+    /// Side margin of the panel inside a page card `cardWidth` wide. A
+    /// smaller size never narrows the panel below `minReducedPaneWidth`
+    /// while the card is wide enough to hold it.
+    static func paneInsetX(cardWidth: CGFloat, size: PeekPanelSize) -> CGFloat {
+        let proportional = cardWidth * (1 - size.widthFraction) / 2
+        guard size != .large else { return max(Self.minPaneInset, proportional) }
+        let widestForMinimumPanel = (cardWidth - Self.minReducedPaneWidth) / 2
+        return max(Self.minPaneInset, min(proportional, widestForMinimumPanel))
     }
 
     /// Screen rect of the card alone: the overlay frame minus the shadow

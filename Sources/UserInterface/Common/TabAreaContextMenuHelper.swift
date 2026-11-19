@@ -9,26 +9,18 @@ final class TabAreaContextMenuHelper: NSObject {
 
     private weak var browserState: BrowserState?
     private let isHorizontalLayout: Bool
+    /// Holds the button-visibility preferences the submenus toggle.
+    private let defaults: UserDefaults
 
-    init(browserState: BrowserState, isHorizontalLayout: Bool = false) {
+    init(browserState: BrowserState, isHorizontalLayout: Bool = false, defaults: UserDefaults = .standard) {
         self.browserState = browserState
         self.isHorizontalLayout = isHorizontalLayout
+        self.defaults = defaults
     }
 
     func populate(_ menu: NSMenu) {
         menu.removeAllItems()
-
-        // Disable New Tab while the agent controls this Space: the user must not
-        // add tabs to the agent's workspace until they take control. Nil action
-        // greys it out via AppKit's automatic menu enabling.
-        let agentLocked = MainActor.assumeIsolated {
-            AgentSpaceManager.shared.isAgentOwned(browserState?.spaceId ?? "")
-        }
-        menu.addItem(NSMenuItem(
-            title: NSLocalizedString("common.tabAreaContextMenu.newTabAction", value: "New Tab", comment: "Tab area context menu - Open a new browser tab"),
-            action: agentLocked ? nil : #selector(newTab),
-            keyEquivalent: "t"
-        ).configured { $0.keyEquivalentModifierMask = .command; $0.target = agentLocked ? nil : self })
+        menu.addItem(makeNewTabItem())
 
         menu.addItem(NSMenuItem(
             title: NSLocalizedString("common.tabAreaContextMenu.reopenClosedTabAction", value: "Reopen Closed Tab", comment: "Tab area context menu - Reopen the last closed tab"),
@@ -41,11 +33,7 @@ final class TabAreaContextMenuHelper: NSObject {
         if browserState?.isIncognito != true {
             menu.addItem(.separator())
 
-            menu.addItem(NSMenuItem(
-                title: NSLocalizedString("common.tabAreaContextMenu.newBookmarkFolderAction", value: "New Folder", comment: "Tab area context menu - Create a new bookmark folder"),
-                action: #selector(newFolder),
-                keyEquivalent: ""
-            ).configured { $0.target = self })
+            menu.addItem(makeNewFolderItem())
 
             let hasBookmarkableTabs = browserState?.normalTabs.contains { !$0.isLocalPage } ?? false
             menu.addItem(NSMenuItem(
@@ -64,23 +52,29 @@ final class TabAreaContextMenuHelper: NSObject {
         )
         layoutItem.submenu = buildLayoutSubmenu()
         menu.addItem(layoutItem)
-
-        // Active-Space controls, mirroring the Spaces menu / Space right-click.
-        // Only surface them while the Spaces feature is enabled and the window
-        // participates in Spaces — standalone incognito windows expose none;
-        // the Incognito Space's window does.
-        if PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
-           let browserState,
-           browserState.participatesInSpaces == true {
-            menu.addItem(.separator())
-            AppController.shared?.appendActiveSpaceMenuItems(
-                to: menu,
-                browserState: browserState,
-                triggerScreenPoint: NSEvent.mouseLocation
-            )
+        #if DEBUG || NIGHTLY_BUILD
+        if !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
+            menu.addItem(NSMenuItem(
+                title: SidebarPosition.isOnRight
+                    ? NSLocalizedString("sidebar.contextMenu.moveLeft", value: "Move Sidebar to Left", comment: "Sidebar context menu - Move vertical tabs to the left window edge")
+                    : NSLocalizedString("sidebar.contextMenu.moveRight", value: "Move Sidebar to Right", comment: "Sidebar context menu - Move vertical tabs to the right window edge"),
+                action: #selector(moveSidebar), keyEquivalent: ""
+            ).configured { $0.target = self })
         }
+        #endif
+
+        appendActiveSpaceItems(to: menu, includesEditTheme: true)
 
         menu.addItem(.separator())
+        if !isHorizontalLayout {
+            let topButtonsItem = NSMenuItem(
+                title: NSLocalizedString("common.tabAreaContextMenu.topButtonsSubmenu", value: "Top Buttons", comment: "Tab area context menu - Submenu to choose which buttons the sidebar header shows"),
+                action: nil,
+                keyEquivalent: ""
+            )
+            topButtonsItem.submenu = buildTopButtonsSubmenu()
+            menu.addItem(topButtonsItem)
+        }
         let buttonsItem = NSMenuItem(
             title: isHorizontalLayout
                 ? NSLocalizedString("common.tabAreaContextMenu.toolbarButtonsSubmenu", value: "Toolbar Buttons", comment: "Tab strip context menu - Submenu to choose which buttons the top bar shows in the Comfortable layout")
@@ -90,6 +84,60 @@ final class TabAreaContextMenuHelper: NSObject {
         )
         buttonsItem.submenu = buildButtonsSubmenu()
         menu.addItem(buttonsItem)
+    }
+
+    /// The Space root row's "…" menu: the tab area menu without its reopen,
+    /// bulk-bookmark, layout, theme and button entries.
+    func populateSpaceRootMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        menu.addItem(makeNewTabItem())
+        if browserState?.isIncognito != true {
+            menu.addItem(makeNewFolderItem())
+        }
+        appendActiveSpaceItems(to: menu, includesEditTheme: false)
+    }
+
+    private func makeNewTabItem() -> NSMenuItem {
+        // Disable New Tab while the agent controls this Space: the user must not
+        // add tabs to the agent's workspace until they take control. Nil action
+        // greys it out via AppKit's automatic menu enabling.
+        let agentLocked = MainActor.assumeIsolated {
+            AgentSpaceManager.shared.isAgentOwned(browserState?.spaceId ?? "")
+        }
+        return NSMenuItem(
+            title: NSLocalizedString("common.tabAreaContextMenu.newTabAction", value: "New Tab", comment: "Tab area context menu - Open a new browser tab"),
+            action: agentLocked ? nil : #selector(newTab),
+            keyEquivalent: "t"
+        ).configured { $0.keyEquivalentModifierMask = .command; $0.target = agentLocked ? nil : self }
+    }
+
+    private func makeNewFolderItem() -> NSMenuItem {
+        NSMenuItem(
+            title: NSLocalizedString("common.tabAreaContextMenu.newBookmarkFolderAction", value: "New Folder", comment: "Tab area context menu - Create a new bookmark folder"),
+            action: #selector(newFolder),
+            keyEquivalent: ""
+        ).configured { $0.target = self }
+    }
+
+    /// Active-Space controls, mirroring the Spaces menu / Space right-click.
+    /// Only surface them while the Spaces feature is enabled and the window
+    /// participates in Spaces — standalone incognito windows expose none;
+    /// the Incognito Space's window does.
+    private func appendActiveSpaceItems(to menu: NSMenu, includesEditTheme: Bool) {
+        guard PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
+              let browserState,
+              browserState.participatesInSpaces == true else { return }
+        menu.addItem(.separator())
+        AppController.shared?.appendActiveSpaceMenuItems(
+            to: menu,
+            browserState: browserState,
+            triggerScreenPoint: NSEvent.mouseLocation,
+            includesEditTheme: includesEditTheme
+        )
+    }
+
+    @objc private func moveSidebar() {
+        PhiPreferences.GeneralSettings.saveSidebarPosition(SidebarPosition.isOnRight ? .left : .right)
     }
 
     @objc private func newTab() {
@@ -144,10 +192,33 @@ final class TabAreaContextMenuHelper: NSObject {
     @objc private func toggleButtonVisibility(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? String,
               let setting = PhiPreferences.GeneralSettings(rawValue: rawValue) else { return }
-        UserDefaults.standard.set(!setting.loadValue(), forKey: setting.rawValue)
+        defaults.set(!setting.loadValue(from: defaults), forKey: setting.rawValue)
     }
 
     // MARK: - Private
+
+    /// The sidebar header's buttons. Search Tabs is listed only in the layout
+    /// whose header shows it, and Back, Forward and Reload only in the one
+    /// whose header holds them.
+    private func buildTopButtonsSubmenu() -> NSMenu {
+        typealias Setting = PhiPreferences.GeneralSettings
+        var entries: [(Setting, String)] = []
+        if browserState?.layoutMode == .performance {
+            entries.append((.sidebarHeaderShowsBack,
+                            NSLocalizedString("common.tabAreaContextMenu.topButtons.back", value: "Back", comment: "Tab area context menu - Top Buttons submenu item that shows or hides the sidebar header's Back button")))
+            entries.append((.sidebarHeaderShowsForward,
+                            NSLocalizedString("common.tabAreaContextMenu.topButtons.forward", value: "Forward", comment: "Tab area context menu - Top Buttons submenu item that shows or hides the sidebar header's Forward button")))
+            entries.append((.sidebarHeaderShowsReload,
+                            NSLocalizedString("common.tabAreaContextMenu.topButtons.reload", value: "Reload", comment: "Tab area context menu - Top Buttons submenu item that shows or hides the sidebar header's Reload button")))
+        }
+        if browserState?.layoutMode == .balanced {
+            entries.append((.sidebarHeaderShowsSearchTabs,
+                            NSLocalizedString("common.tabAreaContextMenu.topButtons.searchTabs", value: "Search Tabs", comment: "Tab area context menu - Top Buttons submenu item that shows or hides the sidebar header's Search Tabs button")))
+        }
+        entries.append((.sidebarHeaderShowsSidebarToggle,
+                        NSLocalizedString("common.tabAreaContextMenu.topButtons.sidebarToggle", value: "Toggle Sidebar", comment: "Tab area context menu - Top Buttons submenu item that shows or hides the sidebar header's button that shows or hides the sidebar")))
+        return buildToggleSubmenu(entries)
+    }
 
     private func buildButtonsSubmenu() -> NSMenu {
         typealias Setting = PhiPreferences.GeneralSettings
@@ -167,6 +238,10 @@ final class TabAreaContextMenuHelper: NSObject {
                             NSLocalizedString("common.tabAreaContextMenu.bottomButtons.feedback", value: "Feedback", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the feedback button")))
         }
 
+        return buildToggleSubmenu(entries)
+    }
+
+    private func buildToggleSubmenu(_ entries: [(PhiPreferences.GeneralSettings, String)]) -> NSMenu {
         let submenu = NSMenu()
         for (setting, title) in entries {
             let item = NSMenuItem(
@@ -176,7 +251,7 @@ final class TabAreaContextMenuHelper: NSObject {
             )
             item.representedObject = setting.rawValue
             item.target = self
-            item.state = setting.loadValue() ? .on : .off
+            item.state = setting.loadValue(from: defaults) ? .on : .off
             submenu.addItem(item)
         }
         return submenu

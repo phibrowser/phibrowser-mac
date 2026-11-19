@@ -112,6 +112,36 @@ final class ContentSurfaceControllerRebuildTests: XCTestCase {
         XCTAssertTrue(container.hasContentSurface)
     }
 
+    /// Signing in from Guest gives the migrated bookmarks and pins new
+    /// identifiers; an open tab bound to one follows it, in Chromium too.
+    func testMaterializedDanglingWindowRebindsItsTabsToTheMigratedRecords() throws {
+        let registry = SpaceSessionControllersManager.shared
+        let slot = makeSlot()
+        let windowId = Self.takeWindowId()
+        registry.addDanglingWindow(makeChromiumWindow(for: slot), windowId: windowId, browserType: .normal,
+                                   profileId: "Default", spaceId: "first", slot: slot)
+        danglingWindowIds.append(windowId)
+        let wrapper = PinnedScopeVariantWebContentWrapperSpy(urlString: "https://example.com", title: nil)
+        let tab = Tab(url: "https://example.com", isActive: true, index: 0,
+                      webContentView: wrapper, customGuid: "guest-bookmark")
+        registry.addPendingTabToDanglingWindow(tab, windowId: windowId)
+        let record = try XCTUnwrap(registry.danglingWindows.first { $0.windowId == windowId })
+        let receipt = GuestDataMigrationReceipt(
+            operationID: UUID(), sourceUserID: "guest", targetUserID: store.account.userID,
+            snapshotID: UUID(), completedAt: Date(),
+            mappings: GuestDataMigrationIdentifierMappings(
+                profileIDs: [:], spaceIDs: [:], bookmarkGUIDs: ["guest-bookmark": "account-bookmark"],
+                pinnedTargets: [], pinLineageIDs: [:], urlRuleTargets: [], skippedURLRules: [],
+                defaultImportFolderGUID: nil, targetPinnedTabScopeRawValue: PinnedTabScope.profile.rawValue,
+                targetSpaceProfileIDs: [:], insertedProfileIDs: [], insertedSpaceIDs: []),
+            targetThemes: .empty)
+
+        registry.processDanglingWindowForTesting(record, account: store.account, migrationReceipt: receipt)
+
+        XCTAssertEqual(tab.guidInLocalDB, "account-bookmark")
+        XCTAssertEqual(wrapper.customValues.last, "account-bookmark")
+    }
+
     func testReboundWindowKeepsItsSurface() throws {
         let registry = SpaceSessionControllersManager.shared
         let slot = makeSlot()

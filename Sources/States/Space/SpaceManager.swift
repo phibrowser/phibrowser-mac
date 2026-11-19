@@ -665,8 +665,17 @@ final class SpaceManager: ObservableObject {
     }
 
     private func suspendStoreBinding() {
-        discardSpacePrewarm()
+        if !Thread.isMainThread {
+            DispatchQueue.main.sync { self.suspendStoreBinding() }
+            return
+        }
         isStoreBindingSuspended = true
+        if let account = boundAccount {
+            MainActor.assumeIsolated {
+                SpaceSessionControllersManager.shared.revokeOmniboxContexts(reason: "context_changed", account: account)
+            }
+        }
+        discardSpacePrewarm()
         storeBindingGeneration = UUID()
         spacesCancellable?.cancel()
         spacesCancellable = nil
@@ -2186,8 +2195,11 @@ final class SpaceManager: ObservableObject {
             // window is gone": predicted parked, never actually parked.
             AppLogWarn("[SpaceManager] ghost receipt: dropped \(reconciliation.unparked.count) predicted ghost(s) chromium never parked \(reconciliation.unparked)")
         }
-        if !reconciliation.unmapped.isEmpty {
-            AppLogError("[SpaceManager] ghost receipt: chromium parked \(reconciliation.unmapped.count) window(s) no Space maps to \(reconciliation.unmapped) — unreachable until the next full restore brings them back")
+        let retired = dropUnmappedGhostsOfProfilesWithoutSpace(
+            reconciliation.unmapped, windowIdsByProfileId: receipt.windowIdsByProfileId)
+        let unmapped = reconciliation.unmapped.filter { !retired.contains($0) }
+        if !unmapped.isEmpty {
+            AppLogError("[SpaceManager] ghost receipt: chromium parked \(unmapped.count) window(s) no Space maps to \(unmapped) — unreachable until the next full restore brings them back")
         }
         if receipt.eagerFilterMatchedNothing {
             AppLogError("[SpaceManager] ghost receipt: the eager set matched no saved window — every window parked and none came back")
@@ -4100,20 +4112,57 @@ final class SpaceManager: ObservableObject {
                 AppLogWarn("[SpaceManager] \(reason): no profile resolves for ghost \(windowId) (Space \(spaceId)) — dropped Mac-side only")
                 continue
             }
-            bridge.ensureProfileLoaded(profileId) { success in
-                guard success else {
-                    AppLogWarn("[SpaceManager] \(reason): profile \(profileId) failed to load — ghost \(windowId) dropped Mac-side only")
-                    return
-                }
-                bridge.dropGhostWindow(Int32(windowId), profileId: profileId) { ok in
-                    if ok {
-                        AppLogInfo("[SpaceManager] \(reason): dropped ghost window \(windowId) (Space \(spaceId))")
-                    } else {
-                        AppLogWarn("[SpaceManager] \(reason): chromium held no ghost \(windowId) (Space \(spaceId)) — record was stale")
-                    }
+            dropChromiumGhostRecord(windowId: windowId, profileId: profileId,
+                                    owner: "Space \(spaceId)", reason: reason, bridge: bridge)
+        }
+    }
+
+    /// The chromium half of retiring one parked ghost: its store entry and
+    /// its window in the profile's session file, once the profile is loaded.
+    /// `owner` only names the ghost in the log lines.
+    private func dropChromiumGhostRecord(windowId: Int, profileId: String, owner: String,
+                                         reason: String, bridge: PhiChromiumBridgeProtocol) {
+        bridge.ensureProfileLoaded(profileId) { success in
+            guard success else {
+                AppLogWarn("[SpaceManager] \(reason): profile \(profileId) failed to load — ghost \(windowId) dropped Mac-side only")
+                return
+            }
+            bridge.dropGhostWindow(Int32(windowId), profileId: profileId) { ok in
+                if ok {
+                    AppLogInfo("[SpaceManager] \(reason): dropped ghost window \(windowId) (\(owner))")
+                } else {
+                    AppLogWarn("[SpaceManager] \(reason): chromium held no ghost \(windowId) (\(owner)) — record was stale")
                 }
             }
         }
+    }
+
+    /// Retires the parked windows of profiles no Space is bound to, among
+    /// the ghosts a receipt reports that no Space maps to. Such a window is
+    /// one the coordinator discarded when it was live
+    /// (`discardWindowOnProfileWithoutSpace`): its close never left the
+    /// session file, so each launch would park it again, and a full restore
+    /// would replay it only to have it discarded again. Returns the window
+    /// ids it retired.
+    private func dropUnmappedGhostsOfProfilesWithoutSpace(
+        _ unmapped: [Int], windowIdsByProfileId: [String: [Int]]
+    ) -> Set<Int> {
+        guard !unmapped.isEmpty,
+              let bridge = ChromiumLauncher.sharedInstance().bridge,
+              bridge.responds(to: #selector(PhiChromiumBridgeProtocol
+                  .dropGhostWindow(_:profileId:completion:))) else { return [] }
+        let unmappedIds = Set(unmapped)
+        var dropped: Set<Int> = []
+        for (profileId, windowIds) in windowIdsByProfileId.sorted(by: { $0.key < $1.key })
+        where hasNoSpace(boundTo: profileId) {
+            for windowId in windowIds.sorted() where unmappedIds.contains(windowId) {
+                dropChromiumGhostRecord(windowId: windowId, profileId: profileId,
+                                        owner: "profile \(profileId), which no Space uses",
+                                        reason: "ghost receipt", bridge: bridge)
+                dropped.insert(windowId)
+            }
+        }
+        return dropped
     }
 
     /// Where the coordinator's fallback mint may land, as a pure rule:
@@ -4292,6 +4341,81 @@ final class SpaceManager: ObservableObject {
         ensureDefaultSpaceForCurrentAccountIfReady()
     }
 
+    /// The Spaces a Chromium-initiated window is attributed against.
+    ///
+    /// `spaces` is fed by an async publisher chain (`bind`'s Task →
+    /// SwiftData publisher → main queue) and the first Chromium windows
+    /// of a launch reliably arrive before it delivers — checking the
+    /// cache alone would no-op exactly on the cold-launch path the
+    /// profile-consistency rule exists for. Fall back to a direct
+    /// main-context fetch; every caller is on the main thread (Chromium's
+    /// window-created callback), the same assumption `applyResolvedTheme`
+    /// makes.
+    private func spacesKnownForWindowAttribution() -> [Space] {
+        if !spaces.isEmpty { return spaces }
+        guard let account = boundAccount else { return [] }
+        return MainActor.assumeIsolated {
+            account.localStorage.getAllSpaces()
+        }
+    }
+
+    /// Whether a normal window on `profileId` has no Space it could be
+    /// presented as: the account's Spaces are known, and none of them is
+    /// bound to that profile.
+    ///
+    /// Chromium opens such a window on its own — a profile's settings page
+    /// when that profile has no browser, a session replay of an earlier one,
+    /// the startup fallback for a last-active profile — and presenting it as
+    /// whichever Space happens to be preferred would show that profile's
+    /// logins and pinned tabs under another profile's Space. The coordinator
+    /// discards the window instead (`discardWindowOnProfileWithoutSpace`).
+    ///
+    /// False while no user Space is known: before the account binds, and on
+    /// a first launch or a Guest session whose default Space is created from
+    /// this very window's profile (`observeNormalWindowProfileForDefaultSpace`).
+    func hasNoSpace(boundTo profileId: String) -> Bool {
+        Self.isProfileWithoutSpace(
+            profileId: profileId,
+            knownSpaces: spacesKnownForWindowAttribution().map {
+                (profileId: $0.profileId,
+                 isUserSpace: !Self.isIncognitoSpaceId($0.spaceId) && !$0.isAgentSpace)
+            })
+    }
+
+    /// The pure half of `hasNoSpace(boundTo:)`. Any Space bound to the
+    /// profile keeps its window, an agent or Incognito Space included: only
+    /// the case `spaceId(boundTo:preferring:)` cannot resolve is discarded.
+    /// Pure and static so the rule is pinned by table.
+    static func isProfileWithoutSpace(
+        profileId: String,
+        knownSpaces: [(profileId: String, isUserSpace: Bool)]
+    ) -> Bool {
+        guard !profileId.isEmpty,
+              knownSpaces.contains(where: \.isUserSpace) else { return false }
+        return !knownSpaces.contains { $0.profileId == profileId }
+    }
+
+    /// Opens the persisted last-active Space when discarding a window on a
+    /// profile no Space uses left the app with no browser window and none on
+    /// its way. That window can be the only one a launch opens (Chromium's
+    /// last-active profile list naming just that profile), and the Dock
+    /// reopen cannot recover from it: with no slot window ever hosted it
+    /// stays with Chromium's handler, which opens the same profile again.
+    ///
+    /// Called a moment after the discard rather than at once, so a launch's
+    /// other profiles have replayed their windows before this reads the app
+    /// as windowless.
+    func openPersistedSpaceIfDiscardLeftNoWindow() {
+        let liveWindows = liveNonShadowWindowCount
+        let heldSlots = slotOccupancy.filter(Self.slotHoldsOrAwaitsWindow).count
+        guard !isSessionRestoreInFlight, liveWindows == 0, heldSlots == 0 else {
+            AppLogInfo("[SpaceManager] discarding a window on a profile no Space uses left other windows in place: liveNonShadowWindows=\(liveWindows), slotsHoldingWindows=\(heldSlots), restoreInFlight=\(isSessionRestoreInFlight)")
+            return
+        }
+        let spawned = spawnPersistedSpaceWindow()
+        AppLogInfo("[SpaceManager] no window left after discarding one on a profile no Space uses; persisted Space \(spawned ? "spawn requested" : "did not resolve")")
+    }
+
     /// Resolves the Space a normal window whose Chromium profile is
     /// `profileId` may be tagged with. A window must only be presented as a
     /// Space bound to its own profile: pinned tabs (and bookmarks) are
@@ -4314,19 +4438,7 @@ final class SpaceManager: ObservableObject {
     /// restoredFromWindowId == 0).
     func spaceId(boundTo profileId: String, preferring preferred: String) -> String {
         guard !profileId.isEmpty else { return preferred }
-        // `spaces` is fed by an async publisher chain (`bind`'s Task →
-        // SwiftData publisher → main queue) and the first Chromium windows
-        // of a launch reliably arrive before it delivers — checking the
-        // cache alone would no-op exactly on the cold-launch path this
-        // invariant exists for. Fall back to a direct main-context fetch;
-        // every caller is on the main thread (Chromium's window-created
-        // callback), the same assumption `applyResolvedTheme` makes.
-        var known = spaces
-        if known.isEmpty, let account = boundAccount {
-            known = MainActor.assumeIsolated {
-                account.localStorage.getAllSpaces()
-            }
-        }
+        let known = spacesKnownForWindowAttribution()
         func boundProfileId(of spaceId: String?) -> String? {
             guard let spaceId else { return nil }
             return known.first(where: { $0.spaceId == spaceId })?.profileId
@@ -4382,14 +4494,7 @@ final class SpaceManager: ObservableObject {
     /// profile's pinned tabs), matching every other resolution path.
     func restoredSpaceTarget(_ restoredSpaceId: String?, profileId: String) -> String? {
         guard let restoredSpaceId, !restoredSpaceId.isEmpty else { return nil }
-        // Same cold-launch caveat as `spaceId(boundTo:preferring:)`: the first
-        // windows of a launch arrive before the `spaces` publisher delivers.
-        var known = spaces
-        if known.isEmpty, let account = boundAccount {
-            known = MainActor.assumeIsolated {
-                account.localStorage.getAllSpaces()
-            }
-        }
+        let known = spacesKnownForWindowAttribution()
         guard let model = known.first(where: { $0.spaceId == restoredSpaceId }),
               isAutomaticSwitchTarget(model) else { return nil }
         // Validate what we are about to RETURN, not just what was asked for:
@@ -7623,8 +7728,8 @@ final class SpaceManager: ObservableObject {
                 || liveTargets.contains(spaceId))
     }
 
-    /// Flattens the rules and the live spaceId→windowId
-    /// map and hands both to the Chromium bridge via the new
+    /// Flattens the rules and the windows Chromium may route into directly
+    /// and hands both to the Chromium bridge via the new
     /// `setSpaceRoutingTable:spaceWindowMap:` method. Idempotent — Chromium
     /// replaces its table atomically — so it's safe to call on every change
     /// without diffing. Invoked from:
@@ -7675,7 +7780,19 @@ final class SpaceManager: ObservableObject {
         // Already publisher-ordered; canonicalize anyway so all three push
         // paths share one explicit ordering invariant.
         Self.canonicalizeRulesPayloadOrder(&rulesPayload)
-        let windowMapPayload = mapping.mapValues { NSNumber(value: $0) }
+        // Chromium opens a routed URL straight into any window listed here
+        // (`PhiURLRouter` kRoute, `Navigate(kShowWindow)`), wherever that
+        // window is. Spaces are left out, so a rule match for another Space
+        // always comes back through `routeAskedURL`, which moves the SOURCE
+        // window's slot to the target Space: the link opens in the window it
+        // was clicked in even when another window is showing that Space, and
+        // the slot's fullscreen-aware swap runs. Chromium knows a window is
+        // already in the target Space from `setWindowSpace`. Only the generic
+        // Incognito target is listed, because no window carries that id as its
+        // Space.
+        let windowMapPayload = mapping
+            .filter { $0.key == Self.incognitoRuleTargetId }
+            .mapValues { NSNumber(value: $0) }
         bridge.setSpaceRoutingTable(rulesPayload, spaceWindowMap: windowMapPayload)
     }
 
@@ -7715,17 +7832,17 @@ final class SpaceManager: ObservableObject {
 
     /// Opens `urlString` after a URL rule routed it here: an "ask first" match
     /// the user resolved in `PhiChromiumCoordinator`'s prompt, the right-click
-    /// "Open link as" submenu, or a silent auto-route to a Space with no open
-    /// window (`routeURL`). `spaceId == nil` means "keep it here"; the Kiosk
+    /// "Open link as" submenu, or a silent auto-route to a Space the source
+    /// window is not in (`routeURL`). `spaceId == nil` means "keep it here"; the Kiosk
     /// sentinel opens a new Kiosk inheriting the source Browser's exact profile;
     /// any other id is brought to the front as a Space destination.
     ///
     /// The matching navigation was already cancelled on the Chromium side, so
-    /// this always opens *something* — if the chosen Space's window can't be
-    /// resolved (rare cold-spawn race), it falls back to the source window so
-    /// the URL is never silently dropped.
+    /// unresolved Space windows may fall back to the source window. If the
+    /// final ordinary-tab destination has disappeared, report failure rather
+    /// than reopening in an unrelated profile or re-entering the routing rule.
     @MainActor
-    func routeAskedURL(_ urlString: String, toSpaceId spaceId: String?, sourceWindowId: Int64, sourceIsNewTab: Bool) {
+    func routeAskedURL(_ urlString: String, toSpaceId spaceId: String?, sourceWindowId: Int64, sourceIsNewTab: Bool, ordinaryNewTab: Bool = false) {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
         // Bypass space routing for the re-open: the URL matched an ask-rule,
         // so a plain new tab would be caught by the same rule and prompt
@@ -7739,8 +7856,16 @@ final class SpaceManager: ObservableObject {
         // switch is choreographing the window (same-Space opens and the
         // spawn-failure fallback), where surfacing is the point.
         let open: (_ windowId: Int64, _ activateWindow: Bool) -> Void = { windowId, activateWindow in
-            bridge.openTabBypassingSpaceRouting(
-                withUrl: urlString, windowId: windowId, activateWindow: activateWindow)
+            if ordinaryNewTab,
+               bridge.responds(to: #selector(PhiChromiumBridgeProtocol.createOrdinaryTab(withUrl:windowId:activateWindow:bypassSpaceRouting:))) {
+                if !bridge.createOrdinaryTab(withUrl: urlString, windowId: windowId,
+                                             activateWindow: activateWindow, bypassSpaceRouting: true) {
+                    BrowserState.reportOrdinaryTabOpenFailure()
+                }
+            } else {
+                bridge.openTabBypassingSpaceRouting(
+                    withUrl: urlString, windowId: windowId, activateWindow: activateWindow)
+            }
         }
 
         let sourceController = SpaceSessionControllersManager.shared
@@ -7758,7 +7883,7 @@ final class SpaceManager: ObservableObject {
         // `sourceIsNewTab` covers the regular web NTP path, and the Swift
         // focusing-tab fallback covers the native incognito NTP path.
         let sourceIsStranded = sourceIsNewTab
-            || (sourceController?.browserState.focusingTab.map(Self.isStrandedNewTab) ?? false)
+            || (!ordinaryNewTab && (sourceController?.browserState.focusingTab.map(Self.isStrandedNewTab) ?? false))
 
         if spaceId == Self.kioskRuleTargetId {
             let selector = NSSelectorFromString("openURLInKiosk:sourceWindowId:")
@@ -7985,22 +8110,15 @@ final class SpaceManager: ObservableObject {
 
     /// Picks one windowId per Space that is currently VISIBLE on screen. A
     /// Space can be active in multiple slots simultaneously; the keySlot wins
-    /// the tiebreak so cross-Space routing lands in the window the user just had
-    /// focused.
+    /// the tiebreak.
     ///
     /// Only each slot's visible window is reported — never a non-visible sibling
     /// (a Space whose window the slot keeps off-screen, e.g. a session-restored
-    /// window the slot hides behind the active Space). This is what makes the
-    /// C++ router (`PhiURLRouter`) treat routing to a non-visible Space as
-    /// `kRouteToSpace` (hand to `routeAskedURL`) instead of `kRoute` (surface
-    /// the window directly via `Navigate(kShowWindow)`). The direct path
-    /// bypasses the slot's swap logic: in fullscreen a restored sibling window
-    /// is detached from the native tab group, so surfacing it that way strands
-    /// it in its own macOS Space (a stray window over the fullscreen). Routing
-    /// through `routeAskedURL` re-enters the slot's fullscreen-aware swap, which
-    /// re-attaches the window into the fullscreen Space before surfacing it.
-    /// `visibleController`'s didSet re-pushes this map so a Space switch keeps it
-    /// fresh.
+    /// window the slot hides behind the active Space).
+    ///
+    /// Feeds the "Open Link In Space" menu, and the one window the URL routing
+    /// table lists (see `pushRoutingTableToChromium`). `visibleController`'s
+    /// didSet re-pushes both so a Space switch keeps them fresh.
     private func currentSpaceWindowMap() -> [String: Int] {
         var result: [String: Int] = [:]
         var ordered: [SpaceWindowSlot] = []
@@ -13987,12 +14105,12 @@ extension Notification.Name {
 ///   far heavier than three 8pt layers — at +7.5ms on this same metric, and
 ///   that is a cross-batch number.
 /// - **Traffic lights need nothing known about the window** beyond where they
-///   go. Phi leaves the browser window's own buttons in the titlebar —
-///   `FloatingTrafficLightsView` draws its own and forwards clicks rather than
-///   reparenting them — and only hides them for a collapsed sidebar in a
-///   non-traditional layout, which a freshly restored window is not. What they
-///   are NOT is free: their position had to be measured, because the style
-///   mask alone does not reproduce it. See `trafficLightOrigin(remembered:)`.
+///   go. Phi leaves the browser window's own buttons in the titlebar — the
+///   floating sidebar holds separate ones (`SidebarTrafficLightsView`) — and
+///   only hides them for a collapsed sidebar in a non-traditional layout, which
+///   a freshly restored window is not. What they are NOT is free: their
+///   position had to be measured, because the style mask alone does not
+///   reproduce it. See `trafficLightOrigin(remembered:)`.
 /// - **The sidebar band needs one number, and it must be the real one.** A
 ///   guessed width would put the boundary somewhere the restored window's
 ///   sidebar does not end, and the band would step sideways at the hand-off —
@@ -14135,7 +14253,8 @@ final class ReopenLoadingWindow: NSWindow {
          trafficLightOrigin: NSPoint? = nil) {
         // Resolved before `super.init` because it decides the style mask: no
         // usable origin, no buttons at all.
-        let lightOrigin = Self.trafficLightOrigin(remembered: trafficLightOrigin)
+        // Right-sidebar windows reveal controls on hover, so the inert loading window must not show them.
+        let lightOrigin = SidebarPosition.isOnRight ? nil : Self.trafficLightOrigin(remembered: trafficLightOrigin)
         // Byte for byte the mask the fork gives a normal browser window
         // (`BrowserNativeWidgetMac::PopulateCreateWindowParams`: titled,
         // closable, miniaturizable, resizable, plus full-size content for the
@@ -14284,7 +14403,7 @@ final class ReopenLoadingWindow: NSWindow {
     /// keeps the sidebar collapsed permanently
     /// (`MainSplitViewController.updateLayoutForHorizontalTabs`). One number
     /// therefore settles the width, the collapsed state and which layouts draw
-    /// anything, which is why nothing in this class reads `LayoutMode` — and
+    /// anything. The current layout only gates the effective sidebar side;
     /// `.comfortable` is the layout that needs no help, since its own first
     /// painted frame already carries a tab-strip skeleton.
     ///
@@ -14333,7 +14452,7 @@ final class ReopenLoadingWindow: NSWindow {
     /// Nothing resizes this window after `init`, so it is placed once.
     private func installSidebarBand(width: CGFloat, tint: NSColor, in host: NSView) {
         let band = ColoredVisualEffectView(
-            frame: NSRect(x: 0, y: 0, width: width, height: frame.height))
+            frame: NSRect(x: SidebarPosition.isOnRight ? frame.width - width : 0, y: 0, width: width, height: frame.height))
         band.material = .fullScreenUI
         band.state = .active
         band.backgroundColor = tint
@@ -14411,7 +14530,7 @@ final class ReopenLoadingWindow: NSWindow {
         let group = activityDotsSize
         let contentWidth = size.width - leading
         guard contentWidth >= group.width, size.height >= group.height else { return nil }
-        return NSRect(x: leading + (contentWidth - group.width) / 2,
+        return NSRect(x: (SidebarPosition.isOnRight ? 0 : leading) + (contentWidth - group.width) / 2,
                       y: (size.height - group.height) / 2,
                       width: group.width,
                       height: group.height)
@@ -14560,7 +14679,7 @@ final class ReopenLoadingWindow: NSWindow {
         // The close button specifically, not whichever one exists: the origin
         // describes the LEADING light, so reading any other would shift the
         // group by a whole 23pt pitch.
-        guard let leading = window.standardWindowButton(.closeButton),
+        guard let leading = window.titlebarButton(.closeButton),
               let titlebar = leading.superview else { return nil }
         let height = window.frame.height
         guard height > 0 else { return nil }

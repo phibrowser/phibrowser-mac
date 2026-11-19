@@ -18,6 +18,7 @@ struct IconPicker: View {
     /// the Spaces settings pane fills its detail column with the picker.
     let fillsAvailableHeight: Bool
     let onSelect: (IconPickerSelection) -> Void
+    let onReset: (() -> Void)?
 
     private let emojiCatalog: EmojiCatalog
 
@@ -37,6 +38,7 @@ struct IconPicker: View {
          width: CGFloat? = nil,
          fillsAvailableHeight: Bool = false,
          emojiCatalog: EmojiCatalog = .shared,
+         onReset: (() -> Void)? = nil,
          onSelect: @escaping (IconPickerSelection) -> Void) {
         self.selected = selected
         self.showsGroups = showsGroups
@@ -44,6 +46,7 @@ struct IconPicker: View {
         self.fillsAvailableHeight = fillsAvailableHeight
         self.emojiCatalog = emojiCatalog
         self.onSelect = onSelect
+        self.onReset = onReset
         _selectedTab = State(initialValue: selected?.isEmoji == true ? .emoji : .icon)
     }
 
@@ -62,11 +65,20 @@ struct IconPicker: View {
 
     private var pickerBody: some View {
         VStack(spacing: 0) {
-            PhiSegmentedPicker(
-                IconPickerTab.allCases,
-                selection: $selectedTab
-            ) { tab in
-                Text(tab.title)
+            HStack(spacing: 8) {
+                PhiSegmentedPicker(
+                    IconPickerTab.allCases,
+                    selection: $selectedTab
+                ) { tab in
+                    Text(tab.title)
+                }
+                if let onReset {
+                    Button(action: onReset) {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.plain)
+                    .help(NSLocalizedString("common.iconPicker.reset", value: "Reset Icon", comment: "Icon picker - Restore the original icon"))
+                }
             }
             .frame(height: IconPickerMetrics.segmentHeight)
 

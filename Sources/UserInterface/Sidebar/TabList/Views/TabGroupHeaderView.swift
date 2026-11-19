@@ -26,6 +26,16 @@ final class TabGroupHeaderViewModel {
     /// `TabGroupHeaderHostingView`'s hit-test guard so a click in the
     /// close zone is only counted when the button is visible.
     var isHeaderHovered: Bool = false
+    /// A touch revealed the close button (touch has no hover).
+    var isTouchRevealed: Bool = false {
+        didSet {
+            if !isTouchRevealed { isCloseArmedForTouch = false }
+        }
+    }
+    /// The close button was already touch-revealed when the current touch
+    /// began, so a tap on it closes instead of only revealing it.
+    var isCloseArmedForTouch: Bool = false
+    var showsCloseButton: Bool { isHeaderHovered || isTouchRevealed }
     /// Mirrors `WebContentGroupInfo.isCollapsed` so the inline chevron
     /// in `TabGroupHeaderView` can rotate without driving the state.
     var isCollapsed: Bool = false
@@ -141,7 +151,7 @@ struct TabGroupHeaderView: View {
                     .font(.system(size: 11, weight: .semibold))
             }
             .frame(width: 24, height: 24)
-            .opacity(viewModel.isHeaderHovered ? 1 : 0)
+            .opacity(viewModel.showsCloseButton ? 1 : 0)
             .onHover { hovering in
                 isCloseButtonHovered = hovering && viewModel.isHeaderHovered
             }
@@ -199,15 +209,25 @@ enum TabGroupHeaderHitTarget {
 struct TabGroupHeaderHitTargetResolver {
     static let controlSize: CGFloat = 24
     static let horizontalInset: CGFloat = 6
+    /// Minimum touch target on macOS.
+    static let touchTargetSize: CGFloat = 36
 
-    static func target(at point: CGPoint, in bounds: CGRect) -> TabGroupHeaderHitTarget? {
+    static func target(
+        at point: CGPoint,
+        in bounds: CGRect,
+        expandsCloseForTouch: Bool = false
+    ) -> TabGroupHeaderHitTarget? {
         let originY = bounds.midY - controlSize * 0.5
-        let closeRect = CGRect(
+        var closeRect = CGRect(
             x: bounds.maxX - horizontalInset - controlSize,
             y: originY,
             width: controlSize,
             height: controlSize
         )
+        if expandsCloseForTouch {
+            let outset = (touchTargetSize - controlSize) * 0.5
+            closeRect = closeRect.insetBy(dx: -outset, dy: -outset)
+        }
         if closeRect.contains(point) {
             return .closeGroup
         }

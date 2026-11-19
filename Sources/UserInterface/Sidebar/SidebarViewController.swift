@@ -286,6 +286,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     
     private lazy var headerView = SidebarHeaderView(state: state)
     /// The share of the page card's edge shadow that falls on the sidebar.
+    private var pageEdgeShadowOnRight = false
     private lazy var pageEdgeShadowView = PageCardEdgeShadowView(cardPosition: .beyondTrailingEdge)
     private lazy var pinnedTabViewController = PinnedTabViewController(state: state, hostVC: self)
     /// See `SidebarTabListViewController.beginDraggingPaneAsTab(_:event:)`.
@@ -475,6 +476,10 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         }
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         spacesStripHostingView = hostingView
+        headerView.onSpaceSwitchPlacementChanged = { [weak self, weak stripGeometry] sitsInControlRow in
+            stripGeometry?.sitsInControlRow = sitsInControlRow
+            self?.updateHeaderHeight()
+        }
         headerView.mountSpaceSwitch(hostingView)
         spacesStripRowView = hostingView
         updateHeaderHeight()
@@ -536,6 +541,9 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     private var isSidebarContentActive = false
     private var lastPersistedFavoriteHeight: CGFloat?
     private var sidebarTrackingArea: NSTrackingArea?
+    private var touchTapObserver: TouchTapObserver?
+    private var pointerMotionObserver: PointerMotionObserver?
+    private weak var touchRevealedCell: SidebarCellView?
 
     
     init(browserState: BrowserState, mediaController: SidebarMediaController) {
@@ -596,6 +604,11 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         updateMemoryButtonVisibility()
         updateSidebarContentActivation()
         updateSpaceTintGradient()
+        touchTapObserver = TouchTapObserver(
+            view: view,
+            onTouchBegan: { [weak self] in self?.touchRevealedCell?.touchWillBegin() },
+            onTap: { [weak self] location in self?.handleTouch(at: location) }
+        )
     }
 
     override func viewDidLayout() {
@@ -630,6 +643,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         mediaController.setActive(false, on: mediaSurface)
         // A concealed Space's sidebar keeps its hover state for its next reveal.
         guard view.window == nil else { return }
+        endTouchReveal()
         setHoverControlsVisible(false, animated: false)
     }
 
@@ -648,7 +662,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         }
         // A Space switch swapping sessions under a still pointer sends the
         // leaving sidebar an exit; keep its controls for its next reveal.
-        guard !view.isHiddenOrHasHiddenAncestor, !isPointerInside else { return }
+        guard !view.isHiddenOrHasHiddenAncestor, !isPointerInside, !isTouchRevealActive else { return }
         setHoverControlsVisible(false)
     }
 
@@ -662,7 +676,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     /// its controls as they already were, not fade them in from nothing.
     private func updateHoverControlsForCurrentMouseLocation() {
         // A concealed session's sidebar keeps its state until it shows again.
-        guard !view.isHiddenOrHasHiddenAncestor else { return }
+        guard !view.isHiddenOrHasHiddenAncestor, !isTouchRevealActive else { return }
         setHoverControlsVisible(isPointerInside, animated: false)
     }
 
@@ -670,6 +684,59 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         guard let window = view.window else { return false }
         let point = view.convert(window.mouseLocationOutsideOfEventStream, from: nil)
         return view.visibleRect.contains(point)
+    }
+
+    // MARK: - Touch
+
+    private var isTouchRevealActive: Bool { pointerMotionObserver != nil }
+
+    /// Touch has no hover, so a tap in the sidebar reveals the controls the
+    /// pointer would: the sidebar's hover controls plus the tapped row's own.
+    /// They stay until the pointer moves again or the sidebar leaves the
+    /// window. A touch outside the sidebar is not observed: a direct-touch
+    /// recognizer on an ancestor of the web content stops AppKit's
+    /// touch-to-mouse emulation for Chromium.
+    private func handleTouch(at locationInWindow: NSPoint) {
+        guard let contentView = view.window?.contentView else { return }
+        let cell = sidebarCell(at: locationInWindow)
+        if touchRevealedCell !== cell {
+            touchRevealedCell?.setTouchRevealed(false)
+            touchRevealedCell = cell
+        }
+        // A reused cell drops its reveal; set it on every tap.
+        cell?.setTouchRevealed(true)
+        setHoverControlsVisible(true)
+
+        if let pointerMotionObserver {
+            pointerMotionObserver.noteTouch(at: locationInWindow)
+        } else {
+            pointerMotionObserver = PointerMotionObserver(
+                view: contentView,
+                touchLocationInWindow: locationInWindow
+            ) { [weak self] in
+                self?.endTouchReveal()
+            }
+        }
+    }
+
+    private func endTouchReveal() {
+        touchRevealedCell?.setTouchRevealed(false)
+        touchRevealedCell = nil
+        pointerMotionObserver?.invalidate()
+        pointerMotionObserver = nil
+        updateHoverControlsForCurrentMouseLocation()
+    }
+
+    private func sidebarCell(at locationInWindow: NSPoint) -> SidebarCellView? {
+        guard let superview = view.superview else { return nil }
+        var candidate = view.hitTest(superview.convert(locationInWindow, from: nil))
+        while let current = candidate, current !== view {
+            if let cell = current as? SidebarCellView {
+                return cell
+            }
+            candidate = current.superview
+        }
+        return nil
     }
 
     /// Binds the bottom bar's download button to the downloads manager exactly
@@ -703,6 +770,13 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
             super.scrollWheel(with: event)
             return
         }
+    }
+
+    /// Mouse back/forward side buttons over the sidebar switch Space.
+    /// Skipped while the create-Space overlay is up, like the swipe.
+    func handleSideButtonSpaceSwitch(_ event: NSEvent) -> Bool {
+        guard createSpaceOverlay == nil, let step = sideButtonSpaceStep(for: event) else { return false }
+        return activateAdjacentSpace(by: step, state: state)
     }
 
     /// Update chat button visibility based on configuration and current tab's aiChatEnabled
@@ -761,7 +835,9 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         // setupStackView).
         let base = headerView.controlRowTopOffset + (addressInSidebar ? 71 : 27)
         let spacesBandHeight = SidebarHeaderView.spaceSwitchBandHeight(addressInSidebar: addressInSidebar)
-        let headerHeight = base + (spacesEnabled ? spacesBandHeight : 0)
+        // A row moved up into the control row adds no height of its own.
+        let reservesSpacesBand = spacesEnabled && !headerView.spaceSwitchSitsInControlRow
+        let headerHeight = base + (reservesSpacesBand ? spacesBandHeight : 0)
         headerHeightConstraint?.update(offset: headerHeight)
     }
 
@@ -831,6 +907,16 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         // An open Peek fades the page behind it; its card casts no shadow then.
         pageEdgeShadowView.isHidden = !layout.showsContentShadow || state.isPageDeemphasizedForPeek
         pageEdgeShadowView.cornerRadius = layout.containerCornerRadius
+        let right = SidebarPosition.isOnRight
+        if right != pageEdgeShadowOnRight {
+            pageEdgeShadowOnRight = right
+            pageEdgeShadowView.snp.remakeConstraints { make in
+                make.top.bottom.equalToSuperview()
+                if right { make.left.equalToSuperview() } else { make.right.equalToSuperview() }
+                make.width.equalTo(PageCardEdgeShadowView.shadowRadius * 4)
+            }
+            pageEdgeShadowView.needsLayout = true
+        }
     }
 
     private func setupStackView() {
@@ -1224,9 +1310,9 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         guard shouldActivate, !state.isIncognito else { return }
 
         pinnedTabViewController.$contentHeight
-            .combineLatest(state.$isDraggingTab)
+            .combineLatest(state.$isDraggingTab, pinnedTabViewController.$isEmptyDropZoneRevealed)
             .debounce(for: .seconds(0.01), scheduler: DispatchQueue.main)
-            .sink { [weak self] newHeight, draggingTab in
+            .sink { [weak self] newHeight, draggingTab, _ in
                 self?.updateFavoriteHeight(newHeight, isDragging: draggingTab)
             }
             .store(in: &contentCancellables)
@@ -1313,7 +1399,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     
     private func updateFavoriteHeight(_ newHeight: CGFloat, isDragging: Bool = false) {
         let clampedHeight: CGFloat
-        if newHeight < 20 && isDragging {
+        if newHeight < 20 && pinnedTabViewController.isEmptyDropZoneRevealed {
             clampedHeight = 100
         } else {
             clampedHeight = newHeight
@@ -1937,5 +2023,13 @@ extension SidebarViewController: SpaceSwitchBandSurface {
     func setSpaceSwitchBackdropHidden(_ hidden: Bool) {
         (view as? BackdropContainerView)?.paintsBackdrop = !hidden && paintsOwnBackdrop
         spaceTintBackgroundView.isHidden = hidden || !paintsOwnBackdrop
+    }
+}
+
+extension SidebarViewController {
+    /// See `SidebarTabListViewController.scrollOffset`.
+    var tabListScrollOffset: NSPoint {
+        get { tabList.scrollOffset }
+        set { tabList.scrollOffset = newValue }
     }
 }

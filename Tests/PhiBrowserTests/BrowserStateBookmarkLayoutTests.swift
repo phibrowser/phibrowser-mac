@@ -77,6 +77,7 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
         XCTAssertTrue(waitUntil { bookmark.url == "https://new.example/path" })
         XCTAssertEqual(bookmark.title, "Bookmark")
         XCTAssertTrue(wrapper.navigatedURLs.isEmpty)
+        XCTAssertTrue(wrapper.inPlaceNavigatedURLs.isEmpty)
         XCTAssertTrue(wrapper.customValues.isEmpty)
         XCTAssertNil(state.replacementURLForBookmark(guid: bookmark.guid))
         wrapper.urlString = "https://another.example"
@@ -301,6 +302,26 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
         })
     }
 
+    /// PHI-2046 (b): a divider drag in a split opened from a bookmark reports
+    /// the unchanged orientation; it must not write it over the orientation
+    /// sync landed for the bookmark.
+    func testADividerDragDoesNotWriteTheOrientationOverTheBookmark() throws {
+        let state = try makeState()
+        let bookmark = try createBookmark(in: state,
+                                          guid: "landed-layout-bookmark",
+                                          url: "https://primary.example",
+                                          secondaryUrl: "https://secondary.example",
+                                          layout: .horizontal)
+        state.splits = [SplitGroup(id: "split-bound", tabIds: [910, 911], layout: .vertical,
+                                   fractions: [0.5, 0.5])]
+        state.splitBookmarkBindings[bookmark.guid] = "split-bound"
+
+        state.handleSplitVisualsChanged(splitId: "split-bound", layout: .vertical, fractions: [0.3, 0.7])
+
+        XCTAssertEqual(bookmark.layout, .horizontal)
+        XCTAssertEqual(state.splits.first?.fractions, [0.3, 0.7])
+    }
+
     func testSwitchingToComfortableClearsPrimaryPendingSplitBookmarkBinding() throws {
         let state = try makeState()
         let bookmarkGuid = "split-bookmark-primary-pending"
@@ -448,6 +469,41 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
                                  fractions: [0.25, 0.25, 0.25, 0.25])
         state.splitBookmarkBindings[guid] = "split"
         return bookmark
+    }
+
+    /// A third pane of a split bookmark is focused when it arrives, before
+    /// Chromium adds it to the split. Once it joins, the bookmark row is
+    /// active again even though focus does not move.
+    func testBookmarkStaysActiveWhenTheFocusedPaneJoinsItsSplit() throws {
+        let state = try makeState()
+        let guid = "three-pane-bookmark"
+        state.localStore.createBookmark(url: "https://a.example/",
+                                        title: "A",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: guid,
+                                        spaceId: state.spaceId,
+                                        secondaryUrl: "https://b.example/",
+                                        secondaryTitle: "B",
+                                        splitExtraPanes: [
+                                            SplitBookmarkExtraPane(url: "https://c.example/", title: "C"),
+                                        ])
+        XCTAssertTrue(waitUntil { state.bookmarkManager.bookmark(withGuid: guid) != nil })
+        let bookmark = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: guid))
+        let panes = (1...3).map { Tab(guid: $0, url: "https://p\($0).example/", isActive: false, index: $0, title: "P\($0)") }
+        state.tabs = panes
+        state.splitBookmarkBindings[guid] = "split"
+        state.focuseTab(panes[0])
+        state.handleSplitCreated(splitId: "split", tabIds: [1, 2], layout: .vertical, fractions: [0.5, 0.5])
+        XCTAssertTrue(bookmark.isActive)
+
+        // The third pane arrives focused, ahead of its join.
+        state.focuseTab(panes[2])
+        XCTAssertFalse(bookmark.isActive)
+
+        state.handleSplitContentsChanged(splitId: "split", tabIds: [1, 2, 3])
+
+        XCTAssertTrue(bookmark.isActive)
     }
 
     func testReorderingABoundSplitResequencesTheBookmarkPanes() throws {
@@ -634,6 +690,11 @@ final class BookmarkLayoutTestWebContentWrapper: NSObject, WebContentWrapper {
     private(set) var navigatedURLs: [String] = []
     func navigate(toURL urlString: String) {
         navigatedURLs.append(urlString)
+        self.urlString = urlString
+    }
+    private(set) var inPlaceNavigatedURLs: [String] = []
+    func navigateInPlace(toURL urlString: String) {
+        inPlaceNavigatedURLs.append(urlString)
         self.urlString = urlString
     }
     func setAsActiveTab() {}

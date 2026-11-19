@@ -100,6 +100,9 @@ class Tab: WebContentRepresentable {
     /// by `BrowserState.handleTabJoinedGroup` / `handleTabLeftGroup`.
     @Published var groupToken: String?
     @Published var title: String = ""
+    /// When the wrapper last reported a title (uptime nanoseconds, 0 before
+    /// its first report). See `takePageTitle(_:sentAt:)`.
+    private var wrapperTitleReportedAt: UInt64 = 0
     @Published var url: String?
     @Published private(set) var securityInfo: TabSecurityInfo = .empty
     
@@ -209,6 +212,8 @@ class Tab: WebContentRepresentable {
     /// Stable logical identity retained when a pinned record is copied to a
     /// different scope and receives a new physical database guid.
     var pinnedLineageId: String?
+    @Published var pinnedIcon: String?
+    var pinnedIconPopover: NSPopover?
     var profileId: String?
     /// Whether a profile-scoped repository result can update this tab's
     /// persisted favicon snapshot. App-scoped pinned rows have no profile
@@ -220,6 +225,7 @@ class Tab: WebContentRepresentable {
     /// records carry no `windowId`, and the key window's Space is not the
     /// right-clicked one when the click lands in another window.
     weak var contextMenuOwnerState: BrowserState?
+    weak var contextMenuAnchorView: NSView?
     var isOpenned = true
     /// DB-persisted title that bypasses title KVO from `webContentWrapper`.
     var storedTitle: String?
@@ -361,15 +367,11 @@ class Tab: WebContentRepresentable {
         // A new WebContents starts out not kept loaded.
         pushKeepLoaded()
 
-        // The notification comes on whichever thread wrote a default (the sync
-        // engine writes off the main thread), so hop before comparing values.
-        let keepLoadedSetting = PhiPreferences.GeneralSettings.keepPinnedTabsLoaded
-        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
-            .receive(on: DispatchQueue.main)
-            .map { _ in keepLoadedSetting.loadValue() }
-            .prepend(keepLoadedSetting.loadValue())
-            .removeDuplicates()
+        // A change can come on whichever thread wrote it (the sync engine
+        // writes off the main thread).
+        PhiPreferences.GeneralSettings.keepPinnedTabsLoaded.sharedValuePublisher
             .dropFirst()
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self, self.isPinned else { return }
                 self.pushKeepLoaded()
@@ -528,6 +530,14 @@ class Tab: WebContentRepresentable {
             }
             .store(in: &cancellables)
         
+        // The first value is the wrapper's title when bound, not a report.
+        wrapper.publisher(for: \.title)
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.wrapperTitleReportedAt = DispatchTime.now().uptimeNanoseconds
+            }
+            .store(in: &cancellables)
+
         wrapper.publisher(for: \.urlString)
             .sink { [weak self] urlString in
                 guard let self else { return }
@@ -676,6 +686,19 @@ class Tab: WebContentRepresentable {
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
     
+    /// Shows a title the page set, which Chromium sent at `sentAt` (uptime
+    /// nanoseconds), unless the wrapper has reported a title since. The
+    /// wrapper's title, set by each navigation's metadata, reaches the tab
+    /// within Chromium's call, while page titles come through EventBus a
+    /// main-queue turn later; the wrapper's later report is Chromium's newer
+    /// title. Going back to an entry whose title is unchanged sends no new
+    /// page title, so an older one landing last would stay (a redirector
+    /// page's, when its jump is re-homed and the tab goes back).
+    func takePageTitle(_ title: String, sentAt: UInt64) {
+        guard wrapperTitleReportedAt <= sentAt else { return }
+        self.title = title
+    }
+
     /// Applies a stored custom title. The title observer reads this value on every update.
     func applyStoredTitle(_ title: String) {
         storedTitle = title
@@ -1013,9 +1036,11 @@ extension Tab: Equatable {
 }
 
 extension Tab: Hashable {
+    // `guidInLocalDB` changes while a tab is live (pin, bookmark, split), and
+    // AppKit hash tables such as NSOutlineView's item map bridge to this hash.
+    // Hashing a mutable field strands their entries and crashes later lookups.
     func hash(into hasher: inout Hasher) {
         hasher.combine(guid)
-        hasher.combine(guidInLocalDB)
     }
 }
 
@@ -1041,6 +1066,7 @@ extension Tab {
             dbModel.profile != nil || dbModel.profileId?.isEmpty == false
         self.storedTitle = dbModel.title
         if dbModel.dataType == .pinnedTab {
+            self.pinnedIcon = dbModel.icon == "default" ? nil : dbModel.icon
             self.pinnedLineageId = dbModel.pinLineageId ?? dbModel.guid
             self.pinnedUrl = dbModel.url.absoluteString
             self.pinnedCreatedDate = dbModel.createdDate

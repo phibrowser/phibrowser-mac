@@ -390,6 +390,7 @@ class WebContentContainerViewController: NSViewController {
     /// cold page's first frame, under an evicted frame, in a split's gap
     /// (`updatePageAreaBackdropCorners` squares its corners to match).
     private var pageAreaBackdropLeadingConstraint: Constraint?
+    private var pageAreaBackdropTrailingConstraint: Constraint?
     private var pageAreaBackdropTrailingBottomConstraint: Constraint?
     private var contentLayout: WebContentLayout {
         WebContentLayout(browserState: browserState)
@@ -621,7 +622,8 @@ class WebContentContainerViewController: NSViewController {
         contentContainer.addSubview(pageAreaBackdrop)
         pageAreaBackdrop.snp.makeConstraints { make in
             pageAreaBackdropLeadingConstraint = make.leading.equalToSuperview().constraint
-            pageAreaBackdropTrailingBottomConstraint = make.trailing.bottom.equalToSuperview().inset(contentLayout.edgeSpacing).constraint
+            pageAreaBackdropTrailingBottomConstraint = make.bottom.equalToSuperview().inset(contentLayout.edgeSpacing).constraint
+            pageAreaBackdropTrailingConstraint = make.trailing.equalToSuperview().inset(contentLayout.edgeSpacing).constraint
             make.top.equalToSuperview()
         }
         updatePageAreaBackdropLeadingInset()
@@ -867,7 +869,7 @@ class WebContentContainerViewController: NSViewController {
             }
         }
         if let dock = transcriptDockView, let edge = transcriptDockEdge {
-            dock.updateLayout(contentLayout, leadingInset: pageAreaLeadingInset)
+            dock.updateLayout(contentLayout, leadingInset: pageAreaInsets.leading, trailingInset: pageAreaInsets.trailing)
             // The dock's own thickness constraint lives on the dock view
             // (plain NSLayoutConstraint, untouched by this snp remake).
             dock.snp.remakeConstraints { make in
@@ -1691,9 +1693,24 @@ class WebContentContainerViewController: NSViewController {
     /// Just above `pageAreaBackdrop`, below every tab's view.
     private func placeContentSurface(_ hostingView: NSView) {
         contentContainer.addSubview(hostingView, positioned: .above, relativeTo: pageAreaBackdrop)
+        pinContentSurfaceToPagePanel(hostingView)
+    }
+
+    /// Over the page panel only, and clipped to it. Chromium draws a layout
+    /// some frames after AppKit shows it, and until then the surface shows
+    /// its last frame at its old size: one from a larger page area would
+    /// run over the margins around the panel.
+    private func pinContentSurfaceToPagePanel(_ hostingView: NSView) {
         hostingView.snp.remakeConstraints { make in
-            make.edges.equalToSuperview()
+            make.edges.equalTo(pageAreaBackdrop)
         }
+        hostingView.clipsToBounds = true
+        // Clipped to the card's rounded shape, not its rectangle: a late
+        // frame would otherwise fill the card's corners square until
+        // Chromium draws its own rounded one.
+        hostingView.wantsLayer = true
+        hostingView.layer?.cornerCurve = .continuous
+        hostingView.layer?.cornerRadius = contentLayout.containerCornerRadius
     }
 
     /// Lends the surface's view to the page entering content fullscreen
@@ -1751,9 +1768,7 @@ class WebContentContainerViewController: NSViewController {
         guard let contentSurfaceHosting, contentSurfaceHosting.isHeld else { return }
         contentSurfaceHosting.isHeld = false
         guard let contentSurfaceView, contentSurfaceView.superview === contentContainer else { return }
-        contentSurfaceView.snp.remakeConstraints { make in
-            make.edges.equalToSuperview()
-        }
+        pinContentSurfaceToPagePanel(contentSurfaceView)
     }
 
     /// Over a content surface the page card is clear and this backdrop shows
@@ -2333,6 +2348,9 @@ class WebContentContainerViewController: NSViewController {
         updatePageAreaBackdropLeadingInset()
         pageAreaBackdropTrailingBottomConstraint?.update(inset: contentLayout.edgeSpacing)
         pageAreaBackdrop.layer?.cornerRadius = contentLayout.containerCornerRadius
+        if let contentSurfaceView, contentSurfaceView.superview === contentContainer {
+            contentSurfaceView.layer?.cornerRadius = contentLayout.containerCornerRadius
+        }
         extensionSidePanelFrameBackdrop?.layer?.cornerRadius = contentLayout.containerCornerRadius
         remakeContentLayout()
         contentContainer.needsLayout = true
@@ -2340,20 +2358,17 @@ class WebContentContainerViewController: NSViewController {
 
     /// Mirror of `WebContentViewController.updateSplitViewLeadingInset`, so
     /// the backdrop hugs the same leading edge the mounted panel uses.
-    private var pageAreaLeadingInset: CGFloat {
-        let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
-        let sidebarCollapsed = browserState?.sidebarCollapsed ?? true
-        return (traditionalLayout || sidebarCollapsed)
-            ? contentLayout.edgeSpacing
-            : 0
+    private var pageAreaInsets: (leading: CGFloat, trailing: CGFloat) {
+        contentLayout.pageInsets(sidebarCollapsed: browserState?.sidebarCollapsed ?? true)
     }
 
     /// Called from `updateLayoutForMode`, which already re-runs on layout-mode
     /// and sidebar-collapse changes. A bottom transcript dock shares the page
     /// panel's left edge, so it follows the same inset.
     private func updatePageAreaBackdropLeadingInset() {
-        let inset = pageAreaLeadingInset
+        let inset = pageAreaInsets.leading
         pageAreaBackdropLeadingConstraint?.update(inset: inset)
+        pageAreaBackdropTrailingConstraint?.update(inset: pageAreaInsets.trailing)
     }
 
     // MARK: - AI Chat Toggle

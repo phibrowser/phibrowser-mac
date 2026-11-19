@@ -393,6 +393,7 @@ final class AgentTranscriptDockView: NSView {
     private let wrapper = NSView()
     private var wrapperTopConstraint: Constraint?
     private var wrapperLeadingConstraint: Constraint?
+    private var wrapperTrailingConstraint: Constraint?
     private var wrapperTrailingBottomConstraint: Constraint?
 
     init(edge: AgentTranscriptDockEdge, content: NSView) {
@@ -411,7 +412,8 @@ final class AgentTranscriptDockView: NSView {
             wrapperTopConstraint = make.top.equalToSuperview().constraint
             wrapperLeadingConstraint = make.leading.equalToSuperview()
                 .inset(edge == .bottom ? WebContentConstant.edgesSpacing : 0).constraint
-            wrapperTrailingBottomConstraint = make.trailing.bottom.equalToSuperview()
+            wrapperTrailingConstraint = make.trailing.equalToSuperview().inset(WebContentConstant.edgesSpacing).constraint
+            wrapperTrailingBottomConstraint = make.bottom.equalToSuperview()
                 .inset(WebContentConstant.edgesSpacing).constraint
         }
 
@@ -462,11 +464,12 @@ final class AgentTranscriptDockView: NSView {
 
     /// Outer edges follow the page, but the seam between sibling cards stays
     /// 8pt even when the page no longer contributes its own outer margin.
-    func updateLayout(_ layout: WebContentLayout, leadingInset: CGFloat) {
+    func updateLayout(_ layout: WebContentLayout, leadingInset: CGFloat, trailingInset: CGFloat) {
         let seamInset = WebContentConstant.edgesSpacing - layout.edgeSpacing
         wrapperTopConstraint?.update(inset: edge == .bottom ? seamInset : 0)
         wrapperLeadingConstraint?.update(inset: edge == .right ? seamInset : leadingInset)
         wrapperTrailingBottomConstraint?.update(inset: layout.edgeSpacing)
+        wrapperTrailingConstraint?.update(inset: trailingInset)
         wrapper.layer?.cornerRadius = layout.containerCornerRadius
     }
 

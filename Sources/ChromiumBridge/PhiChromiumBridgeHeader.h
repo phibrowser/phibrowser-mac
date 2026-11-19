@@ -459,6 +459,18 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)askSpaceForURL:(NSString *)urlString
         defaultSpaceId:(NSString *)defaultSpaceId
         sourceWindowId:(int64_t)sourceWindowId
+        sourceIsNewTab:(BOOL)sourceIsNewTab
+        ordinaryNewTab:(BOOL)ordinaryNewTab;
+
+- (void)routeURLInSpace:(NSString *)spaceId
+                    url:(NSString *)urlString
+         sourceWindowId:(int64_t)sourceWindowId
+         ordinaryNewTab:(BOOL)ordinaryNewTab
+         sourceIsNewTab:(BOOL)sourceIsNewTab;
+
+- (void)askSpaceForURL:(NSString *)urlString
+        defaultSpaceId:(NSString *)defaultSpaceId
+        sourceWindowId:(int64_t)sourceWindowId
         sourceIsNewTab:(BOOL)sourceIsNewTab;
 
 /// The user picked a Space from the web-content right-click "Open link as"
@@ -544,6 +556,19 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// with respondsToSelector: (skew).
 - (BOOL)isPeekLinkSurfaceEnabled;
 
+/// Whether the new foreground tab that the tab identified by `sourceTabId`
+/// opens for `url` will open in the Peek panel on the client's own initiative
+/// (the automatic Peek of a pinned tab's or Bookmark Tab's link to another
+/// site). Chromium asks as it creates the tab, before the client hears of it:
+/// the client marks a Peek only after the tab's load has started, so while
+/// this returns YES Chromium keeps that load in its window
+/// (phi::PhiLinkTabMarker), and a URL rule cannot take a redirect of it away
+/// from the Peek. Called synchronously on the UI thread. Callers must guard
+/// with respondsToSelector: (skew).
+- (BOOL)opensAutoPeekForLinkFromTabId:(int64_t)sourceTabId
+                                  url:(NSString *)url
+                             windowId:(int64_t)windowId;
+
 /// Right-click "Open in Reading Mode" — Chromium asks Mac to show Reader View
 /// for the tab identified by `tabId`. Reader View is the Mac client's: it
 /// extracts the article and swaps a native surface over the tab's content, so
@@ -566,6 +591,58 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)pageActionInvoked:(NSString *)actionId
                 channelId:(NSString *)channelId
                      info:(NSDictionary<NSString *, id> *)info;
+
+- (BOOL)advanceNativeOmniboxSession:(NSString*)sessionID
+    bindingToken:(NSString*)bindingToken request:(uint64_t)request windowId:(int64_t)windowId
+    NS_SWIFT_NAME(advanceNativeOmniboxSession(_:bindingToken:request:windowId:));
+
+/// Whether Phi's Mac omnibox and the NTP search box use the unified omnibox
+/// session. Off when the selector is missing.
+- (BOOL)isUnifiedOmniboxEnabled;
+
+/// V2 native data bridge. These selectors are browser-process only; no renderer
+/// identity, URL or entity identifier is accepted as selection authority.
+- (NSString* _Nullable)beginNativeOmniboxSession:(NSString*)sessionID
+    windowId:(int64_t)windowId profileId:(NSString*)profileID
+    targetTabId:(NSNumber* _Nullable)targetTabID
+    NS_SWIFT_NAME(beginNativeOmniboxSession(_:windowId:profileId:targetTabId:));
+- (void)queryNativeOmniboxSession:(NSString*)sessionID
+    bindingToken:(NSString*)bindingToken request:(uint64_t)request
+    windowId:(int64_t)windowId
+    completion:(void (^)(NSString* _Nullable json, NSString* status))completion
+    NS_SWIFT_NAME(queryNativeOmniboxSession(_:bindingToken:request:windowId:completion:));
+- (void)stopNativeOmniboxSession:(NSString*)sessionID request:(uint64_t)request
+    windowId:(int64_t)windowId
+    NS_SWIFT_NAME(stopNativeOmniboxSession(_:request:windowId:));
+- (void)endNativeOmniboxSession:(NSString*)sessionID windowId:(int64_t)windowId
+    NS_SWIFT_NAME(endNativeOmniboxSession(_:windowId:));
+- (void)executeNativeOmniboxSession:(NSString*)sessionID
+    bindingToken:(NSString*)bindingToken request:(uint64_t)request
+    windowId:(int64_t)windowId frozenEntityJSON:(NSString*)frozenEntityJSON
+    mutationEpoch:(NSString*)mutationEpoch pinScope:(NSString*)pinScope
+    learningText:(NSString*)learningText
+    duplicateSplit:(BOOL)duplicateSplit
+    completion:(void (^)(NSString* status, NSString* _Nullable effect))completion
+    NS_SWIFT_NAME(executeNativeOmniboxSession(_:bindingToken:request:windowId:frozenEntityJSON:mutationEpoch:pinScope:learningText:duplicateSplit:completion:));
+/// Runs a Phi command chosen from the native omnibox. `status` is
+/// "accepted" once Phi has taken the command, otherwise "rejected" or "stale".
+- (void)executeNativeOmniboxCommand:(NSString*)sessionID
+    bindingToken:(NSString*)bindingToken request:(uint64_t)request
+    windowId:(int64_t)windowId commandId:(NSString*)commandID
+    completion:(void (^)(NSString* status))completion
+    NS_SWIFT_NAME(executeNativeOmniboxCommand(_:bindingToken:request:windowId:commandId:completion:));
+/// An ordinary row was chosen while native rows were shown for this
+/// normalized input; the next matching input prefers no native default.
+- (void)recordOrdinaryOmniboxChoice:(NSString*)sessionID
+    bindingToken:(NSString*)bindingToken request:(uint64_t)request
+    windowId:(int64_t)windowId learningText:(NSString*)learningText
+    NS_SWIFT_NAME(recordOrdinaryOmniboxChoice(_:bindingToken:request:windowId:learningText:));
+/// The user deleted history of `profileId` in [begin, end), seconds since
+/// 1970; `end` is infinity for an open range. Omnibox choices recorded in
+/// that range are forgotten.
+- (void)omniboxHistoryDeletedForProfile:(NSString*)profileId
+    begin:(double)begin end:(double)end
+    NS_SWIFT_NAME(omniboxHistoryDeleted(profileId:begin:end:));
 
 /// Hosted-window mode: Chromium asked to show or activate a hosted browser
 /// window — a routed navigation landing in another Space's window, a page
@@ -1103,6 +1180,51 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (BOOL)createNewTabStrictlyWithUrl:(NSString *)urlString
                            windowId:(int64_t)windowId
                    focusAfterCreate:(BOOL)focus;
+- (void)placeNewTabWithWindowId:(int64_t)windowId
+                         tabId:(int64_t)tabId
+                   beforeTabId:(int64_t)anchorTabId;
+
+- (BOOL)createOrdinaryTabWithUrl:(NSString *)url
+                         windowId:(int64_t)windowId
+                   activateWindow:(BOOL)activateWindow
+               bypassSpaceRouting:(BOOL)bypassSpaceRouting;
+
+- (BOOL)routeURLIfSpaceRuleMatches:(NSString *)url
+                          windowId:(int64_t)windowId
+                    ordinaryNewTab:(BOOL)ordinaryNewTab;
+
+/// PHI-1817: synchronous submission receipts for validated native entities.
+/// Exact window only; no dormant queue, URL fallback, or cross-window lookup.
+/// Callers must negotiate both selectors before enabling native execution.
+/// Native presentation transport; v1 remains separate. JSON replies use the
+/// same bounded v2 envelopes as the document API. Native callers never supply
+/// a Profile, Space, entity payload or URL to select.
+- (void)performOmniboxV2Operation:(NSString *)operation
+                    requestJSON:(NSString *)requestJSON
+                       windowId:(int64_t)windowId
+                     completion:(void (^)(NSString *responseJSON))completion
+    NS_SWIFT_NAME(performOmniboxV2Operation(_:requestJSON:windowId:completion:));
+
+- (BOOL)revokeOmniboxSearchContextForWindow:(int64_t)windowId
+                      expectedBindingToken:(NSString *)token
+                                    reason:(NSString *)reason
+    NS_SWIFT_NAME(revokeOmniboxSearchContext(windowId:expectedBindingToken:reason:));
+
+// Pins or bookmarks in the bound scope changed. Live sessions with this
+// binding re-read their native snapshot; nothing else is revoked.
+- (BOOL)refreshOmniboxNativeDataForWindow:(int64_t)windowId
+                     expectedBindingToken:(NSString *)token
+    NS_SWIFT_NAME(refreshOmniboxNativeData(windowId:expectedBindingToken:));
+
+- (BOOL)createOmniboxEntityTabWithUrl:(NSString *)urlString
+                           windowId:(int64_t)windowId
+                         customGuid:(NSString * _Nullable)customGuid
+    NS_SWIFT_NAME(createOmniboxEntityTab(url:windowId:customGuid:));
+- (BOOL)activateOmniboxEntityTabWithId:(int64_t)tabId
+                            windowId:(int64_t)windowId
+                  expectedCustomGuid:(NSString *)customGuid
+    NS_SWIFT_NAME(activateOmniboxEntityTab(tabId:windowId:expectedCustomGuid:));
+
 - (void)createQuickLookupTabWithWindowId:(int64_t)windowId
                                customGuid:(NSString* _Nullable)customGuid;
 /// Same missing-window rule as the `focusAfterCreate:` variant above: a tab
@@ -2472,6 +2594,19 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (BOOL)isPictureInPictureWindow:(NSWindow *)window
     NS_SWIFT_NAME(isPictureInPictureWindow(_:));
 
+/// Appends `url` as a background tab: the window's active tab stays, and the
+/// window is not activated. Chromium marks the tab as a link tab before its
+/// load starts, as it does a Cmd-clicked link's: a URL rule leaves the load,
+/// every server redirect of it and the page's own redirects without a user
+/// gesture (location.replace, a meta refresh) in this window, and routes the
+/// first other navigation in the tab, such as a click or a typed URL. Used
+/// when a pinned tab or Bookmark Tab is separated into a normal tab, so the
+/// page the user kept stays in the current Space even when a URL rule matches
+/// it. Optional so the client can fall back to an ordinary background tab on
+/// an older framework.
+- (void)openBackgroundTabBypassingSpaceRoutingWithUrl:(NSString *)url
+                                             windowId:(int64_t)windowId;
+
 @end
 
 typedef NS_ENUM(NSInteger, PhiMediaControlAction) {
@@ -2615,6 +2750,13 @@ typedef NS_ENUM(NSInteger, PhiMediaControlAction) {
 - (void)goForward;
 - (void)stopLoading;
 - (void)navigateToURL:(NSString *)urlString;
+/// navigateToURL for a bound tab (Pinned tab, Bookmark Tab): the load stays in
+/// this tab even when `urlString` is on another site, where a bound tab's
+/// cross-site navigation is otherwise re-opened as a Peek or a new tab. The
+/// tab's binding is not touched. Covers this one load only, and only when the
+/// request starts at `urlString`; a later redirect or script jump is re-opened
+/// as usual.
+- (void)navigateInPlaceToURL:(NSString *)urlString;
 - (void)setAsActiveTab;
 - (void)moveSelfToIndex:(NSInteger)newIndex selectAfterMove:(BOOL)selectAfterMove;
 - (void)moveSelfToNewWindow:(BOOL)activateNewWindow;
@@ -2674,6 +2816,15 @@ typedef NS_ENUM(NSInteger, PhiMediaControlAction) {
 /// wrapper and whenever the value changes. The Mac client is the only writer.
 /// Optional so a newer client keeps working with an older framework.
 - (void)setPhiKeepLoaded:(BOOL)keepLoaded;
+/// Whether this tab is bound in a way its custom value cannot carry: today a
+/// pane of an open Split Bookmark. While YES, Space URL rules leave every
+/// navigation inside the tab in place, as they do for a pinned tab or
+/// Bookmark Tab; nothing else treats it as bound, so its cross-site
+/// navigations still load in it. Every new WebContents starts at NO and the
+/// value is not saved with the session, so the client pushes it again when it
+/// binds a restored split. The Mac client is the only writer. Optional so a
+/// newer client keeps working with an older framework.
+- (void)setPhiBoundTab:(BOOL)bound;
 @end
 
 @protocol BookmarkWrapper <NSObject>

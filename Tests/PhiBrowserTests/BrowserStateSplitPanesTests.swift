@@ -284,6 +284,45 @@ final class BrowserStateSplitPanesTests: XCTestCase {
         XCTAssertEqual(cell.faviconOpacity(paneIndex: 2), 1, "The cell rebinds to all three panes")
     }
 
+    /// At the sidebar's minimum width a four-pane row leaves each pane less
+    /// room than a favicon and a full close button need. The button has to
+    /// narrow inside its own pane; it used to collapse to nothing while
+    /// still being drawn, so it could not be hovered or clicked.
+    func testSidebarSplitCellKeepsCloseButtonsHittableInNarrowPanes() throws {
+        let tabs = (1...SplitGroup.maxPaneCount).map {
+            Tab(guid: $0, url: "https://e\($0).example", isActive: false, index: $0 - 1)
+        }
+        // Row widths at the minimum sidebar width: in the tab list, and
+        // inside a tab group.
+        for rowWidth: CGFloat in [193, 173] {
+            let cell = SidebarSplitCellView(frame: NSRect(x: 0, y: 0, width: rowWidth, height: 36))
+            cell.configure(with: SplitSidebarItem(groupId: "narrow", panes: tabs, browserState: nil))
+            // A table pins its cell's width. As a window's content view the
+            // cell could widen the window instead of running out of room.
+            let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 36))
+            container.addSubview(cell)
+            let window = NSWindow(contentRect: container.frame, styleMask: [], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = container
+            defer { window.close() }
+
+            cell.setHovered(true)
+            container.layoutSubtreeIfNeeded()
+            XCTAssertEqual(cell.frame.width, rowWidth, "The row keeps the width under test")
+
+            for index in tabs.indices {
+                let layout = try XCTUnwrap(cell.closeButtonLayout(paneIndex: index))
+                let context = "pane \(index) in a \(rowWidth)-point row"
+                XCTAssertTrue(layout.pane.contains(layout.button),
+                              "The close button stays inside its pane: \(context)")
+                XCTAssertGreaterThanOrEqual(layout.button.width, 10,
+                                            "The close button keeps a hittable width: \(context)")
+                XCTAssertGreaterThanOrEqual(layout.button.minX, layout.favicon.maxX,
+                                            "The close button does not cover the favicon: \(context)")
+            }
+        }
+    }
+
     // MARK: - SplitGroup
 
     func testNormalizedFractionsScaleSharesToOneAndFallBackToEqualShares() {

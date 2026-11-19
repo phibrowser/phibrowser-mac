@@ -304,8 +304,11 @@ class OmniBoxViewController: NSViewController {
     // MARK: - Public Methods
 
     func prepareForPresentation() {
+        viewModel.beginV2Presentation()
         viewModel.refreshSearchEngineSpaceShortcut()
         suggestionView.switchToTabAddsSplit = viewModel.isChoosingSplitPane
+        textField.updateSearchPlaceholder(engineName: viewModel.selectedSearchEngine?.name,
+                                          isChoosingSplitPane: viewModel.isChoosingSplitPane)
     }
 
     func handleKeywordSearchSpaceKeyDown(_ event: NSEvent) -> Bool {
@@ -349,6 +352,10 @@ class OmniBoxViewController: NSViewController {
         viewModel.reset()
     }
 
+    func endV2Presentation() {
+        viewModel.endV2Presentation()
+    }
+
     func updateStatus(with tab: Tab) {
         viewModel.updateStatus(with: tab)
     }
@@ -380,7 +387,8 @@ class OmniBoxViewController: NSViewController {
     // MARK: - Private Methods
 
     private func updateKeywordSearchUI(engine: OmniBoxKeywordSearchEngine?, hint: OmniBoxKeywordSearchEngine?) {
-        textField.updateSearchPlaceholder(engineName: engine?.name)
+        textField.updateSearchPlaceholder(engineName: engine?.name,
+                                          isChoosingSplitPane: viewModel.isChoosingSplitPane)
         if engine != nil {
             iconImageView.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
         }

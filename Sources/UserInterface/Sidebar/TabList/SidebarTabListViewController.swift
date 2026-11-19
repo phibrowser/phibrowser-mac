@@ -20,18 +20,52 @@ protocol SidebarTabListItemOwner: AnyObject {
 }
 
 enum SidebarNewTabStickyResolver {
-    static func shouldShowFloatingNewTab(rowRect: CGRect, visibleRect: CGRect) -> Bool {
-        rowRect.minY < visibleRect.minY
+    static func shouldShowFloatingNewTab(rowRect: CGRect, visibleRect: CGRect,
+                                         atTop: Bool = true) -> Bool {
+        atTop ? rowRect.minY < visibleRect.minY : rowRect.maxY > visibleRect.maxY
     }
 
     static func visibleRectExcludingTopOverlay(visibleRect: CGRect, overlayHeight: CGFloat) -> CGRect {
+        visibleRectExcludingOverlay(visibleRect: visibleRect, overlayHeight: overlayHeight, atTop: true)
+    }
+
+    static func visibleRectExcludingOverlay(visibleRect: CGRect, overlayHeight: CGFloat,
+                                            atTop: Bool, isFlipped: Bool = true) -> CGRect {
         let hiddenHeight = max(0, min(overlayHeight, visibleRect.height))
         return CGRect(
             x: visibleRect.origin.x,
-            y: visibleRect.origin.y + hiddenHeight,
+            y: visibleRect.origin.y + (atTop == isFlipped ? hiddenHeight : 0),
             width: visibleRect.width,
             height: visibleRect.height - hiddenHeight
         )
+    }
+
+    static func floatingFrame(scrollFrame: CGRect, contentWidth: CGFloat, rowHeight: CGFloat,
+                              atTop: Bool, containerIsFlipped: Bool) -> CGRect {
+        let height = max(0, min(rowHeight, scrollFrame.height))
+        return CGRect(x: scrollFrame.minX,
+                      y: atTop == containerIsFlipped ? scrollFrame.minY : scrollFrame.maxY - height,
+                      width: contentWidth, height: height)
+    }
+}
+
+/// Keeps a root-level drop on the tab side of the New Tab row, so the drop
+/// line never draws past the button: below it when the button closes the
+/// list, above it when it opens the tab section.
+enum SidebarNewTabDropResolver {
+    static func rootDropIndex(proposed: Int, newTabButtonIndex: Int?, buttonAtTop: Bool) -> Int {
+        guard let newTabButtonIndex else { return proposed }
+        if buttonAtTop {
+            return proposed == newTabButtonIndex ? newTabButtonIndex + 1 : proposed
+        }
+        return min(proposed, newTabButtonIndex)
+    }
+
+    /// The row takes no drop of its own: a drag over it lands in the tab
+    /// slot next to it, the last one when it ends the list and the first one
+    /// when it starts the tab section.
+    static func rootDropIndex(forDropOnButtonAt newTabButtonIndex: Int, buttonAtTop: Bool) -> Int {
+        buttonAtTop ? newTabButtonIndex + 1 : newTabButtonIndex
     }
 }
 
@@ -193,6 +227,11 @@ class SidebarTabListViewController: NSViewController {
     /// Tab and split rows scrolled under the hovered floating New Tab row still
     /// get tracking-area hovers; new and reused cells pick this up on configure.
     private var isTabHoverSuppressed = false
+    /// Rebuilding a group's inner table is the costliest part of scrolling
+    /// a group row into view, so each group keeps its own cell instead of
+    /// taking whichever one the outline's reuse queue hands out. The cells
+    /// carry no identifier, so the outline never queues them for reuse.
+    private var groupCellsByToken: [String: TabGroupCellView] = [:]
     private let floatingNewTabContentMask: CALayer = {
         let layer = CALayer()
         layer.backgroundColor = NSColor.black.cgColor
@@ -262,8 +301,8 @@ class SidebarTabListViewController: NSViewController {
     /// Set while the Space root is opened only so autosave can restore its folders.
     private var isRestoringAutosavedExpansion = false
 
-    /// Drop-target visual feedback: at most one of bookmark folder
-    /// or tab-group is highlighted at a time. Replaces the older
+    /// Drop-target visual feedback: at most one bookmark folder,
+    /// tab group, split partner, or split pane slot is highlighted at a time. Replaces the older
     /// `dropFeedbackFolderGuid: String?` single-purpose flag so the
     /// new tab-group highlight (Phase 3) can ride the same state
     /// machine without parallel bookkeeping.
@@ -271,6 +310,8 @@ class SidebarTabListViewController: NSViewController {
         case none
         case bookmarkFolder(guid: String)
         case tabGroup(token: String)
+        case splitTab(TabSplitDropTarget)
+        case splitPane(SplitPaneDropTarget)
         case spaceRoot
     }
     private var dropFeedbackTarget: DropFeedbackTarget = .none
@@ -331,7 +372,7 @@ class SidebarTabListViewController: NSViewController {
     /// Tracks the identity of the focusing tab we last scrolled to.
     /// Scroll is skipped when the focusing tab hasn't changed (e.g. bookmark expand/collapse).
     /// Update only when scheduling a scroll; clear when focus has no representable sidebar row.
-    private var lastScrolledFocusingTabId: AnyHashable?
+    private var lastScrolledFocusingItemId: AnyHashable?
 
     /// Flag to control whether bookmarks are shown in the sidebar
     private var showBookmarks: Bool = true
@@ -571,6 +612,8 @@ class SidebarTabListViewController: NSViewController {
         // already-applied store delivery, which opens the restore gate and
         // paints — and that paint has to find both sections filled.
         tabSectionController.browserState = browserState
+        // Groups removed while inactive never reached `tabSectionDidUpdate`.
+        pruneGroupCells()
         bookmarkSectionController.setActive(true)
         refreshAllItems()
     }
@@ -628,7 +671,7 @@ class SidebarTabListViewController: NSViewController {
         suppressesGroupUpdateAnimations = false
         scrollAnimationGeneration += 1
         scrollScheduleGeneration += 1
-        lastScrolledFocusingTabId = nil
+        lastScrolledFocusingItemId = nil
         lastSelectedItem = nil
         userInitiatedToggleFolderGuid = nil
         removeFloatingNewTabCell()
@@ -985,7 +1028,7 @@ class SidebarTabListViewController: NSViewController {
     }
 
     private func clearFocusingSelection() {
-        lastScrolledFocusingTabId = nil
+        lastScrolledFocusingItemId = nil
         selectItem(nil)
     }
     
@@ -1855,6 +1898,15 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     }
 
     private func _validateDropImpl(_ outlineView: NSOutlineView, info: NSDraggingInfo, proposedItem item: Any?, proposedChildIndex index: Int) -> NSDragOperation {
+        var item = item
+        var index = index
+        if (item as? SidebarItem)?.itemType == .newTabButton,
+           let buttonIndex = dataSourceChildren(of: nil).firstIndex(where: { $0.itemType == .newTabButton }) {
+            item = nil
+            index = SidebarNewTabDropResolver.rootDropIndex(
+                forDropOnButtonAt: buttonIndex, buttonAtTop: browserState.opensNewTabsAtTop)
+            outlineView.setDropItem(nil, dropChildIndex: index)
+        }
         let originalResolvedItem: Any? = {
             if let provider = item as? UnderlyingBookmarkProviding { return provider.underlyingBookmark }
             return item
@@ -1914,6 +1966,13 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         // this sidebar's tab strip: `sourceState.moveGroupSliceToWindow`
         // mirrors `TabStrip.groupDragControllerCommitMoveCrossWindow`.
         if pasteboard.string(forType: .tabGroup) != nil {
+            if originalResolvedItem == nil, index != NSOutlineViewDropOnItemIndex {
+                let clamped = clampedRootDropIndex(index)
+                if clamped != index {
+                    outlineView.setDropItem(nil, dropChildIndex: clamped)
+                    index = clamped
+                }
+            }
             if isCrossWindowDrag(pasteboard) {
                 guard let sourceState = sourceBrowserState(for: pasteboard),
                       browserState.canAcceptCrossWindowDrag(from: sourceState),
@@ -1967,6 +2026,24 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                 return []
             }
             setDropFeedback(.none)
+            return .move
+        }
+
+        if let (_, target) = splitDropTabs(from: pasteboard,
+                                          onto: originalResolvedItem,
+                                          childIndex: index) {
+            let side = splitDropSide(in: outlineView, at: info.draggingLocation)
+            setDropFeedback(.splitTab(TabSplitDropTarget(
+                tabId: target.guid, side: side)))
+            return .move
+        }
+
+        if let (_, target) = splitPaneDrop(from: pasteboard,
+                                           onto: originalResolvedItem,
+                                           childIndex: index,
+                                           in: outlineView,
+                                           at: info.draggingLocation) {
+            setDropFeedback(.splitPane(target))
             return .move
         }
 
@@ -2040,7 +2117,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         }
         updateDropFeedbackFolder(in: outlineView, with: resolvedItem, childIndex: resolvedIndex, pasteboard: pasteboardItem)
         
-        let maxRootDropIndex = maxRootDropChildIndex()
+        let maxRootDropIndex = clampedRootDropIndex(maxRootDropChildIndex())
         
         if resolvedItem == nil {
             // NSOutlineView has a quirky behavior: dragging an item past the last row
@@ -2076,6 +2153,14 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                proposedChildIndex: resolvedIndex) {
             outlineView.setDropItem(nil, dropChildIndex: snapped)
             resolvedIndex = snapped
+        }
+
+        if resolvedItem == nil, resolvedIndex != NSOutlineViewDropOnItemIndex {
+            let clamped = clampedRootDropIndex(resolvedIndex)
+            if clamped != resolvedIndex {
+                outlineView.setDropItem(nil, dropChildIndex: clamped)
+                resolvedIndex = clamped
+            }
         }
 
         if pasteboard.string(forType: .pinnedTab) != nil {
@@ -2619,7 +2704,45 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             return false
         }
 
+        let splitFeedback = dropFeedbackTarget
         browserState.tabDraggingSession.end()
+
+        if let (draggedTab, targetTab) = splitDropTabs(
+            from: pasteboard,
+            onto: resolvedItem,
+            childIndex: resolvedIndex
+        ) {
+            let side: TabSplitDropSide
+            if case .splitTab(let highlightedTarget) = splitFeedback,
+               highlightedTarget.tabId == targetTab.guid {
+                side = highlightedTarget.side
+            } else {
+                side = splitDropSide(in: outlineView, at: info.draggingLocation)
+            }
+            return browserState.createSplit(
+                leftTabId: side == .left ? draggedTab.guid : targetTab.guid,
+                rightTabId: side == .left ? targetTab.guid : draggedTab.guid,
+                layout: .vertical
+            ) != nil
+        }
+
+        if let (draggedTab, target) = splitPaneDrop(
+            from: pasteboard,
+            onto: resolvedItem,
+            childIndex: resolvedIndex,
+            in: outlineView,
+            at: info.draggingLocation
+        ) {
+            let slot: Int
+            if case .splitPane(let highlightedTarget) = splitFeedback,
+               highlightedTarget.splitId == target.splitId {
+                slot = highlightedTarget.slot
+            } else {
+                slot = target.slot
+            }
+            return browserState.addTabToSplit(
+                target.splitId, tabId: draggedTab.guid, slot: slot)
+        }
 
         // Mirror of the validateDrop off-the-record guard, for redirected
         // drops that land here with a bookmark target anyway.
@@ -3247,6 +3370,14 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         dataSourceChildren(of: nil).count
     }
 
+    /// See `SidebarNewTabDropResolver`.
+    private func clampedRootDropIndex(_ proposed: Int) -> Int {
+        SidebarNewTabDropResolver.rootDropIndex(
+            proposed: proposed,
+            newTabButtonIndex: dataSourceChildren(of: nil).firstIndex { $0.itemType == .newTabButton },
+            buttonAtTop: browserState.opensNewTabsAtTop)
+    }
+
     private func isDragLocationPastLastRow(in outlineView: NSOutlineView, dragY: CGFloat, lastRowRect: NSRect) -> Bool {
         if outlineView.isFlipped {
             return dragY > lastRowRect.maxY
@@ -3281,6 +3412,85 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         return isRowInBookmarkSection(proposedRow)
     }
     
+    /// A single opened tab dropped on another opened tab forms a split.
+    /// Keep gap drops, cross-window transfers, multi-selection drags, and
+    /// existing split pairs on their current reorder paths. Split members
+    /// must share group membership so the merged sidebar row remains valid.
+    private func splitDropTabs(
+        from pasteboard: NSPasteboard,
+        onto item: Any?,
+        childIndex: Int
+    ) -> (dragged: Tab, target: Tab)? {
+        guard childIndex == NSOutlineViewDropOnItemIndex,
+              dragSourceWindowId(from: pasteboard) == browserState.windowId,
+              pasteboard.string(forType: .tabGroup) == nil,
+              pasteboard.string(forType: .phiBookmark) == nil,
+              pasteboard.phiBookmarkGuids().isEmpty,
+              pasteboard.phiNormalTabIds().count <= 1,
+              let draggedId = pasteboard.string(forType: .normalTab).flatMap(Int.init),
+              let target = item as? Tab,
+              target.guid != draggedId,
+              let dragged = browserState.normalTabs.first(where: { $0.guid == draggedId }),
+              browserState.normalTabs.contains(where: { $0.guid == target.guid }),
+              dragged.groupToken == target.groupToken,
+              browserState.splitGroup(forTabId: draggedId) == nil,
+              browserState.splitGroup(forTabId: target.guid) == nil else {
+            return nil
+        }
+        return (dragged, target)
+    }
+
+    private static let splitPaneDropReorderEdge: CGFloat = 8
+
+    /// A single opened tab dropped on a split's row joins that split as a
+    /// pane, in the slot under the pointer. Gap drops, a full split, and
+    /// every drag `splitDropTabs` leaves alone stay on the reorder path.
+    private func splitPaneDrop(
+        from pasteboard: NSPasteboard,
+        onto item: Any?,
+        childIndex: Int,
+        in outlineView: NSOutlineView,
+        at windowPoint: NSPoint
+    ) -> (dragged: Tab, target: SplitPaneDropTarget)? {
+        guard childIndex == NSOutlineViewDropOnItemIndex,
+              dragSourceWindowId(from: pasteboard) == browserState.windowId,
+              pasteboard.string(forType: .tabGroup) == nil,
+              pasteboard.string(forType: .phiBookmark) == nil,
+              pasteboard.phiBookmarkGuids().isEmpty,
+              pasteboard.phiNormalTabIds().count <= 1,
+              let draggedId = pasteboard.string(forType: .normalTab).flatMap(Int.init),
+              let split = item as? SplitSidebarItem,
+              browserState.canAddNormalTabToSplit(split.groupId, tabId: draggedId),
+              let dragged = browserState.normalTabs.first(where: { $0.guid == draggedId }) else {
+            return nil
+        }
+        // Resolve the row from the pointer: `row(forItem:)` can miss a
+        // split row whose item was rebuilt since AppKit cached it.
+        let point = outlineView.convert(windowPoint, from: nil)
+        let row = outlineView.row(at: point)
+        guard row >= 0 else { return nil }
+        // The outline proposes a drop on the row right up to its top edge.
+        // Leave a band at each edge to the reorder path so a tab can still
+        // be placed above or below the split.
+        let rowFrame = outlineView.rect(ofRow: row)
+        guard rowFrame.insetBy(dx: 0, dy: Self.splitPaneDropReorderEdge).contains(point) else {
+            return nil
+        }
+        let slot = SplitPaneDropTarget.slot(
+            atX: point.x, in: rowFrame, paneCount: split.paneCount)
+        return (dragged, SplitPaneDropTarget(splitId: split.groupId, slot: slot))
+    }
+
+    private func splitDropSide(
+        in outlineView: NSOutlineView,
+        at windowPoint: NSPoint
+    ) -> TabSplitDropSide {
+        let point = outlineView.convert(windowPoint, from: nil)
+        let row = outlineView.row(at: point)
+        guard row >= 0 else { return .right }
+        return point.x < outlineView.rect(ofRow: row).midX ? .left : .right
+    }
+
     /// A drop landed directly ON a tab row (`dropChildIndex ==
     /// NSOutlineViewDropOnItemIndex`). Redirect the indicator to "insert
     /// before that tab" in tab-section coordinates, snapping past any
@@ -3371,7 +3581,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         return proposedChildIndex + (snappedDestination - tabDestination)
     }
 
-    private func calculateTabDestinationIndex(from outlineViewIndex: Int) -> Int {
+    func calculateTabDestinationIndex(from outlineViewIndex: Int) -> Int {
         // Translate an NSOutlineView root-row index (drop position) into a
         // `normalTabs` insertion index.
         //
@@ -3394,17 +3604,18 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         let positionInTabItems = max(0, outlineViewIndex - currentTabSectionStart())
         let items = tabSectionController.tabItems
 
-        // Drop at or before the New-Tab-button row → very front of
-        // `normalTabs`. (`tabItems[0]` is always the New-Tab-button.)
-        if positionInTabItems <= 1 {
-            return 0
-        }
+        // The New Tab row can occupy either edge; never subtract a fixed
+        // button offset from the visual position (groups/splits also fold rows).
+        if positionInTabItems == 0 { return 0 }
         // Drop past the last tab-section item → append to `normalTabs`.
         if positionInTabItems >= items.count {
             return browserState.normalTabs.count
         }
 
         let target = items[positionInTabItems]
+        if target.itemType == .newTabButton {
+            return browserState.opensNewTabsAtTop ? 0 : browserState.normalTabs.count
+        }
         if let tab = target as? Tab {
             return browserState.normalTabs.firstIndex(of: tab)
                 ?? browserState.normalTabs.count
@@ -3669,6 +3880,10 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             updateFolderDropFeedbackCell(guid: guid, highlighted: highlighted)
         case .tabGroup(let token):
             updateTabGroupDropFeedbackCell(token: token, highlighted: highlighted)
+        case .splitTab(let target):
+            updateSplitTabDropFeedbackCell(target: target, highlighted: highlighted)
+        case .splitPane(let target):
+            updateSplitPaneDropFeedbackCell(target: target, highlighted: highlighted)
         case .spaceRoot:
             updateSpaceRootDropFeedbackCell(highlighted: highlighted)
         }
@@ -3681,6 +3896,38 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             return
         }
         cell.setDropTargetHighlighted(highlighted)
+    }
+
+    private func updateSplitTabDropFeedbackCell(
+        target: TabSplitDropTarget,
+        highlighted: Bool
+    ) {
+        guard let tab = browserState.normalTabs.first(where: { $0.guid == target.tabId }) else {
+            return
+        }
+        let row = outlineView.row(forItem: tab)
+        guard row >= 0,
+              let cell = outlineView.view(
+                atColumn: 0, row: row, makeIfNecessary: false
+              ) as? SidebarTabCellView else {
+            return
+        }
+        cell.setSplitDropTargetHighlighted(highlighted ? target.side : nil)
+    }
+
+    private func updateSplitPaneDropFeedbackCell(
+        target: SplitPaneDropTarget,
+        highlighted: Bool
+    ) {
+        // Match the cell by the split it shows rather than by item identity,
+        // which goes stale when the split's row item is rebuilt.
+        outlineView.enumerateAvailableRowViews { rowView, _ in
+            guard let cell = rowView.view(atColumn: 0) as? SidebarSplitCellView,
+                  (cell.item as? SplitSidebarItem)?.groupId == target.splitId else {
+                return
+            }
+            cell.setPaneDropSlotHighlighted(highlighted ? target.slot : nil)
+        }
     }
 
     private func updateFolderDropFeedbackCell(guid: String, highlighted: Bool) {
@@ -3885,6 +4132,13 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
                 guard let self else { return }
                 self.toggleItemExpanded(self.spaceRootItem)
             }
+            rootCell.makeMoreMenu = { [weak self] in
+                let menu = NSMenu()
+                guard let self else { return menu }
+                self.contextMenuHelper.populateSpaceRootMenu(menu)
+                self.disableItemsIfAgentLocked(in: menu)
+                return menu
+            }
             cellView = rootCell
         case .bookmark, .bookmarkFolder:
             let identifier = NSUserInterfaceItemIdentifier("BookmarkCell")
@@ -3928,15 +4182,8 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
             cellView = separatorCell!
 
         case .tabGroup:
-            let identifier = NSUserInterfaceItemIdentifier("TabGroupCell")
-            let groupCell: TabGroupCellView
-            if let existing = outlineView.makeView(
-                withIdentifier: identifier, owner: self) as? TabGroupCellView {
-                groupCell = existing
-            } else {
-                groupCell = TabGroupCellView()
-                groupCell.identifier = identifier
-            }
+            let groupCell = (sidebarItem as? TabGroupSidebarItem)
+                .map { cachedGroupCell(for: $0.group.token) } ?? TabGroupCellView()
             groupCell.groupCellDelegate = self
             cellView = groupCell
 
@@ -3961,8 +4208,24 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         if let tabCell = cellView as? SidebarTabCellView {
             tabCell.setActiveSuppressed(browserState.groupOverviewState != nil)
             tabCell.setHoverSuppressed(isTabHoverSuppressed)
+            if let tab = sidebarItem as? Tab {
+                if case .splitTab(let target) = dropFeedbackTarget,
+                   target.tabId == tab.guid {
+                    tabCell.setSplitDropTargetHighlighted(target.side)
+                } else {
+                    tabCell.setSplitDropTargetHighlighted(nil)
+                }
+            }
         }
-        (cellView as? SidebarSplitCellView)?.setHoverSuppressed(isTabHoverSuppressed)
+        if let splitCell = cellView as? SidebarSplitCellView {
+            splitCell.setHoverSuppressed(isTabHoverSuppressed)
+            if case .splitPane(let target) = dropFeedbackTarget,
+               (sidebarItem as? SplitSidebarItem)?.groupId == target.splitId {
+                splitCell.setPaneDropSlotHighlighted(target.slot)
+            } else {
+                splitCell.setPaneDropSlotHighlighted(nil)
+            }
+        }
         if let bookmarkCell = cellView as? BookmarkCellView,
            let bookmark = sidebarItem as? Bookmark {
             bookmarkCell.setDropTargetHighlighted(bookmark.isFolder && dropFeedbackTarget == .bookmarkFolder(guid: bookmark.guid))
@@ -3979,7 +4242,28 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         }
         return cellView
     }
-    
+
+    private func cachedGroupCell(for token: String) -> TabGroupCellView {
+        // A cell still shown in a row, as while a reload replaces that row,
+        // can't be placed in a second one.
+        if let cell = groupCellsByToken[token], cell.superview?.superview == nil {
+            return cell
+        }
+        let cell = TabGroupCellView()
+        groupCellsByToken[token] = cell
+        return cell
+    }
+
+    /// Drops the cells of groups that are gone. A cached cell holds its
+    /// members' `Tab`s, so it must not outlive the group.
+    private func pruneGroupCells() {
+        guard !groupCellsByToken.isEmpty else { return }
+        let liveTokens = Set(tabSectionController.tabItems.compactMap {
+            ($0 as? TabGroupSidebarItem)?.group.token
+        })
+        groupCellsByToken = groupCellsByToken.filter { liveTokens.contains($0.key) }
+    }
+
     func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
         guard let sidebarItem = item as? SidebarItem else { return 32.0 }
         
@@ -4122,8 +4406,7 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
             // insert proxy, then collapse — so the bookmark doesn't animate "into" the folder.
             if let folder = item as? Bookmark, folder.isFolder,
                let focusingTab = browserState.focusingTab,
-               let localGuid = focusingTab.guidInLocalDB,
-               let focusingBookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid),
+               let focusingBookmark = backingBookmark(of: focusingTab),
                isBookmark(focusingBookmark, descendantOf: folder) {
                 
                 let desired = computeFocusedBookmarkPresentation(for: focusingTab, treatingFolderAsCollapsed: folder)
@@ -4152,8 +4435,7 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
         } else {
             if let folder = item as? Bookmark, folder.isFolder,
                let focusingTab = browserState.focusingTab,
-               let localGuid = focusingTab.guidInLocalDB,
-               let focusingBookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid),
+               let focusingBookmark = backingBookmark(of: focusingTab),
                isBookmark(focusingBookmark, descendantOf: folder) {
                 
                 // Single-child shortcut: if the proxy occupies the same visual slot as the real child
@@ -4303,6 +4585,9 @@ extension SidebarTabListViewController: TabSectionDelegate {
     
     func tabSectionDidUpdate(with change: TabSectionChange) {
         guard isActive else { return }
+        if change.rootItemsChanged {
+            pruneGroupCells()
+        }
         // Only the restore transaction can deliver a whole window's tabs
         // before this window's bookmarks exist; tabs arriving one at a time
         // in steady state are never gated.
@@ -4433,10 +4718,13 @@ extension SidebarTabListViewController: TabSectionDelegate {
     }
 
     private var focusingBookmarkHiddenUnderCollapsedFolder: Bookmark? {
-        guard let localGuid = browserState.focusingTab?.guidInLocalDB,
-              let bookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid),
+        guard let bookmark = browserState.focusingTab.flatMap(backingBookmark(of:)),
               isHiddenUnderCollapsedFolder(bookmark) else { return nil }
         return bookmark
+    }
+
+    private func backingBookmark(of tab: Tab) -> Bookmark? {
+        browserState.bookmarkGuidBacking(tab).flatMap { browserState.bookmarkManager.bookmark(withGuid: $0) }
     }
 }
 
@@ -4484,8 +4772,7 @@ extension SidebarTabListViewController {
             restoreSpaceRootExpansion(animated: animated)
             refreshAllItems(animated: animated)
         } else {
-            let bookmark = browserState.focusingTab?.guidInLocalDB
-                .flatMap { browserState.bookmarkManager.bookmark(withGuid: $0) }
+            let bookmark = browserState.focusingTab.flatMap(backingBookmark(of:))
                 ?? floatingBookmarkGuid.flatMap { browserState.bookmarkManager.bookmark(withGuid: $0) }
             let presentation = bookmark.map { rootFloatingPresentation(for: $0, hiddenBookmarkGuid: $0.guid) }
                 ?? .cleared
@@ -4579,7 +4866,7 @@ extension SidebarTabListViewController {
         // folder still gets one, so a freshly built outline (e.g. a re-activated list) shows it.
         let hiddenFocusingGuid = browserState.isBookmarkRootExpanded
             ? focusingBookmarkHiddenUnderCollapsedFolder?.guid
-            : browserState.focusingTab?.guidInLocalDB
+            : browserState.focusingTab.flatMap(backingBookmark(of:))?.guid
         guard let bookmarkGuid = floatingBookmarkGuid ?? hiddenFocusingGuid,
               let bookmark = browserState.bookmarkManager.bookmark(withGuid: bookmarkGuid) else {
             return .cleared
@@ -4729,9 +5016,7 @@ extension SidebarTabListViewController {
             return nil
         }
         
-        guard let localGuid = tab.guidInLocalDB,
-              let bookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid),
-              !bookmark.isFolder else {
+        guard let bookmark = backingBookmark(of: tab), !bookmark.isFolder else {
             return nil
         }
         
@@ -4806,7 +5091,8 @@ extension SidebarTabListViewController {
         let visibleRect = scrollView.contentView.documentVisibleRect
         let shouldShow = SidebarNewTabStickyResolver.shouldShowFloatingNewTab(
             rowRect: rowRect,
-            visibleRect: visibleRect
+            visibleRect: visibleRect,
+            atTop: browserState.opensNewTabsAtTop
         )
 
         if shouldShow {
@@ -4815,7 +5101,7 @@ extension SidebarTabListViewController {
             removeFloatingNewTabCell()
         }
 
-        outlineView.dragAutoscrollTopObstructionHeight = shouldShow ? rowRect.height : 0
+        outlineView.dragAutoscrollTopObstructionHeight = shouldShow && browserState.opensNewTabsAtTop ? rowRect.height : 0
         setOriginalNewTabCellHidden(shouldShow)
     }
 
@@ -4829,7 +5115,6 @@ extension SidebarTabListViewController {
         // masking the scroll view hides the rows under it without the row.
         if floatingView.superview == nil {
             view.addSubview(floatingView, positioned: .above, relativeTo: scrollView)
-            scrollView.scrollerInsets.top = rowRect.height
         }
 
         layoutFloatingNewTabView(floatingView, rowHeight: rowRect.height)
@@ -4849,23 +5134,17 @@ extension SidebarTabListViewController {
     }
 
     private func layoutFloatingNewTabView(_ floatingView: FloatingNewTabView, rowHeight: CGFloat) {
-        let scrollFrame = scrollView.frame
-        let height = max(0, rowHeight)
-        let y = view.isFlipped ? scrollFrame.minY : scrollFrame.maxY - height
-        floatingView.frame = NSRect(
-            x: scrollFrame.minX,
-            y: y,
-            width: scrollView.contentSize.width,
-            height: height
-        )
-
-        let bounds = scrollView.bounds
-        let visibleContentRect = NSRect(
-            x: bounds.minX,
-            y: scrollView.isFlipped ? bounds.minY + height : bounds.minY,
-            width: bounds.width,
-            height: max(0, bounds.height - height)
-        )
+        let atTop = browserState.opensNewTabsAtTop
+        floatingView.sticksToTop = atTop
+        floatingView.frame = SidebarNewTabStickyResolver.floatingFrame(
+            scrollFrame: scrollView.frame, contentWidth: scrollView.contentSize.width,
+            rowHeight: rowHeight, atTop: atTop, containerIsFlipped: view.isFlipped)
+        let height = floatingView.frame.height
+        scrollView.scrollerInsets.top = atTop ? height : 0
+        scrollView.scrollerInsets.bottom = atTop ? 0 : height
+        let visibleContentRect = SidebarNewTabStickyResolver.visibleRectExcludingOverlay(
+            visibleRect: scrollView.bounds, overlayHeight: height,
+            atTop: atTop, isFlipped: scrollView.isFlipped)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         floatingNewTabContentMask.frame = visibleContentRect
@@ -4880,6 +5159,7 @@ extension SidebarTabListViewController {
         floatingNewTabView = nil
         scrollView.layer?.mask = nil
         scrollView.scrollerInsets.top = 0
+        scrollView.scrollerInsets.bottom = 0
         setOriginalNewTabCellHidden(false)
     }
 
@@ -4910,7 +5190,7 @@ extension SidebarTabListViewController {
         cell.isHidden = hidden
     }
 
-    private var floatingNewTabTopOverlayHeight: CGFloat {
+    private var floatingNewTabOverlayHeight: CGFloat {
         guard floatingNewTabView?.superview != nil else { return 0 }
         if let height = floatingNewTabView?.bounds.height, height > 0 {
             return height
@@ -4967,22 +5247,31 @@ extension SidebarTabListViewController {
         }
     }
 
-    private func scheduleScrollToVisible(forItem item: Any?) {
+    /// `groupMember` scrolls only that member's inner row of the group `item`
+    /// into view; a long group can be taller than the visible area.
+    private func scheduleScrollToVisible(forItem item: Any?, groupMember: Tab? = nil) {
         guard let item else { return }
         scrollScheduleGeneration += 1
         let generation = scrollScheduleGeneration
         DispatchQueue.main.async { [weak self] in
             guard let self, generation == self.scrollScheduleGeneration else { return }
             let row = outlineView.row(forItem: item)
-            if row >= 0 {
-                animateScrollRowToVisible(row)
+            guard row >= 0 else { return }
+            var targetRect = outlineView.rect(ofRow: row)
+            if let groupMember,
+               let groupItem = item as? TabGroupSidebarItem,
+               let span = TabGroupCellView.memberRowSpan(of: groupMember,
+                                                         in: groupItem,
+                                                         browserState: browserState) {
+                targetRect.origin.y += span.minY
+                targetRect.size.height = span.height
             }
+            animateScrollRectToVisible(targetRect)
         }
     }
 
-    private func animateScrollRowToVisible(_ row: Int) {
-        guard row >= 0,
-              let scrollView = outlineView.enclosingScrollView else {
+    private func animateScrollRectToVisible(_ rowRect: NSRect) {
+        guard let scrollView = outlineView.enclosingScrollView else {
             return
         }
 
@@ -4994,19 +5283,22 @@ extension SidebarTabListViewController {
             layer.removeAllAnimations()
         }
 
-        let rowRect = outlineView.rect(ofRow: row)
         let visibleRect = clipView.documentVisibleRect
-        let topOverlayHeight = floatingNewTabTopOverlayHeight
-        let unobscuredVisibleRect = SidebarNewTabStickyResolver.visibleRectExcludingTopOverlay(
-            visibleRect: visibleRect,
-            overlayHeight: topOverlayHeight
-        )
+        // A newly inserted row can overflow before the deferred sticky refresh.
+        // Resolve the overlay first so focus scrolling leaves the row unobscured.
+        updateFloatingNewTabVisibility()
+        let overlayHeight = floatingNewTabOverlayHeight
+        let atTop = browserState.opensNewTabsAtTop
+        let topOverlayHeight = atTop ? overlayHeight : 0
+        let bottomOverlayHeight = atTop ? 0 : overlayHeight
+        let unobscuredVisibleRect = SidebarNewTabStickyResolver.visibleRectExcludingOverlay(
+            visibleRect: visibleRect, overlayHeight: overlayHeight, atTop: atTop)
 
         var targetY = visibleRect.origin.y
         if rowRect.minY < unobscuredVisibleRect.minY {
             targetY = rowRect.minY - topOverlayHeight
         } else if rowRect.maxY > unobscuredVisibleRect.maxY {
-            targetY = rowRect.maxY - visibleRect.height
+            targetY = rowRect.maxY - visibleRect.height + bottomOverlayHeight
         } else {
             return
         }
@@ -5037,12 +5329,15 @@ extension SidebarTabListViewController {
             return
         }
         
-        let shouldScroll = tab.id != lastScrolledFocusingTabId
+        // Panes of one split share a bookmark row; switching between them must not rescroll.
+        let bookmark = backingBookmark(of: tab)
+        let scrollTargetId: AnyHashable = bookmark?.id ?? tab.id
+        let shouldScroll = scrollTargetId != lastScrolledFocusingItemId
 
         if let item = allItems.first(where: { $0.id == tab.id }) {
             selectItem(item, clearSelectionFirst: true)
             if shouldScroll {
-                lastScrolledFocusingTabId = tab.id
+                lastScrolledFocusingItemId = scrollTargetId
                 scheduleScrollToVisible(forItem: item)
             }
             return
@@ -5050,8 +5345,7 @@ extension SidebarTabListViewController {
 
         // Grouped tabs render inside `TabGroupCellView`'s inner table —
         // no outline child to select. If the focusing tab belongs to a
-        // visible group, scroll the group's row into view so the user
-        // sees the active tab inside the cell, but skip outline
+        // visible group, scroll its member row into view, but skip outline
         // selection (the inner table drives its own active highlight
         // via SwiftUI).
         for case let groupItem as TabGroupSidebarItem in allItems
@@ -5059,21 +5353,21 @@ extension SidebarTabListViewController {
             $0.guid == tab.guid && $0.groupToken == groupItem.group.token
         }) {
             if shouldScroll {
-                lastScrolledFocusingTabId = tab.id
-                scheduleScrollToVisible(forItem: groupItem)
+                lastScrolledFocusingItemId = scrollTargetId
+                scheduleScrollToVisible(forItem: groupItem, groupMember: tab)
             }
             selectItem(nil)
             return
         }
         
         if let presentation = focusedBookmarkPresentation,
-           let guid = tab.guidInLocalDB,
-           presentation.proxy.underlyingBookmark.guid == guid {
+           let bookmark,
+           presentation.proxy.underlyingBookmark.guid == bookmark.guid {
             let row = outlineView.row(forItem: presentation.proxy)
             if row >= 0 {
                 outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 if shouldScroll {
-                    lastScrolledFocusingTabId = tab.id
+                    lastScrolledFocusingItemId = scrollTargetId
                     scheduleScrollToVisible(forItem: presentation.proxy)
                 }
             } else {
@@ -5082,8 +5376,7 @@ extension SidebarTabListViewController {
             return
         }
         
-        guard let localGuid = tab.guidInLocalDB,
-              let bookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid) else {
+        guard let bookmark else {
             clearFocusingSelection()
             return
         }
@@ -5102,7 +5395,7 @@ extension SidebarTabListViewController {
         if row >= 0 {
             outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             if shouldScroll {
-                lastScrolledFocusingTabId = tab.id
+                lastScrolledFocusingItemId = scrollTargetId
                 scheduleScrollToVisible(forItem: bookmark)
             }
         } else {
@@ -5689,10 +5982,12 @@ extension SidebarTabListViewController: SideBarOutlineViewDelegate {
     }
 
     func outlineView(_ outlineView: NSOutlineView, draggingExited sender: (any NSDraggingInfo)?) {
+        clearDropFeedback()
         endOutlineDestinationDrag()
     }
 
     func outlineView(_ outlineView: NSOutlineView, draggingEnded sender: any NSDraggingInfo) {
+        clearDropFeedback()
         endOutlineDestinationDrag()
     }
     
@@ -5959,3 +6254,19 @@ extension SidebarTabListViewController: NSDraggingSource {
 /// - `shouldExpandItem` blocks expansion when `isDraggingTab == true`;
 ///   `expandFloatingBookmarkParentsIfNeeded` temporarily sets `allowExpandDuringDrag = true` to bypass.
 /// - Folders stay expanded after drag ends; no restoration needed.
+
+extension SidebarTabListViewController {
+    /// Where the list is scrolled. The floating panel and the docked column
+    /// each have a list; a dock or undock gives the one taking over the
+    /// other's position, so the rows stay put.
+    var scrollOffset: NSPoint {
+        get { scrollView?.contentView.bounds.origin ?? .zero }
+        set {
+            guard let scrollView else { return }
+            let clip = scrollView.contentView
+            let target = clip.constrainBoundsRect(NSRect(origin: newValue, size: clip.bounds.size)).origin
+            clip.scroll(to: target)
+            scrollView.reflectScrolledClipView(clip)
+        }
+    }
+}

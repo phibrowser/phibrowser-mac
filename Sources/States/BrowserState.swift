@@ -8,6 +8,9 @@ import Combine
 
 /// Window-scoped browser state for tabs, layout, and sidebar UI.
 class BrowserState {
+    // Optional ownership prevents lifecycle revocation from opening a lazy
+    // store or constructing an adapter in unsupported windows.
+    var omniboxNativeSearchAdapter: OmniboxNativeSearchAdapter?
     enum AIChatSidebarOpenTrigger: String {
         case button
         case shortcut
@@ -107,7 +110,9 @@ class BrowserState {
     }
 
     /// Tabs mirrored from Chromium, including their order.
-    @Published var tabs: [Tab] = []
+    @Published var tabs: [Tab] = [] {
+        didSet { syncSplitBookmarkPaneMarks() }
+    }
     /// Non-pinned tabs shown in the sidebar list.
     @Published var normalTabs: [Tab] = []
     /// Pinned tabs managed on the native side.
@@ -134,6 +139,7 @@ class BrowserState {
     /// tab-index echo caught up. Protected tabs keep their native slot for
     /// one Chromium order echo, then return to normal Chromium resequencing.
     private var nativeOrderProtectedTabIds: Set<Int> = []
+    private var newTabPlacementReconciler = NativeTabPlacementReconciler()
     
     /// Pending requests to mark the next created tab as a native NTP (incognito only).
     private var pendingNativeNtpCount: Int = 0
@@ -203,7 +209,13 @@ class BrowserState {
     /// `openNewTabAsSplit` arrives from Chromium, it is paired with the
     /// stored partner into a vertical split; the slot field decides which
     /// side the *new* tab takes (the partner takes the other slot).
-    var pendingSplitPartnerByCustomGuid: [String: PendingSplitPartner] = [:]
+    var pendingSplitPartnerByCustomGuid: [String: PendingSplitPartner] = [:] {
+        willSet {
+            MainActor.assumeIsolated {
+                omniboxNativeSearchAdapter?.beginContextTransition(reason: "context_changed")
+            }
+        }
+    }
 
     /// Tabs `openNewTabAsSplit` focuses before their split exists, from
     /// their arrival until Chromium's split echo reaches `splits`
@@ -219,7 +231,9 @@ class BrowserState {
     /// the split back a moment after its panes arrive, so `updateNormalTabs`
     /// keeps them out of the tab list meanwhile: listed, each would flash a
     /// row that vanishes once the split lands behind the bookmark cell.
-    var splitPaneIdsOpeningBehindBookmark: Set<Int> = []
+    var splitPaneIdsOpeningBehindBookmark: Set<Int> = [] {
+        didSet { syncSplitBookmarkPaneMarks() }
+    }
 
     /// Panes of a bookmark-bound split the user is closing whole, from the
     /// close request until each is removed. See
@@ -263,9 +277,12 @@ class BrowserState {
     /// reports the split created or grown.
     var pendingSplitAdditionalPaneURLsById: [String: [String]] = [:]
 
-    /// splitId → the bookmarks bound to a split and its panes, noted just
-    /// before one of the panes is replaced. See `swapTabInSplit`.
-    var pendingBoundSplitPaneSwaps: [String: (bookmarkGuids: [String], tabIds: [Int])] = [:]
+    /// splitId → the bookmarks bound to a split, its panes and the tab
+    /// taking one pane's place, noted just before the pane is replaced. See
+    /// `swapTabInSplit`.
+    var pendingBoundSplitPaneSwaps: [String: (bookmarkGuids: [String], tabIds: [Int], incomingTabId: Int)] = [:] {
+        didSet { syncSplitBookmarkPaneMarks() }
+    }
 
     /// "Split with New Tab" under the Omnibox new-tab behavior: the focused
     /// tab is shown beside a blank pane while the omnibox picks the partner.
@@ -277,6 +294,12 @@ class BrowserState {
 
     private var lastLegacyLayout: Bool?
     @Published var layoutMode: LayoutMode = .performance
+
+    /// Evaluate on the destination window when the creation arrives. A source
+    /// Space's layout must not override the target's insertion policy.
+    var opensNewTabsAtTop: Bool {
+        !layoutMode.isTraditional && PhiPreferences.GeneralSettings.newTabsAtTop.loadValue()
+    }
     @Published var lastPhiAIEnabled: Bool = PhiPreferences.AISettings.phiAIEnabled.loadValue()
     private var lastSentinelOnLogin: Bool = PhiPreferences.AISettings.launchSentinelOnLogin.loadValue()
     
@@ -316,6 +339,9 @@ class BrowserState {
     /// Where AI Chat panel tabs are requested and panel records go to Chromium.
     let aiChatPanelBridge: AIChatPanelBridging
 
+    /// Where a tab opened from a link is grouped with its Opener.
+    let tabGroupBridge: TabGroupBridging
+
     /// Test seam: stands in for the sign-in and live-window gates of
     /// `createAIChatTab(for:chromeTabId:)`, which the test process cannot
     /// meet. nil in production.
@@ -336,6 +362,17 @@ class BrowserState {
     /// Split panes Chromium announced it is removing whose `closeTab` has not
     /// run yet. See `splitPaneWillBeRemoved(_:)`.
     var splitPaneIdsBeingRemoved: Set<Int> = []
+    /// The panes, in slot order, of the split each tab just left. Closing a
+    /// pane, Chromium takes it out of the split before it reports the tab
+    /// removed, so `prepareForActiveTabClose` reads the split here to keep
+    /// focus inside it. Kept only until the current burst of Chromium events
+    /// has been handled. See `noteSplitPanesLeft(_:previousTabIds:)`.
+    var splitPaneTabIdsJustLeft: [Int: [Int]] = [:]
+    /// Pinned-split writes this window sent to the store that no pinned-tabs
+    /// emission has shown yet, by record guid. While one is pending the live
+    /// split is the source of truth; otherwise the store is. See
+    /// `reconcilePinnedSplitPartners()`.
+    var pinnedSplitWritesInFlight: [String: PinnedSplitWriteInFlight] = [:]
     var aiChatCollapseWatches: [ObjectIdentifier: (tabId: Int, watch: AnyCancellable)] = [:]
     var aiChatPanelURLWatches: [ObjectIdentifier: AnyCancellable] = [:]
     var aiChatPanelRecordSubscriptions = Set<AnyCancellable>()
@@ -451,7 +488,9 @@ class BrowserState {
     @Published var isDraggingTab = false
 
     /// Side-by-side tab splits, mirrored from Chromium (source of truth).
-    @Published var splits: [SplitGroup] = []
+    @Published var splits: [SplitGroup] = [] {
+        didSet { syncSplitBookmarkPaneMarks() }
+    }
 
     /// Pinned-tab DB guids that the user just asked to reopen as a split via
     /// `openPinnedSplit`. Auto-recreation only fires for guids in this set so
@@ -481,9 +520,26 @@ class BrowserState {
     /// bookmark.guid → splitId of the split that was opened from that
     /// split-view bookmark. Lets `openBookmark` detect that the bookmark is
     /// already open (and re-activate its primary pane) instead of creating
-    /// another duplicate split. Cleared when the split is removed. Not
-    /// persisted — window-scoped.
-    @Published var splitBookmarkBindings: [String: String] = [:]
+    /// another duplicate split. Cleared when the split is removed.
+    /// Window-scoped; saved with the account so a session restore can bind
+    /// the split again (`saveSplitBookmarkBindings`).
+    @Published var splitBookmarkBindings: [String: String] = [:] {
+        didSet {
+            saveSplitBookmarkBindings(since: oldValue)
+            syncSplitBookmarkPaneMarks()
+        }
+    }
+
+    /// Tab id → the wrapper this window last told Chromium the tab is a
+    /// Split Bookmark pane through (`syncSplitBookmarkPaneMarks`). Kept by
+    /// wrapper so a pane that leaves the window, still alive, is unmarked.
+    /// `addressBarNavigationOpensNewTab(for:)` reads it too, so exactly the
+    /// marked panes keep their page on an address-bar submission.
+    private var markedSplitBookmarkPaneWrappers: [Int: WebContentWrapper & NSObject] = [:]
+
+    /// Bookmarks a restored split was bound to before the bookmark store's
+    /// first delivery could confirm they still exist.
+    var restoredSplitBookmarkGuidsAwaitingStore: Set<String> = []
 
     let imagePreviewState: BrowserImagePreviewState
     /// Peek popup state (bound-tab cross-site previews); see the
@@ -599,18 +655,21 @@ class BrowserState {
     /// customGuid namespace persisted on a live peek tab so session restore
     /// can re-bind it to its opener: "phi-peek:" + the opener's key. The key
     /// is the opener's bookmark/pinned record guid when it has one, else the
-    /// paired one-shot marker below. Stamped in `presentPeek`, stripped in
+    /// paired one-shot marker below. Stamped in `presentPeek`, rewritten by
+    /// `setBinding` when the opener's binding changes, stripped in
     /// `adoptPeekTabIntoStrip`. Chromium exempts the "phi-peek" namespaces
     /// everywhere a non-empty custom_value changes behavior (cross-domain
     /// re-homing, tab-group blocking, the extensions' phiSaved bit) — see
     /// phi::IsPhiPeekMarkerValue, which must match these prefixes.
     static let peekTabGuidPrefix = "phi-peek:"
 
-    /// customGuid stamped on a NORMAL opener tab while it carries a peek:
-    /// "phi-peek-opener:" + a pair UUID (normal tabs have no record guid to
+    /// customGuid stamped on an UNBOUND opener tab while it carries a peek —
+    /// a normal tab, or a pane of a split that is not pinned:
+    /// "phi-peek-opener:" + a pair UUID (such tabs have no record guid to
     /// address them across restarts). The peek's marker embeds this whole
     /// string as its opener key, so restore matching is a plain equality
-    /// check either way. Stripped when the peek ends.
+    /// check either way. Also given by `setBinding` to an opener whose
+    /// binding is cleared under a peek. Stripped when the peek ends.
     static let peekOpenerGuidPrefix = "phi-peek-opener:"
 
     static func isPeekTabGuid(_ customGuid: String?) -> Bool {
@@ -697,17 +756,75 @@ class BrowserState {
         aiChatTabs[newId] = aiChatTab
         AppLogInfo("🔄 [AIChat] Migrated split chat tab from '\(oldId)' to '\(newId)'")
     }
-    
+
+    // MARK: - Tab binding
+
+    /// The one place that changes which bookmark or pinned record an open tab
+    /// is bound to: binds an unbound tab, rebinds a bound one, or clears the
+    /// binding (`nil` or an empty string). Moves the tab's AI Chat panel to
+    /// the tab's new identifier, updates `guidInLocalDB`, then writes the
+    /// binding to Chromium.
+    ///
+    /// A Peek open on the tab follows it: the Peek's restore marker is
+    /// rewritten to name the new binding. When the binding is cleared, the
+    /// tab gets (or keeps) a Peek opener marker for the Peek to name, as a
+    /// normal tab that opens a Peek does.
+    ///
+    /// A caller that binds an unbound tab takes it out of its tab group
+    /// first: Chromium does not allow a bound tab in a group. A tab that
+    /// holds only a Peek opener marker counts as unbound.
+    ///
+    /// Callers pass bindings only: never one of the other values kept in the
+    /// same slot (Peek markers and the one-shot markers a new tab arrives
+    /// with). Not for the record objects of the pinned area.
+    ///
+    /// Pass `writeToChromium: false` to hold the Chromium write back, and
+    /// call again with the same binding once it may go out.
+    func setBinding(_ binding: String?, for tab: Tab, writeToChromium: Bool = true) {
+        let newBinding = binding?.isEmpty == false ? binding : nil
+        let isUnbound = tab.guidInLocalDB?.isEmpty != false || Self.isPeekOpenerGuid(tab.guidInLocalDB)
+        assert(newBinding == nil || !isUnbound || tab.groupToken == nil,
+               "A tab must leave its tab group before it is bound")
+        migrateAIChatTab(for: tab, toNewIdentifier: newBinding)
+        let peek = peekState.peek(forOpener: tab.guid)
+        var stored = newBinding
+        if stored == nil, peek != nil {
+            stored = Self.isPeekOpenerGuid(tab.guidInLocalDB)
+                ? tab.guidInLocalDB
+                : Self.peekOpenerGuidPrefix + UUID().uuidString
+        }
+        tab.guidInLocalDB = stored
+        if writeToChromium {
+            tab.webContentWrapper?.updateTabCustomValue(stored ?? "")
+        }
+        guard let peek else { return }
+        // An AI Chat id is not an opener key (`stampPeekRestoreBinding`).
+        let marker = stored.flatMap { Self.isAIChatId($0) ? nil : Self.peekTabGuidPrefix + $0 }
+        peek.guidInLocalDB = marker
+        if writeToChromium {
+            peek.webContentWrapper?.updateTabCustomValue(marker ?? "")
+        }
+    }
+
     private var cancellables = Set<AnyCancellable>()
     
     private(set) lazy var  bookmarkManager: BookmarkManager = { .init(with: self) }()
     private(set) lazy var  extensionManager: ExtensionManager = { .init(browserState: self) }()
     private(set) lazy var  downloadsManager: DownloadsManager = { .init(browserState: self) }()
+    /// This Space's download toasts, kept while another Space is presented
+    /// in the shell's shared overlay.
+    private(set) lazy var livingDownloadsManager = LivingDownloadsManager(downloadsManager: downloadsManager)
     
     // Rebind read-only window publishers when a controller is attached. The
     // subject carries no sidebar value and does not retain the controller.
     private let windowControllerChanges = PassthroughSubject<Void, Never>()
     weak var windowController: SpaceSessionController? {
+        willSet {
+            guard windowController !== newValue else { return }
+            MainActor.assumeIsolated {
+                omniboxNativeSearchAdapter?.beginContextTransition(reason: "context_changed")
+            }
+        }
         didSet { windowControllerChanges.send(()) }
     }
     
@@ -720,9 +837,11 @@ class BrowserState {
          isIncognitoSpace: Bool = false,
          isKioskWindow: Bool = false,
          isAgentSpace: Bool = false,
-         aiChatPanelBridge: AIChatPanelBridging = LiveAIChatPanelBridge()) {
+         aiChatPanelBridge: AIChatPanelBridging = LiveAIChatPanelBridge(),
+         tabGroupBridge: TabGroupBridging = LiveTabGroupBridge()) {
         self.windowId = windowId
         self.aiChatPanelBridge = aiChatPanelBridge
+        self.tabGroupBridge = tabGroupBridge
         self.localStore = localStore
         self.profileId = profileId
         self.spaceId = spaceId
@@ -817,6 +936,7 @@ class BrowserState {
     }
     
     private func syncPinnedTabMetadata(_ existing: Tab, from localTab: Tab) {
+        existing.pinnedIcon = localTab.pinnedIcon
         existing.pinnedLineageId = localTab.pinnedLineageId
         existing.pinnedCreatedDate = localTab.pinnedCreatedDate
         let persistedURL = localTab.pinnedUrl ?? localTab.url
@@ -868,20 +988,14 @@ class BrowserState {
         }
     }
 
-    /// Retargets an open pinned tab in place. custom_value must be cleared
-    /// around the navigation or `CrossDomainNewTabNavigationThrottle` bounces
-    /// a cross-domain load into a new tab.
+    /// Retargets an open pinned tab in place: the load stays in the tab even
+    /// when `url` is on another site, and the tab's binding is not touched.
     private func navigateOpenPinnedTab(_ tab: Tab, to url: String?) {
         guard let url, tab.isOpenned, let wrapper = tab.webContentWrapper else { return }
         if tab.url != url {
             tab.url = url
         }
-        wrapper.updateTabCustomValue("")
-        wrapper.navigate(toURL: url)
-        guard let pinnedGuid = tab.guidInLocalDB else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            wrapper.updateTabCustomValue(pinnedGuid)
-        }
+        wrapper.navigateInPlace(toURL: url)
     }
 
     @MainActor
@@ -970,10 +1084,13 @@ class BrowserState {
 
         // Re-sync every pinned tab against the currently open Chromium tabs.
         syncAllPinnedTabsState()
+        // The records now hold the store's values: retire this window's
+        // writes the store has caught up with.
+        confirmPinnedSplitWritesInFlight()
         // Stamp the pinned-split partner linkage from any live `isPinned`
         // group now that the records exist, so closing a just-pinned split
         // can't strand the pair unlinked while the store write is still in
-        // flight.
+        // flight; adopt what sync landed otherwise.
         reconcilePinnedSplitPartners()
         updateNormalTabs()
     }
@@ -1077,9 +1194,7 @@ class BrowserState {
                   bookmarkGuids.contains(localGuid) else {
                 continue
             }
-            migrateAIChatTab(for: tab, toNewIdentifier: nil)
-            tab.guidInLocalDB = nil
-            tab.webContentWrapper?.updateTabCustomValue("")
+            setBinding(nil, for: tab)
             detachedBookmarkGuids.insert(localGuid)
         }
 
@@ -1338,13 +1453,14 @@ class BrowserState {
     }
 
     /// Preserves a pinned tab's current page as a normal background tab,
-    /// then returns the pinned tab to its stored URL.
+    /// then returns the pinned tab to its stored URL. The page's load stays
+    /// in this Space even when a URL rule matches it.
     func separatePinnedTabFromCurrentURL(_ tab: Tab) {
         guard let context = pinnedTabOriginNavigationContext(for: tab) else {
             return
         }
 
-        createTab(context.currentURL, customGuid: nil, focusAfterCreate: false)
+        openBackgroundTabBypassingSpaceRouting(context.currentURL)
         navigateOpenPinnedTab(context.tab, to: context.originalURL)
     }
 
@@ -1898,7 +2014,9 @@ class BrowserState {
         bookmarkGuidBacking(tab) != nil
     }
 
-    private func bookmarkGuidBacking(_ tab: Tab) -> String? {
+    /// The bookmark `tab` is opened from: its own bookmark, or the split-view
+    /// bookmark bound to its split.
+    func bookmarkGuidBacking(_ tab: Tab) -> String? {
         guard !tab.isPinned else { return nil }
         if let guid = tab.guidInLocalDB, !guid.isEmpty,
            bookmarkManager.bookmark(withGuid: guid) != nil {
@@ -3524,7 +3642,10 @@ class BrowserState {
             consumePendingSplitSlotSwap(for: tab)
         }
 
-        if consumePendingNativeNTP() {
+        // A standalone incognito window's first tab is seeded by Chromium
+        // (`NewEmptyWindow`) rather than `createQuickLookupTab`, so nothing
+        // enqueued it.
+        if consumePendingNativeNTP() || (isIncognito && tabs.isEmpty && tab.isNTP) {
             tab.usesNativeNTP = true
         }
 
@@ -3602,9 +3723,11 @@ class BrowserState {
                                      context: context,
                                      hiddenOpenerTabIds: preseededHiddenOpenerTabIds,
                                      visibleNormalTabIds: normalTabs.map(\.guid))
+        groupTabOpenedFromLinkIfNeeded(tab, context: context)
         if let context, context.creationKind == .linkBackground, !context.isActiveAtCreation {
             MainActor.assumeIsolated {
                 tabSwitchManager.recordBackgroundTab(tab)
+                OverlayToastCenter.shared.showBackgroundTabCreation(tab, in: self)
             }
         }
         restoreAIChatPanel(of: tab, isActiveAtCreation: context?.isActiveAtCreation == true)
@@ -3619,6 +3742,123 @@ class BrowserState {
                 )
             }
         }
+    }
+
+    // MARK: - Tab groups from opened links
+
+    /// Keyed by the live tab id of a pinned tab or Bookmark Tab: the token of
+    /// the tab group its first link formed. Memory only, so after a relaunch
+    /// the Opener's next link starts a new group.
+    private var groupTokenByPinnedOrBookmarkOpenerTabId: [Int: String] = [:]
+
+    /// "Group tabs opened from links": a link the user opened in a new tab on
+    /// purpose, from a regular tab that is not in a tab group, forms a new
+    /// tab group with that tab (its Opener). Runs once the arrival has its
+    /// place in the tab order. Later links from the group's tabs join it
+    /// through Chromium's own rule that a link-opened tab inherits its
+    /// Opener's group. Links from a pinned tab or Bookmark Tab group without
+    /// their Opener.
+    private func groupTabOpenedFromLinkIfNeeded(_ tab: Tab, context: NativeTabCreationContext?) {
+        // A tab that arrived in a group inherited its Opener's group.
+        guard tab.groupToken == nil,
+              let context, context.isUserOpenedNewTab,
+              PhiPreferences.GeneralSettings.groupTabsOpenedFromLinks.loadValue(),
+              windowAllowsGroupingTabsOpenedFromLinks,
+              normalTabOrder.contains(tab.guid),
+              let openerTabId = context.openerTabId,
+              let opener = tabs.first(where: { $0.guid == openerTabId }) else {
+            return
+        }
+        // Pinned tabs and Bookmark Tabs never join a tab group, so their
+        // links form one without them.
+        if isPinnedOrBookmarkTab(opener) {
+            groupTabOpenedFromPinnedOrBookmarkOpener(tab, opener: opener, context: context)
+            return
+        }
+        guard normalTabOrder.contains(opener.guid), opener.groupToken == nil else {
+            return
+        }
+        // Chromium groups a split as a whole; mirror that here.
+        let openerTabIds = splitGroup(forTabId: opener.guid)?.tabIds ?? [opener.guid]
+        guard let token = tabGroupBridge.createGroup(tabIds: openerTabIds + [tab.guid],
+                                                     title: Self.groupName(forOpener: opener,
+                                                                           searchTerms: context.openerSearchTerms),
+                                                     windowId: windowId) else {
+            return
+        }
+        // Chromium stacks the new tab right after the Opener; tabs opened
+        // from the Opener earlier stay where they are, outside the group.
+        // Mac order only: Chromium has already moved it.
+        normalTabOrder.removeAll { $0 == tab.guid }
+        if let anchorIndex = openerTabIds.compactMap({ normalTabOrder.firstIndex(of: $0) }).max() {
+            normalTabOrder.insert(tab.guid, at: anchorIndex + 1)
+        }
+        let updates = (openerTabIds + [tab.guid]).map { (tabId: $0, newToken: Optional(token)) }
+        MainActor.assumeIsolated {
+            applyOptimisticGroupMembership(updates: updates)
+        }
+    }
+
+    /// A link from a pinned tab or Bookmark Tab forms a group on its own,
+    /// where the tab already landed in the regular tabs; further links from
+    /// the same Opener join that group.
+    private func groupTabOpenedFromPinnedOrBookmarkOpener(_ tab: Tab,
+                                                          opener: Tab,
+                                                          context: NativeTabCreationContext) {
+        // Forget groups that are gone and Openers whose live tab closed.
+        // Pruning here rather than when the group closes is enough: Undo
+        // Close reopens a group under a new token, so the Opener's next link
+        // still starts a new group.
+        groupTokenByPinnedOrBookmarkOpenerTabId = groupTokenByPinnedOrBookmarkOpenerTabId.filter { openerTabId, token in
+            tabs.contains { $0.guid == openerTabId } && tabs.contains { $0.groupToken == token }
+        }
+        let token: String
+        if let existingToken = groupTokenByPinnedOrBookmarkOpenerTabId[opener.guid] {
+            tabGroupBridge.addTabs([tab.guid], toGroup: existingToken, windowId: windowId)
+            token = existingToken
+        } else {
+            guard let newToken = tabGroupBridge.createGroup(tabIds: [tab.guid],
+                                                            title: Self.groupName(forOpener: opener,
+                                                                                  searchTerms: context.openerSearchTerms),
+                                                            windowId: windowId) else {
+                return
+            }
+            groupTokenByPinnedOrBookmarkOpenerTabId[opener.guid] = newToken
+            token = newToken
+        }
+        MainActor.assumeIsolated {
+            applyOptimisticGroupMembership(tabId: tab.guid, newToken: token)
+        }
+    }
+
+    /// A pinned tab or a Bookmark Tab, the tabs Chromium never puts in a tab
+    /// group. A regular tab that only carries a Peek marker is neither.
+    private func isPinnedOrBookmarkTab(_ tab: Tab) -> Bool {
+        if tab.isPinned || isBookmarkBackedTab(tab) { return true }
+        guard let localGuid = tab.guidInLocalDB, !localGuid.isEmpty else { return false }
+        return pinnedTabs.contains { $0.guidInLocalDB == localGuid }
+    }
+
+    /// Only a regular window's Space instance or an Incognito window groups
+    /// tabs: never an Agent Space (even while the user has taken it over),
+    /// a Kiosk window or a Shadow window. Popup and app windows have no
+    /// `BrowserState`.
+    private var windowAllowsGroupingTabsOpenedFromLinks: Bool {
+        let isAgentSpaceWindow = isAgentSpace || MainActor.assumeIsolated {
+            AgentSpaceManager.shared.isAgentSpace(spaceId)
+        }
+        return !isAgentSpaceWindow && !isKioskWindow
+            && windowController?.browserType != .shadow
+    }
+
+    /// The Opener's search terms when it is a search results page, else its
+    /// title, else its site. Set once when the group is created.
+    private static func groupName(forOpener opener: Tab, searchTerms: String?) -> String? {
+        if let searchTerms, !searchTerms.isEmpty { return searchTerms }
+        let title = (opener.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !title.isEmpty { return title }
+        let site = URLProcessor.displayName(for: opener.url ?? "")
+        return site.isEmpty ? nil : site
     }
 
     // MARK: - Peek (bound-tab cross-site popups)
@@ -3656,10 +3896,9 @@ class BrowserState {
     private var pendingExplicitPeek: PendingExplicitPeek?
 
     /// Address-bar submission in flight from a bookmark/pinned-bound row.
-    /// Chromium reports the tab the omnibox spawns as a link-FOREGROUND child
-    /// of the submitting tab — indistinguishable at arrival from a real link
-    /// click — so without this the Peek pipeline would divert it into a peek,
-    /// which is precisely the surface the submission is meant to escape.
+    /// Older frameworks report omnibox-created tabs as link-foreground
+    /// children, indistinguishable from real link clicks. Newer frameworks
+    /// identify typed arrivals explicitly, but must still consume this claim.
     /// One-shot, consumed by the first arrival from that opener.
     private struct PendingAddressBarTab {
         let openerTabId: Int
@@ -3719,12 +3958,44 @@ class BrowserState {
             }
     }
 
+    /// Whether a new foreground tab that `openerTabId` opens for `urlString`
+    /// opens in the Peek panel on its own: the automatic path of
+    /// `maybeDivertPeekCandidate` and `resolvePeekCandidate`, answered before
+    /// the tab exists. Chromium asks as it creates such a tab and keeps its
+    /// first load in this window when the answer is yes, because the Peek is
+    /// marked only after that load has started. Keep in step with those two.
+    func opensAutoPeek(forLinkFrom openerTabId: Int, urlString: String) -> Bool {
+        let isAgentSpaceWindow = MainActor.assumeIsolated {
+            AgentSpaceManager.shared.isAgentSpace(spaceId)
+        }
+        guard !isIncognito, !isAgentSpaceWindow, !layoutMode.isTraditional,
+              PhiPreferences.GeneralSettings.peekViewEnabled.loadValue(),
+              PhiPreferences.GeneralSettings.autoPeekViewEnabled.loadValue(),
+              let boundURLString = boundURLStringForPeekOpener(openerTabId) else { return false }
+        let scheme = URL(string: urlString)?.scheme?.lowercased() ?? ""
+        guard scheme == "http" || scheme == "https" else { return false }
+        return autoPeeksLink(boundURLString: boundURLString, targetURLString: urlString)
+    }
+
+    /// The site rule of the automatic Peek: a link leaving the bound row's
+    /// site peeks; one staying on it peeks only while the same-site option
+    /// is on. Shared by `opensAutoPeek` and `resolvePeekCandidate`.
+    private func autoPeeksLink(boundURLString: String, targetURLString: String) -> Bool {
+        PhiPreferences.GeneralSettings.autoPeekSameSiteLinksEnabled.loadValue()
+            || !peekIsSameSite(boundURLString, targetURLString)
+    }
+
     /// Diverts a freshly arrived Chromium tab into the Peek pipeline when it
     /// is a foreground link child of a bookmark- or pinned-bound opener.
     /// Returns true when the tab was taken over (kept out of `tabs`).
     private func maybeDivertPeekCandidate(_ tab: Tab, context: NativeTabCreationContext?) -> Bool {
-        // Tab arrivals are delivered on the main thread (EventBus hops via
-        // Task { @MainActor }); assumeIsolated mirrors the focuseTab pattern.
+        // Consume before the kind and preference gates: a typed arrival must
+        // not leave a stale claim that suppresses the next genuine link.
+        let isAddressBarArrival = context?.openerTabId.map {
+            consumeAddressBarNewTab(openerTabId: $0)
+        } ?? false
+        // Tab arrivals are delivered on the main queue by EventBus;
+        // assumeIsolated mirrors the focuseTab pattern.
         let isAgentSpaceWindow = MainActor.assumeIsolated {
             AgentSpaceManager.shared.isAgentSpace(spaceId)
         }
@@ -3749,7 +4020,7 @@ class BrowserState {
         if let customGuid = tab.guidInLocalDB, !customGuid.isEmpty { return false }
         // An address-bar submission from a bound row asked for a plain new
         // tab; Chromium just reports it like a link child. Never peek it.
-        if consumeAddressBarNewTab(openerTabId: openerTabId) {
+        if isAddressBarArrival {
             AppLogInfo("👀 [Peek] tabId=\(tab.guid) is an address-bar new tab from opener=\(openerTabId) — not a candidate")
             return false
         }
@@ -3911,19 +4182,23 @@ class BrowserState {
     }
 
     /// Whether an address-bar submission made while `tab` is focused must
-    /// open a NEW tab instead of navigating `tab` itself. True for the
-    /// sidebar rows that stand for a stored URL — a bookmark's tab and a
-    /// pinned tab — in the vertical layouts: navigating them in place either
-    /// bounces the load into a Peek (bookmark) or re-points the pinned row
-    /// and its icon at whatever was typed. The traditional (Comfortable)
-    /// layout has neither surface and keeps plain same-tab navigation.
+    /// open a NEW tab instead of navigating `tab` itself. True in the
+    /// vertical layouts for the bound tabs. A bookmark's tab or pinned tab
+    /// navigated in place would bounce the load into a Peek (bookmark) or
+    /// re-point the pinned row and its icon at whatever was typed. A Split
+    /// Bookmark pane would load the typed URL past Space URL rules; a pane
+    /// counts when its mark was pushed to Chromium, so the two agree. The
+    /// traditional (Comfortable) layout has no Bookmark Tab or Split
+    /// Bookmark and keeps plain same-tab navigation, pinned tabs included.
     func addressBarNavigationOpensNewTab(for tab: Tab) -> Bool {
         guard !layoutMode.isTraditional else { return false }
         return boundRecordURLString(for: tab) != nil
+            || markedSplitBookmarkPaneWrappers[tab.guid] != nil
     }
 
-    /// Completes the pending candidate's decision: same site (or non-web
-    /// target) → adopt as a normal tab; cross-site → present the Peek panel.
+    /// Completes the pending candidate's decision: same site (unless the
+    /// same-site option is on) or non-web target → adopt as a normal tab;
+    /// otherwise → present the Peek panel.
     /// Always entered on a clean main turn.
     private func resolvePeekCandidate(targetURLString: String) {
         guard let candidate = peekCandidate else { return }
@@ -3960,12 +4235,12 @@ class BrowserState {
         let isWebURL = scheme == "http" || scheme == "https"
         if !isWebURL || layoutMode.isTraditional
             || !PhiPreferences.GeneralSettings.autoPeekViewEnabled.loadValue()
-            || peekIsSameSite(candidate.boundURLString, targetURLString) {
+            || !autoPeeksLink(boundURLString: candidate.boundURLString, targetURLString: targetURLString) {
             AppLogInfo("👀 [Peek] tabId=\(candidate.tab.guid) url=\(targetURLString) adopting as normal tab")
             adoptPeekTabIntoStrip(candidate.tab, context: candidate.context, activate: true)
             return
         }
-        AppLogInfo("👀 [Peek] tabId=\(candidate.tab.guid) url=\(targetURLString) cross-site — presenting peek")
+        AppLogInfo("👀 [Peek] tabId=\(candidate.tab.guid) url=\(targetURLString) auto — presenting peek")
         presentPeek(candidate.tab,
                     context: candidate.context,
                     openerTabId: candidate.openerTabId,
@@ -4041,37 +4316,7 @@ class BrowserState {
            wrapper.responds(to: #selector(WebContentWrapper.updateIsPeekSurface(_:))) {
             wrapper.updateIsPeekSurface(true)
         }
-        // Persist the opener binding for session restore: the markers ride
-        // Chromium's session commands and come back as the restored tabs'
-        // customGuid (see peekTabGuidPrefix). Bookmark/pinned openers are
-        // addressed by their stable record guid; a normal opener gets a
-        // paired one-shot marker of its own, reused across peek
-        // replacements.
-        if let opener = tabs.first(where: { $0.guid == openerTabId }) {
-            var openerKey: String?
-            if let localGuid = opener.guidInLocalDB, !localGuid.isEmpty {
-                if !Self.isAIChatId(localGuid) {
-                    openerKey = localGuid
-                }
-            } else if splitGroup(forTabId: openerTabId) == nil {
-                // Not for a split pane: split operations read a pane's
-                // guidInLocalDB as a binding and clear it, and a restored
-                // peek is never re-bound to a split pane anyway
-                // (presentRestoredPeek).
-                let pairKey = Self.peekOpenerGuidPrefix + UUID().uuidString
-                opener.guidInLocalDB = pairKey
-                opener.webContentWrapper?.updateTabCustomValue(pairKey)
-                openerKey = pairKey
-            }
-            if let openerKey {
-                let marker = Self.peekTabGuidPrefix + openerKey
-                if tab.guidInLocalDB != marker {
-                    tab.guidInLocalDB = marker
-                    tab.webContentWrapper?.updateTabCustomValue(marker)
-                }
-                AppLogInfo("👀 [Peek] restore binding stamped: peek=\(tab.guid) openerKey=\(openerKey)")
-            }
-        }
+        stampPeekRestoreBinding(on: tab, openerTabId: openerTabId)
         installPeekOpenerWatchIfNeeded()
         peekState.present(tab, openerTabId: openerTabId)
         MainActor.assumeIsolated {
@@ -4087,21 +4332,48 @@ class BrowserState {
         }
     }
 
+    /// Persists the opener binding of the peek `tab` for session restore:
+    /// the markers ride Chromium's session commands and come back as the
+    /// restored tabs' customGuid (see peekTabGuidPrefix). Bookmark/pinned
+    /// openers are addressed by their stable record guid; an unbound opener
+    /// — a normal tab, or a pane of a split that is not pinned — gets a
+    /// paired one-shot marker of its own, reused across peek replacements.
+    func stampPeekRestoreBinding(on tab: Tab, openerTabId: Int) {
+        guard let opener = tabs.first(where: { $0.guid == openerTabId }) else { return }
+        var openerKey: String?
+        if let localGuid = opener.guidInLocalDB, !localGuid.isEmpty {
+            if !Self.isAIChatId(localGuid) {
+                openerKey = localGuid
+            }
+        } else {
+            let pairKey = Self.peekOpenerGuidPrefix + UUID().uuidString
+            opener.guidInLocalDB = pairKey
+            opener.webContentWrapper?.updateTabCustomValue(pairKey)
+            openerKey = pairKey
+        }
+        guard let openerKey else { return }
+        let marker = Self.peekTabGuidPrefix + openerKey
+        if tab.guidInLocalDB != marker {
+            tab.guidInLocalDB = marker
+            tab.webContentWrapper?.updateTabCustomValue(marker)
+        }
+        AppLogInfo("👀 [Peek] restore binding stamped: peek=\(tab.guid) openerKey=\(openerKey)")
+    }
+
     /// Re-binds a restored peek tab (identified by its `peekTabGuidPrefix`
-    /// customGuid) to its live opener. Entered deferred, on a clean main
-    /// turn — never from the restore replay stack (presentPeek reaches the
-    /// bridge synchronously). Falls back to adopting the page as a plain
-    /// tab when the opener is gone, in a split, already carrying a peek, or
-    /// Peek is unavailable — the restored page must never die with its
-    /// marker. The snapshot's `activeTabId` stays the focus authority
-    /// (`activatesOpener: false`).
+    /// customGuid) to its live opener, a split pane included: the split is
+    /// replayed before this runs. Entered deferred, on a clean main turn —
+    /// never from the restore replay stack (presentPeek reaches the bridge
+    /// synchronously). Falls back to adopting the page as a plain tab when
+    /// the opener is gone, already carrying a peek, or Peek is unavailable
+    /// — the restored page must never die with its marker. The snapshot's
+    /// `activeTabId` stays the focus authority (`activatesOpener: false`).
     private func presentRestoredPeek(_ tab: Tab,
                                      context: NativeTabCreationContext?,
                                      openerTabId: Int) {
         guard PhiPreferences.GeneralSettings.peekViewEnabled.loadValue(),
               !layoutMode.isTraditional,
               tabs.contains(where: { $0.guid == openerTabId }),
-              splitGroup(forTabId: openerTabId) == nil,
               peekState.peek(forOpener: openerTabId) == nil else {
             AppLogInfo("👀 [Peek] restored peek tabId=\(tab.guid) cannot re-bind to opener=\(openerTabId) — adopting as a normal tab")
             if peekState.peek(forOpener: openerTabId) == nil {
@@ -5143,6 +5415,30 @@ class BrowserState {
             return
         }
 
+        let isOrdinaryCreation = (context?.creationKind == .typedNewTab
+            || context?.creationKind == .typedNavigation)
+            && restoreTransactionPendingGuids == nil
+            && (tab.guidInLocalDB?.isEmpty ?? true)
+            && tab.groupToken == nil
+            && splitGroup(forTabId: tab.guid) == nil
+        if isOrdinaryCreation {
+            if opensNewTabsAtTop {
+                placeOrdinaryNewTabAtStart(tab)
+            } else {
+                // Eligible ordinary creations already append in Chromium.
+                // Do not issue a manual move: it can rewrite opener children.
+                insertIntoNormalTabOrder(tabGuid: tab.guid, at: normalTabOrder.count)
+            }
+            return
+        }
+        // Typed tabs with structural ownership (for example a split seed)
+        // retain their Chromium placement rather than inheriting the default.
+        var placementContext = context
+        if placementContext?.creationKind == .typedNewTab
+            || placementContext?.creationKind == .typedNavigation {
+            placementContext?.creationKind = .explicitInsert
+        }
+
         let shouldSyncHiddenOpenerOrder: Bool = {
             guard let context,
                   let openerTabId = context.openerTabId,
@@ -5154,7 +5450,7 @@ class BrowserState {
 
         if let insertionIndex = NativeTabDecisionEngine.insertionIndex(
             visibleNormalTabIds: visibleNormalTabIds,
-            context: context,
+            context: placementContext,
             relationGraph: nativeRelationGraph,
             splitLastTabIdByMember: splitLastTabIdByMemberMap(),
             hiddenOpenerTabIds: hiddenOpenerTabIds
@@ -5168,6 +5464,33 @@ class BrowserState {
 
         AppLogDebug("[NativeTab] handleNewTabFromChromium falling back to updateNormalTabs for tabId=\(tab.guid)")
         updateNormalTabs()
+    }
+
+    private func placeOrdinaryNewTabAtStart(_ tab: Tab) {
+        let bridge = ChromiumLauncher.sharedInstance().bridge
+        if let bridge,
+           !bridge.responds(to: #selector(PhiChromiumBridgeProtocol.placeNewTab(withWindowId:tabId:beforeTabId:))) {
+            AppLogWarn("[NativeTab] new-tab placement requires the matching Chromium framework")
+            updateNormalTabs()
+            return
+        }
+        insertIntoNormalTabOrder(tabGuid: tab.guid, at: 0)
+        guard let bridge,
+              normalTabOrder.contains(tab.guid),
+              let move = normalTabRelativeOrderSyncMove(tabId: tab.guid),
+              case .before(let anchorTabId) = move.anchor else { return }
+        let token = newTabPlacementReconciler.begin(tabId: tab.guid)
+        bridge.placeNewTab(withWindowId: windowId.int64Value,
+                          tabId: tab.guid.int64Value,
+                          beforeTabId: anchorTabId.int64Value)
+        // The bridge emits its final full-strip snapshot synchronously, even
+        // for a rejected/no-op move. EventBus and this completion use the same
+        // FIFO main queue, outside Chromium's mutation stack.
+        EventBus.shared.enqueue { [weak self] in
+            guard let self,
+                  let indices = self.newTabPlacementReconciler.finish(tabId: tab.guid, token: token) else { return }
+            self.reorderTabs(indices)
+        }
     }
 
     /// Applies one restored-window snapshot as a single transaction (T3B):
@@ -5308,6 +5631,7 @@ class BrowserState {
         // no matter how this unwinds.
         restoreTransactionPendingGuids = Set(batch.map { $0.tab.guid })
         defer { restoreTransactionPendingGuids = nil }
+        if isRestore { takeSplitBookmarkBindingsFromPreviousRunIfNeeded() }
 
         if let indices = snapshot.indices {
             let combined = tabs + batch.map { $0.tab }
@@ -5348,6 +5672,9 @@ class BrowserState {
         for action in snapshot.splitActions {
             switch action {
             case let .created(splitId, tabIds, layout, fractions):
+                // Before the split lands, so it hides its panes behind the
+                // bookmark in this same transaction.
+                if isRestore { bindRestoredSplitToItsBookmark(splitId: splitId) }
                 handleSplitCreated(splitId: splitId,
                                    tabIds: tabIds,
                                    layout: layout,
@@ -5395,12 +5722,59 @@ class BrowserState {
         // into the session snapshot.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            // The marks the transaction changed (a restored split bound to
+            // its bookmark), held back from the replay stack.
+            self.syncSplitBookmarkPaneMarks()
             for (tab, _) in batch {
                 self.consumePendingSplitPartner(for: tab)
                 self.consumePendingPrimarySplit(for: tab)
                 self.consumePendingSplitSlotSwap(for: tab)
             }
         }
+    }
+
+    // MARK: - Split Bookmark pane marks
+
+    /// Tells Chromium which tabs are Split Bookmark panes, so Space URL rules
+    /// leave every navigation inside them in place, as they do for a pinned
+    /// tab or Bookmark Tab (whose custom value already says so; a pane has
+    /// none). The marked tabs are the live panes of every split bound to a
+    /// Split Bookmark, plus the panes on their way into or through one, so a
+    /// pane stays marked while the binding is briefly missing:
+    /// - a pane opening behind its bookmark is marked as it arrives, in the
+    ///   same turn its split-pending marker is cleared;
+    ///   `consumePendingPrimarySplit` clears the first pane's before the
+    ///   split even exists;
+    /// - a bound split replacing a pane keeps its panes and the incoming tab
+    ///   marked while Chromium removes the split and creates it again under
+    ///   its id (`swapTabInSplit`); the incoming tab may have just lost its
+    ///   own marker (`consumePendingSplitSlotSwap`).
+    ///
+    /// Runs whenever these inputs or the tab list change, and pushes only the
+    /// difference. A restore transaction runs in Chromium's replay stack, so
+    /// it pushes nothing; its epilogue syncs on the next turn. A restored pane
+    /// does not load until it is shown, and that load is a restore, which the
+    /// rules leave alone.
+    private func syncSplitBookmarkPaneMarks() {
+        if restoreTransactionPendingGuids != nil { return }
+        var paneIds = splitPaneIdsOpeningBehindBookmark
+        for splitId in splitBookmarkBindings.values {
+            paneIds.formUnion(splitGroup(forId: splitId)?.tabIds ?? [])
+        }
+        for swap in pendingBoundSplitPaneSwaps.values {
+            paneIds.formUnion(swap.tabIds + [swap.incomingTabId])
+        }
+        var marked: [Int: WebContentWrapper & NSObject] = [:]
+        for tab in tabs where paneIds.contains(tab.guid) {
+            marked[tab.guid] = tab.webContentWrapper
+        }
+        for (tabId, wrapper) in markedSplitBookmarkPaneWrappers where marked[tabId] !== wrapper {
+            wrapper.setPhiBoundTab?(false)
+        }
+        for (tabId, wrapper) in marked where markedSplitBookmarkPaneWrappers[tabId] !== wrapper {
+            wrapper.setPhiBoundTab?(true)
+        }
+        markedSplitBookmarkPaneWrappers = marked
     }
 
     private func preseedHiddenOpenerInsertionIfNeeded(
@@ -5506,13 +5880,26 @@ class BrowserState {
             "graph={openers=\(nativeRelationGraph.openerByTabId), " +
             "localFix=\(nativeRelationGraph.locallyFixedOpenerTabIds)}"
         )
-        var targetTabId = NativeTabDecisionEngine.selectionTarget(
+        // A pane closing out of a split that stays up hands focus to another
+        // of its panes, ahead of every opener and neighbor rule: the split,
+        // not the tab after it, stays the active tab. By the time Chromium
+        // reports the removal it has already taken the pane out of the split,
+        // so the split it just left counts too.
+        let splitPaneTarget = (splitGroup(forTabId: tabId)?.tabIds ?? splitPaneTabIdsJustLeft[tabId]).flatMap {
+            NativeTabDecisionEngine.splitPaneSelectionTarget(
+                splitPaneTabIds: $0,
+                closingTabId: tabId,
+                visibleNormalTabIds: visibleIds
+            )
+        }
+        var targetTabId = splitPaneTarget ?? NativeTabDecisionEngine.selectionTarget(
             visibleNormalTabIds: visibleIds,
             closingTabId: tabId,
             relationGraph: nativeRelationGraph
         )
 
-        if let target = targetTabId,
+        if splitPaneTarget == nil,
+           let target = targetTabId,
            nativeRelationGraph.openerByTabId[tabId] != nil,
            !isOpenerRelated(target: target, closingTabId: tabId) {
             if let pinnedTarget = findPinnedOrBookmarkAncestor(of: tabId),
@@ -6137,23 +6524,15 @@ class BrowserState {
     
     func toggleTabPinStatus(_ tabId: Int, guidInDB: String?) {
         if let opennedTab = tabs.first(where: { $0.guid == tabId }) {
-            // A bookmark-backed tab is not pinned yet still carries a non-empty
-            // guidInLocalDB (the bookmark GUID). The branch below treats any
-            // non-empty guidInLocalDB as "already pinned" and would unpin it,
-            // which severs the bookmark binding and leaves the tab neither
-            // pinned nor bookmarked. Pin it like a normal tab instead: a fresh
-            // pinned-record GUID is minted and the live tab retargeted, while
-            // the original bookmark (a separate record keyed by its own GUID)
-            // is left in place.
-            if !opennedTab.isPinned,
-               let bookmarkGuid = opennedTab.guidInLocalDB, !bookmarkGuid.isEmpty,
-               bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil {
-                moveNormalTab(tabId: opennedTab.guid, toPinnd: -1, selectAfterMove: opennedTab.isActive)
-                opennedTab.isPinned = true
-                updateNormalTabs()
-                return
-            }
-            if opennedTab.isPinned || opennedTab.guidInLocalDB?.isEmpty == false {
+            // The live tab of a pinned record is not always flagged
+            // `isPinned`, so a binding to a current pinned record counts too.
+            // Any other binding does not, and the tab is pinned as a new
+            // record: a bookmark's guid (the bookmark stays in place), a Peek
+            // opener marker, or the guid of a record from before a pinned tab
+            // scope change, which unpinning would resolve through its lineage
+            // to the current record and delete.
+            if opennedTab.isPinned
+                || pinnedTabs.contains(where: { $0.guidInLocalDB == opennedTab.guidInLocalDB }) {
                 if let pinnedGuid = opennedTab.guidInLocalDB,
                    let pinnedTab = pinnedTabs.first(where: { $0.guidInLocalDB == pinnedGuid }),
                    pinnedSplitDBGuids(forPinnedTab: pinnedTab) != nil {
@@ -6163,16 +6542,9 @@ class BrowserState {
                     return
                 }
 
-                // Migrate AI Chat tab association before changing identifier
-                // When unpinning, identifier changes from guidInLocalDB to chromium guid
-                migrateAIChatTab(for: opennedTab, toNewIdentifier: nil)
-
                 clearPinnedSplitPartnerReference(forPinnedGuid: opennedTab.guidInLocalDB)
                 localStore.removePinnedTab(opennedTab, profileId: profileId, spaceId: spaceId)
-                opennedTab.guidInLocalDB = nil
-                if let wrapper = opennedTab.webContentWrapper {
-                    wrapper.updateTabCustomValue("")
-                }
+                setBinding(nil, for: opennedTab)
                 opennedTab.isPinned = false
                 insertIntoNormalTabOrder(tabGuid: opennedTab.guid,
                                          at: normalTabOrder.count,
@@ -6239,6 +6611,60 @@ class BrowserState {
         }
     }
 
+    func createOrdinaryTab(_ url: String) {
+        let windowId = self.windowId.int64Value
+        performWithBrowser {
+            guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
+            if bridge.responds(to: #selector(PhiChromiumBridgeProtocol.createOrdinaryTab(withUrl:windowId:activateWindow:bypassSpaceRouting:))) {
+                if !bridge.createOrdinaryTab(withUrl: url, windowId: windowId,
+                                             activateWindow: true, bypassSpaceRouting: false) {
+                    Self.reportOrdinaryTabOpenFailure()
+                }
+            } else {
+                bridge.createNewTab(withUrl: url, windowId: windowId,
+                                    customGuid: nil, focusAfterCreate: true)
+            }
+        }
+    }
+
+    /// Opens `url` as a background tab that Chromium treats as a ⌘-clicked
+    /// link's: its load, the load's redirects and the page's own redirects
+    /// without a user gesture stay in this window even when a URL rule
+    /// matches them. The first other navigation in the tab is routed.
+    func openBackgroundTabBypassingSpaceRouting(_ url: String) {
+        let windowId = self.windowId.int64Value
+        performWithBrowser {
+            guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
+            if bridge.responds(to: #selector(PhiChromiumBridgeProtocol.openBackgroundTabBypassingSpaceRouting(withUrl:windowId:))) {
+                bridge.openBackgroundTabBypassingSpaceRouting?(withUrl: url, windowId: windowId)
+            } else {
+                // An older framework: an ordinary background tab, which is routed.
+                bridge.createNewTab(withUrl: url, windowId: windowId,
+                                    customGuid: nil, focusAfterCreate: false)
+            }
+        }
+    }
+
+    /// Do not reopen a failed destination in an unrelated profile. Defer UI
+    /// until after the Chromium call unwinds; alerts must not nest its run loop.
+    static func reportOrdinaryTabOpenFailure() {
+        DispatchQueue.main.async {
+            let title = NSLocalizedString("tabs.openFailed.title", value: "Couldn’t open tab", comment: "Tab open failure title")
+            let message = NSLocalizedString("tabs.openFailed.message", value: "The destination window is no longer available. Open a window in the intended Space and try again.", comment: "Tab open failure recovery")
+            if OverlayToastCenter.shared.show(title: title, message: message, in: .activeWindow) != nil {
+                return
+            }
+            let alert = NSAlert()
+            alert.messageText = title
+            alert.informativeText = message
+            if let window = NSApp.keyWindow, window.isVisible {
+                alert.beginSheetModal(for: window)
+            } else {
+                alert.runModal()
+            }
+        }
+    }
+
     func createQuickLookupTab(customGuid: String? = nil) {
         let focusingTabText = focusingTab?.guid ?? -1
         AppLogDebug(
@@ -6266,26 +6692,28 @@ class BrowserState {
         }
     }
     
-    func updateTabTitle(tabId: Int, newTitle: String) {
+    /// `sentAt`: when Chromium sent the title (uptime nanoseconds); the
+    /// default never counts as older than the wrapper's title.
+    func updateTabTitle(tabId: Int, newTitle: String, sentAt: UInt64 = .max) {
         guard let tab = tabs.first(where: { $0.guid == tabId }) else {
             // Off-strip peek tabs still take titles: the panel header shows
             // them live, and the title must already be current when the tab
             // is later adopted (expand / split).
             if let peekTab = peekState.peekTab(withId: tabId) {
-                peekTab.title = newTitle
+                peekTab.takePageTitle(newTitle, sentAt: sentAt)
             } else if let candidateTab = peekCandidate?.tab, candidateTab.guid == tabId {
-                candidateTab.title = newTitle
+                candidateTab.takePageTitle(newTitle, sentAt: sentAt)
             } else if let readerTab = readerOverlayState.readerTab(withId: tabId) {
                 // Off-strip reader-surface tabs take titles too: the title
                 // must already be current when the tab is later adopted
                 // (link click inside the reader).
-                readerTab.title = newTitle
+                readerTab.takePageTitle(newTitle, sentAt: sentAt)
             } else if let candidateTab = readerOverlayCandidate?.tab, candidateTab.guid == tabId {
-                candidateTab.title = newTitle
+                candidateTab.takePageTitle(newTitle, sentAt: sentAt)
             } else if let paneTab = libraryPaneTab, paneTab.guid == tabId {
                 // The Library's Folio pane tab too: current when adopted
                 // (link click inside the library page).
-                paneTab.title = newTitle
+                paneTab.takePageTitle(newTitle, sentAt: sentAt)
             } else {
                 AppLogWarn("tab not found for id: \(tabId)")
             }
@@ -6311,11 +6739,12 @@ class BrowserState {
             // Chromium's UI thread — so with enough continuously-active
             // renderers the queue behind it grew until `agentSpace.*` calls
             // (and CDP) blew past their client timeouts.
-            tab.title = displayTitle
+            tab.takePageTitle(displayTitle, sentAt: sentAt)
         }
     }
     
     func reorderTabs(_ indexesMap: [Int: Int]) {
+        newTabPlacementReconciler.record(indices: indexesMap)
         tabs.forEach { tab in
             if let index = indexesMap[tab.guid] {
                 tab.setIndex(index)
@@ -6336,27 +6765,12 @@ class BrowserState {
         let cachedSet = Set(normalTabOrder)
         let resequenced = tabs.compactMap { cachedSet.contains($0.guid) ? $0.guid : nil }
         let protectedTabIds = nativeOrderProtectedTabIds.intersection(cachedSet)
-        if resequenced == normalTabOrder {
-            nativeOrderProtectedTabIds.subtract(protectedTabIds)
-        } else if protectedTabIds.isEmpty {
-            normalTabOrder = resequenced
-        } else {
-            var mergedOrder = resequenced.filter { !protectedTabIds.contains($0) }
-            let protectedPositions = normalTabOrder.enumerated()
-                .filter { protectedTabIds.contains($0.element) }
-            for (index, tabId) in protectedPositions {
-                mergedOrder.insert(tabId, at: min(index, mergedOrder.count))
-            }
-            if mergedOrder != normalTabOrder {
-                normalTabOrder = mergedOrder
-            }
-            AppLogDebug(
-                "[NativeTab] reorderTabs preserved protected native slots " +
-                "protected=\(Array(protectedTabIds).sorted()) resequenced=\(resequenced) " +
-                "normalOrder=\(normalTabOrder)"
-            )
-            nativeOrderProtectedTabIds.subtract(protectedTabIds)
-        }
+        normalTabOrder = newTabPlacementReconciler.reconcile(
+            localOrder: normalTabOrder,
+            physicalOrder: resequenced,
+            additionallyProtected: protectedTabIds
+        )
+        nativeOrderProtectedTabIds.subtract(protectedTabIds)
         updateNormalTabs()
     }
     
@@ -7801,7 +8215,7 @@ class BrowserState {
     /// `bridge.removeTabsFromGroup` / `bridge.createGroupFromTabs` all
     /// return synchronously, but the corresponding
     /// `TabGroupEvent.tabJoinedGroup` / `tabLeftGroup` ride the
-    /// `EventBus.send → Task { @MainActor }` queue and don't land until
+    /// `EventBus.send` FIFO main queue and don't land until
     /// at least the next runloop tick. If the caller also synchronously
     /// repositioned the tab (e.g. sidebar drag dropped it inside a
     /// group's child range via `moveNormalTabLocally`), the strip ends
@@ -8087,19 +8501,21 @@ class BrowserState {
         }
 
         let newGuid = UUID().uuidString
-        migrateAIChatTab(for: tab, toNewIdentifier: newGuid)
 
         // A tab unpinned earlier in this session still carries its old pin's
         // lineage. Pinning a normal tab is always a new pin (an owner change is
-        // a tombstone plus a new create), and the store rejects a lineage that
-        // has no active row, so drop the residue before the write.
+        // a tombstone plus a new create), so drop the residue: the new record
+        // has its own lineage.
         tab.pinnedLineageId = nil
         tab.pinnedCreatedDate = nil
-        localStore.moveOrCreatePinnedTab(tab, after: afterGuid, profileId: profileId, spaceId: spaceId, newGuid: newGuid)
-        tab.guidInLocalDB = newGuid
-        if let wrapper = tab.webContentWrapper {
-            wrapper.updateTabCustomValue(newGuid)
-        }
+        // The store takes the tab's binding and lineage as the record to
+        // move. It rejects a lineage that has no active row, and resolves the
+        // guid of a record from before a pinned tab scope change to the
+        // current record of its lineage, which it would then move instead of
+        // creating one. Hand it a stand-in that carries neither.
+        let unbound = Tab(guid: -1, url: tab.url, isActive: false, index: 0, title: tab.title, customGuid: nil)
+        localStore.moveOrCreatePinnedTab(unbound, after: afterGuid, profileId: profileId, spaceId: spaceId, newGuid: newGuid)
+        setBinding(newGuid, for: tab)
         return newGuid
     }
 
@@ -8121,15 +8537,13 @@ class BrowserState {
             for childId in affectedChildren {
                 nativeRelationGraph.locallyFixedOpenerTabIds.insert(childId)
             }
-            migrateAIChatTab(for: tab, toNewIdentifier: newGuid)
-            tab.guidInLocalDB = newGuid
+            setBinding(newGuid, for: tab)
             // Same residue as `moveNormalTabToPinned`: the new row has its own lineage.
             tab.pinnedLineageId = nil
             tab.pinnedCreatedDate = nil
             if splitId != nil {
                 tab.isPinned = true
             }
-            tab.webContentWrapper?.updateTabCustomValue(newGuid)
         }
         if let splitId,
            let splitIndex = splits.firstIndex(where: { $0.id == splitId }) {
@@ -8146,10 +8560,8 @@ class BrowserState {
         guard !affected.isEmpty else { return }
         let tabIDs = Set(affected.map(\.guid))
         for tab in affected {
-            migrateAIChatTab(for: tab, toNewIdentifier: nil)
-            tab.guidInLocalDB = nil
+            setBinding(nil, for: tab)
             tab.isPinned = false
-            tab.webContentWrapper?.updateTabCustomValue("")
             insertIntoNormalTabOrder(tabGuid: tab.guid, at: normalTabOrder.count, syncChromiumOrder: false)
         }
         for index in splits.indices where splits[index].tabIds.contains(where: { tabIDs.contains($0) }) {
@@ -8190,16 +8602,11 @@ class BrowserState {
             return
         }
         if let normalTab = tabs.first(where: { $0.guidInLocalDB == pinnedGuid }) {
-            // Migrate AI Chat tab association before changing identifier
-            // When moving out of pinned, identifier changes from guidInLocalDB to chromium guid
-            migrateAIChatTab(for: normalTab, toNewIdentifier: nil)
-
-            normalTab.guidInLocalDB = nil
+            setBinding(nil, for: normalTab)
             normalTab.isPinned = false
             if let storedTitle = pinnedTab.storedTitle {
                 normalTab.applyStoredTitle(storedTitle)
             }
-            pinnedTab.webContentWrapper?.updateTabCustomValue("")
 
             insertIntoNormalTabOrder(tabGuid: normalTab.guid,
                                      at: normalIndex,
@@ -8245,13 +8652,11 @@ class BrowserState {
         }
 
         for pane in ordered {
-            migrateAIChatTab(for: pane.live, toNewIdentifier: nil)
-            pane.live.guidInLocalDB = nil
+            setBinding(nil, for: pane.live)
             pane.live.isPinned = false
             if let storedTitle = pane.pinned.storedTitle {
                 pane.live.applyStoredTitle(storedTitle)
             }
-            pane.live.webContentWrapper?.updateTabCustomValue("")
         }
 
         // Clear the pinned flag on the live split so its toolbar/sidebar
@@ -8423,9 +8828,7 @@ class BrowserState {
             nativeRelationGraph.locallyFixedOpenerTabIds.insert(childId)
         }
 
-        migrateAIChatTab(for: tab, toNewIdentifier: bookmarkGuid)
-        tab.guidInLocalDB = bookmarkGuid
-        tab.webContentWrapper?.updateTabCustomValue(bookmarkGuid)
+        setBinding(bookmarkGuid, for: tab)
     }
     
     /// Converts every member of a tab group into a bookmark folder,
@@ -8582,14 +8985,8 @@ class BrowserState {
                                   favicon: pinnedTab.liveFaviconData ?? pinnedTab.cachedFaviconData)
 
         if pinnedTab.isOpenned, let chromiumTab = tabs.first(where: { $0.guidInLocalDB == pinnedGuid }) {
-            migrateAIChatTab(for: chromiumTab, toNewIdentifier: newBookmarkGuid)
-
-            chromiumTab.guidInLocalDB = newBookmarkGuid
+            setBinding(newBookmarkGuid, for: chromiumTab)
             chromiumTab.isPinned = false
-
-            if let wrapper = chromiumTab.webContentWrapper {
-                wrapper.updateTabCustomValue(newBookmarkGuid)
-            }
         }
 
         // Remove the persisted pinned entry after the Chromium tab is converted back.
@@ -8664,13 +9061,11 @@ class BrowserState {
         // records are removed below.
         if allLive {
             for (livePane, record) in zip(live, records) {
-                migrateAIChatTab(for: livePane, toNewIdentifier: nil)
-                livePane.guidInLocalDB = nil
+                setBinding(nil, for: livePane)
                 livePane.isPinned = false
                 if let storedTitle = record.storedTitle {
                     livePane.applyStoredTitle(storedTitle)
                 }
-                livePane.webContentWrapper?.updateTabCustomValue("")
             }
             // Resolve a SplitGroup to bind under the new bookmark. The live
             // SplitGroup is the common case; if none exists (the pinned
@@ -8748,18 +9143,10 @@ class BrowserState {
         
         // If the bookmark is already open, retarget the live Chromium tab as well.
         if realBookmark.isOpened, let chromiumTab = tabs.first(where: { $0.guidInLocalDB == bookmark.guid }) {
-            // Migrate AI Chat tab association before changing identifier
-            migrateAIChatTab(for: chromiumTab, toNewIdentifier: newPinnedGuid)
-            
             // Point the live tab at the new pinned-tab identifier.
-            chromiumTab.guidInLocalDB = newPinnedGuid
+            setBinding(newPinnedGuid, for: chromiumTab)
             chromiumTab.isPinned = true
             chromiumTab.title = tempTab.title
-            
-            // Keep the Chromium-side custom value in sync.
-            if let wrapper = chromiumTab.webContentWrapper {
-                wrapper.updateTabCustomValue(newPinnedGuid)
-            }
         }
         
         // Remove the old bookmark entry once the pinned version exists.
@@ -8794,19 +9181,10 @@ class BrowserState {
         }
 
         if realBookmark.isOpened, let chromiumTab = tabs.first(where: { $0.guidInLocalDB == bookmark.guid }) {
-            // Migrate AI Chat tab association before changing identifier
-            // When moving out of bookmark to normal tab, identifier changes to chromium guid
-            migrateAIChatTab(for: chromiumTab, toNewIdentifier: nil)
-            
             // Reuse the open Chromium tab and detach it from bookmark storage.
-            chromiumTab.guidInLocalDB = nil
+            setBinding(nil, for: chromiumTab)
             chromiumTab.applyStoredTitle(bookmark.title)
-            
-            // Keep the Chromium-side custom value in sync.
-            if let wrapper = chromiumTab.webContentWrapper {
-                wrapper.updateTabCustomValue("")
-            }
-            
+
             // Insert the existing tab into the desired normal-tab position.
             insertIntoNormalTabOrder(tabGuid: chromiumTab.guid,
                                      at: index,
@@ -8882,9 +9260,7 @@ class BrowserState {
         }
 
         if let chromiumTab = tabs.first(where: { $0.guidInLocalDB == realBookmark.guid }) {
-            migrateAIChatTab(for: chromiumTab, toNewIdentifier: nil)
-            chromiumTab.guidInLocalDB = nil
-            chromiumTab.webContentWrapper?.updateTabCustomValue("")
+            setBinding(nil, for: chromiumTab)
             clearBookmarkOpenedStateForComfortableLayout(realBookmark)
             applyOptimisticGroupMembership(tabId: chromiumTab.guid, newToken: tokenHex)
             insertIntoNormalTabOrder(tabGuid: chromiumTab.guid,
@@ -8928,9 +9304,7 @@ class BrowserState {
               let bookmark = bookmarkManager.bookmark(withGuid: localGuid) else {
             return
         }
-        migrateAIChatTab(for: tab, toNewIdentifier: nil)
-        tab.guidInLocalDB = nil
-        tab.webContentWrapper?.updateTabCustomValue("")
+        setBinding(nil, for: tab)
         clearBookmarkOpenedStateForComfortableLayout(bookmark)
         updateNormalTabs()
     }
@@ -9032,13 +9406,11 @@ class BrowserState {
         }
 
         if let normalTab = tabs.first(where: { $0.guidInLocalDB == pinnedGuid }) {
-            migrateAIChatTab(for: normalTab, toNewIdentifier: nil)
-            normalTab.guidInLocalDB = nil
+            setBinding(nil, for: normalTab)
             normalTab.isPinned = false
             if let storedTitle = pinnedTab.storedTitle {
                 normalTab.applyStoredTitle(storedTitle)
             }
-            normalTab.webContentWrapper?.updateTabCustomValue("")
             applyOptimisticGroupMembership(tabId: normalTab.guid, newToken: tokenHex)
             insertIntoNormalTabOrder(tabGuid: normalTab.guid,
                                      at: normalTabsIndex,
@@ -9115,9 +9487,7 @@ class BrowserState {
         }
 
         for tab in tabsToClose {
-            migrateAIChatTab(for: tab, toNewIdentifier: nil)
-            tab.guidInLocalDB = nil
-            tab.webContentWrapper?.updateTabCustomValue("")
+            setBinding(nil, for: tab)
         }
 
         for splitId in orderedSplitIdsToRemove {
@@ -9163,10 +9533,10 @@ class BrowserState {
            let groupIdx = splits.firstIndex(where: { $0.id == splitId }) {
             for (tabId, db) in zip(splits[groupIdx].tabIds, dbGuids) {
                 guard let live = tabs.first(where: { $0.guid == tabId }) else { continue }
-                migrateAIChatTab(for: live, toNewIdentifier: db)
-                live.guidInLocalDB = db
+                // A split saved as a bookmark while in a tab group is still in it.
+                detachNormalTabFromGroupForPinning(live)
+                setBinding(db, for: live)
                 live.isPinned = true
-                live.webContentWrapper?.updateTabCustomValue(db)
             }
             splits[groupIdx].isPinned = true
             splitBookmarkBindings.removeValue(forKey: bookmarkGuid)

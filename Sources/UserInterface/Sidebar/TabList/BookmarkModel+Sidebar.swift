@@ -196,6 +196,17 @@ extension Bookmark: ContextMenuRepresentable {
             }
         }
 
+        if source == .sidebar, !isFolder, let state = contextMenuState,
+           isOpened || state.splitBookmarkBindings[guid] != nil {
+            // Same action as the row's hover-only "minus" button, which touch
+            // can only reach after a reveal tap.
+            let close = NSMenuItem(title: NSLocalizedString("sidebar.bookmarkContextMenu.closeOpenTabAction", value: "Close Tab", comment: "Sidebar bookmark context menu - Closes the tab currently open from this bookmark; the bookmark itself stays"),
+                                   action: #selector(closeOpenTab),
+                                   keyEquivalent: "")
+            close.target = self
+            menu.addItem(close)
+        }
+
         if let state = contextMenuState,
            appendSpaceTransferMenuItems(to: menu,
                                         browserState: state,
@@ -315,6 +326,11 @@ extension Bookmark: ContextMenuRepresentable {
             .cloneBookmark(self, toSpaceId: targetSpaceId)
     }
     
+    @MainActor
+    @objc private func closeOpenTab() {
+        contextMenuState?.closeBookmark(self)
+    }
+
     @objc private func openInNewTab() {
         guard let _ = url else { return }
         // Open through the bookmark flow so the Chromium tab stays associated.

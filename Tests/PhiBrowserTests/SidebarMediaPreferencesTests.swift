@@ -23,6 +23,17 @@ final class SidebarMediaPreferencesTests: XCTestCase {
         super.tearDown()
     }
 
+    func testSidebarPositionDefaultsToLeftAndRoundTrips() throws {
+        XCTAssertEqual(PhiPreferences.GeneralSettings.loadSidebarPosition(from: defaults), .left)
+        for position in SidebarPosition.allCases {
+            PhiPreferences.GeneralSettings.saveSidebarPosition(position, to: defaults)
+            let reopened = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+            XCTAssertEqual(PhiPreferences.GeneralSettings.loadSidebarPosition(from: reopened), position)
+        }
+        defaults.set("unknown", forKey: PhiPreferences.GeneralSettings.sidebarPositionKey)
+        XCTAssertEqual(PhiPreferences.GeneralSettings.loadSidebarPosition(from: defaults), .left)
+    }
+
     func testFreshInstallEnablesPlayerAndUsesDynamicMode() {
         XCTAssertTrue(PhiPreferences.GeneralSettings.sidebarMediaPlayerEnabled.loadValue(from: defaults))
         XCTAssertEqual(PhiPreferences.GeneralSettings.loadSidebarMediaPresentationMode(from: defaults), .dynamic)

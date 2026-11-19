@@ -18,6 +18,7 @@ final class PeekPanelSizeTests: XCTestCase {
     private var accountDirectory: URL!
     private var previousLayout: Any?
     private var previousEdgeToEdge: Any?
+    private var previousPeekSize: Any?
     private var slots: [SpaceWindowSlot] = []
     private let manager = SpaceManager(observeAccountChanges: false)
     private var nextId = 123461100
@@ -29,6 +30,8 @@ final class PeekPanelSizeTests: XCTestCase {
         previousLayout = UserDefaults.standard.object(forKey: PhiPreferences.GeneralSettings.layoutModeKey)
         previousEdgeToEdge = UserDefaults.standard.object(forKey: "edgeToEdgeWebContent")
         UserDefaults.standard.set(false, forKey: "edgeToEdgeWebContent")
+        previousPeekSize = UserDefaults.standard.object(forKey: PhiPreferences.GeneralSettings.peekPanelSizeKey)
+        UserDefaults.standard.removeObject(forKey: PhiPreferences.GeneralSettings.peekPanelSizeKey)
         PhiPreferences.GeneralSettings.saveLayoutMode(.balanced)
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -60,6 +63,7 @@ final class PeekPanelSizeTests: XCTestCase {
         }
         UserDefaults.standard.set(previousLayout, forKey: PhiPreferences.GeneralSettings.layoutModeKey)
         UserDefaults.standard.set(previousEdgeToEdge, forKey: "edgeToEdgeWebContent")
+        UserDefaults.standard.set(previousPeekSize, forKey: PhiPreferences.GeneralSettings.peekPanelSizeKey)
         try await super.tearDown()
     }
 
@@ -161,6 +165,76 @@ final class PeekPanelSizeTests: XCTestCase {
         XCTAssertTrue(WebContentContainerViewController.isHeaderRowShown(header))
         XCTAssertLessThan(screenFrame(of: fixture.panel.pageCardView).maxY,
                           screenFrame(of: header).minY)
+    }
+
+    /// The card's side margin is a share of the page width, which for most
+    /// window widths is a fraction of a point. Chromium sizes the page in
+    /// whole points, so a fractional card left the card's own background
+    /// showing as a hairline down its right edge (PHI-1991). Whatever the
+    /// window width, the card sits on whole points.
+    func testThePeekCardSitsOnWholePointsAtAnyWindowWidth() throws {
+        let fixture = try makeSessionWithPeek()
+        let window = try XCTUnwrap(fixture.session.window)
+        for width in [1213.0, 1337.0, 1099.0, 1250.0] {
+            var frame = window.frame
+            frame.size.width = width
+            window.setFrame(frame, display: true)
+            settle()
+            fixture.container.view.layoutSubtreeIfNeeded()
+            fixture.panel.relayoutIfVisible()
+            fixture.panel.pageCardView.superview?.layoutSubtreeIfNeeded()
+            let card = screenFrame(of: fixture.panel.pageCardView)
+            XCTAssertEqual(card.minX, card.minX.rounded(), "minX at window width \(width)")
+            XCTAssertEqual(card.width, card.width.rounded(), "width at window width \(width)")
+            XCTAssertEqual(card.minY, card.minY.rounded(), "minY at window width \(width)")
+            XCTAssertEqual(card.height, card.height.rounded(), "height at window width \(width)")
+        }
+    }
+
+    /// Large is the size the panel always had: a 4% margin on each side.
+    func testLargePanelKeepsTheOriginalMargin() {
+        XCTAssertEqual(PeekPanelController.paneInsetX(cardWidth: 1000, size: .large), 40, accuracy: 0.001)
+        XCTAssertEqual(PeekPanelController.paneInsetX(cardWidth: 400, size: .large), 24, accuracy: 0.001,
+                       "the minimum margin still applies")
+    }
+
+    func testSmallerSizesWidenTheMargins() {
+        XCTAssertEqual(PeekPanelController.paneInsetX(cardWidth: 1500, size: .medium), 150, accuracy: 0.001)
+        XCTAssertEqual(PeekPanelController.paneInsetX(cardWidth: 1500, size: .small), 240, accuracy: 0.001)
+    }
+
+    /// On a narrow window a smaller size gives up its margins before the
+    /// panel drops below its minimum width, and never goes under the minimum
+    /// margin.
+    func testSmallerSizesKeepAUsablePanelOnANarrowWindow() {
+        XCTAssertEqual(PeekPanelController.paneInsetX(cardWidth: 800, size: .small), 128, accuracy: 0.001,
+                       "800pt card: the proportional margin still fits")
+        XCTAssertEqual(PeekPanelController.paneInsetX(cardWidth: 650, size: .small), 85, accuracy: 0.001,
+                       "650pt card: the panel stays 480pt wide")
+        XCTAssertEqual(PeekPanelController.paneInsetX(cardWidth: 500, size: .small), 24, accuracy: 0.001)
+    }
+
+    /// Settings › Navigations resizes an open panel in place.
+    func testChangingThePanelSizeResizesAnOpenPeek() throws {
+        let fixture = try makeSessionWithPeek()
+        let page = try XCTUnwrap(fixture.container.currentPageCardView)
+        let large = screenFrame(of: fixture.panel.pageCardView)
+
+        UserDefaults.standard.set(PeekPanelSize.small.rawValue,
+                                  forKey: PhiPreferences.GeneralSettings.peekPanelSizeKey)
+        settle()
+        fixture.panel.pageCardView.superview?.layoutSubtreeIfNeeded()
+        let small = screenFrame(of: fixture.panel.pageCardView)
+        let pageFrame = screenFrame(of: page)
+        XCTAssertLessThan(small.width, large.width)
+        XCTAssertEqual(small.height, large.height, accuracy: 0.5, "only the width changes")
+        XCTAssertEqual(small.midX, pageFrame.midX, accuracy: 1, "the panel stays centred on the page")
+
+        UserDefaults.standard.set(PeekPanelSize.large.rawValue,
+                                  forKey: PhiPreferences.GeneralSettings.peekPanelSizeKey)
+        settle()
+        fixture.panel.pageCardView.superview?.layoutSubtreeIfNeeded()
+        assertEqual(screenFrame(of: fixture.panel.pageCardView), large)
     }
 
     // MARK: - Helpers

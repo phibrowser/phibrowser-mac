@@ -276,6 +276,7 @@ extension Shortcuts {
                         .IDC_DEV_TOOLS_INSPECT,
                         .IDC_DEV_TOOLS_CONSOLE,
                         .PHI_TOGGLE_SIDEBAR,
+                        .PHI_TOGGLE_BALANCED_LAYOUT,
                         .PHI_TOGGLE_CHATBAR,
                         .PHI_TOGGLE_READER,
                         .PHI_NEW_CONVERSATION]
@@ -687,6 +688,7 @@ extension CommandWrapper {
         switch self {
         case .IDC_OPEN_FILE, .IDC_SHOW_BOOKMARK_BAR, .PHI_TOGGLE_SIDEBAR,
              .PHI_FARRINGDON_TOGGLE, .PHI_SPLIT_WITH_NEW_TAB, .PHI_CLEAR_ALL_TABS,
+             .PHI_TOGGLE_BALANCED_LAYOUT,
              .IDC_TAB_SEARCH, .IDC_DUPLICATE_TAB, .IDC_WINDOW_PIN_TAB,
              .IDC_DEV_TOOLS, .IDC_DEV_TOOLS_INSPECT, .IDC_DEV_TOOLS_CONSOLE,
              .PHI_TOGGLE_CHATBAR, .PHI_NEW_CONVERSATION,
@@ -748,6 +750,7 @@ extension CommandWrapper {
         .IDC_WINDOW_CLOSE_TABS_TO_RIGHT: .init(title: "Close Tabs to the Right", keywords: ["closetabstotheright"]),
         .IDC_MOVE_TAB_TO_NEW_WINDOW: .init(title: "Move Tab to New Window", keywords: ["movetabtonewwindow"]),
         .PHI_TOGGLE_SIDEBAR: .init(title: "Toggle Sidebar", keywords: ["togglesidebar"]),
+        .PHI_TOGGLE_BALANCED_LAYOUT: .init(title: "Toggle Balanced Layout", keywords: ["layout", "balanced", "performance", "address bar"]),
         .PHI_TOGGLE_CHATBAR: .init(title: "Toggle Chatbar", keywords: ["togglechatbar","ai"]),
         .PHI_TAB_SWITCHER_FORWARD: .init(title: "Show Tab Switcher", keywords: ["tab switcher", "forward"]),
         .PHI_TAB_SWITCHER_BACKWARD: .init(title: "Show Tab Switcher(Reverse)", keywords: ["tab switcher", "backward"]),

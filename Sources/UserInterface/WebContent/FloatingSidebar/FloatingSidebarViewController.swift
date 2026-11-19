@@ -65,8 +65,14 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         return hosting
     }()
     private lazy var headerView = SidebarHeaderView(state: state, isFloating: true)
-    private lazy var pinnedTabViewController = PinnedTabViewController(state: state)
-    private lazy var tabList = SidebarTabListViewController(state: state)
+    private lazy var pinnedTabViewController = PinnedTabViewController(state: state, hostVC: self)
+    private var initializedTabList: SidebarTabListViewController?
+    private var tabList: SidebarTabListViewController {
+        if let initializedTabList { return initializedTabList }
+        let tabList = SidebarTabListViewController(state: state, hostVC: self)
+        initializedTabList = tabList
+        return tabList
+    }
 
     private lazy var pinnedTabsContainerView: NSView = {
         let view = NSView()
@@ -116,6 +122,10 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         }
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         spacesStripHostingView = hostingView
+        headerView.onSpaceSwitchPlacementChanged = { [weak self, weak stripGeometry] sitsInControlRow in
+            stripGeometry?.sitsInControlRow = sitsInControlRow
+            self?.updateHeaderHeight()
+        }
         headerView.mountSpaceSwitch(hostingView)
         spacesStripRowView = hostingView
         updateHeaderHeight()
@@ -330,8 +340,16 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         }
     }
 
+    /// Mouse back/forward side buttons over the panel switch Space,
+    /// mirroring the docked sidebar.
+    func handleSideButtonSpaceSwitch(_ event: NSEvent) -> Bool {
+        guard createSpaceOverlay == nil, let step = sideButtonSpaceStep(for: event) else { return false }
+        return activateAdjacentSpace(by: step, state: state)
+    }
+
     deinit {
-        tabList.tearDown()
+        // Creating the list here would register a weak reference to a deinitializing controller.
+        initializedTabList?.tearDown()
     }
 
     private func setupPaletteBackdropIfNeeded() {
@@ -857,9 +875,9 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         guard active else { return }
 
         pinnedTabViewController.$contentHeight
-            .combineLatest(state.$isDraggingTab)
+            .combineLatest(state.$isDraggingTab, pinnedTabViewController.$isEmptyDropZoneRevealed)
             .debounce(for: .seconds(0.01), scheduler: DispatchQueue.main)
-            .sink { [weak self] newHeight, dragging in
+            .sink { [weak self] newHeight, dragging, _ in
                 self?.updateFavoriteHeight(newHeight, isDragging: dragging)
             }
             .store(in: &contentCancellables)
@@ -882,12 +900,30 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
             && state.participatesInSpaces
             && (SpaceManager.shared.spaces.count > 1 || headerView.forcesSpaceSwitchVisible)
         // The floating header keeps its nav row 8pt from the top in every
-        // layout (see SidebarHeaderView.sidebarButtonTopOffset), so both
-        // bases leave 3pt under the last header row, as the docked one does.
-        let base: CGFloat = showInSidebar ? 79 : 35
+        // layout, or the column's offset in docked metrics (see
+        // SidebarHeaderView.controlRowTopOffset); both bases leave 3pt under
+        // the last header row, as the docked one does.
+        let base = headerView.controlRowTopOffset + (showInSidebar ? 71 : 27)
         let spacesBandHeight = SidebarHeaderView.spaceSwitchBandHeight(addressInSidebar: showInSidebar)
-        let headerHeight = base + (spacesEnabled ? spacesBandHeight : 0)
+        // A row moved up into the control row adds no height of its own.
+        let reservesSpacesBand = spacesEnabled && !headerView.spaceSwitchSitsInControlRow
+        let headerHeight = base + (reservesSpacesBand ? spacesBandHeight : 0)
         headerHeightConstraint?.update(offset: headerHeight)
+    }
+
+    /// While the panel covers the docked column during a dock or undock, its
+    /// header lays out like the column's (see
+    /// `SidebarHeaderView.usesDockedMetrics`). The caller lays out.
+    /// Keeps the header's lights through a hand-off; see
+    /// `SidebarHeaderView.keepsTrafficLightsForHandOff`.
+    func setKeepsTrafficLightsForHandOff(_ keeps: Bool) {
+        headerView.keepsTrafficLightsForHandOff = keeps
+    }
+
+    func setUsesDockedHeaderMetrics(_ docked: Bool) {
+        guard headerView.usesDockedMetrics != docked else { return }
+        headerView.usesDockedMetrics = docked
+        updateHeaderHeight()
     }
 
     // MARK: - Create Space Overlay
@@ -1063,7 +1099,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
 
     private func updateFavoriteHeight(_ newHeight: CGFloat, isDragging: Bool = false) {
         let clampedHeight: CGFloat
-        if newHeight < 20 && isDragging {
+        if newHeight < 20 && pinnedTabViewController.isEmptyDropZoneRevealed {
             clampedHeight = 100
         } else {
             clampedHeight = newHeight
@@ -1162,5 +1198,13 @@ extension FloatingSidebarViewController: SpaceSwitchBandSurface {
             paletteBackdropLayer.removeAnimation(forKey: "phi.fillRamp")
             updatePaletteBackdrop()
         }
+    }
+}
+
+extension FloatingSidebarViewController {
+    /// See `SidebarTabListViewController.scrollOffset`.
+    var tabListScrollOffset: NSPoint {
+        get { tabList.scrollOffset }
+        set { tabList.scrollOffset = newValue }
     }
 }

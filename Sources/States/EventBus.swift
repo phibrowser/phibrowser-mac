@@ -40,7 +40,7 @@ struct TabEvent: WindowEvent {
         case focusTabWithTabId(_ tabId: Int)
         case createTab(_ url: String)
         case openTab(_ url: String)
-        case updateTabTitle(tabId: Int, newTitle: String)
+        case updateTabTitle(tabId: Int, newTitle: String, sentAt: UInt64)
         case updateTabIndex(_ indexesMap: [Int: Int])
         case updateTabRelationships(_ snapshot: NativeTabRelationshipSnapshot)
         case move(tab: Tab, toNewIndex: Int, selectAfterMove: Bool)
@@ -161,8 +161,8 @@ class EventBus {
     func send<T: AppEvent>(_ event: T) {
              switch event.scope {
              case .window(let windowId):
-                 Task { @MainActor in
-                     handleWindowEvent(event, windowId: windowId)
+                 enqueue {
+                     self.handleWindowEvent(event, windowId: windowId)
                  }
 
              case .profile:
@@ -172,6 +172,14 @@ class EventBus {
              }
     }
     
+    /// Bridge callbacks and mutation completions share one FIFO queue. Never
+    /// run inline: a handler may call back into Chromium after its stack unwinds.
+    func enqueue(_ action: @escaping @MainActor () -> Void) {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { action() }
+        }
+    }
+
     @MainActor
     private func handleWindowEvent<T: AppEvent>(_ event: T, windowId: Int) {
         guard let browserState = SpaceSessionControllersManager.shared
@@ -218,8 +226,8 @@ class EventBus {
             state.createTab(url)
         case .openTab(let url):
             state.openTab(url)
-        case .updateTabTitle(let tabId, let newTitle):
-            state.updateTabTitle(tabId: tabId, newTitle: newTitle)
+        case .updateTabTitle(let tabId, let newTitle, let sentAt):
+            state.updateTabTitle(tabId: tabId, newTitle: newTitle, sentAt: sentAt)
         case .updateTabIndex(let indexesMap):
             state.reorderTabs(indexesMap)
         case .updateTabRelationships(let snapshot):

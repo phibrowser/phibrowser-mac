@@ -60,20 +60,21 @@ enum TabDataModelSchemaV14: VersionedSchema {
         var secondaryUrl: URL?
         var secondaryTitle: String?
         /// Split bookmark of three or four panes: a JSON array of `SplitBookmarkExtraPane` for the
-        /// panes after `url` and `secondaryUrl`. Nil for a pair. Local-only: sync and HTML export
-        /// see the first two panes.
+        /// panes after `url` and `secondaryUrl`. Nil for a pair. Synced as `split_extra_panes`; HTML
+        /// export sees the first two panes.
         var splitExtraPanes: String?
         var splitPartnerGuid: String?
         /// Pinned split of three or four panes: the JSON array of every member's `guid`, carried
         /// by each member. Nil for a solo pin and for a pair, which `splitPartnerGuid` links.
-        /// Local-only: sync sees these members as separate pins.
+        /// Synced as `split_pane_uuids` (member lineages, never these per-device guids).
         var splitPaneGuids: String?
         /// Raw split layout (`vertical` side-by-side, `horizontal` stacked).
-        /// Nil keeps existing records compatible and defaults to side-by-side.
+        /// Nil keeps existing records compatible and defaults to side-by-side. Synced as `split_layout`
+        /// for split bookmarks and pinned splits; divider positions are live window state only.
         var layout: String?
         var lastSeen: Date?
-        /// Stable resource identifier. Bookmark folders currently consume it;
-        /// other tab kinds retain the default until they add icon support.
+        /// Stable resource identifier for bookmark folders and pinned-tab icon overrides.
+        /// Other tab kinds retain the default.
         var icon = "default"
         /// Stable logical identity shared by copies of the same pinned tab.
         /// `guid` remains the unique physical record id used by Chromium.

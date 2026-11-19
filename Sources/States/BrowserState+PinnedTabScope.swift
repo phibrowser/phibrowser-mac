@@ -173,9 +173,8 @@ extension BrowserState {
             )
         }
         if let liveTab = tabs.first(where: { $0.guidInLocalDB == oldGuid }) {
-            liveTab.guidInLocalDB = newGuid
+            setBinding(newGuid, for: liveTab)
             liveTab.pinnedLineageId = localTab.pinnedLineageId
-            liveTab.webContentWrapper?.updateTabCustomValue(newGuid)
         }
     }
 }

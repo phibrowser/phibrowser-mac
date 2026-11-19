@@ -36,7 +36,15 @@ class SidebarCellView: NSTableCellView {
         cancellables.removeAll()
         item = nil
     }
-    
+
+    /// Shows the row's hover-only controls for a touch, which has no hover.
+    func setTouchRevealed(_ revealed: Bool) {}
+
+    /// A new touch is starting in the sidebar. A row whose controls act on
+    /// the press records here which of them were visible, so a tap on a
+    /// hidden control's spot only reveals it.
+    func touchWillBegin() {}
+
     func configure(with item: SidebarItem) {
         self.item = item
         configureAppearance()
@@ -276,7 +284,11 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private let peekTabViewModel = TabViewModel()
     private let tabPreviewRegistration = TabPreviewRegistration()
     private weak var configuredTab: Tab?
+    /// Resolving the preview target costs every row scrolled into view, so
+    /// it waits for the first hover after the cell is reused.
+    private var isTabPreviewConfigured = false
     private var activeSuppressed = false
+    private var touchPressObserver: TouchPressObserver?
     weak var delegate: TabCellDelegate?
 
 
@@ -300,12 +312,15 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewModel.setHoverSuppressed(false)
         viewModel.setActiveSuppressed(false, activeValue: false)
         viewModel.setHovered(false)
+        viewModel.splitDropSide = nil
+        viewModel.isTouchRevealed = false
         viewModel.isPressed = false
         // Peek attachment is tab identity, not preservable visual state — a
         // reused row must never show the previous tab's peek indicator.
         viewModel.showsPeek = false
         peekTabViewModel.prepareForReuse()
         tabPreviewRegistration.invalidate()
+        isTabPreviewConfigured = false
         configuredTab = nil
         activeSuppressed = false
     }
@@ -329,7 +344,21 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     func setHovered(_ hovered: Bool) {
         viewModel.setHovered(hovered)
+        if hovered, !isTabPreviewConfigured {
+            configureTabPreview()
+        }
         tabPreviewRegistration.setHovering(hovered && !viewModel.isHoverSuppressed)
+    }
+
+    func setSplitDropTargetHighlighted(_ side: TabSplitDropSide?) {
+        viewModel.splitDropSide = side
+        if side != nil {
+            tabPreviewRegistration.cancelForInteraction()
+        }
+    }
+
+    override func setTouchRevealed(_ revealed: Bool) {
+        viewModel.isTouchRevealed = revealed
     }
 
     func cancelTabPreviewForInteraction() {
@@ -397,7 +426,13 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         press.allowableMovement = 5
         // Don't delay events — let them reach NSHostingView's SwiftUI Button simultaneously
         press.delaysPrimaryMouseButtonEvents = false
+        // macOS 27 defaults to direct touches; a zero-duration press would claim
+        // touch-down ahead of the row's click emulation and sidebar scrolling.
+        press.allowedTouchTypes = []
         addGestureRecognizer(press)
+        touchPressObserver = TouchPressObserver(view: self) { [weak self] pressed in
+            self?.viewModel.isPressed = pressed
+        }
     }
     
     @objc private func handlePress(_ recognizer: NSPressGestureRecognizer) {
@@ -433,30 +468,22 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         let state = SpaceSessionControllersManager.shared
             .controller(for: tab.windowId)?.browserState
         viewModel.configure(with: tab, in: state)
-        if let state {
-            tabPreviewRegistration.configure(
-                anchorView: self,
-                target: .tab(tab),
-                browserState: state,
-                placement: .rightTopAttached,
-                anchorRectProvider: { [weak tab] view in
-                    let bounds = view.bounds
-                    let leadingInset = WebContentConstant.edgesSpacing
-                    let trailingInset = tab?.groupToken == nil
-                        ? WebContentConstant.edgesSpacing
-                        : 2
-                    return CGRect(
-                        x: bounds.minX + leadingInset,
-                        y: bounds.minY + 2,
-                        width: max(0, bounds.width - leadingInset - trailingInset),
-                        height: max(0, bounds.height - 4)
-                    )
-                }
-            )
-        } else {
-            tabPreviewRegistration.invalidate()
+        // A cell reconfigured in place keeps a registration that may be
+        // showing a preview; rebind it as before.
+        if isTabPreviewConfigured {
+            configureTabPreview()
         }
         viewModel.setActiveSuppressed(activeSuppressed, activeValue: tab.isActive)
+        // A tab that stops being active, for example when a link opens a new
+        // tab, drops its touch reveal: the finger has moved on to the page.
+        tab.$isActive
+            .removeDuplicates()
+            .filter { !$0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.viewModel.isTouchRevealed = false
+            }
+            .store(in: &cancellables)
         viewModel.onToggleMute = { [weak tab] in
             guard let tab else { return }
             tab.toggleAudioMuted()
@@ -474,6 +501,35 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         } else {
             updatePeekIndicator(peekTab: nil, browserState: nil)
         }
+    }
+
+    private func configureTabPreview() {
+        guard let tab = configuredTab,
+              let state = SpaceSessionControllersManager.shared
+                .controller(for: tab.windowId)?.browserState else {
+            tabPreviewRegistration.invalidate()
+            return
+        }
+        isTabPreviewConfigured = true
+        tabPreviewRegistration.configure(
+            anchorView: self,
+            target: .tab(tab),
+            browserState: state,
+            placement: .rightTopAttached,
+            anchorRectProvider: { [weak tab] view in
+                let bounds = view.bounds
+                let leadingInset = WebContentConstant.edgesSpacing
+                let trailingInset = tab?.groupToken == nil
+                    ? WebContentConstant.edgesSpacing
+                    : 2
+                return CGRect(
+                    x: bounds.minX + leadingInset,
+                    y: bounds.minY + 2,
+                    width: max(0, bounds.width - leadingInset - trailingInset),
+                    height: max(0, bounds.height - 4)
+                )
+            }
+        )
     }
 
     /// Shows the trailing peek indicator when a live Peek belongs to this
@@ -548,7 +604,7 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             // by reusing `UnifiedTabCloseButton`. Hosted inside the segment
             // so the SwiftUI button receives its own hover events.
             closeHost = ZeroSafeAreaHostingView(rootView: AnyView(
-                UnifiedTabCloseButton(action: closeTapped)
+                UnifiedTabCloseButton(shrinksToFit: true, action: closeTapped)
                     .phiThemeObserver(themeObserver)
             ))
             closeHost.isHidden = true
@@ -592,6 +648,11 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private var statusBadgeHost: TabDecorativeHostingView?
     private var configuredPaneCount = 0
     private var configuredSplitId: String?
+    /// Slot where a dragged tab would join as a new pane, nil while no such
+    /// drop hovers the row. The placeholder stands in that slot.
+    private var paneDropSlot: Int?
+    private let paneDropPlaceholder = TabDecorativeHostingView(
+        rootView: TabSplitDropPlaceholder(cornerRadius: 6))
     private let splitTabPreviewRegistration = SplitTabPreviewRegistration()
     private var showsSplitTabPreview = false
     private var themeObserver = ThemeObserver.shared
@@ -606,6 +667,12 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private var isCellHovered = false {
         didSet {
             guard oldValue != isCellHovered else { return }
+            updateHoverChrome()
+        }
+    }
+    private var isTouchRevealed = false {
+        didSet {
+            guard oldValue != isTouchRevealed else { return }
             updateHoverChrome()
         }
     }
@@ -663,9 +730,11 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
         }
         toolTip = nil
         configuredSplitId = nil
+        setPaneDropSlotHighlighted(nil)
         splitTabPreviewRegistration.invalidate()
         outerBackground.isSelected = false
         isCellHovered = false
+        isTouchRevealed = false
         setCloseButtonSpaceReserved(false)
     }
 
@@ -807,11 +876,21 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             segment.muteWidth = make.width.equalTo(0).constraint
         }
 
+        // A pane can be narrower than a favicon plus a full close button
+        // (four panes at the minimum sidebar width). The button then gives
+        // up its trailing inset, then its width, so it stays inside the
+        // pane beside the favicon. Requiring the full size here made the
+        // layout unsatisfiable; AppKit dropped the width and left a button
+        // that was drawn but could not be hovered or clicked.
         pane.addSubview(segment.closeHost)
         segment.closeHost.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
-            make.trailing.equalToSuperview().offset(-2)
-            make.size.equalTo(CGSize(width: Self.closeButtonSize, height: Self.closeButtonSize))
+            make.height.equalTo(Self.closeButtonSize)
+            make.width.lessThanOrEqualTo(Self.closeButtonSize)
+            make.width.equalTo(Self.closeButtonSize).priority(.high)
+            make.trailing.lessThanOrEqualToSuperview()
+            make.trailing.equalToSuperview().offset(-2).priority(600)
+            make.leading.greaterThanOrEqualTo(icon.snp.trailing).priority(999)
         }
 
         title.snp.makeConstraints { make in
@@ -821,10 +900,12 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             // text when the title actually reaches the segment or close
             // button. The title's low compression resistance lets mute/close
             // controls keep their required widths as this region shrinks.
+            // Below the close button's priorities, so a pane with no room
+            // left for a title collapses it instead of moving the button.
             segment.titlePaneTrailing = make.trailing.equalToSuperview()
-                .offset(-Self.titleTrailingSpacing).constraint
+                .offset(-Self.titleTrailingSpacing).priority(.medium).constraint
             segment.titleCloseTrailing = make.trailing.equalTo(segment.closeHost.snp.leading)
-                .offset(-Self.titleTrailingSpacing).constraint
+                .offset(-Self.titleTrailingSpacing).priority(.medium).constraint
         }
         segment.titleCloseTrailing?.deactivate()
     }
@@ -836,6 +917,24 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
         guard count != configuredPaneCount else { return }
         configuredPaneCount = count
         for index in 0..<count { _ = segment(at: index) }
+        layoutPaneColumns()
+        installStatusBadge(models: segments.prefix(count).map(\.statusModel))
+    }
+
+    /// Shows the placeholder for a dragged tab that would join this split
+    /// as pane `slot`, or removes it for nil.
+    func setPaneDropSlotHighlighted(_ slot: Int?) {
+        guard slot != paneDropSlot else { return }
+        paneDropSlot = slot
+        guard configuredPaneCount > 0 else { return }
+        layoutPaneColumns()
+    }
+
+    /// Lays the configured segments out as equal-width columns, with the
+    /// drop placeholder as one more column in its slot while a tab hovers
+    /// the row.
+    private func layoutPaneColumns() {
+        let count = configuredPaneCount
         for (index, segment) in segments.enumerated() {
             segment.pane.isHidden = index >= count
             segment.pane.snp.removeConstraints()
@@ -844,23 +943,35 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             divider.isHidden = index >= count - 1
             divider.snp.removeConstraints()
         }
-        for index in 0..<count {
-            let pane = segments[index].pane
-            pane.snp.makeConstraints { make in
+        var columns: [NSView] = segments.prefix(count).map(\.pane)
+        let dropSlot = paneDropSlot.map { max(0, min($0, count)) }
+        paneDropPlaceholder.snp.removeConstraints()
+        paneDropPlaceholder.isHidden = dropSlot == nil
+        if let dropSlot {
+            if paneDropPlaceholder.superview == nil {
+                outerBackground.addSubview(paneDropPlaceholder)
+            }
+            columns.insert(paneDropPlaceholder, at: dropSlot)
+        }
+        for (index, column) in columns.enumerated() {
+            column.snp.makeConstraints { make in
                 make.top.bottom.equalToSuperview().inset(2)
                 if index == 0 {
                     make.leading.equalToSuperview().inset(2)
                 } else {
-                    make.leading.equalTo(segments[index - 1].pane.snp.trailing)
+                    make.leading.equalTo(columns[index - 1].snp.trailing)
                         .offset(Self.segmentSpacing)
-                    make.width.equalTo(segments[0].pane)
+                    make.width.equalTo(columns[0])
                 }
-                if index == count - 1 {
+                if index == columns.count - 1 {
                     make.trailing.equalToSuperview().inset(2)
                 }
             }
         }
         for index in 0..<(count - 1) {
+            // The placeholder's own fill sets it apart, so the seam it
+            // would sit against is dropped.
+            dividers[index].isHidden = dropSlot == index + 1
             dividers[index].snp.makeConstraints { make in
                 make.centerX.equalTo(segments[index].pane.snp.trailing)
                     .offset(Self.segmentSpacing / 2)
@@ -869,7 +980,6 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
                 make.height.equalTo(16)
             }
         }
-        installStatusBadge(models: segments.prefix(count).map(\.statusModel))
     }
 
     /// Treat the split as one tab for chat and agent status. Each pane feeds
@@ -972,10 +1082,15 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
         segments[index].tab?.close()
     }
 
+    override func setTouchRevealed(_ revealed: Bool) {
+        isTouchRevealed = revealed
+    }
+
     private func updateHoverChrome() {
-        setCloseButtonSpaceReserved(isCellHovered)
+        let showsCloseButtons = isCellHovered || isTouchRevealed
+        setCloseButtonSpaceReserved(showsCloseButtons)
         for segment in visibleSegments {
-            segment.closeHost.isHidden = !isCellHovered
+            segment.closeHost.isHidden = !showsCloseButtons
         }
     }
 
@@ -1226,6 +1341,16 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
     func isRecordingIndicatorVisible(paneIndex: Int) -> Bool {
         guard paneIndex < configuredPaneCount else { return false }
         return !segments[paneIndex].recordingHost.isHidden
+    }
+
+    /// Test seam: frames of the given pane, its favicon and its close
+    /// button, in the cell's coordinates.
+    func closeButtonLayout(paneIndex: Int) -> (pane: NSRect, favicon: NSRect, button: NSRect)? {
+        guard paneIndex < configuredPaneCount else { return nil }
+        let segment = segments[paneIndex]
+        return (segment.pane.convert(segment.pane.bounds, to: self),
+                segment.iconView.convert(segment.iconView.bounds, to: self),
+                segment.closeHost.convert(segment.closeHost.bounds, to: self))
     }
 
     /// Test seam: current memory-reclaimed opacity for the given pane's favicon.

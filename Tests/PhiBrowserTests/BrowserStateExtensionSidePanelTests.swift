@@ -690,6 +690,7 @@ private final class ExtensionSidePanelTestWebContentWrapper: NSObject, WebConten
     func goForward() {}
     func stopLoading() {}
     func navigate(toURL urlString: String) { self.urlString = urlString }
+    func navigateInPlace(toURL urlString: String) {}
     func setAsActiveTab() {}
     func moveSelf(to newIndex: Int, selectAfterMove: Bool) {}
     func moveSelf(toNewWindow activateNewWindow: Bool) {}

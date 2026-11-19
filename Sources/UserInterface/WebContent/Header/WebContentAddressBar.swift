@@ -34,12 +34,12 @@ final class WebContentAddressBarViewModel: ObservableObject {
         // shell sets currentTab=nil.
         if let browserState {
             browserState.$isInPlaceholderMode
-                .removeDuplicates()
+                .combineLatest(browserState.$pendingSplitPreview)
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self] isPlaceholder in
+                .sink { [weak self] isPlaceholder, preview in
                     guard let self else { return }
                     self.isInPlaceholderMode = isPlaceholder
-                    if isPlaceholder {
+                    if isPlaceholder || (preview != nil && preview?.partnerTabId == currentTab?.guid) {
                         self.displayText = ""
                     } else if let url = currentTab?.url {
                         let alwaysShowURLPath = PhiPreferences.GeneralSettings.alwaysShowURLPath.loadValue()
@@ -99,6 +99,11 @@ final class WebContentAddressBarViewModel: ObservableObject {
                 // Skip writes during placeholder mode so the placeholder sink
                 // (which blanks displayText) is not raced by a stale URL update.
                 guard self?.browserState?.isInPlaceholderMode != true else { return }
+                if let preview = self?.browserState?.pendingSplitPreview,
+                   preview.partnerTabId == tab.guid {
+                    self?.displayText = ""
+                    return
+                }
                 self?.displayText = text
             }
             .store(in: &cancellables)
@@ -190,6 +195,10 @@ struct WebContentAddressBarView: View {
 
     @StateObject private var viewModel: WebContentAddressBarViewModel
     @State private var isHovering = false
+    /// A tap on the trailing controls' area shows them for touch, which has
+    /// no hover.
+    @State private var isTouchRevealed = false
+    @State private var touchRevealHideTask: Task<Void, Never>?
     @State private var anchorView: NSView?
     @State private var isMenuShown = false
     @State private var menuAnchorView: NSView?
@@ -261,6 +270,7 @@ struct WebContentAddressBarView: View {
                     copyURLButton
                     menuButton
                 }
+                .overlay { touchRevealSurface }
             }
         }
         .frame(height: 26)
@@ -281,7 +291,43 @@ struct WebContentAddressBarView: View {
         .onChange(of: currentTab.map(ObjectIdentifier.init)) { _, _ in
             viewModel.bind(currentTab: currentTab)
         }
+        .onChange(of: isMenuShown) { _, isShown in
+            if !isShown, isTouchRevealed {
+                scheduleTouchRevealHide()
+            }
+        }
         .clipShape(Capsule())
+    }
+
+    private var isHoverActive: Bool {
+        isHovering || isTouchRevealed
+    }
+
+    /// Takes the first touch tap on the hidden controls so it only reveals
+    /// them; once shown, taps reach the controls.
+    @ViewBuilder
+    private var touchRevealSurface: some View {
+        if #available(macOS 27, *) {
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(TapGesture(count: 1, inputKinds: .directTouch).onEnded {
+                    isTouchRevealed = true
+                    scheduleTouchRevealHide()
+                })
+                .allowsHitTesting(!isHoverActive && !isMenuShown)
+        }
+    }
+
+    /// Hides the touch reveal after a few seconds. A menu opened from these
+    /// controls keeps the bar in its hover state, as it does for the pointer;
+    /// the countdown restarts when the menu closes.
+    private func scheduleTouchRevealHide() {
+        touchRevealHideTask?.cancel()
+        touchRevealHideTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, !isMenuShown else { return }
+            isTouchRevealed = false
+        }
     }
 
     private var backgroundShape: some View {
@@ -293,7 +339,7 @@ struct WebContentAddressBarView: View {
                ? ThemedColor.windowBackground.swiftUIColor(theme: theme, appearance: appearance)
                : .clear)
         let hoverColor = Color(.sidebarTabHoveredColorEmphasized)
-        let shouldHighlight = isHovering || isMenuShown
+        let shouldHighlight = isHoverActive || isMenuShown
         return Capsule()
             .fill(shouldHighlight ? hoverColor : baseColor)
     }
@@ -384,7 +430,7 @@ struct WebContentAddressBarView: View {
         if viewModel.isReaderApplicable {
             ReaderButtonView(
                 isActive: viewModel.isReaderViewActive,
-                isAddressBarHovering: isHovering,
+                isAddressBarHovering: isHoverActive,
                 isMenuShown: isMenuShown,
                 action: {
                     anchorView?.window?.customTooltipController.dismissAll()
@@ -435,8 +481,8 @@ struct WebContentAddressBarView: View {
             .buttonStyle(.plain)
             .background(AddressBarAnchorView { memoryMenuAnchorView = $0 }.allowsHitTesting(false))
             .onHover { isMemoryButtonHovering = $0 }
-            .opacity(isHovering || isMenuShown ? 1 : 0)
-            .animation(.easeInOut(duration: 0.15), value: isHovering || isMenuShown)
+            .opacity(isHoverActive || isMenuShown ? 1 : 0)
+            .animation(.easeInOut(duration: 0.15), value: isHoverActive || isMenuShown)
             .accessibilityLabel(title)
         }
     }
@@ -447,7 +493,7 @@ struct WebContentAddressBarView: View {
             browserState: browserState,
             currentTab: currentTab,
             showCopyConfirmation: $showCopyConfirmation,
-            isAddressBarHovering: isHovering,
+            isAddressBarHovering: isHoverActive,
             isMenuShown: isMenuShown,
             dismissTooltip: {
                 anchorView?.window?.customTooltipController.dismissAll()
@@ -489,8 +535,8 @@ struct WebContentAddressBarView: View {
             )
         }
         .frame(width: 24, height: 24)
-        .opacity((isHovering || isMenuShown) ? 1 : 0)
-        .animation(.easeInOut(duration: 0.15), value: isHovering || isMenuShown)
+        .opacity((isHoverActive || isMenuShown) ? 1 : 0)
+        .animation(.easeInOut(duration: 0.15), value: isHoverActive || isMenuShown)
     }
 
     private func presentAddressBarMenu() {

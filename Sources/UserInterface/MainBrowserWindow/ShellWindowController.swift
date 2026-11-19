@@ -224,6 +224,24 @@ final class ShellWindow: NSWindow {
         }
     }
 
+    /// Mouse back/forward side buttons over a sidebar (docked or floating)
+    /// switch Space; over the page they still navigate. Routed here instead
+    /// of up the responder chain because the sidebar's own views swallow
+    /// `otherMouseDown` rather than passing it on: the tab list's
+    /// NSOutlineView and the SwiftUI hosting views (Spaces strip, rows,
+    /// bottom bar) all keep it. `sendEvent` calls it for the button shape;
+    /// `PhiApplication.sendEvent` calls it for the swipe shape, which it
+    /// turns into page Back/Forward before any window sees it. Returns false
+    /// when the pointer isn't over a sidebar, or the sidebar didn't take the
+    /// event.
+    @objc func routeSideButtonToSidebar(_ event: NSEvent) -> Bool {
+        guard event.type == .otherMouseDown || event.type == .swipe,
+              let hit = contentView?.superview?.hitTest(event.locationInWindow) else { return false }
+        let surface = sequence(first: hit as NSResponder, next: { $0.nextResponder })
+            .lazy.compactMap { $0 as? any SpaceSwitchBandSurface }.first
+        return surface?.handleSideButtonSpaceSwitch(event) == true
+    }
+
     override func sendEvent(_ event: NSEvent) {
         if let target = redispatchTarget(for: event) {
             // Nothing took the second pass: the Chromium window's
@@ -231,6 +249,7 @@ final class ShellWindow: NSWindow {
             target.sendEvent(event)
             return
         }
+        if routeSideButtonToSidebar(event) { return }
         switch event.type {
         case .keyDown:
             // AppKit does not run performKeyEquivalent for Option-only keys;
@@ -346,12 +365,21 @@ final class ShellWindow: NSWindow {
 
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
         noteWindowActionDuringTitlebarDoubleClick()
+        logProgrammaticResize(to: frameRect)
         super.setFrame(frameRect, display: flag)
     }
 
     override func setFrame(_ frameRect: NSRect, display displayFlag: Bool, animate animateFlag: Bool) {
         noteWindowActionDuringTitlebarDoubleClick()
+        logProgrammaticResize(to: frameRect)
         super.setFrame(frameRect, display: displayFlag, animate: animateFlag)
+    }
+
+    /// Expanding the sidebar column makes AppKit widen the window when the
+    /// page area can't give up the column's width.
+    private func logProgrammaticResize(to frameRect: NSRect) {
+        guard !inLiveResize, frameRect.size != frame.size else { return }
+        AppLogDebug("[SidebarToggle] window frame \(frame) -> \(frameRect)")
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -519,8 +547,8 @@ final class ShellWindowController: NSObject, NSWindowDelegate {
         trafficLightPositioner?.stop(restoringPlacement: true)
         let positioner = TrafficLightPositioner(
             window: window,
-            centerFromWindowTop: SpaceSessionController.chromeRowCenter(for: layoutMode, edgeToEdgeEnabled: layout.edgeToEdgeEnabled),
-            centerFromWindowLeading: layoutMode == .balanced ? 22 : nil
+            centerFromWindowTop: layout.sidebarOnRight ? FloatingTrafficLightMetrics.bandHeight / 2 : SpaceSessionController.chromeRowCenter(for: layoutMode, edgeToEdgeEnabled: layout.edgeToEdgeEnabled),
+            centerFromWindowLeading: layout.sidebarOnRight ? 20 : (layoutMode == .balanced ? 22 : nil)
         )
         trafficLightPositioner = positioner
         trafficLightLayout = layout
@@ -543,6 +571,10 @@ final class ShellWindowController: NSObject, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.title = "Phi"
         window.isMovableByWindowBackground = true
+        // Otherwise a table view rebuilds the key view loop of every row it
+        // adds, forcing an extra layout of the row's SwiftUI content; when
+        // the window recalculates the loop itself, it does so only on Tab.
+        window.autorecalculatesKeyViewLoop = true
         window.animationBehavior = .none
         // Chromium owns session restore and the slot owns frame continuity,
         // exactly as for the adopted Chromium windows (see

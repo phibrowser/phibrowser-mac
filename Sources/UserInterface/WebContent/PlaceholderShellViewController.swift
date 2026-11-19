@@ -42,6 +42,7 @@ final class PlaceholderShellViewController: NSViewController {
     private var headerHeightConstraint: Constraint?
     private var leftContainerLeadingConstraint: Constraint?
     private var trailingBottomConstraint: Constraint?
+    private var trailingConstraint: Constraint?
     private var fullscreenObserverCancellable: AnyCancellable?
     private var transcriptObserverCancellable: AnyCancellable?
     private var contentLayout: WebContentLayout {
@@ -93,9 +94,10 @@ final class PlaceholderShellViewController: NSViewController {
         view.addSubview(leftContainerWrapper)
         leftContainerWrapper.snp.makeConstraints { make in
             leftContainerLeadingConstraint = make.leading.equalToSuperview()
-                .inset(contentLeadingInset)
+                .inset(contentInsets.leading)
                 .constraint
-            trailingBottomConstraint = make.trailing.bottom.equalToSuperview().inset(contentLayout.edgeSpacing).constraint
+            trailingBottomConstraint = make.bottom.equalToSuperview().inset(contentLayout.edgeSpacing).constraint
+            trailingConstraint = make.trailing.equalToSuperview().inset(contentInsets.trailing).constraint
             make.top.equalToSuperview()
         }
 
@@ -162,16 +164,15 @@ final class PlaceholderShellViewController: NSViewController {
                 }
     }
 
-    private var contentLeadingInset: CGFloat {
-        let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
-        let sidebarCollapsed = browserState?.sidebarCollapsed ?? true
-        return (traditionalLayout || sidebarCollapsed)
-            ? contentLayout.edgeSpacing
-            : 0
+    /// Mirror of `WebContentViewController.updateSplitViewLeadingInset`: no
+    /// margin on the side the expanded sidebar sits on.
+    private var contentInsets: (leading: CGFloat, trailing: CGFloat) {
+        contentLayout.pageInsets(sidebarCollapsed: browserState?.sidebarCollapsed ?? true)
     }
 
     private func updateContentLeadingInset() {
-        leftContainerLeadingConstraint?.update(inset: contentLeadingInset)
+        leftContainerLeadingConstraint?.update(inset: contentInsets.leading)
+        trailingConstraint?.update(inset: contentInsets.trailing)
         trailingBottomConstraint?.update(inset: contentLayout.edgeSpacing)
         leftContainerView.layer?.cornerRadius = contentLayout.innerCornerRadius
     }

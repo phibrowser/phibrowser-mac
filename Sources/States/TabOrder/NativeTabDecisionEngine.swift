@@ -20,6 +20,13 @@ struct NativeTabCreationContext: Equatable {
     var sourceTabId: Int?
     var resetOpenerOnActiveTabChange: Bool
     var didForgetAllOpenersBeforeCreate: Bool
+    /// The user asked for this tab with a link gesture (Cmd-click,
+    /// middle-click, Cmd-Shift-click, or Open Link in New Tab), as opposed to
+    /// the page opening it or a Phi command. Absent from older frameworks.
+    var isUserOpenedNewTab: Bool
+    /// The Opener's search terms, normalised by Chromium, when the Opener is
+    /// a search results page of a search engine its profile knows.
+    var openerSearchTerms: String?
 
     init(
         isActiveAtCreation: Bool = false,
@@ -28,7 +35,9 @@ struct NativeTabCreationContext: Equatable {
         insertAfterTabId: Int? = nil,
         sourceTabId: Int? = nil,
         resetOpenerOnActiveTabChange: Bool = false,
-        didForgetAllOpenersBeforeCreate: Bool = false
+        didForgetAllOpenersBeforeCreate: Bool = false,
+        isUserOpenedNewTab: Bool = false,
+        openerSearchTerms: String? = nil
     ) {
         self.isActiveAtCreation = isActiveAtCreation
         self.creationKind = creationKind
@@ -37,6 +46,8 @@ struct NativeTabCreationContext: Equatable {
         self.sourceTabId = sourceTabId
         self.resetOpenerOnActiveTabChange = resetOpenerOnActiveTabChange
         self.didForgetAllOpenersBeforeCreate = didForgetAllOpenersBeforeCreate
+        self.isUserOpenedNewTab = isUserOpenedNewTab
+        self.openerSearchTerms = openerSearchTerms
     }
 
     init(dictionary: [AnyHashable: Any]) {
@@ -47,7 +58,9 @@ struct NativeTabCreationContext: Equatable {
             insertAfterTabId: Self.intValue(dictionary["insertAfterTabId"]),
             sourceTabId: Self.intValue(dictionary["sourceTabId"]),
             resetOpenerOnActiveTabChange: Self.boolValue(dictionary["resetOpenerOnActiveTabChange"]),
-            didForgetAllOpenersBeforeCreate: Self.boolValue(dictionary["didForgetAllOpenersBeforeCreate"])
+            didForgetAllOpenersBeforeCreate: Self.boolValue(dictionary["didForgetAllOpenersBeforeCreate"]),
+            isUserOpenedNewTab: Self.boolValue(dictionary["isUserOpenedNewTab"]),
+            openerSearchTerms: dictionary["openerSearchTerms"] as? String
         )
     }
 
@@ -460,10 +473,9 @@ enum NativeTabDecisionEngine {
             }
         case .typedNewTab, .typedNavigation:
             AppLogDebug(
-                "[NativeTab] insertionIndex chose append for kind=\(context.creationKind.rawValue) " +
-                "result=\(visibleNormalTabIds.count)"
+                "[NativeTab] insertionIndex chose head for kind=\(context.creationKind.rawValue)"
             )
-            return visibleNormalTabIds.count
+            return 0
         case .explicitInsert, .moveFromOtherWindow, .restore, .bridgeCreate, .unknown:
             if let insertAfterTabId = context.insertAfterTabId,
                let anchorIndex = visibleNormalTabIds.firstIndex(of: insertAfterTabId) {
@@ -511,6 +523,25 @@ enum NativeTabDecisionEngine {
             insertAfterIndex = index
         }
         return insertAfterIndex.map { $0 + 1 } ?? 0
+    }
+
+    /// The pane that takes focus when the focused pane of a split closes and
+    /// the split stays up (two or more other panes remain): the next
+    /// remaining pane in slot order, else the previous one. `nil` when the
+    /// close dissolves the split, so the ordinary `selectionTarget` applies.
+    /// `splitPaneTabIds` are the split's panes in slot order; a pane absent
+    /// from `visibleNormalTabIds` (closing in the same batch) is skipped.
+    static func splitPaneSelectionTarget(
+        splitPaneTabIds: [Int],
+        closingTabId: Int,
+        visibleNormalTabIds: [Int]
+    ) -> Int? {
+        guard let slot = splitPaneTabIds.firstIndex(of: closingTabId) else { return nil }
+        let visible = Set(visibleNormalTabIds)
+        let isRemaining: (Int) -> Bool = { $0 != closingTabId && visible.contains($0) }
+        guard splitPaneTabIds.filter(isRemaining).count >= 2 else { return nil }
+        return splitPaneTabIds[(slot + 1)...].first(where: isRemaining)
+            ?? splitPaneTabIds[..<slot].last(where: isRemaining)
     }
 
     static func selectionTarget(
@@ -625,5 +656,39 @@ enum NativeTabDecisionEngine {
         }
 
         return false
+    }
+}
+
+/// Protects only native creation placements while their synchronous bridge
+/// mutations and queued full-strip echoes drain. Chromium wins at completion.
+struct NativeTabPlacementReconciler {
+    private var requests: [Int: UUID] = [:]
+    private var latestIndices: [Int: Int]?
+
+    var protectedTabIds: Set<Int> { Set(requests.keys) }
+
+    mutating func begin(tabId: Int) -> UUID {
+        let token = UUID()
+        requests[tabId] = token
+        return token
+    }
+
+    mutating func record(indices: [Int: Int]) {
+        latestIndices = indices
+    }
+
+    mutating func finish(tabId: Int, token: UUID) -> [Int: Int]? {
+        guard requests[tabId] == token else { return nil }
+        requests.removeValue(forKey: tabId)
+        return latestIndices
+    }
+
+    func reconcile(localOrder: [Int], physicalOrder: [Int], additionallyProtected: Set<Int> = []) -> [Int] {
+        let protected = protectedTabIds.union(additionallyProtected).intersection(localOrder)
+        var result = physicalOrder.filter { !protected.contains($0) }
+        for (index, tabId) in localOrder.enumerated() where protected.contains(tabId) {
+            result.insert(tabId, at: min(index, result.count))
+        }
+        return result
     }
 }

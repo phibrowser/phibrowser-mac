@@ -322,7 +322,7 @@ final class NativeTabDecisionEngineTests: XCTestCase {
         XCTAssertEqual(index, 2)
     }
 
-    func testTypedNewTabFallsBackToAppend() {
+    func testTypedNewTabPrecedesExistingNormalTabs() {
         let context = NativeTabCreationContext(
             isActiveAtCreation: true,
             creationKind: .typedNewTab,
@@ -339,7 +339,31 @@ final class NativeTabDecisionEngineTests: XCTestCase {
             relationGraph: .empty
         )
 
-        XCTAssertEqual(index, 3)
+        XCTAssertEqual(index, 0)
+    }
+
+    func testOrdinaryCreationPrecedesThreeAndFourPaneSplits() {
+        for panes in [[1, 2, 3], [1, 2, 3, 4]] {
+            for kind in [NativeTabCreationKind.typedNewTab, .typedNavigation] {
+                let index = NativeTabDecisionEngine.insertionIndex(
+                    visibleNormalTabIds: panes,
+                    context: NativeTabCreationContext(creationKind: kind, openerTabId: 2),
+                    relationGraph: .empty,
+                    splitLastTabIdByMember: Dictionary(uniqueKeysWithValues: panes.map { ($0, panes[panes.count - 1]) })
+                )
+                XCTAssertEqual(index, 0)
+            }
+        }
+    }
+
+    func testExplicitPlacementAndRestoreRetainTheirAnchor() {
+        for kind in [NativeTabCreationKind.explicitInsert, .restore, .moveFromOtherWindow, .bridgeCreate, .unknown] {
+            XCTAssertEqual(NativeTabDecisionEngine.insertionIndex(
+                visibleNormalTabIds: [1, 2, 3, 4, 5],
+                context: NativeTabCreationContext(creationKind: kind, insertAfterTabId: 4),
+                relationGraph: .empty
+            ), 4)
+        }
     }
 
     func testCloseSelectionPrefersChildThenSiblingThenOpenerThenNeighbor() {
@@ -387,6 +411,46 @@ final class NativeTabDecisionEngineTests: XCTestCase {
                 relationGraph: .empty
             ),
             9
+        )
+    }
+
+    /// A pane closing out of a split that stays up keeps focus inside the
+    /// split: the next pane, or the previous one for the last pane, rather
+    /// than the tab after the split. A close that dissolves the split, or
+    /// takes the other panes with it, leaves the choice to `selectionTarget`.
+    func testSplitPaneSelectionKeepsFocusInASplitThatStaysUp() {
+        let panes = [1, 2, 3, 4]
+        let visible = [1, 2, 3, 4, 5]
+
+        XCTAssertEqual(
+            NativeTabDecisionEngine.splitPaneSelectionTarget(
+                splitPaneTabIds: panes, closingTabId: 4, visibleNormalTabIds: visible),
+            3,
+            "The last pane hands focus back to the pane before it, not to tab 5"
+        )
+        XCTAssertEqual(
+            NativeTabDecisionEngine.splitPaneSelectionTarget(
+                splitPaneTabIds: panes, closingTabId: 2, visibleNormalTabIds: visible),
+            3
+        )
+        XCTAssertEqual(
+            NativeTabDecisionEngine.splitPaneSelectionTarget(
+                splitPaneTabIds: [1, 2, 3], closingTabId: 3, visibleNormalTabIds: [1, 2, 3, 5]),
+            2
+        )
+        XCTAssertNil(
+            NativeTabDecisionEngine.splitPaneSelectionTarget(
+                splitPaneTabIds: [1, 2], closingTabId: 2, visibleNormalTabIds: [1, 2, 5]),
+            "Closing a pane of a pair dissolves the split"
+        )
+        XCTAssertNil(
+            NativeTabDecisionEngine.splitPaneSelectionTarget(
+                splitPaneTabIds: panes, closingTabId: 4, visibleNormalTabIds: [3, 4, 5]),
+            "Panes closing in the same batch do not count as remaining"
+        )
+        XCTAssertNil(
+            NativeTabDecisionEngine.splitPaneSelectionTarget(
+                splitPaneTabIds: panes, closingTabId: 5, visibleNormalTabIds: visible)
         )
     }
 
@@ -724,5 +788,54 @@ final class NativeTabDecisionEngineTests: XCTestCase {
         graph.fixOpenersAfterMovingSlice([2, 3])
 
         XCTAssertNil(graph.openerByTabId[4])
+    }
+}
+
+final class NativeTabPlacementReconcilerTests: XCTestCase {
+    func testRapidCreationsKeepBothSlotsUntilTheirOwnCompletion() {
+        var reconciler = NativeTabPlacementReconciler()
+        let a = reconciler.begin(tabId: 10)
+        let b = reconciler.begin(tabId: 11)
+        let local = [11, 10, 1, 2, 3, 4]
+        reconciler.record(indices: [1: 0, 2: 1, 3: 2, 4: 3, 10: 4, 11: 5])
+        XCTAssertEqual(reconciler.reconcile(localOrder: local, physicalOrder: [1, 2, 3, 4, 10, 11]), local)
+        reconciler.record(indices: [10: 0, 1: 1, 2: 2, 3: 3, 4: 4, 11: 5])
+        XCTAssertNotNil(reconciler.finish(tabId: 10, token: a))
+        XCTAssertEqual(reconciler.reconcile(localOrder: local, physicalOrder: [10, 1, 2, 3, 4, 11]), local)
+        reconciler.record(indices: [11: 0, 10: 1, 1: 2, 2: 3, 3: 4, 4: 5])
+        XCTAssertNotNil(reconciler.finish(tabId: 11, token: b))
+        XCTAssertTrue(reconciler.protectedTabIds.isEmpty)
+        XCTAssertEqual(reconciler.reconcile(localOrder: local, physicalOrder: [1, 2, 3, 4, 11, 10]), [1, 2, 3, 4, 11, 10])
+    }
+
+    func testOlderCompletionCannotReleaseReplacementRequest() {
+        var reconciler = NativeTabPlacementReconciler()
+        let old = reconciler.begin(tabId: 10)
+        let current = reconciler.begin(tabId: 10)
+        reconciler.record(indices: [1: 0, 10: 1])
+        XCTAssertNil(reconciler.finish(tabId: 10, token: old))
+        XCTAssertEqual(reconciler.protectedTabIds, [10])
+        XCTAssertEqual(reconciler.finish(tabId: 10, token: current), [1: 0, 10: 1])
+    }
+
+    func testConstraintOrMissingAnchorAdoptsActualOrderAtCompletion() {
+        var reconciler = NativeTabPlacementReconciler()
+        let token = reconciler.begin(tabId: 10)
+        reconciler.record(indices: [1: 0, 2: 1, 3: 2, 4: 3, 10: 4])
+        XCTAssertEqual(reconciler.reconcile(localOrder: [10, 1, 2, 3, 4], physicalOrder: [1, 2, 3, 4, 10]), [10, 1, 2, 3, 4])
+        XCTAssertNotNil(reconciler.finish(tabId: 10, token: token))
+        XCTAssertEqual(reconciler.reconcile(localOrder: [10, 1, 2, 3, 4], physicalOrder: [1, 2, 3, 4, 10]), [1, 2, 3, 4, 10])
+    }
+
+    func testClosingOrHidingPendingTabDoesNotReinsertIt() {
+        var reconciler = NativeTabPlacementReconciler()
+        _ = reconciler.begin(tabId: 10)
+        XCTAssertEqual(reconciler.reconcile(localOrder: [1, 2], physicalOrder: [2, 1]), [2, 1])
+    }
+
+    func testUnrelatedFourPaneReversalIsNotProtected() {
+        var reconciler = NativeTabPlacementReconciler()
+        _ = reconciler.begin(tabId: 10)
+        XCTAssertEqual(reconciler.reconcile(localOrder: [10, 1, 2, 3, 4], physicalOrder: [4, 3, 2, 1, 10]), [10, 4, 3, 2, 1])
     }
 }

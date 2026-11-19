@@ -417,7 +417,7 @@ struct CreateSpacePanel: View {
     /// Space once the bridge reports the new id. Mirrors the menu's
     /// `newProfile` flow so both entry points behave identically.
     private func promptCreateProfile() {
-        guard let name = ProfileNameFieldValidator.present(.create) else { return }
+        guard let name = ProfileNameFieldValidator.presentCreate() else { return }
         profileManager.createProfile(displayName: name) { newId in
             if let newId { selectedProfileId = newId }
         }

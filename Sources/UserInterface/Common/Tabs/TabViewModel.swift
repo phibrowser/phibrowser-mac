@@ -7,6 +7,33 @@ import SwiftUI
 import Combine
 import AppKit
 
+enum TabSplitDropSide: Equatable {
+    case left
+    case right
+}
+
+struct TabSplitDropTarget: Equatable {
+    let tabId: Int
+    let side: TabSplitDropSide
+}
+
+/// A dragged tab hovering a split's sidebar row: the split it would join
+/// and the pane slot it would take.
+struct SplitPaneDropTarget: Equatable {
+    let splitId: String
+    let slot: Int
+
+    /// The slot for a pointer at `x` over a split row spanning `rowFrame`
+    /// with `paneCount` panes. Slots follow the pane boundaries of the row
+    /// at rest: the leading half of a pane inserts before it and the
+    /// trailing half after it.
+    static func slot(atX x: CGFloat, in rowFrame: CGRect, paneCount: Int) -> Int {
+        guard paneCount > 0, rowFrame.width > 0 else { return max(0, paneCount) }
+        let fraction = (x - rowFrame.minX) / rowFrame.width
+        return max(0, min(paneCount, Int((fraction * CGFloat(paneCount)).rounded())))
+    }
+}
+
 enum TabCornerBadgeStatus: Int, CaseIterable {
     case chat
     case inputting
@@ -190,6 +217,7 @@ final class TabViewModel {
     var title: String = ""
     var url: String?
     var faviconUrl: String?
+    var pinnedIcon: String?
     var liveFaviconImage: NSImage?
     var profileFaviconImage: NSImage?
     private(set) var liveFaviconRevision: Int = 0
@@ -201,8 +229,11 @@ final class TabViewModel {
     /// True when this tab is part of the temporary multi-selection (the active
     /// tab is implicitly included but never carries this flag).
     var isMultiSelected: Bool = false
+    var splitDropSide: TabSplitDropSide?
     var isHovered: Bool = false
     var isHoverSuppressed: Bool = false
+    /// A touch revealed the row's hover-only controls (touch has no hover).
+    var isTouchRevealed: Bool = false
     var showsTabPreview: Bool = false
     /// A live Peek is attached to this tab — drives the trailing peek
     /// indicator on the sidebar row.
@@ -272,6 +303,7 @@ final class TabViewModel {
         title = ""
         url = nil
         faviconUrl = nil
+        pinnedIcon = nil
         faviconLoadURL = nil
         liveFaviconImage = nil
         profileFaviconImage = nil
@@ -279,8 +311,10 @@ final class TabViewModel {
         isActive = false
         isActiveSuppressed = false
         isMultiSelected = false
+        splitDropSide = nil
         isHovered = false
         isHoverSuppressed = false
+        isTouchRevealed = false
         showsTabPreview = false
         showsPeek = false
         isPressed = false
@@ -333,6 +367,7 @@ final class TabViewModel {
         self.url = tab.url
         self.faviconLoadURL = Self.faviconPageURLString(for: tab)
         self.faviconUrl = tab.faviconUrl
+        self.pinnedIcon = tab.pinnedIcon
         updateLiveFavicon(data: tab.liveFaviconData, revision: tab.liveFaviconRevision)
         updateProfileFaviconImage(data: tab.cachedFaviconData, clearsOnNil: true)
         refreshProfileFaviconIfNeeded(for: tab, expectedGuid: tab.guid)
@@ -361,6 +396,15 @@ final class TabViewModel {
                 guard let self, self.isCurrentConfiguration(expectedGuid: expectedGuid, expectedGeneration: expectedGeneration) else { return }
                 self.title = newTitle
                 self.onToolTipUpdated?()
+            }
+            .store(in: &cancellables)
+
+        tab.$pinnedIcon
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] icon in
+                guard let self, self.isCurrentConfiguration(expectedGuid: expectedGuid, expectedGeneration: expectedGeneration) else { return }
+                self.pinnedIcon = icon
             }
             .store(in: &cancellables)
             

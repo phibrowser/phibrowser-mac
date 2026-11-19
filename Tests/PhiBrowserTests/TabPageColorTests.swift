@@ -312,6 +312,9 @@ final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
     var supportsPageColor = true
     var supportsKeepLoaded = true
     private(set) var keepLoadedPushes: [Bool] = []
+    private(set) var boundTabPushes: [Bool] = []
+    /// Custom value and bound-tab pushes in the order they came.
+    private(set) var bindingPushLog: [String] = []
     private var storedPageColor: NSColor?
     private(set) var pageColorReadCount = 0
     private(set) var pageColorObservationCount = 0
@@ -364,6 +367,7 @@ final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
     func goForward() {}
     func stopLoading() {}
     func navigate(toURL urlString: String) { self.urlString = urlString }
+    func navigateInPlace(toURL urlString: String) {}
     func setAsActiveTab() { setAsActiveTabCallCount += 1 }
     func moveSelf(to newIndex: Int, selectAfterMove: Bool) {}
     func moveSelf(toNewWindow activateNewWindow: Bool) {}
@@ -376,7 +380,10 @@ final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
                   afterTabId anchorTabId: Int64) {}
     func moveSplit(toNewWindow activateNewWindow: Bool) {}
     func moveSplit(toWindow targetWindowId: Int64, at insertIndex: Int) {}
-    func updateTabCustomValue(_ customValue: String) { updatedCustomValues.append(customValue) }
+    func updateTabCustomValue(_ customValue: String) {
+        updatedCustomValues.append(customValue)
+        bindingPushLog.append("customValue=\(customValue)")
+    }
     func focus() {}
     func restoreFocus() { restoreFocusCallCount += 1 }
     func updateSecurityState(_ securityState: [AnyHashable: Any]) {}
@@ -387,4 +394,8 @@ final class PageColorTestWebContentWrapper: NSObject, WebContentWrapper {
     func muteAudio() {}
     func unmuteAudio() {}
     func setPhiKeepLoaded(_ keepLoaded: Bool) { keepLoadedPushes.append(keepLoaded) }
+    func setPhiBoundTab(_ bound: Bool) {
+        boundTabPushes.append(bound)
+        bindingPushLog.append("bound=\(bound)")
+    }
 }

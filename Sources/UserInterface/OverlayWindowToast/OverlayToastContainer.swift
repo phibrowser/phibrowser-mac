@@ -118,6 +118,7 @@ struct OverlayToastContainer: View {
                 topCenterToastArea
                 topTrailingToastArea
             }
+            .padding(viewModel.contentInsets)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .coordinateSpace(name: coordinateSpaceName)
             .onPreferenceChange(OverlayHitTestFrameKey.self) { swiftUIFrames in

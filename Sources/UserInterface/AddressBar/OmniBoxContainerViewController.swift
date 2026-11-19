@@ -59,6 +59,7 @@ final class OmniBoxContainerViewController: NSViewController {
     private(set) var hasShown = false
     private var needsShowAnimation = false
     private var animationOn = false
+    private var presentationGeneration: UInt64 = 0
     private weak var browserState: BrowserState?
     private var focusingTabObserver: AnyCancellable?
     private var keyboardMonitor: Any?
@@ -94,7 +95,9 @@ final class OmniBoxContainerViewController: NSViewController {
         super.init(nibName: nil, bundle: nil)
         self.browserState = browserState
         self.parentView = superView
-        omniBoxController = OmniBoxViewController(viewModel: .init(windowState: browserState), state: browserState)
+        omniBoxController = OmniBoxViewController(
+            viewModel: .init(windowState: browserState, enableUnifiedOmnibox: UnifiedOmnibox.isEnabled),
+            state: browserState)
         omniBoxController?.setActionDelegate(self)
         
         superView?.mouseDown = { [weak self] event in
@@ -259,6 +262,7 @@ final class OmniBoxContainerViewController: NSViewController {
     
     
     func showOmniBox(fromAddressBar: Bool, addressView: NSView? = nil) {
+        presentationGeneration += 1
         omniBoxController?.prepareForPresentation()
         self.addressView = addressView
         showFromAddressBar = fromAddressBar && addressView != nil
@@ -275,9 +279,28 @@ final class OmniBoxContainerViewController: NSViewController {
         } else {
             showOmniboxReletiveToAdressView(omniBoxController?.contentSize ?? .zero)
         }
+        reclaimKeyFromChildWindow()
         omniBoxController?.focusTextField()
         observeFocusingTabChange()
         postInWindowOverlayVisibility(true)
+    }
+
+    /// A shortcut pressed while a child window of this window holds key (the
+    /// sidebar folder preview, the find bar) never reaches this window's
+    /// `sendEvent`, which is where an explicit interaction reclaims key, and
+    /// `ShellWindow` refuses first-responder changes while a child is key.
+    /// Opening the omnibox is such an interaction, so it takes key back here.
+    /// Key held by another top-level window is left alone.
+    private func reclaimKeyFromChildWindow() {
+        guard let window = view.window, let keyWindow = NSApp.keyWindow, keyWindow !== window else { return }
+        var ancestor = keyWindow.parent
+        while let current = ancestor {
+            if current === window {
+                window.makeKey()
+                return
+            }
+            ancestor = current.parent
+        }
     }
 
     private func postInWindowOverlayVisibility(_ visible: Bool) {
@@ -328,6 +351,9 @@ final class OmniBoxContainerViewController: NSViewController {
     }
 
     func hideOmniBox(fromAddressBar: Bool = false) {
+        presentationGeneration += 1
+        let generation = presentationGeneration
+        omniBoxController?.endV2Presentation()
         // At hide START, not completion: the overlay is on its way out, and
         // anything that deferred to it may take key back behind the fade.
         postInWindowOverlayVisibility(false)
@@ -365,8 +391,9 @@ final class OmniBoxContainerViewController: NSViewController {
             
             CATransaction.begin()
             CATransaction.setCompletionBlock { [weak self] in
-                self?.hasShown = false
-                self?.view.superview?.removeFromSuperview()
+                guard let self, self.presentationGeneration == generation else { return }
+                self.hasShown = false
+                self.view.superview?.removeFromSuperview()
                 omniBoxView.alphaValue = 0
                 omniBoxView.layer?.removeAllAnimations()
             }
@@ -377,6 +404,7 @@ final class OmniBoxContainerViewController: NSViewController {
         }
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            guard self.presentationGeneration == generation else { return }
             self.omniBoxController?.reset()
         }
         
@@ -413,10 +441,12 @@ final class OmniBoxContainerViewController: NSViewController {
         animationGroup.isRemovedOnCompletion = true
 
         CATransaction.begin()
+        let generation = presentationGeneration
         CATransaction.setCompletionBlock { [weak self] in
-            self?.omniBoxController?.focusTextField()
-            self?.hasShown = true
-            self?.needsShowAnimation = false
+            guard let self, self.presentationGeneration == generation else { return }
+            self.omniBoxController?.focusTextField()
+            self.hasShown = true
+            self.needsShowAnimation = false
         }
         
         omniBoxView.layer?.add(animationGroup, forKey: "showAnimation")
@@ -539,10 +569,12 @@ final class OmniBoxContainerViewController: NSViewController {
         animationGroup.isRemovedOnCompletion = true
 
         CATransaction.begin()
+        let generation = presentationGeneration
         CATransaction.setCompletionBlock { [weak self] in
-            self?.omniBoxController?.focusTextField()
-            self?.hasShown = true
-            self?.needsShowAnimation = false
+            guard let self, self.presentationGeneration == generation else { return }
+            self.omniBoxController?.focusTextField()
+            self.hasShown = true
+            self.needsShowAnimation = false
         }
 
         omniBoxView.layer?.add(animationGroup, forKey: "expandAnimation")
@@ -611,8 +643,10 @@ final class OmniBoxContainerViewController: NSViewController {
         animationGroup.isRemovedOnCompletion = false
 
         CATransaction.begin()
+        let generation = presentationGeneration
         CATransaction.setCompletionBlock { [weak self, weak omniBoxView] in
-            guard let self = self, let omniBoxView = omniBoxView else { return }
+            guard let self = self, self.presentationGeneration == generation,
+                  let omniBoxView = omniBoxView else { return }
             if let layer = omniBoxView.layer {
                 layer.removeAllAnimations()
                 layer.transform = CATransform3DIdentity
@@ -677,8 +711,23 @@ final class OmniBoxContainerViewController: NSViewController {
             .map { _ in () }
             .eraseToAnyPublisher() ?? Empty<Void, Never>().eraseToAnyPublisher()
         
-        frameChangePublisher
+        let defaultsChanges = NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .map { _ in () }
+        let geometryChanges = frameChangePublisher
             .merge(with: sidebarWidthPublisher)
+            .merge(with: defaultsChanges)
+            .eraseToAnyPublisher()
+
+        geometryChanges
+            .map { [weak self] _ -> (CGRect, CGFloat, Bool) in
+                (self?.view.bounds ?? .zero, self?.browserState?.sidebarWidth ?? 0, SidebarPosition.isOnRight)
+            }
+            .removeDuplicates { (previous: (CGRect, CGFloat, Bool), current: (CGRect, CGFloat, Bool)) in
+                guard previous.0 == current.0 else { return false }
+                guard previous.1 == current.1 else { return false }
+                return previous.2 == current.2
+            }
             .sink { [weak self] _ in
                 self?.updateOmniBoxFrame()
             }
@@ -713,7 +762,7 @@ final class OmniBoxContainerViewController: NSViewController {
         if sidebarWidth == 0 || rightAreaWidth < actualWidth {
             proposedX = (parentBounds.width - actualWidth) / 2
         } else {
-            proposedX = sidebarWidth + (rightAreaWidth - actualWidth) / 2
+            proposedX = (SidebarPosition.isOnRight ? 0 : sidebarWidth) + (rightAreaWidth - actualWidth) / 2
         }
         let x = max(
             horizontalInset,

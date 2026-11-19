@@ -1142,7 +1142,7 @@ extension AppController {
     }
 
     @objc func newProfile(_ sender: Any?) {
-        guard let name = ProfileNameFieldValidator.present(.create) else { return }
+        guard let name = ProfileNameFieldValidator.presentCreate() else { return }
         ProfileManager.shared.createProfile(displayName: name) { _ in }
     }
 
@@ -1422,6 +1422,11 @@ extension AppController {
     }
     
     @objc func toggleSidebar(_ sender: Any?) {
+        // Holding the shortcut toggles once, not on every key repeat.
+        // `isARepeat` asserts on anything but a key event.
+        if let event = NSApp.currentEvent, event.type == .keyDown, event.isARepeat {
+            return
+        }
         guard let state = SpaceSessionControllersManager.shared
             .activeWindowController?.browserState,
               !state.isKioskWindow else {
@@ -2244,7 +2249,8 @@ extension AppController {
     func appendActiveSpaceMenuItems(
         to menu: NSMenu,
         browserState: BrowserState? = nil,
-        triggerScreenPoint: NSPoint? = nil
+        triggerScreenPoint: NSPoint? = nil,
+        includesEditTheme: Bool = true
     ) {
         let targetSlot = browserState?.windowController?.slot ?? currentSpacesSlot()
         let activeSpaceId = targetSlot?.activeSpaceId ?? SpaceManager.shared.activeSpaceId
@@ -2281,18 +2287,24 @@ extension AppController {
             changeIconItem = nil
         }
 
-        let editThemeItem = NSMenuItem(
-            title: NSLocalizedString("app.activeSpaceContextMenu.themeSubmenuTitle", value: "Edit Theme", comment: "Active Space context menu - opens the theme editor for the active Space"),
-            action: #selector(requestActiveSpaceThemeEditor(_:)),
-            keyEquivalent: ""
-        )
-        editThemeItem.target = self
-        editThemeItem.representedObject = SpaceThemeEditorMenuContext(
-            browserState: browserState,
-            placement: triggerScreenPoint.map(SpaceThemeEditorPanelPlacement.nearTrigger)
-                ?? .windowTop
-        )
-        menu.addItem(editThemeItem)
+        let editThemeItem: NSMenuItem?
+        if includesEditTheme {
+            let item = NSMenuItem(
+                title: NSLocalizedString("app.activeSpaceContextMenu.themeSubmenuTitle", value: "Edit Theme", comment: "Active Space context menu - opens the theme editor for the active Space"),
+                action: #selector(requestActiveSpaceThemeEditor(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = SpaceThemeEditorMenuContext(
+                browserState: browserState,
+                placement: triggerScreenPoint.map(SpaceThemeEditorPanelPlacement.nearTrigger)
+                    ?? .windowTop
+            )
+            menu.addItem(item)
+            editThemeItem = item
+        } else {
+            editThemeItem = nil
+        }
 
         let changeProfileParent = NSMenuItem(
             title: NSLocalizedString("app.activeSpaceContextMenu.profileSubmenuTitle", value: "Change Profile", comment: "Active Space context menu - Submenu to re-bind the active Space to another profile"),

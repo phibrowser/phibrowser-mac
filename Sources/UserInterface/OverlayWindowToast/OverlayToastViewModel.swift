@@ -8,9 +8,12 @@
 
 import Cocoa
 import Combine
+import SwiftUI
 
 class OverlayToastViewModel: ObservableObject {
-    let browserState: BrowserState
+    /// The Space whose toasts are shown. A shell window's shared overlay
+    /// follows the presented Space (`bind(to:)`).
+    @Published private(set) var browserState: BrowserState
     let toastCenter: OverlayToastCenter
     let isPanel: Bool
     
@@ -36,6 +39,10 @@ class OverlayToastViewModel: ObservableObject {
 
     /// Current window layout mode used for layout-sensitive overlay positioning.
     @Published private(set) var layoutMode: LayoutMode
+
+    /// The page area's insets inside the overlay. A shell window's overlay
+    /// covers the whole window and lays its toasts out in the page area.
+    @Published var contentInsets = EdgeInsets()
     
     // MARK: - Hit Testing
     
@@ -44,6 +51,7 @@ class OverlayToastViewModel: ObservableObject {
     var hitTestFrames: [CGRect] = []
     
     private var cancellables = Set<AnyCancellable>()
+    private var stateCancellables = Set<AnyCancellable>()
     
     /// Delay used so removal animations can finish before the overlay hides.
     private let hideDelay: TimeInterval = 0.3
@@ -57,25 +65,40 @@ class OverlayToastViewModel: ObservableObject {
         self.browserState = browserState
         self.toastCenter = toastCenter
         self.isPanel = isPanel
-        self.livingDownloadsManager = LivingDownloadsManager(downloadsManager: browserState.downloadsManager)
+        self.livingDownloadsManager = browserState.livingDownloadsManager
         self.notificationCardManager = notificationCardManager
         self.layoutMode = browserState.layoutMode
         
-        setupBindings()
+        bindStateSubscriptions()
+        setupNotificationCardBinding()
     }
-    
-    private func setupBindings() {
+
+    /// Shows `state`'s toasts instead of the current Space's.
+    func bind(to state: BrowserState) {
+        guard state !== browserState else { return }
+        browserState = state
+        livingDownloadsManager = state.livingDownloadsManager
+        layoutMode = state.layoutMode
+        bindStateSubscriptions()
+    }
+
+    private func bindStateSubscriptions() {
+        stateCancellables.removeAll()
+
         browserState.$layoutMode
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .assign(to: &$layoutMode)
+            .sink { [weak self] in self?.layoutMode = $0 }
+            .store(in: &stateCancellables)
 
         toastCenter.visibleToastsPublisher(for: browserState.windowId)
             .receive(on: DispatchQueue.main)
-            .assign(to: &$genericToasts)
+            .sink { [weak self] in self?.genericToasts = $0 }
+            .store(in: &stateCancellables)
 
         guard !isPanel else { return }
 
+        isLivingDownloadsVisible = !livingDownloadsManager.livingItems.isEmpty
         // Show immediately when items appear, hide after a short delay when the list empties.
         livingDownloadsManager.$livingItems
             .map { !$0.isEmpty }
@@ -95,8 +118,12 @@ class OverlayToastViewModel: ObservableObject {
                     }
                 }
             }
-            .store(in: &cancellables)
-        
+            .store(in: &stateCancellables)
+    }
+
+    private func setupNotificationCardBinding() {
+        guard !isPanel else { return }
+
         // Notification card visibility is coordinated by `NotificationCardManager`.
         notificationCardManager.shouldShowInLegacy
             .receive(on: DispatchQueue.main)

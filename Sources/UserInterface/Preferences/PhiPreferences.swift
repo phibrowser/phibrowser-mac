@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import AppKit
+import Combine
 import Foundation
 
 extension UserDefaults {
@@ -12,6 +13,18 @@ extension UserDefaults {
         guard object(forKey: key) != nil else { return defaultValue }
         return bool(forKey: key)
     }
+}
+
+enum SidebarPosition: String, CaseIterable {
+    case left, right
+
+    static var isOnRight: Bool {
+        !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
+            && PhiPreferences.GeneralSettings.loadSidebarPosition() == .right
+    }
+
+    /// The side the sidebar actually sits on: traditional layout keeps it on the left.
+    static var effective: SidebarPosition { isOnRight ? .right : .left }
 }
 
 enum LayoutMode: String, CaseIterable, Identifiable {
@@ -59,6 +72,36 @@ enum AutoPictureInPictureMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// Width of the Peek panel over the page it floats on. Height always spans
+/// the page; only the side margins change.
+enum PeekPanelSize: String, CaseIterable, Identifiable {
+    case large   // near the page's full width (default)
+    case medium
+    case small
+
+    var id: String { rawValue }
+
+    /// Share of the page card's width the panel takes.
+    var widthFraction: CGFloat {
+        switch self {
+        case .large: return 0.92
+        case .medium: return 0.8
+        case .small: return 0.68
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .large:
+            return NSLocalizedString("settings.navigations.peek.size.largeOption", value: "Large", comment: "Peek panel size option - The panel covers nearly the full width of the page")
+        case .medium:
+            return NSLocalizedString("settings.navigations.peek.size.mediumOption", value: "Medium", comment: "Peek panel size option - The panel leaves wider margins on both sides of the page")
+        case .small:
+            return NSLocalizedString("settings.navigations.peek.size.smallOption", value: "Small", comment: "Peek panel size option - The panel leaves the widest margins on both sides of the page")
+        }
+    }
+}
+
 /// The stored presentation preference is retained while the player is disabled.
 enum SidebarMediaPresentationMode: String, CaseIterable, Identifiable {
     case alwaysExpanded
@@ -94,6 +137,7 @@ enum PhiPreferences: String {
 extension PhiPreferences {
     enum GeneralSettings: String, CaseIterable {
         case openNewTabPageOnCmdT
+        case newTabsAtTop // Sidebar layouts only; Comfortable always appends ordinary new tabs
         case openExternalLinksInKiosk
         case openKioskOnCommandOptionClick
         case openKioskWithGlobalShortcut
@@ -106,7 +150,13 @@ extension PhiPreferences {
         case showTabPreviews // Whether open tabs use custom hover preview cards
         case doubleClickToCloseTabs // Close ordinary tabs with an unmodified double-click
         case directionalTabClosingEnabled // Show and enable closing ordinary tabs before or after an anchor
+        case groupTabsOpenedFromLinks // A link opened in a new tab on purpose forms a tab group with its Opener
         case sidebarMediaPlayerEnabled // Show controls for background page media
+        case sidebarHeaderShowsSearchTabs // Sidebar header buttons the user can toggle from the sidebar context menu
+        case sidebarHeaderShowsSidebarToggle
+        case sidebarHeaderShowsBack
+        case sidebarHeaderShowsForward
+        case sidebarHeaderShowsReload
         case sidebarBottomBarShowsProfile // Sidebar bottom bar entries the user can toggle from the sidebar context menu
         case sidebarBottomBarShowsDownloads
         case sidebarBottomBarShowsMemory
@@ -123,12 +173,15 @@ extension PhiPreferences {
         case suppressCloseIncognitoSpaceWarning // "Do not ask again" on the close-Incognito-Space confirmation
         case peekViewEnabled // Master gate for Peek View: the context-menu item and the automatic cross-site diversion
         case autoPeekViewEnabled // Sub-gate under peekViewEnabled: the automatic cross-site diversion from pinned/bookmark-bound tabs; explicit peeks are unaffected
+        case autoPeekSameSiteLinksEnabled // Widens autoPeekViewEnabled: new-tab links that stay on the bound tab's site peek too
         case tabSwitcherIncludesAllSpaces // Ctrl-Tab switcher lists recent tabs from every Space in the window, not only the current one
 
         var defaultValue: Bool {
             switch self {
             case .openNewTabPageOnCmdT:
                 return true
+            case .newTabsAtTop:
+                return false
             case .openExternalLinksInKiosk:
                 return false
             case .openKioskOnCommandOptionClick:
@@ -153,9 +206,16 @@ extension PhiPreferences {
                 return false
             case .directionalTabClosingEnabled:
                 return true
+            case .groupTabsOpenedFromLinks:
+                return false
             case .sidebarMediaPlayerEnabled:
                 return true
-            case .sidebarBottomBarShowsProfile,
+            case .sidebarHeaderShowsSearchTabs,
+                 .sidebarHeaderShowsSidebarToggle,
+                 .sidebarHeaderShowsBack,
+                 .sidebarHeaderShowsForward,
+                 .sidebarHeaderShowsReload,
+                 .sidebarBottomBarShowsProfile,
                  .sidebarBottomBarShowsDownloads,
                  .sidebarBottomBarShowsMemory,
                  .sidebarBottomBarShowsFeedback,
@@ -180,6 +240,8 @@ extension PhiPreferences {
                 return true
             case .autoPeekViewEnabled:
                 return true
+            case .autoPeekSameSiteLinksEnabled:
+                return false
             case .tabSwitcherIncludesAllSpaces:
                 return false
             }
@@ -187,6 +249,15 @@ extension PhiPreferences {
 
         func loadValue(from defaults: UserDefaults = .standard) -> Bool {
             defaults.bool(forKey: rawValue, default: defaultValue)
+        }
+
+        /// The value on subscribe and on each change, on the thread that wrote
+        /// it. Every subscriber shares one read per defaults change:
+        /// `UserDefaults.didChangeNotification` fires for any key, including
+        /// the split view frames AppKit autosaves on each frame of a sidebar
+        /// resize, and a read per subscriber scales with the number of tabs.
+        var sharedValuePublisher: AnyPublisher<Bool, Never> {
+            SharedGeneralSettingValues.subject(for: self).eraseToAnyPublisher()
         }
 
         static let sidebarMediaPresentationModeKey = "sidebarMediaPresentationMode"
@@ -203,6 +274,13 @@ extension PhiPreferences {
             to defaults: UserDefaults = .standard
         ) {
             defaults.set(mode.rawValue, forKey: sidebarMediaPresentationModeKey)
+        }
+
+        /// Per-Mac, not synced: the right width depends on this Mac's display.
+        static let peekPanelSizeKey = "peekPanelSize"
+
+        static func loadPeekPanelSize(from defaults: UserDefaults = .standard) -> PeekPanelSize {
+            defaults.string(forKey: peekPanelSizeKey).flatMap(PeekPanelSize.init(rawValue:)) ?? .large
         }
 
         static let autoPictureInPictureModeKey = "autoPictureInPictureMode"
@@ -241,6 +319,16 @@ extension PhiPreferences {
             to defaults: UserDefaults = .standard
         ) {
             defaults.set(enabled, forKey: pictureInPictureOnFullscreenDesktopsKey)
+        }
+
+        static let sidebarPositionKey = "sidebarPosition"
+
+        static func loadSidebarPosition(from defaults: UserDefaults = .standard) -> SidebarPosition {
+            defaults.string(forKey: sidebarPositionKey).flatMap(SidebarPosition.init(rawValue:)) ?? .left
+        }
+
+        static func saveSidebarPosition(_ position: SidebarPosition, to defaults: UserDefaults = .standard) {
+            defaults.set(position.rawValue, forKey: sidebarPositionKey)
         }
 
         static let layoutModeKey = "layoutMode"
@@ -881,4 +969,28 @@ extension Notification.Name {
     /// flips, so masks and pills already on screen follow it.
     static let agentUnstyledOperatingPageDidChange =
         Notification.Name("agentUnstyledOperatingPageDidChange")
+}
+
+/// Backs `PhiPreferences.GeneralSettings.sharedValuePublisher`: one subject
+/// and one defaults observer per setting, kept for the app's lifetime.
+private enum SharedGeneralSettingValues {
+    private static let lock = NSLock()
+    private static var subjects: [PhiPreferences.GeneralSettings: CurrentValueSubject<Bool, Never>] = [:]
+
+    static func subject(for setting: PhiPreferences.GeneralSettings) -> CurrentValueSubject<Bool, Never> {
+        lock.lock()
+        defer { lock.unlock() }
+        if let subject = subjects[setting] { return subject }
+        let subject = CurrentValueSubject<Bool, Never>(setting.loadValue())
+        _ = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            let value = setting.loadValue()
+            if subject.value != value { subject.send(value) }
+        }
+        subjects[setting] = subject
+        return subject
+    }
 }

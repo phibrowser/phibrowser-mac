@@ -6,6 +6,7 @@
 import Foundation
 import Combine
 import AppKit
+@MainActor
 class OmniBoxViewModel: ObservableObject {
     @Published private(set) var state = OmniBoxState()
     
@@ -16,6 +17,15 @@ class OmniBoxViewModel: ObservableObject {
     private let chromiumBridge = ChromiumLauncher.sharedInstance().bridge
     private let browserState: BrowserState
     private let searchCoordinator = OmniBoxSearchCoordinator()
+    private let enableUnifiedOmnibox: Bool
+    private var v2Client: OmniboxNativeUIClient?
+    private var presentationEpoch: UInt64 = 0
+    private var presentationActive = false
+    private var v2Restarts = 0
+    private var pendingV2Enter: PendingV2Enter?
+    private var resumingV2Enter = false
+    /// Suggestions come from the V2 session, which adds pins and bookmarks.
+    private(set) var routesOmniboxV2 = false
     private let keywordSearchURLBuilder: (String, String) -> String?
     private let searchEngineSpaceShortcutProvider: () -> Bool
     /// Hands a chosen match (its result line and open disposition) to
@@ -32,12 +42,12 @@ class OmniBoxViewModel: ObservableObject {
     private var keywordSearchDestination: (query: String, url: String)?
     
     var opennedFromCurrentTab = false
-    /// A bookmark's tab and a pinned tab stand for their stored URL: an
-    /// address-bar submission there opens a NEW tab rather than navigating
-    /// the row in place (which bounces the bookmark tab into a Peek and
-    /// re-points the pinned row and its icon). Tracked separately from
-    /// `opennedFromCurrentTab`, which still describes where the omnibox was
-    /// opened from — the Cmd+L toggle reads that.
+    /// Whether an address-bar submission opens a NEW tab instead of
+    /// navigating the focused tab in place, so a bound tab keeps its page
+    /// (`BrowserState.addressBarNavigationOpensNewTab(for:)` says which).
+    /// Tracked separately from `opennedFromCurrentTab`, which still
+    /// describes where the omnibox was opened from — the Cmd+L toggle reads
+    /// that.
     private var opensSubmissionInNewTab = false
     /// The tab an address-bar open describes and a submission navigates:
     /// the page in front of the user (`BrowserState.pageCommandTarget`), so
@@ -68,8 +78,8 @@ class OmniBoxViewModel: ObservableObject {
     }
 
     /// Claims the tab this submission is about to spawn so the Peek pipeline
-    /// leaves it alone. Chromium parents an omnibox-opened foreground tab to
-    /// whatever is focused and reports it as a link-foreground child, which on
+    /// leaves it alone. Older frameworks report an omnibox-opened foreground
+    /// tab as a link-foreground child of the focused tab, which on
     /// a bookmark/pinned-bound row is indistinguishable from a link click —
     /// and would become a Peek. An omnibox submission never means "peek this".
     ///
@@ -91,7 +101,9 @@ class OmniBoxViewModel: ObservableObject {
     init(configuration: OmniBoxConfiguration = .default, windowState: BrowserState,
          keywordSearchURLBuilder: ((String, String) -> String?)? = nil,
          searchEngineSpaceShortcutProvider: (() -> Bool)? = nil,
-         suggestionSelector: ((Int, PhiOmniboxSuggestionDisposition) -> Void)? = nil) {
+         suggestionSelector: ((Int, PhiOmniboxSuggestionDisposition) -> Void)? = nil,
+         enableUnifiedOmnibox: Bool = false) {
+        self.enableUnifiedOmnibox = enableUnifiedOmnibox
         self.configuration = configuration
         self.browserState = windowState
         let bridge = chromiumBridge
@@ -115,6 +127,169 @@ class OmniBoxViewModel: ObservableObject {
     deinit {
     }
     
+    /// An Enter that arrived before the current query's rows could be
+    /// selected. It runs once those rows arrive, as the legacy omnibox would.
+    private struct PendingV2Enter {
+        let epoch: UInt64
+        let text: String
+        /// The explicitly chosen row; nil for the default.
+        let rowKey: String?
+        let commandKeyPressed: Bool
+    }
+
+    /// Pins and bookmarks are offered only where a submission opens a new tab
+    /// or replaces a blank one: Cmd+L on a page navigates that page in place.
+    private var offersNativeRows: Bool {
+        guard enableUnifiedOmnibox, !isChoosingSplitPane, !shouldCreateInGroupOverview,
+              !targetsPresentedPeek else { return false }
+        guard opennedFromCurrentTab else { return true }
+        return currentTab.map { $0.isNTP || $0.url == "about:blank" } ?? false
+    }
+
+    func beginV2Presentation() {
+        endV2Presentation()
+        presentationActive = true
+        v2Restarts = 0
+        routesOmniboxV2 = offersNativeRows
+        if routesOmniboxV2 { startV2Client() }
+    }
+
+    func endV2Presentation() {
+        presentationActive = false
+        presentationEpoch += 1
+        stopV2Routing()
+    }
+
+    private func updateV2Routing() {
+        guard presentationActive, routesOmniboxV2 != offersNativeRows else { return }
+        if routesOmniboxV2 {
+            stopV2Routing()
+        } else {
+            routesOmniboxV2 = true
+            v2Restarts = 0
+            startV2Client()
+        }
+    }
+
+    private func stopV2Routing() {
+        routesOmniboxV2 = false
+        pendingV2Enter = nil
+        let old = v2Client
+        v2Client = nil
+        old?.finish()
+    }
+
+    private func startV2Client() {
+        let epoch = presentationEpoch
+        let bridge = chromiumBridge
+        let windowID = browserState.windowId.int64Value
+        let client = OmniboxNativeUIClient { operation, payload, completion in
+            guard let bridge,
+                  bridge.responds(to: #selector(PhiChromiumBridgeProtocol.performOmniboxV2Operation(_:requestJSON:windowId:completion:))) else {
+                completion(["status": "missing_api"]); return
+            }
+            guard let data = try? JSONSerialization.data(withJSONObject: payload),
+                  let json = String(data: data, encoding: .utf8) else {
+                completion(["status": "closed"]); return
+            }
+            bridge.performOmniboxV2Operation(operation, requestJSON: json, windowId: windowID) { encoded in
+                DispatchQueue.main.async {
+                    guard let data = encoded.data(using: .utf8), data.count <= 144 * 1024,
+                          let response = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                        completion(["status": "closed"]); return
+                    }
+                    completion(response)
+                }
+            }
+        }
+        v2Client = client
+        client.onRows = { [weak self, weak client] rows, text in
+            guard let self, let client, self.presentationEpoch == epoch, self.v2Client === client else { return }
+            self.applyIncomingSuggestions(rows, for: text)
+            self.resumePendingV2Enter()
+        }
+        client.onMode = { [weak self, weak client] mode in
+            guard let self, mode == .legacy, self.presentationEpoch == epoch, self.v2Client === client else { return }
+            AppLogInfo("[OmniboxV2] session unsupported, using legacy suggestions")
+            self.stopV2Routing()
+            self.performSearchAtonce()
+        }
+        client.onClosed = { [weak self, weak client] reason in
+            guard let self, self.presentationEpoch == epoch, self.v2Client === client else { return }
+            self.recoverV2Session(reason: reason)
+        }
+        client.onSelectFinished = { status in
+            guard status != "accepted" else { return }
+            AppLogWarn("[OmniboxV2] selection finished with status: \(status)")
+        }
+        client.begin(targetID: browserState.focusingTab?.guid)
+    }
+
+    /// A session that expired or lost its context is replaced; one that cannot
+    /// serve this presentation falls back to legacy suggestions.
+    private func recoverV2Session(reason: String) {
+        let recoverable: Set<String> = ["idle_expired", "context_changed", "store_closed"]
+        v2Client = nil
+        guard recoverable.contains(reason), v2Restarts < 3 else {
+            AppLogInfo("[OmniboxV2] session closed (\(reason)), using legacy suggestions")
+            stopV2Routing()
+            performSearchAtonce()
+            return
+        }
+        v2Restarts += 1
+        AppLogInfo("[OmniboxV2] session closed (\(reason)), restarting")
+        startV2Client()
+        performSearchAtonce()
+    }
+
+    /// Holds an Enter until the current query's rows can be selected. Returns
+    /// whether it was held.
+    private func deferV2EnterIfNeeded(for target: OmniBoxSuggestion?, commandKeyPressed: Bool) -> Bool {
+        guard routesOmniboxV2, !resumingV2Enter,
+              state.inputText.trimmingCharacters(in: .whitespacesAndNewlines).count >= configuration.minInputLength else {
+            return false
+        }
+        let client = v2Client
+        if let client, let token = target?.v2Token {
+            if client.canSelect(token) { return false }
+        } else if let client, target == nil, client.hasSettledSnapshot {
+            return false
+        }
+        let isDefault = target == nil ||
+            (target?.allowedToBeDefault == true && state.suggestions.first?.v2Token == target?.v2Token)
+        let sameQuery = target?.v2Token?.request == client?.request
+        pendingV2Enter = PendingV2Enter(epoch: presentationEpoch, text: state.inputText,
+                                        rowKey: isDefault || !sameQuery ? nil : target?.v2RowKey,
+                                        commandKeyPressed: commandKeyPressed)
+        if client?.isAwaitingSnapshot != true {
+            performSearchAtonce()
+        }
+        return true
+    }
+
+    private func resumePendingV2Enter() {
+        guard let pending = pendingV2Enter else { return }
+        guard pending.epoch == presentationEpoch, pending.text == state.inputText else {
+            pendingV2Enter = nil
+            return
+        }
+        guard v2Client?.hasSettledSnapshot == true else { return }
+        pendingV2Enter = nil
+        resumingV2Enter = true
+        defer { resumingV2Enter = false }
+        guard let rowKey = pending.rowKey else {
+            handleEnterPressed(commandKeyPressed: pending.commandKeyPressed)
+            return
+        }
+        guard let index = state.suggestions.firstIndex(where: { $0.v2RowKey == rowKey }) else {
+            AppLogInfo("[OmniboxV2] held Enter dropped: chosen row is gone")
+            NSSound.beep()
+            return
+        }
+        state.selectedIndex = index
+        handleNavigationAction(for: state.suggestions[index], commandKeyPressed: pending.commandKeyPressed)
+    }
+
     // MARK: - Private Setup
 
     func refreshSearchEngineSpaceShortcut() {
@@ -122,6 +297,13 @@ class OmniBoxViewModel: ObservableObject {
     }
     
     private func setupBindings() {
+        NotificationCenter.default.publisher(for: .omniboxNativeContextInvalidated, object: browserState)
+            .sink { [weak self] notification in
+                // Rows from the old context can no longer be selected.
+                guard let self, self.routesOmniboxV2, let client = self.v2Client else { return }
+                client.close(reason: notification.userInfo?["reason"] as? String ?? "context_changed")
+            }
+            .store(in: &cancellables)
         state.$inputText
             .sink { [weak self] text in
                 self?.handleInputChanged(text)
@@ -161,6 +343,11 @@ class OmniBoxViewModel: ObservableObject {
     }
 
     private func handleIncomingSuggestions(_ results: [[String: Any]], for query: String) {
+        guard !routesOmniboxV2 else { return }
+        applyIncomingSuggestions(results, for: query)
+    }
+
+    private func applyIncomingSuggestions(_ results: [[String: Any]], for query: String) {
         guard selectedSearchEngine == nil,
               query == state.inputText.trimmingCharacters(in: .whitespacesAndNewlines),
               searchCoordinator.shouldAcceptResponse(forQuery: query) else {
@@ -206,6 +393,7 @@ class OmniBoxViewModel: ObservableObject {
         // replace the blank NTP rather than spawn a new tab.
         opennedFromCurrentTab = true
         opensSubmissionInNewTab = browserState.addressBarNavigationOpensNewTab(for: tab)
+        updateV2Routing()
         if tab.isNTP || tab.url == "about:blank" {
             logOpenTrace(
                 stage: "prefill-current-tab",
@@ -238,6 +426,7 @@ class OmniBoxViewModel: ObservableObject {
         opennedFromCurrentTab = false
         opensSubmissionInNewTab = false
         openedFromGroupOverview = true
+        updateV2Routing()
         searchCoordinator.prepareForPrefilledOpen(
             text: "",
             minInputLength: configuration.minInputLength
@@ -260,6 +449,7 @@ class OmniBoxViewModel: ObservableObject {
         } else {
             opennedFromCurrentTab = tab != nil
         }
+        updateV2Routing()
     }
     
     func updateInputText(_ text: String, suppressAutoComplete: Bool = false) {
@@ -302,6 +492,9 @@ class OmniBoxViewModel: ObservableObject {
                 return
             }
             openURL(url, commandKeyPressed: commandKeyPressed)
+            return
+        }
+        if deferV2EnterIfNeeded(for: state.selectedSuggestion, commandKeyPressed: commandKeyPressed) {
             return
         }
         if let selected = state.selectedSuggestion {
@@ -435,6 +628,9 @@ class OmniBoxViewModel: ObservableObject {
                     commandKeyPressed: commandKeyPressed)
             return
         }
+        if deferV2EnterIfNeeded(for: suggestion, commandKeyPressed: commandKeyPressed) {
+            return
+        }
         let disposition = suggestionDisposition(for: suggestion, commandKeyPressed: commandKeyPressed)
         AppLogDebug("omni: select suggestion line: \(suggestion.index), disposition: \(disposition.rawValue)")
         if disposition == .currentTab, let currentTab {
@@ -461,18 +657,40 @@ class OmniBoxViewModel: ObservableObject {
         // Chromium hands the tab this disposition spawns to the Mac side as a
         // link-foreground child of `currentTab`; on a bound row that would be
         // diverted straight into a Peek. Claim it as an address-bar tab first.
-        if disposition == .newForegroundTab {
+        // Splits and commands are opened by Phi, never as a new Chromium tab.
+        if disposition == .newForegroundTab, !suggestion.isNativeSplit, suggestion.v2Kind != "command" {
             claimUpcomingNewTab()
         }
-        suggestionSelector(suggestion.index, disposition)
+        if routesOmniboxV2 {
+            guard let token = suggestion.v2Token, let client = v2Client else { return }
+            let status = client.select(token, ordinaryIntent: Self.v2Intent(for: disposition))
+            guard status == "submitted" else {
+                AppLogWarn("[OmniboxV2] cannot select row: \(status)")
+                NSSound.beep()
+                return
+            }
+        } else {
+            suggestionSelector(suggestion.index, disposition)
+        }
         finishNavigationAction()
+    }
+
+    private static func v2Intent(for disposition: PhiOmniboxSuggestionDisposition) -> String {
+        switch disposition {
+        case .currentTab: return "currentTab"
+        case .switchToTab: return "switchToTab"
+        case .newBackgroundTab: return "newBackgroundTab"
+        default: return "newForegroundTab"
+        }
     }
 
     private func suggestionDisposition(
         for suggestion: OmniBoxSuggestion,
         commandKeyPressed: Bool
     ) -> PhiOmniboxSuggestionDisposition {
-        if suggestion.hasTabMatch && commandKeyPressed {
+        // A pin or bookmark switches like an open tab; the client opens the
+        // entity for it.
+        if commandKeyPressed, suggestion.hasTabMatch || suggestion.isNativeEntity {
             return .switchToTab
         }
         if navigatesCurrentTab {
@@ -498,7 +716,7 @@ class OmniBoxViewModel: ObservableObject {
             if commandKeyPressed {
                 browserState.openTab(url)
             } else {
-                browserState.createTab(url)
+                browserState.createOrdinaryTab(url)
             }
         } else if navigatesCurrentTab {
             navigateCurrentTab(to: url)
@@ -511,8 +729,8 @@ class OmniBoxViewModel: ObservableObject {
             // Resolve the rule up front so both ask and auto-route behave like
             // the live-tab path.
             claimUpcomingNewTab()
-            if !routeIfSpaceRuleMatches(url) {
-                browserState.createTab(url)
+            if !routeIfSpaceRuleMatches(url, ordinaryNewTab: true) {
+                browserState.createOrdinaryTab(url)
             }
         }
         finishNavigationAction()
@@ -523,8 +741,13 @@ class OmniBoxViewModel: ObservableObject {
     /// open-in-window) and this returns `true`, meaning the caller must not open
     /// the URL locally. Needed for the empty-Space paths (native NTP / no tab),
     /// whose navigation runs on a detached WebContents the throttle can't see.
-    private func routeIfSpaceRuleMatches(_ url: String) -> Bool {
-        chromiumBridge?.routeURLIfSpaceRuleMatches(url, windowId: browserState.windowId.int64Value) ?? false
+    private func routeIfSpaceRuleMatches(_ url: String, ordinaryNewTab: Bool = false) -> Bool {
+        guard let chromiumBridge else { return false }
+        if chromiumBridge.responds(to: #selector(PhiChromiumBridgeProtocol.routeURLIfSpaceRuleMatches(_:windowId:ordinaryNewTab:))) {
+            return chromiumBridge.routeURLIfSpaceRuleMatches(
+                url, windowId: browserState.windowId.int64Value, ordinaryNewTab: ordinaryNewTab)
+        }
+        return chromiumBridge.routeURLIfSpaceRuleMatches(url, windowId: browserState.windowId.int64Value)
     }
 
     private func navigateCurrentTab(to url: String) {
@@ -567,6 +790,7 @@ class OmniBoxViewModel: ObservableObject {
     }
 
     private func finishNavigationAction() {
+        let epoch = presentationEpoch
         opennedFromCurrentTab = false
         opensSubmissionInNewTab = false
         targetsPresentedPeek = false
@@ -575,6 +799,7 @@ class OmniBoxViewModel: ObservableObject {
         
         // Leave time for the hide animation to finish before resetting state.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            guard self.presentationEpoch == epoch else { return }
             self.keywordSearchDestination = nil
             self.selectedSearchEngine = nil
             self.keywordSearchHint = nil
@@ -589,6 +814,7 @@ class OmniBoxViewModel: ObservableObject {
     }
     
     func reset() {
+        endV2Presentation()
         opennedFromCurrentTab = false
         opensSubmissionInNewTab = false
         targetsPresentedPeek = false
@@ -606,6 +832,17 @@ class OmniBoxViewModel: ObservableObject {
         guard index >= 0 && index < state.suggestions.count else { return }
         let suggestion = state.suggestions[index]
         AppLogDebug("omni: delete suggestion at index: \(suggestion.index) original text:\(state.inputText)")
+        if routesOmniboxV2 {
+            guard let token = suggestion.v2Token, let client = v2Client else { return }
+            let epoch = presentationEpoch
+            // The V2 session publishes nothing after a query is done; query again.
+            client.delete(token) { [weak self, weak client] deleted in
+                guard deleted, let self, let client, self.presentationEpoch == epoch, self.v2Client === client,
+                      let query = self.suggestionsQuery else { return }
+                client.query(text: query, preventInline: self.preventInlineCompletion)
+            }
+            return
+        }
         // Chromium will emit a refreshed `searchSuggestionChanged` event for the same query
         // after the entry is removed; the persistent subscription in `setupBindings`
         // will pick it up.
@@ -625,6 +862,7 @@ class OmniBoxViewModel: ObservableObject {
             searchCoordinator.reset()
             suggestionsQuery = nil
             browserState.stopAutoCompletion()
+            v2Client?.stop()
             state.clearSuggestions()
             return
         }
@@ -658,11 +896,16 @@ class OmniBoxViewModel: ObservableObject {
         )
 
         canUseTemporaryText = false
-        chromiumBridge?.requestAutoCompleteSuggestions(
-            forText: trimmedQuery,
-            preventInlineAutoComplete: preventInlineCompletion,
-            windowId: browserState.windowId.int64Value
-        )
+        if routesOmniboxV2 {
+            if v2Client == nil { startV2Client() }
+            v2Client?.query(text: trimmedQuery, preventInline: preventInlineCompletion)
+        } else {
+            chromiumBridge?.requestAutoCompleteSuggestions(
+                forText: trimmedQuery,
+                preventInlineAutoComplete: preventInlineCompletion,
+                windowId: browserState.windowId.int64Value
+            )
+        }
         AppLogDebug("omni: requestSuggestions for text:\(trimmedQuery), inlineCompletion: \(!preventInlineCompletion)")
     }
     

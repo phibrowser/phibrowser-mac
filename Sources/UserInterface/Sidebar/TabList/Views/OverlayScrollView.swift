@@ -16,6 +16,10 @@ class OverlayScrollView: NSScrollView {
     }
     private var gestureAxis: GestureAxis = .undecided
 
+    /// Overriding `scrollWheel(with:)` opts a scroll view out of responsive
+    /// scrolling; the override below only reroutes sideways gestures.
+    override class var isCompatibleWithResponsiveScrolling: Bool { true }
+
     override var scrollerStyle: NSScroller.Style {
         get { .overlay }
         set {}

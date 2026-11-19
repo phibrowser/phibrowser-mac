@@ -77,8 +77,7 @@ extension BrowserState {
         for (oldGuid, newGuid) in result.guidMapping where oldGuid != newGuid {
             migrateAIChatTab(fromIdentifier: oldGuid, toIdentifier: newGuid)
             guard let liveTab = liveTabsByPinnedGuid[oldGuid] else { continue }
-            liveTab.guidInLocalDB = newGuid
-            liveTab.webContentWrapper?.updateTabCustomValue(newGuid)
+            setBinding(newGuid, for: liveTab)
         }
 
         let draggedLiveHandle = liveTabsByPinnedGuid[pinnedGuid].flatMap { tab in

@@ -61,6 +61,52 @@ final class SidebarNewTabStickyResolverTests: XCTestCase {
         XCTAssertEqual(result, visibleRect)
     }
 
+    func testBottomCellFloatsWhenPartlyOrFullyBeyondViewport() {
+        let viewport = CGRect(x: 0, y: 80, width: 240, height: 400)
+        for y in [CGFloat(460), CGFloat(500)] {
+            XCTAssertTrue(SidebarNewTabStickyResolver.shouldShowFloatingNewTab(
+                rowRect: CGRect(x: 0, y: y, width: 240, height: 36),
+                visibleRect: viewport, atTop: false))
+        }
+    }
+
+    func testBottomCellRemainsInFlowWhenShortOrExactlyAtViewportBottom() {
+        let viewport = CGRect(x: 0, y: 80, width: 240, height: 400)
+        for y in [CGFloat(120), CGFloat(444)] {
+            XCTAssertFalse(SidebarNewTabStickyResolver.shouldShowFloatingNewTab(
+                rowRect: CGRect(x: 0, y: y, width: 240, height: 36),
+                visibleRect: viewport, atTop: false))
+        }
+    }
+
+    func testBottomOverlayExcludesTrailingAreaInBothCoordinateSystems() {
+        let viewport = CGRect(x: 4, y: 80, width: 240, height: 400)
+        XCTAssertEqual(SidebarNewTabStickyResolver.visibleRectExcludingOverlay(
+            visibleRect: viewport, overlayHeight: 36, atTop: false),
+            CGRect(x: 4, y: 80, width: 240, height: 364))
+        XCTAssertEqual(SidebarNewTabStickyResolver.visibleRectExcludingOverlay(
+            visibleRect: viewport, overlayHeight: 36, atTop: false, isFlipped: false),
+            CGRect(x: 4, y: 116, width: 240, height: 364))
+    }
+
+    func testFloatingFrameAnchorsCorrectEdgeWhenResizedOrFlipped() {
+        let scroll = CGRect(x: 8, y: 20, width: 240, height: 400)
+        for flipped in [true, false] {
+            let top = SidebarNewTabStickyResolver.floatingFrame(
+                scrollFrame: scroll, contentWidth: 230, rowHeight: 36,
+                atTop: true, containerIsFlipped: flipped)
+            let bottom = SidebarNewTabStickyResolver.floatingFrame(
+                scrollFrame: scroll, contentWidth: 230, rowHeight: 36,
+                atTop: false, containerIsFlipped: flipped)
+            XCTAssertEqual(top.minY, flipped ? 20 : 384)
+            XCTAssertEqual(bottom.minY, flipped ? 384 : 20)
+            XCTAssertEqual(bottom.size, CGSize(width: 230, height: 36))
+        }
+        XCTAssertEqual(SidebarNewTabStickyResolver.floatingFrame(
+            scrollFrame: CGRect(x: 0, y: 0, width: 240, height: 20),
+            contentWidth: 230, rowHeight: 36, atTop: false, containerIsFlipped: true).height, 20)
+    }
+
     func testDragAutoscrollUsesTopOverlayAsObstructedArea() {
         let visibleRect = CGRect(x: 0, y: 100, width: 240, height: 400)
 

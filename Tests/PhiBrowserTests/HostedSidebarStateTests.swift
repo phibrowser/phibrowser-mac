@@ -15,6 +15,7 @@ final class HostedSidebarStateTests: XCTestCase {
     private var directory: URL!
     private var accountDirectory: URL!
     private var previousLayout: Any?
+    private var previousSidebarPosition: Any?
     private var slots: [SpaceWindowSlot] = []
     private var subscriptions = Set<AnyCancellable>()
     /// Stand-in web views of `mountPage`, held here: a wrapper's `nativeView` is weak.
@@ -25,6 +26,10 @@ final class HostedSidebarStateTests: XCTestCase {
     override func setUp() async throws {
         previousLayout = UserDefaults.standard.object(forKey: PhiPreferences.GeneralSettings.layoutModeKey)
         PhiPreferences.GeneralSettings.saveLayoutMode(.performance)
+        // The geometry below is the left sidebar's, whatever side the
+        // developer running the suite chose.
+        previousSidebarPosition = UserDefaults.standard.object(forKey: PhiPreferences.GeneralSettings.sidebarPositionKey)
+        PhiPreferences.GeneralSettings.saveSidebarPosition(.left)
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let account = Account(userID: "hosted-sidebar-test-\(UUID().uuidString)")
@@ -48,7 +53,20 @@ final class HostedSidebarStateTests: XCTestCase {
             try FileManager.default.removeItem(at: url)
         }
         UserDefaults.standard.set(previousLayout, forKey: PhiPreferences.GeneralSettings.layoutModeKey)
+        UserDefaults.standard.set(previousSidebarPosition, forKey: PhiPreferences.GeneralSettings.sidebarPositionKey)
         try await super.tearDown()
+    }
+
+    func testFloatingSidebarCanBeReleasedBeforeLoadingItsView() {
+        let state = makeState(spaceId: "unloaded-floating-sidebar")
+        weak var releasedSidebar: FloatingSidebarViewController?
+        autoreleasepool {
+            let sidebar = FloatingSidebarViewController(
+                browserState: state, mediaController: SidebarMediaController(browserState: state))
+            releasedSidebar = sidebar
+            XCTAssertFalse(sidebar.isViewLoaded)
+        }
+        XCTAssertNil(releasedSidebar)
     }
 
     func testMediaVisitHistoryKeepsAllLiveTabsWhileSwitcherStaysLimited() {
@@ -699,6 +717,64 @@ final class HostedSidebarStateTests: XCTestCase {
         XCTAssertGreaterThan(try XCTUnwrap(session.searchTabsBackgroundView.layer?.zPosition), panelZ,
                              "Tab search opened from the panel's button must draw above it too")
         session.omniBoxContainerViewController?.hideOmniBox()
+    }
+
+    func testTrafficLightsFollowTheLatestAnimatedSidebarToggle() async throws {
+        let slot = makeSlot()
+        let session = makeSession(in: slot, spaceId: "sidebar-toggle")
+        session.presentInShell(deferringChromium: true)
+        let split = try XCTUnwrap(slot.shell?.split)
+        let window = try XCTUnwrap(slot.shell?.window)
+        window.orderFront(nil)
+        await drainPresentationUpdates()
+        let buttons = try [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].map {
+            try XCTUnwrap(window.standardWindowButton($0))
+        }
+        func assertHidden(_ hidden: Bool, line: UInt = #line) {
+            for button in buttons { XCTAssertEqual(button.isHidden, hidden, line: line) }
+        }
+
+        split.view.layoutSubtreeIfNeeded()
+        split.setSidebarCollapsed(true, animated: false)
+        session.refreshTrafficLightVisibility()
+        assertHidden(true)
+
+        split.toggleSidebar()
+        session.refreshTrafficLightVisibility()
+        assertHidden(true)
+        split.toggleSidebar()
+        try await Task.sleep(for: .seconds(SidebarToggleAnimation.duration * 2))
+        assertHidden(true)
+
+        split.setSidebarCollapsed(false, animated: false)
+        session.refreshTrafficLightVisibility()
+        assertHidden(false)
+        split.toggleSidebar()
+        session.refreshTrafficLightVisibility()
+        assertHidden(true)
+
+        // Reverse again while the first opening's reveal is still pending.
+        split.toggleSidebar()
+        XCTAssertFalse(split.isSidebarCollapsed)
+        try await Task.sleep(for: .seconds(SidebarToggleAnimation.duration / 4))
+        XCTAssertFalse(split.isSidebarCollapsed)
+        split.toggleSidebar()
+        XCTAssertTrue(split.isSidebarCollapsed)
+        let column = split.splitViewController.splitView.subviews[0]
+        var widthAtReveal: CGFloat?
+        let observation = buttons[0].observe(\.isHidden, options: [.new]) { _, change in
+            if change.newValue == false, widthAtReveal == nil { widthAtReveal = column.frame.width }
+        }
+        split.toggleSidebar()
+        XCTAssertFalse(split.isSidebarCollapsed)
+        session.refreshTrafficLightVisibility()
+        assertHidden(true)
+        try await Task.sleep(for: .seconds(SidebarToggleAnimation.duration * 2))
+        observation.invalidate()
+        XCTAssertFalse(split.isSidebarCollapsed)
+        assertHidden(false)
+        // Shown once the column has opened, never on the way.
+        XCTAssertEqual(try XCTUnwrap(widthAtReveal), column.frame.width, accuracy: 0.5)
     }
 
     func testPresentedShellMatchesTrafficLightInsetsAcrossLayoutChanges() async throws {

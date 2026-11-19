@@ -171,6 +171,40 @@ final class OmniBoxThemeTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(background.phi.selectedColor)[blue, .dark], NSColor(hex: 0x000000))
     }
 
+    func testLongSplitTitleStaysInsideItsRow() throws {
+        let longTitle = Array(repeating: "腾讯网 | 青春华章·我们的新长征|天津：闲置楼宇变身创新高地_腾讯新闻", count: 4)
+            .joined(separator: " | ")
+        let panes = (0..<4).map { ["title": "Page \($0)", "url": "https://example\($0).com"] }
+        let split = OmniBoxSuggestion(chromiumDic: [
+            "type": "bookmark-title", "contents": longTitle, "description": "",
+            "destinationUrl": "https://example0.com", "fillIntoEdit": "", "line": 0,
+            "phiPanes": panes,
+            "phiV2": ["presentationID": "p", "request": UInt64(1), "revision": UInt64(1),
+                      "resultId": "r", "kind": "bookmark"] as [String: Any],
+        ])
+        XCTAssertTrue(split.isNativeSplit)
+
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 200),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        let suggestionView = OmniBoxSuggestionView(frame: window.contentView?.bounds ?? .zero)
+        suggestionView.autoresizingMask = [.width, .height]
+        window.contentView?.addSubview(suggestionView)
+        suggestionView.updateSuggestions([split], selectedIndex: 0, dataSourceChanged: true)
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        let cell = try XCTUnwrap(Self.firstSubview(of: OmniBoxSuggestionCellView.self, in: suggestionView))
+        let cellFrame = cell.convert(cell.bounds, to: suggestionView)
+        XCTAssertLessThanOrEqual(cellFrame.maxX, suggestionView.bounds.width)
+        XCTAssertFalse(cell.isSwitchToTabViewHiddenForTesting)
+    }
+
+    private static func firstSubview<View: NSView>(of type: View.Type, in view: NSView) -> View? {
+        for subview in view.subviews {
+            if let match = subview as? View ?? firstSubview(of: type, in: subview) { return match }
+        }
+        return nil
+    }
+
     private func drainThemeUpdates() {
         let drained = expectation(description: "Theme updates delivered")
         DispatchQueue.main.async { drained.fulfill() }

@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 struct DownloadItemRow: View {
     @ObservedObject var item: DownloadItem
     @State private var isHovered = false
+    @State private var isTouchRevealed = false
     @State private var openAnimationTrigger = 0
     var isLast: Bool
     var usesHoverAppearance = false
@@ -25,7 +26,7 @@ struct DownloadItemRow: View {
     private let buttonSize: CGFloat = 24
 
     private var showsActions: Bool {
-        !usesHoverAppearance || isHovered
+        !usesHoverAppearance || isHovered || isTouchRevealed
     }
     
     var body: some View {
@@ -66,6 +67,7 @@ struct DownloadItemRow: View {
             .onHover { hovering in
                 isHovered = hovering
             }
+            .revealsOnTouchTap($isTouchRevealed)
             
             // Separator
             if !isLast {

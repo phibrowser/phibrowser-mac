@@ -19,6 +19,9 @@ struct AdvancedSettingsView: View {
     @AppStorage(PhiPreferences.GeneralSettings.directionalTabClosingEnabled.rawValue)
     private var directionalTabClosingEnabled = PhiPreferences.GeneralSettings.directionalTabClosingEnabled.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.groupTabsOpenedFromLinks.rawValue)
+    private var groupTabsOpenedFromLinks = PhiPreferences.GeneralSettings.groupTabsOpenedFromLinks.defaultValue
+
     @AppStorage(PhiPreferences.GeneralSettings.showOpenTabIndicators.rawValue)
     private var showOpenTabIndicators = PhiPreferences.GeneralSettings.showOpenTabIndicators.defaultValue
 
@@ -146,6 +149,30 @@ struct AdvancedSettingsView: View {
                     .themedTint(.themeColor)
                     .accessibilityLabel(NSLocalizedString("settings.advanced.tabs.directionalClosingToggle", value: "Close tabs by position", comment: "Advanced settings - Toggle for enabling the options to close tabs before or after a tab or tab group"))
                     .accessibilityIdentifier("settings.tabs.directionalClosing")
+            }
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Divider()
+
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(NSLocalizedString("settings.advanced.tabs.groupTabsOpenedFromLinksToggle", value: "Group tabs opened from links", comment: "Advanced settings - Toggle for putting a link the user opens in a new tab into a tab group with the page it was opened from"))
+                        .font(.system(size: 13))
+                        .themedForeground(.textPrimary)
+                    Text(NSLocalizedString("settings.advanced.tabs.groupTabsOpenedFromLinksDescription", value: "When you Command-click a link, the new tab goes into a tab group for the page it came from.", comment: "Advanced settings - Explains where the tab goes when the user Command-clicks a link"))
+                        .font(.system(size: 11))
+                        .themedForeground(.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                Toggle("", isOn: $groupTabsOpenedFromLinks)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .themedTint(.themeColor)
+                    .accessibilityLabel(NSLocalizedString("settings.advanced.tabs.groupTabsOpenedFromLinksToggle", value: "Group tabs opened from links", comment: "Advanced settings - Toggle for putting a link the user opens in a new tab into a tab group with the page it was opened from"))
+                    .accessibilityIdentifier("settings.tabs.groupTabsOpenedFromLinks")
             }
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)

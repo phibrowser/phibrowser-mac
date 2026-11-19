@@ -400,6 +400,12 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
             }
             .store(in: &cancellables)
 
+        tab.$pinnedIcon
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.setupFavicon() }
+            .store(in: &cancellables)
+
         tab.$url
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -530,6 +536,34 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         faviconLoadHandle = nil
         self.isSelected = tab.isActive
 
+        if let icon = tab.pinnedIcon,
+           let selection = IconPickerSelection.fromStorageValue(icon) {
+            switch selection {
+            case .phiIcon(let id):
+                iconImageView.image = NSImage(named: NSImage.Name(PhiIconCatalog.canonicalId(for: id) ?? id))
+            case .emoji(_, let value):
+                let size = NSSize(width: Self.faviconSize, height: Self.faviconSize)
+                iconImageView.image = NSImage(size: size, flipped: false) { rect in
+                    // Emoji glyphs are larger than their point size, so fit the
+                    // drawn glyph bounds rather than the font size.
+                    let targetSide = Self.faviconSize - 2
+                    let probe = NSAttributedString(string: value, attributes: [.font: NSFont.systemFont(ofSize: targetSide)])
+                    let probeBounds = probe.boundingRect(with: .zero, options: [.usesDeviceMetrics])
+                    let probeSide = max(probeBounds.width, probeBounds.height)
+                    let fontSize = probeSide > 0 ? targetSide * targetSide / probeSide : targetSide
+                    let text = NSAttributedString(string: value, attributes: [.font: NSFont.systemFont(ofSize: fontSize)])
+                    let glyphBounds = text.boundingRect(with: .zero, options: [.usesDeviceMetrics])
+                    text.draw(with: NSRect(x: rect.midX - glyphBounds.midX,
+                                           y: rect.midY - glyphBounds.midY,
+                                           width: 0,
+                                           height: 0),
+                              options: [])
+                    return true
+                }
+            }
+            return
+        }
+
         if let liveFaviconData = tab.liveFaviconData,
            let image = NSImage(data: liveFaviconData) {
             iconImageView.image = image
@@ -575,6 +609,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     
     func menuNeedsUpdate(_ menu: NSMenu) {
         tabPreviewRegistration.cancelForInteraction()
+        tab?.contextMenuAnchorView = view
         if let populateContextMenu { populateContextMenu(menu) }
         else { tab?.makeContextMenu(on: menu) }
     }

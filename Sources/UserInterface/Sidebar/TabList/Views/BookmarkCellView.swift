@@ -53,6 +53,8 @@ private final class BookmarkCellViewState {
     var isActive = false
     var isOpened = false
     var isHovered = false
+    /// A touch revealed the row's hover-only controls (touch has no hover).
+    var isTouchRevealed = false
     var isPressed = false
     var isEditing = false
     var isMultiSelected = false
@@ -107,6 +109,8 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private let secondaryTabViewModel = TabViewModel()
     private let peekTabViewModel = TabViewModel()
     private let hoverRegionView = SidebarTabHoverRegionView()
+    private let folderPreview = BookmarkFolderPreview()
+    private var touchPressObserver: TouchPressObserver?
     private let tabPreviewRegistration = TabPreviewRegistration()
     private let splitTabPreviewRegistration = SplitTabPreviewRegistration()
     // Keep the rename field in AppKit instead of the SwiftUI subtree.
@@ -123,6 +127,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private weak var configuredSecondaryTab: Tab?
     private var usesSplitTabPreview = false
     private var isEditingActive = false
+    private var isPointerHovered = false
 
     /// Standalone management surfaces must not resolve actions through another Space.
     var usesActiveBrowserStateFallback = true
@@ -142,6 +147,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        folderPreview.invalidate()
         faviconLoadHandle?.cancel()
         faviconLoadHandle = nil
         secondaryFaviconLoadHandle?.cancel()
@@ -161,7 +167,13 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         resetState()
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { folderPreview.invalidate() }
+    }
+
     func cancelTabPreviewForInteraction() {
+        folderPreview.invalidate()
         tabPreviewRegistration.cancelForInteraction()
         splitTabPreviewRegistration.cancelForInteraction()
     }
@@ -243,8 +255,17 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             self?.viewState.showsTabPreview = isEligible
         }
 
+        folderPreview.onPresentationChange = { [weak self] _ in
+            self?.updateHoverAppearance()
+        }
         hoverRegionView.onHoverChanged = { [weak self] isHovered in
-            self?.viewState.isHovered = isHovered
+            self?.isPointerHovered = isHovered
+            self?.updateHoverAppearance()
+            if let self, let bookmark = self.configuredBookmark,
+               let browserState = self.browserState, self.usesActiveBrowserStateFallback {
+                self.folderPreview.setHovering(isHovered, source: .folder(bookmark), anchor: self,
+                                               anchorInsets: Self.rowBackgroundInsets, browserState: browserState)
+            }
             if self?.usesSplitTabPreview == true {
                 self?.splitTabPreviewRegistration.setHovering(isHovered)
             } else {
@@ -259,17 +280,41 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         setupPressAnimation()
     }
 
+    /// Insets of the SwiftUI row background inside the cell.
+    private static let rowBackgroundInsets = NSEdgeInsets(top: 2, left: WebContentConstant.edgesSpacing,
+                                                          bottom: 2, right: WebContentConstant.edgesSpacing)
+
+    /// The folder row stays highlighted while its preview is open, even after
+    /// the pointer moves into the preview.
+    private func updateHoverAppearance() {
+        viewState.isHovered = isPointerHovered || folderPreview.isPresented
+    }
+
     private func setupPressAnimation() {
         let press = NSPressGestureRecognizer(target: self, action: #selector(handlePress(_:)))
         press.minimumPressDuration = 0
         press.allowableMovement = 5
         press.delaysPrimaryMouseButtonEvents = false
+        // macOS 27 defaults to direct touches; a zero-duration press would claim
+        // touch-down ahead of the row's click emulation and sidebar scrolling.
+        press.allowedTouchTypes = []
         addGestureRecognizer(press)
+        touchPressObserver = TouchPressObserver(view: self) { [weak self] pressed in
+            if pressed {
+                self?.folderPreview.invalidate()
+            }
+            self?.viewState.isPressed = pressed
+        }
+    }
+
+    override func setTouchRevealed(_ revealed: Bool) {
+        viewState.isTouchRevealed = revealed
     }
 
     @objc private func handlePress(_ recognizer: NSPressGestureRecognizer) {
         switch recognizer.state {
         case .began:
+            folderPreview.invalidate()
             viewState.isPressed = true
         case .ended, .cancelled, .failed:
             viewState.isPressed = false
@@ -301,7 +346,9 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewState.folderIconPickerRequestGeneration = 0
         viewState.isActive = false
         viewState.isOpened = false
+        isPointerHovered = false
         viewState.isHovered = false
+        viewState.isTouchRevealed = false
         viewState.isPressed = false
         viewState.isEditing = false
         viewState.isMultiSelected = false
@@ -361,6 +408,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     override func configureAppearance() {
         guard let bookmark = resolvedBookmark else { return }
+        folderPreview.invalidate()
         configuredBookmark = bookmark
 
         // Expose to UI testing as a button so the test reset can find and
@@ -506,6 +554,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             .dropFirst()
             .sink { [weak self] isExpanded in
                 self?.viewState.isFolderExpanded = isExpanded
+                if isExpanded { self?.folderPreview.invalidate() }
             }
             .store(in: &cancellables)
 
@@ -1025,7 +1074,8 @@ private struct SidebarBookmarkCellContentView: View {
         // While a peek is attached, the row's only close affordance is the
         // peek indicator's "minus" — hide the tab close button so hover
         // doesn't show two close controls side by side.
-        state.isOpened && state.isHovered && !state.isEditing && !state.showsPeek
+        state.isOpened && (state.isHovered || state.isTouchRevealed)
+            && !state.isEditing && !state.showsPeek
     }
 
     private var faviconHoverAction: BookmarkFaviconHoverAction? {
@@ -1154,6 +1204,7 @@ private struct SidebarBookmarkCellContentView: View {
 
             if state.showsPeek, !state.isEditing {
                 SidebarPeekIndicatorView(viewModel: peekTabViewModel,
+                                         isTouchRevealed: state.isTouchRevealed,
                                          onClose: onClosePeek)
             }
 
@@ -1215,8 +1266,12 @@ private struct NavigatedAwaySeparator: View {
 /// close button on hover (mirrors UnifiedTabCloseButton's styling).
 struct SidebarPeekIndicatorView: View {
     let viewModel: TabViewModel
+    /// The row was touch-revealed; show the minus as hover would.
+    var isTouchRevealed = false
     let onClose: () -> Void
     @State private var isHovered = false
+
+    private var showsMinus: Bool { isHovered || isTouchRevealed }
 
     var body: some View {
         Button(action: onClose) {
@@ -1224,10 +1279,10 @@ struct SidebarPeekIndicatorView: View {
                 // On hover the favicon stays visible, dimmed, behind the
                 // minus glyph — the icon still says which page the peek is.
                 UnifiedTabFaviconView(viewModel: viewModel)
-                    .opacity(isHovered ? 0.25 : 1)
+                    .opacity(showsMinus ? 0.25 : 1)
                 Image(systemName: "minus")
                     .font(.system(size: 11, weight: .semibold))
-                    .opacity(isHovered ? 1 : 0)
+                    .opacity(showsMinus ? 1 : 0)
             }
             .frame(width: 24, height: 24)
             .contentShape(Rectangle())

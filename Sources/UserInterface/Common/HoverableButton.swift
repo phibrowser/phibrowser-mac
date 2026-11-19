@@ -99,6 +99,7 @@ struct HoverableButtonConfig {
 
 // MARK: - Button State
 class HoverableButtonState: ObservableObject {
+    @Published var isImageMirrored = false
     @Published var isEnabled: Bool
     
     init(isEnabled: Bool = true) {
@@ -199,9 +200,11 @@ struct HoverableButton: View {
         case .imageOnly:
             if let name = displaySystemName {
                 symbolImageView(name)
+                    .scaleEffect(x: state.isImageMirrored ? -1 : 1, y: 1)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let image = displayImage {
                 imageView(image)
+                    .scaleEffect(x: state.isImageMirrored ? -1 : 1, y: 1)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         case .both(let imagePosition):
@@ -410,6 +413,11 @@ class HoverableButtonNSView: NSView {
     private var selector: Selector?
     private let buttonState: HoverableButtonState
     private var themeObserver = ThemeObserver.shared
+
+    var isImageMirrored: Bool {
+        get { buttonState.isImageMirrored }
+        set { buttonState.isImageMirrored = newValue }
+    }
 
     var secondaryAction: (() -> Void)?
     

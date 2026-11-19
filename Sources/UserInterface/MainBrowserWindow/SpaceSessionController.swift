@@ -498,6 +498,7 @@ class SpaceSessionController: NSWindowController {
     /// retired through its Chromium window's close instead.
     func discardDormant() {
         guard isDormant else { return }
+        browserState.omniboxNativeSearchAdapter?.close(reason: "window_closed")
         pendingBrowserCalls.removeAll()
         leaveShell()
         removeMultiSelectionEscapeMonitor()
@@ -518,6 +519,9 @@ class SpaceSessionController: NSWindowController {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
+        // See `ShellWindowController.init`: keeps sidebar rows from each
+        // forcing an extra layout to rebuild the key view loop.
+        window.autorecalculatesKeyViewLoop = true
         window.animationBehavior = .none
         // Do NOT let AppKit secure-state restoration bring these windows back in
         // fullscreen. On a slot that owned several Space windows in one
@@ -694,21 +698,19 @@ class SpaceSessionController: NSWindowController {
             self.contentViewController = mainSplitViewController
         }
         
+        let sidebarExpansionFinished = mainSplitViewController.windowSplitViewController.sidebarExpansionDidFinish
         $browserState.compactMap { $0 }
             .flatMap { state in
                 state.sidebarCollapsedPublisher.combineLatest(
                     state.$isInFullScreenMode,
                     NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
                         .map { _ in }
-                        .merge(with: state.$isTranscriptDocked.map { _ in })
+                        .merge(with: state.$isTranscriptDocked.map { _ in }, sidebarExpansionFinished)
                         .prepend(())
                 )
             }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] collapsed, fullScreen, _ in
-                guard let self, self.isPresentedOrLegacy else { return }
-                self.applyTrafficLightVisibility(collapsed: collapsed, fullScreen: fullScreen)
-            }
+            .sink { [weak self] _ in self?.refreshTrafficLightVisibility() }
             .store(in: &cancellables)
 
         // Again, synchronously, because the sink above delivers on the main
@@ -725,10 +727,14 @@ class SpaceSessionController: NSWindowController {
             self.contentViewController = mainSplitViewController
         }
 
-        mainSplitViewController.addChild(toastContainerViewController)
-        mainSplitViewController.view.addSubview(toastContainerViewController.view)
-        toastContainerViewController.view.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
+        // A hosted Space shows its toasts in the shell's shared overlay
+        // (`ShellSplitViewController.presentToastOverlay(for:)`).
+        if !isHosted {
+            mainSplitViewController.addChild(toastContainerViewController)
+            mainSplitViewController.view.addSubview(toastContainerViewController.view)
+            toastContainerViewController.view.snp.makeConstraints { make in
+                make.edges.equalToSuperview()
+            }
         }
 
         mainSplitViewController.addChild(imagePreviewOverlayViewController)
@@ -1173,6 +1179,7 @@ class SpaceSessionController: NSWindowController {
     func completePresentationInShell() {
         guard isPresented else { return }
         applyWindowChrome()
+        shellSplit?.presentToastOverlay(for: browserState)
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isPresented, self.window?.isKeyWindow == true else { return }
             self.mainSplitViewController.webContentContainerViewController.restoreFocusAfterPresentation()
@@ -1267,6 +1274,7 @@ class SpaceSessionController: NSWindowController {
     /// switch's first frame.
     func concealFromShell(removingView: Bool = true, deferringChromium: Bool = false) {
         guard isHosted, isPresented else { return }
+        browserState.omniboxNativeSearchAdapter?.beginContextTransition(reason: "surface_hidden")
         isPresented = false
         if removingView {
             removeSessionViewFromShell(evictingSidebar: true)
@@ -1302,6 +1310,7 @@ class SpaceSessionController: NSWindowController {
     /// that is leaving the slot (closing in the background, dropped while
     /// dormant); a presented one goes through `concealFromShell()`.
     func leaveShell() {
+        browserState.omniboxNativeSearchAdapter?.beginContextTransition(reason: "surface_hidden")
         guard isHosted else { return }
         if isPresented {
             concealFromShell()
@@ -1370,6 +1379,7 @@ class SpaceSessionController: NSWindowController {
     /// use this rather than `window?.close()`, which in hosted mode would
     /// close the whole shell.
     func closeChromiumWindow() {
+        browserState.omniboxNativeSearchAdapter?.close(reason: "window_closed")
         lifecycleWindow?.close()
     }
 
@@ -1412,17 +1422,32 @@ class SpaceSessionController: NSWindowController {
     /// re-places them on the chrome row. Driven by the sidebar/fullscreen sink
     /// and, in hosted mode, re-applied when a session is presented (the sink
     /// is silent for background sessions).
+    /// In the right-sidebar layout the lights live in the top band and show
+    /// only while it is revealed (`FloatingTrafficLightsView`).
     private func applyTrafficLightVisibility(collapsed: Bool, fullScreen: Bool) {
         guard let window else { return }
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
-        let hideTrafficLights = !fullScreen && collapsed && !traditionalLayout
+        let bandVisible = mainSplitViewController.webContentContainerViewController.floatingSidebarHost.isTrafficLightBandVisible
+        let waitingForSidebar = mainSplitViewController.windowSplitViewController.isSidebarExpanding
+        let hideTrafficLights = !fullScreen && !traditionalLayout
+            && (SidebarPosition.isOnRight ? !bandVisible : collapsed || waitingForSidebar)
 
-        window.standardWindowButton(.closeButton)?.isHidden = hideTrafficLights
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = hideTrafficLights
-        window.standardWindowButton(.zoomButton)?.isHidden = hideTrafficLights
+        // This runs on every defaults change, and a set of `isHidden` or
+        // `titlebarAppearsTransparent` retiles the titlebar, so only actual
+        // changes are applied.
+        window.setTitlebarButtonsHidden(hideTrafficLights)
 
-        window.titlebarAppearsTransparent = !fullScreen
+        if window.titlebarAppearsTransparent == fullScreen {
+            window.titlebarAppearsTransparent = !fullScreen
+        }
         updateTrafficLightPlacement(fullScreen: fullScreen)
+    }
+
+    /// Reconciles the native buttons with the current sidebar and top band.
+    func refreshTrafficLightVisibility() {
+        guard isPresentedOrLegacy else { return }
+        applyTrafficLightVisibility(collapsed: browserState.sidebarCollapsed,
+                                    fullScreen: browserState.isInFullScreenMode)
     }
 
     /// Centre line of the chrome row that runs beside the traffic lights, as a
@@ -1483,8 +1508,8 @@ class SpaceSessionController: NSWindowController {
         trafficLightPositioner?.stop(restoringPlacement: true)
         let positioner = TrafficLightPositioner(
             window: window,
-            centerFromWindowTop: Self.chromeRowCenter(for: layoutMode, edgeToEdgeEnabled: layout.edgeToEdgeEnabled),
-            centerFromWindowLeading: layoutMode == .balanced ? 22 : nil
+            centerFromWindowTop: layout.sidebarOnRight ? FloatingTrafficLightMetrics.bandHeight / 2 : Self.chromeRowCenter(for: layoutMode, edgeToEdgeEnabled: layout.edgeToEdgeEnabled),
+            centerFromWindowLeading: layout.sidebarOnRight ? 20 : (layoutMode == .balanced ? 22 : nil)
         )
         trafficLightPositioner = positioner
         trafficLightLayout = layout
@@ -1522,6 +1547,7 @@ class SpaceSessionController: NSWindowController {
     }
 
     @objc private func myWindowWillClose(_ notification: Notification) {
+        browserState.omniboxNativeSearchAdapter?.close(reason: "window_closed")
         // Before the Library leaves: its Folio pane closes the pane tab when
         // it leaves its window, and the tab is torn down with the strip.
         browserState.teardownLibraryPaneForWindowClose()

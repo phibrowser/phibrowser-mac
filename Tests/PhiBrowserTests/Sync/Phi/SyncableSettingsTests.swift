@@ -10,6 +10,15 @@ final class SyncableSettingsTests: XCTestCase {
     private var defaults: UserDefaults!
     private var defaultsSuiteName: String!
 
+    func testNewTabPositionSyncUsesBottomDefaultAndAppliesTopChoice() throws {
+        let key = PhiPreferences.GeneralSettings.newTabsAtTop.rawValue
+        let setting = try XCTUnwrap(SyncableSettings.all.first { $0.key == key })
+        XCTAssertEqual(setting.read(defaults)?.boolValue, false)
+        setting.write(boolValue(true, at: 1), defaults)
+        XCTAssertTrue(defaults.bool(forKey: key))
+        XCTAssertEqual(setting.read(defaults)?.boolValue, true)
+    }
+
     override func setUp() {
         super.setUp()
         defaultsSuiteName = "SyncableSettingsTests.\(UUID().uuidString)"
@@ -272,6 +281,7 @@ final class SyncableSettingsTests: XCTestCase {
             Set(keys),
             [
                 "openNewTabPageOnCmdT",
+                "newTabsAtTop",
                 "alwaysShowURLPath",
                 "alwaysShowBookmarkBar",
                 "showBookmarkBarOnNewTabPage",

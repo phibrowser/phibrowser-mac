@@ -908,6 +908,40 @@ final class CustomTooltipTests: XCTestCase {
         XCTAssertEqual(origin.y, 76)
     }
 
+    func testAttachedLeftPlacementAndBothScreenEdgeFallbacks() {
+        let size = CGSize(width: 180, height: 120)
+        let screen = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        XCTAssertEqual(CustomTooltipGeometry.origin(
+            contentSize: size, anchorScreenRect: CGRect(x: 750, y: 400, width: 200, height: 40),
+            visibleFrame: screen, placement: .leftTopAttached
+        ), CGPoint(x: 570, y: 320))
+        XCTAssertEqual(CustomTooltipGeometry.origin(
+            contentSize: size, anchorScreenRect: CGRect(x: 20, y: 400, width: 200, height: 40),
+            visibleFrame: screen, placement: .leftTopAttached
+        ), CGPoint(x: 220, y: 320))
+        XCTAssertEqual(CustomTooltipGeometry.origin(
+            contentSize: size, anchorScreenRect: CGRect(x: 750, y: 400, width: 200, height: 40),
+            visibleFrame: screen, placement: .rightTopAttached
+        ), CGPoint(x: 570, y: 320))
+    }
+
+    func testSidebarPreviewsOpenTowardThePage() {
+        let keys = [PhiPreferences.GeneralSettings.sidebarPositionKey, PhiPreferences.GeneralSettings.layoutModeKey]
+        let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
+        defer { for (key, value) in zip(keys, saved) { UserDefaults.standard.set(value, forKey: key) } }
+        let preview = CustomTooltipConfiguration(placement: .rightTopAttached, handoffGroup: .tabPreview)
+        let plain = CustomTooltipConfiguration(placement: .rightTopAttached)
+
+        UserDefaults.standard.set(LayoutMode.performance.rawValue, forKey: keys[1])
+        UserDefaults.standard.set(SidebarPosition.left.rawValue, forKey: keys[0])
+        XCTAssertEqual(preview.presentationPlacement, .rightTopAttached)
+        UserDefaults.standard.set(SidebarPosition.right.rawValue, forKey: keys[0])
+        XCTAssertEqual(preview.presentationPlacement, .leftTopAttached)
+        XCTAssertEqual(plain.presentationPlacement, .rightTopAttached)
+        UserDefaults.standard.set(LayoutMode.comfortable.rawValue, forKey: keys[1])
+        XCTAssertEqual(preview.presentationPlacement, .rightTopAttached)
+    }
+
     func testBelowPlacementFlipsAboveNearScreenBottom() {
         let visibleFrame = CGRect(x: 0, y: 0, width: 500, height: 400)
         let origin = CustomTooltipGeometry.origin(
@@ -1104,6 +1138,41 @@ final class CustomTooltipTests: XCTestCase {
 
         XCTAssertNil(controller.pendingOwnerID)
         XCTAssertEqual(presenter.presentCount, 1)
+    }
+
+    func testInWindowOverlayAppearingHidesTooltipInThatWindowOnly() {
+        let fixture = makeWindow()
+        let otherWindow = makeWindow().window
+        let scheduler = ManualScheduler()
+        let presenter = RecordingPresenter()
+        let controller = makeController(
+            fixture: fixture,
+            scheduler: scheduler,
+            presenter: presenter
+        )
+
+        controller.pointerEntered(
+            ownerID: UUID(),
+            anchorView: fixture.host,
+            content: AnyView(Text("Visible")),
+            configuration: CustomTooltipConfiguration(showDelay: 0, displayDuration: nil)
+        )
+        for (object, visible) in [(otherWindow, true), (fixture.window, false)] {
+            NotificationCenter.default.post(
+                name: .phiInWindowOverlayVisibilityChanged,
+                object: object,
+                userInfo: ["visible": visible, "surface": "omnibox"]
+            )
+        }
+        XCTAssertTrue(presenter.isVisible, "Another window's overlay or a hiding overlay keeps the tooltip")
+
+        NotificationCenter.default.post(
+            name: .phiInWindowOverlayVisibilityChanged,
+            object: fixture.window,
+            userInfo: ["visible": true, "surface": "omnibox"]
+        )
+        XCTAssertFalse(presenter.isVisible)
+        XCTAssertNil(controller.activeOwnerID)
     }
 
     func testApplicationResignHidesTooltip() {

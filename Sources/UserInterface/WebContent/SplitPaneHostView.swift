@@ -1336,6 +1336,9 @@ private final class PaneMoveHandle: NSView {
 
     private let pill = CALayer()
     private var areas: [NSTrackingArea] = []
+    private var touchObserver: TouchTapObserver?
+    private var touchHideWorkItem: DispatchWorkItem?
+    private var isDragging = false
 
     private var gripRect: CGRect {
         CGRect(x: bounds.midX - Self.gripSize.width / 2,
@@ -1360,6 +1363,13 @@ private final class PaneMoveHandle: NSView {
         setAccessibilityLabel(NSLocalizedString("browser.splitPane.moveHandle",
                                                 value: "Move Pane",
                                                 comment: "Accessibility label of the grip at the top of a split pane that drags the pane to a new position"))
+        // Touch has no hover: show the pill while a finger is on the grip,
+        // where a touch-hold-then-move drags the pane.
+        touchObserver = TouchTapObserver(
+            view: self,
+            onTouchBegan: { [weak self] in self?.showGripForTouch() },
+            onTap: { _ in }
+        )
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -1412,6 +1422,7 @@ private final class PaneMoveHandle: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        isDragging = true
         NSCursor.closedHand.set()
         onDragBegan?(event)
     }
@@ -1421,12 +1432,27 @@ private final class PaneMoveHandle: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        isDragging = false
         hideGrip()
         onDragEnded?()
     }
 
     func hideGrip() {
+        touchHideWorkItem?.cancel()
+        touchHideWorkItem = nil
         pill.opacity = 0
+    }
+
+    /// Hides again after a few seconds if the touch does not turn into a drag.
+    private func showGripForTouch() {
+        pill.opacity = 1
+        touchHideWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, !self.isDragging else { return }
+            self.hideGrip()
+        }
+        touchHideWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: workItem)
     }
 }
 

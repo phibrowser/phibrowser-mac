@@ -1252,6 +1252,10 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         return frame
     }
 
+    private var touchTapObserver: TouchTapObserver?
+    private var pointerMotionObserver: PointerMotionObserver?
+    private var isTouchInputActive: Bool { pointerMotionObserver != nil }
+
     // MARK: - Mouse Tracking
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -1266,6 +1270,51 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         unlockLayoutIfNeeded()
+    }
+
+    // MARK: - Touch
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        touchTapObserver?.invalidate()
+        touchTapObserver = nil
+        endTouchInput()
+        guard window != nil else { return }
+        // Stays on the strip: a direct-touch recognizer on an ancestor of the
+        // web content stops AppKit's touch-to-mouse emulation for Chromium.
+        touchTapObserver = TouchTapObserver(view: self) { [weak self] location in
+            self?.handleTouch(at: location)
+        }
+    }
+
+    /// A tap in the strip shows the active tab's close button until the
+    /// pointer moves again.
+    private func handleTouch(at locationInWindow: NSPoint) {
+        if let pointerMotionObserver {
+            pointerMotionObserver.noteTouch(at: locationInWindow)
+            return
+        }
+        guard let contentView = window?.contentView else { return }
+        pointerMotionObserver = PointerMotionObserver(
+            view: contentView,
+            touchLocationInWindow: locationInWindow
+        ) { [weak self] in
+            self?.endTouchInput()
+        }
+        updateTouchCloseButtons()
+    }
+
+    private func endTouchInput() {
+        guard let pointerMotionObserver else { return }
+        pointerMotionObserver.invalidate()
+        self.pointerMotionObserver = nil
+        updateTouchCloseButtons()
+    }
+
+    private func updateTouchCloseButtons() {
+        for view in normalTabViews.values {
+            view.revealsCloseButtonForTouch = isTouchInputActive
+        }
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -2066,6 +2115,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                 mergedSplitPanes: render.mergedPanes,
                 sourceTab: tab
             )
+            view.revealsCloseButtonForTouch = isTouchInputActive
             view.configure(with: renderData, browserState: browserState)
             view.setActivePageStyle(
                 backgroundColor: activePageBackgroundColor,
@@ -4791,7 +4841,7 @@ extension TabStrip: TabStripDragDelegate {
                         // Optimistic local update — symmetric with the
                         // auto-join site below. The bridge returns
                         // synchronously but `tabLeftGroup` rides the
-                        // EventBus -> Task { @MainActor } async hop,
+                        // EventBus -> FIFO main-queue async hop,
                         // so without clearing the token here, T would
                         // sit at its new position outside the source
                         // group's range while still carrying
@@ -4920,7 +4970,7 @@ extension TabStrip: TabStripDragDelegate {
                     )
                     // Optimistic local update: the bridge returns
                     // synchronously but `tabJoinedGroup` rides the
-                    // EventBus -> Task { @MainActor } async hop, so
+                    // EventBus -> FIFO main-queue async hop, so
                     // T.groupToken would still be stale (nil or old
                     // group) when the `performLayout(.dataChanged)`
                     // below runs. For sandwich auto-join that

@@ -174,6 +174,8 @@ extension CommandWrapper {
             return NSLocalizedString("settings.shortcuts.description.help", value: "Open browser help.", comment: "Shortcuts settings - Description of the help command")
         case .PHI_TOGGLE_SIDEBAR:
             return NSLocalizedString("settings.shortcuts.description.sidebar", value: "Show or hide the sidebar.", comment: "Shortcuts settings - Description of the sidebar command")
+        case .PHI_TOGGLE_BALANCED_LAYOUT:
+            return NSLocalizedString("settings.shortcuts.description.toggleBalancedLayout", value: "Switch to the Balanced layout, or to Performance when Balanced is already active.", comment: "Shortcuts settings - Description of the command that switches between two layout options; Balanced and Performance are the layout option names")
         case .PHI_TOGGLE_CHATBAR:
             return NSLocalizedString("settings.shortcuts.description.chatbar", value: "Show or hide the chat panel.", comment: "Shortcuts settings - Description of the chatbar command")
         case .PHI_TAB_SWITCHER_FORWARD:

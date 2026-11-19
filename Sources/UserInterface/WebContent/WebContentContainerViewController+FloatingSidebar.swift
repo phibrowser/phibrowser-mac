@@ -22,7 +22,7 @@ extension WebContentContainerViewController {
     /// included, uses the shell's panel instead.
     func setupFloatingSidebar(in mainSplit: MainSplitViewController) {
         guard !mainSplit.isHosted, let browserState else { return }
-        standaloneFloatingSidebarHost.install(in: mainSplit, over: view)
+        standaloneFloatingSidebarHost.install(in: mainSplit)
         standaloneFloatingSidebarHost.present(browserState)
     }
 }

@@ -74,6 +74,45 @@ final class SplitWithNewTabBookmarkTests: XCTestCase {
         XCTAssertEqual(state.splitPanePosition(forTabId: partner.guid), .last, file: file, line: line)
     }
 
+    func testRemoveSplitCommandRequiresAnUnpinnedLiveSplitAndKeepsTabs() throws {
+        let (state, source, _) = try makeFixture()
+        XCTAssertFalse(state.canPerformOmniboxCommand(.removeSplitView))
+        let partner = Tab(guid: 101, url: "https://partner.example", isActive: false, index: 1)
+        state.tabs.append(partner)
+        state.splits = [SplitGroup(id: "command-split", tabIds: [source.guid, partner.guid],
+                                   layout: .vertical, fractions: [0.5, 0.5])]
+        XCTAssertTrue(state.canPerformOmniboxCommand(.removeSplitView))
+        state.focusingTab = partner
+        XCTAssertTrue(state.canPerformOmniboxCommand(.removeSplitView))
+        state.splits[0].isPinned = true
+        XCTAssertFalse(state.canPerformOmniboxCommand(.removeSplitView))
+        state.splits[0].isPinned = false
+
+        state.handleSplitRemoved(splitId: "command-split")
+
+        XCTAssertEqual(state.tabs.map(\.guid), [source.guid, partner.guid])
+        XCTAssertEqual(state.focusingTab?.guid, partner.guid)
+        XCTAssertFalse(state.canPerformOmniboxCommand(.removeSplitView))
+    }
+
+    func testSplitSnapshotOffersRemoveCommandWithoutNativeEntities() throws {
+        let (state, source, _) = try makeFixture()
+        state.splits = [SplitGroup(id: "command-split", tabIds: [source.guid, 101],
+                                   layout: .vertical, fractions: [0.5, 0.5])]
+        let snapshot = OmniboxNativeSearchSnapshot(
+            mutationEpoch: "1", pinScope: "test",
+            bookmarks: .init(status: .complete, entities: [
+                .init(kind: .bookmark, entityID: "other", title: "Other", url: "https://other.example")
+            ]), pins: .init(status: .complete, entities: []))
+        let result = try state.decorateOmniboxSnapshot(
+            snapshot, ticket: OmniboxQueryTicket(deadlineUptimeNanoseconds: UInt64.max))
+        XCTAssertTrue(result.commands?.entities.contains { $0.commandID == "removeSplitView" } == true)
+        XCTAssertEqual(result.bookmarks.status, .unavailable)
+        XCTAssertTrue(result.bookmarks.entities.isEmpty)
+        XCTAssertEqual(result.pins.status, .unavailable)
+        XCTAssertNil(result.learning)
+    }
+
     func testNewTabPageUnbindsBookmarkSourceBeforeOpeningPane() throws {
         let (state, source, bookmark) = try makeFixture()
         UserDefaults.standard.set(true, forKey: PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.rawValue)
@@ -92,6 +131,52 @@ final class SplitWithNewTabBookmarkTests: XCTestCase {
 
         assertSourceJoinsVisiblePair(state, source, bookmark)
         XCTAssertNil(state.pendingSplitPreview)
+    }
+
+    func testDirectionalPreviewSubmissionPreservesLayoutAndSlot() throws {
+        let (state, source, _) = try makeFixture()
+        let configurations: [(SplitLayout, SplitSlot)] = [
+            (.vertical, .right), (.vertical, .left),
+            (.horizontal, .right), (.horizontal, .left),
+        ]
+        for (layout, slot) in configurations {
+            state.pendingSplitPartnerByCustomGuid.removeAll()
+            state.pendingSplitPreview = PendingSplitPreview(
+                partnerTabId: source.guid, newTabSlot: slot, layout: layout)
+
+            XCTAssertTrue(state.commitSplitPreview(url: "https://partner.example"))
+
+            let pending = try XCTUnwrap(state.pendingSplitPartnerByCustomGuid.values.first)
+            guard case let .newPair(partnerTabId, newTabSlot, pendingLayout) = pending.target else {
+                return XCTFail("Expected a new pair")
+            }
+            XCTAssertEqual(partnerTabId, source.guid)
+            XCTAssertEqual(newTabSlot, slot)
+            XCTAssertEqual(pendingLayout, layout)
+            XCTAssertEqual(state.pendingSplitPreview?.isCommitted, true)
+            state.endSplitPreview()
+            XCTAssertNotNil(state.pendingSplitPreview, "Committed previews stay until the split arrives")
+        }
+    }
+
+    func testDirectionalNewTabPagePreservesLayoutAndSlot() throws {
+        let (state, source, _) = try makeFixture()
+        UserDefaults.standard.set(true, forKey: PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.rawValue)
+        let configurations: [(SplitLayout, SplitSlot)] = [
+            (.vertical, .left), (.horizontal, .right), (.horizontal, .left),
+        ]
+        for (layout, slot) in configurations {
+            state.pendingSplitPartnerByCustomGuid.removeAll()
+            XCTAssertTrue(state.splitFocusedTabWithNewTab(newTabSlot: slot, layout: layout))
+            let pending = try XCTUnwrap(state.pendingSplitPartnerByCustomGuid.values.first)
+            guard case let .newPair(partnerTabId, newTabSlot, pendingLayout) = pending.target else {
+                return XCTFail("Expected a new pair")
+            }
+            XCTAssertEqual(partnerTabId, source.guid)
+            XCTAssertEqual(newTabSlot, slot)
+            XCTAssertEqual(pendingLayout, layout)
+            XCTAssertNil(state.pendingSplitPreview)
+        }
     }
 
     func testCancellingPreviewPreservesBookmarkBinding() throws {

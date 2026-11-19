@@ -230,7 +230,7 @@ final class TrafficLightPositioner: NSObject {
         guard let window,
               !window.styleMask.contains(.fullScreen) else { return }
         let buttons = cachedTrafficLightButtons(in: window)
-            ?? Self.buttonTypes.compactMap { window.standardWindowButton($0) }
+            ?? Self.buttonTypes.compactMap { window.titlebarButton($0) }
         guard buttons.count == Self.buttonTypes.count,
               let closeButton = buttons.first,
               let closeButtonSuperview = closeButton.superview,
@@ -318,7 +318,7 @@ final class TrafficLightPositioner: NSObject {
     /// The buttons `observeFrameChanges` last recorded, while they still sit
     /// where they were found; nil once AppKit has replaced any of them.
     ///
-    /// `standardWindowButton` searches the window's whole view tree, and
+    /// `titlebarButton` searches the window's view tree, and
     /// `apply()` runs on every run-loop pass of every window. Every check here
     /// is a property read, so only a pass after AppKit rebuilt the titlebar
     /// pays for the search.

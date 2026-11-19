@@ -160,8 +160,8 @@ extension PhiPreferences {
         case sidebarBottomBarShowsDownloads
         case sidebarBottomBarShowsMemory
         case sidebarBottomBarShowsFeedback
-        case topBarShowsProfile // Comfortable layout top bar entries the user can toggle from the tab strip context menu
-        case topBarShowsDownloads
+        case topBarShowsProfile // Comfortable tab strip's Profile button, toggled from the tab strip context menu
+        case topBarShowsDownloads // Downloads, Memory, Feedback: read once to seed the toolbar arrangement
         case topBarShowsMemory
         case topBarShowsFeedback
         case showOpenTabIndicators // Show dots on inactive open pinned tabs and bookmarks

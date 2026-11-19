@@ -313,17 +313,28 @@ struct HeaderExtensionMenuButton: View {
     }
 }
 
+/// Where a capsule of pinned extensions draws the extensions menu button.
+enum ExtensionMenuButtonPlacement: Hashable {
+    case none, leading, trailing
+}
+
 struct HeaderExtensionContainer: View {
     let pinnedExtensions: [Extension]
+    var menuButton: ExtensionMenuButtonPlacement = .trailing
     let extensionManager: ExtensionManager?
     let browserState: BrowserState?
     @Binding var isPopoverShown: Bool
+    /// Hands a completed drag-reorder's new order to the toolbar arrangement.
+    var onReorder: (([String]) -> Void)? = nil
 
     @State private var isHovering = false
 
     var body: some View {
         let visibleProjection = pinnedExtensions.map(\.id)
         HStack(spacing: HeaderExtensionLayout.itemSpacing) {
+            if menuButton == .leading {
+                menuButtonView
+            }
             HStack(spacing: HeaderExtensionLayout.itemSpacing) {
                 ForEach(pinnedExtensions) { ext in
                     if let manager = extensionManager {
@@ -357,14 +368,13 @@ struct HeaderExtensionContainer: View {
                     pinnedExtensions: pinnedExtensions,
                     extensionManager: extensionManager,
                     windowId: browserState?.windowId.int64Value ?? 0,
-                    allowsReordering: browserState?.isIncognito == false
+                    allowsReordering: browserState?.isIncognito == false,
+                    onReorder: onReorder
                 )
             )
-            HeaderExtensionMenuButton(
-                extensionManager: extensionManager,
-                browserState: browserState,
-                isPopoverShown: $isPopoverShown
-            )
+            if menuButton == .trailing {
+                menuButtonView
+            }
         }
         .frame(height: HeaderTrailingLayout.rowHeight)
         .animation(.easeInOut(duration: 0.12), value: visibleProjection)
@@ -378,6 +388,14 @@ struct HeaderExtensionContainer: View {
                 isHovering = hovering
             }
         }
+    }
+
+    private var menuButtonView: some View {
+        HeaderExtensionMenuButton(
+            extensionManager: extensionManager,
+            browserState: browserState,
+            isPopoverShown: $isPopoverShown
+        )
     }
 }
 
@@ -502,6 +520,7 @@ private struct HeaderExtensionReorderSurface: NSViewRepresentable {
     let extensionManager: ExtensionManager?
     let windowId: Int64
     let allowsReordering: Bool
+    let onReorder: (([String]) -> Void)?
 
     func makeNSView(context: Context) -> HeaderExtensionReorderView {
         HeaderExtensionReorderView()
@@ -512,6 +531,7 @@ private struct HeaderExtensionReorderSurface: NSViewRepresentable {
         nsView.extensionManager = extensionManager
         nsView.windowId = windowId
         nsView.allowsReordering = allowsReordering
+        nsView.onReorder = onReorder
     }
 }
 
@@ -527,6 +547,9 @@ final class HeaderExtensionReorderView: NSView {
     weak var extensionManager: ExtensionManager?
     var windowId: Int64 = 0
     var allowsReordering = false
+    /// The toolbar arrangement decides the header's order, so a completed
+    /// reorder hands the row's new order to it as well as to Chromium.
+    var onReorder: (([String]) -> Void)?
 
     private var mouseDownPoint: CGPoint?
     private var pressedSlotIndex: Int?
@@ -708,9 +731,20 @@ final class HeaderExtensionReorderView: NSView {
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         guard let manager = extensionManager,
               updatePreview(atX: convert(sender.draggingLocation, from: nil).x),
-              manager.commitPinnedExtensionReorder(surface: .contentHeader) else {
+              let preview = manager.pinnedExtensionOrdering.presentationOrder else {
             extensionManager?.cancelPinnedExtensionReorder(surface: .contentHeader)
             return false
+        }
+        // The row as the preview draws it. The arrangement takes it first, so
+        // the row keeps this order once the preview ends.
+        let rank = Dictionary(preview.enumerated().map { ($0.element, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        let reordered = pinnedExtensions.map(\.id).sorted { (rank[$0] ?? Int.max) < (rank[$1] ?? Int.max) }
+        onReorder?(reordered)
+        // Chromium declines a move that leaves its own order unchanged, which
+        // the arrangement's order can still differ from.
+        guard manager.commitPinnedExtensionReorder(surface: .contentHeader) else {
+            manager.cancelPinnedExtensionReorder(surface: .contentHeader)
+            return onReorder != nil
         }
         return true
     }

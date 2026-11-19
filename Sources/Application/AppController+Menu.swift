@@ -294,6 +294,7 @@ extension AppController {
     /// Every File menu row rendered from `PageActionRegistry`.
     static let filePageActionItemTag = 500041
     static let viewAppearanceParentItemTag = 500042
+    static let customizeToolbarItemTag = 500043
     static let debugMenuItemTag = 500027
     static let spacesProfileSeparatorTag = 500020
     static let deleteProfileSubmenuIdentifier = NSUserInterfaceItemIdentifier("phi.spaces.deleteProfile")
@@ -425,6 +426,7 @@ extension AppController {
 
                 submenu.items.removeAll { item in
                     item.tag == CommandWrapper.PHI_TOGGLE_SIDEBAR.rawValue ||
+                    item.tag == AppController.customizeToolbarItemTag ||
                     item.tag == CommandWrapper.PHI_TOGGLE_CHATBAR.rawValue ||
                     item.tag == CommandWrapper.PHI_NEW_CONVERSATION.rawValue ||
                     item.tag == CommandWrapper.PHI_TOGGLE_READER.rawValue ||
@@ -540,6 +542,13 @@ extension AppController {
                 Shortcuts.updateShortcut(for: toggleSidebarItem)
                 toggleSidebarItem.target = self
                 submenu.addItem(toggleSidebarItem)
+
+                let customizeToolbarItem = NSMenuItem(title: NSLocalizedString("app.viewMenu.customizeToolbar", value: "Customize Toolbar…", comment: "View menu - Menu item that opens Customize Toolbar to add, remove and rearrange the toolbar's buttons"),
+                                                      action: #selector(customizeToolbar(_:)),
+                                                      keyEquivalent: "")
+                customizeToolbarItem.tag = AppController.customizeToolbarItemTag
+                customizeToolbarItem.target = self
+                submenu.addItem(customizeToolbarItem)
 
                 let toggleChatbarItem = NSMenuItem(title: NSLocalizedString("app.viewMenu.toggleChatbar", value: "Toggle Chatbar", comment: "View menu - Menu item to show or hide the AI chat bar"),
                                                    action: #selector(toggleChatbar(_:)),
@@ -1428,6 +1437,14 @@ extension AppController {
             return
         }
         state.toggleSidebar()
+    }
+
+    @objc func customizeToolbar(_ sender: Any?) {
+        guard let controller = SpaceSessionControllersManager.shared.activeWindowController,
+              !controller.browserState.isKioskWindow else {
+            return
+        }
+        controller.beginToolbarCustomization()
     }
     
     @objc func toggleChatbar(_ sendar: Any?) {
@@ -3592,6 +3609,17 @@ extension AppController {
             if SpaceSessionControllersManager.shared
                 .getActiveWindowState()?.isKioskWindow == true
                 || PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
+                return false
+            }
+        }
+
+        // Performance has no toolbar, and the empty-window placeholder's
+        // cannot be customized.
+        if item.action == #selector(customizeToolbar(_:)) {
+            guard let state = SpaceSessionControllersManager.shared.getActiveWindowState(),
+                  !state.isKioskWindow,
+                  !state.isInPlaceholderMode,
+                  PhiPreferences.GeneralSettings.loadLayoutMode().showsNavigationAtTop else {
                 return false
             }
         }

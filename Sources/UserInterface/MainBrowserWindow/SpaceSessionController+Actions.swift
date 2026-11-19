@@ -106,6 +106,12 @@ extension SpaceSessionController {
         }
     }
 
+    /// Opens Customize Toolbar in this window. Performance has no toolbar.
+    func beginToolbarCustomization() {
+        guard PhiPreferences.GeneralSettings.loadLayoutMode().showsNavigationAtTop else { return }
+        mainSplitViewController.webContentContainerViewController.beginCustomizingToolbar()
+    }
+
     @IBAction func openLocationBar(_ sender: Any?) {
         var addressView = sender as? NSView
         if addressView == nil,

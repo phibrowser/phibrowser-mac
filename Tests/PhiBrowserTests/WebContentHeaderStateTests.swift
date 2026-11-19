@@ -35,31 +35,26 @@ final class WebContentHeaderStateTests: XCTestCase {
         try super.tearDownWithError()
     }
 
-    func testFeedbackIconFitsBesideDownloadAtNinetyPoints() {
-        let fit = HeaderTrailingArea.widthFit(
-            availableWidth: 90,
-            pinnedCount: 0,
-            showDownload: true,
-            showMemory: false,
-            showFeedback: true,
-            showChat: false
+    private func trailingFit(_ items: [ToolbarItemID], availableWidth: CGFloat) -> ToolbarOverflow.Fit {
+        ToolbarOverflow.fit(
+            items,
+            width: HeaderTrailingArea.slotWidth(for:),
+            available: availableWidth - HeaderTrailingArea.trailingPadding,
+            overflowButtonWidth: HeaderTrailingArea.overflowSlotWidth
         )
+    }
 
-        XCTAssertTrue(fit.showFeedback)
-        XCTAssertTrue(fit.showDownload)
+    func testFeedbackIconFitsBesideDownloadAtNinetyPoints() {
+        let fit = trailingFit([.extensionsButton, .downloads, .feedback], availableWidth: 90)
+
+        XCTAssertEqual(fit.folded, [])
+        XCTAssertEqual(fit.visible, [.extensionsButton, .downloads, .feedback])
     }
 
     func testFeedbackIconCollapsesWhenItsSlotDoesNotFit() {
-        let fit = HeaderTrailingArea.widthFit(
-            availableWidth: 59,
-            pinnedCount: 0,
-            showDownload: false,
-            showMemory: false,
-            showFeedback: true,
-            showChat: false
-        )
+        let fit = trailingFit([.extensionsButton, .feedback], availableWidth: 59)
 
-        XCTAssertFalse(fit.showFeedback)
+        XCTAssertEqual(fit.folded, [.feedback])
     }
 
     func testBalancedLayoutAllowsWindowDrag() {
@@ -104,6 +99,43 @@ final class WebContentHeaderStateTests: XCTestCase {
                 isBookmarkBarVisible: true
             )
         )
+    }
+
+    func testTheToolbarLaysOutWithoutTheItemBeingDragged() {
+        let standard = ToolbarArrangement.standard
+        let withoutReload = WebContentHeaderState.layoutArrangement(standard, dragging: .item(.reload))
+        XCTAssertEqual(withoutReload.placements(in: .left).map(\.item), [.sidebarToggle, .back, .forward])
+        XCTAssertEqual(withoutReload.placements(in: .right), standard.placements(in: .right))
+        XCTAssertTrue(withoutReload.showsAddressBar)
+
+        let withoutBar = WebContentHeaderState.layoutArrangement(standard, dragging: .addressBar)
+        XCTAssertFalse(withoutBar.showsAddressBar)
+        XCTAssertEqual(withoutBar.placements(in: .addressTrailing), standard.placements(in: .addressTrailing),
+                       "its buttons come back with it")
+
+        XCTAssertEqual(WebContentHeaderState.layoutArrangement(standard, dragging: nil), standard)
+        XCTAssertEqual(WebContentHeaderState.layoutArrangement(standard, dragging: .defaultSet), standard)
+    }
+
+    func testTheDraggedItemIsLeftOutOnlyWhileCustomizingAndNeverFromTheArrangement() {
+        let state = WebContentHeaderState()
+        state.showAddressBar = true
+        state.arrangement = .standard
+        state.draggedPayload = .addressBar
+        XCTAssertEqual(state.layoutArrangement, .standard, "outside customizing nothing changes")
+        XCTAssertTrue(state.drawsAddressBar)
+
+        state.isCustomizing = true
+        XCTAssertFalse(state.drawsAddressBar, "the toolbar reflows as if the bar were gone")
+        XCTAssertEqual(state.arrangement, .standard, "until it lands or leaves")
+
+        state.draggedPayload = .item(.chat)
+        XCTAssertTrue(state.drawsAddressBar)
+        XCTAssertFalse(state.layoutArrangement.placements(in: .right).contains { $0.item == .chat })
+        XCTAssertTrue(state.arrangement.placements(in: .right).contains { $0.item == .chat })
+
+        state.draggedPayload = nil
+        XCTAssertEqual(state.layoutArrangement, .standard, "a cancelled drag puts it back where it was")
     }
 
     func testFeatureEntryAnalyticsUsesOnlySupportedButtons() {

@@ -22656,6 +22656,18 @@
         }
       }
     },
+    "app.viewMenu.customizeToolbar" : {
+      "comment" : "View menu - Menu item that opens Customize Toolbar to add, remove and rearrange the toolbar's buttons",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Customize Toolbar…"
+          }
+        }
+      }
+    },
     "app.viewMenu.layoutModeSectionTitle" : {
       "comment" : "View menu - Layout mode section header in View menu",
       "extractionState" : "extracted_with_value",
@@ -32200,6 +32212,354 @@
         }
       }
     },
+    "browser.toolbarCustomization.addressBarDragToken.placeholder" : {
+      "comment" : "Customize Toolbar - Label of the small capsule that follows the pointer while the address bar is dragged, when the page has no address to show (for example a new tab)",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Address"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.addressBarStyle.minimal" : {
+      "comment" : "Customize Toolbar sheet - Address bar style: the address as plain text centered in the window, without a field around it",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Minimal"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.addressBarStyle.standard" : {
+      "comment" : "Customize Toolbar sheet - Address bar style: the address in a rounded field with its buttons inside",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Standard"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.addressBarStyleLabel" : {
+      "comment" : "Customize Toolbar sheet - Label of the control that picks how the address bar looks",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Address bar style"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.customizeAction" : {
+      "comment" : "Toolbar, Site Menu and tab strip context menus - Opens Customize Toolbar to add, remove and rearrange the toolbar's buttons",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Customize Toolbar…"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.defaultSetInstructions" : {
+      "comment" : "Customize Toolbar sheet - Caption above the row that restores the default toolbar when dragged into it",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "…or drag the default set into the toolbar."
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.doneAction" : {
+      "comment" : "Customize Toolbar sheet - Button that closes the sheet and returns the toolbar's buttons to normal use",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Done"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.extensionsSection" : {
+      "comment" : "Customize Toolbar sheet - Heading of the section listing the installed extensions the user can drag into the toolbar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Extensions"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.item.address" : {
+      "comment" : "Customize Toolbar sheet - Name of the address bar, which shows the page's address between the toolbar's buttons and can be dragged out of the toolbar and back in",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Address"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.item.back" : {
+      "comment" : "Customize Toolbar sheet - Name of the button that goes back to the previous page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Back"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.item.chat" : {
+      "comment" : "Customize Toolbar sheet - Name of the button that opens Phi AI's chat",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Chat"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.item.copyURL" : {
+      "comment" : "Customize Toolbar sheet - Name of the button that copies the page's address",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copy URL"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.item.downloads" : {
+      "comment" : "Customize Toolbar sheet - Name of the button that shows recent downloads",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Downloads"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.item.extensionsButton" : {
+      "comment" : "Customize Toolbar sheet - Name of the button that opens the menu listing all installed extensions",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Extensions Menu"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.item.feedback" : {
+      "comment" : "Customize Toolbar sheet - Name of the button that opens the feedback form",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Feedback"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.item.forward" : {
+      "comment" : "Customize Toolbar sheet - Name of the button that goes forward to the next page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Forward"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.item.memory" : {
+      "comment" : "Customize Toolbar sheet - Name of the button that opens Phi AI's browser memory",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Browser Memory"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.item.readerView" : {
+      "comment" : "Customize Toolbar sheet - Name of the button that shows the page in Reader View",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Reader View"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.item.reload" : {
+      "comment" : "Customize Toolbar sheet - Name of the button that reloads the page, or stops it while it loads",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Reload"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.item.sidebarToggle" : {
+      "comment" : "Customize Toolbar sheet - Name of the button that shows or hides the sidebar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Toggle Sidebar"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.item.siteMemories" : {
+      "comment" : "Customize Toolbar sheet - Name of the button that manages Phi AI's memories of the current site",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Site Memories"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.item.siteMenu" : {
+      "comment" : "Customize Toolbar sheet - Name of the button that opens the menu of actions and settings for the current site",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Site Menu"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.paletteInstructions" : {
+      "comment" : "Customize Toolbar sheet - Heading above the buttons the user can drag into the toolbar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Drag your favorite items into the toolbar…"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.visibilityAlways" : {
+      "comment" : "Context menu of a button in the address bar while customizing the toolbar - Shows the button at all times",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Always"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.visibilityBadge.showAlways" : {
+      "comment" : "Customize Toolbar - Accessibility label of the eye badge on a button in the address bar that shows only on hover; pressing it shows the button at all times. %@ is the button's name, such as Copy URL",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Always Show %@"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.visibilityBadge.showOnHover" : {
+      "comment" : "Customize Toolbar - Accessibility label of the eye badge on a button in the address bar that is always shown; pressing it shows the button only while the pointer is over the address bar. %@ is the button's name, such as Copy URL",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show %@ on Hover"
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.visibilityBadge.tooltipAlways" : {
+      "comment" : "Customize Toolbar - Tooltip of the eye badge on a button in the address bar that is always shown",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Always shown. Click to show only on hover."
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.visibilityBadge.tooltipOnHover" : {
+      "comment" : "Customize Toolbar - Tooltip of the eye badge on a button in the address bar that shows only while the pointer is over the address bar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Shown on hover. Click to always show."
+          }
+        }
+      }
+    },
+    "browser.toolbarCustomization.visibilityOnHover" : {
+      "comment" : "Context menu of a button in the address bar while customizing the toolbar - Shows the button only while the pointer is over the address bar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "On Hover"
+          }
+        }
+      }
+    },
     "browser.webContentAddressBar.copyURLTooltip" : {
       "comment" : "Copy URL shortcut tooltip title",
       "extractionState" : "extracted_with_value",
@@ -32436,6 +32796,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "閱讀模式"
+          }
+        }
+      }
+    },
+    "browser.webContentAddressBar.siteMemoriesAction" : {
+      "comment" : "Site Menu - Opens the memory controls for the current website; shown when the Site Memories button is not in the toolbar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Site Memories"
           }
         }
       }

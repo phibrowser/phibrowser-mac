@@ -251,6 +251,9 @@ Order among natives:
 7. **Commands.** Up to `command_budget` commands go after the rows. When the
    list is full, a command of Q2 or better replaces the last plain search
    suggestion that is not row 0, not verbatim and not a split action parent.
+   The remaining commands only fill vacant slots and never replace a row: once
+   Chromium is done, or before that if the previous request ended with them,
+   so typing does not shrink and regrow the list.
 8. **Default.** Row 0 is the default when allowed. A native top uses its
    inline completion unless inline is prevented or the open pin's current URL
    differs from its pinned URL.

@@ -414,6 +414,9 @@ private struct BrowsingSectionView: View {
     @AppStorage(PhiPreferences.GeneralSettings.newTabsAtTop.rawValue)
     private var newTabsAtTop: Bool = PhiPreferences.GeneralSettings.newTabsAtTop.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.showHistoryInFloatingPanel.rawValue)
+    private var showHistoryInFloatingPanel: Bool = PhiPreferences.GeneralSettings.showHistoryInFloatingPanel.defaultValue
+
     private var selectedBehavior: Binding<NewTabBehaviour> {
         Binding(
             get: { openNewTabPageOnCmdT ? .newTabPage : .omnibox },
@@ -456,6 +459,27 @@ private struct BrowsingSectionView: View {
                             )
                         }
                     }
+                }
+
+                Divider()
+
+                GeneralRowView(
+                    title: NSLocalizedString(
+                        "settings.general.historyPanel.title",
+                        value: "Show history in a floating panel",
+                        comment: "General settings - Toggle that makes Show History (Command-Y) open a floating history panel instead of the history page"
+                    ),
+                    subtitle: NSLocalizedString(
+                        "settings.general.historyPanel.description",
+                        value: "Show History opens a searchable panel at the side of the window. The full history page stays one click away.",
+                        comment: "General settings - Description below the floating history panel toggle"
+                    )
+                ) {
+                    Toggle("", isOn: $showHistoryInFloatingPanel)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .themedTint(.themeColor)
                 }
             }
         }

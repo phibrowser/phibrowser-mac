@@ -156,6 +156,7 @@
 		37D011013010000100000001 /* refresh.json in Copy LottieFiles */ = {isa = PBXBuildFile; fileRef = 37D011043010000100000004 /* refresh.json */; };
 		37D011023010000100000002 /* memory.json in Copy LottieFiles */ = {isa = PBXBuildFile; fileRef = 37D011053010000100000005 /* memory.json */; };
 		37D4F5122F6A5CB100F9E67D /* OverlayScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37D4F5112F6A5CB100F9E67D /* OverlayScrollView.swift */; };
+		77BBABB650B2C8482BB6438C /* HistoryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F5DF3520FBEED4E0DB756C /* HistoryPanel.swift */; };
 		37D6E3672F18FDA700129557 /* WebContentContainerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37D6E3662F18FDA700129557 /* WebContentContainerViewController.swift */; };
 		37DD11022F9D111100000001 /* BookmarkMenuContentBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DD11012F9D111100000001 /* BookmarkMenuContentBuilder.swift */; };
 		37DD11042F9D111100000001 /* BookmarkHTMLExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DD11032F9D111100000001 /* BookmarkHTMLExporter.swift */; };
@@ -712,6 +713,7 @@
 		EAD00000000000000000001A /* ReaderAccessibilityExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000019 /* ReaderAccessibilityExtractor.swift */; };
 		EAD00000000000000000001C /* URLPatternMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD00000000000000000001B /* URLPatternMatcher.swift */; };
 		EAD000000000000000000024 /* AgentSpaceRouter+Reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000023 /* AgentSpaceRouter+Reader.swift */; };
+		DC54A995EC648F655C67241A /* HistoryPanelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 595A2B32C8995ABD07B34BFC /* HistoryPanelService.swift */; };
 		EAD000000000000000000026 /* ReaderExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000025 /* ReaderExportService.swift */; };
 		EAD000000000000000000028 /* ReaderImageInliner.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000027 /* ReaderImageInliner.swift */; };
 		EAD00000000000000000002A /* ReaderStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000029 /* ReaderStyle.swift */; };
@@ -1034,6 +1036,7 @@
 		37D011043010000100000004 /* refresh.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = refresh.json; sourceTree = "<group>"; };
 		37D011053010000100000005 /* memory.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = memory.json; sourceTree = "<group>"; };
 		37D4F5112F6A5CB100F9E67D /* OverlayScrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayScrollView.swift; sourceTree = "<group>"; };
+		E3F5DF3520FBEED4E0DB756C /* HistoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryPanel.swift; sourceTree = "<group>"; };
 		37D6E3662F18FDA700129557 /* WebContentContainerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentContainerViewController.swift; sourceTree = "<group>"; };
 		37DD11012F9D111100000001 /* BookmarkMenuContentBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkMenuContentBuilder.swift; sourceTree = "<group>"; };
 		37DD11032F9D111100000001 /* BookmarkHTMLExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkHTMLExporter.swift; sourceTree = "<group>"; };
@@ -1588,6 +1591,7 @@
 		EAD000000000000000000019 /* ReaderAccessibilityExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderAccessibilityExtractor.swift; sourceTree = "<group>"; };
 		EAD00000000000000000001B /* URLPatternMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLPatternMatcher.swift; sourceTree = "<group>"; };
 		EAD000000000000000000023 /* AgentSpaceRouter+Reader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentSpaceRouter+Reader.swift"; sourceTree = "<group>"; };
+		595A2B32C8995ABD07B34BFC /* HistoryPanelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryPanelService.swift; sourceTree = "<group>"; };
 		EAD000000000000000000025 /* ReaderExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderExportService.swift; sourceTree = "<group>"; };
 		EAD000000000000000000027 /* ReaderImageInliner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderImageInliner.swift; sourceTree = "<group>"; };
 		EAD000000000000000000029 /* ReaderStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderStyle.swift; sourceTree = "<group>"; };
@@ -3260,6 +3264,7 @@
 				3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */,
 				EAD000000000000000000011 /* ReaderExtractionService.swift */,
 				EAD000000000000000000019 /* ReaderAccessibilityExtractor.swift */,
+				595A2B32C8995ABD07B34BFC /* HistoryPanelService.swift */,
 				EAD000000000000000000025 /* ReaderExportService.swift */,
 				EAD000000000000000000037 /* SaveForLaterService.swift */,
 				EAD000000000000000000013 /* BrowserState+Reader.swift */,
@@ -3293,6 +3298,7 @@
 				376195472F5152A30094A78E /* Header */,
 				8E486A762F3EEF8A00078DEC /* StatusURLViewModel.swift */,
 				8E486A742F3ED68600078DEC /* StatusURLView.swift */,
+				E3F5DF3520FBEED4E0DB756C /* HistoryPanel.swift */,
 				37D6E3662F18FDA700129557 /* WebContentContainerViewController.swift */,
 				A7E1C0010000000000000001 /* PageOverlayView.swift */,
 				377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */,
@@ -3917,6 +3923,7 @@
 				37C76E162F8FAD510042FE45 /* SharedTokenLock.swift in Sources */,
 				37D4F5122F6A5CB100F9E67D /* OverlayScrollView.swift in Sources */,
 				B0F370CB2E43261A000B51F9 /* EventBus.swift in Sources */,
+				77BBABB650B2C8482BB6438C /* HistoryPanel.swift in Sources */,
 				37D6E3672F18FDA700129557 /* WebContentContainerViewController.swift in Sources */,
 				37E5B1A1301200AB00000002 /* ExtensionSidePanelView.swift in Sources */,
 				8E762C192F15F5AE00631087 /* TabDragContext.swift in Sources */,
@@ -4111,6 +4118,7 @@
 				3703C9822F69558C00E7CF6D /* BrowserState+ToggleAI.swift in Sources */,
 				EAD000000000000000000012 /* ReaderExtractionService.swift in Sources */,
 				EAD00000000000000000001A /* ReaderAccessibilityExtractor.swift in Sources */,
+				DC54A995EC648F655C67241A /* HistoryPanelService.swift in Sources */,
 				EAD000000000000000000026 /* ReaderExportService.swift in Sources */,
 				EAD000000000000000000038 /* SaveForLaterService.swift in Sources */,
 				EAD000000000000000000014 /* BrowserState+Reader.swift in Sources */,

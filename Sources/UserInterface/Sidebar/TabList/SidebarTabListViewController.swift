@@ -4132,6 +4132,13 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
                 guard let self else { return }
                 self.toggleItemExpanded(self.spaceRootItem)
             }
+            rootCell.makeMoreMenu = { [weak self] in
+                let menu = NSMenu()
+                guard let self else { return menu }
+                self.contextMenuHelper.populateSpaceRootMenu(menu)
+                self.disableItemsIfAgentLocked(in: menu)
+                return menu
+            }
             cellView = rootCell
         case .bookmark, .bookmarkFolder:
             let identifier = NSUserInterfaceItemIdentifier("BookmarkCell")

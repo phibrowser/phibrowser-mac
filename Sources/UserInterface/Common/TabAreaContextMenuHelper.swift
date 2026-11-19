@@ -20,18 +20,7 @@ final class TabAreaContextMenuHelper: NSObject {
 
     func populate(_ menu: NSMenu) {
         menu.removeAllItems()
-
-        // Disable New Tab while the agent controls this Space: the user must not
-        // add tabs to the agent's workspace until they take control. Nil action
-        // greys it out via AppKit's automatic menu enabling.
-        let agentLocked = MainActor.assumeIsolated {
-            AgentSpaceManager.shared.isAgentOwned(browserState?.spaceId ?? "")
-        }
-        menu.addItem(NSMenuItem(
-            title: NSLocalizedString("common.tabAreaContextMenu.newTabAction", value: "New Tab", comment: "Tab area context menu - Open a new browser tab"),
-            action: agentLocked ? nil : #selector(newTab),
-            keyEquivalent: "t"
-        ).configured { $0.keyEquivalentModifierMask = .command; $0.target = agentLocked ? nil : self })
+        menu.addItem(makeNewTabItem())
 
         menu.addItem(NSMenuItem(
             title: NSLocalizedString("common.tabAreaContextMenu.reopenClosedTabAction", value: "Reopen Closed Tab", comment: "Tab area context menu - Reopen the last closed tab"),
@@ -44,11 +33,7 @@ final class TabAreaContextMenuHelper: NSObject {
         if browserState?.isIncognito != true {
             menu.addItem(.separator())
 
-            menu.addItem(NSMenuItem(
-                title: NSLocalizedString("common.tabAreaContextMenu.newBookmarkFolderAction", value: "New Folder", comment: "Tab area context menu - Create a new bookmark folder"),
-                action: #selector(newFolder),
-                keyEquivalent: ""
-            ).configured { $0.target = self })
+            menu.addItem(makeNewFolderItem())
 
             let hasBookmarkableTabs = browserState?.normalTabs.contains { !$0.isLocalPage } ?? false
             menu.addItem(NSMenuItem(
@@ -76,20 +61,7 @@ final class TabAreaContextMenuHelper: NSObject {
             ).configured { $0.target = self })
         }
 
-        // Active-Space controls, mirroring the Spaces menu / Space right-click.
-        // Only surface them while the Spaces feature is enabled and the window
-        // participates in Spaces — standalone incognito windows expose none;
-        // the Incognito Space's window does.
-        if PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
-           let browserState,
-           browserState.participatesInSpaces == true {
-            menu.addItem(.separator())
-            AppController.shared?.appendActiveSpaceMenuItems(
-                to: menu,
-                browserState: browserState,
-                triggerScreenPoint: NSEvent.mouseLocation
-            )
-        }
+        appendActiveSpaceItems(to: menu, includesEditTheme: true)
 
         menu.addItem(.separator())
         if !isHorizontalLayout {
@@ -110,6 +82,56 @@ final class TabAreaContextMenuHelper: NSObject {
         )
         buttonsItem.submenu = buildButtonsSubmenu()
         menu.addItem(buttonsItem)
+    }
+
+    /// The Space root row's "…" menu: the tab area menu without its reopen,
+    /// bulk-bookmark, layout, theme and button entries.
+    func populateSpaceRootMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        menu.addItem(makeNewTabItem())
+        if browserState?.isIncognito != true {
+            menu.addItem(makeNewFolderItem())
+        }
+        appendActiveSpaceItems(to: menu, includesEditTheme: false)
+    }
+
+    private func makeNewTabItem() -> NSMenuItem {
+        // Disable New Tab while the agent controls this Space: the user must not
+        // add tabs to the agent's workspace until they take control. Nil action
+        // greys it out via AppKit's automatic menu enabling.
+        let agentLocked = MainActor.assumeIsolated {
+            AgentSpaceManager.shared.isAgentOwned(browserState?.spaceId ?? "")
+        }
+        return NSMenuItem(
+            title: NSLocalizedString("common.tabAreaContextMenu.newTabAction", value: "New Tab", comment: "Tab area context menu - Open a new browser tab"),
+            action: agentLocked ? nil : #selector(newTab),
+            keyEquivalent: "t"
+        ).configured { $0.keyEquivalentModifierMask = .command; $0.target = agentLocked ? nil : self }
+    }
+
+    private func makeNewFolderItem() -> NSMenuItem {
+        NSMenuItem(
+            title: NSLocalizedString("common.tabAreaContextMenu.newBookmarkFolderAction", value: "New Folder", comment: "Tab area context menu - Create a new bookmark folder"),
+            action: #selector(newFolder),
+            keyEquivalent: ""
+        ).configured { $0.target = self }
+    }
+
+    /// Active-Space controls, mirroring the Spaces menu / Space right-click.
+    /// Only surface them while the Spaces feature is enabled and the window
+    /// participates in Spaces — standalone incognito windows expose none;
+    /// the Incognito Space's window does.
+    private func appendActiveSpaceItems(to menu: NSMenu, includesEditTheme: Bool) {
+        guard PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
+              let browserState,
+              browserState.participatesInSpaces == true else { return }
+        menu.addItem(.separator())
+        AppController.shared?.appendActiveSpaceMenuItems(
+            to: menu,
+            browserState: browserState,
+            triggerScreenPoint: NSEvent.mouseLocation,
+            includesEditTheme: includesEditTheme
+        )
     }
 
     @objc private func moveSidebar() {

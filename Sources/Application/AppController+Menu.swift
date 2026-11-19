@@ -2249,7 +2249,8 @@ extension AppController {
     func appendActiveSpaceMenuItems(
         to menu: NSMenu,
         browserState: BrowserState? = nil,
-        triggerScreenPoint: NSPoint? = nil
+        triggerScreenPoint: NSPoint? = nil,
+        includesEditTheme: Bool = true
     ) {
         let targetSlot = browserState?.windowController?.slot ?? currentSpacesSlot()
         let activeSpaceId = targetSlot?.activeSpaceId ?? SpaceManager.shared.activeSpaceId
@@ -2286,18 +2287,24 @@ extension AppController {
             changeIconItem = nil
         }
 
-        let editThemeItem = NSMenuItem(
-            title: NSLocalizedString("app.activeSpaceContextMenu.themeSubmenuTitle", value: "Edit Theme", comment: "Active Space context menu - opens the theme editor for the active Space"),
-            action: #selector(requestActiveSpaceThemeEditor(_:)),
-            keyEquivalent: ""
-        )
-        editThemeItem.target = self
-        editThemeItem.representedObject = SpaceThemeEditorMenuContext(
-            browserState: browserState,
-            placement: triggerScreenPoint.map(SpaceThemeEditorPanelPlacement.nearTrigger)
-                ?? .windowTop
-        )
-        menu.addItem(editThemeItem)
+        let editThemeItem: NSMenuItem?
+        if includesEditTheme {
+            let item = NSMenuItem(
+                title: NSLocalizedString("app.activeSpaceContextMenu.themeSubmenuTitle", value: "Edit Theme", comment: "Active Space context menu - opens the theme editor for the active Space"),
+                action: #selector(requestActiveSpaceThemeEditor(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = SpaceThemeEditorMenuContext(
+                browserState: browserState,
+                placement: triggerScreenPoint.map(SpaceThemeEditorPanelPlacement.nearTrigger)
+                    ?? .windowTop
+            )
+            menu.addItem(item)
+            editThemeItem = item
+        } else {
+            editThemeItem = nil
+        }
 
         let changeProfileParent = NSMenuItem(
             title: NSLocalizedString("app.activeSpaceContextMenu.profileSubmenuTitle", value: "Change Profile", comment: "Active Space context menu - Submenu to re-bind the active Space to another profile"),

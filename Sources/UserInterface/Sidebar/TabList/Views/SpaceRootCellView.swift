@@ -75,10 +75,26 @@ final class SpaceRootCellView: SidebarCellView {
         return spring.settlingDuration
     }
     var onToggle: (() -> Void)?
+    var makeMoreMenu: (() -> NSMenu)?
     private let chevron = SpaceRootChevronView()
     private let titleLabel = NSTextField(labelWithString: "")
     private let folderPreview = BookmarkFolderPreview()
     private var expanded: Bool?
+    private var isRowHovered = false
+    private var isMoreMenuPresented = false
+    private lazy var moreButton: HoverableButtonNSView = {
+        let config = HoverableButtonConfig(imageSize: NSSize(width: 14, height: 14), systemName: "ellipsis",
+                                           hoverBackgroundColor: .hover, imageTintColor: .textMuted,
+                                           cornerRadius: 6)
+        let button = HoverableButtonNSView(config: config) { [weak self] in
+            self?.showMoreMenu()
+        }
+        let label = NSLocalizedString("sidebar.spaceRoot.moreButton", value: "More", comment: "Sidebar Space folder row - Button that opens the Space actions menu")
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+        button.isHidden = true
+        return button
+    }()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -108,6 +124,7 @@ final class SpaceRootCellView: SidebarCellView {
         }
         backgoundView.addSubview(chevron)
         backgoundView.addSubview(titleLabel)
+        backgoundView.addSubview(moreButton)
         chevron.snp.makeConstraints {
             $0.leading.equalToSuperview().offset(6)
             $0.centerY.equalToSuperview()
@@ -118,8 +135,13 @@ final class SpaceRootCellView: SidebarCellView {
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.snp.makeConstraints {
             $0.leading.equalTo(chevron.snp.trailing).offset(8)
-            $0.trailing.equalToSuperview().inset(8)
+            $0.trailing.equalTo(moreButton.snp.leading).offset(-4)
             $0.centerY.equalToSuperview()
+        }
+        moreButton.snp.makeConstraints {
+            $0.trailing.equalToSuperview().inset(4)
+            $0.centerY.equalToSuperview()
+            $0.width.height.equalTo(24)
         }
         setAccessibilityElement(true)
         setAccessibilityRole(.disclosureTriangle)
@@ -136,6 +158,8 @@ final class SpaceRootCellView: SidebarCellView {
         guard let root = item as? SpaceRootSidebarItem, let state = root.browserState else { return }
         backgoundView.hoverStateChanged = { [weak self, weak root, weak state] isHovered in
             guard let self, let root, let state else { return }
+            self.isRowHovered = isHovered
+            self.updateMoreButtonVisibility()
             self.folderPreview.setHovering(isHovered, source: .space(root), anchor: self.backgoundView,
                                            browserState: state)
         }
@@ -172,6 +196,23 @@ final class SpaceRootCellView: SidebarCellView {
         NSAccessibility.post(element: self, notification: .valueChanged)
     }
 
+    private func updateMoreButtonVisibility() {
+        moreButton.isHidden = !(isRowHovered || isMoreMenuPresented)
+    }
+
+    private func showMoreMenu() {
+        guard let menu = makeMoreMenu?() else { return }
+        folderPreview.invalidate()
+        isMoreMenuPresented = true
+        backgoundView.isHoverPinned = true
+        updateMoreButtonVisibility()
+        let origin = NSPoint(x: 0, y: moreButton.isFlipped ? moreButton.bounds.maxY + 4 : -4)
+        menu.popUp(positioning: nil, at: origin, in: moreButton)
+        isMoreMenuPresented = false
+        backgoundView.isHoverPinned = false
+        updateMoreButtonVisibility()
+    }
+
     func setDropTargetHighlighted(_ highlighted: Bool) {
         guard backgoundView.isSelected != highlighted else { return }
         backgoundView.isSelected = highlighted
@@ -192,6 +233,9 @@ final class SpaceRootCellView: SidebarCellView {
         folderPreview.invalidate()
         backgoundView.hoverStateChanged = nil
         onToggle = nil
+        makeMoreMenu = nil
+        isRowHovered = false
+        updateMoreButtonVisibility()
         expanded = nil
         backgoundView.isSelected = false
         chevron.setExpanded(false, animated: false)

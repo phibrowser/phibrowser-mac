@@ -109619,6 +109619,18 @@
         }
       }
     },
+    "sidebar.spaceRoot.moreButton" : {
+      "comment" : "Sidebar Space folder row - Button that opens the Space actions menu",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "More"
+          }
+        }
+      }
+    },
     "sidebar.spacesContextMenu.changeIconAction" : {
       "comment" : "Opens the icon/emoji picker for a Space",
       "extractionState" : "extracted_with_value",

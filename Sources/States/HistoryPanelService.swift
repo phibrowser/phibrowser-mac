@@ -94,13 +94,15 @@ final class HistoryPanelService {
 
     // MARK: History
 
-    /// History matching `text` (all history when empty), newest first, at
-    /// most `limit` rows, optionally only visits since `since`.
-    func query(_ text: String, since: Date?, limit: Int) async -> [HistoryPanelEntry] {
+    /// History matching `text` (all history when empty), newest first,
+    /// optionally only visits since `since`. `limit` counts Chromium's raw
+    /// visits, before it merges repeat visits to a page, so fewer rows come
+    /// back; `finished` says whether history has more beyond them.
+    func query(_ text: String, since: Date?, limit: Int) async -> (entries: [HistoryPanelEntry], finished: Bool) {
         await serialized { [weak self] in
-            guard let self else { return [] }
+            guard let self else { return ([], true) }
             for attempt in 0..<2 {
-                guard let session = await self.openSessionIfNeeded() else { return [] }
+                guard let session = await self.openSessionIfNeeded() else { return ([], true) }
                 do {
                     return try await self.runQuery(text, since: since, limit: limit, on: session)
                 } catch {
@@ -109,20 +111,43 @@ final class HistoryPanelService {
                     self.close()
                 }
             }
-            return []
+            return ([], true)
+        }
+    }
+
+    /// The next page of the last `query`, as Chromium's history page loads
+    /// more on scroll: only the new rows are read, so every page costs about
+    /// the same however far the list has been scrolled.
+    func continueQuery(since: Date?) async -> (entries: [HistoryPanelEntry], finished: Bool) {
+        await serialized { [weak self] in
+            guard let self, let session = self.session else { return ([], true) }
+            do {
+                return try await self.fetch("h.queryHistoryContinuation()", since: since, on: session)
+            } catch {
+                AppLogWarn("[HistoryPanel] continuation failed: \(error)")
+                return ([], true)
+            }
         }
     }
 
     private func runQuery(_ text: String, since: Date?, limit: Int,
-                          on session: AppDevToolsPageSession) async throws -> [HistoryPanelEntry] {
+                          on session: AppDevToolsPageSession) async throws -> (entries: [HistoryPanelEntry], finished: Bool) {
         let textLiteral = String(data: try JSONSerialization.data(withJSONObject: [text]), encoding: .utf8)
             .map { String($0.dropFirst().dropLast()) } ?? "\"\""
         let begin = since.map { String(format: "%.0f", $0.timeIntervalSince1970 * 1000) } ?? "null"
+        return try await fetch("h.queryHistory(\(textLiteral),\(max(1, limit)),\(begin),true,true)", since: since, on: session)
+    }
+
+    /// Runs `call` against the history page's handler (`h`) and reads its
+    /// rows and Chromium's `finished` flag.
+    private func fetch(_ call: String, since: Date?,
+                       on session: AppDevToolsPageSession) async throws -> (entries: [HistoryPanelEntry], finished: Bool) {
         let script = """
         (async()=>{const m=await import('chrome://history/history.js');\
         const h=m.BrowserProxyImpl.getInstance().handler;\
-        const r=await h.queryHistory(\(textLiteral),\(max(1, limit)),\(begin),true,true);\
-        return r.results.value.map(e=>[e.url,e.title,e.domain,e.time,e.dateTimeOfDay,e.fallbackFaviconText]);})()
+        const r=await \(call);\
+        return {rows:r.results.value.map(e=>[e.url,e.title,e.domain,e.time,e.dateTimeOfDay,e.fallbackFaviconText]),\
+        finished:!!(r.results.info&&r.results.info.finished)};})()
         """
         let reply = try await session.command("Runtime.evaluate", params: [
             "expression": script, "awaitPromise": true, "returnByValue": true
@@ -130,9 +155,11 @@ final class HistoryPanelService {
         if let exception = reply["exceptionDetails"] {
             throw AppDevToolsPageSession.SessionError.commandFailed("\(exception)")
         }
-        guard let rows = (reply["result"] as? [String: Any])?["value"] as? [[Any]] else { return [] }
+        guard let value = (reply["result"] as? [String: Any])?["value"] as? [String: Any],
+              let rows = value["rows"] as? [[Any]] else { return ([], true) }
+        let finished = value["finished"] as? Bool ?? true
         let cutoff = since ?? .distantPast
-        return rows.compactMap { row in
+        let entries: [HistoryPanelEntry] = rows.compactMap { row -> HistoryPanelEntry? in
             guard row.count >= 6, let url = row[0] as? String,
                   let millis = (row[3] as? NSNumber)?.doubleValue else { return nil }
             let time = Date(timeIntervalSince1970: millis / 1000)
@@ -147,6 +174,7 @@ final class HistoryPanelService {
                 fallbackLetter: (row[5] as? String) ?? ""
             )
         }
+        return (entries, finished)
     }
 
     private func openSessionIfNeeded() async -> AppDevToolsPageSession? {

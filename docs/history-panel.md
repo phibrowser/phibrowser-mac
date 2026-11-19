@@ -24,13 +24,24 @@ that page's own handler over the app's in-process DevTools session
 
 ```js
 const m = await import('chrome://history/history.js');
-m.BrowserProxyImpl.getInstance().handler.queryHistory(text, max, begin, true, true);
+const h = m.BrowserProxyImpl.getInstance().handler;
+h.queryHistory(text, max, begin, true, true);   // first page
+h.queryHistoryContinuation();                   // each further page
 ```
 
 - This is the same Mojo call the history page makes. Its shape is Chromium's
   WebUI internals, not a public API: a Chromium update that changes
   `history.js` or `queryHistory` breaks the panel's results. The query fails
   softly (empty list, one warning in the log) rather than crashing.
+- Paging follows the history page: the first page is a `queryHistory` call,
+  and each later page is `queryHistoryContinuation()`, so a page costs about
+  the same however far the list has been scrolled (about 20 ms warm).
+  `max_count` counts raw visits before Chromium merges repeat visits to a
+  page, so fewer rows than asked for come back; the response's
+  `info.finished`, not the row count, says whether history goes on.
+- Yesterday's filter queries from the start of yesterday and skips today's
+  visits, which come first, reading further pages until yesterday's rows
+  arrive.
 - Queries are serialized because a session runs one command at a time. A
   failed query closes the hidden page and retries once on a fresh one.
 - Nothing listens on a port; history never leaves the process.

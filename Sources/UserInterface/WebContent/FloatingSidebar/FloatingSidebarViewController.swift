@@ -66,7 +66,13 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     }()
     private lazy var headerView = SidebarHeaderView(state: state, isFloating: true)
     private lazy var pinnedTabViewController = PinnedTabViewController(state: state, hostVC: self)
-    private lazy var tabList = SidebarTabListViewController(state: state, hostVC: self)
+    private var initializedTabList: SidebarTabListViewController?
+    private var tabList: SidebarTabListViewController {
+        if let initializedTabList { return initializedTabList }
+        let tabList = SidebarTabListViewController(state: state, hostVC: self)
+        initializedTabList = tabList
+        return tabList
+    }
 
     private lazy var pinnedTabsContainerView: NSView = {
         let view = NSView()
@@ -342,7 +348,8 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     }
 
     deinit {
-        tabList.tearDown()
+        // Creating the list here would register a weak reference to a deinitializing controller.
+        initializedTabList?.tearDown()
     }
 
     private func setupPaletteBackdropIfNeeded() {

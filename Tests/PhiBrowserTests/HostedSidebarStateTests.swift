@@ -57,6 +57,18 @@ final class HostedSidebarStateTests: XCTestCase {
         try await super.tearDown()
     }
 
+    func testFloatingSidebarCanBeReleasedBeforeLoadingItsView() {
+        let state = makeState(spaceId: "unloaded-floating-sidebar")
+        weak var releasedSidebar: FloatingSidebarViewController?
+        autoreleasepool {
+            let sidebar = FloatingSidebarViewController(
+                browserState: state, mediaController: SidebarMediaController(browserState: state))
+            releasedSidebar = sidebar
+            XCTAssertFalse(sidebar.isViewLoaded)
+        }
+        XCTAssertNil(releasedSidebar)
+    }
+
     func testMediaVisitHistoryKeepsAllLiveTabsWhileSwitcherStaysLimited() {
         let state = makeState(spaceId: "media-history")
         let tabs = (0..<12).map { index in

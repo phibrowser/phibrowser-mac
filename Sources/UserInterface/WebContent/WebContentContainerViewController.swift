@@ -1767,6 +1767,9 @@ class WebContentContainerViewController: NSViewController {
     /// laid out now, or takes it off.
     private func updateFullScreenTransitionMask() {
         guard let contentSurfaceView, let layer = contentSurfaceView.layer else { return }
+        // Every layout pass comes here (`viewDidLayout`); outside a transition,
+        // with no mask on, there is nothing to put on or take off.
+        guard masksPagesForFullScreenTransition || layer.mask === fullScreenTransitionMask else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }

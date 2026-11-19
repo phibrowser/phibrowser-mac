@@ -64,7 +64,7 @@ and separate Profiles. Exercise expanded and floating sidebar modes.
 | Fullscreen and crash pages | Switching away withdraws session-owned presentation and leaves the AppKit fullscreen that Space's page put the shell in (the user's own fullscreen — the green button, View › Enter Full Screen and its ⌃⌘F, which go to AppKit, not Chromium — stays; a browser fullscreen Chromium requests for a Space belongs to that Space and stays on a switch too; a quit from a page in fullscreen reopens windowed); actions still target that session |
 | Dock reopen and capture | Reopen selects a valid visible shell; capture reflects the requested session's presented content |
 | Window title | The Window menu, the Dock menu and Mission Control list the shell under the presented Space's active tab title, following tab switches, navigations and Space switches; a Space whose Browser is not up yet, or one on the placeholder page after its last tab closes, shows its Space name, and the tab opened there takes over |
-| Content surface | Pages, split panes, the AI Chat panel, docked and undocked DevTools and the placeholder page keep their corners, borders and gap colors; Peek, Reader, the extension side panel, content fullscreen, Kiosk windows, a tab dragged to another window, and the crash page, login, agent and progress overlays work, Peek, Reader, the side panel and Kiosk windows showing blank until their first frame when hidden and shown again (chromium ADR 0016); warm switches (to a recent tab, the fifth to twelfth most recent, a resized window, after five idle minutes or a Space switch), rapid switch cycles, cross-site navigation, entering, leaving and switching within a split, and switching from a tab with docked DevTools to a tab never shown show no blank frame and no other tab's page; a switch to a tab that has not painted keeps the previous page for at most four frames, then shows the page-area backdrop until its first frame; "Add Tab to New Split View" keeps the other pane shown; closing the active tab keeps the closed page on screen until its successor appears (chromium ADR 0014, close clone), and a cold successor that has not painted four frames after the mount shows the page-area backdrop until its first frame; a standalone Incognito window behaves the same on its switches and closes |
+| Content surface | Pages, split panes, the AI Chat panel, docked and undocked DevTools and the placeholder page keep their corners, borders and gap colors; Peek, Reader, the extension side panel, content fullscreen, Kiosk windows, a tab dragged to another window, and the crash page, login, agent and progress overlays work, Peek, Reader, the side panel and Kiosk windows showing blank until their first frame when hidden and shown again (chromium ADR 0016); warm switches (to a recent tab, the fifth to twelfth most recent, a resized window, after five idle minutes or a Space switch), rapid switch cycles, cross-site navigation, entering, leaving and switching within a split, and switching from a tab with docked DevTools to a tab never shown show no blank frame and no other tab's page; a switch to a tab that has not painted keeps the previous page for at most four frames, then shows the page-area backdrop until its first frame; "Add Tab to New Split View" keeps the other pane shown; closing the active tab keeps the closed page on screen until its successor appears (chromium ADR 0014, close clone), and a cold successor that has not painted four frames after the mount shows the page-area backdrop until its first frame; a standalone Incognito window behaves the same on its switches and closes; entering and leaving native fullscreen (the green button, View › Enter Full Screen, ⌃⌘F) with one page or a split of two to four panes shows each page only inside its own card throughout the animation, in a standalone Incognito window too, and the pages lay out at the new size when it ends |
 
 OS permission state, camera/microphone availability and account eligibility are
 separate prerequisites. Reset a test site's permission when testing its prompt;
@@ -132,6 +132,18 @@ its header, only moves toward its settled width: from AI Chat to the
 extension side panel, it takes that width at once under the outgoing chat;
 the other way, the chat slides in to meet it, and it narrows only once the
 chat needs the room.
+
+AppKit snapshots the window for its native fullscreen animation in the pass
+that resizes it, before Chromium draws the pages at the new size. Between
+will- and did-Enter/ExitFullScreen the page container therefore masks the
+surface's view to each page's new card, cut to where that page drew as the
+transition started (ADR 0010): the animation shows each page's last frame
+cropped to its card, a part of a card that frame does not reach shows the
+backdrop, and the live window, laid out anew, takes over when the animation
+ends. The mask comes off at the did-notification, or after 2 s when AppKit
+fails the transition. A page in content fullscreen is not cut, since its card
+is the fullscreen overlay: the animation out of content fullscreen still shows
+the page filling the window.
 
 The feature is on by default. Run the content-surface row as is, then once
 with `--disable-features=PhiContentSurface` as a smoke test: no crash, and no

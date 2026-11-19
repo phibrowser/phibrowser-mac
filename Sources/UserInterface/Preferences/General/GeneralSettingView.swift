@@ -177,6 +177,7 @@ private struct AppearanceSectionView: View {
 
                 Divider()
 
+                #if DEBUG || NIGHTLY_BUILD
                 GeneralRowView(title: NSLocalizedString("settings.general.sidebarPosition.title", value: "Sidebar position", comment: "General settings - Side of the window containing vertical tabs")) {
                     Picker("", selection: $sidebarPosition) {
                         Text(NSLocalizedString("settings.general.sidebarPosition.left", value: "Left", comment: "General settings - Left sidebar position")).tag(SidebarPosition.left.rawValue)
@@ -187,6 +188,7 @@ private struct AppearanceSectionView: View {
                 }
 
                 Divider()
+                #endif
 
                 GeneralRowView(title: NSLocalizedString("settings.general.appearance.title", value: "Color appearance", comment: "General settings - Color appearance row title"), alignment: .top) {
                     HStack(spacing: 16) {

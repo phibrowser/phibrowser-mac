@@ -52,6 +52,7 @@ final class TabAreaContextMenuHelper: NSObject {
         )
         layoutItem.submenu = buildLayoutSubmenu()
         menu.addItem(layoutItem)
+        #if DEBUG || NIGHTLY_BUILD
         if !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
             menu.addItem(NSMenuItem(
                 title: SidebarPosition.isOnRight
@@ -60,6 +61,7 @@ final class TabAreaContextMenuHelper: NSObject {
                 action: #selector(moveSidebar), keyEquivalent: ""
             ).configured { $0.target = self })
         }
+        #endif
 
         appendActiveSpaceItems(to: menu, includesEditTheme: true)
 

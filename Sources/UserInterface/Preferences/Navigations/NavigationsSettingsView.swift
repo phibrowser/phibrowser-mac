@@ -16,6 +16,9 @@ struct NavigationsSettingsView: View {
     @AppStorage(PhiPreferences.GeneralSettings.openKioskWithGlobalShortcut.rawValue)
     private var openKioskWithGlobalShortcut: Bool = PhiPreferences.GeneralSettings.openKioskWithGlobalShortcut.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.openAddressBarWithGlobalShortcut.rawValue)
+    private var openAddressBarWithGlobalShortcut: Bool = PhiPreferences.GeneralSettings.openAddressBarWithGlobalShortcut.defaultValue
+
     @AppStorage(PhiPreferences.GeneralSettings.peekViewEnabled.rawValue)
     private var peekViewEnabled: Bool = PhiPreferences.GeneralSettings.peekViewEnabled.defaultValue
 
@@ -31,6 +34,9 @@ struct NavigationsSettingsView: View {
     @State private var kioskShortcutDescription =
         NavigationsSettingsView.currentKioskShortcutDescription
     @State private var kioskShortcutStatus = AppController.shared?.kioskGlobalShortcutStatus ?? .disabled
+    @State private var addressBarShortcutDescription =
+        NavigationsSettingsView.currentAddressBarShortcutDescription
+    @State private var addressBarShortcutStatus = AppController.shared?.addressBarGlobalShortcutStatus ?? .disabled
 
     var body: some View {
         ScrollView(.vertical) {
@@ -68,6 +74,28 @@ struct NavigationsSettingsView: View {
                             description: NSLocalizedString("settings.navigations.kiosk.commandOption.description", value: "Hold Command and Option while clicking a link to open it in a Kiosk window.", comment: "Navigations settings - Explanation of the Command-Option Kiosk toggle"),
                             isOn: $openKioskOnCommandOptionClick,
                             onChange: { AppController.shared?.setOpenKioskOnCommandOptionClickEnabled($0) }
+                        )
+                    }
+                }
+
+                NavigationsSettingsSection(
+                    title: NSLocalizedString("settings.navigations.addressBar.sectionTitle", value: "Address Bar", comment: "Navigations settings - Address Bar section title"),
+                    description: NSLocalizedString("settings.navigations.addressBar.sectionDescription", value: "Search or open a site while another app is in front.", comment: "Navigations settings - Description of the Address Bar section, which holds the system-wide address bar shortcut")
+                ) {
+                    SettingsDetailCard {
+                        NavigationsSettingsToggleRow(
+                            title: Self.addressBarGlobalShortcutTitle(
+                                shortcutDescription: addressBarShortcutDescription
+                            ),
+                            description: Self.globalShortcutStatusDescription(
+                                addressBarShortcutStatus,
+                                unassignedDescription: NSLocalizedString("settings.navigations.addressBar.globalShortcut.unassigned", value: "Assign an Open Address Bar from Any App shortcut in Shortcuts.", comment: "Navigations settings - Status shown when the system-wide address bar shortcut is enabled but has no key assigned")
+                            ),
+                            isOn: $openAddressBarWithGlobalShortcut,
+                            onChange: {
+                                AppController.shared?
+                                    .setOpenAddressBarWithGlobalShortcutEnabled($0)
+                            }
                         )
                     }
                 }
@@ -176,13 +204,17 @@ struct NavigationsSettingsView: View {
             NotificationCenter.default.publisher(for: .shortcutsDidChange)
         ) { _ in
             kioskShortcutDescription = Self.currentKioskShortcutDescription
+            addressBarShortcutDescription = Self.currentAddressBarShortcutDescription
         }
         .onReceive(NotificationCenter.default.publisher(for: KioskGlobalShortcutRegistrar.statusDidChangeNotification)) { _ in
             kioskShortcutStatus = AppController.shared?.kioskGlobalShortcutStatus ?? .disabled
+            addressBarShortcutStatus = AppController.shared?.addressBarGlobalShortcutStatus ?? .disabled
         }
         .onAppear {
             kioskShortcutDescription = Self.currentKioskShortcutDescription
             kioskShortcutStatus = AppController.shared?.kioskGlobalShortcutStatus ?? .disabled
+            addressBarShortcutDescription = Self.currentAddressBarShortcutDescription
+            addressBarShortcutStatus = AppController.shared?.addressBarGlobalShortcutStatus ?? .disabled
         }
     }
 
@@ -191,11 +223,20 @@ struct NavigationsSettingsView: View {
     }
 
     static func globalShortcutStatusDescription(_ status: KioskGlobalShortcutRegistrar.Status) -> String? {
+        globalShortcutStatusDescription(status, unassignedDescription: nil)
+    }
+
+    /// `unassignedDescription` names the command to assign; nil names Kiosk's.
+    static func globalShortcutStatusDescription(
+        _ status: KioskGlobalShortcutRegistrar.Status,
+        unassignedDescription: String?
+    ) -> String? {
         switch status {
         case .disabled: return nil
         case .registered:
             return NSLocalizedString("settings.navigations.kiosk.globalShortcut.registered", value: "This shortcut is available in other apps.", comment: "Navigations settings - Status shown after the global Kiosk shortcut is successfully registered")
         case .unassigned:
+            if let unassignedDescription { return unassignedDescription }
             return NSLocalizedString("settings.navigations.kiosk.globalShortcut.unassigned", value: "Assign a New Kiosk Window shortcut in Shortcuts.", comment: "Navigations settings - Status shown when global Kiosk activation is enabled but its shortcut is unassigned")
         case .unsupported:
             return NSLocalizedString("settings.navigations.kiosk.globalShortcut.unsupported", value: "This shortcut is not supported globally with the current keyboard layout. Choose another shortcut.", comment: "Navigations settings - Status shown when the assigned Kiosk shortcut cannot be registered with the current keyboard layout")
@@ -217,6 +258,21 @@ struct NavigationsSettingsView: View {
 
     private static var currentKioskShortcutDescription: String {
         Shortcuts.key(for: .PHI_NEW_KIOSK_WINDOW)?.displayString ?? "—"
+    }
+
+    static func addressBarGlobalShortcutTitle(shortcutDescription: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "settings.navigations.addressBar.globalShortcut.title",
+                value: "Open the address bar when pressing %@ in any app",
+                comment: "Navigations settings - Toggle title for enabling the system-wide address bar shortcut; %@ is replaced by the current Open Address Bar from Any App shortcut"
+            ),
+            shortcutDescription
+        )
+    }
+
+    private static var currentAddressBarShortcutDescription: String {
+        Shortcuts.key(for: .PHI_OPEN_ADDRESS_BAR_FROM_ANY_APP)?.displayString ?? "—"
     }
 }
 

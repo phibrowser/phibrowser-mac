@@ -76818,6 +76818,54 @@
         }
       }
     },
+    "settings.navigations.addressBar.globalShortcut.title" : {
+      "comment" : "Navigations settings - Toggle title for enabling the system-wide address bar shortcut; %@ is replaced by the current Open Address Bar from Any App shortcut",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open the address bar when pressing %@ in any app"
+          }
+        }
+      }
+    },
+    "settings.navigations.addressBar.globalShortcut.unassigned" : {
+      "comment" : "Navigations settings - Status shown when the system-wide address bar shortcut is enabled but has no key assigned",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Assign an Open Address Bar from Any App shortcut in Shortcuts."
+          }
+        }
+      }
+    },
+    "settings.navigations.addressBar.sectionDescription" : {
+      "comment" : "Navigations settings - Description of the Address Bar section, which holds the system-wide address bar shortcut",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Search or open a site while another app is in front."
+          }
+        }
+      }
+    },
+    "settings.navigations.addressBar.sectionTitle" : {
+      "comment" : "Navigations settings - Address Bar section title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Address Bar"
+          }
+        }
+      }
+    },
     "settings.navigations.kiosk.commandOption.description" : {
       "comment" : "Navigations settings - Explanation of the Command-Option Kiosk toggle",
       "extractionState" : "extracted_with_value",
@@ -89876,6 +89924,18 @@
         }
       }
     },
+    "settings.shortcuts.command.openAddressBarFromAnyApp" : {
+      "comment" : "Shortcuts settings - Command title for the system-wide shortcut that shows the address bar while another app is in front",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open Address Bar from Any App"
+          }
+        }
+      }
+    },
     "settings.shortcuts.command.openDeveloperConsole" : {
       "comment" : "Shortcuts settings - Command title for opening the developer tools console",
       "extractionState" : "extracted_with_value",
@@ -97293,6 +97353,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "切換至目前視窗中的第 %d 個分頁。"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.description.openAddressBarFromAnyApp" : {
+      "comment" : "Shortcuts settings - Description of the system-wide command that shows the address bar while another app is in front",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show the address bar over any app and open the result in a new tab."
           }
         }
       }

@@ -16,6 +16,17 @@ class PhiSplitView: NSSplitView {
 //    }
     override var dividerColor: NSColor { .clear }
     override var dividerThickness: CGFloat { 0 }
+
+    /// The shell window is movable by its background
+    /// (`SpaceSessionController`), so a mouse-down moves it unless the view
+    /// AppKit hit-tests or one of its ancestors answers false here. Most views
+    /// inside the sidebar and page area answer true, such as a pinned tab's
+    /// cell around its favicon. AppKit's default for this split view follows
+    /// whether it overrides `draw(_:)`: without that override it answers true,
+    /// and dragging a pinned tab from around its icon moved the window along
+    /// with the tab. Answer false explicitly so neither column starts a window
+    /// move, whatever the split view draws.
+    override var mouseDownCanMoveWindow: Bool { false }
 }
 
 /// With a zero-thickness divider AppKit only gives it a ~5pt hit area, so

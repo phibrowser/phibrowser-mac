@@ -110159,6 +110159,30 @@
         }
       }
     },
+    "sidebar.splitTab.closePaneButtonAccessibilityLabel" : {
+      "comment" : "Sidebar split tab - Accessibility label for the button that closes one pane of the split",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close Tab"
+          }
+        }
+      }
+    },
+    "sidebar.splitTab.removePaneButtonAccessibilityLabel" : {
+      "comment" : "Sidebar split tab - Accessibility label for the button shown while Option is held, which takes one pane out of the split and keeps it open as a normal tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Remove from Split"
+          }
+        }
+      }
+    },
     "sidebar.tabContextMenu.addSplitToBookmarks" : {
       "comment" : "Tab context menu - Save both panes of the split as a bookmark folder",
       "extractionState" : "extracted_with_value",

@@ -9,7 +9,9 @@ import Security
 import SecurityInterface
 
 final class WebContentAddressBarMenuPresenter {
-    private final class MenuActionTarget: NSObject {
+    /// Runs a closure for a menu item; the toolbar's other menus
+    /// (`ToolbarCustomizationMenu`) use it too.
+    final class MenuActionTarget: NSObject {
         let action: () -> Void
 
         init(action: @escaping () -> Void) {
@@ -21,23 +23,84 @@ final class WebContentAddressBarMenuPresenter {
         }
     }
 
+    static let siteMemoriesItemIdentifier = NSUserInterfaceItemIdentifier("phi.siteMenu.siteMemories")
+
+    /// Pops the Site Menu under `anchorView`, or at the pointer when
+    /// `contextMenuEvent` is a right-click on the toolbar. Site Memories
+    /// opens its menu at the same spot (`memoryMenuLocation`).
     static func present(
         browserState: BrowserState?,
         currentTab: Tab?,
         anchorView: NSView?,
+        contextMenuEvent: NSEvent? = nil,
+        showsSiteMemoriesEntry: Bool,
+        onCustomize: @escaping () -> Void,
         onPresentationChanged: (Bool) -> Void
     ) {
         guard let anchorView = anchorView ?? browserState?.windowController?.window?.contentView else {
             return
         }
 
+        let menu = makeMenu(
+            browserState: browserState,
+            currentTab: currentTab,
+            anchorView: anchorView,
+            memoryMenuLocation: memoryMenuLocation(for: contextMenuEvent, in: anchorView),
+            showsSiteMemoriesEntry: showsSiteMemoriesEntry,
+            onCustomize: onCustomize
+        )
+
+        onPresentationChanged(true)
+        anchorView.effectiveAppearance.performAsCurrentDrawingAppearance {
+            if let contextMenuEvent {
+                NSMenu.popUpContextMenu(menu, with: contextMenuEvent, for: anchorView)
+            } else {
+                menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -6), in: anchorView)
+            }
+        }
+        onPresentationChanged(false)
+    }
+
+    /// Where Site Memories opens its menu from a Site Menu that `event`
+    /// opened: at the right-click, in `anchorView`'s coordinates. The anchor
+    /// can be far from it (Minimal's slot, the strip of a removed bar). Nil,
+    /// under the anchor, for a Site Menu opened by its button.
+    static func memoryMenuLocation(for event: NSEvent?, in anchorView: NSView) -> NSPoint? {
+        event.map { anchorView.convert($0.locationInWindow, from: nil) }
+    }
+
+    /// Whether the Site Menu offers Site Memories: the button is not drawn
+    /// (see `ToolbarArrangement.showsSiteMemoriesButton`) and the page is one
+    /// the button would show for.
+    @MainActor
+    static func showsSiteMemoriesEntry(arrangement: ToolbarArrangement, browserState: BrowserState?, currentTab: Tab?) -> Bool {
+        guard !arrangement.showsSiteMemoriesButton, let browserState else { return false }
+        return SiteMemoryMenuActions(
+            urlString: (currentTab ?? browserState.focusingTab)?.url ?? "",
+            profileID: browserState.profileId,
+            isIncognito: browserState.isIncognito,
+            isPhiAIEnabled: PhiPreferences.AISettings.phiAIEnabled.loadValue(),
+            service: nil
+        ) != nil
+    }
+
+    /// The Site Menu. Each item keeps its action target alive through its
+    /// `representedObject`, so the menu works for as long as it exists.
+    /// `anchorView` is where Site Memories opens its menu: under it, or at
+    /// `memoryMenuLocation` in it when given.
+    static func makeMenu(
+        browserState: BrowserState?,
+        currentTab: Tab?,
+        anchorView: NSView? = nil,
+        memoryMenuLocation: NSPoint? = nil,
+        showsSiteMemoriesEntry: Bool,
+        onCustomize: @escaping () -> Void
+    ) -> NSMenu {
         let resolvedTab = currentTab ?? browserState?.focusingTab
         let extensionManager = browserState?.extensionManager
         extensionManager?.refreshExtensions()
         let rawURLString = resolvedTab?.url ?? ""
-        let brandedURLString = URLProcessor.phiBrandEnsuredUrlString(rawURLString)
 
-        var actionTargets: [MenuActionTarget] = []
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -55,7 +118,7 @@ final class WebContentAddressBarMenuPresenter {
             item.image = image
             if let action {
                 let target = MenuActionTarget(action: action)
-                actionTargets.append(target)
+                item.representedObject = target
                 item.target = target
                 item.action = #selector(MenuActionTarget.performAction(_:))
             }
@@ -84,11 +147,11 @@ final class WebContentAddressBarMenuPresenter {
                         let windowId = browserState?.windowId.int64Value ?? 0
                         ChromiumLauncher.sharedInstance().bridge?.triggerExtension(
                             withId: ext.id,
-                            anchorRect: ExtensionPopupAnchor.rectOfView(anchorView),
+                            anchorRect: anchorView.flatMap(ExtensionPopupAnchor.rectOfView),
                             windowId: windowId
                         )
                     }
-                    actionTargets.append(target)
+                    item.representedObject = target
                     item.target = target
                     item.action = #selector(MenuActionTarget.performAction(_:))
                     submenu.addItem(item)
@@ -105,7 +168,7 @@ final class WebContentAddressBarMenuPresenter {
                 let url = URLProcessor.processUserInput("phi://extensions")
                 browserState?.createTab(url)
             }
-            actionTargets.append(manageTarget)
+            manageItem.representedObject = manageTarget
             manageItem.target = manageTarget
             manageItem.action = #selector(MenuActionTarget.performAction(_:))
             submenu.addItem(manageItem)
@@ -128,7 +191,7 @@ final class WebContentAddressBarMenuPresenter {
                     .clearWebsiteCache(url ?? "", windowId: windowId.int64Value)
                 
             }
-            actionTargets.append(clearCacheTarget)
+            clearCacheItem.representedObject = clearCacheTarget
             clearCacheItem.target = clearCacheTarget
             clearCacheItem.action = #selector(MenuActionTarget.performAction(_:))
             submenu.addItem(clearCacheItem)
@@ -144,7 +207,7 @@ final class WebContentAddressBarMenuPresenter {
                     .bridge?
                     .clearWebsiteCookies(url ?? "", windowId: windowId.int64Value)
             }
-            actionTargets.append(clearCookieTarget)
+            clearCookieItem.representedObject = clearCookieTarget
             clearCookieItem.target = clearCookieTarget
             clearCookieItem.action = #selector(MenuActionTarget.performAction(_:))
             submenu.addItem(clearCookieItem)
@@ -160,7 +223,7 @@ final class WebContentAddressBarMenuPresenter {
                 let url = URLProcessor.processUserInput("chrome://settings/content/siteDetails?site=\(rawURLString)")
                 browserState?.createTab(url)
             }
-            actionTargets.append(moreSettingsTarget)
+            moreSettingsItem.representedObject = moreSettingsTarget
             moreSettingsItem.target = moreSettingsTarget
             moreSettingsItem.action = #selector(MenuActionTarget.performAction(_:))
             submenu.addItem(moreSettingsItem)
@@ -202,6 +265,27 @@ final class WebContentAddressBarMenuPresenter {
             menu.addItem(item)
         }
 
+        // Stands in for the Site Memories button while it is not drawn.
+        if showsSiteMemoriesEntry {
+            let item = addMenuItem(
+                title: NSLocalizedString("browser.webContentAddressBar.siteMemoriesAction", value: "Site Memories", comment: "Site Menu - Opens the memory controls for the current website; shown when the Site Memories button is not in the toolbar"),
+                image: siteMemoriesMenuIcon()
+            ) { [weak anchorView] in
+                // Opens once the Site Menu has finished closing.
+                RunLoop.main.perform(inModes: [.default]) {
+                    MainActor.assumeIsolated {
+                        presentMemoryMenu(
+                            browserState: browserState,
+                            currentTab: resolvedTab,
+                            anchorView: anchorView,
+                            location: memoryMenuLocation
+                        ) { _ in }
+                    }
+                }
+            }
+            item.identifier = siteMemoriesItemIdentifier
+        }
+
         menu.addItem(.separator())
 
         let alwaysShowURLPath = PhiPreferences.GeneralSettings.alwaysShowURLPath.loadValue()
@@ -238,20 +322,19 @@ final class WebContentAddressBarMenuPresenter {
 
         }
 
-        onPresentationChanged(true)
-        anchorView.effectiveAppearance.performAsCurrentDrawingAppearance {
-            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -6), in: anchorView)
-        }
-        onPresentationChanged(false)
-
-        _ = actionTargets
+        menu.addItem(.separator())
+        menu.addItem(ToolbarCustomizationMenu.customizeItem(action: onCustomize))
+        return menu
     }
 
+    /// Pops the Site Memories menu under `anchorView`, or at `location` in
+    /// it when given.
     @MainActor
     static func presentMemoryMenu(
         browserState: BrowserState?,
         currentTab: Tab?,
         anchorView: NSView?,
+        location: NSPoint? = nil,
         onPresentationChanged: (Bool) -> Void
     ) {
         guard let anchorView = anchorView ?? browserState?.windowController?.window?.contentView,
@@ -264,7 +347,7 @@ final class WebContentAddressBarMenuPresenter {
         onPresentationChanged(true)
         defer { onPresentationChanged(false) }
         anchorView.effectiveAppearance.performAsCurrentDrawingAppearance {
-            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -6), in: anchorView)
+            menu.popUp(positioning: nil, at: location ?? NSPoint(x: 0, y: -6), in: anchorView)
         }
     }
 
@@ -409,6 +492,14 @@ final class WebContentAddressBarMenuPresenter {
 
     private static func menuSymbol(named systemName: String) -> NSImage? {
         NSImage(systemSymbolName: systemName, accessibilityDescription: nil)
+    }
+
+    /// The Site Memories button's icon at menu size.
+    private static func siteMemoriesMenuIcon() -> NSImage? {
+        guard let icon = NSImage(named: "memory-manage-icon")?.copy() as? NSImage else { return nil }
+        icon.size = NSSize(width: 16, height: 16)
+        icon.isTemplate = true
+        return icon
     }
 
     private static func shouldShowSecuritySection(for rawURLString: String) -> Bool {

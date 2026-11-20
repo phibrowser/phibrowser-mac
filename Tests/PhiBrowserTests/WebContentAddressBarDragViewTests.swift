@@ -36,6 +36,15 @@ final class WebContentAddressBarDragViewTests: XCTestCase {
         XCTAssertFalse(WebContentAddressBarDragView.claimsEvent(ofType: nil))
     }
 
+    func testMinimalButtonSpansAreLeftToTheButtons() {
+        let spans: [ClosedRange<CGFloat>] = [100...150, 300...376]
+        XCTAssertTrue(WebContentAddressBarDragView.isExcluded(120, by: spans), "a leading button")
+        XCTAssertTrue(WebContentAddressBarDragView.isExcluded(376, by: spans), "the trailing section's edge")
+        XCTAssertFalse(WebContentAddressBarDragView.isExcluded(200, by: spans), "the address text")
+        XCTAssertFalse(WebContentAddressBarDragView.isExcluded(20, by: spans), "the empty slot")
+        XCTAssertFalse(WebContentAddressBarDragView.isExcluded(120, by: []), "Standard excludes nothing")
+    }
+
     func testReleaseAtFivePointsIsAClick() {
         XCTAssertTrue(WebContentAddressBarDragView.isClick(
             from: NSPoint(x: 100, y: 100),

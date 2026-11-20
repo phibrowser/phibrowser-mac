@@ -8032,7 +8032,17 @@ final class SpaceManager: ObservableObject {
             return
         }
 
-        let existingSlot = slots.first(where: {
+        // A link from another application has no source window, so it goes
+        // where the target Space already is: a window showing it, the key
+        // window first, then a slot holding its window behind another Space.
+        // Taking the first slot that holds a window for the Space would switch
+        // a window the user left on another Space while one shows the target.
+        let slotsKeyFirst = (keySlot.map { [$0] } ?? [])
+            + slots.filter { $0 !== keySlot }
+        let showingSlot = slotsKeyFirst.first(where: {
+            $0.visibleController?.spaceId == concreteTargetSpaceId
+        })
+        let existingSlot = showingSlot ?? slotsKeyFirst.first(where: {
             $0.windowController(for: concreteTargetSpaceId) != nil
         })
         let slot = existingSlot

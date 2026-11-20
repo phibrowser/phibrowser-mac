@@ -218,6 +218,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         iconImageView.alphaValue = 1
         tabPreviewRegistration.invalidate()
         peekBadge.isHidden = true
+        backgroundView.isHoverPinned = false
         peekBadge.faviconImage = nil
         statusModel.prepareForReuse()
         updateStatusBadge(isSuppressed: false)
@@ -391,6 +392,25 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
             else { tab.makeContextMenu(on: menu) }
         }
         
+        // The pin whose icon picker is open stays highlighted while the
+        // `HoverShield` over the window holds every other hover.
+        let center = NotificationCenter.default
+        center.publisher(for: NSPopover.willShowNotification)
+            .merge(with: center.publisher(for: NSPopover.willCloseNotification))
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak tab] note in
+                guard let self, let tab, let popover = note.object as? NSPopover,
+                      popover === tab.pinnedIconPopover else { return }
+                let isShowing = note.name == NSPopover.willShowNotification
+                if !isShowing {
+                    // Picks up a pointer resting on the pin first, so the
+                    // highlight does not drop until the pointer next moves.
+                    self.backgroundView.updateTrackingAreas()
+                }
+                self.backgroundView.isHoverPinned = isShowing
+            }
+            .store(in: &cancellables)
+
         tab.$liveFaviconData
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in

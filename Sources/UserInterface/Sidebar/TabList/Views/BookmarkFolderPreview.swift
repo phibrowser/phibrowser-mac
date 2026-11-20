@@ -235,6 +235,33 @@ final class BookmarkFolderPreview: NSObject, NSWindowDelegate {
     private var anchorInsets = NSEdgeInsetsZero
     private var source: BookmarkFolderPreviewSource?
 
+    /// Popovers on screen, gathered from `NSPopover` notifications; see
+    /// `hasPopover(over:)`. The observers start with the first preview, which
+    /// a sidebar cell creates before any of its popovers can show.
+    private static let shownPopovers = NSHashTable<NSPopover>.weakObjects()
+    private static let popoverObservers: [NSObjectProtocol] = {
+        let center = NotificationCenter.default
+        return [
+            center.addObserver(forName: NSPopover.willShowNotification, object: nil, queue: .main) { note in
+                MainActor.assumeIsolated {
+                    guard let popover = note.object as? NSPopover else { return }
+                    shownPopovers.add(popover)
+                }
+            },
+            center.addObserver(forName: NSPopover.didCloseNotification, object: nil, queue: .main) { note in
+                MainActor.assumeIsolated {
+                    guard let popover = note.object as? NSPopover else { return }
+                    shownPopovers.remove(popover)
+                }
+            }
+        ]
+    }()
+
+    override init() {
+        super.init()
+        _ = Self.popoverObservers
+    }
+
     /// `anchorInsets` trims the anchor view to the row's visible background,
     /// which the panel is placed against.
     func setHovering(_ hovering: Bool, source: BookmarkFolderPreviewSource, anchor: NSView,
@@ -256,6 +283,7 @@ final class BookmarkFolderPreview: NSObject, NSWindowDelegate {
         guard panel == nil,
               let window = anchor.window, window.isKeyWindow, NSApp.isActive,
               !Self.isEditingText(in: window),
+              !Self.hasPopover(over: window),
               !anchor.isHiddenOrHasHiddenAncestor,
               source.isCollapsed,
               NSEvent.pressedMouseButtons == 0,
@@ -426,6 +454,17 @@ final class BookmarkFolderPreview: NSObject, NSWindowDelegate {
     /// native text input in progress, such as the omnibox or tab search.
     static func isEditingText(in window: NSWindow) -> Bool {
         (window.firstResponder as? NSTextView)?.isEditable == true
+    }
+
+    /// The preview takes key, which closes a transient popover, so it must not
+    /// open while a popover is up over `window`, such as the folder icon
+    /// picker. A popover's window is a child of the window it opens from. A
+    /// popover that takes key itself, like the pinned tab icon picker with its
+    /// search field, already blocks the preview through `isKeyWindow`.
+    static func hasPopover(over window: NSWindow) -> Bool {
+        shownPopovers.allObjects.contains { popover in
+            popover.isShown && popover.contentViewController?.view.window?.parent === window
+        }
     }
 
     private static func inset(_ rect: CGRect, by insets: NSEdgeInsets) -> CGRect {

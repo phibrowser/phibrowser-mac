@@ -332,6 +332,36 @@ final class BookmarkFolderPreviewTests: XCTestCase {
         XCTAssertFalse(BookmarkFolderPreview.isEditingText(in: window))
     }
 
+    func testAPopoverOverTheBrowserWindowBlocksThePreview() throws {
+        _ = BookmarkFolderPreview()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 100),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        hostWindows.append(window)
+        let other = NSWindow(contentRect: NSRect(x: 0, y: 200, width: 300, height: 100),
+                             styleMask: [.titled], backing: .buffered, defer: false)
+        other.isReleasedWhenClosed = false
+        hostWindows.append(other)
+        window.orderFront(nil)
+        other.orderFront(nil)
+        let anchor = try XCTUnwrap(window.contentView)
+        XCTAssertFalse(BookmarkFolderPreview.hasPopover(over: window))
+
+        let popover = NSPopover()
+        popover.animates = false
+        popover.behavior = .transient
+        popover.contentViewController = NSViewController()
+        popover.contentViewController?.view = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 60))
+        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertTrue(BookmarkFolderPreview.hasPopover(over: window), "A popover such as the folder icon picker blocks the preview")
+        XCTAssertFalse(BookmarkFolderPreview.hasPopover(over: other), "A popover over another window does not")
+
+        popover.close()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertFalse(BookmarkFolderPreview.hasPopover(over: window))
+    }
+
     // MARK: Placement
 
     func testLeftSidebarOpensToTheRightWithTheFirstRowLevelWithTheFolder() {

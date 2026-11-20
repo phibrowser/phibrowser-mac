@@ -1054,6 +1054,7 @@ final class FloatingSidebarHostViewController: NSViewController {
 
     private func floatingSidebarWindowGeometryDidChange() {
         guard let panel = floatingSidebarContainerView, panel.isHidden == false else { return }
+        applyFloatingSidebarWidth()
         refreshFloatingSidebarPointerState()
         guard !isPointerInsideFloatingSidebar, !isPointerInsideFloatingSidebarTrigger else { return }
         // The delayed hide checks the pointer again when it fires; a later
@@ -1087,10 +1088,11 @@ final class FloatingSidebarHostViewController: NSViewController {
         applyFloatingSidebarWidth()
     }
 
-    /// Applies a width sync `updateFloatingSidebarWidth` deferred, if any.
+    /// Brings the panel to its width now, ahead of any sync
+    /// `updateFloatingSidebarWidth` deferred. The width also follows the
+    /// window's, which changes while the panel is hidden without a sync.
     private func flushPendingFloatingSidebarWidthSync() {
-        guard let workItem = floatingSidebarWidthSyncWorkItem else { return }
-        workItem.cancel()
+        floatingSidebarWidthSyncWorkItem?.cancel()
         floatingSidebarWidthSyncWorkItem = nil
         applyFloatingSidebarWidth()
     }
@@ -1509,8 +1511,9 @@ final class MouseTrackingAreaView: NSView {
 }
 
 /// The strip along the floating panel's inner edge. Dragging it resizes the
-/// panel, as dragging the divider resizes the docked column.
-final class FloatingSidebarResizeHandleView: NSView {
+/// panel, as dragging the divider resizes the docked column
+/// (`ShellSplitDividerView`).
+class FloatingSidebarResizeHandleView: NSView {
     var onBegin: (() -> Void)?
     /// The pointer's horizontal distance from where the drag started.
     var onDrag: ((CGFloat) -> Void)?

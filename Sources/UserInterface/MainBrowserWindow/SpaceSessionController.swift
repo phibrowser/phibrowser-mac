@@ -698,7 +698,7 @@ class SpaceSessionController: NSWindowController {
             self.contentViewController = mainSplitViewController
         }
         
-        let sidebarExpansionFinished = mainSplitViewController.windowSplitViewController.sidebarExpansionDidFinish
+        let sidebarExpansionFinished = mainSplitViewController.sidebarExpansionDidFinish
         $browserState.compactMap { $0 }
             .flatMap { state in
                 state.sidebarCollapsedPublisher.combineLatest(
@@ -1428,7 +1428,7 @@ class SpaceSessionController: NSWindowController {
         guard let window else { return }
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
         let bandVisible = mainSplitViewController.webContentContainerViewController.floatingSidebarHost.isTrafficLightBandVisible
-        let waitingForSidebar = mainSplitViewController.windowSplitViewController.isSidebarExpanding
+        let waitingForSidebar = mainSplitViewController.isSidebarExpanding
         let hideTrafficLights = !fullScreen && !traditionalLayout
             && (SidebarPosition.isOnRight ? !bandVisible : collapsed || waitingForSidebar)
 

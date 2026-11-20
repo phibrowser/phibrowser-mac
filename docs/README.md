@@ -17,6 +17,7 @@ contracts, failure modes and verification entry points. Start with the repositor
 
 - [Space and store lifetime](architecture/space-store-lifetime.md)
 - [Hosted shell and window verification](hosted-shell-window-fixes-and-testing.md)
+- [Custom shell split](architecture/custom-shell-split.md): the shell window's sidebar | page split
 - [Sidebar selection and refresh](architecture/sidebar-selection-and-refresh.md)
 - [Group overview](architecture/group-overview.md)
 - [Split chat ownership](architecture/split-chat-ownership.md)

@@ -157,8 +157,7 @@ final class PlaceholderShellViewController: NSViewController {
                 }
 
         sidebarCollapsedObserverCancellable =
-            browserState?.sidebarCollapsedPublisher
-                .receive(on: DispatchQueue.main)
+            browserState?.sidebarTakesPageSpacePublisher
                 .sink { [weak self] _ in
                     self?.updateContentLeadingInset()
                 }
@@ -167,7 +166,7 @@ final class PlaceholderShellViewController: NSViewController {
     /// Mirror of `WebContentViewController.updateSplitViewLeadingInset`: no
     /// margin on the side the expanded sidebar sits on.
     private var contentInsets: (leading: CGFloat, trailing: CGFloat) {
-        contentLayout.pageInsets(sidebarCollapsed: browserState?.sidebarCollapsed ?? true)
+        contentLayout.pageInsets(sidebarCollapsed: browserState?.sidebarTakesPageSpace != true)
     }
 
     private func updateContentLeadingInset() {

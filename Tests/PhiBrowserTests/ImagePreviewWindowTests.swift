@@ -31,13 +31,13 @@ final class ImagePreviewWindowTests: XCTestCase {
         let sidebarItem = NSSplitViewItem(viewController: sidebar)
         sidebarItem.minimumThickness = MainSplitViewController.leftItemMinWidth
         sidebarItem.maximumThickness = MainSplitViewController.leftItemMaxWidth
-        sidebarItem.holdingPriority = ShellSplitViewController.sidebarHoldingPriority
+        sidebarItem.holdingPriority = .init(rawValue: 260)
         split.addSplitViewItem(sidebarItem)
 
         let content = NSViewController()
         content.view = NSView()
         let contentItem = NSSplitViewItem(contentListWithViewController: content)
-        contentItem.holdingPriority = ShellSplitViewController.contentHoldingPriority
+        contentItem.holdingPriority = .init(rawValue: 240)
         split.addSplitViewItem(contentItem)
 
         let overlay = ImagePreviewOverlayViewController(state: BrowserImagePreviewState(loader: Loader()))

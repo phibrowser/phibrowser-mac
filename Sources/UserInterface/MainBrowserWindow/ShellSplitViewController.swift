@@ -16,59 +16,56 @@ import Combine
 /// vertical-layout switch slides the sidebar band inside the column while
 /// the page area swaps underneath (`SpaceWindowSlot.HostedBandSlide`).
 ///
-/// The split item is the sole owner of sidebar geometry. Sessions observe
-/// it through read-only publishers; presenting or creating a Space never
-/// writes width or collapsed state back into the shell.
+/// This controller is the sole owner of sidebar geometry: the width the
+/// user chose for each side, the collapsed state and the toggle in flight.
+/// `ShellSplitView` places the views from it. Sessions observe it through
+/// read-only publishers; presenting or creating a Space never writes width
+/// or collapsed state back into the shell.
+/// See docs/architecture/custom-shell-split.md.
 final class ShellSplitViewController: NSViewController {
     static let leftItemMinWidth = MainSplitViewController.leftItemMinWidth
     static let leftItemMaxWidth = MainSplitViewController.leftItemMaxWidth
-    /// The column holds its width against window resizes ahead of the page
-    /// area, and — through `ShellSidebarHostViewController.residentTrailingPriority`
-    /// — ahead of any width its resident trees would prefer.
-    static let sidebarHoldingPriority = NSLayoutConstraint.Priority(260)
-    static let contentHoldingPriority = NSLayoutConstraint.Priority(240)
-    private static var splitViewAutosaveName: String {
-        SidebarPosition.isOnRight ? "phiMainBrowserSplitViewRight" : "phiMainBrowserSplitView"
-    }
-
-    private var sidebarOnRight = false
-    private var isReorderingSidebar = false
-
-    private func updateSidebarPosition() {
-        let right = SidebarPosition.isOnRight
-        guard sidebarOnRight != right else { return }
-        // A width the floating panel left belongs to the side it was set on;
-        // the destination side keeps its own.
-        pendingDockWidth = nil
-        // `repositionSidebarItem` saves the outgoing side's current width;
-        // a pending write from before the move would overwrite it later.
-        sidebarWidthPersistWorkItem?.cancel()
-        sidebarWidthPersistWorkItem = nil
-        let destinationWidth = AccountController.shared.localDataAccount?.userDefaults
-            .lastKnownSidebarWidth(for: SidebarPosition.effective) ?? 0
-        isReorderingSidebar = true
-        sidebarSplitViewItem = splitViewController.repositionSidebarItem(
-            sidebarSplitViewItem, onRight: right, width: destinationWidth,
-            autosaveName: Self.splitViewAutosaveName
-        )
-        sidebarOnRight = right
-        isReorderingSidebar = false
-        sidebarHost.reparkHiddenResidents()
-        if destinationWidth >= Self.leftItemMinWidth {
-            lastExpandedSidebarWidth = destinationWidth
-        }
-        lastRecordedSidebarWidth = nil
-        recordSidebarWidth()
-    }
-
-    let splitViewController = PhiSplitViewController()
+    let splitView = ShellSplitView()
     let sidebarHost = ShellSidebarHostViewController()
     let contentHost = ShellContentHostViewController()
     let floatingSidebarHost = FloatingSidebarHostViewController()
-    @Published private var sidebarSplitViewItem: NSSplitViewItem!
-    private var contentSplitViewItem: NSSplitViewItem!
     private var cancellables = Set<AnyCancellable>()
     private var lastTraditionalLayout: Bool?
+
+    private var sidebarOnRight = false
+    private var side: SidebarPosition { sidebarOnRight ? .right : .left }
+    private var transitions = SidebarTransitions(isCollapsed: false)
+    private var flightCompletions: [Int: (Bool) -> Void] = [:]
+    /// The width the user chose for the column on each side. A side with
+    /// none opens at the minimum.
+    private var preferredWidths: [SidebarPosition: CGFloat] = [:]
+    private var dividerDrag: DividerDrag?
+    private let collapsedSubject = CurrentValueSubject<Bool, Never>(false)
+    private let widthSubject = CurrentValueSubject<CGFloat, Never>(0)
+    private let takesPageSpaceSubject = CurrentValueSubject<Bool, Never>(true)
+
+    /// An animated expansion has landed. A superseded one never reports.
+    let sidebarExpansionDidFinish = PassthroughSubject<Void, Never>()
+    /// An animated expansion has started and not landed. The collapsed state
+    /// changes as soon as it starts.
+    var isSidebarExpanding: Bool { transitions.isExpanding }
+
+    /// The account's defaults, where each side's width is kept. A test seam.
+    lazy var accountDefaults: () -> AccountUserDefaults? = {
+        AccountController.shared.localDataAccount?.userDefaults
+    }
+
+    private var isTraditionalLayout: Bool {
+        PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
+    }
+
+    /// The root view's width, which the window sets at once; the split view
+    /// fills it, but only takes its frame in the next layout pass.
+    private var containerWidth: CGFloat { view.bounds.width }
+
+    private var preferredWidth: CGFloat {
+        ShellSplitGeometry.clampedToLimits(preferredWidths[side] ?? Self.leftItemMinWidth)
+    }
 
     override func loadView() {
         view = TitlebarTransparentView()
@@ -76,95 +73,37 @@ final class ShellSplitViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        let splitView = PhiSplitView()
-        splitView.isVertical = true
-        splitViewController.splitView = splitView
-        addChild(splitViewController)
-        view.addSubview(splitViewController.view)
-        splitViewController.view.translatesAutoresizingMaskIntoConstraints = false
-        sidebarHost.parkingAnchor = splitView
+        addChild(sidebarHost)
+        addChild(contentHost)
+        splitView.install(column: sidebarHost.view, page: contentHost.view)
+        view.addSubview(splitView)
+        splitView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            splitViewController.view.topAnchor.constraint(equalTo: view.topAnchor),
-            splitViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            splitViewController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            splitViewController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            splitView.topAnchor.constraint(equalTo: view.topAnchor),
+            splitView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            splitView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            splitView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
 
-        // A plain item on every OS and side, never `sidebarWithViewController:`.
-        // Before macOS 26 AppKit reveals a collapsed sidebar-behavior item by
-        // itself when the pointer reaches the screen edge in full screen. That
-        // edge is also the floating sidebar's trigger, and the reveal reports
-        // the column as expanded, which hides the floating panel and moves the
-        // top bar's borrowed buttons away while the pointer is still there.
-        sidebarSplitViewItem = NSSplitViewItem(viewController: sidebarHost)
-        sidebarSplitViewItem.minimumThickness = Self.leftItemMinWidth
-        sidebarSplitViewItem.maximumThickness = Self.leftItemMaxWidth
-        sidebarSplitViewItem.canCollapse = true
-        sidebarSplitViewItem.collapseBehavior = SidebarPosition.isOnRight ? .preferResizingSiblingsWithFixedSplitView : .default
-        sidebarSplitViewItem.holdingPriority = Self.sidebarHoldingPriority
-        if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
-            sidebarSplitViewItem.isCollapsed = true
-        }
-        splitViewController.addSplitViewItem(sidebarSplitViewItem)
+        sidebarOnRight = SidebarPosition.isOnRight
+        loadStoredGeometry()
+        connectDivider()
+        splitView.onWidthChange = { [weak self] in self?.containerWidthDidChange() }
+        applyState()
 
-        contentSplitViewItem = NSSplitViewItem(contentListWithViewController: contentHost)
-        contentSplitViewItem.holdingPriority = Self.contentHoldingPriority
-        splitViewController.addSplitViewItem(contentSplitViewItem)
-
-        updateSidebarPosition()
-
-        // The same autosave name the per-session split used, so the width
-        // the user had carries over.
-        splitView.autosaveName = Self.splitViewAutosaveName
-        // The width the column had when last expanded: what the floating
-        // panel opens at while the column is collapsed. Seeded from the
-        // account so a launch with a collapsed sidebar still opens the panel
-        // at the user's width; every expanded-column frame updates it.
-        lastExpandedSidebarWidth = AccountController.shared.localDataAccount?
-            .userDefaults.lastKnownSidebarWidth(for: SidebarPosition.effective) ?? 0
-        // The autosaved frames keep the width the column had when it
-        // collapsed; a floating panel resize after that is only in the
-        // account, so a restored collapsed column docks at the account's width.
-        if sidebarSplitViewItem.isCollapsed, lastExpandedSidebarWidth >= Self.leftItemMinWidth {
-            pendingDockWidth = min(lastExpandedSidebarWidth, Self.leftItemMaxWidth)
-        }
-
-        $sidebarSplitViewItem
-            .compactMap { $0 }
-            .map { $0.publisher(for: \.isCollapsed) }
-            .switchToLatest()
-            .sink { [weak self] isCollapsed in
-                guard let self else { return }
-                if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
-                    // Traditional layout keeps the sidebar collapsed even if
-                    // split-view state restoration tries to expand it.
-                    if !isCollapsed {
-                        self.sidebarSplitViewItem.isCollapsed = true
-                    }
-                    return
-                }
-                // Expanded some other way than `setSidebarCollapsed` (state
-                // restoration, a drag out of the edge): still dock at the
-                // width the floating panel left.
-                if !isCollapsed, let width = self.pendingDockWidth {
-                    self.pendingDockWidth = nil
-                    DispatchQueue.main.async { [weak self] in
-                        guard let splitView = self?.splitViewController.splitView else { return }
-                        splitView.setPosition(SidebarPosition.isOnRight
-                            ? splitView.bounds.width - splitView.dividerThickness - width
-                            : width, ofDividerAt: 0)
-                    }
-                }
-                self.recordSidebarWidth()
-            }
-            .store(in: &cancellables)
-        sidebarHost.view.postsFrameChangedNotifications = true
-        NotificationCenter.default.publisher(for: NSView.frameDidChangeNotification, object: sidebarHost.view)
-            .sink { [weak self] _ in self?.recordSidebarWidth() }
-            .store(in: &cancellables)
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateLayoutForHorizontalTabs() }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+            .sink { [weak self] _ in self?.persistGeometry() }
+            .store(in: &cancellables)
+        // The window's own transition takes over its content; the toggle
+        // lands first.
+        NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)
+            .merge(with: NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification))
+            .filter { [weak self] in ($0.object as? NSWindow) === self?.view.window }
+            .sink { [weak self] _ in self?.settleTransition() }
             .store(in: &cancellables)
         updateLayoutForHorizontalTabs()
         floatingSidebarHost.install(in: self)
@@ -221,73 +160,89 @@ final class ShellSplitViewController: NSViewController {
             top: 0, left: pageArea.minX, bottom: 0, right: view.bounds.width - pageArea.maxX))
     }
 
-    /// Observes the actual split item, including AppKit collapse/restore.
+    /// The collapsed state as last asked for: it changes when a toggle
+    /// starts, once per toggle.
     var sidebarCollapsedPublisher: AnyPublisher<Bool, Never> {
-        $sidebarSplitViewItem
-            .compactMap { $0 }
-            .map { $0.publisher(for: \.isCollapsed) }
-            .switchToLatest()
-            .removeDuplicates()
-            .eraseToAnyPublisher()
+        collapsedSubject.removeDuplicates().eraseToAnyPublisher()
     }
 
+    /// The column's width, 0 while collapsed: one value per toggle and per
+    /// step of a divider drag, none per animation frame.
     var sidebarWidthPublisher: AnyPublisher<CGFloat, Never> {
-        NotificationCenter.default.publisher(for: NSView.frameDidChangeNotification, object: sidebarHost.view)
-            .map { _ in () }
-            .merge(with: sidebarCollapsedPublisher.map { _ in () })
-            .map { [weak self] _ in self?.sidebarWidth ?? 0 }
-            .prepend(sidebarWidth)
-            .removeDuplicates()
-            .eraseToAnyPublisher()
+        widthSubject.removeDuplicates().eraseToAnyPublisher()
     }
 
-    var isSidebarCollapsed: Bool { sidebarSplitViewItem?.isCollapsed ?? false }
+    /// Whether the column takes its width from the page area: false while
+    /// collapsed and for the whole of a toggle in flight. It changes with the
+    /// page area's frame, in the same turn: when a collapse starts and when
+    /// an expansion lands. The page's sidebar-side inset follows this, so a
+    /// toggle lays the page out once.
+    var sidebarTakesPageSpacePublisher: AnyPublisher<Bool, Never> {
+        takesPageSpaceSubject.removeDuplicates().eraseToAnyPublisher()
+    }
+
+    var sidebarTakesPageSpace: Bool { transitions.columnTakesPageSpace }
+
+    var isSidebarCollapsed: Bool { transitions.isCollapsed }
 
     var sidebarWidth: CGFloat {
-        guard let item = sidebarSplitViewItem, !item.isCollapsed else { return 0 }
-        return item.viewController.view.frame.width
+        guard isViewLoaded, !transitions.isCollapsed else { return 0 }
+        return splitView.geometry.effectiveWidth(inContainerOfWidth: containerWidth)
     }
 
     func toggleSidebar(_ collapsed: Bool? = nil) {
         setSidebarCollapsed(collapsed ?? !isSidebarCollapsed, animated: true)
     }
 
-    func setSidebarCollapsed(_ collapsed: Bool, animated: Bool) {
+    /// `completion` is called exactly once: with true when the column got
+    /// to `collapsed`, at once if it is there already, and with false when a
+    /// later request for the other state cut this one short.
+    func setSidebarCollapsed(_ collapsed: Bool, animated: Bool, completion: ((_ finished: Bool) -> Void)? = nil) {
         // A toggle during a hand-off starts from the hand-off's end state.
         floatingSidebarHost.finishSidebarHandOffImmediately()
         sidebarHost.setResidentsHidden(false)
-        let target = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional || collapsed
-        guard sidebarSplitViewItem.isCollapsed != target else { return }
-        let dockWidth = pendingDockWidth
-        if !target { pendingDockWidth = nil }
-        // A column that opens at a panel-resized width (`pendingDockWidth`)
-        // expands there instead of handing off.
-        if animated, target || dockWidth == nil, handOffSidebar(collapsing: target) { return }
-        splitViewController.setSidebarCollapsed(target, item: sidebarSplitViewItem, animated: animated,
-                                                dockWidth: dockWidth)
+        let target = isTraditionalLayout || collapsed
+        if animated, transitions.isCollapsed != target, handOffSidebar(collapsing: target, completion: completion) {
+            return
+        }
+        changeCollapsed(to: target, duration: animated ? SidebarToggleAnimation.duration : nil,
+                        completion: completion)
     }
 
     /// Aligns the column to `width` / `collapsed`. The column persists across
     /// Spaces, so this only matters when a caller wants a shape other than
     /// the one on screen.
     func setSidebarGeometry(width: CGFloat?, collapsed: Bool) {
-        guard !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional else { return }
-        // An explicit width wins over the one the floating panel left.
-        if width != nil { pendingDockWidth = nil }
+        guard !isTraditionalLayout else { return }
+        if !collapsed, let width, width > 0 {
+            setPreferredWidth(width)
+        }
         setSidebarCollapsed(collapsed, animated: false)
-        guard !collapsed, let width, width > 0 else { return }
-        let clamped = min(max(width, Self.leftItemMinWidth), Self.leftItemMaxWidth)
-        splitViewController.splitView.setPosition(SidebarPosition.isOnRight ? splitViewController.splitView.bounds.width - splitViewController.splitView.dividerThickness - clamped : clamped, ofDividerAt: 0)
+        applyState()
     }
 
     func containsSidebarTabDragBoundary(at screenLocation: CGPoint) -> Bool {
-        guard !sidebarSplitViewItem.isCollapsed else { return false }
+        guard !transitions.isCollapsed else { return false }
         return sidebarHost.view.containsScreenLocation(screenLocation)
+    }
+
+    private func updateSidebarPosition() {
+        let right = SidebarPosition.isOnRight
+        guard sidebarOnRight != right else { return }
+        settleTransition()
+        dividerDrag = nil
+        let width = preferredWidth
+        sidebarOnRight = right
+        // A side that never had a width of its own takes the other's along.
+        if preferredWidths[side] == nil {
+            setPreferredWidth(width)
+        }
+        applyState()
     }
 
     private func updateLayoutForHorizontalTabs() {
         updateSidebarPosition()
-        let traditional = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
+        let traditional = isTraditionalLayout
         if let last = lastTraditionalLayout, last == traditional { return }
         let changingLayout = lastTraditionalLayout != nil
         lastTraditionalLayout = traditional
@@ -296,59 +251,319 @@ final class ShellSplitViewController: NSViewController {
         }
     }
 
-    /// The column's width the last time it was expanded, or 0 before any.
-    /// Resizing the floating panel while the column is collapsed sets it too:
-    /// the panel and the column share one width.
-    private(set) var lastExpandedSidebarWidth: CGFloat = 0
-
-    /// The width the column docks at when it next expands, set by resizing
-    /// the floating panel while the column is collapsed. AppKit would
-    /// otherwise restore the width the column had when it collapsed.
-    private var pendingDockWidth: CGFloat?
+    /// The width the column opens at in this window: the floating panel's
+    /// width while the column is collapsed. 0 before the view is loaded.
+    var lastExpandedSidebarWidth: CGFloat {
+        guard isViewLoaded else { return 0 }
+        return ShellSplitGeometry.effectiveWidth(preferred: preferredWidth, inContainerOfWidth: containerWidth)
+    }
 
     /// Takes the floating panel's width, resized by the user while the column
     /// is collapsed, as the column's width: the panel opens at it from now on
     /// and the column docks at it.
     func adoptFloatingSidebarWidth(_ width: CGFloat) {
-        guard sidebarSplitViewItem.isCollapsed else { return }
-        let clamped = min(max(width, Self.leftItemMinWidth), Self.leftItemMaxWidth)
-        lastExpandedSidebarWidth = clamped
-        pendingDockWidth = clamped
-        persistSidebarWidth(clamped)
+        guard transitions.isCollapsed else { return }
+        setPreferredWidth(min(width, ShellSplitGeometry.maxWidth(inContainerOfWidth: containerWidth)))
+        applyState()
     }
 
-    private var sidebarWidthPersistWorkItem: DispatchWorkItem?
-    private var lastRecordedSidebarWidth: CGFloat?
-    /// Quiet period after the column's last width change before the width is
-    /// written to the account's defaults.
-    private static let sidebarWidthPersistDelay: TimeInterval = 0.3
-
-    /// Records the column's width: at once in memory, for the floating panel,
-    /// and on disk once the width settles. Each account-defaults write
-    /// serializes and atomically rewrites the whole store, and a divider drag
-    /// reports a new width (twice) on every frame.
-    private func recordSidebarWidth() {
-        guard !isReorderingSidebar, let item = sidebarSplitViewItem else { return }
-        let width = item.isCollapsed ? 0 : item.viewController.view.frame.width
-        guard width != lastRecordedSidebarWidth else { return }
-        lastRecordedSidebarWidth = width
-        if width >= Self.leftItemMinWidth {
-            lastExpandedSidebarWidth = width
-        }
-        guard width != Self.leftItemMinWidth else { return }
-        persistSidebarWidth(width)
+    /// Brings the views and the publishers in line with the state.
+    private func applyState() {
+        var geometry = splitView.geometry
+        geometry.sidebarOnRight = sidebarOnRight
+        geometry.preferredWidth = dividerDrag?.width ?? preferredWidth
+        geometry.columnTakesPageSpace = transitions.columnTakesPageSpace
+        splitView.geometry = geometry
+        splitView.isColumnHidden = transitions.isCollapsed && transitions.flight == nil
+        // No divider on a collapsed edge or under a column in flight; one
+        // that collapsed the column mid-drag keeps the drag.
+        splitView.divider.isHidden = !transitions.columnTakesPageSpace && dividerDrag == nil
+        collapsedSubject.send(transitions.isCollapsed)
+        widthSubject.send(sidebarWidth)
+        takesPageSpaceSubject.send(transitions.columnTakesPageSpace)
     }
 
-    /// Writes `width` to the account's defaults once no newer width has
-    /// arrived for `sidebarWidthPersistDelay`.
-    private func persistSidebarWidth(_ width: CGFloat) {
-        sidebarWidthPersistWorkItem?.cancel()
-        let side = SidebarPosition.effective
-        let workItem = DispatchWorkItem {
-            AccountController.shared.localDataAccount?.userDefaults.setLastKnownSidebarWidth(width, for: side)
+    /// The one way the collapsed state changes. `duration` is a whole
+    /// toggle's, nil for a change that applies at once.
+    private func changeCollapsed(to collapsed: Bool, duration: TimeInterval?, widensWindow: Bool = true,
+                                 completion: ((Bool) -> Void)? = nil) {
+        if !collapsed, transitions.isCollapsed, widensWindow {
+            widenWindowForColumnIfNeeded()
         }
-        sidebarWidthPersistWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.sidebarWidthPersistDelay, execute: workItem)
+        let outcome = transitions.request(collapsed: collapsed, duration: duration,
+                                          shownFraction: splitView.shownColumnFraction)
+        if let ended = outcome.ended {
+            finish(ended, finished: outcome.endedAtItsTarget)
+        }
+        guard outcome.changed else {
+            completion?(true)
+            return
+        }
+        // The comfortable layout's forced collapse is not the user's.
+        if !isTraditionalLayout {
+            collapsedToStore = collapsed
+            schedulePersist()
+        }
+        applyState()
+        guard let flight = outcome.flight else {
+            completion?(true)
+            return
+        }
+        flightCompletions[flight.id] = completion
+        splitView.slideColumn(for: flight) { [weak self] in
+            self?.land(flight.id)
+        }
+    }
+
+    private func land(_ id: Int) {
+        guard let flight = transitions.land(id) else { return }
+        finish(flight, finished: true)
+    }
+
+    /// Lands the toggle in flight now: a change that is not a toggle (a
+    /// width, the side, the window's size) starts from a settled column.
+    private func settleTransition() {
+        guard let flight = transitions.settle() else { return }
+        finish(flight, finished: true)
+    }
+
+    private func finish(_ flight: SidebarTransitions.Flight, finished: Bool) {
+        let completion = flightCompletions.removeValue(forKey: flight.id)
+        // With the frames' next state, in this turn: the end state when the
+        // flight landed, the next flight's slide when it was cut short.
+        splitView.endSlide()
+        if finished {
+            applyState()
+            if !flight.collapsing {
+                sidebarExpansionDidFinish.send()
+            }
+            if hasGeometryToStore {
+                schedulePersist()
+            }
+        }
+        completion?(finished)
+    }
+
+    /// Where the page cannot give the column its width, opening the column
+    /// widens the window by it, as the NSSplitView this replaced did.
+    private func widenWindowForColumnIfNeeded() {
+        guard let window = view.window, !window.styleMask.contains(.fullScreen) else { return }
+        let columnWidth = preferredWidth
+        guard containerWidth > 0, containerWidth - columnWidth < ShellSplitGeometry.pageMinWidth else { return }
+        var frame = window.frame
+        frame.size.width += columnWidth
+        window.setFrame(frame, display: true)
+        // The split view takes the new width before the toggle starts.
+        view.layoutSubtreeIfNeeded()
+    }
+
+    private func containerWidthDidChange() {
+        settleTransition()
+        widthSubject.send(sidebarWidth)
+    }
+
+    private func setPreferredWidth(_ width: CGFloat) {
+        let clamped = ShellSplitGeometry.clampedToLimits(width).rounded()
+        guard preferredWidths[side] != clamped else { return }
+        preferredWidths[side] = clamped
+        widthsToStore.insert(side)
+        schedulePersist()
+    }
+
+    private struct DividerDrag {
+        let startWidth: CGFloat
+        /// The width the drag has the column at; nil while it has it
+        /// collapsed.
+        var width: CGFloat?
+    }
+
+    private func connectDivider() {
+        let divider = splitView.divider
+        divider.onBegin = { [weak self] in self?.beginDividerDrag() }
+        divider.onDrag = { [weak self] offset in self?.continueDividerDrag(offset: offset) }
+        divider.onEnd = { [weak self] in self?.endDividerDrag() }
+        divider.directions = { [weak self] in self?.dividerDirections ?? .both }
+        divider.range = { [weak self] in
+            self?.dividerRange ?? ShellSplitDividerView.Range(position: 0, min: 0, max: 0)
+        }
+        divider.onAccessibilityStep = { [weak self] towardMax in self?.stepDivider(towardMax: towardMax) }
+    }
+
+    private func beginDividerDrag() {
+        guard !transitions.isCollapsed else { return }
+        settleTransition()
+        let width = sidebarWidth
+        dividerDrag = DividerDrag(startWidth: width, width: width)
+    }
+
+    /// The drag is live. Past half the minimum width it collapses the
+    /// column, and reopens it on the way back.
+    private func continueDividerDrag(offset: CGFloat) {
+        guard var drag = dividerDrag else { return }
+        let proposed = drag.startWidth + (sidebarOnRight ? -offset : offset)
+        if proposed < Self.leftItemMinWidth / 2 {
+            drag.width = nil
+            dividerDrag = drag
+            changeCollapsed(to: true, duration: nil)
+            return
+        }
+        drag.width = min(max(proposed, Self.leftItemMinWidth),
+                         ShellSplitGeometry.maxWidth(inContainerOfWidth: containerWidth))
+        dividerDrag = drag
+        if transitions.isCollapsed {
+            changeCollapsed(to: false, duration: nil, widensWindow: false)
+        } else {
+            applyState()
+        }
+    }
+
+    /// The width the drag ends on is the user's from then on. A drag that
+    /// ends collapsed leaves it as it was.
+    private func endDividerDrag() {
+        guard let drag = dividerDrag else { return }
+        dividerDrag = nil
+        if let width = drag.width {
+            setPreferredWidth(width)
+        }
+        applyState()
+    }
+
+    private var dividerDirections: FloatingSidebarResizeHandleView.Directions {
+        let width = sidebarWidth
+        if width >= ShellSplitGeometry.maxWidth(inContainerOfWidth: containerWidth) {
+            return sidebarOnRight ? .rightOnly : .leftOnly
+        }
+        if width <= Self.leftItemMinWidth {
+            return sidebarOnRight ? .leftOnly : .rightOnly
+        }
+        return .both
+    }
+
+    private var dividerRange: ShellSplitDividerView.Range {
+        let size = splitView.bounds.size
+        let narrowest = Self.leftItemMinWidth
+        let widest = ShellSplitGeometry.maxWidth(inContainerOfWidth: size.width)
+        return ShellSplitDividerView.Range(
+            position: splitView.geometry.dividerPosition(in: size),
+            min: sidebarOnRight ? size.width - widest : narrowest,
+            max: sidebarOnRight ? size.width - narrowest : widest)
+    }
+
+    private static let accessibilityDividerStep: CGFloat = 10
+
+    private func stepDivider(towardMax: Bool) {
+        guard !transitions.isCollapsed else { return }
+        settleTransition()
+        let widening = towardMax != sidebarOnRight
+        let width = sidebarWidth + (widening ? Self.accessibilityDividerStep : -Self.accessibilityDividerStep)
+        setPreferredWidth(min(max(width, Self.leftItemMinWidth),
+                              ShellSplitGeometry.maxWidth(inContainerOfWidth: containerWidth)))
+        applyState()
+    }
+
+    private var widthsToStore = Set<SidebarPosition>()
+    /// The collapsed state the user left the column in, not yet written.
+    private var collapsedToStore: Bool?
+    private var persistWorkItem: DispatchWorkItem?
+    /// Quiet period after the last change before the geometry is written.
+    private static let geometryPersistDelay: TimeInterval = 0.3
+
+    private var hasGeometryToStore: Bool {
+        !widthsToStore.isEmpty || collapsedToStore != nil
+    }
+
+    /// Reads each side's width from the account and the collapsed state
+    /// from the app's defaults.
+    private func loadStoredGeometry() {
+        let defaults = accountDefaults()
+        for side in SidebarPosition.allCases {
+            let width = defaults?.lastKnownSidebarWidth(for: side) ?? 0
+            if width >= Self.leftItemMinWidth {
+                preferredWidths[side] = ShellSplitGeometry.clampedToLimits(width)
+            }
+        }
+        let traditional = isTraditionalLayout
+        let collapsed: Bool
+        if let stored = PhiPreferences.GeneralSettings.loadSidebarCollapsed() {
+            collapsed = stored
+        } else {
+            collapsed = migrateAutosavedColumn(trustingCollapsed: !traditional)
+            PhiPreferences.GeneralSettings.saveSidebarCollapsed(collapsed)
+        }
+        transitions = SidebarTransitions(isCollapsed: traditional || collapsed)
+    }
+
+    /// Takes over what the shell's NSSplitView autosaved for this side, the
+    /// one time there is no collapsed state of the shell's own: the column's
+    /// width as this side's, and whether it was collapsed, which is returned.
+    /// In the comfortable layout the saved column is collapsed by the layout,
+    /// not by the user, so that is not taken.
+    ///
+    /// The saved frames stay where they are: standalone windows still save
+    /// under the same names.
+    private func migrateAutosavedColumn(trustingCollapsed: Bool) -> Bool {
+        let name = sidebarOnRight ? "phiMainBrowserSplitViewRight" : "phiMainBrowserSplitView"
+        guard let frames = UserDefaults.standard.stringArray(forKey: "NSSplitView Subview Frames \(name)"),
+              let column = Self.autosavedColumn(in: frames, sidebarOnRight: sidebarOnRight) else { return false }
+        if (Self.leftItemMinWidth...Self.leftItemMaxWidth).contains(column.width) {
+            setPreferredWidth(column.width)
+        }
+        AppLogInfo("[ShellSplit] migrated autosaved column: width=\(column.width) collapsed=\(column.collapsed)")
+        return trustingCollapsed && column.collapsed
+    }
+
+    /// NSSplitView saves one string per subview, "x, y, width, height,
+    /// hidden, …", in subview order: the column is first on the left and
+    /// second on the right.
+    static func autosavedColumn(in frames: [String], sidebarOnRight: Bool) -> (width: CGFloat, collapsed: Bool)? {
+        guard frames.count == 2 else { return nil }
+        let fields = frames[sidebarOnRight ? 1 : 0].components(separatedBy: ", ")
+        guard fields.count >= 5, let width = Double(fields[2]) else { return nil }
+        return (CGFloat(width), fields[4] == "YES")
+    }
+
+    /// Writes the geometry once it has been still for
+    /// `geometryPersistDelay`: a divider drag reports a width on every frame
+    /// and a burst of toggles a state each, each account-defaults write
+    /// rewrites the whole store, and a write to the app's defaults notifies
+    /// every Space's observers.
+    private func schedulePersist() {
+        persistWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            persistWorkItem = nil
+            // Not under a toggle in flight; landing schedules this again.
+            guard transitions.flight == nil else { return }
+            persistGeometry()
+        }
+        persistWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.geometryPersistDelay, execute: workItem)
+    }
+
+    /// The shell window is closing for good. What is waiting to be stored
+    /// is written now, and the split stops following the app's defaults: a
+    /// closed window's column must not answer a later layout or side change
+    /// and store over the open windows' state.
+    func windowWillClose() {
+        persistGeometry()
+        cancellables.removeAll()
+    }
+
+    private func persistGeometry() {
+        persistWorkItem?.cancel()
+        persistWorkItem = nil
+        if let defaults = accountDefaults() {
+            for side in widthsToStore {
+                if let width = preferredWidths[side] {
+                    defaults.setLastKnownSidebarWidth(width, for: side)
+                }
+            }
+        }
+        widthsToStore.removeAll()
+        if let collapsed = collapsedToStore, PhiPreferences.GeneralSettings.loadSidebarCollapsed() != collapsed {
+            PhiPreferences.GeneralSettings.saveSidebarCollapsed(collapsed)
+        }
+        collapsedToStore = nil
     }
 
     // MARK: - Dock hand-off
@@ -363,12 +578,11 @@ final class ShellSplitViewController: NSViewController {
     /// The event that asked for this toggle. A test seam.
     lazy var currentEventType: () -> NSEvent.EventType? = { NSApp.currentEvent?.type }
 
-    /// The pointer is on the open column. Tests the column's resting rect:
-    /// while it slides open its frame is still moving in.
+    /// The pointer is on the open column.
     private func isPointerOnDockedSidebar() -> Bool {
-        guard !sidebarSplitViewItem.isCollapsed, let point = pointerLocationInWindow() else { return false }
+        guard !transitions.isCollapsed, let point = pointerLocationInWindow() else { return false }
         let bounds = view.bounds
-        let width = sidebarHost.view.frame.width
+        let width = sidebarWidth
         let column = NSRect(x: sidebarOnRight ? bounds.maxX - width : bounds.minX, y: bounds.minY,
                             width: width, height: bounds.height)
         return view.convert(column, to: nil).contains(point)
@@ -381,7 +595,7 @@ final class ShellSplitViewController: NSViewController {
     ///
     /// A click on the sidebar button also has the pointer on the column, but
     /// it means put the sidebar away, so only a key press keeps it up.
-    private func handOffSidebar(collapsing collapsed: Bool) -> Bool {
+    private func handOffSidebar(collapsing collapsed: Bool, completion: ((Bool) -> Void)?) -> Bool {
         let kind: SidebarHandOffKind?
         if collapsed {
             kind = currentEventType() == .keyDown && isPointerOnDockedSidebar() ? .undock : nil
@@ -389,28 +603,19 @@ final class ShellSplitViewController: NSViewController {
             kind = floatingSidebarHost.isVisible ? .dock : nil
         }
         guard let kind, floatingSidebarHost.beginSidebarHandOff(kind) else { return false }
-        if kind == .dock {
-            // A collapsed column expands back to its own frame's width. A
-            // toggle that cut AppKit's animation short leaves that at the
-            // in-flight width; the column must open where the panel is.
-            let width = floatingSidebarHost.currentFloatingWidth
-            if sidebarHost.view.frame.width != width {
-                sidebarHost.view.setFrameSize(NSSize(width: width, height: sidebarHost.view.frame.height))
-            }
-        }
         sidebarHandOffRun += 1
         let run = sidebarHandOffRun
         // The panel covers the column throughout; the column's own rows
-        // would slide in or out under it.
+        // would show in or out under it.
         sidebarHost.setResidentsHidden(true)
         NSAnimationContext.runAnimationGroup { context in
             context.duration = FloatingSidebarHostViewController.sidebarHandOffDuration
             context.timingFunction = SidebarToggleAnimation.timingFunction
             context.allowsImplicitAnimation = true
-            // The toggle's own route: its speed and curve, which the panel's
-            // glide matches, and the window's lights held until it opens.
-            splitViewController.setSidebarCollapsed(collapsed, item: sidebarSplitViewItem,
-                                                    animated: true, dockWidth: nil)
+            // A dock opens the column where the panel is, at the panel's
+            // width, so the window keeps its size.
+            changeCollapsed(to: collapsed, duration: FloatingSidebarHostViewController.sidebarHandOffDuration,
+                            widensWindow: false, completion: completion)
             floatingSidebarHost.animateSidebarHandOff()
         } completionHandler: { [weak self] in
             // A later toggle already finished this hand-off and may run its own.
@@ -460,48 +665,43 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
         backdrop.rebindThemeProvider()
     }
 
-    /// How firmly a resident's trailing edge follows the column's: just
-    /// under the column's own holding priority, so nothing a resident asks
-    /// for can move the divider, and above every default content preference
+    /// How firmly a resident's trailing edge follows the column's, and a
+    /// hidden one holds its width: above every default content preference
     /// (`NSLayoutConstraint.Priority.defaultLow`), so a resident with no
-    /// demand of its own spans the column exactly.
-    static let residentTrailingPriority = NSLayoutConstraint.Priority(
-        ShellSplitViewController.sidebarHoldingPriority.rawValue - 1)
+    /// demand of its own spans the column exactly, and short of required, so
+    /// one whose content insists on more width overruns the column, which
+    /// clips it, instead of contending with the column's frame.
+    static let residentTrailingPriority = NSLayoutConstraint.Priority(259)
 
-    /// Makes `sidebarView` resident in the column, hidden, filling it and
-    /// following its size. A view already resident is left as it is.
-    ///
-    /// Residents follow the column; the column never follows a resident.
-    /// The leading, top and bottom edges are pinned outright, but the
-    /// trailing edge follows at `residentTrailingPriority`, far below the
-    /// priority AppKit applies a divider drag at (490,
-    /// `NSLayoutConstraint.Priority.dragThatCannotResizeWindow`). An
-    /// autoresizing mask would bind the edges with required constraints, and
-    /// then any minimum width a resident tree carried at a higher priority
-    /// — an `NSHostingView` left with its default `sizingOptions` pins its
-    /// SwiftUI content's minimum and maximum width at 999.9 — became the
-    /// column's: every shrink drag lost to it while a collapse (required)
-    /// still went through, so a sidebar dragged to its maximum stuck there.
-    /// Such a tree now overruns the column instead, which is visible and
-    /// fixable where it happens; the divider stays the user's.
-    ///
-    /// Only the presented resident follows the column's width live. A hidden
-    /// one holds its width (`heldWidth`, at the same priority) and catches up
-    /// once the column has stopped changing: AppKit lays out hidden views
-    /// too, so with every resident following, a divider drag re-laid out
-    /// every Space's sidebar on every frame. They are caught up well before
-    /// a switch can present one, so presenting stays a flag flip. A hidden
-    /// one is also parked off the column's leading edge (`park`), so a
-    /// collapse or expand doesn't slide it along.
     /// Hides the residents, leaving the backdrop, while the floating panel
     /// covers the column in a hand-off
-    /// (`ShellSplitViewController.handOffSidebar(collapsing:)`).
+    /// (`ShellSplitViewController.handOffSidebar(collapsing:completion:)`).
     func setResidentsHidden(_ hidden: Bool) {
         for resident in view.subviews where residentWidthConstraints[ObjectIdentifier(resident)] != nil {
             resident.alphaValue = hidden ? 0 : 1
         }
     }
 
+    /// Makes `sidebarView` resident in the column, hidden, filling it and
+    /// following its size. A view already resident is left as it is.
+    ///
+    /// Residents follow the column; the column never follows a resident: its
+    /// frame is the split's to set (`ShellSplitView`). The leading, top and
+    /// bottom edges are pinned outright and the trailing edge at
+    /// `residentTrailingPriority`. A resident tree can carry a minimum width
+    /// at a higher priority (an `NSHostingView` left with its default
+    /// `sizingOptions` pins its SwiftUI content's minimum and maximum width
+    /// at 999.9); such a tree overruns a narrower column, which is visible
+    /// and fixable where it happens.
+    ///
+    /// Only the presented resident follows the column's width live. A hidden
+    /// one holds its width (`heldWidth`, at the same priority) and catches up
+    /// once the column has stopped changing: AppKit lays out hidden views
+    /// too, so with every resident following, a divider drag re-laid out
+    /// every Space's sidebar on every frame. They are caught up well before
+    /// a switch can present one, so presenting stays a flag flip. Nothing
+    /// moves a hidden resident during a toggle: the column slides by its
+    /// layer, and its frame stays put.
     func host(_ sidebarView: NSView) {
         guard sidebarView.superview !== view else { return }
         sidebarView.removeFromSuperview()
@@ -514,16 +714,15 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
         let heldWidth = sidebarView.widthAnchor.constraint(equalToConstant: view.bounds.width)
         heldWidth.priority = Self.residentTrailingPriority
         residentWidthConstraints[ObjectIdentifier(sidebarView)] = ResidentWidthConstraints(
-            leading: sidebarView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             trailing: trailing,
             heldWidth: heldWidth
         )
         NSLayoutConstraint.activate([
+            sidebarView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             sidebarView.topAnchor.constraint(equalTo: view.topAnchor),
             sidebarView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             heldWidth,
         ])
-        park(sidebarView)
     }
 
     /// Shows a resident `sidebarView` as the column's content, above the
@@ -532,7 +731,6 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
     /// residency exists to avoid.
     func present(_ sidebarView: NSView) {
         host(sidebarView)
-        unpark(sidebarView)
         if let constraints = residentWidthConstraints[ObjectIdentifier(sidebarView)] {
             constraints.heldWidth.isActive = false
             constraints.trailing.isActive = true
@@ -558,50 +756,6 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
             constraints.trailing.isActive = false
             constraints.heldWidth.isActive = true
         }
-        park(sidebarView)
-    }
-
-    /// Holds still while the column slides: the shell's split view, whose
-    /// outer edges the column sits flush with when at rest.
-    weak var parkingAnchor: NSView?
-
-    /// Pins a hidden resident's outer edge to `parkingAnchor` instead of the
-    /// column. AppKit collapses and expands the column by sliding it, and a
-    /// resident pinned to it would slide too, its hosting views re-resolving
-    /// their geometry on every frame.
-    private func park(_ sidebarView: NSView) {
-        let id = ObjectIdentifier(sidebarView)
-        guard let constraints = residentWidthConstraints[id] else { return }
-        constraints.parked?.isActive = false
-        guard let anchor = parkingAnchor, sidebarView.isDescendant(of: anchor) else {
-            residentWidthConstraints[id]?.parked = nil
-            constraints.leading.isActive = true
-            return
-        }
-        let parked = SidebarPosition.isOnRight
-            ? sidebarView.trailingAnchor.constraint(equalTo: anchor.trailingAnchor)
-            : sidebarView.leadingAnchor.constraint(equalTo: anchor.leadingAnchor)
-        constraints.leading.isActive = false
-        parked.isActive = true
-        residentWidthConstraints[id]?.parked = parked
-    }
-
-    private func unpark(_ sidebarView: NSView) {
-        let id = ObjectIdentifier(sidebarView)
-        guard let constraints = residentWidthConstraints[id] else { return }
-        constraints.parked?.isActive = false
-        residentWidthConstraints[id]?.parked = nil
-        constraints.leading.isActive = true
-    }
-
-    /// Parks the hidden residents again after the column moved to the other
-    /// side: moving the column out of the split view drops the constraints
-    /// that reached outside it.
-    func reparkHiddenResidents() {
-        for resident in view.subviews
-        where resident.isHidden && residentWidthConstraints[ObjectIdentifier(resident)] != nil {
-            park(resident)
-        }
     }
 
     /// Takes `sidebarView` out of the column for good: its session is
@@ -618,15 +772,10 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
     }
 
     private struct ResidentWidthConstraints {
-        /// Pins the leading edge to the column's; active while presented, or
-        /// while hidden but not parked.
-        let leading: NSLayoutConstraint
         /// Follows the column; active while the resident is presented.
         let trailing: NSLayoutConstraint
         /// Holds a width; active while the resident is hidden.
         let heldWidth: NSLayoutConstraint
-        /// Pins the outer edge to `parkingAnchor` while the resident is hidden.
-        var parked: NSLayoutConstraint?
     }
 
     private var residentWidthConstraints: [ObjectIdentifier: ResidentWidthConstraints] = [:]
@@ -741,72 +890,5 @@ final class ShellContentHostViewController: NSViewController, BrowserThemeContex
     func evict(_ contentView: NSView) {
         contentView.removeFromSuperview()
         contentView.isHidden = false
-    }
-}
-
-@MainActor
-extension NSSplitViewController {
-    /// Moves the sidebar item to the other side, keeping its collapsed state.
-    /// `width` is the destination side's own last expanded width (0 keeps the
-    /// current width); it is applied to a visible column, and to a collapsed
-    /// one's hidden view so the next expand opens at it.
-    func repositionSidebarItem(_ previous: NSSplitViewItem, onRight: Bool, width destinationWidth: CGFloat, autosaveName: String) -> NSSplitViewItem {
-        let restoringExistingGeometry = splitView.autosaveName != nil
-        let collapsed = previous.isCollapsed
-        let currentWidth = max(previous.minimumThickness, previous.viewController.view.frame.width)
-        if restoringExistingGeometry, !collapsed {
-            // The outgoing side's width is only in its autosaved frames,
-            // which the move drops; keep it for the next switch back.
-            AccountController.shared.localDataAccount?.userDefaults
-                .setLastKnownSidebarWidth(currentWidth, for: onRight ? .left : .right)
-        }
-        let width = destinationWidth > 0
-            ? min(max(destinationWidth, previous.minimumThickness), previous.maximumThickness)
-            : currentWidth
-        splitView.autosaveName = nil
-        // AppKit restores the frames saved under a name as soon as it is
-        // assigned, setting the subviews' hidden state behind the item's
-        // `isCollapsed` (the split then reports collapsed while the column
-        // shows, or expands to zero width), and offers no way to assign a
-        // name without that restore. A live move therefore drops the frames
-        // saved under the destination name: the destination side's width is
-        // carried by `width` instead, and the frames applied below are what
-        // AppKit saves under that name next.
-        if restoringExistingGeometry {
-            UserDefaults.standard.removeObject(forKey: "NSSplitView Subview Frames \(autosaveName)")
-        }
-        removeSplitViewItem(previous)
-        let item: NSSplitViewItem
-        if #available(macOS 26.0, *) {
-            item = previous
-        } else {
-            // Before macOS 26 the move rebuilds the item. It is a plain item
-            // on both sides; see `ShellSplitViewController.viewDidLoad`.
-            item = NSSplitViewItem(viewController: previous.viewController)
-            item.minimumThickness = previous.minimumThickness
-            item.maximumThickness = previous.maximumThickness
-            item.holdingPriority = previous.holdingPriority
-            item.canCollapse = previous.canCollapse
-        }
-        item.collapseBehavior = onRight ? .preferResizingSiblingsWithFixedSplitView : .default
-        item.isCollapsed = collapsed
-        let index = onRight ? 1 : 0
-        insertSplitViewItem(item, at: index)
-        if restoringExistingGeometry { splitView.autosaveName = autosaveName }
-        item.isCollapsed = collapsed
-        view.layoutSubtreeIfNeeded()
-        if restoringExistingGeometry {
-            if collapsed {
-                // A collapsed subview keeps its size while hidden and
-                // expands back to it.
-                if splitView.arrangedSubviews.indices.contains(index) {
-                    let column = splitView.arrangedSubviews[index]
-                    column.setFrameSize(NSSize(width: width, height: column.frame.height))
-                }
-            } else {
-                splitView.setPosition(onRight ? splitView.bounds.width - splitView.dividerThickness - width : width, ofDividerAt: 0)
-            }
-        }
-        return item
     }
 }

@@ -127,7 +127,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     /// Keeps the floating header's lights through a hand-off: on an undock
     /// they are there before the column collapses, on a dock until the
     /// window's own show, once the column has opened
-    /// (`PhiSplitViewController.isSidebarExpanding`).
+    /// (`MainSplitViewController.isSidebarExpanding`).
     var keepsTrafficLightsForHandOff = false {
         didSet {
             guard keepsTrafficLightsForHandOff != oldValue else { return }

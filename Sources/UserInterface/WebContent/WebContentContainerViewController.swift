@@ -1076,6 +1076,14 @@ class WebContentContainerViewController: NSViewController {
             }
             .store(in: &cancellables)
 
+        // In the turn the page area's frame changes, as the page card's own
+        // inset (`WebContentViewController.updateSplitViewLeadingInset`).
+        browserState?.sidebarTakesPageSpacePublisher
+            .sink { [weak self] _ in
+                self?.updatePageAreaBackdropLeadingInset()
+            }
+            .store(in: &cancellables)
+
         // Listen to targetURL changes to update status bubble
         browserState?.$targetURL
             .receive(on: DispatchQueue.main)
@@ -2448,7 +2456,7 @@ class WebContentContainerViewController: NSViewController {
     /// Mirror of `WebContentViewController.updateSplitViewLeadingInset`, so
     /// the backdrop hugs the same leading edge the mounted panel uses.
     private var pageAreaInsets: (leading: CGFloat, trailing: CGFloat) {
-        contentLayout.pageInsets(sidebarCollapsed: browserState?.sidebarCollapsed ?? true)
+        contentLayout.pageInsets(sidebarCollapsed: browserState?.sidebarTakesPageSpace != true)
     }
 
     /// Called from `updateLayoutForMode`, which already re-runs on layout-mode

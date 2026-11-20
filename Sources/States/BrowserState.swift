@@ -423,6 +423,34 @@ class BrowserState {
             .eraseToAnyPublisher()
     }
 
+    /// Whether the window's sidebar takes its width from the page area:
+    /// false while it is collapsed and for the whole of a toggle in flight.
+    /// The page's sidebar-side inset follows this rather than
+    /// `sidebarCollapsed`, so it changes in the same turn as the page area's
+    /// frame.
+    var sidebarTakesPageSpace: Bool {
+        MainActor.assumeIsolated {
+            !isKioskWindow && (windowController?.mainSplitViewController.sidebarTakesPageSpace
+                ?? !layoutMode.isTraditional)
+        }
+    }
+
+    var sidebarTakesPageSpacePublisher: AnyPublisher<Bool, Never> {
+        windowControllerChanges.prepend(())
+            .map { [weak self] _ -> AnyPublisher<Bool, Never> in
+                MainActor.assumeIsolated {
+                    guard let self else { return Just(true).eraseToAnyPublisher() }
+                    guard !self.isKioskWindow, let controller = self.windowController else {
+                        return Just(self.sidebarTakesPageSpace).eraseToAnyPublisher()
+                    }
+                    return controller.mainSplitViewController.sidebarTakesPageSpacePublisher
+                }
+            }
+            .switchToLatest()
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
+
     var sidebarWidthPublisher: AnyPublisher<CGFloat, Never> {
         windowControllerChanges.prepend(())
             .map { [weak self] _ -> AnyPublisher<CGFloat, Never> in

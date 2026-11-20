@@ -634,6 +634,7 @@ final class ShellWindowController: NSObject, NSWindowDelegate {
     func closeForTeardown() {
         allowsClose = true
         window.delegate = nil
+        split.windowWillClose()
         window.close()
     }
 
@@ -649,6 +650,7 @@ final class ShellWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        split.windowWillClose()
         slot?.shellDidClose()
     }
 

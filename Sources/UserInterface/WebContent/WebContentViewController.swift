@@ -873,8 +873,9 @@ class WebContentViewController: NSViewController {
         // Observe AI Chat collapse state once the split item exists.
         setupAIChatObserver()
 
-        browserState?.sidebarCollapsedPublisher
-            .receive(on: DispatchQueue.main)
+        // Delivered in the turn the page area's frame changes, so the inset
+        // and the frame make one layout.
+        browserState?.sidebarTakesPageSpacePublisher
             .sink { [weak self] _ in
                 self?.updateSplitViewLeadingInset()
             }
@@ -1000,7 +1001,9 @@ class WebContentViewController: NSViewController {
 
     private func updateSplitViewLeadingInset() {
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
-        let sidebarCollapsed = browserState?.sidebarCollapsed ?? true
+        // The sidebar counts as collapsed until it takes its place beside
+        // the page: an expansion in flight still lies over the page area.
+        let sidebarCollapsed = browserState?.sidebarTakesPageSpace != true
         let insets = contentLayout.pageInsets(sidebarCollapsed: sidebarCollapsed)
         splitViewLeadingConstraint?.update(inset: insets.leading)
         splitViewTrailingConstraint?.update(inset: insets.trailing)

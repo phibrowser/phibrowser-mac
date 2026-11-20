@@ -24,8 +24,15 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     private var shellSplit: ShellSplitViewController? { state.windowController?.shellSplit }
     private let sidebarGeometryChanges = PassthroughSubject<Void, Never>()
 
-    var windowSplitViewController: PhiSplitViewController {
-        shellSplit?.splitViewController ?? splitViewController
+    /// An animated expansion of the window's sidebar has started and not
+    /// finished; the collapsed state changes as soon as it starts.
+    var isSidebarExpanding: Bool {
+        shellSplit?.isSidebarExpanding ?? splitViewController.isSidebarExpanding
+    }
+
+    var sidebarExpansionDidFinish: AnyPublisher<Void, Never> {
+        (shellSplit?.sidebarExpansionDidFinish ?? splitViewController.sidebarExpansionDidFinish)
+            .eraseToAnyPublisher()
     }
 
     var isSidebarCollapsed: Bool {
@@ -56,6 +63,19 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
             .prepend(sidebarWidth)
             .removeDuplicates()
             .eraseToAnyPublisher()
+    }
+
+    /// Whether the sidebar takes its width from the page area; see
+    /// `ShellSplitViewController.sidebarTakesPageSpacePublisher`. A
+    /// standalone window's does whenever it is not collapsed.
+    var sidebarTakesPageSpace: Bool {
+        if isHosted { return shellSplit?.sidebarTakesPageSpace ?? true }
+        return !isSidebarCollapsed
+    }
+
+    var sidebarTakesPageSpacePublisher: AnyPublisher<Bool, Never> {
+        if isHosted, let shellSplit { return shellSplit.sidebarTakesPageSpacePublisher }
+        return sidebarCollapsedPublisher.map { !$0 }.eraseToAnyPublisher()
     }
 
     var providedBrowserThemeContext: BrowserThemeContext? { state.themeContext }
@@ -352,9 +372,12 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     }
 
     private func setupLeftSplitViewItem() {
-        // A plain item on every OS and side; see
-        // `ShellSplitViewController.viewDidLoad` for why this is never a
-        // sidebar-behavior item.
+        // A plain item on every OS and side, never `sidebarWithViewController:`.
+        // Before macOS 26 AppKit reveals a collapsed sidebar-behavior item by
+        // itself when the pointer reaches the screen edge in full screen. That
+        // edge is also the floating sidebar's trigger, and the reveal reports
+        // the column as expanded, which hides the floating panel and moves the
+        // top bar's borrowed buttons away while the pointer is still there.
         sideBarSplitViewItem = NSSplitViewItem(viewController: verticalTabListViewController)
         sideBarSplitViewItem.minimumThickness = Self.leftItemMinWidth
         sideBarSplitViewItem.maximumThickness = Self.leftItemMaxWidth

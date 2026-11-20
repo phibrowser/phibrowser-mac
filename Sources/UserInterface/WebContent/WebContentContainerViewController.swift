@@ -1715,9 +1715,24 @@ class WebContentContainerViewController: NSViewController {
     /// Just above `pageAreaBackdrop`, below every tab's view.
     private func placeContentSurface(_ hostingView: NSView) {
         contentContainer.addSubview(hostingView, positioned: .above, relativeTo: pageAreaBackdrop)
+        pinContentSurfaceToPagePanel(hostingView)
+    }
+
+    /// Over the page panel only, and clipped to it. Chromium draws a layout
+    /// some frames after AppKit shows it, and until then the surface shows
+    /// its last frame at its old size: one from a larger page area would
+    /// run over the margins around the panel.
+    private func pinContentSurfaceToPagePanel(_ hostingView: NSView) {
         hostingView.snp.remakeConstraints { make in
-            make.edges.equalToSuperview()
+            make.edges.equalTo(pageAreaBackdrop)
         }
+        hostingView.clipsToBounds = true
+        // Clipped to the card's rounded shape, not its rectangle: a late
+        // frame would otherwise fill the card's corners square until
+        // Chromium draws its own rounded one.
+        hostingView.wantsLayer = true
+        hostingView.layer?.cornerCurve = .continuous
+        hostingView.layer?.cornerRadius = contentLayout.containerCornerRadius
     }
 
     // MARK: - Full Screen Transition Mask
@@ -1842,9 +1857,7 @@ class WebContentContainerViewController: NSViewController {
         guard let contentSurfaceHosting, contentSurfaceHosting.isHeld else { return }
         contentSurfaceHosting.isHeld = false
         guard let contentSurfaceView, contentSurfaceView.superview === contentContainer else { return }
-        contentSurfaceView.snp.remakeConstraints { make in
-            make.edges.equalToSuperview()
-        }
+        pinContentSurfaceToPagePanel(contentSurfaceView)
     }
 
     /// Over a content surface the page card is clear and this backdrop shows
@@ -2424,6 +2437,9 @@ class WebContentContainerViewController: NSViewController {
         updatePageAreaBackdropLeadingInset()
         pageAreaBackdropTrailingBottomConstraint?.update(inset: contentLayout.edgeSpacing)
         pageAreaBackdrop.layer?.cornerRadius = contentLayout.containerCornerRadius
+        if let contentSurfaceView, contentSurfaceView.superview === contentContainer {
+            contentSurfaceView.layer?.cornerRadius = contentLayout.containerCornerRadius
+        }
         extensionSidePanelFrameBackdrop?.layer?.cornerRadius = contentLayout.containerCornerRadius
         remakeContentLayout()
         contentContainer.needsLayout = true

@@ -24,6 +24,10 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     private var shellSplit: ShellSplitViewController? { state.windowController?.shellSplit }
     private let sidebarGeometryChanges = PassthroughSubject<Void, Never>()
 
+    var windowSplitViewController: PhiSplitViewController {
+        shellSplit?.splitViewController ?? splitViewController
+    }
+
     var isSidebarCollapsed: Bool {
         if isHosted { return shellSplit?.isSidebarCollapsed ?? false }
         return sideBarSplitViewItem?.isCollapsed
@@ -326,8 +330,6 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     private func setupChildSplitViewController() {
         let splitView = PhiSplitView()
         splitView.isVertical = true
-        splitView.dividerStyle = .thick
-        splitView.delegate = self
 
         splitViewController.splitView = splitView
 
@@ -396,17 +398,10 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
         loadViewIfNeeded()
         let target = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional || collapsed
         guard sideBarSplitViewItem.isCollapsed != target else { return }
-        if !target, let width = pendingDockWidth {
-            pendingDockWidth = nil
-            sideBarSplitViewItem.expand(atWidth: width, animated: animated, in: splitViewController.splitView)
-            updateSidebarWidth()
-            return
-        }
-        if animated {
-            sideBarSplitViewItem.animator().isCollapsed = target
-        } else {
-            sideBarSplitViewItem.isCollapsed = target
-        }
+        let dockWidth = pendingDockWidth
+        if !target { pendingDockWidth = nil }
+        splitViewController.setSidebarCollapsed(target, item: sideBarSplitViewItem, animated: animated,
+                                                dockWidth: dockWidth)
         updateSidebarWidth()
     }
 
@@ -473,19 +468,7 @@ class MainSplitViewController: NSViewController, BrowserThemeContextProviding {
     }
 }
 
-extension MainSplitViewController: NSSplitViewDelegate {
-    func splitView(_ splitView: NSSplitView, constrainSplitPosition proposedPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
-        return proposedPosition
-    }
-
-    func splitView(_ splitView: NSSplitView, shouldHideDividerAt dividerIndex: Int) -> Bool {
-        return true
-    }
-
-    func splitViewDidResizeSubviews(_ notification: Notification) {
-        updateSidebarWidth()
-    }
-
+extension MainSplitViewController {
     private func updateSidebarWidth() {
         guard !isReorderingSidebar else { return }
         guard sideBarSplitViewItem != nil else { return }
@@ -548,5 +531,14 @@ class TitlebarTransparentView: NSView {
         let titlebarHeight = max(0, window.frame.height - window.contentLayoutRect.height)
         let heightFromTop = bounds.height - point.y
         return heightFromTop <= titlebarHeight
+    }
+}
+
+extension MainSplitViewController {
+    /// The docked sidebar's tab list position; see
+    /// `SidebarTabListViewController.scrollOffset`.
+    var sidebarTabListScrollOffset: NSPoint {
+        get { verticalTabListViewController.tabListScrollOffset }
+        set { verticalTabListViewController.tabListScrollOffset = newValue }
     }
 }

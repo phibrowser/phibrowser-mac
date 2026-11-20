@@ -411,25 +411,70 @@ extension BrowserState {
             return
         }
 
-        let pinnedCount = pinnedTabs.count
-        let bookmarkCount = visibleBookmarkTabs.count
-        let normalCount = normalTabs.count
+        // A split takes one position in every section, as it takes one row in the sidebar.
+        let pinnedUnits = pinnedTabUnits()
+        let normalUnits = normalTabUnits()
 
-        if index < pinnedCount {
-            openOrFocusPinnedTab(pinnedTabs[index])
+        if index < pinnedUnits.count {
+            openOrFocusPinnedTab(pinnedUnits[index])
             return
         }
 
-        let afterPinned = index - pinnedCount
-        if afterPinned < bookmarkCount {
+        let afterPinned = index - pinnedUnits.count
+        if afterPinned < visibleBookmarkTabs.count {
             openBookmark(visibleBookmarkTabs[afterPinned])
             return
         }
 
-        let afterBookmarks = afterPinned - bookmarkCount
-        if afterBookmarks < normalCount, let wrapper = normalTabs[afterBookmarks].webContentWrapper {
+        let afterBookmarks = afterPinned - visibleBookmarkTabs.count
+        if afterBookmarks < normalUnits.count, let wrapper = normalUnits[afterBookmarks].webContentWrapper {
             wrapper.setAsActiveTab()
         }
+    }
+
+    private func pinnedTabUnits() -> [Tab] {
+        var units: [Tab] = []
+        var consumedDBGuids = Set<String>()
+        for tab in pinnedTabs {
+            guard let dbGuid = tab.guidInLocalDB, !consumedDBGuids.contains(dbGuid) else { continue }
+            units.append(tab)
+            consumedDBGuids.formUnion(pinnedSplitDBGuids(forPinnedTab: tab) ?? [dbGuid])
+        }
+        return units
+    }
+
+    /// A split drawn as one cell is represented by its first pane in slot order.
+    private func normalTabUnits() -> [Tab] {
+        var units: [Tab] = []
+        var consumedTabIds = Set<Int>()
+        for tab in normalTabs where !consumedTabIds.contains(tab.guid) {
+            guard let panes = mergedSplitPanes(containing: tab) else {
+                units.append(tab)
+                continue
+            }
+            consumedTabIds.formUnion(panes.map(\.guid))
+            units.append(panes[0])
+        }
+        return units
+    }
+
+    /// The panes, in slot order, when the split of `tab` is drawn as one cell. Mirrors
+    /// `TabStrip.normalSplitCollapseInfo` in Comfortable layout, and otherwise
+    /// `TabSectionController.ungroupedPanes` / `TabGroupCellView.memberRows`.
+    private func mergedSplitPanes(containing tab: Tab) -> [Tab]? {
+        guard let group = splitGroup(forTabId: tab.guid), !group.isPinned else { return nil }
+        let indices = group.tabIds.compactMap { id in normalTabs.firstIndex(where: { $0.guid == id }) }
+        guard indices.count == group.paneCount, indices.count >= 2 else { return nil }
+        let panes = indices.map { normalTabs[$0] }
+        guard Set(panes.map(\.groupToken)).count == 1 else { return nil }
+        if layoutMode.isTraditional {
+            let isConsecutiveInSlotOrder = indices.enumerated().allSatisfy { $1 == indices[0] + $0 }
+            return isConsecutiveInSlotOrder ? panes : nil
+        }
+        guard tab.groupToken != nil else { return panes }
+        let sorted = indices.sorted()
+        let isContiguous = zip(sorted, sorted.dropFirst()).allSatisfy { $1 == $0 + 1 }
+        return isContiguous ? panes : nil
     }
     
     enum SwitchTabDirection {
@@ -463,10 +508,29 @@ extension BrowserState {
 
         // 2) visible bookmarks (opened or not) ordered by sidebar visibility
         for bookmark in visibleBookmarkTabs {
+            // An opened split bookmark steps through its panes, like pinned and normal splits.
+            if let splitId = splitBookmarkBindings[bookmark.guid],
+               let group = splits.first(where: { $0.id == splitId }) {
+                let panes = group.tabIds.compactMap { id in tabs.first(where: { $0.guid == id }) }
+                if !panes.isEmpty {
+                    for pane in panes {
+                        candidates.append(.init(
+                            focus: { [weak self] in
+                                guard let self else { return }
+                                MainActor.assumeIsolated { self.clearGroupOverview() }
+                                self.localStore.updateLastSeen(bookmark.guid)
+                                pane.webContentWrapper?.setAsActiveTab()
+                            },
+                            matchesCurrent: { $0.guid == pane.guid }
+                        ))
+                    }
+                    continue
+                }
+            }
             candidates.append(.init(
                 focus: { [weak self] in self?.openBookmark(bookmark) },
                 matchesCurrent: { current in
-                    if let b = current.guidInLocalDB, !b.isEmpty, b == bookmark.guid { return true }
+                    if self.bookmarkGuidBacking(current) == bookmark.guid { return true }
                     if bookmark.chromiumTabGuid != -1, bookmark.chromiumTabGuid == current.guid { return true }
                     return false
                 }
@@ -495,7 +559,8 @@ extension BrowserState {
 
         switch dir {
         case .last:
-            candidates.last?.focus()
+            // Like Cmd+1…8, the last position is a whole split.
+            selectTabWithIndex(pinnedTabUnits().count + visibleBookmarkTabs.count + normalTabUnits().count - 1)
         case .forward:
             let next = (currentIndex + 1) % candidates.count
             candidates[next].focus()

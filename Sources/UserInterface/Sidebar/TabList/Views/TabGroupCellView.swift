@@ -740,6 +740,9 @@ final class TabGroupCellView: SidebarCellView {
     /// delegate so the outer outline can request a coordinated row
     /// resize.
     func applyMembers(_ newMembers: [Tab], animated: Bool) {
+        let previousOrder = currentMemberOrder
+        let previousTabsByGuid = tabsByGuid
+        let previousSplitsByKey = splitsByKey
         tabsByGuid = Dictionary(
             uniqueKeysWithValues: newMembers.map { ($0.guid, $0) })
         // Detect non-pinned splits whose every pane lives in this group at
@@ -795,10 +798,21 @@ final class TabGroupCellView: SidebarCellView {
         splitsByKey = splits
         currentMemberOrder = order
 
-        var snap = NSDiffableDataSourceSnapshot<Section, Int>()
-        snap.appendSections([.members])
-        snap.appendItems(currentMemberOrder, toSection: .members)
-        dataSource.apply(snap, animatingDifferences: animated)
+        // Applying even an identical snapshot reloads and rebuilds every
+        // member row, as when this group's row scrolls back into view.
+        let rowsUnchanged = previousOrder == currentMemberOrder
+            && currentMemberOrder.allSatisfy { key in
+                if let split = splitsByKey[key] {
+                    return previousSplitsByKey[key] === split
+                }
+                return previousTabsByGuid[key] === tabsByGuid[key]
+            }
+        if !rowsUnchanged {
+            var snap = NSDiffableDataSourceSnapshot<Section, Int>()
+            snap.appendSections([.members])
+            snap.appendItems(currentMemberOrder, toSection: .members)
+            dataSource.apply(snap, animatingDifferences: animated)
+        }
         // Re-bind in place rather than reloading the row: a reload leaves the
         // row blank when the same update also moves it, as when the member
         // above a split joins it as the first pane.
@@ -835,7 +849,7 @@ final class TabGroupCellView: SidebarCellView {
         // Non-pinned splits collapse to a single row in the inner table
         // (mirrors `applyMembers`); the height must shrink with it or we
         // leave empty slots below the merged row.
-        let rowCount = effectiveRowCount(members: members, browserState: browserState)
+        let rowCount = memberRows(members: members, browserState: browserState).count
         if rowCount == 0 {
             return collapsedRowHeight
         }
@@ -846,26 +860,48 @@ final class TabGroupCellView: SidebarCellView {
             + containerVerticalInset * 2
     }
 
-    /// Counts merged-cell rows the inner table will produce for `members`.
-    /// Each non-pinned split whose panes are consecutive members counts
-    /// once instead of once per pane. Stays in lockstep with `applyMembers`.
-    private static func effectiveRowCount(members: [Tab],
-                                          browserState: BrowserState) -> Int {
+    /// Vertical span of `tab`'s inner row, measured from the top of the
+    /// group's outline row. Nil when the group is collapsed or `tab` is not
+    /// a member.
+    static func memberRowSpan(of tab: Tab,
+                              in groupItem: TabGroupSidebarItem,
+                              browserState: BrowserState) -> (minY: CGFloat, height: CGFloat)? {
+        guard !groupItem.group.isCollapsed else { return nil }
+        let members = browserState.normalTabs.filter {
+            $0.groupToken == groupItem.group.token
+        }
+        guard let index = memberRows(members: members, browserState: browserState)
+            .firstIndex(where: { $0.contains(tab.guid) }) else {
+            return nil
+        }
+        let minY = containerVerticalInset
+            + headerHeight
+            + innerTableTopInset
+            + CGFloat(index) * memberRowHeight
+        return (minY, memberRowHeight)
+    }
+
+    /// Member guids of each row the inner table will produce for `members`.
+    /// A non-pinned split whose panes are consecutive members shares one
+    /// row. Stays in lockstep with `applyMembers`.
+    private static func memberRows(members: [Tab],
+                                   browserState: BrowserState) -> [[Int]] {
         var consumed = Set<Int>()
-        var count = 0
+        var rows: [[Int]] = []
         for tab in members {
             if consumed.contains(tab.guid) { continue }
             if let group = browserState.splitGroup(forTabId: tab.guid),
                !group.isPinned,
                let panes = contiguousPanes(of: group, in: members) {
-                consumed.formUnion(panes.map(\.guid))
-                count += 1
+                let guids = panes.map(\.guid)
+                consumed.formUnion(guids)
+                rows.append(guids)
                 continue
             }
             consumed.insert(tab.guid)
-            count += 1
+            rows.append([tab.guid])
         }
-        return count
+        return rows
     }
 
     /// Every pane of `group` when all of them sit at consecutive indices of

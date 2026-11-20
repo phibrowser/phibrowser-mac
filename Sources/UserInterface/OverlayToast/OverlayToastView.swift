@@ -15,6 +15,24 @@ struct OverlayToastView: View {
     @State private var naturalContentWidth: CGFloat = 0
 
     var body: some View {
+        if let action = toast.action, action.usesWholeToast {
+            Button {
+                action.handler()
+                toastCenter.dismiss(id: toast.id)
+            } label: {
+                toastSurface
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(action.title))
+            .accessibilityIdentifier("overlayToast.action")
+        } else {
+            toastSurface
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("overlayToast.container")
+        }
+    }
+
+    private var toastSurface: some View {
         ZStack(alignment: .leading) {
             naturalWidthProbe
             toastContent
@@ -29,8 +47,6 @@ struct OverlayToastView: View {
         .shadow(color: Color.black.opacity(0.15), radius: 20, x: 0, y: 10)
         .shadow(color: Color.black.opacity(0.1), radius: 1, x: 0, y: 0)
         .contentShape(Rectangle())
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("overlayToast.container")
     }
 
     private var toastContent: some View {
@@ -41,7 +57,7 @@ struct OverlayToastView: View {
                     .fixedSize()
             }
 
-            if let action = toast.action {
+            if let action = toast.action, !action.usesWholeToast {
                 if action.isBordered {
                     OverlayToastBorderedActionButton(action: action, toastID: toast.id, toastCenter: toastCenter)
                         .fixedSize()

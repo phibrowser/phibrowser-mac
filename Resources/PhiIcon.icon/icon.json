@@ -5,6 +5,19 @@
   "groups" : [
     {
       "layers" : [
+
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
         {
           "glass" : false,
           "image-name" : "Vector (1).png",
@@ -48,7 +61,20 @@
           "glass" : false,
           "hidden" : false,
           "image-name" : "bg.png",
-          "name" : "bg"
+          "name" : "bg",
+          "opacity-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : 0
+            }
+          ],
+          "position" : {
+            "scale" : 1.1,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
         }
       ],
       "shadow" : {

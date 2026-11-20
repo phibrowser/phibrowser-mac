@@ -166,3 +166,25 @@ struct InlineRenameField: NSViewRepresentable {
         field.onCancel = onCancel
     }
 }
+
+/// Hands a Settings list (Spaces, profiles) the keyboard each time its pane is
+/// shown, so the arrow keys move the selection without a click first.
+///
+/// Switching panes takes the pane's view out of the window and AppKit gives the
+/// keyboard to the window, but SwiftUI keeps believing the list holds focus: a
+/// `FocusState` that still reads true ignores being set again, and the arrows
+/// go nowhere until something inside the pane, like the rename field, takes
+/// focus and hands it back. When the pane appears, its hosting controller calls
+/// `paneDidAppear(in:)`, which makes the hosting view first responder again and
+/// then moves to a new `generation`. The list binds its focus to the current
+/// generation, so focusing the new one is a real change and SwiftUI moves the
+/// keyboard back to the list.
+@MainActor
+final class SettingsListFocus: ObservableObject {
+    @Published private(set) var generation = 0
+
+    func paneDidAppear(in hostingView: NSView) {
+        guard let window = hostingView.window, window.makeFirstResponder(hostingView) else { return }
+        generation += 1
+    }
+}

@@ -544,13 +544,20 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
             case .emoji(_, let value):
                 let size = NSSize(width: Self.faviconSize, height: Self.faviconSize)
                 iconImageView.image = NSImage(size: size, flipped: false) { rect in
-                    let text = value as NSString
-                    let font = NSFont.systemFont(ofSize: Self.faviconSize - 2)
-                    let attributes: [NSAttributedString.Key: Any] = [.font: font]
-                    let textSize = text.size(withAttributes: attributes)
-                    text.draw(at: NSPoint(x: (rect.width - textSize.width) / 2,
-                                          y: (rect.height - textSize.height) / 2),
-                              withAttributes: attributes)
+                    // Emoji glyphs are larger than their point size, so fit the
+                    // drawn glyph bounds rather than the font size.
+                    let targetSide = Self.faviconSize - 2
+                    let probe = NSAttributedString(string: value, attributes: [.font: NSFont.systemFont(ofSize: targetSide)])
+                    let probeBounds = probe.boundingRect(with: .zero, options: [.usesDeviceMetrics])
+                    let probeSide = max(probeBounds.width, probeBounds.height)
+                    let fontSize = probeSide > 0 ? targetSide * targetSide / probeSide : targetSide
+                    let text = NSAttributedString(string: value, attributes: [.font: NSFont.systemFont(ofSize: fontSize)])
+                    let glyphBounds = text.boundingRect(with: .zero, options: [.usesDeviceMetrics])
+                    text.draw(with: NSRect(x: rect.midX - glyphBounds.midX,
+                                           y: rect.midY - glyphBounds.midY,
+                                           width: 0,
+                                           height: 0),
+                              options: [])
                     return true
                 }
             }

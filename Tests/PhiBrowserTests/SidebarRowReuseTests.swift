@@ -165,6 +165,97 @@ final class SidebarRowReuseTests: XCTestCase {
         XCTAssertEqual(outline.numberOfRows, 88)
     }
 
+    func testRemovedGroupReleasesItsCellWithoutAnotherGroupRow() throws {
+        try assertRemovedGroupReleasesItsCell(windowId: 742) { state, _ in
+            Self.ungroupAll(in: state)
+        }
+    }
+
+    func testGroupRemovedWhileInactiveReleasesItsCellOnReactivation() throws {
+        try assertRemovedGroupReleasesItsCell(windowId: 744) { state, controller in
+            controller.setActive(false)
+            Self.ungroupAll(in: state)
+            controller.setActive(true)
+        }
+    }
+
+    /// Shows one group, removes it through `removeGroup` without showing any
+    /// other group, and expects the group's cell to be released.
+    private func assertRemovedGroupReleasesItsCell(
+        windowId: Int,
+        removeGroup: (BrowserState, SidebarTabListViewController) -> Void
+    ) throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        tempDirectories.append(directory)
+        let store = LocalStore(account: Account(userID: UUID().uuidString), storeDirectoryURL: directory)
+        let state = BrowserState(windowId: windowId, localStore: store, profileId: "Default")
+        state.groups["released-group"] = WebContentGroupInfo(token: "released-group", title: "Group",
+                                                             color: .blue, isCollapsed: false)
+        state.tabs = (0..<4).map {
+            Tab(guid: windowId * 10 + $0, url: "data:text/html,\($0)", isActive: $0 == 0,
+                index: $0, title: "Member \($0)")
+        }
+        for tab in state.tabs {
+            tab.groupToken = "released-group"
+        }
+        state.updateNormalTabs()
+        let controller = SidebarTabListViewController(state: state)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 440),
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer {
+            controller.setActive(false)
+            window.close()
+        }
+        // The sidebar's own row lookups autorelease the cell. The app's event
+        // loop drains those pools every turn; the test must drain them too.
+        autoreleasepool {
+            controller.view.frame = NSRect(x: 0, y: 0, width: 320, height: 440)
+            window.contentViewController = controller
+            controller.setActive(true)
+            window.orderFront(nil)
+        }
+        let outline = try XCTUnwrap(controller.view.subviews
+            .compactMap { ($0 as? NSScrollView)?.documentView as? NSOutlineView }.first)
+
+        weak var groupCell: TabGroupCellView?
+        let deadline = Date().addingTimeInterval(2)
+        while groupCell == nil, Date() < deadline {
+            autoreleasepool {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+                outline.layoutSubtreeIfNeeded()
+                for row in 0..<outline.numberOfRows {
+                    if let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? TabGroupCellView {
+                        groupCell = cell
+                    }
+                }
+            }
+        }
+        XCTAssertNotNil(groupCell)
+
+        autoreleasepool {
+            removeGroup(state, controller)
+        }
+        let releaseDeadline = Date().addingTimeInterval(2)
+        while groupCell != nil, Date() < releaseDeadline {
+            autoreleasepool {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+                outline.layoutSubtreeIfNeeded()
+            }
+        }
+        XCTAssertNil(groupCell, "a removed group's cell must not stay cached")
+    }
+
+    private static func ungroupAll(in state: BrowserState) {
+        for tab in state.tabs {
+            tab.groupToken = nil
+        }
+        state.groups.removeAll()
+        state.updateNormalTabs()
+    }
+
     func testGroupHeaderStaysAtTheTopAcrossRowHeightChanges() throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -199,6 +290,42 @@ final class SidebarRowReuseTests: XCTestCase {
             let topInset = row.isFlipped ? headerRect.minY : row.bounds.maxY - headerRect.maxY
             XCTAssertEqual(topInset, TabGroupCellView.containerVerticalInset, accuracy: 0.5)
         }
+    }
+
+    func testGroupMemberRowSpanLocatesTheMemberInsideALongGroup() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        tempDirectories.append(directory)
+        let store = LocalStore(account: Account(userID: UUID().uuidString), storeDirectoryURL: directory)
+        let state = BrowserState(windowId: 743, localStore: store, profileId: "Default")
+        state.tabs = (0..<30).map {
+            Tab(guid: 7430 + $0, url: "data:text/html,\($0)", isActive: false,
+                index: $0, title: "Member \($0)")
+        }
+        state.tabs.forEach { $0.groupToken = "long-group" }
+        state.updateNormalTabs()
+        let group = WebContentGroupInfo(token: "long-group", title: "Group",
+                                       color: .blue, isCollapsed: false)
+        let item = TabGroupSidebarItem(group: group, browserState: state)
+
+        let span = try XCTUnwrap(TabGroupCellView.memberRowSpan(of: state.tabs[25], in: item,
+                                                                browserState: state))
+        let expectedMinY = TabGroupCellView.containerVerticalInset
+            + TabGroupCellView.headerHeight
+            + TabGroupCellView.innerTableTopInset
+            + 25 * TabGroupCellView.memberRowHeight
+        XCTAssertEqual(span.minY, expectedMinY, accuracy: 0.5)
+        XCTAssertEqual(span.height, TabGroupCellView.memberRowHeight, accuracy: 0.5)
+        XCTAssertLessThanOrEqual(span.minY + span.height,
+                                 TabGroupCellView.desiredHeight(for: item, browserState: state))
+
+        let collapsed = TabGroupSidebarItem(
+            group: WebContentGroupInfo(token: "long-group", title: "Group",
+                                       color: .blue, isCollapsed: true),
+            browserState: state)
+        XCTAssertNil(TabGroupCellView.memberRowSpan(of: state.tabs[25], in: collapsed,
+                                                    browserState: state))
     }
 
     func testTabContentFillsItsRowAfterResizeAndReuse() throws {

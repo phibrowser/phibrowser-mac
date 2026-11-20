@@ -199,6 +199,14 @@ enum BookmarkFolderPreviewLayout {
     }
 }
 
+extension Notification.Name {
+    /// Posted with the `BookmarkFolderPreview` as object when its panel shows
+    /// or closes. The floating sidebar stays open while a preview anchored in
+    /// it is up, as it does for its popovers.
+    static let bookmarkFolderPreviewWillShow = Notification.Name("BookmarkFolderPreviewWillShow")
+    static let bookmarkFolderPreviewDidClose = Notification.Name("BookmarkFolderPreviewDidClose")
+}
+
 /// Owned by the reusable sidebar cell, which feeds it the row's hover and
 /// keeps the row highlighted while `isPresented`.
 ///
@@ -223,7 +231,7 @@ final class BookmarkFolderPreview: NSObject, NSWindowDelegate {
     private var outsideSince: Date?
     private var eventMonitor: Any?
     private var observers: [NSObjectProtocol] = []
-    private weak var anchor: NSView?
+    private(set) weak var anchor: NSView?
     private var anchorInsets = NSEdgeInsetsZero
     private var source: BookmarkFolderPreviewSource?
 
@@ -286,6 +294,7 @@ final class BookmarkFolderPreview: NSObject, NSWindowDelegate {
         self.content = content
         self.anchor = anchor
         self.source = source
+        NotificationCenter.default.post(name: .bookmarkFolderPreviewWillShow, object: self)
         window.addChildWindow(panel, ordered: .above)
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(content.searchField)
@@ -395,6 +404,7 @@ final class BookmarkFolderPreview: NSObject, NSWindowDelegate {
         if wasKey, NSApp.isActive, let window = anchor?.window, window.isVisible {
             window.makeKey()
         }
+        NotificationCenter.default.post(name: .bookmarkFolderPreviewDidClose, object: self)
         onPresentationChange?(false)
     }
 

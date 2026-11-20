@@ -2025,3 +2025,11 @@ extension SidebarViewController: SpaceSwitchBandSurface {
         spaceTintBackgroundView.isHidden = hidden || !paintsOwnBackdrop
     }
 }
+
+extension SidebarViewController {
+    /// See `SidebarTabListViewController.scrollOffset`.
+    var tabListScrollOffset: NSPoint {
+        get { tabList.scrollOffset }
+        set { tabList.scrollOffset = newValue }
+    }
+}

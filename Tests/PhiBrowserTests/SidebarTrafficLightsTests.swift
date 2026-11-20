@@ -7,12 +7,10 @@ import AppKit
 import XCTest
 @testable import Phi
 
-/// With the sidebar collapsed, the floating sidebar's header draws its own
-/// traffic lights. Like the titlebar's, holding Option over them turns the
-/// zoom light into a plus, and an Option-click zooms the window instead of
-/// entering full screen.
+/// With the column collapsed, the floating sidebar's header holds the window's
+/// own buttons, and the titlebar's stay hidden meanwhile.
 @MainActor
-final class FloatingTrafficLightsOptionZoomTests: XCTestCase {
+final class SidebarTrafficLightsTests: XCTestCase {
     private var store: LocalStore!
     private var directory: URL!
     private var accountDirectory: URL!
@@ -57,81 +55,101 @@ final class FloatingTrafficLightsOptionZoomTests: XCTestCase {
         try await super.tearDown()
     }
 
-    func testHoldingOptionOverTheLightsOffersZoom() throws {
+    private let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+
+    func testTheFloatingHeaderHoldsTheWindowsOwnButtons() throws {
         let slot = try makeSlot()
         let lights = try trafficLights(in: showPanel(in: slot))
         let window = try XCTUnwrap(lights.window)
 
-        lights.mouseEntered(with: mouseEvent(.mouseMoved, at: .zero, in: window))
-        XCTAssertFalse(lights.isOptionKeyHeld, "precondition: Option is not held")
-
-        NSApp.sendEvent(flagsChanged([.option], in: window))
-        XCTAssertTrue(lights.isOptionKeyHeld, "pressing Option over the lights offers zoom")
-
-        NSApp.sendEvent(flagsChanged([], in: window))
-        XCTAssertFalse(lights.isOptionKeyHeld, "releasing Option offers full screen again")
-
-        NSApp.sendEvent(flagsChanged([.option], in: window))
-        lights.mouseExited(with: mouseEvent(.mouseMoved, at: .zero, in: window))
-        XCTAssertFalse(lights.isOptionKeyHeld, "leaving the lights drops the offer")
-
-        NSApp.sendEvent(flagsChanged([], in: window))
-        NSApp.sendEvent(flagsChanged([.option], in: window))
-        XCTAssertFalse(lights.isOptionKeyHeld, "Option away from the lights changes nothing")
-        NSApp.sendEvent(flagsChanged([], in: window))
+        XCTAssertEqual(try buttons(of: lights).map(\.action),
+                       types.map { NSWindow.standardWindowButton($0, for: window.styleMask)?.action },
+                       "close, minimize and zoom, in order")
+        for type in types {
+            let own = try XCTUnwrap(window.titlebarButton(type), "the titlebar keeps its own")
+            XCTAssertFalse(own.superview is SidebarTrafficLightsView)
+            XCTAssertTrue(own.isHidden, "and hides it")
+        }
     }
 
-    func testOptionClickingTheZoomLightZoomsTheWindow() throws {
-        let slot = try makeSlot()
-        let lights = try trafficLights(in: showPanel(in: slot))
-        let window = try XCTUnwrap(lights.window)
-        let zoomLight = try XCTUnwrap(lights.subviews.compactMap { $0 as? NSStackView }.first?.arrangedSubviews.last)
-        XCTAssertFalse(window.isZoomed, "precondition: the window is not zoomed")
-
-        click(zoomLight, modifierFlags: .option)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
-
-        XCTAssertTrue(window.isZoomed, "an Option-click zooms the window")
-        XCTAssertFalse(window.styleMask.contains(.fullScreen), "and does not enter full screen")
-    }
-
-    // MARK: - Spacing
-
-    /// The drawn lights stand in for the titlebar's, so they keep its pitch:
-    /// 23 pt on macOS 26, 20 pt on macOS 14 and 15.
+    /// The titlebar's pitch: 23 pt on macOS 26, 20 pt on macOS 14 and 15.
     func testTheLightsAreSpacedLikeTheWindowsOwn() throws {
         let slot = try makeSlot()
         let lights = try trafficLights(in: showPanel(in: slot))
         let window = try XCTUnwrap(lights.window)
-        let native = try [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].map { type in
-            try XCTUnwrap(window.standardWindowButton(type)).frame.midX
-        }
-        let drawn = try dots(of: lights).map { $0.convert(NSPoint(x: $0.bounds.midX, y: 0), to: nil).x }
+        let native = try types.map { try XCTUnwrap(window.titlebarButton($0)).frame.midX }
+        let placed = try buttons(of: lights).map { $0.convert(NSPoint(x: $0.bounds.midX, y: 0), to: nil).x }
 
-        XCTAssertEqual(drawn[1] - drawn[0], native[1] - native[0], accuracy: 0.5, "close to minimize")
-        XCTAssertEqual(drawn[2] - drawn[1], native[2] - native[1], accuracy: 0.5, "minimize to zoom")
+        XCTAssertEqual(placed[1] - placed[0], native[1] - native[0], accuracy: 0.5, "close to minimize")
+        XCTAssertEqual(placed[2] - placed[1], native[2] - native[1], accuracy: 0.5, "minimize to zoom")
     }
 
     func testTheSidebarButtonKeepsItsGapAfterTheLights() throws {
         let slot = try makeSlot()
         let panel = try showPanel(in: slot)
-        let zoomLight = try XCTUnwrap(dots(of: trafficLights(in: panel)).last)
+        let zoom = try XCTUnwrap(buttons(of: trafficLights(in: panel)).last)
         let button = try XCTUnwrap(view(identified: "sidebarHeader.sidebarButton", in: panel))
 
-        let zoomMaxX = zoomLight.convert(zoomLight.bounds, to: nil).maxX
+        let zoomMaxX = zoom.convert(zoom.bounds, to: nil).maxX
         XCTAssertEqual(button.convert(button.bounds, to: nil).minX, zoomMaxX + 10, accuracy: 0.5,
                        "10 pt after the zoom light")
     }
 
+    /// In full screen the bar that slides down with the menu bar carries the
+    /// titlebar's own lights, found even while the floating header still
+    /// holds its own; the collapsed column hides them again on the way out.
+    func testTheFullScreenBarShowsTheTitlebarsOwnLights() throws {
+        let slot = try makeSlot()
+        let panel = try showPanel(in: slot)
+        _ = try trafficLights(in: panel)
+        let window = try XCTUnwrap(slot.shell?.window)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        let own = try types.map { try XCTUnwrap(window.titlebarButton($0)) }
+        let root = try XCTUnwrap(window.contentView)
+        XCTAssertEqual(own.map(\.isHidden), [true, true, true], "precondition: the floating header has the lights")
+
+        window.toggleFullScreen(nil)
+        XCTAssertTrue(wait(until: { window.styleMask.contains(.fullScreen) }), "precondition: in full screen")
+        RunLoop.main.run(until: Date().addingTimeInterval(1))
+        XCTAssertEqual(own.map(\.isHidden), [false, false, false], "the full-screen bar shows the titlebar's own")
+        XCTAssertFalse(allLights(in: root).contains(where: \.isActive), "and the header holds none")
+        // Asked while a header still holds its own, as when the header hears
+        // of full screen after the titlebar has moved to the bar.
+        let lingering = SidebarTrafficLightsView()
+        root.addSubview(lingering)
+        lingering.isActive = true
+        XCTAssertTrue(window.titlebarButton(.closeButton) === own[0], "the titlebar's own, found in the bar")
+        lingering.removeFromSuperview()
+
+        window.toggleFullScreen(nil)
+        XCTAssertTrue(wait(until: { !window.styleMask.contains(.fullScreen) }), "precondition: out of full screen")
+        RunLoop.main.run(until: Date().addingTimeInterval(1))
+        XCTAssertEqual(own.map(\.isHidden), [true, true, true], "the collapsed column hides them again")
+    }
+
     // MARK: - Helpers
 
-    private func dots(of lights: FloatingTrafficLightsView,
-                      file: StaticString = #filePath,
-                      line: UInt = #line) throws -> [NSView] {
-        let dots = try XCTUnwrap(lights.subviews.compactMap { $0 as? NSStackView }.first?.arrangedSubviews,
-                                 file: file, line: line)
-        XCTAssertEqual(dots.count, 3, file: file, line: line)
-        return dots
+    private func buttons(of lights: SidebarTrafficLightsView,
+                         file: StaticString = #filePath,
+                         line: UInt = #line) throws -> [NSButton] {
+        let buttons = lights.subviews.compactMap { $0 as? NSButton }
+        XCTAssertEqual(buttons.count, 3, file: file, line: line)
+        return buttons
+    }
+
+    private func wait(until condition: () -> Bool, timeout: TimeInterval = 8) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        return condition()
+    }
+
+    private func allLights(in view: NSView) -> [SidebarTrafficLightsView] {
+        if let lights = view as? SidebarTrafficLightsView { return [lights] }
+        return view.subviews.flatMap(allLights)
     }
 
     /// The visible view with `identifier` under `root`.
@@ -140,38 +158,11 @@ final class FloatingTrafficLightsOptionZoomTests: XCTestCase {
         return root.subviews.lazy.compactMap { self.view(identified: identifier, in: $0) }.first
     }
 
-    private func click(_ view: NSView, modifierFlags: NSEvent.ModifierFlags) {
-        let window = view.window!
-        let point = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
-        view.mouseDown(with: mouseEvent(.leftMouseDown, at: point, in: window, modifierFlags: modifierFlags))
-        view.mouseUp(with: mouseEvent(.leftMouseUp, at: point, in: window, modifierFlags: modifierFlags))
-    }
-
-    private func mouseEvent(_ type: NSEvent.EventType, at point: NSPoint, in window: NSWindow,
-                            modifierFlags: NSEvent.ModifierFlags = []) -> NSEvent {
-        NSEvent.mouseEvent(with: type, location: point, modifierFlags: modifierFlags,
-                           timestamp: ProcessInfo.processInfo.systemUptime,
-                           windowNumber: window.windowNumber, context: nil,
-                           eventNumber: 0, clickCount: 1, pressure: 1)!
-    }
-
-    private func flagsChanged(_ flags: NSEvent.ModifierFlags, in window: NSWindow) -> NSEvent {
-        NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: flags,
-                         timestamp: ProcessInfo.processInfo.systemUptime,
-                         windowNumber: window.windowNumber, context: nil,
-                         characters: "", charactersIgnoringModifiers: "",
-                         isARepeat: false, keyCode: 58)!
-    }
-
     private func trafficLights(in panel: NSView,
                                file: StaticString = #filePath,
-                               line: UInt = #line) throws -> FloatingTrafficLightsView {
-        func find(_ view: NSView) -> FloatingTrafficLightsView? {
-            if let lights = view as? FloatingTrafficLightsView { return lights }
-            return view.subviews.lazy.compactMap(find).first
-        }
-        let lights = try XCTUnwrap(find(panel), "the panel's header has lights", file: file, line: line)
-        XCTAssertFalse(lights.isHidden, "precondition: the lights are shown", file: file, line: line)
+                               line: UInt = #line) throws -> SidebarTrafficLightsView {
+        let lights = try XCTUnwrap(allLights(in: panel).first, "the panel's header has lights", file: file, line: line)
+        XCTAssertTrue(lights.isActive, "precondition: the lights are in the header", file: file, line: line)
         return lights
     }
 
@@ -187,6 +178,8 @@ final class FloatingTrafficLightsOptionZoomTests: XCTestCase {
         XCTAssertTrue(host.isVisible, "precondition: the panel is shown", file: file, line: line)
         let panel = try XCTUnwrap(host.floatingSidebarContainerView, file: file, line: line)
         split.view.layoutSubtreeIfNeeded()
+        // The collapsed state reaches the titlebar and the header a turn later.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         return panel
     }
 

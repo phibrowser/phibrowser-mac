@@ -333,6 +333,11 @@ public class ThemedHostingController<Content: View>: NSHostingController<AnyView
         super.init(rootView: AnyView(content.phiThemeObserver(observer)))
     }
 
+    /// Follows `source`'s theme from now on, keeping the root view.
+    public func rebindThemeSource(_ source: ThemeStateProvider) {
+        themeObserver.rebind(to: source)
+    }
+
     private static func resolveNonIncognitoContext() -> ThemeStateProvider {
         if let controller = SpaceSessionControllersManager.shared.activeWindowController,
            !controller.browserState.isIncognito {

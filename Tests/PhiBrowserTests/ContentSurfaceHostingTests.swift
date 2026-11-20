@@ -468,6 +468,52 @@ final class ContentSurfaceHostingTests: XCTestCase {
         XCTAssertEqual(fixture.sends.count, sendCount)
     }
 
+    // MARK: - Surface view
+
+    /// Until Chromium draws a layout the surface shows its last frame at its
+    /// old size, so its view covers the page panel alone and clips to it: a
+    /// frame from a larger window must not run over the panel's margins.
+    func testTheSurfaceViewCoversThePagePanelAndClipsToIt() throws {
+        let fixture = try makeFixture()
+
+        XCTAssertNotEqual(try fixture.pagePanelRect(),
+                          fixture.container.view.convert(fixture.container.view.bounds, to: nil),
+                          "precondition: the page panel has margins")
+        XCTAssertEqual(fixture.surfaceRect(), try fixture.pagePanelRect())
+        XCTAssertTrue(fixture.surfaceView.clipsToBounds)
+
+        fixture.window.setContentSize(NSSize(width: 900, height: 600))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        XCTAssertEqual(fixture.surfaceRect(), try fixture.pagePanelRect())
+    }
+
+    /// A late frame from a differently shaped page area would fill the
+    /// card's corners square until Chromium draws its own rounded one, as
+    /// when the sidebar is pinned or unpinned, so the clip follows the card's
+    /// corners too.
+    func testTheSurfaceViewClipsToTheCardsRoundedCorners() throws {
+        let fixture = try makeFixture()
+        let layer = try XCTUnwrap(fixture.surfaceView.layer)
+
+        XCTAssertTrue(layer.masksToBounds)
+        XCTAssertEqual(layer.cornerRadius, WebContentLayout(browserState: fixture.container.browserState).containerCornerRadius)
+        XCTAssertGreaterThan(layer.cornerRadius, 0, "precondition: the card has rounded corners")
+        XCTAssertEqual(layer.cornerCurve, .continuous)
+    }
+
+    func testTheSurfaceViewCoversThePagePanelAgainAfterASidePanelSlide() throws {
+        WebContentContainerViewController.panelSlideDurationForTesting = 0.05
+        let fixture = try makeFixture()
+
+        fixture.slideInSidePanel()
+        XCTAssertTrue(fixture.hosting.isHeld, "precondition: the slide holds")
+        waitUntil { !fixture.hosting.isHeld }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        XCTAssertEqual(fixture.surfaceRect(), try fixture.pagePanelRect())
+    }
+
     // MARK: - Extension side panel slide
 
     /// The extension side panel slides in by a Core Animation group, which
@@ -1023,6 +1069,16 @@ final class ContentSurfaceHostingTests: XCTestCase {
         /// Opens an extension side panel, which slides in, the window being on screen.
         func slideInSidePanel() {
             container.attachExtensionSidePanel(sidePanelState)
+        }
+
+        func surfaceRect() -> NSRect {
+            surfaceView.convert(surfaceView.bounds, to: nil)
+        }
+
+        func pagePanelRect() throws -> NSRect {
+            let page = try XCTUnwrap(
+                container.children.compactMap { $0 as? WebContentViewController }.first)
+            return page.pageCardView.convert(page.pageCardView.bounds, to: nil)
         }
 
         /// The page / AI Chat split and the view it fills.

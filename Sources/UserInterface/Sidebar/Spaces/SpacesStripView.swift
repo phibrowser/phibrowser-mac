@@ -418,7 +418,9 @@ struct SpacesStripView: View {
     static let height: CGFloat = 30
     /// Sidebar row height, leaving 4pt above and below each 24pt item.
     static let sidebarHeight: CGFloat = 32
-    private static let horizontalPadding: CGFloat = 10
+    /// Matches the sidebar's address bar and pinned tabs, so the first pip and
+    /// the trailing "+" / "…" line up with their edges.
+    private static let horizontalPadding: CGFloat = WebContentConstant.edgesSpacing
     /// Tighter horizontal padding for the lone horizontal-layout chip, so the
     /// single Space icon hugs its glyph instead of floating in a wide chip.
     /// The horizontal bar keeps the chip's outer edge 10pt after the native

@@ -192,6 +192,38 @@ final class FloatingSidebarResizeTests: XCTestCase {
         XCTAssertEqual(split.sidebarWidth, 220, accuracy: 0.5, "the column's own limits are back")
     }
 
+    /// A toggle that arrives while the column is still animating takes
+    /// effect at once and sends the column back the other way.
+    func testAToggleDuringTheColumnsAnimationReversesIt() throws {
+        let slot = try makeSlot()
+        let split = try XCTUnwrap(slot.shell?.split)
+        split.setSidebarCollapsed(true, animated: false)
+
+        split.setSidebarCollapsed(false, animated: true)
+        XCTAssertFalse(split.isSidebarCollapsed)
+        split.setSidebarCollapsed(true, animated: true)
+        XCTAssertTrue(split.isSidebarCollapsed, "the expansion is reversed mid-way")
+
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        XCTAssertTrue(split.isSidebarCollapsed, "the column settles collapsed")
+        split.setSidebarCollapsed(false, animated: true)
+        XCTAssertFalse(split.isSidebarCollapsed)
+    }
+
+    /// AppKit ignores `NSAnimationContext.duration` for `isCollapsed`; the
+    /// item's own "collapsed" animation sets it.
+    func testTheColumnTogglesWithTheSidebarAnimationsDuration() throws {
+        let item = NSSplitViewItem(viewController: NSViewController())
+        item.viewController.view = NSView()
+
+        item.setCollapsedAnimated(true)
+
+        let animation = try XCTUnwrap(item.animations["collapsed"] as? CABasicAnimation)
+        XCTAssertEqual(animation.duration, SidebarToggleAnimation.duration, accuracy: 0.0001)
+        XCTAssertEqual(SidebarToggleAnimation.duration, 0.11, accuracy: 0.0001)
+        XCTAssertEqual(animation.timingFunction, SidebarToggleAnimation.timingFunction)
+    }
+
     func testThePanelStaysOpenWhileItsEdgeIsDragged() throws {
         let slot = try makeSlot()
         let split = try XCTUnwrap(slot.shell?.split)

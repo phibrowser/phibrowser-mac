@@ -177,6 +177,7 @@ private struct AppearanceSectionView: View {
 
                 Divider()
 
+                #if DEBUG || NIGHTLY_BUILD
                 GeneralRowView(title: NSLocalizedString("settings.general.sidebarPosition.title", value: "Sidebar position", comment: "General settings - Side of the window containing vertical tabs")) {
                     Picker("", selection: $sidebarPosition) {
                         Text(NSLocalizedString("settings.general.sidebarPosition.left", value: "Left", comment: "General settings - Left sidebar position")).tag(SidebarPosition.left.rawValue)
@@ -187,6 +188,7 @@ private struct AppearanceSectionView: View {
                 }
 
                 Divider()
+                #endif
 
                 GeneralRowView(title: NSLocalizedString("settings.general.appearance.title", value: "Color appearance", comment: "General settings - Color appearance row title"), alignment: .top) {
                     HStack(spacing: 16) {
@@ -421,42 +423,38 @@ private struct BrowsingSectionView: View {
 
     var body: some View {
         GeneralSectionView(title: NSLocalizedString("settings.general.browsing.sectionTitle", value: "Browsing", comment: "General settings - Browsing section title")) {
-            VStack(alignment: .leading, spacing: 8) {
-                GeneralContainerView {
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(NSLocalizedString("settings.general.newTabShortcut.title", value: "New tab behavior", comment: "General settings - Row title for configuring new tab behavior"))
-                                .font(.system(size: 13))
-                                .themedForeground(.textPrimary)
-                        }
-                        Spacer(minLength: 12)
-                        HStack(spacing: 16) {
-                            ForEach(NewTabBehaviour.allCases) { behavior in
-                                GeneralSttingCardView(
-                                    image: Image(newTabImageName(for: behavior)),
-                                    action: {
-                                        selectedBehavior.wrappedValue = behavior
-                                    },
-                                    selected: selectedBehavior.wrappedValue == behavior,
-                                    title: behavior.displayName
-                                )
-                            }
+            GeneralContainerView {
+                GeneralRowView(
+                    title: NSLocalizedString("settings.general.newTabShortcut.title", value: "New tab behavior", comment: "General settings - Row title for configuring new tab behavior"),
+                    alignment: .top
+                ) {
+                    HStack(spacing: 16) {
+                        ForEach(NewTabBehaviour.allCases) { behavior in
+                            GeneralSttingCardView(
+                                image: Image(newTabImageName(for: behavior)),
+                                action: { selectedBehavior.wrappedValue = behavior },
+                                selected: selectedBehavior.wrappedValue == behavior,
+                                title: behavior.displayName
+                            )
                         }
                     }
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                GeneralContainerView {
-                    GeneralRowView(
-                        title: NSLocalizedString("settings.general.newTabsAtTop.title", value: "Open new tabs at top", comment: "General settings - Ordinary new tab position toggle"),
-                        subtitle: NSLocalizedString("settings.general.newTabsAtTop.description", value: "In sidebar layouts, place new tabs at the top of the tab list. Comfortable always opens new tabs at the end.", comment: "General settings - New tab position applies only to sidebar layouts")
-                    ) {
-                        Toggle("", isOn: $newTabsAtTop)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                            .controlSize(.mini)
-                            .themedTint(.themeColor)
-                            .accessibilityLabel(NSLocalizedString("settings.general.newTabsAtTop.title", value: "Open new tabs at top", comment: "General settings - Ordinary new tab position toggle"))
+
+                Divider()
+
+                GeneralRowView(
+                    title: NSLocalizedString("settings.general.newTabPosition.title", value: "Open new tabs", comment: "General settings - Row title for choosing where new tabs are placed in the sidebar tab list"),
+                    alignment: .top
+                ) {
+                    HStack(spacing: 16) {
+                        ForEach(NewTabPosition.allCases) { position in
+                            GeneralSttingCardView(
+                                image: Image(position.imageName),
+                                action: { newTabsAtTop = (position == .top) },
+                                selected: (newTabsAtTop ? NewTabPosition.top : .bottom) == position,
+                                title: position.displayName
+                            )
+                        }
                     }
                 }
             }
@@ -469,6 +467,31 @@ private struct BrowsingSectionView: View {
             return "newtab-ntp"
         case .omnibox:
             return "newtab-omibar"
+        }
+    }
+}
+
+private enum NewTabPosition: CaseIterable, Identifiable {
+    case top
+    case bottom
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .top:
+            return NSLocalizedString("settings.general.newTabPosition.topOption", value: "At the top", comment: "General settings - Option to place new tabs at the top of the sidebar tab list")
+        case .bottom:
+            return NSLocalizedString("settings.general.newTabPosition.bottomOption", value: "At the bottom", comment: "General settings - Option to place new tabs at the bottom of the sidebar tab list")
+        }
+    }
+
+    var imageName: String {
+        switch self {
+        case .top:
+            return "newtab-top"
+        case .bottom:
+            return "newtab-bottom"
         }
     }
 }

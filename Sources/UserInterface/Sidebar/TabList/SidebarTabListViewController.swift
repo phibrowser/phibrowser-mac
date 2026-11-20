@@ -227,6 +227,11 @@ class SidebarTabListViewController: NSViewController {
     /// Tab and split rows scrolled under the hovered floating New Tab row still
     /// get tracking-area hovers; new and reused cells pick this up on configure.
     private var isTabHoverSuppressed = false
+    /// Rebuilding a group's inner table is the costliest part of scrolling
+    /// a group row into view, so each group keeps its own cell instead of
+    /// taking whichever one the outline's reuse queue hands out. The cells
+    /// carry no identifier, so the outline never queues them for reuse.
+    private var groupCellsByToken: [String: TabGroupCellView] = [:]
     private let floatingNewTabContentMask: CALayer = {
         let layer = CALayer()
         layer.backgroundColor = NSColor.black.cgColor
@@ -367,7 +372,7 @@ class SidebarTabListViewController: NSViewController {
     /// Tracks the identity of the focusing tab we last scrolled to.
     /// Scroll is skipped when the focusing tab hasn't changed (e.g. bookmark expand/collapse).
     /// Update only when scheduling a scroll; clear when focus has no representable sidebar row.
-    private var lastScrolledFocusingTabId: AnyHashable?
+    private var lastScrolledFocusingItemId: AnyHashable?
 
     /// Flag to control whether bookmarks are shown in the sidebar
     private var showBookmarks: Bool = true
@@ -607,6 +612,8 @@ class SidebarTabListViewController: NSViewController {
         // already-applied store delivery, which opens the restore gate and
         // paints — and that paint has to find both sections filled.
         tabSectionController.browserState = browserState
+        // Groups removed while inactive never reached `tabSectionDidUpdate`.
+        pruneGroupCells()
         bookmarkSectionController.setActive(true)
         refreshAllItems()
     }
@@ -664,7 +671,7 @@ class SidebarTabListViewController: NSViewController {
         suppressesGroupUpdateAnimations = false
         scrollAnimationGeneration += 1
         scrollScheduleGeneration += 1
-        lastScrolledFocusingTabId = nil
+        lastScrolledFocusingItemId = nil
         lastSelectedItem = nil
         userInitiatedToggleFolderGuid = nil
         removeFloatingNewTabCell()
@@ -1021,7 +1028,7 @@ class SidebarTabListViewController: NSViewController {
     }
 
     private func clearFocusingSelection() {
-        lastScrolledFocusingTabId = nil
+        lastScrolledFocusingItemId = nil
         selectItem(nil)
     }
     
@@ -1959,6 +1966,13 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         // this sidebar's tab strip: `sourceState.moveGroupSliceToWindow`
         // mirrors `TabStrip.groupDragControllerCommitMoveCrossWindow`.
         if pasteboard.string(forType: .tabGroup) != nil {
+            if originalResolvedItem == nil, index != NSOutlineViewDropOnItemIndex {
+                let clamped = clampedRootDropIndex(index)
+                if clamped != index {
+                    outlineView.setDropItem(nil, dropChildIndex: clamped)
+                    index = clamped
+                }
+            }
             if isCrossWindowDrag(pasteboard) {
                 guard let sourceState = sourceBrowserState(for: pasteboard),
                       browserState.canAcceptCrossWindowDrag(from: sourceState),
@@ -4118,6 +4132,13 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
                 guard let self else { return }
                 self.toggleItemExpanded(self.spaceRootItem)
             }
+            rootCell.makeMoreMenu = { [weak self] in
+                let menu = NSMenu()
+                guard let self else { return menu }
+                self.contextMenuHelper.populateSpaceRootMenu(menu)
+                self.disableItemsIfAgentLocked(in: menu)
+                return menu
+            }
             cellView = rootCell
         case .bookmark, .bookmarkFolder:
             let identifier = NSUserInterfaceItemIdentifier("BookmarkCell")
@@ -4161,15 +4182,8 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
             cellView = separatorCell!
 
         case .tabGroup:
-            let identifier = NSUserInterfaceItemIdentifier("TabGroupCell")
-            let groupCell: TabGroupCellView
-            if let existing = outlineView.makeView(
-                withIdentifier: identifier, owner: self) as? TabGroupCellView {
-                groupCell = existing
-            } else {
-                groupCell = TabGroupCellView()
-                groupCell.identifier = identifier
-            }
+            let groupCell = (sidebarItem as? TabGroupSidebarItem)
+                .map { cachedGroupCell(for: $0.group.token) } ?? TabGroupCellView()
             groupCell.groupCellDelegate = self
             cellView = groupCell
 
@@ -4228,7 +4242,28 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         }
         return cellView
     }
-    
+
+    private func cachedGroupCell(for token: String) -> TabGroupCellView {
+        // A cell still shown in a row, as while a reload replaces that row,
+        // can't be placed in a second one.
+        if let cell = groupCellsByToken[token], cell.superview?.superview == nil {
+            return cell
+        }
+        let cell = TabGroupCellView()
+        groupCellsByToken[token] = cell
+        return cell
+    }
+
+    /// Drops the cells of groups that are gone. A cached cell holds its
+    /// members' `Tab`s, so it must not outlive the group.
+    private func pruneGroupCells() {
+        guard !groupCellsByToken.isEmpty else { return }
+        let liveTokens = Set(tabSectionController.tabItems.compactMap {
+            ($0 as? TabGroupSidebarItem)?.group.token
+        })
+        groupCellsByToken = groupCellsByToken.filter { liveTokens.contains($0.key) }
+    }
+
     func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
         guard let sidebarItem = item as? SidebarItem else { return 32.0 }
         
@@ -4371,8 +4406,7 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
             // insert proxy, then collapse — so the bookmark doesn't animate "into" the folder.
             if let folder = item as? Bookmark, folder.isFolder,
                let focusingTab = browserState.focusingTab,
-               let localGuid = focusingTab.guidInLocalDB,
-               let focusingBookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid),
+               let focusingBookmark = backingBookmark(of: focusingTab),
                isBookmark(focusingBookmark, descendantOf: folder) {
                 
                 let desired = computeFocusedBookmarkPresentation(for: focusingTab, treatingFolderAsCollapsed: folder)
@@ -4401,8 +4435,7 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
         } else {
             if let folder = item as? Bookmark, folder.isFolder,
                let focusingTab = browserState.focusingTab,
-               let localGuid = focusingTab.guidInLocalDB,
-               let focusingBookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid),
+               let focusingBookmark = backingBookmark(of: focusingTab),
                isBookmark(focusingBookmark, descendantOf: folder) {
                 
                 // Single-child shortcut: if the proxy occupies the same visual slot as the real child
@@ -4552,6 +4585,9 @@ extension SidebarTabListViewController: TabSectionDelegate {
     
     func tabSectionDidUpdate(with change: TabSectionChange) {
         guard isActive else { return }
+        if change.rootItemsChanged {
+            pruneGroupCells()
+        }
         // Only the restore transaction can deliver a whole window's tabs
         // before this window's bookmarks exist; tabs arriving one at a time
         // in steady state are never gated.
@@ -4682,10 +4718,13 @@ extension SidebarTabListViewController: TabSectionDelegate {
     }
 
     private var focusingBookmarkHiddenUnderCollapsedFolder: Bookmark? {
-        guard let localGuid = browserState.focusingTab?.guidInLocalDB,
-              let bookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid),
+        guard let bookmark = browserState.focusingTab.flatMap(backingBookmark(of:)),
               isHiddenUnderCollapsedFolder(bookmark) else { return nil }
         return bookmark
+    }
+
+    private func backingBookmark(of tab: Tab) -> Bookmark? {
+        browserState.bookmarkGuidBacking(tab).flatMap { browserState.bookmarkManager.bookmark(withGuid: $0) }
     }
 }
 
@@ -4733,8 +4772,7 @@ extension SidebarTabListViewController {
             restoreSpaceRootExpansion(animated: animated)
             refreshAllItems(animated: animated)
         } else {
-            let bookmark = browserState.focusingTab?.guidInLocalDB
-                .flatMap { browserState.bookmarkManager.bookmark(withGuid: $0) }
+            let bookmark = browserState.focusingTab.flatMap(backingBookmark(of:))
                 ?? floatingBookmarkGuid.flatMap { browserState.bookmarkManager.bookmark(withGuid: $0) }
             let presentation = bookmark.map { rootFloatingPresentation(for: $0, hiddenBookmarkGuid: $0.guid) }
                 ?? .cleared
@@ -4828,7 +4866,7 @@ extension SidebarTabListViewController {
         // folder still gets one, so a freshly built outline (e.g. a re-activated list) shows it.
         let hiddenFocusingGuid = browserState.isBookmarkRootExpanded
             ? focusingBookmarkHiddenUnderCollapsedFolder?.guid
-            : browserState.focusingTab?.guidInLocalDB
+            : browserState.focusingTab.flatMap(backingBookmark(of:))?.guid
         guard let bookmarkGuid = floatingBookmarkGuid ?? hiddenFocusingGuid,
               let bookmark = browserState.bookmarkManager.bookmark(withGuid: bookmarkGuid) else {
             return .cleared
@@ -4978,9 +5016,7 @@ extension SidebarTabListViewController {
             return nil
         }
         
-        guard let localGuid = tab.guidInLocalDB,
-              let bookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid),
-              !bookmark.isFolder else {
+        guard let bookmark = backingBookmark(of: tab), !bookmark.isFolder else {
             return nil
         }
         
@@ -5211,22 +5247,31 @@ extension SidebarTabListViewController {
         }
     }
 
-    private func scheduleScrollToVisible(forItem item: Any?) {
+    /// `groupMember` scrolls only that member's inner row of the group `item`
+    /// into view; a long group can be taller than the visible area.
+    private func scheduleScrollToVisible(forItem item: Any?, groupMember: Tab? = nil) {
         guard let item else { return }
         scrollScheduleGeneration += 1
         let generation = scrollScheduleGeneration
         DispatchQueue.main.async { [weak self] in
             guard let self, generation == self.scrollScheduleGeneration else { return }
             let row = outlineView.row(forItem: item)
-            if row >= 0 {
-                animateScrollRowToVisible(row)
+            guard row >= 0 else { return }
+            var targetRect = outlineView.rect(ofRow: row)
+            if let groupMember,
+               let groupItem = item as? TabGroupSidebarItem,
+               let span = TabGroupCellView.memberRowSpan(of: groupMember,
+                                                         in: groupItem,
+                                                         browserState: browserState) {
+                targetRect.origin.y += span.minY
+                targetRect.size.height = span.height
             }
+            animateScrollRectToVisible(targetRect)
         }
     }
 
-    private func animateScrollRowToVisible(_ row: Int) {
-        guard row >= 0,
-              let scrollView = outlineView.enclosingScrollView else {
+    private func animateScrollRectToVisible(_ rowRect: NSRect) {
+        guard let scrollView = outlineView.enclosingScrollView else {
             return
         }
 
@@ -5238,7 +5283,6 @@ extension SidebarTabListViewController {
             layer.removeAllAnimations()
         }
 
-        let rowRect = outlineView.rect(ofRow: row)
         let visibleRect = clipView.documentVisibleRect
         // A newly inserted row can overflow before the deferred sticky refresh.
         // Resolve the overlay first so focus scrolling leaves the row unobscured.
@@ -5285,12 +5329,15 @@ extension SidebarTabListViewController {
             return
         }
         
-        let shouldScroll = tab.id != lastScrolledFocusingTabId
+        // Panes of one split share a bookmark row; switching between them must not rescroll.
+        let bookmark = backingBookmark(of: tab)
+        let scrollTargetId: AnyHashable = bookmark?.id ?? tab.id
+        let shouldScroll = scrollTargetId != lastScrolledFocusingItemId
 
         if let item = allItems.first(where: { $0.id == tab.id }) {
             selectItem(item, clearSelectionFirst: true)
             if shouldScroll {
-                lastScrolledFocusingTabId = tab.id
+                lastScrolledFocusingItemId = scrollTargetId
                 scheduleScrollToVisible(forItem: item)
             }
             return
@@ -5298,8 +5345,7 @@ extension SidebarTabListViewController {
 
         // Grouped tabs render inside `TabGroupCellView`'s inner table —
         // no outline child to select. If the focusing tab belongs to a
-        // visible group, scroll the group's row into view so the user
-        // sees the active tab inside the cell, but skip outline
+        // visible group, scroll its member row into view, but skip outline
         // selection (the inner table drives its own active highlight
         // via SwiftUI).
         for case let groupItem as TabGroupSidebarItem in allItems
@@ -5307,21 +5353,21 @@ extension SidebarTabListViewController {
             $0.guid == tab.guid && $0.groupToken == groupItem.group.token
         }) {
             if shouldScroll {
-                lastScrolledFocusingTabId = tab.id
-                scheduleScrollToVisible(forItem: groupItem)
+                lastScrolledFocusingItemId = scrollTargetId
+                scheduleScrollToVisible(forItem: groupItem, groupMember: tab)
             }
             selectItem(nil)
             return
         }
         
         if let presentation = focusedBookmarkPresentation,
-           let guid = tab.guidInLocalDB,
-           presentation.proxy.underlyingBookmark.guid == guid {
+           let bookmark,
+           presentation.proxy.underlyingBookmark.guid == bookmark.guid {
             let row = outlineView.row(forItem: presentation.proxy)
             if row >= 0 {
                 outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 if shouldScroll {
-                    lastScrolledFocusingTabId = tab.id
+                    lastScrolledFocusingItemId = scrollTargetId
                     scheduleScrollToVisible(forItem: presentation.proxy)
                 }
             } else {
@@ -5330,8 +5376,7 @@ extension SidebarTabListViewController {
             return
         }
         
-        guard let localGuid = tab.guidInLocalDB,
-              let bookmark = browserState.bookmarkManager.bookmark(withGuid: localGuid) else {
+        guard let bookmark else {
             clearFocusingSelection()
             return
         }
@@ -5350,7 +5395,7 @@ extension SidebarTabListViewController {
         if row >= 0 {
             outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             if shouldScroll {
-                lastScrolledFocusingTabId = tab.id
+                lastScrolledFocusingItemId = scrollTargetId
                 scheduleScrollToVisible(forItem: bookmark)
             }
         } else {
@@ -6209,3 +6254,19 @@ extension SidebarTabListViewController: NSDraggingSource {
 /// - `shouldExpandItem` blocks expansion when `isDraggingTab == true`;
 ///   `expandFloatingBookmarkParentsIfNeeded` temporarily sets `allowExpandDuringDrag = true` to bypass.
 /// - Folders stay expanded after drag ends; no restoration needed.
+
+extension SidebarTabListViewController {
+    /// Where the list is scrolled. The floating panel and the docked column
+    /// each have a list; a dock or undock gives the one taking over the
+    /// other's position, so the rows stay put.
+    var scrollOffset: NSPoint {
+        get { scrollView?.contentView.bounds.origin ?? .zero }
+        set {
+            guard let scrollView else { return }
+            let clip = scrollView.contentView
+            let target = clip.constrainBoundsRect(NSRect(origin: newValue, size: clip.bounds.size)).origin
+            clip.scroll(to: target)
+            scrollView.reflectScrolledClipView(clip)
+        }
+    }
+}

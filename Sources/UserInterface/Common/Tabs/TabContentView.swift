@@ -57,11 +57,7 @@ enum TabFaviconPresentation {
     static let reclaimedOpacity: CGFloat = 0.3
 
     static var dimmingEnabledPublisher: AnyPublisher<Bool, Never> {
-        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
-            .map { _ in PhiPreferences.GeneralSettings.showUnloadedTabIndicators.loadValue() }
-            .prepend(PhiPreferences.GeneralSettings.showUnloadedTabIndicators.loadValue())
-            .removeDuplicates()
-            .eraseToAnyPublisher()
+        PhiPreferences.GeneralSettings.showUnloadedTabIndicators.sharedValuePublisher
     }
 
     static func opacity(

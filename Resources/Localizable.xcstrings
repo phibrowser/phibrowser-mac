@@ -74898,122 +74898,182 @@
         }
       }
     },
-    "settings.general.newTabsAtTop.description" : {
-      "comment" : "General settings - New tab position applies only to sidebar layouts",
+    "settings.general.newTabPosition.bottomOption" : {
+      "comment" : "General settings - Option to place new tabs at the bottom of the sidebar tab list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Platziert neue Tabs in Layouts mit Seitenleiste oben in der Tab-Liste. Im Layout „Komfortabel“ werden neue Tabs immer am Ende geöffnet."
+            "value" : "Unten"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "In sidebar layouts, place new tabs at the top of the tab list. Comfortable always opens new tabs at the end."
+            "value" : "At the bottom"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En los diseños con barra lateral, coloca las pestañas nuevas en la parte superior de la lista de pestañas. El diseño Cómodo siempre abre las pestañas nuevas al final."
+            "value" : "Abajo"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dans les dispositions avec barre latérale, place les nouveaux onglets en haut de la liste des onglets. La disposition Confortable ouvre toujours les nouveaux onglets à la fin."
+            "value" : "En bas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "サイドバーのあるレイアウトでは、新しいタブをタブリストの一番上に配置します。ゆったりレイアウトでは、新しいタブは常に末尾に開きます。"
+            "value" : "一番下"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "사이드바 레이아웃에서는 새 탭을 탭 목록 맨 위에 배치해요. 여유 레이아웃에서는 새 탭이 항상 맨 끝에 열려요."
+            "value" : "맨 아래"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plaats nieuwe tabbladen in lay-outs met een zijbalk boven aan de tabbladenlijst. In Comfortabel worden nieuwe tabbladen altijd aan het einde geopend."
+            "value" : "Onderaan"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在侧边栏布局中，将新标签页放在标签页列表顶部。「舒适」布局始终在末尾打开新标签页。"
+            "value" : "底部"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在側邊欄版面配置中，將新分頁放在分頁列表的頂端。「舒適」版面配置一律在尾端開啟新分頁。"
+            "value" : "底端"
           }
         }
       }
     },
-    "settings.general.newTabsAtTop.title" : {
-      "comment" : "General settings - Ordinary new tab position toggle",
+    "settings.general.newTabPosition.title" : {
+      "comment" : "General settings - Row title for choosing where new tabs are placed in the sidebar tab list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Neue Tabs oben öffnen"
+            "value" : "Neue Tabs öffnen"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Open new tabs at top"
+            "value" : "Open new tabs"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir las pestañas nuevas arriba"
+            "value" : "Abrir las pestañas nuevas"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvrir les nouveaux onglets en haut"
+            "value" : "Ouvrir les nouveaux onglets"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新しいタブを一番上に開く"
+            "value" : "新しいタブを開く位置"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "새 탭을 맨 위에 열기"
+            "value" : "새 탭 여는 위치"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open nieuwe tabbladen bovenaan"
+            "value" : "Open nieuwe tabbladen"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在顶部打开新标签页"
+            "value" : "新标签页打开位置"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在頂端開啟新分頁"
+            "value" : "新分頁開啟位置"
+          }
+        }
+      }
+    },
+    "settings.general.newTabPosition.topOption" : {
+      "comment" : "General settings - Option to place new tabs at the top of the sidebar tab list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oben"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "At the top"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arriba"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En haut"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一番上"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "맨 위"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bovenaan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顶部"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "頂端"
           }
         }
       }
@@ -109619,6 +109679,66 @@
         }
       }
     },
+    "sidebar.spaceRoot.moreButton" : {
+      "comment" : "Sidebar Space folder row - Button that opens the Space actions menu",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mehr"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "More"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Más"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "더 보기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meer"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多"
+          }
+        }
+      }
+    },
     "sidebar.spacesContextMenu.changeIconAction" : {
       "comment" : "Opens the icon/emoji picker for a Space",
       "extractionState" : "extracted_with_value",
@@ -131301,6 +131421,65 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在等待載入設定檔"
+          }
+        }
+      }
+    },
+    "tabs.backgroundCreation.confirmation" : {
+      "comment" : "Clickable toast shown when a link opens in a background tab while the sidebar is collapsed; clicking switches to the new tab",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuer Tab erstellt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Tab Created"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nueva pestaña creada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouvel onglet créé"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しいタブを開きました"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "새 탭이 열렸어요"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nieuw tabblad geopend"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已创建新标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已開啟新分頁"
           }
         }
       }

@@ -519,6 +519,9 @@ class SpaceSessionController: NSWindowController {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
+        // See `ShellWindowController.init`: keeps sidebar rows from each
+        // forcing an extra layout to rebuild the key view loop.
+        window.autorecalculatesKeyViewLoop = true
         window.animationBehavior = .none
         // Do NOT let AppKit secure-state restoration bring these windows back in
         // fullscreen. On a slot that owned several Space windows in one
@@ -695,21 +698,19 @@ class SpaceSessionController: NSWindowController {
             self.contentViewController = mainSplitViewController
         }
         
+        let sidebarExpansionFinished = mainSplitViewController.windowSplitViewController.sidebarExpansionDidFinish
         $browserState.compactMap { $0 }
             .flatMap { state in
                 state.sidebarCollapsedPublisher.combineLatest(
                     state.$isInFullScreenMode,
                     NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
                         .map { _ in }
-                        .merge(with: state.$isTranscriptDocked.map { _ in })
+                        .merge(with: state.$isTranscriptDocked.map { _ in }, sidebarExpansionFinished)
                         .prepend(())
                 )
             }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] collapsed, fullScreen, _ in
-                guard let self, self.isPresentedOrLegacy else { return }
-                self.applyTrafficLightVisibility(collapsed: collapsed, fullScreen: fullScreen)
-            }
+            .sink { [weak self] _ in self?.refreshTrafficLightVisibility() }
             .store(in: &cancellables)
 
         // Again, synchronously, because the sink above delivers on the main
@@ -726,10 +727,14 @@ class SpaceSessionController: NSWindowController {
             self.contentViewController = mainSplitViewController
         }
 
-        mainSplitViewController.addChild(toastContainerViewController)
-        mainSplitViewController.view.addSubview(toastContainerViewController.view)
-        toastContainerViewController.view.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
+        // A hosted Space shows its toasts in the shell's shared overlay
+        // (`ShellSplitViewController.presentToastOverlay(for:)`).
+        if !isHosted {
+            mainSplitViewController.addChild(toastContainerViewController)
+            mainSplitViewController.view.addSubview(toastContainerViewController.view)
+            toastContainerViewController.view.snp.makeConstraints { make in
+                make.edges.equalToSuperview()
+            }
         }
 
         mainSplitViewController.addChild(imagePreviewOverlayViewController)
@@ -1174,6 +1179,7 @@ class SpaceSessionController: NSWindowController {
     func completePresentationInShell() {
         guard isPresented else { return }
         applyWindowChrome()
+        shellSplit?.presentToastOverlay(for: browserState)
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isPresented, self.window?.isKeyWindow == true else { return }
             self.mainSplitViewController.webContentContainerViewController.restoreFocusAfterPresentation()
@@ -1417,24 +1423,27 @@ class SpaceSessionController: NSWindowController {
     /// and, in hosted mode, re-applied when a session is presented (the sink
     /// is silent for background sessions).
     /// In the right-sidebar layout the lights live in the top band and show
-    /// only while it is revealed (`FloatingTrafficLightsView.Placement.topBand`).
+    /// only while it is revealed (`FloatingTrafficLightsView`).
     private func applyTrafficLightVisibility(collapsed: Bool, fullScreen: Bool) {
         guard let window else { return }
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
         let bandVisible = mainSplitViewController.webContentContainerViewController.floatingSidebarHost.isTrafficLightBandVisible
+        let waitingForSidebar = mainSplitViewController.windowSplitViewController.isSidebarExpanding
         let hideTrafficLights = !fullScreen && !traditionalLayout
-            && (SidebarPosition.isOnRight ? !bandVisible : collapsed)
+            && (SidebarPosition.isOnRight ? !bandVisible : collapsed || waitingForSidebar)
 
-        window.standardWindowButton(.closeButton)?.isHidden = hideTrafficLights
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = hideTrafficLights
-        window.standardWindowButton(.zoomButton)?.isHidden = hideTrafficLights
+        // This runs on every defaults change, and a set of `isHidden` or
+        // `titlebarAppearsTransparent` retiles the titlebar, so only actual
+        // changes are applied.
+        window.setTitlebarButtonsHidden(hideTrafficLights)
 
-        window.titlebarAppearsTransparent = !fullScreen
+        if window.titlebarAppearsTransparent == fullScreen {
+            window.titlebarAppearsTransparent = !fullScreen
+        }
         updateTrafficLightPlacement(fullScreen: fullScreen)
     }
 
-    /// Re-applies the lights' visibility when the right-sidebar top band is
-    /// revealed or hidden.
+    /// Reconciles the native buttons with the current sidebar and top band.
     func refreshTrafficLightVisibility() {
         guard isPresentedOrLegacy else { return }
         applyTrafficLightVisibility(collapsed: browserState.sidebarCollapsed,

@@ -60,7 +60,7 @@ final class ShellSplitViewController: NSViewController {
         recordSidebarWidth()
     }
 
-    private let splitViewController = PhiSplitViewController()
+    let splitViewController = PhiSplitViewController()
     let sidebarHost = ShellSidebarHostViewController()
     let contentHost = ShellContentHostViewController()
     let floatingSidebarHost = FloatingSidebarHostViewController()
@@ -77,8 +77,6 @@ final class ShellSplitViewController: NSViewController {
         super.viewDidLoad()
         let splitView = PhiSplitView()
         splitView.isVertical = true
-        splitView.dividerStyle = .thick
-        splitView.delegate = self
         splitViewController.splitView = splitView
         addChild(splitViewController)
         view.addSubview(splitViewController.view)
@@ -122,6 +120,12 @@ final class ShellSplitViewController: NSViewController {
         // at the user's width; every expanded-column frame updates it.
         lastExpandedSidebarWidth = AccountController.shared.localDataAccount?
             .userDefaults.lastKnownSidebarWidth(for: SidebarPosition.effective) ?? 0
+        // The autosaved frames keep the width the column had when it
+        // collapsed; a floating panel resize after that is only in the
+        // account, so a restored collapsed column docks at the account's width.
+        if sidebarSplitViewItem.isCollapsed, lastExpandedSidebarWidth >= Self.leftItemMinWidth {
+            pendingDockWidth = min(lastExpandedSidebarWidth, Self.leftItemMaxWidth)
+        }
 
         $sidebarSplitViewItem
             .compactMap { $0 }
@@ -162,6 +166,57 @@ final class ShellSplitViewController: NSViewController {
             .store(in: &cancellables)
         updateLayoutForHorizontalTabs()
         floatingSidebarHost.install(in: self)
+        contentHost.view.postsFrameChangedNotifications = true
+        NotificationCenter.default.publisher(for: NSView.frameDidChangeNotification, object: contentHost.view)
+            .sink { [weak self] _ in self?.scheduleToastOverlayInsetsUpdate() }
+            .store(in: &cancellables)
+    }
+
+    /// The window's one toast overlay, over the split and below the floating
+    /// panel, showing the presented Space's toasts. It keeps the window's
+    /// size, so a column animation never lays it out; it takes the page
+    /// area's insets once the column has settled.
+    private var toastOverlay: OverlayToastViewController?
+    private var toastOverlayInsetsWorkItem: DispatchWorkItem?
+    /// Quiet period after the page area's last frame change before the
+    /// overlay takes its insets.
+    private static let toastOverlayInsetsDelay: TimeInterval = 0.15
+
+    func presentToastOverlay(for state: BrowserState) {
+        if let toastOverlay {
+            toastOverlay.present(state)
+            return
+        }
+        let overlay = OverlayToastViewController(state: state)
+        addChild(overlay)
+        view.addSubview(overlay.view, positioned: .below, relativeTo: floatingSidebarHost.view)
+        overlay.view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            overlay.view.topAnchor.constraint(equalTo: view.topAnchor),
+            overlay.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            overlay.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlay.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        toastOverlay = overlay
+        updateToastOverlayInsets()
+    }
+
+    private func scheduleToastOverlayInsetsUpdate() {
+        guard toastOverlay != nil else { return }
+        toastOverlayInsetsWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.toastOverlayInsetsWorkItem = nil
+            self?.updateToastOverlayInsets()
+        }
+        toastOverlayInsetsWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.toastOverlayInsetsDelay, execute: workItem)
+    }
+
+    private func updateToastOverlayInsets() {
+        guard let toastOverlay else { return }
+        let pageArea = contentHost.view.convert(contentHost.view.bounds, to: view)
+        toastOverlay.setContentInsets(NSEdgeInsets(
+            top: 0, left: pageArea.minX, bottom: 0, right: view.bounds.width - pageArea.maxX))
     }
 
     /// Observes the actual split item, including AppKit collapse/restore.
@@ -196,18 +251,18 @@ final class ShellSplitViewController: NSViewController {
     }
 
     func setSidebarCollapsed(_ collapsed: Bool, animated: Bool) {
+        // A toggle during a hand-off starts from the hand-off's end state.
+        floatingSidebarHost.finishSidebarHandOffImmediately()
+        sidebarHost.setResidentsHidden(false)
         let target = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional || collapsed
         guard sidebarSplitViewItem.isCollapsed != target else { return }
-        if !target, let width = pendingDockWidth {
-            pendingDockWidth = nil
-            sidebarSplitViewItem.expand(atWidth: width, animated: animated, in: splitViewController.splitView)
-            return
-        }
-        if animated {
-            sidebarSplitViewItem.animator().isCollapsed = target
-        } else {
-            sidebarSplitViewItem.isCollapsed = target
-        }
+        let dockWidth = pendingDockWidth
+        if !target { pendingDockWidth = nil }
+        // A column that opens at a panel-resized width (`pendingDockWidth`)
+        // expands there instead of handing off.
+        if animated, target || dockWidth == nil, handOffSidebar(collapsing: target) { return }
+        splitViewController.setSidebarCollapsed(target, item: sidebarSplitViewItem, animated: animated,
+                                                dockWidth: dockWidth)
     }
 
     /// Aligns the column to `width` / `collapsed`. The column persists across
@@ -217,9 +272,7 @@ final class ShellSplitViewController: NSViewController {
         guard !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional else { return }
         // An explicit width wins over the one the floating panel left.
         if width != nil { pendingDockWidth = nil }
-        if sidebarSplitViewItem.isCollapsed != collapsed {
-            sidebarSplitViewItem.isCollapsed = collapsed
-        }
+        setSidebarCollapsed(collapsed, animated: false)
         guard !collapsed, let width, width > 0 else { return }
         let clamped = min(max(width, Self.leftItemMinWidth), Self.leftItemMaxWidth)
         splitViewController.splitView.setPosition(SidebarPosition.isOnRight ? splitViewController.splitView.bounds.width - splitViewController.splitView.dividerThickness - clamped : clamped, ofDividerAt: 0)
@@ -295,19 +348,75 @@ final class ShellSplitViewController: NSViewController {
         sidebarWidthPersistWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.sidebarWidthPersistDelay, execute: workItem)
     }
-}
 
-extension ShellSplitViewController: NSSplitViewDelegate {
-    func splitView(_ splitView: NSSplitView, constrainSplitPosition proposedPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
-        proposedPosition
+    // MARK: - Dock hand-off
+
+    private var sidebarHandOffRun = 0
+
+    /// Where the pointer is, in window coordinates. A test seam.
+    lazy var pointerLocationInWindow: () -> NSPoint? = { [weak self] in
+        self?.view.window?.mouseLocationOutsideOfEventStream
     }
 
-    func splitView(_ splitView: NSSplitView, shouldHideDividerAt dividerIndex: Int) -> Bool {
-        true
+    /// The event that asked for this toggle. A test seam.
+    lazy var currentEventType: () -> NSEvent.EventType? = { NSApp.currentEvent?.type }
+
+    /// The pointer is on the open column. Tests the column's resting rect:
+    /// while it slides open its frame is still moving in.
+    private func isPointerOnDockedSidebar() -> Bool {
+        guard !sidebarSplitViewItem.isCollapsed, let point = pointerLocationInWindow() else { return false }
+        let bounds = view.bounds
+        let width = sidebarHost.view.frame.width
+        let column = NSRect(x: sidebarOnRight ? bounds.maxX - width : bounds.minX, y: bounds.minY,
+                            width: width, height: bounds.height)
+        return view.convert(column, to: nil).contains(point)
     }
 
-    func splitViewDidResizeSubviews(_ notification: Notification) {
-        recordSidebarWidth()
+    /// Pinning from the visible floating panel docks it in place; unpinning
+    /// with the shortcut while the pointer is on the column turns the column
+    /// into the panel in place. Both run the column change and the panel's
+    /// change in one group. Returns false when this toggle is not a hand-off.
+    ///
+    /// A click on the sidebar button also has the pointer on the column, but
+    /// it means put the sidebar away, so only a key press keeps it up.
+    private func handOffSidebar(collapsing collapsed: Bool) -> Bool {
+        let kind: SidebarHandOffKind?
+        if collapsed {
+            kind = currentEventType() == .keyDown && isPointerOnDockedSidebar() ? .undock : nil
+        } else {
+            kind = floatingSidebarHost.isVisible ? .dock : nil
+        }
+        guard let kind, floatingSidebarHost.beginSidebarHandOff(kind) else { return false }
+        if kind == .dock {
+            // A collapsed column expands back to its own frame's width. A
+            // toggle that cut AppKit's animation short leaves that at the
+            // in-flight width; the column must open where the panel is.
+            let width = floatingSidebarHost.currentFloatingWidth
+            if sidebarHost.view.frame.width != width {
+                sidebarHost.view.setFrameSize(NSSize(width: width, height: sidebarHost.view.frame.height))
+            }
+        }
+        sidebarHandOffRun += 1
+        let run = sidebarHandOffRun
+        // The panel covers the column throughout; the column's own rows
+        // would slide in or out under it.
+        sidebarHost.setResidentsHidden(true)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = FloatingSidebarHostViewController.sidebarHandOffDuration
+            context.timingFunction = SidebarToggleAnimation.timingFunction
+            context.allowsImplicitAnimation = true
+            // The toggle's own route: its speed and curve, which the panel's
+            // glide matches, and the window's lights held until it opens.
+            splitViewController.setSidebarCollapsed(collapsed, item: sidebarSplitViewItem,
+                                                    animated: true, dockWidth: nil)
+            floatingSidebarHost.animateSidebarHandOff()
+        } completionHandler: { [weak self] in
+            // A later toggle already finished this hand-off and may run its own.
+            guard let self, sidebarHandOffRun == run else { return }
+            sidebarHost.setResidentsHidden(false)
+            floatingSidebarHost.finishSidebarHandOff()
+        }
+        return true
     }
 }
 
@@ -380,6 +489,15 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
     /// too, so with every resident following, a divider drag re-laid out
     /// every Space's sidebar on every frame. They are caught up well before
     /// a switch can present one, so presenting stays a flag flip.
+    /// Hides the residents, leaving the backdrop, while the floating panel
+    /// covers the column in a hand-off
+    /// (`ShellSplitViewController.handOffSidebar(collapsing:)`).
+    func setResidentsHidden(_ hidden: Bool) {
+        for resident in view.subviews where residentWidthConstraints[ObjectIdentifier(resident)] != nil {
+            resident.alphaValue = hidden ? 0 : 1
+        }
+    }
+
     func host(_ sidebarView: NSView) {
         guard sidebarView.superview !== view else { return }
         sidebarView.removeFromSuperview()

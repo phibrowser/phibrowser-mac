@@ -591,6 +591,7 @@
 		CC71BABB2E9E40A9006C7238 /* OmniBoxSuggestionCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC71BABA2E9E40A9006C7238 /* OmniBoxSuggestionCellView.swift */; };
 		CC8B74BE2EA8B66E0075F58C /* Sentry.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8B74BD2EA8B66E0075F58C /* Sentry.swift */; };
 		CC8B74C02EA8BF490075F58C /* CrashSample.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8B74BF2EA8BF490075F58C /* CrashSample.swift */; };
+		DB6F00000000000000000002 /* DebugFrameRateMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB6F00000000000000000001 /* DebugFrameRateMonitor.swift */; };
 		CC8B76B12EA8D7B70075F58C /* AppController+Debug.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8B76B02EA8D7B70075F58C /* AppController+Debug.swift */; };
 		CC8B76B32EA8D7B70075F58C /* AppController+UserDataBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8B76B22EA8D7B70075F58C /* AppController+UserDataBackup.swift */; };
 		CC98F89C2E8BC71800DAD237 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC98F89B2E8BC71800DAD237 /* Settings.swift */; };
@@ -1471,6 +1472,7 @@
 		CC8B35202E81618F00C8A380 /* PhiBrowser-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "PhiBrowser-Info.plist"; sourceTree = SOURCE_ROOT; };
 		CC8B74BD2EA8B66E0075F58C /* Sentry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sentry.swift; sourceTree = "<group>"; };
 		CC8B74BF2EA8BF490075F58C /* CrashSample.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashSample.swift; sourceTree = "<group>"; };
+		DB6F00000000000000000001 /* DebugFrameRateMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugFrameRateMonitor.swift; sourceTree = "<group>"; };
 		CC8B76B02EA8D7B70075F58C /* AppController+Debug.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppController+Debug.swift"; sourceTree = "<group>"; };
 		CC8B76B22EA8D7B70075F58C /* AppController+UserDataBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppController+UserDataBackup.swift"; sourceTree = "<group>"; };
 		CC98F89B2E8BC71800DAD237 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
@@ -2794,6 +2796,7 @@
 				CCDEC82E2E83D6B200D91BE9 /* AppController+Sparkle.swift */,
 				CC98F8A12E8BCE0900DAD237 /* AppController+Settings.swift */,
 				CC8B76B02EA8D7B70075F58C /* AppController+Debug.swift */,
+				DB6F00000000000000000001 /* DebugFrameRateMonitor.swift */,
 				CC8B76B22EA8D7B70075F58C /* AppController+UserDataBackup.swift */,
 				8EB01BEC3010BCED0043E59D /* AccountDeletionLocalDataRemoval.swift */,
 				8EB01BEA3010BCED0043E59D /* UserDataRemoval.swift */,
@@ -3775,6 +3778,7 @@
 				CCD3246D2EB1EFB600AA0B85 /* PinnedExtensionItem.swift in Sources */,
 				CCB53DD02E6EC437004BF233 /* OmniBoxContainerViewController.swift in Sources */,
 				CC8B76B12EA8D7B70075F58C /* AppController+Debug.swift in Sources */,
+				DB6F00000000000000000002 /* DebugFrameRateMonitor.swift in Sources */,
 				CC8B76B32EA8D7B70075F58C /* AppController+UserDataBackup.swift in Sources */,
 				8EB01BEB3010BCED0043E59D /* UserDataRemoval.swift in Sources */,
 				CCBF8F352E61AB3A00B9A99E /* SideAddressBar.swift in Sources */,

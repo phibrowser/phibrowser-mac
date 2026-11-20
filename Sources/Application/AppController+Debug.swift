@@ -189,6 +189,14 @@ extension AppController {
         maskPreviewItem.target = self
         debugMenu.addItem(maskPreviewItem)
 
+        let frameRateItem = NSMenuItem(
+            title: "Show FPS Monitor",
+            action: #selector(toggleFrameRateMonitor(_:)),
+            keyEquivalent: ""
+        )
+        frameRateItem.target = self
+        debugMenu.addItem(frameRateItem)
+
         let fakeDeletionItem = NSMenuItem(
             title: "Account Deletion Fake Responses",
             action: nil,
@@ -710,6 +718,12 @@ extension AppController {
             AppLogInfo("[AgentSpace][debug] simulated agent Space \(spaceId); switch to its pip to watch")
             AgentSpaceManager.shared.setStatusCaption(taskId: taskId, caption: "Reading the page…")
         }
+    }
+
+    @MainActor
+    @objc func toggleFrameRateMonitor(_ sender: NSMenuItem) {
+        DebugFrameRateMonitor.shared.toggle()
+        sender.state = DebugFrameRateMonitor.shared.isRunning ? .on : .off
     }
 
     /// Test harness for the operating-mask design: wears the real mask — the

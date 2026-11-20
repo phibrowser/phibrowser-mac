@@ -5204,7 +5204,7 @@ class BrowserState {
     /// publishes it once it arrives. Nothing happens while one is up or on
     /// its way.
     func requestLibraryPaneTab() {
-        guard SaveForLaterService.featureEnabled, libraryPaneTab == nil,
+        guard SaveForLaterService.isAvailable(in: self), libraryPaneTab == nil,
               !hasPendingLibraryPaneRequest else { return }
         let token = UUID().uuidString
         pendingLibraryPaneRequest = (token, Date())

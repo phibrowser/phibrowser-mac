@@ -290,7 +290,7 @@ struct CommandDispatcher {
             return true
         case .PHI_SAVE_FOR_LATER:
             let state = windowController.browserState
-            guard let tab = state.pageCommandTarget, SaveForLaterService.canSave(tab) else {
+            guard let tab = state.pageCommandTarget, SaveForLaterService.canSave(tab, in: state) else {
                 return false
             }
             SaveForLaterService.save(tab: tab, in: state)
@@ -463,7 +463,9 @@ struct CommandDispatcher {
             return spacesShortcutsEnabled
                 && controller.slot?.presentedSpaces.indices.contains(index) == true
         }
-        if command == .PHI_SAVE_FOR_LATER { return SaveForLaterService.featureEnabled }
+        if command == .PHI_SAVE_FOR_LATER {
+            return SaveForLaterService.isAvailable(in: controller.browserState)
+        }
         return true
     }
 

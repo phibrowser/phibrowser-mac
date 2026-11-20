@@ -3708,18 +3708,25 @@ extension AppController {
             return canOpen && ApplicationState.shared.canUseBrowser
         }
 
+        // Folio rows: hidden in off-the-record windows, like page actions
+        // registered without `incognito`; the main menu is shared, so they
+        // return when a regular window is in front.
         if item.action == #selector(saveTabForLater(_:)) {
-            let canSave = MainActor.assumeIsolated {
-                SaveForLaterService.canSave(
-                    SpaceSessionControllersManager.shared
-                        .activeWindowController?.browserState.pageCommandTarget)
+            let canSave = MainActor.assumeIsolated { () -> Bool in
+                let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState
+                (item as? NSMenuItem)?.isHidden = state?.isIncognito == true
+                return SaveForLaterService.canSave(state?.pageCommandTarget, in: state)
             }
             return canSave && ApplicationState.shared.canUseBrowser
         }
 
         if item.action == #selector(openSaveForLaterLibrary(_:)) {
-            return SaveForLaterService.featureEnabled
-                && ApplicationState.shared.canUseBrowser
+            let available = MainActor.assumeIsolated { () -> Bool in
+                let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState
+                (item as? NSMenuItem)?.isHidden = state?.isIncognito == true
+                return SaveForLaterService.isAvailable(in: state)
+            }
+            return available && ApplicationState.shared.canUseBrowser
         }
 
         // Page actions: hidden in off-the-record windows unless registered

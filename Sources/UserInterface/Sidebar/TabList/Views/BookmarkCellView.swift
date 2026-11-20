@@ -128,6 +128,13 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private var usesSplitTabPreview = false
     private var isEditingActive = false
     private var isPointerHovered = false
+    /// Set while this folder's icon picker is open; see
+    /// `setFolderIconPickerShown(_:)`.
+    private var isFolderIconPickerShown = false
+    private let folderIconPickerHoverShield = HoverShield()
+    private var folderIconPickerPopoverObservers: [NSObjectProtocol] = []
+    /// The picker's popover, the first one to show after the picker opens.
+    private weak var folderIconPickerPopover: NSPopover?
 
     /// Standalone management surfaces must not resolve actions through another Space.
     var usesActiveBrowserStateFallback = true
@@ -147,6 +154,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        setFolderIconPickerShown(false)
         folderPreview.invalidate()
         faviconLoadHandle?.cancel()
         faviconLoadHandle = nil
@@ -169,7 +177,9 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil { folderPreview.invalidate() }
+        guard window == nil else { return }
+        folderPreview.invalidate()
+        setFolderIconPickerShown(false)
     }
 
     func cancelTabPreviewForInteraction() {
@@ -228,6 +238,9 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             },
             onSelectFolderIcon: { [weak self] icon in
                 self?.selectFolderIcon(icon)
+            },
+            onFolderIconPickerShownChange: { [weak self] shown in
+                self?.setFolderIconPickerShown(shown)
             }
         ))
         // The outline supplies the row size and folder indentation; the
@@ -285,9 +298,66 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
                                                           bottom: 2, right: WebContentConstant.edgesSpacing)
 
     /// The folder row stays highlighted while its preview is open, even after
-    /// the pointer moves into the preview.
+    /// the pointer moves into the preview, and while its icon picker is open.
     private func updateHoverAppearance() {
-        viewState.isHovered = isPointerHovered || folderPreview.isPresented
+        viewState.isHovered = isPointerHovered || folderPreview.isPresented || isFolderIconPickerShown
+    }
+
+    /// While the folder icon picker is open, the folder it changes stays
+    /// highlighted and nothing else in the window reacts to the pointer, as
+    /// under the pinned tab icon picker. A hover there opened a folder preview,
+    /// which took key and closed the picker. A `HoverShield` over the window
+    /// holds every hover until the picker closes; the picker's popover opens
+    /// after it and sits above it.
+    ///
+    /// The picker ends as its popover starts to close. SwiftUI does not
+    /// always report that through `showsFolderIconPicker`.
+    private func setFolderIconPickerShown(_ shown: Bool) {
+        guard isFolderIconPickerShown != shown else { return }
+        isFolderIconPickerShown = shown
+        folderIconPickerHoverShield.remove()
+        folderIconPickerPopoverObservers.forEach(NotificationCenter.default.removeObserver)
+        folderIconPickerPopoverObservers = []
+        folderIconPickerPopover = nil
+        if !shown, window != nil {
+            // Picks up a pointer resting on the row first, so the highlight
+            // does not drop until the pointer next moves.
+            hoverRegionView.updateTrackingAreas()
+        }
+        if shown, let window {
+            folderPreview.invalidate()
+            observeFolderIconPickerPopover()
+            folderIconPickerHoverShield.cover(window)
+            // Lifts the shield if SwiftUI never shows the popover.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let self, self.isFolderIconPickerShown,
+                      self.folderIconPickerPopover == nil else { return }
+                self.setFolderIconPickerShown(false)
+            }
+        }
+        updateHoverAppearance()
+    }
+
+    /// SwiftUI reports the picker as shown before its popover's will-show
+    /// notification, so the first popover to show is the picker's.
+    private func observeFolderIconPickerPopover() {
+        let center = NotificationCenter.default
+        folderIconPickerPopoverObservers = [
+            center.addObserver(forName: NSPopover.willShowNotification, object: nil, queue: .main) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard let self, self.folderIconPickerPopover == nil,
+                          let popover = note.object as? NSPopover else { return }
+                    self.folderIconPickerPopover = popover
+                }
+            },
+            center.addObserver(forName: NSPopover.willCloseNotification, object: nil, queue: .main) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard let self, let popover = note.object as? NSPopover,
+                          popover === self.folderIconPickerPopover else { return }
+                    self.setFolderIconPickerShown(false)
+                }
+            }
+        ]
     }
 
     private func setupPressAnimation() {
@@ -570,13 +640,18 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             for: .bookmarkFolderIconPickerRequested,
             object: bookmark
         )
-        .receive(on: DispatchQueue.main)
+        // Handled in the menu action's turn, not on a later main-queue hop:
+        // the row keeps its highlight from the menu straight into the picker
+        // instead of dropping it for a frame.
         .sink { [weak self, weak bookmark] _ in
-            guard let self,
-                  let bookmark,
-                  bookmark.isFolder,
-                  self.configuredBookmark === bookmark else { return }
-            self.viewState.folderIconPickerRequestGeneration &+= 1
+            MainActor.assumeIsolated {
+                guard let self,
+                      let bookmark,
+                      bookmark.isFolder,
+                      self.configuredBookmark === bookmark else { return }
+                self.setFolderIconPickerShown(true)
+                self.viewState.folderIconPickerRequestGeneration &+= 1
+            }
         }
         .store(in: &cancellables)
 
@@ -1003,6 +1078,7 @@ private struct SidebarBookmarkCellContentView: View {
     let onNavigatePrimaryToOriginalURL: (Bool) -> Void
     let onNavigateSecondaryToOriginalURL: (Bool) -> Void
     let onSelectFolderIcon: (BookmarkFolderIcon) -> Void
+    let onFolderIconPickerShownChange: (Bool) -> Void
 
     @State private var primaryFaviconHoverAction: BookmarkFaviconHoverAction?
     @State private var secondaryFaviconHoverAction: BookmarkFaviconHoverAction?
@@ -1109,7 +1185,8 @@ private struct SidebarBookmarkCellContentView: View {
                 liveTabViewModel: state.primaryTabIsLive ? primaryTabViewModel : nil,
                 onNavigateToOriginalURL: onNavigatePrimaryToOriginalURL,
                 onReturnHoverChanged: { primaryFaviconHoverAction = $0 },
-                onSelectFolderIcon: onSelectFolderIcon
+                onSelectFolderIcon: onSelectFolderIcon,
+                onFolderIconPickerShownChange: onFolderIconPickerShownChange
             )
             .overlay(alignment: .leading) {
                 if !state.isFolder {
@@ -1318,6 +1395,7 @@ private struct BookmarkFaviconView: View {
     let onNavigateToOriginalURL: (Bool) -> Void
     let onReturnHoverChanged: (BookmarkFaviconHoverAction?) -> Void
     let onSelectFolderIcon: (BookmarkFolderIcon) -> Void
+    var onFolderIconPickerShownChange: (Bool) -> Void = { _ in }
 
     @State private var isReturnButtonHovered = false
     @State private var isCommandKeyPressed = false
@@ -1415,6 +1493,9 @@ private struct BookmarkFaviconView: View {
                     return
                 }
                 showFolderIconPicker()
+            }
+            .onChange(of: showsFolderIconPicker) { _, shown in
+                onFolderIconPickerShownChange(shown)
             }
     }
 

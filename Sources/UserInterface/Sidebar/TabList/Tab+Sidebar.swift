@@ -520,6 +520,11 @@ extension Tab: ContextMenuRepresentable {
         RunLoop.main.perform(inModes: [.default]) { [weak self, weak targetView, weak popover] in
             guard self?.pinnedIconPopover === popover,
                   let targetView, let popover else { return }
+            // Keeps the window under the picker from reacting to hover; see
+            // `HoverShield`.
+            if let window = targetView.window {
+                HoverShield.cover(window, until: popover)
+            }
             popover.show(relativeTo: rect, of: targetView, preferredEdge: .maxY)
         }
     }

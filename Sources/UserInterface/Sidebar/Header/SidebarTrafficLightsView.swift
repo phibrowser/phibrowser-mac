@@ -243,6 +243,20 @@ final class SidebarTrafficLightsView: NSView {
 
 private var titlebarButtonsKey: UInt8 = 0
 
+private struct TitlebarButtonKind: Hashable {
+    let type: UInt
+    let styleMask: UInt
+}
+
+private struct TitlebarButtonTemplate {
+    let buttonClass: ObjectIdentifier
+    let action: Selector?
+}
+
+/// `NSWindow.standardWindowButton(_:for:)` builds a whole new button, too slow
+/// for a window resize, which looks the titlebar's buttons up on every step.
+@MainActor private var titlebarButtonTemplates: [TitlebarButtonKind: TitlebarButtonTemplate] = [:]
+
 extension NSWindow {
     /// The titlebar's own button of `type`. Once a `SidebarTrafficLightsView`
     /// has its buttons in the window, `standardWindowButton(_:)` answers with
@@ -277,14 +291,14 @@ extension NSWindow {
     }
 
     private func searchTitlebar(for type: NSWindow.ButtonType) -> NSButton? {
-        guard let template = NSWindow.standardWindowButton(type, for: styleMask),
+        guard let template = titlebarButtonTemplate(type),
               let titlebar = contentView?.superview?.subviews.first(where: {
                   NSStringFromClass(Swift.type(of: $0)).contains("TitlebarContainer")
               }) else { return nil }
         func find(in view: NSView) -> NSButton? {
             for subview in view.subviews {
                 if let button = subview as? NSButton,
-                   Swift.type(of: button) == Swift.type(of: template),
+                   ObjectIdentifier(Swift.type(of: button)) == template.buttonClass,
                    button.action == template.action {
                     return button
                 }
@@ -293,6 +307,18 @@ extension NSWindow {
             return nil
         }
         return find(in: titlebar)
+    }
+
+    private func titlebarButtonTemplate(_ type: NSWindow.ButtonType) -> TitlebarButtonTemplate? {
+        let kind = TitlebarButtonKind(type: type.rawValue, styleMask: styleMask.rawValue)
+        if let template = titlebarButtonTemplates[kind] { return template }
+        guard let button = NSWindow.standardWindowButton(type, for: styleMask) else { return nil }
+        let template = TitlebarButtonTemplate(
+            buttonClass: ObjectIdentifier(Swift.type(of: button)),
+            action: button.action
+        )
+        titlebarButtonTemplates[kind] = template
+        return template
     }
 
     /// Hides or shows the titlebar's own three. A set of `isHidden` re-tiles

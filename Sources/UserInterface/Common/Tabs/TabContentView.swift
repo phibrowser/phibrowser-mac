@@ -139,7 +139,28 @@ enum TabOpenIndicatorMetrics {
     static let bookmarkSpacing: CGFloat = 2
 }
 
+/// Every use gives the decoration its frame, so it measures neither its
+/// content's size nor safe-area insets: a window resize would otherwise redo
+/// both for each tab's decorations on every step.
 final class TabDecorativeHostingView: ThemedHostingView {
+    override init<Content: View>(rootView content: Content, themeSource: ThemeStateProvider? = nil) {
+        super.init(rootView: content, themeSource: themeSource)
+        sizingOptions = []
+    }
+
+    required init(rootView: AnyView) {
+        super.init(rootView: rootView)
+        sizingOptions = []
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var safeAreaInsets: NSEdgeInsets { NSEdgeInsets() }
+
+    override var safeAreaRect: NSRect { bounds }
+
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 

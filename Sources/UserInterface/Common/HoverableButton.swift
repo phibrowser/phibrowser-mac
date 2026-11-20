@@ -464,6 +464,10 @@ class HoverableButtonNSView: NSView {
         themeObserver = ThemeObserver(themeSource: themeStateProvider)
         let hosting = HoverableHostingView(rootView: AnyView(button.phiThemeObserver(themeObserver)))
         hosting.translatesAutoresizingMaskIntoConstraints = false
+        // The required hugging and compression below already hold the button
+        // to its content size; min and max size constraints would only be
+        // measured again on every step of a window resize.
+        hosting.sizingOptions = [.intrinsicContentSize]
         addSubview(hosting)
         hosting.setContentHuggingPriority(.required, for: .horizontal)
         hosting.setContentHuggingPriority(.required, for: .vertical)

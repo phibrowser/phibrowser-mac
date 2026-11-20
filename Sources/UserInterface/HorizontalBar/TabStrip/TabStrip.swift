@@ -533,6 +533,10 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
 
     override func layout() {
         super.layout()
+        // Outside the Comfortable layout the strip is hidden and inactive, but
+        // still follows the window's width: laying it out would rebuild every
+        // tab's view on each step of a window resize. Activation lays it out.
+        guard isActive else { return }
         updateNormalContainerMask()
 
         let pinnedTabs = browserState.pinnedTabs

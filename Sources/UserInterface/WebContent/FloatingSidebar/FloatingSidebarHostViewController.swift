@@ -110,6 +110,10 @@ final class FloatingSidebarHostViewController: NSViewController {
         overlay.onPointerLeftWindow = { [weak self] event in
             self?.pointerLeftWindow(at: event.locationInWindow)
         }
+        overlay.visiblePanel = { [weak self] in
+            guard let self, self.isVisible else { return nil }
+            return self.floatingSidebarContainerView
+        }
         view = overlay
     }
 
@@ -1668,7 +1672,7 @@ private final class ColumnMaterialSheetView: NSVisualEffectView {
 /// a fullscreen page the trigger strip and the panel's container only track
 /// the pointer, through their tracking areas, and their clicks (the strip,
 /// the inset left of the glass) reach the page too.
-private final class FloatingSidebarOverlayView: NSView {
+final class FloatingSidebarOverlayView: NSView {
     var isOverFullscreenPage: () -> Bool = { false }
     /// The pointer crossing the window's edge, which the strip and the panel
     /// miss when a fast pointer goes around or past them.
@@ -1697,10 +1701,38 @@ private final class FloatingSidebarOverlayView: NSView {
         onPointerLeftWindow?(event)
     }
 
+    /// The panel while it shows; see `mouseDown(with:)`.
+    var visiblePanel: () -> NSView? = { nil }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
         if hit === self { return nil }
         if hit is MouseTrackingAreaView, isOverFullscreenPage() { return nil }
         return hit
+    }
+
+    /// A click on the panel that nothing in it handles, such as one on the
+    /// header beside the sidebar button, comes up the panel's responder chain
+    /// to here. Passed on, AppKit handed it to the page header under the
+    /// panel, and the address bar opened. It ends on the panel instead; a
+    /// click elsewhere passes on as before.
+    override func mouseDown(with event: NSEvent) {
+        guard !isOnVisiblePanel(event) else { return }
+        super.mouseDown(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard !isOnVisiblePanel(event) else { return }
+        super.mouseDragged(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard !isOnVisiblePanel(event) else { return }
+        super.mouseUp(with: event)
+    }
+
+    private func isOnVisiblePanel(_ event: NSEvent) -> Bool {
+        guard let panel = visiblePanel(), panel.window === event.window else { return false }
+        return panel.bounds.contains(panel.convert(event.locationInWindow, from: nil))
     }
 }

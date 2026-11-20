@@ -516,6 +516,14 @@ protocol TitlebarAwareHitTestable: NSView {
 /// action. Ordinary descendant hits—including Chromium WebContents—must remain
 /// unchanged so their mouse events reach the original view.
 class TitlebarTransparentView: NSView {
+    /// The view under `point` before the titlebar band gives empty space to
+    /// the window, such as the floating sidebar's header over the page
+    /// header; see `WebContentHeaderHostingView.isPointerCovered(by:)`.
+    func viewUnderTitlebarRule(at point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         // AppKit supplies `point` in the superview's coordinate space. Convert
         // it before local bounds/titlebar checks; treating it as local can make

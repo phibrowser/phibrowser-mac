@@ -210,7 +210,7 @@ class WebContentHeader: NSView {
         themeObserver = ThemeObserver(themeSource: headerThemeProvider)
         let swiftUIView = makeSwiftUIView()
 
-        let hosting = ZeroSafeAreaHostingView(rootView: swiftUIView)
+        let hosting = WebContentHeaderHostingView(rootView: swiftUIView)
         hosting.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting)
 
@@ -692,5 +692,59 @@ class WebContentHeader: NSView {
             let pointInAnchor = anchor.convert(point, from: sourceView)
             return anchor.bounds.contains(pointInAnchor)
         }
+    }
+}
+
+/// Hosts the header's SwiftUI content. SwiftUI hover follows the hosting
+/// view's tracking areas, which ignore views on top of it, so with the
+/// floating sidebar over the header the address bar under the panel stayed
+/// highlighted. A pointer on a view the window puts above the header counts
+/// as outside it; see `isPointerCovered(by:)`.
+final class WebContentHeaderHostingView: ZeroSafeAreaHostingView<AnyView> {
+    /// Whether the last pointer event fell on a view above the header.
+    private var isPointerCovered = false
+
+    override func mouseEntered(with event: NSEvent) {
+        isPointerCovered = isPointerCovered(by: event)
+        guard !isPointerCovered else { return }
+        super.mouseEntered(with: event)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let wasCovered = isPointerCovered
+        isPointerCovered = isPointerCovered(by: event)
+        switch (wasCovered, isPointerCovered) {
+        case (false, true):
+            super.mouseExited(with: event)
+        case (true, true):
+            break
+        case (true, false):
+            super.mouseEntered(with: event)
+            super.mouseMoved(with: event)
+        case (false, false):
+            super.mouseMoved(with: event)
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        let wasCovered = isPointerCovered
+        isPointerCovered = false
+        guard !wasCovered else { return }
+        super.mouseExited(with: event)
+    }
+
+    /// Whether the pointer's spot belongs to a view outside the header, such
+    /// as the floating sidebar's panel. In the titlebar band the window's hit
+    /// test gives the panel header's empty space to the window, so the check
+    /// asks for the view under that rule.
+    func isPointerCovered(by event: NSEvent) -> Bool {
+        guard let window, event.window === window,
+              let root = window.contentView else { return false }
+        let point = root.superview?.convert(event.locationInWindow, from: nil)
+            ?? event.locationInWindow
+        let hit = (root as? TitlebarTransparentView)?.viewUnderTitlebarRule(at: point)
+            ?? root.hitTest(point)
+        guard let hit else { return false }
+        return !hit.isDescendant(of: self)
     }
 }

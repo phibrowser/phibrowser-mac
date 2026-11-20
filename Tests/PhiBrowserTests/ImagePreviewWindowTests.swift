@@ -63,10 +63,17 @@ final class ImagePreviewWindowTests: XCTestCase {
         window.contentView?.layoutSubtreeIfNeeded()
         split.splitView.setPosition(250, ofDividerAt: 0)
 
-        // Hidden previews remain in the layout tree of every hosted Space.
-        // Both hidden and visible panels must yield when their size is capped.
-        for hidden in [true, false] {
-            overlay.view.isHidden = hidden
+        // A hidden preview leaves its panel out of the layout tree; a shown
+        // panel must yield when its size is capped.
+        for visible in [false, true] {
+            if visible {
+                overlay.state.open(items: items, currentIndex: 0)
+            } else {
+                overlay.state.close()
+            }
+            // The overlay follows `isVisible` on the main queue.
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+            XCTAssertEqual(panel.superview === overlay.view, visible)
             for width: CGFloat in [1000, 1920, 2560, 1000] {
                 window.setContentSize(NSSize(width: width, height: 1000))
                 window.contentView?.layoutSubtreeIfNeeded()
@@ -76,8 +83,10 @@ final class ImagePreviewWindowTests: XCTestCase {
                     split.splitView.setPosition(sidebarWidth, ofDividerAt: 0)
                     window.contentView?.layoutSubtreeIfNeeded()
                     XCTAssertEqual(sidebar.view.frame.width, sidebarWidth, accuracy: 0.5)
-                    XCTAssertEqual(panel.frame.width, min(content.view.bounds.width * 0.84, 1080), accuracy: 0.5)
-                    XCTAssertEqual(panel.frame.height, min(content.view.bounds.height * 0.84, 820), accuracy: 0.5)
+                    guard visible else { continue }
+                    // A shown panel is centred on pixel-aligned edges.
+                    XCTAssertEqual(panel.frame.width, min(content.view.bounds.width * 0.84, 1080), accuracy: 1)
+                    XCTAssertEqual(panel.frame.height, min(content.view.bounds.height * 0.84, 820), accuracy: 1)
                 }
             }
         }

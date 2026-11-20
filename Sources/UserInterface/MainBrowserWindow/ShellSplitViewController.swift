@@ -53,6 +53,7 @@ final class ShellSplitViewController: NSViewController {
         )
         sidebarOnRight = right
         isReorderingSidebar = false
+        sidebarHost.reparkHiddenResidents()
         if destinationWidth >= Self.leftItemMinWidth {
             lastExpandedSidebarWidth = destinationWidth
         }
@@ -81,6 +82,7 @@ final class ShellSplitViewController: NSViewController {
         addChild(splitViewController)
         view.addSubview(splitViewController.view)
         splitViewController.view.translatesAutoresizingMaskIntoConstraints = false
+        sidebarHost.parkingAnchor = splitView
         NSLayoutConstraint.activate([
             splitViewController.view.topAnchor.constraint(equalTo: view.topAnchor),
             splitViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -488,7 +490,9 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
     /// once the column has stopped changing: AppKit lays out hidden views
     /// too, so with every resident following, a divider drag re-laid out
     /// every Space's sidebar on every frame. They are caught up well before
-    /// a switch can present one, so presenting stays a flag flip.
+    /// a switch can present one, so presenting stays a flag flip. A hidden
+    /// one is also parked off the column's leading edge (`park`), so a
+    /// collapse or expand doesn't slide it along.
     /// Hides the residents, leaving the backdrop, while the floating panel
     /// covers the column in a hand-off
     /// (`ShellSplitViewController.handOffSidebar(collapsing:)`).
@@ -510,15 +514,16 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
         let heldWidth = sidebarView.widthAnchor.constraint(equalToConstant: view.bounds.width)
         heldWidth.priority = Self.residentTrailingPriority
         residentWidthConstraints[ObjectIdentifier(sidebarView)] = ResidentWidthConstraints(
+            leading: sidebarView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             trailing: trailing,
             heldWidth: heldWidth
         )
         NSLayoutConstraint.activate([
-            sidebarView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             sidebarView.topAnchor.constraint(equalTo: view.topAnchor),
             sidebarView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             heldWidth,
         ])
+        park(sidebarView)
     }
 
     /// Shows a resident `sidebarView` as the column's content, above the
@@ -527,6 +532,7 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
     /// residency exists to avoid.
     func present(_ sidebarView: NSView) {
         host(sidebarView)
+        unpark(sidebarView)
         if let constraints = residentWidthConstraints[ObjectIdentifier(sidebarView)] {
             constraints.heldWidth.isActive = false
             constraints.trailing.isActive = true
@@ -552,6 +558,50 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
             constraints.trailing.isActive = false
             constraints.heldWidth.isActive = true
         }
+        park(sidebarView)
+    }
+
+    /// Holds still while the column slides: the shell's split view, whose
+    /// outer edges the column sits flush with when at rest.
+    weak var parkingAnchor: NSView?
+
+    /// Pins a hidden resident's outer edge to `parkingAnchor` instead of the
+    /// column. AppKit collapses and expands the column by sliding it, and a
+    /// resident pinned to it would slide too, its hosting views re-resolving
+    /// their geometry on every frame.
+    private func park(_ sidebarView: NSView) {
+        let id = ObjectIdentifier(sidebarView)
+        guard let constraints = residentWidthConstraints[id] else { return }
+        constraints.parked?.isActive = false
+        guard let anchor = parkingAnchor, sidebarView.isDescendant(of: anchor) else {
+            residentWidthConstraints[id]?.parked = nil
+            constraints.leading.isActive = true
+            return
+        }
+        let parked = SidebarPosition.isOnRight
+            ? sidebarView.trailingAnchor.constraint(equalTo: anchor.trailingAnchor)
+            : sidebarView.leadingAnchor.constraint(equalTo: anchor.leadingAnchor)
+        constraints.leading.isActive = false
+        parked.isActive = true
+        residentWidthConstraints[id]?.parked = parked
+    }
+
+    private func unpark(_ sidebarView: NSView) {
+        let id = ObjectIdentifier(sidebarView)
+        guard let constraints = residentWidthConstraints[id] else { return }
+        constraints.parked?.isActive = false
+        residentWidthConstraints[id]?.parked = nil
+        constraints.leading.isActive = true
+    }
+
+    /// Parks the hidden residents again after the column moved to the other
+    /// side: moving the column out of the split view drops the constraints
+    /// that reached outside it.
+    func reparkHiddenResidents() {
+        for resident in view.subviews
+        where resident.isHidden && residentWidthConstraints[ObjectIdentifier(resident)] != nil {
+            park(resident)
+        }
     }
 
     /// Takes `sidebarView` out of the column for good: its session is
@@ -568,10 +618,15 @@ final class ShellSidebarHostViewController: NSViewController, BrowserThemeContex
     }
 
     private struct ResidentWidthConstraints {
+        /// Pins the leading edge to the column's; active while presented, or
+        /// while hidden but not parked.
+        let leading: NSLayoutConstraint
         /// Follows the column; active while the resident is presented.
         let trailing: NSLayoutConstraint
         /// Holds a width; active while the resident is hidden.
         let heldWidth: NSLayoutConstraint
+        /// Pins the outer edge to `parkingAnchor` while the resident is hidden.
+        var parked: NSLayoutConstraint?
     }
 
     private var residentWidthConstraints: [ObjectIdentifier: ResidentWidthConstraints] = [:]
@@ -646,21 +701,24 @@ final class ShellContentHostViewController: NSViewController, BrowserThemeContex
     /// Keep page trees attached just like sidebar content. A hidden ancestor
     /// delivers WebContentsViewCocoa.viewDidHide and Chromium kHidden without
     /// repeating the window attachment callbacks on every Space switch.
+    ///
+    /// Only the presented tree follows the page area's size. A hidden one
+    /// keeps its frame and catches up in `install`, so a sidebar toggle or
+    /// window resize doesn't lay out and resize every resident Space's page.
     func host(_ contentView: NSView) {
         guard contentView.superview !== view else { return }
         contentView.removeFromSuperview()
         contentView.isHidden = true
         contentView.frame = view.bounds
-        contentView.autoresizingMask = [.width, .height]
+        contentView.autoresizingMask = []
         contentView.wantsLayer = true
         view.addSubview(contentView)
     }
 
     func install(_ contentView: NSView) {
         host(contentView)
-        // AppKit can defer autoresizing for hidden trees. Reconcile only an
-        // actual size change, before revealing the resident page.
         if contentView.frame != view.bounds { contentView.frame = view.bounds }
+        contentView.autoresizingMask = [.width, .height]
         contentView.layer?.transform = CATransform3DIdentity
         contentView.isHidden = false
         if view.subviews.last !== contentView {
@@ -677,6 +735,7 @@ final class ShellContentHostViewController: NSViewController, BrowserThemeContex
         guard contentView.superview === view else { return }
         contentView.layer?.transform = CATransform3DIdentity
         contentView.isHidden = true
+        contentView.autoresizingMask = []
     }
 
     func evict(_ contentView: NSView) {

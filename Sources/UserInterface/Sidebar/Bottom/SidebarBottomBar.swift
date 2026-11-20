@@ -555,12 +555,17 @@ class SidebarBottomBarSwiftUIView: NSView {
     }
     
     /// Hides or shows the chat button, for example in private mode.
+    ///
+    /// Callers re-resolve on every defaults change in every Space, and an
+    /// assignment re-renders the bar even when the value is unchanged.
     func setChatHidden(_ hidden: Bool) {
+        guard state.isChatHidden != hidden else { return }
         state.isChatHidden = hidden
     }
 
     /// Hides or shows the AI memory button. Should be hidden when Phi AI is disabled.
     func setMemoryHidden(_ hidden: Bool) {
+        guard state.isMemoryHidden != hidden else { return }
         state.isMemoryHidden = hidden
     }
 

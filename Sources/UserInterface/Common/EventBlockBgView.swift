@@ -86,3 +86,77 @@ class EventBlockBgView: NSView {
 //        addCursorRect(bounds, cursor: .arrow)
 //    }
 }
+
+/// A clear borderless child window over a browser window that takes the
+/// pointer while an icon picker popover is open. Tracking areas fire only in
+/// the window under the pointer, so nothing under the picker reacts to hover:
+/// a hovered folder opened its preview, which took key and closed the picker.
+/// A popover shown after the shield sits above it. A click on the shield
+/// closes the transient popover, as any click outside it does, and reaches
+/// nothing under it.
+@MainActor
+final class HoverShield {
+    private var window: NSWindow?
+    private var closeObserver: NSObjectProtocol?
+
+    /// Covers `parent` until `remove()`.
+    func cover(_ parent: NSWindow) {
+        remove()
+        let shield = Self.makeWindow(over: parent)
+        parent.addChildWindow(shield, ordered: .above)
+        window = shield
+    }
+
+    /// Covers `parent` until `popover` starts to close. Call it before
+    /// showing the popover; the shield keeps itself alive until then.
+    static func cover(_ parent: NSWindow, until popover: NSPopover) {
+        let shield = HoverShield()
+        shield.cover(parent)
+        shield.closeObserver = NotificationCenter.default.addObserver(
+            forName: NSPopover.willCloseNotification, object: popover, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { shield.remove() }
+        }
+        // Lifts the shield if the popover never shows.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak popover] in
+            guard popover?.isShown != true else { return }
+            shield.remove()
+        }
+    }
+
+    func remove() {
+        if let closeObserver {
+            NotificationCenter.default.removeObserver(closeObserver)
+            self.closeObserver = nil
+        }
+        guard let window else { return }
+        window.parent?.removeChildWindow(window)
+        window.orderOut(nil)
+        self.window = nil
+    }
+
+    static func makeWindow(over parent: NSWindow) -> NSWindow {
+        let shield = NSWindow(contentRect: parent.frame, styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        shield.isReleasedWhenClosed = false
+        shield.isOpaque = false
+        shield.backgroundColor = .clear
+        shield.hasShadow = false
+        shield.ignoresMouseEvents = false
+        shield.contentView = ShieldView()
+        return shield
+    }
+
+    /// Takes clicks, scrolls and the cursor so nothing under the shield gets
+    /// them.
+    private final class ShieldView: NSView {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func mouseDown(with event: NSEvent) {}
+        override func rightMouseDown(with event: NSEvent) {}
+        override func otherMouseDown(with event: NSEvent) {}
+        override func scrollWheel(with event: NSEvent) {}
+        override func resetCursorRects() {
+            addCursorRect(bounds, cursor: .arrow)
+        }
+    }
+}

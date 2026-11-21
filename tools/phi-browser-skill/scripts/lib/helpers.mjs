@@ -1454,6 +1454,24 @@ async function dialogBlockedAttach(targetId) {
   return true
 }
 
+/** Stops the target's in-flight load on `sessionId`. Page.stopLoading is
+ *  answered by the browser, so it gets through while a navigation that never
+ *  commits holds the session's renderer-bound commands. True when sent. */
+async function stopStuckNavigation(sessionId, targetId) {
+  const client = await cdpClient()
+  try {
+    await client.send('Page.stopLoading', {}, sessionId, 5000)
+  } catch { return false }
+  const { targetInfo } = await client
+    .send('Target.getTargetInfo', { targetId }, undefined, 5000)
+    .catch(() => ({ targetInfo: null }))
+  const url = shortUrl(targetInfo?.url || '')
+  logAction('stopped a stuck page load', url)
+  process.stderr.write(`ℹ phi-browser: stopped a page load that was not ` +
+                       `finishing (${url}) — goto() it again if still needed\n`)
+  return true
+}
+
 async function attachTabNow(targetId) {
   const client = await cdpClient()
   // Detach the previous page session so sessions don't accumulate across a
@@ -1516,15 +1534,27 @@ async function attachTabNow(targetId) {
     // A dialog can also have opened in the race window after the probe
     // above — re-check before treating the session as deaf.
     if (await dialogBlockedAttach(targetId)) return sessionId
-    // A just-created session can go deaf under a storm of simultaneous target
-    // attaches (its commands dropped, never answered). One fresh session
-    // recovers it; any other failure is real.
-    client.send('Target.detachFromTarget', { sessionId }).catch(() => {})
-    ;({ sessionId } = await client.send('Target.attachToTarget',
-                                        { targetId, flatten: true }))
-    state.sessionId = sessionId
-    armDialogListeners()
-    await client.send('Page.enable', {}, sessionId)
+    // A main-frame navigation that never commits (a server or network that
+    // never answers) makes DevTools hold every renderer-bound command,
+    // Page.enable included, until it finishes — and every later round
+    // re-attaches this same tab and stalls the same way (PHI-2158). Stop it
+    // and ask again on this session; never while the user owns the screen.
+    let enabled = false
+    if (!userDriving && await stopStuckNavigation(sessionId, targetId)) {
+      enabled = await client.send('Page.enable', {}, sessionId, 10000)
+        .then(() => true, () => false)
+    }
+    if (!enabled) {
+      // A just-created session can go deaf under a storm of simultaneous
+      // target attaches (its commands dropped, never answered). One fresh
+      // session recovers it; any other failure is real.
+      client.send('Target.detachFromTarget', { sessionId }).catch(() => {})
+      ;({ sessionId } = await client.send('Target.attachToTarget',
+                                          { targetId, flatten: true }))
+      state.sessionId = sessionId
+      armDialogListeners()
+      await client.send('Page.enable', {}, sessionId)
+    }
   }
   // Track the main frame's default execution context and pin evaluations to
   // it. Without an explicit contextId, Runtime.evaluate can keep hitting the
@@ -1796,8 +1826,20 @@ export async function goto(url, { timeout = 25, acceptCookies = true } = {}) {
   const deadline = Date.now() + timeout * 1000
   // Page.navigate answers at commit — normally fast, but budget it inside
   // {timeout} (capped at the 40s send default) instead of always allowing 40s.
-  const res = await client.send('Page.navigate', { url }, requireSession(),
-                                Math.min(40000, Math.max(2000, timeout * 1000)))
+  const sid = requireSession()
+  let res
+  try {
+    res = await client.send('Page.navigate', { url }, sid,
+                            Math.min(40000, Math.max(2000, timeout * 1000)))
+  } catch (err) {
+    // A navigation that never commits must not outlive this call: it would
+    // hold every renderer-bound command on this tab — the next round's
+    // Page.enable included (PHI-2158).
+    if (!/timed out/i.test(String(err?.message || ''))) throw err
+    await client.send('Page.stopLoading', {}, sid, 5000).catch(() => {})
+    throw new Error(`goto: ${url} did not start loading within ${timeout}s ` +
+                    '(server or network not answering); the load was stopped')
+  }
   // Page.navigate resolves with errorText on hard failures (bad host, blocked
   // scheme, …) instead of rejecting — surface it rather than silently waiting
   // out the timeout and returning the previous page's info.

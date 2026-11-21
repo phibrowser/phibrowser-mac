@@ -128,6 +128,9 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private var usesSplitTabPreview = false
     private var isEditingActive = false
     private var isPointerHovered = false
+    /// Set while the pointer is on a pinned row above this one; see
+    /// `setHoverSuppressed(_:)`.
+    private(set) var isHoverSuppressed = false
 
     /// Standalone management surfaces must not resolve actions through another Space.
     var usesActiveBrowserStateFallback = true
@@ -258,9 +261,10 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         folderPreview.onPresentationChange = { [weak self] _ in
             self?.updateHoverAppearance()
         }
-        hoverRegionView.onHoverChanged = { [weak self] isHovered in
-            self?.isPointerHovered = isHovered
+        hoverRegionView.onHoverChanged = { [weak self] pointerHovered in
+            self?.isPointerHovered = pointerHovered
             self?.updateHoverAppearance()
+            let isHovered = pointerHovered && self?.isHoverSuppressed == false
             if let self, let bookmark = self.configuredBookmark,
                let browserState = self.browserState, self.usesActiveBrowserStateFallback {
                 self.folderPreview.setHovering(isHovered, source: .folder(bookmark), anchor: self,
@@ -287,7 +291,21 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     /// The folder row stays highlighted while its preview is open, even after
     /// the pointer moves into the preview.
     private func updateHoverAppearance() {
-        viewState.isHovered = isPointerHovered || folderPreview.isPresented
+        viewState.isHovered = (isPointerHovered && !isHoverSuppressed) || folderPreview.isPresented
+    }
+
+    /// A row scrolled under a pinned sidebar row (`FloatingSidebarRowView`)
+    /// still tracks the pointer, so while the pointer is on the pinned row it
+    /// neither highlights nor opens a preview, as `SidebarTabCellView` does.
+    func setHoverSuppressed(_ suppressed: Bool) {
+        guard isHoverSuppressed != suppressed else { return }
+        isHoverSuppressed = suppressed
+        if suppressed {
+            folderPreview.invalidate()
+            tabPreviewRegistration.setHovering(false)
+            splitTabPreviewRegistration.setHovering(false)
+        }
+        updateHoverAppearance()
     }
 
     private func setupPressAnimation() {
@@ -347,6 +365,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewState.isActive = false
         viewState.isOpened = false
         isPointerHovered = false
+        isHoverSuppressed = false
         viewState.isHovered = false
         viewState.isTouchRevealed = false
         viewState.isPressed = false

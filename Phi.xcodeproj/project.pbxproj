@@ -105,7 +105,7 @@
 		376CE4172F2897D30093D937 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE4102F2897D30093D937 /* APIClient.swift */; };
 		376CE5E62F2C66900093D937 /* TabStripBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE5E52F2C66900093D937 /* TabStripBarController.swift */; };
 		376CE5E82F2C669B0093D937 /* TabStripRightButtons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE5E72F2C669B0093D937 /* TabStripRightButtons.swift */; };
-		3777EEF42FC4442700C85E41 /* FloatingNewTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3777EEF32FC4442700C85E41 /* FloatingNewTabView.swift */; };
+		3777EEF42FC4442700C85E41 /* FloatingSidebarRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3777EEF32FC4442700C85E41 /* FloatingSidebarRowView.swift */; };
 		377D210F2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */; };
 		377D21EC2F52C67300A68BE5 /* WebContentAddressBarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377D21EB2F52C67300A68BE5 /* WebContentAddressBarMenu.swift */; };
 		3787811F2FE942E40028969F /* TimeMachineRollbackPolicy.json in Resources */ = {isa = PBXBuildFile; fileRef = 3787811E2FE942E40028969F /* TimeMachineRollbackPolicy.json */; };
@@ -978,7 +978,7 @@
 		376CE4102F2897D30093D937 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		376CE5E52F2C66900093D937 /* TabStripBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabStripBarController.swift; sourceTree = "<group>"; };
 		376CE5E72F2C669B0093D937 /* TabStripRightButtons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabStripRightButtons.swift; sourceTree = "<group>"; };
-		3777EEF32FC4442700C85E41 /* FloatingNewTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingNewTabView.swift; sourceTree = "<group>"; };
+		3777EEF32FC4442700C85E41 /* FloatingSidebarRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingSidebarRowView.swift; sourceTree = "<group>"; };
 		377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WebContentContainerViewController+FloatingSidebar.swift"; sourceTree = "<group>"; };
 		377D21EB2F52C67300A68BE5 /* WebContentAddressBarMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentAddressBarMenu.swift; sourceTree = "<group>"; };
 		3787811E2FE942E40028969F /* TimeMachineRollbackPolicy.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = TimeMachineRollbackPolicy.json; sourceTree = "<group>"; };
@@ -3217,7 +3217,7 @@
 				376581FA2EEA9D6200D3E031 /* BookmarkRowView.swift */,
 				CCBF8F612E65719600B9A99E /* SideBarOutlineView.swift */,
 				37D4F5112F6A5CB100F9E67D /* OverlayScrollView.swift */,
-				3777EEF32FC4442700C85E41 /* FloatingNewTabView.swift */,
+				3777EEF32FC4442700C85E41 /* FloatingSidebarRowView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -4085,7 +4085,7 @@
 				CC376D252EC6D5EE00270B93 /* DynamicColor+Mixing.swift in Sources */,
 				CC376D262EC6D5EE00270B93 /* DynamicColor+Color.swift in Sources */,
 				8EEBD76C2FAB1731008CBD9A /* TabGroupChipView.swift in Sources */,
-				3777EEF42FC4442700C85E41 /* FloatingNewTabView.swift in Sources */,
+				3777EEF42FC4442700C85E41 /* FloatingSidebarRowView.swift in Sources */,
 				374BCE992F7157FD0043C656 /* TabAreaContextMenuHelper.swift in Sources */,
 				37604F632F14C52300B9FB37 /* DefaultColors.swift in Sources */,
 				8E9024952FB4446100852B00 /* TabGroupChipMosaicView.swift in Sources */,

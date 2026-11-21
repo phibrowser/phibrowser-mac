@@ -579,7 +579,7 @@ final class SidebarTabSectionFastPathTests: XCTestCase {
 
             scroll(to: floatingOffset)
             let floatingView = try XCTUnwrap(
-                controller.view.subviews.compactMap { $0 as? FloatingNewTabView }.first
+                controller.view.subviews.compactMap { $0 as? FloatingSidebarRowView }.first
             )
             XCTAssertFalse(floatingView.isHidden)
 
@@ -593,7 +593,7 @@ final class SidebarTabSectionFastPathTests: XCTestCase {
             XCTAssertNil(floatingView.superview)
             scroll(to: floatingOffset)
             let recreatedView = try XCTUnwrap(
-                controller.view.subviews.compactMap { $0 as? FloatingNewTabView }.first
+                controller.view.subviews.compactMap { $0 as? FloatingSidebarRowView }.first
             )
             XCTAssertTrue(recreatedView.isHidden)
             XCTAssertTrue(recreatedView.cellView.isHiddenOrHasHiddenAncestor)
@@ -904,6 +904,384 @@ final class SidebarTabSectionFastPathTests: XCTestCase {
         XCTAssertFalse(change.allowsInsertedRootTabLayoutRepair)
     }
 
+    func testSpaceRowStaysLockedAtTheTopAtEveryScrollOffset() throws {
+        let sidebar = try makeScrollableSidebar(tabCount: 40, pinCount: 1, newTabsAtTop: false)
+        defer { sidebar.controller.setActive(false) }
+
+        sidebar.scroll(to: 0)
+        let pinned = try XCTUnwrap(sidebar.pinnedSpaceRow())
+        let lockedFrame = pinned.frame
+        XCTAssertFalse(pinned.isHidden)
+        XCTAssertEqual((pinned.cellView as? SpaceRootCellView)?.accessibilityLabel(),
+                       sidebar.outline.item(atRow: 0).flatMap { ($0 as? SidebarItem)?.title })
+        let realCell = try XCTUnwrap(sidebar.outline.view(atColumn: 0, row: 0, makeIfNecessary: false))
+        XCTAssertTrue(realCell.isHidden)
+
+        for offset in [CGFloat(1), sidebar.outline.rect(ofRow: 0).maxY + 1, 300, 0] {
+            sidebar.scroll(to: offset)
+            XCTAssertTrue(sidebar.pinnedSpaceRow() === pinned, "offset \(offset)")
+            XCTAssertEqual(pinned.frame, lockedFrame, "offset \(offset)")
+        }
+
+        // Rubber-banding past the top moves the list, never the Space row.
+        sidebar.scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: -30))
+        sidebar.controller.viewDidLayout()
+        XCTAssertTrue(sidebar.pinnedSpaceRow() === pinned)
+        XCTAssertEqual(pinned.frame, lockedFrame)
+    }
+
+    func testFoldingFromPinnedRowKeepsItLocked() throws {
+        let sidebar = try makeScrollableSidebar(tabCount: 3, pinCount: 30, newTabsAtTop: false)
+        defer { sidebar.controller.setActive(false) }
+        XCTAssertTrue(sidebar.state.isBookmarkRootExpanded)
+
+        sidebar.scroll(to: sidebar.outline.rect(ofRow: 0).maxY + 1)
+        let pinned = try XCTUnwrap(sidebar.pinnedSpaceRow())
+        let lockedFrame = pinned.frame
+        let clickAction = try XCTUnwrap(pinned.clickAction)
+        clickAction()
+
+        XCTAssertFalse(sidebar.state.isBookmarkRootExpanded)
+        // Folded: Space root + separator + tabs + New Tab.
+        guard waitUntil(timeout: 2, { sidebar.outline.numberOfRows <= 6 }) else { return }
+        sidebar.controller.viewDidLayout()
+        XCTAssertTrue(sidebar.pinnedSpaceRow() === pinned)
+        XCTAssertEqual(pinned.frame, lockedFrame)
+
+        clickAction()
+        XCTAssertTrue(sidebar.state.isBookmarkRootExpanded)
+    }
+
+    func testSpaceRowShowsHairlineOnlyWithContentUnderIt() throws {
+        let sidebar = try makeScrollableSidebar(tabCount: 40, pinCount: 1, newTabsAtTop: false)
+        defer { sidebar.controller.setActive(false) }
+
+        sidebar.scroll(to: 0)
+        let pinned = try XCTUnwrap(sidebar.pinnedSpaceRow())
+        XCTAssertFalse(pinned.showsSeparator)
+        sidebar.scroll(to: 300)
+        XCTAssertTrue(pinned.showsSeparator)
+        sidebar.scroll(to: 0)
+        XCTAssertFalse(pinned.showsSeparator)
+    }
+
+    func testClickOnSpaceNameTextFoldsFromLockedRow() throws {
+        let sidebar = try makeScrollableSidebar(tabCount: 40, pinCount: 1, newTabsAtTop: false)
+        let window = NSWindow(contentRect: sidebar.controller.view.frame, styleMask: [],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(sidebar.controller.view)
+        defer { sidebar.controller.setActive(false); window.close() }
+        sidebar.scroll(to: 0)
+        let pinned = try XCTUnwrap(sidebar.pinnedSpaceRow())
+        let title = try XCTUnwrap(Self.textField(in: pinned.cellView))
+        let point = title.convert(NSPoint(x: title.bounds.midX, y: title.bounds.midY), to: nil)
+        let hit = try XCTUnwrap(window.contentView?.hitTest(point))
+        XCTAssertTrue(hit === pinned, "A click on the name must reach the row, not the label")
+
+        func event(_ type: NSEvent.EventType, _ flags: NSEvent.ModifierFlags = []) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: flags,
+                                            timestamp: 0, windowNumber: window.windowNumber,
+                                            context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+        XCTAssertTrue(sidebar.state.isBookmarkRootExpanded)
+        hit.mouseDown(with: try event(.leftMouseDown))
+        hit.mouseUp(with: try event(.leftMouseUp))
+        XCTAssertFalse(sidebar.state.isBookmarkRootExpanded)
+
+        // Control-click opens the menu; it never folds.
+        hit.mouseUp(with: try event(.leftMouseUp, .control))
+        XCTAssertFalse(sidebar.state.isBookmarkRootExpanded)
+    }
+
+    func testLockedSpaceRowKeepsTheRealRowsContextMenu() throws {
+        let sidebar = try makeScrollableSidebar(tabCount: 40, pinCount: 1, newTabsAtTop: false)
+        defer { sidebar.controller.setActive(false) }
+        sidebar.scroll(to: 0)
+        let pinned = try XCTUnwrap(sidebar.pinnedSpaceRow())
+        XCTAssertTrue(pinned.menu === sidebar.controller.blankAreaContextMenu)
+    }
+
+    func testHoveringLockedSpaceRowKeepsTabsSuppressedWhileNewTabUnpins() throws {
+        let sidebar = try makeScrollableSidebar(tabCount: 40, pinCount: 1, newTabsAtTop: false)
+        defer { sidebar.controller.setActive(false) }
+        sidebar.scroll(to: 0)
+        let space = try XCTUnwrap(sidebar.pinnedSpaceRow())
+        XCTAssertNotNil(sidebar.pinnedRows().first { $0.cellView is NewTabButtonCellView },
+                        "A long list pins New Tab to the bottom")
+        let entered = try XCTUnwrap(NSEvent.enterExitEvent(
+            with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+            context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+        space.mouseEntered(with: entered)
+        XCTAssertTrue(sidebar.controller.isTabHoverSuppressed)
+
+        // Scrolling to the end hands New Tab back to its real row.
+        sidebar.scroll(to: sidebar.outline.frame.height)
+        XCTAssertNil(sidebar.pinnedRows().first { $0.cellView is NewTabButtonCellView })
+        XCTAssertTrue(sidebar.controller.isTabHoverSuppressed)
+
+        let exited = try XCTUnwrap(NSEvent.enterExitEvent(
+            with: .mouseExited, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+            context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+        space.mouseExited(with: exited)
+        XCTAssertFalse(sidebar.controller.isTabHoverSuppressed)
+    }
+
+    func testLockedSpaceRowsMoreButtonKeepsItsClickAndOpensTheSpaceMenu() throws {
+        let sidebar = try makeScrollableSidebar(tabCount: 40, pinCount: 1, newTabsAtTop: false)
+        let window = NSWindow(contentRect: sidebar.controller.view.frame, styleMask: [],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(sidebar.controller.view)
+        defer { sidebar.controller.setActive(false); window.close() }
+        sidebar.scroll(to: 0)
+        let pinned = try XCTUnwrap(sidebar.pinnedSpaceRow())
+        let cell = try XCTUnwrap(pinned.cellView as? SpaceRootCellView)
+        let menu = try XCTUnwrap(cell.makeMoreMenu?())
+        XCTAssertFalse(menu.items.isEmpty, "The pinned copy opens the real row's Space menu")
+
+        // The button shows on hover; show it the way hovering does.
+        let button = try XCTUnwrap(Self.subview(of: HoverableButtonNSView.self, in: cell))
+        button.isHidden = false
+        window.contentView?.layoutSubtreeIfNeeded()
+        let point = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil)
+        let hit = try XCTUnwrap(window.contentView?.hitTest(point))
+        XCTAssertTrue(hit !== pinned, "A click on the button must not fold the Space")
+        XCTAssertTrue(hit !== button && hit.isDescendant(of: button),
+                      "The button's hosted view, which runs its action, takes the click")
+    }
+
+    func testHoveringLockedSpaceRowKeepsPinsUnderItFromHighlighting() throws {
+        let sidebar = try makeScrollableSidebar(tabCount: 40, pinCount: 1, newTabsAtTop: false)
+        defer { sidebar.controller.setActive(false) }
+        sidebar.scroll(to: 0)
+        let space = try XCTUnwrap(sidebar.pinnedSpaceRow())
+        let pinRow = try XCTUnwrap(sidebar.row(of: .bookmark))
+        let pin = try XCTUnwrap(sidebar.outline.view(atColumn: 0, row: pinRow, makeIfNecessary: false)
+            as? BookmarkCellView)
+        XCTAssertFalse(pin.isHoverSuppressed)
+
+        let entered = try XCTUnwrap(NSEvent.enterExitEvent(
+            with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+            context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+        space.mouseEntered(with: entered)
+        XCTAssertTrue(pin.isHoverSuppressed)
+
+        let exited = try XCTUnwrap(NSEvent.enterExitEvent(
+            with: .mouseExited, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+            context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+        space.mouseExited(with: exited)
+        XCTAssertFalse(pin.isHoverSuppressed)
+    }
+
+    private static func subview<T: NSView>(of type: T.Type, in view: NSView) -> T? {
+        for subview in view.subviews {
+            if let match = subview as? T { return match }
+            if let match = self.subview(of: type, in: subview) { return match }
+        }
+        return nil
+    }
+
+    private static func textField(in view: NSView) -> NSTextField? {
+        for subview in view.subviews {
+            if let field = subview as? NSTextField { return field }
+            if let field = textField(in: subview) { return field }
+        }
+        return nil
+    }
+
+    func testSpaceRowStaysLockedThroughADrag() throws {
+        let sidebar = try makeScrollableSidebar(tabCount: 40, pinCount: 1, newTabsAtTop: false)
+        defer { sidebar.controller.setActive(false) }
+        sidebar.scroll(to: 300)
+        let pinned = try XCTUnwrap(sidebar.pinnedSpaceRow())
+        let lockedFrame = pinned.frame
+        let drag = StubDraggingInfo(location: .zero)
+
+        sidebar.controller.outlineView(sidebar.outline, draggingEntered: drag)
+        XCTAssertTrue(sidebar.pinnedSpaceRow() === pinned)
+        XCTAssertEqual(pinned.frame, lockedFrame)
+        XCTAssertNil(sidebar.pinnedRows().first { $0.cellView is NewTabButtonCellView },
+                     "New Tab still steps aside during drags")
+        XCTAssertEqual(sidebar.outline.dragAutoscrollTopObstructionHeight, lockedFrame.height, accuracy: 0.5)
+
+        sidebar.controller.outlineView(sidebar.outline, draggingEnded: drag)
+        XCTAssertTrue(sidebar.pinnedSpaceRow() === pinned)
+    }
+
+    func testDragOverLockedSpaceRowScrollsTheListUpWithoutDropping() throws {
+        let sidebar = try makeScrollableSidebar(tabCount: 40, pinCount: 1, newTabsAtTop: false)
+        let window = NSWindow(contentRect: sidebar.controller.view.frame, styleMask: [],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(sidebar.controller.view)
+        defer { sidebar.controller.setActive(false); window.close() }
+        sidebar.scroll(to: 300)
+        let pinned = try XCTUnwrap(sidebar.pinnedSpaceRow())
+        XCTAssertFalse(sidebar.outline.registeredDraggedTypes.isEmpty)
+        XCTAssertEqual(Set(pinned.registeredDraggedTypes), Set(sidebar.outline.registeredDraggedTypes))
+        XCTAssertTrue(pinned.wantsPeriodicDraggingUpdates())
+
+        let point = pinned.convert(NSPoint(x: pinned.bounds.midX, y: pinned.bounds.midY), to: nil)
+        let operation = pinned.draggingUpdated(StubDraggingInfo(location: point))
+        XCTAssertEqual(operation, [])
+        XCTAssertLessThan(sidebar.scrollView.contentView.bounds.origin.y, 300)
+    }
+
+    func testScrollerInsetsHoldStillWhileNewTabPinsAndUnpins() throws {
+        for atTop in [true, false] {
+            let sidebar = try makeScrollableSidebar(tabCount: 40, pinCount: 6, newTabsAtTop: atTop)
+            defer { sidebar.controller.setActive(false) }
+            let row = try XCTUnwrap(sidebar.row(of: .newTabButton))
+            let rect = sidebar.outline.rect(ofRow: row)
+            let range: StrideThrough<CGFloat> = atTop
+                ? stride(from: rect.minY - 80, through: rect.minY + 20, by: 2)
+                : stride(from: rect.maxY - sidebar.scrollView.contentView.bounds.height - 20,
+                         through: rect.maxY - sidebar.scrollView.contentView.bounds.height + 20, by: 2)
+            var seen = Set<String>()
+            var pinStates = Set<Bool>()
+            for offset in range {
+                sidebar.scroll(to: offset)
+                pinStates.insert(sidebar.pinnedRows().contains { $0.cellView is NewTabButtonCellView })
+                let insets = sidebar.scrollView.scrollerInsets
+                seen.insert("\(insets.top)/\(insets.bottom)")
+            }
+            XCTAssertEqual(pinStates, [true, false], "atTop \(atTop): the range crosses the pin point")
+            // A knob dragged across the pin point must not see its track move.
+            XCTAssertEqual(seen.count, 1, "atTop \(atTop): scroller insets changed: \(seen)")
+        }
+    }
+
+    func testNewTabPinsInTheSameTurnAsTheScroll() throws {
+        let sidebar = try makeScrollableSidebar(tabCount: 40, pinCount: 1, newTabsAtTop: true)
+        defer { sidebar.controller.setActive(false) }
+        let spaceHeight = sidebar.outline.rect(ofRow: 0).height
+        let newTabRect = sidebar.outline.rect(ofRow: try XCTUnwrap(sidebar.row(of: .newTabButton)))
+        let clipView = sidebar.scrollView.contentView
+        func hasPinnedNewTab() -> Bool {
+            sidebar.pinnedRows().contains { $0.cellView is NewTabButtonCellView }
+        }
+
+        // No layout pass and no main-queue turn: a frame drawn right after
+        // the scroll must already show the pinned row.
+        clipView.scroll(to: NSPoint(x: 0, y: newTabRect.minY - spaceHeight + 4))
+        XCTAssertTrue(hasPinnedNewTab())
+        clipView.scroll(to: .zero)
+        XCTAssertFalse(hasPinnedNewTab())
+    }
+
+    func testNewTabPinsBelowPinnedSpaceRow() throws {
+        let sidebar = try makeScrollableSidebar(tabCount: 40, pinCount: 1, newTabsAtTop: true)
+        defer { sidebar.controller.setActive(false) }
+        let spaceHeight = sidebar.outline.rect(ofRow: 0).height
+        let newTabRow = try XCTUnwrap(sidebar.row(of: .newTabButton))
+        let newTabRect = sidebar.outline.rect(ofRow: newTabRow)
+
+        // New Tab still sits below the visible top, but under the pinned Space row.
+        sidebar.scroll(to: newTabRect.minY - spaceHeight + 1)
+        let space = try XCTUnwrap(sidebar.pinnedSpaceRow())
+        let newTab = try XCTUnwrap(sidebar.pinnedRows().first { $0.cellView is NewTabButtonCellView })
+        XCTAssertFalse(space.showsSeparator)
+        XCTAssertTrue(newTab.showsSeparator)
+        if sidebar.controller.view.isFlipped {
+            XCTAssertEqual(newTab.frame.minY, space.frame.maxY, accuracy: 0.5)
+        } else {
+            XCTAssertEqual(newTab.frame.maxY, space.frame.minY, accuracy: 0.5)
+        }
+        XCTAssertEqual(sidebar.scrollView.scrollerInsets.top, space.frame.height + newTab.frame.height, accuracy: 0.5)
+    }
+
+    func testPinnedSpaceRowGoesAwayWhenSpaceHasNoPins() throws {
+        let sidebar = try makeScrollableSidebar(tabCount: 40, pinCount: 1, newTabsAtTop: false)
+        defer { sidebar.controller.setActive(false) }
+
+        sidebar.scroll(to: sidebar.outline.rect(ofRow: 0).maxY + 1)
+        let pinned = try XCTUnwrap(sidebar.pinnedSpaceRow())
+        let pin = try XCTUnwrap(sidebar.state.bookmarkManager.rootFolder.children.first)
+        sidebar.state.bookmarkManager.removeBookmark(pin)
+
+        guard waitUntil(timeout: 2, { pinned.superview == nil }) else { return }
+        XCTAssertNil(sidebar.pinnedSpaceRow())
+        XCTAssertEqual(sidebar.scrollView.scrollerInsets.top, 0)
+    }
+
+    func testCreateSpaceOverlaySuppressionHidesPinnedSpaceRow() throws {
+        let sidebar = try makeScrollableSidebar(tabCount: 40, pinCount: 1, newTabsAtTop: false)
+        defer { sidebar.controller.setActive(false) }
+
+        sidebar.scroll(to: sidebar.outline.rect(ofRow: 0).maxY + 1)
+        let pinned = try XCTUnwrap(sidebar.pinnedSpaceRow())
+        sidebar.controller.setCreateSpaceOverlayInteractionSuppressed(true)
+        XCTAssertTrue(pinned.isHidden)
+        sidebar.controller.viewDidLayout()
+        XCTAssertTrue(pinned.isHidden)
+
+        sidebar.controller.setCreateSpaceOverlayInteractionSuppressed(false)
+        XCTAssertFalse(pinned.isHidden)
+    }
+
+    /// A Performance-layout sidebar with `tabCount` tabs and `pinCount` pins
+    /// in the Space root, laid out and ready to scroll.
+    private func makeScrollableSidebar(tabCount: Int, pinCount: Int,
+                                       newTabsAtTop: Bool) throws -> ScrollableSidebar {
+        let key = PhiPreferences.GeneralSettings.newTabsAtTop.rawValue
+        let layoutKey = PhiPreferences.GeneralSettings.layoutModeKey
+        let oldPreference = UserDefaults.standard.object(forKey: key)
+        let oldLayout = UserDefaults.standard.object(forKey: layoutKey)
+        addTeardownBlock {
+            UserDefaults.standard.set(oldPreference, forKey: key)
+            UserDefaults.standard.set(oldLayout, forKey: layoutKey)
+        }
+        UserDefaults.standard.set(newTabsAtTop, forKey: key)
+        PhiPreferences.GeneralSettings.saveLayoutMode(.performance)
+
+        let state = try makeState()
+        state.tabs = (0..<tabCount).map { index in
+            Tab(guid: 2000 + index, url: "https://tab.example/\(index)",
+                isActive: false, index: index, title: "Tab \(index)")
+        }
+        state.updateNormalTabs()
+        for index in 0..<pinCount {
+            state.localStore.createBookmark(url: "https://pin.example/\(index)", title: "Pin \(index)",
+                                            profileId: state.profileId, parentId: nil,
+                                            guid: UUID().uuidString, spaceId: state.spaceId)
+        }
+        let (controller, outline) = try makeActiveSidebar(for: state)
+        let scrollView = try XCTUnwrap(outline.enclosingScrollView)
+        // Space root + pins + separator + tabs + New Tab.
+        let expectedRows = 1 + pinCount + 1 + tabCount + 1
+        guard waitUntil(timeout: 2, {
+            outline.item(atRow: 0) is SpaceRootSidebarItem && outline.numberOfRows >= expectedRows
+        }) else { throw XCTSkip("Sidebar did not finish loading") }
+        controller.view.layoutSubtreeIfNeeded()
+        return ScrollableSidebar(state: state, controller: controller, outline: outline, scrollView: scrollView)
+    }
+
+    private struct ScrollableSidebar {
+        let state: BrowserState
+        let controller: SidebarTabListViewController
+        let outline: SideBarOutlineView
+        let scrollView: NSScrollView
+
+        func scroll(to offset: CGFloat) {
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: offset))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            controller.viewDidLayout()
+        }
+
+        func pinnedRows() -> [FloatingSidebarRowView] {
+            controller.view.subviews.compactMap { $0 as? FloatingSidebarRowView }
+        }
+
+        func pinnedSpaceRow() -> FloatingSidebarRowView? {
+            pinnedRows().first { $0.cellView is SpaceRootCellView }
+        }
+
+        func row(of type: SidebarItemType) -> Int? {
+            (0..<outline.numberOfRows).first { (outline.item(atRow: $0) as? SidebarItem)?.itemType == type }
+        }
+    }
+
     private func makeState(spaceId: String = UUID().uuidString) throws -> BrowserState {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -968,4 +1346,29 @@ final class SidebarTabSectionFastPathTests: XCTestCase {
         XCTFail("Condition was not met before timeout.")
         return false
     }
+}
+
+/// The few `NSDraggingInfo` members the sidebar reads, for driving drags
+/// without a real drag session.
+private final class StubDraggingInfo: NSObject, NSDraggingInfo {
+    let draggingLocation: NSPoint
+    init(location: NSPoint) { draggingLocation = location }
+    var draggingDestinationWindow: NSWindow? { nil }
+    var draggingSourceOperationMask: NSDragOperation { .move }
+    var draggedImageLocation: NSPoint { draggingLocation }
+    var draggedImage: NSImage? { nil }
+    let draggingPasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+    var draggingSource: Any? { nil }
+    var draggingSequenceNumber: Int { 1 }
+    func slideDraggedImage(to screenPoint: NSPoint) {}
+    var draggingFormation: NSDraggingFormation = .default
+    var animatesToDestination = false
+    var numberOfValidItemsForDrop = 1
+    func enumerateDraggingItems(
+        options enumOpts: NSDraggingItemEnumerationOptions = [], for view: NSView?,
+        classes classArray: [AnyClass], searchOptions: [NSPasteboard.ReadingOptionKey: Any] = [:],
+        using block: (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void
+    ) {}
+    var springLoadingHighlight: NSSpringLoadingHighlight { .none }
+    func resetSpringLoading() {}
 }

@@ -333,6 +333,25 @@ extension OverlayToastCenter {
         return show(title: title, placement: .topTrailing, shareURLs: [url], in: browserState)
     }
 
+    /// Shown after Cmd+D instead of an editor, so saving never blocks the page.
+    @discardableResult
+    func showBookmarkSavedConfirmation(alreadyBookmarked: Bool,
+                                       in browserState: BrowserState,
+                                       onEdit: @escaping @MainActor () -> Void) -> UUID? {
+        let title = alreadyBookmarked
+            ? NSLocalizedString("browser.bookmarkShortcut.alreadySavedToast", value: "Already Bookmarked", comment: "Toast shown when the bookmark shortcut is used on a page or split that is already bookmarked")
+            : NSLocalizedString("browser.bookmarkShortcut.savedToast", value: "Added to Bookmarks", comment: "Toast shown after the bookmark shortcut saves the current page or split as a bookmark")
+        let editTitle = NSLocalizedString(
+            "browser.bookmarkShortcut.editAction",
+            value: "Edit",
+            comment: "Button on the bookmark-saved toast that opens the editor for the bookmark's name, URL and folder")
+        return show(
+            title: title,
+            placement: .topTrailing,
+            in: .windowId(browserState.windowId),
+            action: OverlayToastAction(title: editTitle, handler: onEdit))
+    }
+
     @discardableResult
     func showURLCopyConfirmation(copiedURLs: [String], in browserState: BrowserState) -> UUID? {
         let title = copiedURLs.count > 1

@@ -25829,6 +25829,42 @@
         }
       }
     },
+    "browser.bookmarkShortcut.alreadySavedToast" : {
+      "comment" : "Toast shown when the bookmark shortcut is used on a page or split that is already bookmarked",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Already Bookmarked"
+          }
+        }
+      }
+    },
+    "browser.bookmarkShortcut.editAction" : {
+      "comment" : "Button on the bookmark-saved toast that opens the editor for the bookmark's name, URL and folder",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Edit"
+          }
+        }
+      }
+    },
+    "browser.bookmarkShortcut.savedToast" : {
+      "comment" : "Toast shown after the bookmark shortcut saves the current page or split as a bookmark",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Added to Bookmarks"
+          }
+        }
+      }
+    },
     "browser.extensionSidePanel.close" : {
       "comment" : "Extension side panel - Tooltip and accessibility label for the header control that closes the panel",
       "extractionState" : "extracted_with_value",

@@ -3,15 +3,24 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+import AppKit
 import XCTest
 @testable import Phi
 
 final class PhiIconCatalogTests: XCTestCase {
     func testCatalogUsesUniqueSemanticAssetNames() {
-        XCTAssertEqual(PhiIconCatalog.all.count, 88)
+        XCTAssertEqual(PhiIconCatalog.all.count, 158)
         XCTAssertEqual(Set(PhiIconCatalog.allIds).count, PhiIconCatalog.all.count)
         XCTAssertEqual(PhiIconCatalog.all.first?.assetName, "phi-icon-mail")
         XCTAssertEqual(PhiIconCatalog.all.last?.assetName, "phi-icon-backtick")
+    }
+
+    /// The catalog and `scripts/generate-phi-icons.py` keep separate lists, so
+    /// an icon added to one but not the other shows up here.
+    func testEveryCatalogIconHasAnImageAsset() {
+        for icon in PhiIconCatalog.all {
+            XCTAssertNotNil(NSImage(named: icon.assetName), icon.assetName)
+        }
     }
 
     func testCatalogMapsFigmaNamesToFileSafeAssetNames() {

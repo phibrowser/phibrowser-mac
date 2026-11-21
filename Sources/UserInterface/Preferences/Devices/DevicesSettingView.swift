@@ -29,6 +29,9 @@ struct DevicesSettingView: View {
                 if needsPairing, !viewModel.requiresReconfiguration, viewModel.unlockState == .unlocked {
                     pairingCard
                 }
+                if let pending = viewModel.startOverPending, viewModel.unlockState != .notSignedIn {
+                    startOverPendingCard(pending)
+                }
 
                 switch viewModel.unlockState {
                 case .loading:
@@ -204,6 +207,24 @@ struct DevicesSettingView: View {
             } control: {
                 actionButton(SyncReconfigurationStrings.title) { onResolvePairing() }
                     .disabled(viewModel.isReconfiguring)
+            }
+        }
+    }
+
+    /// While this Mac's request to start sync over is journaled (docs/sync.md, "Starting over
+    /// from a Mac that is not set up for sync").
+    private func startOverPendingCard(_ pending: DevicesSettingViewModel.StartOverPending) -> some View {
+        SettingsDetailCard {
+            row(ResetRequestStrings.settingsPendingTitle) {
+                hintText(ResetRequestStrings.settingsPendingDetail(executeAfter: pending.executeAfter))
+                if let error = viewModel.startOverError {
+                    errorText(error)
+                }
+            } control: {
+                actionButton(ResetRequestStrings.cancelRequest) {
+                    Task { await viewModel.cancelStartOver() }
+                }
+                .disabled(viewModel.isCancellingStartOver)
             }
         }
     }

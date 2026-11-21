@@ -1,7 +1,9 @@
 import SwiftUI
 
 /// Lets a new device pick how to join: enter a recovery code, or request approval
-/// from an already-authorized device. Purely presentational.
+/// from an already-authorized device. When the account exists and this Mac holds no
+/// envelope, a third choice starts sync over without the old data (docs/sync.md,
+/// "Starting over from a Mac that is not set up for sync"). Purely presentational.
 struct JoinMethodChoiceView: View {
     @ObservedObject var viewModel: KeyLayerViewModel
 
@@ -25,6 +27,14 @@ struct JoinMethodChoiceView: View {
                 viewModel.showRecoveryEntry()
             }
             .buttonStyle(.bordered)
+
+            if viewModel.canStartOver {
+                Button(ResetRequestStrings.joinMethodChoice) {
+                    viewModel.showStartOver()
+                }
+                .buttonStyle(.link)
+                .font(.callout)
+            }
         }
         .padding(32)
         .frame(minWidth: 360)

@@ -30,6 +30,18 @@ func AppLogError(_ value: String) {}
     var isRetired = false
     var requiresReconfiguration = false
 }
+enum InteractiveReauthenticationResult: Equatable { case signedIn, cancelled, wrongAccount, failed }
+@MainActor final class AuthManager {
+    static let shared = AuthManager()
+    func reauthenticateInteractively() async -> InteractiveReauthenticationResult { .failed }
+    func cancelOngoingWebAuthentication() {}
+}
+final class MemoryJournal {
+    var data: Data?
+    var writes = 0
+    lazy var store = SyncResetRequestJournalStore(readData: { [unowned self] in self.data },
+        writeData: { [unowned self] in self.data = $0; self.writes += 1; return true })
+}
 
 actor JoinAPI: KeyEnvelopeAPI {
     var requests: [String: JoinRequestDTO] = [:]
@@ -108,6 +120,51 @@ actor JoinAPI: KeyEnvelopeAPI {
     func putProfileKey(uuid: String, envelope: Data) async throws -> Bool { true }
     func getDomainKey(domain: String) async throws -> Data? { nil }
     func putDomainKey(domain: String, envelope: Data) async throws -> Bool { true }
+
+    // Reset requests: one row per operation; `resetStatus` moves it like the server would.
+    var resets: [UUID: ResetRequestDTO] = [:]
+    var resetPutError: Error?
+    var resetExecuteError: Error?
+    var journalAtPut: Data??
+    var observeJournal: (() -> Data?)?
+    func setObserver(_ observe: @escaping () -> Data?) { observeJournal = observe }
+    func failResetPut(_ error: Error?) { resetPutError = error }
+    func failResetExecute(_ error: Error?) { resetExecuteError = error }
+    func resetStatus(_ operation: UUID, _ status: String, executeAfter: Date? = nil) {
+        guard let old = resets[operation] else { return }
+        resets[operation] = ResetRequestDTO(operationId: old.operationId, status: status, createdAt: old.createdAt,
+                                            executeAfter: executeAfter ?? old.executeAfter, joinRequestId: old.joinRequestId)
+    }
+    func putResetRequest(operationId: UUID, deviceKeyId: String, publicKey: Data,
+                         name: String, platform: String) async throws -> ResetRequestDTO {
+        journalAtPut = .some(observeJournal?())
+        if let resetPutError { throw resetPutError }
+        if let row = resets[operationId] { return row }
+        counter += 1
+        let joinId = "join-\(counter)"
+        requests[joinId] = JoinRequestDTO(requestId: joinId, requestingPublicKey: publicKey, name: name, platform: platform,
+            status: "pending", grantedArkEnvelope: Data(), createdAt: Date(), resolvedByDeviceKeyId: nil)
+        let row = ResetRequestDTO(operationId: operationId.uuidString.lowercased(), status: "pending", createdAt: Date(),
+                                  executeAfter: Date().addingTimeInterval(48 * 3600), joinRequestId: joinId)
+        resets[operationId] = row
+        return row
+    }
+    func getResetRequest(operationId: UUID) async throws -> ResetRequestDTO {
+        guard let row = resets[operationId] else { throw ResetRequestError.notFound }
+        return row
+    }
+    func cancelResetRequest(operationId: UUID, deviceKeyId: String) async throws {
+        guard let row = resets[operationId] else { throw ResetRequestError.notFound }
+        guard row.status == "pending" else { throw ResetRequestError.notPending(status: row.status) }
+        resetStatus(operationId, "cancelled")
+        try setStatus(row.joinRequestId, "denied")
+    }
+    func executeResetRequest(operationId: UUID, deviceKeyId: String) async throws {
+        if let resetExecuteError { throw resetExecuteError }
+        guard let row = resets[operationId] else { throw ResetRequestError.notFound }
+        guard Date() >= row.executeAfter else { throw ResetRequestError.tooEarly(executeAfter: row.executeAfter) }
+        resets = [:]; requests = [:]; account = nil; envelopes = [:]
+    }
 }
 
 @main struct JoinTests {
@@ -280,8 +337,101 @@ actor JoinAPI: KeyEnvelopeAPI {
         await alreadyInitialized.startBootstrap()
         try require(alreadyInitialized.phase == .error(KeyLayerStrings.saveFailed),
                     "Failed flag cleanup after an existing account must report storage failure")
+        try await resetRequestCases()
         print("PASS bootstrap failures: lost response uses ordinary recovery; local write errors keep their own message and gate")
         print("PASS recovery confirmation: one-time display, Back to the shown code, wrong/checksummed codes, normalized input, reopen, gating")
         print("PASS join lifecycle: cancel/recovery/close, stale tickets, exact-key isolation, failed withdrawal, late POST, cancelled approval, too-many-pending, retry routing")
+    }
+
+    /// Starting over without the old data (docs/sync.md): journal first, the waiting page on
+    /// reopen, the approved join, execution into first-device setup, and transport failures.
+    @MainActor static func resetRequestCases() async throws {
+        func fixture(signIn: InteractiveReauthenticationResult = .signedIn)
+            async -> (JoinAPI, DeviceKeyStore, AccountKeyManager, MemoryJournal, KeyLayerViewModel) {
+            let api = JoinAPI(), provider = DeviceKeyStore(), journal = MemoryJournal()
+            _ = try? await api.putAccount(salt: Data(count: 16), kdfVersion: "v1", kdfParams: Data("{}".utf8),
+                                          recoveryEnvelope: Data())
+            let manager = AccountKeyManager(api: api, deviceKeyProvider: provider, pendingRegistrations: MemoryRegistration())
+            let vm = KeyLayerViewModel(manager: manager, beginEnrollment: {}, resetJournal: journal.store,
+                                       reauthenticate: { signIn }, cancelReauthentication: {})
+            await api.setObserver { journal.data }
+            return (api, provider, manager, journal, vm)
+        }
+
+        // The third choice exists only after the probe saw an account without an envelope.
+        var (api, provider, manager, journal, vm) = await fixture()
+        try require(!vm.canStartOver, "No third choice before the account probe")
+        await vm.beginSetup()
+        try require(vm.phase == .chooseJoinMethod && vm.canStartOver, "Existing account without envelope offers the third choice")
+        // An outstanding approval ticket is withdrawn, and the journal is written before the PUT.
+        await vm.startJoinRequest()
+        vm.showStartOver()
+        try require(vm.phase == .resetExplanation, "The third choice opens the explanation")
+        await vm.continueStartOver()
+        guard case .waitingForReset(let executeAfter) = vm.phase else { throw NSError(domain: "Expected the waiting page", code: 1) }
+        try require(await api.pendingIDs().count == 1, "Only the reset request's own join row is pending")
+        let atPut = await api.journalAtPut
+        try require(atPut != nil && atPut! != nil, "The journal must exist before the PUT is sent")
+        let saved = journal.store.load()!
+        try require(saved.executeAfter != nil && abs(saved.executeAfter!.timeIntervalSince(executeAfter)) < 0.01
+                    && saved.joinRequestId != nil, "The answered request records its date and join row")
+        // Close and reopen: the window lands on the waiting page from the journal.
+        vm.cancelFlow()
+        let reopened = KeyLayerViewModel(manager: manager, beginEnrollment: {}, resetJournal: journal.store,
+                                         reauthenticate: { .signedIn }, cancelReauthentication: {})
+        await reopened.beginSetup()
+        guard case .waitingForReset(let shown) = reopened.phase, abs(shown.timeIntervalSince(saved.executeAfter!)) < 0.01 else {
+            throw NSError(domain: "A reopened window lands on the waiting page", code: 1)
+        }
+        // "Yes, it was me": the join row is approved, the reset row is approved.
+        let envelope = try PhiKeyCrypto.sealToPublicKey(Data(count: 32), recipient: provider.key.publicKey)
+        try await api.setStatus(saved.joinRequestId!, "approved", envelope: envelope)
+        await api.resetStatus(saved.operationId, "approved")
+        await reopened.pollResetOnce()
+        try require(reopened.phase == .readyToPair && manager.currentARK != nil && journal.data == nil,
+                    "Approval continues through the approved join and clears the journal")
+        reopened.stopPolling()
+
+        // The date passes with nobody answering: execute, then first-device setup.
+        (api, provider, manager, journal, vm) = await fixture()
+        await vm.beginSetup()
+        vm.showStartOver()
+        await vm.continueStartOver()
+        let op = journal.store.load()!.operationId
+        await api.resetStatus(op, "pending", executeAfter: Date().addingTimeInterval(-1))
+        await vm.pollResetOnce()
+        try require(vm.phase == .introduction && journal.data == nil && !vm.canStartOver,
+                    "An executed request clears the journal and routes to first-device setup")
+
+        // A transport failure keeps the journal; Retry replays the same operation.
+        (api, provider, manager, journal, vm) = await fixture()
+        await vm.beginSetup()
+        await api.failResetPut(URLError(.notConnectedToInternet))
+        vm.showStartOver()
+        await vm.continueStartOver()
+        try require(vm.phase == .resetError(ResetRequestStrings.requestFailed) && journal.store.load() != nil,
+                    "A transport failure keeps the journal and offers Retry")
+        let kept = journal.store.load()!.operationId
+        await api.failResetPut(nil)
+        await vm.retryReset()
+        guard case .waitingForReset = vm.phase else { throw NSError(domain: "Retry must reach the waiting page", code: 1) }
+        try require(journal.store.load()!.operationId == kept, "Retry sends the journaled operation again")
+        // Cancel request withdraws it on the server and drops the journal.
+        await vm.cancelResetRequest()
+        try require(vm.phase == .chooseJoinMethod && journal.data == nil, "Cancel request returns to the join choice")
+        let cancelled = await api.resets[kept]?.status
+        try require(cancelled == "cancelled", "The server row is cancelled")
+        vm.stopPolling()
+
+        // A cancelled sign-in returns to the explanation and sends nothing.
+        (api, provider, manager, journal, vm) = await fixture(signIn: .cancelled)
+        await vm.beginSetup()
+        vm.showStartOver()
+        await vm.continueStartOver()
+        try require(vm.phase == .resetExplanation && journal.data == nil, "Cancelled sign-in goes back to the explanation")
+        let puts = await api.resets.count
+        try require(puts == 0, "Nothing is requested without the fresh sign-in")
+        _ = provider
+        print("PASS reset request: third choice gating, journal before PUT, reopen lands on waiting, approval joins, execution routes to first-device setup, transport retry keeps the operation, cancel, cancelled sign-in")
     }
 }

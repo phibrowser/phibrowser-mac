@@ -56,7 +56,9 @@ remains a separate prerequisite for native writes and Chromium ready-key exposur
 If bootstrap throws before returning a code, the pending flag is cleared: a lost
 account-creation response must not claim that the user saved an unseen code.
 An existing account then uses the ordinary join/recovery choices. This does not
-add a reset for an account whose only recovery code was lost during creation.
+add a reset of its own for an account whose only recovery code was lost during
+creation; such an account can use the join-method page's start-over choice
+("Starting over from a Mac that is not set up for sync" below).
 Local enrollment/confirmation writes report a local save error, distinct from
 connectivity failures, and a failed confirmation write keeps the gate closed.
 
@@ -435,6 +437,109 @@ runs; a round admitted before the episode finishes under the partial behaviour
 existing row from being created again, and a deletion of such a Space arriving
 from the account is applied); Chromium keeps syncing the mapped Profiles for the
 first 15 seconds; the reason is per pass, not per Profile.
+
+### Starting over from a Mac that is not set up for sync
+
+PHI-2002 (server contract: sync-service `docs/architecture.md`, "Reset sync from
+a Mac that is not set up for sync"). A returning user whose enrolled Macs are all
+gone and whose recovery code is lost can ask the server to delete the account's
+sync data and start over from a Mac that holds no envelope. The old data stays
+unrecoverable; the server only deletes after its own gates (every enrolled Mac
+unused for 30 days, a fresh sign-in, a 48-hour cooling-off re-checked at
+execution). This Mac never registers a device for the request: it is identified
+by the operation UUID, its `device_key_id` and its public key, as a join request
+is.
+
+**Entry.** The join-method page (`KeyLayerPhase.chooseJoinMethod`) shows a third
+choice, **Start over without the old data**, only when the account probe has
+answered that the account exists (`GET /keys/v1/account` 200) while this Mac has
+no envelope (`.needsJoin`), or when bootstrap answered `already_initialized`
+(`KeyLayerViewModel.canStartOver`). The model also needs the account's journal
+store, which only the setup window's model receives from the gate.
+
+**Flow** (`KeyLayerViewModel`, pages in `ResetRequestViews.swift`, copy in
+`ResetRequestStrings`):
+
+1. `.resetExplanation` states, in order: the account's data on the sync server is
+   deleted and cannot be recovered; every Mac set up for sync must have been
+   unused for 30 days; the user signs in again; the deletion happens 48 hours
+   after the request; a Mac set up for sync that comes online before then is
+   asked first. **Learn more** opens
+   `https://phibrowser.com/help/[<locale>/]sync/#start-over-without-the-old-data`
+   (`SyncHelpLinks.startOverURL`, anchor `startOverAnchor`, provisional), with the
+   same locale and browser-target rules as the recovery-code article.
+2. Continue runs `AuthManager.reauthenticateInteractively()` (`.resetSigningIn`):
+   Auth0 web auth with `prompt=login` and `max_age=0` through the external-browser
+   provider, returning only after the new credentials for the same account are
+   stored. It never touches the expired-session state machine
+   (`reauthenticationState`) and never signs out: another account's sign-in
+   answers `.wrongAccount`, a failure `.failed`, both back to the explanation
+   with an inline error. Cancel on the page (or closing the window) calls
+   `cancelOngoingWebAuthentication()`; `.cancelled` returns to the explanation.
+3. The request: withdraw every pending join ticket for this device's exact public
+   key (`AccountKeyManager.withdrawOutstandingJoinRequests`, the join rule; a
+   withdrawal is not account activity), write the journal, then
+   `PUT /keys/v1/reset-requests/{operation}` with `device_key_id`,
+   `requesting_public_key` (base64), `name` and `platform`, the values a join
+   request sends. Journal first, request second. A replay of a journaled
+   operation (Try again after a lost answer) withdraws nothing: the earlier
+   attempt already did, and the pending ticket for this key may by then be the
+   request's own join row, which the join route's deny would end as `denied`.
+4. `.waitingForReset(executeAfter)`: "Sync will start over on <date>…", with
+   **Cancel request** and **Close**. Close keeps the request. The page polls
+   `GET /keys/v1/reset-requests/{operation}` every 60 seconds while open, and the
+   window, when reopened, lands on this page and polls at once while the journal
+   holds an operation.
+5. When a poll finds the request still pending at or after `execute_after`,
+   `POST …/execute` runs.
+
+**Journal.** `sync.resetRequest` in account defaults, beside
+`sync.pairingEnrollment` (`SyncResetRequestJournalStore`, wired by
+`PhiChromiumCoordinator` into `SyncKeyController.resetRequestJournal`). Version 1
+holds `operationId`, `deviceKeyID`, `createdAtMs`, and, once the server has
+answered, `executeAfterMs` and `joinRequestId`, so the waiting page and the
+Settings row show the date without a network call and an approval opens the right
+join row. Cancel and execute send the journaled `deviceKeyID`. It is cleared on
+every terminal answer below and on a definitive refusal; it is kept on transport
+and server errors; sign-out keeps it (the request lives on the server
+regardless), and another account never reads it. A Mac that unlocks with its own
+envelope drops a leftover journal and withdraws the request best effort.
+
+| Where | Answer | Client |
+| --- | --- | --- |
+| `PUT` | 200 `pending` | Journal gets the date and join row; waiting page |
+| `PUT` | 409 `devices_active` | "A Mac set up for sync was used on <last_active_at>…"; Back to join method; journal cleared |
+| `PUT` | 409 `reset_request_exists` | "Another Mac already asked… from <execute_after>; … ask again from <execute_after + 7 days>"; journal cleared |
+| `PUT` | 403 `stale_authentication` | Journal cleared; the fresh sign-in runs once more with a new operation; a second refusal shows fixed copy |
+| `PUT` | 404 `account_not_found` | Journal cleared; `.introduction` (first-device setup) |
+| `PUT` | 400 `device_known`, 409 `reset_request_conflict`, 400 | Fixed copy; journal cleared (the server holds nothing for the operation); Try again starts from the explanation |
+| `PUT` | transport, 5xx | Fixed copy; journal kept; Try again sends the same operation again (the server replays it; a stale sign-in by then asks for one more) |
+| `GET` | `pending`, before `execute_after` | Keep waiting |
+| `GET` | `pending`, at or after `execute_after` | Execute |
+| `GET` | `approved` | Open the approved join row (`AccountKeyManager.pollJoin`), register, `verified()`, then pairing; journal cleared; nothing deleted |
+| `GET` | `denied` | "Another Mac declined this request."; Back to join method; journal cleared |
+| `GET` | `blocked` | The `devices_active` copy without a date; journal cleared |
+| `GET` | `expired` | "This request ran out…"; **Start over again** returns to the explanation; journal cleared |
+| `GET` | `cancelled` | Join method; journal cleared |
+| `GET` | 404 | Journal cleared; the account probe runs again |
+| `GET` | transport | The journal's date stays on the waiting page with an inline error |
+| execute | 200, 404 `reset_request_not_found` | Journal cleared; the account probe runs again, finds no account, and routes to `.introduction`. The requester never had sync state, so nothing local is cleaned |
+| execute | 409 `too_early` | Keep waiting; the server's `execute_after` is shown and journaled |
+| execute | 409 `devices_active` | As for the `PUT`; journal cleared |
+| execute | 409 `not_pending` | The status is read again and handled as above |
+| execute | other | Fixed copy; journal kept; Try again asks again |
+| cancel | 200, 409 `not_pending`, 404, 403 `not_requester` | Journal cleared; join method |
+| cancel | transport | Inline error; journal and page kept |
+
+**Settings → Sync.** While the journal holds an operation, the pane shows a
+**Start over pending** row with the date (from the journal) and **Cancel
+request** (`SyncKeyController.cancelResetRequest()`, the same cancel rules). The
+row reads the journal on every load; closing the setup window reloads the pane.
+
+Dates shown to the user use the user's locale (`ResetRequestStrings.formatted`),
+never the wire's RFC 3339. Logs carry the operation id, statuses and error codes
+only. The enrolled-Mac side (pending check, `account` SSE event, the "Was this
+you?" alert) is a separate client task and not part of this flow.
 
 ### Pairing page plan
 

@@ -1016,6 +1016,51 @@ class AuthManager {
         }
     }
     
+    /// A voluntary fresh sign-in inside a flow that needs proof of a recent authentication, such
+    /// as asking to start sync over (docs/sync.md, "Starting over from a Mac that is not set up
+    /// for sync"). Auth0 web auth runs with `prompt=login` and `max_age=0`, so the user signs in
+    /// fully whatever session the browser holds; the access token then carries a fresh
+    /// `https://phibrowser.com/auth_time`. Returns only after the new credentials are stored.
+    ///
+    /// This is not the expired-session path: `reauthenticationState` is never touched, and a
+    /// failure or another account's sign-in leaves the current session as it was instead of
+    /// signing out.
+    @MainActor
+    func reauthenticateInteractively() async -> InteractiveReauthenticationResult {
+        guard !blocksAutomaticCredentialRecovery, !isAccountDeletionInProgress else { return .failed }
+        let session = authSessionGeneration.capture()
+        recordTrace("interactive-reauthentication-started")
+        do {
+            let results = try await Auth0.webAuth(clientId: clicentId, domain: domain)
+                .audience(audience)
+                .scope("openid profile email offline_access")
+                .parameters(["prompt": "login", "max_age": "0"])
+                .provider(makeExternalBrowserAuthProvider())
+                .start()
+            guard authSessionGeneration.isCurrent(session) else {
+                recordTrace("interactive-reauthentication-discarded", details: ["reason": "stale_auth_session"])
+                return .failed
+            }
+            guard reauthenticatedCredentialsMatchCurrentAccount(results) else {
+                recordTrace("interactive-reauthentication-user-mismatch")
+                return .wrongAccount
+            }
+            guard storeReauthenticatedCredentials(results) else {
+                recordTrace("interactive-reauthentication-store-failed")
+                return .failed
+            }
+            recordTrace("interactive-reauthentication-succeeded")
+            return .signedIn
+        } catch WebAuthError.userCancelled {
+            recordTrace("interactive-reauthentication-cancelled")
+            return .cancelled
+        } catch {
+            recordTrace("interactive-reauthentication-failed", details: ["error": error.localizedDescription])
+            AppLogWarn("interactive reauthentication with auth0 failed: \(error.localizedDescription)")
+            return .failed
+        }
+    }
+
     /// Outcome of the network half of a logout.
     enum RemoteWebSessionClearOutcome {
         case cleared

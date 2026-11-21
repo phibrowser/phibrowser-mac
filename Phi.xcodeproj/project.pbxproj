@@ -513,6 +513,9 @@
 		C0D3F1082026090800000001 /* SidebarFileDropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3F1082026090800000002 /* SidebarFileDropView.swift */; };
 		C1EA20261102000100000001 /* BrowserState+ClearTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1EA20261102000100000002 /* BrowserState+ClearTabs.swift */; };
 		C1D7A5E0B3F24E6A9C0D1F12 /* SyncPairingLocalResetMarker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D7A5E0B3F24E6A9C0D1F11 /* SyncPairingLocalResetMarker.swift */; };
+		E2A0C3B1D4F5061728394A02 /* SyncResetRequestJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A0C3B1D4F5061728394A01 /* SyncResetRequestJournal.swift */; };
+		E2A0C3B1D4F5061728394A04 /* ResetRequestStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A0C3B1D4F5061728394A03 /* ResetRequestStrings.swift */; };
+		E2A0C3B1D4F5061728394A06 /* ResetRequestViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A0C3B1D4F5061728394A05 /* ResetRequestViews.swift */; };
 		C1D7A5E0B3F24E6A9C0D1F22 /* PhiLocalDataReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D7A5E0B3F24E6A9C0D1F21 /* PhiLocalDataReset.swift */; };
 		C5BADF6174A250C6CE32EA57 /* DeviceApprovalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C80221E1E435653384260DC4 /* DeviceApprovalService.swift */; };
 		C5F9F384A23E1553837E302C /* AccountKeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0024EB323125F300021F9D /* AccountKeyManager.swift */; };
@@ -1393,6 +1396,9 @@
 		C0D3F1082026090800000002 /* SidebarFileDropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarFileDropView.swift; sourceTree = "<group>"; };
 		C1EA20261102000100000002 /* BrowserState+ClearTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+ClearTabs.swift"; sourceTree = "<group>"; };
 		C1D7A5E0B3F24E6A9C0D1F11 /* SyncPairingLocalResetMarker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPairingLocalResetMarker.swift; sourceTree = "<group>"; };
+		E2A0C3B1D4F5061728394A01 /* SyncResetRequestJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncResetRequestJournal.swift; sourceTree = "<group>"; };
+		E2A0C3B1D4F5061728394A03 /* ResetRequestStrings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ResetRequestStrings.swift; path = UI/ResetRequestStrings.swift; sourceTree = "<group>"; };
+		E2A0C3B1D4F5061728394A05 /* ResetRequestViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ResetRequestViews.swift; path = UI/ResetRequestViews.swift; sourceTree = "<group>"; };
 		C1D7A5E0B3F24E6A9C0D1F21 /* PhiLocalDataReset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiLocalDataReset.swift; sourceTree = "<group>"; };
 		C70000000000000000000001 /* CustomTooltipController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomTooltipController.swift; sourceTree = "<group>"; };
 		C70000000000000000000002 /* CustomTooltip+Hosting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CustomTooltip+Hosting.swift"; sourceTree = "<group>"; };
@@ -1708,6 +1714,9 @@
 				DB90EAB144A61C14E0121301 /* ChromiumSyncStatus.swift */,
 				DB90EAB144A61C14E0121101 /* SyncPairingState.swift */,
 				C1D7A5E0B3F24E6A9C0D1F11 /* SyncPairingLocalResetMarker.swift */,
+				E2A0C3B1D4F5061728394A01 /* SyncResetRequestJournal.swift */,
+				E2A0C3B1D4F5061728394A03 /* ResetRequestStrings.swift */,
+				E2A0C3B1D4F5061728394A05 /* ResetRequestViews.swift */,
 				72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */,
 				6FFFE1C0B7A7B38B0B896CF4 /* PairingWizardView.swift */,
 				3D65DDDE1F39C8D1E868E132 /* PairingStepBar.swift */,
@@ -4322,6 +4331,9 @@
 				DB90EAB144A61C14E0121302 /* ChromiumSyncStatus.swift in Sources */,
 				DB90EAB144A61C14E0121102 /* SyncPairingState.swift in Sources */,
 				C1D7A5E0B3F24E6A9C0D1F12 /* SyncPairingLocalResetMarker.swift in Sources */,
+				E2A0C3B1D4F5061728394A02 /* SyncResetRequestJournal.swift in Sources */,
+				E2A0C3B1D4F5061728394A04 /* ResetRequestStrings.swift in Sources */,
+				E2A0C3B1D4F5061728394A06 /* ResetRequestViews.swift in Sources */,
 				C1D7A5E0B3F24E6A9C0D1F22 /* PhiLocalDataReset.swift in Sources */,
 				8D2E1AF84824992526795C3F /* PairingWizardViewModel.swift in Sources */,
 				72458E59165A0E8FA89654B5 /* PairingWizardView.swift in Sources */,

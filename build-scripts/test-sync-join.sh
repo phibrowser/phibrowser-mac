@@ -17,5 +17,7 @@ xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$task_build/
   "$task_root/Sources/Sync/Keys/AccountKeyManager.swift" \
   "$task_root/Sources/Sync/Keys/PhiKeyCrypto.swift" \
   "$task_root/Sources/Sync/Keys/RecoveryCode.swift" \
+  "$task_root/Sources/Sync/Keys/SyncResetRequestJournal.swift" \
+  "$task_root/Sources/Sync/Keys/UI/ResetRequestStrings.swift" \
   "$task_build/KeyLayerViewModel.swift" "$task_root/Tests/SyncJoin/main.swift" -o "$task_build/tests"
 "$task_build/tests"

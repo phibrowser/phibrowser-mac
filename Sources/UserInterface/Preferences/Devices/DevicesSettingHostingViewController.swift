@@ -164,6 +164,16 @@ final class DevicesSettingHostingViewController: NSViewController {
             self?.syncKeyController?.requiresReconfiguration == true
                 || PhiChromiumCoordinator.shared.nativeSyncRequiresReconfiguration
         }
+        viewModel.resetRequestJournal = { [weak self] in
+            guard AccountController.shared.account?.userID == accountID else { return nil }
+            return self?.syncKeyController?.resetRequestJournal?.load()
+        }
+        viewModel.cancelResetRequestAction = { [weak self] in
+            guard let controller = self?.syncKeyController else {
+                throw DevicesRemoveDeviceError.syncControllerUnavailable
+            }
+            try await controller.cancelResetRequest()
+        }
         viewModel.profileNames = { Dictionary(uniqueKeysWithValues:
             ProfileManager.shared.userAssignableProfiles.map { ($0.profileId, $0.displayName) }) }
         boundManager = syncStack.manager

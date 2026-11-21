@@ -544,6 +544,10 @@ class Tab: WebContentRepresentable {
                 let previousURLString = self.url
                 self.url = urlString
                 self.clearFaviconDataIfPageURLChanged(from: previousURLString, to: urlString)
+                // An Entra sign-in needs the device credentials the Extensible
+                // SSO extension holds the first time a tab reaches the IdP
+                // (issue #383). Every other URL returns on a set lookup.
+                EnterpriseSSOHeaders.shared.noteCommittedURL(urlString)
             }
             .store(in: &cancellables)
 

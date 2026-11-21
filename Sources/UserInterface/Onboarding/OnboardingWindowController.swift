@@ -124,9 +124,14 @@ class OnboardingWindowController: NSWindowController {
         return vc
     }()
     
+    /// Hosts every page at the fixed design size and scales it down to fit
+    /// the screen. Nil for a window supplied by the caller, whose pages are
+    /// set as its content view controller directly.
+    private var scalingContainer: OnboardingScalingContainerViewController?
+
     convenience init(presentsGuestMigrationRecovery: Bool = false) {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 800),
+            contentRect: NSRect(origin: .zero, size: OnboardingScalingContainerViewController.designSize),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -140,7 +145,28 @@ class OnboardingWindowController: NSWindowController {
         self.init(window: window)
         HolographicCardView.prepareArtwork()
         self.presentsGuestMigrationRecovery = presentsGuestMigrationRecovery
+        let container = OnboardingScalingContainerViewController()
+        scalingContainer = container
+        contentViewController = container
         setupContentViewController()
+        fitToScreen()
+    }
+
+    /// Scales the window so the whole page fits the target screen's visible
+    /// frame (between the menu bar and the Dock). Full size wherever 640×800
+    /// already fits; uniformly smaller on short displays such as a 13" laptop.
+    func fitToScreen(_ screen: NSScreen? = nil) {
+        guard let window, let scalingContainer,
+              let visible = (screen ?? window.screen ?? NSScreen.main)?.visibleFrame else { return }
+        let size = scalingContainer.fittedSize(in: visible)
+        guard window.contentRect(forFrameRect: window.frame).size != size else { return }
+        window.setContentSize(size)
+    }
+
+    /// The page on screen, whether hosted in the scaling container or set
+    /// directly as the window's content view controller.
+    private var currentPage: NSViewController? {
+        scalingContainer?.page ?? window?.contentViewController
     }
 
     private func setupContentViewController() {
@@ -171,7 +197,15 @@ class OnboardingWindowController: NSWindowController {
 
             return loginViewController
         }()
-        contentViewController = contentVc
+        show(contentVc)
+    }
+
+    private func show(_ page: NSViewController) {
+        if let scalingContainer {
+            scalingContainer.show(page)
+        } else {
+            window?.contentViewController = page
+        }
     }
     
     // MARK: - Content Management
@@ -183,13 +217,13 @@ class OnboardingWindowController: NSWindowController {
         if completesCurrentStep {
             analyticsSession.completeCurrentStep()
         }
-        window?.contentViewController = vc
+        show(vc)
         recordCurrentStepViewed()
     }
 
     func recordCurrentStepViewed() {
         guard window?.isVisible == true,
-              let viewController = window?.contentViewController,
+              let viewController = currentPage,
               let step = analyticsStep(for: viewController) else {
             return
         }
@@ -328,6 +362,74 @@ class OnboardingWindowController: NSWindowController {
 
         Task { @MainActor in
             await LoginController.shared.completeCurrentLogin()
+        }
+    }
+}
+
+/// Hosts one onboarding page at its fixed design size and scales it
+/// uniformly to the container's frame. Every page is laid out for exactly
+/// 640×800; on a display whose visible frame is shorter than that (PHI-1472)
+/// the whole design shrinks to fit instead of running under the Dock.
+/// Scaling is done with the view's bounds, the same mechanism NSScrollView
+/// magnification uses, so drawing, layers and hit testing all follow it.
+final class OnboardingScalingContainerViewController: NSViewController {
+    static let designSize = NSSize(width: 640, height: 800)
+
+    private(set) var page: NSViewController?
+
+    override func loadView() {
+        view = OnboardingScalingView(designSize: Self.designSize)
+    }
+
+    func show(_ newPage: NSViewController) {
+        guard newPage !== page else { return }
+        if let page {
+            page.view.removeFromSuperview()
+            page.removeFromParent()
+        }
+        addChild(newPage)
+        // The page pins its own size with constraints; position it by frame
+        // in the container's design-space bounds.
+        let pageView = newPage.view
+        pageView.translatesAutoresizingMaskIntoConstraints = true
+        pageView.autoresizingMask = []
+        pageView.frame = NSRect(origin: .zero, size: Self.designSize)
+        view.addSubview(pageView)
+        page = newPage
+    }
+
+    /// The largest size with the design's aspect ratio that fits `visibleFrame`,
+    /// never larger than the design itself.
+    func fittedSize(in visibleFrame: NSRect) -> NSSize {
+        let design = Self.designSize
+        let scale = min(1,
+                        visibleFrame.width / design.width,
+                        visibleFrame.height / design.height)
+        return NSSize(width: (design.width * scale).rounded(.down),
+                      height: (design.height * scale).rounded(.down))
+    }
+}
+
+private final class OnboardingScalingView: NSView {
+    private let designSize: NSSize
+
+    init(designSize: NSSize) {
+        self.designSize = designSize
+        super.init(frame: NSRect(origin: .zero, size: designSize))
+        wantsLayer = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        // Keep the coordinate space at the design size whatever the frame,
+        // so the hosted page always lays out at 640×800 and is drawn scaled.
+        if bounds.size != designSize {
+            setBoundsSize(designSize)
         }
     }
 }

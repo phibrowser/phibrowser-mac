@@ -10238,10 +10238,11 @@ final class SpaceWindowSlot: ObservableObject {
         guard let frame else { return nil }
         let minimum = NSSize(width: 640, height: 480)
         guard frame.width < minimum.width || frame.height < minimum.height else { return frame }
-        let size = ShellWindowController.defaultContentSize
+        var size = ShellWindowController.defaultContentSize
         var origin = frame.origin
         if let screen = NSScreen.main {
             let visible = screen.visibleFrame
+            size = ShellWindowController.fittedDefaultSize(in: visible)
             origin.x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
             origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
         }

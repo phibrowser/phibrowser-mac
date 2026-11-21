@@ -187,6 +187,7 @@ class LoginController {
             AppLogDebug("🔐 [Login] Reusing existing LoginWindowController")
         }
 
+        loginWindowController?.fitToScreen()
         loginWindowController?.window?.makeKeyAndOrderFront(nil)
         loginWindowController?.window?.center()
         loginWindowController?.recordCurrentStepViewed()

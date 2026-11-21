@@ -1593,7 +1593,13 @@ class SpaceSessionController: NSWindowController {
         }
         
         window.level = .normal
-        window.setContentSize(Self.defaultWindowSize)
+        if let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
+            let chrome = window.frameRect(forContentRect: .zero).size
+            window.setContentSize(
+                ShellWindowController.fittedDefaultSize(in: visible, chrome: chrome))
+        } else {
+            window.setContentSize(Self.defaultWindowSize)
+        }
         window.alphaValue = 1.0
         window.setIsVisible(true)
         window.center()

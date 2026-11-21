@@ -442,6 +442,20 @@ class PinnedTabViewController: NSViewController {
             }
             .store(in: &cancellables)
 
+        // Tiles per row and their spacing are the Space's own, set in
+        // Settings → Spaces (`SpaceManager.pinnedTabGridStyle(forSpaceId:)`).
+        customLayout.style = SpaceManager.shared.pinnedTabGridStyle(forSpaceId: browserState.spaceId)
+        NotificationCenter.default.publisher(for: .pinnedTabGridStyleDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak browserState] notification in
+                guard let self, let browserState,
+                      let spaceIds = notification.userInfo?["spaceIds"] as? [String],
+                      spaceIds.contains(browserState.spaceId) else { return }
+                self.customLayout.style = SpaceManager.shared.pinnedTabGridStyle(forSpaceId: browserState.spaceId)
+                self.updateLayout()
+            }
+            .store(in: &cancellables)
+
         // Focus changes only affect selection state, not the data snapshot.
         browserState.$focusingTab
             .receive(on: DispatchQueue.main)

@@ -5,6 +5,54 @@
 
 import Cocoa
 
+/// How one Space lays out its pinned tabs in the sidebar: how many tiles
+/// share a row and how far apart they sit. Stored per Space by
+/// `SpaceManager.pinnedTabGridStyle(forSpaceId:)`; a Space without an entry
+/// uses `automatic`, the grid as it has always been.
+struct PinnedTabGridStyle: Codable, Equatable {
+    /// The gap between tiles, across and down.
+    enum Spacing: String, Codable, CaseIterable {
+        case standard
+        case compact
+
+        var points: CGFloat {
+            switch self {
+            case .standard: return 8
+            case .compact: return 4
+            }
+        }
+    }
+
+    /// The tile counts a Space can fix its rows at.
+    static let columnChoices = 3...6
+    static let automatic = PinnedTabGridStyle()
+
+    /// The settings one Space can copy to every other Space.
+    struct Parts: OptionSet {
+        let rawValue: Int
+        static let columns = Parts(rawValue: 1 << 0)
+        static let spacing = Parts(rawValue: 1 << 1)
+    }
+
+    /// Tiles per row. Nil follows the sidebar's width.
+    var columns: Int?
+    var spacing: Spacing = .standard
+
+    /// This style with `parts` taken from `source` and the rest kept.
+    func copying(_ parts: Parts, from source: PinnedTabGridStyle) -> PinnedTabGridStyle {
+        var copy = self
+        if parts.contains(.columns) { copy.columns = source.columns }
+        if parts.contains(.spacing) { copy.spacing = source.spacing }
+        return copy
+    }
+}
+
+extension Notification.Name {
+    /// Posted by `SpaceManager` when one or more Spaces get a new pinned tab
+    /// grid style. `userInfo["spaceIds"]` lists them.
+    static let pinnedTabGridStyleDidChange = Notification.Name("PhiPinnedTabGridStyleDidChangeNotification")
+}
+
 class PinnedTabLayout: NSCollectionViewLayout {
     enum Section: Int {
         case extensions = 0
@@ -25,10 +73,10 @@ class PinnedTabLayout: NSCollectionViewLayout {
         let contentWidth: CGFloat
         let tabCount: Int
         let extensionCount: Int
+        let style: PinnedTabGridStyle
     }
 
     private enum Constants {
-        static let spacing: CGFloat = 8
         static let insets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         static let tabHeight: CGFloat = 45
         static let extensionHeight: CGFloat = 28
@@ -48,6 +96,15 @@ class PinnedTabLayout: NSCollectionViewLayout {
 
     private var tabMetrics: SectionMetrics = .empty
     private var extensionMetrics: SectionMetrics = .empty
+
+    /// The Space's row count and spacing. Setting a new style lays the grid
+    /// out again on the next pass.
+    var style: PinnedTabGridStyle = .automatic {
+        didSet {
+            guard style != oldValue else { return }
+            invalidateLayout()
+        }
+    }
 
     init(topInset: CGFloat, bottomInset: CGFloat) {
         self.topInset = topInset
@@ -84,7 +141,7 @@ class PinnedTabLayout: NSCollectionViewLayout {
     }
 
     func configure(parentWidth: CGFloat, tabCount: Int, extensionCount: Int) {
-        let input = LayoutInput(contentWidth: parentWidth, tabCount: tabCount, extensionCount: extensionCount)
+        let input = LayoutInput(contentWidth: parentWidth, tabCount: tabCount, extensionCount: extensionCount, style: style)
         if lastPreparedInput != input {
             pendingConfiguredWidth = parentWidth
             invalidateLayout()
@@ -100,7 +157,7 @@ class PinnedTabLayout: NSCollectionViewLayout {
         let extensionCount = numberOfItems(in: .extensions, collectionView: collectionView)
         let tabCount = numberOfItems(in: .tabs, collectionView: collectionView)
         let contentWidth = pendingConfiguredWidth ?? collectionView.bounds.width
-        let input = LayoutInput(contentWidth: contentWidth, tabCount: tabCount, extensionCount: extensionCount)
+        let input = LayoutInput(contentWidth: contentWidth, tabCount: tabCount, extensionCount: extensionCount, style: style)
 
         guard input != lastPreparedInput else {
             return
@@ -125,6 +182,38 @@ class PinnedTabLayout: NSCollectionViewLayout {
         guard let collectionView else { return false }
         return abs(newBounds.width - collectionView.bounds.width) > .ulpOfOne
     }
+
+    /// Columns and tile width for the pinned tabs. Automatic fits as many
+    /// tiles as the sidebar's width allows, up to one per pin. A fixed count
+    /// sizes every tile as one of that many columns, so a tile keeps its
+    /// width however many pins there are, and lets tiles go narrower than
+    /// the automatic minimum.
+    static func tabGrid(itemCount: Int, contentWidth: CGFloat, style: PinnedTabGridStyle) -> (columns: Int, itemWidth: CGFloat) {
+        let spacing = style.spacing.points
+        guard let fixed = style.columns else {
+            return grid(itemCount: itemCount, contentWidth: contentWidth, spacing: spacing,
+                        columnLimit: tabColumnsLimit(for: contentWidth), minimumWidth: Constants.tabMinimumWidth)
+        }
+        let columns = max(1, fixed)
+        return (columns, max(1, rowWidth(for: contentWidth, columns: columns, spacing: spacing)))
+    }
+
+    /// Fits up to `columnLimit` columns of at least `minimumWidth`, never
+    /// more than there are items, and widens them to fill the row.
+    static func grid(itemCount: Int, contentWidth: CGFloat, spacing: CGFloat,
+                     columnLimit: Int, minimumWidth: CGFloat) -> (columns: Int, itemWidth: CGFloat) {
+        var columns = max(1, min(columnLimit, itemCount))
+        while columns > 1, rowWidth(for: contentWidth, columns: columns, spacing: spacing) < minimumWidth {
+            columns -= 1
+        }
+        return (columns, max(minimumWidth, rowWidth(for: contentWidth, columns: columns, spacing: spacing)))
+    }
+
+    /// The width each of `columns` tiles gets inside the grid's insets.
+    private static func rowWidth(for contentWidth: CGFloat, columns: Int, spacing: CGFloat) -> CGFloat {
+        let availableWidth = max(contentWidth - Constants.insets.left - Constants.insets.right, 0)
+        return (availableWidth - CGFloat(columns - 1) * spacing) / CGFloat(columns)
+    }
 }
 
 // MARK: - Private Helpers
@@ -144,10 +233,13 @@ private extension PinnedTabLayout {
         cachedAttributes.removeAll()
         orderedAttributes.removeAll()
 
-        let tabMaxColumns = tabColumnsLimit(for: input.contentWidth)
+        let spacing = input.style.spacing.points
         let extensionMaxColumns = extensionColumnsLimit(for: input.contentWidth)
-        extensionMetrics = metrics(for: input.extensionCount, itemHeight: Constants.extensionHeight, minimumWidth: Constants.extensionMinimumWidth, contentWidth: input.contentWidth, columnLimit: extensionMaxColumns)
-        tabMetrics = metrics(for: input.tabCount, itemHeight: Constants.tabHeight, minimumWidth: Constants.tabMinimumWidth, contentWidth: input.contentWidth, columnLimit: tabMaxColumns)
+        extensionMetrics = metrics(for: input.extensionCount, itemHeight: Constants.extensionHeight, spacing: spacing,
+                                   grid: Self.grid(itemCount: input.extensionCount, contentWidth: input.contentWidth, spacing: spacing,
+                                                   columnLimit: extensionMaxColumns, minimumWidth: Constants.extensionMinimumWidth))
+        tabMetrics = metrics(for: input.tabCount, itemHeight: Constants.tabHeight, spacing: spacing,
+                             grid: Self.tabGrid(itemCount: input.tabCount, contentWidth: input.contentWidth, style: input.style))
 
         let hasExtensions = extensionMetrics.numberOfItems > 0
         let hasTabs = tabMetrics.numberOfItems > 0
@@ -157,14 +249,14 @@ private extension PinnedTabLayout {
         }
 
         if hasExtensions {
-            layout(section: .extensions, metrics: extensionMetrics, yOffset: &yOffset)
+            layout(section: .extensions, metrics: extensionMetrics, spacing: spacing, yOffset: &yOffset)
         }
 
         if hasTabs {
             if hasExtensions {
-                yOffset += Constants.spacing
+                yOffset += spacing
             }
-            layout(section: .tabs, metrics: tabMetrics, yOffset: &yOffset)
+            layout(section: .tabs, metrics: tabMetrics, spacing: spacing, yOffset: &yOffset)
         }
 
         if hasExtensions || hasTabs {
@@ -184,11 +276,11 @@ private extension PinnedTabLayout {
 
     /// Width used for column-limit breakpoints. Parent width grew by the same
     /// amount as `insets.right` when the sidebar trailing edge was added.
-    func columnDecisionWidth(for contentWidth: CGFloat) -> CGFloat {
+    static func columnDecisionWidth(for contentWidth: CGFloat) -> CGFloat {
         max(contentWidth - Constants.insets.right, 0)
     }
 
-    func tabColumnsLimit(for contentWidth: CGFloat) -> Int {
+    static func tabColumnsLimit(for contentWidth: CGFloat) -> Int {
         let width = columnDecisionWidth(for: contentWidth)
         if width < 236 {
             return 3
@@ -202,7 +294,7 @@ private extension PinnedTabLayout {
     }
 
     func extensionColumnsLimit(for contentWidth: CGFloat) -> Int {
-        let width = columnDecisionWidth(for: contentWidth)
+        let width = Self.columnDecisionWidth(for: contentWidth)
         if width <= 250 {
             return 5
         } else if width <= 350 {
@@ -212,42 +304,22 @@ private extension PinnedTabLayout {
         }
     }
 
-    private func metrics(for itemCount: Int, itemHeight: CGFloat, minimumWidth: CGFloat, contentWidth: CGFloat, columnLimit: Int) -> SectionMetrics {
+    private func metrics(for itemCount: Int, itemHeight: CGFloat, spacing: CGFloat, grid: (columns: Int, itemWidth: CGFloat)) -> SectionMetrics {
         guard itemCount > 0 else {
             return .empty
         }
-
-        var columns = min(columnLimit, itemCount)
-        let availableWidth = max(contentWidth - Constants.insets.left - Constants.insets.right, 0)
-
-        while columns > 1 {
-            let itemWidth = (availableWidth - CGFloat(columns - 1) * Constants.spacing) / CGFloat(columns)
-            if itemWidth >= minimumWidth {
-                break
-            }
-            columns -= 1
-        }
-
-        var itemWidth: CGFloat
-        if columns == 0 {
-            columns = 1
-        }
-
-        let calculatedWidth = (availableWidth - CGFloat(columns - 1) * Constants.spacing) / CGFloat(columns)
-        itemWidth = max(minimumWidth, calculatedWidth)
-
-        let rows = Int(ceil(Double(itemCount) / Double(columns)))
-        let sectionHeight = CGFloat(rows) * itemHeight + CGFloat(max(0, rows - 1)) * Constants.spacing
+        let rows = Int(ceil(Double(itemCount) / Double(grid.columns)))
+        let sectionHeight = CGFloat(rows) * itemHeight + CGFloat(max(0, rows - 1)) * spacing
         return SectionMetrics(
             numberOfItems: itemCount,
-            numberOfColumns: columns,
+            numberOfColumns: grid.columns,
             numberOfRows: rows,
-            itemSize: NSSize(width: itemWidth, height: itemHeight),
+            itemSize: NSSize(width: grid.itemWidth, height: itemHeight),
             sectionHeight: sectionHeight
         )
     }
 
-    private func layout(section: Section, metrics: SectionMetrics, yOffset: inout CGFloat) {
+    private func layout(section: Section, metrics: SectionMetrics, spacing: CGFloat, yOffset: inout CGFloat) {
         guard metrics.numberOfItems > 0, metrics.numberOfColumns > 0, let collectionView else { return }
         let itemsInSection = min(metrics.numberOfItems, numberOfItems(in: section, collectionView: collectionView))
         guard itemsInSection > 0 else { return }
@@ -256,8 +328,8 @@ private extension PinnedTabLayout {
             let row = itemIndex / metrics.numberOfColumns
             let column = itemIndex % metrics.numberOfColumns
 
-            let originX = Constants.insets.left + CGFloat(column) * (metrics.itemSize.width + Constants.spacing)
-            let originY = yOffset + CGFloat(row) * (metrics.itemSize.height + Constants.spacing)
+            let originX = Constants.insets.left + CGFloat(column) * (metrics.itemSize.width + spacing)
+            let originY = yOffset + CGFloat(row) * (metrics.itemSize.height + spacing)
 
             let indexPath = IndexPath(item: itemIndex, section: section.rawValue)
             let attributes = NSCollectionViewLayoutAttributes(forItemWith: indexPath)

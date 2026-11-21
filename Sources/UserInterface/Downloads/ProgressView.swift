@@ -119,6 +119,8 @@ struct CircularProgressView: View {
                             lineCap: .round
                         )
                     )
+                    // A zero-length stroke with round caps can otherwise leave a dot.
+                    .opacity(progress > 0 ? 1 : 0)
                     .rotationEffect(.degrees(-90))
                     .animation(.easeInOut(duration: 0.2), value: progress)
             }

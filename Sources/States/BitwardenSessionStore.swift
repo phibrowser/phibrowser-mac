@@ -94,7 +94,10 @@ enum BitwardenSessionStore {
         ]
         base.merge(useDataProtection) { current, _ in current }
         let update = SecItemUpdate(base as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        if update == errSecSuccess { return }
+        if update == errSecSuccess {
+            AppLogInfo("[BitwardenSessionStore] saved")
+            return
+        }
         if update != errSecItemNotFound {
             AppLogError("[BitwardenSessionStore] SecItemUpdate failed: \(describe(update))")
             return
@@ -105,7 +108,9 @@ enum BitwardenSessionStore {
         // iCloud. Honored because this is the data-protection keychain.
         create[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         let add = SecItemAdd(create as CFDictionary, nil)
-        if add != errSecSuccess {
+        if add == errSecSuccess {
+            AppLogInfo("[BitwardenSessionStore] saved")
+        } else {
             AppLogError("[BitwardenSessionStore] SecItemAdd failed: \(describe(add))")
         }
     }
@@ -122,13 +127,21 @@ enum BitwardenSessionStore {
         query.merge(useDataProtection) { current, _ in current }
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data else {
-            if status != errSecItemNotFound {
-                AppLogError("[BitwardenSessionStore] read failed: \(describe(status))")
-            }
+        if status == errSecItemNotFound {
+            AppLogInfo("[BitwardenSessionStore] restore record missing")
             return nil
         }
-        return try? JSONDecoder().decode(BitwardenPersistedSession.self, from: data)
+        guard status == errSecSuccess else {
+            AppLogError("[BitwardenSessionStore] read failed (OSStatus \(status))")
+            return nil
+        }
+        guard let data = item as? Data,
+              let session = try? JSONDecoder().decode(BitwardenPersistedSession.self, from: data) else {
+            AppLogWarn("[BitwardenSessionStore] restore record malformed")
+            return nil
+        }
+        AppLogInfo("[BitwardenSessionStore] restore record loaded")
+        return session
     }
 
     /// Removes the persisted session (logout, or when a restore reveals it is

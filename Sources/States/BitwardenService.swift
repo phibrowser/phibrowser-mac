@@ -356,6 +356,15 @@ enum BitwardenHelperErrorCode: String {
     /// The code sent with the last attempt was wrong or expired; a fresh one
     /// has been emailed.
     case invalidNewDeviceOtp
+
+    /// Log only recognized protocol identifiers. Helper error messages can contain server data.
+    static func restoreRejectionReason(_ error: Any?) -> String {
+        guard let code = (error as? [String: Any])?["code"] as? String,
+              let reason = Self(rawValue: code) else {
+            return "unclassified"
+        }
+        return reason.rawValue
+    }
 }
 
 /// Low-level transport to `PhiBitwardenHelper`. Spawns the helper with one end
@@ -878,11 +887,20 @@ final class BitwardenHelperClient: @unchecked Sendable {
                         handleEventFrame(frame)
                         continue
                     }
-                    if let ok = frame["ok"] as? Bool, !ok { onFailure?() }
+                    switch frame["ok"] as? Bool {
+                    case true?:
+                        AppLogInfo("[BitwardenHelperClient] session restore accepted")
+                    case false?:
+                        let reason = BitwardenHelperErrorCode.restoreRejectionReason(frame["error"])
+                        AppLogWarn("[BitwardenHelperClient] session restore rejected: \(reason)")
+                        onFailure?()
+                    case nil:
+                        AppLogWarn("[BitwardenHelperClient] session restore response malformed")
+                    }
                     return
                 }
             } catch {
-                AppLogWarn("[BitwardenHelperClient] session restore did not complete: \(error.localizedDescription)")
+                AppLogWarn("[BitwardenHelperClient] session restore transport failed")
             }
         }
 

@@ -1472,6 +1472,19 @@ private final class DividerHandle: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    /// The shell window sets `isMovableByWindowBackground`, and AppKit's
+    /// default for a non-opaque view lets the window take over the drag
+    /// after its first few events, moving the window instead of the divider.
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    /// Undocumented AppKit hook: the window server moves the window on its own
+    /// for presses in the titlebar strip unless a view claims the rect here,
+    /// and AppKit claims nothing for a view that draws nothing. Chromium's
+    /// `BridgedContentView` overrides it the same way.
+    @objc func _opaqueRectForWindowMoveWhenInTitlebar() -> NSRect {
+        bounds
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         resetTrackingArea()

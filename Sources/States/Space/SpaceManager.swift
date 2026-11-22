@@ -871,6 +871,12 @@ final class SpaceManager: ObservableObject {
     /// family this belongs to; the records describe a session this side can
     /// no longer reach).
     private var parkedGhostSpaceIdsByWindowId: [Int: String] = [:]
+    /// This process is the first launch after a user-data import, read and
+    /// cleared from `chromiumSessionPredatesImportKey` in `init`. The cold
+    /// start's park receipts then retire every parked window no Space maps
+    /// to (`dropUnmappedGhosts`) instead of keeping it as an unreachable
+    /// ghost.
+    private var coldStartFollowsUserDataImport = false
     /// Index into `restoreEntries` → the windows a live slot last had recorded
     /// against that entry, ghosts excluded. Refreshed by every snapshot write
     /// that lands while a slot still speaks for the entry, and read once the
@@ -1070,6 +1076,7 @@ final class SpaceManager: ObservableObject {
         NotificationCenter.default.addObserver(self, selector: #selector(handleStoreWillClose),
                                                name: LocalStore.willCloseNotification, object: nil)
         guard observeAccountChanges else { return }
+        coldStartFollowsUserDataImport = Self.consumeChromiumSessionPredatesImport()
 
         NotificationCenter.default.addObserver(
             self,
@@ -2166,12 +2173,17 @@ final class SpaceManager: ObservableObject {
     /// to reach it from; it is reported and left where it is, because it
     /// still lives in the session file and the next unfiltered restore hands
     /// it back as an ordinary window, while dropping it would destroy those
-    /// tabs for good.
+    /// tabs for good. The exceptions are windows nothing can ever claim
+    /// (`dropUnmappedGhosts`): those of a profile no Space is bound to, and,
+    /// on the cold start right after a user-data import
+    /// (`retiringImportSupersededGhosts`), every one — the user chose to
+    /// replace that session with the backup's Spaces.
     ///
     /// Must run BEFORE `endSessionRestoreTransaction`: that is the write
     /// which folds the park records into the persisted snapshot, and it has
     /// to fold the receipt rather than the prediction.
-    private func applyParkedGhostReceipt(_ receipt: ChromiumParkedGhostReceipt) {
+    private func applyParkedGhostReceipt(_ receipt: ChromiumParkedGhostReceipt,
+                                         retiringImportSupersededGhosts: Bool = false) {
         let snapshotSpaceIdsByWindowId = restoreEntries
             .reduce(into: [Int: String]()) { merged, entry in
                 // First wins on a (corrupt) duplicate, the same rule
@@ -2195,8 +2207,23 @@ final class SpaceManager: ObservableObject {
             // window is gone": predicted parked, never actually parked.
             AppLogWarn("[SpaceManager] ghost receipt: dropped \(reconciliation.unparked.count) predicted ghost(s) chromium never parked \(reconciliation.unparked)")
         }
-        let retired = dropUnmappedGhostsOfProfilesWithoutSpace(
-            reconciliation.unmapped, windowIdsByProfileId: receipt.windowIdsByProfileId)
+        var retired = dropUnmappedGhosts(
+            reconciliation.unmapped, windowIdsByProfileId: receipt.windowIdsByProfileId,
+            reason: "ghost receipt"
+        ) { profileId in
+            hasNoSpace(boundTo: profileId) ? "profile \(profileId), which no Space uses" : nil
+        }
+        // An empty record maps nothing, so every parked window would read as
+        // unmapped; only a loaded snapshot can say a window has no Space.
+        if retiringImportSupersededGhosts, !restoreEntries.isEmpty {
+            let remaining = reconciliation.unmapped.filter { !retired.contains($0) }
+            retired.formUnion(dropUnmappedGhosts(
+                remaining, windowIdsByProfileId: receipt.windowIdsByProfileId,
+                reason: "ghost receipt after user-data import"
+            ) { profileId in
+                "profile \(profileId), saved before the import"
+            })
+        }
         let unmapped = reconciliation.unmapped.filter { !retired.contains($0) }
         if !unmapped.isEmpty {
             AppLogError("[SpaceManager] ghost receipt: chromium parked \(unmapped.count) window(s) no Space maps to \(unmapped) — unreachable until the next full restore brings them back")
@@ -3567,6 +3594,27 @@ final class SpaceManager: ObservableObject {
     /// account's own snapshot, so there is no second copy that can go stale.
     static let lastBoundAccountUserIDKey = "PhiLastBoundAccountUserID"
 
+    /// App-domain flag set by the user-data import after it replaces the
+    /// `Phi` directory and before it relaunches. It lives here rather than in
+    /// the account's defaults because the import swaps that directory, while
+    /// Chromium's profile directories — and the session files the next cold
+    /// start replays — stay as the importing process leaves them at quit.
+    static let chromiumSessionPredatesImportKey = "PhiChromiumSessionPredatesUserDataImport"
+
+    /// Marks the next launch as the first after a user-data import.
+    static func markChromiumSessionPredatesImport() {
+        UserDefaults.standard.set(true, forKey: chromiumSessionPredatesImportKey)
+    }
+
+    /// Reads and clears the import flag, so exactly one launch acts on it.
+    private static func consumeChromiumSessionPredatesImport() -> Bool {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: chromiumSessionPredatesImportKey) else { return false }
+        defaults.removeObject(forKey: chromiumSessionPredatesImportKey)
+        AppLogInfo("[SpaceManager] first launch after a user-data import — this cold start retires parked windows no imported Space maps to")
+        return true
+    }
+
     /// The owner map a snapshot entry stores under
     /// `snapshotSpaceProfileIdsKey`. Agent Spaces are left out: the launch
     /// that reads this excludes them from the eager set, so their owner would
@@ -3717,7 +3765,8 @@ final class SpaceManager: ObservableObject {
             windowIdsByProfileId: windowIdsByProfileId,
             // A cold start never arms through ArmForReopen, so the stale-set
             // tally this reports is never about it.
-            eagerFilterMatchedNothing: false))
+            eagerFilterMatchedNothing: false),
+            retiringImportSupersededGhosts: coldStartFollowsUserDataImport)
         if Self.coldStartReceiptWritesSnapshot(
             recordedBefore: recordedBefore,
             recordedAfter: parkedGhostSpaceIdsByWindowId) {
@@ -4137,15 +4186,27 @@ final class SpaceManager: ObservableObject {
         }
     }
 
-    /// Retires the parked windows of profiles no Space is bound to, among
-    /// the ghosts a receipt reports that no Space maps to. Such a window is
-    /// one the coordinator discarded when it was live
-    /// (`discardWindowOnProfileWithoutSpace`): its close never left the
-    /// session file, so each launch would park it again, and a full restore
-    /// would replay it only to have it discarded again. Returns the window
-    /// ids it retired.
-    private func dropUnmappedGhostsOfProfilesWithoutSpace(
-        _ unmapped: [Int], windowIdsByProfileId: [String: [Int]]
+    /// Retires parked windows among the ghosts a receipt reports that no
+    /// Space maps to, for the profiles `owner` names (nil skips a profile;
+    /// the string only names the ghost in the log lines). Two cases qualify,
+    /// both windows nothing can ever claim:
+    ///
+    ///   * A profile no Space is bound to. Such a window is one the
+    ///     coordinator discarded when it was live
+    ///     (`discardWindowOnProfileWithoutSpace`): its close never left the
+    ///     session file, so each launch would park it again, and a full
+    ///     restore would replay it only to have it discarded again.
+    ///   * Any profile, on the cold start right after a user-data import
+    ///     (`coldStartFollowsUserDataImport`). The import replaces only the
+    ///     `Phi` directory, so the session files still hold the windows of
+    ///     the process that ran it while the snapshot comes from the backup;
+    ///     a window the backup's snapshot cannot place belongs to no imported
+    ///     Space.
+    ///
+    /// Returns the window ids it retired.
+    private func dropUnmappedGhosts(
+        _ unmapped: [Int], windowIdsByProfileId: [String: [Int]], reason: String,
+        owner: (_ profileId: String) -> String?
     ) -> Set<Int> {
         guard !unmapped.isEmpty,
               let bridge = ChromiumLauncher.sharedInstance().bridge,
@@ -4153,12 +4214,11 @@ final class SpaceManager: ObservableObject {
                   .dropGhostWindow(_:profileId:completion:))) else { return [] }
         let unmappedIds = Set(unmapped)
         var dropped: Set<Int> = []
-        for (profileId, windowIds) in windowIdsByProfileId.sorted(by: { $0.key < $1.key })
-        where hasNoSpace(boundTo: profileId) {
+        for (profileId, windowIds) in windowIdsByProfileId.sorted(by: { $0.key < $1.key }) {
+            guard let owner = owner(profileId) else { continue }
             for windowId in windowIds.sorted() where unmappedIds.contains(windowId) {
                 dropChromiumGhostRecord(windowId: windowId, profileId: profileId,
-                                        owner: "profile \(profileId), which no Space uses",
-                                        reason: "ghost receipt", bridge: bridge)
+                                        owner: owner, reason: reason, bridge: bridge)
                 dropped.insert(windowId)
             }
         }

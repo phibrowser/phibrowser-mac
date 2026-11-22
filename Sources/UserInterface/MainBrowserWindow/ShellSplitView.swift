@@ -14,28 +14,50 @@ import Cocoa
 /// is collapsed or a toggle is in flight the page area spans the container
 /// and the column, if showing, lies over it. The divider is on top.
 ///
-/// A toggle's motion is Core Animation's (`slideColumn`): explicit
-/// animations on the two panes' layers, running on the render server while
-/// the frames stay where the toggle's state put them. The main thread lays
-/// nothing out per frame, and a busy one cannot stall the slide.
+/// A toggle's motion is Core Animation's (`slideColumn`): the column's layer
+/// slides and a mask on the page draws the card's near edge beside it, on
+/// the render server while the frames stay where the toggle's state put
+/// them. The main thread lays nothing out per frame, and a busy one cannot
+/// stall the slide.
 ///
 /// The view knows nothing about Spaces or the shell window.
 final class ShellSplitView: NSView {
-    /// How far under the column the page area's near edge is with the column
-    /// fully in, tapering to nothing as the column leaves. Two layers that
-    /// move on their own and only meet show what is behind them along the
-    /// seam, as a line down the column's edge. And with the page card's
-    /// margin, which is this wide, under the column, the card's edge is
-    /// where it sits beside an open column: it does not step when the page
-    /// area takes its narrow frame.
-    static let pageOverlap = WebContentConstant.edgesSpacing
+    /// The page's card as a toggle draws it: the page tree, laid out for the
+    /// page area's in-flight frame, shows from the card's near edge on.
+    struct SlidingPageCard {
+        /// The presented page tree, filling the page area.
+        let view: NSView
+        /// The card's frame in `view`. Its top, bottom and corners shape the
+        /// near edge; where that edge is comes from the column.
+        let frame: NSRect
+        let cornerRadius: CGFloat
+        /// The card's margin on the column's side with the column away.
+        let margin: CGFloat
+    }
+
     static let slideAnimationKey = "shellSplit.slide"
     /// How long after a slide's duration its completion is called anyway.
     private static let slideCompletionMargin: TimeInterval = 0.3
+    /// How often an expansion lays the page out on its way: a few times a
+    /// toggle, not per frame.
+    static let pageStepInterval = SidebarToggleAnimation.duration / 5
 
     let divider = ShellSplitDividerView()
     private weak var columnView: NSView?
     private weak var pageView: NSView?
+    /// The card a toggle's mask draws; nil leaves the page unmasked.
+    var pageCard: (() -> SlidingPageCard?)?
+    private var pageCardMask: CALayer?
+    private weak var maskedPageView: NSView?
+    /// What a slide in flight takes off the page on the column's side, past
+    /// the card's margin: the page area keeps its frame and its card, and
+    /// the page in the card (`onPageInsetInFlight`) is laid out narrower.
+    private(set) var pageInsetInFlight: CGFloat = 0
+    /// Lays the page in the card out `pageInsetInFlight` in from the card's
+    /// near edge. Called with 0 when the slide ends.
+    var onPageInsetInFlight: ((CGFloat) -> Void)?
+    /// Bumped by `endSlide()`, so a step of a slide that ended is dropped.
+    private var pageStepsGeneration = 0
 
     var geometry = ShellSplitGeometry() {
         didSet {
@@ -132,11 +154,12 @@ final class ShellSplitView: NSView {
     /// its place, the page area spanning the container.
     ///
     /// The column moves by its own width times the fraction hidden, toward
-    /// its edge. The column pushes the page area along: the page's near edge
-    /// stays under the column's inner edge (`pageOverlap`) and its far side
-    /// overhangs the container. Both animations run on the same curve from
-    /// the same commit, so the page stays under the column's edge on every
-    /// frame.
+    /// its edge. The page area does not move. A mask on the page
+    /// (`maskPageCard`) hides it up to where the card's near edge would be
+    /// beside the column on screen, on the same curve from the same commit,
+    /// so the card's edge stays on the column however late the main thread
+    /// is. In the card the page is laid out for the slide (`stepPage`), its
+    /// far side still and its near side at the column or under it.
     ///
     /// The animations hold their end value until `endSlide()`, which the
     /// caller pairs with the frames' end state in one turn: a main thread
@@ -146,8 +169,7 @@ final class ShellSplitView: NSView {
     /// not animated; its completion comes on the main queue's next turn.
     /// `completion` may be called more than once.
     func slideColumn(for flight: SidebarTransitions.Flight, completion: @escaping () -> Void) {
-        guard flight.duration > 0, window?.isVisible == true,
-              let columnLayer = columnView?.layer, let pageLayer = pageView?.layer else {
+        guard flight.duration > 0, window?.isVisible == true, let columnLayer = columnView?.layer else {
             endSlide()
             DispatchQueue.main.async(execute: completion)
             return
@@ -168,9 +190,18 @@ final class ShellSplitView: NSView {
         CATransaction.setCompletionBlock(completion)
         slide(columnLayer, from: outward * (1 - flight.startFraction) * width,
               to: outward * (1 - flight.endFraction) * width)
-        let pageTravel = -outward * max(width - Self.pageOverlap, 0)
-        slide(pageLayer, from: pageTravel * flight.startFraction, to: pageTravel * flight.endFraction)
+        let card = pageCard?()
+        if let card, let mask = maskPageCard(card) {
+            // The card's near edge, `margin` from the container's edge with
+            // the column away and at the column's inner edge with it in.
+            func nearEdge(_ fraction: CGFloat) -> CGFloat {
+                let inset = card.margin + (width - card.margin) * fraction
+                return geometry.sidebarOnRight ? bounds.width - inset : inset
+            }
+            slide(mask, from: nearEdge(flight.startFraction), to: nearEdge(flight.endFraction))
+        }
         CATransaction.commit()
+        stepPage(for: flight, travel: width - (card?.margin ?? 0))
         noteUncommittedSlide(startingAt: flight.startFraction)
         // The completion block is Core Animation's to call; a slide must
         // land even if it never does.
@@ -178,10 +209,104 @@ final class ShellSplitView: NSView {
                                       execute: completion)
     }
 
+    /// Lays the page in the card out for the slide, never narrower than the
+    /// card shows: Chromium draws a width some frames late, and a page laid
+    /// out short of the column leaves a strip of bare card between them.
+    ///
+    /// A collapse uncovers the page, so it takes the landing's width now and
+    /// Chromium draws it once, under the column. An expansion covers it: the
+    /// page follows the column (`followColumn`), and the landing has little
+    /// or no width left to lay out.
+    ///
+    /// What it costs:
+    /// - A collapse shows the page laid out for the landing while the card
+    ///   is still narrower, its content off center until the column is out.
+    ///   Until Chromium draws that width, a frame or two, the card (in the
+    ///   page's background) shows beside the column: a short notch where the
+    ///   page's near content differs from its background.
+    /// - An expansion trails the column: when the column stops, the page is
+    ///   up to a step (about 50pt) short and gets there 2–3 frames later,
+    ///   the toolbar's leading buttons under the column meanwhile. Stepping
+    ///   ahead of the column settled a frame sooner but left bare card
+    ///   between them.
+    private func stepPage(for flight: SidebarTransitions.Flight, travel: CGFloat) {
+        guard !flight.collapsing else {
+            setPageInsetInFlight(0)
+            return
+        }
+        setPageInsetInFlight(travel * flight.startFraction)
+        followColumn(travel: travel, generation: pageStepsGeneration)
+    }
+
+    /// Every `pageStepInterval` until the column is all in, lays the page
+    /// out to where the column is on screen.
+    private func followColumn(travel: CGFloat, generation: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.pageStepInterval) { [weak self] in
+            guard let self, self.pageStepsGeneration == generation else { return }
+            let shown = self.shownColumnFraction
+            self.setPageInsetInFlight(travel * shown)
+            if shown < 1 {
+                self.followColumn(travel: travel, generation: generation)
+            }
+        }
+    }
+
+    private func setPageInsetInFlight(_ inset: CGFloat) {
+        let inset = inset.rounded(.down)
+        guard inset != pageInsetInFlight else { return }
+        pageInsetInFlight = inset
+        onPageInsetInFlight?(inset)
+    }
+
+    /// Masks `card.view` to everything on the far side of an edge at the
+    /// mask's x translation, with the card's near corners rounded there.
+    private func maskPageCard(_ card: SlidingPageCard) -> CALayer? {
+        guard let layer = card.view.layer else { return nil }
+        let onRight = geometry.sidebarOnRight
+        // Well past the container on every side the mask leaves open.
+        let reach = 4 * max(bounds.width, bounds.height)
+        let cardRect = card.view.convertToLayer(card.frame)
+        let x = onRight ? -reach : 0
+        let mask = CALayer()
+        mask.frame = CGRect(origin: .zero, size: bounds.size)
+        let cardPiece = CALayer()
+        cardPiece.frame = CGRect(x: x, y: cardRect.minY, width: reach, height: cardRect.height)
+        cardPiece.cornerRadius = card.cornerRadius
+        cardPiece.cornerCurve = .continuous
+        cardPiece.maskedCorners = onRight
+            ? [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
+            : [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+        let above = CALayer()
+        above.frame = CGRect(x: x, y: cardRect.maxY, width: reach, height: reach)
+        let below = CALayer()
+        below.frame = CGRect(x: x, y: cardRect.minY - reach, width: reach, height: reach)
+        for piece in [cardPiece, above, below] {
+            piece.backgroundColor = NSColor.black.cgColor
+            mask.addSublayer(piece)
+        }
+        removePageCardMask()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.mask = mask
+        CATransaction.commit()
+        pageCardMask = mask
+        maskedPageView = card.view
+        return mask
+    }
+
+    private func removePageCardMask() {
+        if let pageCardMask, let layer = maskedPageView?.layer, layer.mask === pageCardMask {
+            layer.mask = nil
+        }
+        pageCardMask = nil
+    }
+
     /// Takes the slide's animations off, leaving the panes at their frames.
     func endSlide() {
         columnView?.layer?.removeAnimation(forKey: Self.slideAnimationKey)
-        pageView?.layer?.removeAnimation(forKey: Self.slideAnimationKey)
+        removePageCardMask()
+        pageStepsGeneration += 1
+        setPageInsetInFlight(0)
         uncommittedSlideStart = nil
     }
 

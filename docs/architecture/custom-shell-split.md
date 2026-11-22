@@ -206,84 +206,101 @@ and not at all when the burst ends where it began.
 
 ### Constraints that fix the timing
 
-The page may be laid out once per toggle, there is no way to snapshot a page
-(its pixels live in Chromium's CAContext), and no strip may be uncovered. So
-while the column is in flight the page area has to be at its wider layout:
+The page may be laid out a few times per toggle but not per frame, and
+there is no way to snapshot a page (its pixels live in Chromium's CAContext).
+`columnTakesPageSpace` is false for the whole flight: the page area's model
+frame spans the container and stays there, and an expansion insets the page
+in its card on the column side (`ShellSplitView.pageInsetInFlight`, applied
+by `WebContentViewController.sidebarInsetInFlight`), following the column
+(`stepPage`, below).
 
-| direction | page layout changes | why |
-|---|---|---|
-| collapse | at the start, to the full width | the column leaves; anything narrower uncovers a strip |
-| expand | at the end, to the narrow width | the column arrives; narrowing first uncovers the strip it has not reached |
+Chromium draws a width a few frames after AppKit lays it out, so the page is
+never laid out short of what the card shows: the card between the column and
+a page laid out ahead of it is bare, a strip in the card's color down the
+whole page, toolbar included.
 
-That is `columnTakesPageSpace`, which the frames are laid out from.
+### Motion (D4, decided: reveal)
 
-### Motion (D4, decided: push)
+The column slides over a page area that stays put, and a mask on the page
+draws the card's near edge beside the column. The page tree is laid out for
+the page area's in-flight frame; the mask hides it up to where the card's
+near edge is on screen, with the card's near corners rounded there.
 
-The column pushes the page area along. The page area's layer is translated so
-that its near edge stays under the column's inner edge; its far side overhangs
-the window's far edge and is clipped by the window.
+- The page area's far side does not move: the card's far edge, the toolbar's
+  trailing buttons and a docked chat panel stay where they are.
+- The card's near edge and corners travel with the column, `m` (the card's
+  margin, `WebContentLayout.edgeSpacing`) from the column's inner edge with
+  the column away, at it with the column in.
+- A collapse uncovers the page. It is laid out at the landing's width as
+  the toggle starts, so Chromium draws that width once, the part still under
+  the column included, and the column slides off a page already in place.
+  Until that frame comes the card shows between the column and Chromium's
+  last one (Content surface lag).
+- An expansion covers the page. Every `ShellSplitView.pageStepInterval` (a
+  fifth of the toggle) the page is laid out to where the column is on
+  screen, read from its presentation layer, until the column is all in. The
+  page's near side is at the column or under it, never ahead, and little or
+  no width is left for the landing. The page trails the column by a step
+  and the frames it takes to draw, and settles a few frames after the
+  column stops.
 
-- The card's near edge and corners, and left-anchored page content, travel
-  with the column, as they did when the page was resized on every frame.
-- Centred content jumps `S/2` against the motion at the layout change, then
-  travels.
-- The far edge (margin, card corners, right-aligned toolbar buttons) is
-  off-window during the slide, and back when an expansion lands.
-- The stale Chromium frame at the layout change stays registered to the card's
-  top-left.
-
-The alternative, the column sliding over a page that stays put, was built from
-the same code and compared in recordings. It keeps the far edge still, and
-makes the visible page content jump by the column's width at the layout
-change. It was dropped.
+Push, which this replaced, translated the page area's layer so its near edge
+stayed under the column. It kept left-anchored content travelling with the
+column and the stale frame's gutter off-window, but slid the far side, with
+the toolbar's trailing buttons and a docked chat panel, off the window for
+the whole slide.
 
 ### Frame by frame
 
 `p` is the eased progress (0.11s, `SidebarToggleAnimation.timingFunction`).
 Offsets are explicit `CABasicAnimation`s on `transform.translation.x` under
-`ShellSplitView.slideAnimationKey`; model frames do not move during the
-flight. `o` is `ShellSplitView.pageOverlap`, 8pt.
+`ShellSplitView.slideAnimationKey`, on the column's layer and on the mask of
+the presented page tree's layer (`ShellSplitView.SlidingPageCard`, supplied
+by `ShellContentHostViewController.slidingPageCard`); model frames do not
+move during the flight. `m` is the card's margin.
 
 Left sidebar, collapse:
 
 | when | model | on screen |
 |---|---|---|
-| start, one pass | collapsed flips; page area frame → `[0, W]`, laid out once; column stays `[0, S]`, visible | column offset 0, page offset `S − o` |
-| in flight | nothing | column offset `−S·p`; page offset `(S − o)·(1 − p)` |
-| end | column hidden; animations removed | page at `[0, W]` |
+| start, one pass | collapsed flips; page area frame → `[0, W]`, the page `[m, W]` in it; column stays `[0, S]`, visible | column offset 0, card edge at `S` |
+| in flight | nothing | column offset `−S·p`; card edge at `S − (S − m)·p` |
+| end | column hidden; animation and mask removed | page at `[0, W]`, card edge at `m` |
 
 Left sidebar, expand:
 
 | when | model | on screen |
 |---|---|---|
-| start, one pass | collapsed flips, `isSidebarExpanding` on; column unhidden at `[0, S]`; page area untouched | column offset `−S`, page offset 0 |
-| in flight | nothing | column offset `−S·(1 − p)`; page offset `(S − o)·p` |
-| end | page area frame → `[S, W]`, laid out once; animations removed; `sidebarExpansionDidFinish` | column `[0, S]`, page `[S, W]` |
+| start, one pass | collapsed flips, `isSidebarExpanding` on; column unhidden at `[0, S]` | column offset `−S`, card edge at `m` |
+| every fifth of the duration, until the column is in | page inset → `(S − m)·p` as the column shows it then | |
+| in flight | nothing else | column offset `−S·(1 − p)`; card edge at `m + (S − m)·p` |
+| end | page area frame → `[S, W]`, page inset → 0, the page's width unchanged; animation and mask removed; `sidebarExpansionDidFinish` | column `[0, S]`, page `[S, W]` |
 
 Right sidebar: the same with the signs reversed, and the page area ends at
 `[0, W − S]`.
 
-No gap: with the fraction `f` of the column showing, the column's inner edge is
-at `S·f` and the page's near edge at `(S − o)·f`, under the column by `o·f`;
-the page's far edge is at `W + (S − o)·f ≥ W`. Both layers run on the same
-curve from the same commit, so this holds on every frame without the main
-thread.
-
-Why the page runs under the column instead of meeting it: two layers that move
-on their own and only meet show what is behind them along the seam. With
-`o = 0` that was a dark line one pixel wide down the column's inner edge for
-the whole slide. The overlap is the page card's sidebar-side margin, so it has
-a second effect: with the column fully in, the card's edge is exactly where it
-sits beside an open column, and neither end of a toggle steps the card by its
-margin.
+Two earlier versions laid the page out five times in both directions, each
+a step ahead of the slide. On an expansion that put the page's near side
+ahead of the card's edge, and up to a step of bare card showed between them
+on every expansion (measured 12–188px wide, toolbar row included). On a
+collapse each step was one more width for Chromium to draw, and its frames
+ran behind the column for the whole slide; laid out once, its frame is
+there in the slide's first frames. What the bare card shows is the page's
+own background while the card holds one page and the separated frame's
+color beside an AI Chat, which is why the strip read as white with the chat
+closed and was hard to see with it open. The first of those versions stepped
+the page area's own frame: what its lag uncovered was the window behind the
+page area, with the card's 8pt margin beside it.
 
 The animations hold their end value and are removed (`endSlide()`) in the
 turn the frames take their end state, so a late main thread delays only the
 final layout, never a frame. The landing is the animations' own completion;
 a timer lands the flight 0.3s after its duration if that never comes.
 
-The start of a collapse still waits for one pass: the state change, its
-observers and the one page layout land before the first frame commits.
+The start of a toggle still waits for one pass: the state change, its
+observers and a collapse's page layout land before the first frame commits.
+An expansion's steps run on the main queue; a busy main thread delays a
+step, which leaves the page further under the column, never the slide.
 
 A reversal reads the column's offset from its presentation layer as the shown
 fraction, and replaces the animations with ones from there. The presentation
@@ -309,17 +326,28 @@ frame changes. Everything else keeps reading the collapsed flag.
 - The window starting into or out of full screen settles the flight, as any
   change of the container's width does.
 - Space switch: not an interruption. The band slide and the page slide animate
-  descendants of the column and the page area; the split animates those two
-  views' own layers.
+  descendants of the column and the page area; the split animates the
+  column's own layer and the mask of the page tree presented when the toggle
+  started, which the page slide's transform leaves alone. A page tree
+  presented mid-flight is unmasked until the toggle lands.
 - Window widening (D2) happens, and is laid out, before the flight starts, so
   it does not settle the flight it belongs to.
 
 ### Content surface
 
 `ContentSurfaceHosting` keeps reporting model rects. The surface's view is
-inside the translated layer and moves with the card; recordings show the page
-staying in its card through the slide. The animations never touch `bounds`,
-so `clippingRect(of:)`'s presented-width rule does not trigger.
+inside the masked page tree, so the mask cuts the page's pixels with the
+card. The animations never touch `bounds`, so `clippingRect(of:)`'s
+presented-width rule does not trigger.
+
+The surface's view is pinned to the card on three sides and to the window's
+edge on the sidebar's side, where the page area clips it
+(`WebContentContainerViewController.pinContentSurfaceToPagePanel`), so the
+sidebar never moves or resizes it. Pinned to the card it moved when the card
+did, and Chromium's last frame, drawn where the surface was, moved with it:
+a docked AI Chat shifted, and the page's wider frame ran over it, until
+Chromium drew again. A clip to the card could not stop that; the chat is in
+the same surface.
 
 ## Hand-off
 
@@ -435,9 +463,9 @@ follow-ups.
 - The floating panel reusing the docked resident sidebar instead of a second
   tree per Space (see Hand-off).
 - The column's and the page area's backdrops are tinted from the wallpaper
-  behind them by position. While the two layers slide, each carries the tint
-  of where its frame is, so the page's margin can read a shade off the
-  column's until the toggle lands. Not measurable in the recordings' frames.
+  behind them by position. While the column slides, it carries the tint of
+  where its frame is, so the page's margin can read a shade off the column's
+  until the toggle lands. Not measurable in the recordings' frames.
 
 ## Content surface lag
 
@@ -447,13 +475,24 @@ it. With one resize per toggle instead of one per frame, the options later:
 
 | option | hides | cost |
 |---|---|---|
-| Resize while the far side is off-window (the slide does this already) | all but a far-edge strip on collapse; everything on expand | none |
+| Resize while the far side is off-window (push did this) | all but a far-edge strip on collapse; everything on expand | slides the far side, toolbar buttons and a docked chat panel off-window; dropped for the reveal |
 | Hold the surface's view at its old frame until the new one is drawn (`isHeld` exists for the side panel) | overflow on shrink | cannot fill a gutter on grow; needs a drawn-at-size signal from Chromium |
 | Snapshot the page for the transition | both | Chromium has to supply it; async, costs the frames it saves |
 | Chromium-side resize sync: hold AppKit's commit for the surface's frame, with a timeout | both | Chromium change; one bounded wait per toggle, a stall if the timeout is long |
 | Stretch the stale frame to the new size | gutter | Chromium change; a brief distortion |
 
 The resize sync is the one to pursue: once per toggle it is a bounded cost.
+
+While a toggle is in flight the backdrop takes the page's own background
+(`PhiChromiumBridge.pageBackgroundColorForTabId:windowId:`, the primary
+page's reported background), so a gutter past Chromium's last frame shows
+the page's color, not the card's. That covers the surface's own gutter only,
+and only for a card holding one page: a split's other pane or the AI Chat
+shows the backdrop through its clear fill, and keeps the card's color.
+A renderer's first frame at a new width often shows the page's root
+background where its content has not been rasterized yet; that strip is
+Chromium's, and on a page with a light root under a dark hero (What's New)
+it stays light.
 
 ## Decisions
 
@@ -462,7 +501,9 @@ The resize sync is the one to pursue: once per toggle it is a bounded cost.
 - D3: collapsed flag in the app's defaults, one for both sides; never written
   by the comfortable layout; leaving that layout always expands; written only
   once settled.
-- D4: push, picked from recordings of both.
+- D4: reveal, the page area staying put with the card's near edge masked
+  beside the column. Push was picked first from recordings of both, and
+  replaced because it slid the far side off the window.
 - D5: drag-to-collapse and reopening within the drag kept; no drag on a
   collapsed edge; no double-click action.
 - A reversal's duration is scaled to the distance left.
@@ -471,8 +512,9 @@ The resize sync is the one to pursue: once per toggle it is a bounded cost.
 
 - Hit testing and the sidebar's hover check follow model frames for the 0.11s
   of a toggle.
-- The far edge of the page is off-window during the slide and returns when an
-  expansion lands.
+- On an expansion the page follows the column in steps, not per frame, and
+  settles a few frames after the column stops. On a collapse the card shows
+  beside the column until Chromium draws the page at its new width.
 - A window squeezed below `S + 200` resizes the column, and the presented
   sidebar with it, on each resize step, as before.
 - Widening the window (D2) and the slide in the same toggle: the window jumps
@@ -491,9 +533,10 @@ The resize sync is the one to pursue: once per toggle it is a bounded cost.
   toggles, divider drags with real mouse events, accessibility, sides, layout
   modes, storage, relaunch and migration.
 - The same suite checks the slide on a shell that is on screen: the two
-  animations' values, duration and curve, frames that stay put in flight, a
-  reversal from the presentation layer at several points, the page-space
-  signal, and landing by the animations' own completion.
+  animations' values, duration and curve, the page never laid out short
+  of the column with the page area in place, a reversal from the
+  presentation layer at several points, the page-space signal, and landing
+  by the animations' own completion.
   `SidebarDockHandOffTests` checks the column's slide against the panel's
   glide.
 - Existing suites unchanged in intent: `SidebarDockHandOffTests`,

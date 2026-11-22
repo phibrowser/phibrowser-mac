@@ -89,6 +89,8 @@ final class ShellSplitViewController: NSViewController {
         loadStoredGeometry()
         connectDivider()
         splitView.onWidthChange = { [weak self] in self?.containerWidthDidChange() }
+        splitView.pageCard = { [weak self] in self?.contentHost.slidingPageCard }
+        splitView.onPageInsetInFlight = { [weak self] inset in self?.contentHost.setPageInsetInFlight(inset) }
         applyState()
 
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
@@ -310,6 +312,7 @@ final class ShellSplitViewController: NSViewController {
             return
         }
         flightCompletions[flight.id] = completion
+        contentHost.setPageBackdropPaintsPageBackground(true)
         splitView.slideColumn(for: flight) { [weak self] in
             self?.land(flight.id)
         }
@@ -332,6 +335,7 @@ final class ShellSplitViewController: NSViewController {
         // With the frames' next state, in this turn: the end state when the
         // flight landed, the next flight's slide when it was cut short.
         splitView.endSlide()
+        contentHost.setPageBackdropPaintsPageBackground(false)
         if finished {
             applyState()
             if !flight.collapsing {
@@ -845,6 +849,27 @@ final class ShellContentHostViewController: NSViewController, BrowserThemeContex
     func followTheme(of session: SpaceSessionController?) {
         themeSession = session
         backdrop.rebindThemeProvider()
+    }
+
+    /// The presented page tree's card, for a sidebar toggle's mask.
+    var slidingPageCard: ShellSplitView.SlidingPageCard? {
+        guard let controller = themeSession?.mainSplitViewController, controller.isViewLoaded,
+              controller.view.superview === view, !controller.view.isHidden else { return nil }
+        let outline = controller.webContentContainerViewController.pageCardOutline(in: controller.view)
+        return ShellSplitView.SlidingPageCard(view: controller.view, frame: outline.frame,
+                                              cornerRadius: outline.cornerRadius, margin: outline.margin)
+    }
+
+    /// See `WebContentContainerViewController.setSidebarInsetInFlight(_:)`.
+    func setPageInsetInFlight(_ inset: CGFloat) {
+        guard let controller = themeSession?.mainSplitViewController, controller.isViewLoaded else { return }
+        controller.webContentContainerViewController.setSidebarInsetInFlight(inset)
+    }
+
+    /// See `WebContentContainerViewController.setBackdropPaintsPageBackground(_:)`.
+    func setPageBackdropPaintsPageBackground(_ paints: Bool) {
+        guard let controller = themeSession?.mainSplitViewController, controller.isViewLoaded else { return }
+        controller.webContentContainerViewController.setBackdropPaintsPageBackground(paints)
     }
 
     /// Keep page trees attached just like sidebar content. A hidden ancestor

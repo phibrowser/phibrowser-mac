@@ -2287,6 +2287,11 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// Returns all active split ID strings in the given window.
 - (NSArray<NSString *> *)listSplitsInWindow:(int64_t)windowId;
 
+/// The background color the tab's page reported, or nil before it reports
+/// one.
+- (NSColor * _Nullable)pageBackgroundColorForTabId:(int64_t)tabId
+                                          windowId:(int64_t)windowId;
+
 // ==========================================================================
 // Profile management (Mac → Chromium)
 // ==========================================================================

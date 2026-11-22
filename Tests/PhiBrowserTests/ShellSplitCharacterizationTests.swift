@@ -520,23 +520,50 @@ final class ShellSplitCharacterizationTests: XCTestCase {
         }
     }
 
-    /// The page area takes its new size once per toggle, never per frame.
-    func testAnAnimatedToggleResizesThePageAreaOnce() {
-        let shell = makeShell(onScreen: true)
-        shell.split.setSidebarGeometry(width: 300, collapsed: false)
-        shell.layout()
-        var frameChanges = 0
-        let observer = NotificationCenter.default.addObserver(
-            forName: NSView.frameDidChangeNotification, object: shell.split.contentHost.view, queue: nil
-        ) { _ in frameChanges += 1 }
-        defer { NotificationCenter.default.removeObserver(observer) }
-
-        for collapsing in [true, false] {
-            frameChanges = 0
-            shell.split.setSidebarCollapsed(collapsing, animated: true)
-            waitForToggleAnimation()
+    /// The page in the card is never laid out short of the column, which
+    /// would bare a strip of card between them. A collapse lays it out at
+    /// the landing's width as it starts; an expansion a few times on its
+    /// way, each no further than the column shows. The page area keeps
+    /// spanning the container meanwhile.
+    func testAnAnimatedToggleKeepsThePageUnderTheColumn() {
+        for side in SidebarPosition.allCases {
+            startOver(on: side)
+            let shell = makeShell(onScreen: true)
+            shell.split.setSidebarGeometry(width: 300, collapsed: false)
             shell.layout()
-            XCTAssertEqual(frameChanges, 1, collapsing ? "collapse" : "expand")
+            let splitView = shell.split.splitView
+            let container = NSRect(x: 0, y: 0, width: 1000, height: Self.height)
+            var insets: [CGFloat] = []
+            var columnShown: [CGFloat] = []
+            var pages: [NSRect] = []
+            let forward = splitView.onPageInsetInFlight
+            splitView.onPageInsetInFlight = { inset in
+                insets.append(inset)
+                columnShown.append(splitView.shownColumnFraction * 300)
+                pages.append(shell.split.contentHost.view.frame)
+                forward?(inset)
+            }
+
+            shell.split.setSidebarCollapsed(true, animated: true)
+            shell.layout()
+            XCTAssertEqual(shell.page, container, "\(side.rawValue) collapse")
+            waitForToggleAnimation()
+            XCTAssertEqual(insets, [], "\(side.rawValue) collapse")
+
+            shell.split.setSidebarCollapsed(false, animated: true)
+            waitForToggleAnimation()
+            let label = "\(side.rawValue) expand"
+            // Landing puts the page beside the column and the inset back to 0.
+            XCTAssertEqual(insets.last, 0, label)
+            let steps = Array(insets.dropLast())
+            XCTAssertFalse(steps.isEmpty, label)
+            XCTAssertEqual(steps, steps.sorted(), label)
+            for (inset, shown) in zip(insets, columnShown) {
+                XCTAssertLessThanOrEqual(inset, shown + 0.5, label)
+            }
+            for page in pages.dropLast() {
+                XCTAssertEqual(page, container, label)
+            }
         }
     }
 
@@ -548,10 +575,6 @@ final class ShellSplitCharacterizationTests: XCTestCase {
             shell.layout()
             var expansionsFinished = 0
             let subscription = shell.split.sidebarExpansionDidFinish.sink { expansionsFinished += 1 }
-            var pageFrameChanges = 0
-            let observer = NotificationCenter.default.addObserver(
-                forName: NSView.frameDidChangeNotification, object: shell.split.contentHost.view, queue: nil
-            ) { _ in pageFrameChanges += 1 }
 
             shell.split.setSidebarCollapsed(true, animated: true)
             shell.split.setSidebarCollapsed(false, animated: true)
@@ -561,9 +584,7 @@ final class ShellSplitCharacterizationTests: XCTestCase {
             assertExpanded(shell, width: 300, on: side)
             XCTAssertFalse(shell.split.isSidebarExpanding)
             XCTAssertEqual(expansionsFinished, 1)
-            XCTAssertLessThanOrEqual(pageFrameChanges, 2, "out once and back once at most")
             subscription.cancel()
-            NotificationCenter.default.removeObserver(observer)
         }
     }
 
@@ -593,14 +614,18 @@ final class ShellSplitCharacterizationTests: XCTestCase {
     }
 
     private func slide(on view: NSView) -> CABasicAnimation? {
-        view.layer?.animation(forKey: ShellSplitView.slideAnimationKey) as? CABasicAnimation
+        view.layer.flatMap { slide(on: $0) }
+    }
+
+    private func slide(on layer: CALayer) -> CABasicAnimation? {
+        layer.animation(forKey: ShellSplitView.slideAnimationKey) as? CABasicAnimation
     }
 
     private func offset(_ value: Any?) -> CGFloat {
         CGFloat((value as? NSNumber)?.doubleValue ?? .nan)
     }
 
-    /// The column's and the page area's slides for a toggle between
+    /// The column's slide, and the page area staying put, for a toggle between
     /// `from` and `to` (the fraction of the column showing), 300 wide.
     private func assertSlides(in shell: Shell, on side: SidebarPosition, from: CGFloat, to: CGFloat,
                               duration: TimeInterval, accuracy: CGFloat = 0.5,
@@ -615,15 +640,17 @@ final class ShellSplitCharacterizationTests: XCTestCase {
         XCTAssertEqual(column.fillMode, .both, file: file, line: line)
         XCTAssertFalse(column.isRemovedOnCompletion, file: file, line: line)
 
-        // The page's near edge stays under the column's inner edge: by the
-        // whole overlap with the column fully in, by none with it gone.
-        let travel = -outward * (300 - ShellSplitView.pageOverlap)
-        let pageSlide = try XCTUnwrap(slide(on: shell.split.contentHost.view),
-                                      "the page area travels with the column", file: file, line: line)
-        XCTAssertEqual(offset(pageSlide.fromValue), travel * from, accuracy: accuracy, file: file, line: line)
-        XCTAssertEqual(offset(pageSlide.toValue), travel * to, accuracy: 0.5, file: file, line: line)
-        XCTAssertEqual(pageSlide.duration, column.duration, file: file, line: line)
-        XCTAssertEqual(pageSlide.timingFunction, column.timingFunction, file: file, line: line)
+        XCTAssertNil(slide(on: shell.split.contentHost.view), "the page area stays put", file: file, line: line)
+    }
+
+    /// The page area spanning the container, the page in its card no
+    /// further in from the column's side than the column shows.
+    private func assertPageInFlight(_ shell: Shell, on side: SidebarPosition,
+                                    file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(shell.page, NSRect(x: 0, y: 0, width: 1000, height: Self.height), file: file, line: line)
+        let splitView = shell.split.splitView
+        XCTAssertLessThanOrEqual(splitView.pageInsetInFlight, splitView.shownColumnFraction * 300 + 0.5,
+                                 file: file, line: line)
     }
 
     private func assertNoSlides(in shell: Shell, _ message: String = "",
@@ -632,10 +659,10 @@ final class ShellSplitCharacterizationTests: XCTestCase {
         XCTAssertNil(slide(on: shell.split.contentHost.view), message, file: file, line: line)
     }
 
-    /// A toggle is two layer animations over frames that do not move: the
-    /// column shown at its place and the page area spanning the window for
-    /// the whole flight, then the end state and no animation.
-    func testAToggleSlidesThePanesOverFramesThatStayPut() throws {
+    /// A toggle is a layer animation over frames that do not move with it:
+    /// the column shown at its place and the page area's far side where it
+    /// was for the whole flight, then the end state and no animation.
+    func testAToggleSlidesTheColumnOverFramesThatStayPut() throws {
         for side in SidebarPosition.allCases {
             startOver(on: side)
             let shell = makeShell(onScreen: true)
@@ -651,7 +678,7 @@ final class ShellSplitCharacterizationTests: XCTestCase {
             XCTAssertEqual(shell.column.width, 300, accuracy: 0.5)
             XCTAssertEqual(shell.column.minX, side == .left ? 0 : 700, accuracy: 0.5)
             XCTAssertFalse(shell.split.sidebarHost.view.isHidden, "shown until it has slid out")
-            XCTAssertEqual(shell.page, NSRect(x: 0, y: 0, width: 1000, height: Self.height))
+            assertPageInFlight(shell, on: side)
             spin(landing)
             assertNoSlides(in: shell, "collapsed")
             assertCollapsed(shell)
@@ -659,11 +686,46 @@ final class ShellSplitCharacterizationTests: XCTestCase {
             shell.split.setSidebarCollapsed(false, animated: true)
             try assertSlides(in: shell, on: side, from: 0, to: 1, duration: duration)
             XCTAssertFalse(shell.split.sidebarHost.view.isHidden)
-            XCTAssertEqual(shell.page, NSRect(x: 0, y: 0, width: 1000, height: Self.height),
-                           "the page area keeps the window until the column has landed")
+            assertPageInFlight(shell, on: side)
             spin(landing)
             assertNoSlides(in: shell, "expanded")
             assertExpanded(shell, width: 300, on: side)
+        }
+    }
+
+    /// A mask draws the card's near edge beside the column: at the card's
+    /// margin with the column away, at the column's inner edge with it in,
+    /// and gone once the toggle lands.
+    func testAToggleMasksThePageToTheCardBesideTheColumn() throws {
+        for side in SidebarPosition.allCases {
+            startOver(on: side)
+            let shell = makeShell(onScreen: true)
+            shell.split.setSidebarGeometry(width: 300, collapsed: false)
+            shell.layout()
+            let page = NSView(frame: shell.split.contentHost.view.bounds)
+            page.wantsLayer = true
+            shell.split.contentHost.view.addSubview(page)
+            let card = NSRect(x: 0, y: 8, width: 992, height: Self.height - 8)
+            shell.split.splitView.pageCard = {
+                ShellSplitView.SlidingPageCard(view: page, frame: card, cornerRadius: 10, margin: 8)
+            }
+            func edge(_ inset: CGFloat) -> CGFloat { side == .left ? inset : 1000 - inset }
+
+            shell.split.setSidebarCollapsed(true, animated: true)
+            let mask = try XCTUnwrap(page.layer?.mask)
+            let collapse = try XCTUnwrap(slide(on: mask))
+            XCTAssertEqual(offset(collapse.fromValue), edge(300), accuracy: 0.5)
+            XCTAssertEqual(offset(collapse.toValue), edge(8), accuracy: 0.5)
+            XCTAssertEqual(collapse.timingFunction, SidebarToggleAnimation.timingFunction)
+            waitForToggleAnimation()
+            XCTAssertNil(page.layer?.mask, "collapsed")
+
+            shell.split.setSidebarCollapsed(false, animated: true)
+            let expand = try XCTUnwrap(page.layer?.mask.flatMap { slide(on: $0) })
+            XCTAssertEqual(offset(expand.fromValue), edge(8), accuracy: 0.5)
+            XCTAssertEqual(offset(expand.toValue), edge(300), accuracy: 0.5)
+            waitForToggleAnimation()
+            XCTAssertNil(page.layer?.mask, "expanded")
         }
     }
 
@@ -694,7 +756,7 @@ final class ShellSplitCharacterizationTests: XCTestCase {
                 XCTAssertEqual(results, [false], "the collapse was cut short")
                 try assertSlides(in: shell, on: side, from: shown, to: 1,
                                  duration: SidebarToggleAnimation.duration * TimeInterval(1 - shown), accuracy: 6)
-                XCTAssertEqual(shell.page, NSRect(x: 0, y: 0, width: 1000, height: Self.height))
+                assertPageInFlight(shell, on: side)
                 XCTAssertTrue(shell.split.isSidebarExpanding)
 
                 waitForToggleAnimation()

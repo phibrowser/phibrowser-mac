@@ -155,3 +155,40 @@ final class PictureInPictureOnlyDesktopTests: XCTestCase {
         XCTAssertFalse(isActive(others: [findBar]))
     }
 }
+
+@MainActor
+final class PictureInPictureActivationHandOffTests: XCTestCase {
+    private func shouldHandOff(
+        foundKey: Bool = false,
+        sinceDesktopSwitch: TimeInterval? = nil,
+        aloneOnDesktop: Bool = true
+    ) -> Bool {
+        PictureInPictureActivationHandOff.shouldHandOff(
+            activationFoundKeyWindow: foundKey,
+            secondsSinceInactiveDesktopSwitch: sinceDesktopSwitch,
+            pictureInPictureAloneOnDesktop: aloneOnDesktop)
+    }
+
+    func testAppSwitchOntoPictureInPictureOnlyDesktopHandsOff() {
+        XCTAssertTrue(shouldHandOff())
+    }
+
+    func testClickOnThePictureInPictureKeepsIt() {
+        XCTAssertFalse(shouldHandOff(foundKey: true))
+    }
+
+    func testDesktopWithABrowserWindowKeepsTheRestoredKeyWindow() {
+        XCTAssertFalse(shouldHandOff(aloneOnDesktop: false))
+    }
+
+    func testActivationRightAfterADesktopSwitchKeepsThePictureInPicture() {
+        XCTAssertFalse(shouldHandOff(sinceDesktopSwitch: 0.003))
+    }
+
+    func testDesktopSwitchLongBeforeTheActivationDoesNotCount() {
+        // Another app went fullscreen, then the user pressed Cmd-Tab.
+        XCTAssertTrue(shouldHandOff(sinceDesktopSwitch: 4))
+        XCTAssertTrue(shouldHandOff(
+            sinceDesktopSwitch: PictureInPictureActivationHandOff.desktopSwitchActivationInterval))
+    }
+}

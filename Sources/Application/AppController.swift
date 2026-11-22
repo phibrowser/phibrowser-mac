@@ -230,6 +230,7 @@ import PostHog
                                                selector: #selector(forwardPendingOpenURLsOnActivation(_:)),
                                                name: NSApplication.didBecomeActiveNotification,
                                                object: nil)
+        PictureInPictureActivationHandOff.shared.install()
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(refreshSpacesMenuVisibility),
                                                name: .activeBrowserWindowDidChange,
@@ -460,6 +461,12 @@ import PostHog
                 AuthManager.shared.renewCredentials()
             } else {
                 AppLogDebug("reopen: Guest Mode or fresh access token, skipping renew")
+            }
+            // AppKit has just keyed a window on the current desktop, which
+            // may be a picture-in-picture window alone there; the browser
+            // window takes key instead and macOS moves to its desktop.
+            if PictureInPictureActivationHandOff.shared.applicationShouldHandleReopen() {
+                return false
             }
             // With no surviving browser window, spawn the persisted
             // last-active Space ourselves instead of letting Chromium's

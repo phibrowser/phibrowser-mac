@@ -1866,6 +1866,36 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)cancelWebAuthenticationSessionRequest:
     (ASWebAuthenticationSessionRequest*)request;
 
+// Enterprise SSO (macOS Extensible SSO / Microsoft Enterprise SSO plug-in)
+
+// Optional: a framework build that predates the call does not implement it, so
+// callers guard with respondsToSelector: (version skew), like the other optional
+// calls in this protocol.
+@optional
+
+/// Attaches the headers the device's Extensible SSO extension returned for
+/// `idpHost` to every later request the network stack sends to that origin.
+///
+/// `headers` is what the extension answers a `get_sso_cookies` request with —
+/// the `x-ms-RefreshTokenCredential` / `x-ms-DeviceCredential` values Entra's
+/// device-authentication hand-off needs — flattened by the client from
+/// `prt_headers` and `device_headers`. Chromium's equivalent is
+/// `enterprise_auth::PlatformAuthProviderManager`
+/// (chrome/browser/enterprise/platform_auth), which an embedder has to wire the
+/// same way. Without it, an Entra sign-in on an MDM-managed Mac reaches
+/// `device.login.microsoftonline.com` with no device identity and dies on
+/// `/common/DeviceAuthTls/reprocess` with AADSTS900561 (issue #383).
+///
+/// Replaces any headers previously installed for `idpHost`; an empty dictionary
+/// clears them. Returns NO when the origin is not http(s), when the headers hold
+/// a name or value the network stack rejects, or when this build predates the
+/// call — callers must guard with respondsToSelector: (version skew), like the
+/// other optional calls in this header.
+- (BOOL)setEnterpriseSSORequestHeaders:(NSDictionary<NSString *, NSString *> *)headers
+                            forIdPHost:(NSString *)idpHost;
+
+@required
+
 // Import management
 - (void)importBrowserDataFromBrowserType:(BrowserType)browserType profile:(NSString *)profile dataTypes:(nullable NSArray<NSString *> *)dataTypes windowId:(int64_t)windowId;
 

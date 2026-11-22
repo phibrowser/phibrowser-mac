@@ -24,9 +24,19 @@ struct LocalStoreCompatibilityManifest: Codable, Equatable {
 }
 
 struct LocalStoreBackupRecord: Codable, Equatable {
+    /// `storeFormatVersion` of a quarantined store. No app can read format 0,
+    /// so preflight never restores a quarantined store.
+    static let unrecognisedStoreFormatVersion = 0
+
     let id: String
     let storeFormatVersion: Int
     let directoryName: String
     let createdAt: Date
     let createdBeforeUpgradingToStoreFormatVersion: Int
+    /// SHA-256 of the backed-up store files. Nil for backups written before
+    /// digests existed.
+    var contentDigest: String?
+    /// True when the files were moved aside because their schema matched no
+    /// known store format, rather than copied before an upgrade.
+    var isQuarantinedUnrecognisedStore: Bool?
 }

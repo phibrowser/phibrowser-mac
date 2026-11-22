@@ -526,7 +526,7 @@ class LoginController {
                     "🔐 [GuestMigration] Account setup failed before publication: " +
                     error.localizedDescription
                 )
-                if showGuestMigrationFailureAlert() {
+                if showGuestMigrationFailureAlert(for: error) {
                     continue
                 }
                 if abandonGuestAccountTransitionAfterFailure() {
@@ -1016,18 +1016,26 @@ class LoginController {
     }
 
     @MainActor
-    private func showGuestMigrationFailureAlert() -> Bool {
+    private func showGuestMigrationFailureAlert(for error: Error) -> Bool {
         let alert = NSAlert()
         alert.messageText = NSLocalizedString(
             "oobe.guestMigration.failure.title",
             value: "Couldn’t finish setting up your account",
             comment: "Guest migration - Alert title when Guest data could not be moved before account publication"
         )
-        alert.informativeText = NSLocalizedString(
-            "oobe.guestMigration.failure.message",
-            value: "Phi couldn’t move your Guest data. Your data is safe, and you can try again.",
-            comment: "Guest migration - Alert message explaining that Guest data remains safe and migration can be retried"
-        )
+        if (error as? GuestDataMigrationError) == .sourceStoreUnavailable {
+            alert.informativeText = NSLocalizedString(
+                "oobe.guestMigration.failure.guestDataUnavailableMessage",
+                value: "Phi couldn’t open your Guest data on this Mac, so it can’t be moved to your account. Your Guest data has not been changed. Quit and reopen Phi, then try again.",
+                comment: "Guest migration - Alert message when the Guest data on this Mac could not be opened, so signing in from Guest Mode cannot move it"
+            )
+        } else {
+            alert.informativeText = NSLocalizedString(
+                "oobe.guestMigration.failure.message",
+                value: "Phi couldn’t move your Guest data. Your data is safe, and you can try again.",
+                comment: "Guest migration - Alert message explaining that Guest data remains safe and migration can be retried"
+            )
+        }
         alert.alertStyle = .warning
         alert.addButton(withTitle: NSLocalizedString(
             "oobe.guestMigration.failure.retryButton",

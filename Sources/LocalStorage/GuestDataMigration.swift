@@ -266,6 +266,8 @@ enum GuestDataMigrationError: LocalizedError, Equatable {
     case targetImportRequiresRecovery(String)
     case sourceDataChangedAfterSnapshot
     case sourceDataCreatedAfterStaging
+    /// The Guest LocalStore never opened, so there is no snapshot to take.
+    case sourceStoreUnavailable
 
     var requiresTargetRecovery: Bool {
         if case .targetImportRequiresRecovery = self {
@@ -298,6 +300,8 @@ enum GuestDataMigrationError: LocalizedError, Equatable {
             return "Guest data changed after it was imported. The source data was preserved and must be migrated before cleanup."
         case .sourceDataCreatedAfterStaging:
             return "New Guest data appeared after directory cleanup was staged. Resume the pending migration before finalizing it."
+        case .sourceStoreUnavailable:
+            return "The Guest local data store could not be opened."
         }
     }
 }
@@ -1119,7 +1123,10 @@ extension LocalStore {
         sourceUserID: String,
         themes: GuestDataMigrationThemeSnapshot
     ) async throws -> GuestDataMigrationSnapshot {
-        try await performFinalBackgroundOperationAndClose { context in
+        if container == nil, !isClosedForAccountDirectoryRemoval {
+            throw GuestDataMigrationError.sourceStoreUnavailable
+        }
+        return try await performFinalBackgroundOperationAndClose { context in
             try Self.makeGuestDataMigrationSnapshot(
                 in: context,
                 sourceUserID: sourceUserID,

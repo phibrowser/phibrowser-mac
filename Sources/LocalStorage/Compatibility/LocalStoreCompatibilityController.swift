@@ -3,6 +3,7 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+import CryptoKit
 import Foundation
 
 struct LocalStoreOpenPlan {
@@ -89,14 +90,32 @@ final class LocalStoreCompatibilityController {
             currentStoreFormatVersion: configuration.currentStoreFormatVersion,
             existingBackups: manifestState.manifest.backups
         )
-        if configuration.backupPolicy.shouldBackupBeforeOpening(backupContext) {
-            let backup = try createBackup(
-                forStoreFormatVersion: manifestState.manifest.activeStoreFormatVersion,
-                beforeUpgradingToStoreFormatVersion: configuration.currentStoreFormatVersion,
-                in: storeDirectory
-            )
-            manifestState.manifest.backups.append(backup)
-            createdBackup = backup
+        let storeFileExists = fileManager.fileExists(
+            atPath: storeDirectory.appendingPathComponent(configuration.storeFilename).path
+        )
+        // With no store file there is nothing to back up; SwiftData creates an
+        // empty store. This also covers a quarantine interrupted after its
+        // files moved but before the manifest recorded it.
+        if storeFileExists, configuration.backupPolicy.shouldBackupBeforeOpening(backupContext) {
+            let digest = try storeDigest(in: storeDirectory)
+            // An open that keeps failing never advances the manifest, so every
+            // launch or retry would otherwise copy the same bytes again.
+            let alreadyBackedUp = manifestState.manifest.backups.contains { backup in
+                backup.storeFormatVersion == manifestState.manifest.activeStoreFormatVersion &&
+                    backup.createdBeforeUpgradingToStoreFormatVersion == configuration.currentStoreFormatVersion &&
+                    backupStoreExists(backup, in: storeDirectory) &&
+                    (try? self.digest(of: backup, in: storeDirectory)) == digest
+            }
+            if !alreadyBackedUp {
+                let backup = try createBackup(
+                    forStoreFormatVersion: manifestState.manifest.activeStoreFormatVersion,
+                    beforeUpgradingToStoreFormatVersion: configuration.currentStoreFormatVersion,
+                    contentDigest: digest,
+                    in: storeDirectory
+                )
+                manifestState.manifest.backups.append(backup)
+                createdBackup = backup
+            }
         }
 
         try saveManifest(manifestState.manifest, to: storeDirectory)
@@ -121,6 +140,60 @@ final class LocalStoreCompatibilityController {
         if let restoredBackup = plan.restoredBackup {
             try deleteBackup(restoredBackup, in: storeDirectory)
         }
+    }
+
+    /// Moves an active store whose schema matches no known store format out of
+    /// the way so the caller can create an empty store in its place.
+    ///
+    /// The files are moved, never deleted, into a backup that no app version
+    /// restores. Earlier backups holding the same bytes were labelled with a
+    /// readable format they never had, so they are removed; the quarantine
+    /// keeps the only copy. The manifest then records the current format,
+    /// which the empty store will have once SwiftData creates it.
+    @discardableResult
+    func quarantineUnrecognisedStore(at storeDirectory: URL) throws -> LocalStoreBackupRecord {
+        var manifestState = try loadManifest(from: storeDirectory)
+        let mainStoreURL = storeDirectory.appendingPathComponent(configuration.storeFilename)
+        guard fileManager.fileExists(atPath: mainStoreURL.path) else {
+            throw LocalStoreCompatibilityError.missingStoreFile(mainStoreURL)
+        }
+        let digest = try storeDigest(in: storeDirectory)
+
+        let backupID = uniqueBackupID(in: storeDirectory)
+        let directoryName = "\(configuration.backupsDirectoryName)/\(backupID)"
+        let quarantineDirectory = storeDirectory.appendingPathComponent(directoryName, isDirectory: true)
+        try fileManager.createDirectory(at: quarantineDirectory, withIntermediateDirectories: true)
+        for fileName in storeFileNames {
+            let sourceURL = storeDirectory.appendingPathComponent(fileName)
+            guard fileManager.fileExists(atPath: sourceURL.path) else {
+                continue
+            }
+            try fileManager.moveItem(at: sourceURL, to: quarantineDirectory.appendingPathComponent(fileName))
+        }
+
+        let record = LocalStoreBackupRecord(
+            id: backupID,
+            storeFormatVersion: LocalStoreBackupRecord.unrecognisedStoreFormatVersion,
+            directoryName: directoryName,
+            createdAt: configuration.dateProvider(),
+            createdBeforeUpgradingToStoreFormatVersion: configuration.currentStoreFormatVersion,
+            contentDigest: digest,
+            isQuarantinedUnrecognisedStore: true
+        )
+        let mislabelledCopies = manifestState.manifest.backups.filter { backup in
+            backup.isQuarantinedUnrecognisedStore != true &&
+                (try? self.digest(of: backup, in: storeDirectory)) == digest
+        }
+        manifestState.manifest.backups.removeAll { backup in
+            mislabelledCopies.contains { $0.id == backup.id }
+        }
+        manifestState.manifest.backups.append(record)
+        manifestState.manifest.activeStoreFormatVersion = configuration.currentStoreFormatVersion
+        try saveManifest(manifestState.manifest, to: storeDirectory)
+        for copy in mislabelledCopies {
+            try? deleteBackup(copy, in: storeDirectory)
+        }
+        return record
     }
 
     private func loadManifest(from storeDirectory: URL) throws -> (manifest: LocalStoreCompatibilityManifest, wasCreated: Bool) {
@@ -156,6 +229,7 @@ final class LocalStoreCompatibilityController {
     private func createBackup(
         forStoreFormatVersion storeFormatVersion: Int,
         beforeUpgradingToStoreFormatVersion targetStoreFormatVersion: Int,
+        contentDigest: String,
         in storeDirectory: URL
     ) throws -> LocalStoreBackupRecord {
         let mainStoreURL = storeDirectory.appendingPathComponent(configuration.storeFilename)
@@ -181,7 +255,8 @@ final class LocalStoreCompatibilityController {
             storeFormatVersion: storeFormatVersion,
             directoryName: directoryName,
             createdAt: configuration.dateProvider(),
-            createdBeforeUpgradingToStoreFormatVersion: targetStoreFormatVersion
+            createdBeforeUpgradingToStoreFormatVersion: targetStoreFormatVersion,
+            contentDigest: contentDigest
         )
     }
 
@@ -252,6 +327,39 @@ final class LocalStoreCompatibilityController {
             suffix += 1
         }
         return candidate
+    }
+
+    private func digest(of backup: LocalStoreBackupRecord, in storeDirectory: URL) throws -> String {
+        if let contentDigest = backup.contentDigest {
+            return contentDigest
+        }
+        return try storeDigest(
+            in: storeDirectory.appendingPathComponent(backup.directoryName, isDirectory: true)
+        )
+    }
+
+    /// SHA-256 over the main store file and its write-ahead log. The shared
+    /// memory index is derived state and is left out, and an empty log hashes
+    /// like a missing one because SQLite creates and removes it freely.
+    private func storeDigest(in directory: URL) throws -> String {
+        var hasher = SHA256()
+        for fileName in [configuration.storeFilename, "\(configuration.storeFilename)-wal"] {
+            let url = directory.appendingPathComponent(fileName)
+            guard fileManager.fileExists(atPath: url.path) else {
+                continue
+            }
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            var hashedName = false
+            while let chunk = try handle.read(upToCount: 1 << 20), !chunk.isEmpty {
+                if !hashedName {
+                    hasher.update(data: Data(fileName.utf8))
+                    hashedName = true
+                }
+                hasher.update(data: chunk)
+            }
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     private var storeFileNames: [String] {

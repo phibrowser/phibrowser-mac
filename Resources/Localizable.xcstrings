@@ -51048,6 +51048,42 @@
         }
       }
     },
+    "localData.openFailedAlert.dismissButton" : {
+      "comment" : "Local data alert - button that dismisses the alert shown when the local database could not be opened",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OK"
+          }
+        }
+      }
+    },
+    "localData.openFailedAlert.message" : {
+      "comment" : "Local data alert - body when the local database could not be opened; explains the effect and that the data was not changed",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your Spaces, pinned tabs and bookmarks on this Mac can’t be shown or saved right now. Your data has not been changed. Quit and reopen Phi to try again."
+          }
+        }
+      }
+    },
+    "localData.openFailedAlert.title" : {
+      "comment" : "Local data alert - title when the local database on this Mac could not be opened",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Phi Couldn’t Open Local Browser Data"
+          }
+        }
+      }
+    },
     "localData.pinnedTabScope.migrationInFlightError" : {
       "comment" : "Pinned-tab scope migration error when a browser migration is in flight",
       "extractionState" : "extracted_with_value",
@@ -52355,6 +52391,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "訪客資料尚未清除完成"
+          }
+        }
+      }
+    },
+    "oobe.guestMigration.failure.guestDataUnavailableMessage" : {
+      "comment" : "Guest migration - Alert message when the Guest data on this Mac could not be opened, so signing in from Guest Mode cannot move it",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Phi couldn’t open your Guest data on this Mac, so it can’t be moved to your account. Your Guest data has not been changed. Quit and reopen Phi, then try again."
           }
         }
       }

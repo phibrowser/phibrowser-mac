@@ -199,7 +199,7 @@ extension NSView: ThemeSource {
 SwiftUI bindings use `Combine`, `ObservableObject`, and environment propagation.
 
 - `ThemedHostingController` is the recommended way to bridge `NSHostingController` boundaries. It auto-creates a `ThemeObserver` and injects `phiTheme` / `phiAppearance` environment values, resolving the theme source in order: explicit parameter → active browser window → `ThemeManager.shared`.
-- `ThemedHostingView` is the recommended way to bridge `NSHostingView` boundaries. Same auto-injection as `ThemedHostingController`, plus automatic `rebind` on `viewDidMoveToWindow` (views may be created before being added to a window).
+- `ThemedHostingView` is the recommended way to bridge `NSHostingView` boundaries. Same auto-injection as `ThemedHostingController`, plus automatic `rebind` on `viewDidMoveToWindow` (views may be created before being added to a window) and `rebindIfSourceChanged` on `viewDidChangeEffectiveAppearance`, so a view bound to another tree's source (or a freed one) recovers on the next appearance change. `NSView.browserThemeContext` finds a view's tree by walking its superviews for one whose `nextResponder` is `BrowserThemeContextProviding`; it does not follow the responder chain from the view, because a table cell enters the window before its row view's `nextResponder` is set.
 - Themed SwiftUI modifiers resolve from `@Environment(\.phiTheme)` and `@Environment(\.phiAppearance)` so they stay aligned with the current browser window.
 - For custom `NSHostingView` subclasses (e.g. `ZeroSafeAreaHostingView`, `HitTransparentHostingView`), keep a `ThemeObserver` property and call `themeObserver.rebind(to: themeStateProvider)` in `viewDidMoveToWindow`.
 

@@ -1043,6 +1043,14 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
         themeObserver.rebind(to: themeStateProvider)
     }
 
+    /// Same recovery as `ThemedHostingView`: a split row bound to another
+    /// tree's source follows its own tree again on the next appearance change.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        guard window != nil else { return }
+        themeObserver.rebindIfSourceChanged(to: themeStateProvider)
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let area = hoverTrackingArea {

@@ -33,16 +33,18 @@ class PhiSplitViewController: NSSplitViewController {
     private var sidebarTargetCollapsed = false
     private var sidebarTransitions = 0
     private var pendingExpansion: Int?
+    var prefersReducedMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     /// An animated expansion has started and not finished. AppKit publishes
     /// the expanded state as soon as the animation starts.
     var isSidebarExpanding: Bool { pendingExpansion != nil }
 
     func setSidebarCollapsed(_ collapsed: Bool, item: NSSplitViewItem, animated: Bool,
                              dockWidth: CGFloat?) {
+        let shouldAnimate = animated && !prefersReducedMotion()
         sidebarTargetCollapsed = collapsed
         sidebarTransitions += 1
         let transition = sidebarTransitions
-        pendingExpansion = animated && !collapsed ? transition : nil
+        pendingExpansion = shouldAnimate && !collapsed ? transition : nil
         let finished = { [weak self] in
             guard let self, self.pendingExpansion == transition else { return }
             self.pendingExpansion = nil
@@ -50,10 +52,10 @@ class PhiSplitViewController: NSSplitViewController {
         }
 
         if !collapsed, let dockWidth {
-            item.expand(atWidth: dockWidth, animated: animated, in: splitView,
+            item.expand(atWidth: dockWidth, animated: shouldAnimate, in: splitView,
                         limits: MainSplitViewController.leftItemMinWidth...MainSplitViewController.leftItemMaxWidth,
                         completion: finished)
-        } else if animated {
+        } else if shouldAnimate {
             item.setCollapsedAnimated(collapsed) { [weak self, weak item] in
                 // AppKit can hide the column when a superseded collapse completes.
                 if collapsed, self?.sidebarTargetCollapsed == false, let item, item.isCollapsed {

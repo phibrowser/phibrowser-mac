@@ -204,10 +204,12 @@ final class ShellSplitViewController: NSViewController {
         floatingSidebarHost.finishSidebarHandOffImmediately()
         sidebarHost.setResidentsHidden(false)
         let target = isTraditionalLayout || collapsed
-        if animated, transitions.isCollapsed != target, handOffSidebar(collapsing: target, completion: completion) {
+        let shouldAnimate = animated && !floatingSidebarHost.prefersReducedMotion()
+        if animated, transitions.isCollapsed != target,
+           handOffSidebar(collapsing: target, animated: shouldAnimate, completion: completion) {
             return
         }
-        changeCollapsed(to: target, duration: animated ? SidebarToggleAnimation.duration : nil,
+        changeCollapsed(to: target, duration: shouldAnimate ? SidebarToggleAnimation.duration : nil,
                         completion: completion)
     }
 
@@ -594,12 +596,12 @@ final class ShellSplitViewController: NSViewController {
 
     /// Pinning from the visible floating panel docks it in place; unpinning
     /// with the shortcut while the pointer is on the column turns the column
-    /// into the panel in place. Both run the column change and the panel's
-    /// change in one group. Returns false when this toggle is not a hand-off.
+    /// into the panel in place. Animated hand-offs group both changes.
+    /// Returns false when this toggle is not a hand-off.
     ///
     /// A click on the sidebar button also has the pointer on the column, but
     /// it means put the sidebar away, so only a key press keeps it up.
-    private func handOffSidebar(collapsing collapsed: Bool, completion: ((Bool) -> Void)?) -> Bool {
+    private func handOffSidebar(collapsing collapsed: Bool, animated: Bool, completion: ((Bool) -> Void)?) -> Bool {
         let kind: SidebarHandOffKind?
         if collapsed {
             kind = currentEventType() == .keyDown && isPointerOnDockedSidebar() ? .undock : nil
@@ -608,6 +610,13 @@ final class ShellSplitViewController: NSViewController {
         }
         guard let kind, floatingSidebarHost.beginSidebarHandOff(kind) else { return false }
         sidebarHandOffRun += 1
+        guard animated else {
+            changeCollapsed(to: collapsed, duration: nil, widensWindow: false)
+            floatingSidebarHost.finishSidebarHandOffImmediately()
+            floatingSidebarHost.browserState?.windowController?.refreshTrafficLightVisibility()
+            completion?(true)
+            return true
+        }
         let run = sidebarHandOffRun
         // The panel covers the column throughout; the column's own rows
         // would show in or out under it.

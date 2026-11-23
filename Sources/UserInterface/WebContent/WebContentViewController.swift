@@ -295,9 +295,8 @@ class WebContentViewController: NSViewController {
     private var aiChatSidebarMetricsSession = AIChatSidebarMetricsSession()
     /// Last known expanded width for AI Chat sidebar.
     private var lastKnownAIChatWidth: CGFloat = 360
-    /// Target width for the next expand animation.  Set before uncollapsing so
-    /// `animateAIChatCollapseTransition` can temporarily raise `minimumThickness`.
-    /// Cleared in the animation completion handler.
+    /// Target width for the next expansion. The transition temporarily raises
+    /// `minimumThickness` to this width and clears it when the expansion settles.
     private var pendingAIChatWidthRestore: CGFloat?
     /// Set once when the AI Chat sidebar is first expanded during this
     /// controller's lifetime.  After the first expand, cached-width restoration
@@ -1082,16 +1081,22 @@ class WebContentViewController: NSViewController {
         // emit costs nothing.
         aiChatSplitViewItem.publisher(for: \.isCollapsed)
             .dropFirst()
+            .map { [weak self] isCollapsed in
+                let cameFromModel = self?.isUpdatingAIChatState == true
+                    && self?.associatedTab?.aiChatCollapsed == isCollapsed
+                return (isCollapsed, cameFromModel)
+            }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] isCollapsed in
+            .sink { [weak self] isCollapsed, cameFromModel in
                 guard let self else { return }
                 // Stale delivery: the item has moved on and the newer value
                 // is queued behind this one (see `observeTabAIChatState`).
                 guard isCollapsed == self.aiChatSplitViewItem?.isCollapsed else { return }
                 self.updateAIChatSidebarMetrics(isExpanded: !isCollapsed)
                 
-                // Ignore KVO while we are already synchronizing state ourselves.
-                guard !self.isUpdatingAIChatState else {
+                // Capture model-driven writes before delivery moves to the main
+                // queue. A newer tab request may already be queued by then.
+                guard !cameFromModel, !self.isUpdatingAIChatState else {
                     self.updateLeftContainerStyle(isAIChatExpanded: !isCollapsed)
                     return
                 }
@@ -1254,7 +1259,7 @@ class WebContentViewController: NSViewController {
         observeTabAIChatEnabled(tab, splitViewItem: splitViewItem)
     }
     
-    /// Sync AI Chat state from tab to splitViewItem (one-time, with animation)
+    /// Sync AI Chat state from tab to splitViewItem.
     private func syncAIChatState(from tab: Tab, to splitViewItem: NSSplitViewItem) {
         // In a split the chat is shared, so autohide only when *both* panes
         // disable chat (e.g. both panes are on NTP). When the partner pane
@@ -1262,7 +1267,7 @@ class WebContentViewController: NSViewController {
         guard tab.aiChatEnabled || partnerHasAIChatEnabled() else {
             if !splitViewItem.isCollapsed {
                 isUpdatingAIChatState = true
-                splitViewItem.animator().isCollapsed = true
+                setAIChatSidebarCollapsed(true, item: splitViewItem)
                 isUpdatingAIChatState = false
             }
             return
@@ -1274,7 +1279,7 @@ class WebContentViewController: NSViewController {
                 prepareAIChatWidthBeforeExpand(for: tab)
             }
             isUpdatingAIChatState = true
-            animateAIChatCollapseTransition(splitViewItem, collapsed: tab.aiChatCollapsed)
+            setAIChatSidebarCollapsed(tab.aiChatCollapsed, item: splitViewItem)
             isUpdatingAIChatState = false
         }
     }
@@ -1325,7 +1330,7 @@ class WebContentViewController: NSViewController {
                     }
                     // Guard against feedback loops while mirroring KVO back into the tab.
                     self.isUpdatingAIChatState = true
-                    self.animateAIChatCollapseTransition(splitViewItem, collapsed: collapsed)
+                    self.setAIChatSidebarCollapsed(collapsed, item: splitViewItem)
                     self.isUpdatingAIChatState = false
                     self.persistAIChatSidebarStateIfNeeded(for: tab)
                 }
@@ -1355,7 +1360,7 @@ class WebContentViewController: NSViewController {
 
                 if !splitViewItem.isCollapsed {
                     self.isUpdatingAIChatState = true
-                    splitViewItem.animator().isCollapsed = true
+                    self.setAIChatSidebarCollapsed(true, item: splitViewItem)
                     self.isUpdatingAIChatState = false
                 }
                 // Each pane only observes its own tab's aiChatEnabled, so the
@@ -3430,30 +3435,28 @@ class WebContentViewController: NSViewController {
         }
 
         isUpdatingAIChatState = true
-        animateAIChatCollapseTransition(splitViewItem, collapsed: true)
+        setAIChatSidebarCollapsed(true, item: splitViewItem)
         isUpdatingAIChatState = false
         updateLeftContainerStyle(isAIChatExpanded: false)
         persistAIChatSidebarStateIfNeeded(for: associatedTab)
     }
 
-    /// Animate AI Chat sidebar expand/collapse with proper width handling.
+    /// Expand or collapse the AI Chat sidebar at its restored width.
     ///
     /// For **expand**: temporarily raises `minimumThickness` to the pending
     /// cached width so NSSplitView's uncollapse animation targets the correct
-    /// width directly — avoiding the default "expand to minimumThickness then
-    /// jump" visual artifact.  The original `minimumThickness` is restored in
-    /// the completion handler so the user can still freely resize afterwards.
+    /// width directly. The original `minimumThickness` is restored once the
+    /// layout settles so the user can still freely resize afterwards.
     ///
     /// - Important: Callers must set `isUpdatingAIChatState = true` **before**
     ///   invoking this method and reset it afterwards to prevent reentrant KVO
     ///   loops.
-    private func animateAIChatCollapseTransition(
-        _ splitViewItem: NSSplitViewItem,
-        collapsed: Bool
-    ) {
+    private func setAIChatSidebarCollapsed(_ collapsed: Bool, item splitViewItem: NSSplitViewItem) {
+        let reduceMotion = (parent as? WebContentContainerViewController)?.prefersReducedMotion()
+            ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let expanding = !collapsed
-        isAnimatingAIChatExpansion = expanding
-        isAnimatingAIChatCollapse = collapsed
+        isAnimatingAIChatExpansion = expanding && !reduceMotion
+        isAnimatingAIChatCollapse = collapsed && !reduceMotion
         aiChatTransitionCount += 1
         let transition = aiChatTransitionCount
 
@@ -3496,9 +3499,7 @@ class WebContentViewController: NSViewController {
                              until: .aiChatTransition(transition))
         }
 
-        NSAnimationContext.runAnimationGroup({ _ in
-            splitViewItem.animator().isCollapsed = collapsed
-        }, completionHandler: { [weak self, weak splitViewItem] in
+        let finish = { [weak self, weak splitViewItem] in
             guard let self else { return }
             if let savedMinThickness, let splitViewItem {
                 splitViewItem.minimumThickness = savedMinThickness
@@ -3523,7 +3524,17 @@ class WebContentViewController: NSViewController {
                 // itself (a tab that comes with its panel expanded).
                 self.embeddedChatViewController?.setupIfNeeded()
             }
-        })
+        }
+        if reduceMotion {
+            splitViewItem.isCollapsed = collapsed
+            updateLeftContainerStyleForCurrentAIChatState()
+            view.layoutSubtreeIfNeeded()
+            finish()
+        } else {
+            NSAnimationContext.runAnimationGroup({ _ in
+                splitViewItem.animator().isCollapsed = collapsed
+            }, completionHandler: finish)
+        }
     }
 
     /// Numbers a container side panel slide over this page, for
@@ -3615,9 +3626,8 @@ class WebContentViewController: NSViewController {
     /// Detaches an expanded AI Chat from the split layout right before the
     /// extension side panel slides in, returning a frame-driven snapshot
     /// ghost (positioned in `coordView`'s space) for the container to
-    /// slide out alongside the panel's slide-in. nil when the chat is
-    /// collapsed or absent, or when the snapshot fails (the chat then
-    /// simply vanishes under the incoming panel).
+    /// slide out alongside the panel's slide-in. With Reduce Motion, pass
+    /// nil for `coordView` to settle the chat without a snapshot.
     ///
     /// The panel ↔ chat mutex normally collapses the chat through the tab
     /// observers, which apply NSSplitView's own divider animation a
@@ -3632,8 +3642,18 @@ class WebContentViewController: NSViewController {
     /// would animate the card by Core Animation, while the page follows the
     /// split frame by frame as in any slide (and the content surface clips
     /// it to that card).
-    func collapseAIChatForPanelTransition(ghostIn coordView: NSView) -> NSView? {
+    func collapseAIChatForPanelTransition(ghostIn coordView: NSView?) -> NSView? {
         guard let aiChatSplitViewItem, !aiChatSplitViewItem.isCollapsed else {
+            return nil
+        }
+        guard let coordView else {
+            if let tab = associatedTab, !tab.aiChatCollapsed {
+                tab.toggleAIChat(true)
+            }
+            isUpdatingAIChatState = true
+            setAIChatSidebarCollapsed(true, item: aiChatSplitViewItem)
+            isUpdatingAIChatState = false
+            persistAIChatSidebarStateIfNeeded(for: associatedTab)
             return nil
         }
         let paneView = aiChatSplitViewItem.viewController.view

@@ -519,10 +519,10 @@ class WebContentContainerViewController: NSViewController {
     /// running while it cuts it short, or see it end; nil keeps AppKit's.
     static var panelSlideDurationForTesting: TimeInterval?
 
-    /// True when a panel attach/detach should settle immediately instead of
-    /// sliding: the test seam is on, or there is no window to animate in.
+    var prefersReducedMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
     private var skipsPanelSlideAnimation: Bool {
-        Self.panelSlideAnimationsDisabledForTesting || view.window == nil
+        prefersReducedMotion() || Self.panelSlideAnimationsDisabledForTesting || view.window == nil
     }
 
     /// Test-only view of the mounted panel slot.
@@ -2059,6 +2059,9 @@ class WebContentContainerViewController: NSViewController {
     private func slideInExtensionSidePanel(_ panelView: ExtensionSidePanelView) {
         extensionSidePanelView = panelView
         guard !skipsPanelSlideAnimation else {
+            if prefersReducedMotion() {
+                _ = currentWebContentController?.collapseAIChatForPanelTransition(ghostIn: nil)
+            }
             remakeContentLayout()
             settlePanelTransitionOuterBorder()
             return
@@ -2194,11 +2197,12 @@ class WebContentContainerViewController: NSViewController {
         dropClosingAIChatGhost()
         releaseContentSurfaceHold()
 
+        let skipsAnimation = skipsPanelSlideAnimation
         // Window-server snapshot of the closing content (`WebContentSnapshotter`
         // — local snapshot APIs return blank for the remote Chromium layer).
         // Best effort: without it the card slides out with its header over
         // an empty background.
-        let snapshot = WebContentSnapshotter.captureOnScreen(
+        let snapshot = skipsAnimation ? nil : WebContentSnapshotter.captureOnScreen(
             panelView.contentHostView, resolution: .bestResolution)
         for subview in panelView.contentHostView.subviews {
             subview.removeFromSuperview()
@@ -2213,7 +2217,7 @@ class WebContentContainerViewController: NSViewController {
 
         extensionSidePanelView = nil
 
-        if skipsPanelSlideAnimation {
+        if skipsAnimation {
             panelView.removeFromSuperview()
             extensionSidePanelFrameBackdrop?.removeFromSuperview()
             extensionSidePanelFrameBackdrop = nil

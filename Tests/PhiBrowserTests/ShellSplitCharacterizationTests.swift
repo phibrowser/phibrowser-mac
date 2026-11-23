@@ -173,6 +173,7 @@ final class ShellSplitCharacterizationTests: XCTestCase {
         window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true
         let split = ShellSplitViewController()
+        split.floatingSidebarHost.prefersReducedMotion = { false }
         split.accountDefaults = { [accountDefaults] in accountDefaults }
         split.view.frame = NSRect(x: 0, y: 0, width: width, height: Self.height)
         window.contentViewController = split
@@ -437,6 +438,19 @@ final class ShellSplitCharacterizationTests: XCTestCase {
             XCTAssertEqual(widths, [300, 0, 300])
             XCTAssertEqual(expansionsFinished, 0, "only an animated expansion reports its end")
         }
+    }
+
+    func testReduceMotionTogglesSidebarImmediately() {
+        let shell = makeShell(onScreen: true)
+        shell.split.setSidebarGeometry(width: 300, collapsed: false)
+        shell.split.floatingSidebarHost.prefersReducedMotion = { true }
+
+        shell.split.toggleSidebar()
+        assertCollapsed(shell)
+
+        shell.split.toggleSidebar()
+        XCTAssertFalse(shell.split.isSidebarExpanding)
+        assertExpanded(shell, width: 300, on: .left)
     }
 
     func testToggleSidebarFlipsTheCollapsedState() {

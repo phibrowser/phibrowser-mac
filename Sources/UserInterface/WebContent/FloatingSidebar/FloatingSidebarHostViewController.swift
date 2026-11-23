@@ -264,7 +264,6 @@ final class FloatingSidebarHostViewController: NSViewController {
     static let floatingSidebarSpringMass: CGFloat = 1
     static let floatingSidebarSlideInAnimationKey = "floatingSidebarSlideIn"
 
-    /// With Reduce Motion on, the slide-in keeps its plain ease-out.
     var prefersReducedMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     /// Lays the panel out at rest, then plays the travel from the window edge
@@ -496,7 +495,7 @@ final class FloatingSidebarHostViewController: NSViewController {
     /// Ends the hand-off once the column has changed. A dock fades the panel
     /// off the open column it now matches. Safe to call when nothing runs.
     func finishSidebarHandOff() {
-        guard sidebarHandOff == .dock,
+        guard !prefersReducedMotion(), sidebarHandOff == .dock,
               let panel = floatingSidebarContainerView, isVisible else {
             completeSidebarHandOff()
             return
@@ -532,7 +531,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         case .undock:
             applyPanelShape(docked: false)
             // The border, left out of the glide, fades in at rest.
-            if let layer = panelContentView?.layer {
+            if !prefersReducedMotion(), let layer = panelContentView?.layer {
                 let fade = CABasicAnimation(keyPath: "borderWidth")
                 fade.fromValue = 0
                 fade.toValue = layer.borderWidth
@@ -829,7 +828,6 @@ final class FloatingSidebarHostViewController: NSViewController {
     static let floatingSidebarHideDelay: TimeInterval = 0.12
     static let floatingSidebarMinimumVisibleDuration: TimeInterval = 0.5
     static let floatingSidebarInset: CGFloat = 5
-    static let floatingSidebarShowDuration: TimeInterval = 0.15
     static let floatingSidebarHideDuration: TimeInterval = 0.15
     /// Quiet period after the docked column's last width change before the
     /// hidden panel follows it; shorter than the trigger's enable delay after
@@ -1243,8 +1241,8 @@ final class FloatingSidebarHostViewController: NSViewController {
             return
         }
 
-        // Ensure panel starts offscreen before sliding in.
-        floatingSidebarLeadingConstraint?.update(offset: floatingSidebarHiddenLeading)
+        let reduceMotion = prefersReducedMotion()
+        floatingSidebarLeadingConstraint?.update(offset: reduceMotion ? 0 : floatingSidebarHiddenLeading)
         view.layoutSubtreeIfNeeded()
         panel.isHidden = false
         floatingSidebarViewController?.setMediaPresented(true)
@@ -1257,16 +1255,9 @@ final class FloatingSidebarHostViewController: NSViewController {
             cancelFloatingSidebarHide()
         }
 
-        floatingSidebarLeadingConstraint?.update(offset: 0)
-        guard prefersReducedMotion() else {
+        if !reduceMotion {
+            floatingSidebarLeadingConstraint?.update(offset: 0)
             springFloatingSidebarIntoPlace(panel)
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.floatingSidebarShowDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            context.allowsImplicitAnimation = true
-            self.view.layoutSubtreeIfNeeded()
         }
     }
 
@@ -1298,7 +1289,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         let generation = visibilityGeneration
         floatingSidebarLeadingConstraint?.update(offset: floatingSidebarHiddenLeading)
 
-        if animated {
+        if animated, !prefersReducedMotion() {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = Self.floatingSidebarHideDuration
                 context.timingFunction = CAMediaTimingFunction(name: .easeIn)

@@ -574,6 +574,32 @@ final class SidebarDockHandOffTests: XCTestCase {
 
     // MARK: - Shell routing
 
+    func testReduceMotionCompletesHandOffImmediately() throws {
+        let (split, host) = try expandedColumn()
+        host.prefersReducedMotion = { true }
+        split.pointerLocationInWindow = { [unowned split] in Self.middle(of: split.sidebarHost.view) }
+        let closeButton = try XCTUnwrap(split.view.window?.standardWindowButton(.closeButton))
+        host.browserState?.windowController?.refreshTrafficLightVisibility()
+        XCTAssertFalse(closeButton.isHidden)
+
+        var completions: [Bool] = []
+        split.setSidebarCollapsed(true, animated: true) { completions.append($0) }
+        XCTAssertTrue(split.isSidebarCollapsed)
+        XCTAssertTrue(host.isVisible)
+        XCTAssertFalse(host.isSidebarHandOffRunning)
+        XCTAssertTrue(closeButton.isHidden)
+        let panel = try XCTUnwrap(host.floatingSidebarContainerView)
+        let content = try XCTUnwrap(Self.contentLayer(in: panel))
+        XCTAssertNil(content.animation(forKey: "borderIn"))
+
+        split.setSidebarCollapsed(false, animated: true) { completions.append($0) }
+        XCTAssertTrue(split.sidebarTakesPageSpace)
+        XCTAssertFalse(host.isVisible)
+        XCTAssertFalse(host.isSidebarHandOffRunning)
+        XCTAssertFalse(closeButton.isHidden)
+        XCTAssertEqual(completions, [true, true])
+    }
+
     func testPinningWhileThePanelIsOpenHandsOff() throws {
         let (split, host) = try visiblePanel()
         let panelWidth = host.currentFloatingWidth
@@ -901,6 +927,7 @@ final class SidebarDockHandOffTests: XCTestCase {
         // Toggles in these tests come from the shortcut unless a test says
         // otherwise.
         slot.shell?.split.currentEventType = { .keyDown }
+        slot.shell?.split.floatingSidebarHost.prefersReducedMotion = { false }
         nextWindowId += 1
         let state = UnseededBrowserState(windowId: nextWindowId, localStore: store,
             profileId: LocalStore.defaultProfileId, spaceId: "first", isIncognito: false)

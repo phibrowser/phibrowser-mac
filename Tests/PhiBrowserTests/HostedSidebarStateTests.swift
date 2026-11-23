@@ -724,6 +724,7 @@ final class HostedSidebarStateTests: XCTestCase {
         let session = makeSession(in: slot, spaceId: "sidebar-toggle")
         session.presentInShell(deferringChromium: true)
         let split = try XCTUnwrap(slot.shell?.split)
+        split.floatingSidebarHost.prefersReducedMotion = { false }
         let window = try XCTUnwrap(slot.shell?.window)
         window.orderFront(nil)
         await drainPresentationUpdates()

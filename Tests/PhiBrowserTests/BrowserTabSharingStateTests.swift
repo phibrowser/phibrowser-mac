@@ -30,6 +30,7 @@ final class BrowserTabSharingStateTests: XCTestCase {
     }
 
     private func makeSnapshot(revision: UInt64,
+                              sessionId: String = "session-a",
                               sharedTabId: Int? = nil,
                               surfaceType: TabSharingSnapshot.Session.SurfaceType = .tab,
                               isSwitching: Bool = false,
@@ -37,7 +38,7 @@ final class BrowserTabSharingStateTests: XCTestCase {
         TabSharingSnapshot(
             revision: revision,
             selectedSession: .init(
-                sessionId: "session-a",
+                sessionId: sessionId,
                 capturerTabId: meetingTabId,
                 capturerWindowId: windowId,
                 surfaceType: surfaceType,
@@ -57,36 +58,36 @@ final class BrowserTabSharingStateTests: XCTestCase {
 
     func test_offersUnsharedTab() {
         let state = makeState()
-        XCTAssertFalse(state.canShareInstead(tabId: candidateTabId))
+        XCTAssertNil(state.shareInsteadOffer(for: candidateTabId))
 
         state.apply(makeSnapshot(revision: 1))
-        XCTAssertTrue(state.canShareInstead(tabId: candidateTabId))
+        XCTAssertNotNil(state.shareInsteadOffer(for: candidateTabId))
     }
 
     func test_startPicksUpRunningShare() {
         currentSnapshot = makeSnapshot(revision: 1)
         let state = makeState()
 
-        XCTAssertTrue(state.canShareInstead(tabId: candidateTabId))
+        XCTAssertNotNil(state.shareInsteadOffer(for: candidateTabId))
     }
 
     func test_noOfferForSharedOrPresentingTab() {
         let state = makeState()
         state.apply(makeSnapshot(revision: 1))
 
-        XCTAssertFalse(state.canShareInstead(tabId: sharedTabId))
-        XCTAssertFalse(state.canShareInstead(tabId: meetingTabId))
+        XCTAssertNil(state.shareInsteadOffer(for: sharedTabId))
+        XCTAssertNil(state.shareInsteadOffer(for: meetingTabId))
     }
 
     func test_noOfferWhenSessionCannotSwitch() {
         let state = makeState()
 
         state.apply(makeSnapshot(revision: 1, surfaceType: .window))
-        XCTAssertFalse(state.canShareInstead(tabId: candidateTabId))
+        XCTAssertNil(state.shareInsteadOffer(for: candidateTabId))
         state.apply(makeSnapshot(revision: 2, canSwitch: false))
-        XCTAssertFalse(state.canShareInstead(tabId: candidateTabId))
+        XCTAssertNil(state.shareInsteadOffer(for: candidateTabId))
         state.apply(makeSnapshot(revision: 3, isSwitching: true))
-        XCTAssertFalse(state.canShareInstead(tabId: candidateTabId))
+        XCTAssertNil(state.shareInsteadOffer(for: candidateTabId))
     }
 
     func test_noOfferWhenFrameworkRejectsTarget() {
@@ -94,7 +95,7 @@ final class BrowserTabSharingStateTests: XCTestCase {
         let state = makeState()
         state.apply(makeSnapshot(revision: 1))
 
-        XCTAssertFalse(state.canShareInstead(tabId: candidateTabId))
+        XCTAssertNil(state.shareInsteadOffer(for: candidateTabId))
     }
 
     func test_olderSnapshotIsIgnored() {
@@ -102,46 +103,62 @@ final class BrowserTabSharingStateTests: XCTestCase {
         state.apply(makeSnapshot(revision: 5))
         state.apply(.init(revision: 4, selectedSession: nil))
 
-        XCTAssertTrue(state.canShareInstead(tabId: candidateTabId))
+        XCTAssertNotNil(state.shareInsteadOffer(for: candidateTabId))
     }
 
-    func test_switchHidesOfferUntilCompletion() {
+    func test_switchHidesOfferUntilCompletion() throws {
         let state = makeState()
         state.apply(makeSnapshot(revision: 1))
 
-        state.shareInstead(tabId: candidateTabId)
+        let offer = try XCTUnwrap(state.shareInsteadOffer(for: candidateTabId))
+        state.shareInstead(offer)
         XCTAssertNil(state.replaceableSession)
         XCTAssertEqual(switchRequests.count, 1)
         XCTAssertEqual(switchRequests.first?.tabId, candidateTabId)
 
         // A second click while in flight sends nothing.
-        state.shareInstead(tabId: candidateTabId)
+        state.shareInstead(offer)
         XCTAssertEqual(switchRequests.count, 1)
 
         // The framework now shares the candidate tab.
         currentSnapshot = makeSnapshot(revision: 2, sharedTabId: candidateTabId)
         pendingCompletion?(TabSharingSwitchResult(status: .success, reason: nil))
-        XCTAssertFalse(state.canShareInstead(tabId: candidateTabId))
-        XCTAssertTrue(state.canShareInstead(tabId: sharedTabId))
+        XCTAssertNil(state.shareInsteadOffer(for: candidateTabId))
+        XCTAssertNotNil(state.shareInsteadOffer(for: sharedTabId))
         XCTAssertEqual(state.snapshot.selectedSession?.sharedTabId, candidateTabId)
     }
 
-    func test_failedSwitchRestoresOffer() {
+    func test_failedSwitchRestoresOffer() throws {
         let state = makeState()
         state.apply(makeSnapshot(revision: 1))
 
-        state.shareInstead(tabId: candidateTabId)
+        let offer = try XCTUnwrap(state.shareInsteadOffer(for: candidateTabId))
+        state.shareInstead(offer)
         pendingCompletion?(TabSharingSwitchResult(status: .failed, reason: "busy"))
 
-        XCTAssertTrue(state.canShareInstead(tabId: candidateTabId))
+        XCTAssertNotNil(state.shareInsteadOffer(for: candidateTabId))
     }
 
     func test_shareInsteadIgnoresIneligibleTab() {
         let state = makeState()
         state.apply(makeSnapshot(revision: 1))
 
-        state.shareInstead(tabId: sharedTabId)
+        state.shareInstead(.init(sessionId: "session-a", tabId: sharedTabId))
         XCTAssertTrue(switchRequests.isEmpty)
+    }
+
+    func test_clickFromAnEarlierSessionDoesNotSwitchTheNewSession() throws {
+        let state = makeState()
+        state.apply(makeSnapshot(revision: 1))
+        let oldOffer = try XCTUnwrap(state.shareInsteadOffer(for: candidateTabId))
+
+        state.apply(makeSnapshot(revision: 2, sessionId: "session-b"))
+        state.shareInstead(oldOffer)
+        XCTAssertTrue(switchRequests.isEmpty)
+
+        let newOffer = try XCTUnwrap(state.shareInsteadOffer(for: candidateTabId))
+        state.shareInstead(newOffer)
+        XCTAssertEqual(switchRequests.map(\.sessionId), ["session-b"])
     }
 
     func test_snapshotParsing() {

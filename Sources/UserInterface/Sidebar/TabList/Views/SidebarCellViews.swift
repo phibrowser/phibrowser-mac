@@ -571,15 +571,16 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
         let discardedOutlineHost: TabDecorativeHostingView
         let titleLabel = TrailingFadeTextField()
         let closeHost: ZeroSafeAreaHostingView<AnyView>
+        /// Switches a running tab share to this pane's tab; left of close.
+        let shareInsteadHost: ZeroSafeAreaHostingView<AnyView>
+        var shareInsteadOffer: BrowserTabSharingState.ShareInsteadOffer?
         let muteHost: ZeroSafeAreaHostingView<AnyView>
         /// Recording badge overlaid on the favicon. Mirrors the corner
         /// badge `UnifiedTabFaviconView` draws on a normal tab so a split
         /// pane using the microphone / camera / screen share reads the same.
         let recordingHost: TabRecordingIconHostingView
-        let beingSharedOutlineHost = TabDecorativeHostingView(
-            rootView: TabBeingSharedSidebarRowOutline(cornerRadius: 6)
-        )
         var muteWidth: Constraint?
+        var shareInsteadWidth: Constraint?
         var titlePaneTrailing: Constraint?
         var titleCloseTrailing: Constraint?
         var faviconHandle: ProfileScopedFaviconLoadHandle?
@@ -605,6 +606,8 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
                     .phiThemeObserver(themeObserver)
             ))
             closeHost.isHidden = true
+            shareInsteadHost = ZeroSafeAreaHostingView(rootView: AnyView(EmptyView()))
+            shareInsteadHost.isHidden = true
             // Mute toggle. Hidden + zero width by default so the title fills
             // the same space when no audio is present; shown with 20pt
             // width when the pane's tab is audible or muted.
@@ -616,7 +619,6 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
                 AnyView(EmptyView())
             }
             recordingHost.isHidden = true
-            beingSharedOutlineHost.isHidden = true
         }
 
         func prepareForReuse() {
@@ -628,10 +630,13 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             titleLabel.stringValue = ""
             titleLabel.toolTip = nil
             closeHost.isHidden = true
+            shareInsteadHost.isHidden = true
+            shareInsteadHost.rootView = AnyView(EmptyView())
+            shareInsteadOffer = nil
             muteHost.isHidden = true
             recordingHost.isHidden = true
-            beingSharedOutlineHost.isHidden = true
             muteWidth?.update(offset: 0)
+            shareInsteadWidth?.update(offset: 0)
             tab = nil
         }
     }
@@ -706,7 +711,7 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
     func handleDoubleClick(with event: NSEvent) -> Bool {
         // Functional controls retain their own actions, including double-clicks.
         for segment in visibleSegments {
-            for control in [segment.closeHost, segment.muteHost] where !control.isHidden {
+            for control in [segment.closeHost, segment.shareInsteadHost, segment.muteHost] where !control.isHidden {
                 if control.bounds.contains(control.convert(event.locationInWindow, from: nil)) {
                     return false
                 }
@@ -888,6 +893,16 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             make.leading.greaterThanOrEqualTo(icon.snp.trailing).priority(999)
         }
 
+        // Zero width unless offered, so the hovered title keeps ending at
+        // the close button.
+        pane.addSubview(segment.shareInsteadHost)
+        segment.shareInsteadHost.snp.makeConstraints { make in
+            make.centerY.equalToSuperview()
+            make.trailing.equalTo(segment.closeHost.snp.leading)
+            make.height.equalTo(Self.closeButtonSize)
+            segment.shareInsteadWidth = make.width.equalTo(0).constraint
+        }
+
         title.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
             make.leading.equalTo(segment.muteHost.snp.trailing).offset(4)
@@ -899,15 +914,10 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             // left for a title collapses it instead of moving the button.
             segment.titlePaneTrailing = make.trailing.equalToSuperview()
                 .offset(-Self.titleTrailingSpacing).priority(.medium).constraint
-            segment.titleCloseTrailing = make.trailing.equalTo(segment.closeHost.snp.leading)
+            segment.titleCloseTrailing = make.trailing.equalTo(segment.shareInsteadHost.snp.leading)
                 .offset(-Self.titleTrailingSpacing).priority(.medium).constraint
         }
         segment.titleCloseTrailing?.deactivate()
-
-        pane.addSubview(segment.beingSharedOutlineHost, positioned: .above, relativeTo: nil)
-        segment.beingSharedOutlineHost.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
-        }
     }
 
     /// Lays out `count` equal-width segments across the background with a
@@ -1095,10 +1105,42 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
     }
 
     private func updateHoverChrome() {
+        updateShareInsteadOffers()
         let showsCloseButtons = isCellHovered || isTouchRevealed
         setCloseButtonSpaceReserved(showsCloseButtons)
         for segment in visibleSegments {
             segment.closeHost.isHidden = !showsCloseButtons
+        }
+    }
+
+    /// Offers share-instead on each hovered pane a running tab share can
+    /// switch to, while the pane still fits it past its favicon / mute.
+    private func updateShareInsteadOffers() {
+        let sharingState = (browserState ?? (item as? SplitSidebarItem)?.browserState)?.tabSharingState
+        for segment in visibleSegments {
+            let controlsWidth = Self.closeButtonSize * 2 + 2
+            let offer: BrowserTabSharingState.ShareInsteadOffer?
+            if isCellHovered, let tab = segment.tab,
+               segment.pane.bounds.width - controlsWidth >= segment.muteHost.frame.maxX {
+                offer = sharingState?.shareInsteadOffer(for: tab.guid)
+            } else {
+                offer = nil
+            }
+            guard offer != segment.shareInsteadOffer else { continue }
+            segment.shareInsteadOffer = offer
+            if let offer {
+                segment.shareInsteadHost.rootView = AnyView(
+                    UnifiedTabShareInsteadButton(offer: offer) { [weak segment, weak sharingState] in
+                        guard segment?.tab?.guid == offer.tabId else { return }
+                        sharingState?.shareInstead(offer)
+                    }
+                    .phiThemeObserver(themeObserver)
+                )
+            } else {
+                segment.shareInsteadHost.rootView = AnyView(EmptyView())
+            }
+            segment.shareInsteadHost.isHidden = offer == nil
+            segment.shareInsteadWidth?.update(offset: offer == nil ? 0 : Self.closeButtonSize)
         }
     }
 
@@ -1185,13 +1227,10 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             // Same identity-routed binding for the capture flags so each
             // segment's recording badge tracks its own tab, matching a
             // standalone tab.
-            Publishers.CombineLatest4(tab.$isCapturingAudio,
-                                      tab.$isCapturingVideo,
-                                      tab.$isSharingScreen,
-                                      tab.$isBeingMirrored)
+            Publishers.CombineLatest(tab.$isCapturingAudio, tab.$isCapturingVideo)
                 .removeDuplicates { $0 == $1 }
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self, weak tab] _, _, _, _ in
+                .sink { [weak self, weak tab] _, _ in
                     guard let self, let tab, let index = self.segmentIndex(of: tab) else { return }
                     self.updateCaptureBadges(index: index, tab: tab)
                 }
@@ -1232,6 +1271,12 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
                 }
                 .store(in: &cancellables)
         }
+
+        state?.tabSharingState.$replaceableSession
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateShareInsteadOffers() }
+            .store(in: &cancellables)
 
         // Re-resolve the pane order when the strip order changes (reverse /
         // move-pane actions, drag-to-reorder, etc). The SplitSidebarItem
@@ -1339,10 +1384,7 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     /// Show or hide a segment's capture badges from its tab's capture flags.
     private func updateCaptureBadges(index: Int, tab: Tab) {
-        let segment = segments[index]
-        segment.beingSharedOutlineHost.isHidden = !tab.isBeingSharedRemotely
-
-        let host = segment.recordingHost
+        let host = segments[index].recordingHost
         let showsMedia = tab.isCapturingMedia
         host.isHidden = !showsMedia
         guard showsMedia else { return }

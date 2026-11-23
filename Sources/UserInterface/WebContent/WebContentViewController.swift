@@ -1456,24 +1456,16 @@ class WebContentViewController: NSViewController {
         }
 
         installAttachedBookmarkBarIfNeeded()
-        installScreenShareMirroredBorderOverlayIfNeeded()
-    }
-
-    private func installScreenShareMirroredBorderOverlayIfNeeded() {
-        if screenShareMirroredBorderOverlay.superview !== hostView {
-            screenShareMirroredBorderOverlay.removeFromSuperview()
-        }
-        guard screenShareMirroredBorderOverlay.superview == nil else { return }
-        hostView.addSubview(
+        // The host's children are replaced when page content is mounted.
+        leftContainerView.addSubview(
             screenShareMirroredBorderOverlay,
             positioned: .above,
-            relativeTo: nil
+            relativeTo: hostView
         )
         screenShareMirroredBorderOverlay.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
+            make.leading.trailing.bottom.equalToSuperview()
+            make.top.equalTo(bookmarkBarSlotView.snp.bottom)
         }
-        screenShareMirroredBorderOverlay.cornerRadius =
-            LiquidGlassCompatible.webContentInnerComponentsCornerRadius
         screenShareMirroredBorderOverlay.setActive(false)
     }
     
@@ -2082,6 +2074,7 @@ class WebContentViewController: NSViewController {
             return
         }
         addWebContentView(contentView, tabId: tabId)
+        refreshScreenShareMirroredBorderPresentation()
         contentMode = .webContent
         updateLeftContainerStyleForCurrentAIChatState()
     }
@@ -2271,7 +2264,7 @@ class WebContentViewController: NSViewController {
             return
         }
 
-        if let host = currentSplitHost,
+        if currentSplitHost != nil,
            let tab = associatedTab,
            browserState?.splitGroup(forTabId: tab.guid) != nil {
             screenShareMirroredBorderOverlay.setActive(false)
@@ -2882,7 +2875,7 @@ class WebContentViewController: NSViewController {
             contentSurfaceLender?.reclaimContentSurface()
             contentSurfaceLender = nil
             // Within the window, as on entry.
-            original.addSubview(hostView)
+            original.addSubview(hostView, positioned: .below, relativeTo: screenShareMirroredBorderOverlay)
             hostView.snp.remakeConstraints { make in
                 make.leading.trailing.bottom.equalToSuperview()
                 make.top.equalTo(bookmarkBarSlotView.snp.bottom)

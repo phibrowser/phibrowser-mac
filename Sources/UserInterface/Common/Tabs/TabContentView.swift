@@ -685,7 +685,8 @@ struct SplitPaneMuteButton: View {
 /// Shown left of the close button on a hovered tab while a tab share runs:
 /// shares this tab instead, keeping the same share running.
 struct UnifiedTabShareInsteadButton: View {
-    let viewModel: TabViewModel
+    let offer: BrowserTabSharingState.ShareInsteadOffer
+    let action: () -> Void
     @State private var isHovered = false
 
     static var title: String {
@@ -697,9 +698,7 @@ struct UnifiedTabShareInsteadButton: View {
     }
 
     var body: some View {
-        Button {
-            viewModel.onShareInstead?()
-        } label: {
+        Button(action: action) {
             Image(systemName: "rectangle.2.swap")
                 .font(.system(size: 11, weight: .semibold))
                 .frame(width: 24, height: 24)
@@ -713,6 +712,7 @@ struct UnifiedTabShareInsteadButton: View {
         )
         .help(Self.title)
         .accessibilityLabel(Self.title)
+        .id(offer)
         .onHover { hovering in
             isHovered = hovering
         }
@@ -762,9 +762,9 @@ struct TabBeingSharedFaviconOutline: View {
     }
 }
 
-/// Yellow outline around a sidebar tab row (or split pane) while its content
+/// Yellow outline around a sidebar tab row or tab strip item while its content
 /// is mirrored to a remote screen share (#259).
-struct TabBeingSharedSidebarRowOutline: View {
+struct TabBeingSharedRowOutline: View {
     var cornerRadius: CGFloat = 8
     @State private var isAnimating = false
 

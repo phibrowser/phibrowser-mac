@@ -251,7 +251,7 @@ final class TabViewModel {
     /// Tab whose page is mirrored to a remote capture consumer.
     var isBeingSharedRemotely: Bool = false
     /// Hovered tab that a running tab share can switch to.
-    var offersShareInstead: Bool = false
+    private(set) var shareInsteadOffer: BrowserTabSharingState.ShareInsteadOffer?
     var isHorizontalCompactMode: Bool = false
     /// Set by the horizontal tab strip while it hides this favicon under the
     /// cell's centered recording icon, or with the whole cell laid out at
@@ -273,7 +273,6 @@ final class TabViewModel {
     let status = TabStatusModel()
 
     var onToggleMute: (() -> Void)?
-    var onShareInstead: (() -> Void)?
     var onToolTipUpdated: (() -> Void)?
     
     private(set) var faviconRevision: Int = 0
@@ -287,10 +286,6 @@ final class TabViewModel {
         isLoading
     }
 
-    var showsCaptureIndicator: Bool {
-        isCapturingMedia || isPresentingScreenShare || isBeingSharedRemotely
-    }
-    
     var displayTitle: String {
         if !title.isEmpty { return title }
         if let url, !url.isEmpty { return url }
@@ -338,13 +333,12 @@ final class TabViewModel {
         isCapturingMedia = false
         isPresentingScreenShare = false
         isBeingSharedRemotely = false
-        offersShareInstead = false
+        shareInsteadOffer = nil
         tabSharingState = nil
         groupColor = nil
         status.prepareForReuse()
         faviconRevision &+= 1
         onToggleMute = nil
-        onShareInstead = nil
         onToolTipUpdated = nil
     }
 
@@ -362,13 +356,20 @@ final class TabViewModel {
     }
 
     private func refreshShareInsteadOffer() {
-        var offers = false
-        if isHovered, let tabId = configuredTabGuid, let tabSharingState {
-            offers = tabSharingState.canShareInstead(tabId: tabId)
+        let offer: BrowserTabSharingState.ShareInsteadOffer?
+        if isHovered, let tabId = configuredTabGuid {
+            offer = tabSharingState?.shareInsteadOffer(for: tabId)
+        } else {
+            offer = nil
         }
-        if offers != offersShareInstead {
-            offersShareInstead = offers
+        if offer != shareInsteadOffer {
+            shareInsteadOffer = offer
         }
+    }
+
+    func shareInstead(_ offer: BrowserTabSharingState.ShareInsteadOffer) {
+        guard configuredTabGuid == offer.tabId else { return }
+        tabSharingState?.shareInstead(offer)
     }
 
     func setActiveSuppressed(_ suppressed: Bool, activeValue: Bool? = nil) {
@@ -572,9 +573,6 @@ final class TabViewModel {
 
         tabSharingState = browserState?.tabSharingState
         if let tabSharingState {
-            onShareInstead = { [weak tabSharingState] in
-                tabSharingState?.shareInstead(tabId: expectedGuid)
-            }
             tabSharingState.$replaceableSession
                 .dropFirst()
                 .receive(on: DispatchQueue.main)
@@ -583,8 +581,6 @@ final class TabViewModel {
                     self.refreshShareInsteadOffer()
                 }
                 .store(in: &cancellables)
-        } else {
-            onShareInstead = nil
         }
         refreshShareInsteadOffer()
 

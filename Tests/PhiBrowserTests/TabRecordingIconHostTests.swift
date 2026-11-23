@@ -141,7 +141,7 @@ final class TabRecordingIconHostTests: XCTestCase {
         )
     }
 
-    func test_mirroredTabFaviconBadgeShowsBeingSharedIconNotMicDot() throws {
+    func test_mirroredSidebarTabShowsRowOutlineWithoutRecordingBadge() throws {
         let tab = Tab(
             guid: 2,
             url: "https://example.com/2",
@@ -152,16 +152,110 @@ final class TabRecordingIconHostTests: XCTestCase {
         let viewModel = TabViewModel()
         viewModel.configure(with: tab, in: nil)
 
-        let body = String(describing: SideTabView(model: viewModel).body)
-        let rowOutline = String(describing: TabBeingSharedSidebarRowOutline.self)
-        let faviconOutline = String(describing: TabBeingSharedFaviconOutline.self)
-        let recording = String(describing: UnifiedTabRecordingIcon.self)
-        XCTAssertTrue(body.contains("\(rowOutline)("))
-        XCTAssertFalse(body.contains("\(faviconOutline)("))
-        XCTAssertFalse(body.contains("\(recording)("))
+        let view = SideTabView(model: viewModel, peekModel: TabViewModel(),
+                               onClose: {}, onClosePeek: {})
+        view.frame = NSRect(x: 0, y: 0, width: 240, height: 32)
+        view.layout()
+
+        XCTAssertEqual(rowOutlineHosts(in: view).count, 1)
+        let favicon = try XCTUnwrap(view.subviews.flatMap(\.subviews)
+            .compactMap { $0 as? SideTabFaviconView }.first)
+        XCTAssertFalse(favicon.subviews.contains { $0 is SideTabRecordingBadgeView })
+    }
+
+    /// Split tabs leave the being-shared sign to the content pane's border.
+    func test_compactSplitCellShowsNoSharedSign() {
+        for panes: [PaneCapture] in [[.mirrored, .idle], [.idle, .idle, .mirrored]] {
+            let view = makeCell(panes: panes, compact: true)
+
+            XCTAssertEqual(centerGlyphHosts(in: view).count, 0)
+            XCTAssertEqual(rowOutlineHosts(in: view).count, 0)
+        }
+    }
+
+    func test_normalSplitCellShowsNoSharedOutline() {
+        let view = makeCell(panes: [.mirrored, .idle], compact: false)
+
+        XCTAssertEqual(rowOutlineHosts(in: view).count, 0)
+    }
+
+    func test_normalTabItemBeingSharedShowsTheRowOutline() throws {
+        let view = makeCell(panes: [.mirrored], compact: false)
+
+        let host = try XCTUnwrap(rowOutlineHosts(in: view).first)
+        XCTAssertEqual(host.frame, view.bounds)
+    }
+
+    /// Presenting alone draws no centered glyph, so it must not take the
+    /// center and hide the favicons.
+    func test_compactTabItemThatOnlyPresentsShowsNoCenteredGlyph() {
+        let view = makeCell(panes: [.presenting], compact: true)
+
+        XCTAssertEqual(centerGlyphHosts(in: view).count, 0)
     }
 
     // MARK: - Helpers
+
+    private enum PaneCapture {
+        case idle, presenting, mirrored
+    }
+
+    /// A tab item, merged split when `panes` holds more than one.
+    private func makeCell(panes: [PaneCapture], compact: Bool) -> TabItemView {
+        let tabs = panes.enumerated().map { index, capture in
+            let tab = Tab(
+                guid: index + 1,
+                url: "https://example.com/\(index + 1)",
+                isActive: false,
+                index: index
+            )
+            tab.setCaptureStateForTesting(
+                sharingScreen: capture == .presenting,
+                beingMirrored: capture == .mirrored
+            )
+            return tab
+        }
+        let view = TabItemView()
+        let threshold = tabs.count > 1
+            ? TabStripMetrics.Content.splitCompactModeThreshold(paneCount: tabs.count)
+            : TabStripMetrics.Content.compactModeThreshold
+        let width = compact ? threshold - 1 : threshold + 1
+        view.frame = CGRect(x: 0, y: 0, width: width, height: TabStripMetrics.Strip.tabHeight)
+        view.configure(with: TabRenderData(
+            id: "tab-1",
+            title: "Example",
+            url: tabs[0].url ?? "",
+            isActive: false,
+            isPinned: false,
+            isSplitGroupActive: false,
+            mergedSplitPanes: Array(tabs.dropFirst()),
+            sourceTab: tabs[0]
+        ))
+        view.layout()
+        return view
+    }
+
+    private func rowOutlineHosts(in root: NSView) -> [NSView] {
+        let marker = String(describing: TabBeingSharedRowOutline.self)
+        var hosts: [NSView] = []
+        var pending = [root]
+        while let view = pending.popLast() {
+            if !view.isHidden, let host = view as? NSHostingView<AnyView>,
+               String(describing: host.rootView).contains(marker) {
+                hosts.append(host)
+            }
+            pending.append(contentsOf: view.subviews)
+        }
+        return hosts
+    }
+
+    private func centerGlyphHosts(in root: NSView) -> [NSView] {
+        let marker = String(describing: UnifiedTabCaptureCenterIndicator.self)
+        return recordingIconHosts(in: root).filter { host in
+            guard let host = host as? NSHostingView<AnyView> else { return false }
+            return String(describing: host.rootView).contains(marker)
+        }
+    }
 
     /// Compact, because that is where a tab item shows the centred
     /// recording icon; a normal-width item shows a badge on its favicon.

@@ -15,6 +15,11 @@ import Foundation
 /// which session that is and whether a tab may join it, and re-checks when
 /// the switch is requested.
 final class BrowserTabSharingState: ObservableObject {
+    struct ShareInsteadOffer: Hashable {
+        let sessionId: String
+        let tabId: Int
+    }
+
     @Published private(set) var snapshot: TabSharingSnapshot = .empty
     /// The session a tab row can switch to itself; nil while a switch is in
     /// flight or when the share cannot switch tabs.
@@ -46,17 +51,21 @@ final class BrowserTabSharingState: ObservableObject {
         refreshReplaceableSession()
     }
 
-    func canShareInstead(tabId: Int) -> Bool {
+    func shareInsteadOffer(for tabId: Int) -> ShareInsteadOffer? {
         guard let session = replaceableSession,
               tabId != session.capturerTabId,
-              tabId != session.sharedTabId else {
-            return false
+              tabId != session.sharedTabId,
+              client.availability(session.sessionId, windowId, tabId).isSuccess else {
+            return nil
         }
-        return client.availability(session.sessionId, windowId, tabId).isSuccess
+        return ShareInsteadOffer(sessionId: session.sessionId, tabId: tabId)
     }
 
-    func shareInstead(tabId: Int) {
-        guard canShareInstead(tabId: tabId), let session = replaceableSession else { return }
+    func shareInstead(_ offer: ShareInsteadOffer) {
+        let tabId = offer.tabId
+        guard let session = replaceableSession,
+              session.sessionId == offer.sessionId,
+              shareInsteadOffer(for: tabId) == offer else { return }
         pendingSwitchTargetTabId = tabId
         refreshReplaceableSession()
         AppLogInfo("[TabSharing] switch requested windowId=\(windowId) " +

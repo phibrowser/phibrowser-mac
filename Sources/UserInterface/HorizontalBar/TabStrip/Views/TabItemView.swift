@@ -93,7 +93,7 @@ final class TabItemView: NSView {
     private var currentTabId: String?
     private weak var sourceTab: Tab?
     private weak var tabSharingState: BrowserTabSharingState?
-    private var showsShareInstead = false
+    private var shareInsteadOffer: BrowserTabSharingState.ShareInsteadOffer?
     private let tabPreviewRegistration = TabPreviewRegistration()
     private let splitTabPreviewRegistration = SplitTabPreviewRegistration()
     private var showsTabPreview = false
@@ -143,6 +143,8 @@ final class TabItemView: NSView {
         let titleHostingView = HitTransparentHostingView(rootView: AnyView(EmptyView()))
         let muteButtonHostingView = ZeroSafeAreaHostingView(rootView: AnyView(EmptyView()))
         let closeButtonHostingView = ZeroSafeAreaHostingView(rootView: AnyView(EmptyView()))
+        let shareInsteadButtonHostingView = ZeroSafeAreaHostingView(rootView: AnyView(EmptyView()))
+        var shareInsteadOffer: BrowserTabSharingState.ShareInsteadOffer?
         /// Thin vertical line on the pane's leading edge, separating it from
         /// the pane before it. Sizing + color mirror the tab↔tab separator
         /// (`TabStripMetrics.Content.separator*`) so the divider inside a
@@ -151,7 +153,8 @@ final class TabItemView: NSView {
         let dividerView = NSView()
 
         var hostingViews: [NSView] {
-            [faviconHostingView, muteButtonHostingView, titleHostingView, closeButtonHostingView]
+            [faviconHostingView, muteButtonHostingView, titleHostingView, closeButtonHostingView,
+             shareInsteadButtonHostingView]
         }
 
         var views: [NSView] { hostingViews + [dividerView] }
@@ -169,6 +172,8 @@ final class TabItemView: NSView {
     private var mergedPaneCount = 0
     private var mergedPanes: ArraySlice<MergedPaneViews> { mergedPanePool.prefix(mergedPaneCount) }
     private var isMergedSplitCell: Bool { mergedPaneCount > 0 }
+    /// Split tabs carry no being-shared sign; the content pane's border does.
+    private var isSplitCell: Bool { isMergedSplitCell || backgroundLayer.splitPanePosition != nil }
     /// Panes rendered by this cell, host included.
     private var paneCount: Int { 1 + mergedPaneCount }
     private var isDragHighlighted = false {
@@ -249,6 +254,13 @@ final class TabItemView: NSView {
         return view
     }()
 
+    private lazy var beingSharedOutlineHostingView: HitTransparentHostingView<AnyView> = {
+        let view = HitTransparentHostingView(rootView: AnyView(EmptyView()))
+        view.layer?.backgroundColor = .clear
+        view.isHidden = true
+        return view
+    }()
+
     private lazy var closeButtonHostingView: ZeroSafeAreaHostingView<AnyView> = {
         let view = ZeroSafeAreaHostingView(rootView: makeCloseButtonRootView())
         view.layer?.backgroundColor = .clear
@@ -257,7 +269,7 @@ final class TabItemView: NSView {
 
     /// Switches a running tab share to this tab; left of the close button.
     private lazy var shareInsteadButtonHostingView: ZeroSafeAreaHostingView<AnyView> = {
-        let view = ZeroSafeAreaHostingView(rootView: makeShareInsteadButtonRootView())
+        let view = ZeroSafeAreaHostingView(rootView: AnyView(EmptyView()))
         view.layer?.backgroundColor = .clear
         view.isHidden = true
         return view
@@ -308,6 +320,11 @@ final class TabItemView: NSView {
         }
     }
 
+    private func isOnShareInsteadButton(_ point: NSPoint) -> Bool {
+        let views = [shareInsteadButtonHostingView] + mergedPanes.map(\.shareInsteadButtonHostingView)
+        return views.contains { !$0.isHidden && $0.frame.contains(point) }
+    }
+
     /// The non-host pane whose visible mute toggle contains `point`.
     private func mergedPaneWithMuteButton(at point: CGPoint) -> MergedPaneViews? {
         mergedPanes.first {
@@ -352,6 +369,7 @@ final class TabItemView: NSView {
             self?.updatePreviewEligibility()
         }
 
+        addSubview(beingSharedOutlineHostingView)
         addSubview(faviconHostingView)
         addSubview(openIndicatorHostingView)
         addSubview(muteButtonHostingView)
@@ -449,10 +467,11 @@ final class TabItemView: NSView {
 
     private func layoutFaviconAndMedia(mode: LayoutMode) -> CGFloat {
         let metrics = TabStripMetrics.Content.self
-        let showCaptureCenterGlyph = viewModel.showsCaptureIndicator
         let showMute = viewModel.isCurrentlyAudible || viewModel.isMuted
         let centerY = bounds.height / 2
         let panes = Array(mergedPanes)
+        let showCaptureCenterGlyph = viewModel.isCapturingMedia
+            || (viewModel.isBeingSharedRemotely && !isSplitCell)
 
         // Pane mute toggles only render inside merged split cells; reset
         // to hidden up front so recycled cells transitioning into non-split
@@ -669,6 +688,7 @@ final class TabItemView: NSView {
             pane.viewModel.isHorizontalCompactMode = viewModel.isHorizontalCompactMode
         }
 
+        setBeingSharedOutlineVisible(sourceTab?.isBeingSharedRemotely == true && !isSplitCell)
         let titleStartX = layoutFaviconAndMedia(mode: mode)
 
         switch mode {
@@ -681,6 +701,7 @@ final class TabItemView: NSView {
             for pane in mergedPanePool {
                 pane.titleHostingView.isHidden = true
                 pane.closeButtonHostingView.isHidden = true
+                pane.shareInsteadButtonHostingView.isHidden = true
             }
             shareInsteadButtonHostingView.isHidden = true
 
@@ -688,13 +709,14 @@ final class TabItemView: NSView {
             // Close buttons: one per pane for a merged split cell (all
             // visible on hover), single button for a regular tab.
             if isMergedSplitCell {
-                shareInsteadButtonHostingView.isHidden = true
                 layoutMergedPaneText(
                     column: paneColumn(0),
                     faviconView: faviconHostingView,
                     muteView: muteButtonHostingView,
                     titleView: titleHostingView,
-                    closeView: closeButtonHostingView
+                    closeView: closeButtonHostingView,
+                    shareInsteadView: shareInsteadButtonHostingView,
+                    offersShareInstead: shareInsteadOffer != nil
                 )
                 for (offset, pane) in mergedPanes.enumerated() {
                     layoutMergedPaneText(
@@ -702,7 +724,9 @@ final class TabItemView: NSView {
                         faviconView: pane.faviconHostingView,
                         muteView: pane.muteButtonHostingView,
                         titleView: pane.titleHostingView,
-                        closeView: pane.closeButtonHostingView
+                        closeView: pane.closeButtonHostingView,
+                        shareInsteadView: pane.shareInsteadButtonHostingView,
+                        offersShareInstead: pane.shareInsteadOffer != nil
                     )
                 }
             } else {
@@ -717,12 +741,17 @@ final class TabItemView: NSView {
                 for pane in mergedPanePool {
                     pane.titleHostingView.isHidden = true
                     pane.closeButtonHostingView.isHidden = true
+                    pane.shareInsteadButtonHostingView.isHidden = true
                 }
-                let showsShareInsteadButton = shouldShowCloseButton && showsShareInstead
+                let shareFrame = closeButtonHostingView.frame
+                    .offsetBy(dx: -metrics.closeButtonSize.width, dy: 0)
+                let leadingControl: NSView = muteButtonHostingView.isHidden
+                    ? faviconHostingView : muteButtonHostingView
+                let showsShareInsteadButton = shouldShowCloseButton && shareInsteadOffer != nil
+                    && shareFrame.minX >= leadingControl.frame.maxX
                 shareInsteadButtonHostingView.isHidden = !showsShareInsteadButton
                 if showsShareInsteadButton {
-                    shareInsteadButtonHostingView.frame = closeButtonHostingView.frame
-                        .offsetBy(dx: -metrics.closeButtonSize.width, dy: 0)
+                    shareInsteadButtonHostingView.frame = shareFrame
                 }
                 let trailingControlsMinX = showsShareInsteadButton
                     ? shareInsteadButtonHostingView.frame.minX
@@ -753,7 +782,9 @@ final class TabItemView: NSView {
         faviconView: NSView,
         muteView: NSView,
         titleView: NSView,
-        closeView: NSView
+        closeView: NSView,
+        shareInsteadView: NSView,
+        offersShareInstead: Bool
     ) {
         let metrics = TabStripMetrics.Content.self
         let closeFrame = CGRect(
@@ -770,10 +801,19 @@ final class TabItemView: NSView {
         closeView.isHidden = !showClose
         closeView.frame = closeFrame
 
-        let titleStart = (muteView.isHidden ? faviconView : muteView).frame.maxX
-            + metrics.titleToFavicon
+        let leadingControl = muteView.isHidden ? faviconView : muteView
+        // Share-instead sits left of the close button and gives way the same
+        // way when the column cannot fit it past the favicon / mute toggle.
+        let shareFrame = closeFrame.offsetBy(dx: -metrics.closeButtonSize.width, dy: 0)
+        let showShareInstead = showClose && offersShareInstead
+            && shareFrame.minX >= leadingControl.frame.maxX
+        shareInsteadView.isHidden = !showShareInstead
+        shareInsteadView.frame = shareFrame
+
+        let titleStart = leadingControl.frame.maxX + metrics.titleToFavicon
+        let trailingControlsMinX = showShareInstead ? shareFrame.minX : closeFrame.minX
         let titleMax = showClose
-            ? closeFrame.minX - metrics.titleToCloseButton
+            ? trailingControlsMinX - metrics.titleToCloseButton
             : column.maxX - metrics.titleTrailing
         titleView.isHidden = false
         titleView.frame = CGRect(
@@ -814,6 +854,7 @@ final class TabItemView: NSView {
             view.isHidden = true
             view.frame = .zero
         }
+        setBeingSharedOutlineVisible(false)
         // SwiftUI keeps animating a hidden host's recording badge.
         viewModel.hidesRecordingBadge = true
         for pane in mergedPanePool {
@@ -948,24 +989,55 @@ final class TabItemView: NSView {
         makeThemedRootView(UnifiedTabCaptureCenterIndicator(viewModel: viewModel))
     }
 
-    private func isOnShareInsteadButton(_ point: NSPoint) -> Bool {
-        !shareInsteadButtonHostingView.isHidden
-            && shareInsteadButtonHostingView.frame.contains(point)
+    /// The outline pulses forever, so it is only hosted while visible.
+    private func setBeingSharedOutlineVisible(_ visible: Bool) {
+        let host = beingSharedOutlineHostingView
+        host.frame = visible ? bounds : .zero
+        guard visible == host.isHidden else { return }
+        host.isHidden = !visible
+        host.rootView = visible
+            ? AnyView(TabBeingSharedRowOutline(cornerRadius: TabStripMetrics.Tab.cornerRadius))
+            : AnyView(EmptyView())
     }
 
-    private func makeShareInsteadButtonRootView() -> AnyView {
-        makeThemedRootView(UnifiedTabShareInsteadButton(viewModel: viewModel))
+    private func makeShareInsteadButtonRootView(
+        offer: BrowserTabSharingState.ShareInsteadOffer?,
+        viewModel: TabViewModel
+    ) -> AnyView {
+        guard let offer else { return AnyView(EmptyView()) }
+        return makeThemedRootView(
+            UnifiedTabShareInsteadButton(offer: offer) { [weak viewModel] in
+                viewModel?.shareInstead(offer)
+            }
+        )
     }
 
-    /// Returns whether the offer changed.
+    /// Refreshes the offer of every pane; returns whether any changed.
     private func refreshShareInsteadOffer() -> Bool {
-        var offers = false
-        if isHovered, let tabId = sourceTab?.guid, let tabSharingState {
-            offers = tabSharingState.canShareInstead(tabId: tabId)
+        func offer(for tab: Tab?) -> BrowserTabSharingState.ShareInsteadOffer? {
+            guard isHovered, let tab else { return nil }
+            return tabSharingState?.shareInsteadOffer(for: tab.guid)
         }
-        guard offers != showsShareInstead else { return false }
-        showsShareInstead = offers
-        return true
+        var changed = false
+        let hostOffer = offer(for: sourceTab)
+        if hostOffer != shareInsteadOffer {
+            shareInsteadOffer = hostOffer
+            shareInsteadButtonHostingView.rootView = makeShareInsteadButtonRootView(
+                offer: hostOffer, viewModel: viewModel
+            )
+            changed = true
+        }
+        for pane in mergedPanes {
+            let paneOffer = offer(for: pane.tab)
+            if paneOffer != pane.shareInsteadOffer {
+                pane.shareInsteadOffer = paneOffer
+                pane.shareInsteadButtonHostingView.rootView = makeShareInsteadButtonRootView(
+                    offer: paneOffer, viewModel: pane.viewModel
+                )
+                changed = true
+            }
+        }
+        return changed
     }
 
     private func makeCloseButtonRootView() -> AnyView {
@@ -1129,6 +1201,10 @@ final class TabItemView: NSView {
         for (index, pane) in mergedPanePool.enumerated() {
             guard index < panes.count else {
                 pane.tab = nil
+                if pane.shareInsteadOffer != nil {
+                    pane.shareInsteadOffer = nil
+                    pane.shareInsteadButtonHostingView.rootView = AnyView(EmptyView())
+                }
                 pane.viewModel.cancelSubscriptions()
                 pane.viewModel.onToggleMute = nil
                 pane.viewModel.onToolTipUpdated = nil

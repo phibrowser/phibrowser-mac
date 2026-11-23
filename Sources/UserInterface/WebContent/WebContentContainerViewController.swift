@@ -2512,13 +2512,17 @@ class WebContentContainerViewController: NSViewController {
     /// shows. Painted in the page's own background then, that is no strip.
     /// Only for a card holding one page: a split's other pane or the AI Chat
     /// beside the page shows the backdrop through its clear fill.
-    /// False puts the card's color back.
+    /// False puts the card's color back. A framework without
+    /// `pageBackgroundColor(forTabId:windowId:)` (2.18.0 and earlier) keeps
+    /// the card's color, as before the call existed.
     func setBackdropPaintsPageBackground(_ paints: Bool) {
         guard hasContentSurface else { return }
         guard paints, let controller = currentWebContentController,
               controller.contentSurfaceTabs.count == 1, !controller.isPageCardSeparated,
               let tab = browserState?.focusingTab, let windowId = browserState?.windowId,
-              let color = ChromiumLauncher.sharedInstance().bridge?.pageBackgroundColor(
+              let bridge = ChromiumLauncher.sharedInstance().bridge,
+              bridge.responds(to: #selector(PhiChromiumBridgeProtocol.pageBackgroundColor(forTabId:windowId:))),
+              let color = bridge.pageBackgroundColor(
                   forTabId: Int64(tab.guid), windowId: Int64(windowId)),
               color.alphaComponent == 1
         else {

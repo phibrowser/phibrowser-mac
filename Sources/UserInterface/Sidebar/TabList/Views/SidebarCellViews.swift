@@ -192,7 +192,7 @@ final class SidebarTabHoverRegionView: NSView {
 
     private var trackingArea: NSTrackingArea?
 
-    // Pass clicks through to the hostingView below. Manually forwarding via
+    // Pass clicks through to the views below. Manually forwarding via
     // `mouseDown(with:)` doesn't trigger SwiftUI's gesture system (the X
     // close button never fires), so let AppKit deliver events the normal way.
     // Hover detection still works because NSTrackingArea fires entered/exited
@@ -275,7 +275,7 @@ private final class SidebarTabHoverDeadZoneView: NSView {
 
 // MARK: - Tab Cell View (reused from existing)
 class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
-    private var hostingView: ThemedHostingView!
+    private var tabView: SideTabView!
     private let hoverRegionView = SidebarTabHoverRegionView()
     private let hoverDeadZoneView = SidebarTabHoverDeadZoneView()
     private let viewModel = TabViewModel()
@@ -307,7 +307,7 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         // Only cancel subscriptions and reset interaction state.
         // Visual state (title, favicon, etc.) is preserved until configure()
         // overwrites it, avoiding a blank-frame flicker between prepareForReuse
-        // and the next SwiftUI render cycle.
+        // and the next render.
         viewModel.cancelSubscriptions()
         viewModel.setHoverSuppressed(false)
         viewModel.setActiveSuppressed(false, activeValue: false)
@@ -373,25 +373,19 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private func setupViews() {
         wantsLayer = true
         layer?.masksToBounds = false
-        hostingView = ThemedHostingView(rootView: SideTabView(
+        tabView = SideTabView(
             model: viewModel,
+            peekModel: peekTabViewModel,
             onClose: { [weak self] in
                 self?.closeButtonTapped()
             },
-            peekModel: peekTabViewModel,
             onClosePeek: { [weak self] in
                 self?.closePeekTapped()
             }
-        ))
-        // The outline row and edge constraints own this view's size.
-        // Avoid measuring minimum, ideal and maximum SwiftUI content sizes.
-        hostingView.sizingOptions = []
-        hostingView.wantsLayer = true
-        hostingView.layer?.masksToBounds = false
-        addSubview(hostingView)
-        hostingView.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
-        }
+        )
+        tabView.frame = bounds
+        tabView.autoresizingMask = [.width, .height]
+        addSubview(tabView)
 
         tabPreviewRegistration.onEligibilityChanged = { [weak self] isEligible in
             self?.viewModel.showsTabPreview = isEligible
@@ -424,7 +418,7 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         let press = NSPressGestureRecognizer(target: self, action: #selector(handlePress(_:)))
         press.minimumPressDuration = 0
         press.allowableMovement = 5
-        // Don't delay events — let them reach NSHostingView's SwiftUI Button simultaneously
+        // Don't delay events — let them reach the row's buttons simultaneously
         press.delaysPrimaryMouseButtonEvents = false
         // macOS 27 defaults to direct touches; a zero-duration press would claim
         // touch-down ahead of the row's click emulation and sidebar scrolling.

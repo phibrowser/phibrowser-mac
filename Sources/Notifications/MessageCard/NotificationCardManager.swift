@@ -46,10 +46,21 @@ final class NotificationCardManager: ObservableObject {
     /// Tracks whether the current card stack was explicitly dismissed by the user.
     @Published private(set) var isExplicitlyHidden: Bool = false
     
+    /// Fires on subscription and whenever the account's popup mode changes,
+    /// which `isNotificationPopupEnabled` reads but nothing publishes.
+    private static var popupModeChanges: AnyPublisher<Void, Never> {
+        NotificationCenter.default.publisher(for: .notificationPopupModeDidChange)
+            .map { _ in }
+            .prepend(())
+            .eraseToAnyPublisher()
+    }
+
     /// Visibility publisher for sidebar presentation.
     var shouldShowInSidebar: AnyPublisher<Bool, Never> {
         Publishers.CombineLatest4($latestCard, $isManuallyShown, $activeDisplayMode, $isExplicitlyHidden)
-            .map { [weak self] latestCard, isManuallyShown, activeMode, isExplicitlyHidden in
+            .combineLatest(Self.popupModeChanges)
+            .map { [weak self] values, _ in
+                let (latestCard, isManuallyShown, activeMode, isExplicitlyHidden) = values
                 guard latestCard != nil, activeMode == .sidebar, !isExplicitlyHidden else { return false }
                 return self?.isNotificationPopupEnabled == true || isManuallyShown
             }
@@ -60,7 +71,9 @@ final class NotificationCardManager: ObservableObject {
     /// Visibility publisher for legacy overlay presentation.
     var shouldShowInLegacy: AnyPublisher<Bool, Never> {
         Publishers.CombineLatest4($latestCard, $isManuallyShown, $activeDisplayMode, $isExplicitlyHidden)
-            .map { [weak self] latestCard, isManuallyShown, activeMode, isExplicitlyHidden in
+            .combineLatest(Self.popupModeChanges)
+            .map { [weak self] values, _ in
+                let (latestCard, isManuallyShown, activeMode, isExplicitlyHidden) = values
                 let hasCard = latestCard != nil
                 let isLegacy = activeMode == .legacy
                 let isPopupEnabled = self?.isNotificationPopupEnabled == true
@@ -150,11 +163,13 @@ final class NotificationCardManager: ObservableObject {
     }
     
     /// Updates the active display mode when layout changes.
+    ///
+    /// Runs on every defaults change, and every sidebar bottom bar of every
+    /// Space observes this object, so an unchanged mode is not reassigned.
     private func setDisplayMode(_ mode: CardDisplayMode) {
-        if activeDisplayMode != mode {
-            isManuallyShown = false
-            isExplicitlyHidden = false
-        }
+        guard activeDisplayMode != mode else { return }
+        isManuallyShown = false
+        isExplicitlyHidden = false
         activeDisplayMode = mode
     }
     

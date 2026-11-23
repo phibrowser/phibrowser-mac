@@ -146,3 +146,70 @@ extension NSSplitViewItem {
         }
     }
 }
+
+@MainActor
+extension NSSplitViewController {
+    /// Moves the sidebar item to the other side, keeping its collapsed state.
+    /// `width` is the destination side's own last expanded width (0 keeps the
+    /// current width); it is applied to a visible column, and to a collapsed
+    /// one's hidden view so the next expand opens at it.
+    func repositionSidebarItem(_ previous: NSSplitViewItem, onRight: Bool, width destinationWidth: CGFloat, autosaveName: String) -> NSSplitViewItem {
+        let restoringExistingGeometry = splitView.autosaveName != nil
+        let collapsed = previous.isCollapsed
+        let currentWidth = max(previous.minimumThickness, previous.viewController.view.frame.width)
+        if restoringExistingGeometry, !collapsed {
+            // The outgoing side's width is only in its autosaved frames,
+            // which the move drops; keep it for the next switch back.
+            AccountController.shared.localDataAccount?.userDefaults
+                .setLastKnownSidebarWidth(currentWidth, for: onRight ? .left : .right)
+        }
+        let width = destinationWidth > 0
+            ? min(max(destinationWidth, previous.minimumThickness), previous.maximumThickness)
+            : currentWidth
+        splitView.autosaveName = nil
+        // AppKit restores the frames saved under a name as soon as it is
+        // assigned, setting the subviews' hidden state behind the item's
+        // `isCollapsed` (the split then reports collapsed while the column
+        // shows, or expands to zero width), and offers no way to assign a
+        // name without that restore. A live move therefore drops the frames
+        // saved under the destination name: the destination side's width is
+        // carried by `width` instead, and the frames applied below are what
+        // AppKit saves under that name next.
+        if restoringExistingGeometry {
+            UserDefaults.standard.removeObject(forKey: "NSSplitView Subview Frames \(autosaveName)")
+        }
+        removeSplitViewItem(previous)
+        let item: NSSplitViewItem
+        if #available(macOS 26.0, *) {
+            item = previous
+        } else {
+            // Before macOS 26 the move rebuilds the item. It is a plain item
+            // on both sides; see `MainSplitViewController.setupLeftSplitViewItem`.
+            item = NSSplitViewItem(viewController: previous.viewController)
+            item.minimumThickness = previous.minimumThickness
+            item.maximumThickness = previous.maximumThickness
+            item.holdingPriority = previous.holdingPriority
+            item.canCollapse = previous.canCollapse
+        }
+        item.collapseBehavior = onRight ? .preferResizingSiblingsWithFixedSplitView : .default
+        item.isCollapsed = collapsed
+        let index = onRight ? 1 : 0
+        insertSplitViewItem(item, at: index)
+        if restoringExistingGeometry { splitView.autosaveName = autosaveName }
+        item.isCollapsed = collapsed
+        view.layoutSubtreeIfNeeded()
+        if restoringExistingGeometry {
+            if collapsed {
+                // A collapsed subview keeps its size while hidden and
+                // expands back to it.
+                if splitView.arrangedSubviews.indices.contains(index) {
+                    let column = splitView.arrangedSubviews[index]
+                    column.setFrameSize(NSSize(width: width, height: column.frame.height))
+                }
+            } else {
+                splitView.setPosition(onRight ? splitView.bounds.width - splitView.dividerThickness - width : width, ofDividerAt: 0)
+            }
+        }
+        return item
+    }
+}

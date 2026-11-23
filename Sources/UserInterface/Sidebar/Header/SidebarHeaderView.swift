@@ -23,7 +23,6 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     private var sidebarButtonLeftConstraint: Constraint?
     private var upgradeButtonLeftConstraint: Constraint?
     private var searchTabsButtonRightConstraint: Constraint?
-    private var addressViewHeightConstraint: Constraint?
     private var spaceSwitchTopConstraint: Constraint?
     static func controlRowTopOffset(
         for layoutMode: LayoutMode,
@@ -127,7 +126,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     /// Keeps the floating header's lights through a hand-off: on an undock
     /// they are there before the column collapses, on a dock until the
     /// window's own show, once the column has opened
-    /// (`PhiSplitViewController.isSidebarExpanding`).
+    /// (`MainSplitViewController.isSidebarExpanding`).
     var keepsTrafficLightsForHandOff = false {
         didSet {
             guard keepsTrafficLightsForHandOff != oldValue else { return }
@@ -390,13 +389,6 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             make.right.equalToSuperview().inset(Self.navigationTrailingInset)
         }
         
-        addSubview(addressView)
-        addressView.snp.makeConstraints { make in
-            make.left.right.equalToSuperview()
-            make.top.equalTo(stackView.snp.bottom).offset(Self.addressViewTopOffset)
-            addressViewHeightConstraint = make.height.equalTo(addressViewHeight).constraint
-        }
-
         updateLayoutVisibility(layoutMode: initialLayoutMode)
     }
 
@@ -449,11 +441,6 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
                     .offset(Self.spaceSwitchTopOffset(addressInSidebar: addressInSidebar)).constraint
                 make.height.equalTo(SpacesStripView.sidebarHeight)
             }
-            addressView.snp.remakeConstraints { make in
-                make.left.right.equalToSuperview()
-                make.top.equalTo(view.snp.bottom).offset(Self.addressViewTopOffsetBelowSpaceSwitch)
-                addressViewHeightConstraint = make.height.equalTo(addressViewHeight).constraint
-            }
         } else {
             spaceSwitchControlRowLeading = nil
             setSpaceSwitchSitsInControlRow(false)
@@ -462,13 +449,39 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
                 make.top.equalTo(stackView.snp.bottom)
                 make.height.equalTo(0)
             }
-            addressView.snp.remakeConstraints { make in
-                make.left.right.equalToSuperview()
-                make.top.equalTo(stackView.snp.bottom).offset(Self.addressViewTopOffset)
-                addressViewHeightConstraint = make.height.equalTo(addressViewHeight).constraint
-            }
         }
+        makeAddressViewConstraints()
         updateLayoutVisibility(layoutMode: browserState?.layoutMode ?? .performance)
+    }
+
+    /// Only the Performance layout shows the address bar in the header.
+    /// Elsewhere it leaves the view tree: hidden, it would still be laid out
+    /// on every step of a window resize.
+    private func setAddressViewAttached(_ attached: Bool) {
+        guard attached != (addressView.superview != nil) else { return }
+        if attached {
+            if let spaceSwitchView {
+                addSubview(addressView, positioned: .below, relativeTo: spaceSwitchView)
+            } else {
+                addSubview(addressView)
+            }
+            makeAddressViewConstraints()
+        } else {
+            addressView.removeFromSuperview()
+        }
+    }
+
+    private func makeAddressViewConstraints() {
+        guard addressView.superview != nil else { return }
+        addressView.snp.remakeConstraints { make in
+            make.left.right.equalToSuperview()
+            if spaceSwitchVisible == true, let spaceSwitchView {
+                make.top.equalTo(spaceSwitchView.snp.bottom).offset(Self.addressViewTopOffsetBelowSpaceSwitch)
+            } else {
+                make.top.equalTo(stackView.snp.bottom).offset(Self.addressViewTopOffset)
+            }
+            make.height.equalTo(addressViewHeight)
+        }
     }
 
     private func isSidebarLayout(_ layoutMode: LayoutMode) -> Bool {
@@ -488,10 +501,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         // `updateNavigationButtonsVisibility`, which this method ends with.
         // Address bar visibility is delegated to SideAddressBar's own
         // placeholder-mode sink (blanks the text field).
-        addressView.isHidden = !showInSidebar
-
-        // Update addressView height constraint
-        addressViewHeightConstraint?.update(offset: showInSidebar ? addressViewHeight : 0)
+        setAddressViewAttached(showInSidebar)
         spaceSwitchTopConstraint?.update(offset: Self.spaceSwitchTopOffset(addressInSidebar: showInSidebar))
 
         // Adjust sidebarButton position

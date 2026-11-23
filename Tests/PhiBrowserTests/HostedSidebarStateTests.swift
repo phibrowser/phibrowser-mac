@@ -760,7 +760,7 @@ final class HostedSidebarStateTests: XCTestCase {
         XCTAssertFalse(split.isSidebarCollapsed)
         split.toggleSidebar()
         XCTAssertTrue(split.isSidebarCollapsed)
-        let column = split.splitViewController.splitView.subviews[0]
+        let column = split.sidebarHost.view
         var widthAtReveal: CGFloat?
         let observation = buttons[0].observe(\.isHidden, options: [.new]) { _, change in
             if change.newValue == false, widthAtReveal == nil { widthAtReveal = column.frame.width }

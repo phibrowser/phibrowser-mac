@@ -49,7 +49,6 @@ private final class BookmarkCellViewState {
     var isFolderExpanded = false
     var folderIcon = BookmarkFolderIcon.standard
     var usesStaticFolderSnapshotIcon = false
-    var folderIconPickerRequestGeneration = 0
     var isActive = false
     var isOpened = false
     var isHovered = false
@@ -113,12 +112,8 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private var touchPressObserver: TouchPressObserver?
     private let tabPreviewRegistration = TabPreviewRegistration()
     private let splitTabPreviewRegistration = SplitTabPreviewRegistration()
-    // Keep the rename field in AppKit instead of the SwiftUI subtree.
-    // Hover-driven SwiftUI updates were rebuilding the representable path and
-    // tearing down the field editor mid-rename. SwiftUI makes this much more
-    // fragile than a plain NSTextField needs to be.
     private let editField = NSTextField()
-    private var hostingView: ThemedHostingView!
+    private var rowView: SidebarBookmarkRowContentView!
     private var faviconLoadHandle: ProfileScopedFaviconLoadHandle?
     private var secondaryFaviconLoadHandle: ProfileScopedFaviconLoadHandle?
     private var extraFaviconLoadHandles: [ProfileScopedFaviconLoadHandle] = []
@@ -164,6 +159,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         tabPreviewRegistration.invalidate()
         splitTabPreviewRegistration.invalidate()
         peekTabViewModel.prepareForReuse()
+        rowView.closeFolderIconPicker()
         resetState()
     }
 
@@ -196,21 +192,18 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private func setUsesStaticFolderSnapshotIcon(_ usesStaticIcon: Bool) {
         guard viewState.usesStaticFolderSnapshotIcon != usesStaticIcon else { return }
         viewState.usesStaticFolderSnapshotIcon = usesStaticIcon
-        hostingView.needsLayout = true
-        hostingView.needsDisplay = true
-        hostingView.layoutSubtreeIfNeeded()
-        hostingView.displayIfNeeded()
+        rowView.needsLayout = true
+        rowView.layoutSubtreeIfNeeded()
+        rowView.displayIfNeeded()
     }
 
     private func setupViews() {
         wantsLayer = true
         layer?.masksToBounds = false
-        hostingView = ThemedHostingView(rootView: SidebarBookmarkCellContentView(
+        rowView = SidebarBookmarkRowContentView(
             state: viewState,
             primaryTabViewModel: primaryTabViewModel,
             secondaryTabViewModel: secondaryTabViewModel,
-            primaryStatusModel: primaryTabViewModel.status,
-            secondaryStatusModel: secondaryTabViewModel.status,
             peekTabViewModel: peekTabViewModel,
             onClose: { [weak self] in
                 self?.closeButtonTapped()
@@ -229,19 +222,11 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             onSelectFolderIcon: { [weak self] icon in
                 self?.selectFolderIcon(icon)
             }
-        ))
-        // The outline supplies the row size and folder indentation; the
-        // edge constraints size the content without SwiftUI measurements.
-        hostingView.sizingOptions = []
-        hostingView.wantsLayer = true
-        hostingView.layer?.masksToBounds = false
-        addSubview(hostingView)
-        hostingView.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
-        }
+        )
+        rowView.frame = bounds
+        rowView.autoresizingMask = [.width, .height]
+        addSubview(rowView)
 
-        // The hosting view renders the display state, while AppKit owns the
-        // inline editor so responder and hover changes stay decoupled.
         setupEditField()
         addSubview(editField)
         updateEditFieldLayout()
@@ -280,7 +265,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         setupPressAnimation()
     }
 
-    /// Insets of the SwiftUI row background inside the cell.
+    /// Insets of the row background inside the cell.
     private static let rowBackgroundInsets = NSEdgeInsets(top: 2, left: WebContentConstant.edgesSpacing,
                                                           bottom: 2, right: WebContentConstant.edgesSpacing)
 
@@ -343,7 +328,6 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewState.isFolderExpanded = false
         viewState.folderIcon = .standard
         viewState.usesStaticFolderSnapshotIcon = false
-        viewState.folderIconPickerRequestGeneration = 0
         viewState.isActive = false
         viewState.isOpened = false
         isPointerHovered = false
@@ -381,7 +365,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     }
 
     private func updateEditFieldLayout() {
-        // Match the SwiftUI row chrome:
+        // Match the row chrome:
         // `edgesSpacing` is the outer row inset. Folder icons use a 20-point
         // slot with 4 points of leading padding, while regular bookmark
         // favicons keep their original 16-point slot with 6 points of leading
@@ -409,6 +393,9 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     override func configureAppearance() {
         guard let bookmark = resolvedBookmark else { return }
         folderPreview.invalidate()
+        if configuredBookmark !== bookmark {
+            rowView.showFolderStateWithoutAnimation()
+        }
         configuredBookmark = bookmark
 
         // Expose to UI testing as a button so the test reset can find and
@@ -576,7 +563,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
                   let bookmark,
                   bookmark.isFolder,
                   self.configuredBookmark === bookmark else { return }
-            self.viewState.folderIconPickerRequestGeneration &+= 1
+            self.rowView.showFolderIconPicker()
         }
         .store(in: &cancellables)
 
@@ -991,347 +978,597 @@ private enum BookmarkFaviconHoverAction {
     }
 }
 
-private struct SidebarBookmarkCellContentView: View {
-    let state: BookmarkCellViewState
-    let primaryTabViewModel: TabViewModel
-    let secondaryTabViewModel: TabViewModel
-    @ObservedObject var primaryStatusModel: TabStatusModel
-    @ObservedObject var secondaryStatusModel: TabStatusModel
-    let peekTabViewModel: TabViewModel
-    let onClose: () -> Void
-    let onClosePeek: () -> Void
-    let onNavigatePrimaryToOriginalURL: (Bool) -> Void
-    let onNavigateSecondaryToOriginalURL: (Bool) -> Void
-    let onSelectFolderIcon: (BookmarkFolderIcon) -> Void
-
-    @State private var primaryFaviconHoverAction: BookmarkFaviconHoverAction?
-    @State private var secondaryFaviconHoverAction: BookmarkFaviconHoverAction?
-
-    @AppStorage(PhiPreferences.GeneralSettings.showUnloadedTabIndicators.rawValue)
-    private var showUnloadedTabIndicators = PhiPreferences.GeneralSettings.showUnloadedTabIndicators.defaultValue
-
-    @Environment(\.phiTheme) private var theme
-    @Environment(\.phiAppearance) private var appearance
-
-    private var isHighlighted: Bool {
-        state.isActive || state.isDropTargetHighlighted || state.isMultiSelected
-    }
-
-    private var backgroundColor: Color {
-        if state.isActive || state.isDropTargetHighlighted {
-            return Color(nsColor: NSColor(resource: .sidebarTabSelected))
-        }
-        if state.isMultiSelected {
-            return ThemedColor.tabSubSelectionBackground.swiftUIColor(
-                theme: theme,
-                appearance: appearance
-            )
-        }
-        if state.isHovered {
-            return Color(nsColor: NSColor(resource: .sidebarTabHovered))
-        }
-        return .clear
-    }
-
-    private var borderColor: Color {
-        if showsSelectionBorder && appearance == .dark {
-            return .white.opacity(0.2)
-        }
-        return .clear
-    }
-
-    private var showsSelectionBorder: Bool {
-        !state.isActive && (state.isDropTargetHighlighted || state.isMultiSelected)
-    }
-
-    private var borderStrokeStyle: StrokeStyle {
-        return StrokeStyle(
-            lineWidth: showsSelectionBorder ? 1 : 0,
-            lineCap: .round
-        )
-    }
-
-    private var showsOpenIndicator: Bool {
-        !state.isFolder && TabFaviconPresentation.showsOpenIndicator(
-            isOpened: state.isOpened,
-            isActive: state.isActive
-        )
-    }
-
-    private var openIndicatorOpacity: CGFloat {
-        TabFaviconPresentation.opacity(
-            isDiscarded: primaryStatusModel.isDiscarded || secondaryStatusModel.isDiscarded,
-            isUnloaded: primaryStatusModel.isUnloaded || secondaryStatusModel.isUnloaded,
-            dimmingEnabled: showUnloadedTabIndicators
-        )
-    }
-
-    private var textColor: ThemedColor {
-        state.isFolder ? .textPrimaryStrong : .textPrimary
-    }
-
-    private var showCloseButton: Bool {
-        // While a peek is attached, the row's only close affordance is the
-        // peek indicator's "minus" — hide the tab close button so hover
-        // doesn't show two close controls side by side.
-        state.isOpened && (state.isHovered || state.isTouchRevealed)
-            && !state.isEditing && !state.showsPeek
-    }
-
-    private var faviconHoverAction: BookmarkFaviconHoverAction? {
-        primaryFaviconHoverAction ?? secondaryFaviconHoverAction
-    }
-
-    private var showBookmarkFaviconHint: Bool {
-        faviconHoverAction != nil
-    }
-
-    private var showsNavigatedAwaySeparator: Bool {
-        !state.isFolder
-            && !state.showsSecondaryFavicon
-            && !state.isEditing
-            && state.primaryTabIsLive
-            && BookmarkFaviconView.hasNavigatedAway(originalURL: state.primaryPageURL,
-                                                    currentURL: primaryTabViewModel.url)
-    }
-
-    var body: some View {
-        HStack(alignment: .center, spacing: state.isFolder ? 6 : 8) {
-            BookmarkFaviconView(
-                image: state.primaryFaviconImage,
-                pageURL: state.primaryPageURL,
-                revision: state.primaryFaviconRevision,
-                isFolder: state.isFolder,
-                isFolderExpanded: state.isFolderExpanded,
-                folderIcon: state.folderIcon,
-                usesStaticFolderSnapshotIcon: state.usesStaticFolderSnapshotIcon,
-                folderIconPickerRequestGeneration: state.folderIconPickerRequestGeneration,
-                liveTabViewModel: state.primaryTabIsLive ? primaryTabViewModel : nil,
-                onNavigateToOriginalURL: onNavigatePrimaryToOriginalURL,
-                onReturnHoverChanged: { primaryFaviconHoverAction = $0 },
-                onSelectFolderIcon: onSelectFolderIcon
-            )
-            .overlay(alignment: .leading) {
-                if !state.isFolder {
-                    // Keep the indicator decorative so selection changes do
-                    // not alter the row's measured width.
-                    TabOpenIndicatorView()
-                        .offset(x: -(
-                            TabOpenIndicatorMetrics.diameter
-                                + TabOpenIndicatorMetrics.bookmarkSpacing
-                        ))
-                        .opacity(showsOpenIndicator ? openIndicatorOpacity : 0)
-                }
-            }
-
-            if !state.isEditing,
-               state.primaryTabIsLive,
-               primaryTabViewModel.isCurrentlyAudible || primaryTabViewModel.isMuted {
-                UnifiedTabMuteButton(viewModel: primaryTabViewModel)
-            }
-
-            if state.showsSecondaryFavicon {
-                BookmarkFaviconView(
-                    image: state.secondaryFaviconImage,
-                    pageURL: state.secondaryPageURL,
-                    revision: state.secondaryFaviconRevision,
-                    isFolder: false,
-                    isFolderExpanded: false,
-                    folderIcon: .standard,
-                    usesStaticFolderSnapshotIcon: false,
-                    folderIconPickerRequestGeneration: 0,
-                    liveTabViewModel: state.secondaryTabIsLive ? secondaryTabViewModel : nil,
-                    onNavigateToOriginalURL: onNavigateSecondaryToOriginalURL,
-                    onReturnHoverChanged: { secondaryFaviconHoverAction = $0 },
-                    onSelectFolderIcon: { _ in }
-                )
-
-                if !state.isEditing,
-                   state.secondaryTabIsLive,
-                   secondaryTabViewModel.isCurrentlyAudible || secondaryTabViewModel.isMuted {
-                    UnifiedTabMuteButton(viewModel: secondaryTabViewModel)
-                }
-
-                ForEach(state.extraPaneFavicons) { pane in
-                    BookmarkFaviconView(
-                        image: pane.image,
-                        pageURL: pane.pageURL,
-                        revision: pane.revision,
-                        isFolder: false,
-                        isFolderExpanded: false,
-                        folderIcon: .standard,
-                        usesStaticFolderSnapshotIcon: false,
-                        folderIconPickerRequestGeneration: 0,
-                        liveTabViewModel: nil,
-                        onNavigateToOriginalURL: { _ in },
-                        onReturnHoverChanged: { _ in },
-                        onSelectFolderIcon: { _ in }
-                    )
-                }
-            }
-
-            ZStack(alignment: .leading) {
-                UnifiedTabTitleTextView(
-                    displayTitle: state.title,
-                    isShimmering: false,
-                    isPressed: state.isFolder ? false : state.isPressed
-                )
-                .themedForeground(textColor)
-                .fontWeight(state.isFolder ? .medium : .regular)
-                .frame(height: 16, alignment: .center)
-                .offset(y: showBookmarkFaviconHint ? -7 : 0)
-
-                Text(faviconHoverAction?.hintText ?? "")
-                .font(.system(size: 9))
-                .lineLimit(1)
-                .themedForeground(.textTertiary)
-                .offset(y: 8)
-                .opacity(showBookmarkFaviconHint ? 1 : 0)
-            }
-            .padding(.leading, showsNavigatedAwaySeparator ? NavigatedAwaySeparator.titleInset : 0)
-            .overlay(alignment: .leading) {
-                if showsNavigatedAwaySeparator {
-                    NavigatedAwaySeparator()
-                        .frame(width: NavigatedAwaySeparator.titleInset)
-                        .offset(x: NavigatedAwaySeparator.centeringOffset)
-                        .opacity(primaryFaviconHoverAction == nil ? 1 : 0)
-                }
-            }
-            .opacity(state.isEditing ? 0 : 1)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 30)
-            .animation(.easeOut(duration: 0.1), value: showBookmarkFaviconHint)
-
-            if state.showsPeek, !state.isEditing {
-                SidebarPeekIndicatorView(viewModel: peekTabViewModel,
-                                         isTouchRevealed: state.isTouchRevealed,
-                                         onClose: onClosePeek)
-            }
-
-            if showCloseButton {
-                UnifiedTabCloseButton(systemImage: "minus", action: onClose)
-            }
-        }
-        .help(state.showsTabPreview ? "" : state.title)
-        .padding(.leading, state.isFolder ? 4 : 6)
-        .padding(.trailing, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(backgroundColor)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(borderColor, style: borderStrokeStyle)
-        )
-        .shadow(color: .black.opacity(isHighlighted ? 0.15 : 0), radius: 1, x: 0, y: 1)
-        .overlay(alignment: .topTrailing) {
-            if !state.isFolder {
-                MergedTabCornerBadgeView(
-                    models: [primaryTabViewModel.status, secondaryTabViewModel.status],
-                    isSuppressed: state.showsPeek
-                )
-                .offset(
-                    x: TabCornerBadgeMetrics.overhang,
-                    y: -TabCornerBadgeMetrics.overhang
-                )
-            }
-        }
-        .padding(.leading, WebContentConstant.edgesSpacing)
-        .padding(.trailing, WebContentConstant.edgesSpacing)
-        .padding(.vertical, 2)
-        .scaleEffect(state.isFolder ? 1.0 : (state.isPressed ? 0.985 : 1.0))
-        .animation(.easeOut(duration: 0.08), value: state.isPressed)
-    }
-}
-
-/// Marks an open bookmark whose tab has navigated away from the saved URL.
-private struct NavigatedAwaySeparator: View {
-    static let titleInset: CGFloat = 6
-    /// The row already leaves 9 points after the favicon image (8-point stack
+/// The sidebar bookmark row, in AppKit for the same reason as `SideTabView`.
+/// `layout()` reads the cell's state and the live tabs' view models inside
+/// `withObservationTracking`, and a change to anything it read asks for the
+/// next layout.
+final class SidebarBookmarkRowContentView: NSView {
+    private static let cornerRadius: CGFloat = 8
+    private static let buttonSize: CGFloat = 24
+    private static let faviconSlotSize: CGFloat = 16
+    private static let folderIconSize: CGFloat = 20
+    private static let trailingInset: CGFloat = 8
+    private static let titleAreaHeight: CGFloat = 30
+    /// How far the title rises, and the hint sits below center, while the
+    /// favicon's hover hint shows.
+    private static let titleHintLift: CGFloat = 7
+    private static let hintDrop: CGFloat = 8
+    private static let separatorInset: CGFloat = 6
+    /// The row already leaves 9 points after the favicon image (8-point
     /// spacing plus the slot's 1-point inset); shift back by half to center.
-    static let centeringOffset: CGFloat = -4.5
+    private static let separatorOffset: CGFloat = -4.5
 
-    var body: some View {
-        Capsule()
-            .themedFill(.textTertiary)
-            .frame(width: 2, height: 14)
-            .rotationEffect(.degrees(15))
-            .accessibilityHidden(true)
+    private let state: BookmarkCellViewState
+    private let primaryTabViewModel: TabViewModel
+    private let secondaryTabViewModel: TabViewModel
+    private let peekTabViewModel: TabViewModel
+    private let onClose: () -> Void
+    private let onClosePeek: () -> Void
+    private let onSelectFolderIcon: (BookmarkFolderIcon) -> Void
+
+    /// Scaled as a whole while the row is pressed.
+    private let contentView = SideTabContainerView()
+    private let backgroundView = SideTabPassthroughView()
+    private let openIndicatorView = SideTabPassthroughView()
+    private let folderIconView = BookmarkFolderIconView()
+    private let primaryFaviconButton = BookmarkFaviconButton()
+    private let primaryMuteButton = SideTabIconButton()
+    private let secondaryFaviconButton = BookmarkFaviconButton()
+    private let secondaryMuteButton = SideTabIconButton()
+    private var extraFaviconViews: [SideTabFaviconView] = []
+    private let titleAreaView = BookmarkTitleAreaView()
+    private let titleView = SideTabTitleView()
+    private let hintLabel = NSTextField(labelWithString: "")
+    private let separatorView = NavigatedAwaySeparatorView()
+    private let peekButton = SideTabPeekButton()
+    private let closeButton = SideTabIconButton()
+    private let badgeView = SideTabCornerBadgeView()
+
+    private var theme: Theme?
+    private var phiAppearance: Appearance = .light
+    private var dimmingEnabled = PhiPreferences.GeneralSettings.showUnloadedTabIndicators.loadValue()
+    private var showsOpenIndicators = PhiPreferences.GeneralSettings.showOpenTabIndicators.loadValue()
+    private var cancellables = Set<AnyCancellable>()
+    private var pressedScale = SideTabPressedScale()
+    private var primaryHoverAction: BookmarkFaviconHoverAction?
+    private var secondaryHoverAction: BookmarkFaviconHoverAction?
+    private var isHintShown = false
+    private var folderIconPopover: NSPopover?
+    private var folderIconPicker: NSHostingController<BookmarkFolderIconPicker>?
+    private var pickerSelection: BookmarkFolderIcon?
+
+    private lazy var highlightShadow: NSShadow = {
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.15)
+        shadow.shadowBlurRadius = 1
+        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        return shadow
+    }()
+
+    fileprivate init(state: BookmarkCellViewState,
+         primaryTabViewModel: TabViewModel,
+         secondaryTabViewModel: TabViewModel,
+         peekTabViewModel: TabViewModel,
+         onClose: @escaping () -> Void,
+         onClosePeek: @escaping () -> Void,
+         onNavigatePrimaryToOriginalURL: @escaping (Bool) -> Void,
+         onNavigateSecondaryToOriginalURL: @escaping (Bool) -> Void,
+         onSelectFolderIcon: @escaping (BookmarkFolderIcon) -> Void) {
+        self.state = state
+        self.primaryTabViewModel = primaryTabViewModel
+        self.secondaryTabViewModel = secondaryTabViewModel
+        self.peekTabViewModel = peekTabViewModel
+        self.onClose = onClose
+        self.onClosePeek = onClosePeek
+        self.onSelectFolderIcon = onSelectFolderIcon
+        super.init(frame: .zero)
+        primaryFaviconButton.onNavigate = onNavigatePrimaryToOriginalURL
+        secondaryFaviconButton.onNavigate = onNavigateSecondaryToOriginalURL
+        setupViews()
+        setupSubscriptions()
     }
-}
 
-/// Trailing indicator for a Peek attached to a sidebar row's tab (bookmark
-/// or normal): shows the peeked page's favicon, and turns into a "minus"
-/// close button on hover (mirrors UnifiedTabCloseButton's styling).
-struct SidebarPeekIndicatorView: View {
-    let viewModel: TabViewModel
-    /// The row was touch-revealed; show the minus as hover would.
-    var isTouchRevealed = false
-    let onClose: () -> Void
-    @State private var isHovered = false
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
-    private var showsMinus: Bool { isHovered || isTouchRevealed }
+    override var isFlipped: Bool { true }
 
-    var body: some View {
-        Button(action: onClose) {
-            ZStack {
-                // On hover the favicon stays visible, dimmed, behind the
-                // minus glyph — the icon still says which page the peek is.
-                UnifiedTabFaviconView(viewModel: viewModel)
-                    .opacity(showsMinus ? 0.25 : 1)
-                Image(systemName: "minus")
-                    .font(.system(size: 11, weight: .semibold))
-                    .opacity(showsMinus ? 1 : 0)
-            }
-            .frame(width: 24, height: 24)
-            .contentShape(Rectangle())
+    /// The folder icon shows the next state without a stroke, for a row
+    /// that now shows another bookmark.
+    func showFolderStateWithoutAnimation() {
+        folderIconView.showNextStateWithoutAnimation()
+    }
+
+    func showFolderIconPicker() {
+        guard state.isFolder, window != nil else { return }
+        let popover = folderIconPopover ?? makeFolderIconPopover()
+        updateFolderIconPicker()
+        popover.show(relativeTo: folderIconView.bounds, of: folderIconView, preferredEdge: .minY)
+    }
+
+    func closeFolderIconPicker() {
+        folderIconPopover?.close()
+    }
+
+    private func setupViews() {
+        wantsLayer = true
+        layer?.masksToBounds = false
+        contentView.wantsLayer = true
+        contentView.layer?.masksToBounds = false
+        addSubview(contentView)
+
+        backgroundView.wantsLayer = true
+        backgroundView.layer?.cornerRadius = Self.cornerRadius
+        backgroundView.layer?.cornerCurve = .continuous
+        contentView.addSubview(backgroundView)
+
+        openIndicatorView.wantsLayer = true
+        openIndicatorView.layer?.cornerRadius = TabOpenIndicatorMetrics.diameter / 2
+        contentView.addSubview(openIndicatorView)
+
+        contentView.addSubview(folderIconView)
+
+        titleAreaView.wantsLayer = true
+        titleAreaView.layer?.masksToBounds = false
+        titleAreaView.addSubview(titleView)
+        hintLabel.font = NSFont.systemFont(ofSize: 9)
+        hintLabel.lineBreakMode = .byClipping
+        hintLabel.maximumNumberOfLines = 1
+        hintLabel.phi.setTextColor(.textTertiary)
+        hintLabel.alphaValue = 0
+        titleAreaView.addSubview(hintLabel)
+        titleAreaView.addSubview(separatorView)
+        contentView.addSubview(titleAreaView)
+
+        primaryFaviconButton.onHoverActionChanged = { [weak self] action in
+            self?.primaryHoverAction = action
+            self?.needsLayout = true
         }
-        .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .themedFill(.hover)
-                .opacity(isHovered ? 1 : 0)
-        )
-        .onHover { hovering in
-            isHovered = hovering
+        secondaryFaviconButton.onHoverActionChanged = { [weak self] action in
+            self?.secondaryHoverAction = action
+            self?.needsLayout = true
         }
-        .help(NSLocalizedString(
+        primaryMuteButton.onClick = { [weak self] in self?.primaryTabViewModel.onToggleMute?() }
+        secondaryMuteButton.onClick = { [weak self] in self?.secondaryTabViewModel.onToggleMute?() }
+        for view in [primaryFaviconButton, primaryMuteButton, secondaryFaviconButton, secondaryMuteButton] {
+            contentView.addSubview(view)
+        }
+
+        peekButton.onClick = { [weak self] in self?.onClosePeek() }
+        peekButton.toolTip = NSLocalizedString(
             "peek.bookmarkCell.closePeekTooltip",
             value: "Close Peek",
             comment: "Bookmark sidebar row - Tooltip of the minus button that closes the floating page preview opened from this bookmark"
-        ))
-        .ignoresSafeArea()
+        )
+        contentView.addSubview(peekButton)
+
+        closeButton.image = NSImage(systemSymbolName: "minus", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
+        closeButton.onClick = { [weak self] in self?.onClose() }
+        contentView.addSubview(closeButton)
+
+        contentView.addSubview(badgeView)
+    }
+
+    private func setupSubscriptions() {
+        _ = phi.subscribe { [weak self] theme, appearance in
+            self?.theme = theme
+            self?.phiAppearance = appearance
+            self?.needsLayout = true
+        }
+        // The status models are `ObservableObject`s, outside Observation.
+        for status in [primaryTabViewModel.status, secondaryTabViewModel.status, peekTabViewModel.status] {
+            status.objectWillChange
+                .sink { [weak self] _ in self?.needsLayout = true }
+                .store(in: &cancellables)
+        }
+        TabFaviconPresentation.dimmingEnabledPublisher
+            .dropFirst()
+            .sink { [weak self] enabled in
+                self?.dimmingEnabled = enabled
+                self?.needsLayout = true
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .map { _ in PhiPreferences.GeneralSettings.showOpenTabIndicators.loadValue() }
+            .removeDuplicates()
+            .sink { [weak self] shows in
+                guard let self, self.showsOpenIndicators != shows else { return }
+                self.showsOpenIndicators = shows
+                self.needsLayout = true
+            }
+            .store(in: &cancellables)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        withObservationTracking {
+            render()
+        } onChange: { [weak self] in
+            MainActor.assumeIsolated {
+                self?.needsLayout = true
+            }
+        }
+    }
+
+    // MARK: Rendering
+
+    private func render() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let titleRect = renderRow()
+        CATransaction.commit()
+        renderTitleArea(in: titleRect)
+    }
+
+    /// Lays out and renders everything but the title area, and returns the
+    /// title area's frame.
+    private func renderRow() -> NSRect {
+        let bounds = self.bounds
+        let isFolder = state.isFolder
+        let isEditing = state.isEditing
+        contentView.frame = bounds
+        pressedScale.apply(!isFolder && state.isPressed, to: contentView.layer, in: bounds)
+
+        let inset = WebContentConstant.edgesSpacing
+        let rowRect = NSRect(
+            x: inset,
+            y: 2,
+            width: max(0, bounds.width - inset * 2),
+            height: max(0, bounds.height - 4)
+        )
+        renderBackground(in: rowRect)
+
+        let hoverFill = theme.map { ThemedColor.hover.resolve(theme: $0, appearance: phiAppearance) } ?? .clear
+        let spacing: CGFloat = isFolder ? 6 : 8
+        let midY = rowRect.midY
+
+        let slotSize = isFolder ? Self.folderIconSize : Self.faviconSlotSize
+        let slotRect = NSRect(
+            x: rowRect.minX + (isFolder ? 4 : 6),
+            y: midY - slotSize / 2,
+            width: slotSize,
+            height: slotSize
+        )
+        folderIconView.isHidden = !isFolder
+        primaryFaviconButton.isHidden = isFolder
+        if isFolder {
+            folderIconView.frame = slotRect
+            folderIconView.render(
+                icon: state.folderIcon,
+                isExpanded: state.isFolderExpanded,
+                usesStaticSnapshotIcon: state.usesStaticFolderSnapshotIcon,
+                theme: theme,
+                appearance: phiAppearance
+            )
+            if folderIconPopover?.isShown == true {
+                updateFolderIconPicker()
+            }
+        } else {
+            renderFavicon(primaryFaviconButton, in: slotRect,
+                          image: state.primaryFaviconImage,
+                          pageURL: state.primaryPageURL,
+                          revision: state.primaryFaviconRevision,
+                          liveModel: state.primaryTabIsLive ? primaryTabViewModel : nil,
+                          hoverFill: hoverFill)
+        }
+        renderOpenIndicator(besides: slotRect)
+        var x = slotRect.maxX + spacing
+
+        x = layoutMuteButton(primaryMuteButton, model: primaryTabViewModel,
+                             isLive: state.primaryTabIsLive, x: x, midY: midY, spacing: spacing)
+
+        let showsSecondary = state.showsSecondaryFavicon
+        secondaryFaviconButton.isHidden = !showsSecondary
+        if showsSecondary {
+            let rect = faviconSlot(x: x, midY: midY)
+            renderFavicon(secondaryFaviconButton, in: rect,
+                          image: state.secondaryFaviconImage,
+                          pageURL: state.secondaryPageURL,
+                          revision: state.secondaryFaviconRevision,
+                          liveModel: state.secondaryTabIsLive ? secondaryTabViewModel : nil,
+                          hoverFill: hoverFill)
+            x = rect.maxX + spacing
+            x = layoutMuteButton(secondaryMuteButton, model: secondaryTabViewModel,
+                                 isLive: state.secondaryTabIsLive, x: x, midY: midY, spacing: spacing)
+        } else {
+            secondaryMuteButton.isHidden = true
+        }
+        x = layoutExtraFavicons(showsSecondary ? state.extraPaneFavicons : [], x: x, midY: midY, spacing: spacing)
+
+        var titleMaxX = rowRect.maxX - Self.trailingInset
+        // While a peek is attached, the row's only close affordance is the
+        // peek indicator's minus, so hover doesn't show two close controls.
+        let showsClose = state.isOpened && (state.isHovered || state.isTouchRevealed)
+            && !isEditing && !state.showsPeek
+        closeButton.isHidden = !showsClose
+        if showsClose {
+            closeButton.frame = buttonFrame(x: titleMaxX - Self.buttonSize, midY: midY)
+            titleMaxX -= Self.buttonSize + spacing
+        }
+        let showsPeek = state.showsPeek && !isEditing
+        peekButton.isHidden = !showsPeek
+        if showsPeek {
+            peekButton.frame = buttonFrame(x: titleMaxX - Self.buttonSize, midY: midY)
+            peekButton.render(model: peekTabViewModel, isTouchRevealed: state.isTouchRevealed,
+                              dimmingEnabled: dimmingEnabled, theme: theme, appearance: phiAppearance)
+            titleMaxX -= Self.buttonSize + spacing
+        }
+        for button in [primaryMuteButton, secondaryMuteButton, peekButton, closeButton] as [SideTabIconButton] {
+            button.hoverFillColor = hoverFill
+        }
+
+        badgeView.isHidden = isFolder
+        if !isFolder {
+            let badgeSize = TabCornerBadgeMetrics.visualSize
+            badgeView.frame = NSRect(
+                x: rowRect.maxX - badgeSize + TabCornerBadgeMetrics.overhang,
+                y: rowRect.minY - TabCornerBadgeMetrics.overhang,
+                width: badgeSize,
+                height: badgeSize
+            )
+            let status = state.showsPeek ? nil : TabCornerBadgeStatus.highestPriority([
+                primaryTabViewModel.status.cornerBadgeStatus,
+                secondaryTabViewModel.status.cornerBadgeStatus
+            ])
+            badgeView.render(status: status, theme: theme, appearance: phiAppearance)
+        }
+
+        let toolTip = state.showsTabPreview ? nil : state.title
+        if self.toolTip != toolTip {
+            self.toolTip = toolTip
+        }
+
+        return NSRect(
+            x: x,
+            y: midY - Self.titleAreaHeight / 2,
+            width: max(0, titleMaxX - x),
+            height: Self.titleAreaHeight
+        )
+    }
+
+    private func renderBackground(in rect: NSRect) {
+        backgroundView.frame = rect
+        let isActive = state.isActive
+        let isDropTarget = state.isDropTargetHighlighted
+        let isMultiSelected = state.isMultiSelected
+        let fill: NSColor
+        if isActive || isDropTarget {
+            fill = NSColor(resource: .sidebarTabSelected)
+        } else if isMultiSelected, let theme {
+            fill = ThemedColor.tabSubSelectionBackground.resolve(theme: theme, appearance: phiAppearance)
+        } else if state.isHovered {
+            fill = NSColor(resource: .sidebarTabHovered)
+        } else {
+            fill = .clear
+        }
+        guard let layer = backgroundView.layer else { return }
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer.backgroundColor = fill.cgColor
+        }
+        let showsBorder = !isActive && (isDropTarget || isMultiSelected) && phiAppearance == .dark
+        layer.borderWidth = showsBorder ? 1 : 0
+        layer.borderColor = showsBorder ? NSColor.white.withAlphaComponent(0.2).cgColor : nil
+        let shadow = isActive || isDropTarget || isMultiSelected ? highlightShadow : nil
+        if backgroundView.shadow !== shadow {
+            backgroundView.shadow = shadow
+        }
+    }
+
+    private func renderFavicon(_ button: BookmarkFaviconButton,
+                               in slotRect: NSRect,
+                               image: NSImage?,
+                               pageURL: String?,
+                               revision: Int,
+                               liveModel: TabViewModel?,
+                               hoverFill: NSColor) {
+        let outset = (Self.buttonSize - slotRect.width) / 2
+        button.frame = slotRect.insetBy(dx: -outset, dy: -outset)
+        button.render(image: image, pageURL: pageURL, revision: revision, liveModel: liveModel,
+                      dimmingEnabled: dimmingEnabled, theme: theme, appearance: phiAppearance)
+        button.hoverFillColor = button.canNavigate ? hoverFill : .clear
+    }
+
+    /// The dot beside an open bookmark that isn't the active one.
+    private func renderOpenIndicator(besides slotRect: NSRect) {
+        openIndicatorView.isHidden = state.isFolder
+        guard !state.isFolder else { return }
+        let diameter = TabOpenIndicatorMetrics.diameter
+        openIndicatorView.frame = NSRect(
+            x: slotRect.minX - diameter - TabOpenIndicatorMetrics.bookmarkSpacing,
+            y: slotRect.midY - diameter / 2,
+            width: diameter,
+            height: diameter
+        )
+        let primary = primaryTabViewModel.status
+        let secondary = secondaryTabViewModel.status
+        let showsIndicator = showsOpenIndicators
+            && TabFaviconPresentation.showsOpenIndicator(isOpened: state.isOpened, isActive: state.isActive)
+        openIndicatorView.alphaValue = showsIndicator
+            ? TabFaviconPresentation.opacity(
+                isDiscarded: primary.isDiscarded || secondary.isDiscarded,
+                isUnloaded: primary.isUnloaded || secondary.isUnloaded,
+                dimmingEnabled: dimmingEnabled
+            )
+            : 0
+        openIndicatorView.layer?.backgroundColor = (phiAppearance.isLight ? NSColor.black : NSColor.white).cgColor
+    }
+
+    private func layoutMuteButton(_ button: SideTabIconButton,
+                                  model: TabViewModel,
+                                  isLive: Bool,
+                                  x: CGFloat,
+                                  midY: CGFloat,
+                                  spacing: CGFloat) -> CGFloat {
+        let showsButton = !state.isEditing && isLive && (model.isCurrentlyAudible || model.isMuted)
+        button.isHidden = !showsButton
+        guard showsButton else { return x }
+        button.image = NSImage(resource: model.isMuted ? .speakerMute : .speakerWave)
+        button.frame = buttonFrame(x: x, midY: midY)
+        return x + Self.buttonSize + spacing
+    }
+
+    /// Panes after the second of a split bookmark of three or four panes.
+    private func layoutExtraFavicons(_ panes: [BookmarkExtraPaneFavicon],
+                                     x: CGFloat,
+                                     midY: CGFloat,
+                                     spacing: CGFloat) -> CGFloat {
+        while extraFaviconViews.count < panes.count {
+            let view = SideTabFaviconView()
+            contentView.addSubview(view, positioned: .below, relativeTo: titleAreaView)
+            extraFaviconViews.append(view)
+        }
+        var x = x
+        for (index, view) in extraFaviconViews.enumerated() {
+            guard index < panes.count else {
+                view.isHidden = true
+                continue
+            }
+            let pane = panes[index]
+            let rect = faviconSlot(x: x, midY: midY)
+            view.isHidden = false
+            view.frame = rect
+            view.render(image: pane.image, pageURL: pane.pageURL, revision: pane.revision)
+            x = rect.maxX + spacing
+        }
+        return x
+    }
+
+    private func renderTitleArea(in rect: NSRect) {
+        let showsSeparator = !state.isFolder
+            && !state.showsSecondaryFavicon
+            && !state.isEditing
+            && state.primaryTabIsLive
+            && BookmarkFaviconButton.hasNavigatedAway(originalURL: state.primaryPageURL,
+                                                      currentURL: primaryTabViewModel.url)
+        let leading = showsSeparator ? Self.separatorInset : 0
+        let hintAction = primaryHoverAction ?? secondaryHoverAction
+        let showsHint = hintAction != nil
+        let midY = rect.height / 2
+        let titleHeight = SideTabTitleView.titleHeight
+        let titleFrame = NSRect(
+            x: leading,
+            y: midY - titleHeight / 2 - (showsHint ? Self.titleHintLift : 0),
+            width: max(0, rect.width - leading),
+            height: titleHeight
+        )
+        if let hintAction {
+            hintLabel.stringValue = hintAction.hintText
+        }
+        let hintHeight = ceil(hintLabel.intrinsicContentSize.height)
+        let hintFrame = NSRect(
+            x: leading,
+            y: midY + Self.hintDrop - hintHeight / 2,
+            width: max(0, rect.width - leading),
+            height: hintHeight
+        )
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        titleAreaView.frame = rect
+        titleAreaView.alphaValue = state.isEditing ? 0 : 1
+        separatorView.isHidden = !showsSeparator
+        separatorView.frame = NSRect(x: Self.separatorOffset, y: 0,
+                                     width: Self.separatorInset, height: rect.height)
+        separatorView.color = theme.map { ThemedColor.textTertiary.resolve(theme: $0, appearance: phiAppearance) }
+            ?? .tertiaryLabelColor
+        titleView.setEmphasized(state.isFolder)
+        if titleView.frame.size != titleFrame.size {
+            titleView.frame = titleFrame
+        }
+        titleView.render(title: state.title, isShimmering: false)
+        CATransaction.commit()
+
+        let applyMotion = {
+            self.titleView.frame = titleFrame
+            self.hintLabel.frame = hintFrame
+            self.hintLabel.alphaValue = showsHint ? 1 : 0
+            self.separatorView.alphaValue = self.primaryHoverAction == nil ? 1 : 0
+        }
+        if showsHint != isHintShown {
+            isHintShown = showsHint
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.1
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                context.allowsImplicitAnimation = true
+                applyMotion()
+            }
+        } else {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            applyMotion()
+            CATransaction.commit()
+        }
+    }
+
+    private func faviconSlot(x: CGFloat, midY: CGFloat) -> NSRect {
+        NSRect(x: x, y: midY - Self.faviconSlotSize / 2,
+               width: Self.faviconSlotSize, height: Self.faviconSlotSize)
+    }
+
+    private func buttonFrame(x: CGFloat, midY: CGFloat) -> NSRect {
+        NSRect(x: x, y: midY - Self.buttonSize / 2, width: Self.buttonSize, height: Self.buttonSize)
+    }
+
+    // MARK: Folder icon picker
+
+    private func makeFolderIconPopover() -> NSPopover {
+        let picker = NSHostingController(rootView: makeFolderIconPickerContent())
+        picker.sizingOptions = .preferredContentSize
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = picker
+        folderIconPicker = picker
+        folderIconPopover = popover
+        return popover
+    }
+
+    private func updateFolderIconPicker() {
+        guard pickerSelection != state.folderIcon else { return }
+        folderIconPicker?.rootView = makeFolderIconPickerContent()
+    }
+
+    private func makeFolderIconPickerContent() -> BookmarkFolderIconPicker {
+        pickerSelection = state.folderIcon
+        return BookmarkFolderIconPicker(selected: state.folderIcon) { [weak self] icon in
+            self?.onSelectFolderIcon(icon)
+        }
     }
 }
 
-private struct BookmarkFaviconView: View {
-    let image: NSImage?
-    let pageURL: String?
-    let revision: Int
-    let isFolder: Bool
-    let isFolderExpanded: Bool
-    let folderIcon: BookmarkFolderIcon
-    let usesStaticFolderSnapshotIcon: Bool
-    let folderIconPickerRequestGeneration: Int
-    let liveTabViewModel: TabViewModel?
-    let onNavigateToOriginalURL: (Bool) -> Void
-    let onReturnHoverChanged: (BookmarkFaviconHoverAction?) -> Void
-    let onSelectFolderIcon: (BookmarkFolderIcon) -> Void
-
-    @State private var isReturnButtonHovered = false
-    @State private var isCommandKeyPressed = false
-    @State private var modifierFlagsMonitor: Any?
-    @State private var showsFolderIconPicker = false
-
+/// A bookmark pane's favicon. While the pane's live tab has navigated away
+/// from the saved URL it becomes a button that goes back, or with Command
+/// separates the current page from the bookmark.
+private final class BookmarkFaviconButton: SideTabIconButton {
     private static let faviconSlotSize: CGFloat = 16
-    private static let faviconSize: CGFloat = 14
-    private static let folderSize: CGFloat = 20
-    private static let faviconCornerRadius: CGFloat = 3
-    private static let returnButtonSize: CGFloat = 24
 
-    private var slotSize: CGFloat {
-        isFolder ? Self.folderSize : Self.faviconSlotSize
+    private let faviconView = SideTabFaviconView()
+    private(set) var canNavigate = false
+    private var isCommandKeyPressed = false
+    private var modifierFlagsMonitor: Any?
+    private var hoverAction: BookmarkFaviconHoverAction?
+
+    var onHoverActionChanged: ((BookmarkFaviconHoverAction?) -> Void)?
+    var onNavigate: ((Bool) -> Void)?
+
+    override init() {
+        super.init()
+        addSubview(faviconView)
+        onClick = { [weak self] in
+            let modifierFlags = NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags
+            self?.onNavigate?(modifierFlags.contains(.command))
+        }
+        updateAccessibility()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 
     static func hasNavigatedAway(originalURL: String?, currentURL: String?) -> Bool {
@@ -1342,116 +1579,72 @@ private struct BookmarkFaviconView: View {
         return !URLProcessor.areEquivalentForOriginNavigation(currentURL, originalURL)
     }
 
-    private var canNavigateToOriginalURL: Bool {
-        !isFolder && Self.hasNavigatedAway(originalURL: pageURL, currentURL: liveTabViewModel?.url)
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        canNavigate ? super.hitTest(point) : nil
     }
 
-    private var hoverAction: BookmarkFaviconHoverAction {
-        isCommandKeyPressed ? .separateFromBookmark : .backToSavedURL
-    }
-
-    var body: some View {
-        Group {
-            if isFolder {
-                folderIconContent
-            } else {
-                bookmarkFaviconButton
-            }
+    /// - Parameter liveModel: The pane's live tab, or nil to show the saved
+    ///   page's icon.
+    func render(image: NSImage?,
+                pageURL: String?,
+                revision: Int,
+                liveModel: TabViewModel?,
+                dimmingEnabled: Bool,
+                theme: Theme?,
+                appearance: Appearance) {
+        let size = Self.faviconSlotSize
+        faviconView.frame = NSRect(x: (bounds.width - size) / 2, y: (bounds.height - size) / 2,
+                                   width: size, height: size)
+        if let liveModel {
+            faviconView.render(model: liveModel, dimmingEnabled: dimmingEnabled,
+                               theme: theme, appearance: appearance)
+        } else {
+            faviconView.render(image: image, pageURL: pageURL, revision: revision)
         }
-        .frame(width: slotSize, height: slotSize)
-    }
-
-    private var bookmarkFaviconButton: some View {
-        Button(action: handleReturnButtonClick) {
-            faviconContent
-                .frame(width: Self.returnButtonSize, height: Self.returnButtonSize)
-                .contentShape(Rectangle())
+        let canNavigate = liveModel.map { Self.hasNavigatedAway(originalURL: pageURL, currentURL: $0.url) } ?? false
+        if canNavigate != self.canNavigate {
+            self.canNavigate = canNavigate
+            updateHoverAction()
+            updateAccessibility()
         }
-        .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .themedFill(.hover)
-                .opacity(canNavigateToOriginalURL && isReturnButtonHovered ? 1 : 0)
-        )
-        .onHover(perform: updateReturnButtonHover)
-        .onChange(of: canNavigateToOriginalURL) { _, canNavigate in
-            if !canNavigate {
-                updateReturnButtonHover(false)
-            }
-        }
-        .onDisappear {
-            stopModifierFlagsMonitor()
-            onReturnHoverChanged(nil)
-        }
-        .allowsHitTesting(canNavigateToOriginalURL)
-        .accessibilityHidden(!canNavigateToOriginalURL)
-        .accessibilityLabel(
-            Text(
-                isCommandKeyPressed
-                    ? BookmarkFaviconHoverAction.separateFromBookmark.hintText
-                    : NSLocalizedString("sidebar.bookmarkCell.favicon.returnToSavedURLAccessibilityLabel", value: "Return to Bookmark URL",
-                        comment: "Bookmark favicon button - Navigate the open bookmark tab back to its saved URL"
-                    )
-            )
-        )
     }
 
-    private var folderIconContent: some View {
-        BookmarkFolderIconView(
-            icon: folderIcon,
-            isExpanded: isFolderExpanded,
-            usesStaticSnapshotIcon: usesStaticFolderSnapshotIcon
-        )
-            .frame(width: Self.folderSize, height: Self.folderSize)
-            .allowsHitTesting(false)
-            .popover(isPresented: $showsFolderIconPicker, arrowEdge: .bottom) {
-                BookmarkFolderIconPicker(selected: folderIcon) { selection in
-                    onSelectFolderIcon(selection)
-                }
-            }
-            .onChange(of: folderIconPickerRequestGeneration) { oldValue, newValue in
-                guard newValue > oldValue else {
-                    showsFolderIconPicker = false
-                    return
-                }
-                showFolderIconPicker()
-            }
+    override func pointerInsideChanged() {
+        super.pointerInsideChanged()
+        updateHoverAction()
     }
 
-    private func showFolderIconPicker() {
-        guard isFolder else { return }
-        showsFolderIconPicker = true
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateHoverAction()
     }
 
-    private func updateReturnButtonHover(_ hovering: Bool) {
-        let isHovered = canNavigateToOriginalURL && hovering
-        guard isReturnButtonHovered != isHovered else { return }
-        isReturnButtonHovered = isHovered
+    private func updateHoverAction() {
+        let isHovered = isPointerInside && canNavigate && window != nil
         if isHovered {
-            isCommandKeyPressed = NSEvent.modifierFlags.contains(.command)
             startModifierFlagsMonitor()
-            onReturnHoverChanged(hoverAction)
         } else {
             stopModifierFlagsMonitor()
             isCommandKeyPressed = false
-            onReturnHoverChanged(nil)
         }
-    }
-
-    private func handleReturnButtonClick() {
-        let modifierFlags = NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags
-        onNavigateToOriginalURL(modifierFlags.contains(.command))
+        let action: BookmarkFaviconHoverAction? = isHovered
+            ? (isCommandKeyPressed ? .separateFromBookmark : .backToSavedURL)
+            : nil
+        guard action != hoverAction else { return }
+        hoverAction = action
+        updateAccessibility()
+        onHoverActionChanged?(action)
     }
 
     private func startModifierFlagsMonitor() {
         guard modifierFlagsMonitor == nil else { return }
-        modifierFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
-            let commandKeyPressed = event.modifierFlags.contains(.command)
-            if isCommandKeyPressed != commandKeyPressed {
-                isCommandKeyPressed = commandKeyPressed
-                if isReturnButtonHovered {
-                    onReturnHoverChanged(hoverAction)
-                }
+        isCommandKeyPressed = NSEvent.modifierFlags.contains(.command)
+        modifierFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            guard let self else { return event }
+            let isPressed = event.modifierFlags.contains(.command)
+            if self.isCommandKeyPressed != isPressed {
+                self.isCommandKeyPressed = isPressed
+                self.updateHoverAction()
             }
             return event
         }
@@ -1463,26 +1656,40 @@ private struct BookmarkFaviconView: View {
         self.modifierFlagsMonitor = nil
     }
 
-    @ViewBuilder
-    private var faviconContent: some View {
-        if let liveTabViewModel {
-            UnifiedTabFaviconView(viewModel: liveTabViewModel)
-        } else if let image {
-            faviconImage(image)
-        } else {
-            Image.favicon(for: pageURL, configuration: .init(cornerRadius: Self.faviconCornerRadius))
-                .id(revision)
-                .frame(width: Self.faviconSize, height: Self.faviconSize)
+    private func updateAccessibility() {
+        setAccessibilityElement(canNavigate)
+        setAccessibilityLabel(
+            isCommandKeyPressed
+                ? BookmarkFaviconHoverAction.separateFromBookmark.hintText
+                : NSLocalizedString("sidebar.bookmarkCell.favicon.returnToSavedURLAccessibilityLabel", value: "Return to Bookmark URL",
+                    comment: "Bookmark favicon button - Navigate the open bookmark tab back to its saved URL"
+                )
+        )
+    }
+}
+
+/// Marks an open bookmark whose tab has navigated away from the saved URL.
+/// Top-down, so the title rises and the favicon's hover hint sits below it.
+private final class BookmarkTitleAreaView: SideTabPassthroughView {
+    override var isFlipped: Bool { true }
+}
+
+private final class NavigatedAwaySeparatorView: SideTabPassthroughView {
+    var color: NSColor = .clear {
+        didSet {
+            if color != oldValue { needsDisplay = true }
         }
     }
 
-    @ViewBuilder
-    private func faviconImage(_ image: NSImage) -> some View {
-        Image(nsImage: image)
-            .resizable()
-            .scaledToFit()
-            .frame(width: Self.faviconSize, height: Self.faviconSize)
-            .clipShape(RoundedRectangle(cornerRadius: Self.faviconCornerRadius, style: .continuous))
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: NSRect(x: -1, y: -7, width: 2, height: 14), xRadius: 1, yRadius: 1)
+        var transform = AffineTransform(translationByX: bounds.midX, byY: bounds.midY)
+        transform.rotate(byDegrees: 15)
+        path.transform(using: transform)
+        color.setFill()
+        path.fill()
     }
 }
 

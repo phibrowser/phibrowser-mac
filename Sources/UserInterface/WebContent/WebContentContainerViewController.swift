@@ -1076,6 +1076,14 @@ class WebContentContainerViewController: NSViewController {
             }
             .store(in: &cancellables)
 
+        // In the turn the page area's frame changes, as the page card's own
+        // inset (`WebContentViewController.updateSplitViewLeadingInset`).
+        browserState?.sidebarTakesPageSpacePublisher
+            .sink { [weak self] _ in
+                self?.updatePageAreaBackdropLeadingInset()
+            }
+            .store(in: &cancellables)
+
         // Listen to targetURL changes to update status bubble
         browserState?.$targetURL
             .receive(on: DispatchQueue.main)
@@ -1712,6 +1720,9 @@ class WebContentContainerViewController: NSViewController {
         AppLogInfo("[ContentSurface] [Container] installed windowId=\(browserState?.windowId ?? -1)")
     }
 
+    /// The side `pinContentSurfaceToPagePanel` held at the window's edge.
+    private var contentSurfaceSidebarEdge: NSRectEdge?
+
     /// Just above `pageAreaBackdrop`, below every tab's view.
     private func placeContentSurface(_ hostingView: NSView) {
         contentContainer.addSubview(hostingView, positioned: .above, relativeTo: pageAreaBackdrop)
@@ -1722,10 +1733,33 @@ class WebContentContainerViewController: NSViewController {
     /// some frames after AppKit shows it, and until then the surface shows
     /// its last frame at its old size: one from a larger page area would
     /// run over the margins around the panel.
+    ///
+    /// On the sidebar's side it reaches the window's edge instead, where the
+    /// page area's own frame clips it. The sidebar moves the page panel's
+    /// edge on that side, on every step of a toggle: a surface pinned to it
+    /// moved, and Chromium's last frame, drawn where the surface was, moved
+    /// with it, the AI Chat beside the page and the page over it, until
+    /// Chromium drew again. Held at the window's edge the surface neither
+    /// moves nor resizes when the sidebar does. The cost: with the sidebar
+    /// shown the surface is wider than the card by the sidebar, and Chromium
+    /// allocates and fills that clipped-off part too.
     private func pinContentSurfaceToPagePanel(_ hostingView: NSView) {
+        let layout = contentLayout
+        let windowEdge = layout.layoutMode.isTraditional ? nil : hostingView.window?.contentView
         hostingView.snp.remakeConstraints { make in
-            make.edges.equalTo(pageAreaBackdrop)
+            make.top.bottom.equalTo(pageAreaBackdrop)
+            if let windowEdge, !layout.sidebarOnRight {
+                make.leading.equalTo(windowEdge)
+            } else {
+                make.leading.equalTo(pageAreaBackdrop)
+            }
+            if let windowEdge, layout.sidebarOnRight {
+                make.trailing.equalTo(windowEdge)
+            } else {
+                make.trailing.equalTo(pageAreaBackdrop)
+            }
         }
+        contentSurfaceSidebarEdge = windowEdge.map { _ in layout.sidebarOnRight ? .maxX : .minX }
         hostingView.clipsToBounds = true
         // Clipped to the card's rounded shape, not its rectangle: a late
         // frame would otherwise fill the card's corners square until
@@ -2439,16 +2473,66 @@ class WebContentContainerViewController: NSViewController {
         pageAreaBackdrop.layer?.cornerRadius = contentLayout.containerCornerRadius
         if let contentSurfaceView, contentSurfaceView.superview === contentContainer {
             contentSurfaceView.layer?.cornerRadius = contentLayout.containerCornerRadius
+            let sidebarEdge: NSRectEdge? = contentLayout.layoutMode.isTraditional
+                ? nil : (contentLayout.sidebarOnRight ? .maxX : .minX)
+            if sidebarEdge != contentSurfaceSidebarEdge, contentSurfaceHosting?.isHeld != true {
+                pinContentSurfaceToPagePanel(contentSurfaceView)
+            }
         }
         extensionSidePanelFrameBackdrop?.layer?.cornerRadius = contentLayout.containerCornerRadius
         remakeContentLayout()
         contentContainer.needsLayout = true
     }
 
+    /// Lays the pages out `inset` in from the card's edge on the sidebar's
+    /// side while a sidebar toggle is in flight; the card keeps its frame
+    /// (`ShellSplitView.pageInsetInFlight`). Each step goes to the mounted
+    /// pages only; the landing's 0 to every page, so one unmounted mid-flight
+    /// does not keep a step.
+    func setSidebarInsetInFlight(_ inset: CGFloat) {
+        let controllers = inset == 0
+            ? Array(webContentControllers.values)
+            : children.compactMap { $0 as? WebContentViewController }
+        for controller in controllers {
+            controller.sidebarInsetInFlight = inset
+        }
+    }
+
+    /// While a sidebar toggle is in flight the page is laid out at widths
+    /// Chromium draws some frames late, and past its last frame the backdrop
+    /// shows. Painted in the page's own background then, that is no strip.
+    /// Only for a card holding one page: a split's other pane or the AI Chat
+    /// beside the page shows the backdrop through its clear fill.
+    /// False puts the card's color back.
+    func setBackdropPaintsPageBackground(_ paints: Bool) {
+        guard hasContentSurface else { return }
+        guard paints, let controller = currentWebContentController,
+              controller.contentSurfaceTabs.count == 1, !controller.isPageCardSeparated,
+              let tab = browserState?.focusingTab, let windowId = browserState?.windowId,
+              let color = ChromiumLauncher.sharedInstance().bridge?.pageBackgroundColor(
+                  forTabId: Int64(tab.guid), windowId: Int64(windowId)),
+              color.alphaComponent == 1
+        else {
+            bindCurrentPageFrameBackground()
+            return
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        pageAreaBackdrop.layer?.backgroundColor = color.cgColor
+        CATransaction.commit()
+    }
+
+    /// The page card's frame in `view`, its corner radius, and its margin on
+    /// the sidebar's side with the sidebar collapsed.
+    func pageCardOutline(in view: NSView) -> (frame: NSRect, cornerRadius: CGFloat, margin: CGFloat) {
+        (pageAreaBackdrop.convert(pageAreaBackdrop.bounds, to: view),
+         contentLayout.containerCornerRadius, contentLayout.edgeSpacing)
+    }
+
     /// Mirror of `WebContentViewController.updateSplitViewLeadingInset`, so
     /// the backdrop hugs the same leading edge the mounted panel uses.
     private var pageAreaInsets: (leading: CGFloat, trailing: CGFloat) {
-        contentLayout.pageInsets(sidebarCollapsed: browserState?.sidebarCollapsed ?? true)
+        contentLayout.pageInsets(sidebarCollapsed: browserState?.sidebarTakesPageSpace != true)
     }
 
     /// Called from `updateLayoutForMode`, which already re-runs on layout-mode

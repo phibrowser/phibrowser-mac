@@ -5,7 +5,6 @@
 
 import AppKit
 import Lottie
-import SwiftUI
 import XCTest
 @testable import Phi
 
@@ -39,11 +38,12 @@ final class LottieAnimationViewEngineTests: XCTestCase {
     /// static snapshot and as the live icon.
     func testBookmarkFolderIconRendersOnTheMainThread() {
         for usesStaticSnapshotIcon in [true, false] {
-            let icon = NSHostingView(rootView: BookmarkFolderIconView(
-                icon: .standard,
-                isExpanded: false,
-                usesStaticSnapshotIcon: usesStaticSnapshotIcon
-            ))
+            let icon = BookmarkFolderIconView()
+            icon.render(icon: .standard,
+                        isExpanded: false,
+                        usesStaticSnapshotIcon: usesStaticSnapshotIcon,
+                        theme: nil,
+                        appearance: .light)
 
             XCTAssertEqual(renderingEngines(of: icon), [.mainThread],
                            "usesStaticSnapshotIcon: \(usesStaticSnapshotIcon)")

@@ -275,7 +275,7 @@ final class ContentSurfaceHosting {
 
     /// A web view the surface draws and the view its stacking order counts
     /// from.
-    private typealias MountedWebView = (address: NSObject, webView: NSView, root: NSView, path: [Int])
+    private typealias MountedWebView = (address: NSObject, webView: NSView, root: NSView, ancestry: [NSView])
 
     /// The web views mounted in `window` below `container`, or below the
     /// overlay holding the surface's view, back to front.
@@ -304,28 +304,39 @@ final class ContentSurfaceHosting {
             addresses
                 .compactMap { item -> MountedWebView? in
                     guard let webView = item.webView, webView.window === window,
-                          let path = Self.indexPath(of: webView, below: root) else { return nil }
-                    return (item.address, webView, root, path)
+                          let ancestry = Self.ancestry(of: webView, below: root) else { return nil }
+                    return (item.address, webView, root, ancestry)
                 }
-                .sorted { $0.path.lexicographicallyPrecedes($1.path) }
+                .sorted { Self.isDrawnBefore($0.ancestry, $1.ancestry, below: root) }
         }
     }
 
-    /// Subview indices from `container` down to `view`, or nil when `view` is
-    /// not below it. Ordered lexicographically, these give the back-to-front
-    /// order in which AppKit draws the views.
-    private static func indexPath(of view: NSView, below container: NSView) -> [Int]? {
-        var path: [Int] = []
+    /// The views from `container`'s subview down to `view`, or nil when
+    /// `view` is not below it. Follows superviews only: reading `subviews`
+    /// at every level, every pass, was the pass's largest cost.
+    private static func ancestry(of view: NSView, below container: NSView) -> [NSView]? {
+        var ancestry = [view]
         var child = view
         while let parent = child.superview {
-            guard let index = parent.subviews.firstIndex(of: child) else { return nil }
-            path.append(index)
             if parent === container {
-                return path.reversed()
+                return ancestry.reversed()
             }
+            ancestry.append(parent)
             child = parent
         }
         return nil
+    }
+
+    /// Whether AppKit draws the view ending `a` before the one ending `b`:
+    /// an ancestor before its descendants, and otherwise, under their nearest
+    /// common ancestor, the branch at the lower subview index first.
+    private static func isDrawnBefore(_ a: [NSView], _ b: [NSView], below container: NSView) -> Bool {
+        let shared = zip(a, b).prefix { $0 === $1 }.count
+        guard shared < a.count, shared < b.count else { return a.count < b.count }
+        let subviews = (shared == 0 ? container : a[shared - 1]).subviews
+        guard let indexA = subviews.firstIndex(where: { $0 === a[shared] }),
+              let indexB = subviews.firstIndex(where: { $0 === b[shared] }) else { return false }
+        return indexA < indexB
     }
 
     /// Where `webView` is in the window and the part of it that its clipping

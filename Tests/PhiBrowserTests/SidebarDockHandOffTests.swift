@@ -473,8 +473,10 @@ final class SidebarDockHandOffTests: XCTestCase {
         let (split, host) = try visiblePanel()
 
         split.setSidebarCollapsed(false, animated: true)
-        let opacities = try sampleGlassOpacity(in: host, for: 0.2)
+        // The glide only: once it ends the panel fades off the open column.
+        let opacities = try sampleGlassOpacity(in: host, for: Host.sidebarHandOffDuration - 1.0 / 60)
 
+        XCTAssertFalse(opacities.isEmpty)
         XCTAssertTrue(opacities.allSatisfy { $0 > 0.99 }, "the page never shows through: \(opacities)")
         host.finishSidebarHandOffImmediately()
     }
@@ -585,6 +587,30 @@ final class SidebarDockHandOffTests: XCTestCase {
         XCTAssertFalse(host.isVisible)
         XCTAssertFalse(host.isSidebarHandOffRunning)
         XCTAssertEqual(split.sidebarWidth, panelWidth, accuracy: 0.5, "the column docks at the panel's width")
+    }
+
+    /// The column's slide and the panel's glide are added in one turn, with
+    /// one duration and one curve, so they start on the same commit and move
+    /// as one.
+    func testTheColumnSlidesWithThePanelsGlide() throws {
+        let (split, host) = try visiblePanel()
+        let visual = try XCTUnwrap(host.floatingSidebarContainerView?.subviews.first)
+
+        split.setSidebarCollapsed(false, animated: true)
+
+        let slide = try XCTUnwrap(split.sidebarHost.view.layer?
+            .animation(forKey: ShellSplitView.slideAnimationKey) as? CABasicAnimation, "the column slides in")
+        let glide = try XCTUnwrap(visual.layer?.animation(forKey: "sidebarHandOff.position") as? CABasicAnimation,
+                                  "the panel glides")
+        XCTAssertEqual(slide.duration, Host.sidebarHandOffDuration, accuracy: 0.001)
+        XCTAssertEqual(slide.duration, glide.duration, accuracy: 0.001)
+        XCTAssertEqual(slide.timingFunction, glide.timingFunction)
+        XCTAssertEqual(slide.beginTime, glide.beginTime, "both start with the commit")
+        XCTAssertEqual((slide.toValue as? NSNumber)?.doubleValue, 0, "the column ends at its place")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+        XCTAssertNil(split.sidebarHost.view.layer?.animation(forKey: ShellSplitView.slideAnimationKey))
+        XCTAssertFalse(split.isSidebarCollapsed)
+        XCTAssertFalse(host.isSidebarHandOffRunning)
     }
 
     func testUnpinWithThePointerOnTheSidebarLeavesThePanelUp() throws {

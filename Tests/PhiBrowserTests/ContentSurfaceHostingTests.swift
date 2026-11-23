@@ -502,6 +502,23 @@ final class ContentSurfaceHostingTests: XCTestCase {
         XCTAssertEqual(layer.cornerCurve, .continuous)
     }
 
+    /// Lent to content fullscreen the view fills the screen, where the
+    /// card's rounded corners would show the Space's backdrop.
+    func testTheSurfaceViewIsSquareWhileLentToContentFullscreen() throws {
+        let fixture = try makeFixture()
+        let layer = try XCTUnwrap(fixture.surfaceView.layer)
+        let cardRadius = layer.cornerRadius
+        XCTAssertGreaterThan(cardRadius, 0, "precondition: the card has rounded corners")
+
+        let overlay = NSView(frame: fixture.container.view.bounds)
+        fixture.container.view.addSubview(overlay)
+        fixture.container.lendContentSurface(to: overlay)
+        XCTAssertEqual(layer.cornerRadius, 0)
+
+        fixture.container.reclaimContentSurface()
+        XCTAssertEqual(layer.cornerRadius, cardRadius)
+    }
+
     func testTheSurfaceViewCoversThePagePanelAgainAfterASidePanelSlide() throws {
         WebContentContainerViewController.panelSlideDurationForTesting = 0.05
         let fixture = try makeFixture()

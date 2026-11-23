@@ -1853,6 +1853,9 @@ class WebContentContainerViewController: NSViewController {
         contentSurfaceView.snp.remakeConstraints { make in
             make.edges.equalToSuperview()
         }
+        // The card's rounded clip would show the Space's backdrop at the
+        // screen's corners. `reclaimContentSurface` rounds it again.
+        contentSurfaceView.layer?.cornerRadius = 0
         AppLogInfo("[ContentSurface] [Container] lent to content fullscreen windowId=\(browserState?.windowId ?? -1)")
     }
 

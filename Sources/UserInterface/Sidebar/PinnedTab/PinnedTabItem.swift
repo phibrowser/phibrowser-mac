@@ -143,6 +143,11 @@ private final class PinnedPeekBadgeView: NSView {
     }
 }
 
+final class PinnedTabCardBackgroundView: HoverableView {
+    // A press beside the favicon hits this surface and starts a tab drag.
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
 /// Root view of a pinned cell. The peek badge straddles the cell's top-right
 /// corner and so hangs outside these bounds, where AppKit's hit testing
 /// stops — extend it to the overhanging subviews so the whole plate stays
@@ -227,7 +232,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         view.layer?.masksToBounds = false
 
         // Interactive background view.
-        backgroundView = HoverableView()
+        backgroundView = PinnedTabCardBackgroundView()
         backgroundView.wantsLayer = true
         backgroundView.layer?.cornerCurve = .continuous
         backgroundView.layer?.cornerRadius = 8

@@ -104,7 +104,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         view.wantsLayer = true
         view.layer?.masksToBounds = false
 
-        backgroundView = HoverableView()
+        backgroundView = PinnedTabCardBackgroundView()
         backgroundView.wantsLayer = true
         backgroundView.layer?.cornerCurve = .continuous
         backgroundView.layer?.cornerRadius = 8

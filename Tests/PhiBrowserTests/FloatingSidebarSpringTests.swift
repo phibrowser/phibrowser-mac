@@ -136,6 +136,31 @@ final class FloatingSidebarSpringTests: XCTestCase {
         XCTAssertNil(panel.layer?.animation(forKey: Host.floatingSidebarSlideInAnimationKey))
     }
 
+    func testReopeningDuringHideHonorsNewReduceMotionSetting() throws {
+        let slot = try makeSlot()
+        let split = try XCTUnwrap(slot.shell?.split)
+        let host = split.floatingSidebarHost
+        try collapse(in: slot)
+        host.prefersReducedMotion = { false }
+        host.showFloatingSidebar()
+        let panel = try XCTUnwrap(host.floatingSidebarContainerView)
+
+        host.hideFloatingSidebar(animated: true)
+        XCTAssertTrue(host.isVisible, "precondition: the slide-out is still in flight")
+
+        var checkedReduceMotion = false
+        host.prefersReducedMotion = {
+            checkedReduceMotion = true
+            return true
+        }
+        host.showFloatingSidebar()
+
+        XCTAssertTrue(checkedReduceMotion)
+        XCTAssertTrue(host.isVisible)
+        XCTAssertEqual(panel.frame.minX, 0, accuracy: 0.5)
+        XCTAssertEqual(panel.layer?.animationKeys() ?? [], [])
+    }
+
     func testTheSpringSettlesWithinTheSpecsWindow() {
         let spring = CASpringAnimation()
         spring.stiffness = Host.floatingSidebarSpringStiffness

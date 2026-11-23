@@ -858,6 +858,7 @@ final class FloatingSidebarHostViewController: NSViewController {
     static let floatingSidebarHideDelay: TimeInterval = 0.12
     static let floatingSidebarMinimumVisibleDuration: TimeInterval = 0.5
     static let floatingSidebarInset: CGFloat = 5
+    private static let floatingSidebarShowDuration: TimeInterval = 0.15
     static let floatingSidebarHideDuration: TimeInterval = 0.15
     /// Quiet period after the docked column's last width change before the
     /// hidden panel follows it; shorter than the trigger's enable delay after
@@ -1293,12 +1294,14 @@ final class FloatingSidebarHostViewController: NSViewController {
 
         guard let panel = floatingSidebarContainerView else { return }
         visibilityGeneration += 1
+        let reduceMotion = prefersReducedMotion()
+        let wasHiding = isFloatingSidebarHideAnimating
+        isFloatingSidebarHideAnimating = false
         guard panel.isHidden else {
             floatingSidebarViewController?.setMediaPresented(true)
             floatingSidebarLeadingConstraint?.update(offset: 0)
-            if isFloatingSidebarHideAnimating {
+            if wasHiding, !reduceMotion {
                 // Slide back from where the hide got to, rather than jump.
-                isFloatingSidebarHideAnimating = false
                 NSAnimationContext.runAnimationGroup { context in
                     context.duration = Self.floatingSidebarShowDuration
                     context.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -1307,11 +1310,14 @@ final class FloatingSidebarHostViewController: NSViewController {
                 }
             } else {
                 view.layoutSubtreeIfNeeded()
+                if wasHiding {
+                    panel.layer?.removeAllAnimations()
+                    floatingSidebarResizeHandle?.layer?.removeAllAnimations()
+                }
             }
             return
         }
 
-        let reduceMotion = prefersReducedMotion()
         floatingSidebarLeadingConstraint?.update(offset: reduceMotion ? 0 : floatingSidebarHiddenLeading)
         view.layoutSubtreeIfNeeded()
         panel.isHidden = false
@@ -1358,11 +1364,12 @@ final class FloatingSidebarHostViewController: NSViewController {
         visibilityGeneration += 1
         let generation = visibilityGeneration
         floatingSidebarLeadingConstraint?.update(offset: floatingSidebarHiddenLeading)
-        isFloatingSidebarHideAnimating = animated
+        let shouldAnimate = animated && !prefersReducedMotion()
+        isFloatingSidebarHideAnimating = shouldAnimate
         pointerTouchedFloatingSidebar = false
         pointerEnteredWindowThroughStrip = false
 
-        if animated, !prefersReducedMotion() {
+        if shouldAnimate {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = Self.floatingSidebarHideDuration
                 context.timingFunction = CAMediaTimingFunction(name: .easeIn)

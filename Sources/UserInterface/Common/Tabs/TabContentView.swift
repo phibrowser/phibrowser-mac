@@ -5,6 +5,7 @@
 
 import SwiftUI
 import Combine
+import AppKit
 import Lottie
 
 // MARK: - Atomic Components
@@ -567,9 +568,12 @@ struct UnifiedTabFaviconView: View {
             )
         }
         .overlay(alignment: .topTrailing) {
-            if viewModel.isCapturingMedia && !viewModel.hidesRecordingBadge {
-                UnifiedTabRecordingIcon()
-                    .offset(x: 3, y: -3)
+            if !viewModel.hidesRecordingBadge {
+                UnifiedTabFaviconCaptureBadgesView(viewModel: viewModel)
+                    .offset(
+                        x: TabCaptureBadgeMetrics.topTrailingOffset.width,
+                        y: TabCaptureBadgeMetrics.topTrailingOffset.height
+                    )
             }
         }
         .scaleEffect(viewModel.isPressed ? 0.985 : 1.0)
@@ -678,8 +682,118 @@ struct SplitPaneMuteButton: View {
     }
 }
 
+/// Shown left of the close button on a hovered tab while a tab share runs:
+/// shares this tab instead, keeping the same share running.
+struct UnifiedTabShareInsteadButton: View {
+    let offer: BrowserTabSharingState.ShareInsteadOffer
+    let action: () -> Void
+    @State private var isHovered = false
+
+    static var title: String {
+        NSLocalizedString(
+            "tabs.screenShare.shareThisTabInstead",
+            value: "Share this tab instead",
+            comment: "Tab row button - Tooltip and accessibility label on a hovered tab while another tab is being shared; switches the share to this tab"
+        )
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "rectangle.2.swap")
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .themedFill(.hover)
+                .opacity(isHovered ? 1 : 0)
+        )
+        .help(Self.title)
+        .accessibilityLabel(Self.title)
+        .id(offer)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .ignoresSafeArea()
+    }
+}
+
+enum TabCaptureBadgeMetrics {
+    static let recordingDotSize: CGFloat = 8
+    static let sharePillSize: CGFloat = 11
+    static let sharedOutlineExpansion: CGFloat = 2.5
+    static let sharedOutlineLineWidth: CGFloat = 2
+    static let topTrailingOffset = CGSize(width: 4, height: -4)
+    static let bottomTrailingOffset = CGSize(width: 3, height: 3)
+}
+
+/// Yellow outline on tabs whose content is mirrored to a remote capture.
+struct TabBeingSharedFaviconOutline: View {
+    let faviconSize: CGFloat
+    let faviconCornerRadius: CGFloat
+    @State private var isAnimating = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: faviconCornerRadius + 1, style: .continuous)
+            .strokeBorder(
+                Color.yellow.opacity(isAnimating ? 0.55 : 0.95),
+                lineWidth: TabCaptureBadgeMetrics.sharedOutlineLineWidth
+            )
+            .frame(
+                width: faviconSize + TabCaptureBadgeMetrics.sharedOutlineExpansion * 2,
+                height: faviconSize + TabCaptureBadgeMetrics.sharedOutlineExpansion * 2
+            )
+            .animation(
+                NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                    ? nil
+                    : .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
+                value: isAnimating
+            )
+            .onAppear {
+                isAnimating = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            }
+            .help(NSLocalizedString(
+                "tabs.captureBadge.beingShared",
+                value: "Others can see this tab while you share.",
+                comment: "Tab favicon badge - Tooltip when this tab's content is mirrored to a remote screen share"
+            ))
+    }
+}
+
+/// Yellow outline around a sidebar tab row or tab strip item while its content
+/// is mirrored to a remote screen share (#259).
+struct TabBeingSharedRowOutline: View {
+    var cornerRadius: CGFloat = 8
+    @State private var isAnimating = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .strokeBorder(
+                Color.yellow.opacity(isAnimating ? 0.55 : 0.95),
+                lineWidth: TabCaptureBadgeMetrics.sharedOutlineLineWidth
+            )
+            .animation(
+                NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                    ? nil
+                    : .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
+                value: isAnimating
+            )
+            .onAppear {
+                isAnimating = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            }
+            .allowsHitTesting(false)
+            .help(NSLocalizedString(
+                "tabs.captureBadge.beingShared",
+                value: "Others can see this tab while you share.",
+                comment: "Tab row outline - Tooltip when this tab's content is mirrored to a remote screen share"
+            ))
+    }
+}
+
 struct UnifiedTabRecordingIcon: View {
-    private let iconSize: CGFloat = 8
+    private let iconSize = TabCaptureBadgeMetrics.recordingDotSize
     @State private var isAnimating = false
 
     var body: some View {
@@ -695,6 +809,132 @@ struct UnifiedTabRecordingIcon: View {
                     .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: isAnimating)
             }
             .onAppear { isAnimating = true }
+            .help(NSLocalizedString(
+                "tabs.captureBadge.microphoneOrCamera",
+                value: "This tab is using the microphone or camera.",
+                comment: "Tab favicon badge - Tooltip on the red recording dot for microphone or camera capture"
+            ))
+    }
+}
+
+/// Tab that is presenting screen content to a call or other capture consumer.
+struct UnifiedTabPresentingScreenShareIcon: View {
+    private let pillSize = TabCaptureBadgeMetrics.sharePillSize
+    @State private var isAnimating = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.yellow)
+            Circle()
+                .strokeBorder(.white.opacity(0.95), lineWidth: 1)
+            Image(systemName: "arrow.up.forward")
+                .font(.system(size: pillSize * 0.45, weight: .black))
+                .foregroundStyle(.black.opacity(0.82))
+        }
+        .frame(width: pillSize, height: pillSize)
+        .shadow(color: .black.opacity(0.35), radius: 0.5, x: 0, y: 0.5)
+        .opacity(isAnimating ? 0.65 : 1.0)
+        .animation(
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                ? nil
+                : .easeInOut(duration: 1.1).repeatForever(autoreverses: true),
+            value: isAnimating
+        )
+        .onAppear {
+            isAnimating = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        }
+        .help(NSLocalizedString(
+            "tabs.captureBadge.presentingScreenShare",
+            value: "This tab is sharing screen content.",
+            comment: "Tab favicon badge - Tooltip when this tab is the presenter in a screen share session"
+        ))
+    }
+}
+
+/// Compact strip indicator when the shared tab has no room for a favicon ring.
+struct UnifiedTabBeingSharedIcon: View {
+    private let pillSize = TabCaptureBadgeMetrics.sharePillSize
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.yellow.opacity(0.2))
+            Circle()
+                .strokeBorder(Color.yellow, lineWidth: 1.5)
+            Image(systemName: "eye")
+                .font(.system(size: pillSize * 0.42, weight: .semibold))
+                .foregroundStyle(.yellow)
+        }
+        .frame(width: pillSize, height: pillSize)
+        .help(NSLocalizedString(
+            "tabs.captureBadge.beingShared",
+            value: "Others can see this tab while you share.",
+            comment: "Tab favicon badge - Tooltip when this tab's content is mirrored to a remote screen share"
+        ))
+    }
+}
+
+struct UnifiedTabFaviconCaptureCornerBadges: View {
+    let isCapturingMedia: Bool
+
+    var body: some View {
+        if isCapturingMedia {
+            UnifiedTabRecordingIcon()
+        }
+    }
+}
+
+struct UnifiedTabFaviconCaptureBadgesView: View {
+    let viewModel: TabViewModel
+
+    var body: some View {
+        if viewModel.isCapturingMedia {
+            UnifiedTabFaviconCaptureCornerBadges(isCapturingMedia: true)
+        }
+    }
+}
+
+struct UnifiedTabFaviconCaptureBadgesViewFromTab: View {
+    let isCapturingMedia: Bool
+    let isPresentingScreenShare: Bool
+    let isBeingSharedRemotely: Bool
+    let faviconSize: CGFloat
+    let faviconCornerRadius: CGFloat
+
+    init(
+        isCapturingMedia: Bool,
+        isPresentingScreenShare: Bool,
+        isBeingSharedRemotely: Bool,
+        faviconSize: CGFloat = 16,
+        faviconCornerRadius: CGFloat = 3
+    ) {
+        self.isCapturingMedia = isCapturingMedia
+        self.isPresentingScreenShare = isPresentingScreenShare
+        self.isBeingSharedRemotely = isBeingSharedRemotely
+        self.faviconSize = faviconSize
+        self.faviconCornerRadius = faviconCornerRadius
+    }
+
+    var body: some View {
+        if isCapturingMedia {
+            UnifiedTabFaviconCaptureCornerBadges(isCapturingMedia: true)
+        }
+    }
+}
+
+/// Single centred strip icon when favicons are hidden in compact or pinned layout.
+struct UnifiedTabCaptureCenterIndicator: View {
+    let viewModel: TabViewModel
+
+    var body: some View {
+        Group {
+            if viewModel.isCapturingMedia {
+                UnifiedTabRecordingIcon()
+            } else if viewModel.isBeingSharedRemotely {
+                UnifiedTabBeingSharedIcon()
+            }
+        }
     }
 }
 

@@ -42,8 +42,10 @@ final class SideTabView: NSView {
     private let titleView = SideTabTitleView()
     private let peekButton = SideTabPeekButton()
     private let closeButton = SideTabIconButton()
+    private var shareInsteadButton: (offer: BrowserTabSharingState.ShareInsteadOffer, view: SideTabIconButton)?
     private let badgeView = SideTabCornerBadgeView()
     private var splitPlaceholder: SideTabSplitPlaceholderView?
+    private var beingSharedOutlineHost: TabDecorativeHostingView?
 
     private var theme: Theme?
     private var phiAppearance: Appearance = .light
@@ -189,6 +191,22 @@ final class SideTabView: NSView {
         }
 
         renderBackground(in: tabRect)
+        if model.isBeingSharedRemotely {
+            let outlineHost: TabDecorativeHostingView
+            if let beingSharedOutlineHost {
+                outlineHost = beingSharedOutlineHost
+            } else {
+                outlineHost = TabDecorativeHostingView(
+                    rootView: TabBeingSharedRowOutline(cornerRadius: Self.cornerRadius)
+                )
+                contentView.addSubview(outlineHost, positioned: .above, relativeTo: backgroundView)
+                beingSharedOutlineHost = outlineHost
+            }
+            outlineHost.frame = tabRect
+        } else if let beingSharedOutlineHost {
+            beingSharedOutlineHost.removeFromSuperview()
+            self.beingSharedOutlineHost = nil
+        }
 
         let midY = tabRect.midY
         var x = tabRect.minX + Self.contentLeadingInset
@@ -226,6 +244,18 @@ final class SideTabView: NSView {
             titleMaxX -= Self.buttonSize + Self.itemSpacing
         }
         let hoverFill = theme.map { ThemedColor.hover.resolve(theme: $0, appearance: phiAppearance) } ?? .clear
+        let shareButtonX = titleMaxX - Self.buttonSize
+        if showsClose, let offer = model.shareInsteadOffer, shareButtonX >= x - Self.itemSpacing {
+            let button = shareInsteadButton?.offer == offer
+                ? shareInsteadButton?.view : nil
+            let shareButton = button ?? makeShareInsteadButton(for: offer)
+            shareButton.frame = buttonFrame(x: shareButtonX, midY: midY)
+            shareButton.hoverFillColor = hoverFill
+            shareButton.isHidden = false
+            titleMaxX -= Self.buttonSize + Self.itemSpacing
+        } else {
+            shareInsteadButton?.view.isHidden = true
+        }
         for button in [muteButton, closeButton, peekButton] as [SideTabIconButton] {
             button.hoverFillColor = hoverFill
         }
@@ -286,6 +316,22 @@ final class SideTabView: NSView {
 
     private func buttonFrame(x: CGFloat, midY: CGFloat) -> NSRect {
         NSRect(x: x, y: midY - Self.buttonSize / 2, width: Self.buttonSize, height: Self.buttonSize)
+    }
+
+    private func makeShareInsteadButton(
+        for offer: BrowserTabSharingState.ShareInsteadOffer
+    ) -> SideTabIconButton {
+        shareInsteadButton?.view.removeFromSuperview()
+        let button = SideTabIconButton()
+        button.image = NSImage(systemSymbolName: "rectangle.2.swap", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
+        let title = UnifiedTabShareInsteadButton.title
+        button.toolTip = title
+        button.setAccessibilityLabel(title)
+        button.onClick = { [weak self] in self?.model.shareInstead(offer) }
+        contentView.addSubview(button)
+        shareInsteadButton = (offer, button)
+        return button
     }
 
     private func makeSplitPlaceholder() -> SideTabSplitPlaceholderView {

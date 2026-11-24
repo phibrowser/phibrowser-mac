@@ -35,8 +35,8 @@ final class ProfileKeyManagerTelemetryTests: XCTestCase {
         }
     }
 
-    /// Observer calls made off the main thread are queued to it; one main-actor turn runs every
-    /// call queued so far.
+    /// Observer calls are queued to the main thread; one main-actor turn runs every call queued
+    /// so far.
     private func deliverQueuedTelemetry() async {
         await MainActor.run {}
     }

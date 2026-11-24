@@ -2276,7 +2276,7 @@ extension AppController {
         let changeIconItem: NSMenuItem?
         if showsChangeIconItem {
             let item = NSMenuItem(
-                title: NSLocalizedString("app.tabAreaMenu.changeIcon", value: "Change Icon\u{2026}", comment: "Tab-area menu - opens the icon/emoji picker below the active Space's icon"),
+                title: NSLocalizedString("app.tabAreaMenu.changeIcon", value: "Change Space Icon\u{2026}", comment: "Tab-area menu - opens the icon/emoji picker below the active Space's icon"),
                 action: #selector(requestActiveSpaceIconPicker(_:)),
                 keyEquivalent: ""
             )
@@ -2290,7 +2290,7 @@ extension AppController {
         let editThemeItem: NSMenuItem?
         if includesEditTheme {
             let item = NSMenuItem(
-                title: NSLocalizedString("app.activeSpaceContextMenu.themeSubmenuTitle", value: "Edit Theme", comment: "Active Space context menu - opens the theme editor for the active Space"),
+                title: NSLocalizedString("app.activeSpaceContextMenu.themeSubmenuTitle", value: "Edit Theme\u{2026}", comment: "Active Space context menu - opens the theme editor for the active Space"),
                 action: #selector(requestActiveSpaceThemeEditor(_:)),
                 keyEquivalent: ""
             )

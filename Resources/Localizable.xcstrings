@@ -8518,7 +8518,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Edit Theme"
+            "value" : "Edit Theme…"
           }
         },
         "es" : {
@@ -17629,7 +17629,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Change Icon…"
+            "value" : "Change Space Icon…"
           }
         },
         "es" : {

@@ -16783,55 +16783,55 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Design bearbeiten"
+            "value" : "Design bearbeiten…"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Edit Theme"
+            "value" : "Edit Theme…"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Editar tema"
+            "value" : "Editar tema…"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Modifier le thème"
+            "value" : "Modifier le thème…"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "テーマを編集"
+            "value" : "テーマを編集…"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "테마 편집"
+            "value" : "테마 편집…"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wijzig thema"
+            "value" : "Wijzig thema…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "编辑主题"
+            "value" : "编辑主题…"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "編輯主題"
+            "value" : "編輯主題…"
           }
         }
       }
@@ -50059,55 +50059,55 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Design bearbeiten"
+            "value" : "Design bearbeiten…"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Edit Theme"
+            "value" : "Edit Theme…"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Editar tema"
+            "value" : "Editar tema…"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Modifier le thème"
+            "value" : "Modifier le thème…"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "テーマを編集"
+            "value" : "テーマを編集…"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "테마 편집"
+            "value" : "테마 편집…"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wijzig thema"
+            "value" : "Wijzig thema…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "编辑主题"
+            "value" : "编辑主题…"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "編輯主題"
+            "value" : "編輯主題…"
           }
         }
       }

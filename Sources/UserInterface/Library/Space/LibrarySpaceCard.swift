@@ -111,8 +111,8 @@ struct LibrarySpaceCard: View {
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .help(NSLocalizedString("library.spaces.editTheme", value: "Edit Theme", comment: "Library Space card - theme editor button"))
-            .accessibilityLabel(NSLocalizedString("library.spaces.editTheme", value: "Edit Theme", comment: "Library Space card - theme editor button"))
+            .help(NSLocalizedString("library.spaces.editTheme", value: "Edit Theme…", comment: "Library Space card - theme editor button"))
+            .accessibilityLabel(NSLocalizedString("library.spaces.editTheme", value: "Edit Theme…", comment: "Library Space card - theme editor button"))
             .popover(isPresented: $showsThemeEditor, arrowEdge: .bottom) {
                 SpaceThemeEditorView(spaceId: space.spaceId) {
                     showsThemeEditor = false

@@ -2540,7 +2540,7 @@ extension AppController {
         }
 
         let editThemeItem = NSMenuItem(
-            title: NSLocalizedString("app.spacesMenu.changeTheme", value: "Edit Theme", comment: "Spaces menu - opens the theme editor for the active Space"),
+            title: NSLocalizedString("app.spacesMenu.changeTheme", value: "Edit Theme…", comment: "Spaces menu - opens the theme editor for the active Space"),
             action: #selector(requestActiveSpaceThemeEditor(_:)),
             keyEquivalent: ""
         )

@@ -36,6 +36,12 @@ struct CommandShortcutTooltipContent: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
+        // Near-opaque white / black over the material, matching the Space hover
+        // card: the bare material reads as gray in light mode.
+        .background(
+            (appearance.isDark ? Color.black : Color.white).opacity(0.9),
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
         .background(
             .regularMaterial,
             in: RoundedRectangle(cornerRadius: 9, style: .continuous)

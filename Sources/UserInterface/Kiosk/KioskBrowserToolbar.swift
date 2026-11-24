@@ -435,6 +435,8 @@ private struct KioskProfileMenu: View {
 
 private struct KioskToolbarActions: View {
     let state: KioskBrowserState
+    @ObservedObject private var spaceManager: SpaceManager = .shared
+    @State private var preferredSpaceId: String?
 
     @State private var isExtensionPopoverShown = false
     @State private var copyButtonAnchorView: NSView?
@@ -471,9 +473,32 @@ private struct KioskToolbarActions: View {
                     ),
                     command: .PHI_COPY_URL
                 )
+                .kioskPrimarySpaceTheme(
+                    KioskSpaceMenuTargetResolver.primarySpaceTheme(
+                        for: state,
+                        preferredSpaceId: preferredSpaceId,
+                        in: spaceManager
+                    )
+                )
             }
         }
         .frame(height: 24)
+        .onReceive(state.$preferredSpaceId.receive(on: DispatchQueue.main)) {
+            preferredSpaceId = $0
+        }
+    }
+}
+
+private extension View {
+    /// Overrides the tooltip's theme with the Kiosk's primary Space theme;
+    /// nil keeps the Kiosk window's fixed palette.
+    @ViewBuilder
+    func kioskPrimarySpaceTheme(_ theme: Theme?) -> some View {
+        if let theme {
+            environment(\.phiTheme, theme)
+        } else {
+            self
+        }
     }
 }
 
@@ -540,6 +565,33 @@ private struct KioskCopyURLButtonView: View {
 }
 
 enum KioskSpaceMenuTargetResolver {
+    /// Spaces a Kiosk can hand its page to: none while incognito or with the
+    /// Spaces feature turned off.
+    @MainActor
+    static func availableSpaces(for state: KioskBrowserState, in spaceManager: SpaceManager) -> [Space] {
+        guard !state.isIncognito,
+              PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue() else {
+            return []
+        }
+        return spaceManager.spaces
+    }
+
+    /// Theme of the Space the toolbar's "Open in" action targets, or nil when
+    /// there is none. The Kiosk window keeps a fixed palette; its toolbar
+    /// tooltips take this theme instead so they match the Space they point at.
+    @MainActor
+    static func primarySpaceTheme(
+        for state: KioskBrowserState,
+        preferredSpaceId: String?,
+        in spaceManager: SpaceManager
+    ) -> Theme? {
+        primarySpace(
+            in: availableSpaces(for: state, in: spaceManager),
+            preferredSpaceId: preferredSpaceId,
+            activeSpaceId: spaceManager.activeSpaceId
+        ).map { spaceManager.resolvedTheme(forSpaceId: $0.spaceId) }
+    }
+
     static func primarySpace(
         in spaces: [Space],
         preferredSpaceId: String? = nil,
@@ -596,11 +648,7 @@ private struct KioskSpaceMenu: View {
     }
 
     private var availableSpaces: [Space] {
-        guard !state.isIncognito,
-              PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue() else {
-            return []
-        }
-        return spaceManager.spaces
+        KioskSpaceMenuTargetResolver.availableSpaces(for: state, in: spaceManager)
     }
 
     private var primarySpace: Space? {
@@ -669,6 +717,7 @@ private struct KioskSpaceMenu: View {
                     title: primaryActionTooltipTitle,
                     command: .PHI_KIOSK_OPEN_IN_SPACE
                 )
+                .kioskPrimarySpaceTheme(primarySpace.map { spaceManager.resolvedTheme(forSpaceId: $0.spaceId) })
             }
 
             Divider()
@@ -696,6 +745,7 @@ private struct KioskSpaceMenu: View {
                     title: spaceListTitle,
                     command: .PHI_KIOSK_CHOOSE_SPACE
                 )
+                .kioskPrimarySpaceTheme(primarySpace.map { spaceManager.resolvedTheme(forSpaceId: $0.spaceId) })
             }
             .onHover { isSpaceListHovered = $0 }
             .background {

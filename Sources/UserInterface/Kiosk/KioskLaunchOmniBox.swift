@@ -37,7 +37,9 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
     static let rightInset: CGFloat = 12
     static let topInset: CGFloat = 40
 
-    static var panelSize: NSSize {
+    static var panelSize: NSSize { panelSize(boxWidth: boxWidth) }
+
+    static func panelSize(boxWidth: CGFloat) -> NSSize {
         NSSize(
             width: boxWidth + shadowMargin * 2,
             height: OmniBoxContainerViewController.maxOmniBoxHeight + shadowMargin * 2
@@ -65,6 +67,19 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
         return NSRect(
             x: (topRight.x + shadowMargin - panelSize.width).rounded(),
             y: (topRight.y + shadowMargin - panelSize.height).rounded(),
+            width: panelSize.width,
+            height: panelSize.height
+        )
+    }
+
+    /// Horizontally centered, the box's top a third of the way down the
+    /// screen (where Spotlight sits), so suggestions have room below it.
+    static func centeredFrame(onVisibleFrame visibleFrame: NSRect, boxWidth: CGFloat) -> NSRect {
+        let boxTop = visibleFrame.maxY - visibleFrame.height / 3
+        let panelSize = panelSize(boxWidth: boxWidth)
+        return NSRect(
+            x: (visibleFrame.midX - panelSize.width / 2).rounded(),
+            y: (boxTop + shadowMargin - panelSize.height).rounded(),
             width: panelSize.width,
             height: panelSize.height
         )
@@ -128,13 +143,27 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
         )
     }
 
+    /// The omnibox box's width: Kiosk's `boxWidth` unless the caller sets
+    /// one (the address bar shortcut uses the in-window omnibox's width).
+    private let panelBoxWidth: CGFloat
+
+    /// Draws the panel in `source`'s theme. The panel is its own window, not
+    /// a browser window, so its views would otherwise resolve the global
+    /// theme rather than the browser window's Space. Call before `present`,
+    /// which puts the views in the window.
+    func pinTheme(_ source: ThemeStateProvider) {
+        backgroundView.subtreeThemeSource = source
+    }
+
     init(
         browserState: BrowserState,
         hostWindow: NSWindow?,
+        boxWidth: CGFloat = KioskLaunchOmniBoxPanelController.boxWidth,
         onFinish: @escaping (String?) -> Void
     ) {
+        panelBoxWidth = boxWidth
         panel = Panel(
-            contentRect: NSRect(origin: .zero, size: Self.panelSize),
+            contentRect: NSRect(origin: .zero, size: Self.panelSize(boxWidth: boxWidth)),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: true
@@ -145,7 +174,7 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
             browserState: browserState,
             superView: backgroundView,
             isDetachedFromHostWindow: true,
-            fixedBoxWidth: Self.boxWidth
+            fixedBoxWidth: boxWidth
         )
         self.onFinish = onFinish
         super.init()
@@ -178,15 +207,18 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
         panel.collectionBehavior = [
             .canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle
         ]
-        panel.contentView = NSView(frame: NSRect(origin: .zero, size: Self.panelSize))
+        panel.contentView = NSView(frame: NSRect(origin: .zero, size: Self.panelSize(boxWidth: panelBoxWidth)))
         panel.delegate = self
     }
 
-    func present(on screen: NSScreen?) {
+    /// `centered` places the box in the middle of the screen instead of
+    /// Kiosk's top-right corner.
+    func present(on screen: NSScreen?, centered: Bool = false) {
         guard !isFinished, let contentView = panel.contentView else { return }
         if let visibleFrame = (screen ?? NSScreen.main)?.visibleFrame {
             panel.setFrame(
-                Self.frame(onVisibleFrame: visibleFrame),
+                centered ? Self.centeredFrame(onVisibleFrame: visibleFrame, boxWidth: panelBoxWidth)
+                    : Self.frame(onVisibleFrame: visibleFrame),
                 display: false
             )
         }

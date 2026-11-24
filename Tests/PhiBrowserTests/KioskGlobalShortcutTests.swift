@@ -283,6 +283,29 @@ final class KioskGlobalShortcutTests: XCTestCase {
         XCTAssertEqual(actions, 2)
     }
 
+    /// Kiosk's registrar and the address bar shortcut's run side by side, so
+    /// each matches hot-key events by its own signature and ignores the
+    /// other's, even when both picked the same hot-key id.
+    func testRegistrarIgnoresHotKeyEventsWithAnotherRegistrarsSignature() throws {
+        let api = FakeHotKeys()
+        let layout = try layout("US")
+        var actions = 0
+        let signature: OSType = 0x50484142 // PHAB
+        let registrar = Registrar(action: { actions += 1 }, hotKeyAPI: api.api,
+            shortcut: { .init(characters: "z", modifiers: .control) }, keyboardLayout: { layout },
+            notificationCenter: NotificationCenter(), inputSourceNotificationCenter: NotificationCenter(),
+            hotKeySignature: signature)
+        defer { registrar.invalidate() }
+        registrar.start(enabled: true)
+        let identifier = try XCTUnwrap(api.active.values.first?.identifier)
+
+        XCTAssertEqual(identifier.signature, signature)
+        XCTAssertEqual(try deliver(identifier, to: registrar), noErr)
+        XCTAssertEqual(try deliver(.init(signature: Registrar.kioskHotKeySignature, id: identifier.id), to: registrar),
+                       OSStatus(eventNotHandledErr))
+        XCTAssertEqual(actions, 1)
+    }
+
     func testUnregisterFailurePreventsReplacementAndActionUntilRecovery() throws {
         let api = FakeHotKeys()
         let center = NotificationCenter()

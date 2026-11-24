@@ -792,28 +792,76 @@ struct TabBeingSharedRowOutline: View {
     }
 }
 
+/// Pulsing dot on a tab's favicon: red while the tab uses the microphone or
+/// camera, yellow while it is shared, alternating between the two for both.
 struct UnifiedTabRecordingIcon: View {
-    private let iconSize = TabCaptureBadgeMetrics.recordingDotSize
-    @State private var isAnimating = false
+    var isCapturingMedia = true
+    var isBeingShared = false
+
+    private enum Phase {
+        case red, redDim, yellow, yellowDim
+
+        var redOpacity: Double {
+            switch self {
+            case .red: 1
+            case .redDim: 0.2
+            case .yellow, .yellowDim: 0
+            }
+        }
+
+        var yellowOpacity: Double {
+            switch self {
+            case .yellow: 1
+            case .yellowDim: 0.2
+            case .red, .redDim: 0
+            }
+        }
+    }
+
+    private var phases: [Phase] {
+        switch (isCapturingMedia, isBeingShared) {
+        case (true, true): [.red, .redDim, .yellow, .yellowDim]
+        case (false, true): [.yellow, .yellowDim]
+        default: [.red, .redDim]
+        }
+    }
+
+    private var helpText: String {
+        let recording = NSLocalizedString(
+            "tabs.captureBadge.microphoneOrCamera",
+            value: "This tab is using the microphone or camera.",
+            comment: "Tab favicon badge - Tooltip on the red recording dot for microphone or camera capture"
+        )
+        let shared = NSLocalizedString(
+            "tabs.captureBadge.beingShared",
+            value: "Others can see this tab while you share.",
+            comment: "Tab favicon badge - Tooltip when this tab's content is mirrored to a remote screen share"
+        )
+        switch (isCapturingMedia, isBeingShared) {
+        case (true, true): return recording + "\n" + shared
+        case (false, true): return shared
+        default: return recording
+        }
+    }
 
     var body: some View {
+        let iconSize = TabCaptureBadgeMetrics.recordingDotSize
         Circle()
             .fill(.white)
             .frame(width: iconSize, height: iconSize)
             .overlay {
-                Image(systemName: "circle.fill")
-                    .resizable()
-                    .foregroundStyle(.red)
+                PhaseAnimator(phases) { phase in
+                    ZStack {
+                        Circle().fill(Color.red).opacity(phase.redOpacity)
+                        Circle().fill(Color.yellow).opacity(phase.yellowOpacity)
+                    }
                     .frame(width: iconSize - 2, height: iconSize - 2)
-                    .opacity(isAnimating ? 0.2 : 1.0)
-                    .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: isAnimating)
+                } animation: { _ in
+                    .easeInOut(duration: 1)
+                }
+                .id(phases)
             }
-            .onAppear { isAnimating = true }
-            .help(NSLocalizedString(
-                "tabs.captureBadge.microphoneOrCamera",
-                value: "This tab is using the microphone or camera.",
-                comment: "Tab favicon badge - Tooltip on the red recording dot for microphone or camera capture"
-            ))
+            .help(helpText)
     }
 }
 
@@ -852,35 +900,13 @@ struct UnifiedTabPresentingScreenShareIcon: View {
     }
 }
 
-/// Compact strip indicator when the shared tab has no room for a favicon ring.
-struct UnifiedTabBeingSharedIcon: View {
-    private let pillSize = TabCaptureBadgeMetrics.sharePillSize
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(Color.yellow.opacity(0.2))
-            Circle()
-                .strokeBorder(Color.yellow, lineWidth: 1.5)
-            Image(systemName: "eye")
-                .font(.system(size: pillSize * 0.42, weight: .semibold))
-                .foregroundStyle(.yellow)
-        }
-        .frame(width: pillSize, height: pillSize)
-        .help(NSLocalizedString(
-            "tabs.captureBadge.beingShared",
-            value: "Others can see this tab while you share.",
-            comment: "Tab favicon badge - Tooltip when this tab's content is mirrored to a remote screen share"
-        ))
-    }
-}
-
 struct UnifiedTabFaviconCaptureCornerBadges: View {
     let isCapturingMedia: Bool
+    var isBeingShared = false
 
     var body: some View {
-        if isCapturingMedia {
-            UnifiedTabRecordingIcon()
+        if isCapturingMedia || isBeingShared {
+            UnifiedTabRecordingIcon(isCapturingMedia: isCapturingMedia, isBeingShared: isBeingShared)
         }
     }
 }
@@ -889,9 +915,10 @@ struct UnifiedTabFaviconCaptureBadgesView: View {
     let viewModel: TabViewModel
 
     var body: some View {
-        if viewModel.isCapturingMedia {
-            UnifiedTabFaviconCaptureCornerBadges(isCapturingMedia: true)
-        }
+        UnifiedTabFaviconCaptureCornerBadges(
+            isCapturingMedia: viewModel.isCapturingMedia,
+            isBeingShared: viewModel.isBeingSharedRemotely
+        )
     }
 }
 
@@ -928,13 +955,10 @@ struct UnifiedTabCaptureCenterIndicator: View {
     let viewModel: TabViewModel
 
     var body: some View {
-        Group {
-            if viewModel.isCapturingMedia {
-                UnifiedTabRecordingIcon()
-            } else if viewModel.isBeingSharedRemotely {
-                UnifiedTabBeingSharedIcon()
-            }
-        }
+        UnifiedTabFaviconCaptureCornerBadges(
+            isCapturingMedia: viewModel.isCapturingMedia,
+            isBeingShared: viewModel.isBeingSharedRemotely
+        )
     }
 }
 

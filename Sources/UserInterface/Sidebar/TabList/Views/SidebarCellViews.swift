@@ -905,13 +905,12 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             ))
         }
 
-        // Capture chrome (mic dot, share pill, mirrored outline) is centered
-        // on the favicon so the yellow ring wraps the icon correctly.
+        // Same top-trailing corner as `SideTabFaviconView`'s recording badge.
         pane.addSubview(segment.recordingHost)
         segment.recordingHost.snp.makeConstraints { make in
-            make.center.equalTo(icon)
-            make.width.equalTo(22)
-            make.height.equalTo(22)
+            make.trailing.equalTo(icon).offset(3)
+            make.top.equalTo(icon).offset(-3)
+            make.size.equalTo(TabCaptureBadgeMetrics.recordingDotSize)
         }
 
         let title = segment.titleLabel
@@ -1357,10 +1356,10 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
             // Same identity-routed binding for the capture flags so each
             // segment's recording badge tracks its own tab, matching a
             // standalone tab.
-            Publishers.CombineLatest(tab.$isCapturingAudio, tab.$isCapturingVideo)
+            Publishers.CombineLatest3(tab.$isCapturingAudio, tab.$isCapturingVideo, tab.$isBeingMirrored)
                 .removeDuplicates { $0 == $1 }
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self, weak tab] _, _ in
+                .sink { [weak self, weak tab] _, _, _ in
                     guard let self, let tab, let index = self.segmentIndex(of: tab) else { return }
                     self.updateCaptureBadges(index: index, tab: tab)
                 }
@@ -1515,11 +1514,13 @@ class SidebarSplitCellView: SidebarCellView, TabPreviewInteractionCancelling {
     /// Show or hide a segment's capture badges from its tab's capture flags.
     private func updateCaptureBadges(index: Int, tab: Tab) {
         let host = segments[index].recordingHost
-        let showsMedia = tab.isCapturingMedia
-        host.isHidden = !showsMedia
-        guard showsMedia else { return }
+        let isCapturingMedia = tab.isCapturingMedia
+        let isBeingShared = tab.isBeingSharedRemotely
+        host.isHidden = !(isCapturingMedia || isBeingShared)
+        guard !host.isHidden else { return }
         host.rootView = AnyView(
-            UnifiedTabFaviconCaptureCornerBadges(isCapturingMedia: true)
+            UnifiedTabFaviconCaptureCornerBadges(isCapturingMedia: isCapturingMedia,
+                                                 isBeingShared: isBeingShared)
                 .phiThemeObserver(themeObserver)
         )
     }

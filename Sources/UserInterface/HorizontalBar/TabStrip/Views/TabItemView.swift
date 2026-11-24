@@ -172,8 +172,6 @@ final class TabItemView: NSView {
     private var mergedPaneCount = 0
     private var mergedPanes: ArraySlice<MergedPaneViews> { mergedPanePool.prefix(mergedPaneCount) }
     private var isMergedSplitCell: Bool { mergedPaneCount > 0 }
-    /// Split tabs carry no being-shared sign; the content pane's border does.
-    private var isSplitCell: Bool { isMergedSplitCell || backgroundLayer.splitPanePosition != nil }
     /// Panes rendered by this cell, host included.
     private var paneCount: Int { 1 + mergedPaneCount }
     private var isDragHighlighted = false {
@@ -251,13 +249,6 @@ final class TabItemView: NSView {
             self?.makeRecordingIconRootView() ?? AnyView(EmptyView())
         }
         view.layer?.backgroundColor = .clear
-        return view
-    }()
-
-    private lazy var beingSharedOutlineHostingView: HitTransparentHostingView<AnyView> = {
-        let view = HitTransparentHostingView(rootView: AnyView(EmptyView()))
-        view.layer?.backgroundColor = .clear
-        view.isHidden = true
         return view
     }()
 
@@ -369,7 +360,6 @@ final class TabItemView: NSView {
             self?.updatePreviewEligibility()
         }
 
-        addSubview(beingSharedOutlineHostingView)
         addSubview(faviconHostingView)
         addSubview(openIndicatorHostingView)
         addSubview(muteButtonHostingView)
@@ -470,8 +460,8 @@ final class TabItemView: NSView {
         let showMute = viewModel.isCurrentlyAudible || viewModel.isMuted
         let centerY = bounds.height / 2
         let panes = Array(mergedPanes)
-        let showCaptureCenterGlyph = viewModel.isCapturingMedia
-            || (viewModel.isBeingSharedRemotely && !isSplitCell)
+        let showCaptureCenterGlyph = !isMergedSplitCell
+            && (viewModel.isCapturingMedia || viewModel.isBeingSharedRemotely)
 
         // Pane mute toggles only render inside merged split cells; reset
         // to hidden up front so recycled cells transitioning into non-split
@@ -506,37 +496,12 @@ final class TabItemView: NSView {
             for pane in mergedPanePool {
                 pane.dividerView.isHidden = true
             }
-            // Merged cells surface ANY pane's audio state as ONE centered
-            // glyph for the whole cell. Per-pane glyphs were tried and read
-            // wrong: [favicon][speaker] mimics a normal tab's "favicon + its
-            // indicator" row, misattributing another pane's sound to the
-            // first pane. The glyph and its mute toggle bind to the first
-            // pane in slot order that carries the state, the host first.
-            // Host recording still outranks audio (single-tab precedence).
-            // While a centered glyph is up, the favicons — and the per-pane
-            // recording corner badges they carry — are hidden, so a narrow
-            // cell shows at most one state at a time by design.
-            let audiblePane = panes.first { $0.showsMute }
-            if showCaptureCenterGlyph {
-                recordingIconHostingView.isHidden = false
-                recordingIconHostingView.frame = centeredFrame(for: recordingIconSize)
-                hideAllFavicons()
-                muteButtonHostingView.isHidden = true
-            } else if showMute {
-                muteButtonHostingView.isHidden = false
-                muteButtonHostingView.frame = centeredFrame(for: muteButtonSize)
-                hideAllFavicons()
-                recordingIconHostingView.isHidden = true
-            } else if let audiblePane {
-                audiblePane.muteButtonHostingView.isHidden = false
-                audiblePane.muteButtonHostingView.frame = centeredFrame(for: muteButtonSize)
-                hideAllFavicons()
-                muteButtonHostingView.isHidden = true
-                recordingIconHostingView.isHidden = true
-            } else if isMergedSplitCell {
+            if isMergedSplitCell {
                 // One favicon per pane inside one pinned/compact cell. Stack
                 // them horizontally around the cell's center so the cell
-                // still occupies a single slot in the strip's layout.
+                // still occupies a single slot in the strip's layout. The
+                // row always stays up: audio shows no glyph here, and
+                // capture shows as each pane's favicon corner badge.
                 let iconSize = metrics.faviconSize
                 let gap = mergedFaviconGap
                 let rowWidth = iconSize.width * CGFloat(paneCount)
@@ -570,6 +535,16 @@ final class TabItemView: NSView {
                     )
                 }
                 muteButtonHostingView.isHidden = true
+                recordingIconHostingView.isHidden = true
+            } else if showCaptureCenterGlyph {
+                recordingIconHostingView.isHidden = false
+                recordingIconHostingView.frame = centeredFrame(for: recordingIconSize)
+                hideAllFavicons()
+                muteButtonHostingView.isHidden = true
+            } else if showMute {
+                muteButtonHostingView.isHidden = false
+                muteButtonHostingView.frame = centeredFrame(for: muteButtonSize)
+                hideAllFavicons()
                 recordingIconHostingView.isHidden = true
             } else {
                 faviconHostingView.isHidden = false
@@ -688,7 +663,6 @@ final class TabItemView: NSView {
             pane.viewModel.isHorizontalCompactMode = viewModel.isHorizontalCompactMode
         }
 
-        setBeingSharedOutlineVisible(sourceTab?.isBeingSharedRemotely == true && !isSplitCell)
         let titleStartX = layoutFaviconAndMedia(mode: mode)
 
         switch mode {
@@ -854,7 +828,6 @@ final class TabItemView: NSView {
             view.isHidden = true
             view.frame = .zero
         }
-        setBeingSharedOutlineVisible(false)
         // SwiftUI keeps animating a hidden host's recording badge.
         viewModel.hidesRecordingBadge = true
         for pane in mergedPanePool {
@@ -987,17 +960,6 @@ final class TabItemView: NSView {
 
     private func makeRecordingIconRootView() -> AnyView {
         makeThemedRootView(UnifiedTabCaptureCenterIndicator(viewModel: viewModel))
-    }
-
-    /// The outline pulses forever, so it is only hosted while visible.
-    private func setBeingSharedOutlineVisible(_ visible: Bool) {
-        let host = beingSharedOutlineHostingView
-        host.frame = visible ? bounds : .zero
-        guard visible == host.isHidden else { return }
-        host.isHidden = !visible
-        host.rootView = visible
-            ? AnyView(TabBeingSharedRowOutline(cornerRadius: TabStripMetrics.Tab.cornerRadius))
-            : AnyView(EmptyView())
     }
 
     private func makeShareInsteadButtonRootView(

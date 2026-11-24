@@ -1172,6 +1172,10 @@ extension Tab {
         isSharingScreen = sharingScreen
         isBeingMirrored = beingMirrored
     }
+
+    func setAudibleForTesting(_ audible: Bool) {
+        isCurrentlyAudible = audible
+    }
 }
 
 extension String {

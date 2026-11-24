@@ -3005,6 +3005,8 @@ extension AppController {
                 }
             }
             self.addressBarLaunchOmniBoxPanel = panel
+            // The current Space's theme, as the in-window omnibox shows it.
+            panel.pinTheme(host.browserState.themeContext)
             panel.present(on: screen, centered: true)
         }
     }

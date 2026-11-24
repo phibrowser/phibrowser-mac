@@ -147,6 +147,14 @@ final class KioskLaunchOmniBoxPanelController: NSObject, NSWindowDelegate {
     /// one (the address bar shortcut uses the in-window omnibox's width).
     private let panelBoxWidth: CGFloat
 
+    /// Draws the panel in `source`'s theme. The panel is its own window, not
+    /// a browser window, so its views would otherwise resolve the global
+    /// theme rather than the browser window's Space. Call before `present`,
+    /// which puts the views in the window.
+    func pinTheme(_ source: ThemeStateProvider) {
+        backgroundView.subtreeThemeSource = source
+    }
+
     init(
         browserState: BrowserState,
         hostWindow: NSWindow?,

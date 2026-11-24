@@ -392,6 +392,9 @@ class BrowserState {
     @Published var isRestoringClearedTabs = false
 
     let travelBackTabCreated = PassthroughSubject<(marker: String, tab: Tab), Never>()
+    /// Sends each tab a link opened in the background, once it has its place
+    /// in `normalTabs`, so the sidebar list can scroll it into view.
+    let backgroundTabOpened = PassthroughSubject<Tab, Never>()
     
     /// Read-only views of the owning window's split, never per-Space state.
     var sidebarCollapsed: Bool {
@@ -3759,6 +3762,7 @@ class BrowserState {
             MainActor.assumeIsolated {
                 tabSwitchManager.recordBackgroundTab(tab)
                 OverlayToastCenter.shared.showBackgroundTabCreation(tab, in: self)
+                backgroundTabOpened.send(tab)
             }
         }
         restoreAIChatPanel(of: tab, isActiveAtCreation: context?.isActiveAtCreation == true)

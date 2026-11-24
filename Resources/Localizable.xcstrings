@@ -113927,6 +113927,17 @@
         }
       }
     },
+    "sidebar.tabList.showActiveTabButton" : {
+      "comment" : "Sidebar tab list - Arrow button at the top or bottom edge of the list, shown while the active tab is scrolled out of view; clicking scrolls back to it",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Active Tab"
+          }
+        }
+      }
+    },
     "sidebar.updateReminder.closeButtonAccessibilityLabel" : {
       "comment" : "Sidebar update reminder - Accessibility description for close button",
       "extractionState" : "extracted_with_value",

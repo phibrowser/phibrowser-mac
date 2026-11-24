@@ -224,6 +224,19 @@ class SidebarTabListViewController: NSViewController {
     private var outlineView: SideBarOutlineView!
     private var scrollView: NSScrollView!
     private var floatingNewTabView: FloatingNewTabView?
+    /// Arrow at the list's top or bottom edge while the active tab is
+    /// scrolled out of view; created the first time it is needed.
+    private var activeTabArrowView: SidebarActiveTabArrowView?
+    /// Coalesces `scheduleActiveTabArrowUpdate()` calls within one turn.
+    private var isActiveTabArrowUpdateScheduled = false
+    /// True while `animateScrollRectToVisible` moves the list. The bounds
+    /// change frame by frame, so the arrow may hide during the scroll but not
+    /// appear; its completion re-checks. Otherwise switching to an off-screen
+    /// tab would flash the arrow in for a row already on its way.
+    private var isFocusScrollAnimating = false
+    /// Reads macOS Reduce Motion; tests replace it. Under it, focus and
+    /// reveal scrolls jump and the arrow fades instead of sliding.
+    var prefersReducedMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     /// Tab and split rows scrolled under the hovered floating New Tab row still
     /// get tracking-area hovers; new and reused cells pick this up on configure.
     private var isTabHoverSuppressed = false
@@ -373,6 +386,14 @@ class SidebarTabListViewController: NSViewController {
     /// Scroll is skipped when the focusing tab hasn't changed (e.g. bookmark expand/collapse).
     /// Update only when scheduling a scroll; clear when focus has no representable sidebar row.
     private var lastScrolledFocusingItemId: AnyHashable?
+    /// A tab a link just opened in the background, waiting for its row.
+    /// `BrowserState.backgroundTabOpened` arrives before this list has the
+    /// row, so the reveal runs after the next `tabSectionDidUpdate`. Focus
+    /// stays where it was, so `lastScrolledFocusingItemId` is left alone.
+    private weak var pendingBackgroundRevealTab: Tab?
+    /// Slower than a focus scroll: the user didn't ask for this one, so the
+    /// list eases over to the new tab instead of jumping to it.
+    private static let backgroundRevealScrollDuration: TimeInterval = 0.4
 
     /// Flag to control whether bookmarks are shown in the sidebar
     private var showBookmarks: Bool = true
@@ -501,6 +522,7 @@ class SidebarTabListViewController: NSViewController {
         }
         scrollView.isHidden = suppressed
         floatingNewTabView?.isHidden = suppressed
+        updateActiveTabArrow()
     }
     
     private func setupAppearance() {
@@ -541,6 +563,7 @@ class SidebarTabListViewController: NSViewController {
         .sink { [weak self] _ in
             self?.updateFloatingNewTabVisibility()
             self?.cancelVisibleTabPreviews()
+            self?.updateActiveTabArrow()
         }
         .store(in: &cancellables)
 
@@ -552,7 +575,33 @@ class SidebarTabListViewController: NSViewController {
         .sink { [weak self] _ in
             self?.updateFloatingNewTabVisibility()
             self?.cancelVisibleTabPreviews()
+            self?.updateActiveTabArrow()
         }
+        .store(in: &cancellables)
+
+        browserState.backgroundTabOpened
+            .sink { [weak self] tab in
+                self?.pendingBackgroundRevealTab = tab
+            }
+            .store(in: &cancellables)
+
+        // A drag owns the list: the arrow leaves when one starts and comes
+        // back when it ends, even if nothing scrolled in between.
+        browserState.$isDraggingTab
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateActiveTabArrow() }
+            .store(in: &cancellables)
+
+        // Rows can move without a scroll: a folder or tab group above the
+        // active tab collapsing or expanding changes the document height.
+        NotificationCenter.default.publisher(
+            for: NSView.frameDidChangeNotification,
+            object: outlineView
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _ in self?.scheduleActiveTabArrowUpdate() }
         .store(in: &cancellables)
 
         browserState.$isBookmarkRootExpanded
@@ -672,6 +721,9 @@ class SidebarTabListViewController: NSViewController {
         scrollAnimationGeneration += 1
         scrollScheduleGeneration += 1
         lastScrolledFocusingItemId = nil
+        pendingBackgroundRevealTab = nil
+        activeTabArrowView?.setEdge(nil, animated: false)
+        isFocusScrollAnimating = false
         lastSelectedItem = nil
         userInitiatedToggleFolderGuid = nil
         removeFloatingNewTabCell()
@@ -4613,6 +4665,7 @@ extension SidebarTabListViewController: TabSectionDelegate {
                 self.pushPaneUpdatesToSplitCells(change.affectedSplitIds)
                 self.updateSeparatorButtonVisibility()
                 self.clearFloatingProxyIfTabClosed()
+                self.revealPendingBackgroundTab()
             }
             return
         }
@@ -4631,6 +4684,7 @@ extension SidebarTabListViewController: TabSectionDelegate {
             self.pushPaneUpdatesToSplitCells(change.affectedSplitIds)
             self.updateSeparatorButtonVisibility()
             self.clearFloatingProxyIfTabClosed()
+            self.revealPendingBackgroundTab()
         }
     }
 
@@ -5247,30 +5301,173 @@ extension SidebarTabListViewController {
         }
     }
 
+    /// The row that shows `tab`: its own row, the merged row of its split,
+    /// its member row inside a group (`groupMember`), or the bookmark row or
+    /// floating proxy backing it.
+    /// Read-only, unlike `applyFocusingSelection`: it never expands a folder.
+    private func rowTarget(for tab: Tab) -> (item: Any, groupMember: Tab?)? {
+        if let item = allItems.first(where: { $0.id == tab.id }) {
+            return (item, nil)
+        }
+        for case let split as SplitSidebarItem in allItems where split.contains(tabId: tab.guid) {
+            return (split, nil)
+        }
+        if let token = tab.groupToken {
+            for case let groupItem as TabGroupSidebarItem in allItems where groupItem.group.token == token {
+                return (groupItem, tab)
+            }
+        }
+        guard let bookmark = backingBookmark(of: tab) else { return nil }
+        if let presentation = focusedBookmarkPresentation,
+           presentation.proxy.underlyingBookmark.guid == bookmark.guid {
+            return (presentation.proxy, nil)
+        }
+        return outlineView.row(forItem: bookmark) >= 0 ? (bookmark, nil) : nil
+    }
+
+    /// Scrolls the background tab a link just opened into view, the least
+    /// distance needed, once its row exists. Runs after the group heights are
+    /// reconciled, so a new group member's row is already in place. A drag
+    /// owns the scroll position, so the reveal is dropped during one. A burst
+    /// of tabs ends on the last one: `scheduleScrollToVisible` keeps only its
+    /// latest request.
+    private func revealPendingBackgroundTab() {
+        guard let tab = pendingBackgroundRevealTab else { return }
+        guard !browserState.isDraggingTab,
+              browserState.normalTabs.contains(where: { $0 === tab }) else {
+            pendingBackgroundRevealTab = nil
+            return
+        }
+        guard let target = rowTarget(for: tab) else { return }
+        pendingBackgroundRevealTab = nil
+        scheduleScrollToVisible(forItem: target.item, groupMember: target.groupMember,
+                                duration: Self.backgroundRevealScrollDuration)
+    }
+
     /// `groupMember` scrolls only that member's inner row of the group `item`
     /// into view; a long group can be taller than the visible area.
-    private func scheduleScrollToVisible(forItem item: Any?, groupMember: Tab? = nil) {
+    private func scheduleScrollToVisible(forItem item: Any?, groupMember: Tab? = nil,
+                                         duration: TimeInterval = 0.14) {
         guard let item else { return }
         scrollScheduleGeneration += 1
         let generation = scrollScheduleGeneration
         DispatchQueue.main.async { [weak self] in
             guard let self, generation == self.scrollScheduleGeneration else { return }
-            let row = outlineView.row(forItem: item)
-            guard row >= 0 else { return }
-            var targetRect = outlineView.rect(ofRow: row)
-            if let groupMember,
-               let groupItem = item as? TabGroupSidebarItem,
-               let span = TabGroupCellView.memberRowSpan(of: groupMember,
-                                                         in: groupItem,
-                                                         browserState: browserState) {
-                targetRect.origin.y += span.minY
-                targetRect.size.height = span.height
-            }
-            animateScrollRectToVisible(targetRect)
+            guard let targetRect = rowRect(forItem: item, groupMember: groupMember) else { return }
+            animateScrollRectToVisible(targetRect, duration: duration)
         }
     }
 
-    private func animateScrollRectToVisible(_ rowRect: NSRect) {
+    /// The outline rect of `item`'s row, narrowed to `groupMember`'s inner
+    /// row when `item` is an expanded group; nil when the row isn't there.
+    private func rowRect(forItem item: Any, groupMember: Tab?) -> NSRect? {
+        let row = outlineView.row(forItem: item)
+        guard row >= 0 else { return nil }
+        var rect = outlineView.rect(ofRow: row)
+        if let groupMember,
+           let groupItem = item as? TabGroupSidebarItem,
+           let span = TabGroupCellView.memberRowSpan(of: groupMember,
+                                                     in: groupItem,
+                                                     browserState: browserState) {
+            rect.origin.y += span.minY
+            rect.size.height = span.height
+        }
+        return rect
+    }
+
+    /// Updates the arrow on the next turn, after any scroll that
+    /// `scheduleScrollToVisible` queued in this one.
+    private func scheduleActiveTabArrowUpdate() {
+        guard !isActiveTabArrowUpdateScheduled else { return }
+        isActiveTabArrowUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isActiveTabArrowUpdateScheduled = false
+            self.updateActiveTabArrow()
+        }
+    }
+
+    /// Shows the arrow at the edge the active tab's row went past, or hides
+    /// it while any of the row is in view. Runs on every scroll tick: a scan
+    /// of the root items for the active row (plus its group's members when
+    /// grouped) and a rect comparison. Hidden while a drag owns the list,
+    /// while the create-Space form covers it, and on an inactive list; held
+    /// back from appearing while a focus scroll runs.
+    private func updateActiveTabArrow() {
+        guard isViewLoaded, isActive, !scrollView.isHidden, !browserState.isDraggingTab else {
+            activeTabArrowView?.setEdge(nil, animated: isActive, reduceMotion: prefersReducedMotion())
+            return
+        }
+        let visibleRect = scrollView.contentView.documentVisibleRect
+        let unobscuredRect = SidebarNewTabStickyResolver.visibleRectExcludingOverlay(
+            visibleRect: visibleRect,
+            overlayHeight: floatingNewTabOverlayHeight,
+            atTop: browserState.opensNewTabsAtTop,
+            isFlipped: outlineView.isFlipped)
+        // The clip follows the New Tab row even while the arrow slides out.
+        if let arrow = activeTabArrowView {
+            layoutActiveTabArrow(arrow, visibleRect: visibleRect)
+        }
+        let activeRowRect = browserState.focusingTab
+            .flatMap { rowTarget(for: $0) }
+            .flatMap { rowRect(forItem: $0.item, groupMember: $0.groupMember) }
+        guard let edge = SidebarActiveTabArrowResolver.edge(
+            activeRowRect: activeRowRect, unobscuredVisibleRect: unobscuredRect) else {
+            activeTabArrowView?.setEdge(nil, animated: true, reduceMotion: prefersReducedMotion())
+            return
+        }
+        if isFocusScrollAnimating, activeTabArrowView?.edge != edge {
+            return
+        }
+        let arrow = activeTabArrowView ?? makeActiveTabArrowView()
+        layoutActiveTabArrow(arrow, visibleRect: visibleRect)
+        arrow.stripRect = arrow.convert(
+            SidebarActiveTabArrowResolver.stripFrame(
+                unobscuredRect: unobscuredRect, edge: edge, containerIsFlipped: outlineView.isFlipped),
+            from: outlineView)
+        arrow.setEdge(edge, animated: true, reduceMotion: prefersReducedMotion())
+    }
+
+    /// Spans the arrow over the visible list and puts its clip edge on the
+    /// New Tab row: the sticky bar, or the row itself once it scrolls in.
+    private func layoutActiveTabArrow(_ arrow: SidebarActiveTabArrowView, visibleRect: NSRect) {
+        arrow.frame = view.convert(visibleRect, from: outlineView)
+        let newTabRowRect = newTabButtonItem.flatMap { item -> NSRect? in
+            let row = outlineView.row(forItem: item)
+            return row >= 0 ? outlineView.rect(ofRow: row) : nil
+        }
+        arrow.clipRect = arrow.convert(
+            SidebarActiveTabArrowResolver.clipRect(
+                visibleRect: visibleRect,
+                overlayHeight: floatingNewTabOverlayHeight,
+                newTabRowRect: newTabRowRect,
+                newTabAtTop: browserState.opensNewTabsAtTop),
+            from: outlineView)
+    }
+
+    private func makeActiveTabArrowView() -> SidebarActiveTabArrowView {
+        let arrow = SidebarActiveTabArrowView(frame: .zero)
+        arrow.scrollView = scrollView
+        arrow.clickAction = { [weak self] in
+            self?.scrollActiveTabIntoView()
+        }
+        arrow.hoverStateChanged = { [weak self] hovering in
+            self?.setVisibleTabHoverSuppressed(hovering)
+        }
+        view.addSubview(arrow, positioned: .above, relativeTo: scrollView)
+        activeTabArrowView = arrow
+        return arrow
+    }
+
+    /// The arrow's click: the same least-distance scroll focus changes use.
+    private func scrollActiveTabIntoView() {
+        defer { scheduleActiveTabArrowUpdate() }
+        guard let tab = browserState.focusingTab,
+              let target = rowTarget(for: tab) else { return }
+        scheduleScrollToVisible(forItem: target.item, groupMember: target.groupMember)
+    }
+
+    private func animateScrollRectToVisible(_ rowRect: NSRect, duration: TimeInterval = 0.14) {
         guard let scrollView = outlineView.enclosingScrollView else {
             return
         }
@@ -5310,9 +5507,16 @@ extension SidebarTabListViewController {
 
         scrollAnimationGeneration += 1
         let generation = scrollAnimationGeneration
+        if prefersReducedMotion() {
+            isFocusScrollAnimating = false
+            clipView.setBoundsOrigin(NSPoint(x: visibleRect.origin.x, y: targetY))
+            scrollView.reflectScrolledClipView(clipView)
+            return
+        }
+        isFocusScrollAnimating = true
 
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.14
+            context.duration = duration
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             clipView.animator().setBoundsOrigin(NSPoint(x: visibleRect.origin.x, y: targetY))
         } completionHandler: { [weak self] in
@@ -5320,10 +5524,15 @@ extension SidebarTabListViewController {
                 return
             }
             scrollView.reflectScrolledClipView(clipView)
+            self.isFocusScrollAnimating = false
+            self.updateActiveTabArrow()
         }
     }
     
     private func applyFocusingSelection(for tab: Tab?) {
+        // Deferred until after the focus scroll scheduled below, so the arrow
+        // never flashes in for a row that is about to scroll into view.
+        defer { scheduleActiveTabArrowUpdate() }
         guard let tab else {
             clearFocusingSelection()
             return

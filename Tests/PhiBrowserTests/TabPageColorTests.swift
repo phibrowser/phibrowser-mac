@@ -73,6 +73,22 @@ final class TabPageColorTests: XCTestCase {
 
 @MainActor
 final class TabAudioStateTests: XCTestCase {
+    /// A pinned tab keeps its `Tab` after its contents close; the capture dot
+    /// must go with the contents.
+    func testRemovalClearsCaptureState() {
+        let wrapper = PageColorTestWebContentWrapper(urlString: "https://meet.example")
+        wrapper.isCapturingVideo = true
+        wrapper.isBeingMirrored = true
+        let tab = makeTab(wrapper)
+        XCTAssertTrue(tab.isCapturingMedia, "Precondition.")
+        XCTAssertTrue(tab.isBeingSharedRemotely, "Precondition.")
+
+        tab.setWebContentsWrapper(wrapper: nil)
+
+        XCTAssertFalse(tab.isCapturingMedia)
+        XCTAssertFalse(tab.isBeingSharedRemotely)
+    }
+
     func testSessionMuteRemainsVisibleAfterAudibilityExpires() {
         let wrapper = PageColorTestWebContentWrapper(urlString: "https://media.example")
         wrapper.isCurrentlyAudible = true

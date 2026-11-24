@@ -727,6 +727,8 @@ enum TabCaptureBadgeMetrics {
     static let sharedOutlineLineWidth: CGFloat = 2
     static let topTrailingOffset = CGSize(width: 4, height: -4)
     static let bottomTrailingOffset = CGSize(width: 3, height: 3)
+    /// Inset of a pinned split's capture dot from the cell's bottom-trailing corner.
+    static let pinnedSplitCornerInset: CGFloat = 4
 }
 
 /// Yellow outline on tabs whose content is mirrored to a remote capture.
@@ -950,14 +952,15 @@ struct UnifiedTabFaviconCaptureBadgesViewFromTab: View {
     }
 }
 
-/// Single centred strip icon when favicons are hidden in compact or pinned layout.
+/// One strip icon for the capture state of every tab in `viewModels`: the
+/// centred icon of a compact tab, or the corner dot of a pinned split.
 struct UnifiedTabCaptureCenterIndicator: View {
-    let viewModel: TabViewModel
+    let viewModels: [TabViewModel]
 
     var body: some View {
         UnifiedTabFaviconCaptureCornerBadges(
-            isCapturingMedia: viewModel.isCapturingMedia,
-            isBeingShared: viewModel.isBeingSharedRemotely
+            isCapturingMedia: viewModels.contains { $0.isCapturingMedia },
+            isBeingShared: viewModels.contains { $0.isBeingSharedRemotely }
         )
     }
 }
@@ -968,10 +971,12 @@ struct UnifiedTabCaptureCenterIndicator: View {
 /// `NSHostingView`, so a tab cell that only hid its badge re-rendered it on
 /// every frame for as long as the cell lived. Cells keep this host in their
 /// tree and toggle `isHidden` as before; the host drops the icon on hide and
-/// builds a fresh one on show, which also restarts the pulse. The host owns
-/// `rootView`: callers set `isHidden`, never `rootView`.
+/// builds a fresh one on show, which also restarts the pulse. A hidden
+/// ancestor (a dragged item, a covering overlay) counts as hidden too. The
+/// host owns `rootView`: callers set `isHidden`, never `rootView`.
 final class TabRecordingIconHostingView: ZeroSafeAreaHostingView<AnyView> {
     private var makeIcon: () -> AnyView = { AnyView(EmptyView()) }
+    private var showsIcon = false
 
     convenience init(makeIcon: @escaping () -> AnyView) {
         self.init(rootView: AnyView(EmptyView()))
@@ -980,9 +985,53 @@ final class TabRecordingIconHostingView: ZeroSafeAreaHostingView<AnyView> {
     }
 
     override var isHidden: Bool {
-        didSet {
-            guard isHidden != oldValue else { return }
-            rootView = isHidden ? AnyView(EmptyView()) : makeIcon()
+        didSet { updateIcon() }
+    }
+
+    override func viewDidHide() {
+        super.viewDidHide()
+        updateIcon()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        updateIcon()
+    }
+
+    private func updateIcon() {
+        let showsIcon = !isHiddenOrHasHiddenAncestor
+        guard showsIcon != self.showsIcon else { return }
+        self.showsIcon = showsIcon
+        rootView = showsIcon ? makeIcon() : AnyView(EmptyView())
+    }
+}
+
+extension TabRecordingIconHostingView {
+    /// A host whose dot shows the combined capture state of `tabs()`.
+    static func combiningCaptureState(of tabs: @escaping () -> [Tab]) -> TabRecordingIconHostingView {
+        TabRecordingIconHostingView {
+            let tabs = tabs()
+            return AnyView(UnifiedTabFaviconCaptureCornerBadges(
+                isCapturingMedia: tabs.contains(where: \.isCapturingMedia),
+                isBeingShared: tabs.contains(where: \.isBeingSharedRemotely)
+            ))
         }
+    }
+
+    /// Keeps the host shown while any of `tabs` captures or is shared, and
+    /// rebuilds its dot whenever their capture flags change.
+    func bindCaptureState(of tabs: [Tab], into cancellables: inout Set<AnyCancellable>) {
+        Publishers.MergeMany(tabs.map { tab in
+            Publishers.CombineLatest3(tab.$isCapturingAudio, tab.$isCapturingVideo, tab.$isBeingMirrored)
+                .removeDuplicates { $0 == $1 }
+                .map { _ in () }
+        })
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] in
+            guard let self else { return }
+            self.isHidden = true
+            self.isHidden = !tabs.contains { $0.isCapturingMedia || $0.isBeingSharedRemotely }
+        }
+        .store(in: &cancellables)
     }
 }

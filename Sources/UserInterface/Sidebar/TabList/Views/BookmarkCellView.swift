@@ -273,6 +273,13 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     /// the pointer moves into the preview.
     private func updateHoverAppearance() {
         viewState.isHovered = isPointerHovered || folderPreview.isPresented
+        updatePrimaryTabHover()
+    }
+
+    /// Feeds the row's hover to a single bookmark's live tab, whose model
+    /// offers the share-instead button only while hovered.
+    private func updatePrimaryTabHover() {
+        primaryTabViewModel.setHovered(viewState.isHovered && !viewState.showsSecondaryFavicon)
     }
 
     private func setupPressAnimation() {
@@ -672,6 +679,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         configuredSecondaryTab = panes.secondary
         configure(viewModel: primaryTabViewModel, with: panes.primary)
         configure(viewModel: secondaryTabViewModel, with: panes.secondary)
+        updatePrimaryTabHover()
         viewState.primaryTabIsLive = panes.primary != nil
         viewState.secondaryTabIsLive = panes.secondary != nil
         viewState.isOpened = panes.primary?.hasWebContent == true
@@ -1022,7 +1030,9 @@ final class SidebarBookmarkRowContentView: NSView {
     private let separatorView = NavigatedAwaySeparatorView()
     private let peekButton = SideTabPeekButton()
     private let closeButton = SideTabIconButton()
+    private var shareInsteadButton: (offer: BrowserTabSharingState.ShareInsteadOffer, view: SideTabIconButton)?
     private let badgeView = SideTabCornerBadgeView()
+    private var beingSharedOutlineHost: TabDecorativeHostingView?
 
     private var theme: Theme?
     private var phiAppearance: Appearance = .light
@@ -1224,6 +1234,12 @@ final class SidebarBookmarkRowContentView: NSView {
             height: max(0, bounds.height - 4)
         )
         renderBackground(in: rowRect)
+        // A split bookmark shows sharing as the shared pane's favicon dot.
+        let isSplit = state.showsSecondaryFavicon
+        renderBeingSharedOutline(
+            in: rowRect,
+            isShown: !isFolder && !isSplit && state.primaryTabIsLive && primaryTabViewModel.isBeingSharedRemotely
+        )
 
         let hoverFill = theme.map { ThemedColor.hover.resolve(theme: $0, appearance: phiAppearance) } ?? .clear
         let spacing: CGFloat = isFolder ? 6 : 8
@@ -1256,6 +1272,7 @@ final class SidebarBookmarkRowContentView: NSView {
                           pageURL: state.primaryPageURL,
                           revision: state.primaryFaviconRevision,
                           liveModel: state.primaryTabIsLive ? primaryTabViewModel : nil,
+                          showsSharedDot: isSplit,
                           hoverFill: hoverFill)
         }
         renderOpenIndicator(besides: slotRect)
@@ -1273,6 +1290,7 @@ final class SidebarBookmarkRowContentView: NSView {
                           pageURL: state.secondaryPageURL,
                           revision: state.secondaryFaviconRevision,
                           liveModel: state.secondaryTabIsLive ? secondaryTabViewModel : nil,
+                          showsSharedDot: true,
                           hoverFill: hoverFill)
             x = rect.maxX + spacing
             x = layoutMuteButton(secondaryMuteButton, model: secondaryTabViewModel,
@@ -1291,6 +1309,19 @@ final class SidebarBookmarkRowContentView: NSView {
         if showsClose {
             closeButton.frame = buttonFrame(x: titleMaxX - Self.buttonSize, midY: midY)
             titleMaxX -= Self.buttonSize + spacing
+        }
+        // The primary model only offers while it sees the hover, which a split
+        // bookmark never passes on.
+        let shareButtonX = titleMaxX - Self.buttonSize
+        if showsClose, !isSplit, let offer = primaryTabViewModel.shareInsteadOffer, shareButtonX >= x - spacing {
+            let button = shareInsteadButton?.offer == offer ? shareInsteadButton?.view : nil
+            let shareButton = button ?? makeShareInsteadButton(for: offer)
+            shareButton.frame = buttonFrame(x: shareButtonX, midY: midY)
+            shareButton.hoverFillColor = hoverFill
+            shareButton.isHidden = false
+            titleMaxX -= Self.buttonSize + spacing
+        } else {
+            shareInsteadButton?.view.isHidden = true
         }
         let showsPeek = state.showsPeek && !isEditing
         peekButton.isHidden = !showsPeek
@@ -1367,12 +1398,45 @@ final class SidebarBookmarkRowContentView: NSView {
                                pageURL: String?,
                                revision: Int,
                                liveModel: TabViewModel?,
+                               showsSharedDot: Bool,
                                hoverFill: NSColor) {
         let outset = (Self.buttonSize - slotRect.width) / 2
         button.frame = slotRect.insetBy(dx: -outset, dy: -outset)
         button.render(image: image, pageURL: pageURL, revision: revision, liveModel: liveModel,
+                      showsSharedDot: showsSharedDot,
                       dimmingEnabled: dimmingEnabled, theme: theme, appearance: phiAppearance)
         button.hoverFillColor = button.canNavigate ? hoverFill : .clear
+    }
+
+    private func makeShareInsteadButton(
+        for offer: BrowserTabSharingState.ShareInsteadOffer
+    ) -> SideTabIconButton {
+        shareInsteadButton?.view.removeFromSuperview()
+        let button = SideTabIconButton.shareInstead { [weak self] in
+            self?.primaryTabViewModel.shareInstead(offer)
+        }
+        contentView.addSubview(button)
+        shareInsteadButton = (offer, button)
+        return button
+    }
+
+    private func renderBeingSharedOutline(in rect: NSRect, isShown: Bool) {
+        guard isShown else {
+            beingSharedOutlineHost?.removeFromSuperview()
+            beingSharedOutlineHost = nil
+            return
+        }
+        let outlineHost: TabDecorativeHostingView
+        if let beingSharedOutlineHost {
+            outlineHost = beingSharedOutlineHost
+        } else {
+            outlineHost = TabDecorativeHostingView(
+                rootView: TabBeingSharedRowOutline(cornerRadius: Self.cornerRadius)
+            )
+            contentView.addSubview(outlineHost, positioned: .above, relativeTo: backgroundView)
+            beingSharedOutlineHost = outlineHost
+        }
+        outlineHost.frame = rect
     }
 
     /// The dot beside an open bookmark that isn't the active one.
@@ -1589,6 +1653,7 @@ private final class BookmarkFaviconButton: SideTabIconButton {
                 pageURL: String?,
                 revision: Int,
                 liveModel: TabViewModel?,
+                showsSharedDot: Bool,
                 dimmingEnabled: Bool,
                 theme: Theme?,
                 appearance: Appearance) {
@@ -1597,7 +1662,7 @@ private final class BookmarkFaviconButton: SideTabIconButton {
                                    width: size, height: size)
         if let liveModel {
             faviconView.render(model: liveModel, dimmingEnabled: dimmingEnabled,
-                               theme: theme, appearance: appearance)
+                               theme: theme, appearance: appearance, showsSharedDot: showsSharedDot)
         } else {
             faviconView.render(image: image, pageURL: pageURL, revision: revision)
         }

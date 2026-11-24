@@ -40,6 +40,10 @@ final class ShellSplitViewController: NSViewController {
     /// none opens at the minimum.
     private var preferredWidths: [SidebarPosition: CGFloat] = [:]
     private var dividerDrag: DividerDrag?
+    /// The width a drag released past the collapse threshold left the column
+    /// at, which its collapse slides out from; nil once that collapse ends.
+    /// The preferred width stays the one the drag started from.
+    private var releasedDragWidth: CGFloat?
     private let collapsedSubject = CurrentValueSubject<Bool, Never>(false)
     private let widthSubject = CurrentValueSubject<CGFloat, Never>(0)
     private let takesPageSpaceSubject = CurrentValueSubject<Bool, Never>(true)
@@ -273,7 +277,7 @@ final class ShellSplitViewController: NSViewController {
     private func applyState() {
         var geometry = splitView.geometry
         geometry.sidebarOnRight = sidebarOnRight
-        geometry.preferredWidth = dividerDrag?.width ?? preferredWidth
+        geometry.preferredWidth = dividerDrag?.width ?? releasedDragWidth ?? preferredWidth
         geometry.columnTakesPageSpace = transitions.columnTakesPageSpace
         splitView.geometry = geometry
         splitView.isColumnHidden = transitions.isCollapsed && transitions.flight == nil
@@ -332,6 +336,7 @@ final class ShellSplitViewController: NSViewController {
 
     private func finish(_ flight: SidebarTransitions.Flight, finished: Bool) {
         let completion = flightCompletions.removeValue(forKey: flight.id)
+        releasedDragWidth = nil
         // With the frames' next state, in this turn: the end state when the
         // flight landed, the next flight's slide when it was cut short.
         splitView.endSlide()
@@ -376,9 +381,11 @@ final class ShellSplitViewController: NSViewController {
 
     private struct DividerDrag {
         let startWidth: CGFloat
-        /// The width the drag has the column at; nil while it has it
-        /// collapsed.
-        var width: CGFloat?
+        /// The width the drag has the column at.
+        var width: CGFloat
+        /// The pointer is past half the minimum width: the column holds at
+        /// the minimum, and releasing here slides it out.
+        var releaseCollapses = false
     }
 
     private func connectDivider() {
@@ -400,36 +407,32 @@ final class ShellSplitViewController: NSViewController {
         dividerDrag = DividerDrag(startWidth: width, width: width)
     }
 
-    /// The drag is live. Past half the minimum width it collapses the
-    /// column, and reopens it on the way back.
+    /// The drag is live and stops at the minimum width. Past half the
+    /// minimum it only marks the release as a collapse; coming back before
+    /// the release clears that.
     private func continueDividerDrag(offset: CGFloat) {
         guard var drag = dividerDrag else { return }
         let proposed = drag.startWidth + (sidebarOnRight ? -offset : offset)
-        if proposed < Self.leftItemMinWidth / 2 {
-            drag.width = nil
-            dividerDrag = drag
-            changeCollapsed(to: true, duration: nil)
-            return
-        }
+        drag.releaseCollapses = proposed < Self.leftItemMinWidth / 2
         drag.width = min(max(proposed, Self.leftItemMinWidth),
                          ShellSplitGeometry.maxWidth(inContainerOfWidth: containerWidth))
         dividerDrag = drag
-        if transitions.isCollapsed {
-            changeCollapsed(to: false, duration: nil, widensWindow: false)
-        } else {
-            applyState()
-        }
+        applyState()
     }
 
-    /// The width the drag ends on is the user's from then on. A drag that
-    /// ends collapsed leaves it as it was.
+    /// The width the drag ends on is the user's from then on. A drag
+    /// released past half the minimum slides the column out from where the
+    /// drag left it and keeps the width the drag started from.
     private func endDividerDrag() {
         guard let drag = dividerDrag else { return }
         dividerDrag = nil
-        if let width = drag.width {
-            setPreferredWidth(width)
+        guard drag.releaseCollapses else {
+            setPreferredWidth(drag.width)
+            applyState()
+            return
         }
-        applyState()
+        releasedDragWidth = drag.width
+        changeCollapsed(to: true, duration: SidebarToggleAnimation.dragReleaseDuration)
     }
 
     private var dividerDirections: FloatingSidebarResizeHandleView.Directions {

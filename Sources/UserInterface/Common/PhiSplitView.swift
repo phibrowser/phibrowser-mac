@@ -85,6 +85,10 @@ class PhiSplitViewController: NSSplitViewController {
 
 enum SidebarToggleAnimation {
     static let duration: TimeInterval = 0.11
+    /// A divider drag released past the collapse threshold slides the column
+    /// out over this, slower than a toggle so the hand-off from the pointer
+    /// reads as a motion rather than a jump.
+    static let dragReleaseDuration: TimeInterval = 0.22
     static let timingFunction = CAMediaTimingFunction(controlPoints: 0.1, 0.4, 0.6, 1)
 }
 

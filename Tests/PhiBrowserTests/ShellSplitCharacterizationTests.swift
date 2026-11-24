@@ -1071,9 +1071,9 @@ final class ShellSplitCharacterizationTests: XCTestCase {
         }
     }
 
-    /// Past half the minimum width the drag collapses the column; coming
-    /// back before the release reopens it.
-    func testDraggingPastHalfTheMinimumCollapsesAndComingBackReopens() {
+    /// A drag released past half the minimum width slides the column out;
+    /// coming back before the release keeps it open.
+    func testReleasingPastHalfTheMinimumCollapsesAndComingBackKeepsItOpen() {
         for side in SidebarPosition.allCases {
             startOver(on: side)
             let shell = makeShell()
@@ -1084,6 +1084,9 @@ final class ShellSplitCharacterizationTests: XCTestCase {
             assertExpanded(shell, width: 260, on: side, "back out in the same drag")
 
             XCTAssertTrue(dragDivider(of: shell, on: side, through: [100, 96]))
+            XCTAssertTrue(shell.split.isSidebarCollapsed, "the release collapses")
+            spin(SidebarToggleAnimation.dragReleaseDuration + 0.4)
+            shell.layout()
             assertCollapsed(shell)
             XCTAssertEqual(shell.split.lastExpandedSidebarWidth, 260, accuracy: 0.5,
                            "the floating panel opens at the width the column will")

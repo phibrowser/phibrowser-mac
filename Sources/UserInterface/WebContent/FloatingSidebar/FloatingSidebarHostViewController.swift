@@ -927,7 +927,7 @@ final class FloatingSidebarHostViewController: NSViewController {
 
         // Below the sidebar content, which mounts later
         // (`columnMaterialSheet`).
-        let sheet = NSVisualEffectView()
+        let sheet = ColumnMaterialSheetView()
         sheet.material = .fullScreenUI
         sheet.blendingMode = .behindWindow
         sheet.wantsLayer = true
@@ -1587,6 +1587,12 @@ final class FloatingSidebarResizeHandleView: NSView {
         dragStartX = nil
         onEnd?()
     }
+}
+
+/// AppKit routes a scroll event to a lower hit-testable sibling before
+/// `nextResponder`, so this sheet would take swipes from the sidebar content.
+private final class ColumnMaterialSheetView: NSVisualEffectView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// The full-page overlay accepts hits only on the trigger and visible panel.

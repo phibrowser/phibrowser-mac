@@ -273,6 +273,7 @@ struct SpacesStripView: View {
     @ObservedObject private var profileManager: ProfileManager = .shared
     @ObservedObject private var agentSpaceManager: AgentSpaceManager = .shared
     @Environment(\.phiAppearance) private var windowAppearance: Appearance
+    @Environment(\.phiTheme) private var windowTheme: Theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var isPickerOpen: Bool = false
@@ -1671,18 +1672,31 @@ struct SpacesStripView: View {
         )
     }
 
-    /// Builds a pip's hover card from its bound profile, icon, and switch
-    /// shortcut. Rendered in a passthrough floating panel (see
+    /// Builds a pip's hover card from its name, bound profile, and switch
+    /// shortcut, tinted with the window theme. Rendered in a passthrough floating panel (see
     /// `SpaceHoverTooltipController`) so it can't swallow the click that switches
     /// Spaces. The shortcut is empty for Spaces past the ninth, which have no
     /// ⌃-number binding.
     private func hoverCard(for space: Space) -> SpaceHoverCard {
         SpaceHoverCard(
-            profileName: profileDisplayName(for: space.profileId),
-            iconStoredValue: space.iconName,
             spaceName: space.name,
-            shortcutTokens: spaceShortcut(for: space)?.keycapTokens ?? []
+            profileName: showsProfileInHoverCard(for: space) ? profileDisplayName(for: space.profileId) : nil,
+            shortcutTokens: spaceShortcut(for: space)?.keycapTokens ?? [],
+            // The dark theme color is too dim on the card's black chrome, so dark
+            // mode takes the theme's brighter hover variant instead.
+            accent: (windowAppearance.isDark ? ThemedColor.themeColorOnHover : ThemedColor.themeColor)
+                .swiftUIColor(theme: windowTheme, appearance: windowAppearance),
+            isDark: windowAppearance.isDark
         )
+    }
+
+    /// The hover card names the profile only when it tells the user something:
+    /// with a single user-assignable profile every Space is bound to it. A Space
+    /// on any other profile (e.g. the agent fallback) still shows it, as does
+    /// the card while the profile list has not been enumerated yet.
+    private func showsProfileInHoverCard(for space: Space) -> Bool {
+        let profiles = profileManager.userAssignableProfiles
+        return !(profiles.count == 1 && profiles[0].profileId == space.profileId)
     }
 
     /// The effective (remap-aware) switch shortcut for a Space, resolved from its
@@ -2678,61 +2692,84 @@ private func systemSymbolName(for stored: String) -> String? {
     return stored
 }
 
-/// A pip's hover card: the Space (icon + name) in a neutral rounded label on the left,
-/// the bound profile name in the middle, and its switch shortcut as keycaps on the
-/// right.
+/// A pip's hover card, on one row: the Space name in a theme-tinted label, the
+/// bound profile (person glyph + name), and the switch shortcut as keycaps.
+/// Every label and keycap takes the window's theme color (`accent`).
+///
+/// Labels size to their text and truncate only past a per-label maximum, so the
+/// card never wraps and never grows without bound. The profile label is omitted
+/// when the caller passes `profileName == nil` (the user has a single profile).
+///
 /// Self-contained (plain data in) so it can be hosted in a standalone panel by
 /// `SpaceHoverTooltipController` instead of a transient `.popover` — the popover
 /// swallowed the next click (its own dismissal), so the pip's switch never ran.
 struct SpaceHoverCard: View {
-    let profileName: String
-    let iconStoredValue: String?
     let spaceName: String
+    /// Nil hides the profile label.
+    let profileName: String?
     /// Per-keycap tokens (modifiers then key), or empty for Spaces without a
     /// ⌃-number binding.
     let shortcutTokens: [String]
+    /// The window theme's accent, resolved for the window's appearance.
+    let accent: Color
+    /// The source window's appearance; drives the card's chrome (dark or light).
+    let isDark: Bool
+
+    /// Tint behind the Space label and keycaps. Doubled on the dark chrome,
+    /// where 14% of the accent all but disappears and the Space label stops
+    /// reading as distinct from the profile label.
+    private var fillOpacity: Double { isDark ? 0.28 : 0.14 }
+
+    private static let labelFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
+    private static let labelHorizontalPadding: CGFloat = 6
+    private static let labelHeight: CGFloat = 20
+    private static let profileGlyphSize: CGFloat = 16
+    private static let profileGlyphSpacing: CGFloat = 4
+    /// Outer widths (padding included) past which a label truncates.
+    private static let spaceLabelMaxWidth: CGFloat = 220
+    private static let profileLabelMaxWidth: CGFloat = 120
 
     var body: some View {
         HStack(spacing: 8) {
             HStack(spacing: 4) {
-                HStack(spacing: 4) {
-                    // SpaceIconView adds its optical padding to this 12pt glyph,
-                    // producing the design's 16pt icon canvas.
-                    SpaceIconView(
-                        storedValue: iconStoredValue,
-                        size: 12,
-                        symbolWeight: .regular,
-                        tint: .primary
+                labelText(spaceName, maxWidth: Self.spaceLabelMaxWidth - 2 * Self.labelHorizontalPadding)
+                    .padding(.horizontal, Self.labelHorizontalPadding)
+                    .frame(height: Self.labelHeight)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(accent.opacity(fillOpacity))
                     )
-                    Text(spaceName)
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 6)
-                .frame(width: 77, height: 20, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.08)))
 
-                Text(profileName)
-                    .foregroundStyle(Color.primary.opacity(0.3))
-                    .lineLimit(1)
-                    .padding(.horizontal, 6)
-                    .frame(width: 60, height: 20, alignment: .leading)
+                if let profileName {
+                    HStack(spacing: Self.profileGlyphSpacing) {
+                        Image(systemName: "person.crop.circle")
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: Self.profileGlyphSize, height: Self.profileGlyphSize)
+                        labelText(
+                            profileName,
+                            maxWidth: Self.profileLabelMaxWidth - 2 * Self.labelHorizontalPadding
+                                - Self.profileGlyphSize - Self.profileGlyphSpacing
+                        )
+                    }
+                    .padding(.horizontal, Self.labelHorizontalPadding)
+                    .frame(height: Self.labelHeight)
+                }
             }
 
             if !shortcutTokens.isEmpty {
-                HStack(spacing: 2) {
+                HStack(spacing: 4) {
                     ForEach(Array(shortcutTokens.enumerated()), id: \.offset) { _, token in
                         keycap(token)
                     }
                 }
             }
         }
-        .font(.system(size: 12))
-        .foregroundStyle(Color.primary)
+        .foregroundStyle(accent)
         .fixedSize()
         .padding(4)
         // The panel hosting this card is borderless and clear, so the card draws
         // its own popover-like chrome (the popover used to provide it).
-        .background(Color.white.opacity(0.9),
+        .background((isDark ? Color.black : Color.white).opacity(0.9),
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .background(.regularMaterial,
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -2740,23 +2777,48 @@ struct SpaceHoverCard: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
         )
-        .environment(\.colorScheme, .light)
+        // The panel is its own window, so it does not inherit the source
+        // window's appearance; pin the scheme to it explicitly.
+        .environment(\.colorScheme, isDark ? .dark : .light)
     }
 
-    /// A neutral keycap badge that also accommodates remapped multi-character keys.
+    /// A single-line label exactly as wide as its text, capped at `maxWidth`
+    /// with a trailing ellipsis. The width is measured up front because the card
+    /// is laid out at its ideal size (`fixedSize`), where a flexible
+    /// `.frame(maxWidth:)` would not make the text truncate.
+    private func labelText(_ text: String, maxWidth: CGFloat) -> some View {
+        // +1 absorbs sub-point rounding differences between AppKit measurement
+        // and SwiftUI layout, which would otherwise ellipsize a fitting name.
+        let measured = ceil((text as NSString).size(withAttributes: [.font: Self.labelFont]).width) + 1
+        return Text(text)
+            .font(Font(Self.labelFont))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(width: min(measured, maxWidth), alignment: .leading)
+    }
+
+    /// A themed keycap badge that also accommodates remapped multi-character keys.
+    /// Same shape as `CommandShortcutTooltipContent`'s keycap, with a heavier
+    /// stroke and glyph for the Space card.
     private func keycap(_ text: String) -> some View {
         Text(text)
+            .font(.system(size: 11, weight: .bold))
             .padding(.horizontal, 4)
             .frame(minWidth: 20, minHeight: 20)
             .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.primary.opacity(0.08))
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(accent.opacity(fillOpacity))
             )
+            .overlay {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .strokeBorder(accent.opacity(0.7), lineWidth: 1.5)
+            }
     }
 }
 
 /// Hosts a pip's hover card in a click-through floating `NSPanel`
-/// (`ignoresMouseEvents`) anchored just above the pip. Because it is a separate,
+/// (`ignoresMouseEvents`) placed at the lower right of the cursor where the
+/// card first appears; it does not follow the cursor afterwards. Because it is a separate,
 /// non-interactive window there is no transient-popover dismiss monitor to
 /// consume the next click, so a click on the pip falls straight through to its
 /// Button and switches the Space. Mirrors TabStrip's drag-image panel.
@@ -2787,6 +2849,11 @@ final class SpaceHoverTooltipController: ObservableObject {
     /// at the pip's edge doesn't read as "left". The pointer watchdog tears the
     /// card down once the real cursor leaves this rect.
     private var ownerAnchorRect: CGRect = .zero
+
+    /// The cursor position captured when the current owner's card was first
+    /// presented. Same-owner re-presents (any `manager` republish) reuse it, so
+    /// the card stays put while the cursor moves within the pip.
+    private var presentationCursor: CGPoint = .zero
 
     /// Polls the real cursor position (`NSEvent.mouseLocation`) while a card is
     /// up. SwiftUI's `.onHover` silently drops its exit callback when the pointer
@@ -2827,8 +2894,8 @@ final class SpaceHoverTooltipController: ObservableObject {
         panel?.orderOut(nil)
     }
 
-    /// Shows `card` for `spaceId`, centered above `anchorScreenRect`. Idempotent:
-    /// re-presenting the same pip just repositions and refreshes the content.
+    /// Shows `card` for `spaceId` at the lower right of the cursor. Idempotent:
+    /// re-presenting the same pip refreshes the content without moving the card.
     /// Rejected when the real cursor is not inside the pip — see the guard.
     func present(spaceId: String, card: AnyView, anchorScreenRect: CGRect, screen: NSScreen?) {
         let panel = ensurePanel()
@@ -2852,30 +2919,50 @@ final class SpaceHoverTooltipController: ObservableObject {
         let isNewPresentation = ownerId != spaceId
         ownerId = spaceId
         ownerAnchorRect = expandedAnchor
+        if isNewPresentation { presentationCursor = NSEvent.mouseLocation }
         guard let hostingView else { return }
         hostingView.rootView = AnyView(card
             .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 1)
             .padding(Self.shadowInset))
         hostingView.layoutSubtreeIfNeeded()
         let size = hostingView.fittingSize
-
-        let gap: CGFloat = 6
-        var origin = CGPoint(
-            x: anchorScreenRect.midX - size.width / 2,
-            y: anchorScreenRect.maxY + gap - Self.shadowInset // Keep the visible card 6pt above the pip.
-        )
-        if let visible = (screen ?? panel.screen ?? NSScreen.main)?.visibleFrame {
-            origin.x = min(max(origin.x, visible.minX + 4), visible.maxX - size.width - 4)
-            // Flip below the pip if showing above would clip the screen top.
-            if origin.y + size.height > visible.maxY - 4 {
-                origin.y = anchorScreenRect.minY - gap - size.height + Self.shadowInset
-            }
-            origin.y = max(origin.y, visible.minY + 4)
-        }
+        let visible = (screen ?? panel.screen ?? NSScreen.main)?.visibleFrame
+        let origin = Self.panelOrigin(cursor: presentationCursor, panelSize: size, visibleFrame: visible)
         panel.setFrame(CGRect(origin: origin, size: size), display: true)
         panel.orderFront(nil)
         startPointerWatchdog()
         if isNewPresentation || autoCloseTimer == nil { startAutoCloseTimer() }
+    }
+
+    /// Visible-card offset from the cursor hot spot (screen points, y up): far
+    /// enough right and down to clear the arrow cursor's glyph.
+    static let cursorOffset = CGSize(width: 10, height: 22)
+    /// Gap kept from the cursor when the card flips left of or above it.
+    static let cursorFlipGap: CGFloat = 6
+    static let screenMargin: CGFloat = 4
+
+    /// Panel origin (screen coordinates) that puts the visible card at the lower
+    /// right of `cursor`. Flips to the cursor's left when the card would cross
+    /// the screen's right edge, and above it when it would cross the bottom; a
+    /// final clamp keeps it on screen. `panelSize` includes the shadow inset.
+    static func panelOrigin(cursor: CGPoint, panelSize: CGSize, visibleFrame: CGRect?) -> CGPoint {
+        let inset = shadowInset
+        let cardWidth = panelSize.width - 2 * inset
+        let cardHeight = panelSize.height - 2 * inset
+
+        var cardMinX = cursor.x + cursorOffset.width
+        var cardMinY = cursor.y - cursorOffset.height - cardHeight
+        if let visible = visibleFrame {
+            if cardMinX + cardWidth > visible.maxX - screenMargin {
+                cardMinX = cursor.x - cursorFlipGap - cardWidth
+            }
+            if cardMinY < visible.minY + screenMargin {
+                cardMinY = cursor.y + cursorFlipGap
+            }
+            cardMinX = min(max(cardMinX, visible.minX + screenMargin), visible.maxX - screenMargin - cardWidth)
+            cardMinY = min(max(cardMinY, visible.minY + screenMargin), visible.maxY - screenMargin - cardHeight)
+        }
+        return CGPoint(x: cardMinX - inset, y: cardMinY - inset)
     }
 
     /// Hides the card NOW — no linger, and no warmth left behind (a click-hide

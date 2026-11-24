@@ -693,6 +693,9 @@ extension BrowserState {
         let departed = previous.tabIds.filter { !tabIds.contains($0) }
         let joined = tabIds.filter { !previous.tabIds.contains($0) }
         splits[index].tabIds = tabIds
+        if previous.tabIds != tabIds {
+            endSplitJoinPreviewBeforeSubmission(splitId: splitId)
+        }
         if splits[index].fractions.count != tabIds.count {
             // Chromium's visuals echo lands right after this; until it does,
             // keep one share per pane so the host lays out every pane.
@@ -706,6 +709,10 @@ extension BrowserState {
             }
             noteSplitPanesLeft(departed, previousTabIds: previous.tabIds)
             tabsAwaitingSplit.subtract(joined)
+            if !joined.isEmpty, let preview = pendingSplitPreview, preview.isCommitted,
+               preview.joining?.splitId == splitId {
+                pendingSplitPreview = nil
+            }
             splitPaneIdsOpeningBehindBookmark.subtract(joined)
             reconcileSplitChatBinding(splits[index])
             syncSplitAIChatCollapsed(splits[index])
@@ -787,6 +794,7 @@ extension BrowserState {
             SidecarAIOutputStateStore.shared.splitDidDissolve(removedSplit, in: self)
         }
         splits.removeAll { $0.id == splitId }
+        endSplitJoinPreviewBeforeSubmission(splitId: splitId)
         if let removedSplit {
             notifyTravelBackSceneChanged(tabIds: removedSplit.tabIds)
         }
@@ -1823,21 +1831,31 @@ extension BrowserState {
     /// left by default. The requested new pane is a new-tab page under that behavior;
     /// under Omnibox it is previewed blank and the omnibox's submission
     /// becomes the pane (`commitSplitPreview`). A focused pane of a split
-    /// gets a new-tab page as the pane right after it (no omnibox preview:
-    /// the preview host shows a pair).
+    /// gets the new pane right after it, or right before it for `.left`;
+    /// under Omnibox its split opens a space there while the URL is chosen.
     @discardableResult
     func splitFocusedTabWithNewTab(newTabSlot: SplitSlot = .right,
                                    layout: SplitLayout = .vertical) -> Bool {
         guard canSplitFocusedTabWithNewTab, let tab = focusingTab else { return false }
+        let opensNewTabPage = PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.loadValue()
         if let group = splitGroup(forTabId: tab.guid), let slot = group.slot(of: tab.guid) {
-            return openNewTabIntoSplit(splitId: group.id, slot: slot + 1, navigateURL: nil)
+            let join = SplitJoin(splitId: group.id, slot: newTabSlot == .left ? slot : slot + 1)
+            if opensNewTabPage {
+                return openNewTabIntoSplit(splitId: join.splitId, slot: join.slot, navigateURL: nil)
+            }
+            return presentSplitPreview(PendingSplitPreview(partnerTabId: tab.guid, joining: join))
         }
-        if PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.loadValue() {
+        if opensNewTabPage {
             makeTabNormalOpened(tabId: tab.guid)
             return openNewTabAsSplit(partnerTabId: tab.guid, newTabSlot: newTabSlot, layout: layout)
         }
+        return presentSplitPreview(PendingSplitPreview(partnerTabId: tab.guid, newTabSlot: newTabSlot,
+                                                       layout: layout))
+    }
+
+    private func presentSplitPreview(_ preview: PendingSplitPreview) -> Bool {
         guard let windowController else { return false }
-        pendingSplitPreview = PendingSplitPreview(partnerTabId: tab.guid, newTabSlot: newTabSlot, layout: layout)
+        pendingSplitPreview = preview
         // Next turn, after the page container has mounted the preview.
         DispatchQueue.main.async { [weak self, weak windowController] in
             guard self?.pendingSplitPreview?.isCommitted == false else { return }
@@ -1852,11 +1870,17 @@ extension BrowserState {
         guard var preview = pendingSplitPreview, !preview.isCommitted else { return false }
         preview.isCommitted = true
         pendingSplitPreview = preview
-        // Keep the bookmark binding while previewing; release it only on submission.
-        makeTabNormalOpened(tabId: preview.partnerTabId)
-        guard openNewTabAsSplit(partnerTabId: preview.partnerTabId,
-                                newTabSlot: preview.newTabSlot,
-                                partnerNavigateURL: url, layout: preview.layout) else {
+        let opened: Bool
+        if let join = preview.joining {
+            opened = openNewTabIntoSplit(splitId: join.splitId, slot: join.slot, navigateURL: url)
+        } else {
+            // Keep the bookmark binding while previewing; release it only on submission.
+            makeTabNormalOpened(tabId: preview.partnerTabId)
+            opened = openNewTabAsSplit(partnerTabId: preview.partnerTabId,
+                                       newTabSlot: preview.newTabSlot,
+                                       partnerNavigateURL: url, layout: preview.layout)
+        }
+        guard opened else {
             pendingSplitPreview = nil
             return false
         }
@@ -1873,12 +1897,16 @@ extension BrowserState {
                   $0.guid != preview.partnerTabId && $0.url == url
                       && splitGroup(forTabId: $0.guid) == nil
               }) else { return false }
-        makeTabNormalOpened(tabId: match.guid)
-        makeTabNormalOpened(tabId: preview.partnerTabId)
-        let newTabIsPrimary = preview.newTabSlot == .left
-        guard createSplit(leftTabId: newTabIsPrimary ? match.guid : preview.partnerTabId,
-                          rightTabId: newTabIsPrimary ? preview.partnerTabId : match.guid,
-                          layout: preview.layout) != nil else { return false }
+        if let join = preview.joining {
+            guard addTabToSplit(join.splitId, tabId: match.guid, slot: join.slot) else { return false }
+        } else {
+            makeTabNormalOpened(tabId: match.guid)
+            makeTabNormalOpened(tabId: preview.partnerTabId)
+            let newTabIsPrimary = preview.newTabSlot == .left
+            guard createSplit(leftTabId: newTabIsPrimary ? match.guid : preview.partnerTabId,
+                              rightTabId: newTabIsPrimary ? preview.partnerTabId : match.guid,
+                              layout: preview.layout) != nil else { return false }
+        }
         preview.isCommitted = true
         pendingSplitPreview = preview
         expireCommittedSplitPreview(preview)
@@ -1886,11 +1914,26 @@ extension BrowserState {
     }
 
     /// The preview stays up until the real split replaces it
-    /// (`handleSplitCreated`); this covers a split that never arrives.
+    /// (`handleSplitCreated`, `handleSplitContentsChanged`); this covers a
+    /// split that never arrives.
     private func expireCommittedSplitPreview(_ preview: PendingSplitPreview) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             guard let self, self.pendingSplitPreview == preview else { return }
             self.pendingSplitPreview = nil
+        }
+    }
+
+    /// The split a pane is being chosen for changed its panes or dissolved,
+    /// so the chosen slot no longer holds: the picker closes instead of
+    /// opening the pane in the wrong place or as a plain tab.
+    @MainActor
+    private func endSplitJoinPreviewBeforeSubmission(splitId: String) {
+        guard let preview = pendingSplitPreview, !preview.isCommitted,
+              preview.joining?.splitId == splitId else { return }
+        AppLogInfo("[Split] join preview ended: split \(splitId) changed before submission")
+        pendingSplitPreview = nil
+        if let omnibox = windowController?.omniBoxContainerViewController, omnibox.hasShown {
+            omnibox.hideOmniBox()
         }
     }
 
@@ -2451,11 +2494,19 @@ enum SplitSlot {
     case right
 }
 
+/// Where a new pane joins an existing split.
+struct SplitJoin: Equatable {
+    let splitId: String
+    let slot: Int
+}
+
 struct PendingSplitPreview: Equatable {
     /// The focused tab shown beside the blank pane.
     let partnerTabId: Int
     var newTabSlot: SplitSlot = .right
     var layout: SplitLayout = .vertical
+    /// Set when the pane joins the focused tab's split instead of pairing.
+    var joining: SplitJoin?
     /// The omnibox submitted; the real split is on its way.
     var isCommitted = false
 }

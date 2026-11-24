@@ -51732,6 +51732,17 @@
         }
       }
     },
+    "omnibox.command.addBottomSplit" : {
+      "comment" : "Omnibox commands - Adds a new pane below the current tab",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add bottom split"
+          }
+        }
+      }
+    },
     "omnibox.command.addLeftSplit" : {
       "comment" : "Omnibox commands - Adds a new pane to the left of the current tab",
       "localizations" : {
@@ -51787,6 +51798,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加入左側分割畫面"
+          }
+        }
+      }
+    },
+    "omnibox.command.addRightSplit" : {
+      "comment" : "Omnibox commands - Adds a new pane to the right of the current tab",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add right split"
           }
         }
       }
@@ -51850,65 +51872,6 @@
         }
       }
     },
-    "omnibox.command.addVerticalSplitView" : {
-      "comment" : "Omnibox commands - Adds a new pane below the current tab",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vertikale Split View hinzufügen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add vertical split view"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Agregar vista dividida vertical"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter une Split View verticale"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下に分割表示を追加"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "세로 분할 보기 추가"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voeg verticale Split View toe"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加上下分屏"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加入垂直分割畫面"
-          }
-        }
-      }
-    },
     "omnibox.command.manageExtensions" : {
       "comment" : "Omnibox commands - Command that opens the extensions management page",
       "extractionState" : "extracted_with_value",
@@ -51965,66 +51928,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "管理擴充功能"
-          }
-        }
-      }
-    },
-    "omnibox.command.newSplitView" : {
-      "comment" : "Omnibox commands - Command that splits the current tab with a new tab",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Split View hinzufügen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Add split view"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Agregar vista dividida"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter une Split View"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "分割表示を追加"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "분할 보기 추가"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voeg Split View toe"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加分屏"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加入分割畫面"
           }
         }
       }

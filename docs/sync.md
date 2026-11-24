@@ -1174,9 +1174,15 @@ are telemetry only: no sync decision reads them.
 A paired pass that lists the Profiles also reads at most three envelopes whose flag was never
 read (`defaultFlagFillPerPass`), in uuid order, skipping envelopes that do not open, so an old
 install converges over a few passes. The default-flag count is reported only once every listed
-Profile's flag is known. Observer calls are dropped once the owning `SyncKeyController` retires
-(`ProfileKeyManager.retireTelemetry()`, checked after each await), so a response still in flight
-for the previous account cannot overwrite the next one's caches. Sign-out and this device leaving sync (`invalidateSyncKeyController`
+Profile's flag is known. `ProfileKeyManager` delivers its observer calls on the main thread
+(inline when the envelope read finished there, queued otherwise) and holds no lock across them. A
+`UserDefaults` write blocks its thread until the main queue has run every
+`UserDefaults.didChangeNotification` observer registered with `queue: .main`, so a mirror written
+off the main thread under a lock the main thread also takes deadlocks the app (PHI-2211). Observer
+calls are dropped once the owning `SyncKeyController` retires
+(`ProfileKeyManager.retireTelemetry()`, checked on the main thread immediately before each call),
+so a response still in flight for the previous account cannot overwrite the next one's caches.
+Sign-out and this device leaving sync (`invalidateSyncKeyController`
 with no account, or a native cleanup) reset every key and set `enabled` to false; an account
 assignment at launch keeps them. The uuid keys never leave the device; the snapshot carries one
 bool and three counts.

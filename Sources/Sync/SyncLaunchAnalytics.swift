@@ -12,6 +12,12 @@ import Foundation
 /// mirror. Telemetry only: no sync decision ever reads these keys. The Profile listing and the
 /// default-flag map hold account Profile uuids as keys, locally only; the snapshot reports counts
 /// and one bool, never a uuid.
+///
+/// Write the mirrors on the main thread only. A `UserDefaults` write blocks its thread until the
+/// main queue has run every `UserDefaults.didChangeNotification` observer registered with
+/// `queue: .main`, so a write made off the main thread, under a lock the main thread also takes,
+/// deadlocks the app (PHI-2211). `ProfileKeyManager.reportTelemetry` delivers its observer calls
+/// on the main thread for this reason.
 enum SyncLaunchAnalytics {
     static let enabledDefaultsKey = "metrics.sync.enabled"
     static let activeDeviceCountDefaultsKey = "metrics.sync.activeDeviceCount"
@@ -20,7 +26,8 @@ enum SyncLaunchAnalytics {
     /// Envelope reads one mapping pass may spend on uuids whose flag was never read.
     static let defaultFlagFillPerPass = 3
 
-    /// Serializes read-modify-write of the flag map: envelope reads finish concurrently.
+    /// Serializes read-modify-write of the flag map. Writers arrive on the main thread in the
+    /// app; the lock keeps the type safe for callers that do not (tests).
     private static let lock = NSLock()
 
     /// The pairing gate's `isPaired`, every time enrollment is configured or changes.

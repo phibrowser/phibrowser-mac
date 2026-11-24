@@ -50,10 +50,10 @@ Divider
   height including the titlebar band. None while collapsed.
 - A drag is live, keeps the pointer's offset, and stops at 193, 500 and
   `W − 200`. The width it ends on stays when the window grows.
-- Past half the minimum (below 96.5) the column holds at the minimum, and a
-  release there slides it out over `SidebarToggleAnimation.dragReleaseDuration`
-  (0.22s); coming back before the release keeps it open. Reopened later, it has
-  the width the drag started from.
+- Below 96.5pt the column slides out over 0.22s with `cubic-bezier(0.1, 0.4, 0.6, 1)`,
+  or closes immediately with Reduce Motion. Dragging back to 96.5pt in the
+  same gesture reopens it and resumes live resizing. Releasing while collapsed
+  preserves the previous preferred width.
 - Double-click does nothing. Accessibility exposes one `AXSplitter` whose value
   is the divider's position.
 
@@ -383,8 +383,8 @@ titlebar band works.
 
 - The drag is live and clamped to 193 … `min(500, W − 200)`; the width it ends
   on becomes the preferred width.
-- Past half the minimum the column holds at the minimum; a release there
-  slides it out from that width, coming back first keeps it open.
+- Crossing below half the minimum starts the collapse. The divider keeps
+  tracking until mouse-up, including while the column is hidden.
 - No divider on a collapsed edge; the floating trigger owns it.
 - Double-click does nothing.
 
@@ -505,9 +505,9 @@ it stays light.
 - D4: reveal, the page area staying put with the card's near edge masked
   beside the column. Push was picked first from recordings of both, and
   replaced because it slid the far side off the window.
-- D5: drag-to-collapse decided on release, animated from the minimum width
-  (an instant collapse under the pointer read as a jump); no drag on a
-  collapsed edge; no double-click action.
+- D5: crossing the threshold during a drag slides the column out from its
+  minimum width. Crossing back immediately restores live resizing. A new
+  drag requires an expanded column. Double-click has no action.
 - A reversal's duration is scaled to the distance left.
 
 ## Known limits

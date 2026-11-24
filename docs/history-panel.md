@@ -52,13 +52,38 @@ h.queryHistoryContinuation();                   // each further page
 
 The hidden page stays warm while the panel is closed so reopening is instant,
 and is released after 10 minutes without use or when its window closes. The
-last opening view (no search, Week filter) is cached and painted immediately on
+last opening view (no search, no filter) is cached and painted immediately on
 the next open while it refreshes.
+
+## Search responsiveness
+
+- Typing filters the rows already loaded (or the cached results of a shorter
+  search the new text extends) at once, on the title and URL, so the list
+  answers each keystroke without waiting; Chromium's results replace them a
+  moment later.
+- Keystrokes are coalesced for 40 ms before a query runs.
+- A new search shows its first page as soon as it arrives; further pages it
+  reads to fill the list follow behind it.
+- The last 24 results, by search text and filter, are kept, so deleting a
+  letter or switching a filter back paints at once while it refreshes.
+- Each query's timing (first page and total) goes to the debug log; the
+  search text is not logged.
+- Rows take their actions as closures rather than observing the model, so a
+  keystroke or a selection move redraws only the rows whose entry or
+  selection changed.
+- New visits in the window refresh the list 250 ms after they settle.
 
 ## Behavior notes
 
+- The panel opens with no filter, showing all history, with the search field
+  focused, so typing searches at once. The field is focused again after the
+  panel becomes key, since SwiftUI's focus request on appear can arrive before
+  the panel can take it.
 - The panel is a child window at `.normal` level, so it stays with its browser
   window, other apps cover it, and it survives app switches.
+- The panel's hosting view pins its Space's theme with `subtreeThemeSource`:
+  the panel is its own window, so on joining it the view would otherwise
+  resolve the global theme instead of the Space's.
 - While the panel has key focus, the Show History shortcut is intercepted with
   a local key monitor: the panel is not a browser window, so the menu would
   otherwise hand the command to Chromium, which opens an empty window.

@@ -58,4 +58,24 @@ final class HistoryPanelModelTests: XCTestCase {
 
         XCTAssertEqual(opened, ["https://example.com/b", "https://example.com/a"])
     }
+
+    func testOpensWithNoFilter() {
+        let service = HistoryPanelService.service(windowId: windowId, profileId: "history-panel-tests")
+        let model = HistoryPanelModel(service: service, onOpen: { _, _ in }, onShowFullHistory: {}, onClose: {})
+
+        XCTAssertNil(model.range)
+    }
+
+    func testTypingFiltersTheLoadedRowsAtOnce() {
+        let service = HistoryPanelService.service(windowId: windowId, profileId: "history-panel-tests")
+        let now = Date()
+        service.lastOpeningResults = [entry("swift-docs", now), entry("weather", now.addingTimeInterval(-1)),
+                                      entry("swiftui-guide", now.addingTimeInterval(-2))]
+        let model = HistoryPanelModel(service: service, onOpen: { _, _ in }, onShowFullHistory: {}, onClose: {})
+
+        // Before any query could answer, the list already shows the matches.
+        model.searchText = "swift"
+
+        XCTAssertEqual(model.sections.flatMap(\.entries).map(\.title), ["swift-docs", "swiftui-guide"])
+    }
 }

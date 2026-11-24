@@ -53,10 +53,16 @@ final class HistoryPanelModel: ObservableObject {
     }
 
     @Published var searchText = "" {
-        didSet { if searchText != oldValue { reload(debounced: true) } }
+        didSet {
+            guard searchText != oldValue else { return }
+            // Answer at once from what's already here, then ask Chromium.
+            showProvisionalMatches()
+            reload(debounced: true)
+        }
     }
     /// Nil shows all history.
-    @Published var range: Range? = .week {
+    /// Opens with no filter: all history.
+    @Published var range: Range? = nil {
         didSet { if range != oldValue { reload(debounced: false) } }
     }
     @Published private(set) var sections: [Section] = []
@@ -70,6 +76,51 @@ final class HistoryPanelModel: ObservableObject {
     private var entries: [HistoryPanelEntry] = []
     private var reachedEnd = false
     private var queryTask: Task<Void, Never>?
+
+    /// Recent results by search and range, so going back to one (deleting a
+    /// letter, switching the chip back) paints at once while it refreshes.
+    private struct CacheKey: Hashable {
+        let text: String
+        let range: Range?
+    }
+    private struct CachedResult {
+        let rows: [HistoryPanelEntry]
+        let complete: Bool
+    }
+    private var cache: [CacheKey: CachedResult] = [:]
+    private var cacheOrder: [CacheKey] = []
+    private static let cacheLimit = 24
+
+    private func remember(_ rows: [HistoryPanelEntry], complete: Bool, for key: CacheKey) {
+        cache[key] = CachedResult(rows: rows, complete: complete)
+        cacheOrder.removeAll { $0 == key }
+        cacheOrder.append(key)
+        while cacheOrder.count > Self.cacheLimit { cache.removeValue(forKey: cacheOrder.removeFirst()) }
+    }
+
+    /// While a search is on its way: the rows of the closest search already
+    /// answered (this one, or a shorter one it extends) that match the new
+    /// text. Exact when that search had all of history's matches.
+    private func showProvisionalMatches() {
+        let text = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let cached = cache[CacheKey(text: text, range: range)] {
+            apply(cached.rows)
+            return
+        }
+        let lowered = text.lowercased()
+        var source = entries
+        var prefix = lowered
+        while !prefix.isEmpty {
+            prefix.removeLast()
+            if let cached = cache[CacheKey(text: prefix, range: range)] { source = cached.rows; break }
+        }
+        guard !lowered.isEmpty else { return }
+        let terms = lowered.split(whereSeparator: \.isWhitespace).map(String.init)
+        apply(source.filter { entry in
+            let haystack = (entry.title + " " + entry.url).lowercased()
+            return terms.allSatisfy { haystack.contains($0) }
+        }, provisional: true)
+    }
     let onOpen: (HistoryPanelEntry, HistoryPanelOpenMode) -> Void
     let onShowFullHistory: () -> Void
     let onClose: () -> Void
@@ -95,7 +146,13 @@ final class HistoryPanelModel: ObservableObject {
 
     func reload(debounced: Bool) {
         reachedEnd = false
-        runQuery(delay: debounced ? 0.12 : 0, mode: .fresh)
+        if !debounced, let cached = cache[CacheKey(text: searchText.trimmingCharacters(in: .whitespacesAndNewlines),
+                                                   range: range)] {
+            apply(cached.rows)
+        }
+        // A short pause lets a burst of typing become one query; what's
+        // typed shows at once from `showProvisionalMatches`.
+        runQuery(delay: debounced ? 0.04 : 0, mode: .fresh)
     }
 
     /// Re-reads the newest page so new visits appear; rows already loaded
@@ -135,11 +192,16 @@ final class HistoryPanelModel: ObservableObject {
             func absorb(_ page: [HistoryPanelEntry]) {
                 for entry in page where keeps(entry) && seen.insert(entry.id).inserted { rows.append(entry) }
             }
+            let started = Date()
             var page = mode == .more
                 ? await self.service.continueQuery(since: since)
                 : await self.service.query(text, since: since, limit: Self.pageSize)
             guard !Task.isCancelled else { return }
             absorb(page.entries)
+            let firstPageMs = Int(Date().timeIntervalSince(started) * 1000)
+            // A new search shows its first page at once; any more it needs
+            // to fill the list arrive behind it.
+            if mode == .fresh, !rows.isEmpty { self.apply(rows) }
             if mode == .refresh, let boundary = page.entries.last?.time {
                 absorb(existing.filter { $0.time < boundary })
             }
@@ -155,19 +217,31 @@ final class HistoryPanelModel: ObservableObject {
                 absorb(page.entries)
             }
             if mode != .refresh { self.reachedEnd = page.finished }
-            if mode == .fresh, text.isEmpty, range == .week {
+            if mode == .fresh, text.isEmpty, range == nil {
                 self.service.lastOpeningResults = rows
             }
+            if mode != .more {
+                self.remember(rows, complete: page.finished, for: CacheKey(text: text, range: range))
+            }
+            AppLogDebug("[HistoryPanel] \(mode) query (\(text.count) chars): first page \(firstPageMs) ms, "
+                + "\(rows.count) rows in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
             self.apply(rows)
             self.queryTask = nil
         }
     }
 
-    private func apply(_ results: [HistoryPanelEntry]) {
-        entries = results
-        let calendar = Calendar.current
+    private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.setLocalizedDateFormatFromTemplate("EEEEdMMMM")
+        return formatter
+    }()
+
+    /// `provisional` rows (filtered from earlier results while a search is
+    /// on its way) don't replace the loaded list the next page builds on.
+    private func apply(_ results: [HistoryPanelEntry], provisional: Bool = false) {
+        if !provisional { entries = results }
+        let calendar = Calendar.current
+        let formatter = Self.dayFormatter
         var built: [Section] = []
         var current: (day: Date, entries: [HistoryPanelEntry])?
         func flush() {
@@ -349,8 +423,10 @@ struct HistoryPanelView: View {
                             .foregroundStyle(muted)
                             .padding(EdgeInsets(top: 8, leading: 8, bottom: 2, trailing: 8))
                         ForEach(section.entries) { entry in
-                            HistoryPanelRow(entry: entry, model: model, isSelected: model.selectedId == entry.id,
-                                           accent: accent, text: text, muted: muted, field: field)
+                            HistoryPanelRow(entry: entry, isSelected: model.selectedId == entry.id,
+                                           accent: accent, text: text, muted: muted, field: field,
+                                           actions: rowActions)
+                                .equatable()
                                 .id(entry.id)
                                 .onAppear { model.loadMoreIfNeeded(after: entry) }
                         }
@@ -373,6 +449,20 @@ struct HistoryPanelView: View {
         }
     }
 
+    /// What a row needs from the model, without observing it: a row then
+    /// redraws only when its own entry or selection changes, not on every
+    /// keystroke or selection move elsewhere in the list.
+    private var rowActions: HistoryPanelRow.Actions {
+        let model = model
+        return HistoryPanelRow.Actions(
+            open: { entry in
+                model.selectedId = entry.id
+                model.onOpen(entry, HistoryPanelOpenMode.current.resolved())
+            },
+            cachedFavicon: { model.favicon(for: $0) },
+            loadFavicon: { model.loadFavicon(for: $0, completion: $1) })
+    }
+
     private var footer: some View {
         Button(action: model.onShowFullHistory) {
             Text(NSLocalizedString("history.floatingPanel.showAll", value: "Show full history",
@@ -387,21 +477,31 @@ struct HistoryPanelView: View {
     }
 }
 
-private struct HistoryPanelRow: View {
+private struct HistoryPanelRow: View, Equatable {
+    struct Actions {
+        let open: (HistoryPanelEntry) -> Void
+        let cachedFavicon: (HistoryPanelEntry) -> NSImage?
+        let loadFavicon: (HistoryPanelEntry, @escaping (NSImage?) -> Void) -> Void
+    }
+
     let entry: HistoryPanelEntry
-    @ObservedObject var model: HistoryPanelModel
     let isSelected: Bool
     let accent: Color
     let text: Color
     let muted: Color
     let field: Color
+    let actions: Actions
     @State private var favicon: NSImage?
     @State private var isHovered = false
 
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.entry == rhs.entry && lhs.isSelected == rhs.isSelected && lhs.accent == rhs.accent
+            && lhs.text == rhs.text && lhs.muted == rhs.muted && lhs.field == rhs.field
+    }
+
     var body: some View {
         Button {
-            model.selectedId = entry.id
-            model.onOpen(entry, HistoryPanelOpenMode.current.resolved())
+            actions.open(entry)
         } label: {
             HStack(spacing: 8) {
                 ZStack {
@@ -437,9 +537,9 @@ private struct HistoryPanelRow: View {
         .onHover { isHovered = $0 }
         .help(entry.url)
         .onAppear {
-            favicon = model.favicon(for: entry)
+            favicon = actions.cachedFavicon(entry)
             guard favicon == nil else { return }
-            model.loadFavicon(for: entry) { favicon = $0 }
+            actions.loadFavicon(entry) { favicon = $0 }
         }
     }
 }
@@ -541,6 +641,10 @@ final class HistoryPanelController: NSObject {
             .padding(EdgeInsets(top: Self.shadowMargin, leading: Self.shadowMargin,
                                 bottom: Self.shadowMargin, trailing: Self.edgeInset))
         let hosting = ThemedHostingView(rootView: root, themeSource: state.themeContext)
+        // The panel is its own window, not the browser window, so on joining
+        // it the hosting view would resolve the global theme and drop the
+        // Space's: pin the Space's theme to this subtree.
+        hosting.subtreeThemeSource = state.themeContext
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
         self.hosting = hosting
@@ -584,7 +688,7 @@ final class HistoryPanelController: NSObject {
                 })
             }
             .switchToLatest()
-            .debounce(for: .milliseconds(600), scheduler: DispatchQueue.main)
+            .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in self?.model.refresh() }
     }
 
@@ -595,6 +699,7 @@ final class HistoryPanelController: NSObject {
         position()
         parent.addChildWindow(panel, ordered: .above)
         panel.makeKeyAndOrderFront(nil)
+        focusSearchField()
         guard !reducesMotion else { return }
         hosting.setFrameOrigin(NSPoint(x: container.bounds.width, y: 0))
         NSAnimationContext.runAnimationGroup { context in
@@ -603,6 +708,26 @@ final class HistoryPanelController: NSObject {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             hosting.animator().setFrameOrigin(.zero)
         }
+    }
+
+    /// Puts the cursor in the search field, so typing searches at once. The
+    /// view asks for focus when it appears, but that is before the panel is
+    /// key, so the request can be lost; this asks again once it is.
+    private func focusSearchField() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.panel.isVisible else { return }
+            if let field = Self.firstEditableField(in: self.hosting), self.panel.firstResponder !== field.currentEditor() {
+                self.panel.makeFirstResponder(field)
+            }
+        }
+    }
+
+    private static func firstEditableField(in view: NSView) -> NSTextField? {
+        if let field = view as? NSTextField, field.isEditable { return field }
+        for subview in view.subviews {
+            if let field = firstEditableField(in: subview) { return field }
+        }
+        return nil
     }
 
     /// Against the browser window's right edge, vertically centered.

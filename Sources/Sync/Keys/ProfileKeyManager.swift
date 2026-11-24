@@ -81,7 +81,7 @@ final class ProfileKeyManager {
     /// Telemetry only (`SyncLaunchAnalytics`): the account's Profile uuids from every listing, and the
     /// default flag of every envelope this manager opens or writes (nil flag reported as false).
     /// Nil in tests; the coordinator sets both. Never consulted by sync logic. Both are called on
-    /// the main thread, with no lock held (`reportTelemetry`).
+    /// the main thread, in call order, with no lock held (`reportTelemetry`).
     var onAccountListing: ((Set<String>) -> Void)?
     var onDefaultFlag: ((_ uuid: String, _ isDefault: Bool) -> Void)?
     /// Set once by the owning controller's `retire()`, on the main thread. Every observer call
@@ -109,22 +109,21 @@ final class ProfileKeyManager {
         reportTelemetry { $0.onDefaultFlag?(uuid, isDefault) }
     }
 
-    /// Runs one observer call on the main thread: inline when already there, queued otherwise.
+    /// Queues one observer call to the main thread, also when the caller is already on it.
     ///
     /// The observers write `UserDefaults.standard`. A defaults write blocks its thread until the
     /// main queue has run every `UserDefaults.didChangeNotification` observer registered with
     /// `queue: .main`, and envelope reads finish on the generic executor. Calling an observer
     /// there, under a lock the main thread also takes, deadlocked the app (PHI-2211): the worker
     /// held the lock waiting for the main queue while the main thread waited for the lock.
+    ///
+    /// Always queuing keeps the calls in the order they were made. A call made on the main thread
+    /// (the default-flag backfill) that ran inline would overtake an older read's call still
+    /// waiting in the queue, and the older value would be written last.
     private func reportTelemetry(_ report: @escaping (ProfileKeyManager) -> Void) {
-        let deliver = { [weak self] in
+        DispatchQueue.main.async { [weak self] in
             guard let self, !self.isTelemetryRetired else { return }
             report(self)
-        }
-        if Thread.isMainThread {
-            deliver()
-        } else {
-            DispatchQueue.main.async(execute: deliver)
         }
     }
 

@@ -1174,8 +1174,9 @@ are telemetry only: no sync decision reads them.
 A paired pass that lists the Profiles also reads at most three envelopes whose flag was never
 read (`defaultFlagFillPerPass`), in uuid order, skipping envelopes that do not open, so an old
 install converges over a few passes. The default-flag count is reported only once every listed
-Profile's flag is known. `ProfileKeyManager` delivers its observer calls on the main thread
-(inline when the envelope read finished there, queued otherwise) and holds no lock across them. A
+Profile's flag is known. `ProfileKeyManager` queues every observer call to the main thread, in the
+order the calls were made (a call made on the main thread is queued too, so it cannot overtake an
+older one), and holds no lock across them. A
 `UserDefaults` write blocks its thread until the main queue has run every
 `UserDefaults.didChangeNotification` observer registered with `queue: .main`, so a mirror written
 off the main thread under a lock the main thread also takes deadlocks the app (PHI-2211). Observer

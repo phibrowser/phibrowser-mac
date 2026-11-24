@@ -80,12 +80,14 @@ final class ProfileKeyManager {
     private let mappingStore: ProfileSyncMappingStore
     /// Telemetry only (`SyncLaunchAnalytics`): the account's Profile uuids from every listing, and the
     /// default flag of every envelope this manager opens or writes (nil flag reported as false).
-    /// Nil in tests; the coordinator sets both. Never consulted by sync logic.
+    /// Nil in tests; the coordinator sets both. Never consulted by sync logic. Both are called on
+    /// the main thread, with no lock held (`reportTelemetry`).
     var onAccountListing: ((Set<String>) -> Void)?
     var onDefaultFlag: ((_ uuid: String, _ isDefault: Bool) -> Void)?
-    /// Set once by the owning controller's `retire()`. Every observer call checks it after its
-    /// await, under the lock, so a response that arrives for a retired account never writes the
-    /// next account's caches.
+    /// Set once by the owning controller's `retire()`, on the main thread. Every observer call
+    /// checks it on the main thread immediately before it runs, so a response that arrives for a
+    /// retired account never writes the next account's caches. The lock guards the flag only and
+    /// is never held across an observer call.
     private let telemetryLock = NSLock()
     private var telemetryRetired = false
 
@@ -94,16 +96,36 @@ final class ProfileKeyManager {
         telemetryRetired = true
     }
 
-    private func noteListing(_ uuids: Set<String>) {
+    private var isTelemetryRetired: Bool {
         telemetryLock.lock(); defer { telemetryLock.unlock() }
-        guard !telemetryRetired else { return }
-        onAccountListing?(uuids)
+        return telemetryRetired
+    }
+
+    private func noteListing(_ uuids: Set<String>) {
+        reportTelemetry { $0.onAccountListing?(uuids) }
     }
 
     private func noteDefaultFlag(_ uuid: String, _ isDefault: Bool) {
-        telemetryLock.lock(); defer { telemetryLock.unlock() }
-        guard !telemetryRetired else { return }
-        onDefaultFlag?(uuid, isDefault)
+        reportTelemetry { $0.onDefaultFlag?(uuid, isDefault) }
+    }
+
+    /// Runs one observer call on the main thread: inline when already there, queued otherwise.
+    ///
+    /// The observers write `UserDefaults.standard`. A defaults write blocks its thread until the
+    /// main queue has run every `UserDefaults.didChangeNotification` observer registered with
+    /// `queue: .main`, and envelope reads finish on the generic executor. Calling an observer
+    /// there, under a lock the main thread also takes, deadlocked the app (PHI-2211): the worker
+    /// held the lock waiting for the main queue while the main thread waited for the lock.
+    private func reportTelemetry(_ report: @escaping (ProfileKeyManager) -> Void) {
+        let deliver = { [weak self] in
+            guard let self, !self.isTelemetryRetired else { return }
+            report(self)
+        }
+        if Thread.isMainThread {
+            deliver()
+        } else {
+            DispatchQueue.main.async(execute: deliver)
+        }
     }
 
     init(api: KeyEnvelopeAPI, keyManager: AccountKeyManager, mappingStore: ProfileSyncMappingStore) {

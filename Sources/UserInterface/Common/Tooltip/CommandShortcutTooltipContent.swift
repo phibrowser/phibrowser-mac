@@ -7,6 +7,10 @@ import SwiftUI
 import Combine
 
 struct CommandShortcutTooltipContent: View {
+    /// With two keycaps the card stays near the 320pt cap of
+    /// `DefaultCustomTooltipContent`.
+    private static let titleMaxWidth: CGFloat = 240
+
     let title: String
     let command: CommandWrapper
 
@@ -25,6 +29,9 @@ struct CommandShortcutTooltipContent: View {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: Self.titleMaxWidth, alignment: .leading)
 
             if let shortcut {
                 HStack(spacing: 4) {

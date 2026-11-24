@@ -2823,7 +2823,7 @@ struct SpaceHoverCard: View {
 /// consume the next click, so a click on the pip falls straight through to its
 /// Button and switches the Space. Mirrors TabStrip's drag-image panel.
 final class SpaceHoverTooltipController: ObservableObject {
-    private static let shadowInset: CGFloat = 8
+    private static let shadowInset = TooltipCardShadow.inset
     private var panel: NSPanel?
     private var hostingView: NSHostingView<AnyView>?
     /// The spaceId currently shown, so a stale pip's `dismiss` can't tear down a
@@ -2921,9 +2921,7 @@ final class SpaceHoverTooltipController: ObservableObject {
         ownerAnchorRect = expandedAnchor
         if isNewPresentation { presentationCursor = NSEvent.mouseLocation }
         guard let hostingView else { return }
-        hostingView.rootView = AnyView(card
-            .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 1)
-            .padding(Self.shadowInset))
+        hostingView.rootView = AnyView(card.tooltipCardShadow())
         hostingView.layoutSubtreeIfNeeded()
         let size = hostingView.fittingSize
         let visible = (screen ?? panel.screen ?? NSScreen.main)?.visibleFrame

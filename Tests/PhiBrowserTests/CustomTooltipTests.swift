@@ -233,6 +233,7 @@ final class CustomTooltipTests: XCTestCase {
             screen: NSScreen?,
             themeProvider: ThemeStateProvider,
             placement: CustomTooltipPlacement,
+            drawsCardShadow: Bool,
             frameAnimationDuration: TimeInterval
         ) {
             isVisible = true

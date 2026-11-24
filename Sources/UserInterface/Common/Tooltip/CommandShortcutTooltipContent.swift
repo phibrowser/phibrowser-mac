@@ -40,15 +40,15 @@ struct CommandShortcutTooltipContent: View {
         // card: the bare material reads as gray in light mode.
         .background(
             (appearance.isDark ? Color.black : Color.white).opacity(0.9),
-            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
         .background(
             .regularMaterial,
-            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(.primary.opacity(0.1))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(.primary.opacity(0.15), lineWidth: 1)
         }
         .fixedSize()
         .accessibilityElement(children: .ignore)

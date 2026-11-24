@@ -1159,6 +1159,11 @@ final class HostedSidebarStateTests: XCTestCase {
     }
 
     func testHostedTitlebarGapsReachWindowWithoutDiscardingContentHits() throws {
+        // This fixture exercises the titlebar gap provided by the page margin.
+        let key = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue
+        let previous = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(previous, forKey: key) }
+        UserDefaults.standard.set(false, forKey: key)
         for mode: LayoutMode in [.performance, .balanced, .comfortable] {
             PhiPreferences.GeneralSettings.saveLayoutMode(mode)
             let slot = makeSlot()

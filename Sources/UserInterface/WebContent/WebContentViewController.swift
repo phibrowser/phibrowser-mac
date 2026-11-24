@@ -414,6 +414,14 @@ class WebContentViewController: NSViewController {
     private var contentLayout: WebContentLayout {
         WebContentLayout(browserState: browserState)
     }
+    var usesWindowDragNotch = false {
+        didSet {
+            guard usesWindowDragNotch != oldValue else { return }
+            currentSplitHost?.hidesTopMoveHandle = usesWindowDragNotch
+            splitPreviewHost?.hidesTopMoveHandle = usesWindowDragNotch
+        }
+    }
+
     private var nativeNtpController: NewTabViewController?
     private var bookmarkManagerController: BookmarkManagerViewController?
     private var groupOverviewController: GroupOverviewViewController?
@@ -2435,6 +2443,7 @@ class WebContentViewController: NSViewController {
             host = newHost
         }
 
+        host.hidesTopMoveHandle = usesWindowDragNotch
         host.squaresCorners = contentLayout.squaresCorners
         mountedSplitPartners = partners
 
@@ -2523,6 +2532,7 @@ class WebContentViewController: NSViewController {
             host.snp.makeConstraints { $0.edges.equalToSuperview() }
             splitPreviewHost = host
         }
+        host.hidesTopMoveHandle = usesWindowDragNotch
         host.squaresCorners = contentLayout.squaresCorners
         host.update(layout: preview.layout, fractions: [0.5, 0.5],
                     layoutMode: PhiPreferences.GeneralSettings.loadLayoutMode())

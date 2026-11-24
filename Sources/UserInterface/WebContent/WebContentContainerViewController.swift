@@ -11,12 +11,6 @@ import SwiftUI
 /// Container for managing multiple WebContentViewController instances (one per tab)
 /// Also manages the global topBarView (TabStrip) for traditional layout mode
 class WebContentContainerViewController: NSViewController {
-    private final class TitlebarAwareView: NSView, TitlebarAwareHitTestable {
-        func shouldConsumeHitTest(at point: NSPoint) -> Bool {
-            false
-        }
-    }
-
     weak var browserState: BrowserState?
     private var cancellables = Set<AnyCancellable>()
     private var isSubscriptionsSetup = false
@@ -457,7 +451,7 @@ class WebContentContainerViewController: NSViewController {
     /// Single window-level region for titlebar drag and double-click handling.
     /// Child tab and placeholder controllers must not add their own copies:
     /// those overlays stack above the page when performance mode hides its header.
-    private var titleAwareArea = TitlebarAwareView()
+    private let windowDragNotch = WindowDragNotchView()
     private var titleAwareAreaHeightConstraint: Constraint?
     
     /// Only standalone windows mount this host. Hosted sessions use the
@@ -662,8 +656,8 @@ class WebContentContainerViewController: NSViewController {
         }
 
         // Add titlebar aware area
-        view.addSubview(titleAwareArea)
-        titleAwareArea.snp.makeConstraints { make in
+        view.addSubview(windowDragNotch)
+        windowDragNotch.snp.makeConstraints { make in
             make.leading.trailing.top.equalToSuperview()
             titleAwareAreaHeightConstraint = make.height.equalTo(
                 contentLayout.titleAwareAreaHeight
@@ -729,9 +723,9 @@ class WebContentContainerViewController: NSViewController {
         // Add as child view controller
         addChild(barController)
         
-        // Add topBar view above titleAwareArea, so tab items receive clicks
-        // in the overlap zone while titleAwareArea still handles the gap above the bar
-        view.addSubview(barController.view, positioned: .above, relativeTo: titleAwareArea)
+        // Add topBar view above windowDragNotch, so tab items receive clicks
+        // in the overlap zone while windowDragNotch still handles the gap above the bar
+        view.addSubview(barController.view, positioned: .above, relativeTo: windowDragNotch)
         barController.view.snp.makeConstraints { make in
             make.leading.trailing.equalToSuperview()
             topBarTopConstraint = make.top.equalToSuperview().inset(contentLayout.topEdgeSpacing).constraint
@@ -2311,6 +2305,7 @@ class WebContentContainerViewController: NSViewController {
     /// Mounts `controller`'s view as the current tab and removes every other
     /// tab view in the same turn (see "Tab switch" above).
     private func switchToWebContentController(_ controller: WebContentViewController) {
+        controller.usesWindowDragNotch = windowDragNotch.usesHoverNotch
         if let current = currentWebContentController, current !== controller {
             // Outgoing focused VC no longer owns the split host — drop its
             // partner-crash subscription (its own observers won't re-run).
@@ -2450,13 +2445,22 @@ class WebContentContainerViewController: NSViewController {
     
     // MARK: - Layout Mode
     
+    private func updateTitlebarAwareArea() {
+        let layout = contentLayout
+        let usesHoverNotch = layout.layoutMode == .performance && layout.edgeToEdgeEnabled
+            && !layout.isFullScreen && browserState?.isKioskWindow == false
+        windowDragNotch.usesHoverNotch = usesHoverNotch
+        currentWebContentController?.usesWindowDragNotch = usesHoverNotch
+        titleAwareAreaHeightConstraint?.update(
+            offset: usesHoverNotch ? WindowDragNotchView.hoverBandHeight : layout.titleAwareAreaHeight
+        )
+    }
+
     private func updateLayoutForMode() {
         let layoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
         let traditionalLayout = layoutMode.isTraditional
 
-        titleAwareAreaHeightConstraint?.update(
-            offset: contentLayout.titleAwareAreaHeight
-        )
+        updateTitlebarAwareArea()
         
         if traditionalLayout {
             // Traditional layout (horizontal tabs): show topBar
@@ -2470,8 +2474,6 @@ class WebContentContainerViewController: NSViewController {
             tabStripBarController?.view.isHidden = true
             topBarHeightConstraint?.update(offset: 0)
             topBarTopConstraint?.update(inset: contentLayout.topEdgeSpacing)
-            // The titlebar hit area disappears with the page margin.
-            titleAwareArea.isHidden = false
         }
 
         updateContentOuterBorder()

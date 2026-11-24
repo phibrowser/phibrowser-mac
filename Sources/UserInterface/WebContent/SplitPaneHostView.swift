@@ -139,7 +139,19 @@ final class SplitPaneHostView: NSView {
     var allowsPaneMove = true {
         didSet {
             guard allowsPaneMove != oldValue else { return }
-            moveHandles.forEach { $0.isHidden = !allowsPaneMove }
+            updateMoveHandleVisibility()
+        }
+    }
+
+    var hidesTopMoveHandle = false {
+        didSet {
+            if hidesTopMoveHandle != oldValue { updateMoveHandleVisibility() }
+        }
+    }
+
+    private func updateMoveHandleVisibility() {
+        for (slot, handle) in moveHandles.enumerated() {
+            handle.isHidden = !allowsPaneMove || (hidesTopMoveHandle && paneLayout == .horizontal && slot == 0)
         }
     }
 
@@ -346,7 +358,6 @@ final class SplitPaneHostView: NSView {
         while moveHandles.count < count {
             let index = moveHandles.count
             let handle = PaneMoveHandle()
-            handle.isHidden = !allowsPaneMove
             handle.onDragBegan = { [weak self] event in self?.beginPaneMove(slot: index, at: event) }
             handle.onDragChanged = { [weak self] event in self?.continuePaneMove(at: event) }
             handle.onDragEnded = { [weak self] in self?.endPaneMove() }
@@ -355,6 +366,7 @@ final class SplitPaneHostView: NSView {
         while moveHandles.count > count {
             moveHandles.removeLast().removeFromSuperview()
         }
+        updateMoveHandleVisibility()
         // Above every pane, including one just added.
         for handle in moveHandles {
             addSubview(handle, positioned: .below, relativeTo: focusRingView)
@@ -402,6 +414,7 @@ final class SplitPaneHostView: NSView {
         var changed = false
         if self.paneLayout != layout {
             self.paneLayout = layout
+            updateMoveHandleVisibility()
             applyDividerCursor()
             changed = true
         }
@@ -1394,7 +1407,7 @@ private final class PaneMoveHandle: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        gripRect.contains(convert(point, from: superview)) ? self : nil
+        !isHiddenOrHasHiddenAncestor && gripRect.contains(convert(point, from: superview)) ? self : nil
     }
 
     override func layout() {

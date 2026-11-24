@@ -400,6 +400,57 @@ final class ContentFullscreenSurfaceTests: XCTestCase {
                       "the keyboard left the page: \(String(describing: fixture.window.firstResponder))")
     }
 
+    func testWindowNotchHidesOnlyTheTopStackedPaneMoveHandle() throws {
+        let settings = UserDefaults.standard
+        let edgeKey = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue
+        let modeKey = PhiPreferences.GeneralSettings.layoutModeKey
+        let previousEdge = settings.object(forKey: edgeKey)
+        let previousMode = settings.object(forKey: modeKey)
+        defer {
+            settings.set(previousEdge, forKey: edgeKey)
+            settings.set(previousMode, forKey: modeKey)
+        }
+        PhiPreferences.GeneralSettings.saveLayoutMode(.performance)
+        settings.set(true, forKey: edgeKey)
+        let fixture = try makeFixture()
+        try formSplit(fixture)
+        let host = try XCTUnwrap(fixture.webViews[0].superview?.superview as? SplitPaneHostView)
+        let handles = host.subviews.filter { $0.accessibilityIdentifier() == "splitPaneMoveHandle" }
+        XCTAssertEqual(handles.count, 2)
+        XCTAssertTrue(handles.allSatisfy { !$0.isHidden }, "both side-by-side handles are available")
+
+        func setLayout(_ layout: SplitLayout) {
+            fixture.state.splits = [SplitGroup(id: "split-970-971", tabIds: [970, 971],
+                                               layout: layout, fractions: [0.5, 0.5])]
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            fixture.container.view.layoutSubtreeIfNeeded()
+        }
+
+        setLayout(.horizontal)
+        let top = try XCTUnwrap(handles.max { $0.frame.midY < $1.frame.midY })
+        let bottom = try XCTUnwrap(handles.min { $0.frame.midY < $1.frame.midY })
+        func gripCenter(_ handle: NSView) -> NSPoint {
+            handle.convert(NSPoint(x: handle.bounds.midX, y: handle.bounds.maxY - 9), to: host)
+        }
+        XCTAssertTrue(top.isHidden)
+        XCTAssertNil(top.hitTest(gripCenter(top)))
+        func hitAtGrip(_ handle: NSView) -> NSView? {
+            host.hitTest(host.convert(gripCenter(handle), to: host.superview))
+        }
+        XCTAssertFalse(hitAtGrip(top) === top)
+        XCTAssertTrue(hitAtGrip(bottom) === bottom)
+
+        setLayout(.vertical)
+        XCTAssertTrue(handles.allSatisfy { !$0.isHidden }, "rotating back restores both handles")
+        setLayout(.horizontal)
+        settings.set(false, forKey: edgeKey)
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: settings)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        fixture.container.view.layoutSubtreeIfNeeded()
+        XCTAssertTrue(handles.allSatisfy { !$0.isHidden }, "disabling the notch restores the top handle")
+        XCTAssertTrue(hitAtGrip(top) === top)
+    }
+
     // MARK: - Helpers
 
     private struct Fixture {

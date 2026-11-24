@@ -242,7 +242,14 @@ final class ShellWindow: NSWindow {
         return surface?.handleSideButtonSpaceSwitch(event) == true
     }
 
+    /// Direct touches are hit-tested outside sendEvent. NSApp.currentEvent can
+    /// still refer to an earlier pointer event during that hit test.
+    private(set) var dispatchingEventType: NSEvent.EventType?
+
     override func sendEvent(_ event: NSEvent) {
+        let previousType = dispatchingEventType
+        dispatchingEventType = event.type
+        defer { dispatchingEventType = previousType }
         if let target = redispatchTarget(for: event) {
             // Nothing took the second pass: the Chromium window's
             // `sendEvent` marks the redispatch unhandled and stops.

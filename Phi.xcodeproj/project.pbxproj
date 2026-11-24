@@ -420,6 +420,7 @@
 		A71E0000000000000000DE52 /* SyncedDeletionConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E0000000000000000DE51 /* SyncedDeletionConfirmation.swift */; };
 		A7C021022FFD000000000002 /* ContextMenuEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C021012FFD000000000001 /* ContextMenuEvent.swift */; };
 		A7E1C0020000000000000002 /* PageOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0010000000000000001 /* PageOverlayView.swift */; };
+		8EFF7BD8414B4AD1B6A6C34D /* WindowDragNotchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F923139258EC4FF6A18F103D /* WindowDragNotchView.swift */; };
 		A81113410000000000000002 /* OOBEAnalyticsSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A81113410000000000000001 /* OOBEAnalyticsSession.swift */; };
 		A81113410000000000000004 /* FirstTimeActionTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A81113410000000000000003 /* FirstTimeActionTracker.swift */; };
 		A8441AB3AB219A8FEA6F1F9A /* PairingDataSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DBF40D64EB16F125973C878 /* PairingDataSummary.swift */; };
@@ -1303,6 +1304,7 @@
 		A71E0000000000000000DE51 /* SyncedDeletionConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncedDeletionConfirmation.swift; sourceTree = "<group>"; };
 		A7C021012FFD000000000001 /* ContextMenuEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextMenuEvent.swift; sourceTree = "<group>"; };
 		A7E1C0010000000000000001 /* PageOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageOverlayView.swift; sourceTree = "<group>"; };
+		F923139258EC4FF6A18F103D /* WindowDragNotchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDragNotchView.swift; sourceTree = "<group>"; };
 		A7F3C2D19E4B5A6C7D8E9F01 /* PairingFlowPlan.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingFlowPlan.swift; path = UI/PairingFlowPlan.swift; sourceTree = "<group>"; };
 		A81113410000000000000001 /* OOBEAnalyticsSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OOBEAnalyticsSession.swift; sourceTree = "<group>"; };
 		A81113410000000000000003 /* FirstTimeActionTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstTimeActionTracker.swift; sourceTree = "<group>"; };
@@ -3315,6 +3317,7 @@
 				8E486A742F3ED68600078DEC /* StatusURLView.swift */,
 				37D6E3662F18FDA700129557 /* WebContentContainerViewController.swift */,
 				A7E1C0010000000000000001 /* PageOverlayView.swift */,
+				F923139258EC4FF6A18F103D /* WindowDragNotchView.swift */,
 				377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */,
 				B0F370B82E430CA5000B51F9 /* WebContentViewController.swift */,
 				37E5B1A0301200AB00000001 /* ExtensionSidePanelView.swift */,
@@ -3979,6 +3982,7 @@
 				376088DC307F95A8007FCE33 /* ShortcutConfiguration.swift in Sources */,
 				B0F370DA2E433F0E000B51F9 /* OverlayWindowController.swift in Sources */,
 				A7E1C0020000000000000002 /* PageOverlayView.swift in Sources */,
+				8EFF7BD8414B4AD1B6A6C34D /* WindowDragNotchView.swift in Sources */,
 				CCBF8FA22E698A7400B9A99E /* SpaceSessionControllersManager.swift in Sources */,
 				B02586F62E42FD97001B08FC /* AppController.swift in Sources */,
 				4B4C00000000000000000001 /* ExternalOpenSender.swift in Sources */,

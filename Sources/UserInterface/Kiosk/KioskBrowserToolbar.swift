@@ -835,6 +835,7 @@ private final class KioskSpaceMenuAnchorView: NSView {
             item.state = space.spaceId == primarySpaceId ? .on : .off
             menu.addItem(item)
         }
+        window?.customTooltipController.dismissAll()
         isShowingMenu = true
         defer { isShowingMenu = false }
         let bottomLeading = NSPoint(

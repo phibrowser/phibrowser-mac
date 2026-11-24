@@ -144,6 +144,63 @@ final class TabStripLayoutTests: XCTestCase {
         XCTAssertEqual(width0, width2, "Non-active tabs should have the same width.")
     }
 
+    /// A merged three-pane split's protected width (192) exceeds the ideal
+    /// width (180): with ample room it must still get it, not shrink to
+    /// ideal and fall into its favicon-only compact rendering.
+    func testActiveWideSplitKeepsItsProtectedWidthWhenSpaceIsAmple() {
+        let output = TabStripLayoutEngine.layoutNormal(input: splitInput(containerWidth: 2000))
+
+        XCTAssertEqual(output.tabFrames[1].width, 192)
+        XCTAssertEqual(output.tabFrames[0].width, 180)
+        XCTAssertEqual(output.tabFrames[2].width, 180)
+    }
+
+    func testActiveWideSplitWidthNeverShrinksAsTheStripWidens() {
+        var previousActive: CGFloat = 0
+        var previousInactive: CGFloat = 0
+        for containerWidth in stride(from: CGFloat(300), through: 1200, by: 10) {
+            let output = TabStripLayoutEngine.layoutNormal(input: splitInput(containerWidth: containerWidth))
+            let active = output.tabFrames[1].width
+            let inactive = output.tabFrames[0].width
+            XCTAssertGreaterThanOrEqual(active, previousActive, "containerWidth=\(containerWidth)")
+            XCTAssertGreaterThanOrEqual(inactive, previousInactive, "containerWidth=\(containerWidth)")
+            XCTAssertGreaterThanOrEqual(active, 192, "containerWidth=\(containerWidth)")
+            previousActive = active
+            previousInactive = inactive
+        }
+    }
+
+    func testGroupedActiveWideSplitKeepsItsProtectedWidthWhenSpaceIsAmple() {
+        let token = "g1"
+        let output = TabStripLayoutEngine.layoutNormal(input: splitInput(
+            containerWidth: 2000,
+            groupRuns: [GroupRun(token: token, range: 2...3, isCollapsed: false)],
+            chipFullWidths: [token: 120]
+        ))
+
+        XCTAssertEqual(output.tabFrames[1].width, 192)
+        XCTAssertEqual(output.tabFrames[0].width, 180)
+    }
+
+    private func splitInput(
+        containerWidth: CGFloat,
+        groupRuns: [GroupRun] = [],
+        chipFullWidths: [String: CGFloat] = [:]
+    ) -> TabStripLayoutInput {
+        TabStripLayoutInput(
+            containerWidth: containerWidth,
+            tabCount: 4,
+            activeTabIndex: 1,
+            spacing: 2,
+            idealTabWidth: 180,
+            minTabWidth: 36,
+            activeTabWidth: 192,
+            tabHeight: 32,
+            groupRuns: groupRuns,
+            chipFullWidths: chipFullWidths
+        )
+    }
+
     // MARK: - Chip width cache miss
 
     /// Regression: `chipFullWidths` is populated asynchronously by

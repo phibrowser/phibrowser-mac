@@ -435,9 +435,6 @@ private struct KioskProfileMenu: View {
 
 private struct KioskToolbarActions: View {
     let state: KioskBrowserState
-    @ObservedObject private var spaceManager: SpaceManager = .shared
-    @State private var preferredSpaceId: String?
-
     @State private var isExtensionPopoverShown = false
     @State private var copyButtonAnchorView: NSView?
     @State private var showCopyConfirmation = false
@@ -465,27 +462,35 @@ private struct KioskToolbarActions: View {
                 .allowsHitTesting(false)
             )
             .customTooltip {
-                CommandShortcutTooltipContent(
-                    title: NSLocalizedString(
-                        "browser.webContentAddressBar.copyURLTooltip",
-                        value: "Copy URL",
-                        comment: "Copy URL shortcut tooltip title"
-                    ),
-                    command: .PHI_COPY_URL
-                )
-                .kioskPrimarySpaceTheme(
-                    KioskSpaceMenuTargetResolver.primarySpaceTheme(
-                        for: state,
-                        preferredSpaceId: preferredSpaceId,
-                        in: spaceManager
-                    )
-                )
+                KioskCopyURLTooltipContent(state: state)
             }
         }
         .frame(height: 24)
-        .onReceive(state.$preferredSpaceId.receive(on: DispatchQueue.main)) {
-            preferredSpaceId = $0
-        }
+    }
+}
+
+/// Observes `SpaceManager` only while the tooltip is hosted, so Space changes
+/// don't re-render the toolbar actions row.
+private struct KioskCopyURLTooltipContent: View {
+    let state: KioskBrowserState
+    @ObservedObject private var spaceManager: SpaceManager = .shared
+
+    var body: some View {
+        CommandShortcutTooltipContent(
+            title: NSLocalizedString(
+                "browser.webContentAddressBar.copyURLTooltip",
+                value: "Copy URL",
+                comment: "Copy URL shortcut tooltip title"
+            ),
+            command: .PHI_COPY_URL
+        )
+        .kioskPrimarySpaceTheme(
+            KioskSpaceMenuTargetResolver.primarySpaceTheme(
+                for: state,
+                preferredSpaceId: state.preferredSpaceId,
+                in: spaceManager
+            )
+        )
     }
 }
 

@@ -6148,13 +6148,11 @@ final class SpaceManager: ObservableObject {
                     }
                     if !recreatesURL {
                         guard let sourceWrapper else { return }
-                        // Append to the end of the target's normal tabs; the scheduled
-                        // insertion lands the arriving tab there, mirroring the
-                        // cross-window drag path in `TabStrip.moveTabToWindow`.
-                        let normalIndex = targetState.normalTabs.count
-                        targetState.scheduleNormalTabInsertion(tabGuid: tabGuid, at: normalIndex)
+                        let stripIndex = targetState.scheduleSpaceTabMove(
+                            tabGuid: tabGuid, fromKiosk: sourceState.isKioskWindow
+                        )
                         sourceWrapper.moveSplit(toWindow: targetState.windowId.int64Value,
-                                                at: targetState.tabs.count)
+                                                at: stripIndex)
                         if sourceState.isKioskWindow {
                             self?.captureKioskOpenedInSpace()
                         }

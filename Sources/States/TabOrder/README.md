@@ -267,7 +267,8 @@ This ensures that subsequent Chromium snapshots will not overwrite the Mac-side 
 `newTabsAtTop` is a synchronized global Boolean under General → Browsing,
 defaulting to false. `BrowserState.opensNewTabsAtTop` combines this preference
 with the destination layout. Comfortable always appends without changing the
-stored choice. Toggling the preference does not reorder existing tabs.
+stored choice. A live Kiosk tab moved into the current Space also follows that
+Space's effective placement. Toggling the preference does not reorder existing tabs.
 
 Only ordinary typed creation is eligible. Pending explicit/group insertion,
 persisted custom IDs, existing group/split membership, and synchronous restore

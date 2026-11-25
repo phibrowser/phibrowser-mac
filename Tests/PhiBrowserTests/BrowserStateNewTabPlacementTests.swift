@@ -121,6 +121,27 @@ final class BrowserStateNewTabPlacementTests: XCTestCase {
         XCTAssertTrue(bridge.requests.isEmpty)
     }
 
+    func testLiveKioskMoveUsesDestinationPlacementInSidebarAndChromium() throws {
+        for (fromKiosk, layout, top, expectFirst) in [
+            (true, LayoutMode.performance, true, true),
+            (true, .performance, false, false),
+            (true, .comfortable, true, false),
+            (false, .performance, true, false)
+        ] {
+            let state = try makeState()
+            state.layoutMode = layout
+            UserDefaults.standard.set(top, forKey: PhiPreferences.GeneralSettings.newTabsAtTop.rawValue)
+            state.tabs[0].isPinned = true
+            state.updateNormalTabs()
+
+            let index = state.scheduleSpaceTabMove(tabGuid: 10, fromKiosk: fromKiosk)
+            XCTAssertEqual(index, expectFirst ? 1 : 4)
+            let tab = Tab(guid: 10, url: "https://example.test/kiosk", isActive: true, index: index)
+            state.handleNewTabFromChromium(tab, context: NativeTabCreationContext(creationKind: .moveFromOtherWindow))
+            XCTAssertEqual(state.normalTabs.map(\.guid), expectFirst ? [10, 2, 3, 4] : [2, 3, 4, 10])
+        }
+    }
+
     func testUnsetPreferencePreservesBottomDefault() throws {
         UserDefaults.standard.removeObject(forKey: PhiPreferences.GeneralSettings.newTabsAtTop.rawValue)
         XCTAssertFalse(PhiPreferences.GeneralSettings.newTabsAtTop.defaultValue)

@@ -830,16 +830,22 @@ extension BrowserState {
     /// and reports the split back through `handleSplitCreated`. Returns the
     /// new split ID on success.
     ///
+    /// The split stands where `anchorTabId` (default: the first pane) stands;
+    /// the other panes move next to it.
+    ///
     /// Chromium pivots the split on whichever of the tabs is already active,
     /// so the active tab never bounces HIDDEN → VISIBLE (which
     /// `RenderWidgetHostViewCocoa` does not always cleanly resume from — the
     /// previously-focused tab's pane then renders blank).
     @discardableResult
-    func createSplit(tabIds: [Int], layout: SplitLayout) -> String? {
+    func createSplit(tabIds: [Int], layout: SplitLayout, anchorTabId: Int? = nil) -> String? {
         guard tabIds.count >= 2, tabIds.count <= SplitGroup.maxPaneCount,
-              Set(tabIds).count == tabIds.count else { return nil }
+              Set(tabIds).count == tabIds.count,
+              let anchor = anchorTabId ?? tabIds.first,
+              tabIds.contains(anchor) else { return nil }
         return ChromiumLauncher.sharedInstance().bridge?.createSplit(
             withTabIds: tabIds.map { NSNumber(value: Int64($0)) },
+            anchorTabId: Int64(anchor),
             layout: layout.rawValue,
             windowId: windowId.int64Value)
     }
@@ -847,8 +853,11 @@ extension BrowserState {
     /// Pairs two tabs: `leftTabId` takes slot 0 (left / top), `rightTabId`
     /// slot 1.
     @discardableResult
-    func createSplit(leftTabId: Int, rightTabId: Int, layout: SplitLayout) -> String? {
-        createSplit(tabIds: [leftTabId, rightTabId], layout: layout)
+    func createSplit(leftTabId: Int,
+                     rightTabId: Int,
+                     layout: SplitLayout,
+                     anchorTabId: Int? = nil) -> String? {
+        createSplit(tabIds: [leftTabId, rightTabId], layout: layout, anchorTabId: anchorTabId)
     }
 
     func removeSplit(_ splitId: String) {
@@ -1790,7 +1799,8 @@ extension BrowserState {
             case .left:
                 splitId = createSplit(leftTabId: attachedLiveTab.guid,
                                       rightTabId: partnerTabId,
-                                      layout: layout)
+                                      layout: layout,
+                                      anchorTabId: partnerTabId)
             case .right:
                 splitId = createSplit(leftTabId: partnerTabId,
                                       rightTabId: attachedLiveTab.guid,
@@ -1905,7 +1915,8 @@ extension BrowserState {
             let newTabIsPrimary = preview.newTabSlot == .left
             guard createSplit(leftTabId: newTabIsPrimary ? match.guid : preview.partnerTabId,
                               rightTabId: newTabIsPrimary ? preview.partnerTabId : match.guid,
-                              layout: preview.layout) != nil else { return false }
+                              layout: preview.layout,
+                              anchorTabId: preview.partnerTabId) != nil else { return false }
         }
         preview.isCommitted = true
         pendingSplitPreview = preview

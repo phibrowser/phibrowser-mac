@@ -2722,7 +2722,8 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             return browserState.createSplit(
                 leftTabId: side == .left ? draggedTab.guid : targetTab.guid,
                 rightTabId: side == .left ? targetTab.guid : draggedTab.guid,
-                layout: .vertical
+                layout: .vertical,
+                anchorTabId: targetTab.guid
             ) != nil
         }
 

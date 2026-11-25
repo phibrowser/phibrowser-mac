@@ -1509,7 +1509,8 @@ extension TabGroupCellView: GroupTabsDragSource {
             return state.createSplit(
                 leftTabId: side == .left ? dragged.guid : target.guid,
                 rightTabId: side == .left ? target.guid : dragged.guid,
-                layout: .vertical
+                layout: .vertical,
+                anchorTabId: target.guid
             ) != nil
         }
         if let (dragged, target) = groupedSplitPaneDrop(

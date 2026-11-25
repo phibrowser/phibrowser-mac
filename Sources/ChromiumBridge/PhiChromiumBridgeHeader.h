@@ -2210,11 +2210,13 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // ==========================================================================
 
 /// Create a split from two to four existing tabs, in the given pane order.
-/// Chromium arranges the tabs next to each other in that order first (they
-/// take the group of whichever is active, else the first). Returns the
-/// split ID string, or nil when a tab is missing, already split, or
-/// repeated.
+/// The split stands where `anchorTabId`, one of `tabIds`, stands: Chromium
+/// lines the other tabs up around it in that order, in its group. Returns
+/// the split ID string, or nil when a tab is missing, already split, or
+/// repeated, the anchor is not one of them, or the anchor is grouped and a
+/// tab cannot join a tab group.
 - (NSString * _Nullable)createSplitWithTabIds:(NSArray<NSNumber *> *)tabIds
+                                   anchorTabId:(int64_t)anchorTabId
                                         layout:(NSString *)layout
                                       windowId:(int64_t)windowId;
 

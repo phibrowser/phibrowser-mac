@@ -269,9 +269,6 @@ class SidebarTabListViewController: NSViewController {
     /// Snapshot committed by the latest accepted `reloadWith` request.
     /// Unlike `allItems`, its captured child IDs cannot be changed by model reuse.
     private var lastAcceptedOutlineSnapshot: DiffableOutlineSnapshot<AnyHashable>?
-    /// Advances only for accepted structural mutations. PHI-1099 repair
-    /// completions use it to avoid touching rows owned by a newer transaction.
-    private var outlineLayoutGeneration: UInt = 0
     private var multiSelectionRangeAnchor: SidebarMultiSelectionUnit?
     /// Diffable completion runs before AppKit necessarily finishes moving rows.
     /// Keep group-local animations off until the latest structural transition settles.
@@ -699,7 +696,6 @@ class SidebarTabListViewController: NSViewController {
     private func refreshAllItems(
         presentationState: FloatingBookmarkPresentationState? = nil,
         animated: Bool = true,
-        allowsInsertedRootTabLayoutRepair: Bool = false,
         animateSpaceRootExpansion: Bool = false,
         afterReload: ((_ outlineStructureChanged: Bool) -> Void)? = nil
     ) -> Bool {
@@ -738,50 +734,14 @@ class SidebarTabListViewController: NSViewController {
             from: previousSnapshot,
             to: snapshot
         )
-        let insertedRootTabForLayoutRepair: Tab? = {
-            guard allowsInsertedRootTabLayoutRepair else { return nil }
-            guard let insertionIndex = Self.singleRootInsertionIndex(
-                from: previousSnapshot.rootIDs,
-                to: snapshot.rootIDs
-            ) else { return nil }
-
-            let plan = DiffableOutlineDiffPlanner.plan(
-                from: previousSnapshot,
-                to: snapshot
-            )
-            guard
-                plan.isSafe,
-                plan.operations.count == 1,
-                case let .insert(insertedID, parentID, planIndex) = plan.operations[0],
-                insertedID == snapshot.rootIDs[insertionIndex],
-                parentID == nil,
-                planIndex == insertionIndex,
-                let tab = snapshot.item(for: snapshot.rootIDs[insertionIndex]) as? Tab,
-                tab.groupToken == nil,
-                snapshot.rootIDs.dropFirst(insertionIndex + 1).contains(where: {
-                    guard let groupItem = snapshot.item(for: $0) as? TabGroupSidebarItem else {
-                        return false
-                    }
-                    return !groupItem.group.isCollapsed
-                })
-            else { return nil }
-            return tab
-        }()
-        let shouldAnimateOutlineMutation = animated && insertedRootTabForLayoutRepair == nil
-
         var didUpdateDataSource = false
-        var acceptedOutlineLayoutGeneration: UInt?
         outlineView.reloadWith(
             snapshot,
-            animated: shouldAnimateOutlineMutation,
+            animated: animated,
             updateDataSource: { [weak self] in
                 guard let self else { return }
-                if outlineStructureChanged {
-                    self.outlineLayoutGeneration &+= 1
-                }
-                acceptedOutlineLayoutGeneration = self.outlineLayoutGeneration
                 self.lastAcceptedOutlineSnapshot = snapshot
-                if shouldAnimateOutlineMutation && outlineStructureChanged {
+                if animated && outlineStructureChanged {
                     self.suppressGroupAnimationsUntilOutlineSettles()
                 }
                 self.allItems = items
@@ -797,19 +757,6 @@ class SidebarTabListViewController: NSViewController {
             completion: { [weak self] in
                 guard let self else { return }
                 guard didUpdateDataSource else { return }
-                if let insertedRootTabForLayoutRepair,
-                   let acceptedOutlineLayoutGeneration,
-                   acceptedOutlineLayoutGeneration == self.outlineLayoutGeneration,
-                   self.lastAcceptedOutlineSnapshot?.rootIDs == snapshot.rootIDs,
-                   let repair = self.outlineView.repairRealizedRowLayoutIfNeeded(
-                       afterInserting: insertedRootTabForLayoutRepair
-                   ) {
-                    AppLogDebug(
-                        "[TAB_GROUP_GAP] repaired realized suffix rows " +
-                            "mismatchedRow=\(repair.row) " +
-                            "originDelta=\(String(format: "%.1f", repair.originDelta))"
-                    )
-                }
                 self.restoreSpaceRootExpansion(animated: animateSpaceRootExpansion)
                 self.selectActiveTab()
                 self.applyFocusingSelection(for: self.browserState.focusingTab)
@@ -887,29 +834,6 @@ class SidebarTabListViewController: NSViewController {
             else { return true }
         }
         return false
-    }
-
-    static func singleRootInsertionIndex<ItemID: Equatable>(
-        from oldRootIDs: [ItemID],
-        to newRootIDs: [ItemID]
-    ) -> Int? {
-        guard newRootIDs.count == oldRootIDs.count + 1 else { return nil }
-
-        var oldIndex = 0
-        var insertionIndex: Int?
-        for newIndex in newRootIDs.indices {
-            if oldIndex < oldRootIDs.count,
-               newRootIDs[newIndex] == oldRootIDs[oldIndex] {
-                oldIndex += 1
-            } else if insertionIndex == nil {
-                insertionIndex = newIndex
-            } else {
-                return nil
-            }
-        }
-
-        guard oldIndex == oldRootIDs.count else { return nil }
-        return insertionIndex
     }
 
     private func suppressGroupAnimationsUntilOutlineSettles() {
@@ -4620,10 +4544,7 @@ extension SidebarTabListViewController: TabSectionDelegate {
         // Restore transaction (T3B): apply the root snapshot without
         // insertion animations so the restored list lands fully formed in
         // the same main-thread turn as the state application.
-        refreshAllItems(
-            animated: !change.isRestoreTransaction,
-            allowsInsertedRootTabLayoutRepair: change.allowsInsertedRootTabLayoutRepair
-        ) { [weak self] outlineStructureChanged in
+        refreshAllItems(animated: !change.isRestoreTransaction) { [weak self] outlineStructureChanged in
             guard let self else { return }
             self.pushMemberUpdatesToGroupCells(
                 change.affectedGroupTokens,

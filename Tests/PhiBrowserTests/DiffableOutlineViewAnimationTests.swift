@@ -255,7 +255,7 @@ private final class DiffableOutlineAnimationFixture: NSObject, NSOutlineViewData
     }
 }
 
-private final class OutlineLayoutRepairItem: NSObject {
+private final class OutlineRowItem: NSObject {
     let height: CGFloat
 
     init(height: CGFloat) {
@@ -294,26 +294,16 @@ private final class RecordingSideBarOutlineView: SideBarOutlineView {
     }
 }
 
-private struct OutlineLayoutRepairResult {
+private struct OutlineInsertionResult {
     let realizedSuffixRows: [Int]
-    let maximumOriginDeltaBeforeRepair: CGFloat
-    let repairedRow: Int?
-    let repairedOriginDelta: CGFloat?
-    let maximumOriginDeltaAfterRepair: CGFloat
+    let maximumOriginDelta: CGFloat
     let maximumOriginDeltaAfterHeightReconciliation: CGFloat
-    let selectedRowsBeforeRepair: IndexSet
-    let selectedRowsAfterRepair: IndexSet
-    let clipOriginBeforeRepair: NSPoint
-    let clipOriginAfterRepair: NSPoint
-    let secondRepairWasNeeded: Bool
-    let repairWasNeededAfterHeightReconciliation: Bool
+    let selectedRows: IndexSet
     let reloadItemCallCount: Int
-    let insertedItemReloadCount: Int
-    let reloadChildrenValues: [Bool]
     let reloadDataCallCount: Int
 }
 
-private final class SideBarOutlineLayoutRepairFixture: NSObject,
+private final class SideBarOutlineInsertionFixture: NSObject,
     NSOutlineViewDataSource,
     NSOutlineViewDelegate
 {
@@ -326,7 +316,7 @@ private final class SideBarOutlineLayoutRepairFixture: NSObject,
 
     private let scrollView: NSScrollView
     private let window: NSWindow
-    private var items: [OutlineLayoutRepairItem]
+    private var items: [OutlineRowItem]
 
     override init() {
         let viewport = NSRect(x: 0, y: 0, width: 193, height: 640)
@@ -340,7 +330,7 @@ private final class SideBarOutlineLayoutRepairFixture: NSObject,
         items = [
             36, 36, 36, 36, 36, 36, 16, 36,
             260, 36, 260, 36, 36, 36, 36, 36, 36, 36,
-        ].map { OutlineLayoutRepairItem(height: $0) }
+        ].map { OutlineRowItem(height: $0) }
 
         super.init()
 
@@ -364,7 +354,7 @@ private final class SideBarOutlineLayoutRepairFixture: NSObject,
         outlineView.bottomPadding = 130
         window.orderFrontRegardless()
 
-        outlineView.reloadData()
+        outlineView.reloadWith(snapshot(of: items), animated: false, updateDataSource: {})
         layout()
 
         let clipView = scrollView.contentView
@@ -392,20 +382,14 @@ private final class SideBarOutlineLayoutRepairFixture: NSObject,
         window.close()
     }
 
-    func insertAndRepair(insertionIndex: Int = 8, insertedCount: Int = 1) -> OutlineLayoutRepairResult {
-        let insertedItems = (0..<insertedCount).map { _ in OutlineLayoutRepairItem(height: 36) }
-        let insertedItem = insertedItems[0]
-        items.insert(contentsOf: insertedItems, at: insertionIndex)
+    func insert(at insertionIndex: Int = 8, count insertedCount: Int = 1) -> OutlineInsertionResult {
+        var newItems = items
+        newItems.insert(contentsOf: (0..<insertedCount).map { _ in OutlineRowItem(height: 36) }, at: insertionIndex)
         let suffixStart = insertionIndex + 1
         let groupRows = IndexSet([8, 10].map { $0 >= insertionIndex ? $0 + insertedCount : $0 })
 
-        outlineView.beginUpdates()
-        outlineView.insertItems(
-            at: IndexSet(integersIn: insertionIndex..<(insertionIndex + insertedCount)),
-            inParent: nil,
-            withAnimation: []
-        )
-        outlineView.endUpdates()
+        outlineView.clearRecordedReloads()
+        outlineView.reloadWith(snapshot(of: newItems), animated: false, updateDataSource: { self.items = newItems })
 
         drainMainQueue()
         let rects = (0..<outlineView.numberOfRows).map {
@@ -416,33 +400,7 @@ private final class SideBarOutlineLayoutRepairFixture: NSObject,
         let realizedSuffixRows = (suffixStart..<outlineView.numberOfRows).filter { row in
             outlineView.rowView(atRow: row, makeIfNecessary: false) != nil
         }
-        let maximumOriginDeltaBeforeRepair = maximumOriginDelta(
-            rows: realizedSuffixRows,
-            rects: rects
-        )
-        let selectedRowsBeforeRepair = outlineView.selectedRowIndexes
-        let clipOriginBeforeRepair = scrollView.contentView.bounds.origin
-
-        outlineView.clearRecordedReloads()
-        let repair = outlineView.repairRealizedRowLayoutIfNeeded(
-            afterInserting: insertedItem
-        )
-
-        let rectsAfterRepair = (0..<outlineView.numberOfRows).map {
-            outlineView.rect(ofRow: $0)
-        }
-        let realizedRowsAfterRepair = (suffixStart..<outlineView.numberOfRows).filter { row in
-            outlineView.rowView(atRow: row, makeIfNecessary: false) != nil
-        }
-        let maximumOriginDeltaAfterRepair = maximumOriginDelta(
-            rows: realizedRowsAfterRepair,
-            rects: rectsAfterRepair
-        )
-        let selectedRowsAfterRepair = outlineView.selectedRowIndexes
-        let clipOriginAfterRepair = scrollView.contentView.bounds.origin
-        let secondRepairWasNeeded = outlineView.repairRealizedRowLayoutIfNeeded(
-            afterInserting: insertedItem
-        ) != nil
+        let originDelta = maximumOriginDelta(rows: realizedSuffixRows, rects: rects)
 
         DispatchQueue.main.async { [outlineView] in
             NSAnimationContext.runAnimationGroup { context in
@@ -462,37 +420,16 @@ private final class SideBarOutlineLayoutRepairFixture: NSObject,
         let finalRealizedSuffixRows = (suffixStart..<outlineView.numberOfRows).filter { row in
             outlineView.rowView(atRow: row, makeIfNecessary: false) != nil
         }
-        let maximumOriginDeltaAfterHeightReconciliation = maximumOriginDelta(
-            rows: finalRealizedSuffixRows,
-            rects: finalRects
-        )
-        let repairWasNeededAfterHeightReconciliation =
-            outlineView.repairRealizedRowLayoutIfNeeded(
-                afterInserting: insertedItem
-            ) != nil
-        let insertedItemID = ObjectIdentifier(insertedItem)
-        let insertedItemReloads = outlineView.itemReloads.filter {
-            $0.itemID == insertedItemID
-        }
 
-        return OutlineLayoutRepairResult(
+        return OutlineInsertionResult(
             realizedSuffixRows: realizedSuffixRows,
-            maximumOriginDeltaBeforeRepair: maximumOriginDeltaBeforeRepair,
-            repairedRow: repair?.row,
-            repairedOriginDelta: repair?.originDelta,
-            maximumOriginDeltaAfterRepair: maximumOriginDeltaAfterRepair,
-            maximumOriginDeltaAfterHeightReconciliation:
-                maximumOriginDeltaAfterHeightReconciliation,
-            selectedRowsBeforeRepair: selectedRowsBeforeRepair,
-            selectedRowsAfterRepair: selectedRowsAfterRepair,
-            clipOriginBeforeRepair: clipOriginBeforeRepair,
-            clipOriginAfterRepair: clipOriginAfterRepair,
-            secondRepairWasNeeded: secondRepairWasNeeded,
-            repairWasNeededAfterHeightReconciliation:
-                repairWasNeededAfterHeightReconciliation,
+            maximumOriginDelta: originDelta,
+            maximumOriginDeltaAfterHeightReconciliation: maximumOriginDelta(
+                rows: finalRealizedSuffixRows,
+                rects: finalRects
+            ),
+            selectedRows: outlineView.selectedRowIndexes,
             reloadItemCallCount: outlineView.itemReloads.count,
-            insertedItemReloadCount: insertedItemReloads.count,
-            reloadChildrenValues: insertedItemReloads.map(\.reloadChildren),
             reloadDataCallCount: outlineView.reloadDataCallCount
         )
     }
@@ -510,7 +447,7 @@ private final class SideBarOutlineLayoutRepairFixture: NSObject,
     }
 
     func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-        (item as? OutlineLayoutRepairItem)?.height ?? 36
+        (item as? OutlineRowItem)?.height ?? 36
     }
 
     func outlineView(
@@ -522,6 +459,14 @@ private final class SideBarOutlineLayoutRepairFixture: NSObject,
             as? NSTableCellView ?? NSTableCellView()
         cell.identifier = Identifier.cell
         return cell
+    }
+
+    private func snapshot(of items: [OutlineRowItem]) -> DiffableOutlineSnapshot<AnyHashable> {
+        let ids = items.map { AnyHashable(ObjectIdentifier($0)) }
+        let nodes = zip(ids, items).map { id, item in
+            (id, DiffableOutlineSnapshot<AnyHashable>.Node(id: id, item: item, parentID: nil, childIDs: []))
+        }
+        return DiffableOutlineSnapshot(rootIDs: ids, nodes: Dictionary(uniqueKeysWithValues: nodes))
     }
 
     private func maximumOriginDelta(rows: [Int], rects: [NSRect]) -> CGFloat {
@@ -763,50 +708,29 @@ final class DiffableOutlineViewAnimationTests: XCTestCase {
         }
     }
 
-    func testRepairsStaleRealizedRowsAfterInsertionInVariableHeightOutline() {
+    func testInsertionAboveVisibleRowsKeepsRealizedRowsOnTheirRects() {
         runOnMain {
-            let fixture = SideBarOutlineLayoutRepairFixture()
-            let result = fixture.insertAndRepair()
+            let fixture = SideBarOutlineInsertionFixture()
+            let result = fixture.insert()
 
             XCTAssertFalse(result.realizedSuffixRows.isEmpty)
-            XCTAssertGreaterThan(result.maximumOriginDeltaBeforeRepair, 0.5)
-            XCTAssertNotNil(result.repairedRow)
-            XCTAssertGreaterThan(abs(result.repairedOriginDelta ?? 0), 0.5)
-            XCTAssertEqual(result.reloadItemCallCount, 1)
-            XCTAssertEqual(result.insertedItemReloadCount, 1)
-            XCTAssertEqual(result.reloadChildrenValues, [false])
+            XCTAssertLessThanOrEqual(result.maximumOriginDelta, 0.5)
+            XCTAssertLessThanOrEqual(result.maximumOriginDeltaAfterHeightReconciliation, 0.5)
+            XCTAssertEqual(result.selectedRows, IndexSet(integer: 8))
+            XCTAssertEqual(result.reloadItemCallCount, 0)
             XCTAssertEqual(result.reloadDataCallCount, 0)
-            XCTAssertLessThanOrEqual(result.maximumOriginDeltaAfterRepair, 0.5)
-            XCTAssertLessThanOrEqual(
-                result.maximumOriginDeltaAfterHeightReconciliation,
-                0.5
-            )
-            XCTAssertEqual(result.selectedRowsBeforeRepair, IndexSet(integer: 8))
-            XCTAssertEqual(result.selectedRowsAfterRepair, result.selectedRowsBeforeRepair)
-            XCTAssertEqual(
-                result.clipOriginAfterRepair.x,
-                result.clipOriginBeforeRepair.x,
-                accuracy: 0.5
-            )
-            XCTAssertEqual(
-                result.clipOriginAfterRepair.y,
-                result.clipOriginBeforeRepair.y,
-                accuracy: 0.5
-            )
-            XCTAssertFalse(result.secondRepairWasNeeded)
-            XCTAssertFalse(result.repairWasNeededAfterHeightReconciliation)
         }
     }
 
     func testBatchInsertionAroundVariableHeightRowsPreservesGeometry() {
         runOnMain {
             for insertionIndex in [8, 12] {
-                let fixture = SideBarOutlineLayoutRepairFixture()
-                let result = fixture.insertAndRepair(insertionIndex: insertionIndex, insertedCount: 2)
+                let fixture = SideBarOutlineInsertionFixture()
+                let result = fixture.insert(at: insertionIndex, count: 2)
                 XCTAssertFalse(result.realizedSuffixRows.isEmpty)
-                XCTAssertLessThanOrEqual(result.maximumOriginDeltaAfterRepair, 0.5)
+                XCTAssertLessThanOrEqual(result.maximumOriginDelta, 0.5)
                 XCTAssertLessThanOrEqual(result.maximumOriginDeltaAfterHeightReconciliation, 0.5)
-                XCTAssertEqual(result.selectedRowsAfterRepair, result.selectedRowsBeforeRepair)
+                XCTAssertEqual(result.reloadItemCallCount, 0)
                 XCTAssertEqual(result.reloadDataCallCount, 0)
             }
         }

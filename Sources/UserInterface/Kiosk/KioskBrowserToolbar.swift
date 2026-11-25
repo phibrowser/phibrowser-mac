@@ -374,6 +374,7 @@ private struct KioskProfileMenu: View {
     @ObservedObject private var profileManager: ProfileManager
     let currentProfileId: String
     let onSelect: (String) -> Void
+    @State private var menuPresenter = KioskProfileMenuPresenter()
 
     init(
         currentProfileId: String,
@@ -385,43 +386,56 @@ private struct KioskProfileMenu: View {
         self.onSelect = onSelect
     }
 
+    /// The glyph cropped out of the asset's padded 32-point canvas, so the
+    /// label centers the visible icon against the name.
+    private static let profileIcon: NSImage = {
+        let source = NSImage(resource: .settingProfileIcon)
+        let glyphRect = NSRect(x: 7, y: 9, width: 18, height: 15)
+        let scale: CGFloat = 0.7
+        let icon = NSImage(
+            size: NSSize(width: glyphRect.width * scale, height: glyphRect.height * scale),
+            flipped: false
+        ) { rect in
+            source.draw(in: rect, from: glyphRect, operation: .sourceOver, fraction: 1)
+            return true
+        }
+        icon.isTemplate = true
+        return icon
+    }()
+
     private var currentProfileName: String {
         profileManager.profile(for: currentProfileId)?.displayName
             ?? currentProfileId
     }
 
     var body: some View {
-        Menu {
-            ForEach(profileManager.userAssignableProfiles) { profile in
-                Button {
-                    onSelect(profile.profileId)
-                } label: {
-                    HStack {
-                        Text(verbatim: profile.displayName)
-                        if profile.profileId == currentProfileId {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-                .disabled(profile.profileId == currentProfileId)
-            }
+        Button {
+            menuPresenter.anchorView?.showMenu()
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
+                Image(nsImage: Self.profileIcon)
+                    .accessibilityHidden(true)
                 Text(verbatim: currentProfileName)
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.tail)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, 7)
             .frame(height: 24)
-            .background(Capsule().fill(Color.primary.opacity(0.07)))
             .contentShape(Capsule())
         }
-        .menuStyle(.borderlessButton)
         .buttonStyle(.plain)
+        .background {
+            KioskProfileMenuAnchor(
+                profiles: profileManager.userAssignableProfiles,
+                currentProfileId: currentProfileId,
+                onSelect: onSelect,
+                presenter: menuPresenter
+            )
+        }
         .accessibilityLabel(NSLocalizedString(
             "kiosk.toolbar.profileMenu.accessibilityLabel",
             value: "Switch Profile",
@@ -430,6 +444,64 @@ private struct KioskProfileMenu: View {
         .onAppear {
             profileManager.refresh()
         }
+    }
+}
+
+private final class KioskProfileMenuPresenter {
+    weak var anchorView: KioskProfileMenuAnchorView?
+}
+
+private struct KioskProfileMenuAnchor: NSViewRepresentable {
+    let profiles: [PhiBrowserProfile]
+    let currentProfileId: String
+    let onSelect: (String) -> Void
+    let presenter: KioskProfileMenuPresenter
+
+    func makeNSView(context: Context) -> KioskProfileMenuAnchorView {
+        let view = KioskProfileMenuAnchorView()
+        presenter.anchorView = view
+        return view
+    }
+
+    func updateNSView(_ view: KioskProfileMenuAnchorView, context: Context) {
+        view.profiles = profiles
+        view.currentProfileId = currentProfileId
+        view.onSelect = onSelect
+    }
+}
+
+private final class KioskProfileMenuAnchorView: NSView {
+    var profiles: [PhiBrowserProfile] = []
+    var currentProfileId = ""
+    var onSelect: ((String) -> Void)?
+
+    func showMenu() {
+        guard window != nil, !profiles.isEmpty else { return }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for profile in profiles {
+            let item = NSMenuItem(
+                title: profile.displayName,
+                action: #selector(selectProfile(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = profile.profileId
+            let isCurrent = profile.profileId == currentProfileId
+            item.state = isCurrent ? .on : .off
+            item.isEnabled = !isCurrent
+            menu.addItem(item)
+        }
+        let bottomLeading = NSPoint(
+            x: bounds.minX,
+            y: isFlipped ? bounds.maxY : bounds.minY
+        )
+        menu.popUp(positioning: nil, at: bottomLeading, in: self)
+    }
+
+    @objc private func selectProfile(_ sender: NSMenuItem) {
+        guard let profileId = sender.representedObject as? String else { return }
+        onSelect?(profileId)
     }
 }
 

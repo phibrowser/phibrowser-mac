@@ -2693,7 +2693,7 @@ private func systemSymbolName(for stored: String) -> String? {
 }
 
 /// A pip's hover card, on one row: the Space name in a theme-tinted label, the
-/// bound profile (person glyph + name), and the switch shortcut as keycaps.
+/// bound profile (icon + name), and the switch shortcut as keycaps.
 /// Every label and keycap takes the window's theme color (`accent`).
 ///
 /// Labels size to their text and truncate only past a per-label maximum, so the
@@ -2742,9 +2742,15 @@ struct SpaceHoverCard: View {
 
                 if let profileName {
                     HStack(spacing: Self.profileGlyphSpacing) {
-                        Image(systemName: "person.crop.circle")
-                            .font(.system(size: 12, weight: .medium))
+                        Image(.settingProfileIcon)
+                            .resizable()
+                            .scaledToFit()
                             .frame(width: Self.profileGlyphSize, height: Self.profileGlyphSize)
+                            // The glyph occupies only 18 × 15 points of the 32-point asset.
+                            .scaleEffect(1.5)
+                            // Lines the glyph's center up with the label's cap height.
+                            .offset(y: 1)
+                            .accessibilityHidden(true)
                         labelText(
                             profileName,
                             maxWidth: Self.profileLabelMaxWidth - 2 * Self.labelHorizontalPadding

@@ -6,12 +6,19 @@
 import Foundation
 
 enum PhiBuildCapabilities {
+    #if ATHENA_CANARY_TRIAL
+    static let usesAthenaCanary = true
+    #else
+    static let usesAthenaCanary = false
+    #endif
+
     #if PHI_OSS_BUILD
     static let supportsAuthentication = false
     static let supportsAI = false
     #else
     static let supportsAuthentication = true
-    static let supportsAI = true
+    // Browser AI surfaces require the Sentinel backend.
+    static let supportsAI = !usesAthenaCanary
     #endif
 }
 

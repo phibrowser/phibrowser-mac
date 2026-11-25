@@ -639,6 +639,9 @@ enum FeedbackOutbox {
                 truncated: collectedBytes < item.length, status: collectedBytes == 0 ? "empty" : "collected"
             )
         }
+        guard !PhiBuildCapabilities.usesAthenaCanary else {
+            return FeedbackLogSnapshot(primary: primary, sentinel: [])
+        }
         let sentinel = try FeedbackSentinelLogCollector.collect(
             mainLogsURL: sentinelLogsURL, serviceLogsURL: sentinelServiceLogsURL, jobRoot: jobRoot
         )

@@ -88,7 +88,7 @@ final class SentinelIPCClient: Sendable {
     /// derived from the Sentinel's user-specific storage path. Falls back to the
     /// legacy $TMPDIR-rooted path when only a pre-migration Sentinel is running.
     private func socketPath() -> String? {
-        guard let storagePath = sentinelStoragePath() else { return nil }
+        guard !PhiBuildCapabilities.usesAthenaCanary, let storagePath = sentinelStoragePath() else { return nil }
         return ipcSocketPath(for: storagePath)
     }
 

@@ -26,7 +26,7 @@ private final class PhiUserDataExportSelectionBox {
     init(browserDataAvailable: Bool) {
         selection = PhiUserDataExportSelection(
             includeBrowserData: browserDataAvailable,
-            includeAIData: true
+            includeAIData: !PhiBuildCapabilities.usesAthenaCanary
         )
     }
 }
@@ -218,6 +218,7 @@ extension AppController {
             target: nil,
             action: nil
         )
+        aiCheckbox.isEnabled = !PhiBuildCapabilities.usesAthenaCanary
         aiCheckbox.state = box.selection.includeAIData ? .on : .off
 
         box.readState = {

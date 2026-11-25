@@ -143,6 +143,7 @@ enum SentinelLanguagePreferenceSync {
         applicationDomainName: String? = nil,
         systemPreferredLanguages: [String] = Locale.preferredLanguages
     ) -> TerminationSyncResult {
+        guard !PhiBuildCapabilities.usesAthenaCanary else { return .unchanged }
         let preference = PhiPreferences.GeneralSettings.loadAppLanguagePreference(
             from: defaults
         )
@@ -181,6 +182,7 @@ enum SentinelLanguagePreferenceSync {
         _ preference: AppLanguagePreference,
         notifySentinel: Bool
     ) {
+        guard !PhiBuildCapabilities.usesAthenaCanary else { return }
         let sharedPreference = makeSharedPreference(for: preference)
 
         do {

@@ -121,7 +121,7 @@ import PostHog
         // whether its windows may be shown. The async refresh below can still
         // recover a fresher shared credential snapshot afterwards.
         resolveBrowserAccessFromAuthentication(checkChromiumLaunchStatus: true)
-        if ApplicationState.shared.isGuest || !PhiBuildCapabilities.supportsAI {
+        if ApplicationState.shared.isGuest || !PhiBuildCapabilities.supportsAuthentication {
             GuestModePreferences.disableAI()
         }
         let permitsSentinelLaunch: Bool
@@ -159,7 +159,7 @@ import PostHog
         
         ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = self
         
-        #if !PHI_OSS_BUILD
+        #if !PHI_OSS_BUILD && !ATHENA_CANARY_TRIAL
         setupSparkle()
         #endif
         setupKinfisherCache()
@@ -252,6 +252,9 @@ import PostHog
                                                object: nil)
         kioskGlobalShortcutRegistrar.start()
         
+        #if ATHENA_CANARY_TRIAL
+        if permitsSentinelLaunch { openTrialAthenaWhenSignedIn() }
+        #else
         if permitsSentinelLaunch,
            ApplicationState.shared.isAuthenticated {
             AuthenticatedSentinelSessionLifecycle.reconcile()
@@ -267,10 +270,57 @@ import PostHog
                 )
             }
         }
+        #endif
     }
+
+    #if ATHENA_CANARY_TRIAL
+    private var requestedTrialAthena = false
+
+    @MainActor
+    private func openTrialAthenaWhenSignedIn() {
+        guard ApplicationState.shared.isAuthenticated else {
+            requestedTrialAthena = false
+            return
+        }
+        guard !requestedTrialAthena else { return }
+        requestedTrialAthena = true
+        let url = Bundle.main.bundleURL.deletingLastPathComponent()
+            .appendingPathComponent("Athena Canary.app", isDirectory: true)
+        Task {
+            let verified = await Task.detached(priority: .userInitiated) {
+                AgentPeerIdentity.verifiesCompanion(
+                    at: url, identifier: "com.phibrowser.canary.athena"
+                )
+            }.value
+            guard verified else {
+                requestedTrialAthena = false
+                AppLogError("Could not verify the Athena Canary beside the browser.")
+                return
+            }
+            guard ApplicationState.shared.isAuthenticated else { return }
+            do {
+                _ = try await NSWorkspace.shared.openApplication(
+                    at: url, configuration: NSWorkspace.OpenConfiguration()
+                )
+            } catch {
+                requestedTrialAthena = false
+                AppLogError("Could not open Athena Canary: \(error.localizedDescription)")
+            }
+        }
+    }
+    #endif
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         bindChromiumBridgeIfNeeded()
+
+        #if ATHENA_CANARY_TRIAL
+        // Some browser surfaces observe this preference directly. Mask it for
+        // this process so the ordinary Canary retains its saved AI setting.
+        let defaults = UserDefaults.standard
+        var arguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        arguments[PhiPreferences.AISettings.phiAIEnabled.rawValue] = false
+        defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+        #endif
 
         // Register defaults before any settings are read.
         UserDefaultsRegistration.registerDefaults()
@@ -1358,7 +1408,11 @@ import PostHog
 
     @objc private func browserAccessStateDidChange(_ notification: Notification) {
         Task { @MainActor in
+            #if ATHENA_CANARY_TRIAL
+            if hasFinishedLaunching { openTrialAthenaWhenSignedIn() }
+            #else
             AuthenticatedSentinelSessionLifecycle.reconcile()
+            #endif
             guard ApplicationState.shared.canUseBrowser,
                   !ApplicationState.shared
                     .isGuestAccountPromotionInProgress else {

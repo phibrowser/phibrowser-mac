@@ -979,6 +979,18 @@ enum AgentPeerIdentity {
             + " and identifier \"\(identifier)\""
     }
 
+    #if ATHENA_CANARY_TRIAL
+    /// The trial opens a sibling app from the distribution folder. Apply the
+    /// same signing requirement here that the browser uses for this peer.
+    static func verifiesCompanion(at url: URL, identifier: String) -> Bool {
+        var code: SecStaticCode?
+        guard let requirement = companionRequirements[identifier],
+              SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess,
+              let code else { return false }
+        return SecStaticCodeCheckValidity(code, [], requirement) == errSecSuccess
+    }
+    #endif
+
     private static let companionRequirements: [String: SecRequirement] = {
         var requirements: [String: SecRequirement] = [:]
         let identifiers = AgentCompanion.all.flatMap(\.channels)

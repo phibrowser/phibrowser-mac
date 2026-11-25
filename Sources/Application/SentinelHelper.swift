@@ -287,11 +287,17 @@ enum AuthenticatedSentinelSessionLifecycle {
     /// is running; a plain quit would be refused and show a quit alert.
     static func containCredentialBoundaryFailure() {
         SentinelWatchdog.shared.stop()
+        #if ATHENA_CANARY_TRIAL
+        for app in NSRunningApplication.runningApplications(withBundleIdentifier: "com.phibrowser.canary.athena") {
+            app.terminate()
+        }
+        #else
         if SentinelHelper.requestTerminationForBrowserUpdate() {
             AppLogInfo("Stopped Sentinel after credential boundary cleanup failure")
         } else {
             AppLogError("Sentinel did not exit after credential boundary cleanup failure; it may still hold the previous account token")
         }
+        #endif
     }
 
     private static func schedulePhiReactivationAfterRegistration() {
@@ -322,6 +328,7 @@ enum SentinelHelper {
     }
 
     static func register() {
+        guard !PhiBuildCapabilities.usesAthenaCanary else { return }
         let identifier = loginItemIdentifier()
         let service = SMAppService.loginItem(identifier: identifier)
         AppLogInfo("Sentinel login item identifier: \(identifier)")
@@ -336,6 +343,7 @@ enum SentinelHelper {
     }
 
     static func unregister() async {
+        guard !PhiBuildCapabilities.usesAthenaCanary else { return }
         let identifier = loginItemIdentifier()
         let service = SMAppService.loginItem(identifier: identifier)
         guard service.status != .notRegistered,
@@ -354,6 +362,7 @@ enum SentinelHelper {
     }
 
     static var isRunning: Bool {
+        guard !PhiBuildCapabilities.usesAthenaCanary else { return false }
         let identifier = loginItemIdentifier()
         return NSWorkspace.shared.runningApplications.contains {
             guard let bundleID = $0.bundleIdentifier else { return false }
@@ -362,6 +371,7 @@ enum SentinelHelper {
     }
 
     static func runningInfo(identifier: String = loginItemIdentifier()) -> RunningInfo? {
+        guard !PhiBuildCapabilities.usesAthenaCanary else { return nil }
         guard let app = runningApplication(identifier: identifier) else {
             return nil
         }
@@ -377,10 +387,12 @@ enum SentinelHelper {
     }
 
     static func launch() {
+        guard !PhiBuildCapabilities.usesAthenaCanary else { return }
         ensureRunning(identifier: loginItemIdentifier())
     }
 
     static func terminateAll() {
+        guard !PhiBuildCapabilities.usesAthenaCanary else { return }
         let identifiers: Set<String> = [loginItemIdentifier()]
         for app in NSWorkspace.shared.runningApplications.filter({ identifiers.contains($0.bundleIdentifier ?? "") }) {
             guard !app.isTerminated else { continue }
@@ -391,6 +403,7 @@ enum SentinelHelper {
 
     @discardableResult
     static func requestTerminationForBrowserUpdate(timeout: TimeInterval = 8) -> Bool {
+        guard !PhiBuildCapabilities.usesAthenaCanary else { return true }
         let identifier = loginItemIdentifier()
         guard runningApplication(identifier: identifier) != nil else {
             AppLogInfo("Sentinel is not running; no browser update termination request needed")
@@ -423,6 +436,7 @@ enum SentinelHelper {
     }
 
     static func openDashboard(section: String) {
+        guard !PhiBuildCapabilities.usesAthenaCanary else { return }
         let identifier = loginItemIdentifier()
 
         // Launch Sentinel if needed; ensureRunning no-ops when it is already running.
@@ -463,6 +477,7 @@ enum SentinelHelper {
     /// Phi AI is disabled) never receives the event, and its data for the
     /// account lingers — accepted residue, logged so the drop is diagnosable.
     static func postAccountDeletedEvent() {
+        guard !PhiBuildCapabilities.usesAthenaCanary else { return }
         let identifier = loginItemIdentifier()
         if runningApplication(identifier: identifier) == nil {
             AppLogWarn("Posting account deleted event while Sentinel is not running; the event will be lost (bundleID \(identifier))")
@@ -612,6 +627,7 @@ enum SentinelHelper {
     ///   resolution below, or
     /// - the file system rejected the read (sandbox, permissions).
     static func recentBootLog(maxBytes: Int = 98_000) -> Data? {
+        guard !PhiBuildCapabilities.usesAthenaCanary else { return nil }
         let url = bootLogURL()
         guard FileManager.default.fileExists(atPath: url.path) else {
             return nil

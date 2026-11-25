@@ -44,7 +44,7 @@ enum ServiceBrokerSocketPath {
     /// `auth0Subject` for this browser bundle. `nil` when the subject is empty
     /// or Application Support cannot be located.
     static func currentDataSocketPath(auth0Subject: String) -> String? {
-        guard !auth0Subject.isEmpty,
+        guard !PhiBuildCapabilities.usesAthenaCanary, !auth0Subject.isEmpty,
               let applicationSupportPath = NSSearchPathForDirectoriesInDomains(
                   .applicationSupportDirectory,
                   .userDomainMask,

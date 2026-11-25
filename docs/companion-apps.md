@@ -150,3 +150,21 @@ and re-broadcasts `saveForLater.armedChanged`, the same path a PostHog flag
 load takes, and the Library, the General and Profiles settings panes and the
 Shortcuts list re-read the flag. With no companion connected the flag and
 every surface behave exactly as before.
+
+## Athena Canary internal trial
+
+Build the native client with the Release-Canary configuration and add
+`ATHENA_CANARY_TRIAL` to its existing Swift compilation conditions. Package
+the signed browser and the signed `Athena Canary.app` together in one folder.
+Omit the Sentinel login item. Both apps keep their Canary identifiers so that
+the shared sign-in and the browser companion signature check work. Testers
+quit their regular Canary apps before opening the trial and keep both trial
+apps together when moving the folder.
+
+After sign-in, Phi opens its signed sibling Athena. Athena owns its Runner,
+service updates, and chat UI. Guest sessions only open the browser. The trial
+disables browser-hosted AI, Sentinel supervision, Runner and Service Broker
+connections, and AI-data export. Browser data can still be exported.
+The trial browser does not start its nightly updater. It shares Canary's user
+data and credentials. To return to the regular Canary, quit both trial apps
+and open the regular browser.

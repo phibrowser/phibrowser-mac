@@ -219,6 +219,7 @@ final class SentinelTelemetryConsentPublisher {
     /// Returns whether this synchronization durably changed the shared
     /// snapshot.
     private func synchronize(enabled: Bool) -> Bool {
+        guard !PhiBuildCapabilities.usesAthenaCanary else { return false }
         do {
             let result = try store.synchronize(
                 enabled: enabled,

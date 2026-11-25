@@ -584,7 +584,7 @@ extension AppController {
             } else
             
             if menuRole == .app, let subMenu = menuItem.submenu {
-                #if !PHI_OSS_BUILD
+                #if !PHI_OSS_BUILD && !ATHENA_CANARY_TRIAL
                 subMenu.items.removeAll { $0.tag == AppController.checkForUpdateItemTag }
 
                 for (index, item) in subMenu.items.enumerated() {
@@ -800,7 +800,7 @@ extension AppController {
                 )
                 uninstallItem.tag = AppController.uninstallPhiItemTag
                 uninstallItem.target = self
-                subMenu.addItem(uninstallItem)
+                if !PhiBuildCapabilities.usesAthenaCanary { subMenu.addItem(uninstallItem) }
                 
                 subMenu.delegate = self
             }
@@ -1999,7 +1999,7 @@ extension AppController {
         let sentinelLogsURL = SentinelHelper.sentinelLogsDirectoryURL()
         let fm = FileManager.default
         let hasPhi = fm.fileExists(atPath: phiLogsURL.path)
-        let hasSentinel = fm.fileExists(atPath: sentinelLogsURL.path)
+        let hasSentinel = !PhiBuildCapabilities.usesAthenaCanary && fm.fileExists(atPath: sentinelLogsURL.path)
         guard hasPhi || hasSentinel else {
             let alert = NSAlert()
             alert.messageText = NSLocalizedString("app.logExport.noLogsFound.title", value: "Export Logs", comment: "Help menu - Log export alert title when no log folders exist")

@@ -138,6 +138,22 @@ final class ShellWindow: NSWindow {
         return isAncestor(of: key)
     }
 
+    /// Whether a picture-in-picture window (video or document), or a window
+    /// attached to one, holds key while this shell is the one the user was
+    /// last in. The PiP is no child of this shell: a click in it takes key
+    /// and main, and AppKit gives key back to it when it was the last key
+    /// window as Phi returns from another app (Cmd-Tab, Dock). Other shells
+    /// stay ordinary background windows, whose first click only brings them
+    /// forward.
+    private var pictureInPictureIsKeyOverThisShell: Bool {
+        guard let key = NSApp.keyWindow, key !== self,
+              SpaceSessionControllersManager.shared.activeWindowController?.window === self else {
+            return false
+        }
+        return ChromiumLauncher.sharedInstance().bridge?.isPictureInPictureWindow?(
+            PictureInPictureOnlyDesktop.attachedTo(key)) == true
+    }
+
     /// Whether `window` is one of this shell's descendants (see
     /// `childWindowIsKey` for what those are).
     func isAncestor(of window: NSWindow) -> Bool {
@@ -272,7 +288,11 @@ final class ShellWindow: NSWindow {
             // on a click. Reclaim it before dispatch so the
             // `makeFirstResponder` guard does not swallow the click and tabs,
             // sidebar and page handle it at once instead of on a second try.
-            if childWindowIsKey {
+            // The same for a picture-in-picture window holding key over this
+            // shell: AppKit would spend the click on making the shell key,
+            // and the page, which does not accept the first mouse, would
+            // never see it. AppKit still orders the shell front on the click.
+            if childWindowIsKey || pictureInPictureIsKeyOverThisShell {
                 makeKey()
             }
         default:

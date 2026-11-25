@@ -7961,6 +7961,17 @@ class BrowserState {
         return indices.enumerated().allSatisfy { $0.element == indices[0] + $0.offset }
     }
     
+    /// Reserve the visible slot for a live Space transfer and return the matching
+    /// Chromium strip index. Pinned and bookmark tabs can precede the first normal tab.
+    func scheduleSpaceTabMove(tabGuid: Int, fromKiosk: Bool) -> Int {
+        if fromKiosk, opensNewTabsAtTop, let first = normalTabs.first {
+            scheduleNormalTabInsertion(tabGuid: tabGuid, at: 0)
+            return first.index
+        }
+        scheduleNormalTabInsertion(tabGuid: tabGuid, at: normalTabs.count)
+        return tabs.count
+    }
+
     func scheduleNormalTabInsertion(tabGuid: Int, at index: Int) {
         pendingNormalTabInsertion = PendingNormalTabInsertion(url: nil,
                                                               guid: tabGuid,

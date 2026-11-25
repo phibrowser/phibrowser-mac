@@ -161,7 +161,7 @@ the shared sign-in and the browser companion signature check work. Testers
 quit their regular Canary apps before opening the trial and keep both trial
 apps together when moving the folder.
 
-After sign-in, Phi opens its signed sibling Athena. Athena owns its Runner,
+In Settings → Athena, enabling Athena opens the signed sibling app for a signed-in user. Disabling it quits that app and lets its Runner shut down. A separate preference controls automatic opening at browser startup or sign-in. Both preferences default to on. Athena owns its Runner,
 service updates, and chat UI. Guest sessions only open the browser. The trial
 disables browser-hosted AI, Sentinel supervision, Runner and Service Broker
 connections, and AI-data export. Browser data can still be exported.

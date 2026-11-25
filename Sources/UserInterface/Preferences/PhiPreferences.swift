@@ -419,6 +419,17 @@ extension PhiPreferences {
         }
     }
     
+    #if ATHENA_CANARY_TRIAL
+    enum AthenaSettings: String {
+        case enabled = "PhiAthenaEnabled"
+        case openAtStartup = "PhiAthenaOpenAtStartup"
+
+        func loadValue() -> Bool {
+            UserDefaults.standard.bool(forKey: rawValue, default: true)
+        }
+    }
+    #endif
+
     enum AISettings: String, CaseIterable {
         case phiAIEnabled, enableConnectors, enableConnectorContext , enableChatWithTabs, enableBrowserMemories, launchSentinelOnLogin, enableProactiveSuggestionsOnNTP, enableEmailProtection
         #if DEBUG || NIGHTLY_BUILD

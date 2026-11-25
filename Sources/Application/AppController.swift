@@ -274,39 +274,79 @@ import PostHog
     }
 
     #if ATHENA_CANARY_TRIAL
-    private var requestedTrialAthena = false
+    private var handledTrialAthenaSignIn = false
+    private var trialAthenaOperation: Task<Void, Never>?
 
     @MainActor
     private func openTrialAthenaWhenSignedIn() {
         guard ApplicationState.shared.isAuthenticated else {
-            requestedTrialAthena = false
+            handledTrialAthenaSignIn = false
             return
         }
-        guard !requestedTrialAthena else { return }
-        requestedTrialAthena = true
-        let url = Bundle.main.bundleURL.deletingLastPathComponent()
-            .appendingPathComponent("Athena Canary.app", isDirectory: true)
-        Task {
-            let verified = await Task.detached(priority: .userInitiated) {
-                AgentPeerIdentity.verifiesCompanion(
-                    at: url, identifier: "com.phibrowser.canary.athena"
-                )
-            }.value
-            guard verified else {
-                requestedTrialAthena = false
-                AppLogError("Could not verify the Athena Canary beside the browser.")
+        guard !handledTrialAthenaSignIn else { return }
+        handledTrialAthenaSignIn = true
+        if PhiPreferences.AthenaSettings.openAtStartup.loadValue(),
+           PhiPreferences.AthenaSettings.enabled.loadValue() {
+            requestTrialAthena(open: true)
+        }
+    }
+
+    /// Athena stops its Runner asynchronously on quit. Serialize requests so
+    /// switching it back on waits for the previous instance to finish exiting.
+    @MainActor
+    func requestTrialAthena(open: Bool) {
+        let previous = trialAthenaOperation
+        trialAthenaOperation = Task { @MainActor in
+            await previous?.value
+            let url = Bundle.main.bundleURL.deletingLastPathComponent()
+                .appendingPathComponent("Athena Canary.app", isDirectory: true)
+            let id = "com.phibrowser.canary.athena"
+            if !open {
+                for app in NSRunningApplication.runningApplications(withBundleIdentifier: id)
+                    where app.bundleURL?.resolvingSymlinksInPath() == url.resolvingSymlinksInPath() {
+                    guard app.terminate() || app.isTerminated else {
+                        reportTrialAthenaQuitFailure()
+                        return
+                    }
+                    let deadline = ContinuousClock.now + .seconds(65)
+                    while !app.isTerminated && ContinuousClock.now < deadline {
+                        try? await Task.sleep(for: .milliseconds(200))
+                    }
+                    if !app.isTerminated { reportTrialAthenaQuitFailure() }
+                }
                 return
             }
-            guard ApplicationState.shared.isAuthenticated else { return }
+            guard ApplicationState.shared.isAuthenticated,
+                  PhiPreferences.AthenaSettings.enabled.loadValue() else { return }
+            let verified = await Task.detached(priority: .userInitiated) {
+                AgentPeerIdentity.verifiesCompanion(at: url, identifier: id)
+            }.value
+            guard verified else {
+                reportTrialAthenaError(NSLocalizedString("settings.athena.openFailed", value: "Phi could not verify the Athena Canary app next to the browser.", comment: "Athena settings - Error when the paired app is missing or has an invalid signature"))
+                return
+            }
+            guard ApplicationState.shared.isAuthenticated,
+                  PhiPreferences.AthenaSettings.enabled.loadValue() else { return }
             do {
-                _ = try await NSWorkspace.shared.openApplication(
-                    at: url, configuration: NSWorkspace.OpenConfiguration()
-                )
+                _ = try await NSWorkspace.shared.openApplication(at: url, configuration: .init())
             } catch {
-                requestedTrialAthena = false
-                AppLogError("Could not open Athena Canary: \(error.localizedDescription)")
+                reportTrialAthenaError(error.localizedDescription)
             }
         }
+    }
+
+    @MainActor
+    private func reportTrialAthenaQuitFailure() {
+        reportTrialAthenaError(NSLocalizedString("settings.athena.quitFailed", value: "Athena is still running. Quit it from the Athena menu.", comment: "Athena settings - Error when Athena does not finish quitting"))
+    }
+
+    @MainActor
+    private func reportTrialAthenaError(_ message: String) {
+        AppLogError("Athena: \(message)")
+        guard let window = settingsWindowController?.window, window.isVisible else { return }
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.beginSheetModal(for: window)
     }
     #endif
 

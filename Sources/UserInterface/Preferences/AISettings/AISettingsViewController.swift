@@ -9,7 +9,11 @@ import Settings
 
 class AISettingsViewController: NSViewController, SettingsPane {
     var paneIdentifier = Settings.PaneIdentifier.aisettings
+    #if ATHENA_CANARY_TRIAL
+    var paneTitle = NSLocalizedString("settings.navigation.athenaTitle", value: "Athena", comment: "Settings - Tab title for the Athena companion")
+    #else
     var paneTitle: String = NSLocalizedString("settings.navigation.aiTitle", value: "Phi & AI", comment: "Settings - Tab title for AI and Phi assistant settings")
+    #endif
     var toolbarItemIcon: NSImage = NSImage(resource: .settingPhiIcon)
 
     let hostingController = AISettingHostingViewController()

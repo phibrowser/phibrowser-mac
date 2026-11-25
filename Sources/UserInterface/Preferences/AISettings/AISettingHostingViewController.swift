@@ -7,8 +7,12 @@ import Cocoa
 import SwiftUI
 
 final class AISettingHostingViewController: NSViewController {
+    #if ATHENA_CANARY_TRIAL
+    private var hostingController: ThemedHostingController<AthenaSettingsView>?
+    #else
     private var hostingController: ThemedHostingController<AISettingView>?
     private let connectorViewModel = AISettingsConnectorViewModel()
+    #endif
 
     override func loadView() {
         view = NSView()
@@ -22,7 +26,11 @@ final class AISettingHostingViewController: NSViewController {
     }
 
     private func setupSwiftUIView() {
+        #if ATHENA_CANARY_TRIAL
+        let hostingController = ThemedHostingController(rootView: AthenaSettingsView())
+        #else
         let hostingController = ThemedHostingController(rootView: AISettingView(connectorViewModel: connectorViewModel))
+        #endif
 
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(hostingController)
@@ -41,11 +49,13 @@ final class AISettingHostingViewController: NSViewController {
     override func viewWillAppear() {
         super.viewWillAppear()
         hostingController?.view.needsLayout = true
+        #if !ATHENA_CANARY_TRIAL
         if PhiBuildCapabilities.supportsAI {
             connectorViewModel.loadConnectionsIfNeeded()
         } else {
             connectorViewModel.suspendForUnauthenticatedAccess()
         }
+        #endif
     }
 
 }

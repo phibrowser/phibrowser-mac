@@ -126,6 +126,60 @@ struct AISettingView: View {
     }
 }
 
+#if ATHENA_CANARY_TRIAL
+struct AthenaSettingsView: View {
+    @AppStorage(PhiPreferences.AthenaSettings.enabled.rawValue) private var enabled = true
+    @AppStorage(PhiPreferences.AthenaSettings.openAtStartup.rawValue) private var openAtStartup = true
+    @State private var signedIn = ApplicationState.shared.isAuthenticated
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            AIContainerView {
+                Toggle(isOn: Binding(get: { enabled }, set: { value in
+                    enabled = value
+                    AppController.shared.requestTrialAthena(open: value)
+                })) {
+                    Text(NSLocalizedString("settings.athena.enable", value: "Enable Athena", comment: "Athena settings - Switch that opens the paired app or quits it and its services"))
+                }
+                .accessibilityIdentifier("athena.enabled")
+                .padding(.vertical, 12)
+                Divider()
+                Toggle(isOn: $openAtStartup) {
+                    Text(NSLocalizedString("settings.athena.openAtStartup", value: "Open Athena when Phi starts or you sign in", comment: "Athena settings - Switch for automatically launching Athena in signed-in browser sessions"))
+                }
+                .accessibilityIdentifier("athena.openAtStartup")
+                .padding(.vertical, 12)
+                .disabled(!enabled)
+            }
+            AISectionView(title: NSLocalizedString("settings.athena.appSection", value: "Athena app", comment: "Athena settings - Section with an action to open the companion app")) {
+                AIContainerView {
+                    AINavigationRow(title: NSLocalizedString("settings.athena.openApp", value: "Open Athena", comment: "Athena settings - Open the paired Athena app to use chat or manage its settings"), enabled: enabled && signedIn) {
+                        AppController.shared.requestTrialAthena(open: true)
+                    }
+                    if !signedIn {
+                        Divider()
+                        GuestAILoginPromptRow { LoginController.shared.showLoginWindowFromAccountSettings() }
+                    }
+                }
+                Text(NSLocalizedString("settings.athena.appSettingsHint", value: "In Athena, press ⌘, to open its settings.", comment: "Athena settings - Explains how to open the companion app’s settings with Command-comma"))
+                    .font(.system(size: 12))
+                    .themedForeground(.textSecondary)
+            }
+            Spacer()
+        }
+        .toggleStyle(.switch)
+        .themedTint(.themeColor)
+        .padding(36)
+        .frame(width: 680, height: 561, alignment: .topLeading)
+        .themedBackground(PhiPreferences.fixedWindowBackground)
+        .onAppear { signedIn = ApplicationState.shared.isAuthenticated }
+        .onReceive(NotificationCenter.default.publisher(for: .browserAccessStateDidChange).receive(on: DispatchQueue.main)) { _ in
+            signedIn = ApplicationState.shared.isAuthenticated
+        }
+    }
+}
+#endif
+
 // MARK: - AI Master Controls
 
 private struct AIMasterControlSection: View {

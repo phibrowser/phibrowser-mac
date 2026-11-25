@@ -65924,6 +65924,90 @@
         }
       }
     },
+    "settings.athena.appSection" : {
+      "comment" : "Athena settings - Section with an action to open the companion app",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Athena app"
+          }
+        }
+      }
+    },
+    "settings.athena.appSettingsHint" : {
+      "comment" : "Athena settings - Explains how to open the companion app’s settings with Command-comma",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "In Athena, press ⌘, to open its settings."
+          }
+        }
+      }
+    },
+    "settings.athena.enable" : {
+      "comment" : "Athena settings - Switch that opens the paired app or quits it and its services",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Enable Athena"
+          }
+        }
+      }
+    },
+    "settings.athena.openApp" : {
+      "comment" : "Athena settings - Open the paired Athena app to use chat or manage its settings",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open Athena"
+          }
+        }
+      }
+    },
+    "settings.athena.openAtStartup" : {
+      "comment" : "Athena settings - Switch for automatically launching Athena in signed-in browser sessions",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open Athena when Phi starts or you sign in"
+          }
+        }
+      }
+    },
+    "settings.athena.openFailed" : {
+      "comment" : "Athena settings - Error when the paired app is missing or has an invalid signature",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Phi could not verify the Athena Canary app next to the browser."
+          }
+        }
+      }
+    },
+    "settings.athena.quitFailed" : {
+      "comment" : "Athena settings - Error when Athena does not finish quitting",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Athena is still running. Quit it from the Athena menu."
+          }
+        }
+      }
+    },
     "settings.bitwardenLoginSheet.changeEmailLink" : {
       "comment" : "Bitwarden login sheet - change email link",
       "extractionState" : "extracted_with_value",
@@ -76538,6 +76622,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Phi 與 AI"
+          }
+        }
+      }
+    },
+    "settings.navigation.athenaTitle" : {
+      "comment" : "Settings - Tab title for the Athena companion",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Athena"
           }
         }
       }

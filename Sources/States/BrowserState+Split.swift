@@ -1072,7 +1072,7 @@ extension BrowserState {
                                                          windowId: windowId.int64Value)
         let wid = windowId
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-            guard let self, self.windowId == wid else { return }
+            guard let self, self.windowId == wid, self.tabsAwaitingSplit.contains(tabId) else { return }
             self.tabsAwaitingSplit.remove(tabId)
         }
         return true
@@ -2055,10 +2055,12 @@ extension BrowserState {
         // the visibility-skip marks so the partners can hide normally again.
         let wid = windowId
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-            guard let self else { return }
-            guard let pending = self.pendingSplitPartnerByCustomGuid.removeValue(forKey: pendingGuid) else {
+            // Read before removing: any write, even a no-op one, ends the
+            // open omnibox session (`pendingSplitPartnerByCustomGuid.willSet`).
+            guard let self, let pending = self.pendingSplitPartnerByCustomGuid[pendingGuid] else {
                 return  // already consumed
             }
+            self.pendingSplitPartnerByCustomGuid.removeValue(forKey: pendingGuid)
             for partnerId in partnerIds {
                 ChromiumLauncher.sharedInstance().bridge?
                     .clearPendingSplitPartner(withTabId: partnerId.int64Value,
@@ -2104,9 +2106,11 @@ extension BrowserState {
         // `openNewTabAsSplit`) — a latched marker hijacks the tab forever.
         tab.guidInLocalDB = nil
         tab.webContentWrapper?.updateTabCustomValue("")
-        guard let pending = pendingSplitPartnerByCustomGuid.removeValue(forKey: customGuid) else {
+        // Read first: removing an expired key still runs `willSet`.
+        guard let pending = pendingSplitPartnerByCustomGuid[customGuid] else {
             return
         }
+        pendingSplitPartnerByCustomGuid.removeValue(forKey: customGuid)
         // From here on, every exit path must clear the visibility-skip mark
         // on the partners — Chromium clears it idempotently on success, but
         // the early-return guards below would otherwise leave a permanent
@@ -2155,10 +2159,9 @@ extension BrowserState {
             // declined add (the split dissolved meanwhile).
             let tabId = tab.guid
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-                guard let self else { return }
-                if self.tabsAwaitingSplit.remove(tabId) != nil {
-                    clearPartnerMarks()
-                }
+                guard let self, self.tabsAwaitingSplit.contains(tabId) else { return }
+                self.tabsAwaitingSplit.remove(tabId)
+                clearPartnerMarks()
             }
             return
 

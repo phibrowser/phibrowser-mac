@@ -16,6 +16,11 @@ import AppKit
 /// `splitVisualsChanged:` notification and are re-applied via
 /// `update(layout:fractions:)`.
 ///
+/// A pane dragged to another slot takes its share along, where Chromium
+/// keeps shares with their slots: once the reorder has landed, the host
+/// commits the reordered shares the same way and ignores the old order's
+/// echoes meanwhile (`landPaneMove`).
+///
 /// Panes are addressed by slot: 0 is the left column of a vertical split and
 /// the top row of a horizontal one. Mapping a slot back to a tab id is the
 /// controller's job.
@@ -51,6 +56,15 @@ final class SplitPaneHostView: NSView {
     private static let panePullOutMargin: CGFloat = 40
     /// A pane leaving the split shrinks to this share of its size.
     private static let panePullOutScale: CGFloat = 0.5
+    /// How far a divider's grab area reaches into the pane on each side of
+    /// it. The divider itself is too thin to hit reliably.
+    static let dividerGrabOutset: CGFloat = 3
+    /// How long shares that differ from the ones a pane move committed are
+    /// ignored: Chromium keeps shares with their slots, so the first echoes
+    /// after a reorder still carry the old order.
+    private static let moveFractionsEchoTimeout: TimeInterval = 2
+    /// How far two shares may differ and still count as the same.
+    private static let fractionMatchTolerance: CGFloat = 0.005
 
     /// Ratios the divider magnetically snaps to while dragging, as the first
     /// neighbour's share of the two panes it separates: an even split plus
@@ -131,6 +145,15 @@ final class SplitPaneHostView: NSView {
     /// Fires when the user drags the pane at this slot out of the split.
     var onPaneRemove: ((Int) -> Void)?
 
+    /// Where the pane at this slot goes when it is dragged out and released,
+    /// in this view's coordinates: its row in the sidebar. The pane flies as
+    /// far toward it as the page area reaches. Nil shrinks it where it is.
+    var paneExitTarget: ((Int) -> CGRect?)?
+
+    /// Fires when a preview held for a dropped change ends: the change
+    /// arrived, or never did and the hold timed out.
+    var onPreviewHoldEnded: (() -> Void)?
+
     /// Asked while a pane is dragged off the page. Returns true when a tab
     /// drag has taken over from this one, which ends it here.
     var onPaneDragOffPage: ((_ slot: Int, _ event: NSEvent) -> Bool)?
@@ -169,6 +192,26 @@ final class SplitPaneHostView: NSView {
         case move(from: Int, to: Int)
         /// The pane at `slot` would leave the split, the others filling in.
         case removal(slot: Int)
+        /// The pane at `slot` was released outside the split and shrinks
+        /// away to `target` before it is removed. The others fill in at
+        /// their new size; the last one left takes the whole host, as it
+        /// will once the split is gone.
+        case exit(slot: Int, target: CGRect)
+    }
+
+    /// A reorder dropped and not yet echoed back: the slot each place takes
+    /// its pane from, and the shares once every pane keeps its own.
+    private struct PendingMove {
+        let order: [Int]
+        let fractions: [CGFloat]
+    }
+
+    /// Shares this host committed and waits to see echoed.
+    private struct ExpectedFractions {
+        let fractions: [CGFloat]
+        let deadline: CFTimeInterval
+        /// The latest shares ignored meanwhile, applied if the wait runs out.
+        var deferred: [CGFloat]?
     }
 
     private struct PaneAnimation {
@@ -201,6 +244,21 @@ final class SplitPaneHostView: NSView {
     private var moveHandles: [PaneMoveHandle] = []
     /// Each pane child's autoresizing mask, saved while the preview pins it.
     private var pinnedPaneChildren: [(view: NSView, mask: NSView.AutoresizingMask)] = []
+    private var pendingMove: PendingMove?
+    private var expectedFractions: ExpectedFractions?
+    private var expectedFractionsGeneration = 0
+    /// The dividers' own rects. Their views are wider (`dividerGrabOutset`).
+    private var dividerRects: [CGRect] = []
+
+    /// True on a host that previews a split about to be created
+    /// (`beginCreationPreview(page:)`): slot 0 holds the page, slot 1 nothing.
+    private(set) var isCreationPreview = false
+    /// Where the page sits in a creation preview; nil is the whole host.
+    private var creationPageRect: CGRect?
+    private lazy var creationPlaceholder = NSView()
+
+    /// True while a dropped change is awaited (see `onPreviewHoldEnded`).
+    var isHoldingPreview: Bool { isHoldingPanePreview }
 
     private var isUserDragging = false
     private var draggingDividerIndex: Int?
@@ -211,6 +269,10 @@ final class SplitPaneHostView: NSView {
     /// Snap ratio the divider is currently stuck to, or nil when free. Tracked
     /// so the alignment haptic fires once on entry, not every mouse move.
     private var activeMagneticSnap: CGFloat?
+    /// False until the dragged divider has left the snap point it started
+    /// on. A divider that starts on one would otherwise stay stuck to it for
+    /// the first `magneticSnapDistance` points and seem not to move.
+    private var isMagneticSnapArmed = false
     private var paneClickMonitor: Any?
     /// The pane a left or middle click went down on, by its native view so a
     /// pane reorder or replacement during the click can't misdirect it.
@@ -247,6 +309,11 @@ final class SplitPaneHostView: NSView {
             NSEvent.removeMonitor(paneClickMonitor)
         }
     }
+
+    /// The shell window moves by its background, and a press that just
+    /// misses a divider lands here, on the gap around the panes: it must not
+    /// drag the window away while the pointer still shows a resize cursor.
+    override var mouseDownCanMoveWindow: Bool { false }
 
     /// Install the click monitor only when actually mounted in a window. Two
     /// split hosts can coexist in the same window (one per WebContentVC), but
@@ -367,18 +434,28 @@ final class SplitPaneHostView: NSView {
             moveHandles.removeLast().removeFromSuperview()
         }
         updateMoveHandleVisibility()
-        // Above every pane, including one just added.
-        for handle in moveHandles {
-            addSubview(handle, positioned: .below, relativeTo: focusRingView)
-        }
+        raiseDividersAndHandles()
         if fractions.count != count {
             fractions = Self.normalized(fractions, count: count)
+            expectedFractions = nil
         }
         if let focusedPane, focusedPane >= count {
             self.focusedPane = nil
         }
         applyDividerCursor()
         needsLayout = true
+    }
+
+    /// Puts the dividers and move handles back above every pane card, one
+    /// just added or just dragged included: a divider's grab area reaches
+    /// over the cards beside it.
+    private func raiseDividersAndHandles() {
+        for divider in dividers {
+            addSubview(divider, positioned: .below, relativeTo: focusRingView)
+        }
+        for handle in moveHandles {
+            addSubview(handle, positioned: .below, relativeTo: focusRingView)
+        }
     }
 
     /// Swap in new native views, one per slot. Used after
@@ -399,10 +476,81 @@ final class SplitPaneHostView: NSView {
             }
         }
         if needsReattach {
-            endPanePreview()
-            attach(panes: panes)
+            if let moved = landedMoveFractions(for: panes) {
+                landPaneMove(panes: panes, fractions: moved)
+            } else {
+                endPanePreview()
+                attach(panes: panes)
+            }
             needsLayout = true
         }
+    }
+
+    /// The shares to lay `panes` out with when they are the reorder this
+    /// host previewed and dropped, nil for any other change.
+    private func landedMoveFractions(for panes: [NSView]) -> [CGFloat]? {
+        guard let pending = pendingMove,
+              panes.count == slots.count, pending.order.count == slots.count else { return nil }
+        for (place, slot) in pending.order.enumerated() where slots[slot].native !== panes[place] {
+            return nil
+        }
+        return pending.fractions
+    }
+
+    /// Takes the reordered panes in where the preview left them. Each pane
+    /// keeps its own share, so every card is already the size of the page
+    /// moving into it and no page resizes. The cards take their new places
+    /// while their pages are still pinned, then the pages move across.
+    private func landPaneMove(panes: [NSView], fractions moved: [CGFloat]) {
+        let wasHolding = isHoldingPanePreview
+        isHoldingPanePreview = false
+        panePreviewHoldGeneration += 1
+        paneMoveDrag = nil
+        pendingMove = nil
+        stopPaneAnimation()
+        panePreview = nil
+        fractions = moved
+        applyPaneFrames(targetPaneRects())
+        attach(panes: panes)
+        unpinPaneChildren()
+        raiseDividersAndHandles()
+        expectFractions(moved)
+        // Chromium still holds the shares in their old order. Sent on the
+        // next turn: its echo must not land inside the content update that
+        // brought the reorder here, which goes on to push the stale shares.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window != nil, self.fractions == moved else { return }
+            self.onFractionsCommit?(moved.map { Double($0) })
+        }
+        if wasHolding {
+            onPreviewHoldEnded?()
+        }
+    }
+
+    /// Ignores incoming shares other than `fractions` for a while
+    /// (`moveFractionsEchoTimeout`).
+    private func expectFractions(_ fractions: [CGFloat]) {
+        expectedFractionsGeneration += 1
+        let generation = expectedFractionsGeneration
+        expectedFractions = ExpectedFractions(
+            fractions: fractions,
+            deadline: CACurrentMediaTime() + Self.moveFractionsEchoTimeout,
+            deferred: nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.moveFractionsEchoTimeout) { [weak self] in
+            guard let self, self.expectedFractionsGeneration == generation,
+                  let expected = self.expectedFractions else { return }
+            // Chromium never took the shares: fall back to what it holds.
+            self.expectedFractions = nil
+            guard !self.isUserDragging, let deferred = expected.deferred,
+                  deferred.count == self.slots.count, deferred != self.fractions else { return }
+            self.fractions = deferred
+            self.needsLayout = true
+        }
+    }
+
+    private static func fractionsMatch(_ lhs: [CGFloat], _ rhs: [CGFloat]) -> Bool {
+        lhs.count == rhs.count
+            && zip(lhs, rhs).allSatisfy { abs($0 - $1) <= fractionMatchTolerance }
     }
 
     /// Apply incoming server-side layout/shares. Ignored while the user is
@@ -418,7 +566,18 @@ final class SplitPaneHostView: NSView {
             applyDividerCursor()
             changed = true
         }
-        let normalized = Self.normalized(fractions.map { CGFloat($0) }, count: slots.count)
+        var normalized = Self.normalized(fractions.map { CGFloat($0) }, count: slots.count)
+        if var expected = expectedFractions {
+            if Self.fractionsMatch(normalized, expected.fractions)
+                || CACurrentMediaTime() >= expected.deadline {
+                expectedFractions = nil
+            } else {
+                // Shares in the order the panes had before a move.
+                expected.deferred = normalized
+                expectedFractions = expected
+                normalized = self.fractions
+            }
+        }
         if normalized != self.fractions {
             self.fractions = normalized
             changed = true
@@ -469,10 +628,13 @@ final class SplitPaneHostView: NSView {
             }
         }
         ensureSlotCount(panes.count)
+        // Every pane moves to its slot before any slot is swept below: a
+        // reordered pane still waiting in its old slot would be swept out of
+        // the window and brought back.
+        for (slot, pane) in zip(slots, panes) where pane.superview !== slot.container {
+            slot.container.addSubview(pane)
+        }
         for (slot, pane) in zip(slots, panes) {
-            if pane.superview !== slot.container {
-                slot.container.addSubview(pane)
-            }
             // A pane replace (drag-to-replace) swaps one pane's native view
             // for another tab's while this host stays mounted. The evicted
             // tab's view would otherwise stay behind in its container,
@@ -523,6 +685,9 @@ final class SplitPaneHostView: NSView {
 
     /// Where the panes belong now, with any preview applied.
     private func targetPaneRects() -> (panes: [CGRect], dividers: [CGRect]) {
+        if isCreationPreview {
+            return ([creationPageRect ?? bounds, .zero], [.zero])
+        }
         let total = Self.paneLayoutRect(in: bounds, layoutMode: layoutMode)
         switch panePreview {
         case .insertion(let slot):
@@ -532,8 +697,15 @@ final class SplitPaneHostView: NSView {
                                                      slot: slot)
             return (preview.panes, preview.dividers)
         case .move(let from, let to):
-            let rects = Self.paneRects(in: total, layout: paneLayout, fractions: fractions)
-            var panes = Self.movePreviewRects(rects.panes, from: from, to: to)
+            // Every pane keeps its own share and takes it along, so no page
+            // changes size, during the drag or after the drop.
+            let order = Self.moveOrder(count: fractions.count, from: from, to: to)
+            let rects = Self.paneRects(in: total, layout: paneLayout,
+                                       fractions: order.map { fractions[$0] })
+            var panes = Array(repeating: CGRect.zero, count: fractions.count)
+            for (place, pane) in order.enumerated() {
+                panes[pane] = rects.panes[place]
+            }
             // The dragged pane follows the pointer instead of its slot.
             if let drag = paneMoveDrag, drag.isActive, panes.indices.contains(from) {
                 var dragged = panes[from]
@@ -558,6 +730,20 @@ final class SplitPaneHostView: NSView {
                     ?? slots[slot].container.frame
             }
             return rects
+        case .exit(let slot, let target):
+            var rects = Self.removalPreviewRects(in: total,
+                                                 layout: paneLayout,
+                                                 fractions: fractions,
+                                                 slot: slot)
+            // The last pane left fills the host as the unsplit page will,
+            // so nothing moves when the split goes.
+            if slots.count == 2, rects.panes.indices.contains(1 - slot) {
+                rects.panes[1 - slot] = bounds
+            }
+            if rects.panes.indices.contains(slot) {
+                rects.panes[slot] = target
+            }
+            return rects
         case nil:
             return Self.paneRects(in: total, layout: paneLayout, fractions: fractions)
         }
@@ -570,13 +756,80 @@ final class SplitPaneHostView: NSView {
         for (slot, rect) in zip(slots, rects.panes) {
             slot.container.frame = rect
         }
+        dividerRects = rects.dividers
         for (divider, rect) in zip(dividers, rects.dividers) {
-            divider.frame = rect
+            divider.frame = Self.dividerGrabFrame(for: rect, layout: paneLayout)
         }
         positionFocusRing(paneFrames: rects.panes)
         positionMirroredBorderOverlays(paneFrames: rects.panes)
         if let gapFillView {
             layoutGapFill(gapFillView)
+        }
+        clipCoveredPaneCards()
+    }
+
+    /// The frame of a divider's view: its rect widened along the split axis
+    /// so a press just beside the gap still grabs it.
+    static func dividerGrabFrame(for rect: CGRect, layout: SplitLayout) -> CGRect {
+        guard !rect.isEmpty else { return rect }
+        switch layout {
+        case .vertical:
+            return rect.insetBy(dx: -dividerGrabOutset, dy: 0)
+        case .horizontal:
+            return rect.insetBy(dx: 0, dy: -dividerGrabOutset)
+        }
+    }
+
+    /// Cuts out of each pane card the part a card above it covers. Over a
+    /// content surface the pages draw beneath the whole view tree and the
+    /// cards are clear, so the border of a card under the dragged pane would
+    /// otherwise show through the dragged page.
+    private func clipCoveredPaneCards() {
+        let cards = hasContentSurface
+            ? slots.map(\.container).filter { !$0.isHidden && !$0.frame.isEmpty }
+            : []
+        var stacking: [ObjectIdentifier: Int] = [:]
+        if cards.count > 1 {
+            for (index, view) in subviews.enumerated() {
+                stacking[ObjectIdentifier(view)] = index
+            }
+        }
+        for slot in slots {
+            let card = slot.container
+            guard let layer = card.layer else { continue }
+            let level = stacking[ObjectIdentifier(card)] ?? 0
+            let covering = cards.filter {
+                $0 !== card
+                    && (stacking[ObjectIdentifier($0)] ?? 0) > level
+                    && $0.frame.intersects(card.frame)
+            }
+            guard !covering.isEmpty, !card.isHidden, !card.frame.isEmpty else {
+                if layer.mask != nil {
+                    layer.mask = nil
+                }
+                continue
+            }
+            let holes = covering.map { cover -> CGPath in
+                let hole = cover.frame.offsetBy(dx: -card.frame.minX, dy: -card.frame.minY)
+                let radius = min(outerCornerRadius, hole.width / 2, hole.height / 2)
+                return CGPath(roundedRect: hole, cornerWidth: radius, cornerHeight: radius, transform: nil)
+            }
+            // United first, as in `layoutGapFill`: the mask is even-odd.
+            let path = CGMutablePath()
+            path.addRect(card.bounds)
+            if let first = holes.first {
+                path.addPath(holes.dropFirst().reduce(first) { $0.union($1) })
+            }
+            let mask = layer.mask as? CAShapeLayer ?? CAShapeLayer()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            mask.fillRule = .evenOdd
+            mask.frame = card.bounds
+            mask.path = path
+            if layer.mask !== mask {
+                layer.mask = mask
+            }
+            CATransaction.commit()
         }
     }
 
@@ -681,21 +934,33 @@ final class SplitPaneHostView: NSView {
             guard let self, self.panePreviewHoldGeneration == generation,
                   self.isHoldingPanePreview else { return }
             self.isHoldingPanePreview = false
-            self.applyPanePreview(nil)
+            self.pendingMove = nil
+            // A creation preview's owner closes it and takes the host down.
+            if !self.isCreationPreview {
+                self.applyPanePreview(nil)
+            }
+            self.onPreviewHoldEnded?()
         }
     }
 
     /// Drops any preview without animating, leaving the next layout to place
     /// the panes.
     private func endPanePreview() {
+        let wasHolding = isHoldingPanePreview
         isHoldingPanePreview = false
         panePreviewHoldGeneration += 1
         paneMoveDrag = nil
+        pendingMove = nil
         stopPaneAnimation()
-        guard panePreview != nil || !pinnedPaneChildren.isEmpty else { return }
-        panePreview = nil
-        unpinPaneChildren()
-        needsLayout = true
+        if panePreview != nil || !pinnedPaneChildren.isEmpty {
+            panePreview = nil
+            unpinPaneChildren()
+            needsLayout = true
+        }
+        syncPaneBorders(animated: false)
+        if wasHolding {
+            onPreviewHoldEnded?()
+        }
     }
 
     private func applyPanePreview(_ preview: PanePreview?) {
@@ -704,7 +969,109 @@ final class SplitPaneHostView: NSView {
             pinPaneChildren()
         }
         panePreview = preview
+        syncPaneBorders(animated: true)
         animatePaneFrames(completion: preview == nil ? { [weak self] in self?.unpinPaneChildren() } : nil)
+    }
+
+    /// A pane that fills the host on its own shows no card border: the last
+    /// pane left as the other exits, and the page of a creation preview
+    /// before it makes way. Every other pane shows one.
+    private func syncPaneBorders(animated: Bool) {
+        for (index, slot) in slots.enumerated() {
+            guard let layer = slot.container.layer else { continue }
+            var fillsHost = false
+            if isCreationPreview {
+                fillsHost = index == 0 && creationPageRect == nil
+            } else if case .exit(let leaving, _) = panePreview {
+                fillsHost = slots.count == 2 && index != leaving
+            }
+            let width: CGFloat = fillsHost ? 0 : 1
+            guard layer.borderWidth != width else { continue }
+            if animated, window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                let fade = CABasicAnimation(keyPath: "borderWidth")
+                fade.fromValue = layer.presentation()?.borderWidth ?? layer.borderWidth
+                fade.toValue = width
+                fade.duration = Self.panePreviewAnimationDuration
+                layer.add(fade, forKey: "splitPane.borderWidth")
+            } else {
+                layer.removeAnimation(forKey: "splitPane.borderWidth")
+            }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.borderWidth = width
+            CATransaction.commit()
+        }
+    }
+
+    // MARK: - Creation preview
+
+    /// Where the page and the pane joining it sit in the pair a drop is about
+    /// to create: an even split of `bounds`, as Chromium creates it.
+    static func creationPreviewRects(in bounds: CGRect,
+                                     layoutMode: LayoutMode,
+                                     layout: SplitLayout,
+                                     newPaneIsPrimary: Bool) -> (page: CGRect, opened: CGRect) {
+        let total = paneLayoutRect(in: bounds, layoutMode: layoutMode)
+        let panes = paneRects(in: total, layout: layout, fractions: [0.5, 0.5]).panes
+        return newPaneIsPrimary ? (panes[1], panes[0]) : (panes[0], panes[1])
+    }
+
+    /// Turns this host into the preview of a split a dragged tab would form
+    /// with `page`: the page alone, filling the host as it does unsplit,
+    /// until `setCreationPreview(page:)` moves it aside. The host must be in
+    /// its window at its final size. The page is cropped rather than resized
+    /// while it makes way, as panes are for `setInsertionPreview(slot:)`.
+    func beginCreationPreview(page: NSView) {
+        isCreationPreview = true
+        creationPageRect = nil
+        allowsPaneMove = false
+        focusedPane = nil
+        ensureSlotCount(2)
+        slots[1].container.isHidden = true
+        dividers.forEach { $0.isHidden = true }
+        syncPaneBorders(animated: false)
+        applyPaneFrames(targetPaneRects())
+        attach(panes: [page, creationPlaceholder])
+    }
+
+    /// Moves the page of a creation preview to `page`, or back over the
+    /// whole host when nil. `completion` runs once it is there, unless
+    /// another move replaces this one first.
+    func setCreationPreview(page: CGRect?, animated: Bool = true, completion: (() -> Void)? = nil) {
+        guard isCreationPreview, !isHoldingPanePreview else { return }
+        guard page != creationPageRect else {
+            if paneAnimation == nil {
+                completion?()
+            }
+            return
+        }
+        if page != nil {
+            pinPaneChildren()
+        }
+        creationPageRect = page
+        syncPaneBorders(animated: animated)
+        let finish: () -> Void = { [weak self] in
+            if page == nil {
+                self?.unpinPaneChildren()
+            }
+            completion?()
+        }
+        if animated {
+            animatePaneFrames(completion: finish)
+        } else {
+            stopPaneAnimation()
+            applyPaneFrames(targetPaneRects())
+            finish()
+        }
+    }
+
+    /// Keeps the page of a creation preview aside until the split a drop
+    /// asked for arrives. The owner takes this host down when it does, or
+    /// when `onPreviewHoldEnded` reports it never did.
+    func holdCreationPreview() {
+        guard isCreationPreview, creationPageRect != nil else { return }
+        isHoldingPanePreview = true
+        schedulePanePreviewRelease()
     }
 
     /// Pins each pane's content at its current size against the pane's top
@@ -719,8 +1086,16 @@ final class SplitPaneHostView: NSView {
         }
     }
 
-    private func unpinPaneChildren() {
+    /// Lets the pinned pane content follow its pane again. `keptSlot` names a
+    /// pane whose content stays pinned.
+    private func unpinPaneChildren(exceptSlot keptSlot: Int? = nil) {
+        let keptContainer = keptSlot.flatMap { slot($0) }?.container
+        var stillPinned: [(view: NSView, mask: NSView.AutoresizingMask)] = []
         for (child, mask) in pinnedPaneChildren {
+            if let keptContainer, child.superview === keptContainer {
+                stillPinned.append((child, mask))
+                continue
+            }
             child.autoresizingMask = mask
             // Manually framed children (DevTools) have no flexible size and
             // get their frame from the controller.
@@ -728,7 +1103,7 @@ final class SplitPaneHostView: NSView {
                 child.frame = container.bounds
             }
         }
-        pinnedPaneChildren = []
+        pinnedPaneChildren = stillPinned
     }
 
     // MARK: - Pane animation
@@ -752,7 +1127,9 @@ final class SplitPaneHostView: NSView {
         paneAnimation = PaneAnimation(timer: timer,
                                       startTime: CACurrentMediaTime(),
                                       panes: slots.map { $0.container.frame },
-                                      dividers: dividers.map { $0.frame },
+                                      dividers: dividerRects.count == dividers.count
+                                          ? dividerRects
+                                          : dividers.map { $0.frame },
                                       completion: completion)
         RunLoop.main.add(timer, forMode: .common)
     }
@@ -806,9 +1183,7 @@ final class SplitPaneHostView: NSView {
             pinPaneChildren()
             // Stacking follows view order, on the content surface too.
             addSubview(slots[drag.slot].container, positioned: .below, relativeTo: focusRingView)
-            for handle in moveHandles {
-                addSubview(handle, positioned: .below, relativeTo: focusRingView)
-            }
+            raiseDividersAndHandles()
         }
         drag.translation = paneLayout == .vertical
             ? point.x - drag.startPoint.x
@@ -846,18 +1221,44 @@ final class SplitPaneHostView: NSView {
         switch panePreview {
         case .move(let from, let to) where from != to:
             isHoldingPanePreview = true
+            let order = Self.moveOrder(count: fractions.count, from: from, to: to)
+            pendingMove = PendingMove(order: order, fractions: order.map { fractions[$0] })
             animatePaneFrames { [weak self] in
                 guard let self else { return }
                 self.schedulePanePreviewRelease()
                 self.onPaneMove?(from, to)
             }
         case .removal(let slot):
-            isHoldingPanePreview = true
-            schedulePanePreviewRelease()
-            onPaneRemove?(slot)
+            exitPane(slot: slot, toward: paneExitTarget?(slot))
         default:
             panePreview = nil
             animatePaneFrames { [weak self] in self?.unpinPaneChildren() }
+        }
+    }
+
+    /// Sends the released pane off toward `target`, its row in the sidebar,
+    /// and asks for its removal once it is there. A page cannot draw outside
+    /// the page area, so the pane stops at the host's edge nearest the row.
+    /// The panes that stay take their new size now rather than when the
+    /// removal lands, the last one left over the whole host.
+    private func exitPane(slot: Int, toward target: CGRect?) {
+        guard slots.indices.contains(slot) else { return }
+        isHoldingPanePreview = true
+        let frame = slots[slot].container.frame
+        var exitRect = CGRect(x: frame.midX, y: frame.midY, width: 0, height: 0)
+        if let target, !target.isEmpty {
+            exitRect.size = CGSize(width: min(target.width, frame.width, bounds.width),
+                                   height: min(target.height, frame.height, bounds.height))
+            exitRect.origin.x = max(bounds.minX, min(target.minX, bounds.maxX - exitRect.width))
+            exitRect.origin.y = max(bounds.minY, min(target.minY, bounds.maxY - exitRect.height))
+        }
+        panePreview = .exit(slot: slot, target: exitRect)
+        unpinPaneChildren(exceptSlot: slot)
+        syncPaneBorders(animated: true)
+        animatePaneFrames { [weak self] in
+            guard let self else { return }
+            self.schedulePanePreviewRelease()
+            self.onPaneRemove?(slot)
         }
     }
 
@@ -917,18 +1318,15 @@ final class SplitPaneHostView: NSView {
         return rects
     }
 
-    /// Where each pane, by current slot, sits once the pane at `from` moves
-    /// to `to`. Shares stay with their slots, as Chromium keeps them.
-    static func movePreviewRects(_ panes: [CGRect], from: Int, to: Int) -> [CGRect] {
-        guard panes.indices.contains(from), panes.indices.contains(to) else { return panes }
-        var order = Array(panes.indices)
+    /// The current slot each place holds once the pane at `from` moves to
+    /// `to`, in place order. A pane takes its share along, so laying the
+    /// shares out in this order gives the split after the move.
+    static func moveOrder(count: Int, from: Int, to: Int) -> [Int] {
+        var order = Array(0..<max(0, count))
+        guard order.indices.contains(from), order.indices.contains(to) else { return order }
         order.remove(at: from)
         order.insert(from, at: to)
-        var moved = panes
-        for (place, pane) in order.enumerated() {
-            moved[pane] = panes[place]
-        }
-        return moved
+        return order
     }
 
     /// The host's and pane cards' fills (see `hasContentSurface`).
@@ -942,7 +1340,7 @@ final class SplitPaneHostView: NSView {
         gapFillView?.removeFromSuperview()
         gapFillView = nil
         guard hasContentSurface else { return }
-        let gapFill = NSView()
+        let gapFill = GapFillView()
         gapFill.wantsLayer = true
         gapFill.phiLayer?.setBackgroundColor(.extensionSurfaceBackground)
         let mask = CAShapeLayer()
@@ -957,7 +1355,8 @@ final class SplitPaneHostView: NSView {
         guard let mask = gapFillView.layer?.mask as? CAShapeLayer else { return }
         // Circular corners, as Chromium rounds the panes' pixels; the cards'
         // own continuous curve has no CGPath form.
-        let cards = slots.map { $0.container.frame }.filter { !$0.isEmpty }.map { card -> CGPath in
+        let cards = slots.filter { !$0.container.isHidden }
+            .map { $0.container.frame }.filter { !$0.isEmpty }.map { card -> CGPath in
             let radius = min(outerCornerRadius, card.width / 2, card.height / 2)
             return CGPath(roundedRect: card, cornerWidth: radius, cornerHeight: radius, transform: nil)
         }
@@ -1187,8 +1586,15 @@ final class SplitPaneHostView: NSView {
     }
 
     private func positionFocusRing(paneFrames: [NSRect]) {
-        // A ring on another pane would draw across the pane being dragged.
-        guard paneMoveDrag?.isActive != true, let focusedPane, focusedPane < paneFrames.count else {
+        // A ring on another pane would draw across the pane being dragged,
+        // and one around a pane that is leaving or taking over the host
+        // would vanish with the split.
+        var isExiting = false
+        if case .exit = panePreview {
+            isExiting = true
+        }
+        guard paneMoveDrag?.isActive != true, !isExiting,
+              let focusedPane, focusedPane < paneFrames.count else {
             focusRingView.isHidden = true
             return
         }
@@ -1219,6 +1625,9 @@ final class SplitPaneHostView: NSView {
         dragStartLocation = convert(event.locationInWindow, from: nil)
         dragStartFractions = (fractions[dividerIndex], fractions[dividerIndex + 1])
         activeMagneticSnap = nil
+        isMagneticSnapArmed = false
+        // The user sets the shares now, whatever a pane move still awaits.
+        expectedFractions = nil
     }
 
     /// Signed drag distance that grows the leading pane when positive.
@@ -1260,7 +1669,19 @@ final class SplitPaneHostView: NSView {
         let rawRatio = dragStartFractions.leading / pairShare + delta
         let minRatio = Self.minPaneFraction / pairShare
         let clampedRatio = max(minRatio, min(1 - minRatio, rawRatio))
-        let snapTarget = magneticSnapTarget(for: clampedRatio, usable: pairPoints)
+        var snapTarget = magneticSnapTarget(for: clampedRatio, usable: pairPoints)
+        if !isMagneticSnapArmed {
+            // The divider moves freely until it is out of reach of the snap
+            // point it started on, if any; after that every point pulls,
+            // that one included.
+            let startSnap = magneticSnapTarget(for: dragStartFractions.leading / pairShare,
+                                               usable: pairPoints)
+            if startSnap == nil || snapTarget != startSnap {
+                isMagneticSnapArmed = true
+            } else {
+                snapTarget = nil
+            }
+        }
         emitSnapFeedbackIfNeeded(snapTarget)
         let ratio = snapTarget.map { max(minRatio, min(1 - minRatio, $0)) } ?? clampedRatio
         let leading = pairShare * ratio
@@ -1342,13 +1763,14 @@ final class SplitPaneHostView: NSView {
     }
 }
 
-// MARK: - Divider
+/// The host's fill around the pane cards over a content surface. Like the
+/// host, it never starts a window drag (`SplitPaneHostView.mouseDownCanMoveWindow`).
+private final class GapFillView: NSView {
+    override var mouseDownCanMoveWindow: Bool { false }
+}
 
-/// Transparent strip between two pane cards — it's purely a drag/hit area.
-/// Whatever sits behind the split host (`leftContainerView`'s fill) shows
-/// through, so the gap reads as background rather than as its own chrome
-/// strip. Width is also the drag hit area — no separate invisible grab band
-/// needed.
+// MARK: - Pane move handle
+
 /// The grip along the top of a pane for dragging it to another slot. It
 /// appears when the pointer nears the pane's top edge, and only the grip
 /// itself takes the mouse, so the rest of the band still reaches the page.
@@ -1489,6 +1911,14 @@ private final class PaneMoveHandle: NSView {
     }
 }
 
+// MARK: - Divider
+
+/// Transparent strip between two pane cards — it's purely a drag/hit area.
+/// Whatever sits behind the split host (`leftContainerView`'s fill) shows
+/// through, so the gap reads as background rather than as its own chrome
+/// strip. The view is wider than the gap by
+/// `SplitPaneHostView.dividerGrabOutset` on each side and sits above the
+/// cards, so a press just beside the gap still grabs the divider.
 private final class DividerHandle: NSView {
     var dragCursor: NSCursor = .resizeLeftRight {
         didSet { resetTrackingArea() }

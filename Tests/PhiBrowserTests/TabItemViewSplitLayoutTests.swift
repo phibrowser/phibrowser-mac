@@ -453,16 +453,53 @@ final class SplitViewLayoutTests: XCTestCase {
         XCTAssertEqual(preview.dividers[1], .zero)
     }
 
-    /// Moving a pane shifts the ones it passes; each pane takes the slot's
-    /// rect, so widths stay with the slots.
-    func testMovePreviewShiftsThePanesThePaneCrosses() {
-        let a = CGRect(x: 0, y: 0, width: 100, height: 50)
-        let b = CGRect(x: 104, y: 0, width: 200, height: 50)
-        let c = CGRect(x: 308, y: 0, width: 100, height: 50)
+    /// Moving a pane shifts the ones it passes. The order names the slot
+    /// each place takes its pane from, and a pane's share goes with it.
+    func testMoveOrderShiftsThePanesThePaneCrosses() {
+        XCTAssertEqual(SplitPaneHostView.moveOrder(count: 3, from: 0, to: 2), [1, 2, 0])
+        XCTAssertEqual(SplitPaneHostView.moveOrder(count: 3, from: 2, to: 0), [2, 0, 1])
+        XCTAssertEqual(SplitPaneHostView.moveOrder(count: 3, from: 1, to: 1), [0, 1, 2])
+        XCTAssertEqual(SplitPaneHostView.moveOrder(count: 2, from: 0, to: 5), [0, 1])
+    }
 
-        XCTAssertEqual(SplitPaneHostView.movePreviewRects([a, b, c], from: 0, to: 2), [c, a, b])
-        XCTAssertEqual(SplitPaneHostView.movePreviewRects([a, b, c], from: 2, to: 0), [b, c, a])
-        XCTAssertEqual(SplitPaneHostView.movePreviewRects([a, b, c], from: 1, to: 1), [a, b, c])
+    /// Swapping a quarter pane with a three-quarter one leaves each its
+    /// width: the wide pane now starts on the left.
+    func testMovedPanesKeepTheirOwnWidths() {
+        let total = CGRect(x: 0, y: 0, width: 404, height: 100)
+        let fractions: [CGFloat] = [0.25, 0.75]
+        let order = SplitPaneHostView.moveOrder(count: 2, from: 0, to: 1)
+
+        let moved = SplitPaneHostView.paneRects(in: total,
+                                                layout: .vertical,
+                                                fractions: order.map { fractions[$0] })
+
+        XCTAssertEqual(moved.panes.map(\.width), [300, 100])
+        XCTAssertEqual(moved.panes[1].minX, 304)
+    }
+
+    /// A divider's view reaches into the panes beside it along the split
+    /// axis only; a divider with no rect stays empty.
+    func testDividerGrabFrameWidensAlongTheSplitAxis() {
+        let outset = SplitPaneHostView.dividerGrabOutset
+        let divider = CGRect(x: 100, y: 0, width: 4, height: 50)
+
+        XCTAssertEqual(SplitPaneHostView.dividerGrabFrame(for: divider, layout: .vertical),
+                       CGRect(x: 100 - outset, y: 0, width: 4 + outset * 2, height: 50))
+        XCTAssertEqual(SplitPaneHostView.dividerGrabFrame(for: .zero, layout: .vertical), .zero)
+    }
+
+    /// The pair a create drop previews is an even split; the new pane takes
+    /// the side dropped on and the page keeps the other.
+    func testCreationPreviewGivesTheNewPaneTheDroppedSide() {
+        let bounds = CGRect(x: 0, y: 0, width: 1012, height: 108)
+
+        let preview = SplitPaneHostView.creationPreviewRects(in: bounds,
+                                                             layoutMode: .performance,
+                                                             layout: .vertical,
+                                                             newPaneIsPrimary: true)
+
+        XCTAssertEqual(preview.opened, CGRect(x: 4, y: 4, width: 500, height: 100))
+        XCTAssertEqual(preview.page, CGRect(x: 508, y: 4, width: 500, height: 100))
     }
 
     /// Opening a slot mid-split shrinks the panes in proportion and leaves

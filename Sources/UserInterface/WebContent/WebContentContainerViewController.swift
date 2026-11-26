@@ -360,13 +360,44 @@ class WebContentContainerViewController: NSViewController {
             current?.setSplitInsertionPreview(slot: slot)
         }
         view.onAddPaneCommitted = { [weak self] slot in
-            self?.currentWebContentController?.holdSplitInsertionPreview(slot: slot)
+            guard let self, let current = self.currentWebContentController else { return }
+            self.releaseDropHintWhenHoldEnds(on: current)
+            current.holdSplitInsertionPreview(slot: slot)
+        }
+        view.canOpenSpaceForCreate = { [weak self] in
+            self?.currentWebContentController?.canPreviewSplitCreation ?? false
+        }
+        view.onCreatePreviewChanged = { [weak self] preview in
+            guard let self else { return }
+            self.splitCreationPreview = preview
+            self.currentWebContentController?.setSplitCreationPreview(
+                layout: preview?.layout,
+                newPaneIsPrimary: preview?.newPaneIsPrimary ?? false)
+        }
+        view.onCreateCommitted = { [weak self] in
+            guard let self, let current = self.currentWebContentController else { return }
+            self.splitCreationPreview = nil
+            self.releaseDropHintWhenHoldEnds(on: current)
+            current.holdSplitCreationPreview()
         }
         return view
     }()
 
     /// The controller whose split is showing the add-a-pane preview.
     private weak var addPanePreviewController: WebContentViewController?
+
+    /// The pair a tab dragged over the page would create, while the page
+    /// previews it. Kept here so the preview follows a focus change made
+    /// during the drag (`switchToWebContentController`).
+    private var splitCreationPreview: SplitTabDropContainer.CreatePreview?
+
+    /// The card of a split drop stays on screen until the page side stops
+    /// holding its preview: the dropped page arrived, or never did.
+    private func releaseDropHintWhenHoldEnds(on controller: WebContentViewController) {
+        controller.onSplitDropHoldEnded = { [weak self] in
+            self?.contentContainer.releaseDropHint()
+        }
+    }
 
     /// Exposed so the horizontal TabStrip (comfortable layout) can show the
     /// split-drop hint while a tab is being torn out — TabStrip drives drags
@@ -2313,6 +2344,12 @@ class WebContentContainerViewController: NSViewController {
             // A chat ghost snapped from the outgoing pane must not slide
             // over the incoming tab's content.
             dropClosingAIChatGhost()
+            // Pressing a sidebar row focuses the dragged tab, and the drag
+            // hands focus back once it is over the page: a split creation
+            // preview may sit on the controller that is leaving. Its page
+            // goes back now; the incoming controller takes the preview over
+            // below.
+            current.cancelSplitCreationPreview()
         }
 
         // Add new controller
@@ -2394,6 +2431,16 @@ class WebContentContainerViewController: NSViewController {
         // Now the focused split host (if in a split) — watch the partner pane's
         // crashState so a non-focused-pane crash shows without a focus switch.
         controller.updatePartnerCrashSubscription()
+        if let preview = splitCreationPreview {
+            // Already where the drag wants it, without the slide: the page
+            // only just came on screen.
+            controller.setSplitCreationPreview(layout: preview.layout,
+                                               newPaneIsPrimary: preview.newPaneIsPrimary,
+                                               animated: false)
+        }
+        // A split drop that opened its page in a new tab ends here: the page
+        // the card stood for is on screen.
+        contentContainer.releaseDropHint()
         // Force a full layout sweep before reading splitViewContainer's frame.
         // Otherwise — if the window was just resized (e.g. titlebar
         // double-click zoom) and a layout pass is still pending — the convert

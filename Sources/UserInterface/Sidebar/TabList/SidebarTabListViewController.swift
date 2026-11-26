@@ -5714,6 +5714,27 @@ extension SidebarTabListViewController: TabGroupCellViewDelegate {
         return true
     }
 
+    /// Where the row of split pane `tab` shows in the list, in window
+    /// coordinates: the place a pane dragged out of its split flies to when
+    /// released. A pane with no row of its own (in a collapsed tab group)
+    /// uses the first row any pane of its split has. Nil while no such row
+    /// is on screen.
+    func paneExitRect(for tab: Tab) -> CGRect? {
+        guard let sidebar = hostVC?.view, sidebar.window != nil,
+              !sidebar.isHiddenOrHasHiddenAncestor else { return nil }
+        var row = outlineView.row(forItem: tab)
+        if row < 0, let group = browserState.splitGroup(forTabId: tab.guid) {
+            row = group.tabIds.lazy
+                .compactMap { tabId in self.browserState.normalTabs.first { $0.guid == tabId } }
+                .map { self.outlineView.row(forItem: $0) }
+                .first { $0 >= 0 } ?? -1
+        }
+        guard row >= 0 else { return nil }
+        let visible = outlineView.rect(ofRow: row).intersection(outlineView.visibleRect)
+        guard !visible.isEmpty else { return nil }
+        return outlineView.convert(visible, to: nil)
+    }
+
     /// A tab-row shaped drag image: the pane has no row in the list yet.
     private static func paneTabDragImage(for tab: Tab) -> NSImage {
         let size = NSSize(width: 220, height: 36)

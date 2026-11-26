@@ -551,6 +551,7 @@ class WebContentViewController: NSViewController {
             applyFills()
             embeddedChatViewController?.hasContentSurface = hasContentSurface
             currentSplitHost?.hasContentSurface = hasContentSurface
+            splitCreationHost?.hasContentSurface = hasContentSurface
         }
     }
 
@@ -690,7 +691,14 @@ class WebContentViewController: NSViewController {
             self?.resyncSplitChatWidthIfNeeded()
         }
     }
-    
+
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        // A page left aside by a split creation preview would come back
+        // cropped to its half the next time this controller is shown.
+        cancelSplitCreationPreview()
+    }
+
     // MARK: - Focus Management
     
     /// Hosted mode puts every Space's tree in the one shell window, so only
@@ -2061,6 +2069,13 @@ class WebContentViewController: NSViewController {
             updateLeftContainerStyleForCurrentAIChatState()
             return
         }
+        // A page that has made way for a dragged or dropped tab stays there
+        // across content refreshes; the preview's own end puts it back.
+        if isShowingSplitCreationPreview(of: contentView) {
+            contentMode = .webContent
+            updateLeftContainerStyleForCurrentAIChatState()
+            return
+        }
         removeSplitPreview(keeping: contentView)
         // Tear down any leftover split host before re-mounting single content.
         var leavesSplitPane = false
@@ -2449,6 +2464,9 @@ class WebContentViewController: NSViewController {
         host.hidesTopMoveHandle = usesWindowDragNotch
         host.squaresCorners = contentLayout.squaresCorners
         mountedSplitPartners = partners
+        // The split a creation preview stood for is here; its host went
+        // with the other leftovers above once the page had moved out of it.
+        removeSplitCreationHost()
 
         // installSplitContent only runs on the focused VC's mount path, so
         // the host's "focused pane" is always the slot that matches ownTabId.
@@ -2489,6 +2507,22 @@ class WebContentViewController: NSViewController {
             state.removeTabFromSplit(tabId: tabId)
         }
         host.onPaneRemove = removePane
+        // A pane released outside the split flies to its row in the sidebar
+        // before it is removed.
+        host.paneExitTarget = { [weak self, weak host] slot in
+            guard let state = self?.browserState, let host,
+                  slot >= 0, slot < movablePaneTabIds.count,
+                  let tab = state.tabs.first(where: { $0.guid == movablePaneTabIds[slot] }),
+                  let split = state.windowController?.mainSplitViewController,
+                  !split.isSidebarCollapsed,
+                  let rowRect = split.sidebarViewController.paneExitRect(for: tab) else {
+                return nil
+            }
+            return host.convert(rowRect, from: nil)
+        }
+        host.onPreviewHoldEnded = { [weak self] in
+            self?.onSplitDropHoldEnded?()
+        }
         // Reaching the sidebar makes the pane a normal tab, and the drag
         // carries on as that tab's, so it can land anywhere in the list.
         host.onPaneDragOffPage = { [weak self] slot, event in
@@ -2590,6 +2624,116 @@ class WebContentViewController: NSViewController {
         currentSplitHost?.holdInsertionPreview(slot: slot)
     }
 
+    // MARK: - Split creation preview
+
+    /// Fires when the preview held for a split drop on this page ends: the
+    /// dropped page arrived, or never did and the hold timed out. The drop
+    /// hint card stays on screen until then.
+    var onSplitDropHoldEnded: (() -> Void)?
+
+    /// Whether this page can move aside for the pane a dragged tab would
+    /// pair it with. Only a plain web page mounted on its own does: docked
+    /// DevTools, a native page or a crash page keeps the whole area.
+    var canPreviewSplitCreation: Bool {
+        guard isViewLoaded, hostView.window != nil, contentMode == .webContent,
+              let tab = associatedTab, let contentView = tab.webContentView,
+              !tab.devToolsAttached, !tab.isInContentFullscreen,
+              crashedPageController == nil,
+              browserState?.pendingSplitPreview == nil,
+              activeSplitForCurrentTab() == nil else { return false }
+        return contentView.superview === hostView || isShowingSplitCreationPreview(of: contentView)
+    }
+
+    /// Previews the pair a dragged tab would form with this page: the page
+    /// slides into the half it would keep, as panes make way for one that
+    /// joins a split. `newPaneIsPrimary` puts the new pane on the left or
+    /// top. A nil `layout` slides the page back. No-op while a drop is held.
+    func setSplitCreationPreview(layout: SplitLayout?, newPaneIsPrimary: Bool = false, animated: Bool = true) {
+        guard splitCreationHost?.isHoldingPreview != true else { return }
+        guard let layout else {
+            endSplitCreationPreview(animated: animated)
+            return
+        }
+        guard canPreviewSplitCreation, let contentView = associatedTab?.webContentView else { return }
+        let host = splitCreationHost ?? mountSplitCreationHost(for: contentView)
+        let rects = SplitPaneHostView.creationPreviewRects(
+            in: host.bounds,
+            layoutMode: PhiPreferences.GeneralSettings.loadLayoutMode(),
+            layout: layout,
+            newPaneIsPrimary: newPaneIsPrimary)
+        host.setCreationPreview(page: rects.page, animated: animated)
+    }
+
+    /// Keeps the page aside until the split a drop asked for arrives.
+    func holdSplitCreationPreview() {
+        splitCreationHost?.holdCreationPreview()
+    }
+
+    /// Puts the page back at once, whatever the preview was doing. For a
+    /// controller about to leave the screen.
+    func cancelSplitCreationPreview() {
+        removeSplitCreationHost()
+    }
+
+    private func isShowingSplitCreationPreview(of contentView: NSView) -> Bool {
+        guard let host = splitCreationHost, host.superview === hostView else { return false }
+        return contentView.isDescendant(of: host)
+    }
+
+    /// Mounts the host that carries the page while it makes way. The page
+    /// moves into it within the window and at its current size, so nothing
+    /// changes on screen until the preview moves it.
+    private func mountSplitCreationHost(for contentView: NSView) -> SplitPaneHostView {
+        let host = SplitPaneHostView(layout: .vertical, fractions: [0.5, 0.5],
+                                     layoutMode: PhiPreferences.GeneralSettings.loadLayoutMode())
+        host.hasContentSurface = hasContentSurface
+        host.squaresCorners = contentLayout.squaresCorners
+        host.translatesAutoresizingMaskIntoConstraints = false
+        hostView.addSubview(host)
+        host.snp.makeConstraints { $0.edges.equalToSuperview() }
+        host.frame = hostView.bounds
+        host.beginCreationPreview(page: contentView)
+        host.onPreviewHoldEnded = { [weak self, weak host] in
+            guard let self else { return }
+            // The split never arrived (or the host left the window): the
+            // page goes back.
+            if let host, host === self.splitCreationHost {
+                self.endSplitCreationPreview(animated: host.window != nil)
+            }
+            self.onSplitDropHoldEnded?()
+        }
+        splitCreationHost = host
+        return host
+    }
+
+    private func endSplitCreationPreview(animated: Bool) {
+        guard let host = splitCreationHost else { return }
+        guard animated, host.window != nil else {
+            removeSplitCreationHost()
+            return
+        }
+        host.setCreationPreview(page: nil, animated: true) { [weak self, weak host] in
+            guard let self, let host, host === self.splitCreationHost else { return }
+            self.removeSplitCreationHost()
+        }
+    }
+
+    /// Takes the creation preview's host down, moving the page back into
+    /// `hostView` first if it is still inside (a same-window move, as in
+    /// `removeSplitPreview(keeping:)`).
+    private func removeSplitCreationHost() {
+        guard let host = splitCreationHost else { return }
+        splitCreationHost = nil
+        if let contentView = associatedTab?.webContentView, contentView.isDescendant(of: host) {
+            hostView.addSubview(contentView)
+            contentView.translatesAutoresizingMaskIntoConstraints = true
+            contentView.autoresizingMask = []
+            contentView.frame = hostView.contentFrame
+        }
+        host.removeFromSuperview()
+    }
+
+    private weak var splitCreationHost: SplitPaneHostView?
     private weak var splitPreviewHost: SplitPaneHostView?
     private lazy var splitPreviewPane = NSView()
 
@@ -2699,6 +2843,15 @@ class WebContentViewController: NSViewController {
     }
 
     private func addWebContentView(_ contentView: NSView, tabId: Int) {
+        // A page waiting, where a drop left it, for a split whose other pane
+        // is not ready yet stays there; the split's arrival or the hold's
+        // timeout moves it. Any other creation preview ends here, its page
+        // moving back into hostView before the sweep below.
+        if isShowingSplitCreationPreview(of: contentView),
+           splitCreationHost?.isHoldingPreview == true {
+            return
+        }
+        removeSplitCreationHost()
         // A page already in hostView stays: taken out to be added back, it
         // would leave the window (see `showWebContent`).
         for subview in hostView.subviews where subview !== contentView {

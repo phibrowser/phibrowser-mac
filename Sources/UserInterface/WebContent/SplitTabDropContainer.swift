@@ -21,9 +21,13 @@ import AppKit
 ///   "When you drag a tab to a splitview page, remain the old logic");
 /// - the cursor sits in one of the four edge thirds of the container.
 ///
-/// Visual hint: while a valid drag is hovering anywhere over the page area,
-/// all four directional hint cards are shown with a dashed border. The center
-/// band is a no-drop area. Replace mode still shows only the existing panes.
+/// Visual hint: a page that can make way (`createOpensSpace`) slides into the
+/// half it would keep once the drag is on an edge zone, and one card fills
+/// the other half, as when a pane joins a split. Any other page stays put
+/// under all four directional hint cards, shown with a dashed border while a
+/// valid drag is hovering anywhere over the page area. The center band is a
+/// no-drop area. Replace mode still shows only the existing panes. The card
+/// a drop lands on stays until its page arrives (`releaseDropHint()`).
 ///
 /// Mouse events are not affected: `contentContainer` does not override
 /// `hitTest`, so children (the Chromium native view) continue to receive
@@ -76,6 +80,19 @@ final class SplitTabDropContainer: NSView {
     /// bleed through; dropping `alphaValue` further makes the card read
     /// as thin film rather than a solid glass panel.
     private static let dropHintGlassOpacity: CGFloat = 1.0
+    /// How long the card dropped on fades for once its page has arrived.
+    private static let dropHintReleaseFadeDuration: TimeInterval = 0.15
+    /// How long a dropped-on card stays without word that its page arrived.
+    /// The page side gives up after two seconds and says so; this only
+    /// covers a drop that never reaches it.
+    private static let dropHintHoldTimeout: TimeInterval = 2.5
+
+    /// Whether forming a new split previews like adding a pane to one: the
+    /// page slides into the half it keeps and one card fills the other,
+    /// instead of four directional cards floating over a page that stays
+    /// put. Trial behaviour (PHI-2190). Pages that cannot make way
+    /// (`canOpenSpaceForCreate`) keep the floating cards either way.
+    static let createOpensSpace = true
 
     /// Supplies the actual web-page area (in this view's coordinate space)
     /// so the highlight and trigger zones avoid covering the URL bar and
@@ -90,6 +107,26 @@ final class SplitTabDropContainer: NSView {
     /// Fires when a drop adds a pane at this slot, so the space stays open
     /// until the pane arrives.
     var onAddPaneCommitted: ((Int) -> Void)?
+
+    /// Whether the focused page can slide aside for the pane a drop would
+    /// pair it with (see `createOpensSpace`).
+    var canOpenSpaceForCreate: (() -> Bool)?
+
+    /// The pair a drop on the active zone would create, as far as the page
+    /// previews it: the split's layout and whether the new pane takes the
+    /// primary slot.
+    struct CreatePreview: Equatable {
+        let layout: SplitLayout
+        let newPaneIsPrimary: Bool
+    }
+
+    /// Fires when the pair a drop would create changes, nil once the drag
+    /// leaves the create zones. The page moves into the half it keeps.
+    var onCreatePreviewChanged: ((CreatePreview?) -> Void)?
+
+    /// Fires when a drop creates the previewed pair, so the page stays
+    /// aside until the split arrives.
+    var onCreateCommitted: (() -> Void)?
 
     enum DropZone: Hashable {
         /// Create mode: the focused tab and the drop form a new pair with the
@@ -120,6 +157,17 @@ final class SplitTabDropContainer: NSView {
             case .left, .top: return true
             case .right, .bottom: return false
             case .pane(let slot), .insert(let slot): return slot == 0
+            }
+        }
+
+        /// The create zone across the page; pane zones have none.
+        var opposite: DropZone {
+            switch self {
+            case .left: return .right
+            case .right: return .left
+            case .top: return .bottom
+            case .bottom: return .top
+            case .pane, .insert: return self
             }
         }
 
@@ -426,6 +474,16 @@ final class SplitTabDropContainer: NSView {
     private var expandedDropHintDragAnchor: CGPoint?
     private var expandedDropHintCenterAnchor: CGPoint?
 
+    /// True while the dragged tab is the focused one. Dropped on its own
+    /// page it lands on the dropped side and a new tab takes the other, so
+    /// the new pane's card belongs across from the pointer.
+    private var dragIsFocusedTab = false
+
+    /// The card a drop landed on, kept on screen until its page arrives so
+    /// the space it covers is never empty (`releaseDropHint()`).
+    private var heldHintZone: DropZone?
+    private var heldHintGeneration = 0
+
     private var themeObservation: AnyObject?
 
     override init(frame frameRect: NSRect) {
@@ -557,6 +615,7 @@ final class SplitTabDropContainer: NSView {
             return
         }
         activeMode = mode
+        dragIsFocusedTab = browserState?.focusingTab?.guid == draggedTabId
         applyHintLabels(for: mode)
         showHighlights()
         if let screenPoint,
@@ -569,9 +628,67 @@ final class SplitTabDropContainer: NSView {
         }
     }
 
-    /// Hides all split-drop hint cards.
+    /// Hides all split-drop hint cards, except one a drop is holding.
     func hideSplitDropHints() {
         hideHighlights()
+    }
+
+    /// Keeps the card of the zone just dropped on where it is: the page it
+    /// stands for takes a moment to arrive, and the space would be empty
+    /// meanwhile. `releaseDropHint()` fades it out.
+    private func holdDropHint(_ zone: DropZone) {
+        guard hintsVisible, let card = cards[zone], !card.surface.isHidden else { return }
+        heldHintZone = zone
+        heldHintGeneration += 1
+        let generation = heldHintGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.dropHintHoldTimeout) { [weak self] in
+            guard let self, self.heldHintGeneration == generation else { return }
+            self.releaseDropHint()
+        }
+    }
+
+    /// Fades out the card a drop left on screen. Called once the page side
+    /// stops holding its preview: the dropped page arrived, or never did.
+    func releaseDropHint() {
+        guard let zone = heldHintZone, let card = cards[zone] else { return }
+        heldHintZone = nil
+        heldHintGeneration += 1
+        let generation = heldHintGeneration
+        let finish: () -> Void = { [weak self] in
+            card.surface.alphaValue = 1
+            card.label.alphaValue = 1
+            // A new drag may have taken the card over meanwhile.
+            guard let self, self.heldHintGeneration == generation,
+                  !(self.hintsVisible && self.visibleZones.contains(zone)) else { return }
+            self.setCard(card, hidden: true)
+        }
+        guard window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            finish()
+            return
+        }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = Self.dropHintReleaseFadeDuration
+            card.surface.animator().alphaValue = 0
+            card.label.animator().alphaValue = 0
+        }, completionHandler: finish)
+    }
+
+    private func setCard(_ card: HintCard, hidden: Bool) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        card.whiteOverlay.isHidden = hidden
+        card.border.isHidden = hidden
+        CATransaction.commit()
+        card.surface.isHidden = hidden
+        card.glass.isHidden = hidden
+        if hidden {
+            // Out of the surface while hidden: even a hidden glass
+            // re-resolves its geometry on every frame the page area moves.
+            card.glass.removeFromSuperview()
+        } else if card.glass.superview !== card.surface {
+            card.surface.addSubview(card.glass)
+        }
+        card.label.isHidden = hidden
     }
 
     /// The hint cards live inside the page area, beneath the Peek and Reader
@@ -603,6 +720,12 @@ final class SplitTabDropContainer: NSView {
         switch mode {
         case .create:
             guard let focusedTabId = state.focusingTab?.guid else { return }
+            // The page has made way for this drop: it and the card stay
+            // where they are until the split arrives.
+            if hintsVisible, activeDropZone == zone, createPreview != nil {
+                holdDropHint(zone)
+                onCreateCommitted?()
+            }
             performSplitDrop(state: state,
                              source: source,
                              focusedTabId: focusedTabId,
@@ -751,6 +874,9 @@ final class SplitTabDropContainer: NSView {
                                 zone: DropZone) {
         guard case .insert(let slot) = zone,
               let group = state.splitGroup(forId: splitId), group.canAddPane else { return }
+        if activeDropZone == zone {
+            holdDropHint(zone)
+        }
         onAddPaneCommitted?(slot)
         switch source {
         case .normalTab(let tabId):
@@ -905,6 +1031,14 @@ final class SplitTabDropContainer: NSView {
         guard area.contains(pointInSelf) else { return nil }
         switch mode {
         case .create:
+            // The opened half is wider than the edge zone that opened it:
+            // stay on the zone while the pointer is anywhere in that half.
+            // Not for the focused tab dragged onto its own page, where the
+            // half lies across from the pointer.
+            if !dragIsFocusedTab, let activeDropZone, createPreview != nil,
+               Self.createOpenedRect(for: activeDropZone, in: area).contains(pointInSelf) {
+                return activeDropZone
+            }
             return Self.createDropZone(
                 for: pointInSelf,
                 in: area,
@@ -1250,12 +1384,18 @@ final class SplitTabDropContainer: NSView {
     }
 
     /// Visual rectangles for the given mode. Create mode uses the independent
-    /// Figma geometry above; pane mode mirrors the split's actual panes, with
-    /// the add-a-pane cards drawn as slim strips on the ends of the axis.
+    /// Figma geometry above, or, where the page makes way
+    /// (`opensSpaceForCreate`), the one half opened for the new pane; pane
+    /// mode mirrors the split's actual panes, with the space opened for a
+    /// new pane on the active add-a-pane zone.
     private func hintRects(mode: Mode, area: CGRect) -> [DropZone: CGRect] {
         switch mode {
         case .create:
-            return Self.createDropHintRects(in: area)
+            guard opensSpaceForCreate else {
+                return Self.createDropHintRects(in: area)
+            }
+            guard let zone = activeDropZone, createPreview != nil else { return [:] }
+            return [zone: Self.createOpenedRect(for: newPaneZone(for: zone), in: area)]
         case .pane(let splitId):
             var rects: [DropZone: CGRect] = [:]
             let preview = addPanePreviewRects(splitId: splitId, area: area)
@@ -1266,6 +1406,66 @@ final class SplitTabDropContainer: NSView {
                 rects[activeDropZone] = preview.opened
             }
             return rects
+        }
+    }
+
+    // MARK: - Create mode that opens space
+
+    /// True while a create-mode drag shows the page making way rather than
+    /// the four floating cards.
+    private var opensSpaceForCreate: Bool {
+        Self.createOpensSpace && activeMode == .create && canOpenSpaceForCreate?() == true
+    }
+
+    /// True while the floating directional cards are the hint in use.
+    private var usesFloatingCards: Bool {
+        activeMode == .create && !opensSpaceForCreate
+    }
+
+    /// The create zone whose half the new pane takes for a drop on `zone`:
+    /// the zone itself, or the one across from it when the dragged tab is
+    /// the page, which then lands under the pointer.
+    private func newPaneZone(for zone: DropZone) -> DropZone {
+        dragIsFocusedTab ? zone.opposite : zone
+    }
+
+    /// The pair a drop on the active zone would create, nil unless the page
+    /// makes way for it.
+    private var createPreview: CreatePreview? {
+        guard opensSpaceForCreate, let zone = activeDropZone,
+              Self.allZones.contains(zone) else { return nil }
+        let paneZone = newPaneZone(for: zone)
+        return CreatePreview(layout: paneZone.layout, newPaneIsPrimary: paneZone.isPrimarySlot)
+    }
+
+    /// The half of `area` the new pane takes when it joins on `zone`'s
+    /// side, lined up with the pane the split will give it.
+    static func createOpenedRect(for zone: DropZone, in area: CGRect) -> CGRect {
+        SplitPaneHostView.creationPreviewRects(
+            in: area,
+            layoutMode: PhiPreferences.GeneralSettings.loadLayoutMode(),
+            layout: zone.layout,
+            newPaneIsPrimary: zone.isPrimarySlot
+        ).opened
+    }
+
+    /// The edge the new pane's card opens out of as the page slides away
+    /// from it, nil unless the page makes way for a drop on `zone`.
+    private func createEntryRect(for zone: DropZone, area: CGRect) -> CGRect? {
+        guard zone == activeDropZone, createPreview != nil else { return nil }
+        let paneZone = newPaneZone(for: zone)
+        let opened = Self.createOpenedRect(for: paneZone, in: area)
+        switch paneZone {
+        case .left:
+            return CGRect(x: opened.minX, y: opened.minY, width: 1, height: opened.height)
+        case .right:
+            return CGRect(x: opened.maxX - 1, y: opened.minY, width: 1, height: opened.height)
+        case .top:
+            return CGRect(x: opened.minX, y: opened.maxY - 1, width: opened.width, height: 1)
+        case .bottom:
+            return CGRect(x: opened.minX, y: opened.minY, width: opened.width, height: 1)
+        case .pane, .insert:
+            return nil
         }
     }
 
@@ -1413,6 +1613,11 @@ final class SplitTabDropContainer: NSView {
         // Drag is contextually valid and the cursor is over the page area:
         // show the directional hint cards so the user can see where they land.
         activeMode = mode
+        if case .normalTab(let tabId) = source {
+            dragIsFocusedTab = state.focusingTab?.guid == tabId
+        } else {
+            dragIsFocusedTab = false
+        }
         applyHintLabels(for: mode)
         showHighlights()
         let resolvedZone = zone(forPoint: pointInSelf, mode: mode, area: area)
@@ -1507,7 +1712,9 @@ final class SplitTabDropContainer: NSView {
     private var visibleZones: [DropZone] {
         switch activeMode {
         case .create:
-            return Self.allZones
+            guard opensSpaceForCreate else { return Self.allZones }
+            // As in pane mode: only the half opened for the new pane.
+            return createPreview == nil ? [] : activeDropZone.map { [$0] } ?? []
         case .pane:
             // Only what the drop changes is covered: the pane it replaces or
             // the space opened for a new pane. Every other pane stays clear.
@@ -1537,6 +1744,12 @@ final class SplitTabDropContainer: NSView {
     }
 
     private func showHighlights() {
+        if let heldZone = heldHintZone {
+            // A new drag takes over from a card still held for the last drop.
+            heldHintZone = nil
+            heldHintGeneration += 1
+            cards[heldZone].map { setCard($0, hidden: true) }
+        }
         if !hintsVisible {
             hintsVisible = true
             updateDropHintFrames(transition: nil)
@@ -1568,18 +1781,9 @@ final class SplitTabDropContainer: NSView {
         }
         hintsVisible = false
         setActiveDropZone(nil)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        for card in cards.values {
-            card.whiteOverlay.isHidden = true
-            card.border.isHidden = true
-        }
-        CATransaction.commit()
-        for card in cards.values {
-            card.surface.isHidden = true
-            card.glass.isHidden = true
-            card.glass.removeFromSuperview()
-            card.label.isHidden = true
+        // The card a drop is holding stays until `releaseDropHint()`.
+        for (zone, card) in cards where zone != heldHintZone {
+            setCard(card, hidden: true)
         }
     }
 
@@ -1589,6 +1793,7 @@ final class SplitTabDropContainer: NSView {
     private func setActiveDropZone(_ zone: DropZone?, dragPoint: CGPoint? = nil) {
         let previousZone = activeDropZone
         let previousAddPaneSlot = addPanePreviewSlot
+        let previousCreatePreview = createPreview
         let wasExpanded = isActiveDropHintExpanded
         let zoneChanged = zone != previousZone
         if zoneChanged {
@@ -1599,7 +1804,8 @@ final class SplitTabDropContainer: NSView {
         }
         activeDropZone = zone
         activeDragPoint = zone == nil ? nil : dragPoint
-        if activeMode == .create, let zone, let dragPoint {
+        let floatingCards = usesFloatingCards
+        if floatingCards, let zone, let dragPoint {
             let area = pageAreaProvider?() ?? bounds
             let wasExpandedInThisZone = previousZone == zone && wasExpanded
             let approachTarget = Self.createDropHintRect(
@@ -1656,12 +1862,18 @@ final class SplitTabDropContainer: NSView {
         if addPaneSlotChanged {
             onAddPanePreviewChanged?(addPanePreviewSlot)
         }
+        let createPreviewChanged = createPreview != previousCreatePreview
+        if createPreviewChanged {
+            onCreatePreviewChanged?(createPreview)
+        }
+        // Cards that fill opened space move in step with the panes.
+        let openedSpaceChanged = addPaneSlotChanged || createPreviewChanged
         if hintsVisible {
             let transition: HintFrameTransition?
             if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                 transition = nil
-            } else if activeMode != .create {
-                transition = addPaneSlotChanged ? .settle : nil
+            } else if !floatingCards {
+                transition = openedSpaceChanged ? .settle : nil
             } else if previousZone == nil, zone != nil {
                 transition = .attract
             } else if zoneChanged || (expansionChanged && !isActiveDropHintExpanded) {
@@ -1674,13 +1886,14 @@ final class SplitTabDropContainer: NSView {
                 transition = .follow
             }
             updateDropHintFrames(transition: transition)
-            // Pane mode covers only the active zone, so each change of zone
-            // swaps which card is on screen.
-            if addPaneSlotChanged || (zoneChanged && activeMode != .create) {
+            // Pane mode, and create mode that opens space, cover only the
+            // active zone, so each change of zone swaps which card is on
+            // screen.
+            if openedSpaceChanged || (zoneChanged && !floatingCards) {
                 showHighlights()
             }
         }
-        if activeMode == .create,
+        if floatingCards,
            let zone,
            let dragPoint,
            !isActiveDropHintExpanded,
@@ -1706,7 +1919,8 @@ final class SplitTabDropContainer: NSView {
         CATransaction.setDisableActions(true)
         for candidate in Self.allCardZones {
             guard let card = cards[candidate] else { continue }
-            let isActive = candidate == zone
+            // A card held for a drop keeps its look until it is released.
+            let isActive = candidate == zone || (zone == nil && candidate == heldHintZone)
             card.activeMask.isHidden = !isActive
             card.surface.layer?.zPosition = isActive ? 10_001 : 9_999
             card.label.layer?.zPosition = isActive ? 10_002 : 10_000
@@ -1776,7 +1990,9 @@ final class SplitTabDropContainer: NSView {
     private func labelText(for zone: DropZone, mode: Mode) -> String {
         switch mode {
         case .create:
-            return zone.labelText
+            // The card names the side it covers, which is across from the
+            // zone when the page itself is dragged (`newPaneZone(for:)`).
+            return (opensSpaceForCreate ? newPaneZone(for: zone) : zone).labelText
         case .pane(let splitId):
             let group = browserState?.splitGroup(forId: splitId)
             let layout = group?.layout ?? .vertical
@@ -1812,7 +2028,8 @@ final class SplitTabDropContainer: NSView {
         for zone in visibleZones {
             guard let card = cards[zone], let baseRect = rects[zone] else { continue }
             var hintRect = baseRect
-            if activeMode == .create {
+            let floatingCards = usesFloatingCards
+            if floatingCards {
                 hintRect = Self.createDropHintRect(
                     for: zone,
                     in: area,
@@ -1832,11 +2049,13 @@ final class SplitTabDropContainer: NSView {
             }
             // A card that was hidden has nowhere on screen to move from,
             // except a new pane's card, which opens out of the zone entered.
-            let openingFrom = card.surface.isHidden ? addPaneEntryRect(for: zone, area: area) : nil
+            let openingFrom = card.surface.isHidden
+                ? addPaneEntryRect(for: zone, area: area) ?? createEntryRect(for: zone, area: area)
+                : nil
             let cardTransition = card.surface.isHidden && openingFrom == nil ? nil : transition
             // Pane cards rest at their real size and only pass through a
             // scale while moving, so their rounded corners stay true.
-            let movingFrom = activeMode != .create && cardTransition != nil
+            let movingFrom = !floatingCards && cardTransition != nil
                 ? openingFrom ?? presentedDropHintRect(for: zone, fallback: card.surface.frame)
                 : nil
             updateDropHintFrame(
@@ -1885,9 +2104,9 @@ final class SplitTabDropContainer: NSView {
     /// its rounded corners.
     private func hintCornerRadius(for mode: Mode) -> CGFloat {
         switch mode {
-        case .create:
+        case .create where !opensSpaceForCreate:
             return Self.dropHintCornerRadius
-        case .pane:
+        case .create, .pane:
             return WebContentLayout(browserState: browserState).innerCornerRadius
         }
     }

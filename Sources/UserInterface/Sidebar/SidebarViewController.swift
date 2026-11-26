@@ -294,6 +294,11 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         tabList.beginDraggingPaneAsTab(tab, event: event)
     }
 
+    /// See `SidebarTabListViewController.paneExitRect(for:)`.
+    func paneExitRect(for tab: Tab) -> CGRect? {
+        tabList.paneExitRect(for: tab)
+    }
+
     private lazy var tabList: SidebarTabListViewController = {
         let controller = SidebarTabListViewController(state: state, hostVC: self)
         controller.setCleanupButtonsVisible(false)

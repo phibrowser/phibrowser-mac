@@ -137,7 +137,7 @@ struct AthenaSettingsView: View {
             AIContainerView {
                 Toggle(isOn: Binding(get: { enabled }, set: { value in
                     enabled = value
-                    AppController.shared.requestTrialAthena(open: value)
+                    AppController.shared.trialAthenaEnabledDidChange(value)
                 })) {
                     Text(NSLocalizedString("settings.athena.enable", value: "Enable Athena", comment: "Athena settings - Switch that opens the paired app or quits it and its services"))
                 }

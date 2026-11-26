@@ -253,7 +253,7 @@ import PostHog
         kioskGlobalShortcutRegistrar.start()
         
         #if ATHENA_CANARY_TRIAL
-        if permitsSentinelLaunch { openTrialAthenaWhenSignedIn() }
+        if permitsSentinelLaunch { reconcileTrialAthenaSession() }
         #else
         if permitsSentinelLaunch,
            ApplicationState.shared.isAuthenticated {
@@ -278,7 +278,8 @@ import PostHog
     private var trialAthenaOperation: Task<Void, Never>?
 
     @MainActor
-    private func openTrialAthenaWhenSignedIn() {
+    private func reconcileTrialAthenaSession() {
+        applyTrialAthenaExtensionPolicy()
         guard ApplicationState.shared.isAuthenticated else {
             handledTrialAthenaSignIn = false
             return
@@ -288,6 +289,22 @@ import PostHog
         if PhiPreferences.AthenaSettings.openAtStartup.loadValue(),
            PhiPreferences.AthenaSettings.enabled.loadValue() {
             requestTrialAthena(open: true)
+        }
+    }
+
+    @MainActor
+    func trialAthenaEnabledDidChange(_ enabled: Bool) {
+        applyTrialAthenaExtensionPolicy()
+        requestTrialAthena(open: enabled)
+    }
+
+    @MainActor
+    private func applyTrialAthenaExtensionPolicy() {
+        let bridge = ChromiumLauncher.sharedInstance().bridge
+        if PhiChromiumCoordinator.shared.shouldEnablePhiExtensions() {
+            bridge?.enablePhiExtensions()
+        } else {
+            bridge?.disablePhiExtensions(false)
         }
     }
 
@@ -1449,7 +1466,7 @@ import PostHog
     @objc private func browserAccessStateDidChange(_ notification: Notification) {
         Task { @MainActor in
             #if ATHENA_CANARY_TRIAL
-            if hasFinishedLaunching { openTrialAthenaWhenSignedIn() }
+            if hasFinishedLaunching { reconcileTrialAthenaSession() }
             #else
             AuthenticatedSentinelSessionLifecycle.reconcile()
             #endif

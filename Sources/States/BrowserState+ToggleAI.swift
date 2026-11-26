@@ -8,6 +8,8 @@ import Cocoa
 
 extension BrowserState {
     func onAIEnabledChanged(_ enabled: Bool, sentinelOnLogin: Bool) {
+        // The trial follows Athena and account changes at application scope.
+        guard !PhiBuildCapabilities.usesAthenaCanary else { return }
         let effectiveEnabled = enabled && PhiBuildCapabilities.supportsAI
         if effectiveEnabled {
             ChromiumLauncher.sharedInstance().bridge?.enablePhiExtensions()
@@ -49,8 +51,9 @@ extension BrowserState {
     /// re-enter the Mac side with registry change events for a window that is
     /// not yet addressable.
     func syncPhiExtensionsIfAIDisabled() {
-        guard !PhiPreferences.AISettings.phiAIEnabled.loadValue() else { return }
+        guard !PhiChromiumCoordinator.shared.shouldEnablePhiExtensions() else { return }
         DispatchQueue.main.async {
+            guard !PhiChromiumCoordinator.shared.shouldEnablePhiExtensions() else { return }
             ChromiumLauncher.sharedInstance().bridge?.disablePhiExtensions(false)
         }
     }

@@ -1831,8 +1831,11 @@ import SwiftUI
 
 extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     func shouldEnablePhiExtensions() -> Bool {
-        PhiBuildCapabilities.supportsAI
-            && PhiPreferences.AISettings.phiAIEnabled.loadValue()
+        #if ATHENA_CANARY_TRIAL
+        ApplicationState.shared.isAuthenticated && PhiPreferences.AthenaSettings.enabled.loadValue()
+        #else
+        PhiBuildCapabilities.supportsAI && PhiPreferences.AISettings.phiAIEnabled.loadValue()
+        #endif
     }
 
     /// Chromium is about to replay a profile's session at cold start and is

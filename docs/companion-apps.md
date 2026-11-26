@@ -161,9 +161,29 @@ the shared sign-in and the browser companion signature check work. Testers
 quit their regular Canary apps before opening the trial and keep both trial
 apps together when moving the folder.
 
-In Settings → Athena, enabling Athena opens the signed sibling app for a signed-in user. Disabling it quits that app and lets its Runner shut down. A separate preference controls automatic opening at browser startup or sign-in. Both preferences default to on. Athena owns its Runner,
-service updates, and chat UI. Guest sessions only open the browser. The trial
-disables browser-hosted AI, Sentinel supervision, Runner and Service Broker
+Build the trial extensions in a fresh staging directory.
+
+```sh
+python3 build-scripts/build-athena-canary-extensions.py \
+    "$ATHENA_CHECKOUT" "$ATHENA_REVISION" "$EXTENSION_VERSION" "$STAGING/Default Apps"
+```
+
+Use a four-part Chromium version newer than the extensions in the Canary
+profiles being upgraded. The script builds Sidecar, Lexington, Kensington and
+Mirage from that Athena revision using its locked dependencies and staging
+signing keys. The external install descriptors retain the existing Canary IDs.
+The trial CRXs omit the regular staging update feed. Ship updates in a newer
+trial bundle. Replace the staged framework's `Versions/Current/Default Apps`
+directory with the output and sign the framework before the enclosing app.
+
+In Settings → Athena, enabling Athena opens the signed sibling app for a
+signed-in user and enables Sidecar, Lexington and Kensington. Disabling it
+quits Athena, lets its Runner shut down, and disables those extensions. Mirage
+remains enabled as the browser's web store customizer. A separate preference
+controls automatic opening of Athena at browser startup or sign-in. Both
+preferences default to on. Athena owns its Runner, service updates and chat UI.
+Guest sessions only open the browser. The trial disables native Sentinel AI
+controls, Sentinel supervision, browser-to-Runner and Service Broker
 connections, and AI-data export. Browser data can still be exported.
 The trial browser does not start its nightly updater. It shares Canary's user
 data and credentials. To return to the regular Canary, quit both trial apps

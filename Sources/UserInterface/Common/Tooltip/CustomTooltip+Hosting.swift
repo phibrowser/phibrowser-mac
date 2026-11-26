@@ -106,7 +106,27 @@ final class CustomTooltipRegistration: NSObject {
 
     @objc(mouseEntered:)
     private func handleMouseEntered(_ event: NSEvent) {
+        if let view, Self.isCoveredByInWindowOverlay(view, at: event.locationInWindow) {
+            return
+        }
         handlePointerEntered()
+    }
+
+    /// Tracking areas ignore what is drawn above them in the same window, so
+    /// an anchor under an in-window overlay (the omnibox, tab search) still
+    /// gets `mouseEntered`. The pointer is on the overlay when the window's
+    /// hit test lands in an overlay backdrop the anchor is not part of.
+    private static func isCoveredByInWindowOverlay(_ view: NSView, at locationInWindow: NSPoint) -> Bool {
+        guard let frameView = view.window?.contentView?.superview,
+              let hit = frameView.hitTest(locationInWindow) else { return false }
+        var candidate: NSView? = hit
+        while let current = candidate {
+            if current is EventBlockBgView {
+                return !view.isDescendant(of: current)
+            }
+            candidate = current.superview
+        }
+        return false
     }
 
     @objc(mouseExited:)

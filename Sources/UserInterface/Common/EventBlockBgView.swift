@@ -48,21 +48,28 @@ class EventBlockBgView: NSView {
         return nil
     }
 
-    // Transparent but intercepts events
+    // Transparent but intercepts events. None of the left-button events go
+    // to `super`: AppKit hands an unhandled mouse event to the view beneath
+    // this one (it hit-tests the window again), which would click the
+    // control the overlay covers. Owners act on `mouseDown` and forward a
+    // click outside themselves explicitly.
     override var isOpaque: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var acceptsFirstResponder: Bool { true }
     override func mouseDown(with event: NSEvent) {
         mouseDown?(event)
-        super.mouseDown(with: event)
     }
-    
+
     override func mouseMoved(with event: NSEvent) {
-        
+
     }
-    
+
+    override func mouseDragged(with event: NSEvent) {
+
+    }
+
     override func mouseUp(with event: NSEvent) {
-        super.mouseUp(with: event)
+
     }
     
     override func rightMouseDown(with event: NSEvent) {

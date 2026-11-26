@@ -359,6 +359,14 @@ for the presentation.
 **Closing.** The Omnibox hides immediately after a selection. The session ends
 only after the select reply, because ending earlier cancels Phi's dispatch.
 
+**Backdrop.** The in-window Omnibox and tab search sit on an
+`EventBlockBgView`. Outside the box a click falls through to the real control
+(Omnibox) or is forwarded after dismissal (tab search); inside it nothing
+reaches the controls underneath. The backdrop never passes its own mouse
+events to `super`, because AppKit would hand them to the view beneath it, and
+custom tooltips skip `mouseEntered` when the pointer is on a backdrop the
+anchor is not part of, because tracking areas ignore overlapping views.
+
 ## Sidecar NTP
 
 The NTP is the Sidecar extension's `chrome://newtab` override. Chromium accepts

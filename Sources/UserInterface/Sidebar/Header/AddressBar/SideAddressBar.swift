@@ -1037,7 +1037,10 @@ private final class DraggableExtensionButton: HoverableButtonNSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if !hasCrossedHysteresis,
+        // A release without this button's own press is not a click: AppKit
+        // can forward an unhandled mouse-up from a view drawn above it.
+        if mouseDownPoint != nil,
+           !hasCrossedHysteresis,
            bounds.contains(convert(event.locationInWindow, from: nil)) {
             onPrimaryClick?()
         }

@@ -168,8 +168,10 @@ python3 build-scripts/build-athena-canary-extensions.py \
     "$ATHENA_CHECKOUT" "$ATHENA_REVISION" "$EXTENSION_VERSION" "$STAGING/Default Apps"
 ```
 
-Use a four-part Chromium version newer than the extensions in the Canary
-profiles being upgraded. The script builds Sidecar, Lexington, Kensington and
+Keep the Canary launch switch `--phi-no-embed-extensions`. Chromium installs
+signed CRXs into each new profile. Its default-app provider skips profiles
+where preinstallation has already run, even when the bundled versions are newer.
+Use a four-part Chromium version newer than the installed CRXs for upgrades. The script builds Sidecar, Lexington, Kensington and
 Mirage from that Athena revision using its locked dependencies and staging
 signing keys. The external install descriptors retain the existing Canary IDs.
 The trial CRXs omit the regular staging update feed. Ship updates in a newer

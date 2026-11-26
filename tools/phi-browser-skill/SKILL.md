@@ -156,6 +156,8 @@ Core surface — full semantics in this file:
 - Dialogs: `handleDialog(accept, promptText?)` (current tab),
   `dismissDialog(targetId, accept, promptText?)` (browser-level — frees any
   tab wedged behind a dialog) — see "Caveats"
+- Resource blocking (opt-in, default off): `blockResources({images, media,
+  fonts, patterns})`, `unblockResources()` — see "Blocking heavy resources"
 - Page JS: `js(expression)` — Runtime.evaluate, returns by value. Never use
   `element.click()`, focus/value writes, or dispatched events as user input;
   those bypass human hit-testing. Use the input helpers.
@@ -267,6 +269,28 @@ it on normal sites**: to read more of a long page, scroll and re-observe
 (`observe({diff: true})` keeps that cheap). `setViewport` exists for
 responsive-layout testing and explicitly requested sizes only — semantics in
 `references/observation.md`.
+
+### Blocking heavy resources
+
+Off by default. For long scraping or monitoring runs on image- or video-heavy
+sites, where pixels are not part of the task, `blockResources({images: true,
+media: true})` stops the agent's tabs from loading images and audio/video
+(`fonts: true` adds web fonts; `patterns: ['*://*.cdn.example/*', '*.mp4*']`
+blocks matching URLs — CDP Fetch wildcards over the whole URL). It saves the
+decode, playback and paint work on the machine the browser runs on. It applies
+to the current tab and every tab the task attaches or opens later, persists
+across rounds until `unblockResources()` or `complete()`, and is lifted while
+the user holds control. Agent and shadow contexts only.
+
+Trade-off: with it on, the page is no longer what a user would see —
+**screenshots (evidence included) show no images**, `scrapeMedia` has nothing
+to fetch, icon-only buttons lose their icon, and layouts sized by images can
+shift. Call `unblockResources()` (and reload with `goto`) before an evidence
+screenshot, a visual check, or anything that reads images; never turn it on
+for a task whose output is how a page looks. Not covered: cross-site iframes,
+workers, and video a player streams through fetch/XHR (MSE) — block such
+streams by URL `patterns`. Do not mix with your own `Fetch.*` calls via
+`cdp()`.
 
 **Canvas-like editors** (Google Docs/Sheets, Notion, Lark/Feishu Docs,
 Figma, whiteboards, heavily virtualized editors): their MAIN editing surface

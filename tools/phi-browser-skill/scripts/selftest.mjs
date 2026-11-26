@@ -176,12 +176,38 @@ const CF_FALSE_TITLE = `<!doctype html><title>Just a moment...</title>
 const CF_BLOCKED = `<!doctype html><title>Attention Required! | Cloudflare</title>
 <div id="cf-error-details">Sorry, you have been blocked</div>`
 
+// blockResources: one image and one pattern-matched fetch, each counted by
+// the server so the check proves the requests never left the browser.
+const BLOCKABLE = `<!doctype html><title>blockable</title>
+<img id="pix" src="${BASE}/pix.png?n=PIXNONCE"><script>
+window.patternResult = fetch('${BASE}/pattern-target?n=PIXNONCE')
+  .then((r) => r.ok ? 'loaded' : 'http ' + r.status, () => 'blocked')
+</` + `script>`
+
+// 1x1 transparent PNG.
+const PIX = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+  'base64')
+const blockHits = { pix: 0, pattern: 0 }
+
 function startServer() {
   return new Promise((resolve, reject) => {
     const srv = createServer((req, res) => {
       res.setHeader('content-type', 'text/html')
       const page = (name) => `<!doctype html><title>${name}</title><h1>${name}</h1>`
-      if (req.url.startsWith('/slow')) {
+      if (req.url.startsWith('/pix.png')) {
+        blockHits.pix++
+        res.setHeader('content-type', 'image/png')
+        res.setHeader('cache-control', 'no-store')
+        res.end(PIX)
+      } else if (req.url.startsWith('/pattern-target')) {
+        blockHits.pattern++
+        res.setHeader('cache-control', 'no-store')
+        res.end('ok')
+      } else if (req.url.startsWith('/blockable')) {
+        const nonce = new URL(req.url, BASE).searchParams.get('n') || '0'
+        res.end(BLOCKABLE.replaceAll('PIXNONCE', nonce))
+      } else if (req.url.startsWith('/slow')) {
         // Delay the HEADERS so Page.navigate itself blocks — the goto-budget
         // tests need a navigation that cannot commit quickly.
         setTimeout(() => res.end(page('slow')), 8000)
@@ -619,6 +645,47 @@ async function main() {
   check('observe sees the SPA controls', (obs.elements || []).length >= 3,
         `${(obs.elements || []).length} elements`)
   check('snapshotText tags refs', /\[ref=\d+/.test(await H.snapshotText()))
+
+  // --- blockResources: opt-in, survives re-attach, fully undone -------------
+  const pixLoaded = () => H.js(`(async () => {
+    const img = document.getElementById('pix')
+    if (!img.complete) await new Promise((r) => { img.onload = img.onerror = r })
+    return img.naturalWidth > 0
+  })()`)
+  const blockSpec = await H.blockResources({ images: true, patterns: ['*/pattern-target*'] })
+  check('blockResources returns the applied spec',
+        blockSpec.images && !blockSpec.media && blockSpec.patterns.length === 1,
+        JSON.stringify(blockSpec))
+  const hitsBefore = { ...blockHits }
+  await H.goto(`${BASE}/blockable?n=1`, { acceptCookies: false })
+  const blockedImg = !(await pixLoaded())
+  const blockedFetch = await H.js('window.patternResult')
+  check('blockResources stops images and pattern-matched URLs',
+        blockedImg && blockedFetch === 'blocked'
+          && blockHits.pix === hitsBefore.pix
+          && blockHits.pattern === hitsBefore.pattern,
+        `img blocked ${blockedImg}, fetch ${blockedFetch}, ` +
+          `server hits +${blockHits.pix - hitsBefore.pix}/+${blockHits.pattern - hitsBefore.pattern}`)
+  const blockTab = (await H.listTabs()).find((t) => t.current)?.targetId
+  const otherTab = await H.openTab(`${BASE}/blockable?n=2`, { reuseBlank: false,
+                                                              acceptCookies: false })
+  const blockedInNewTab = !(await pixLoaded())
+  await H.switchTab(blockTab)
+  await H.goto(`${BASE}/blockable?n=3`, { acceptCookies: false })
+  const blockedAfterSwitch = !(await pixLoaded())
+  check('blockResources covers openTab and survives switchTab re-attach',
+        blockedInNewTab && blockedAfterSwitch && blockHits.pix === hitsBefore.pix,
+        `new tab ${blockedInNewTab}, after switch ${blockedAfterSwitch}`)
+  await H.closeTab(otherTab.targetId)
+  await H.switchTab(blockTab)
+  const unblockSpec = await H.unblockResources()
+  await H.goto(`${BASE}/blockable?n=4`, { acceptCookies: false })
+  const loadedAgain = await pixLoaded()
+  const fetchAgain = await H.js('window.patternResult')
+  check('unblockResources lets everything load again',
+        !unblockSpec.images && loadedAgain && fetchAgain === 'loaded'
+          && blockHits.pix > hitsBefore.pix,
+        `img ${loadedAgain}, fetch ${fetchAgain}`)
 
   // --- importCookies round-trip (local domain only) --------------------------
   const imp = await H.importCookies([{

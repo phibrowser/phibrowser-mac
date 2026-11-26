@@ -66,6 +66,10 @@ const state = {
   // override for this heredoc round; `scale` is the last applied compositing
   // scale (input coords must be multiplied by it, see inputScale).
   viewportByTarget: new Map(),
+  // {sessionId, dispose} — the page session blockResources' Fetch
+  // interception is armed on, and its requestPaused listener (see
+  // syncResourceBlock). Null while nothing is armed.
+  resourceBlockSession: null,
   // {x, y, windowId} in widget coordinates — the last mouse position this
   // round dispatched in the bound window. click()/hover() use it to emit the
   // intermediate move events a real cursor produces instead of teleporting;
@@ -132,6 +136,9 @@ async function cdpClient() {
     if (state.task && state.task.taskId === taskId) {
       state.task.ownership = owner
       state.ownerCheckedAt = Date.now()
+      // A user taking control sees the page whole: lift blockResources'
+      // interception at once (takeOver/waitForAgentControl re-arm it).
+      if (owner === 'user') syncResourceBlock().catch(() => {})
     }
   })
   return state.cdp
@@ -1177,6 +1184,17 @@ function writeStoredViewport(key, request) {
   writeSessionState(key, { viewport: request ?? null })
 }
 
+// blockResources' spec persists the same way: Fetch interception dies with the
+// round's session, so the next round's attach re-arms it from here. `null`
+// lets everything load again.
+function readStoredResourceBlock(key) {
+  return readSessionState(key).resourceBlock ?? null
+}
+
+function writeStoredResourceBlock(key, spec) {
+  writeSessionState(key, { resourceBlock: spec ?? null })
+}
+
 // Window-level pointer memory lets a later heredoc round resume the cursor
 // where the previous round left it. The window id rejects stale coordinates
 // after a task is healed/recreated under the same name.
@@ -1319,6 +1337,7 @@ async function spawnSessionMirror(taskId) {
             ? { message: String(prev.completing.message) } : {}),
         }).catch(() => {})
         writeStoredViewport(prev.taskId, null)
+        writeStoredResourceBlock(prev.taskId, null)
       }
       clearDaemonControl(transcript.sessionKey)
       return
@@ -1341,6 +1360,7 @@ async function spawnSessionMirror(taskId) {
           ? { message: String(prev.completing.message) } : {}),
       }).catch(() => {})  // already gone settles it just as well
       writeStoredViewport(prev.taskId, null)
+      writeStoredResourceBlock(prev.taskId, null)
     }
     const livePid = prev && prev.pid && pidAlive(prev.pid) ? prev.pid : null
     const agentCapability = appProvidedAgentCapability()
@@ -1517,6 +1537,11 @@ async function attachTabNow(targetId) {
   // flip the user's visible tab AND raise/focus their window mid-use
   // (Chromium only skips window activation for agent-mode windows).
   const userDriving = ctx?.kind === 'user' || state.task?.ownership === 'user'
+  // Re-arm blockResources on the new session (Fetch interception dies with
+  // the session it was enabled on), ahead of anything that loads. Handled
+  // browser-side, so a dialog holding the renderer cannot stall it; skipped
+  // while the user owns what's on screen.
+  await syncResourceBlock().catch(() => {})
   // Make the tab we're about to drive the window's active tab, so a watching
   // user sees the tab the agent operates and Phi can mask it. Activating a tab
   // in an agent-mode window does not surface the hidden window.
@@ -1553,6 +1578,7 @@ async function attachTabNow(targetId) {
                                           { targetId, flatten: true }))
       state.sessionId = sessionId
       armDialogListeners()
+      await syncResourceBlock().catch(() => {})
       await client.send('Page.enable', {}, sessionId)
     }
   }
@@ -1670,12 +1696,30 @@ const claimedTabs = new Set()
  * polls the document ready, and runs the consent pass. Runtime.evaluate and
  * Page.navigate need no domain enables, so this session never issues one:
  * Page.enable stays confined to the serialized attachTab.
+ *
+ * Returns the session's release. While blockResources is armed the session
+ * stays attached until the caller's attachTab has re-armed interception on
+ * the persistent session — the page is only "interactive" here, and a
+ * subresource still paused on this session would be let through by the
+ * detach — so the caller awaits the release after its attach. Otherwise the
+ * session is already let go and the release does nothing.
  */
 async function prepareTab(client, targetId, { navigateTo = null, acceptCookies }) {
   const { sessionId } = await client.send('Target.attachToTarget',
                                           { targetId, flatten: true })
+  let disposeBlock = null
+  // Detach first, then drop the listener: a request paused on this session
+  // until the very end must still be failed, not resumed.
+  const release = async () => {
+    await client.send('Target.detachFromTarget', { sessionId }).catch(() => {})
+    disposeBlock?.()
+  }
   try {
     const viewport = await applyAgentViewport(client, sessionId, targetId, null)
+    // blockResources covers the load itself, which runs on this session.
+    if (state.task && state.task.ownership !== 'user') {
+      disposeBlock = await armResourceBlock(client, sessionId).catch(() => null)
+    }
     if (navigateTo) {
       const res = await client.send('Page.navigate', { url: navigateTo }, sessionId)
       if (res.errorText) {
@@ -1694,11 +1738,15 @@ async function prepareTab(client, targetId, { navigateTo = null, acceptCookies }
         typeof acceptCookies === 'object' ? acceptCookies : {},
         sessionId, viewport.scale)
     }
-  } finally {
-    // The emulation override dies with this session; the caller's attachTab
-    // re-imposes it on the persistent session right after.
-    client.send('Target.detachFromTarget', { sessionId }).catch(() => {})
+  } catch (err) {
+    await release()
+    throw err
   }
+  // The emulation override and the interception die with this session; the
+  // caller's attachTab re-imposes both on the persistent session right after.
+  if (disposeBlock) return release
+  client.send('Target.detachFromTarget', { sessionId }).catch(() => {})
+  return async () => {}
 }
 
 /**
@@ -1758,9 +1806,14 @@ export async function openTab(url, { acceptCookies = true, reuseBlank = true } =
       (t) => BLANK_TAB_URLS.has(t.url) && !claimedTabs.has(t.targetId))
     if (blank) {
       claimedTabs.add(blank.targetId)
-      await prepareTab(client, blank.targetId, { navigateTo: url, acceptCookies })
-      await guardAgentControl()  // honor a takeover that landed mid-load
-      await attachTab(blank.targetId)
+      const release = await prepareTab(client, blank.targetId,
+                                       { navigateTo: url, acceptCookies })
+      try {
+        await guardAgentControl()  // honor a takeover that landed mid-load
+        await attachTab(blank.targetId)
+      } finally {
+        await release()
+      }
       return { targetId: blank.targetId, windowId: task.windowId, reused: true }
     }
   }
@@ -1769,9 +1822,18 @@ export async function openTab(url, { acceptCookies = true, reuseBlank = true } =
   // open, so the cost is ~one lookup for the new tab rather than one per tab in
   // the whole browser on every poll.
   const before = new Set(await pageTargetIds())
+  // The app starts loading the URL it is given before this round can attach,
+  // which would let that first load past blockResources. While a block is
+  // armed, open a tagged blank page instead and navigate it on the setup
+  // session once interception is on. The fragment keeps a concurrent
+  // openTab's reuseBlank from adopting the tab (BLANK_TAB_URLS is exact).
+  const blockFirstLoad = task.ownership !== 'user' && !!readStoredResourceBlock(task.taskId)
   await phiSend(contextKind() === 'shadow'
                   ? 'agentSpace.shadow.openTab' : 'agentSpace.openTab',
-                { taskId: task.taskId, url })
+                { taskId: task.taskId,
+                  url: blockFirstLoad
+                    ? `about:blank#phi-open-${Math.random().toString(36).slice(2)}`
+                    : url })
   const deadline = Date.now() + 15000
   while (Date.now() < deadline) {
     for (const targetId of await pageTargetIds()) {
@@ -1783,9 +1845,15 @@ export async function openTab(url, { acceptCookies = true, reuseBlank = true } =
       if (win.windowId !== task.windowId) { before.add(targetId); continue }
       if (claimedTabs.has(targetId)) continue  // claimed during the lookup above
       claimedTabs.add(targetId)
-      await prepareTab(client, targetId, { acceptCookies })
-      await guardAgentControl()  // honor a takeover that landed mid-load
-      await attachTab(targetId)
+      const release = await prepareTab(client, targetId,
+                                       { navigateTo: blockFirstLoad ? url : null,
+                                         acceptCookies })
+      try {
+        await guardAgentControl()  // honor a takeover that landed mid-load
+        await attachTab(targetId)
+      } finally {
+        await release()
+      }
       return { targetId, windowId: win.windowId }
     }
     await wait(0.25)
@@ -4551,6 +4619,131 @@ export async function setViewport({ width, height } = {}) {
   return applyAgentViewport(await cdpClient(), requireSession(), targetId, request)
 }
 
+// blockResources flag -> the CDP Network.ResourceType values it blocks.
+const RESOURCE_BLOCK_TYPES = { images: ['Image'], media: ['Media'], fonts: ['Font'] }
+
+/** Fetch.enable patterns for a stored blockResources spec. */
+function resourceBlockPatterns(spec) {
+  const patterns = []
+  for (const [flag, types] of Object.entries(RESOURCE_BLOCK_TYPES)) {
+    if (!spec[flag]) continue
+    for (const resourceType of types) {
+      patterns.push({ urlPattern: '*', resourceType, requestStage: 'Request' })
+    }
+  }
+  for (const urlPattern of spec.patterns || []) {
+    patterns.push({ urlPattern, requestStage: 'Request' })
+  }
+  return patterns
+}
+
+/**
+ * Arms the bound task's stored blockResources spec on `sessionId`: Fetch
+ * interception with only the blocked types/URLs as patterns, so nothing else
+ * ever pauses, and a listener that fails each paused request as
+ * BlockedByClient. Listener first, so no paused request is missed. Returns
+ * the listener's disposer, or null when nothing is to be blocked.
+ */
+async function armResourceBlock(client, sessionId) {
+  const spec = state.task ? readStoredResourceBlock(state.task.taskId) : null
+  if (!spec) return null
+  const dispose = client.on('Fetch.requestPaused', ({ requestId }) => {
+    client.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' },
+                sessionId).catch(() => {})
+  }, sessionId)
+  try {
+    await client.send('Fetch.enable', { patterns: resourceBlockPatterns(spec) },
+                      sessionId)
+  } catch (err) {
+    dispose()
+    throw err
+  }
+  return dispose
+}
+
+/**
+ * Brings the CURRENT page session's interception in line with the stored
+ * spec and who is driving: drops what is armed, then arms again unless the
+ * user owns what's on screen (a user-Space binding, or a user holding
+ * control). Called on every attach and on each control change.
+ */
+async function syncResourceBlock() {
+  const armed = state.resourceBlockSession
+  state.resourceBlockSession = null
+  const sessionId = state.sessionId
+  if (!armed && !sessionId) return
+  const client = await cdpClient()
+  if (armed) {
+    armed.dispose()
+    // A session detached since took its interception with it.
+    if (armed.sessionId === sessionId) {
+      await client.send('Fetch.disable', {}, sessionId).catch(() => {})
+    }
+  }
+  if (!sessionId) return
+  if (contextKind() === 'user' || state.task?.ownership === 'user') return
+  const dispose = await armResourceBlock(client, sessionId)
+  if (dispose) state.resourceBlockSession = { sessionId, dispose }
+}
+
+/**
+ * OPT-IN: stops the agent's tabs from loading images, audio/video and/or web
+ * fonts, plus any URL matching `patterns` (CDP Fetch wildcards: `*` any run,
+ * `?` one character, matched against the whole URL — e.g.
+ * '*://*.example-cdn.com/*' or '*.mp4*'). Cuts the decode, playback and paint
+ * work of image- and video-heavy pages an agent only scrapes. Default off.
+ *
+ * Trade-off: screenshots and annotatedScreenshot then show no images (broken
+ * or empty boxes), scrapeMedia finds nothing to fetch, image-only controls
+ * render without their icon, and a layout sized by images can shift — turn
+ * it off (unblockResources) before taking evidence screenshots or anything
+ * that needs the page as a user would see it.
+ *
+ * Applies to the tab attached now and every tab the task attaches or opens
+ * later (openTab's load included), and persists across heredoc rounds until
+ * unblockResources() or complete(). Agent/shadow contexts only; lifted while
+ * the user holds control (handOff, or the user taking over) and re-armed when
+ * control comes back. Covers the page and its same-site frames; requests of
+ * cross-site iframes, workers and service workers, and media streamed through
+ * fetch/XHR (MSE players — block those by URL `patterns`), still load.
+ * Do not combine with your own Fetch.* calls through cdp(). Calling again
+ * replaces the previous spec; a spec blocking nothing equals
+ * unblockResources(). Returns the applied {images, media, fonts, patterns}.
+ */
+export async function blockResources({ images = false, media = false, fonts = false,
+                                       patterns = [] } = {}) {
+  if (contextKind() === 'user') {
+    throw new Error('blockResources is agent-space only — a user-Space tab is ' +
+                    "the user's own page; never strip its resources")
+  }
+  const task = requireTask()
+  const list = (Array.isArray(patterns) ? patterns : [patterns])
+    .map((p) => String(p ?? '').trim()).filter(Boolean)
+  const spec = { images: !!images, media: !!media, fonts: !!fonts, patterns: list }
+  if (!spec.images && !spec.media && !spec.fonts && !list.length) {
+    return unblockResources()
+  }
+  await guardAgentControl()
+  writeStoredResourceBlock(task.taskId, spec)
+  logAction('block resources', [
+    ...Object.keys(RESOURCE_BLOCK_TYPES).filter((flag) => spec[flag]),
+    ...(list.length ? [`${list.length} pattern${list.length === 1 ? '' : 's'}`] : []),
+  ].join(', '))
+  await syncResourceBlock()
+  return spec
+}
+
+/** Lets every resource load again: undoes blockResources() for the tab
+ *  attached now and every later attach/round. Allowed while the user holds
+ *  control. Returns the cleared {images, media, fonts, patterns}. */
+export async function unblockResources() {
+  const task = requireTask()
+  writeStoredResourceBlock(task.taskId, null)
+  await syncResourceBlock()
+  logAction('unblock resources')
+  return { images: false, media: false, fonts: false, patterns: [] }
+}
+
 // ---------------------------------------------------------------------------
 // Input (coordinates are CSS pixels, origin top-left of the viewport)
 
@@ -6126,6 +6319,8 @@ export async function handOff(message) {
       .send('Emulation.clearDeviceMetricsOverride', {}, state.sessionId)
       .catch(() => {})
   }
+  // Likewise blockResources: the user sees and drives the page whole.
+  await syncResourceBlock().catch(() => {})
   return { done: true }
 }
 
@@ -6152,6 +6347,7 @@ export async function takeOver() {
     // and screenshots work again — with this tab's override if one was set.
     await applyAgentViewport(await cdpClient(), state.sessionId, state.targetId,
                              state.viewportByTarget.get(state.targetId)?.request ?? null)
+    await syncResourceBlock().catch(() => {})
   }
   return { done: true }
 }
@@ -6204,6 +6400,7 @@ export async function waitForAgentControl({ timeout = 600 } = {}) {
       } else if (state.sessionId) {
         await applyAgentViewport(await cdpClient(), state.sessionId, state.targetId,
                                  state.viewportByTarget.get(state.targetId)?.request ?? null)
+        await syncResourceBlock().catch(() => {})
       }
       return { owner: 'agent' }
     }
@@ -6316,9 +6513,13 @@ export async function complete({ success = true, message = undefined,
     // control file is the tailer's exit signal.
     stopSessionMirror(task.taskId)
   }
-  // Drop any persisted viewport so a later session reusing this name starts
-  // at the page area (the task record itself is ephemeral).
-  if (!deferred) writeStoredViewport(task.taskId, null)
+  // Drop any persisted viewport and resource block so a later session reusing
+  // this name starts at the page area with every resource loading (the task
+  // record itself is ephemeral).
+  if (!deferred) {
+    writeStoredViewport(task.taskId, null)
+    writeStoredResourceBlock(task.taskId, null)
+  }
   state.task = null
   state.sessionId = null
   state.targetId = null

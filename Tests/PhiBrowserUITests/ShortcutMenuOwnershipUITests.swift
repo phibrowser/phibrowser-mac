@@ -33,6 +33,16 @@ final class ShortcutMenuOwnershipUITests: XCTestCase {
         }
     }
 
+    func testF12OpensDevToolsWithFocusInWebPage() throws {
+        try launch(configuration: [])
+        try navigateToFixture(title: firstTitle, bodyHTML: "<input aria-label='F12 test input'>")
+        let field = app.webViews.textFields["F12 test input"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.click()
+        app.typeKey(.F12, modifierFlags: [])
+        XCTAssertTrue(app.buttons["Customize and control DevTools"].firstMatch.waitForExistence(timeout: 15))
+    }
+
     func testNativeSettingsOnControlPageDownWinsWithoutSwitchingTabs() throws {
         try launchWithControlPageDown(commandID: 40015) // IDC_OPTIONS
         try prepareTwoTabs()

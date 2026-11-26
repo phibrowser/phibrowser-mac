@@ -77718,7 +77718,7 @@
       }
     },
     "settings.navigations.kiosk.globalShortcut.unsupported" : {
-      "comment" : "Navigations settings - Status shown when the assigned Kiosk shortcut cannot be registered with the current keyboard layout",
+      "comment" : "Navigations settings - Status shown when the assigned shortcut cannot open Kiosk from other apps",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
@@ -77730,7 +77730,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This shortcut is not supported globally with the current keyboard layout. Choose another shortcut."
+            "value" : "Choose a different key combination for the global Kiosk shortcut."
           }
         },
         "es" : {
@@ -101843,6 +101843,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用 Esc 鍵的快速鍵必須搭配 Command 或 Control 鍵。"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.recording.kioskFunctionKey" : {
+      "comment" : "Shortcuts settings - Shown while recording a function key for New Kiosk Window",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "F1–F20 cannot be assigned to New Kiosk Window. Press a different shortcut."
           }
         }
       }

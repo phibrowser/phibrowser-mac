@@ -386,7 +386,7 @@ struct ShortcutsKey: Hashable, Codable {
             for: event,
             inputSourceIdentifier: inputSourceIdentifier
         )?.canonical,
-              key.modifiersRaw != 0,
+              !key.modifiers.isEmpty || key.isStandardFunctionKey,
               // AppKit only accepts Function on system-provided menu items.
               // Keep it in event matching to prevent fallback to a different
               // chord, but do not promise a new binding ordinary menus reject.
@@ -601,6 +601,11 @@ struct ShortcutsKey: Hashable, Codable {
         case "\u{F746}": return UInt32(kVK_Help)
         default: return nil
         }
+    }
+
+    var isStandardFunctionKey: Bool {
+        guard characters.utf16.count == 1, let code = characters.utf16.first else { return false }
+        return (NSF1FunctionKey...NSF20FunctionKey).contains(Int(code))
     }
 
     var isPrintableMenuCharacter: Bool {

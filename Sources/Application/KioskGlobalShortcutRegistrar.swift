@@ -200,6 +200,7 @@ final class KioskGlobalShortcutRegistrar {
     ) -> [Configuration] {
         guard isEnabled,
               let shortcut,
+              CommandWrapper.PHI_NEW_KIOSK_WINDOW.allowsShortcut(shortcut),
               !shortcut.modifiers.contains(.function),
               shortcut.modifiers.subtracting(ShortcutsKey.supportedModifierFlags).isEmpty,
               !shortcut.modifiers.isEmpty,
@@ -242,7 +243,7 @@ final class KioskGlobalShortcutRegistrar {
         }
     }
 
-    private static func carbonModifiers(_ flags: NSEvent.ModifierFlags) -> UInt32 {
+    static func carbonModifiers(_ flags: NSEvent.ModifierFlags) -> UInt32 {
         var modifiers: UInt32 = 0
         if flags.contains(.command) {
             modifiers |= UInt32(cmdKey)

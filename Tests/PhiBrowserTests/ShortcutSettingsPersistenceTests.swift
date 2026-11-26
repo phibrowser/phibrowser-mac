@@ -144,6 +144,53 @@ final class ShortcutSettingsPersistenceTests: XCTestCase {
         }
     }
 
+    func testNewKioskWindowRejectsF12WithoutSavingAndAcceptsNextShortcut() throws {
+        let command = CommandWrapper.PHI_NEW_KIOSK_WINDOW
+        let model = ShortcutsViewModel()
+        model.setCustomShortcut(for: command, key: customKey)
+        let saved = contents
+        let writes = writeCount
+        func keyDown(_ characters: String, _ code: UInt16, _ flags: NSEvent.ModifierFlags) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
+                characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code))
+        }
+        model.startRecording(for: command)
+        let f12 = try keyDown("\u{F70F}", 111, .function)
+        for event in [f12, try keyDown("\u{F70F}", 111, [.command, .function])] {
+            model.handleCaptureEvent(event)
+            XCTAssertEqual(model.editingCommand, command)
+            XCTAssertNotNil(model.recordingMessage)
+            XCTAssertEqual(Shortcuts.key(for: command), customKey)
+            XCTAssertEqual(contents, saved)
+            XCTAssertEqual(writeCount, writes)
+        }
+        model.handleCaptureEvent(try keyDown("y", 16, [.control, .option]))
+        XCTAssertNil(model.capture)
+        XCTAssertNil(model.recordingMessage)
+        XCTAssertEqual(Shortcuts.key(for: command), ShortcutsKey(characters: "y", modifiers: [.control, .option]))
+        XCTAssertEqual(writeCount, writes + 1)
+
+        model.startRecording(for: .IDC_RELOAD)
+        model.handleCaptureEvent(f12)
+        XCTAssertNil(model.capture)
+        XCTAssertEqual(Shortcuts.key(for: .IDC_RELOAD), ShortcutsKey(characters: "\u{F70F}", modifiers: []))
+        let toggle = try XCTUnwrap(model.conflicts(for: .IDC_RELOAD).first { $0.id == .command(40237) })
+        XCTAssertNil(toggle.command)
+    }
+
+    func testLegacyNewKioskWindowF12UsesDefaultAfterReload() throws {
+        let command = CommandWrapper.PHI_NEW_KIOSK_WINDOW
+        let defaultKey = try XCTUnwrap(Shortcuts.DefaultShortcuts[command])
+        let url = try XCTUnwrap(Shortcuts.configuration.fileURL)
+        let f12 = ShortcutsKey(characters: "\u{F70F}", modifiers: [])
+        try Shortcuts.configuration.set(.custom(f12), for: command.rawValue, at: url)
+        try Shortcuts.reloadOverrides().get()
+        XCTAssertFalse(Shortcuts.isOverridden(command))
+        XCTAssertEqual(Shortcuts.key(for: command), defaultKey)
+        XCTAssertEqual(try item(command, in: ShortcutsViewModel()).shortcutKey, defaultKey)
+    }
+
     func testRecordedShiftedDigitsUseSharedDisplayWithoutChangingSavedKeys() throws {
         let model = ShortcutsViewModel()
         let commands: [CommandWrapper] = [.IDC_RELOAD, .PHI_COPY_URL, .IDS_EDIT_USE_SELECTION_MAC]
@@ -1493,6 +1540,14 @@ final class ShortcutSettingsPersistenceTests: XCTestCase {
         let hidden = model.inventory.bindings.filter { $0.source == .hidden }
         XCTAssertFalse(hidden.isEmpty)
         for binding in hidden {
+            // Chromium owns IDC_DEV_TOOLS_TOGGLE; Phi lists it as a read-only F12 binding.
+            if binding.commandID == 40237 {
+                XCTAssertEqual(binding.key, ShortcutsKey(characters: "\u{F70F}", modifiers: []))
+                let reserved = try XCTUnwrap(model.reservedShortcuts.first { $0.id == binding.owner })
+                XCTAssertFalse(reserved.name.isEmpty)
+                XCTAssertTrue(reserved.keys.contains(binding.key))
+                continue
+            }
             let command = try XCTUnwrap(binding.commandID.flatMap(CommandWrapper.init(rawValue:)))
             let name = model.sections.flatMap(\.items).first { $0.command == command }?.name
                 ?? model.reservedShortcuts.first { $0.id == binding.owner }?.name

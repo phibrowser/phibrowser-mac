@@ -39,7 +39,16 @@ enum SystemShortcutBindings {
         return Set(bindings.filter { $0.owner != .system }.map(\.key)).compactMap { key in
             // Reuse the existing pure Carbon chord resolver, including layout,
             // shifted punctuation and physical aliases. Never register a hotkey.
-            let chords = KioskGlobalShortcutRegistrar.configurations(for: key, isEnabled: true, layout: layout)
+            let chords: [KioskGlobalShortcutRegistrar.Configuration]
+            if key.isStandardFunctionKey, let code = key.carbonSpecialKeyCode,
+               !key.modifiers.contains(.function) {
+                // Carbon may mark the function key itself with Fn, even for bare F12.
+                let modifiers = KioskGlobalShortcutRegistrar.carbonModifiers(key.modifiers)
+                chords = [.init(keyCode: code, modifiers: modifiers),
+                          .init(keyCode: code, modifiers: modifiers | UInt32(kEventKeyModifierFnMask))]
+            } else {
+                chords = KioskGlobalShortcutRegistrar.configurations(for: key, isEnabled: true, layout: layout)
+            }
             guard chords.contains(where: enabled.contains) else { return nil }
             return ShortcutBinding(owner: .system, key: key, scope: .all, source: .system)
         }

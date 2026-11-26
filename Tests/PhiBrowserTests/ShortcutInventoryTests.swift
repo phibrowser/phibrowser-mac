@@ -169,6 +169,19 @@ final class ShortcutInventoryTests: XCTestCase {
         XCTAssertNotNil(ShortcutsKey.recordingKey(for: try event(122, "\u{F704}", .shift), inputSourceIdentifier: "com.apple.keylayout.US"))
     }
 
+    func testBareFunctionKeysCanBeRecordedWithoutCapturingTypingOrNavigation() throws {
+        for (code, character) in [(UInt16(122), "\u{F704}"), (111, "\u{F70F}"), (90, "\u{F717}")] {
+            let expected = ShortcutsKey(characters: character, modifiers: [])
+            for flags: NSEvent.ModifierFlags in [[], .function] {
+                XCTAssertEqual(ShortcutsKey.recordingAction(for: try event(code, character, flags)), .key(expected))
+            }
+            XCTAssertTrue(KioskGlobalShortcutRegistrar.configurations(for: expected, isEnabled: true, layout: nil).isEmpty)
+        }
+        for (code, character) in [(UInt16(0), "a"), (48, "\t"), (126, "\u{F700}")] {
+            XCTAssertEqual(ShortcutsKey.recordingAction(for: try event(code, character, [])), .unsupported)
+        }
+    }
+
     func testForwardDeleteDoesNotDisableTheBinding() throws {
         XCTAssertEqual(ShortcutsKey.recordingAction(for: try event(117, "\u{F728}", [])), .unsupported)
         guard case .key = ShortcutsKey.recordingAction(for: try event(117, "\u{F728}", .command)) else {

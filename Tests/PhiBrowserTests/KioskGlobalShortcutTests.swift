@@ -101,6 +101,16 @@ final class KioskGlobalShortcutTests: XCTestCase {
         }
     }
 
+    func testFunctionKeysAreUnavailableForGlobalKioskActivation() throws {
+        for value in NSF1FunctionKey...NSF20FunctionKey {
+            let character = String(try XCTUnwrap(UnicodeScalar(value)))
+            for flags: NSEvent.ModifierFlags in [[], .shift, .control, [.command, .option]] {
+                let key = ShortcutsKey(characters: character, modifiers: flags)
+                XCTAssertTrue(Registrar.configurations(for: key, isEnabled: true, layout: nil).isEmpty)
+            }
+        }
+    }
+
     func testCanonicalPhysicalIdentityWinsOverLegacySemanticCandidate() {
         let layout = Registrar.KeyboardLayout(inputSourceIdentifier: "com.apple.keylayout.DVORAK-QWERTYCMD") { code, _ in
             switch Int(code) {
@@ -396,7 +406,7 @@ final class KioskGlobalShortcutTests: XCTestCase {
     func testSystemRegistrationReportsConflictRecoversAndReleasesOwnership() throws {
         // Reserve a test-only chord without changing user preferences or
         // synthesizing keyboard input. Exercise the real Carbon service.
-        let code = UInt32(kVK_F19)
+        let code = UInt32(kVK_Help)
         let modifiers = UInt32(controlKey | optionKey | shiftKey)
         let identifier = EventHotKeyID(signature: 0x50485453, id: 1) // PHTS
         var blocker: EventHotKeyRef?
@@ -407,7 +417,7 @@ final class KioskGlobalShortcutTests: XCTestCase {
         defer { if let blocker { XCTAssertEqual(UnregisterEventHotKey(blocker), noErr) } }
 
         let registrar = Registrar(action: { XCTFail("No keyboard input is sent by this test") },
-            shortcut: { .init(characters: "\u{F716}", modifiers: [.control, .option, .shift]) },
+            shortcut: { .init(characters: "\u{F746}", modifiers: [.control, .option, .shift]) },
             keyboardLayout: { nil }, notificationCenter: NotificationCenter(),
             inputSourceNotificationCenter: NotificationCenter())
         defer { registrar.invalidate() }

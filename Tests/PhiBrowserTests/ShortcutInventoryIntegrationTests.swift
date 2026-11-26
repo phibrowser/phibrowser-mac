@@ -108,6 +108,16 @@ final class ShortcutInventoryIntegrationTests: XCTestCase {
         XCTAssertEqual(Shortcuts.menuBindings(in: menu).first?.scope, CommandWrapper.IDC_CLOSE_WINDOW.shortcutScope)
     }
 
+    func testHistoryOnF12ShowsTheChromiumToggleAsAReadOnlyConflict() throws {
+        let f12 = ShortcutsKey(characters: "\u{F70F}", modifiers: [])
+        let toggle = ShortcutBinding(commandID: 40237, key: f12, scope: .browser, source: .hidden)
+        install([.IDC_SHOW_HISTORY: .custom(f12), .IDC_DEV_TOOLS: .disabled])
+        let model = ShortcutsViewModel(additionalBindings: { [toggle] }, availableCommands: { [] })
+        let conflicts = model.conflicts(for: .IDC_SHOW_HISTORY)
+        XCTAssertEqual(conflicts.map(\.id), [toggle.owner])
+        XCTAssertNil(try XCTUnwrap(conflicts.first).command)
+    }
+
     func testAdditionalBindingFilterPreservesOwnersAndExcludesDisabledCommands() {
         let key = ShortcutsKey(characters: "d", modifiers: [.control, .option])
         let disabled = ShortcutBinding(commandID: CommandWrapper.IDC_FOCUS_NEXT_PANE.rawValue,

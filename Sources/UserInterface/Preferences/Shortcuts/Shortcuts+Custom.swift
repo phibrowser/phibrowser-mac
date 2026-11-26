@@ -378,10 +378,12 @@ extension Shortcuts {
     }
     
     static func overrideState(for commandId: Int) -> ShortcutOverride? {
-        if let command = CommandWrapper(rawValue: commandId), fixedShortcutCommands.contains(command) {
-            return nil
+        let override = configuration.overrides[commandId]
+        if let command = CommandWrapper(rawValue: commandId) {
+            if fixedShortcutCommands.contains(command) { return nil }
+            if case .custom(let key) = override, !command.allowsShortcut(key) { return nil }
         }
-        return configuration.overrides[commandId]
+        return override
     }
 
     static func chromiumOverrideState(for commandID: Int) -> ShortcutOverride? {
@@ -658,6 +660,10 @@ extension ShortcutsKey {
 }
 
 extension CommandWrapper {
+    func allowsShortcut(_ key: ShortcutsKey) -> Bool {
+        self != .PHI_NEW_KIOSK_WINDOW || !key.isStandardFunctionKey
+    }
+
     /// Standard macOS menu services reserve keys without appearing in settings.
     var isSystemShortcut: Bool {
         switch self {

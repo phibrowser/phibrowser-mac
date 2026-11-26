@@ -45,6 +45,19 @@ final class SystemShortcutBindingsTests: XCTestCase {
                                            key: key, in: .browser).map(\.owner), [.system])
     }
 
+    func testFunctionKeyReservationsPreserveModifiersAndAcceptCarbonFnFlag() {
+        let bare = ShortcutsKey(characters: "\u{F70F}", modifiers: [])
+        let shifted = ShortcutsKey(characters: "\u{F70F}", modifiers: .shift)
+        for fn in [0, Int(kEventKeyModifierFnMask)] {
+            for (modifiers, expected) in [(0, bare), (shiftKey, shifted)] {
+                let conflicts = SystemShortcutBindings.conflicts(
+                    with: [binding(bare), binding(shifted)],
+                    records: [record(kVK_F12, modifiers: modifiers | fn)], layout: nil)
+                XCTAssertEqual(conflicts.map(\.key), [expected])
+            }
+        }
+    }
+
     func testShiftedKeypadDoesNotInheritTheControlOneSystemWarning() {
         let shifted = ShortcutsKey(characters: "1", modifiers: [.control, .shift], preservesShift: true)
         let ordinaryReservations = [record(), record(kVK_ANSI_Keypad1)]

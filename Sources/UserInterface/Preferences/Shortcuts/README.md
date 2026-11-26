@@ -193,7 +193,13 @@ still enabled. A stale capture view cannot release another view's suspension.
 Carbon unregister failures retain the failure status and block Kiosk actions;
 the OS may still own the chord until unregister succeeds.
 
-Unmodified keys are not recorded. A non-Latin event is stored and displayed with
+Only F1 through F20 can be recorded without modifiers. On keyboards configured
+for media controls, hold Fn to send the function-key event to Phi.
+Chromium handles F12 as its built-in DevTools toggle and reports it to Phi's
+shortcut inventory for conflict warnings. Command-Option-I is the separate
+Open DevTools menu shortcut.
+
+A non-Latin event is stored and displayed with
 a canonical Latin character only when AppKit supplies a verified ASCII equivalent
 or Chromium defines an input-source-specific physical mapping. Otherwise Phi
 keeps the semantic local-script character instead of saving an identity that one
@@ -408,6 +414,9 @@ Kiosk-only group. When its global-shortcut preference is enabled,
 `KioskGlobalShortcutRegistrar` registers its effective key with Carbon. That
 system-wide hotkey can take precedence before window interception, so assigning
 the same key to a Kiosk-only command still constitutes a conflict.
+Recording F1 through F20 for New Kiosk Window, alone or with modifiers, leaves
+the existing shortcut in place and keeps the recorder open. If an older
+configuration assigned one of these keys, Phi uses the default Command-Option-N.
 
 The registrar resolves printable keys through the current OS keyboard layout
 and the shared `ShortcutsKey.eventKeys` matcher. It registers all physical aliases

@@ -198,7 +198,7 @@ struct NavigationsSettingsView: View {
         case .unassigned:
             return NSLocalizedString("settings.navigations.kiosk.globalShortcut.unassigned", value: "Assign a New Kiosk Window shortcut in Shortcuts.", comment: "Navigations settings - Status shown when global Kiosk activation is enabled but its shortcut is unassigned")
         case .unsupported:
-            return NSLocalizedString("settings.navigations.kiosk.globalShortcut.unsupported", value: "This shortcut is not supported globally with the current keyboard layout. Choose another shortcut.", comment: "Navigations settings - Status shown when the assigned Kiosk shortcut cannot be registered with the current keyboard layout")
+            return NSLocalizedString("settings.navigations.kiosk.globalShortcut.unsupported", value: "Choose a different key combination for the global Kiosk shortcut.", comment: "Navigations settings - Status shown when the assigned shortcut cannot open Kiosk from other apps")
         case .failed:
             return NSLocalizedString("settings.navigations.kiosk.globalShortcut.failed", value: "The global shortcut is unavailable. Choose another shortcut, or turn this setting off and on to retry.", comment: "Navigations settings - Status shown after the system rejects a global shortcut operation, with recovery guidance")
         }

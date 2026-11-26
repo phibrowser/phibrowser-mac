@@ -449,6 +449,10 @@ class ShortcutsViewModel: ObservableObject {
     
     /// Save only this command. Conflicts remain visible for the user to resolve.
     func setCustomShortcut(for command: CommandWrapper, key: ShortcutsKey) {
+        guard command.allowsShortcut(key) else {
+            recordingMessage = NSLocalizedString("settings.shortcuts.recording.kioskFunctionKey", value: "F1–F20 cannot be assigned to New Kiosk Window. Press a different shortcut.", comment: "Shortcuts settings - Shown while recording a function key for New Kiosk Window")
+            return
+        }
         // Runtime bindings already include overrides. Remember the unassigned
         // baseline before replacing it, rather than treating the custom key as a default.
         if !Shortcuts.isOverridden(command) {

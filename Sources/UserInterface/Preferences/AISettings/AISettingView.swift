@@ -154,7 +154,7 @@ struct AthenaSettingsView: View {
             AISectionView(title: NSLocalizedString("settings.athena.appSection", value: "Athena app", comment: "Athena settings - Section with an action to open the companion app")) {
                 AIContainerView {
                     AINavigationRow(title: NSLocalizedString("settings.athena.openApp", value: "Open Athena", comment: "Athena settings - Open the paired Athena app to use chat or manage its settings"), enabled: enabled && signedIn) {
-                        AppController.shared.requestTrialAthena(open: true)
+                        AppController.shared.requestTrialAthena(.openWindow)
                     }
                     if !signedIn {
                         Divider()

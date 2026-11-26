@@ -291,14 +291,14 @@ import PostHog
         handledTrialAthenaSignIn = true
         if PhiPreferences.AthenaSettings.openAtStartup.loadValue(),
            PhiPreferences.AthenaSettings.enabled.loadValue() {
-            requestTrialAthena(open: true)
+            requestTrialAthena(.startInBackground)
         }
     }
 
     @MainActor
     func trialAthenaEnabledDidChange(_ enabled: Bool) {
         applyTrialAthenaExtensionPolicy()
-        requestTrialAthena(open: enabled)
+        requestTrialAthena(enabled ? .openWindow : .quit)
     }
 
     @MainActor
@@ -314,17 +314,21 @@ import PostHog
         bridge?.nativeSettingsChanged(PhiPreferences.AISettings.buildConfig())
     }
 
+    enum TrialAthenaRequest {
+        case startInBackground, openWindow, quit
+    }
+
     /// Athena stops its Runner asynchronously on quit. Serialize requests so
     /// switching it back on waits for the previous instance to finish exiting.
     @MainActor
-    func requestTrialAthena(open: Bool) {
+    func requestTrialAthena(_ request: TrialAthenaRequest) {
         let previous = trialAthenaOperation
         trialAthenaOperation = Task { @MainActor in
             await previous?.value
             let url = Bundle.main.bundleURL.deletingLastPathComponent()
                 .appendingPathComponent("Athena Canary.app", isDirectory: true)
             let id = "com.phibrowser.canary.athena"
-            if !open {
+            if request == .quit {
                 for app in NSRunningApplication.runningApplications(withBundleIdentifier: id)
                     where app.bundleURL?.resolvingSymlinksInPath() == url.resolvingSymlinksInPath() {
                     guard app.terminate() || app.isTerminated else {
@@ -351,7 +355,20 @@ import PostHog
             guard ApplicationState.shared.isAuthenticated,
                   PhiPreferences.AthenaSettings.enabled.loadValue() else { return }
             do {
-                _ = try await NSWorkspace.shared.openApplication(at: url, configuration: .init())
+                let configuration = NSWorkspace.OpenConfiguration()
+                if request == .startInBackground {
+                    guard NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty else { return }
+                    configuration.activates = false
+                    // Athena's login-item launch path starts its services with the library window closed.
+                    let event = NSAppleEventDescriptor(eventClass: AEEventClass(kCoreEventClass),
+                                                       eventID: AEEventID(kAEOpenApplication),
+                                                       targetDescriptor: nil,
+                                                       returnID: AEReturnID(kAutoGenerateReturnID),
+                                                       transactionID: AETransactionID(kAnyTransactionID))
+                    event.setParam(NSAppleEventDescriptor(boolean: true), forKeyword: keyAELaunchedAsLogInItem)
+                    configuration.appleEvent = event
+                }
+                _ = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
             } catch {
                 reportTrialAthenaError(error.localizedDescription)
             }

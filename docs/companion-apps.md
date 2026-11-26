@@ -194,7 +194,10 @@ signed-in value under the existing AI preference in its process-local defaults
 domain, preserving the saved ordinary Canary setting. Disabling Athena closes
 open browser AI panels, quits the companion and disables those extensions. Mirage
 remains enabled as the browser's web store customizer. A separate preference
-controls automatic opening of Athena at browser startup or sign-in. Both
+controls background startup of Athena at browser launch or sign-in. Phi uses
+Athena's login-item launch behavior to start its services with the main window
+closed. If Athena is already running, Phi leaves its windows as they are.
+Choose Open Athena in Settings to bring up the main window. Both
 preferences default to on. Athena owns its Runner, service updates and chat UI.
 Guest sessions only open the browser. For a signed-in user with Athena enabled,
 the existing authenticated Service Broker client resolves the current account's

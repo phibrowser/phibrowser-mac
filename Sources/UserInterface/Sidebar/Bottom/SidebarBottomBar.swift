@@ -552,6 +552,31 @@ class SidebarBottomBarSwiftUIView: NSView {
                 self?.state.isFeedbackHidden = ApplicationState.shared.isGuest
             }
             .store(in: &cancellables)
+
+        // An empty bar leaves the sidebar's stack, so the rows above it reach the bottom.
+        typealias Setting = PhiPreferences.GeneralSettings
+        let preferences = Setting.sidebarBottomBarShowsProfile.sharedValuePublisher
+            .combineLatest(Setting.sidebarBottomBarShowsDownloads.sharedValuePublisher,
+                           Setting.sidebarBottomBarShowsMemory.sharedValuePublisher,
+                           Setting.sidebarBottomBarShowsFeedback.sharedValuePublisher)
+        let availability = state.$isChatHidden
+            .combineLatest(state.$isMemoryHidden, state.$isFeedbackHidden,
+                           NotificationCardManager.shared.$latestCard.map { $0 != nil })
+        preferences.combineLatest(availability)
+            .map { preferences, availability in
+                let (showsProfile, showsDownloads, showsMemory, showsFeedback) = preferences
+                let (isChatHidden, isMemoryHidden, isFeedbackHidden, hasCardEntry) = availability
+                return showsProfile || showsDownloads
+                    || (showsMemory && !isMemoryHidden)
+                    || (showsFeedback && !isFeedbackHidden)
+                    || !isChatHidden || hasCardEntry
+            }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] hasControls in
+                self?.isHidden = !hasControls
+            }
+            .store(in: &cancellables)
     }
     
     /// Hides or shows the chat button, for example in private mode.

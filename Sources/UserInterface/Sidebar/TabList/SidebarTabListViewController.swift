@@ -124,7 +124,6 @@ enum SidebarBookmarkFolderDropResolver {
 class SidebarTabListViewController: NSViewController {
     private static let bottomContentInset: CGFloat = 130
     private static let bookmarkRenameClickInterval: TimeInterval = 0.5
-    private static let outlineAnimationSettlePadding: TimeInterval = 0.05
 
     private enum SidebarMultiSelectionUnit: Hashable {
         case tab(Int)
@@ -283,10 +282,6 @@ class SidebarTabListViewController: NSViewController {
     /// Unlike `allItems`, its captured child IDs cannot be changed by model reuse.
     private var lastAcceptedOutlineSnapshot: DiffableOutlineSnapshot<AnyHashable>?
     private var multiSelectionRangeAnchor: SidebarMultiSelectionUnit?
-    /// Diffable completion runs before AppKit necessarily finishes moving rows.
-    /// Keep group-local animations off until the latest structural transition settles.
-    private var groupAnimationSuppressionGeneration: UInt = 0
-    private var suppressesGroupUpdateAnimations = false
     
     /// UI-only state: when non-nil, we temporarily "reparent" the focusing bookmark to keep it visible.
     /// This never mutates the real `Bookmark.parent`.
@@ -713,8 +708,6 @@ class SidebarTabListViewController: NSViewController {
         temporarilyHiddenRealBookmarkGuid = nil
         dropFeedbackTarget = .none
         allowExpandDuringDrag = false
-        groupAnimationSuppressionGeneration &+= 1
-        suppressesGroupUpdateAnimations = false
         scrollAnimationGeneration += 1
         scrollScheduleGeneration += 1
         lastScrolledFocusingItemId = nil
@@ -793,9 +786,6 @@ class SidebarTabListViewController: NSViewController {
             updateDataSource: { [weak self] in
                 guard let self else { return }
                 self.lastAcceptedOutlineSnapshot = snapshot
-                if animated && outlineStructureChanged {
-                    self.suppressGroupAnimationsUntilOutlineSettles()
-                }
                 self.allItems = items
                 self.focusedBookmarkPresentation = resolvedPresentationState.focusedPresentation
                 self.floatingBookmarkGuid = resolvedPresentationState.floatingBookmarkGuid
@@ -886,20 +876,6 @@ class SidebarTabListViewController: NSViewController {
             else { return true }
         }
         return false
-    }
-
-    private func suppressGroupAnimationsUntilOutlineSettles() {
-        groupAnimationSuppressionGeneration &+= 1
-        let generation = groupAnimationSuppressionGeneration
-        suppressesGroupUpdateAnimations = true
-        let delay = max(NSAnimationContext.current.duration, 0.25)
-            + Self.outlineAnimationSettlePadding
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self,
-                  self.groupAnimationSuppressionGeneration == generation
-            else { return }
-            self.suppressesGroupUpdateAnimations = false
-        }
     }
 
     private func reconcileTabGroupRowHeightsWithoutAnimation() {
@@ -4579,10 +4555,7 @@ extension SidebarTabListViewController: TabSectionDelegate {
                 guard let self else { return }
                 self.updateVisibleBookmarkTabs()
                 self.updateFloatingNewTabVisibility()
-                self.pushMemberUpdatesToGroupCells(
-                    change.affectedGroupTokens,
-                    animated: !self.suppressesGroupUpdateAnimations
-                )
+                self.pushMemberUpdatesToGroupCells(change.affectedGroupTokens, animated: true)
                 // Off-screen groups have no cell to send a height callback.
                 // Membership, collapse, and split changes can preserve every
                 // root ID while changing their cached height and all later rows.
@@ -4601,7 +4574,7 @@ extension SidebarTabListViewController: TabSectionDelegate {
             guard let self else { return }
             self.pushMemberUpdatesToGroupCells(
                 change.affectedGroupTokens,
-                animated: !outlineStructureChanged && !self.suppressesGroupUpdateAnimations
+                animated: !outlineStructureChanged
             )
             self.pushPaneUpdatesToSplitCells(change.affectedSplitIds)
             self.updateSeparatorButtonVisibility()
@@ -5646,10 +5619,15 @@ extension SidebarTabListViewController: TabGroupCellViewDelegate {
         else { return }
         let row = outlineView.row(forItem: item)
         guard row >= 0 else { return }
-        let shouldAnimate = animated && !suppressesGroupUpdateAnimations
+        // A cell also reports its height when AppKit creates it during an
+        // animated update. Noting a height that has not changed there makes
+        // the new row, and the rows after it, skip their animation.
+        let expectedHeight = self.outlineView(outlineView, heightOfRowByItem: item)
+            + outlineView.intercellSpacing.height
+        guard abs(outlineView.rect(ofRow: row).height - expectedHeight) > 0.5 else { return }
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = shouldAnimate ? 0.2 : 0
-            context.allowsImplicitAnimation = shouldAnimate
+            context.duration = animated ? 0.2 : 0
+            context.allowsImplicitAnimation = animated
             outlineView.noteHeightOfRows(withIndexesChanged: IndexSet(integer: row))
         }
     }

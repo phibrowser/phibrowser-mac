@@ -242,7 +242,14 @@ final class ShellWindow: NSWindow {
         return surface?.handleSideButtonSpaceSwitch(event) == true
     }
 
+    /// Direct touches are hit-tested outside sendEvent. NSApp.currentEvent can
+    /// still refer to an earlier pointer event during that hit test.
+    private(set) var dispatchingEventType: NSEvent.EventType?
+
     override func sendEvent(_ event: NSEvent) {
+        let previousType = dispatchingEventType
+        dispatchingEventType = event.type
+        defer { dispatchingEventType = previousType }
         if let target = redispatchTarget(for: event) {
             // Nothing took the second pass: the Chromium window's
             // `sendEvent` marks the redispatch unhandled and stops.
@@ -605,11 +612,24 @@ final class ShellWindowController: NSObject, NSWindowDelegate {
             return NSRect(origin: .zero, size: size)
         }
         let visible = screen.visibleFrame
+        let fitted = fittedDefaultSize(in: visible)
         let origin = NSPoint(
-            x: visible.midX - size.width / 2,
-            y: visible.midY - size.height / 2
+            x: visible.midX - fitted.width / 2,
+            y: visible.midY - fitted.height / 2
         )
-        return NSRect(origin: origin, size: size)
+        return NSRect(origin: origin, size: fitted)
+    }
+
+    /// The default window size capped to `visibleFrame`, so a first window on
+    /// a small display (a 13" laptop at default scaling, a large Dock) opens
+    /// whole instead of spilling under the menu bar, Dock and screen edges.
+    /// Unchanged wherever the default already fits.
+    static func fittedDefaultSize(in visibleFrame: NSRect,
+                                  chrome: NSSize = .zero) -> NSSize {
+        NSSize(
+            width: min(defaultContentSize.width, visibleFrame.width - chrome.width),
+            height: min(defaultContentSize.height, visibleFrame.height - chrome.height)
+        )
     }
 
     func show() {
@@ -621,6 +641,7 @@ final class ShellWindowController: NSObject, NSWindowDelegate {
     func closeForTeardown() {
         allowsClose = true
         window.delegate = nil
+        split.windowWillClose()
         window.close()
     }
 
@@ -636,6 +657,7 @@ final class ShellWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        split.windowWillClose()
         slot?.shellDidClose()
     }
 

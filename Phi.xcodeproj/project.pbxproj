@@ -31,6 +31,9 @@
 		2F3F30219641EDD78FE06E96 /* RecoveryCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EE9BDB8D95B7A16A1E96582 /* RecoveryCode.swift */; };
 		31CA905CB7B349718546747A /* ShellWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A94C011853FB4653964F3285 /* ShellWindowController.swift */; };
 		31CA905CB7B349718546747B /* ShellSplitViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A94C011853FB4653964F3286 /* ShellSplitViewController.swift */; };
+		31CA905CB7B349718546747C /* ShellSplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A94C011853FB4653964F3287 /* ShellSplitView.swift */; };
+		31CA905CB7B349718546747D /* ShellSplitGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A94C011853FB4653964F3288 /* ShellSplitGeometry.swift */; };
+		31CA905CB7B349718546747E /* SidebarTransitions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A94C011853FB4653964F3289 /* SidebarTransitions.swift */; };
 		3703C88C2F68F78500E7CF6D /* AISettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3703C88B2F68F78500E7CF6D /* AISettingView.swift */; };
 		3703C9822F69558C00E7CF6D /* BrowserState+ToggleAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */; };
 		3703C9842F6956E600E7CF6D /* SentinelHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3703C9832F6956E600E7CF6D /* SentinelHelper.swift */; };
@@ -284,6 +287,7 @@
 		5EA17ABC000000000000010D /* SearchTabsContainerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC000000000000011D /* SearchTabsContainerViewController.swift */; };
 		5F1A5A11AC1D000000000001 /* BrowserState+Split.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1A5A11AC1D000000000002 /* BrowserState+Split.swift */; };
 		5F1A5A11AC1D000000000003 /* SplitPaneHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1A5A11AC1D000000000004 /* SplitPaneHostView.swift */; };
+		E259000200000000000002 /* ScreenShareMirroredBorderOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E259000100000000000001 /* ScreenShareMirroredBorderOverlayView.swift */; };
 		5F1A5A11AC1D000000000005 /* SplitTabDropContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1A5A11AC1D000000000006 /* SplitTabDropContainer.swift */; };
 		5F1A5A11AC1D0000000C5001 /* ContentSurfaceHosting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1A5A11AC1D0000000C5002 /* ContentSurfaceHosting.swift */; };
 		686A8B97FDFABB61BB2539FD /* ProfilePairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7218F862C1F92C027CE8E979 /* ProfilePairingView.swift */; };
@@ -339,6 +343,7 @@
 		8E4C949C2F10DA5800B09A80 /* NewTabButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4C949B2F10DA5800B09A80 /* NewTabButton.swift */; };
 		8E4FD9BF2EF7D98C007D97A4 /* ZeroSafeAreaHostingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4FD9BE2EF7D98C007D97A4 /* ZeroSafeAreaHostingView.swift */; };
 		8E571D5030131FEF00E3FBE7 /* SessionRestorePreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E571D4F30131FEF00E3FBE7 /* SessionRestorePreference.swift */; };
+		E25901000000000000000002 /* TabSharingBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25901000000000000000001 /* TabSharingBridge.swift */; };
 		8E5D8B012FDFFAD30039CBE3 /* WebContentSnapshotter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E5D8B002FDFFAD30039CBE3 /* WebContentSnapshotter.swift */; };
 		8E6145822F753114001919BA /* LayoutSelectionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E6145802F753114001919BA /* LayoutSelectionViewController.swift */; };
 		8E6145BE2F753469001919BA /* ImportDataTypeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E6145BD2F753469001919BA /* ImportDataTypeViewController.swift */; };
@@ -415,6 +420,7 @@
 		A71E0000000000000000DE52 /* SyncedDeletionConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E0000000000000000DE51 /* SyncedDeletionConfirmation.swift */; };
 		A7C021022FFD000000000002 /* ContextMenuEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C021012FFD000000000001 /* ContextMenuEvent.swift */; };
 		A7E1C0020000000000000002 /* PageOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0010000000000000001 /* PageOverlayView.swift */; };
+		8EFF7BD8414B4AD1B6A6C34D /* WindowDragNotchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F923139258EC4FF6A18F103D /* WindowDragNotchView.swift */; };
 		A81113410000000000000002 /* OOBEAnalyticsSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A81113410000000000000001 /* OOBEAnalyticsSession.swift */; };
 		A81113410000000000000004 /* FirstTimeActionTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A81113410000000000000003 /* FirstTimeActionTracker.swift */; };
 		A8441AB3AB219A8FEA6F1F9A /* PairingDataSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DBF40D64EB16F125973C878 /* PairingDataSummary.swift */; };
@@ -591,6 +597,7 @@
 		CC71BABB2E9E40A9006C7238 /* OmniBoxSuggestionCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC71BABA2E9E40A9006C7238 /* OmniBoxSuggestionCellView.swift */; };
 		CC8B74BE2EA8B66E0075F58C /* Sentry.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8B74BD2EA8B66E0075F58C /* Sentry.swift */; };
 		CC8B74C02EA8BF490075F58C /* CrashSample.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8B74BF2EA8BF490075F58C /* CrashSample.swift */; };
+		DB6F00000000000000000002 /* DebugFrameRateMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB6F00000000000000000001 /* DebugFrameRateMonitor.swift */; };
 		CC8B76B12EA8D7B70075F58C /* AppController+Debug.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8B76B02EA8D7B70075F58C /* AppController+Debug.swift */; };
 		CC8B76B32EA8D7B70075F58C /* AppController+UserDataBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8B76B22EA8D7B70075F58C /* AppController+UserDataBackup.swift */; };
 		CC98F89C2E8BC71800DAD237 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC98F89B2E8BC71800DAD237 /* Settings.swift */; };
@@ -724,6 +731,7 @@
 		EE7E00000000000000000002 /* PeekPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7E00000000000000000012 /* PeekPanelController.swift */; };
 		EE7E00000000000000000003 /* PeekOriginTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7E00000000000000000013 /* PeekOriginTracker.swift */; };
 		EE7E00000000000000000004 /* BrowserReaderOverlayState.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7E00000000000000000014 /* BrowserReaderOverlayState.swift */; };
+		E25901000000000000000004 /* BrowserTabSharingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25901000000000000000003 /* BrowserTabSharingState.swift */; };
 		EE7E00000000000000000005 /* ReaderPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7E00000000000000000015 /* ReaderPanelController.swift */; };
 		EF7BF5709C02A5EF0C4EAD3E /* AIChatPanelBridging.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4BC0BCCBF13A16ECD96ED4E /* AIChatPanelBridging.swift */; };
 		7A6B0C1D2E3F4A5B6C7D8E01 /* TabGroupBridging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A6B0C1D2E3F4A5B6C7D8E02 /* TabGroupBridging.swift */; };
@@ -1150,6 +1158,7 @@
 		5EA17ABC000000000000011D /* SearchTabsContainerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTabsContainerViewController.swift; sourceTree = "<group>"; };
 		5F1A5A11AC1D000000000002 /* BrowserState+Split.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+Split.swift"; sourceTree = "<group>"; };
 		5F1A5A11AC1D000000000004 /* SplitPaneHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitPaneHostView.swift; sourceTree = "<group>"; };
+		E259000100000000000001 /* ScreenShareMirroredBorderOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenShareMirroredBorderOverlayView.swift; sourceTree = "<group>"; };
 		5F1A5A11AC1D000000000006 /* SplitTabDropContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitTabDropContainer.swift; sourceTree = "<group>"; };
 		5F1A5A11AC1D0000000C5002 /* ContentSurfaceHosting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentSurfaceHosting.swift; sourceTree = "<group>"; };
 		60CA90A486574D8B45CEF3DF /* PinnedTabScopeMirror.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PinnedTabScopeMirror.swift; sourceTree = "<group>"; };
@@ -1210,6 +1219,7 @@
 		8E4C949B2F10DA5800B09A80 /* NewTabButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewTabButton.swift; sourceTree = "<group>"; };
 		8E4FD9BE2EF7D98C007D97A4 /* ZeroSafeAreaHostingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZeroSafeAreaHostingView.swift; sourceTree = "<group>"; };
 		8E571D4F30131FEF00E3FBE7 /* SessionRestorePreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRestorePreference.swift; sourceTree = "<group>"; };
+		E25901000000000000000001 /* TabSharingBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSharingBridge.swift; sourceTree = "<group>"; };
 		8E5D8B002FDFFAD30039CBE3 /* WebContentSnapshotter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentSnapshotter.swift; sourceTree = "<group>"; };
 		8E6145802F753114001919BA /* LayoutSelectionViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutSelectionViewController.swift; sourceTree = "<group>"; };
 		8E6145BD2F753469001919BA /* ImportDataTypeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportDataTypeViewController.swift; sourceTree = "<group>"; };
@@ -1294,6 +1304,7 @@
 		A71E0000000000000000DE51 /* SyncedDeletionConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncedDeletionConfirmation.swift; sourceTree = "<group>"; };
 		A7C021012FFD000000000001 /* ContextMenuEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextMenuEvent.swift; sourceTree = "<group>"; };
 		A7E1C0010000000000000001 /* PageOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageOverlayView.swift; sourceTree = "<group>"; };
+		F923139258EC4FF6A18F103D /* WindowDragNotchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDragNotchView.swift; sourceTree = "<group>"; };
 		A7F3C2D19E4B5A6C7D8E9F01 /* PairingFlowPlan.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingFlowPlan.swift; path = UI/PairingFlowPlan.swift; sourceTree = "<group>"; };
 		A81113410000000000000001 /* OOBEAnalyticsSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OOBEAnalyticsSession.swift; sourceTree = "<group>"; };
 		A81113410000000000000003 /* FirstTimeActionTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstTimeActionTracker.swift; sourceTree = "<group>"; };
@@ -1305,6 +1316,9 @@
 		A8F100162FF0000000000016 /* PhiUninstaller */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = PhiUninstaller; sourceTree = BUILT_PRODUCTS_DIR; };
 		A94C011853FB4653964F3285 /* ShellWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellWindowController.swift; sourceTree = "<group>"; };
 		A94C011853FB4653964F3286 /* ShellSplitViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellSplitViewController.swift; sourceTree = "<group>"; };
+		A94C011853FB4653964F3287 /* ShellSplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellSplitView.swift; sourceTree = "<group>"; };
+		A94C011853FB4653964F3288 /* ShellSplitGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellSplitGeometry.swift; sourceTree = "<group>"; };
+		A94C011853FB4653964F3289 /* SidebarTransitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarTransitions.swift; sourceTree = "<group>"; };
 		A95471B53513ADA4F465A3F5 /* PhiSyncInvalidation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiSyncInvalidation.swift; sourceTree = "<group>"; };
 		A99F8238F606FE6A51B5B631 /* ContentBlockingSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentBlockingSettings.swift; sourceTree = "<group>"; };
 		A9A1D8147A6979F022AFEB5B /* AdvancedSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSettingViewController.swift; sourceTree = "<group>"; };
@@ -1471,6 +1485,7 @@
 		CC8B35202E81618F00C8A380 /* PhiBrowser-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "PhiBrowser-Info.plist"; sourceTree = SOURCE_ROOT; };
 		CC8B74BD2EA8B66E0075F58C /* Sentry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sentry.swift; sourceTree = "<group>"; };
 		CC8B74BF2EA8BF490075F58C /* CrashSample.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashSample.swift; sourceTree = "<group>"; };
+		DB6F00000000000000000001 /* DebugFrameRateMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugFrameRateMonitor.swift; sourceTree = "<group>"; };
 		CC8B76B02EA8D7B70075F58C /* AppController+Debug.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppController+Debug.swift"; sourceTree = "<group>"; };
 		CC8B76B22EA8D7B70075F58C /* AppController+UserDataBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppController+UserDataBackup.swift"; sourceTree = "<group>"; };
 		CC98F89B2E8BC71800DAD237 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
@@ -1601,6 +1616,7 @@
 		EE7E00000000000000000012 /* PeekPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekPanelController.swift; sourceTree = "<group>"; };
 		EE7E00000000000000000013 /* PeekOriginTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekOriginTracker.swift; sourceTree = "<group>"; };
 		EE7E00000000000000000014 /* BrowserReaderOverlayState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserReaderOverlayState.swift; sourceTree = "<group>"; };
+		E25901000000000000000003 /* BrowserTabSharingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserTabSharingState.swift; sourceTree = "<group>"; };
 		EE7E00000000000000000015 /* ReaderPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderPanelController.swift; sourceTree = "<group>"; };
 		EFA5278C000987D588D0197B /* phi_specifics.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = phi_specifics.pb.swift; sourceTree = "<group>"; };
 		F01D3A000000000000000011 /* bookmark-folder-open.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; path = "bookmark-folder-open.svg"; sourceTree = "<group>"; };
@@ -2609,6 +2625,7 @@
 				7A6B0C1D2E3F4A5B6C7D8E02 /* TabGroupBridging.swift */,
 				A99F8238F606FE6A51B5B631 /* ContentBlockingSettings.swift */,
 				8E571D4F30131FEF00E3FBE7 /* SessionRestorePreference.swift */,
+				E25901000000000000000001 /* TabSharingBridge.swift */,
 				ACDC00000000000000000C01 /* AgentCDP */,
 				8EC5A10A2E5C10AA00B41A01 /* ChromiumAnalyticsRelay.swift */,
 				B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */,
@@ -2794,6 +2811,7 @@
 				CCDEC82E2E83D6B200D91BE9 /* AppController+Sparkle.swift */,
 				CC98F8A12E8BCE0900DAD237 /* AppController+Settings.swift */,
 				CC8B76B02EA8D7B70075F58C /* AppController+Debug.swift */,
+				DB6F00000000000000000001 /* DebugFrameRateMonitor.swift */,
 				CC8B76B22EA8D7B70075F58C /* AppController+UserDataBackup.swift */,
 				8EB01BEC3010BCED0043E59D /* AccountDeletionLocalDataRemoval.swift */,
 				8EB01BEA3010BCED0043E59D /* UserDataRemoval.swift */,
@@ -3185,6 +3203,9 @@
 				B0FEED012E42FD97001B08FC /* TrafficLightPositioner.swift */,
 				A94C011853FB4653964F3285 /* ShellWindowController.swift */,
 				A94C011853FB4653964F3286 /* ShellSplitViewController.swift */,
+				A94C011853FB4653964F3287 /* ShellSplitView.swift */,
+				A94C011853FB4653964F3288 /* ShellSplitGeometry.swift */,
+				A94C011853FB4653964F3289 /* SidebarTransitions.swift */,
 			);
 			path = MainBrowserWindow;
 			sourceTree = "<group>";
@@ -3234,6 +3255,7 @@
 				D10000000000000000000011 /* BrowserImagePreviewState.swift */,
 				EE7E00000000000000000011 /* BrowserPeekState.swift */,
 				EE7E00000000000000000014 /* BrowserReaderOverlayState.swift */,
+				E25901000000000000000003 /* BrowserTabSharingState.swift */,
 				CCBF8FA62E69948D00B9A99E /* BrowserState.swift */,
 				A17100000000000000000002 /* SidebarMediaController.swift */,
 				747241560000000000000011 /* TravelBackScene.swift */,
@@ -3295,11 +3317,13 @@
 				8E486A742F3ED68600078DEC /* StatusURLView.swift */,
 				37D6E3662F18FDA700129557 /* WebContentContainerViewController.swift */,
 				A7E1C0010000000000000001 /* PageOverlayView.swift */,
+				F923139258EC4FF6A18F103D /* WindowDragNotchView.swift */,
 				377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */,
 				B0F370B82E430CA5000B51F9 /* WebContentViewController.swift */,
 				37E5B1A0301200AB00000001 /* ExtensionSidePanelView.swift */,
 				37C9E5A12F3EF7CD00353A03 /* AIChatSidebarStateStore.swift */,
 				5F1A5A11AC1D000000000004 /* SplitPaneHostView.swift */,
+				E259000100000000000001 /* ScreenShareMirroredBorderOverlayView.swift */,
 				5F1A5A11AC1D0000000C5002 /* ContentSurfaceHosting.swift */,
 				5F1A5A11AC1D000000000006 /* SplitTabDropContainer.swift */,
 				37BA3EA12F866864003A8A53 /* EdgeFogOverlayView.swift */,
@@ -3734,6 +3758,7 @@
 				D1F600062FD6000000000006 /* DiffableOutlineView.swift in Sources */,
 				D1F600082FD6000000000008 /* SidebarDiffableSnapshotBuilder.swift in Sources */,
 				8E571D5030131FEF00E3FBE7 /* SessionRestorePreference.swift in Sources */,
+				E25901000000000000000002 /* TabSharingBridge.swift in Sources */,
 				CCEB64CB2E98DD520036C763 /* InsetTableRowView.swift in Sources */,
 				37C1B1E42EDEA03400DD4496 /* FeedbackView.swift in Sources */,
 				FBD200012FD0000000000001 /* FeedbackOutbox.swift in Sources */,
@@ -3775,6 +3800,7 @@
 				CCD3246D2EB1EFB600AA0B85 /* PinnedExtensionItem.swift in Sources */,
 				CCB53DD02E6EC437004BF233 /* OmniBoxContainerViewController.swift in Sources */,
 				CC8B76B12EA8D7B70075F58C /* AppController+Debug.swift in Sources */,
+				DB6F00000000000000000002 /* DebugFrameRateMonitor.swift in Sources */,
 				CC8B76B32EA8D7B70075F58C /* AppController+UserDataBackup.swift in Sources */,
 				8EB01BEB3010BCED0043E59D /* UserDataRemoval.swift in Sources */,
 				CCBF8F352E61AB3A00B9A99E /* SideAddressBar.swift in Sources */,
@@ -3956,6 +3982,7 @@
 				376088DC307F95A8007FCE33 /* ShortcutConfiguration.swift in Sources */,
 				B0F370DA2E433F0E000B51F9 /* OverlayWindowController.swift in Sources */,
 				A7E1C0020000000000000002 /* PageOverlayView.swift in Sources */,
+				8EFF7BD8414B4AD1B6A6C34D /* WindowDragNotchView.swift in Sources */,
 				CCBF8FA22E698A7400B9A99E /* SpaceSessionControllersManager.swift in Sources */,
 				B02586F62E42FD97001B08FC /* AppController.swift in Sources */,
 				4B4C00000000000000000001 /* ExternalOpenSender.swift in Sources */,
@@ -3972,6 +3999,9 @@
 				B0FEED022E42FD97001B08FC /* TrafficLightPositioner.swift in Sources */,
 				31CA905CB7B349718546747A /* ShellWindowController.swift in Sources */,
 				31CA905CB7B349718546747B /* ShellSplitViewController.swift in Sources */,
+				31CA905CB7B349718546747C /* ShellSplitView.swift in Sources */,
+				31CA905CB7B349718546747D /* ShellSplitGeometry.swift in Sources */,
+				31CA905CB7B349718546747E /* SidebarTransitions.swift in Sources */,
 				8E486A772F3EEF8A00078DEC /* StatusURLViewModel.swift in Sources */,
 				8E762CC62F16531A00631087 /* TabStripAnimation.swift in Sources */,
 				37C1B0DE2ED8081400DD4496 /* ShortcutsSettingsView.swift in Sources */,
@@ -4134,6 +4164,7 @@
 				EAD00000000000000000002A /* ReaderStyle.swift in Sources */,
 				5F1A5A11AC1D000000000001 /* BrowserState+Split.swift in Sources */,
 				5F1A5A11AC1D000000000003 /* SplitPaneHostView.swift in Sources */,
+				E259000200000000000002 /* ScreenShareMirroredBorderOverlayView.swift in Sources */,
 				5F1A5A11AC1D0000000C5001 /* ContentSurfaceHosting.swift in Sources */,
 				5F1A5A11AC1D000000000005 /* SplitTabDropContainer.swift in Sources */,
 				37C1B2842EE039D000DD4496 /* DownloadsListView.swift in Sources */,
@@ -4206,6 +4237,7 @@
 				EE7E00000000000000000002 /* PeekPanelController.swift in Sources */,
 				EE7E00000000000000000003 /* PeekOriginTracker.swift in Sources */,
 				EE7E00000000000000000004 /* BrowserReaderOverlayState.swift in Sources */,
+				E25901000000000000000004 /* BrowserTabSharingState.swift in Sources */,
 				EE7E00000000000000000005 /* ReaderPanelController.swift in Sources */,
 				D10000000000000000000008 /* ExtensionDialogManager.swift in Sources */,
 				D10000000000000000000009 /* ExtensionDialogViewController.swift in Sources */,

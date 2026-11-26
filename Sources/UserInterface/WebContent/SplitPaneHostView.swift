@@ -83,6 +83,9 @@ final class SplitPaneHostView: NSView {
         /// NTP. Kept separate from crash overlays so a renderer crash can
         /// still take visual priority when both states are briefly present.
         weak var loginRequiredView: NSView?
+        /// Yellow screen-share frame shown while the pane's tab is mirrored.
+        /// Lives in the host above the focus ring, not in the container.
+        let mirroredBorderOverlay = ScreenShareMirroredBorderOverlayView()
     }
 
     private var slots: [PaneSlot] = []
@@ -136,7 +139,19 @@ final class SplitPaneHostView: NSView {
     var allowsPaneMove = true {
         didSet {
             guard allowsPaneMove != oldValue else { return }
-            moveHandles.forEach { $0.isHidden = !allowsPaneMove }
+            updateMoveHandleVisibility()
+        }
+    }
+
+    var hidesTopMoveHandle = false {
+        didSet {
+            if hidesTopMoveHandle != oldValue { updateMoveHandleVisibility() }
+        }
+    }
+
+    private func updateMoveHandleVisibility() {
+        for (slot, handle) in moveHandles.enumerated() {
+            handle.isHidden = !allowsPaneMove || (hidesTopMoveHandle && paneLayout == .horizontal && slot == 0)
         }
     }
 
@@ -319,11 +334,14 @@ final class SplitPaneHostView: NSView {
             let slot = PaneSlot()
             configurePaneContainer(slot.container)
             addSubview(slot.container, positioned: .below, relativeTo: focusRingView)
+            slot.mirroredBorderOverlay.isHidden = true
+            addSubview(slot.mirroredBorderOverlay, positioned: .above, relativeTo: focusRingView)
             slots.append(slot)
         }
         while slots.count > count {
             let slot = slots.removeLast()
             slot.container.removeFromSuperview()
+            slot.mirroredBorderOverlay.removeFromSuperview()
         }
         while dividers.count < count - 1 {
             let index = dividers.count
@@ -340,7 +358,6 @@ final class SplitPaneHostView: NSView {
         while moveHandles.count < count {
             let index = moveHandles.count
             let handle = PaneMoveHandle()
-            handle.isHidden = !allowsPaneMove
             handle.onDragBegan = { [weak self] event in self?.beginPaneMove(slot: index, at: event) }
             handle.onDragChanged = { [weak self] event in self?.continuePaneMove(at: event) }
             handle.onDragEnded = { [weak self] in self?.endPaneMove() }
@@ -349,6 +366,7 @@ final class SplitPaneHostView: NSView {
         while moveHandles.count > count {
             moveHandles.removeLast().removeFromSuperview()
         }
+        updateMoveHandleVisibility()
         // Above every pane, including one just added.
         for handle in moveHandles {
             addSubview(handle, positioned: .below, relativeTo: focusRingView)
@@ -396,6 +414,7 @@ final class SplitPaneHostView: NSView {
         var changed = false
         if self.paneLayout != layout {
             self.paneLayout = layout
+            updateMoveHandleVisibility()
             applyDividerCursor()
             changed = true
         }
@@ -555,6 +574,7 @@ final class SplitPaneHostView: NSView {
             divider.frame = rect
         }
         positionFocusRing(paneFrames: rects.panes)
+        positionMirroredBorderOverlays(paneFrames: rects.panes)
         if let gapFillView {
             layoutGapFill(gapFillView)
         }
@@ -1177,6 +1197,19 @@ final class SplitPaneHostView: NSView {
         focusRingView.updatePath(outerRadius: outerCornerRadius)
     }
 
+    /// Yellow screen-share frame for a mirrored pane (#259).
+    func setMirroredBorderVisible(_ visible: Bool, slot index: Int) {
+        slot(index)?.mirroredBorderOverlay.setActive(visible)
+    }
+
+    private func positionMirroredBorderOverlays(paneFrames: [NSRect]) {
+        let radius = outerCornerRadius
+        for (slot, frame) in zip(slots, paneFrames) {
+            slot.mirroredBorderOverlay.frame = frame
+            slot.mirroredBorderOverlay.cornerRadius = radius
+        }
+    }
+
     // MARK: - Divider dragging
 
     private func beginDrag(dividerIndex: Int, at event: NSEvent) {
@@ -1374,7 +1407,7 @@ private final class PaneMoveHandle: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        gripRect.contains(convert(point, from: superview)) ? self : nil
+        !isHiddenOrHasHiddenAncestor && gripRect.contains(convert(point, from: superview)) ? self : nil
     }
 
     override func layout() {
@@ -1471,6 +1504,19 @@ private final class DividerHandle: NSView {
         wantsLayer = true
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    /// The shell window sets `isMovableByWindowBackground`, and AppKit's
+    /// default for a non-opaque view lets the window take over the drag
+    /// after its first few events, moving the window instead of the divider.
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    /// Undocumented AppKit hook: the window server moves the window on its own
+    /// for presses in the titlebar strip unless a view claims the rect here,
+    /// and AppKit claims nothing for a view that draws nothing. Chromium's
+    /// `BridgedContentView` overrides it the same way.
+    @objc func _opaqueRectForWindowMoveWhenInTitlebar() -> NSRect {
+        bounds
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()

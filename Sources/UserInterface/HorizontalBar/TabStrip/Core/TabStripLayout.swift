@@ -233,6 +233,28 @@ enum TabStripLayoutEngine {
         return layoutNormalWithGroups(input: input)
     }
 
+    /// Tabs share `availableForTabs` evenly up to `idealTabWidth`. A
+    /// protected active tab never gets less than `activeTabWidth` — which
+    /// exceeds `idealTabWidth` for a merged split of three or more panes —
+    /// and the inactive tabs then share the rest, still capped at ideal.
+    private static func allocateTabWidths(
+        input: TabStripLayoutInput,
+        availableForTabs: CGFloat,
+        effectiveTabCount: Int,
+        protectsActive: Bool
+    ) -> (active: CGFloat, inactive: CGFloat) {
+        let baseWidth = max(0, availableForTabs / CGFloat(effectiveTabCount))
+        let uniformWidth = min(baseWidth, input.idealTabWidth)
+        guard protectsActive, uniformWidth < input.activeTabWidth else {
+            return (uniformWidth, uniformWidth)
+        }
+        let inactiveCount = effectiveTabCount - 1
+        let inactiveWidth = inactiveCount > 0
+            ? min(input.idealTabWidth, (availableForTabs - input.activeTabWidth) / CGFloat(inactiveCount))
+            : 0
+        return (input.activeTabWidth, inactiveWidth)
+    }
+
     private static func layoutNormalUngrouped(input: TabStripLayoutInput) -> TabStripLayoutOutput {
         // Start offset keeps the leading inverse corner visible.
         let startOffsetX = calculateStartXOffset()
@@ -282,36 +304,17 @@ enum TabStripLayoutEngine {
             activeW = max(lockedW, input.activeTabWidth)
             inactiveW = lockedW
         } else if effectiveTabCount > 0 {
-            let baseWidth = max(0, availableForTabs / CGFloat(effectiveTabCount))
-            if baseWidth >= input.idealTabWidth {
-                // Plenty of space: use ideal widths.
-                activeW = input.idealTabWidth
-                inactiveW = input.idealTabWidth
-            } else if baseWidth >= input.activeTabWidth {
-                // Medium pressure: shrink all tabs evenly.
-                activeW = baseWidth
-                inactiveW = baseWidth
-            } else {
-                // Tight space: protect the active tab — unless it is lifted
-                // out of the flow in any exclusion form (single, set, or
-                // group range): reserving width for an excluded tab shrinks
-                // every remaining tab and leaves dead slack at the strip end.
-                let isActiveExcluded = (input.activeTabIndex.map { excludedIndices.contains($0) } ?? false)
-                if input.activeTabIndex != nil && !isActiveExcluded {
-                    activeW = input.activeTabWidth
-                    let remainingForInactive = availableForTabs - activeW
-                    let inactiveCount = effectiveTabCount - 1
-                    if inactiveCount > 0 {
-                        inactiveW = remainingForInactive / CGFloat(inactiveCount)
-                    } else {
-                        inactiveW = 0
-                    }
-                } else {
-                    // No active tab, or it is being dragged out, so use the shared width.
-                    activeW = baseWidth
-                    inactiveW = baseWidth
-                }
-            }
+            // An active tab lifted out of the flow in any exclusion form
+            // (single, set, or group range) earns no width reservation:
+            // reserving width for it shrinks every remaining tab and leaves
+            // dead slack at the strip end.
+            let isActiveExcluded = (input.activeTabIndex.map { excludedIndices.contains($0) } ?? false)
+            (activeW, inactiveW) = allocateTabWidths(
+                input: input,
+                availableForTabs: availableForTabs,
+                effectiveTabCount: effectiveTabCount,
+                protectsActive: input.activeTabIndex != nil && !isActiveExcluded
+            )
             if inactiveW < input.minTabWidth { inactiveW = input.minTabWidth }
             if activeW < input.minTabWidth { activeW = input.minTabWidth }
         }
@@ -468,28 +471,18 @@ enum TabStripLayoutEngine {
             activeW = max(lockedW, input.activeTabWidth)
             inactiveW = lockedW
         } else if effectiveTabCount > 0 {
-            if baseWidth >= input.idealTabWidth {
-                activeW = input.idealTabWidth
-                inactiveW = input.idealTabWidth
-            } else if baseWidth >= input.activeTabWidth {
-                activeW = baseWidth
-                inactiveW = baseWidth
-            } else {
-                // Mirror `layoutNormalUngrouped`: an active tab lifted out
-                // in ANY exclusion form (single, set, or whole-group range)
-                // earns no width reservation.
-                if let activeIdx = input.activeTabIndex,
-                   !dragExcludedIndices.contains(activeIdx),
-                   !collapsedMemberSet.contains(activeIdx) {
-                    activeW = input.activeTabWidth
-                    let remainingForInactive = availableForTabs - activeW
-                    let inactiveCount = effectiveTabCount - 1
-                    inactiveW = inactiveCount > 0 ? remainingForInactive / CGFloat(inactiveCount) : 0
-                } else {
-                    activeW = baseWidth
-                    inactiveW = baseWidth
-                }
-            }
+            // Mirror `layoutNormalUngrouped`: an active tab lifted out
+            // in ANY exclusion form (single, set, or whole-group range)
+            // earns no width reservation.
+            let protectsActive = input.activeTabIndex.map {
+                !dragExcludedIndices.contains($0) && !collapsedMemberSet.contains($0)
+            } ?? false
+            (activeW, inactiveW) = allocateTabWidths(
+                input: input,
+                availableForTabs: availableForTabs,
+                effectiveTabCount: effectiveTabCount,
+                protectsActive: protectsActive
+            )
             if inactiveW < input.minTabWidth { inactiveW = input.minTabWidth }
             if activeW < input.minTabWidth { activeW = input.minTabWidth }
         }

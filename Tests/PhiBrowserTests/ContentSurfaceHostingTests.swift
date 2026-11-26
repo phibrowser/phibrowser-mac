@@ -502,6 +502,23 @@ final class ContentSurfaceHostingTests: XCTestCase {
         XCTAssertEqual(layer.cornerCurve, .continuous)
     }
 
+    /// Lent to content fullscreen the view fills the screen, where the
+    /// card's rounded corners would show the Space's backdrop.
+    func testTheSurfaceViewIsSquareWhileLentToContentFullscreen() throws {
+        let fixture = try makeFixture()
+        let layer = try XCTUnwrap(fixture.surfaceView.layer)
+        let cardRadius = layer.cornerRadius
+        XCTAssertGreaterThan(cardRadius, 0, "precondition: the card has rounded corners")
+
+        let overlay = NSView(frame: fixture.container.view.bounds)
+        fixture.container.view.addSubview(overlay)
+        fixture.container.lendContentSurface(to: overlay)
+        XCTAssertEqual(layer.cornerRadius, 0)
+
+        fixture.container.reclaimContentSurface()
+        XCTAssertEqual(layer.cornerRadius, cardRadius)
+    }
+
     func testTheSurfaceViewCoversThePagePanelAgainAfterASidePanelSlide() throws {
         WebContentContainerViewController.panelSlideDurationForTesting = 0.05
         let fixture = try makeFixture()
@@ -798,6 +815,159 @@ final class ContentSurfaceHostingTests: XCTestCase {
         }
     }
 
+    // MARK: - Full screen transitions
+
+    /// AppKit snapshots the window for its full screen animation in the pass
+    /// that resizes it, before the run loop turns and before Chromium draws
+    /// the page at its new size: the surface is masked to the page's new card
+    /// by then, so its old, larger frame shows nowhere past the card.
+    func testAsTheWindowStartsOutOfFullScreenThePageIsMasked() throws {
+        let fixture = try makeFixture()
+        XCTAssertNil(fixture.surfaceMask(), "precondition: no mask outside a transition")
+        let drawn = fixture.fromWindowTop(fixture.webView)
+
+        NotificationCenter.default.post(name: NSWindow.willExitFullScreenNotification, object: fixture.window)
+        fixture.resizeWindow(to: NSSize(width: 900, height: 600))
+
+        let mask = try XCTUnwrap(fixture.surfaceMask(), "the page is not masked before the run loop turns")
+        let card = fixture.fromWindowTop(fixture.webView)
+        XCTAssertGreaterThan(drawn.width, card.width, "precondition: the card shrank")
+        assertRect(mask.boundingBoxOfPath, equals: fixture.inSurface(fromWindowTop: card.intersection(drawn)))
+    }
+
+    /// The page's old frame, smaller than its new card, shows where it
+    /// lies; the rest of the card is left to the backdrop.
+    func testAsTheWindowStartsIntoFullScreenThePageIsMaskedToItsOldFrame() throws {
+        let fixture = try makeFixture()
+        let drawn = fixture.fromWindowTop(fixture.webView)
+
+        NotificationCenter.default.post(name: NSWindow.willEnterFullScreenNotification, object: fixture.window)
+        fixture.resizeWindow(to: NSSize(width: 1400, height: 900))
+
+        let mask = try XCTUnwrap(fixture.surfaceMask(), "the page is not masked before the run loop turns")
+        let card = fixture.fromWindowTop(fixture.webView)
+        XCTAssertGreaterThan(card.width, drawn.width, "precondition: the card grew")
+        assertRect(mask.boundingBoxOfPath, equals: fixture.inSurface(fromWindowTop: card.intersection(drawn)))
+    }
+
+    /// The mask rounds the corners the surface rounds.
+    func testTheMaskKeepsThePageCorners() throws {
+        let fixture = try makeFixture()
+        let corners = try XCTUnwrap(fixture.lastSent())
+        XCTAssertGreaterThan(corners.bottomRight, 0, "precondition: the page's bottom right is rounded")
+
+        NotificationCenter.default.post(name: NSWindow.willExitFullScreenNotification, object: fixture.window)
+        fixture.resizeWindow(to: NSSize(width: 900, height: 600))
+
+        let mask = try XCTUnwrap(fixture.surfaceMask())
+        let page = fixture.rectInSurface(of: fixture.webView)
+        let bottom = fixture.surfaceView.isFlipped ? page.maxY - 1 : page.minY + 1
+        XCTAssertFalse(mask.contains(CGPoint(x: page.maxX - 1, y: bottom)), "the bottom right corner is square")
+        XCTAssertTrue(mask.contains(CGPoint(x: page.midX, y: page.midY)))
+    }
+
+    /// Each pane of a split shows only where its own old frame lies. The
+    /// left page's old frame runs on into the right pane's new card, which
+    /// leaves that part to the backdrop rather than show the left page.
+    func testEachPaneOfASplitShowsOnlyItsOwnOldFrame() throws {
+        let (fixture, _, _, partnerView) = try makeSplitFixture()
+        fixture.window.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        let drawnRight = fixture.fromWindowTop(partnerView)
+
+        NotificationCenter.default.post(name: NSWindow.willExitFullScreenNotification, object: fixture.window)
+        fixture.resizeWindow(to: NSSize(width: 900, height: 600))
+
+        let mask = try XCTUnwrap(fixture.surfaceMask())
+        let left = fixture.rectInSurface(of: fixture.webView)
+        XCTAssertTrue(mask.contains(CGPoint(x: left.midX, y: left.midY)), "the left pane is masked away")
+        let right = fixture.fromWindowTop(partnerView)
+        XCTAssertGreaterThan(drawnRight.minX, right.minX, "precondition: the right pane moved left")
+        let y = right.intersection(drawnRight).midY
+        let underLeftPage = NSRect(x: (right.minX + drawnRight.minX) / 2, y: y, width: 0, height: 0)
+        let underRightPage = NSRect(x: (drawnRight.minX + right.maxX) / 2, y: y, width: 0, height: 0)
+        XCTAssertFalse(mask.contains(fixture.inSurface(fromWindowTop: underLeftPage).origin),
+                       "the right pane shows the left page's old frame")
+        XCTAssertTrue(mask.contains(fixture.inSurface(fromWindowTop: underRightPage).origin),
+                      "the right pane hides its own old frame")
+    }
+
+    /// Once the animation ends the live window, laid out anew, shows.
+    func testTheMaskGoesOnceTheWindowIsOutOfFullScreen() throws {
+        let fixture = try makeFixture()
+        NotificationCenter.default.post(name: NSWindow.willExitFullScreenNotification, object: fixture.window)
+        fixture.resizeWindow(to: NSSize(width: 900, height: 600))
+        XCTAssertNotNil(fixture.surfaceMask(), "precondition: the page is masked")
+
+        NotificationCenter.default.post(name: NSWindow.didExitFullScreenNotification, object: fixture.window)
+
+        XCTAssertNil(fixture.surfaceMask())
+    }
+
+    func testTheMaskGoesOnceTheWindowIsInFullScreen() throws {
+        let fixture = try makeFixture()
+        NotificationCenter.default.post(name: NSWindow.willEnterFullScreenNotification, object: fixture.window)
+        fixture.resizeWindow(to: NSSize(width: 1400, height: 900))
+        XCTAssertNotNil(fixture.surfaceMask(), "precondition: the page is masked")
+
+        NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: fixture.window)
+
+        XCTAssertNil(fixture.surfaceMask())
+    }
+
+    /// A transition AppKit fails posts no did-notification.
+    func testTheMaskGoesOnItsOwnWhenTheTransitionNeverEnds() throws {
+        WebContentContainerViewController.fullScreenTransitionMaskTimeoutForTesting = 0.1
+        defer { WebContentContainerViewController.fullScreenTransitionMaskTimeoutForTesting = nil }
+        let fixture = try makeFixture()
+        NotificationCenter.default.post(name: NSWindow.willEnterFullScreenNotification, object: fixture.window)
+        XCTAssertNotNil(fixture.surfaceMask(), "precondition: the page is masked")
+
+        waitUntil { fixture.surfaceMask() == nil }
+
+        XCTAssertNil(fixture.surfaceMask())
+    }
+
+    /// A resize outside a full screen transition, and another window's
+    /// transition, leave the surface whole.
+    func testOnlyThisWindowsFullScreenTransitionMasksThePages() throws {
+        let fixture = try makeFixture()
+        fixture.resizeWindow(to: NSSize(width: 900, height: 600))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertNil(fixture.surfaceMask(), "a plain resize masks the pages")
+
+        let other = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                             styleMask: [.titled], backing: .buffered, defer: true)
+        other.isReleasedWhenClosed = false
+        windows.append(other)
+        NotificationCenter.default.post(name: NSWindow.willExitFullScreenNotification, object: other)
+        fixture.resizeWindow(to: NSSize(width: 1000, height: 700))
+        XCTAssertNil(fixture.surfaceMask(), "another window's transition masks the pages")
+    }
+
+    /// Its top is `minY` in a flipped view and `maxY` otherwise.
+    func testARoundedPathRoundsItsOnScreenCorners() {
+        var corners = ContentSurfaceHosting.Hosting()
+        corners.bottomRight = 20
+        let rect = CGRect(x: 0, y: 0, width: 100, height: 100)
+
+        let flipped = ContentSurfaceHosting.roundedPath(rect, corners: corners, flipped: true)
+        XCTAssertFalse(flipped.contains(CGPoint(x: 99, y: 99)), "the bottom right of a flipped rect is cut")
+        XCTAssertTrue(flipped.contains(CGPoint(x: 99, y: 1)))
+
+        let unflipped = ContentSurfaceHosting.roundedPath(rect, corners: corners, flipped: false)
+        XCTAssertFalse(unflipped.contains(CGPoint(x: 99, y: 1)), "the bottom right of an unflipped rect is cut")
+        XCTAssertTrue(unflipped.contains(CGPoint(x: 99, y: 99)))
+    }
+
+    private func assertRect(_ rect: CGRect, equals expected: CGRect,
+                            file: StaticString = #filePath, line: UInt = #line) {
+        for (value, wanted) in [(rect.minX, expected.minX), (rect.minY, expected.minY),
+                                (rect.width, expected.width), (rect.height, expected.height)] {
+            XCTAssertEqual(value, wanted, accuracy: 0.5, "\(rect) is not \(expected)", file: file, line: line)
+        }
+    }
+
     /// Runs the main run loop until `done` or two seconds pass, calling
     /// `sample` on every turn.
     private func waitUntil(_ done: () -> Bool, sampling sample: () -> Void = {}) {
@@ -855,6 +1025,41 @@ final class ContentSurfaceHostingTests: XCTestCase {
             self.surfaceView = surfaceView
             self.hosting = hosting
             sidePanel.nativeView = sidePanelView
+        }
+
+        /// The surface's mask: the cards, while the window moves into or
+        /// out of full screen.
+        func surfaceMask() -> CGPath? {
+            (surfaceView.layer?.mask as? CAShapeLayer)?.path
+        }
+
+        /// `view`'s bounds in the surface's view.
+        func rectInSurface(of view: NSView) -> NSRect {
+            surfaceView.convert(view.convert(view.bounds, to: nil), from: nil)
+        }
+
+        /// `view`'s bounds in the window measured from its top left, where
+        /// the surface keeps drawing its last frame until Chromium draws
+        /// again.
+        func fromWindowTop(_ view: NSView) -> NSRect {
+            let rect = view.convert(view.bounds, to: nil)
+            return NSRect(x: rect.minX, y: window.frame.height - rect.maxY,
+                          width: rect.width, height: rect.height)
+        }
+
+        /// `rect`, in the window measured from its top left, in the surface's
+        /// view.
+        func inSurface(fromWindowTop rect: NSRect) -> NSRect {
+            let inWindow = NSRect(x: rect.minX, y: window.frame.height - rect.maxY,
+                                  width: rect.width, height: rect.height)
+            return surfaceView.convert(inWindow, from: nil)
+        }
+
+        /// Resizes the window and lays it out, as AppKit does before it
+        /// snapshots the window for a full screen animation.
+        func resizeWindow(to size: NSSize) {
+            window.setContentSize(size)
+            window.layoutIfNeeded()
         }
 
         func lastSent() -> ContentSurfaceHosting.Hosting? {

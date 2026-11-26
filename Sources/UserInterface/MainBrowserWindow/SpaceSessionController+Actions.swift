@@ -290,32 +290,43 @@ extension SpaceSessionController {
         // When the focused tab is a pane of a split, bookmark the whole split
         // (matching the right-click "Add Split to Bookmark"), keyed off the
         // split's first pane so the toggle round-trips with `openBookmark`.
+        //
+        // Saving never blocks the page: the result is a non-modal toast whose
+        // Edit button opens the editor on demand. A repeat press finds the
+        // existing bookmark, so it never creates a duplicate.
         if let group = state.splitGroup(forTabId: tab.guid),
            let primaryTab = state.tabs.first(where: { $0.guid == group.firstTabId }),
            let primaryURL = primaryTab.url, !primaryURL.isEmpty {
-            if let existing = state.bookmarkManager.findSplitBookmark(byPrimaryURL: primaryURL) {
-                presentBookmarkEditor(for: existing)
-            } else if state.addSplitBookmarkFromTab(tab, bindLiveSplit: false) {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                    if let newBookmark = self?.browserState.bookmarkManager.findSplitBookmark(byPrimaryURL: primaryURL) {
-                        self?.presentBookmarkEditor(for: newBookmark)
-                    }
-                }
+            let alreadyBookmarked = state.bookmarkManager.findSplitBookmark(byPrimaryURL: primaryURL) != nil
+            guard alreadyBookmarked || state.addSplitBookmarkFromTab(tab, bindLiveSplit: false) else { return }
+            showBookmarkSavedToast(alreadyBookmarked: alreadyBookmarked) { manager in
+                manager.findSplitBookmark(byPrimaryURL: primaryURL)
             }
             return
         }
 
-        if let existing = state.bookmarkManager.findBookmark(byURL: url) {
-            presentBookmarkEditor(for: existing)
-        } else {
+        let alreadyBookmarked = state.bookmarkManager.findBookmark(byURL: url) != nil
+        if !alreadyBookmarked {
             state.bookmarkManager.addBookmark(title: tab.title,
                                               url: url,
                                               faviconData: tab.liveFaviconData ?? tab.cachedFaviconData)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                if let newBookmark = state.bookmarkManager.findBookmark(byURL: url) {
-                    self?.presentBookmarkEditor(for: newBookmark)
-                }
-            }
+        }
+        showBookmarkSavedToast(alreadyBookmarked: alreadyBookmarked) { manager in
+            manager.findBookmark(byURL: url)
+        }
+    }
+
+    /// Resolves the bookmark when Edit is clicked rather than up front: a new
+    /// bookmark reaches the tree asynchronously, and it may be gone by then.
+    private func showBookmarkSavedToast(alreadyBookmarked: Bool,
+                                        resolveBookmark: @escaping (BookmarkManager) -> Bookmark?) {
+        OverlayToastCenter.shared.showBookmarkSavedConfirmation(
+            alreadyBookmarked: alreadyBookmarked,
+            in: browserState
+        ) { [weak self] in
+            guard let self,
+                  let bookmark = resolveBookmark(self.browserState.bookmarkManager) else { return }
+            self.presentBookmarkEditor(for: bookmark)
         }
     }
     

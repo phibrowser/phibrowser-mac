@@ -451,7 +451,10 @@ final class SplitTabDropContainer: NSView {
         for zone in Self.allCardZones {
             guard let card = cards[zone] else { continue }
             addSubview(card.surface)
-            card.surface.addSubview(card.glass)
+            // The glass joins the surface once its card shows in a drag and
+            // leaves when the hints hide: every page area has twelve, and even
+            // hidden, each one re-resolves its geometry on every frame the
+            // page area moves.
             card.glass.layer?.addSublayer(card.highlight)
             card.surface.layer?.addSublayer(card.whiteOverlay)
             card.surface.layer?.addSublayer(card.activeMask)
@@ -671,7 +674,8 @@ final class SplitTabDropContainer: NSView {
         if zone.isPrimarySlot {
             state.createSplit(leftTabId: draggedTabId,
                               rightTabId: focusedTabId,
-                              layout: zone.layout)
+                              layout: zone.layout,
+                              anchorTabId: focusedTabId)
         } else {
             state.createSplit(leftTabId: focusedTabId,
                               rightTabId: draggedTabId,
@@ -696,7 +700,8 @@ final class SplitTabDropContainer: NSView {
             if zone.isPrimarySlot {
                 state.createSplit(leftTabId: liveTab.guid,
                                   rightTabId: focusedTabId,
-                                  layout: zone.layout)
+                                  layout: zone.layout,
+                                  anchorTabId: focusedTabId)
             } else {
                 state.createSplit(leftTabId: focusedTabId,
                                   rightTabId: liveTab.guid,
@@ -1549,6 +1554,9 @@ final class SplitTabDropContainer: NSView {
         for (zone, card) in cards {
             let isVisible = visible.contains(zone)
             card.surface.isHidden = !isVisible
+            if isVisible, card.glass.superview !== card.surface {
+                card.surface.addSubview(card.glass)
+            }
             card.glass.isHidden = !isVisible
             card.label.isHidden = !isVisible
         }
@@ -1570,6 +1578,7 @@ final class SplitTabDropContainer: NSView {
         for card in cards.values {
             card.surface.isHidden = true
             card.glass.isHidden = true
+            card.glass.removeFromSuperview()
             card.label.isHidden = true
         }
     }

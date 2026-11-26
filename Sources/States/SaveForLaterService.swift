@@ -78,12 +78,22 @@ enum SaveForLaterService {
     /// its RPCs: job bookkeeping, not a state container.
     private static var inFlightTabGuids: Set<Int> = []
 
-    /// Whether the menu item / shortcut should be offered for this tab.
-    /// Guest Mode saves too, into the same folder as a signed-in session.
+    /// Whether Folio is offered in `state`'s window: the master flag, and
+    /// never in an off-the-record window (incognito windows and the
+    /// Incognito Space). Saving there would leave a durable copy of private
+    /// browsing, and Mirage — which serves the library page — does not run
+    /// in incognito, so its page would only load as blocked.
+    nonisolated static func isAvailable(in state: BrowserState?) -> Bool {
+        featureEnabled && state?.isIncognito != true
+    }
+
+    /// Whether the menu item / shortcut should be offered for this tab of
+    /// `state`'s window. Guest Mode saves too, into the same folder as a
+    /// signed-in session; incognito does not (`isAvailable(in:)`).
     /// Only web pages are saveable — chrome:// and chrome-extension://
     /// surfaces (reader pages, settings) are not items.
-    static func canSave(_ tab: Tab?) -> Bool {
-        guard featureEnabled,
+    static func canSave(_ tab: Tab?, in state: BrowserState?) -> Bool {
+        guard let state, isAvailable(in: state),
               let tab, !tab.isShowingNativeNTP,
               !inFlightTabGuids.contains(tab.guid),
               let url = tab.url, !url.isEmpty, !url.isLocalUrlString,
@@ -120,7 +130,7 @@ enum SaveForLaterService {
     static func save(tab: Tab, in state: BrowserState,
                      trigger: SaveTrigger = .manual,
                      highlightBlocks: [String] = []) {
-        guard canSave(tab) else { return }
+        guard canSave(tab, in: state) else { return }
         let context = JobContext(
             tabGuid: tab.guid,
             windowId: state.windowId,
@@ -418,7 +428,7 @@ enum SaveForLaterService {
 
     /// Opens the library page as a tab of `state`'s window.
     static func openLibrary(in state: BrowserState) {
-        guard featureEnabled else { return }
+        guard isAvailable(in: state) else { return }
         state.createTab(libraryPageURL, customGuid: nil, focusAfterCreate: true)
     }
 

@@ -119,6 +119,10 @@ extension AppController {
                         try Self.applyImportedProfileIdRemaps(repairResult.profileIdRemaps, in: staging.extractedPhiURL)
                         AppLogInfo("[Debug] Phi user data import replacing Phi data directory")
                         try Self.replacePhiUserDataDirectory(withExtractedPhiAt: staging.extractedPhiURL)
+                        // Chromium's session files are outside `Phi` and keep
+                        // this process's windows; the next cold start retires
+                        // the ones the imported Spaces cannot claim.
+                        SpaceManager.markChromiumSessionPredatesImport()
                         staging.cleanup()
                         AppLogInfo("[Debug] Phi user data imported from \(zipURL.path), relaunching")
                         Self.relaunchPhiApplication()

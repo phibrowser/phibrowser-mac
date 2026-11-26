@@ -724,6 +724,7 @@ final class HostedSidebarStateTests: XCTestCase {
         let session = makeSession(in: slot, spaceId: "sidebar-toggle")
         session.presentInShell(deferringChromium: true)
         let split = try XCTUnwrap(slot.shell?.split)
+        split.floatingSidebarHost.prefersReducedMotion = { false }
         let window = try XCTUnwrap(slot.shell?.window)
         window.orderFront(nil)
         await drainPresentationUpdates()
@@ -760,7 +761,7 @@ final class HostedSidebarStateTests: XCTestCase {
         XCTAssertFalse(split.isSidebarCollapsed)
         split.toggleSidebar()
         XCTAssertTrue(split.isSidebarCollapsed)
-        let column = split.splitViewController.splitView.subviews[0]
+        let column = split.sidebarHost.view
         var widthAtReveal: CGFloat?
         let observation = buttons[0].observe(\.isHidden, options: [.new]) { _, change in
             if change.newValue == false, widthAtReveal == nil { widthAtReveal = column.frame.width }
@@ -1158,6 +1159,11 @@ final class HostedSidebarStateTests: XCTestCase {
     }
 
     func testHostedTitlebarGapsReachWindowWithoutDiscardingContentHits() throws {
+        // This fixture exercises the titlebar gap provided by the page margin.
+        let key = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue
+        let previous = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(previous, forKey: key) }
+        UserDefaults.standard.set(false, forKey: key)
         for mode: LayoutMode in [.performance, .balanced, .comfortable] {
             PhiPreferences.GeneralSettings.saveLayoutMode(mode)
             let slot = makeSlot()

@@ -145,12 +145,22 @@ class HoverableView: NSView {
     
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
+        guard isOwnTrackingEvent(event) else { return }
         mouseEntered = true
     }
     
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
+        guard isOwnTrackingEvent(event) else { return }
         mouseEntered = false
+    }
+
+    /// A hoverable subview's enter and exit reach this view through the
+    /// responder chain (`super` forwards them). Only this view's own
+    /// tracking area says the pointer entered or left it: crossing from one
+    /// subview to another stays inside.
+    private func isOwnTrackingEvent(_ event: NSEvent) -> Bool {
+        event.trackingArea == nil || event.trackingArea === trackingArea
     }
     
     override func mouseDown(with event: NSEvent) {

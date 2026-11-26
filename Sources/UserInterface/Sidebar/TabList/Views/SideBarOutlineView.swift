@@ -400,48 +400,6 @@ class SideBarOutlineView: DiffableOutlineView {
         return super.rowView(atRow: row, makeIfNecessary: makeIfNecessary)
     }
 
-    /// AppKit can position realized suffix rows using an estimated height for a
-    /// newly inserted row in a variable-height outline, then leave those row
-    /// views at the estimated origins after `rect(ofRow:)` resolves the final
-    /// height. Reload only the inserted item when that exact frame mismatch is
-    /// present; this makes NSOutlineView retile the affected suffix without
-    /// rebuilding the list.
-    @discardableResult
-    func repairRealizedRowLayoutIfNeeded(
-        afterInserting insertedItem: AnyObject
-    ) -> (row: Int, originDelta: CGFloat)? {
-        let insertedRow = row(forItem: insertedItem)
-        guard insertedRow >= 0, insertedRow < numberOfRows else { return nil }
-
-        // Resolving the inserted row itself is what replaces AppKit's temporary
-        // estimated height with the delegate-provided final height.
-        _ = rect(ofRow: insertedRow)
-
-        var mismatch: (row: Int, originDelta: CGFloat)?
-        for row in (insertedRow + 1)..<numberOfRows {
-            guard let rowView = rowView(atRow: row, makeIfNecessary: false) else {
-                continue
-            }
-            let expectedFrame = rect(ofRow: row)
-            let originDelta = rowView.frame.minY - expectedFrame.minY
-            guard abs(originDelta) > 0.5 else { continue }
-            mismatch = (row, originDelta)
-            break
-        }
-
-        guard let mismatch,
-              let currentInsertedItem = item(atRow: insertedRow),
-              currentInsertedItem as AnyObject === insertedItem
-        else { return nil }
-
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0
-            context.allowsImplicitAnimation = false
-            reloadItem(currentInsertedItem, reloadChildren: false)
-        }
-        return mismatch
-    }
-    
     override func menu(for event: NSEvent) -> NSMenu? {
         let location = convert(event.locationInWindow, from: nil)
         rightClickedLocation = location

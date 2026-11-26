@@ -331,6 +331,19 @@ extension PhiPreferences {
             defaults.set(position.rawValue, forKey: sidebarPositionKey)
         }
 
+        static let sidebarCollapsedKey = "sidebarCollapsed"
+
+        /// Whether the user left the sidebar column collapsed in a vertical
+        /// layout; nil before a shell window has ever stored it. One state
+        /// for both sides and every shell window.
+        static func loadSidebarCollapsed(from defaults: UserDefaults = .standard) -> Bool? {
+            defaults.object(forKey: sidebarCollapsedKey) as? Bool
+        }
+
+        static func saveSidebarCollapsed(_ collapsed: Bool, to defaults: UserDefaults = .standard) {
+            defaults.set(collapsed, forKey: sidebarCollapsedKey)
+        }
+
         static let layoutModeKey = "layoutMode"
 
         static func loadLayoutMode() -> LayoutMode {

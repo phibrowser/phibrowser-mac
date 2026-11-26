@@ -246,6 +246,12 @@ final class TabViewModel {
     var isCurrentlyAudible: Bool = false
     var isMuted: Bool = false
     var isCapturingMedia: Bool = false
+    /// Video-call tab that is presenting screen content.
+    var isPresentingScreenShare: Bool = false
+    /// Tab whose page is mirrored to a remote capture consumer.
+    var isBeingSharedRemotely: Bool = false
+    /// Hovered tab that a running tab share can switch to.
+    private(set) var shareInsteadOffer: BrowserTabSharingState.ShareInsteadOffer?
     var isHorizontalCompactMode: Bool = false
     /// Set by the horizontal tab strip while it hides this favicon under the
     /// cell's centered recording icon, or with the whole cell laid out at
@@ -272,13 +278,14 @@ final class TabViewModel {
     private(set) var faviconRevision: Int = 0
     
     private var cancellables = Set<AnyCancellable>()
+    private weak var tabSharingState: BrowserTabSharingState?
     private var rawIsLoading: Bool = false
     private var profileFaviconLoadHandle: ProfileScopedFaviconLoadHandle?
 
     var isShimmering: Bool {
         isLoading
     }
-    
+
     var displayTitle: String {
         if !title.isEmpty { return title }
         if let url, !url.isEmpty { return url }
@@ -324,6 +331,10 @@ final class TabViewModel {
         isCurrentlyAudible = false
         isMuted = false
         isCapturingMedia = false
+        isPresentingScreenShare = false
+        isBeingSharedRemotely = false
+        shareInsteadOffer = nil
+        tabSharingState = nil
         groupColor = nil
         status.prepareForReuse()
         faviconRevision &+= 1
@@ -333,13 +344,32 @@ final class TabViewModel {
 
     func setHovered(_ hovered: Bool) {
         isHovered = hovered && !isHoverSuppressed
+        refreshShareInsteadOffer()
     }
 
     func setHoverSuppressed(_ suppressed: Bool) {
         isHoverSuppressed = suppressed
         if suppressed {
             isHovered = false
+            refreshShareInsteadOffer()
         }
+    }
+
+    private func refreshShareInsteadOffer() {
+        let offer: BrowserTabSharingState.ShareInsteadOffer?
+        if isHovered, let tabId = configuredTabGuid {
+            offer = tabSharingState?.shareInsteadOffer(for: tabId)
+        } else {
+            offer = nil
+        }
+        if offer != shareInsteadOffer {
+            shareInsteadOffer = offer
+        }
+    }
+
+    func shareInstead(_ offer: BrowserTabSharingState.ShareInsteadOffer) {
+        guard configuredTabGuid == offer.tabId else { return }
+        tabSharingState?.shareInstead(offer)
     }
 
     func setActiveSuppressed(_ suppressed: Bool, activeValue: Bool? = nil) {
@@ -385,7 +415,9 @@ final class TabViewModel {
         updateVisualLoading()
         self.isCurrentlyAudible = tab.isCurrentlyAudible
         self.isMuted = tab.isMuted
-        self.isCapturingMedia = tab.isCapturingAudio || tab.isCapturingVideo || tab.isSharingScreen
+        self.isCapturingMedia = tab.isCapturingMedia
+        self.isPresentingScreenShare = tab.isPresentingScreenShare
+        self.isBeingSharedRemotely = tab.isBeingSharedRemotely
         self.isHovered = false
         self.isHoverSuppressed = false
         
@@ -523,14 +555,34 @@ final class TabViewModel {
             }
             .store(in: &cancellables)
 
-        Publishers.CombineLatest3(tab.$isCapturingAudio, tab.$isCapturingVideo, tab.$isSharingScreen)
+        Publishers.CombineLatest4(
+            tab.$isCapturingAudio,
+            tab.$isCapturingVideo,
+            tab.$isSharingScreen,
+            tab.$isBeingMirrored
+        )
             .removeDuplicates { $0 == $1 }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] isCapturingAudio, isCapturingVideo, isSharingScreen in
+            .sink { [weak self] isCapturingAudio, isCapturingVideo, isSharingScreen, isBeingMirrored in
                 guard let self, self.isCurrentConfiguration(expectedGuid: expectedGuid, expectedGeneration: expectedGeneration) else { return }
-                self.isCapturingMedia = isCapturingAudio || isCapturingVideo || isSharingScreen
+                self.isCapturingMedia = isCapturingAudio || isCapturingVideo
+                self.isPresentingScreenShare = isSharingScreen && !isBeingMirrored
+                self.isBeingSharedRemotely = isBeingMirrored
             }
             .store(in: &cancellables)
+
+        tabSharingState = browserState?.tabSharingState
+        if let tabSharingState {
+            tabSharingState.$replaceableSession
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    guard let self, self.isCurrentConfiguration(expectedGuid: expectedGuid, expectedGeneration: expectedGeneration) else { return }
+                    self.refreshShareInsteadOffer()
+                }
+                .store(in: &cancellables)
+        }
+        refreshShareInsteadOffer()
 
         // Group affiliation color. Updates on (a) tab joining/leaving a group,
         // (b) the dict gaining/losing the entry, (c) the current group's color

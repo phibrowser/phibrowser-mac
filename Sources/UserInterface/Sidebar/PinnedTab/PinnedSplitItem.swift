@@ -59,6 +59,8 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     private var backgroundView: HoverableView!
     private var openIndicatorHost: TabDecorativeHostingView!
     private var statusBadgeHost: TabDecorativeHostingView!
+    /// One dot for every pane's capture state, in the cell's bottom-trailing corner.
+    private var captureBadgeHost: TabRecordingIconHostingView!
     private var cancellables = Set<AnyCancellable>()
     private let splitTabPreviewRegistration = SplitTabPreviewRegistration()
     private var showsSplitTabPreview = false
@@ -97,6 +99,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         applyPaneLayout(separatesDashedOutlines: false)
         openIndicatorHost.isHidden = true
         openIndicatorHost.alphaValue = 1
+        captureBadgeHost.isHidden = true
         splitTabPreviewRegistration.invalidate()
     }
 
@@ -104,7 +107,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         view.wantsLayer = true
         view.layer?.masksToBounds = false
 
-        backgroundView = HoverableView()
+        backgroundView = PinnedTabCardBackgroundView()
         backgroundView.wantsLayer = true
         backgroundView.layer?.cornerCurve = .continuous
         backgroundView.layer?.cornerRadius = 8
@@ -166,6 +169,15 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
             ))
         }
 
+        captureBadgeHost = .combiningCaptureState { [weak self] in
+            self?.panes ?? []
+        }
+        backgroundView.addSubview(captureBadgeHost)
+        captureBadgeHost.snp.makeConstraints { make in
+            make.trailing.bottom.equalTo(backgroundView).inset(TabCaptureBadgeMetrics.pinnedSplitCornerInset)
+            make.size.equalTo(TabCaptureBadgeMetrics.recordingDotSize)
+        }
+
         statusBadgeHost = TabDecorativeHostingView(
             rootView: MergedTabCornerBadgeView(
                 models: slots.map(\.statusModel)
@@ -201,6 +213,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
             }
         }
         applyPaneLayout(separatesDashedOutlines: everyFaviconShowsDashedOutline)
+        captureBadgeHost.bindCaptureState(of: shownPanes, into: &cancellables)
 
         Publishers.MergeMany(shownPanes.map(\.$hasWebContent))
             .receive(on: DispatchQueue.main)

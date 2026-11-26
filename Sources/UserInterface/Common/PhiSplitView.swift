@@ -33,16 +33,18 @@ class PhiSplitViewController: NSSplitViewController {
     private var sidebarTargetCollapsed = false
     private var sidebarTransitions = 0
     private var pendingExpansion: Int?
+    var prefersReducedMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     /// An animated expansion has started and not finished. AppKit publishes
     /// the expanded state as soon as the animation starts.
     var isSidebarExpanding: Bool { pendingExpansion != nil }
 
     func setSidebarCollapsed(_ collapsed: Bool, item: NSSplitViewItem, animated: Bool,
                              dockWidth: CGFloat?) {
+        let shouldAnimate = animated && !prefersReducedMotion()
         sidebarTargetCollapsed = collapsed
         sidebarTransitions += 1
         let transition = sidebarTransitions
-        pendingExpansion = animated && !collapsed ? transition : nil
+        pendingExpansion = shouldAnimate && !collapsed ? transition : nil
         let finished = { [weak self] in
             guard let self, self.pendingExpansion == transition else { return }
             self.pendingExpansion = nil
@@ -50,10 +52,10 @@ class PhiSplitViewController: NSSplitViewController {
         }
 
         if !collapsed, let dockWidth {
-            item.expand(atWidth: dockWidth, animated: animated, in: splitView,
+            item.expand(atWidth: dockWidth, animated: shouldAnimate, in: splitView,
                         limits: MainSplitViewController.leftItemMinWidth...MainSplitViewController.leftItemMaxWidth,
                         completion: finished)
-        } else if animated {
+        } else if shouldAnimate {
             item.setCollapsedAnimated(collapsed) { [weak self, weak item] in
                 // AppKit can hide the column when a superseded collapse completes.
                 if collapsed, self?.sidebarTargetCollapsed == false, let item, item.isCollapsed {
@@ -85,6 +87,7 @@ class PhiSplitViewController: NSSplitViewController {
 
 enum SidebarToggleAnimation {
     static let duration: TimeInterval = 0.11
+    static let dragCollapseDuration: TimeInterval = 0.22
     static let timingFunction = CAMediaTimingFunction(controlPoints: 0.1, 0.4, 0.6, 1)
 }
 
@@ -144,5 +147,72 @@ extension NSSplitViewItem {
             restoreLimits()
             completion?()
         }
+    }
+}
+
+@MainActor
+extension NSSplitViewController {
+    /// Moves the sidebar item to the other side, keeping its collapsed state.
+    /// `width` is the destination side's own last expanded width (0 keeps the
+    /// current width); it is applied to a visible column, and to a collapsed
+    /// one's hidden view so the next expand opens at it.
+    func repositionSidebarItem(_ previous: NSSplitViewItem, onRight: Bool, width destinationWidth: CGFloat, autosaveName: String) -> NSSplitViewItem {
+        let restoringExistingGeometry = splitView.autosaveName != nil
+        let collapsed = previous.isCollapsed
+        let currentWidth = max(previous.minimumThickness, previous.viewController.view.frame.width)
+        if restoringExistingGeometry, !collapsed {
+            // The outgoing side's width is only in its autosaved frames,
+            // which the move drops; keep it for the next switch back.
+            AccountController.shared.localDataAccount?.userDefaults
+                .setLastKnownSidebarWidth(currentWidth, for: onRight ? .left : .right)
+        }
+        let width = destinationWidth > 0
+            ? min(max(destinationWidth, previous.minimumThickness), previous.maximumThickness)
+            : currentWidth
+        splitView.autosaveName = nil
+        // AppKit restores the frames saved under a name as soon as it is
+        // assigned, setting the subviews' hidden state behind the item's
+        // `isCollapsed` (the split then reports collapsed while the column
+        // shows, or expands to zero width), and offers no way to assign a
+        // name without that restore. A live move therefore drops the frames
+        // saved under the destination name: the destination side's width is
+        // carried by `width` instead, and the frames applied below are what
+        // AppKit saves under that name next.
+        if restoringExistingGeometry {
+            UserDefaults.standard.removeObject(forKey: "NSSplitView Subview Frames \(autosaveName)")
+        }
+        removeSplitViewItem(previous)
+        let item: NSSplitViewItem
+        if #available(macOS 26.0, *) {
+            item = previous
+        } else {
+            // Before macOS 26 the move rebuilds the item. It is a plain item
+            // on both sides; see `MainSplitViewController.setupLeftSplitViewItem`.
+            item = NSSplitViewItem(viewController: previous.viewController)
+            item.minimumThickness = previous.minimumThickness
+            item.maximumThickness = previous.maximumThickness
+            item.holdingPriority = previous.holdingPriority
+            item.canCollapse = previous.canCollapse
+        }
+        item.collapseBehavior = onRight ? .preferResizingSiblingsWithFixedSplitView : .default
+        item.isCollapsed = collapsed
+        let index = onRight ? 1 : 0
+        insertSplitViewItem(item, at: index)
+        if restoringExistingGeometry { splitView.autosaveName = autosaveName }
+        item.isCollapsed = collapsed
+        view.layoutSubtreeIfNeeded()
+        if restoringExistingGeometry {
+            if collapsed {
+                // A collapsed subview keeps its size while hidden and
+                // expands back to it.
+                if splitView.arrangedSubviews.indices.contains(index) {
+                    let column = splitView.arrangedSubviews[index]
+                    column.setFrameSize(NSSize(width: width, height: column.frame.height))
+                }
+            } else {
+                splitView.setPosition(onRight ? splitView.bounds.width - splitView.dividerThickness - width : width, ofDividerAt: 0)
+            }
+        }
+        return item
     }
 }

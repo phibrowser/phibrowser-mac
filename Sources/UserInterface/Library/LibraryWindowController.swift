@@ -46,6 +46,9 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        // Release focus before detaching the host so no SwiftUI focus proxy of
+        // the detached content stays in the window's responder chain (PHI-1968).
+        window?.makeFirstResponder(nil)
         // Detach the host so SwiftUI stops refreshing hidden Library content.
         window?.contentViewController = nil
     }

@@ -149,6 +149,12 @@ struct CustomTooltipConfiguration: Equatable {
         return SidebarPosition.isOnRight ? .leftTopAttached : .rightTopAttached
     }
 
+    /// Tab previews keep the panel's window shadow; other tooltips draw the
+    /// Space hover card's shadow.
+    fileprivate var drawsCardShadow: Bool {
+        handoffGroup == .standard
+    }
+
     fileprivate var normalizedShowDelay: TimeInterval {
         max(0, showDelay)
     }
@@ -184,13 +190,26 @@ struct DefaultCustomTooltipContent: View {
             .padding(.vertical, 6)
             .background(
                 .regularMaterial,
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(.primary.opacity(0.1))
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(.primary.opacity(0.15), lineWidth: 1)
             }
             .fixedSize()
+    }
+}
+
+/// Soft drop shadow that tooltip cards draw themselves inside a shadowless
+/// panel. The panel reserves `inset` on every side so the blur is not clipped.
+enum TooltipCardShadow {
+    static let inset: CGFloat = 8
+}
+
+extension View {
+    func tooltipCardShadow() -> some View {
+        shadow(color: .black.opacity(0.06), radius: 4, x: 0, y: 1)
+            .padding(TooltipCardShadow.inset)
     }
 }
 
@@ -205,6 +224,7 @@ protocol CustomTooltipPresenting: AnyObject {
         screen: NSScreen?,
         themeProvider: ThemeStateProvider,
         placement: CustomTooltipPlacement,
+        drawsCardShadow: Bool,
         frameAnimationDuration: TimeInterval
     )
     func dismiss()
@@ -254,6 +274,7 @@ private final class CustomTooltipPanelPresenter: CustomTooltipPresenting {
         screen: NSScreen?,
         themeProvider: ThemeStateProvider,
         placement: CustomTooltipPlacement,
+        drawsCardShadow: Bool,
         frameAnimationDuration: TimeInterval
     ) {
         guard let sourceWindow else { return }
@@ -261,13 +282,18 @@ private final class CustomTooltipPanelPresenter: CustomTooltipPresenting {
         bindTheme(to: themeProvider, panel: panel)
 
         guard let themeObserver else { return }
-        hostingView.rootView = AnyView(
-            CustomTooltipThemedContent(observer: themeObserver, content: content)
-        )
+        let themedContent = CustomTooltipThemedContent(observer: themeObserver, content: content)
+        let shadowInset = drawsCardShadow ? TooltipCardShadow.inset : 0
+        panel.hasShadow = !drawsCardShadow
+        hostingView.rootView = drawsCardShadow
+            ? AnyView(themedContent.tooltipCardShadow())
+            : AnyView(themedContent)
         hostingView.layoutSubtreeIfNeeded()
 
         let visibleFrame = (screen ?? sourceWindow.screen ?? NSScreen.main)?.visibleFrame
         var size = hostingView.fittingSize
+        size.width -= 2 * shadowInset
+        size.height -= 2 * shadowInset
         if let visibleFrame {
             size.width = min(max(size.width, 1), max(1, visibleFrame.width - 8))
             size.height = min(max(size.height, 1), max(1, visibleFrame.height - 8))
@@ -284,6 +310,7 @@ private final class CustomTooltipPanelPresenter: CustomTooltipPresenting {
         )
 
         let targetFrame = CGRect(origin: origin, size: size)
+            .insetBy(dx: -shadowInset, dy: -shadowInset)
         if isVisible,
            panel.isVisible,
            frameAnimationDuration > 0,
@@ -614,6 +641,7 @@ final class CustomTooltipController {
             screen: context.screen,
             themeProvider: context.themeProvider,
             placement: request.configuration.presentationPlacement,
+            drawsCardShadow: request.configuration.drawsCardShadow,
             frameAnimationDuration: shouldAnimateFrame
                 ? request.configuration.normalizedHandoffFrameAnimationDuration
                 : 0
@@ -641,6 +669,7 @@ final class CustomTooltipController {
             screen: context.screen,
             themeProvider: context.themeProvider,
             placement: request.configuration.presentationPlacement,
+            drawsCardShadow: request.configuration.drawsCardShadow,
             frameAnimationDuration: 0
         )
     }

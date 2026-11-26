@@ -11,12 +11,6 @@ import SwiftUI
 /// Container for managing multiple WebContentViewController instances (one per tab)
 /// Also manages the global topBarView (TabStrip) for traditional layout mode
 class WebContentContainerViewController: NSViewController {
-    private final class TitlebarAwareView: NSView, TitlebarAwareHitTestable {
-        func shouldConsumeHitTest(at point: NSPoint) -> Bool {
-            false
-        }
-    }
-
     weak var browserState: BrowserState?
     private var cancellables = Set<AnyCancellable>()
     private var isSubscriptionsSetup = false
@@ -457,7 +451,7 @@ class WebContentContainerViewController: NSViewController {
     /// Single window-level region for titlebar drag and double-click handling.
     /// Child tab and placeholder controllers must not add their own copies:
     /// those overlays stack above the page when performance mode hides its header.
-    private var titleAwareArea = TitlebarAwareView()
+    private let windowDragNotch = WindowDragNotchView()
     private var titleAwareAreaHeightConstraint: Constraint?
     
     /// Only standalone windows mount this host. Hosted sessions use the
@@ -519,10 +513,10 @@ class WebContentContainerViewController: NSViewController {
     /// running while it cuts it short, or see it end; nil keeps AppKit's.
     static var panelSlideDurationForTesting: TimeInterval?
 
-    /// True when a panel attach/detach should settle immediately instead of
-    /// sliding: the test seam is on, or there is no window to animate in.
+    var prefersReducedMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
     private var skipsPanelSlideAnimation: Bool {
-        Self.panelSlideAnimationsDisabledForTesting || view.window == nil
+        prefersReducedMotion() || Self.panelSlideAnimationsDisabledForTesting || view.window == nil
     }
 
     /// Test-only view of the mounted panel slot.
@@ -662,8 +656,8 @@ class WebContentContainerViewController: NSViewController {
         }
 
         // Add titlebar aware area
-        view.addSubview(titleAwareArea)
-        titleAwareArea.snp.makeConstraints { make in
+        view.addSubview(windowDragNotch)
+        windowDragNotch.snp.makeConstraints { make in
             make.leading.trailing.top.equalToSuperview()
             titleAwareAreaHeightConstraint = make.height.equalTo(
                 contentLayout.titleAwareAreaHeight
@@ -729,9 +723,9 @@ class WebContentContainerViewController: NSViewController {
         // Add as child view controller
         addChild(barController)
         
-        // Add topBar view above titleAwareArea, so tab items receive clicks
-        // in the overlap zone while titleAwareArea still handles the gap above the bar
-        view.addSubview(barController.view, positioned: .above, relativeTo: titleAwareArea)
+        // Add topBar view above windowDragNotch, so tab items receive clicks
+        // in the overlap zone while windowDragNotch still handles the gap above the bar
+        view.addSubview(barController.view, positioned: .above, relativeTo: windowDragNotch)
         barController.view.snp.makeConstraints { make in
             make.leading.trailing.equalToSuperview()
             topBarTopConstraint = make.top.equalToSuperview().inset(contentLayout.topEdgeSpacing).constraint
@@ -1049,11 +1043,38 @@ class WebContentContainerViewController: NSViewController {
             }
             .store(in: &cancellables)
 
+        // The pages are masked to their cards while the window moves into or
+        // out of full screen (`fullScreenTransitionMask`). SYNCHRONOUS (no
+        // `.receive(on:)`): AppKit snapshots the window before the main
+        // queue turns.
+        let fullScreenStarts = [NSWindow.willEnterFullScreenNotification,
+                                NSWindow.willExitFullScreenNotification]
+        let fullScreenEnds = [NSWindow.didEnterFullScreenNotification,
+                              NSWindow.didExitFullScreenNotification]
+        Publishers.MergeMany((fullScreenStarts + fullScreenEnds)
+            .map { NotificationCenter.default.publisher(for: $0) })
+            .filter { [weak self] notification in
+                guard let window = self?.view.window else { return false }
+                return notification.object as? NSWindow === window
+            }
+            .sink { [weak self] notification in
+                self?.setPagesMaskedForFullScreenTransition(fullScreenStarts.contains(notification.name))
+            }
+            .store(in: &cancellables)
+
         browserState?.sidebarCollapsedPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateLayoutForMode()
                 self?.updateContentOuterBorder()
+            }
+            .store(in: &cancellables)
+
+        // In the turn the page area's frame changes, as the page card's own
+        // inset (`WebContentViewController.updateSplitViewLeadingInset`).
+        browserState?.sidebarTakesPageSpacePublisher
+            .sink { [weak self] _ in
+                self?.updatePageAreaBackdropLeadingInset()
             }
             .store(in: &cancellables)
 
@@ -1126,6 +1147,9 @@ class WebContentContainerViewController: NSViewController {
         // window showing the Space picker); a standalone Incognito window and
         // a single-Space window got none. Settle the page subtree first.
         contentContainer.layoutSubtreeIfNeeded()
+        // AppKit snapshots the window for a full screen animation after this
+        // pass.
+        updateFullScreenTransitionMask()
         if isPeekBackgroundDeemphasized {
             updatePeekBackgroundPresentation(animated: false)
         }
@@ -1690,6 +1714,9 @@ class WebContentContainerViewController: NSViewController {
         AppLogInfo("[ContentSurface] [Container] installed windowId=\(browserState?.windowId ?? -1)")
     }
 
+    /// The side `pinContentSurfaceToPagePanel` held at the window's edge.
+    private var contentSurfaceSidebarEdge: NSRectEdge?
+
     /// Just above `pageAreaBackdrop`, below every tab's view.
     private func placeContentSurface(_ hostingView: NSView) {
         contentContainer.addSubview(hostingView, positioned: .above, relativeTo: pageAreaBackdrop)
@@ -1700,10 +1727,33 @@ class WebContentContainerViewController: NSViewController {
     /// some frames after AppKit shows it, and until then the surface shows
     /// its last frame at its old size: one from a larger page area would
     /// run over the margins around the panel.
+    ///
+    /// On the sidebar's side it reaches the window's edge instead, where the
+    /// page area's own frame clips it. The sidebar moves the page panel's
+    /// edge on that side, on every step of a toggle: a surface pinned to it
+    /// moved, and Chromium's last frame, drawn where the surface was, moved
+    /// with it, the AI Chat beside the page and the page over it, until
+    /// Chromium drew again. Held at the window's edge the surface neither
+    /// moves nor resizes when the sidebar does. The cost: with the sidebar
+    /// shown the surface is wider than the card by the sidebar, and Chromium
+    /// allocates and fills that clipped-off part too.
     private func pinContentSurfaceToPagePanel(_ hostingView: NSView) {
+        let layout = contentLayout
+        let windowEdge = layout.layoutMode.isTraditional ? nil : hostingView.window?.contentView
         hostingView.snp.remakeConstraints { make in
-            make.edges.equalTo(pageAreaBackdrop)
+            make.top.bottom.equalTo(pageAreaBackdrop)
+            if let windowEdge, !layout.sidebarOnRight {
+                make.leading.equalTo(windowEdge)
+            } else {
+                make.leading.equalTo(pageAreaBackdrop)
+            }
+            if let windowEdge, layout.sidebarOnRight {
+                make.trailing.equalTo(windowEdge)
+            } else {
+                make.trailing.equalTo(pageAreaBackdrop)
+            }
         }
+        contentSurfaceSidebarEdge = windowEdge.map { _ in layout.sidebarOnRight ? .maxX : .minX }
         hostingView.clipsToBounds = true
         // Clipped to the card's rounded shape, not its rectangle: a late
         // frame would otherwise fill the card's corners square until
@@ -1711,6 +1761,73 @@ class WebContentContainerViewController: NSViewController {
         hostingView.wantsLayer = true
         hostingView.layer?.cornerCurve = .continuous
         hostingView.layer?.cornerRadius = contentLayout.containerCornerRadius
+    }
+
+    // MARK: - Full Screen Transition Mask
+
+    /// Limits the content surface to the pages' cards while the window moves
+    /// into or out of full screen, each card to where its page drew as the
+    /// transition started. AppKit snapshots the window for its animation in
+    /// the pass that resizes it, before Chromium draws the pages at their
+    /// new size, so the animation showed the surface's last frame past the
+    /// cards' edges leaving full screen, and the left page of a split across
+    /// both panes. The live window, laid out anew, takes over when the
+    /// animation ends. Off otherwise, where Chromium alone clips and rounds
+    /// the pages.
+    private var masksPagesForFullScreenTransition = false
+    /// Where each page drew as the transition started
+    /// (`ContentSurfaceHosting.pageClips`).
+    private var pageClipsBeforeFullScreenTransition: [ObjectIdentifier: CGRect] = [:]
+    /// The cards' shapes (`ContentSurfaceHosting.pageShapes`).
+    private let fullScreenTransitionMask = CAShapeLayer()
+    /// Ends a mask left by a transition that never posts its did-
+    /// notification (AppKit failing it). The animation is a snapshot, so the
+    /// live window hidden behind it loses nothing when this comes first.
+    private var fullScreenTransitionMaskTimeout: DispatchWorkItem?
+    private static let fullScreenTransitionMaskTimeout: TimeInterval = 2
+    static var fullScreenTransitionMaskTimeoutForTesting: TimeInterval?
+
+    private func setPagesMaskedForFullScreenTransition(_ masked: Bool) {
+        fullScreenTransitionMaskTimeout?.cancel()
+        fullScreenTransitionMaskTimeout = nil
+        if masked, !masksPagesForFullScreenTransition {
+            pageClipsBeforeFullScreenTransition = contentSurfaceHosting?.pageClips() ?? [:]
+        } else if !masked {
+            pageClipsBeforeFullScreenTransition = [:]
+        }
+        masksPagesForFullScreenTransition = masked
+        updateFullScreenTransitionMask()
+        guard masked else { return }
+        let timeout = DispatchWorkItem { [weak self] in
+            self?.setPagesMaskedForFullScreenTransition(false)
+        }
+        fullScreenTransitionMaskTimeout = timeout
+        let delay = Self.fullScreenTransitionMaskTimeoutForTesting ?? Self.fullScreenTransitionMaskTimeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: timeout)
+    }
+
+    /// Puts the mask on the surface's view, shaped to the pages as they are
+    /// laid out now, or takes it off.
+    private func updateFullScreenTransitionMask() {
+        guard let contentSurfaceView, let layer = contentSurfaceView.layer else { return }
+        // Every layout pass comes here (`viewDidLayout`); outside a transition,
+        // with no mask on, there is nothing to put on or take off.
+        guard masksPagesForFullScreenTransition || layer.mask === fullScreenTransitionMask else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        guard masksPagesForFullScreenTransition, let contentSurfaceHosting else {
+            if layer.mask === fullScreenTransitionMask {
+                layer.mask = nil
+            }
+            return
+        }
+        let cards = CGMutablePath()
+        contentSurfaceHosting.pageShapes(in: contentSurfaceView, keptTo: pageClipsBeforeFullScreenTransition)
+            .forEach { cards.addPath($0) }
+        fullScreenTransitionMask.frame = layer.bounds
+        fullScreenTransitionMask.path = cards
+        layer.mask = fullScreenTransitionMask
     }
 
     /// Lends the surface's view to the page entering content fullscreen
@@ -1730,6 +1847,9 @@ class WebContentContainerViewController: NSViewController {
         contentSurfaceView.snp.remakeConstraints { make in
             make.edges.equalToSuperview()
         }
+        // The card's rounded clip would show the Space's backdrop at the
+        // screen's corners. `reclaimContentSurface` rounds it again.
+        contentSurfaceView.layer?.cornerRadius = 0
         AppLogInfo("[ContentSurface] [Container] lent to content fullscreen windowId=\(browserState?.windowId ?? -1)")
     }
 
@@ -1933,6 +2053,9 @@ class WebContentContainerViewController: NSViewController {
     private func slideInExtensionSidePanel(_ panelView: ExtensionSidePanelView) {
         extensionSidePanelView = panelView
         guard !skipsPanelSlideAnimation else {
+            if prefersReducedMotion() {
+                _ = currentWebContentController?.collapseAIChatForPanelTransition(ghostIn: nil)
+            }
             remakeContentLayout()
             settlePanelTransitionOuterBorder()
             return
@@ -2068,11 +2191,12 @@ class WebContentContainerViewController: NSViewController {
         dropClosingAIChatGhost()
         releaseContentSurfaceHold()
 
+        let skipsAnimation = skipsPanelSlideAnimation
         // Window-server snapshot of the closing content (`WebContentSnapshotter`
         // — local snapshot APIs return blank for the remote Chromium layer).
         // Best effort: without it the card slides out with its header over
         // an empty background.
-        let snapshot = WebContentSnapshotter.captureOnScreen(
+        let snapshot = skipsAnimation ? nil : WebContentSnapshotter.captureOnScreen(
             panelView.contentHostView, resolution: .bestResolution)
         for subview in panelView.contentHostView.subviews {
             subview.removeFromSuperview()
@@ -2087,7 +2211,7 @@ class WebContentContainerViewController: NSViewController {
 
         extensionSidePanelView = nil
 
-        if skipsPanelSlideAnimation {
+        if skipsAnimation {
             panelView.removeFromSuperview()
             extensionSidePanelFrameBackdrop?.removeFromSuperview()
             extensionSidePanelFrameBackdrop = nil
@@ -2181,6 +2305,7 @@ class WebContentContainerViewController: NSViewController {
     /// Mounts `controller`'s view as the current tab and removes every other
     /// tab view in the same turn (see "Tab switch" above).
     private func switchToWebContentController(_ controller: WebContentViewController) {
+        controller.usesWindowDragNotch = windowDragNotch.usesHoverNotch
         if let current = currentWebContentController, current !== controller {
             // Outgoing focused VC no longer owns the split host — drop its
             // partner-crash subscription (its own observers won't re-run).
@@ -2320,13 +2445,22 @@ class WebContentContainerViewController: NSViewController {
     
     // MARK: - Layout Mode
     
+    private func updateTitlebarAwareArea() {
+        let layout = contentLayout
+        let usesHoverNotch = layout.layoutMode == .performance && layout.edgeToEdgeEnabled
+            && !layout.isFullScreen && browserState?.isKioskWindow == false
+        windowDragNotch.usesHoverNotch = usesHoverNotch
+        currentWebContentController?.usesWindowDragNotch = usesHoverNotch
+        titleAwareAreaHeightConstraint?.update(
+            offset: usesHoverNotch ? WindowDragNotchView.hoverBandHeight : layout.titleAwareAreaHeight
+        )
+    }
+
     private func updateLayoutForMode() {
         let layoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
         let traditionalLayout = layoutMode.isTraditional
 
-        titleAwareAreaHeightConstraint?.update(
-            offset: contentLayout.titleAwareAreaHeight
-        )
+        updateTitlebarAwareArea()
         
         if traditionalLayout {
             // Traditional layout (horizontal tabs): show topBar
@@ -2340,8 +2474,6 @@ class WebContentContainerViewController: NSViewController {
             tabStripBarController?.view.isHidden = true
             topBarHeightConstraint?.update(offset: 0)
             topBarTopConstraint?.update(inset: contentLayout.topEdgeSpacing)
-            // The titlebar hit area disappears with the page margin.
-            titleAwareArea.isHidden = false
         }
 
         updateContentOuterBorder()
@@ -2350,16 +2482,66 @@ class WebContentContainerViewController: NSViewController {
         pageAreaBackdrop.layer?.cornerRadius = contentLayout.containerCornerRadius
         if let contentSurfaceView, contentSurfaceView.superview === contentContainer {
             contentSurfaceView.layer?.cornerRadius = contentLayout.containerCornerRadius
+            let sidebarEdge: NSRectEdge? = contentLayout.layoutMode.isTraditional
+                ? nil : (contentLayout.sidebarOnRight ? .maxX : .minX)
+            if sidebarEdge != contentSurfaceSidebarEdge, contentSurfaceHosting?.isHeld != true {
+                pinContentSurfaceToPagePanel(contentSurfaceView)
+            }
         }
         extensionSidePanelFrameBackdrop?.layer?.cornerRadius = contentLayout.containerCornerRadius
         remakeContentLayout()
         contentContainer.needsLayout = true
     }
 
+    /// Lays the pages out `inset` in from the card's edge on the sidebar's
+    /// side while a sidebar toggle is in flight; the card keeps its frame
+    /// (`ShellSplitView.pageInsetInFlight`). Each step goes to the mounted
+    /// pages only; the landing's 0 to every page, so one unmounted mid-flight
+    /// does not keep a step.
+    func setSidebarInsetInFlight(_ inset: CGFloat) {
+        let controllers = inset == 0
+            ? Array(webContentControllers.values)
+            : children.compactMap { $0 as? WebContentViewController }
+        for controller in controllers {
+            controller.sidebarInsetInFlight = inset
+        }
+    }
+
+    /// While a sidebar toggle is in flight the page is laid out at widths
+    /// Chromium draws some frames late, and past its last frame the backdrop
+    /// shows. Painted in the page's own background then, that is no strip.
+    /// Only for a card holding one page: a split's other pane or the AI Chat
+    /// beside the page shows the backdrop through its clear fill.
+    /// False puts the card's color back.
+    func setBackdropPaintsPageBackground(_ paints: Bool) {
+        guard hasContentSurface else { return }
+        guard paints, let controller = currentWebContentController,
+              controller.contentSurfaceTabs.count == 1, !controller.isPageCardSeparated,
+              let tab = browserState?.focusingTab, let windowId = browserState?.windowId,
+              let color = ChromiumLauncher.sharedInstance().bridge?.pageBackgroundColor(
+                  forTabId: Int64(tab.guid), windowId: Int64(windowId)),
+              color.alphaComponent == 1
+        else {
+            bindCurrentPageFrameBackground()
+            return
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        pageAreaBackdrop.layer?.backgroundColor = color.cgColor
+        CATransaction.commit()
+    }
+
+    /// The page card's frame in `view`, its corner radius, and its margin on
+    /// the sidebar's side with the sidebar collapsed.
+    func pageCardOutline(in view: NSView) -> (frame: NSRect, cornerRadius: CGFloat, margin: CGFloat) {
+        (pageAreaBackdrop.convert(pageAreaBackdrop.bounds, to: view),
+         contentLayout.containerCornerRadius, contentLayout.edgeSpacing)
+    }
+
     /// Mirror of `WebContentViewController.updateSplitViewLeadingInset`, so
     /// the backdrop hugs the same leading edge the mounted panel uses.
     private var pageAreaInsets: (leading: CGFloat, trailing: CGFloat) {
-        contentLayout.pageInsets(sidebarCollapsed: browserState?.sidebarCollapsed ?? true)
+        contentLayout.pageInsets(sidebarCollapsed: browserState?.sidebarTakesPageSpace != true)
     }
 
     /// Called from `updateLayoutForMode`, which already re-runs on layout-mode

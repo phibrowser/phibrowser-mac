@@ -269,22 +269,28 @@ public extension NSView {
 
     /// The theme context of the browser tree this view belongs to.
     ///
-    /// Resolved through the responder chain first: one shell window presents
-    /// one Space session at a time, and during a Space switch the leaving
-    /// and entering trees are BOTH in the window while the window's
-    /// controller already names the entering one. A view must keep
-    /// following its own tree's context (the leaving sidebar ramps its
-    /// theme across the slide) rather than the window's, so the nearest
-    /// `BrowserThemeContextProviding` responder up the chain wins; the
-    /// window answers for views outside any tree (child panels, overlays).
+    /// Resolved through the view's own tree first: one shell window presents
+    /// one Space session at a time, and its controller names the presented
+    /// session, while every other Space's tree stays resident (hidden) in the
+    /// same window and the leaving and entering trees are both visible during
+    /// a switch. A view must follow its own tree's context (the leaving
+    /// sidebar ramps its theme across the slide) rather than the window's, so
+    /// the nearest ancestor whose controller is `BrowserThemeContextProviding`
+    /// wins; the window answers for views outside any tree (child panels,
+    /// overlays).
+    ///
+    /// Ancestors are walked by `superview`, checking each one's
+    /// `nextResponder`, not by following the responder chain from this view:
+    /// a table cell enters the window while its row view's `nextResponder` is
+    /// still nil, so a responder walk ends there and falls back to the window,
+    /// binding the row to whichever Space is presented at that moment.
     var browserThemeContext: BrowserThemeContext? {
-        var responder: NSResponder? = nextResponder
-        while let current = responder {
-            if let providing = current as? BrowserThemeContextProviding {
+        var ancestor: NSView? = self
+        while let view = ancestor {
+            if let providing = view.nextResponder as? BrowserThemeContextProviding {
                 return providing.providedBrowserThemeContext
             }
-            if current is NSWindow { break }
-            responder = current.nextResponder
+            ancestor = view.superview
         }
         return window?.browserThemeContext
     }
@@ -328,11 +334,12 @@ extension NSView {
             if view.subtreeThemeSource != nil { return "subtree:\(type(of: view))" }
             ancestor = view.superview
         }
-        var responder: NSResponder? = nextResponder
-        while let current = responder {
-            if current is BrowserThemeContextProviding { return "responder:\(type(of: current))" }
-            if current is NSWindow { break }
-            responder = current.nextResponder
+        ancestor = self
+        while let view = ancestor {
+            if let providing = view.nextResponder, providing is BrowserThemeContextProviding {
+                return "responder:\(type(of: providing))"
+            }
+            ancestor = view.superview
         }
         return window?.browserThemeContext != nil ? "window" : "shared"
     }

@@ -224,6 +224,23 @@ final class FloatingSidebarResizeTests: XCTestCase {
         XCTAssertEqual(animation.timingFunction, SidebarToggleAnimation.timingFunction)
     }
 
+    func testStandaloneColumnTogglesImmediatelyWithReduceMotion() {
+        let controller = PhiSplitViewController()
+        controller.prefersReducedMotion = { true }
+        let sidebar = NSViewController()
+        sidebar.view = NSView()
+        let item = NSSplitViewItem(viewController: sidebar)
+        item.canCollapse = true
+        controller.addSplitViewItem(item)
+
+        controller.setSidebarCollapsed(true, item: item, animated: true, dockWidth: nil)
+        XCTAssertTrue(item.isCollapsed)
+        controller.setSidebarCollapsed(false, item: item, animated: true, dockWidth: nil)
+        XCTAssertFalse(item.isCollapsed)
+        XCTAssertFalse(controller.isSidebarExpanding)
+        XCTAssertNil(item.animations["collapsed"])
+    }
+
     func testThePanelStaysOpenWhileItsEdgeIsDragged() throws {
         let slot = try makeSlot()
         let split = try XCTUnwrap(slot.shell?.split)

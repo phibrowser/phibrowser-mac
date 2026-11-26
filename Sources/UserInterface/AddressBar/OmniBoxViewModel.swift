@@ -228,9 +228,11 @@ class OmniBoxViewModel: ObservableObject {
     /// A session that expired or lost its context is replaced; one that cannot
     /// serve this presentation falls back to legacy suggestions.
     private func recoverV2Session(reason: String) {
-        let recoverable: Set<String> = ["idle_expired", "context_changed", "store_closed"]
+        // `document_gone`: the target tab committed a new page, e.g. a new
+        // split pane finishing its first load while the omnibox is open.
+        let recoverable: Set<String> = ["idle_expired", "context_changed", "store_closed", "document_gone"]
         v2Client = nil
-        guard recoverable.contains(reason), v2Restarts < 3 else {
+        guard recoverable.contains(reason), v2Restarts < 3, offersNativeRows else {
             AppLogInfo("[OmniboxV2] session closed (\(reason)), using legacy suggestions")
             stopV2Routing()
             performSearchAtonce()

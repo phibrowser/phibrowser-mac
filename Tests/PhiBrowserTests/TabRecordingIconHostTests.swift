@@ -92,16 +92,16 @@ final class TabRecordingIconHostTests: XCTestCase {
         XCTAssertTrue(try faviconRendersRecordingBadge(in: view))
     }
 
-    func test_compactSplitCellShowingTheRecordingIconRendersNeitherFaviconBadge() throws {
+    /// A merged cell never trades its favicons for the centred icon; each
+    /// recording pane carries its own badge.
+    func test_compactSplitCellKeepsEveryRecordingPanesFaviconBadge() throws {
         let view = makeCompactSplitCell(primaryRecording: true, partnerRecording: true)
 
-        XCTAssertFalse(try faviconRendersRecordingBadge(in: view))
-        XCTAssertFalse(try faviconRendersRecordingBadge(in: view, mergedPane: 0))
+        XCTAssertEqual(centerGlyphHosts(in: view).count, 0)
+        XCTAssertTrue(try faviconRendersRecordingBadge(in: view))
+        XCTAssertTrue(try faviconRendersRecordingBadge(in: view, mergedPane: 0))
     }
 
-    /// Only the primary pane's recording takes the centred icon; a partner
-    /// recording alone keeps both favicons up, and its badge is then the
-    /// cell's only recording sign.
     func test_compactSplitCellKeepsTheRecordingPartnersFaviconBadge() throws {
         let view = makeCompactSplitCell(primaryRecording: false, partnerRecording: true)
 
@@ -141,7 +141,291 @@ final class TabRecordingIconHostTests: XCTestCase {
         )
     }
 
+    func test_mirroredSidebarTabShowsRowOutlineWithoutRecordingBadge() throws {
+        let tab = Tab(
+            guid: 2,
+            url: "https://example.com/2",
+            isActive: true,
+            index: 1
+        )
+        tab.setCaptureStateForTesting(sharingScreen: true, beingMirrored: true)
+        let viewModel = TabViewModel()
+        viewModel.configure(with: tab, in: nil)
+
+        let view = SideTabView(model: viewModel, peekModel: TabViewModel(),
+                               onClose: {}, onClosePeek: {})
+        view.frame = NSRect(x: 0, y: 0, width: 240, height: 32)
+        view.layout()
+
+        XCTAssertEqual(rowOutlineHosts(in: view).count, 1)
+        let favicon = try XCTUnwrap(view.subviews.flatMap(\.subviews)
+            .compactMap { $0 as? SideTabFaviconView }.first)
+        XCTAssertFalse(favicon.subviews.contains { $0 is SideTabRecordingBadgeView })
+    }
+
+    func test_compactSplitCellWithASharedHostKeepsItsFavicons() throws {
+        let view = makeCell(panes: [.mirrored, .idle], compact: true)
+
+        XCTAssertEqual(centerGlyphHosts(in: view).count, 0)
+        XCTAssertEqual(rowOutlineHosts(in: view).count, 0)
+        XCTAssertTrue(try faviconRendersRecordingBadge(in: view))
+        XCTAssertFalse(try faviconRendersRecordingBadge(in: view, mergedPane: 0))
+    }
+
+    func test_compactSplitCellKeepsTheSharedPartnersFaviconBadge() throws {
+        let view = makeCell(panes: [.idle, .idle, .mirrored], compact: true)
+
+        XCTAssertEqual(centerGlyphHosts(in: view).count, 0)
+        XCTAssertFalse(try faviconRendersRecordingBadge(in: view, mergedPane: 0))
+        XCTAssertTrue(try faviconRendersRecordingBadge(in: view, mergedPane: 1))
+    }
+
+    func test_normalSplitCellShowsTheSharedDotOnThePaneFavicon() throws {
+        let view = makeCell(panes: [.mirrored, .idle], compact: false)
+
+        XCTAssertEqual(rowOutlineHosts(in: view).count, 0)
+        XCTAssertTrue(try faviconRendersRecordingBadge(in: view))
+        XCTAssertFalse(try faviconRendersRecordingBadge(in: view, mergedPane: 0))
+    }
+
+    func test_normalTabItemBeingSharedShowsTheDotInsteadOfTheRowOutline() throws {
+        let view = makeCell(panes: [.mirrored], compact: false)
+
+        XCTAssertEqual(rowOutlineHosts(in: view).count, 0)
+        XCTAssertTrue(try faviconRendersRecordingBadge(in: view))
+    }
+
+    func test_compactTabItemBeingSharedShowsTheCenteredDot() {
+        let view = makeCell(panes: [.mirrored], compact: true)
+
+        XCTAssertEqual(centerGlyphHosts(in: view).count, 1)
+        XCTAssertEqual(rowOutlineHosts(in: view).count, 0)
+    }
+
+    func test_sidebarSplitCellShowsTheSharedPanesDot() {
+        let leftTab = Tab(guid: 1, url: "https://example.com/1", isActive: false, index: 0)
+        let rightTab = Tab(guid: 2, url: "https://example.com/2", isActive: false, index: 1)
+        rightTab.setCaptureStateForTesting(sharingScreen: true, beingMirrored: true)
+        let cell = SidebarSplitCellView(frame: NSRect(x: 0, y: 0, width: 320, height: 36))
+        cell.configure(with: SplitSidebarItem(
+            groupId: "split-1-2",
+            panes: [leftTab, rightTab],
+            browserState: nil
+        ))
+
+        XCTAssertFalse(cell.isRecordingIndicatorVisible(paneIndex: 0))
+        XCTAssertTrue(cell.isRecordingIndicatorVisible(paneIndex: 1))
+    }
+
+    func test_compactSplitCellWithAnAudiblePaneKeepsEveryFavicon() {
+        for panes: [PaneCapture] in [[.audible, .idle, .idle, .idle], [.idle, .idle, .audible, .idle]] {
+            let view = makeCell(panes: panes, compact: true)
+
+            XCTAssertEqual(visibleFaviconHosts(in: view).count, panes.count)
+            XCTAssertEqual(visibleMuteHosts(in: view).count, 0)
+        }
+    }
+
+    /// Presenting alone draws no centered glyph, so it must not take the
+    /// center and hide the favicons.
+    func test_compactTabItemThatOnlyPresentsShowsNoCenteredGlyph() {
+        let view = makeCell(panes: [.presenting], compact: true)
+
+        XCTAssertEqual(centerGlyphHosts(in: view).count, 0)
+    }
+
+    func test_pinnedTabItemBeingSharedKeepsItsFaviconAndShowsTheDotOnIt() throws {
+        for panes: [PaneCapture] in [[.mirrored], [.recordingAndMirrored]] {
+            let view = makeCell(panes: panes, compact: false, pinned: true)
+
+            XCTAssertEqual(centerGlyphHosts(in: view).count, 0)
+            XCTAssertEqual(visibleFaviconHosts(in: view).count, 1)
+            XCTAssertTrue(try faviconRendersRecordingBadge(in: view))
+        }
+    }
+
+    func test_pinnedSplitCellShowsOneDotInItsBottomTrailingCorner() throws {
+        let view = makeCell(panes: [.idle, .mirrored], compact: false, pinned: true)
+
+        let dot = try XCTUnwrap(centerGlyphHosts(in: view).first { !$0.isHidden })
+        let inset = TabCaptureBadgeMetrics.pinnedSplitCornerInset
+        XCTAssertEqual(dot.frame.maxX, view.bounds.maxX - inset)
+        XCTAssertEqual(view.isFlipped ? view.bounds.maxY - dot.frame.maxY : dot.frame.minY, inset)
+        XCTAssertEqual(visibleFaviconHosts(in: view).count, 2)
+        XCTAssertFalse(try faviconRendersRecordingBadge(in: view))
+        XCTAssertFalse(try faviconRendersRecordingBadge(in: view, mergedPane: 0))
+    }
+
+    func test_captureIndicatorCombinesEveryPanesState() {
+        func viewModel(_ capture: PaneCapture) -> TabViewModel {
+            let viewModel = TabViewModel()
+            viewModel.configure(with: makeTab(1, capture), in: nil)
+            return viewModel
+        }
+        func body(_ captures: [PaneCapture]) -> String {
+            String(describing: UnifiedTabCaptureCenterIndicator(viewModels: captures.map(viewModel)).body)
+        }
+
+        XCTAssertTrue(body([.idle, .mirrored]).contains("isCapturingMedia: false, isBeingShared: true"))
+        XCTAssertTrue(body([.recording, .mirrored]).contains("isCapturingMedia: true, isBeingShared: true"))
+        XCTAssertTrue(body([.idle, .idle]).contains("isCapturingMedia: false, isBeingShared: false"))
+    }
+
+    func test_recordingIconHostDropsItsIconUnderAHiddenAncestor() {
+        let container = NSView()
+        let host = TabRecordingIconHostingView { AnyView(UnifiedTabRecordingIcon()) }
+        container.addSubview(host)
+        host.isHidden = false
+        XCTAssertEqual(recordingIconHosts(in: container).count, 1, "Precondition.")
+
+        container.isHidden = true
+        XCTAssertEqual(recordingIconHosts(in: container).count, 0)
+
+        container.isHidden = false
+        XCTAssertEqual(recordingIconHosts(in: container).count, 1)
+    }
+
+    func test_sidebarPinnedTabShowsTheDotForItsCaptureState() {
+        for (capture, showsDot) in [(PaneCapture.idle, false), (.mirrored, true), (.recordingAndMirrored, true)] {
+            let item = PinnedTabItem()
+            item.view.frame = CGRect(x: 0, y: 0, width: 54, height: 54)
+            item.configure(with: makeTab(1, capture), browserState: nil,
+                           themeProvider: ThemeManager.shared)
+            drainMainQueue()
+
+            XCTAssertEqual(visibleRecordingIconHosts(in: item.view).count, showsDot ? 1 : 0, "\(capture)")
+        }
+    }
+
+    func test_sidebarPinnedSplitShowsOneDotInItsBottomTrailingCorner() throws {
+        let item = PinnedSplitItem()
+        item.view.frame = CGRect(x: 0, y: 0, width: 54, height: 54)
+        item.configure(panes: [makeTab(1, .recording), makeTab(2, .mirrored)],
+                       themeProvider: ThemeManager.shared)
+        drainMainQueue()
+        item.view.layoutSubtreeIfNeeded()
+
+        let dots = visibleRecordingIconHosts(in: item.view)
+        XCTAssertEqual(dots.count, 1)
+        let dot = try XCTUnwrap(dots.first)
+        let frame = dot.convert(dot.bounds, to: item.view)
+        let inset = TabCaptureBadgeMetrics.pinnedSplitCornerInset
+        XCTAssertEqual(frame.maxX, item.view.bounds.maxX - inset)
+        XCTAssertEqual(item.view.isFlipped ? item.view.bounds.maxY - frame.maxY : frame.minY, inset)
+    }
+
+    /// Normal sidebar rows outline a shared tab instead; split bookmark panes
+    /// carry the dot.
+    func test_sidebarFaviconShowsTheSharedDotOnlyWhenAsked() {
+        let viewModel = TabViewModel()
+        viewModel.configure(with: makeTab(1, .mirrored), in: nil)
+
+        for showsSharedDot in [false, true] {
+            let favicon = SideTabFaviconView(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
+            favicon.render(model: viewModel, dimmingEnabled: false, theme: nil, appearance: .light,
+                           showsSharedDot: showsSharedDot)
+
+            XCTAssertEqual(favicon.subviews.contains { $0 is SideTabRecordingBadgeView }, showsSharedDot)
+        }
+    }
+
     // MARK: - Helpers
+
+    private enum PaneCapture {
+        case idle, presenting, mirrored, audible, recording, recordingAndMirrored
+    }
+
+    /// A closure so `Tab` stays out of the signature: with SwiftUI imported
+    /// the bare type name is ambiguous.
+    private let makeTab = { (guid: Int, capture: PaneCapture) in
+        let tab = Tab(guid: guid, url: "https://example.com/\(guid)", isActive: false, index: guid - 1)
+        tab.setCaptureStateForTesting(
+            video: capture == .recording || capture == .recordingAndMirrored,
+            sharingScreen: capture == .presenting,
+            beingMirrored: capture == .mirrored || capture == .recordingAndMirrored
+        )
+        tab.setAudibleForTesting(capture == .audible)
+        return tab
+    }
+
+    /// Runs the main-queue hops the capture flag subscriptions take.
+    private func drainMainQueue() {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    private func visibleRecordingIconHosts(in root: NSView) -> [NSView] {
+        recordingIconHosts(in: root).filter { host in
+            var view: NSView? = host
+            while let current = view, current !== root {
+                if current.isHidden { return false }
+                view = current.superview
+            }
+            return true
+        }
+    }
+
+    /// A tab item, merged split when `panes` holds more than one.
+    private func makeCell(panes: [PaneCapture], compact: Bool, pinned: Bool = false) -> TabItemView {
+        let tabs = panes.enumerated().map { index, capture in
+            makeTab(index + 1, capture)
+        }
+        let view = TabItemView()
+        let threshold = tabs.count > 1
+            ? TabStripMetrics.Content.splitCompactModeThreshold(paneCount: tabs.count)
+            : TabStripMetrics.Content.compactModeThreshold
+        let width = compact ? threshold - 1 : threshold + 1
+        view.frame = CGRect(x: 0, y: 0, width: width, height: TabStripMetrics.Strip.tabHeight)
+        view.configure(with: TabRenderData(
+            id: "tab-1",
+            title: "Example",
+            url: tabs[0].url ?? "",
+            isActive: false,
+            isPinned: pinned,
+            isSplitGroupActive: false,
+            mergedSplitPanes: Array(tabs.dropFirst()),
+            sourceTab: tabs[0]
+        ))
+        view.layout()
+        return view
+    }
+
+    private func rowOutlineHosts(in root: NSView) -> [NSView] {
+        let marker = String(describing: TabBeingSharedRowOutline.self)
+        var hosts: [NSView] = []
+        var pending = [root]
+        while let view = pending.popLast() {
+            if !view.isHidden, let host = view as? NSHostingView<AnyView>,
+               String(describing: host.rootView).contains(marker) {
+                hosts.append(host)
+            }
+            pending.append(contentsOf: view.subviews)
+        }
+        return hosts
+    }
+
+    private func visibleFaviconHosts(in view: TabItemView) -> [NSView] {
+        view.subviews.filter {
+            !$0.isHidden && $0 is HitTransparentHostingView<AnyView>
+                && $0.frame.size == TabStripMetrics.Content.faviconSize
+        }
+    }
+
+    private func visibleMuteHosts(in view: TabItemView) -> [NSView] {
+        let marker = String(describing: UnifiedTabMuteButton.self)
+        return view.subviews.filter { subview in
+            guard !subview.isHidden, !subview.frame.isEmpty,
+                  let host = subview as? NSHostingView<AnyView> else { return false }
+            return String(describing: host.rootView).contains(marker)
+        }
+    }
+
+    private func centerGlyphHosts(in root: NSView) -> [NSView] {
+        let marker = String(describing: UnifiedTabCaptureCenterIndicator.self)
+        return recordingIconHosts(in: root).filter { host in
+            guard let host = host as? NSHostingView<AnyView> else { return false }
+            return String(describing: host.rootView).contains(marker)
+        }
+    }
 
     /// Compact, because that is where a tab item shows the centred
     /// recording icon; a normal-width item shows a badge on its favicon.
@@ -217,16 +501,24 @@ final class TabRecordingIconHostTests: XCTestCase {
         view.layout()
     }
 
-    /// Hosting views anywhere under `root` whose content is the recording
-    /// icon, hidden or not.
+    /// Hosting views under `root` used for capture indicators (centre or favicon).
     private func recordingIconHosts(in root: NSView) -> [NSView] {
-        let iconName = String(describing: UnifiedTabRecordingIcon.self)
+        let markers = [
+            String(describing: UnifiedTabRecordingIcon.self),
+            String(describing: UnifiedTabCaptureCenterIndicator.self),
+            String(describing: UnifiedTabFaviconCaptureBadgesView.self),
+            String(describing: UnifiedTabFaviconCaptureCornerBadges.self),
+            String(describing: UnifiedTabFaviconCaptureBadgesViewFromTab.self),
+            String(describing: TabBeingSharedFaviconOutline.self),
+        ]
         var hosts: [NSView] = []
         var pending = [root]
         while let view = pending.popLast() {
-            if let host = view as? NSHostingView<AnyView>,
-               String(describing: host.rootView).contains(iconName) {
-                hosts.append(host)
+            if let host = view as? NSHostingView<AnyView> {
+                let description = String(describing: host.rootView)
+                if markers.contains(where: { description.contains($0) }) {
+                    hosts.append(host)
+                }
             }
             pending.append(contentsOf: view.subviews)
         }
@@ -235,11 +527,10 @@ final class TabRecordingIconHostTests: XCTestCase {
 
     /// Whether the item's favicon driven by its own `viewModel` (or, for
     /// `mergedPane`, the view model of that merged pane in
-    /// `mergedPanePool`) renders the recording corner badge. The badge sits
-    /// in `UnifiedTabFaviconView.body`, which the description of the favicon
-    /// host's root view never reaches, so this describes that body built on
-    /// the item's view model: a rendered badge shows up as an icon value, a
-    /// dropped one as `nil`.
+    /// `mergedPanePool`) renders the capture corner badge. The badge sits
+    /// two views below `UnifiedTabFaviconView.body`, which the description of
+    /// the favicon host's root view never reaches, so this describes each
+    /// level's body built on the item's view model.
     private func faviconRendersRecordingBadge(
         in view: TabItemView,
         mergedPane index: Int? = nil
@@ -258,8 +549,14 @@ final class TabRecordingIconHostTests: XCTestCase {
             candidate as? TabViewModel,
             "TabItemView no longer keeps a favicon view model at `\(path)`."
         )
+        let badgesName = String(describing: UnifiedTabFaviconCaptureBadgesView.self)
+        guard String(describing: UnifiedTabFaviconView(viewModel: viewModel).body)
+            .contains("\(badgesName)(") else { return false }
         let iconName = String(describing: UnifiedTabRecordingIcon.self)
-        return String(describing: UnifiedTabFaviconView(viewModel: viewModel).body)
-            .contains("\(iconName)(")
+        let badges = UnifiedTabFaviconCaptureCornerBadges(
+            isCapturingMedia: viewModel.isCapturingMedia,
+            isBeingShared: viewModel.isBeingSharedRemotely
+        )
+        return String(describing: badges.body).contains("\(iconName)(")
     }
 }

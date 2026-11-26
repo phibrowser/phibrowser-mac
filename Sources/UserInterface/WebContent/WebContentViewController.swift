@@ -263,6 +263,7 @@ class WebContentViewController: NSViewController {
     /// Watch partner URL changes so entering or leaving a native URL renderer
     /// replaces that pane immediately instead of waiting for a focus switch.
     private var partnerContentCancellables = Set<AnyCancellable>()
+    private var partnerMirroredCancellables = Set<AnyCancellable>()
     /// Saved superview reference while hostView is re-parented into an overlay
     /// over window.contentView for HTML5 content fullscreen. Nil when not in
     /// fullscreen.
@@ -295,9 +296,8 @@ class WebContentViewController: NSViewController {
     private var aiChatSidebarMetricsSession = AIChatSidebarMetricsSession()
     /// Last known expanded width for AI Chat sidebar.
     private var lastKnownAIChatWidth: CGFloat = 360
-    /// Target width for the next expand animation.  Set before uncollapsing so
-    /// `animateAIChatCollapseTransition` can temporarily raise `minimumThickness`.
-    /// Cleared in the animation completion handler.
+    /// Target width for the next expansion. The transition temporarily raises
+    /// `minimumThickness` to this width and clears it when the expansion settles.
     private var pendingAIChatWidthRestore: CGFloat?
     /// Set once when the AI Chat sidebar is first expanded during this
     /// controller's lifetime.  After the first expand, cached-width restoration
@@ -356,6 +356,7 @@ class WebContentViewController: NSViewController {
     private lazy var webContentProgressBar = WebContentProgressBarView()
     private lazy var headerView = WebContentHeader(browserState: browserState)
     private lazy var loginRequiredOverlayView = LoginRequiredOverlayView()
+    private lazy var screenShareMirroredBorderOverlay = ScreenShareMirroredBorderOverlayView()
     private var splitLoginRequiredViews: [Int: LoginRequiredOverlayView] = [:]
 
     var addressBarAnchorView: NSView? { headerView.addressBarAnchorView }
@@ -413,6 +414,14 @@ class WebContentViewController: NSViewController {
     private var contentLayout: WebContentLayout {
         WebContentLayout(browserState: browserState)
     }
+    var usesWindowDragNotch = false {
+        didSet {
+            guard usesWindowDragNotch != oldValue else { return }
+            currentSplitHost?.hidesTopMoveHandle = usesWindowDragNotch
+            splitPreviewHost?.hidesTopMoveHandle = usesWindowDragNotch
+        }
+    }
+
     private var nativeNtpController: NewTabViewController?
     private var bookmarkManagerController: BookmarkManagerViewController?
     private var groupOverviewController: GroupOverviewViewController?
@@ -873,8 +882,9 @@ class WebContentViewController: NSViewController {
         // Observe AI Chat collapse state once the split item exists.
         setupAIChatObserver()
 
-        browserState?.sidebarCollapsedPublisher
-            .receive(on: DispatchQueue.main)
+        // Delivered in the turn the page area's frame changes, so the inset
+        // and the frame make one layout.
+        browserState?.sidebarTakesPageSpacePublisher
             .sink { [weak self] _ in
                 self?.updateSplitViewLeadingInset()
             }
@@ -939,9 +949,11 @@ class WebContentViewController: NSViewController {
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                guard let self, let tab = self.associatedTab,
-                      self.browserState?.focusingTab?.guid == tab.guid else { return }
-                self.updateContentForTab(tab)
+                guard let self else { return }
+                if let tab = self.associatedTab, self.browserState?.focusingTab?.guid == tab.guid {
+                    self.updateContentForTab(tab)
+                }
+                self.updateSplitJoinPreview()
             }
             .store(in: &cancellables)
 
@@ -998,12 +1010,25 @@ class WebContentViewController: NSViewController {
             .store(in: &cancellables)
     }
 
+    /// How far in from the card's edge on the sidebar's side the page lies
+    /// while a sidebar toggle is in flight
+    /// (`WebContentContainerViewController.setSidebarInsetInFlight`).
+    var sidebarInsetInFlight: CGFloat = 0 {
+        didSet {
+            guard sidebarInsetInFlight != oldValue, isViewLoaded else { return }
+            updateSplitViewLeadingInset()
+        }
+    }
+
     private func updateSplitViewLeadingInset() {
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
-        let sidebarCollapsed = browserState?.sidebarCollapsed ?? true
+        // The sidebar counts as collapsed until it takes its place beside
+        // the page: an expansion in flight still lies over the page area.
+        let sidebarCollapsed = browserState?.sidebarTakesPageSpace != true
         let insets = contentLayout.pageInsets(sidebarCollapsed: sidebarCollapsed)
-        splitViewLeadingConstraint?.update(inset: insets.leading)
-        splitViewTrailingConstraint?.update(inset: insets.trailing)
+        let onRight = contentLayout.sidebarOnRight
+        splitViewLeadingConstraint?.update(inset: insets.leading + (onRight ? 0 : sidebarInsetInFlight))
+        splitViewTrailingConstraint?.update(inset: insets.trailing + (onRight ? sidebarInsetInFlight : 0))
         splitViewTrailingBottomConstraint?.update(inset: contentLayout.edgeSpacing)
         splitViewContainer.layer?.cornerRadius = contentLayout.containerCornerRadius
         leftContainerView.layer?.cornerRadius = contentLayout.innerCornerRadius
@@ -1068,16 +1093,22 @@ class WebContentViewController: NSViewController {
         // emit costs nothing.
         aiChatSplitViewItem.publisher(for: \.isCollapsed)
             .dropFirst()
+            .map { [weak self] isCollapsed in
+                let cameFromModel = self?.isUpdatingAIChatState == true
+                    && self?.associatedTab?.aiChatCollapsed == isCollapsed
+                return (isCollapsed, cameFromModel)
+            }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] isCollapsed in
+            .sink { [weak self] isCollapsed, cameFromModel in
                 guard let self else { return }
                 // Stale delivery: the item has moved on and the newer value
                 // is queued behind this one (see `observeTabAIChatState`).
                 guard isCollapsed == self.aiChatSplitViewItem?.isCollapsed else { return }
                 self.updateAIChatSidebarMetrics(isExpanded: !isCollapsed)
                 
-                // Ignore KVO while we are already synchronizing state ourselves.
-                guard !self.isUpdatingAIChatState else {
+                // Capture model-driven writes before delivery moves to the main
+                // queue. A newer tab request may already be queued by then.
+                guard !cameFromModel, !self.isUpdatingAIChatState else {
                     self.updateLeftContainerStyle(isAIChatExpanded: !isCollapsed)
                     return
                 }
@@ -1240,7 +1271,7 @@ class WebContentViewController: NSViewController {
         observeTabAIChatEnabled(tab, splitViewItem: splitViewItem)
     }
     
-    /// Sync AI Chat state from tab to splitViewItem (one-time, with animation)
+    /// Sync AI Chat state from tab to splitViewItem.
     private func syncAIChatState(from tab: Tab, to splitViewItem: NSSplitViewItem) {
         // In a split the chat is shared, so autohide only when *both* panes
         // disable chat (e.g. both panes are on NTP). When the partner pane
@@ -1248,7 +1279,7 @@ class WebContentViewController: NSViewController {
         guard tab.aiChatEnabled || partnerHasAIChatEnabled() else {
             if !splitViewItem.isCollapsed {
                 isUpdatingAIChatState = true
-                splitViewItem.animator().isCollapsed = true
+                setAIChatSidebarCollapsed(true, item: splitViewItem)
                 isUpdatingAIChatState = false
             }
             return
@@ -1260,7 +1291,7 @@ class WebContentViewController: NSViewController {
                 prepareAIChatWidthBeforeExpand(for: tab)
             }
             isUpdatingAIChatState = true
-            animateAIChatCollapseTransition(splitViewItem, collapsed: tab.aiChatCollapsed)
+            setAIChatSidebarCollapsed(tab.aiChatCollapsed, item: splitViewItem)
             isUpdatingAIChatState = false
         }
     }
@@ -1311,7 +1342,7 @@ class WebContentViewController: NSViewController {
                     }
                     // Guard against feedback loops while mirroring KVO back into the tab.
                     self.isUpdatingAIChatState = true
-                    self.animateAIChatCollapseTransition(splitViewItem, collapsed: collapsed)
+                    self.setAIChatSidebarCollapsed(collapsed, item: splitViewItem)
                     self.isUpdatingAIChatState = false
                     self.persistAIChatSidebarStateIfNeeded(for: tab)
                 }
@@ -1341,7 +1372,7 @@ class WebContentViewController: NSViewController {
 
                 if !splitViewItem.isCollapsed {
                     self.isUpdatingAIChatState = true
-                    splitViewItem.animator().isCollapsed = true
+                    self.setAIChatSidebarCollapsed(true, item: splitViewItem)
                     self.isUpdatingAIChatState = false
                 }
                 // Each pane only observes its own tab's aiChatEnabled, so the
@@ -1440,6 +1471,17 @@ class WebContentViewController: NSViewController {
         }
 
         installAttachedBookmarkBarIfNeeded()
+        // The host's children are replaced when page content is mounted.
+        leftContainerView.addSubview(
+            screenShareMirroredBorderOverlay,
+            positioned: .above,
+            relativeTo: hostView
+        )
+        screenShareMirroredBorderOverlay.snp.makeConstraints { make in
+            make.leading.trailing.bottom.equalToSuperview()
+            make.top.equalTo(bookmarkBarSlotView.snp.bottom)
+        }
+        screenShareMirroredBorderOverlay.setActive(false)
     }
     
     // MARK: - Content SplitView Setup
@@ -1593,6 +1635,14 @@ class WebContentViewController: NSViewController {
                 self?.updateContentForTab(tab)
             }
             .store(in: &contentObserverCancellables)
+        tab.$isBeingMirrored
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshScreenShareMirroredBorderPresentation()
+            }
+            .store(in: &contentObserverCancellables)
+        refreshScreenShareMirroredBorderPresentation()
     }
 
     private func bindProgressObservers(for tab: Tab) {
@@ -2003,7 +2053,8 @@ class WebContentViewController: NSViewController {
             updateLeftContainerStyleForCurrentAIChatState()
             return
         }
-        if browserState?.pendingSplitPreview?.partnerTabId == tabId,
+        if let preview = browserState?.pendingSplitPreview,
+           preview.partnerTabId == tabId, preview.joining == nil,
            associatedTab?.devToolsAttached != true {
             installSplitPreview(ownNativeView: contentView)
             contentMode = .webContent
@@ -2039,6 +2090,7 @@ class WebContentViewController: NSViewController {
             return
         }
         addWebContentView(contentView, tabId: tabId)
+        refreshScreenShareMirroredBorderPresentation()
         contentMode = .webContent
         updateLeftContainerStyleForCurrentAIChatState()
     }
@@ -2162,6 +2214,7 @@ class WebContentViewController: NSViewController {
     func updatePartnerCrashSubscription() {
         partnerCrashCancellables.removeAll()
         partnerContentCancellables.removeAll()
+        partnerMirroredCancellables.removeAll()
         guard let tab = associatedTab,
               let state = browserState,
               state.focusingTab?.guid == tab.guid,
@@ -2177,6 +2230,13 @@ class WebContentViewController: NSViewController {
                     self?.refreshSplitCrashOverlays()
                 }
                 .store(in: &partnerCrashCancellables)
+            partner.$isBeingMirrored
+                .removeDuplicates()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.refreshSplitMirroredBorders()
+                }
+                .store(in: &partnerMirroredCancellables)
             partner.$url
                 .removeDuplicates()
                 .dropFirst()
@@ -2193,6 +2253,7 @@ class WebContentViewController: NSViewController {
     func cancelPartnerCrashSubscription() {
         partnerCrashCancellables.removeAll()
         partnerContentCancellables.removeAll()
+        partnerMirroredCancellables.removeAll()
     }
 
     private func refreshContentForSplitPartnerURLChange() {
@@ -2210,6 +2271,52 @@ class WebContentViewController: NSViewController {
               let tab = associatedTab,
               let group = browserState?.splitGroup(forTabId: tab.guid) else { return }
         reconcileSplitCrashViews(host: host, group: group)
+    }
+
+    private func refreshScreenShareMirroredBorderPresentation() {
+        guard associatedTab?.isInContentFullscreen != true else {
+            screenShareMirroredBorderOverlay.setActive(false)
+            hideSplitMirroredBorders()
+            return
+        }
+
+        if currentSplitHost != nil,
+           let tab = associatedTab,
+           browserState?.splitGroup(forTabId: tab.guid) != nil {
+            screenShareMirroredBorderOverlay.setActive(false)
+            refreshSplitMirroredBorders()
+        } else if let tab = associatedTab {
+            hideSplitMirroredBorders()
+            screenShareMirroredBorderOverlay.setActive(tab.isBeingMirrored)
+        } else {
+            screenShareMirroredBorderOverlay.setActive(false)
+            hideSplitMirroredBorders()
+        }
+    }
+
+    private func refreshSplitMirroredBorders() {
+        guard let host = currentSplitHost,
+              let tab = associatedTab,
+              let group = browserState?.splitGroup(forTabId: tab.guid) else {
+            hideSplitMirroredBorders()
+            return
+        }
+        reconcileSplitMirroredBorders(host: host, group: group)
+    }
+
+    private func reconcileSplitMirroredBorders(host: SplitPaneHostView, group: SplitGroup) {
+        for (slot, tabId) in group.tabIds.enumerated() {
+            let mirrored = browserState?.tabs.first(where: { $0.guid == tabId })?.isBeingMirrored == true
+            host.setMirroredBorderVisible(mirrored, slot: slot)
+        }
+        screenShareMirroredBorderOverlay.setActive(false)
+    }
+
+    private func hideSplitMirroredBorders() {
+        guard let host = currentSplitHost else { return }
+        for slot in 0..<host.paneCount {
+            host.setMirroredBorderVisible(false, slot: slot)
+        }
     }
 
     /// The view representing this controller's tab inside a split pane. Native
@@ -2339,6 +2446,7 @@ class WebContentViewController: NSViewController {
             host = newHost
         }
 
+        host.hidesTopMoveHandle = usesWindowDragNotch
         host.squaresCorners = contentLayout.squaresCorners
         mountedSplitPartners = partners
 
@@ -2353,6 +2461,7 @@ class WebContentViewController: NSViewController {
         // Overlay a crash view on any pane whose tab's renderer has crashed.
         reconcileSplitCrashViews(host: host, group: group)
         reconcileSplitLoginRequiredViews(host: host, group: group)
+        reconcileSplitMirroredBorders(host: host, group: group)
 
         let splitId = group.id
         host.onFractionsCommit = { [weak self] fractions in
@@ -2426,6 +2535,7 @@ class WebContentViewController: NSViewController {
             host.snp.makeConstraints { $0.edges.equalToSuperview() }
             splitPreviewHost = host
         }
+        host.hidesTopMoveHandle = usesWindowDragNotch
         host.squaresCorners = contentLayout.squaresCorners
         host.update(layout: preview.layout, fractions: [0.5, 0.5],
                     layoutMode: PhiPreferences.GeneralSettings.loadLayoutMode())
@@ -2433,6 +2543,28 @@ class WebContentViewController: NSViewController {
         host.update(panes: newTabIsPrimary ? [splitPreviewPane, ownNativeView] : [ownNativeView, splitPreviewPane])
         host.focusedPane = newTabIsPrimary ? 0 : 1
     }
+
+    /// Opens the space where the pane chosen in the omnibox joins this split
+    /// (`PendingSplitPreview.joining`), and holds it once submitted until
+    /// the pane arrives.
+    private func updateSplitJoinPreview() {
+        guard let host = currentSplitHost, isSplitContentMounted else { return }
+        if let preview = browserState?.pendingSplitPreview, let join = preview.joining,
+           preview.partnerTabId == associatedTab?.guid,
+           join.splitId == activeSplitForCurrentTab()?.id {
+            showsSplitJoinPreview = true
+            if preview.isCommitted {
+                host.holdInsertionPreview(slot: join.slot)
+            } else {
+                host.setInsertionPreview(slot: join.slot)
+            }
+        } else if showsSplitJoinPreview {
+            showsSplitJoinPreview = false
+            host.setInsertionPreview(slot: nil)
+        }
+    }
+
+    private var showsSplitJoinPreview = false
 
     private func removeSplitPreview(keeping contentView: NSView) {
         guard let host = splitPreviewHost else { return }
@@ -2783,7 +2915,7 @@ class WebContentViewController: NSViewController {
             contentSurfaceLender?.reclaimContentSurface()
             contentSurfaceLender = nil
             // Within the window, as on entry.
-            original.addSubview(hostView)
+            original.addSubview(hostView, positioned: .below, relativeTo: screenShareMirroredBorderOverlay)
             hostView.snp.remakeConstraints { make in
                 make.leading.trailing.bottom.equalToSuperview()
                 make.top.equalTo(bookmarkBarSlotView.snp.bottom)
@@ -2816,6 +2948,7 @@ class WebContentViewController: NSViewController {
             // As on entry, give the keyboard to the page.
             restoreWebContentFirstResponder()
         }
+        refreshScreenShareMirroredBorderPresentation()
     }
 
     private func restoreWebContentFirstResponder() {
@@ -3416,30 +3549,28 @@ class WebContentViewController: NSViewController {
         }
 
         isUpdatingAIChatState = true
-        animateAIChatCollapseTransition(splitViewItem, collapsed: true)
+        setAIChatSidebarCollapsed(true, item: splitViewItem)
         isUpdatingAIChatState = false
         updateLeftContainerStyle(isAIChatExpanded: false)
         persistAIChatSidebarStateIfNeeded(for: associatedTab)
     }
 
-    /// Animate AI Chat sidebar expand/collapse with proper width handling.
+    /// Expand or collapse the AI Chat sidebar at its restored width.
     ///
     /// For **expand**: temporarily raises `minimumThickness` to the pending
     /// cached width so NSSplitView's uncollapse animation targets the correct
-    /// width directly — avoiding the default "expand to minimumThickness then
-    /// jump" visual artifact.  The original `minimumThickness` is restored in
-    /// the completion handler so the user can still freely resize afterwards.
+    /// width directly. The original `minimumThickness` is restored once the
+    /// layout settles so the user can still freely resize afterwards.
     ///
     /// - Important: Callers must set `isUpdatingAIChatState = true` **before**
     ///   invoking this method and reset it afterwards to prevent reentrant KVO
     ///   loops.
-    private func animateAIChatCollapseTransition(
-        _ splitViewItem: NSSplitViewItem,
-        collapsed: Bool
-    ) {
+    private func setAIChatSidebarCollapsed(_ collapsed: Bool, item splitViewItem: NSSplitViewItem) {
+        let reduceMotion = (parent as? WebContentContainerViewController)?.prefersReducedMotion()
+            ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let expanding = !collapsed
-        isAnimatingAIChatExpansion = expanding
-        isAnimatingAIChatCollapse = collapsed
+        isAnimatingAIChatExpansion = expanding && !reduceMotion
+        isAnimatingAIChatCollapse = collapsed && !reduceMotion
         aiChatTransitionCount += 1
         let transition = aiChatTransitionCount
 
@@ -3482,9 +3613,7 @@ class WebContentViewController: NSViewController {
                              until: .aiChatTransition(transition))
         }
 
-        NSAnimationContext.runAnimationGroup({ _ in
-            splitViewItem.animator().isCollapsed = collapsed
-        }, completionHandler: { [weak self, weak splitViewItem] in
+        let finish = { [weak self, weak splitViewItem] in
             guard let self else { return }
             if let savedMinThickness, let splitViewItem {
                 splitViewItem.minimumThickness = savedMinThickness
@@ -3509,7 +3638,17 @@ class WebContentViewController: NSViewController {
                 // itself (a tab that comes with its panel expanded).
                 self.embeddedChatViewController?.setupIfNeeded()
             }
-        })
+        }
+        if reduceMotion {
+            splitViewItem.isCollapsed = collapsed
+            updateLeftContainerStyleForCurrentAIChatState()
+            view.layoutSubtreeIfNeeded()
+            finish()
+        } else {
+            NSAnimationContext.runAnimationGroup({ _ in
+                splitViewItem.animator().isCollapsed = collapsed
+            }, completionHandler: finish)
+        }
     }
 
     /// Numbers a container side panel slide over this page, for
@@ -3601,9 +3740,8 @@ class WebContentViewController: NSViewController {
     /// Detaches an expanded AI Chat from the split layout right before the
     /// extension side panel slides in, returning a frame-driven snapshot
     /// ghost (positioned in `coordView`'s space) for the container to
-    /// slide out alongside the panel's slide-in. nil when the chat is
-    /// collapsed or absent, or when the snapshot fails (the chat then
-    /// simply vanishes under the incoming panel).
+    /// slide out alongside the panel's slide-in. With Reduce Motion, pass
+    /// nil for `coordView` to settle the chat without a snapshot.
     ///
     /// The panel ↔ chat mutex normally collapses the chat through the tab
     /// observers, which apply NSSplitView's own divider animation a
@@ -3618,8 +3756,18 @@ class WebContentViewController: NSViewController {
     /// would animate the card by Core Animation, while the page follows the
     /// split frame by frame as in any slide (and the content surface clips
     /// it to that card).
-    func collapseAIChatForPanelTransition(ghostIn coordView: NSView) -> NSView? {
+    func collapseAIChatForPanelTransition(ghostIn coordView: NSView?) -> NSView? {
         guard let aiChatSplitViewItem, !aiChatSplitViewItem.isCollapsed else {
+            return nil
+        }
+        guard let coordView else {
+            if let tab = associatedTab, !tab.aiChatCollapsed {
+                tab.toggleAIChat(true)
+            }
+            isUpdatingAIChatState = true
+            setAIChatSidebarCollapsed(true, item: aiChatSplitViewItem)
+            isUpdatingAIChatState = false
+            persistAIChatSidebarStateIfNeeded(for: associatedTab)
             return nil
         }
         let paneView = aiChatSplitViewItem.viewController.view

@@ -72,6 +72,15 @@ public final class ThemeObserver: ObservableObject {
         return true
     }
 
+    /// Rebinds only when `source` is not the source this observer follows:
+    /// one bound to another tree's source, or one whose source was freed.
+    /// A correctly bound observer keeps its subscription untouched.
+    @discardableResult
+    public func rebindIfSourceChanged(to source: ThemeStateProvider) -> Bool {
+        guard boundSource !== source else { return false }
+        return rebind(to: source)
+    }
+
     #if DEBUG || NIGHTLY_BUILD
     var debugBoundSource: ThemeStateProvider? { boundSource }
     #endif
@@ -411,14 +420,28 @@ public class ThemedHostingView: NSHostingView<AnyView> {
         #endif
     }
 
-    #if DEBUG || NIGHTLY_BUILD
+    /// The observer binds when the view enters a window. Re-resolve on
+    /// appearance changes too, so a view bound to another tree's source, or
+    /// to a freed one, follows its own tree again instead of keeping that
+    /// source's appearance.
     public override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
+        guard window != nil else { return }
+        let provider = themeStateProvider
+        #if DEBUG || NIGHTLY_BUILD
         reportStaleThemeBindingIfNeeded()
+        if themeObserver.rebindIfSourceChanged(to: provider) {
+            themeBindRecord = ThemeBindRecord(source: provider, origin: "appearance." + themeProviderOrigin)
+            reportedStaleThemeBinding = false
+        }
+        #else
+        themeObserver.rebindIfSourceChanged(to: provider)
+        #endif
     }
 
-    /// The observer only rebinds on window moves; flag one that no longer
-    /// follows the provider this view resolves to now.
+    #if DEBUG || NIGHTLY_BUILD
+    /// Flags an observer that no longer follows the provider this view
+    /// resolves to now, before the appearance change rebinds it.
     private func reportStaleThemeBindingIfNeeded() {
         guard !reportedStaleThemeBinding, window != nil else { return }
         let provider = themeStateProvider

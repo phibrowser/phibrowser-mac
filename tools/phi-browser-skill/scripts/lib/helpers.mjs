@@ -29,8 +29,10 @@ import { discoverCursorTranscript } from './mirror-cursor.mjs'
 // bookmark bar and AI Chat panel, reported by the app itself via
 // agentSpace.panelSize (see agentPageArea) — so the agent renders exactly
 // what the user sees when surfacing the Space. The page area is re-measured
-// before each action, so a Sidebar toggle, a bar, a panel or a window resize
-// is picked up at the next action (see maybeTrackPageArea).
+// before each action and, for the whole round, about once a second in the
+// background, so a Sidebar toggle, a bar, a panel, a window resize or the
+// user switching to the Space to watch is picked up even while the agent
+// sits idle (see maybeTrackPageArea and followPageArea).
 // Browser.getWindowForTarget bounds (which include the chrome) are only a
 // fallback, and FALLBACK_VIEWPORT the last resort when nothing can be
 // measured. On normal sites the viewport is never changed; setViewport()
@@ -84,6 +86,8 @@ const state = {
   pageAreaCheckedAt: 0,      // when it was last re-checked — see maybeTrackPageArea
   lastPingAt: 0,             // epoch ms of the last keep-alive ping (see maybePing)
   pingTimer: null,           // round-long heartbeat interval (see ensureAgentSpace)
+  pageAreaTimer: null,       // round-long page-area follower (see followPageArea)
+  pageAreaFollowing: false,  // a followPageArea check is in flight
   explicitTtl: null,         // {taskId, deadline} bought by ping(ttlSeconds) —
                              // honored over the default round-end grace while
                              // the deadline lies ahead (see releaseTtlSeconds)
@@ -539,6 +543,13 @@ async function enterAgentContext(name, { profile = '', persistent = false } = {}
   if (!state.pingTimer) {
     state.pingTimer = setInterval(() => { maybePing() }, 15000)
     state.pingTimer.unref?.()
+  }
+  // Round-long page-area follower, for the same reason: per-action tracking
+  // leaves the viewport at a stale size through a silent stretch, which a
+  // watching user sees as a blank band along the page's edge.
+  if (!state.pageAreaTimer) {
+    state.pageAreaTimer = setInterval(followPageArea, 1000)
+    state.pageAreaTimer.unref?.()
   }
   // A round is starting: mark the Space busy (paired with the idle flip in
   // __dispose when the heredoc ends) — unless the USER is driving: a round
@@ -1013,6 +1024,24 @@ async function maybeTrackPageArea() {
 }
 
 /**
+ * `maybeTrackPageArea` on the round-long timer (see ensureAgentSpace). The
+ * emulated viewport otherwise follows the page area only when a helper runs,
+ * so a page area that grows while the agent is idle — a window resized while
+ * the Space was hidden, chrome that differs from the Space it was first
+ * measured through — stays a stale, shorter viewport under a user who switches
+ * in to watch, with the uncovered strip painted blank. One check at a time;
+ * maybeTrackPageArea's own throttle keeps it to one app message a second
+ * shared with the per-action path.
+ */
+function followPageArea() {
+  if (state.pageAreaFollowing) return
+  state.pageAreaFollowing = true
+  maybeTrackPageArea()
+    .catch(() => {})
+    .finally(() => { state.pageAreaFollowing = false })
+}
+
+/**
  * Throttled keep-alive heartbeat. The app expires a silent driving task after
  * ~120s (agentSpace.ping / any control message refreshes it), so nudge it at
  * most every 20s — from the per-action call sites shared with the resize
@@ -1425,6 +1454,24 @@ async function dialogBlockedAttach(targetId) {
   return true
 }
 
+/** Stops the target's in-flight load on `sessionId`. Page.stopLoading is
+ *  answered by the browser, so it gets through while a navigation that never
+ *  commits holds the session's renderer-bound commands. True when sent. */
+async function stopStuckNavigation(sessionId, targetId) {
+  const client = await cdpClient()
+  try {
+    await client.send('Page.stopLoading', {}, sessionId, 5000)
+  } catch { return false }
+  const { targetInfo } = await client
+    .send('Target.getTargetInfo', { targetId }, undefined, 5000)
+    .catch(() => ({ targetInfo: null }))
+  const url = shortUrl(targetInfo?.url || '')
+  logAction('stopped a stuck page load', url)
+  process.stderr.write(`ℹ phi-browser: stopped a page load that was not ` +
+                       `finishing (${url}) — goto() it again if still needed\n`)
+  return true
+}
+
 async function attachTabNow(targetId) {
   const client = await cdpClient()
   // Detach the previous page session so sessions don't accumulate across a
@@ -1487,15 +1534,27 @@ async function attachTabNow(targetId) {
     // A dialog can also have opened in the race window after the probe
     // above — re-check before treating the session as deaf.
     if (await dialogBlockedAttach(targetId)) return sessionId
-    // A just-created session can go deaf under a storm of simultaneous target
-    // attaches (its commands dropped, never answered). One fresh session
-    // recovers it; any other failure is real.
-    client.send('Target.detachFromTarget', { sessionId }).catch(() => {})
-    ;({ sessionId } = await client.send('Target.attachToTarget',
-                                        { targetId, flatten: true }))
-    state.sessionId = sessionId
-    armDialogListeners()
-    await client.send('Page.enable', {}, sessionId)
+    // A main-frame navigation that never commits (a server or network that
+    // never answers) makes DevTools hold every renderer-bound command,
+    // Page.enable included, until it finishes — and every later round
+    // re-attaches this same tab and stalls the same way (PHI-2158). Stop it
+    // and ask again on this session; never while the user owns the screen.
+    let enabled = false
+    if (!userDriving && await stopStuckNavigation(sessionId, targetId)) {
+      enabled = await client.send('Page.enable', {}, sessionId, 10000)
+        .then(() => true, () => false)
+    }
+    if (!enabled) {
+      // A just-created session can go deaf under a storm of simultaneous
+      // target attaches (its commands dropped, never answered). One fresh
+      // session recovers it; any other failure is real.
+      client.send('Target.detachFromTarget', { sessionId }).catch(() => {})
+      ;({ sessionId } = await client.send('Target.attachToTarget',
+                                          { targetId, flatten: true }))
+      state.sessionId = sessionId
+      armDialogListeners()
+      await client.send('Page.enable', {}, sessionId)
+    }
   }
   // Track the main frame's default execution context and pin evaluations to
   // it. Without an explicit contextId, Runtime.evaluate can keep hitting the
@@ -1767,8 +1826,20 @@ export async function goto(url, { timeout = 25, acceptCookies = true } = {}) {
   const deadline = Date.now() + timeout * 1000
   // Page.navigate answers at commit — normally fast, but budget it inside
   // {timeout} (capped at the 40s send default) instead of always allowing 40s.
-  const res = await client.send('Page.navigate', { url }, requireSession(),
-                                Math.min(40000, Math.max(2000, timeout * 1000)))
+  const sid = requireSession()
+  let res
+  try {
+    res = await client.send('Page.navigate', { url }, sid,
+                            Math.min(40000, Math.max(2000, timeout * 1000)))
+  } catch (err) {
+    // A navigation that never commits must not outlive this call: it would
+    // hold every renderer-bound command on this tab — the next round's
+    // Page.enable included (PHI-2158).
+    if (!/timed out/i.test(String(err?.message || ''))) throw err
+    await client.send('Page.stopLoading', {}, sid, 5000).catch(() => {})
+    throw new Error(`goto: ${url} did not start loading within ${timeout}s ` +
+                    '(server or network not answering); the load was stopped')
+  }
   // Page.navigate resolves with errorText on hard failures (bad host, blocked
   // scheme, …) instead of rejecting — surface it rather than silently waiting
   // out the timeout and returning the previous page's info.
@@ -7714,6 +7785,10 @@ export async function __dispose() {
   if (state.pingTimer) {
     clearInterval(state.pingTimer)
     state.pingTimer = null
+  }
+  if (state.pageAreaTimer) {
+    clearInterval(state.pageAreaTimer)
+    state.pageAreaTimer = null
   }
   // The heredoc round ended: if the agent still owns a live Space, mark it idle
   // (it stays idle until the next round's ensureAgentSpace/takeOver). Skip when

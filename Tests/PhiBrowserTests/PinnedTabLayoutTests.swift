@@ -77,4 +77,17 @@ final class PinnedTabLayoutTests: XCTestCase {
         let layout = prepared(PinnedTabLayout(), extensions: 0, tabs: 2)
         XCTAssertEqual(layout.contentHeight, 8 + 45 + 8)
     }
+
+    func testPinnedTabCardBackgroundsPreventWindowDragging() throws {
+        let items: [NSCollectionViewItem] = [PinnedTabItem(), PinnedSplitItem()]
+        for item in items {
+            let view = item.view
+            view.frame = NSRect(x: 0, y: 0, width: 54, height: 45)
+            view.layoutSubtreeIfNeeded()
+
+            let hit = try XCTUnwrap(view.hitTest(NSPoint(x: 2, y: view.bounds.midY)))
+            XCTAssertTrue(hit is HoverableView)
+            XCTAssertFalse(hit.mouseDownCanMoveWindow)
+        }
+    }
 }

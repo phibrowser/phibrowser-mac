@@ -76,7 +76,6 @@ final class ImagePreviewOverlayViewController: NSViewController {
         panelContainer.layer?.masksToBounds = true
 
         view.addSubview(dimmingView)
-        view.addSubview(panelContainer)
 
         addChild(previewViewController)
         panelContainer.addSubview(previewViewController.view)
@@ -85,7 +84,24 @@ final class ImagePreviewOverlayViewController: NSViewController {
             make.edges.equalToSuperview()
         }
 
-        panelContainer.snp.makeConstraints { make in
+        previewViewController.view.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+
+        bindState()
+    }
+
+    /// The panel joins the overlay only while the preview shows. Every page
+    /// area has an overlay, and the panel's glass controls, hidden or not,
+    /// re-resolve their geometry on every frame the page area moves.
+    private func setPanelAttached(_ attached: Bool) {
+        guard attached != (panelContainer.superview === view) else { return }
+        guard attached else {
+            panelContainer.removeFromSuperview()
+            return
+        }
+        view.addSubview(panelContainer)
+        panelContainer.snp.remakeConstraints { make in
             make.center.equalToSuperview()
             // Stay below the page split item's holding priority (240). Once the
             // panel reaches its size cap, it must not shrink the page to keep
@@ -99,12 +115,6 @@ final class ImagePreviewOverlayViewController: NSViewController {
             make.top.greaterThanOrEqualToSuperview().offset(32)
             make.bottom.lessThanOrEqualToSuperview().offset(-32)
         }
-
-        previewViewController.view.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
-        }
-
-        bindState()
     }
 
     func handleBackgroundClick(with event: NSEvent) {
@@ -123,6 +133,7 @@ final class ImagePreviewOverlayViewController: NSViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isVisible in
                 guard let self else { return }
+                setPanelAttached(isVisible)
                 view.isHidden = !isVisible
                 if isVisible {
                     view.window?.makeFirstResponder(view)

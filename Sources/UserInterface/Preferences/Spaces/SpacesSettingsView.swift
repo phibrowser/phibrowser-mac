@@ -122,6 +122,9 @@ struct SpacesSettingsView: View {
         guard let owner = SpaceSessionControllersManager.shared.activeWindowController,
               let window = owner.window,
               let source = window.contentView else { return }
+        // Release the focused Spaces list before Settings tears down its
+        // hosting view, so no focus proxy outlives it (PHI-1968).
+        AppController.shared?.settingsWindowController?.window?.makeFirstResponder(nil)
         AppController.shared?.settingsWindowController?.close()
         window.makeKeyAndOrderFront(nil)
         owner.showLibrary(from: source, section: .spaces)

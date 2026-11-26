@@ -143,6 +143,11 @@ private final class PinnedPeekBadgeView: NSView {
     }
 }
 
+final class PinnedTabCardBackgroundView: HoverableView {
+    // A press beside the favicon hits this surface and starts a tab drag.
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
 /// Root view of a pinned cell. The peek badge straddles the cell's top-right
 /// corner and so hangs outside these bounds, where AppKit's hit testing
 /// stops — extend it to the overhanging subviews so the whole plate stays
@@ -171,6 +176,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     private var peekBadge: PinnedPeekBadgeView!
     private var discardedOutlineHost: TabDecorativeHostingView!
     private var statusBadgeHost: TabDecorativeHostingView!
+    private var captureBadgeHost: TabRecordingIconHostingView!
     private let statusModel = TabStatusModel()
     private var tab: Tab?
     private weak var browserState: BrowserState?
@@ -218,6 +224,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         updateStatusBadge(isSuppressed: false)
         openIndicatorHost.isHidden = true
         openIndicatorHost.alphaValue = 1
+        captureBadgeHost.isHidden = true
         tab = nil
         browserState = nil
     }
@@ -227,7 +234,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         view.layer?.masksToBounds = false
 
         // Interactive background view.
-        backgroundView = HoverableView()
+        backgroundView = PinnedTabCardBackgroundView()
         backgroundView.wantsLayer = true
         backgroundView.layer?.cornerCurve = .continuous
         backgroundView.layer?.cornerRadius = 8
@@ -311,6 +318,16 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
             ))
         }
 
+        captureBadgeHost = .combiningCaptureState { [weak self] in
+            self?.tab.map { [$0] } ?? []
+        }
+        backgroundView.addSubview(captureBadgeHost)
+        captureBadgeHost.snp.makeConstraints { make in
+            make.trailing.equalTo(iconImageView).offset(3)
+            make.top.equalTo(iconImageView).offset(-3)
+            make.size.equalTo(TabCaptureBadgeMetrics.recordingDotSize)
+        }
+
         statusBadgeHost = TabDecorativeHostingView(
             rootView: TabCornerBadgeView(model: statusModel)
         )
@@ -357,6 +374,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         faviconLoadHandle = nil
         statusModel.configure(with: tab, in: browserState)
         updateStatusBadge(isSuppressed: false)
+        captureBadgeHost.bindCaptureState(of: [tab], into: &cancellables)
 
         setupFavicon()
         updateOpenIndicatorOpacity()

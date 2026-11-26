@@ -251,6 +251,63 @@ final class WebContentMountGeometryTests: XCTestCase {
         assertFollowsPageArea(webView, in: fixture, "collapse")
     }
 
+    func testReduceMotionSettlesAIChatAndPanelHandoffsImmediately() throws {
+        let (fixture, controller, panel) = try makeHandoffFixture(chatExpanded: false)
+        defer { withExtendedLifetime(panel) {} }
+        fixture.container.prefersReducedMotion = { true }
+        fixture.state.extensionSidePanelCloseRequestOverrideForTesting = { [weak state = fixture.state] in
+            state?.updateExtensionSidePanel(nil)
+        }
+        let item = try chatItem(of: controller)
+        let minimum = item.minimumThickness
+        let chat = item.viewController.view
+        let webView = fixture.webViews[0]
+        let closedWidth = webView.frame.width
+
+        fixture.state.toggleAIChat(false)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertFalse(chat.isHidden)
+        XCTAssertEqual(item.minimumThickness, minimum)
+        XCTAssertLessThan(webView.frame.width, closedWidth)
+        let openWidth = webView.frame.width
+
+        fixture.state.updateExtensionSidePanel(panel.state)
+        XCTAssertTrue(item.isCollapsed)
+        XCTAssertTrue(chat.window == nil || chat.isHiddenOrHasHiddenAncestor || chat.frame.width == 0)
+        let panelView = try XCTUnwrap(fixture.container.extensionSidePanelViewForTesting)
+        XCTAssertNotNil(panelView.superview)
+
+        fixture.state.toggleAIChat(false)
+        XCTAssertNil(panelView.superview)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertFalse(item.isCollapsed)
+        XCTAssertFalse(chat.isHidden)
+        XCTAssertEqual(webView.frame.width, openWidth, accuracy: 1)
+
+        fixture.state.toggleAIChat(true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertTrue(item.isCollapsed)
+        XCTAssertTrue(chat.window == nil || chat.isHiddenOrHasHiddenAncestor || chat.frame.width == 0)
+        XCTAssertEqual(webView.frame.width, closedWidth, accuracy: 1)
+    }
+
+    func testReduceMotionAutoHideStillUpdatesTheTab() throws {
+        let (fixture, controller, _) = try makeHandoffFixture(chatExpanded: false)
+        fixture.container.prefersReducedMotion = { true }
+        let tab = fixture.tabs[0]
+        let item = try chatItem(of: controller)
+
+        fixture.state.toggleAIChat(false)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertFalse(item.isCollapsed)
+        XCTAssertFalse(tab.aiChatCollapsed)
+
+        tab.aiChatEnabled = false
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertTrue(item.isCollapsed)
+        XCTAssertTrue(tab.aiChatCollapsed)
+    }
+
     /// A collapse that replaces an expand still in flight keeps the page card
     /// separated until the collapse itself ends. AppKit also runs the
     /// completion of the replaced expand, which must not end the newer
@@ -562,6 +619,7 @@ final class WebContentMountGeometryTests: XCTestCase {
         state.focusingTab = tabs[0]
 
         let container = WebContentContainerViewController(state: state)
+        container.prefersReducedMotion = { false }
         container.view.frame = NSRect(x: 0, y: 0, width: 1200, height: 800)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
                               styleMask: [.titled, .resizable],

@@ -142,34 +142,7 @@ final class ContentSurfaceHosting {
             sent.removeAll()
             sentUnder = surfaceView?.superview
         }
-        // Controllers supply the pages they host, including split panes and
-        // embedded chat. Reading every background wrapper's nativeView here
-        // makes each run-loop pass scale with the entire Space's tab count.
-        let tabs = hostedTabs()
-        var wrappers = tabs.compactMap(\.webContentWrapper)
-        if let placeholder = browserState.placeholderWrapper {
-            wrappers.append(placeholder)
-        }
-        // A web view is addressed by its wrapper. Docked DevTools has none and
-        // is addressed by its web view, the view Chromium handed over.
-        var addresses = wrappers.map { (address: $0 as NSObject, webView: $0.nativeView) }
-        addresses += tabs.compactMap(\.devToolsView)
-            .map { (address: $0 as NSObject, webView: Optional($0)) }
-        var seen = Set<ObjectIdentifier>()
-        addresses = addresses.filter { seen.insert(ObjectIdentifier($0.address)).inserted }
-        var roots = [container]
-        if let overlay = surfaceView?.superview, overlay !== container {
-            roots.append(overlay)
-        }
-        let mounted = roots.flatMap { root in
-            addresses
-                .compactMap { item -> (address: NSObject, webView: NSView, root: NSView, path: [Int])? in
-                    guard let webView = item.webView, webView.window === window,
-                          let path = Self.indexPath(of: webView, below: root) else { return nil }
-                    return (item.address, webView, root, path)
-                }
-                .sorted { $0.path.lexicographicallyPrecedes($1.path) }
-        }
+        let mounted = mountedWebViews(in: window, container: container, browserState: browserState)
 
         var nowSent: [ObjectIdentifier: Sent] = [:]
         for (zOrder, item) in mounted.enumerated() {
@@ -226,21 +199,144 @@ final class ContentSurfaceHosting {
         sent = nowSent
     }
 
-    /// Subview indices from `container` down to `view`, or nil when `view` is
-    /// not below it. Ordered lexicographically, these give the back-to-front
-    /// order in which AppKit draws the views.
-    private static func indexPath(of view: NSView, below container: NSView) -> [Int]? {
-        var path: [Int] = []
+    /// The visible part of every web view the surface draws, in the window
+    /// from its top left (`Hosting.clip`), keyed by its address.
+    /// `WebContentContainerViewController` notes them as the window starts
+    /// into or out of full screen: until Chromium draws again, the
+    /// surface's last frame keeps drawing each page there.
+    func pageClips() -> [ObjectIdentifier: CGRect] {
+        Dictionary(shownPages().map { ($0.key, $0.hosting.clip) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// The visible part of every web view the surface draws, with the
+    /// corners the surface gives it (`hosting(of:)`), in `view`'s
+    /// coordinates, kept to where the page drew when `drawn` was noted
+    /// (`pageClips()`). The pages of a split each stay where they were, so
+    /// the left page of a split leaving full screen, still wider than the
+    /// new window, would otherwise show in both panes. An edge the old
+    /// frame cuts keeps square corners.
+    /// `WebContentContainerViewController` masks the surface to them while
+    /// the window moves into or out of full screen.
+    func pageShapes(in view: NSView, keptTo drawn: [ObjectIdentifier: CGRect]) -> [CGPath] {
+        guard let window = view.window, window === container?.window else { return [] }
+        let windowHeight = window.frame.height
+        return shownPages().compactMap { page in
+            var clip = page.hosting.clip
+            var corners = page.hosting
+            if let drawn = drawn[page.key] {
+                let kept = clip.intersection(drawn)
+                if kept.minX > clip.minX + 0.5 { corners.topLeft = 0; corners.bottomLeft = 0 }
+                if kept.maxX < clip.maxX - 0.5 { corners.topRight = 0; corners.bottomRight = 0 }
+                if kept.minY > clip.minY + 0.5 { corners.topLeft = 0; corners.topRight = 0 }
+                if kept.maxY < clip.maxY - 0.5 { corners.bottomLeft = 0; corners.bottomRight = 0 }
+                clip = kept
+            }
+            guard !clip.isNull, !clip.isEmpty else { return nil }
+            // Back from the window's top left.
+            let rect = CGRect(x: clip.minX, y: windowHeight - clip.maxY,
+                              width: clip.width, height: clip.height)
+            return Self.roundedPath(view.convert(rect, from: nil), corners: corners,
+                                    flipped: view.isFlipped)
+        }
+    }
+
+    /// Every mounted web view the surface draws that shows, keyed by its
+    /// address, with its hosting (`hosting(of:)`).
+    private func shownPages() -> [(key: ObjectIdentifier, hosting: Hosting)] {
+        guard let container, let browserState, let window = container.window else { return [] }
+        let windowHeight = window.frame.height
+        return mountedWebViews(in: window, container: container, browserState: browserState)
+            .compactMap { item in
+                let hosting = Self.hosting(of: item.webView, zOrder: 0, below: item.root,
+                                           windowHeight: windowHeight)
+                guard !hosting.clip.isEmpty else { return nil }
+                return (ObjectIdentifier(item.address), hosting)
+            }
+    }
+
+    /// `rect` with `corners`' radii at its on-screen corners: its top is
+    /// `minY` when `flipped`, `maxY` otherwise.
+    static func roundedPath(_ rect: CGRect, corners: Hosting, flipped: Bool) -> CGPath {
+        let top = flipped ? rect.minY : rect.maxY
+        let bottom = flipped ? rect.maxY : rect.minY
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: rect.minX + corners.topLeft, y: top))
+        path.addArc(tangent1End: CGPoint(x: rect.maxX, y: top),
+                    tangent2End: CGPoint(x: rect.maxX, y: bottom), radius: corners.topRight)
+        path.addArc(tangent1End: CGPoint(x: rect.maxX, y: bottom),
+                    tangent2End: CGPoint(x: rect.minX, y: bottom), radius: corners.bottomRight)
+        path.addArc(tangent1End: CGPoint(x: rect.minX, y: bottom),
+                    tangent2End: CGPoint(x: rect.minX, y: top), radius: corners.bottomLeft)
+        path.addArc(tangent1End: CGPoint(x: rect.minX, y: top),
+                    tangent2End: CGPoint(x: rect.maxX, y: top), radius: corners.topLeft)
+        path.closeSubpath()
+        return path
+    }
+
+    /// A web view the surface draws and the view its stacking order counts
+    /// from.
+    private typealias MountedWebView = (address: NSObject, webView: NSView, root: NSView, ancestry: [NSView])
+
+    /// The web views mounted in `window` below `container`, or below the
+    /// overlay holding the surface's view, back to front.
+    private func mountedWebViews(in window: NSWindow, container: NSView,
+                                 browserState: BrowserState) -> [MountedWebView] {
+        // Controllers supply the pages they host, including split panes and
+        // embedded chat. Reading every background wrapper's nativeView here
+        // makes each run-loop pass scale with the entire Space's tab count.
+        let tabs = hostedTabs()
+        var wrappers = tabs.compactMap(\.webContentWrapper)
+        if let placeholder = browserState.placeholderWrapper {
+            wrappers.append(placeholder)
+        }
+        // A web view is addressed by its wrapper. Docked DevTools has none and
+        // is addressed by its web view, the view Chromium handed over.
+        var addresses = wrappers.map { (address: $0 as NSObject, webView: $0.nativeView) }
+        addresses += tabs.compactMap(\.devToolsView)
+            .map { (address: $0 as NSObject, webView: Optional($0)) }
+        var seen = Set<ObjectIdentifier>()
+        addresses = addresses.filter { seen.insert(ObjectIdentifier($0.address)).inserted }
+        var roots = [container]
+        if let overlay = surfaceView?.superview, overlay !== container {
+            roots.append(overlay)
+        }
+        return roots.flatMap { root in
+            addresses
+                .compactMap { item -> MountedWebView? in
+                    guard let webView = item.webView, webView.window === window,
+                          let ancestry = Self.ancestry(of: webView, below: root) else { return nil }
+                    return (item.address, webView, root, ancestry)
+                }
+                .sorted { Self.isDrawnBefore($0.ancestry, $1.ancestry, below: root) }
+        }
+    }
+
+    /// The views from `container`'s subview down to `view`, or nil when
+    /// `view` is not below it. Follows superviews only: reading `subviews`
+    /// at every level, every pass, was the pass's largest cost.
+    private static func ancestry(of view: NSView, below container: NSView) -> [NSView]? {
+        var ancestry = [view]
         var child = view
         while let parent = child.superview {
-            guard let index = parent.subviews.firstIndex(of: child) else { return nil }
-            path.append(index)
             if parent === container {
-                return path.reversed()
+                return ancestry.reversed()
             }
+            ancestry.append(parent)
             child = parent
         }
         return nil
+    }
+
+    /// Whether AppKit draws the view ending `a` before the one ending `b`:
+    /// an ancestor before its descendants, and otherwise, under their nearest
+    /// common ancestor, the branch at the lower subview index first.
+    private static func isDrawnBefore(_ a: [NSView], _ b: [NSView], below container: NSView) -> Bool {
+        let shared = zip(a, b).prefix { $0 === $1 }.count
+        guard shared < a.count, shared < b.count else { return a.count < b.count }
+        let subviews = (shared == 0 ? container : a[shared - 1]).subviews
+        guard let indexA = subviews.firstIndex(where: { $0 === a[shared] }),
+              let indexB = subviews.firstIndex(where: { $0 === b[shared] }) else { return false }
+        return indexA < indexB
     }
 
     /// Where `webView` is in the window and the part of it that its clipping

@@ -230,6 +230,7 @@ import PostHog
                                                selector: #selector(forwardPendingOpenURLsOnActivation(_:)),
                                                name: NSApplication.didBecomeActiveNotification,
                                                object: nil)
+        PictureInPictureActivationHandOff.shared.install()
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(refreshSpacesMenuVisibility),
                                                name: .activeBrowserWindowDidChange,
@@ -460,6 +461,12 @@ import PostHog
                 AuthManager.shared.renewCredentials()
             } else {
                 AppLogDebug("reopen: Guest Mode or fresh access token, skipping renew")
+            }
+            // AppKit has just keyed a window on the current desktop, which
+            // may be a picture-in-picture window alone there; the browser
+            // window takes key instead and macOS moves to its desktop.
+            if PictureInPictureActivationHandOff.shared.applicationShouldHandleReopen() {
+                return false
             }
             // With no surviving browser window, spawn the persisted
             // last-active Space ourselves instead of letting Chromium's
@@ -854,8 +861,7 @@ import PostHog
             }
             : requests
         guard !unclaimedRequests.isEmpty else { return }
-        guard opensInKiosk,
-              hasLoadedURLRules else {
+        guard hasLoadedURLRules else {
             AppLogDebug(
                 "[ExternalKioskRouting] bypassing URL Rule evaluation; "
                     + "forwarding directly to Chromium"
@@ -864,6 +870,18 @@ import PostHog
                 application: application,
                 requests: unclaimedRequests
             )
+            return
+        }
+        guard opensInKiosk else {
+            let requestsForChromium = MainActor.assumeIsolated {
+                routeExternalOpensBySpaceRules(unclaimedRequests)
+            }
+            if !requestsForChromium.isEmpty {
+                forwardOpenURLsDirectlyToChromium(
+                    application: application,
+                    requests: requestsForChromium
+                )
+            }
             return
         }
 
@@ -938,6 +956,50 @@ import PostHog
                 requests: requestsForChromium
             )
         }
+    }
+
+    /// With the Kiosk preference off, opens every request whose URL rule
+    /// silently targets a Space in that Space and returns the rest, in order,
+    /// for Chromium. Left to Chromium, the rule is resolved against the
+    /// last-active window, and `SpaceManager.routeAskedURL` then switches that
+    /// window to the target Space even while another window shows it: a link
+    /// from another application has no source window to keep.
+    /// `SpaceManager.openExternalURLs` opens it in a window already showing
+    /// the Space instead. "Ask every time" and Kiosk targets, and URLs no rule
+    /// matches, keep Chromium's path. Only live targets match, as only they
+    /// reach Chromium's table (`SpaceManager.pushRoutingTableToChromium`).
+    @MainActor
+    private func routeExternalOpensBySpaceRules(
+        _ requests: [ExternalOpenURL]
+    ) -> [ExternalOpenURL] {
+        let manager = SpaceManager.shared
+        let rules = manager.allRules.filter {
+            manager.isLiveURLRuleTarget($0.spaceId)
+        }
+        guard !rules.isEmpty else { return requests }
+
+        var unmatched: [ExternalOpenURL] = []
+        var urlsByTargetSpaceId: [String: [String]] = [:]
+        for request in requests {
+            guard let rule = URLRouter.matchingRule(for: request.url, rules: rules),
+                  case let .openInSpace(targetSpaceId) =
+                    ExternalKioskURLRuleResolver.sourceAppRuleDecision(for: rule) else {
+                unmatched.append(request)
+                continue
+            }
+            AppLogInfo(
+                "[ExternalLinks] URL rule url=\(request.url.scheme ?? "unknown")://"
+                    + "\(request.url.host ?? "no-host") "
+                    + "decision=openInSpace:\(targetSpaceId)"
+            )
+            urlsByTargetSpaceId[targetSpaceId, default: []]
+                .append(request.url.absoluteString)
+        }
+        for (targetSpaceId, urlStrings) in urlsByTargetSpaceId {
+            manager.openExternalURLs(urlStrings,
+                                     inURLRuleTargetSpaceId: targetSpaceId)
+        }
+        return unmatched
     }
 
     /// Opens every request whose sender matches an App rule and returns the

@@ -25,6 +25,28 @@ legacy numbered IDs. For example, Figma names `1`, `A`, and `?` map to
 `phi-icon-number-1`, `phi-icon-letter-a`, and
 `phi-icon-question-mark`.
 
+## Phi Icon Artwork
+
+Picture icons use Heroicons v2 mini (20px solid, MIT, credited in
+`Resources/credits.html`). Letters, numbers and punctuation are drawn by hand
+and are not generated.
+
+`scripts/generate-phi-icons.py` writes each picture icon's image set: a black
+SVG for the light appearance and a white SVG for the dark one, both inset with
+`translate(2 2) scale(0.8)`. The script's `ICONS` list maps each asset slug to
+its Heroicons name. Original icons keep their v1 slugs (`phi-icon-mail` draws
+Heroicons `envelope`), so stored selections never change.
+
+To add an icon, add it to `ICONS` in the script and to `PhiIconCatalog.all`,
+then run:
+
+```sh
+python3 scripts/generate-phi-icons.py
+```
+
+The script downloads the pinned Heroicons release from npm. Pass
+`--source /path/to/heroicons.tgz` to use a local copy.
+
 ## Emoji Metadata Source
 
 Emoji metadata is generated from Unicode's official `emoji-test.txt` file:

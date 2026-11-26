@@ -5,6 +5,7 @@
 
 import Foundation
 import AppKit
+import CoreData
 import SwiftData
 import Combine
 
@@ -151,18 +152,31 @@ class LocalStore {
             return
         }
         
-        let configuration = ModelConfiguration(url: userStorageURL.appendingPathComponent("LocalStore.sqlite"))
-        
-        do {
-            let modelContainer = try ModelContainer(
-                for: TabDataModel.self,
-                ProfileModel.self,
-                SpaceModel.self,
-                SpaceURLRule.self,
-                BrowserDataSettingsModel.self,
-                migrationPlan: TabDataModelMigrationPlan.self,
-                configurations: configuration
-            )
+        let storeFileURL = userStorageURL.appendingPathComponent(Self.compatibilityConfiguration.storeFilename)
+        var openResult = Result { try Self.makeModelContainer(storeURL: storeFileURL) }
+        if case .failure(let error) = openResult {
+            AppLogError("Failed to create ModelContainer: \(error)")
+            // Only a store proven to match none of the shipped schemas is moved
+            // aside. Any other failure keeps the files in place and the store
+            // closed, exactly as before.
+            if Self.storeHasUnrecognisedSchema(at: storeFileURL) {
+                do {
+                    let quarantine = try compatibilityController.quarantineUnrecognisedStore(at: userStorageURL)
+                    AppLogError(
+                        "[LocalStore] Store schema matches no known format; moved it to \(quarantine.directoryName) and creating an empty store"
+                    )
+                    openResult = Result { try Self.makeModelContainer(storeURL: storeFileURL) }
+                    if case .failure(let retryError) = openResult {
+                        AppLogError("Failed to create ModelContainer after quarantine: \(retryError)")
+                    }
+                } catch {
+                    AppLogError("[LocalStore] Failed to quarantine unrecognised store: \(error)")
+                }
+            }
+        }
+
+        switch openResult {
+        case .success(let modelContainer):
             container = modelContainer
             let actor = LocalStoreActor(modelContainer: modelContainer)
             writeActor = actor
@@ -185,11 +199,81 @@ class LocalStore {
             // rows. Since repair is fire-and-forget, readers must also tolerate duplicate keys; both
             // protections are necessary (see healDuplicatePinnedTabRows).
             healDuplicatePinnedTabRows()
-        } catch {
-            AppLogError("Failed to create ModelContainer: \(error)")
+        case .failure(let error):
+            compatibilityStatus = .failed(error.localizedDescription)
             container = nil
             writeActor = nil
             writeJobContinuation = nil
+            if presentsCompatibilityAlerts {
+                Self.runOpenFailedAlertOnce(forStoreAt: userStorageURL)
+            }
+        }
+    }
+
+    private static func makeModelContainer(storeURL: URL) throws -> ModelContainer {
+        try ModelContainer(
+            for: TabDataModel.self,
+            ProfileModel.self,
+            SpaceModel.self,
+            SpaceURLRule.self,
+            BrowserDataSettingsModel.self,
+            migrationPlan: TabDataModelMigrationPlan.self,
+            configurations: ModelConfiguration(url: storeURL)
+        )
+    }
+
+    /// True only when the store's Core Data metadata is readable and matches
+    /// none of the schemas in `TabDataModelMigrationPlan`, such as a store
+    /// written before `TabDataModelSchemaV1`. Unreadable metadata, or any
+    /// schema that cannot be checked, returns false so the store is kept.
+    /// SwiftData reports this case with different errors on different macOS
+    /// versions, so the decision is made from the metadata, not the error.
+    static func storeHasUnrecognisedSchema(at storeURL: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: storeURL.path),
+              let metadata = try? NSPersistentStoreCoordinator.metadataForPersistentStore(
+                type: .sqlite,
+                at: storeURL
+              ) else {
+            return false
+        }
+        for schema in TabDataModelMigrationPlan.schemas {
+            guard let model = NSManagedObjectModel.makeManagedObjectModel(for: schema.models) else {
+                return false
+            }
+            if model.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata) {
+                return false
+            }
+        }
+        return true
+    }
+
+    @MainActor private static var storesWithOpenFailedAlert: Set<String> = []
+
+    /// Each failed open builds a new LocalStore (Guest sign-in retries do), so
+    /// the alert is shown once per store directory per launch.
+    private static func runOpenFailedAlertOnce(forStoreAt storeDirectory: URL) {
+        Task { @MainActor in
+            guard storesWithOpenFailedAlert.insert(storeDirectory.standardizedFileURL.path).inserted else {
+                return
+            }
+            let alert = NSAlert()
+            alert.messageText = NSLocalizedString(
+                "localData.openFailedAlert.title",
+                value: "Phi Couldn’t Open Local Browser Data",
+                comment: "Local data alert - title when the local database on this Mac could not be opened"
+            )
+            alert.informativeText = NSLocalizedString(
+                "localData.openFailedAlert.message",
+                value: "Your Spaces, pinned tabs and bookmarks on this Mac can’t be shown or saved right now. Your data has not been changed. Quit and reopen Phi to try again.",
+                comment: "Local data alert - body when the local database could not be opened; explains the effect and that the data was not changed"
+            )
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: NSLocalizedString(
+                "localData.openFailedAlert.dismissButton",
+                value: "OK",
+                comment: "Local data alert - button that dismisses the alert shown when the local database could not be opened"
+            ))
+            alert.runModal()
         }
     }
 

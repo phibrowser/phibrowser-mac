@@ -148,8 +148,8 @@ final class SidebarRowReuseTests: XCTestCase {
                     XCTAssertEqual(cell.frame.minX, indent, accuracy: 0.5)
                     XCTAssertEqual(cell.frame.width, outline.bounds.width - indent, accuracy: 0.5)
                     XCTAssertEqual(cell.frame.height, 36, accuracy: 0.5)
-                    let host = try XCTUnwrap(cell.subviews.compactMap { $0 as? ThemedHostingView }.first)
-                    XCTAssertEqual(host.frame, cell.bounds)
+                    let content = try XCTUnwrap(cell.subviews.compactMap { $0 as? SidebarBookmarkRowContentView }.first)
+                    XCTAssertEqual(content.frame, cell.bounds)
                 }
             }
         }
@@ -336,7 +336,7 @@ final class SidebarRowReuseTests: XCTestCase {
         defer { window.close() }
         window.contentView = cell
         window.orderFront(nil)
-        let hosting = try XCTUnwrap(cell.subviews.compactMap { $0 as? ThemedHostingView }.first)
+        let tabView = try XCTUnwrap(cell.subviews.compactMap { $0 as? SideTabView }.first)
         for (index, width) in [180.0, 320.0, 240.0].enumerated() {
             cell.prepareForReuse()
             let tab = Tab(guid: 7500 + index, url: "data:text/html,\(index)", isActive: false,
@@ -344,7 +344,7 @@ final class SidebarRowReuseTests: XCTestCase {
             cell.configure(with: tab)
             window.setContentSize(NSSize(width: width, height: 36))
             cell.layoutSubtreeIfNeeded()
-            XCTAssertEqual(hosting.frame, cell.bounds)
+            XCTAssertEqual(tabView.frame, cell.bounds)
             XCTAssertTrue(cell.item === tab)
         }
     }

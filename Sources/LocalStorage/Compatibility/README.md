@@ -69,6 +69,39 @@ Multiple backups can exist at the same time. For example, if v4 and v5 both
 created backups, a v4 app can restore the v4 backup while a v3 app can restore
 the v3 backup.
 
+A backup is skipped when an existing backup of the same format, taken before the
+same upgrade, already holds the same bytes. Each record stores a SHA-256
+`contentDigest` of `LocalStore.sqlite` and a non-empty `-wal`. Records written
+before digests existed are hashed from their files. Without this, a store that
+keeps failing to open never advances the manifest, so every launch or Guest
+sign-in retry copied it again. With no store file there is nothing to back up,
+so none is made.
+
+## Unrecognised Stores
+
+The manifest's format is not proof of the files' schema. A store older than
+`TabDataModelSchemaV1`, left by 0.x installs, matches no schema in
+`TabDataModelMigrationPlan`, so SwiftData cannot open it on any launch.
+
+When the `ModelContainer` fails to open, `LocalStore` reads the store's Core
+Data metadata and compares it with every schema in the plan. The store counts as
+unrecognised only when the metadata is readable and matches none of them. In
+that case `quarantineUnrecognisedStore(at:)`:
+
+- moves the store files into a backup directory recorded with format 0 and
+  `isQuarantinedUnrecognisedStore`. No app reads format 0, so it is never
+  restored;
+- removes earlier backups holding the same bytes, because they were labelled
+  with a readable format the files never had;
+- records the current format as active.
+
+`LocalStore` then opens once more, which creates an empty store. Any other open
+failure leaves the files in place and the store closed, sets
+`compatibilityStatus` to `.failed`, and shows a "Phi Couldn't Open Local Browser
+Data" alert once per store directory per launch. The decision is made from the
+metadata, not from the SwiftData error, because macOS versions report this case
+with different errors.
+
 A restored backup is consumed only after SwiftData/Core Data opens the restored
 store successfully. The selected backup remains available between `prepareStore`
 and `markStoreOpenedSuccessfully` so a failed open does not delete the last

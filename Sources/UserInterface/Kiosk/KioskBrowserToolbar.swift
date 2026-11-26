@@ -374,6 +374,7 @@ private struct KioskProfileMenu: View {
     @ObservedObject private var profileManager: ProfileManager
     let currentProfileId: String
     let onSelect: (String) -> Void
+    @State private var menuPresenter = KioskProfileMenuPresenter()
 
     init(
         currentProfileId: String,
@@ -385,43 +386,56 @@ private struct KioskProfileMenu: View {
         self.onSelect = onSelect
     }
 
+    /// The glyph cropped out of the asset's padded 32-point canvas, so the
+    /// label centers the visible icon against the name.
+    private static let profileIcon: NSImage = {
+        let source = NSImage(resource: .settingProfileIcon)
+        let glyphRect = NSRect(x: 7, y: 9, width: 18, height: 15)
+        let scale: CGFloat = 0.7
+        let icon = NSImage(
+            size: NSSize(width: glyphRect.width * scale, height: glyphRect.height * scale),
+            flipped: false
+        ) { rect in
+            source.draw(in: rect, from: glyphRect, operation: .sourceOver, fraction: 1)
+            return true
+        }
+        icon.isTemplate = true
+        return icon
+    }()
+
     private var currentProfileName: String {
         profileManager.profile(for: currentProfileId)?.displayName
             ?? currentProfileId
     }
 
     var body: some View {
-        Menu {
-            ForEach(profileManager.userAssignableProfiles) { profile in
-                Button {
-                    onSelect(profile.profileId)
-                } label: {
-                    HStack {
-                        Text(verbatim: profile.displayName)
-                        if profile.profileId == currentProfileId {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-                .disabled(profile.profileId == currentProfileId)
-            }
+        Button {
+            menuPresenter.anchorView?.showMenu()
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
+                Image(nsImage: Self.profileIcon)
+                    .accessibilityHidden(true)
                 Text(verbatim: currentProfileName)
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.tail)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, 7)
             .frame(height: 24)
-            .background(Capsule().fill(Color.primary.opacity(0.07)))
             .contentShape(Capsule())
         }
-        .menuStyle(.borderlessButton)
         .buttonStyle(.plain)
+        .background {
+            KioskProfileMenuAnchor(
+                profiles: profileManager.userAssignableProfiles,
+                currentProfileId: currentProfileId,
+                onSelect: onSelect,
+                presenter: menuPresenter
+            )
+        }
         .accessibilityLabel(NSLocalizedString(
             "kiosk.toolbar.profileMenu.accessibilityLabel",
             value: "Switch Profile",
@@ -433,9 +447,66 @@ private struct KioskProfileMenu: View {
     }
 }
 
+private final class KioskProfileMenuPresenter {
+    weak var anchorView: KioskProfileMenuAnchorView?
+}
+
+private struct KioskProfileMenuAnchor: NSViewRepresentable {
+    let profiles: [PhiBrowserProfile]
+    let currentProfileId: String
+    let onSelect: (String) -> Void
+    let presenter: KioskProfileMenuPresenter
+
+    func makeNSView(context: Context) -> KioskProfileMenuAnchorView {
+        let view = KioskProfileMenuAnchorView()
+        presenter.anchorView = view
+        return view
+    }
+
+    func updateNSView(_ view: KioskProfileMenuAnchorView, context: Context) {
+        view.profiles = profiles
+        view.currentProfileId = currentProfileId
+        view.onSelect = onSelect
+    }
+}
+
+private final class KioskProfileMenuAnchorView: NSView {
+    var profiles: [PhiBrowserProfile] = []
+    var currentProfileId = ""
+    var onSelect: ((String) -> Void)?
+
+    func showMenu() {
+        guard window != nil, !profiles.isEmpty else { return }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for profile in profiles {
+            let item = NSMenuItem(
+                title: profile.displayName,
+                action: #selector(selectProfile(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = profile.profileId
+            let isCurrent = profile.profileId == currentProfileId
+            item.state = isCurrent ? .on : .off
+            item.isEnabled = !isCurrent
+            menu.addItem(item)
+        }
+        let bottomLeading = NSPoint(
+            x: bounds.minX,
+            y: isFlipped ? bounds.maxY : bounds.minY
+        )
+        menu.popUp(positioning: nil, at: bottomLeading, in: self)
+    }
+
+    @objc private func selectProfile(_ sender: NSMenuItem) {
+        guard let profileId = sender.representedObject as? String else { return }
+        onSelect?(profileId)
+    }
+}
+
 private struct KioskToolbarActions: View {
     let state: KioskBrowserState
-
     @State private var isExtensionPopoverShown = false
     @State private var copyButtonAnchorView: NSView?
     @State private var showCopyConfirmation = false
@@ -463,17 +534,48 @@ private struct KioskToolbarActions: View {
                 .allowsHitTesting(false)
             )
             .customTooltip {
-                CommandShortcutTooltipContent(
-                    title: NSLocalizedString(
-                        "browser.webContentAddressBar.copyURLTooltip",
-                        value: "Copy URL",
-                        comment: "Copy URL shortcut tooltip title"
-                    ),
-                    command: .PHI_COPY_URL
-                )
+                KioskCopyURLTooltipContent(state: state)
             }
         }
         .frame(height: 24)
+    }
+}
+
+/// Observes `SpaceManager` only while the tooltip is hosted, so Space changes
+/// don't re-render the toolbar actions row.
+private struct KioskCopyURLTooltipContent: View {
+    let state: KioskBrowserState
+    @ObservedObject private var spaceManager: SpaceManager = .shared
+
+    var body: some View {
+        CommandShortcutTooltipContent(
+            title: NSLocalizedString(
+                "browser.webContentAddressBar.copyURLTooltip",
+                value: "Copy URL",
+                comment: "Copy URL shortcut tooltip title"
+            ),
+            command: .PHI_COPY_URL
+        )
+        .kioskPrimarySpaceTheme(
+            KioskSpaceMenuTargetResolver.primarySpaceTheme(
+                for: state,
+                preferredSpaceId: state.preferredSpaceId,
+                in: spaceManager
+            )
+        )
+    }
+}
+
+private extension View {
+    /// Overrides the tooltip's theme with the Kiosk's primary Space theme;
+    /// nil keeps the Kiosk window's fixed palette.
+    @ViewBuilder
+    func kioskPrimarySpaceTheme(_ theme: Theme?) -> some View {
+        if let theme {
+            environment(\.phiTheme, theme)
+        } else {
+            self
+        }
     }
 }
 
@@ -540,6 +642,33 @@ private struct KioskCopyURLButtonView: View {
 }
 
 enum KioskSpaceMenuTargetResolver {
+    /// Spaces a Kiosk can hand its page to: none while incognito or with the
+    /// Spaces feature turned off.
+    @MainActor
+    static func availableSpaces(for state: KioskBrowserState, in spaceManager: SpaceManager) -> [Space] {
+        guard !state.isIncognito,
+              PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue() else {
+            return []
+        }
+        return spaceManager.spaces
+    }
+
+    /// Theme of the Space the toolbar's "Open in" action targets, or nil when
+    /// there is none. The Kiosk window keeps a fixed palette; its toolbar
+    /// tooltips take this theme instead so they match the Space they point at.
+    @MainActor
+    static func primarySpaceTheme(
+        for state: KioskBrowserState,
+        preferredSpaceId: String?,
+        in spaceManager: SpaceManager
+    ) -> Theme? {
+        primarySpace(
+            in: availableSpaces(for: state, in: spaceManager),
+            preferredSpaceId: preferredSpaceId,
+            activeSpaceId: spaceManager.activeSpaceId
+        ).map { spaceManager.resolvedTheme(forSpaceId: $0.spaceId) }
+    }
+
     static func primarySpace(
         in spaces: [Space],
         preferredSpaceId: String? = nil,
@@ -596,11 +725,7 @@ private struct KioskSpaceMenu: View {
     }
 
     private var availableSpaces: [Space] {
-        guard !state.isIncognito,
-              PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue() else {
-            return []
-        }
-        return spaceManager.spaces
+        KioskSpaceMenuTargetResolver.availableSpaces(for: state, in: spaceManager)
     }
 
     private var primarySpace: Space? {
@@ -669,6 +794,7 @@ private struct KioskSpaceMenu: View {
                     title: primaryActionTooltipTitle,
                     command: .PHI_KIOSK_OPEN_IN_SPACE
                 )
+                .kioskPrimarySpaceTheme(primarySpace.map { spaceManager.resolvedTheme(forSpaceId: $0.spaceId) })
             }
 
             Divider()
@@ -696,6 +822,7 @@ private struct KioskSpaceMenu: View {
                     title: spaceListTitle,
                     command: .PHI_KIOSK_CHOOSE_SPACE
                 )
+                .kioskPrimarySpaceTheme(primarySpace.map { spaceManager.resolvedTheme(forSpaceId: $0.spaceId) })
             }
             .onHover { isSpaceListHovered = $0 }
             .background {
@@ -780,6 +907,7 @@ private final class KioskSpaceMenuAnchorView: NSView {
             item.state = space.spaceId == primarySpaceId ? .on : .off
             menu.addItem(item)
         }
+        window?.customTooltipController.dismissAll()
         isShowingMenu = true
         defer { isShowingMenu = false }
         let bottomLeading = NSPoint(

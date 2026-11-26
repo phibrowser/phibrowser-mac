@@ -128,7 +128,11 @@ private struct LibraryContentView: View {
     }
     @State private var selectionAnimationTriggers: [LibraryViewModule.Section: Int] = [:]
     @State private var hoveredSection: LibraryViewModule.Section?
-    @State private var folioAvailable = SaveForLaterService.featureEnabled
+    @State private var folioFlagEnabled = SaveForLaterService.featureEnabled
+    /// Folio is never offered in an off-the-record window: Mirage, which
+    /// serves the library page, does not run there (see
+    /// `SaveForLaterService.isAvailable(in:)`).
+    private var folioAvailable: Bool { folioFlagEnabled && !browserState.isIncognito }
     @State private var sidebarWidth: CGFloat = Self.minimumSidebarWidth
     private var compactSidebar: Bool { sidebarWidth < Self.compactSidebarThreshold }
     @State private var floatingSidebarVisible = false
@@ -193,7 +197,7 @@ private struct LibraryContentView: View {
         .themedForeground(.textPrimary)
         .tint(color(.themeColor))
         .task(id: selection) {
-            folioAvailable = SaveForLaterService.featureEnabled
+            folioFlagEnabled = SaveForLaterService.featureEnabled
             if selection == .folio, !folioAvailable {
                 // Folio went away under a stale selection: fall back.
                 selection = .downloads
@@ -207,7 +211,7 @@ private struct LibraryContentView: View {
         // The Folio app connecting or quitting flips Folio while the Library
         // is open; re-read it rather than wait for the next selection.
         .onReceive(NotificationCenter.default.publisher(for: .agentCompanionsDidChange)) { _ in
-            folioAvailable = SaveForLaterService.featureEnabled
+            folioFlagEnabled = SaveForLaterService.featureEnabled
             if selection == .folio, !folioAvailable {
                 selection = .downloads
             }

@@ -92,6 +92,7 @@ build alone is not verification.
 | TOUCH-011 | Sidebar, tab strip | Fix: removed the window-level tap recognizers that broke taps on web content | Verified with touch (A1, A3) |
 | TOUCH-012 | Sidebar tab rows | Replaced PR #324's touch handling with TOUCH-001; touch and hold opens the menu again | Verified with touch |
 | TOUCH-013 | Top address bar (Balanced, Comfortable) | A tap on the trailing controls' area puts the bar in its hover state for 4 s | Verified with touch |
+| TOUCH-014 | Edge-to-edge window drag notch (Performance) | Tap anywhere in the top 20 pt of the page to reveal the handle for 4 s. Drag or double-tap the visible handle using the native titlebar gestures. | Hit routing and timeout covered by XCTest; pending device verification |
 
 ### TOUCH-001 — Keep press-scale recognizers off direct touch
 

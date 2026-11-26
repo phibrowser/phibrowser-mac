@@ -463,6 +463,173 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         XCTAssertTrue(manifest.backups.isEmpty)
     }
 
+    func testPrepareDoesNotRepeatBackupWhileStoreIsUnchanged() throws {
+        let directory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: directory, contents: "v4")
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 4, backups: []),
+            to: directory
+        )
+        let controller = makeController(currentStoreFormatVersion: 5, backupPolicy: .beforeSchemaUpgrade)
+
+        guard case .ready(let firstPlan) = try controller.prepareStore(at: directory) else {
+            return XCTFail("Expected store preparation to succeed.")
+        }
+        XCTAssertNotNil(firstPlan.createdBackup?.contentDigest)
+        // The open fails, so the manifest never advances past format 4.
+        guard case .ready(let retryPlan) = try controller.prepareStore(at: directory) else {
+            return XCTFail("Expected store preparation to succeed.")
+        }
+        XCTAssertNil(retryPlan.createdBackup)
+        XCTAssertEqual(try readManifest(from: directory).backups.count, 1)
+
+        try writeText("v4-changed-main", to: directory.appendingPathComponent("LocalStore.sqlite"))
+        guard case .ready(let changedPlan) = try controller.prepareStore(at: directory) else {
+            return XCTFail("Expected store preparation to succeed.")
+        }
+        XCTAssertNotNil(changedPlan.createdBackup)
+        XCTAssertEqual(try readManifest(from: directory).backups.count, 2)
+    }
+
+    func testPrepareRecognisesBackupWrittenBeforeDigestsExisted() throws {
+        let directory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: directory, contents: "v4")
+        let legacyBackupDirectory = directory.appendingPathComponent("Backups/legacy", isDirectory: true)
+        try writeStoreFiles(in: legacyBackupDirectory, contents: "v4")
+        let legacyBackup = LocalStoreBackupRecord(
+            id: "legacy",
+            storeFormatVersion: 4,
+            directoryName: "Backups/legacy",
+            createdAt: Date(timeIntervalSince1970: 4),
+            createdBeforeUpgradingToStoreFormatVersion: 5
+        )
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 4, backups: [legacyBackup]),
+            to: directory
+        )
+        let controller = makeController(currentStoreFormatVersion: 5, backupPolicy: .beforeSchemaUpgrade)
+
+        guard case .ready(let plan) = try controller.prepareStore(at: directory) else {
+            return XCTFail("Expected store preparation to succeed.")
+        }
+
+        XCTAssertNil(plan.createdBackup)
+        XCTAssertEqual(try readManifest(from: directory).backups.map(\.id), ["legacy"])
+    }
+
+    func testQuarantineMovesUnrecognisedStoreAndDropsMislabelledCopies() throws {
+        let directory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: directory, contents: "unknown")
+        let unrelatedBackup = try createBackup(in: directory, id: "unrelated", storeFormatVersion: 3)
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 4, backups: [unrelatedBackup]),
+            to: directory
+        )
+        let controller = makeController(currentStoreFormatVersion: 5, backupPolicy: .beforeSchemaUpgrade)
+        guard case .ready(let plan) = try controller.prepareStore(at: directory) else {
+            return XCTFail("Expected store preparation to succeed.")
+        }
+        let mislabelledCopy = try XCTUnwrap(plan.createdBackup)
+
+        let quarantine = try controller.quarantineUnrecognisedStore(at: directory)
+
+        XCTAssertEqual(quarantine.storeFormatVersion, LocalStoreBackupRecord.unrecognisedStoreFormatVersion)
+        XCTAssertEqual(quarantine.isQuarantinedUnrecognisedStore, true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("LocalStore.sqlite").path))
+        let quarantineDirectory = directory.appendingPathComponent(quarantine.directoryName)
+        XCTAssertEqual(try readText(quarantineDirectory.appendingPathComponent("LocalStore.sqlite")), "unknown-main")
+        XCTAssertEqual(try readText(quarantineDirectory.appendingPathComponent("LocalStore.sqlite-wal")), "unknown-wal")
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent(mislabelledCopy.directoryName).path
+        ))
+
+        let manifest = try readManifest(from: directory)
+        XCTAssertEqual(manifest.activeStoreFormatVersion, 5)
+        XCTAssertEqual(manifest.backups.map(\.id), [unrelatedBackup.id, quarantine.id])
+    }
+
+    func testPrepareSkipsBackupWhenStoreFileIsMissing() throws {
+        let directory = try makeTemporaryStoreDirectory()
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 4, backups: []),
+            to: directory
+        )
+        let controller = makeController(currentStoreFormatVersion: 5, backupPolicy: .beforeSchemaUpgrade)
+
+        guard case .ready(let plan) = try controller.prepareStore(at: directory) else {
+            return XCTFail("Expected store preparation to succeed without a store file.")
+        }
+
+        XCTAssertNil(plan.createdBackup)
+        XCTAssertTrue(try readManifest(from: directory).backups.isEmpty)
+    }
+
+    func testQuarantinedStoreIsNeverRestored() throws {
+        let directory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: directory, contents: "unknown")
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 4, backups: []),
+            to: directory
+        )
+        try makeController(currentStoreFormatVersion: 6).quarantineUnrecognisedStore(at: directory)
+
+        // An older app that reads formats 1...5 finds the active format 6 too
+        // new and must not fall back to the quarantined files.
+        let olderApp = makeController(currentStoreFormatVersion: 5)
+        guard case .requiresNewerApp(let issue) = try olderApp.prepareStore(at: directory) else {
+            return XCTFail("Expected the quarantined store to be ignored as a recovery point.")
+        }
+        XCTAssertEqual(issue.activeStoreFormatVersion, 6)
+    }
+
+    func testUnrecognisedSchemaDetectionAcceptsShippedSchemas() throws {
+        let versionOneURL = try makeTemporaryStoreDirectory().appendingPathComponent("LocalStore.sqlite")
+        try createSwiftDataStore(for: TabDataModelSchemaV1.self, at: versionOneURL)
+        XCTAssertFalse(LocalStore.storeHasUnrecognisedSchema(at: versionOneURL))
+
+        let currentDirectory = try makeTemporaryStoreDirectory()
+        let currentStore = LocalStore(
+            account: Account(userID: UUID().uuidString),
+            storeDirectoryURL: currentDirectory,
+            presentsCompatibilityAlerts: false
+        )
+        XCTAssertNotNil(currentStore.getMainContext())
+        XCTAssertFalse(LocalStore.storeHasUnrecognisedSchema(
+            at: currentDirectory.appendingPathComponent("LocalStore.sqlite")
+        ))
+
+        let missingURL = try makeTemporaryStoreDirectory().appendingPathComponent("LocalStore.sqlite")
+        XCTAssertFalse(LocalStore.storeHasUnrecognisedSchema(at: missingURL))
+    }
+
+    func testLocalStoreQuarantinesStoreOlderThanSchemaV1AndOpensEmptyStore() throws {
+        let directory = try makeTemporaryStoreDirectory()
+        let storeURL = directory.appendingPathComponent("LocalStore.sqlite")
+        try createSwiftDataStore(for: PreSchemaV1TestSchema.self, at: storeURL)
+        XCTAssertTrue(LocalStore.storeHasUnrecognisedSchema(at: storeURL))
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 9, backups: []),
+            to: directory
+        )
+
+        let store = LocalStore(
+            account: Account(userID: UUID().uuidString),
+            storeDirectoryURL: directory,
+            presentsCompatibilityAlerts: false
+        )
+
+        XCTAssertNotNil(store.getMainContext())
+        XCTAssertFalse(LocalStore.storeHasUnrecognisedSchema(at: storeURL))
+        let manifest = try readManifest(from: directory)
+        XCTAssertEqual(manifest.activeStoreFormatVersion, LocalStore.compatibilityConfiguration.currentStoreFormatVersion)
+        let quarantine = try XCTUnwrap(manifest.backups.first)
+        XCTAssertEqual(manifest.backups.count, 1, "The pre-open copy holds the same bytes and must be dropped.")
+        XCTAssertEqual(quarantine.isQuarantinedUnrecognisedStore, true)
+        XCTAssertTrue(LocalStore.storeHasUnrecognisedSchema(
+            at: directory.appendingPathComponent(quarantine.directoryName).appendingPathComponent("LocalStore.sqlite")
+        ))
+    }
+
     private func makeController(
         currentStoreFormatVersion: Int,
         readableStoreFormatVersions: ClosedRange<Int>? = nil,
@@ -550,6 +717,14 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         try context.save()
     }
 
+    private func createSwiftDataStore(for schema: any VersionedSchema.Type, at url: URL) throws {
+        let container = try ModelContainer(
+            for: Schema(versionedSchema: schema),
+            configurations: ModelConfiguration(url: url)
+        )
+        try container.mainContext.save()
+    }
+
     private func openAndMigrateStoreToVersionTwo(at url: URL) throws {
         let configuration = ModelConfiguration(url: url)
         let container = try ModelContainer(
@@ -628,6 +803,48 @@ private enum CompatibilityTestSchemaV2: VersionedSchema {
             self.id = id
             self.title = title
             self.subtitle = subtitle
+        }
+    }
+}
+
+/// The tab model as shipped before `TabDataModelSchemaV1`: no `isBookmark`,
+/// `needUpdateMetaData`, `spaceId`, `profileId` or `source`.
+private enum PreSchemaV1TestSchema: VersionedSchema {
+    static var versionIdentifier = Schema.Version(0, 9, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [TabDataModel.self]
+    }
+
+    @Model
+    final class TabDataModel {
+        var guid: String
+        var title: String
+        var index: Int
+        var url: URL
+        var favicon: Data?
+        var createdDate: Date
+        var updatedDate: Date
+        var isPinned = false
+        var overrideTitle: String?
+        var isOpenned = false
+        var isFolder = false
+        var isCreatedByChromium = false
+        var associatedProfileIdentifier: String?
+
+        @Relationship(inverse: \TabDataModel.children)
+        var parent: TabDataModel?
+
+        @Relationship(deleteRule: .cascade)
+        var children: [TabDataModel] = []
+
+        init(guid: String, title: String, index: Int, url: URL) {
+            self.guid = guid
+            self.title = title
+            self.index = index
+            self.url = url
+            createdDate = Date()
+            updatedDate = Date()
         }
     }
 }

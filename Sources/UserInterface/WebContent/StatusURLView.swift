@@ -98,6 +98,10 @@ extension StatusURLView {
     static func makeHostingView(viewModel: StatusURLViewModel, themeSource: ThemeStateProvider? = nil) -> StatusURLHostingView {
         let hostingView = StatusURLHostingView(rootView: StatusURLView(viewModel: viewModel), themeSource: themeSource)
         hostingView.translatesAutoresizingMaskIntoConstraints = false
+        // Sized by its content within the container's width limit; min and
+        // max size constraints would be measured again on every step of a
+        // window resize, while the bubble is hidden too.
+        hostingView.sizingOptions = [.intrinsicContentSize]
 
         hostingView.wantsLayer = true
         hostingView.layer?.zPosition = 1000

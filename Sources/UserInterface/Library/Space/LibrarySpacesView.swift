@@ -160,6 +160,12 @@ struct LibrarySpacesView: View {
     private var creationCard: some View {
         LibrarySpaceCreationCard(browserState: browserState, manager: manager, width: Self.cardWidth, onClose: { restorePreview in
             AppLogInfo("[LibrarySpaces] create.close restorePreview=\(restorePreview)")
+            // End editing and take focus off the form before SwiftUI removes it,
+            // so the window's responder chain never keeps a focus proxy of the
+            // removed card (PHI-1968: KeyViewProxy read after its host was freed).
+            if let window = NSApp.keyWindow, window.firstResponder !== window {
+                window.makeFirstResponder(nil)
+            }
             isCreating = false
         }, onCreated: {
             AppLogInfo("[LibrarySpaces] create.completed space=\($0)")

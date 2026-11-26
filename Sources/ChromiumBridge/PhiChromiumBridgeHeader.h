@@ -1125,6 +1125,13 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// (skew).
 - (BOOL)openPhiChatLinks:(NSArray<NSString *> *)urlStrings;
 
+/// The tab sharing state visible from `windowId` changed. `snapshot` uses the
+/// keys documented at -getTabSharingSnapshotWithWindowId:. Sent only when the
+/// window's view of the selected session changes. Main thread. Callers must
+/// guard with respondsToSelector: (skew).
+- (void)tabSharingSnapshotDidChange:(NSDictionary<NSString *, id> *)snapshot
+                           windowId:(int64_t)windowId;
+
 @end
 
 @protocol PhiChromiumBridgeProtocol <NSObject>
@@ -2203,11 +2210,13 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // ==========================================================================
 
 /// Create a split from two to four existing tabs, in the given pane order.
-/// Chromium arranges the tabs next to each other in that order first (they
-/// take the group of whichever is active, else the first). Returns the
-/// split ID string, or nil when a tab is missing, already split, or
-/// repeated.
+/// The split stands where `anchorTabId`, one of `tabIds`, stands: Chromium
+/// lines the other tabs up around it in that order, in its group. Returns
+/// the split ID string, or nil when a tab is missing, already split, or
+/// repeated, the anchor is not one of them, or the anchor is grouped and a
+/// tab cannot join a tab group.
 - (NSString * _Nullable)createSplitWithTabIds:(NSArray<NSNumber *> *)tabIds
+                                   anchorTabId:(int64_t)anchorTabId
                                         layout:(NSString *)layout
                                       windowId:(int64_t)windowId;
 
@@ -2286,6 +2295,11 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 
 /// Returns all active split ID strings in the given window.
 - (NSArray<NSString *> *)listSplitsInWindow:(int64_t)windowId;
+
+/// The background color the tab's page reported, or nil before it reports
+/// one.
+- (NSColor * _Nullable)pageBackgroundColorForTabId:(int64_t)tabId
+                                          windowId:(int64_t)windowId;
 
 // ==========================================================================
 // Profile management (Mac → Chromium)
@@ -2606,6 +2620,46 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// an older framework.
 - (void)openBackgroundTabBypassingSpaceRoutingWithUrl:(NSString *)url
                                              windowId:(int64_t)windowId;
+
+/// Tab sharing snapshot keys (window-scoped; another profile's session is
+/// never included):
+///   @"revision"        (NSNumber *, uint64) — increases on every change.
+///   @"selectedSession" (NSDictionary *, absent when there is none) — the
+///                      latest started getDisplayMedia() session:
+///     @"sessionId"        (NSString *)  — opaque; pass back unchanged.
+///     @"capturerTabId"    (NSNumber *, int64) — the sharing (meeting) tab.
+///     @"capturerWindowId" (NSNumber *, int64) — absent when not in a window.
+///     @"surfaceType"      (NSString *)  — @"tab", @"window" or @"screen".
+///     @"sharedTabId"      (NSNumber *, int64) — tab surfaces only.
+///     @"sharedWindowId"   (NSNumber *, int64) — tab surfaces only.
+///     @"state"            (NSString *)  — @"active" or @"switching".
+///     @"canSwitch"        (NSNumber *, BOOL) — the session can switch tabs.
+/// Switch result keys:
+///   @"status" (NSString *) — @"success", @"stale", @"notAllowed", @"failed".
+///   @"reason" (NSString *, absent on success) — sessionEnded,
+///             selectionChanged, busy, switchingUnsupported, targetUnavailable,
+///             profileMismatch, policyBlocked, sourceChangeFailed,
+///             handleUnavailable or shutdown.
+/// Returns the tab sharing snapshot visible from `windowId`. Main thread.
+- (NSDictionary<NSString *, id> *)getTabSharingSnapshotWithWindowId:(int64_t)windowId;
+
+/// Whether `sessionId` can switch its shared tab to `targetTabId` right now.
+/// Returns a switch result; @"success" means allowed. Re-checked by
+/// -switchSharedTab..., so a stale answer can never bypass a policy.
+/// Main thread.
+- (NSDictionary<NSString *, id> *)
+    getTabSharingSwitchAvailabilityForSessionId:(NSString *)sessionId
+                                 targetWindowId:(int64_t)targetWindowId
+                                    targetTabId:(int64_t)targetTabId;
+
+/// Replaces the shared tab of `expectedSessionId`, which must still be the
+/// latest started session, with `targetTabId` without restarting the share.
+/// `completion` runs exactly once on the main thread with a switch result;
+/// @"success" means the capture engine finalized the new source.
+- (void)switchSharedTabWithExpectedSessionId:(NSString *)expectedSessionId
+                              targetWindowId:(int64_t)targetWindowId
+                                 targetTabId:(int64_t)targetTabId
+                                  completion:(void (^)(NSDictionary<NSString *, id> *result))completion;
 
 @end
 

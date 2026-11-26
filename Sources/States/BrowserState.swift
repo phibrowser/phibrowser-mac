@@ -423,6 +423,34 @@ class BrowserState {
             .eraseToAnyPublisher()
     }
 
+    /// Whether the window's sidebar takes its width from the page area:
+    /// false while it is collapsed and for the whole of a toggle in flight.
+    /// The page's sidebar-side inset follows this rather than
+    /// `sidebarCollapsed`, so it changes in the same turn as the page area's
+    /// frame.
+    var sidebarTakesPageSpace: Bool {
+        MainActor.assumeIsolated {
+            !isKioskWindow && (windowController?.mainSplitViewController.sidebarTakesPageSpace
+                ?? !layoutMode.isTraditional)
+        }
+    }
+
+    var sidebarTakesPageSpacePublisher: AnyPublisher<Bool, Never> {
+        windowControllerChanges.prepend(())
+            .map { [weak self] _ -> AnyPublisher<Bool, Never> in
+                MainActor.assumeIsolated {
+                    guard let self else { return Just(true).eraseToAnyPublisher() }
+                    guard !self.isKioskWindow, let controller = self.windowController else {
+                        return Just(self.sidebarTakesPageSpace).eraseToAnyPublisher()
+                    }
+                    return controller.mainSplitViewController.sidebarTakesPageSpacePublisher
+                }
+            }
+            .switchToLatest()
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
+
     var sidebarWidthPublisher: AnyPublisher<CGFloat, Never> {
         windowControllerChanges.prepend(())
             .map { [weak self] _ -> AnyPublisher<CGFloat, Never> in
@@ -548,6 +576,8 @@ class BrowserState {
     /// Reader View overlay state (full-pane reading surface over the origin
     /// tab); see the "Reader View overlay" section below.
     let readerOverlayState = BrowserReaderOverlayState()
+    /// Screen-share quick switch offered on hovered tab rows.
+    private(set) lazy var tabSharingState = BrowserTabSharingState(windowId: windowId)
     let themeContext: BrowserThemeContext
 
     /// Tracks in-flight tab dragging within this BrowserState (not a singleton).
@@ -882,6 +912,7 @@ class BrowserState {
                 }
                 .store(in: &cancellables)
             _ = extensionManager
+            tabSharingState.start()
 
             NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
                 .receive(on: DispatchQueue.main)
@@ -5204,7 +5235,7 @@ class BrowserState {
     /// publishes it once it arrives. Nothing happens while one is up or on
     /// its way.
     func requestLibraryPaneTab() {
-        guard SaveForLaterService.featureEnabled, libraryPaneTab == nil,
+        guard SaveForLaterService.isAvailable(in: self), libraryPaneTab == nil,
               !hasPendingLibraryPaneRequest else { return }
         let token = UUID().uuidString
         pendingLibraryPaneRequest = (token, Date())

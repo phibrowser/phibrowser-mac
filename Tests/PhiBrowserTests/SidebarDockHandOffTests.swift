@@ -473,8 +473,10 @@ final class SidebarDockHandOffTests: XCTestCase {
         let (split, host) = try visiblePanel()
 
         split.setSidebarCollapsed(false, animated: true)
-        let opacities = try sampleGlassOpacity(in: host, for: 0.2)
+        // The glide only: once it ends the panel fades off the open column.
+        let opacities = try sampleGlassOpacity(in: host, for: Host.sidebarHandOffDuration - 1.0 / 60)
 
+        XCTAssertFalse(opacities.isEmpty)
         XCTAssertTrue(opacities.allSatisfy { $0 > 0.99 }, "the page never shows through: \(opacities)")
         host.finishSidebarHandOffImmediately()
     }
@@ -572,6 +574,196 @@ final class SidebarDockHandOffTests: XCTestCase {
 
     // MARK: - Shell routing
 
+    func testTouchTapOnHiddenNotchBandRevealsOnlyTheNativeDragHandle() throws {
+        let key = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue
+        let previous = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(previous, forKey: key) }
+        UserDefaults.standard.set(true, forKey: key)
+        let (split, host) = try expandedColumn()
+        let shell = try XCTUnwrap(host.browserState?.windowController)
+        let content = shell.mainSplitViewController.webContentContainerViewController
+        let band = try XCTUnwrap(content.view.subviews.compactMap { $0 as? WindowDragNotchView }.first)
+        let window = try XCTUnwrap(split.view.window)
+        let frame = try XCTUnwrap(window.contentView?.superview)
+        split.view.layoutSubtreeIfNeeded()
+        let tap = band.convert(NSPoint(x: 20, y: band.bounds.midY), to: nil)
+        let center = band.convert(NSPoint(x: band.bounds.midX, y: band.bounds.midY), to: nil)
+        let page = band.convert(NSPoint(x: 20, y: band.bounds.minY - 2), to: nil)
+        band.supportsTouch = { _ in false }
+        XCTAssertFalse(frame.hitTest(tap) === band, "the hidden band passes through on a pointer-only display")
+        band.supportsTouch = { _ in true }
+        XCTAssertTrue(frame.hitTest(tap) === band, "a touch away from the centered handle reaches the recognizer")
+        XCTAssertFalse(frame.hitTest(page) === band)
+        let recognizer = try XCTUnwrap(band.gestureRecognizers.compactMap { $0 as? NSClickGestureRecognizer }.first)
+        XCTAssertEqual(recognizer.allowedTouchTypes, .direct)
+        XCTAssertEqual(recognizer.buttonMask, 0)
+
+        band.revealForTouchTap(at: page)
+        XCTAssertTrue(frame.hitTest(center) === band, "a tap below the band does not reveal it")
+        band.revealForTouchTap(at: tap)
+        band.mouseExited(with: try XCTUnwrap(NSEvent.enterExitEvent(with: .mouseExited, location: tap,
+            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        XCTAssertTrue(frame.hitTest(center) === frame, "the revealed handle uses native window gestures")
+        XCTAssertFalse(frame.hitTest(tap) === band, "touches beside the visible handle reach the page")
+        RunLoop.main.run(until: Date().addingTimeInterval(4))
+        XCTAssertTrue(frame.hitTest(tap) === band, "the band accepts a new reveal after the timeout")
+    }
+
+    func testEdgeToEdgeWindowDragNotchOnlyTakesHitsWhileTheTopEdgeIsHovered() throws {
+        let key = PhiPreferences.GeneralSettings.edgeToEdgeWebContent.rawValue
+        let previous = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(previous, forKey: key) }
+        UserDefaults.standard.set(true, forKey: key)
+
+        let (split, host) = try expandedColumn()
+        let window = try XCTUnwrap(split.view.window)
+        let state = try XCTUnwrap(host.browserState)
+        state.themeContext.setTheme(.mint)
+        let content = try XCTUnwrap(state.windowController).mainSplitViewController.webContentContainerViewController
+        let band = try XCTUnwrap(content.view.subviews.first { $0 is TitlebarAwareHitTestable })
+        let frameView = try XCTUnwrap(window.contentView?.superview)
+
+        func trackingEvent(_ type: NSEvent.EventType, at location: NSPoint) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.enterExitEvent(with: type, location: location,
+                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+        }
+
+        func settleLayout() {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            split.view.layoutSubtreeIfNeeded()
+        }
+
+        func waitForReveal(_ notch: CALayer) {
+            let deadline = Date().addingTimeInterval(1)
+            while notch.opacity == 0 && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+        }
+
+        settleLayout()
+        XCTAssertFalse(split.isSidebarCollapsed)
+        XCTAssertGreaterThan(band.bounds.height, 0, "the page has its own hover target beside the docked sidebar")
+
+        let center = band.convert(NSPoint(x: band.bounds.midX, y: band.bounds.maxY - 10), to: nil)
+        let side = band.convert(NSPoint(x: band.bounds.width * 0.25, y: band.bounds.maxY - 10), to: nil)
+        let notch = try XCTUnwrap(band.layer?.sublayers?.compactMap { $0 as? CAShapeLayer }.first)
+        let outline = try XCTUnwrap(notch.path)
+        for x in [outline.boundingBoxOfPath.minX + 3, outline.boundingBoxOfPath.maxX - 3] {
+            XCTAssertTrue(outline.contains(CGPoint(x: x, y: band.bounds.maxY - 0.5)))
+            XCTAssertFalse(outline.contains(CGPoint(x: x, y: band.bounds.maxY - 3)))
+        }
+        let fill = try XCTUnwrap(notch.fillColor)
+        XCTAssertGreaterThan(fill.alpha, 0)
+        XCTAssertLessThan(fill.alpha, 1)
+        XCTAssertFalse(frameView.hitTest(center) === frameView, "a hidden notch leaves the page clickable")
+        band.mouseEntered(with: try trackingEvent(.mouseEntered, at: side))
+        XCTAssertFalse(frameView.hitTest(center) === frameView, "the page receives clicks during the hover delay")
+        band.mouseExited(with: try trackingEvent(.mouseExited, at: side))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.22))
+        XCTAssertEqual(notch.opacity, 0, "a quick pass cancels the pending reveal")
+        band.mouseEntered(with: try trackingEvent(.mouseEntered, at: side))
+        waitForReveal(notch)
+        XCTAssertEqual(notch.opacity, 1)
+        XCTAssertEqual(notch.affineTransform().ty, 0)
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            XCTAssertNotNil(notch.animation(forKey: "opacity"), "the notch fades in")
+            XCTAssertNotNil(notch.animation(forKey: "transform"), "the notch slides down")
+        }
+        XCTAssertTrue(frameView.hitTest(center) === frameView, "the notch routes to the native titlebar")
+        XCTAssertFalse(frameView.hitTest(side) === frameView, "the rest of the hover band routes to the page")
+
+        state.themeContext.setTheme(.iris)
+        settleLayout()
+        XCTAssertNotEqual(try XCTUnwrap(notch.fillColor), fill, "an open notch follows the Space theme")
+        let crop = NSRect(x: band.bounds.midX - 70, y: 0, width: 140, height: band.bounds.height)
+        let bitmap = try XCTUnwrap(band.bitmapImageRepForCachingDisplay(in: crop))
+        band.cacheDisplay(in: crop, to: bitmap)
+        let preview = XCTAttachment(data: try XCTUnwrap(bitmap.representation(using: .png, properties: [:])),
+                                    uniformTypeIdentifier: "public.png")
+        preview.name = "Window drag notch"
+        preview.lifetime = .keepAlways
+        add(preview)
+
+        band.mouseExited(with: try trackingEvent(.mouseExited, at: center))
+        XCTAssertEqual(notch.opacity, 1, "overshooting the edge keeps the notch available")
+        XCTAssertFalse(frameView.hitTest(side) === frameView)
+        band.mouseEntered(with: try trackingEvent(.mouseEntered, at: center))
+        XCTAssertTrue(frameView.hitTest(center) === frameView, "returning needs no second hover delay")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        XCTAssertEqual(notch.opacity, 1, "returning cancels the scheduled hide")
+        band.mouseExited(with: try trackingEvent(.mouseExited, at: center))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        XCTAssertEqual(notch.opacity, 0)
+        XCTAssertGreaterThan(notch.affineTransform().ty, 0)
+        XCTAssertFalse(frameView.hitTest(center) === frameView)
+
+        split.setSidebarCollapsed(true, animated: false)
+        settleLayout()
+        host.prefersReducedMotion = { true }
+        host.showFloatingSidebar()
+        XCTAssertTrue(host.isVisible)
+        settleLayout()
+        let floatingCenter = band.convert(NSPoint(x: band.bounds.midX, y: band.bounds.maxY - 10), to: nil)
+        band.mouseEntered(with: try trackingEvent(.mouseEntered, at: floatingCenter))
+        waitForReveal(notch)
+        XCTAssertTrue(frameView.hitTest(floatingCenter) === frameView, "the exposed notch works beside the floating sidebar")
+
+        host.hideFloatingSidebar(animated: false)
+        window.setContentSize(NSSize(width: 640, height: 420))
+        settleLayout()
+        let smallWindowCenter = band.convert(NSPoint(x: band.bounds.midX, y: band.bounds.maxY - 10), to: nil)
+        band.mouseEntered(with: try trackingEvent(.mouseEntered, at: smallWindowCenter))
+        waitForReveal(notch)
+        XCTAssertTrue(frameView.hitTest(smallWindowCenter) === frameView)
+
+        // A titlebar zoom can move the hover band without a mouse-exit event.
+        let smallSize = window.frame.size
+        window.performZoom(nil)
+        settleLayout()
+        XCTAssertGreaterThan(window.frame.width * window.frame.height, smallSize.width * smallSize.height)
+        XCTAssertEqual(notch.opacity, 0, "zooming dismisses the old hover immediately")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.22))
+        XCTAssertEqual(notch.opacity, 0, "the old hover does not reopen the notch")
+
+        let zoomedCenter = band.convert(NSPoint(x: band.bounds.midX, y: band.bounds.maxY - 10), to: nil)
+        band.mouseEntered(with: try trackingEvent(.mouseEntered, at: zoomedCenter))
+        waitForReveal(notch)
+        XCTAssertTrue(frameView.hitTest(zoomedCenter) === frameView)
+
+        state.isInFullScreenMode = true
+        settleLayout()
+        XCTAssertEqual(band.frame.height, 0)
+    }
+
+    func testReduceMotionCompletesHandOffImmediately() throws {
+        let (split, host) = try expandedColumn()
+        host.prefersReducedMotion = { true }
+        split.pointerLocationInWindow = { [unowned split] in Self.middle(of: split.sidebarHost.view) }
+        let closeButton = try XCTUnwrap(split.view.window?.standardWindowButton(.closeButton))
+        host.browserState?.windowController?.refreshTrafficLightVisibility()
+        XCTAssertFalse(closeButton.isHidden)
+
+        var completions: [Bool] = []
+        split.setSidebarCollapsed(true, animated: true) { completions.append($0) }
+        XCTAssertTrue(split.isSidebarCollapsed)
+        XCTAssertTrue(host.isVisible)
+        XCTAssertFalse(host.isSidebarHandOffRunning)
+        XCTAssertTrue(closeButton.isHidden)
+        let panel = try XCTUnwrap(host.floatingSidebarContainerView)
+        let content = try XCTUnwrap(Self.contentLayer(in: panel))
+        XCTAssertNil(content.animation(forKey: "borderIn"))
+
+        split.setSidebarCollapsed(false, animated: true) { completions.append($0) }
+        XCTAssertTrue(split.sidebarTakesPageSpace)
+        XCTAssertFalse(host.isVisible)
+        XCTAssertFalse(host.isSidebarHandOffRunning)
+        XCTAssertFalse(closeButton.isHidden)
+        XCTAssertEqual(completions, [true, true])
+    }
+
     func testPinningWhileThePanelIsOpenHandsOff() throws {
         let (split, host) = try visiblePanel()
         let panelWidth = host.currentFloatingWidth
@@ -585,6 +777,30 @@ final class SidebarDockHandOffTests: XCTestCase {
         XCTAssertFalse(host.isVisible)
         XCTAssertFalse(host.isSidebarHandOffRunning)
         XCTAssertEqual(split.sidebarWidth, panelWidth, accuracy: 0.5, "the column docks at the panel's width")
+    }
+
+    /// The column's slide and the panel's glide are added in one turn, with
+    /// one duration and one curve, so they start on the same commit and move
+    /// as one.
+    func testTheColumnSlidesWithThePanelsGlide() throws {
+        let (split, host) = try visiblePanel()
+        let visual = try XCTUnwrap(host.floatingSidebarContainerView?.subviews.first)
+
+        split.setSidebarCollapsed(false, animated: true)
+
+        let slide = try XCTUnwrap(split.sidebarHost.view.layer?
+            .animation(forKey: ShellSplitView.slideAnimationKey) as? CABasicAnimation, "the column slides in")
+        let glide = try XCTUnwrap(visual.layer?.animation(forKey: "sidebarHandOff.position") as? CABasicAnimation,
+                                  "the panel glides")
+        XCTAssertEqual(slide.duration, Host.sidebarHandOffDuration, accuracy: 0.001)
+        XCTAssertEqual(slide.duration, glide.duration, accuracy: 0.001)
+        XCTAssertEqual(slide.timingFunction, glide.timingFunction)
+        XCTAssertEqual(slide.beginTime, glide.beginTime, "both start with the commit")
+        XCTAssertEqual((slide.toValue as? NSNumber)?.doubleValue, 0, "the column ends at its place")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+        XCTAssertNil(split.sidebarHost.view.layer?.animation(forKey: ShellSplitView.slideAnimationKey))
+        XCTAssertFalse(split.isSidebarCollapsed)
+        XCTAssertFalse(host.isSidebarHandOffRunning)
     }
 
     func testUnpinWithThePointerOnTheSidebarLeavesThePanelUp() throws {
@@ -875,6 +1091,7 @@ final class SidebarDockHandOffTests: XCTestCase {
         // Toggles in these tests come from the shortcut unless a test says
         // otherwise.
         slot.shell?.split.currentEventType = { .keyDown }
+        slot.shell?.split.floatingSidebarHost.prefersReducedMotion = { false }
         nextWindowId += 1
         let state = UnseededBrowserState(windowId: nextWindowId, localStore: store,
             profileId: LocalStore.defaultProfileId, spaceId: "first", isIncognito: false)

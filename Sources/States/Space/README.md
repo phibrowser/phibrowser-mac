@@ -55,8 +55,10 @@ tree, and each is handled at the moment the Space withdraws
 
 ## Sidebar geometry ownership
 
-`ShellSplitViewController` owns the sidebar's width and collapsed state through
-its `NSSplitViewItem`. Space sessions have no stored copy of either value.
+`ShellSplitViewController` owns the sidebar's width and collapsed state and
+places the column through `ShellSplitView`
+([design](../../../docs/architecture/custom-shell-split.md)). Space sessions
+have no stored copy of either value.
 `BrowserState.sidebarCollapsed` and `sidebarWidth` are read-only projections of
 the owning split; their publishers observe that split even while the session is
 dormant or concealed. Sidebar commands mutate the owning split directly.

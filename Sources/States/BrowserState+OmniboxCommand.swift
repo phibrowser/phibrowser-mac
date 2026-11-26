@@ -43,10 +43,10 @@ enum OmniboxCommand: String, CaseIterable {
             return NSLocalizedString("omnibox.command.manageExtensions", value: "Manage extensions",
                 comment: "Omnibox commands - Command that opens the extensions management page")
         case .newSplitView:
-            return NSLocalizedString("omnibox.command.newSplitView", value: "Add split view",
-                comment: "Omnibox commands - Command that splits the current tab with a new tab")
+            return NSLocalizedString("omnibox.command.addRightSplit", value: "Add right split",
+                comment: "Omnibox commands - Adds a new pane to the right of the current tab")
         case .addVerticalSplitView:
-            return NSLocalizedString("omnibox.command.addVerticalSplitView", value: "Add vertical split view",
+            return NSLocalizedString("omnibox.command.addBottomSplit", value: "Add bottom split",
                 comment: "Omnibox commands - Adds a new pane below the current tab")
         case .addLeftSplit:
             return NSLocalizedString("omnibox.command.addLeftSplit", value: "Add left split",
@@ -67,7 +67,7 @@ enum OmniboxCommand: String, CaseIterable {
         case .switchToDarkMode: return ["switch", "dark", "mode", "appearance", "theme"]
         case .removeSplitView: return ["remove", "split", "view", "unsplit", "separate"]
         case .manageExtensions: return ["manage", "extensions", "add-ons", "plugins"]
-        case .newSplitView: return ["add", "new", "split", "view", "pane", "side by side"]
+        case .newSplitView: return ["add", "new", "right", "split", "view", "pane", "side by side"]
         case .addVerticalSplitView: return ["add", "vertical", "split", "view", "bottom", "stacked"]
         case .addLeftSplit: return ["add", "left", "split", "horizontal", "pane"]
         case .addTopSplit: return ["add", "top", "split", "vertical", "pane"]
@@ -107,9 +107,20 @@ extension BrowserState {
         case .manageExtensions, .switchToLightMode, .switchToDarkMode,
              .switchToBalancedMode, .switchToPerformanceMode, .switchToComfortableMode:
             return true
-        case .newSplitView, .addVerticalSplitView, .addLeftSplit, .addTopSplit:
-            return canSplitFocusedTabWithNewTab
+        case .newSplitView, .addLeftSplit:
+            return canAddOmniboxSplitPane(layout: .vertical)
+        case .addVerticalSplitView, .addTopSplit:
+            return canAddOmniboxSplitPane(layout: .horizontal)
         }
+    }
+
+    /// A pane joining the focused tab's split takes that split's layout, so
+    /// only commands for the same layout apply.
+    @MainActor
+    private func canAddOmniboxSplitPane(layout: SplitLayout) -> Bool {
+        guard canSplitFocusedTabWithNewTab else { return false }
+        guard let tab = focusingTab, let group = splitGroup(forTabId: tab.guid) else { return true }
+        return group.layout == layout
     }
 
     /// Validates now and performs on a later main-actor turn, once the

@@ -2276,7 +2276,7 @@ extension AppController {
         let changeIconItem: NSMenuItem?
         if showsChangeIconItem {
             let item = NSMenuItem(
-                title: NSLocalizedString("app.tabAreaMenu.changeIcon", value: "Change Icon\u{2026}", comment: "Tab-area menu - opens the icon/emoji picker below the active Space's icon"),
+                title: NSLocalizedString("app.tabAreaMenu.changeIcon", value: "Change Space Icon\u{2026}", comment: "Tab-area menu - opens the icon/emoji picker below the active Space's icon"),
                 action: #selector(requestActiveSpaceIconPicker(_:)),
                 keyEquivalent: ""
             )
@@ -2290,7 +2290,7 @@ extension AppController {
         let editThemeItem: NSMenuItem?
         if includesEditTheme {
             let item = NSMenuItem(
-                title: NSLocalizedString("app.activeSpaceContextMenu.themeSubmenuTitle", value: "Edit Theme", comment: "Active Space context menu - opens the theme editor for the active Space"),
+                title: NSLocalizedString("app.activeSpaceContextMenu.themeSubmenuTitle", value: "Edit Theme\u{2026}", comment: "Active Space context menu - opens the theme editor for the active Space"),
                 action: #selector(requestActiveSpaceThemeEditor(_:)),
                 keyEquivalent: ""
             )
@@ -2540,7 +2540,7 @@ extension AppController {
         }
 
         let editThemeItem = NSMenuItem(
-            title: NSLocalizedString("app.spacesMenu.changeTheme", value: "Edit Theme", comment: "Spaces menu - opens the theme editor for the active Space"),
+            title: NSLocalizedString("app.spacesMenu.changeTheme", value: "Edit Theme…", comment: "Spaces menu - opens the theme editor for the active Space"),
             action: #selector(requestActiveSpaceThemeEditor(_:)),
             keyEquivalent: ""
         )
@@ -2952,8 +2952,23 @@ extension AppController {
     /// panel, and Phi activates only once a URL is picked.
     func newKioskWindowFromGlobalShortcut() {
         MainActor.assumeIsolated {
-            presentNewKioskOmniBox()
+            presentNewKioskOmniBox(returnApplication: Self.kioskGlobalShortcutReturnApplication())
         }
+    }
+
+    /// The app the user was in when the global shortcut fired. The Kiosk
+    /// returns there on close, as an external-link Kiosk returns to its
+    /// sender, instead of leaving Phi's next window key and in front. Read
+    /// at the press: Phi activates only once a URL is picked. There is none
+    /// while Phi is already active.
+    @MainActor
+    private static func kioskGlobalShortcutReturnApplication() -> NSRunningApplication? {
+        guard !NSApp.isActive,
+              let application = NSWorkspace.shared.frontmostApplication,
+              application != NSRunningApplication.current,
+              application.activationPolicy == .regular,
+              !application.isTerminated else { return nil }
+        return application
     }
 
     /// The empty New Kiosk commands: shows the omnibox before any Kiosk
@@ -2962,8 +2977,9 @@ extension AppController {
     /// the window the user is working in, so no browser window is revealed
     /// just to ask. Dismissing the omnibox opens nothing. Issuing the
     /// command again while its omnibox is up dismisses it, like Cmd+T.
+    /// `returnApplication` is where the Kiosk returns on close.
     @MainActor
-    func presentNewKioskOmniBox() {
+    func presentNewKioskOmniBox(returnApplication: NSRunningApplication? = nil) {
         if let panel = kioskLaunchOmniBoxPanel, !panel.isFinished {
             panel.dismiss()
             return
@@ -2991,7 +3007,8 @@ extension AppController {
                 return
             }
             self.presentStandaloneKioskLaunchOmniBox(
-                screen: screen, bridge: bridge, manager: manager)
+                screen: screen, bridge: bridge, manager: manager,
+                returnApplication: returnApplication)
         }
     }
 
@@ -3004,14 +3021,19 @@ extension AppController {
         url: String,
         profileId: String?,
         topRight: NSPoint?,
+        returnApplication: NSRunningApplication?,
         completion: @escaping () -> Void
     ) {
         KioskLaunchActivation().perform { [weak self] in
-            AppLogDebug("[KioskLaunch] opening the picked URL active=\(NSApp.isActive)")
+            AppLogDebug(
+                "[KioskLaunch] opening the picked URL active=\(NSApp.isActive) "
+                    + "returnTo=\(returnApplication?.bundleIdentifier ?? "none")"
+            )
             self?.openNewKioskWindow(
                 url: url,
                 bringToFront: true,
                 profileId: profileId,
+                returnApplication: returnApplication,
                 alignedTopRight: topRight
             )
             completion()
@@ -3028,7 +3050,8 @@ extension AppController {
     private func presentStandaloneKioskLaunchOmniBox(
         screen: NSScreen?,
         bridge: PhiChromiumBridgeProtocol,
-        manager: SpaceSessionControllersManager
+        manager: SpaceSessionControllersManager,
+        returnApplication: NSRunningApplication?
     ) {
         let host: SpaceSessionController
         let ownsHost: Bool
@@ -3065,6 +3088,7 @@ extension AppController {
                 // Browser first would leave nothing to open from.
                 self.openKioskFromLaunchOmniBox(
                     url: url, profileId: profileId, topRight: topRight,
+                    returnApplication: returnApplication,
                     completion: closeOwnedHost)
             } else {
                 AppLogDebug("[KioskLaunch] dismissed without a URL")
@@ -3708,18 +3732,25 @@ extension AppController {
             return canOpen && ApplicationState.shared.canUseBrowser
         }
 
+        // Folio rows: hidden in off-the-record windows, like page actions
+        // registered without `incognito`; the main menu is shared, so they
+        // return when a regular window is in front.
         if item.action == #selector(saveTabForLater(_:)) {
-            let canSave = MainActor.assumeIsolated {
-                SaveForLaterService.canSave(
-                    SpaceSessionControllersManager.shared
-                        .activeWindowController?.browserState.pageCommandTarget)
+            let canSave = MainActor.assumeIsolated { () -> Bool in
+                let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState
+                (item as? NSMenuItem)?.isHidden = state?.isIncognito == true
+                return SaveForLaterService.canSave(state?.pageCommandTarget, in: state)
             }
             return canSave && ApplicationState.shared.canUseBrowser
         }
 
         if item.action == #selector(openSaveForLaterLibrary(_:)) {
-            return SaveForLaterService.featureEnabled
-                && ApplicationState.shared.canUseBrowser
+            let available = MainActor.assumeIsolated { () -> Bool in
+                let state = SpaceSessionControllersManager.shared.activeWindowController?.browserState
+                (item as? NSMenuItem)?.isHidden = state?.isIncognito == true
+                return SaveForLaterService.isAvailable(in: state)
+            }
+            return available && ApplicationState.shared.canUseBrowser
         }
 
         // Page actions: hidden in off-the-record windows unless registered

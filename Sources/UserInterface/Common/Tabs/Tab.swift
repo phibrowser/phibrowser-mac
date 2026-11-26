@@ -352,6 +352,15 @@ class Tab: WebContentRepresentable {
         isCurrentlyAudible = false
         isAudioMuted = false
         isMediaSessionMuted = false
+        // A pinned tab or bookmark outlives its WebContents; without a reset
+        // its last capture state stays on screen after the contents close.
+        isCapturingAudio = false
+        isCapturingVideo = false
+        isCapturingWindow = false
+        isCapturingDisplay = false
+        isCapturingTab = false
+        isBeingMirrored = false
+        isSharingScreen = false
         hasWebContent = wrapper != nil
         isDiscarded = wrapper?.isDiscarded ?? false
         if let wrapper, wrapper.responds(to: Self.isUnloadedSelector) {
@@ -508,6 +517,10 @@ class Tab: WebContentRepresentable {
         wrapper.publisher(for: \.isSharingScreen)
             .assign(to: \.isSharingScreen, on: self)
             .store(in: &cancellables)
+
+#if DEBUG
+        installIssue259CaptureFlagsDebugLoggingIfEnabled()
+#endif
         
         wrapper.publisher(for: \.title)
             .replaceNil(with: "")
@@ -1098,14 +1111,62 @@ extension Tab {
 }
 
 extension Tab {
-    /// Aggregate "capturing media" signal that drives the tab's recording
-    /// badge. Matches the rule the normal-tab favicon badge uses (microphone,
-    /// camera, screen share) so split panes light up under the same
-    /// conditions as standalone tabs.
+    /// Microphone or camera capture — drives the red recording badge only.
     var isCapturingMedia: Bool {
-        isCapturingAudio || isCapturingVideo || isSharingScreen
+        isCapturingAudio || isCapturingVideo
+    }
+
+    /// Tab running screen capture (e.g. a video-call tab presenting).
+    var isPresentingScreenShare: Bool {
+        isSharingScreen && !isBeingMirrored
+    }
+
+    /// Tab whose content is sent to a remote peer (mirrored capture target).
+    var isBeingSharedRemotely: Bool {
+        isBeingMirrored
+    }
+
+    /// Any favicon or sidebar capture glyph for this tab.
+    var showsCaptureIndicator: Bool {
+        isCapturingMedia || isPresentingScreenShare || isBeingSharedRemotely
     }
 }
+
+#if DEBUG
+extension Tab {
+    /// Temporary instrumentation for #259 — remove before merge. Enable with
+    /// `PHI_CAPTURE_FLAGS_DEBUG=1` in the scheme environment or shell.
+    fileprivate func installIssue259CaptureFlagsDebugLoggingIfEnabled() {
+        guard ProcessInfo.processInfo.environment["PHI_CAPTURE_FLAGS_DEBUG"] == "1" else { return }
+
+        let flagPublishers: [AnyPublisher<Void, Never>] = [
+            $isCapturingAudio.map { _ in () }.eraseToAnyPublisher(),
+            $isCapturingVideo.map { _ in () }.eraseToAnyPublisher(),
+            $isCapturingWindow.map { _ in () }.eraseToAnyPublisher(),
+            $isCapturingDisplay.map { _ in () }.eraseToAnyPublisher(),
+            $isCapturingTab.map { _ in () }.eraseToAnyPublisher(),
+            $isBeingMirrored.map { _ in () }.eraseToAnyPublisher(),
+            $isSharingScreen.map { _ in () }.eraseToAnyPublisher(),
+        ]
+
+        Publishers.MergeMany(flagPublishers)
+            .debounce(for: .milliseconds(30), scheduler: RunLoop.main)
+            .sink { [weak self] in
+                guard let self else { return }
+                let host = self.url.flatMap { URL(string: $0)?.host } ?? "—"
+                AppLogWarn(
+                    "[issue-259 capture] tabId=\(self.guid) windowId=\(self.windowId) "
+                        + "active=\(self.isActive) host=\(host) "
+                        + "audio=\(self.isCapturingAudio) video=\(self.isCapturingVideo) "
+                        + "capturingWindow=\(self.isCapturingWindow) capturingDisplay=\(self.isCapturingDisplay) "
+                        + "capturingTab=\(self.isCapturingTab) mirrored=\(self.isBeingMirrored) "
+                        + "sharingScreen=\(self.isSharingScreen)"
+                )
+            }
+            .store(in: &cancellables)
+    }
+}
+#endif
 
 extension Tab {
     /// Test seam: the capture flags are normally driven by Chromium KVO,
@@ -1113,10 +1174,16 @@ extension Tab {
     /// indicator path without a live WebContents.
     func setCaptureStateForTesting(audio: Bool = false,
                                    video: Bool = false,
-                                   sharingScreen: Bool = false) {
+                                   sharingScreen: Bool = false,
+                                   beingMirrored: Bool = false) {
         isCapturingAudio = audio
         isCapturingVideo = video
         isSharingScreen = sharingScreen
+        isBeingMirrored = beingMirrored
+    }
+
+    func setAudibleForTesting(_ audible: Bool) {
+        isCurrentlyAudible = audible
     }
 }
 

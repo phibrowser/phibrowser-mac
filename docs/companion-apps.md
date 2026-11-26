@@ -168,10 +168,16 @@ python3 build-scripts/build-athena-canary-extensions.py \
     "$ATHENA_CHECKOUT" "$ATHENA_REVISION" "$EXTENSION_VERSION" "$STAGING/Default Apps"
 ```
 
-Keep the Canary launch switch `--phi-no-embed-extensions`. Chromium installs
-signed CRXs into each new profile. Its default-app provider skips profiles
-where preinstallation has already run, even when the bundled versions are newer.
-Use a four-part Chromium version newer than the installed CRXs for upgrades. The script builds Sidecar, Lexington, Kensington and
+Keep the Canary launch switch `--phi-no-embed-extensions`. Both choices use
+the same Canary user-data root and extension IDs. On every trial launch the
+native bootstrap registers the four signed CRXs with Chromium's per-user
+`External Extensions` provider before loading profiles. Chromium checks the
+signature, ID and version and performs the install or upgrade as each profile
+opens. Chromium can defer an in-use extension update until the next browser
+launch. The default-app provider alone only seeds new profiles. Use an extension
+version newer than the versions in the Canary profiles being upgraded.
+
+The build script produces Sidecar, Lexington, Kensington and
 Mirage from that Athena revision using its locked dependencies and staging
 signing keys. The external install descriptors retain the existing Canary IDs.
 The trial CRXs omit the regular staging update feed. Ship updates in a newer
@@ -188,5 +194,8 @@ Guest sessions only open the browser. The trial disables native Sentinel AI
 controls, Sentinel supervision, browser-to-Runner and Service Broker
 connections, and AI-data export. Browser data can still be exported.
 The trial browser does not start its nightly updater. It shares Canary's user
-data and credentials. To return to the regular Canary, quit both trial apps
-and open the regular browser.
+data and credentials. Distribute `build-scripts/switch-to-regular-canary.command`
+as `Switch to Regular Canary.command` beside the trial apps. To switch back,
+quit the trial apps, install a signed regular Canary with newer extensions,
+then run that command. It points the four shared registrations at the regular
+CRXs and opens the browser. The regular extensions carry their regular OTA URLs.

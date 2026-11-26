@@ -163,6 +163,12 @@
 #if DEBUG || NIGHTLY_BUILD
                 [arguments addObject:@"--phi-ai-debug"];
                 [arguments addObject:@"--phi-no-embed-extensions"];
+                if (![DefaultExtensionManifestWriter registerTrialExtensionsFromFramework:frameworksPath
+                                                                      inUserDataDirectory:applicationSupportDir
+                                                                                    error:&error]) {
+                    AppLogError(@"Failed to register packaged Canary extensions: %@", error);
+                    return NO;
+                }
                 // Chromium defaults to production; Canary uses the staging
                 // highlight-link endpoint to match its authentication setup.
                 [arguments addObject:@"--phi-highlight-link-url=https://stag.phi.to/api/v1/links"];

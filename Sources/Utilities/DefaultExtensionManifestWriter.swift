@@ -4,7 +4,40 @@
 // found in the LICENSE file.
 
 import Foundation
-struct DefaultExtensionManifestWriter {
+final class DefaultExtensionManifestWriter: NSObject {
+    /// The framework's default-app provider only seeds fresh profiles. Its
+    /// per-user external provider also upgrades CRXs in existing profiles.
+    @objc(registerTrialExtensionsFromFramework:inUserDataDirectory:error:)
+    static func registerTrialExtensions(framework: String, userDataDirectory: String) throws {
+        #if ATHENA_CANARY_TRIAL
+        let packages = URL(fileURLWithPath: framework, isDirectory: true)
+            .appendingPathComponent("Versions/Current/Default Apps", isDirectory: true)
+        let registry = URL(fileURLWithPath: userDataDirectory, isDirectory: true)
+            .appendingPathComponent("External Extensions", isDirectory: true)
+        let registrations = try PhiExtensionID.canaryManaged.map { id -> (URL, Data) in
+            let name = id + ".json"
+            let descriptor = try Data(contentsOf: packages.appendingPathComponent(name))
+            guard var values = try JSONSerialization.jsonObject(with: descriptor) as? [String: String],
+                  let filename = values["external_crx"], let version = values["external_version"],
+                  filename.hasPrefix(id + "-" + version + "-"), filename.hasSuffix(".crx"),
+                  !filename.contains("/"), values.count == 2 else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            let crx = packages.appendingPathComponent(filename)
+            guard FileManager.default.isReadableFile(atPath: crx.path) else {
+                throw CocoaError(.fileReadNoSuchFile)
+            }
+            values["external_crx"] = crx.path
+            let data = try JSONSerialization.data(withJSONObject: values, options: [.sortedKeys])
+            return (registry.appendingPathComponent(name), data)
+        }
+        try FileManager.default.createDirectory(at: registry, withIntermediateDirectories: true)
+        for (url, data) in registrations where (try? Data(contentsOf: url)) != data {
+            try data.write(to: url, options: .atomic)
+        }
+        #endif
+    }
+
     enum Extension: CaseIterable {
         case onePassword, icloudPasswords
         
@@ -79,6 +112,10 @@ struct DefaultExtensionManifestWriter {
 /// auto-install in `ProfileManager`, and the Profiles pane's password-manager
 /// section.
 enum PhiExtensionID {
+    static let canaryManaged = ["pjlnhbfabokjejbhmgghmjiaknfhnima",
+                                  "pjgdkljlcbjgedgeppodjijjphfcplno",
+                                  "fenmfiepnpdlhplemgijlimpbebebljo",
+                                  "ickhcgejficcoofnjnnobadfdnfbilnm"]
     static let icloudPasswords = "pejdijmoenmkgeppbflobdenhhabjlaj"
     /// Chrome Web Store id of the Bitwarden Password Manager extension. Shared
     /// by the OOBE password-manager screen and the per-new-profile auto-install.

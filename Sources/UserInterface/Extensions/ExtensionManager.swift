@@ -308,10 +308,7 @@ class ExtensionManager: ObservableObject {
             self?.refreshExtensions()
         }
     }
-    static let phiExtensionIds = ["pjlnhbfabokjejbhmgghmjiaknfhnima",
-                                  "pjgdkljlcbjgedgeppodjijjphfcplno",
-                                  "fenmfiepnpdlhplemgijlimpbebebljo",
-                                  "ickhcgejficcoofnjnnobadfdnfbilnm"]
+    static let phiExtensionIds = PhiExtensionID.canaryManaged
     
     func extensionChanged(_ info: [[String: Any]]) {
         let mapped = info.compactMap { Extension(from: $0) }

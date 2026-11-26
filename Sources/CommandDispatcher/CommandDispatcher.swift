@@ -100,6 +100,11 @@ struct CommandDispatcher {
             .isGuestTransitionInteractionBlocked {
             return true
         }
+        if command == .IDC_SHOW_HISTORY,
+           PhiPreferences.GeneralSettings.showHistoryInFloatingPanel.loadValue(),
+           HistoryPanelController.toggle(from: window) {
+            return true
+        }
         if command == .PHI_NEW_KIOSK_WINDOW {
             guard let appController = AppController.shared else { return false }
             appController.newKioskWindowFromMenu(nil)

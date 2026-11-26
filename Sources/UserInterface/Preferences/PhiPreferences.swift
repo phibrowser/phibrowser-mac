@@ -138,6 +138,7 @@ extension PhiPreferences {
     enum GeneralSettings: String, CaseIterable {
         case openNewTabPageOnCmdT
         case newTabsAtTop // Sidebar layouts only; Comfortable always appends ordinary new tabs
+        case showHistoryInFloatingPanel // Show History (Cmd-Y) toggles the floating history panel instead of opening the history page
         case openExternalLinksInKiosk
         case openKioskOnCommandOptionClick
         case openKioskWithGlobalShortcut
@@ -181,6 +182,8 @@ extension PhiPreferences {
             case .openNewTabPageOnCmdT:
                 return true
             case .newTabsAtTop:
+                return false
+            case .showHistoryInFloatingPanel:
                 return false
             case .openExternalLinksInKiosk:
                 return false

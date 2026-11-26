@@ -47960,6 +47960,102 @@
         }
       }
     },
+    "history.floatingPanel.close" : {
+      "comment" : "Floating history panel - accessible label of the close button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close history"
+          }
+        }
+      }
+    },
+    "history.floatingPanel.empty" : {
+      "comment" : "Floating history panel - shown when no visits match the search or filter",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No history found"
+          }
+        }
+      }
+    },
+    "history.floatingPanel.range.today" : {
+      "comment" : "Floating history panel - filter chip that shows only today's visits",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Today"
+          }
+        }
+      }
+    },
+    "history.floatingPanel.range.week" : {
+      "comment" : "Floating history panel - filter chip that shows the last seven days of visits",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Week"
+          }
+        }
+      }
+    },
+    "history.floatingPanel.range.yesterday" : {
+      "comment" : "Floating history panel - filter chip that shows only yesterday's visits",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Yesterday"
+          }
+        }
+      }
+    },
+    "history.floatingPanel.searchPlaceholder" : {
+      "comment" : "Floating history panel - placeholder of the search field",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Search history"
+          }
+        }
+      }
+    },
+    "history.floatingPanel.showAll" : {
+      "comment" : "Floating history panel - footer button that opens the full history page in a tab",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show full history"
+          }
+        }
+      }
+    },
+    "history.floatingPanel.title" : {
+      "comment" : "Floating history panel - title at the top of the panel",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "History"
+          }
+        }
+      }
+    },
     "https://vault.example.com" : {
       "localizations" : {
         "de" : {
@@ -74533,6 +74629,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Folio"
+          }
+        }
+      }
+    },
+    "settings.general.historyPanel.description" : {
+      "comment" : "General settings - Description below the floating history panel toggle",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show History opens a searchable panel at the side of the window. The full history page stays one click away."
+          }
+        }
+      }
+    },
+    "settings.general.historyPanel.title" : {
+      "comment" : "General settings - Toggle that makes Show History (Command-Y) open a floating history panel instead of the history page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show history in a floating panel"
           }
         }
       }

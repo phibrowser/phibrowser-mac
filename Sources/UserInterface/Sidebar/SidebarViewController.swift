@@ -47,6 +47,22 @@ final class SpacesStripHostingView: ThemedHostingView {
     /// `NSThemeFrame` — returns true, and the window still stayed put.
     override var mouseDownCanMoveWindow: Bool { false }
 
+    func place(in header: SidebarHeaderView, footer: SidebarSpacesStripFooter,
+               position: SidebarSpaceStripPosition) {
+        if position == .bottom {
+            guard !footer.isActive else { return }
+            cancelSpacesChipFlight()
+            header.unmountSpaceSwitch()
+            stripGeometry?.showsPagination = true
+            footer.setActive(true)
+        } else {
+            guard superview !== header else { return }
+            footer.setActive(false)
+            stripGeometry?.showsPagination = false
+            header.mountSpaceSwitch(self)
+        }
+    }
+
     /// The header hides the row while there is a single Space. Coming back,
     /// its width is unchanged, so no geometry change re-anchors the viewport;
     /// tell the strip instead.
@@ -104,7 +120,7 @@ final class SpacesStripHostingView: ThemedHostingView {
                                toSpaceId: String,
                                pipCount: Int,
                                duration: TimeInterval) -> Bool {
-        guard let geometry = stripGeometry, let hostLayer = layer else { return false }
+        guard let geometry = stripGeometry, !geometry.showsPagination, let hostLayer = layer else { return false }
         // Only a row that shows every pip holds still. An overflowing row
         // re-centers on the new pip and slides under the stand-in, which is
         // not part of it; the SwiftUI chip, which rides the row, keeps those
@@ -437,6 +453,18 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
     /// attached; borrowing the key slot would route clicks to another shell.
     private var spacesStripSlot: SpaceWindowSlot? { state.windowController?.slot }
     private var spacesStripHostingView: SpacesStripHostingView?
+    private let spacesStripFooter = SidebarSpacesStripFooter()
+
+    private func updateSpaceStripPlacement() {
+        if let strip = spacesStripHostingView, createSpaceOverlay == nil {
+            let position: SidebarSpaceStripPosition = state.layoutMode.isTraditional
+                ? .top : PhiPreferences.GeneralSettings.loadSidebarSpaceStripPosition()
+            strip.place(in: headerView, footer: spacesStripFooter, position: position)
+        }
+        headerView.updateSpaceSwitchVisibility()
+        spacesStripFooter.updateVisibility()
+        updateHeaderHeight()
+    }
 
     /// Follows the active Space of the slot this sidebar belongs to. Mirrors
     /// the SpacesStripView fallback chain so the gradient still resolves
@@ -485,9 +513,9 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
             stripGeometry?.sitsInControlRow = sitsInControlRow
             self?.updateHeaderHeight()
         }
-        headerView.mountSpaceSwitch(hostingView)
         spacesStripRowView = hostingView
-        updateHeaderHeight()
+        spacesStripFooter.bind(slot: slot, resolveOwnerController: { [weak state] in state?.windowController })
+        updateSpaceStripPlacement()
     }
 
     /// The Spaces strip row's AppKit view, resolved live by the slot's
@@ -841,7 +869,9 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         let base = headerView.controlRowTopOffset + (addressInSidebar ? 71 : 27)
         let spacesBandHeight = SidebarHeaderView.spaceSwitchBandHeight(addressInSidebar: addressInSidebar)
         // A row moved up into the control row adds no height of its own.
-        let reservesSpacesBand = spacesEnabled && !headerView.spaceSwitchSitsInControlRow
+        let reservesSpacesBand = spacesEnabled
+            && !spacesStripFooter.isActive
+            && !headerView.spaceSwitchSitsInControlRow
         let headerHeight = base + (reservesSpacesBand ? spacesBandHeight : 0)
         headerHeightConstraint?.update(offset: headerHeight)
     }
@@ -874,8 +904,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
                 self?.updatePageEdgeShadow()
                 self?.updateChatButtonVisibility()
                 self?.updateMemoryButtonVisibility()
-                self?.headerView.updateSpaceSwitchVisibility()
-                self?.updateHeaderHeight()
+                self?.updateSpaceStripPlacement()
             }
             .store(in: &cancellables)
 
@@ -888,8 +917,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.headerView.updateSpaceSwitchVisibility()
-                self?.updateHeaderHeight()
+                self?.updateSpaceStripPlacement()
             }
             .store(in: &cancellables)
     }
@@ -1033,6 +1061,11 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
 
         bindMediaPresentation()
         
+        mainStackView.addArrangedSubview(spacesStripFooter)
+        spacesStripFooter.snp.makeConstraints { make in
+            make.leading.trailing.equalToSuperview()
+        }
+
         mainStackView.addArrangedSubview(bottomBarSwiftUI)
         bottomBarSwiftUI.contextMenu = tabList.blankAreaContextMenu
         bottomBarSwiftUI.snp.makeConstraints { make in
@@ -1095,6 +1128,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateSidebarContentActivation()
+                self?.updateSpaceStripPlacement()
             }
             .store(in: &cancellables)
         
@@ -1682,10 +1716,10 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         headerView.forcesSpaceSwitchVisible = true
         updateHeaderHeight()
         view.layoutSubtreeIfNeeded()
-        // Pin the overlay below the visible strip. Keep a full-sidebar fallback
-        // for hosts that do not participate in Spaces and never mounted it.
+        // Only the header strip anchors the form. A footer strip would
+        // leave no room below it, so in that mode the form covers the sidebar.
         let stripRow = spacesStripRowView
-        let anchorsBelowStrip = stripRow?.isHidden == false
+        let anchorsBelowStrip = stripRow?.superview === headerView && stripRow?.isHidden == false
 
         // Match the current Space's sidebar background (color + opacity) by
         // reusing the sidebar root's visual-effect recipe; the form hosting
@@ -1814,7 +1848,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         spacesStripSlot?.creatingSpaceIconValue = nil
         // Release forced visibility. Normal Space-count rules take over again.
         headerView.forcesSpaceSwitchVisible = false
-        updateHeaderHeight()
+        updateSpaceStripPlacement()
         let teardown = {
             host.view.removeFromSuperview()
             host.removeFromParent()
@@ -2002,8 +2036,8 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
 // MARK: - SpaceSwitchBandSurface
 
 extension SidebarViewController: SpaceSwitchBandSurface {
-    // The Spaces switch lives in the header (with its own scroll animation),
-    // so the push-in band is just the pinned strip and the tab list.
+    // The Spaces switch is independent of the moving content band in either
+    // placement. Only the pinned strip and tab list slide between Spaces.
     var spaceSwitchBandViews: [NSView] { [pinnedTabContainerView, tabList.view] }
     var spaceSwitchPinnedStrip: NSView { pinnedTabContainerView }
     var spaceSwitchBandContainer: NSView { mainStackView }

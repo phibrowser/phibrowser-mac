@@ -12437,7 +12437,7 @@ final class SpaceWindowSlot: ObservableObject {
               !surface.view.isHiddenOrHasHiddenAncestor,
               !surface.spaceSwitchBandFrame.isEmpty,
               let strip = surface.spacesStripRowView as? SpacesStripHostingView,
-              strip.stripGeometry != nil else { return nil }
+              strip.stripGeometry?.showsPagination == false else { return nil }
         strip.prepareSpacesSelection(fromSpaceId: fromSpaceId, toSpaceId: toSpaceId)
         return strip
     }

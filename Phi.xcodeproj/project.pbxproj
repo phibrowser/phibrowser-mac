@@ -585,6 +585,8 @@
 		CC59CE000001000000000001 /* SpaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000001000000000002 /* SpaceManager.swift */; };
 		CC59CE0000010000000000A1 /* Space.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE0000010000000000A2 /* Space.swift */; };
 		CC59CE000002000000000001 /* SpacesStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000002000000000002 /* SpacesStripView.swift */; };
+		C4B5F60A8D7C41059A2F2001 /* SidebarSpacePagination.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4B5F60A8D7C41059A2F2002 /* SidebarSpacePagination.swift */; };
+		C4B5F60A8D7C41059A2F2003 /* SidebarSpacesStripFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4B5F60A8D7C41059A2F2004 /* SidebarSpacesStripFooter.swift */; };
 		CC59CE0000020000000000A1 /* SpaceSwitchBandSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE0000020000000000A2 /* SpaceSwitchBandSurface.swift */; };
 		CC59CE000003000000000001 /* ProfileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000003000000000002 /* ProfileManager.swift */; };
 		CC5C51F62FB5C5560044D255 /* credits.html in Resources */ = {isa = PBXBuildFile; fileRef = CC5C51F52FB5C5560044D255 /* credits.html */; };
@@ -1468,6 +1470,8 @@
 		CC59CE000001000000000002 /* SpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceManager.swift; sourceTree = "<group>"; };
 		CC59CE0000010000000000A2 /* Space.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Space.swift; sourceTree = "<group>"; };
 		CC59CE000002000000000002 /* SpacesStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesStripView.swift; sourceTree = "<group>"; };
+		C4B5F60A8D7C41059A2F2002 /* SidebarSpacePagination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarSpacePagination.swift; sourceTree = "<group>"; };
+		C4B5F60A8D7C41059A2F2004 /* SidebarSpacesStripFooter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarSpacesStripFooter.swift; sourceTree = "<group>"; };
 		CC59CE0000020000000000A2 /* SpaceSwitchBandSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceSwitchBandSurface.swift; sourceTree = "<group>"; };
 		CC59CE000003000000000002 /* ProfileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileManager.swift; sourceTree = "<group>"; };
 		CC5C51F52FB5C5560044D255 /* credits.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = credits.html; sourceTree = "<group>"; };
@@ -3029,6 +3033,8 @@
 			isa = PBXGroup;
 			children = (
 				CC59CE000002000000000002 /* SpacesStripView.swift */,
+				C4B5F60A8D7C41059A2F2002 /* SidebarSpacePagination.swift */,
+				C4B5F60A8D7C41059A2F2004 /* SidebarSpacesStripFooter.swift */,
 				CC59CE0000020000000000A2 /* SpaceSwitchBandSurface.swift */,
 				CC4F00030000000000000002 /* SpaceURLRulesEditor.swift */,
 				CC4F00040000000000000002 /* CreateSpacePanel.swift */,
@@ -4260,6 +4266,8 @@
 				CC59CE0000010000000000A1 /* Space.swift in Sources */,
 				CC59CE000001000000000001 /* SpaceManager.swift in Sources */,
 				CC59CE000002000000000001 /* SpacesStripView.swift in Sources */,
+				C4B5F60A8D7C41059A2F2001 /* SidebarSpacePagination.swift in Sources */,
+				C4B5F60A8D7C41059A2F2003 /* SidebarSpacesStripFooter.swift in Sources */,
 				CC59CE0000020000000000A1 /* SpaceSwitchBandSurface.swift in Sources */,
 				CC59CE000003000000000001 /* ProfileManager.swift in Sources */,
 				747241560000000000000021 /* ProfileChatArchiveJournal.swift in Sources */,

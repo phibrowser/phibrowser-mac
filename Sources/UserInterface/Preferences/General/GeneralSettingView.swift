@@ -146,6 +146,9 @@ private struct AppearanceSectionView: View {
     @AppStorage(PhiPreferences.GeneralSettings.sidebarPositionKey)
     private var sidebarPosition = SidebarPosition.left.rawValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.sidebarSpaceStripPositionKey)
+    private var spaceStripPosition = SidebarSpaceStripPosition.top.rawValue
+
     @AppStorage(PhiPreferences.ThemeSettings.userAppearanceChoice.rawValue)
     private var selectedAppearance: UserAppearanceChoice = .system
 
@@ -189,6 +192,21 @@ private struct AppearanceSectionView: View {
 
                 Divider()
                 #endif
+
+                let spaceSwitcherPositionTitle = NSLocalizedString("settings.general.spaceSwitcherPosition.title",
+                    value: "Sidebar Space switcher", comment: "Appearance setting for the placement of the Space switcher in the sidebar")
+                GeneralRowView(title: spaceSwitcherPositionTitle) {
+                    Picker(spaceSwitcherPositionTitle, selection: $spaceStripPosition) {
+                        Text(NSLocalizedString("settings.general.spaceSwitcherPosition.top", value: "Top",
+                            comment: "Appearance option: show the sidebar Space switcher at the top")).tag(SidebarSpaceStripPosition.top.rawValue)
+                        Text(NSLocalizedString("settings.general.spaceSwitcherPosition.bottom", value: "Bottom",
+                            comment: "Appearance option: place the Space switcher at the bottom of the sidebar")).tag(SidebarSpaceStripPosition.bottom.rawValue)
+                    }
+                    .labelsHidden()
+                    .disabled(selectedLayoutMode.wrappedValue.isTraditional)
+                }
+
+                Divider()
 
                 GeneralRowView(title: NSLocalizedString("settings.general.appearance.title", value: "Color appearance", comment: "General settings - Color appearance row title"), alignment: .top) {
                     HStack(spacing: 16) {

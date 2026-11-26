@@ -204,6 +204,7 @@ final class SpacesStripGeometry: ObservableObject {
     /// (`SidebarHeaderView.spaceSwitchSitsInControlRow`): the pips line up at
     /// the trailing edge, and the "+" stays shown so no gap opens beside them.
     @Published var sitsInControlRow = false
+    @Published var showsPagination = false
 
     /// Keep the leaving selection visible while a newly created Space's
     /// icon is rendered and its content is prepared for the band slide.
@@ -484,6 +485,16 @@ struct SpacesStripView: View {
             stripOrderedIds = []
             stripGeometry.pipFrames = [:]
             tooltipController.dismissImmediately()
+        }
+        .onChange(of: stripGeometry.showsPagination) { _, _ in
+            pendingHoverWork?.cancel()
+            pendingHoverWork = nil
+            pendingHoverSpaceId = nil
+            hoveredSpaceId = nil
+            highlightedPipId = nil
+            tooltipController.dismissImmediately()
+            isPickerOpen = false
+            iconEditSpaceId = nil
         }
         .onChange(of: slot.iconPickerRequestToken) { _, _ in
             openActiveIconPicker()
@@ -1678,34 +1689,7 @@ struct SpacesStripView: View {
     /// Spaces. The shortcut is empty for Spaces past the ninth, which have no
     /// ⌃-number binding.
     private func hoverCard(for space: Space) -> SpaceHoverCard {
-        SpaceHoverCard(
-            spaceName: space.name,
-            profileName: showsProfileInHoverCard(for: space) ? profileDisplayName(for: space.profileId) : nil,
-            shortcutTokens: spaceShortcut(for: space)?.keycapTokens ?? [],
-            // The dark theme color is too dim on the card's black chrome, so dark
-            // mode takes the theme's brighter hover variant instead.
-            accent: (windowAppearance.isDark ? ThemedColor.themeColorOnHover : ThemedColor.themeColor)
-                .swiftUIColor(theme: windowTheme, appearance: windowAppearance),
-            isDark: windowAppearance.isDark
-        )
-    }
-
-    /// The hover card names the profile only when it tells the user something:
-    /// with a single user-assignable profile every Space is bound to it. A Space
-    /// on any other profile (e.g. the agent fallback) still shows it, as does
-    /// the card while the profile list has not been enumerated yet.
-    private func showsProfileInHoverCard(for space: Space) -> Bool {
-        let profiles = profileManager.userAssignableProfiles
-        return !(profiles.count == 1 && profiles[0].profileId == space.profileId)
-    }
-
-    /// The effective (remap-aware) switch shortcut for a Space, resolved from its
-    /// position in the manager's order — mirroring how the Spaces menu binds
-    /// ⌃1…⌃9. Nil past the ninth Space or if the binding was cleared.
-    private func spaceShortcut(for space: Space) -> ShortcutsKey? {
-        guard let index = manager.spaces.firstIndex(where: { $0.spaceId == space.spaceId }),
-              let command = CommandWrapper.spaceSelectionCommand(at: index) else { return nil }
-        return Shortcuts.key(for: command)
+        SpaceHoverCard(space: space, manager: manager, theme: windowTheme, appearance: windowAppearance)
     }
 
     /// Trailing affordance that opens the create-Space flow, seeding the new
@@ -1820,12 +1804,6 @@ struct SpacesStripView: View {
             return manager.spaces.first { $0.spaceId == id }
         }
         return nil
-    }
-
-    /// Resolves a Space's bound profile to a user-visible name, falling back to
-    /// the raw profileId if ProfileManager hasn't refreshed yet.
-    private func profileDisplayName(for profileId: String) -> String {
-        profileManager.profile(for: profileId)?.displayName ?? profileId
     }
 
     /// A Space's effective theme, resolved through the single source of
@@ -2659,7 +2637,9 @@ struct SpaceIconView: View {
     static func rasterizedImage(
         for storedValue: String,
         canvasSize: CGFloat,
-        scale: CGFloat
+        scale: CGFloat,
+        isDark: Bool = appAppearance.isDark,
+        tint: Color = Color(nsColor: .labelColor)
     ) -> NSImage? {
         let stored = storedValue.isEmpty ? "rectangle.stack" : storedValue
         // Match the menu's appearance so phi-icons pick their light/dark asset
@@ -2670,9 +2650,9 @@ struct SpaceIconView: View {
             storedValue: stored,
             size: max(canvasSize - 4, 1),
             symbolWeight: .semibold,
-            tint: Color(nsColor: .labelColor)
+            tint: tint
         )
-        .environment(\.colorScheme, appAppearance.isDark ? .dark : .light)
+        .environment(\.colorScheme, isDark ? .dark : .light)
         .frame(width: canvasSize, height: canvasSize)
         let renderer = ImageRenderer(content: icon)
         renderer.scale = scale
@@ -2703,6 +2683,43 @@ private func systemSymbolName(for stored: String) -> String? {
 /// Self-contained (plain data in) so it can be hosted in a standalone panel by
 /// `SpaceHoverTooltipController` instead of a transient `.popover` — the popover
 /// swallowed the next click (its own dismissal), so the pip's switch never ran.
+extension SpaceHoverCard {
+    init(space: Space, manager: SpaceManager, theme: Theme, appearance: Appearance) {
+        let profileManager = ProfileManager.shared
+        self.init(
+            spaceName: space.name,
+            profileName: Self.showsProfile(for: space, profileManager: profileManager)
+                // Falls back to the raw profileId until ProfileManager refreshes.
+                ? profileManager.profile(for: space.profileId)?.displayName ?? space.profileId
+                : nil,
+            shortcutTokens: Self.shortcut(for: space, manager: manager)?.keycapTokens ?? [],
+            // The dark theme color is too dim on the card's black chrome, so dark
+            // mode takes the theme's brighter hover variant instead.
+            accent: (appearance.isDark ? ThemedColor.themeColorOnHover : ThemedColor.themeColor)
+                .swiftUIColor(theme: theme, appearance: appearance),
+            isDark: appearance.isDark
+        )
+    }
+
+    /// The card names the profile only when it tells the user something: with
+    /// a single user-assignable profile every Space is bound to it. A Space on
+    /// any other profile (e.g. the agent fallback) still shows it, as does the
+    /// card while the profile list has not been enumerated yet.
+    private static func showsProfile(for space: Space, profileManager: ProfileManager) -> Bool {
+        let profiles = profileManager.userAssignableProfiles
+        return !(profiles.count == 1 && profiles[0].profileId == space.profileId)
+    }
+
+    /// The effective (remap-aware) switch shortcut, resolved from the Space's
+    /// position in the manager's order — mirroring how the Spaces menu binds
+    /// ⌃1…⌃9. Nil past the ninth Space or if the binding was cleared.
+    private static func shortcut(for space: Space, manager: SpaceManager) -> ShortcutsKey? {
+        guard let index = manager.spaces.firstIndex(where: { $0.spaceId == space.spaceId }),
+              let command = CommandWrapper.spaceSelectionCommand(at: index) else { return nil }
+        return Shortcuts.key(for: command)
+    }
+}
+
 struct SpaceHoverCard: View {
     let spaceName: String
     /// Nil hides the profile label.

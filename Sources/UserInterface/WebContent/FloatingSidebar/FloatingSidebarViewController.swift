@@ -95,6 +95,18 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
     /// attached; borrowing the key slot would route clicks to another shell.
     private var spacesStripSlot: SpaceWindowSlot? { state.windowController?.slot }
     private var spacesStripHostingView: SpacesStripHostingView?
+    private let spacesStripFooter = SidebarSpacesStripFooter()
+
+    private func updateSpaceStripPlacement() {
+        if let strip = spacesStripHostingView, createSpaceOverlay == nil {
+            let position: SidebarSpaceStripPosition = state.layoutMode.isTraditional
+                ? .top : PhiPreferences.GeneralSettings.loadSidebarSpaceStripPosition()
+            strip.place(in: headerView, footer: spacesStripFooter, position: position)
+        }
+        headerView.updateSpaceSwitchVisibility()
+        spacesStripFooter.updateVisibility()
+        updateHeaderHeight()
+    }
 
     func bindSpaceStripToSession() {
         guard state.participatesInSpaces, spacesStripHostingView == nil,
@@ -126,9 +138,9 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
             stripGeometry?.sitsInControlRow = sitsInControlRow
             self?.updateHeaderHeight()
         }
-        headerView.mountSpaceSwitch(hostingView)
         spacesStripRowView = hostingView
-        updateHeaderHeight()
+        spacesStripFooter.bind(slot: slot, resolveOwnerController: { [weak state] in state?.windowController })
+        updateSpaceStripPlacement()
     }
 
     /// The floating strip row's AppKit view, consulted by the slot's
@@ -473,7 +485,12 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
 
         bindMediaPresentation()
 
-        // 7. Bottom bar
+        // 7. Bottom Space switcher and toolbar
+        mainStackView.addArrangedSubview(spacesStripFooter)
+        spacesStripFooter.snp.makeConstraints { make in
+            make.leading.trailing.equalToSuperview()
+        }
+
         mainStackView.addArrangedSubview(bottomBarSwiftUI)
         bottomBarSwiftUI.contextMenu = tabList.blankAreaContextMenu
         bottomBarSwiftUI.snp.makeConstraints { make in
@@ -519,7 +536,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         state.$layoutMode
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.updateHeaderHeight()
+                self?.updateSpaceStripPlacement()
             }
             .store(in: &cancellables)
 
@@ -581,8 +598,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
             .sink { [weak self] _ in
                 self?.updateChatButtonVisibility()
                 self?.updateMemoryButtonVisibility()
-                self?.headerView.updateSpaceSwitchVisibility()
-                self?.updateHeaderHeight()
+                self?.updateSpaceStripPlacement()
             }
             .store(in: &cancellables)
 
@@ -596,8 +612,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.headerView.updateSpaceSwitchVisibility()
-                self?.updateHeaderHeight()
+                self?.updateSpaceStripPlacement()
             }
             .store(in: &cancellables)
     }
@@ -906,7 +921,9 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         let base = headerView.controlRowTopOffset + (showInSidebar ? 71 : 27)
         let spacesBandHeight = SidebarHeaderView.spaceSwitchBandHeight(addressInSidebar: showInSidebar)
         // A row moved up into the control row adds no height of its own.
-        let reservesSpacesBand = spacesEnabled && !headerView.spaceSwitchSitsInControlRow
+        let reservesSpacesBand = spacesEnabled
+            && !spacesStripFooter.isActive
+            && !headerView.spaceSwitchSitsInControlRow
         let headerHeight = base + (reservesSpacesBand ? spacesBandHeight : 0)
         headerHeightConstraint?.update(offset: headerHeight)
     }
@@ -978,7 +995,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         updateHeaderHeight()
         view.layoutSubtreeIfNeeded()
         let stripRow = spacesStripRowView
-        let anchorsBelowStrip = stripRow?.isHidden == false
+        let anchorsBelowStrip = stripRow?.superview === headerView && stripRow?.isHidden == false
 
         // No backdrop, unlike the docked flow: the docked sidebar keeps its
         // content in place and stands a matching visual-effect sheet over it,
@@ -1037,7 +1054,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         spacesStripSlot?.creatingSpaceIconValue = nil
         // Release forced visibility. Normal Space-count rules take over again.
         headerView.forcesSpaceSwitchVisible = false
-        updateHeaderHeight()
+        updateSpaceStripPlacement()
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.15
             context.allowsImplicitAnimation = true

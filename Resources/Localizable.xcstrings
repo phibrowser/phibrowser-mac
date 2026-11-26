@@ -76517,6 +76517,39 @@
         }
       }
     },
+    "settings.general.spaceSwitcherPosition.bottom" : {
+      "comment" : "Appearance option: place the Space switcher at the bottom of the sidebar",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bottom"
+          }
+        }
+      }
+    },
+    "settings.general.spaceSwitcherPosition.title" : {
+      "comment" : "Appearance setting for the placement of the Space switcher in the sidebar",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sidebar Space switcher"
+          }
+        }
+      }
+    },
+    "settings.general.spaceSwitcherPosition.top" : {
+      "comment" : "Appearance option: show the sidebar Space switcher at the top",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top"
+          }
+        }
+      }
+    },
     "settings.general.theme.colorTitle" : {
       "comment" : "General settings - Theme color row title",
       "extractionState" : "extracted_with_value",
@@ -110706,6 +110739,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新增空間"
+          }
+        }
+      }
+    },
+    "sidebar.spacesStrip.pageAccessibilityValue" : {
+      "comment" : "Sidebar Space dot accessibility value; the current dot's one-based position, then the total number of Spaces",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page %1$ld of %2$ld"
           }
         }
       }

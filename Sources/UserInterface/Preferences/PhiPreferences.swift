@@ -321,6 +321,13 @@ extension PhiPreferences {
             defaults.set(enabled, forKey: pictureInPictureOnFullscreenDesktopsKey)
         }
 
+        static let sidebarSpaceStripPositionKey = "sidebarSpaceStripPosition"
+
+        static func loadSidebarSpaceStripPosition(from defaults: UserDefaults = .standard) -> SidebarSpaceStripPosition {
+            defaults.string(forKey: sidebarSpaceStripPositionKey)
+                .flatMap(SidebarSpaceStripPosition.init(rawValue:)) ?? .top
+        }
+
         static let sidebarPositionKey = "sidebarPosition"
 
         static func loadSidebarPosition(from defaults: UserDefaults = .standard) -> SidebarPosition {

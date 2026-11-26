@@ -418,6 +418,18 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         updateSpaceSwitchVisibility()
     }
 
+    func unmountSpaceSwitch() {
+        guard let strip = spaceSwitchView else { return }
+        spaceSwitchView = nil
+        spaceSwitchVisible = nil
+        spaceSwitchTopConstraint = nil
+        spaceSwitchControlRowLeading = nil
+        setSpaceSwitchSitsInControlRow(false)
+        makeAddressViewConstraints()
+        strip.snp.removeConstraints()
+        strip.removeFromSuperview()
+    }
+
     /// Shows or hides the Spaces-switch row, reclaiming the row's height (and
     /// re-pinning the address bar to the nav row) when it is hidden. The row
     /// shows only when the master Spaces feature flag is on AND more than one

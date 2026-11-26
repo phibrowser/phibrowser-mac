@@ -1242,8 +1242,10 @@ extension LocalStore {
     private func bookmarkChangeSnapshot() -> [BookmarkChangeSnapshot]? {
         guard let context = mainContext else { return nil }
         do {
-            return try allBookmarkModels(in: context)
-                .map(BookmarkChangeSnapshot.init)
+            let models = try allBookmarkModels(in: context)
+            let parents = BookmarkParentResolver(models)
+            return models
+                .map { BookmarkChangeSnapshot($0, parentGuid: parents.parentGuid(of: $0)) }
                 .sorted { $0.guid < $1.guid }
         } catch {
             // R12: log only type and domain/code, never row content.
@@ -1292,12 +1294,12 @@ private struct BookmarkChangeSnapshot: Equatable {
     let contentUpdatedDate: Date?
     let locationUpdatedDate: Date?
 
-    init(_ model: TabDataModel) {
+    init(_ model: TabDataModel, parentGuid: String?) {
         syncId = model.syncId
         guid = model.guid
         spaceId = model.spaceId
         profileId = model.profileId ?? model.profile?.profileId
-        parentGuid = model.parent?.guid
+        self.parentGuid = parentGuid
         index = model.index
         type = model.type
         title = model.title

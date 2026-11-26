@@ -400,9 +400,11 @@ final class AccountPhiBookmarkAccess: PhiBookmarkLocalAccess {
 
         // Build parent-child links in memory from one fetch. Prefetched parent relationships avoid further
         // faults or queries during canonical-root traversal.
+        // A parent whose row no longer exists resolves to nil, leaving that subtree unreachable.
+        let parents = BookmarkParentResolver(models)
         var childrenByParent: [String: [TabDataModel]] = [:]
         for model in models {
-            guard let parentGuid = model.parent?.guid else { continue }
+            guard let parentGuid = parents.parentGuid(of: model) else { continue }
             childrenByParent[parentGuid, default: []].append(model)
         }
 

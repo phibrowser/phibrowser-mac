@@ -13,6 +13,21 @@ enum BookmarkPinConversionError: Error {
     case invalidDestination
 }
 
+/// Resolves parent guids by identifier only. A parent outside `models`, including one whose row no
+/// longer exists, resolves to nil: reading any attribute of a missing row is a SwiftData fatal error.
+struct BookmarkParentResolver {
+    private let guidsByID: [PersistentIdentifier: String]
+
+    init(_ models: [TabDataModel]) {
+        guidsByID = Dictionary(models.map { ($0.persistentModelID, $0.guid) },
+                               uniquingKeysWith: { first, _ in first })
+    }
+
+    func parentGuid(of model: TabDataModel) -> String? {
+        model.parent.flatMap { guidsByID[$0.persistentModelID] }
+    }
+}
+
 extension LocalStore {
     /// Converts closed or cross-Space bookmarks without requiring a window runtime.
     /// Creation and removal share one transaction so a failed drop preserves its source.

@@ -840,10 +840,17 @@ extension BookmarkManager {
     func mappedModels(from models: [TabDataModel], reusingExistingBookmarks: Bool = false) -> [Bookmark] {
         let bookmarkModels = models.filter { $0.dataType == .bookmark || $0.dataType == .bookmarkFolder }
         guard !bookmarkModels.isEmpty else { return [] }
-        
+
+        let parents = BookmarkParentResolver(bookmarkModels)
+        let unresolvedParentGuid = "\u{0}unresolved-parent"
+        func parentGuid(of model: TabDataModel) -> String? {
+            guard model.parent != nil else { return nil }
+            return parents.parentGuid(of: model) ?? unresolvedParentGuid
+        }
+
         let sortedModels = bookmarkModels.sorted { lhs, rhs in
-            let lhsParent = lhs.parent?.guid ?? ""
-            let rhsParent = rhs.parent?.guid ?? ""
+            let lhsParent = parentGuid(of: lhs) ?? ""
+            let rhsParent = parentGuid(of: rhs) ?? ""
             if lhsParent != rhsParent {
                 return lhsParent < rhsParent
             }
@@ -869,7 +876,7 @@ extension BookmarkManager {
         
         for model in sortedModels {
             guard let bookmark = bookmarkMap[model.guid],
-                  let parentGuid = model.parent?.guid,
+                  let parentGuid = parentGuid(of: model),
                   let parentBookmark = bookmarkMap[parentGuid],
                   parentBookmark.isFolder else {
                 continue
@@ -889,7 +896,7 @@ extension BookmarkManager {
         var topLevel: [Bookmark] = []
         for model in sortedModels {
             if model.guid == rootGuid { continue }
-            if let parentGuid = model.parent?.guid {
+            if let parentGuid = parentGuid(of: model) {
                 if parentGuid == rootGuid {
                     if let bookmark = bookmarkMap[model.guid] {
                         topLevel.append(bookmark)

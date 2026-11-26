@@ -17,8 +17,7 @@ enum PhiBuildCapabilities {
     static let supportsAI = false
     #else
     static let supportsAuthentication = true
-    // Browser AI surfaces require the Sentinel backend.
-    static let supportsAI = !usesAthenaCanary
+    static let supportsAI = true
     #endif
 }
 

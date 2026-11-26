@@ -44,7 +44,7 @@ enum ServiceBrokerSocketPath {
     /// `auth0Subject` for this browser bundle. `nil` when the subject is empty
     /// or Application Support cannot be located.
     static func currentDataSocketPath(auth0Subject: String) -> String? {
-        guard !PhiBuildCapabilities.usesAthenaCanary, !auth0Subject.isEmpty,
+        guard !auth0Subject.isEmpty,
               let applicationSupportPath = NSSearchPathForDirectoriesInDomains(
                   .applicationSupportDirectory,
                   .userDomainMask,
@@ -52,18 +52,28 @@ enum ServiceBrokerSocketPath {
               ).first else {
             return nil
         }
+        #if ATHENA_CANARY_TRIAL
+        guard PhiPreferences.AthenaSettings.browserAIEnabled else { return nil }
+        let subject = sanitizePathComponent(auth0Subject)
+        guard subject != ".", subject != ".." else { return nil }
+        let storage = URL(fileURLWithPath: applicationSupportPath, isDirectory: true)
+            .appendingPathComponent("com.phibrowser.canary.athena/engine", isDirectory: true)
+            .appendingPathComponent(subject, isDirectory: true)
+        return dataSocketPath(storagePath: storage.path, directoryPrefix: "phi-athena")
+        #else
         let storagePath = sentinelStoragePath(
             applicationSupportPath: applicationSupportPath,
             browserBundleIdentifier: Bundle.main.bundleIdentifier ?? "",
             auth0Subject: auth0Subject
         )
         return dataSocketPath(storagePath: storagePath)
+        #endif
     }
 
-    static func dataSocketPath(storagePath: String) -> String {
+    static func dataSocketPath(storagePath: String, directoryPrefix: String = "phi-sentinel") -> String {
         let digest = SHA256.hash(data: Data(storagePath.utf8))
         let shortHash = digest.prefix(8).map { String(format: "%02x", $0) }.joined()
-        let shortRoot = "/tmp/phi-sentinel-\(shortHash)"
+        let shortRoot = "/tmp/\(directoryPrefix)-\(shortHash)"
         let shortSocketDirectory = (shortRoot as NSString).appendingPathComponent("sockets")
 
         // Sentinel repairs permissions on owned, real directories before binding,

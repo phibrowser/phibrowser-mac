@@ -424,6 +424,20 @@ extension PhiPreferences {
         case enabled = "PhiAthenaEnabled"
         case openAtStartup = "PhiAthenaOpenAtStartup"
 
+        static var browserAIEnabled: Bool {
+            ApplicationState.shared.isAuthenticated && enabled.loadValue()
+        }
+
+        /// Browser UI and extension settings already read phiAIEnabled. Publish
+        /// the trial's effective value without changing regular Canary's choice.
+        static func publishBrowserAI(_ enabled: Bool, defaults: UserDefaults = .standard) {
+            let key = AISettings.phiAIEnabled.rawValue
+            var domain = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+            guard domain[key] as? Bool != enabled else { return }
+            domain[key] = enabled
+            defaults.setVolatileDomain(domain, forName: UserDefaults.argumentDomain)
+        }
+
         func loadValue() -> Bool {
             UserDefaults.standard.bool(forKey: rawValue, default: true)
         }
@@ -983,7 +997,11 @@ enum GuestModePreferences {
             default: PhiPreferences.AISettings.phiAIEnabled.defaultValue
         )
 
+        #if ATHENA_CANARY_TRIAL
+        PhiPreferences.AthenaSettings.publishBrowserAI(false, defaults: defaults)
+        #else
         defaults.set(false, forKey: aiEnabledKey)
+        #endif
         return didChange
     }
 }

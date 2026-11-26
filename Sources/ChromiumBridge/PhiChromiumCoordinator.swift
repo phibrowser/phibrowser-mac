@@ -1832,7 +1832,7 @@ import SwiftUI
 extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     func shouldEnablePhiExtensions() -> Bool {
         #if ATHENA_CANARY_TRIAL
-        ApplicationState.shared.isAuthenticated && PhiPreferences.AthenaSettings.enabled.loadValue()
+        PhiPreferences.AthenaSettings.browserAIEnabled
         #else
         PhiBuildCapabilities.supportsAI && PhiPreferences.AISettings.phiAIEnabled.loadValue()
         #endif

@@ -8,8 +8,12 @@ import Cocoa
 
 extension BrowserState {
     func onAIEnabledChanged(_ enabled: Bool, sentinelOnLogin: Bool) {
-        // The trial follows Athena and account changes at application scope.
-        guard !PhiBuildCapabilities.usesAthenaCanary else { return }
+        // Athena owns the app and extension lifecycle. Each window still
+        // dismisses its own AI panels when the effective switch turns off.
+        if PhiBuildCapabilities.usesAthenaCanary {
+            if !enabled { closeAllAIContent() }
+            return
+        }
         let effectiveEnabled = enabled && PhiBuildCapabilities.supportsAI
         if effectiveEnabled {
             ChromiumLauncher.sharedInstance().bridge?.enablePhiExtensions()

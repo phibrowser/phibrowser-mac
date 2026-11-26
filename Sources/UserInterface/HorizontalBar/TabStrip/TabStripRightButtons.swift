@@ -18,11 +18,7 @@ struct TabStripRightButtons: View {
     /// Set once Sparkle has prepared a downloaded update for installation.
     @State private var availableUpdateVersion: String? = nil
 
-    // Organize-tabs is unavailable when AI is disabled, in incognito windows,
-    // or when there are too few eligible tabs. `@AppStorage` keeps the AI toggle
-    // reactive.
-    @AppStorage(PhiPreferences.AISettings.phiAIEnabled.rawValue)
-    private var phiAIEnabled: Bool = PhiPreferences.AISettings.phiAIEnabled.defaultValue
+    @State private var phiAIEnabled: Bool
 
     @AppStorage(PhiPreferences.GeneralSettings.topBarShowsProfile.rawValue)
     private var showsProfile = PhiPreferences.GeneralSettings.topBarShowsProfile.defaultValue
@@ -41,6 +37,7 @@ struct TabStripRightButtons: View {
         self.browserState = browserState
         self.onCardEntryTap = onCardEntryTap
         self.onSearchTabsTap = onSearchTabsTap
+        _phiAIEnabled = State(initialValue: browserState.lastPhiAIEnabled)
         _eligibleTabCount = State(
             initialValue: FarringdonOrganizer.eligibleTabCount(in: browserState.normalTabs))
 
@@ -79,6 +76,9 @@ struct TabStripRightButtons: View {
                 ProfileButton(surface: .tabStrip)
                     .frame(width: 24, height: 24)
             }
+        }
+        .onReceive(browserState.$lastPhiAIEnabled.receive(on: DispatchQueue.main)) { enabled in
+            phiAIEnabled = enabled
         }
         .onReceive(browserState.$normalTabs.receive(on: DispatchQueue.main)) { tabs in
             eligibleTabCount = FarringdonOrganizer.eligibleTabCount(in: tabs)

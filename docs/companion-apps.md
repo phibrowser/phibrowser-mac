@@ -185,14 +185,22 @@ trial bundle. Replace the staged framework's `Versions/Current/Default Apps`
 directory with the output and sign the framework before the enclosing app.
 
 In Settings → Athena, enabling Athena opens the signed sibling app for a
-signed-in user and enables Sidecar, Lexington and Kensington. Disabling it
-quits Athena, lets its Runner shut down, and disables those extensions. Mirage
+signed-in user and enables Sidecar, Lexington and Kensington. Browser AI
+surfaces (chat sidebar, site memory and tab organization) and the extensions'
+native settings follow the effective Athena switch. The browser publishes the
+signed-in value under the existing AI preference in its process-local defaults
+domain, preserving the saved ordinary Canary setting. Disabling Athena closes
+open browser AI panels, quits the companion and disables those extensions. Mirage
 remains enabled as the browser's web store customizer. A separate preference
 controls automatic opening of Athena at browser startup or sign-in. Both
 preferences default to on. Athena owns its Runner, service updates and chat UI.
-Guest sessions only open the browser. The trial disables native Sentinel AI
-controls, Sentinel supervision, browser-to-Runner and Service Broker
-connections, and AI-data export. Browser data can still be exported.
+Guest sessions only open the browser. For a signed-in user with Athena enabled,
+the existing authenticated Service Broker client resolves the current account's
+Athena engine data socket. The storage root is
+`~/Library/Application Support/com.phibrowser.canary.athena/engine/<sanitized subject>`
+and the short socket directory is `/tmp/phi-athena-<storage path hash>/sockets`.
+Athena owns its private Runner control connection. Sentinel supervision and
+AI-data export stay disabled. Browser data can still be exported.
 The trial browser does not start its nightly updater. It shares Canary's user
 data and credentials. Distribute `build-scripts/switch-to-regular-canary.command`
 as `Switch to Regular Canary.command` beside the trial apps. To switch back,

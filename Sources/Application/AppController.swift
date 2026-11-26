@@ -143,6 +143,9 @@ import PostHog
             permitsSentinelLaunch = true
         }
         
+        #if ATHENA_CANARY_TRIAL
+        PhiPreferences.AthenaSettings.publishBrowserAI(PhiPreferences.AthenaSettings.browserAIEnabled)
+        #endif
         ChromiumLauncher.sharedInstance().bridge?.applicationDidFinishLaunching(notification)
         hasFinishedLaunching = true
         #if PHI_OSS_BUILD
@@ -301,11 +304,14 @@ import PostHog
     @MainActor
     private func applyTrialAthenaExtensionPolicy() {
         let bridge = ChromiumLauncher.sharedInstance().bridge
-        if PhiChromiumCoordinator.shared.shouldEnablePhiExtensions() {
+        let enabled = PhiPreferences.AthenaSettings.browserAIEnabled
+        PhiPreferences.AthenaSettings.publishBrowserAI(enabled)
+        if enabled {
             bridge?.enablePhiExtensions()
         } else {
             bridge?.disablePhiExtensions(false)
         }
+        bridge?.nativeSettingsChanged(PhiPreferences.AISettings.buildConfig())
     }
 
     /// Athena stops its Runner asynchronously on quit. Serialize requests so
@@ -371,12 +377,7 @@ import PostHog
         bindChromiumBridgeIfNeeded()
 
         #if ATHENA_CANARY_TRIAL
-        // Some browser surfaces observe this preference directly. Mask it for
-        // this process so the ordinary Canary retains its saved AI setting.
-        let defaults = UserDefaults.standard
-        var arguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
-        arguments[PhiPreferences.AISettings.phiAIEnabled.rawValue] = false
-        defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+        PhiPreferences.AthenaSettings.publishBrowserAI(false)
         #endif
 
         // Register defaults before any settings are read.

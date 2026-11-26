@@ -123,10 +123,6 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private var usesSplitTabPreview = false
     private var isEditingActive = false
     private var isPointerHovered = false
-    /// Set while this folder's icon picker is open; see
-    /// `setFolderIconPickerShown(_:)`.
-    private var isFolderIconPickerShown = false
-    private let folderIconPickerHoverShield = HoverShield()
 
     /// Standalone management surfaces must not resolve actions through another Space.
     var usesActiveBrowserStateFallback = true
@@ -146,7 +142,6 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     override func prepareForReuse() {
         super.prepareForReuse()
-        setFolderIconPickerShown(false)
         folderPreview.invalidate()
         faviconLoadHandle?.cancel()
         faviconLoadHandle = nil
@@ -170,9 +165,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard window == nil else { return }
-        folderPreview.invalidate()
-        setFolderIconPickerShown(false)
+        if window == nil { folderPreview.invalidate() }
     }
 
     func cancelTabPreviewForInteraction() {
@@ -230,9 +223,6 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
                 self?.selectFolderIcon(icon)
             }
         )
-        rowView.onFolderIconPickerShownChange = { [weak self] shown in
-            self?.setFolderIconPickerShown(shown)
-        }
         rowView.frame = bounds
         rowView.autoresizingMask = [.width, .height]
         addSubview(rowView)
@@ -280,32 +270,16 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
                                                           bottom: 2, right: WebContentConstant.edgesSpacing)
 
     /// The folder row stays highlighted while its preview is open, even after
-    /// the pointer moves into the preview, and while its icon picker is open.
+    /// the pointer moves into the preview.
     private func updateHoverAppearance() {
-        viewState.isHovered = isPointerHovered || folderPreview.isPresented || isFolderIconPickerShown
+        viewState.isHovered = isPointerHovered || folderPreview.isPresented
+        updatePrimaryTabHover()
     }
 
-    /// While the folder icon picker is open, the folder it changes stays
-    /// highlighted and nothing else in the window reacts to the pointer, as
-    /// under the pinned tab icon picker. A hover there opened a folder preview,
-    /// which took key and closed the picker. A `HoverShield` over the window
-    /// holds every hover until the picker starts to close; the picker's
-    /// popover opens after it and sits above it
-    /// (`SidebarBookmarkRowContentView.onFolderIconPickerShownChange`).
-    private func setFolderIconPickerShown(_ shown: Bool) {
-        guard isFolderIconPickerShown != shown else { return }
-        isFolderIconPickerShown = shown
-        folderIconPickerHoverShield.remove()
-        if !shown, window != nil {
-            // Picks up a pointer resting on the row first, so the highlight
-            // does not drop until the pointer next moves.
-            hoverRegionView.updateTrackingAreas()
-        }
-        if shown, let window {
-            folderPreview.invalidate()
-            folderIconPickerHoverShield.cover(window)
-        }
-        updateHoverAppearance()
+    /// Feeds the row's hover to a single bookmark's live tab, whose model
+    /// offers the share-instead button only while hovered.
+    private func updatePrimaryTabHover() {
+        primaryTabViewModel.setHovered(viewState.isHovered && !viewState.showsSecondaryFavicon)
     }
 
     private func setupPressAnimation() {
@@ -590,17 +564,13 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             for: .bookmarkFolderIconPickerRequested,
             object: bookmark
         )
-        // Handled in the menu action's turn, not on a later main-queue hop:
-        // the row keeps its highlight from the menu straight into the picker
-        // instead of dropping it for a frame.
+        .receive(on: DispatchQueue.main)
         .sink { [weak self, weak bookmark] _ in
-            MainActor.assumeIsolated {
-                guard let self,
-                      let bookmark,
-                      bookmark.isFolder,
-                      self.configuredBookmark === bookmark else { return }
-                self.rowView.showFolderIconPicker()
-            }
+            guard let self,
+                  let bookmark,
+                  bookmark.isFolder,
+                  self.configuredBookmark === bookmark else { return }
+            self.rowView.showFolderIconPicker()
         }
         .store(in: &cancellables)
 
@@ -709,6 +679,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         configuredSecondaryTab = panes.secondary
         configure(viewModel: primaryTabViewModel, with: panes.primary)
         configure(viewModel: secondaryTabViewModel, with: panes.secondary)
+        updatePrimaryTabHover()
         viewState.primaryTabIsLive = panes.primary != nil
         viewState.secondaryTabIsLive = panes.secondary != nil
         viewState.isOpened = panes.primary?.hasWebContent == true
@@ -1059,7 +1030,9 @@ final class SidebarBookmarkRowContentView: NSView {
     private let separatorView = NavigatedAwaySeparatorView()
     private let peekButton = SideTabPeekButton()
     private let closeButton = SideTabIconButton()
+    private var shareInsteadButton: (offer: BrowserTabSharingState.ShareInsteadOffer, view: SideTabIconButton)?
     private let badgeView = SideTabCornerBadgeView()
+    private var beingSharedOutlineHost: TabDecorativeHostingView?
 
     private var theme: Theme?
     private var phiAppearance: Appearance = .light
@@ -1072,9 +1045,6 @@ final class SidebarBookmarkRowContentView: NSView {
     private var isHintShown = false
     private var folderIconPopover: NSPopover?
     private var folderIconPicker: NSHostingController<BookmarkFolderIconPicker>?
-    /// Told true just before the folder icon picker's popover shows, and
-    /// false as it starts to close.
-    var onFolderIconPickerShownChange: ((Bool) -> Void)?
     private var pickerSelection: BookmarkFolderIcon?
 
     private lazy var highlightShadow: NSShadow = {
@@ -1124,11 +1094,7 @@ final class SidebarBookmarkRowContentView: NSView {
         guard state.isFolder, window != nil else { return }
         let popover = folderIconPopover ?? makeFolderIconPopover()
         updateFolderIconPicker()
-        // Before the popover, so anything the owner puts over the window
-        // for the picker stays under it.
-        if !popover.isShown { onFolderIconPickerShownChange?(true) }
         popover.show(relativeTo: folderIconView.bounds, of: folderIconView, preferredEdge: .minY)
-        if !popover.isShown { onFolderIconPickerShownChange?(false) }
     }
 
     func closeFolderIconPicker() {
@@ -1268,6 +1234,12 @@ final class SidebarBookmarkRowContentView: NSView {
             height: max(0, bounds.height - 4)
         )
         renderBackground(in: rowRect)
+        // A split bookmark shows sharing as the shared pane's favicon dot.
+        let isSplit = state.showsSecondaryFavicon
+        renderBeingSharedOutline(
+            in: rowRect,
+            isShown: !isFolder && !isSplit && state.primaryTabIsLive && primaryTabViewModel.isBeingSharedRemotely
+        )
 
         let hoverFill = theme.map { ThemedColor.hover.resolve(theme: $0, appearance: phiAppearance) } ?? .clear
         let spacing: CGFloat = isFolder ? 6 : 8
@@ -1300,6 +1272,7 @@ final class SidebarBookmarkRowContentView: NSView {
                           pageURL: state.primaryPageURL,
                           revision: state.primaryFaviconRevision,
                           liveModel: state.primaryTabIsLive ? primaryTabViewModel : nil,
+                          showsSharedDot: isSplit,
                           hoverFill: hoverFill)
         }
         renderOpenIndicator(besides: slotRect)
@@ -1317,6 +1290,7 @@ final class SidebarBookmarkRowContentView: NSView {
                           pageURL: state.secondaryPageURL,
                           revision: state.secondaryFaviconRevision,
                           liveModel: state.secondaryTabIsLive ? secondaryTabViewModel : nil,
+                          showsSharedDot: true,
                           hoverFill: hoverFill)
             x = rect.maxX + spacing
             x = layoutMuteButton(secondaryMuteButton, model: secondaryTabViewModel,
@@ -1335,6 +1309,19 @@ final class SidebarBookmarkRowContentView: NSView {
         if showsClose {
             closeButton.frame = buttonFrame(x: titleMaxX - Self.buttonSize, midY: midY)
             titleMaxX -= Self.buttonSize + spacing
+        }
+        // The primary model only offers while it sees the hover, which a split
+        // bookmark never passes on.
+        let shareButtonX = titleMaxX - Self.buttonSize
+        if showsClose, !isSplit, let offer = primaryTabViewModel.shareInsteadOffer, shareButtonX >= x - spacing {
+            let button = shareInsteadButton?.offer == offer ? shareInsteadButton?.view : nil
+            let shareButton = button ?? makeShareInsteadButton(for: offer)
+            shareButton.frame = buttonFrame(x: shareButtonX, midY: midY)
+            shareButton.hoverFillColor = hoverFill
+            shareButton.isHidden = false
+            titleMaxX -= Self.buttonSize + spacing
+        } else {
+            shareInsteadButton?.view.isHidden = true
         }
         let showsPeek = state.showsPeek && !isEditing
         peekButton.isHidden = !showsPeek
@@ -1411,12 +1398,45 @@ final class SidebarBookmarkRowContentView: NSView {
                                pageURL: String?,
                                revision: Int,
                                liveModel: TabViewModel?,
+                               showsSharedDot: Bool,
                                hoverFill: NSColor) {
         let outset = (Self.buttonSize - slotRect.width) / 2
         button.frame = slotRect.insetBy(dx: -outset, dy: -outset)
         button.render(image: image, pageURL: pageURL, revision: revision, liveModel: liveModel,
+                      showsSharedDot: showsSharedDot,
                       dimmingEnabled: dimmingEnabled, theme: theme, appearance: phiAppearance)
         button.hoverFillColor = button.canNavigate ? hoverFill : .clear
+    }
+
+    private func makeShareInsteadButton(
+        for offer: BrowserTabSharingState.ShareInsteadOffer
+    ) -> SideTabIconButton {
+        shareInsteadButton?.view.removeFromSuperview()
+        let button = SideTabIconButton.shareInstead { [weak self] in
+            self?.primaryTabViewModel.shareInstead(offer)
+        }
+        contentView.addSubview(button)
+        shareInsteadButton = (offer, button)
+        return button
+    }
+
+    private func renderBeingSharedOutline(in rect: NSRect, isShown: Bool) {
+        guard isShown else {
+            beingSharedOutlineHost?.removeFromSuperview()
+            beingSharedOutlineHost = nil
+            return
+        }
+        let outlineHost: TabDecorativeHostingView
+        if let beingSharedOutlineHost {
+            outlineHost = beingSharedOutlineHost
+        } else {
+            outlineHost = TabDecorativeHostingView(
+                rootView: TabBeingSharedRowOutline(cornerRadius: Self.cornerRadius)
+            )
+            contentView.addSubview(outlineHost, positioned: .above, relativeTo: backgroundView)
+            beingSharedOutlineHost = outlineHost
+        }
+        outlineHost.frame = rect
     }
 
     /// The dot beside an open bookmark that isn't the active one.
@@ -1568,7 +1588,6 @@ final class SidebarBookmarkRowContentView: NSView {
         let popover = NSPopover()
         popover.behavior = .transient
         popover.contentViewController = picker
-        popover.delegate = self
         folderIconPicker = picker
         folderIconPopover = popover
         return popover
@@ -1584,14 +1603,6 @@ final class SidebarBookmarkRowContentView: NSView {
         return BookmarkFolderIconPicker(selected: state.folderIcon) { [weak self] icon in
             self?.onSelectFolderIcon(icon)
         }
-    }
-}
-
-extension SidebarBookmarkRowContentView: NSPopoverDelegate {
-    /// As the picker starts to close, not once it has faded: the window under
-    /// it reacts to the pointer again right away.
-    func popoverWillClose(_ notification: Notification) {
-        onFolderIconPickerShownChange?(false)
     }
 }
 
@@ -1642,6 +1653,7 @@ private final class BookmarkFaviconButton: SideTabIconButton {
                 pageURL: String?,
                 revision: Int,
                 liveModel: TabViewModel?,
+                showsSharedDot: Bool,
                 dimmingEnabled: Bool,
                 theme: Theme?,
                 appearance: Appearance) {
@@ -1650,7 +1662,7 @@ private final class BookmarkFaviconButton: SideTabIconButton {
                                    width: size, height: size)
         if let liveModel {
             faviconView.render(model: liveModel, dimmingEnabled: dimmingEnabled,
-                               theme: theme, appearance: appearance)
+                               theme: theme, appearance: appearance, showsSharedDot: showsSharedDot)
         } else {
             faviconView.render(image: image, pageURL: pageURL, revision: revision)
         }

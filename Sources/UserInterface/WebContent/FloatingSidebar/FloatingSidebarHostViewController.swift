@@ -986,7 +986,7 @@ final class FloatingSidebarHostViewController: NSViewController {
 
         // Below the sidebar content, which mounts later
         // (`columnMaterialSheet`).
-        let sheet = NSVisualEffectView()
+        let sheet = ColumnMaterialSheetView()
         sheet.material = .fullScreenUI
         sheet.blendingMode = .behindWindow
         sheet.wantsLayer = true
@@ -1060,7 +1060,7 @@ final class FloatingSidebarHostViewController: NSViewController {
             resizeFloatingSidebar(toWidth: Self.floatingSidebarWidth(
                 from: floatingSidebarResizeStartWidth, dragOffset: offset, sidebarOnRight: sidebarOnRight))
         }
-        resizeHandle.onEnd = { [weak self] in self?.endFloatingSidebarResize() }
+        resizeHandle.onEnd = { [weak self] _ in self?.endFloatingSidebarResize() }
         resizeHandle.directions = { [weak self] in
             guard let self else { return .both }
             return Self.floatingSidebarResizeDirections(forWidth: currentFloatingWidth, sidebarOnRight: sidebarOnRight)
@@ -1582,7 +1582,7 @@ class FloatingSidebarResizeHandleView: NSView {
     var onBegin: (() -> Void)?
     /// The pointer's horizontal distance from where the drag started.
     var onDrag: ((CGFloat) -> Void)?
-    var onEnd: (() -> Void)?
+    var onEnd: ((CGFloat) -> Void)?
     /// The ways the edge can move right now, read for the cursor.
     var directions: (() -> Directions)?
 
@@ -1651,10 +1651,16 @@ class FloatingSidebarResizeHandleView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard dragStartX != nil else { return }
+        guard let startX = dragStartX else { return }
         dragStartX = nil
-        onEnd?()
+        onEnd?(event.locationInWindow.x - startX)
     }
+}
+
+/// AppKit routes a scroll event to a lower hit-testable sibling before
+/// `nextResponder`, so this sheet would take swipes from the sidebar content.
+private final class ColumnMaterialSheetView: NSVisualEffectView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// The full-page overlay accepts hits only on the trigger and visible panel.

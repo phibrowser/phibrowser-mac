@@ -1085,29 +1085,68 @@ final class ShellSplitCharacterizationTests: XCTestCase {
         }
     }
 
-    /// A drag released past half the minimum width slides the column out;
-    /// coming back before the release keeps it open.
-    func testReleasingPastHalfTheMinimumCollapsesAndComingBackKeepsItOpen() {
+    func testDividerCollapsesAndReopensWhileTheMouseIsDown() throws {
         for side in SidebarPosition.allCases {
             startOver(on: side)
-            let shell = makeShell()
-            shell.split.setSidebarGeometry(width: 250, collapsed: false)
+            let shell = makeShell(onScreen: true)
+            shell.split.setSidebarGeometry(width: 300, collapsed: false)
             shell.layout()
+            let divider = shell.split.splitView.divider
+            let column = shell.split.sidebarHost.view
+            func send(_ type: NSEvent.EventType, at width: CGFloat) throws {
+                let point = NSPoint(x: dividerX(in: shell, on: side, sidebarWidth: width), y: 350)
+                let event = try XCTUnwrap(mouseEvent(type, in: shell.window, at: point, clickCount: 1))
+                shell.window.sendEvent(event)
+                shell.layout()
+            }
 
-            XCTAssertTrue(dragDivider(of: shell, on: side, through: [50, 260]))
-            assertExpanded(shell, width: 260, on: side, "back out in the same drag")
+            try send(.leftMouseDown, at: 300)
+            try send(.leftMouseDragged, at: 96)
+            XCTAssertTrue(shell.split.isSidebarCollapsed)
+            XCTAssertFalse(divider.isHidden)
+            let collapse = try XCTUnwrap(slide(on: column))
+            XCTAssertEqual(collapse.duration, SidebarToggleAnimation.dragCollapseDuration, accuracy: 0.001)
+            XCTAssertEqual(collapse.timingFunction, SidebarToggleAnimation.timingFunction)
+            XCTAssertEqual(abs(offset(collapse.toValue)), minWidth, accuracy: 0.5)
 
-            XCTAssertTrue(dragDivider(of: shell, on: side, through: [100, 96]))
-            XCTAssertTrue(shell.split.isSidebarCollapsed, "the release collapses")
-            spin(SidebarToggleAnimation.dragReleaseDuration + 0.4)
-            shell.layout()
+            try send(.leftMouseDragged, at: 97)
+            assertExpanded(shell, width: minWidth, on: side)
+            XCTAssertNil(slide(on: column), "reversing the drag cancels the slide")
+            try send(.leftMouseDragged, at: 270)
+            assertExpanded(shell, width: 270, on: side)
+
+            try send(.leftMouseDragged, at: 95)
+            waitForToggleAnimation()
             assertCollapsed(shell)
-            XCTAssertEqual(shell.split.lastExpandedSidebarWidth, 260, accuracy: 0.5,
-                           "the floating panel opens at the width the column will")
+            XCTAssertFalse(divider.isHidden, "the gesture still owns the divider")
+            try send(.leftMouseDragged, at: 260)
+            assertExpanded(shell, width: 260, on: side)
+            try send(.leftMouseUp, at: 260)
+            XCTAssertEqual(shell.split.lastExpandedSidebarWidth, 260, accuracy: 0.5)
 
-            shell.split.setSidebarCollapsed(false, animated: false)
-            assertExpanded(shell, width: 260, on: side, "reopens at the width the drag started from")
+            try send(.leftMouseDown, at: 260)
+            try send(.leftMouseDragged, at: 100)
+            try send(.leftMouseUp, at: 96)
+            XCTAssertTrue(shell.split.isSidebarCollapsed, "use the final pointer location")
+            XCTAssertTrue(divider.isHidden)
+            XCTAssertEqual(shell.column.width, minWidth, accuracy: 0.5, "mouse-up preserves the slide width")
+            shell.split.setSidebarCollapsed(false, animated: true)
+            let reversal = try XCTUnwrap(slide(on: column))
+            XCTAssertEqual(abs(offset(reversal.fromValue)), 260 - minWidth, accuracy: 0.5)
+            waitForToggleAnimation()
+            assertExpanded(shell, width: 260, on: side)
         }
+    }
+
+    func testDividerCollapseHonorsReduceMotionAndPreservesPreferredWidth() {
+        let shell = makeShell(onScreen: true)
+        shell.split.floatingSidebarHost.prefersReducedMotion = { true }
+        shell.split.setSidebarGeometry(width: 300, collapsed: false)
+        XCTAssertTrue(dragDivider(of: shell, on: .left, through: [96]))
+        assertCollapsed(shell)
+        assertNoSlides(in: shell)
+        shell.split.setSidebarCollapsed(false, animated: false)
+        assertExpanded(shell, width: 300, on: .left)
     }
 
     func testACollapsedColumnHasNoDividerToDrag() {

@@ -456,8 +456,11 @@ final class TabItemView: NSView {
         let showMute = viewModel.isCurrentlyAudible || viewModel.isMuted
         let centerY = bounds.height / 2
         let panes = Array(mergedPanes)
-        let showCaptureCenterGlyph = !isMergedSplitCell
-            && (viewModel.isCapturingMedia || viewModel.isBeingSharedRemotely)
+        let isCapturingOrShared = viewModel.isCapturingMedia || viewModel.isBeingSharedRemotely
+        // A pinned tab keeps its favicon and carries the dot on it; a pinned
+        // split shows one dot for all its panes in the cell's corner.
+        let showCaptureCenterGlyph = !isMergedSplitCell && mode == .compact && isCapturingOrShared
+        let showsPinnedSplitCaptureDot = isMergedSplitCell && mode == .pinned
 
         // Pane mute toggles only render inside merged split cells; reset
         // to hidden up front so recycled cells transitioning into non-split
@@ -472,9 +475,10 @@ final class TabItemView: NSView {
             isUnloaded: sourceTab?.isUnloaded == true
                 || panes.contains { $0.tab?.isUnloaded == true }
         )
-        // Pinned and compact cells show recording as the centered icon below
-        // and hide every favicon; drop their corner badges with them.
-        let hidesRecordingBadges = showCaptureCenterGlyph && mode != .normal
+        // A compact tab shows capture as the centered icon below and hides
+        // its favicon; a pinned split shows it as the corner dot. Drop the
+        // favicon corner badges for both.
+        let hidesRecordingBadges = showCaptureCenterGlyph || showsPinnedSplitCaptureDot
         viewModel.hidesRecordingBadge = hidesRecordingBadges
         for pane in panes {
             pane.viewModel.hidesRecordingBadge = hidesRecordingBadges
@@ -497,7 +501,8 @@ final class TabItemView: NSView {
                 // them horizontally around the cell's center so the cell
                 // still occupies a single slot in the strip's layout. The
                 // row always stays up: audio shows no glyph here, and
-                // capture shows as each pane's favicon corner badge.
+                // capture shows as each pane's favicon corner badge, or as
+                // one corner dot for a pinned split.
                 let iconSize = metrics.faviconSize
                 let gap = mergedFaviconGap
                 let rowWidth = iconSize.width * CGFloat(paneCount)
@@ -531,13 +536,16 @@ final class TabItemView: NSView {
                     )
                 }
                 muteButtonHostingView.isHidden = true
-                recordingIconHostingView.isHidden = true
+                recordingIconHostingView.isHidden = !showsPinnedSplitCaptureDot
+                if showsPinnedSplitCaptureDot {
+                    recordingIconHostingView.frame = pinnedSplitCaptureDotFrame()
+                }
             } else if showCaptureCenterGlyph {
                 recordingIconHostingView.isHidden = false
                 recordingIconHostingView.frame = centeredFrame(for: recordingIconSize)
                 hideAllFavicons()
                 muteButtonHostingView.isHidden = true
-            } else if showMute {
+            } else if showMute && !isCapturingOrShared {
                 muteButtonHostingView.isHidden = false
                 muteButtonHostingView.frame = centeredFrame(for: muteButtonSize)
                 hideAllFavicons()
@@ -939,7 +947,20 @@ final class TabItemView: NSView {
     }
 
     private func makeRecordingIconRootView() -> AnyView {
-        makeThemedRootView(UnifiedTabCaptureCenterIndicator(viewModel: viewModel))
+        makeThemedRootView(UnifiedTabCaptureCenterIndicator(
+            viewModels: [viewModel] + mergedPanes.map(\.viewModel)
+        ))
+    }
+
+    private func pinnedSplitCaptureDotFrame() -> CGRect {
+        let size = TabCaptureBadgeMetrics.recordingDotSize
+        let inset = TabCaptureBadgeMetrics.pinnedSplitCornerInset
+        return CGRect(
+            x: bounds.maxX - inset - size,
+            y: isFlipped ? bounds.maxY - inset - size : bounds.minY + inset,
+            width: size,
+            height: size
+        )
     }
 
     private func makeShareInsteadButtonRootView(
@@ -1123,6 +1144,9 @@ final class TabItemView: NSView {
     /// and their views hide, so a recycled cell never shows a stale pane.
     private func configureMergedPanes(_ panes: [Tab], browserState: BrowserState?) {
         mergedPaneCount = panes.count
+        // The capture icon reads the pane view models it was built with;
+        // the next layout rebuilds it for the new panes.
+        recordingIconHostingView.isHidden = true
         while mergedPanePool.count < panes.count {
             mergedPanePool.append(makeMergedPaneViews())
         }

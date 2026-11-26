@@ -95,6 +95,26 @@ final class SplitWithNewTabBookmarkTests: XCTestCase {
         XCTAssertFalse(state.canPerformOmniboxCommand(.removeSplitView))
     }
 
+    func testAddSplitCommandsFollowFocusedSplitLayoutAndPaneLimit() throws {
+        let (state, source, _) = try makeFixture()
+        let sideBySide: [OmniboxCommand] = [.newSplitView, .addLeftSplit]
+        let stacked: [OmniboxCommand] = [.addVerticalSplitView, .addTopSplit]
+        XCTAssertTrue((sideBySide + stacked).allSatisfy { state.canPerformOmniboxCommand($0) })
+
+        state.splits = [SplitGroup(id: "command-split", tabIds: [source.guid, 101],
+                                   layout: .vertical, fractions: [0.5, 0.5])]
+        XCTAssertTrue(sideBySide.allSatisfy { state.canPerformOmniboxCommand($0) })
+        XCTAssertFalse(stacked.contains { state.canPerformOmniboxCommand($0) })
+
+        state.splits[0].layout = .horizontal
+        XCTAssertFalse(sideBySide.contains { state.canPerformOmniboxCommand($0) })
+        XCTAssertTrue(stacked.allSatisfy { state.canPerformOmniboxCommand($0) })
+
+        state.splits = [SplitGroup(id: "command-split", tabIds: [source.guid, 101, 102, 103],
+                                   layout: .horizontal, fractions: [0.25, 0.25, 0.25, 0.25])]
+        XCTAssertFalse((sideBySide + stacked).contains { state.canPerformOmniboxCommand($0) })
+    }
+
     func testSplitSnapshotOffersRemoveCommandWithoutNativeEntities() throws {
         let (state, source, _) = try makeFixture()
         state.splits = [SplitGroup(id: "command-split", tabIds: [source.guid, 101],
@@ -177,6 +197,66 @@ final class SplitWithNewTabBookmarkTests: XCTestCase {
             XCTAssertEqual(pendingLayout, layout)
             XCTAssertNil(state.pendingSplitPreview)
         }
+    }
+
+    func testFocusedPaneGetsNewPaneBeforeOrAfterItBySlot() throws {
+        let (state, source, _) = try makeFixture()
+        UserDefaults.standard.set(true, forKey: PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.rawValue)
+        state.splits = [SplitGroup(id: "slot-split", tabIds: [99, source.guid, 101],
+                                   layout: .vertical, fractions: [0.4, 0.3, 0.3])]
+        for (newTabSlot, expectedSlot) in [(SplitSlot.left, 1), (SplitSlot.right, 2)] {
+            state.pendingSplitPartnerByCustomGuid.removeAll()
+            XCTAssertTrue(state.splitFocusedTabWithNewTab(newTabSlot: newTabSlot))
+            let pending = try XCTUnwrap(state.pendingSplitPartnerByCustomGuid.values.first)
+            guard case let .existingSplit(splitId, slot) = pending.target else {
+                return XCTFail("Expected the new pane to join the split")
+            }
+            XCTAssertEqual(splitId, "slot-split")
+            XCTAssertEqual(slot, expectedSlot)
+        }
+    }
+
+    func testSubmittingJoinPreviewAddsPaneToSplitAndEndsOnArrival() throws {
+        let (state, source, _) = try makeFixture()
+        state.splits = [SplitGroup(id: "join-split", tabIds: [99, source.guid, 101],
+                                   layout: .vertical, fractions: [0.4, 0.3, 0.3])]
+        let join = SplitJoin(splitId: "join-split", slot: 1)
+        state.pendingSplitPreview = PendingSplitPreview(partnerTabId: source.guid, joining: join)
+
+        XCTAssertTrue(state.commitSplitPreview(url: "https://joining.example"))
+
+        let pending = try XCTUnwrap(state.pendingSplitPartnerByCustomGuid.values.first)
+        guard case let .existingSplit(splitId, slot) = pending.target else {
+            return XCTFail("Expected the new pane to join the split")
+        }
+        XCTAssertEqual(splitId, join.splitId)
+        XCTAssertEqual(slot, join.slot)
+        XCTAssertEqual(state.pendingSplitPreview?.isCommitted, true)
+
+        state.handleSplitContentsChanged(splitId: "join-split", tabIds: [99, 102, source.guid, 101])
+        XCTAssertNil(state.pendingSplitPreview)
+    }
+
+    func testJoinPreviewEndsWhenTargetSplitChangesBeforeSubmission() throws {
+        let (state, source, _) = try makeFixture()
+        let join = SplitJoin(splitId: "join-split", slot: 1)
+        state.splits = [SplitGroup(id: "join-split", tabIds: [99, source.guid, 101],
+                                   layout: .vertical, fractions: [0.4, 0.3, 0.3])]
+        state.pendingSplitPreview = PendingSplitPreview(partnerTabId: source.guid, joining: join)
+
+        state.handleSplitContentsChanged(splitId: "join-split", tabIds: [source.guid, 101])
+        XCTAssertNil(state.pendingSplitPreview)
+
+        state.pendingSplitPreview = PendingSplitPreview(partnerTabId: source.guid, joining: join)
+        state.handleSplitRemoved(splitId: "join-split")
+        XCTAssertNil(state.pendingSplitPreview)
+
+        state.splits = [SplitGroup(id: "join-split", tabIds: [99, source.guid, 101],
+                                   layout: .vertical, fractions: [0.4, 0.3, 0.3])]
+        let committed = PendingSplitPreview(partnerTabId: source.guid, joining: join, isCommitted: true)
+        state.pendingSplitPreview = committed
+        state.handleSplitContentsChanged(splitId: "join-split", tabIds: [source.guid, 101])
+        XCTAssertEqual(state.pendingSplitPreview, committed)
     }
 
     func testCancellingPreviewPreservesBookmarkBinding() throws {

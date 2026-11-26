@@ -322,13 +322,7 @@ final class SideTabView: NSView {
         for offer: BrowserTabSharingState.ShareInsteadOffer
     ) -> SideTabIconButton {
         shareInsteadButton?.view.removeFromSuperview()
-        let button = SideTabIconButton()
-        button.image = NSImage(systemSymbolName: "rectangle.2.swap", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
-        let title = UnifiedTabShareInsteadButton.title
-        button.toolTip = title
-        button.setAccessibilityLabel(title)
-        button.onClick = { [weak self] in self?.model.shareInstead(offer) }
+        let button = SideTabIconButton.shareInstead { [weak self] in self?.model.shareInstead(offer) }
         contentView.addSubview(button)
         shareInsteadButton = (offer, button)
         return button
@@ -397,6 +391,18 @@ final class SideTabContainerView: NSView {
 /// 24-point glyph button with the rounded hover fill of the tab row's
 /// close and mute buttons.
 class SideTabIconButton: NSButton {
+    /// Switches a running tab share to this row's tab.
+    static func shareInstead(action: @escaping () -> Void) -> SideTabIconButton {
+        let button = SideTabIconButton()
+        button.image = NSImage(systemSymbolName: "rectangle.2.swap", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
+        let title = UnifiedTabShareInsteadButton.title
+        button.toolTip = title
+        button.setAccessibilityLabel(title)
+        button.onClick = action
+        return button
+    }
+
     var onClick: (() -> Void)?
     var hoverFillColor: NSColor = .clear {
         didSet {
@@ -569,7 +575,10 @@ final class SideTabFaviconView: SideTabPassthroughView {
 
     override var isFlipped: Bool { true }
 
-    func render(model: TabViewModel, dimmingEnabled: Bool, theme: Theme?, appearance: Appearance) {
+    /// `showsSharedDot`: whether sharing shows on this favicon, for a row
+    /// that has no shared outline of its own.
+    func render(model: TabViewModel, dimmingEnabled: Bool, theme: Theme?, appearance: Appearance,
+                showsSharedDot: Bool = false) {
         let status = model.status
         let showsOutline = TabFaviconPresentation.showsDashedOutline(
             isDiscarded: status.isDiscarded,
@@ -604,8 +613,10 @@ final class SideTabFaviconView: SideTabPassthroughView {
             outlineLayer.strokeColor = stroke.cgColor
         }
 
-        if model.isCapturingMedia && !model.hidesRecordingBadge {
+        let isBeingShared = showsSharedDot && model.isBeingSharedRemotely
+        if (model.isCapturingMedia || isBeingShared) && !model.hidesRecordingBadge {
             let badge = recordingBadge ?? makeRecordingBadge()
+            badge.update(isCapturingMedia: model.isCapturingMedia, isBeingShared: isBeingShared)
             let badgeSize = SideTabRecordingBadgeView.size
             let imageMaxX = (bounds.width + Self.imageSize) / 2
             let imageMinY = (bounds.height - Self.imageSize) / 2
@@ -700,38 +711,66 @@ final class SideTabFaviconView: SideTabPassthroughView {
     }
 }
 
-/// The pulsing red dot shown while a tab uses the camera, microphone or
-/// screen.
+/// The pulsing dot of `UnifiedTabRecordingIcon` in layers: red while a tab
+/// uses the microphone or camera, yellow while it is shared, alternating
+/// between the two for both.
 final class SideTabRecordingBadgeView: SideTabPassthroughView {
     static let size: CGFloat = 8
 
-    private let dotLayer = CALayer()
+    private let redLayer = CALayer()
+    private let yellowLayer = CALayer()
+    private var flags: [Bool] = []
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.white.cgColor
         layer?.cornerRadius = Self.size / 2
-        dotLayer.backgroundColor = NSColor.systemRed.cgColor
-        dotLayer.cornerRadius = (Self.size - 2) / 2
-        layer?.addSublayer(dotLayer)
-        let pulse = CABasicAnimation(keyPath: "opacity")
-        pulse.fromValue = 1
-        pulse.toValue = 0.2
-        pulse.duration = 1
-        pulse.autoreverses = true
-        pulse.repeatCount = .infinity
-        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        dotLayer.add(pulse, forKey: "pulse")
+        for (dot, color) in [(redLayer, NSColor.systemRed), (yellowLayer, NSColor.systemYellow)] {
+            dot.backgroundColor = color.cgColor
+            dot.cornerRadius = (Self.size - 2) / 2
+            dot.opacity = 0
+            layer?.addSublayer(dot)
+        }
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
+    func update(isCapturingMedia: Bool, isBeingShared: Bool) {
+        guard flags != [isCapturingMedia, isBeingShared] else { return }
+        flags = [isCapturingMedia, isBeingShared]
+        let red: [Float]
+        let yellow: [Float]
+        switch (isCapturingMedia, isBeingShared) {
+        case (true, true): (red, yellow) = ([1, 0.2, 0, 0, 1], [0, 0, 1, 0.2, 0])
+        case (false, true): (red, yellow) = ([0, 0, 0], [1, 0.2, 1])
+        default: (red, yellow) = ([1, 0.2, 1], [0, 0, 0])
+        }
+        Self.pulse(redLayer, opacities: red)
+        Self.pulse(yellowLayer, opacities: yellow)
+    }
+
+    /// One second per step, as `UnifiedTabRecordingIcon` moves between phases.
+    private static func pulse(_ dot: CALayer, opacities: [Float]) {
+        dot.removeAnimation(forKey: "pulse")
+        dot.opacity = opacities[0]
+        guard opacities.contains(where: { $0 > 0 }) else { return }
+        let steps = opacities.count - 1
+        let animation = CAKeyframeAnimation(keyPath: "opacity")
+        animation.values = opacities
+        animation.keyTimes = (0...steps).map { NSNumber(value: Double($0) / Double(steps)) }
+        animation.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: steps)
+        animation.duration = CFTimeInterval(steps)
+        animation.repeatCount = .infinity
+        dot.add(animation, forKey: "pulse")
+    }
+
     override func layout() {
         super.layout()
-        dotLayer.frame = bounds.insetBy(dx: 1, dy: 1)
+        redLayer.frame = bounds.insetBy(dx: 1, dy: 1)
+        yellowLayer.frame = redLayer.frame
     }
 }
 

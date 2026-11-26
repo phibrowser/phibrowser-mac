@@ -186,6 +186,14 @@ class DiffableOutlineView: NSOutlineView {
 #endif
     }
 
+    // Opts out of AppKit's row height estimation (macOS 13+), which a table
+    // loses by overriding this method. With rows of different heights the
+    // estimate misplaces rows on screen when rows are added off screen, and
+    // miscounts the rows a disclosure animation slides.
+    override func rect(ofRow row: Int) -> NSRect {
+        super.rect(ofRow: row)
+    }
+
     func applyRemove(
         at indexes: IndexSet,
         inParent parent: Any?,

@@ -8512,55 +8512,55 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Design bearbeiten"
+            "value" : "Design bearbeiten…"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Edit Theme"
+            "value" : "Edit Theme…"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Editar tema"
+            "value" : "Editar tema…"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Modifier le thème"
+            "value" : "Modifier le thème…"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "テーマを編集"
+            "value" : "テーマを編集…"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "테마 편집"
+            "value" : "테마 편집…"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wijzig thema"
+            "value" : "Wijzig thema…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "编辑主题"
+            "value" : "编辑主题…"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "編輯主題"
+            "value" : "編輯主題…"
           }
         }
       }
@@ -16783,55 +16783,55 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Design bearbeiten"
+            "value" : "Design bearbeiten…"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Edit Theme"
+            "value" : "Edit Theme…"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Editar tema"
+            "value" : "Editar tema…"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Modifier le thème"
+            "value" : "Modifier le thème…"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "テーマを編集"
+            "value" : "テーマを編集…"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "테마 편집"
+            "value" : "테마 편집…"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wijzig thema"
+            "value" : "Wijzig thema…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "编辑主题"
+            "value" : "编辑主题…"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "編輯主題"
+            "value" : "編輯主題…"
           }
         }
       }
@@ -17623,55 +17623,55 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Symbol ändern…"
+            "value" : "Space-Symbol ändern…"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Change Icon…"
+            "value" : "Change Space Icon…"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cambiar icono…"
+            "value" : "Cambiar el icono del Espacio…"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Modifier l'icône…"
+            "value" : "Modifier l'icône de l'Espace…"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アイコンを変更…"
+            "value" : "スペースのアイコンを変更…"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "아이콘 변경…"
+            "value" : "스페이스 아이콘 변경…"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wijzig symbool…"
+            "value" : "Wijzig Space-symbool…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更改图标…"
+            "value" : "更改空间图标…"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "變更圖示…"
+            "value" : "變更空間圖示…"
           }
         }
       }
@@ -25833,10 +25833,58 @@
       "comment" : "Toast shown when the bookmark shortcut is used on a page or split that is already bookmarked",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bereits als Lesezeichen gesichert"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Already Bookmarked"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya está en marcadores"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déjà dans les favoris"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すでにブックマークに追加されています"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이미 북마크에 추가돼 있어요"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Staat al in bladwijzers"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已在书签中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已在書籤中"
           }
         }
       }
@@ -25845,10 +25893,58 @@
       "comment" : "Button on the bookmark-saved toast that opens the editor for the bookmark's name, URL and folder",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bearbeiten"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Edit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifier"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編集"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "편집"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wijzig"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯"
           }
         }
       }
@@ -25857,10 +25953,58 @@
       "comment" : "Toast shown after the bookmark shortcut saves the current page or split as a bookmark",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zu Lesezeichen hinzugefügt"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Added to Bookmarks"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agregado a marcadores"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouté aux favoris"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ブックマークに追加しました"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "북마크에 추가됐어요"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toegevoegd aan bladwijzers"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已添加到书签"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已加入書籤"
           }
         }
       }
@@ -49915,55 +50059,55 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Design bearbeiten"
+            "value" : "Design bearbeiten…"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Edit Theme"
+            "value" : "Edit Theme…"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Editar tema"
+            "value" : "Editar tema…"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Modifier le thème"
+            "value" : "Modifier le thème…"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "テーマを編集"
+            "value" : "テーマを編集…"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "테마 편집"
+            "value" : "테마 편집…"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wijzig thema"
+            "value" : "Wijzig thema…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "编辑主题"
+            "value" : "编辑主题…"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "編輯主題"
+            "value" : "編輯主題…"
           }
         }
       }
@@ -51052,10 +51196,58 @@
       "comment" : "Local data alert - button that dismisses the alert shown when the local database could not be opened",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "OK"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "확인"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "好"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "好"
           }
         }
       }
@@ -51064,10 +51256,58 @@
       "comment" : "Local data alert - body when the local database could not be opened; explains the effect and that the data was not changed",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Spaces, angehefteten Tabs und Lesezeichen auf diesem Mac können derzeit weder angezeigt noch gespeichert werden. Deine Daten wurden nicht verändert. Beende Phi und öffne es wieder, um es erneut zu versuchen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Your Spaces, pinned tabs and bookmarks on this Mac can’t be shown or saved right now. Your data has not been changed. Quit and reopen Phi to try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus Espacios, pestañas fijadas y marcadores en este Mac no se pueden mostrar ni guardar en este momento. Tus datos no se han modificado. Sal de Phi y vuelve a abrirlo para intentarlo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vos Espaces, vos onglets épinglés et vos favoris sur ce Mac ne peuvent être ni affichés ni enregistrés pour le moment. Vos données n'ont pas été modifiées. Quittez et rouvrez Phi pour réessayer."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacのスペース、固定タブ、ブックマークは、現在表示も保存もできません。データは変更されていません。もう一度試すには、Phiを終了して再度開いてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지금은 이 Mac의 스페이스, 고정된 탭, 북마크를 표시하거나 저장할 수 없어요. 데이터는 변경되지 않았어요. 다시 시도하려면 Phi를 종료했다가 다시 열어 주세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je Spaces, vastgezette tabbladen en bladwijzers op deze Mac kunnen op dit moment niet worden weergegeven of bewaard. Je gegevens zijn niet gewijzigd. Stop Phi en open de app opnieuw om het nog eens te proberen."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你在这台 Mac 上的空间、固定标签页和书签目前无法显示，也无法保存。你的数据未被更改。请退出并重新打开 Phi 以重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你在這部 Mac 上的空間、釘選分頁和書籤目前無法顯示或儲存。你的資料並未變更。請結束 Phi 並重新開啟，再試一次。"
           }
         }
       }
@@ -51076,10 +51316,58 @@
       "comment" : "Local data alert - title when the local database on this Mac could not be opened",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi konnte die lokalen Browserdaten nicht öffnen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Phi Couldn’t Open Local Browser Data"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi no pudo abrir los datos locales del navegador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi n'a pas pu ouvrir les données locales du navigateur"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phiはローカルのブラウザデータを開けませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi가 로컬 브라우저 데이터를 열지 못했어요"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi kon lokale browsergegevens niet openen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 无法打开本地浏览器数据"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 無法開啟本機瀏覽器資料"
           }
         }
       }
@@ -51444,6 +51732,65 @@
         }
       }
     },
+    "omnibox.command.addBottomSplit" : {
+      "comment" : "Omnibox commands - Adds a new pane below the current tab",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split unten hinzufügen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add bottom split"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agregar división abajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un Split en bas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下に分割表示を追加"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아래쪽 분할 추가"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voeg split onder toe"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在底部添加分屏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入下方分割畫面"
+          }
+        }
+      }
+    },
     "omnibox.command.addLeftSplit" : {
       "comment" : "Omnibox commands - Adds a new pane to the left of the current tab",
       "localizations" : {
@@ -51499,6 +51846,65 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加入左側分割畫面"
+          }
+        }
+      }
+    },
+    "omnibox.command.addRightSplit" : {
+      "comment" : "Omnibox commands - Adds a new pane to the right of the current tab",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechten Split hinzufügen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add right split"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agregar división a la derecha"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un Split à droite"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右に分割表示を追加"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "오른쪽 분할 추가"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voeg split rechts toe"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在右侧添加分屏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入右側分割畫面"
           }
         }
       }
@@ -51562,65 +51968,6 @@
         }
       }
     },
-    "omnibox.command.addVerticalSplitView" : {
-      "comment" : "Omnibox commands - Adds a new pane below the current tab",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vertikale Split View hinzufügen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add vertical split view"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Agregar vista dividida vertical"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter une Split View verticale"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下に分割表示を追加"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "세로 분할 보기 추가"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voeg verticale Split View toe"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加上下分屏"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加入垂直分割畫面"
-          }
-        }
-      }
-    },
     "omnibox.command.manageExtensions" : {
       "comment" : "Omnibox commands - Command that opens the extensions management page",
       "extractionState" : "extracted_with_value",
@@ -51677,66 +52024,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "管理擴充功能"
-          }
-        }
-      }
-    },
-    "omnibox.command.newSplitView" : {
-      "comment" : "Omnibox commands - Command that splits the current tab with a new tab",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Split View hinzufügen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Add split view"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Agregar vista dividida"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter une Split View"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "分割表示を追加"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "분할 보기 추가"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voeg Split View toe"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加分屏"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加入分割畫面"
           }
         }
       }
@@ -52399,10 +52686,58 @@
       "comment" : "Guest migration - Alert message when the Guest data on this Mac could not be opened, so signing in from Guest Mode cannot move it",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi konnte deine Gastdaten auf diesem Mac nicht öffnen, daher können sie nicht in dein Konto verschoben werden. Deine Gastdaten wurden nicht verändert. Beende Phi und öffne es wieder. Versuche es dann erneut."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Phi couldn’t open your Guest data on this Mac, so it can’t be moved to your account. Your Guest data has not been changed. Quit and reopen Phi, then try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi no pudo abrir tus datos de invitado en este Mac, por lo que no se pueden mover a tu cuenta. Tus datos de invitado no se han modificado. Sal de Phi y vuelve a abrirlo; luego, inténtalo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi n'a pas pu ouvrir vos données du mode Invité sur ce Mac et ne peut donc pas les transférer vers votre compte. Vos données du mode Invité n'ont pas été modifiées. Quittez et rouvrez Phi, puis réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PhiはこのMacのゲストデータを開けなかったため、アカウントに移行できません。ゲストデータは変更されていません。Phiを終了して再度開いてから、もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi가 이 Mac의 게스트 데이터를 열지 못해서 데이터를 계정으로 이동할 수 없어요. 게스트 데이터는 변경되지 않았어요. Phi를 종료했다가 다시 연 다음, 다시 시도해 주세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi kon je gastgegevens op deze Mac niet openen, waardoor ze niet naar je account kunnen worden verplaatst. Je gastgegevens zijn niet gewijzigd. Stop Phi en open de app opnieuw. Probeer het daarna nog eens."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 未能打开你在这台 Mac 上的访客数据，因此无法将其迁移到你的账号。你的访客数据未被更改。请退出并重新打开 Phi，然后再试一次。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 無法開啟你在這部 Mac 上的訪客資料，因此無法將資料搬移到你的帳號。你的訪客資料並未變更。請結束 Phi 並重新開啟，然後再試一次。"
           }
         }
       }
@@ -110367,10 +110702,58 @@
       "comment" : "Sidebar split tab - Accessibility label for the button that closes one pane of the split",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tab schließen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Close Tab"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar pestaña"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer l'onglet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タブを閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "탭 닫기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabblad sluiten"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉分頁"
           }
         }
       }
@@ -110379,10 +110762,58 @@
       "comment" : "Sidebar split tab - Accessibility label for the button shown while Option is held, which takes one pane out of the split and keeps it open as a normal tab",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus Split entfernen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Remove from Split"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitar de la vista dividida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer du Split View"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分割表示から外す"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "분할에서 제거"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verwijder uit split"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从分屏中移除"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從分割畫面移除"
           }
         }
       }
@@ -131603,6 +132034,186 @@
         }
       }
     },
+    "tabs.captureBadge.beingShared" : {
+      "comment" : "Tab favicon badge - Tooltip when this tab's content is mirrored to a remote screen share\nTab row outline - Tooltip when this tab's content is mirrored to a remote screen share",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Andere können diesen Tab sehen, solange du ihn teilst."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Others can see this tab while you share."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los demás pueden ver esta pestaña mientras la compartes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les autres participants peuvent voir cet onglet tant que vous le partagez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共有中は、他の参加者もこのタブを見ることができます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "공유하는 동안 다른 사람들이 이 탭을 볼 수 있어요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anderen kunnen dit tabblad zien zolang je het deelt."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在你共享期间，其他人可以看到此标签页。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在你共用期間，其他人可以看到這個分頁。"
+          }
+        }
+      }
+    },
+    "tabs.captureBadge.microphoneOrCamera" : {
+      "comment" : "Tab favicon badge - Tooltip on the red recording dot for microphone or camera capture",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Tab verwendet das Mikrofon oder die Kamera."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This tab is using the microphone or camera."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta pestaña está usando el micrófono o la cámara."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet onglet utilise le micro ou la caméra."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このタブはマイクまたはカメラを使用しています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 탭에서 마이크 또는 카메라를 사용하고 있어요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit tabblad gebruikt de microfoon of camera."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此标签页正在使用麦克风或摄像头。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這個分頁正在使用麥克風或攝影機。"
+          }
+        }
+      }
+    },
+    "tabs.captureBadge.presentingScreenShare" : {
+      "comment" : "Tab favicon badge - Tooltip when this tab is the presenter in a screen share session",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über diesen Tab werden Bildschirminhalte geteilt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This tab is sharing screen content."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta pestaña está compartiendo contenido de la pantalla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet onglet partage du contenu de l'écran."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このタブは画面のコンテンツを共有しています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 탭에서 화면 콘텐츠를 공유하고 있어요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit tabblad deelt scherminhoud."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此标签页正在共享屏幕内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這個分頁正在共用螢幕畫面。"
+          }
+        }
+      }
+    },
     "tabs.clearAll.confirmation" : {
       "comment" : "Tab cleanup toast - Confirmation after tabs close; %@ is the Undo keyboard shortcut",
       "localizations" : {
@@ -131842,42 +132453,6 @@
         }
       }
     },
-    "tabs.captureBadge.beingShared" : {
-      "comment" : "Tab favicon badge - Tooltip when this tab's content is mirrored to a remote screen share\nTab row outline - Tooltip when this tab's content is mirrored to a remote screen share",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Others can see this tab while you share."
-          }
-        }
-      }
-    },
-    "tabs.captureBadge.microphoneOrCamera" : {
-      "comment" : "Tab favicon badge - Tooltip on the red recording dot for microphone or camera capture",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "This tab is using the microphone or camera."
-          }
-        }
-      }
-    },
-    "tabs.captureBadge.presentingScreenShare" : {
-      "comment" : "Tab favicon badge - Tooltip when this tab is the presenter in a screen share session",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "This tab is sharing screen content."
-          }
-        }
-      }
-    },
     "tabs.openFailed.message" : {
       "comment" : "Tab open failure recovery",
       "extractionState" : "extracted_with_value",
@@ -132002,10 +132577,58 @@
       "comment" : "Tab row button - Tooltip and accessibility label on a hovered tab while another tab is being shared; switches the share to this tab",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stattdessen diesen Tab teilen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Share this tab instead"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compartir esta pestaña en su lugar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partager cet onglet à la place"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代わりにこのタブを共有"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 탭을 대신 공유"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In plaats daarvan dit tabblad delen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "改为共享此标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "改為共用這個分頁"
           }
         }
       }

@@ -352,6 +352,15 @@ class Tab: WebContentRepresentable {
         isCurrentlyAudible = false
         isAudioMuted = false
         isMediaSessionMuted = false
+        // A pinned tab or bookmark outlives its WebContents; without a reset
+        // its last capture state stays on screen after the contents close.
+        isCapturingAudio = false
+        isCapturingVideo = false
+        isCapturingWindow = false
+        isCapturingDisplay = false
+        isCapturingTab = false
+        isBeingMirrored = false
+        isSharingScreen = false
         hasWebContent = wrapper != nil
         isDiscarded = wrapper?.isDiscarded ?? false
         if let wrapper, wrapper.responds(to: Self.isUnloadedSelector) {

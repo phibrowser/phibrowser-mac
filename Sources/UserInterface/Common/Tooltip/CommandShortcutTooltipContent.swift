@@ -7,6 +7,10 @@ import SwiftUI
 import Combine
 
 struct CommandShortcutTooltipContent: View {
+    /// With two keycaps the card stays near the 320pt cap of
+    /// `DefaultCustomTooltipContent`.
+    private static let titleMaxWidth: CGFloat = 240
+
     let title: String
     let command: CommandWrapper
 
@@ -25,6 +29,9 @@ struct CommandShortcutTooltipContent: View {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: Self.titleMaxWidth, alignment: .leading)
 
             if let shortcut {
                 HStack(spacing: 4) {
@@ -36,13 +43,19 @@ struct CommandShortcutTooltipContent: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
+        // Near-opaque white / black over the material, matching the Space hover
+        // card: the bare material reads as gray in light mode.
+        .background(
+            (appearance.isDark ? Color.black : Color.white).opacity(0.9),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
         .background(
             .regularMaterial,
-            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(.primary.opacity(0.1))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(.primary.opacity(0.15), lineWidth: 1)
         }
         .fixedSize()
         .accessibilityElement(children: .ignore)

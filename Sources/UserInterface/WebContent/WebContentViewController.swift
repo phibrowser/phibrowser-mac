@@ -949,9 +949,11 @@ class WebContentViewController: NSViewController {
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                guard let self, let tab = self.associatedTab,
-                      self.browserState?.focusingTab?.guid == tab.guid else { return }
-                self.updateContentForTab(tab)
+                guard let self else { return }
+                if let tab = self.associatedTab, self.browserState?.focusingTab?.guid == tab.guid {
+                    self.updateContentForTab(tab)
+                }
+                self.updateSplitJoinPreview()
             }
             .store(in: &cancellables)
 
@@ -2051,7 +2053,8 @@ class WebContentViewController: NSViewController {
             updateLeftContainerStyleForCurrentAIChatState()
             return
         }
-        if browserState?.pendingSplitPreview?.partnerTabId == tabId,
+        if let preview = browserState?.pendingSplitPreview,
+           preview.partnerTabId == tabId, preview.joining == nil,
            associatedTab?.devToolsAttached != true {
             installSplitPreview(ownNativeView: contentView)
             contentMode = .webContent
@@ -2540,6 +2543,28 @@ class WebContentViewController: NSViewController {
         host.update(panes: newTabIsPrimary ? [splitPreviewPane, ownNativeView] : [ownNativeView, splitPreviewPane])
         host.focusedPane = newTabIsPrimary ? 0 : 1
     }
+
+    /// Opens the space where the pane chosen in the omnibox joins this split
+    /// (`PendingSplitPreview.joining`), and holds it once submitted until
+    /// the pane arrives.
+    private func updateSplitJoinPreview() {
+        guard let host = currentSplitHost, isSplitContentMounted else { return }
+        if let preview = browserState?.pendingSplitPreview, let join = preview.joining,
+           preview.partnerTabId == associatedTab?.guid,
+           join.splitId == activeSplitForCurrentTab()?.id {
+            showsSplitJoinPreview = true
+            if preview.isCommitted {
+                host.holdInsertionPreview(slot: join.slot)
+            } else {
+                host.setInsertionPreview(slot: join.slot)
+            }
+        } else if showsSplitJoinPreview {
+            showsSplitJoinPreview = false
+            host.setInsertionPreview(slot: nil)
+        }
+    }
+
+    private var showsSplitJoinPreview = false
 
     private func removeSplitPreview(keeping contentView: NSView) {
         guard let host = splitPreviewHost else { return }

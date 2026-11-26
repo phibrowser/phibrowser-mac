@@ -669,7 +669,7 @@ final class SidebarDockHandOffTests: XCTestCase {
         XCTAssertEqual(notch.opacity, 1)
         XCTAssertEqual(notch.affineTransform().ty, 0)
         if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            XCTAssertNotNil(notch.animation(forKey: "opacity"), "the notch fades in")
+            XCTAssertNil(notch.animation(forKey: "opacity"), "the notch shows at full opacity")
             XCTAssertNotNil(notch.animation(forKey: "transform"), "the notch slides down")
         }
         XCTAssertTrue(frameView.hitTest(center) === frameView, "the notch routes to the native titlebar")
@@ -697,7 +697,8 @@ final class SidebarDockHandOffTests: XCTestCase {
         band.mouseExited(with: try trackingEvent(.mouseExited, at: center))
         RunLoop.main.run(until: Date().addingTimeInterval(0.4))
         XCTAssertEqual(notch.opacity, 0)
-        XCTAssertGreaterThan(notch.affineTransform().ty, 0)
+        XCTAssertGreaterThanOrEqual(notch.affineTransform().ty, outline.boundingBoxOfPath.height,
+                                    "the hidden notch sits above the band, out of view")
         XCTAssertFalse(frameView.hitTest(center) === frameView)
 
         split.setSidebarCollapsed(true, animated: false)

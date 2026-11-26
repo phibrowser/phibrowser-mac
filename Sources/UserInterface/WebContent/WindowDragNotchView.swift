@@ -13,6 +13,8 @@ final class WindowDragNotchView: NSView, TitlebarAwareHitTestable {
     private static let revealDelay: TimeInterval = 0.15
     private static let hideDelay: TimeInterval = 0.30
     private static let touchRevealDuration: TimeInterval = 4
+    /// Hidden notch sits just above the band, clipped by masksToBounds.
+    private static let hiddenOffset: CGFloat = notchHeight + 1
 
     var usesHoverNotch = false {
         didSet {
@@ -44,7 +46,7 @@ final class WindowDragNotchView: NSView, TitlebarAwareHitTestable {
         layer?.masksToBounds = true
         notchLayer.anchorPoint = .zero
         notchLayer.opacity = 0
-        notchLayer.setAffineTransform(CGAffineTransform(translationX: 0, y: 6))
+        notchLayer.setAffineTransform(CGAffineTransform(translationX: 0, y: Self.hiddenOffset))
         gripLayer.cornerRadius = 1.5
         notchLayer.addSublayer(gripLayer)
         layer?.addSublayer(notchLayer)
@@ -158,12 +160,25 @@ final class WindowDragNotchView: NSView, TitlebarAwareHitTestable {
         cancelVisibilityChange()
         let animate = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if !animate { notchLayer.removeAllAnimations() }
+        let duration: TimeInterval = visible ? 0.2 : 0.14
+        // Opacity carries the visible state and flips at once; only the
+        // slide animates. Hold the hiding notch opaque until it is out of view.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        notchLayer.opacity = visible ? 1 : 0
+        if animate && !visible {
+            let hold = CABasicAnimation(keyPath: "opacity")
+            hold.fromValue = 1
+            hold.toValue = 1
+            hold.duration = duration
+            notchLayer.add(hold, forKey: "holdWhileSliding")
+        }
+        CATransaction.commit()
         CATransaction.begin()
         CATransaction.setDisableActions(!animate)
-        CATransaction.setAnimationDuration(visible ? 0.16 : 0.12)
+        CATransaction.setAnimationDuration(duration)
         CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: visible ? .easeOut : .easeIn))
-        notchLayer.opacity = visible ? 1 : 0
-        notchLayer.setAffineTransform(CGAffineTransform(translationX: 0, y: visible ? 0 : 6))
+        notchLayer.setAffineTransform(CGAffineTransform(translationX: 0, y: visible ? 0 : Self.hiddenOffset))
         CATransaction.commit()
     }
 
@@ -172,7 +187,8 @@ final class WindowDragNotchView: NSView, TitlebarAwareHitTestable {
         guard usesHoverNotch else { return hit }
         if notchLayer.opacity == 0 { return acceptsHiddenBandHit ? hit : nil }
         var local = convert(point, from: superview)
-        local.y -= (notchLayer.presentation() ?? notchLayer).affineTransform().ty
+        // Test where the notch lands, so a press during the slide down still grabs it.
+        local.y -= notchLayer.affineTransform().ty
         return notchLayer.path?.contains(local) == true ? hit : nil
     }
 

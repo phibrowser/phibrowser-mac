@@ -180,6 +180,8 @@ version newer than the versions in the Canary profiles being upgraded.
 The build script produces Sidecar, Lexington, Kensington and
 Mirage from that Athena revision using its locked dependencies and staging
 signing keys. The external install descriptors retain the existing Canary IDs.
+The Athena staging builds append ` Athena` to their extension names. Hold
+Option and open Help → Extension Info to see which builds the profile loaded.
 The trial CRXs omit the regular staging update feed. Ship updates in a newer
 trial bundle. Replace the staged framework's `Versions/Current/Default Apps`
 directory with the output and sign the framework before the enclosing app.

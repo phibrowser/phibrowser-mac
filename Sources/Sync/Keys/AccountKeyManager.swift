@@ -21,6 +21,11 @@ protocol KeyEnvelopeAPI {
     func replaceProfileKeyEnvelope(uuid: String, expected: Data, envelope: Data) async throws -> Bool
     func getDomainKey(domain: String) async throws -> Data?
     func putDomainKey(domain: String, envelope: Data) async throws -> Bool
+    func putResetRequest(operationId: UUID, deviceKeyId: String, publicKey: Data,
+                         name: String, platform: String) async throws -> ResetRequestDTO
+    func getResetRequest(operationId: UUID) async throws -> ResetRequestDTO
+    func cancelResetRequest(operationId: UUID, deviceKeyId: String) async throws
+    func executeResetRequest(operationId: UUID, deviceKeyId: String) async throws
 }
 extension KeyEnvelopeAPIClient: KeyEnvelopeAPI {}
 
@@ -282,16 +287,23 @@ final class AccountKeyManager {
     }
 
     private func createJoinApproval() async throws -> JoinTicket {
-        let priv = try deviceKeyProvider.loadOrCreatePrivateKey()
-        let pub = priv.publicKey.rawRepresentation
-        // Older clients and interrupted cancellations may leave pending tickets behind.
-        // Match the full public key, never the display name or its short verification code.
-        for request in try await api.listPendingJoinRequests() where request.requestingPublicKey == pub {
-            try await cancelJoinApproval(requestId: request.requestId)
-        }
+        let pub = try await withdrawOutstandingJoinRequests()
         let id = try await api.postJoinRequest(publicKey: pub,
             name: Host.current().localizedName ?? "Mac", platform: platform)
         return JoinTicket(requestId: id, verificationCode: PhiKeyCrypto.verificationCode(forPublicKey: pub))
+    }
+
+    /// Withdraws every pending join ticket for this device's exact public key and returns that
+    /// key. Older clients and interrupted cancellations may leave pending tickets behind. Match
+    /// the full public key, never the display name or its short verification code. A failed
+    /// withdrawal throws, which blocks the replacement request.
+    @discardableResult
+    func withdrawOutstandingJoinRequests() async throws -> Data {
+        let pub = try deviceKeyProvider.loadOrCreatePrivateKey().publicKey.rawRepresentation
+        for request in try await api.listPendingJoinRequests() where request.requestingPublicKey == pub {
+            try await cancelJoinApproval(requestId: request.requestId)
+        }
+        return pub
     }
 
     /// The account-authenticated deny endpoint also lets the requester withdraw its ticket.
@@ -320,6 +332,38 @@ final class AccountKeyManager {
         case "expired": return .expired
         default:        return .pending(deadline: dto.createdAt.addingTimeInterval(15 * 60))
         }
+    }
+
+    // MARK: - Reset requests (docs/sync.md, "Starting over from a Mac that is not set up for sync")
+
+    /// This device's key id, which a reset request is journaled and authorized under.
+    func currentDeviceKeyId() throws -> String { try deviceKeyProvider.deviceKeyId() }
+
+    /// `PUT /keys/v1/reset-requests/{operation}` with this device's public key, name and
+    /// platform: the same values a join request sends. The caller withdraws outstanding join
+    /// tickets and journals the operation first.
+    func requestSyncReset(operationId: UUID, deviceKeyId: String) async throws -> ResetRequestDTO {
+        let pub = try deviceKeyProvider.loadOrCreatePrivateKey().publicKey.rawRepresentation
+        return try await api.putResetRequest(operationId: operationId, deviceKeyId: deviceKeyId,
+            publicKey: pub, name: Host.current().localizedName ?? "Mac", platform: platform)
+    }
+
+    func syncResetStatus(operationId: UUID) async throws -> ResetRequestDTO {
+        try await api.getResetRequest(operationId: operationId)
+    }
+
+    /// Withdraws the request. Answers that leave nothing to withdraw (no longer pending, gone
+    /// with the account, or not this device's) count as done: in each the server holds no
+    /// pending request of this device any more.
+    func cancelSyncReset(operationId: UUID, deviceKeyId: String) async throws {
+        do { try await api.cancelResetRequest(operationId: operationId, deviceKeyId: deviceKeyId) }
+        catch ResetRequestError.notPending {}
+        catch ResetRequestError.notFound {}
+        catch ResetRequestError.notRequester {}
+    }
+
+    func executeSyncReset(operationId: UUID, deviceKeyId: String) async throws {
+        try await api.executeResetRequest(operationId: operationId, deviceKeyId: deviceKeyId)
     }
 
     /// Registers this device, and — on the one refusal that can never clear on its own —

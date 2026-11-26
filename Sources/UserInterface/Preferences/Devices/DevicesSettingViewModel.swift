@@ -21,6 +21,17 @@ final class DevicesSettingViewModel: ObservableObject {
     @Published var reconfigurationError: String?
     @Published var isReconfiguring = false
     var reconfigurationRequired: () -> Bool = { false }
+    /// This Mac's journaled request to start sync over (docs/sync.md, "Starting over from a Mac
+    /// that is not set up for sync"), read from account defaults on every load: no network call.
+    var resetRequestJournal: () -> SyncResetRequestJournal? = { nil }
+    /// Withdraws that request and drops the journal; throws (journal kept) on a transport failure.
+    var cancelResetRequestAction: () async throws -> Void = {}
+    /// Shown as the **Start over pending** row while the journal holds an operation; the date
+    /// is nil until the server has confirmed the request.
+    @Published private(set) var startOverPending: StartOverPending?
+    struct StartOverPending: Equatable { let executeAfter: Date? }
+    @Published private(set) var isCancellingStartOver = false
+    @Published private(set) var startOverError: String?
     private var loadGeneration: UInt64 = 0
     private var deviceGeneration: UInt64 = 0
     private var pendingGeneration: UInt64 = 0
@@ -255,6 +266,25 @@ final class DevicesSettingViewModel: ObservableObject {
 
     var isUnlocked: Bool { unlockState == .unlocked }
 
+    private func refreshStartOverPending() {
+        startOverPending = resetRequestJournal().map { StartOverPending(executeAfter: $0.executeAfter) }
+    }
+
+    /// The **Start over pending** row's **Cancel request**.
+    func cancelStartOver() async {
+        guard startOverPending != nil, !isCancellingStartOver else { return }
+        isCancellingStartOver = true
+        defer { isCancellingStartOver = false }
+        startOverError = nil
+        do {
+            try await cancelResetRequestAction()
+        } catch {
+            AppLogWarn("[phi-sync] start over cancel from Settings failed: \(PhiSyncLog.describe(error))")
+            startOverError = ResetRequestStrings.cancelFailed
+        }
+        refreshStartOverPending()
+    }
+
     func loadAll() async {
         loadGeneration &+= 1
         let generation = loadGeneration
@@ -269,6 +299,7 @@ final class DevicesSettingViewModel: ObservableObject {
             return
         }
         let account = accountID()
+        refreshStartOverPending()
         // A pane already loaded for this account keeps its content while it reloads, unless the
         // key was discarded since (this device left the account).
         let wasUnlocked = unlockState == .unlocked && unlockedAccountID == .some(account)

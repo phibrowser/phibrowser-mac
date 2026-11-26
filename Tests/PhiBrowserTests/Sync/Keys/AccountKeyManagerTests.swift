@@ -46,6 +46,15 @@ final class AccountKeyManagerTests: XCTestCase {
             var getDomainKeyCalls = 0
             var putDomainKeyCalls = 0
             var beforePutDomainKey: ((String) -> Void)?
+            var resetRequestPutResults: [Result<ResetRequestDTO, Error>] = []
+            var resetRequestGetResults: [Result<ResetRequestDTO, Error>] = []
+            var resetRequestCancelError: Error?
+            var resetRequestExecuteErrors: [Error?] = []
+            var resetRequestPuts: [(operationId: UUID, deviceKeyId: String, publicKey: Data)] = []
+            var resetRequestGets: [UUID] = []
+            var resetRequestCancels: [(operationId: UUID, deviceKeyId: String)] = []
+            var resetRequestExecutes: [(operationId: UUID, deviceKeyId: String)] = []
+            var beforeResetRequestPut: (() -> Void)?
         }
 
         private let lock = NSLock()
@@ -339,6 +348,79 @@ final class AccountKeyManagerTests: XCTestCase {
                 if s.domainEnvelopes[domain] != nil { return false }  // 409: first writer wins
                 s.domainEnvelopes[domain] = envelope
                 return true
+            }
+        }
+
+        // MARK: Reset requests: scripted answers, consumed in order; every call is recorded.
+
+        /// Answers for the next `PUT`s; when empty, a pending request 48 hours out.
+        var resetRequestPutResults: [Result<ResetRequestDTO, Error>] {
+            get { locked { $0.resetRequestPutResults } }
+            set { locked { $0.resetRequestPutResults = newValue } }
+        }
+        /// Answers for the next `GET`s; when empty, 404 `reset_request_not_found`.
+        var resetRequestGetResults: [Result<ResetRequestDTO, Error>] {
+            get { locked { $0.resetRequestGetResults } }
+            set { locked { $0.resetRequestGetResults = newValue } }
+        }
+        var resetRequestCancelError: Error? {
+            get { locked { $0.resetRequestCancelError } }
+            set { locked { $0.resetRequestCancelError = newValue } }
+        }
+        /// Answers for the next executes (`nil` is 200); when empty, 200.
+        var resetRequestExecuteErrors: [Error?] {
+            get { locked { $0.resetRequestExecuteErrors } }
+            set { locked { $0.resetRequestExecuteErrors = newValue } }
+        }
+        /// Runs at the start of each `PUT`, before its answer (to observe the journal).
+        var beforeResetRequestPut: (() -> Void)? {
+            get { locked { $0.beforeResetRequestPut } }
+            set { locked { $0.beforeResetRequestPut = newValue } }
+        }
+        var resetRequestPuts: [(operationId: UUID, deviceKeyId: String, publicKey: Data)] { locked { $0.resetRequestPuts } }
+        var resetRequestGets: [UUID] { locked { $0.resetRequestGets } }
+        var resetRequestCancels: [(operationId: UUID, deviceKeyId: String)] { locked { $0.resetRequestCancels } }
+        var resetRequestExecutes: [(operationId: UUID, deviceKeyId: String)] { locked { $0.resetRequestExecutes } }
+
+        func putResetRequest(operationId: UUID, deviceKeyId: String, publicKey: Data,
+                             name: String, platform: String) async throws -> ResetRequestDTO {
+            let hook = locked { s -> (() -> Void)? in
+                s.resetRequestPuts.append((operationId, deviceKeyId, publicKey))
+                return s.beforeResetRequestPut
+            }
+            hook?()
+            return try locked { s in
+                guard !s.resetRequestPutResults.isEmpty else {
+                    return ResetRequestDTO(operationId: operationId.uuidString.lowercased(), status: "pending",
+                                           createdAt: Date(), executeAfter: Date().addingTimeInterval(48 * 3600),
+                                           joinRequestId: "reset-join")
+                }
+                return try s.resetRequestPutResults.removeFirst().get()
+            }
+        }
+        func getResetRequest(operationId: UUID) async throws -> ResetRequestDTO {
+            try locked { s in
+                s.resetRequestGets.append(operationId)
+                guard !s.resetRequestGetResults.isEmpty else { throw ResetRequestError.notFound }
+                return try s.resetRequestGetResults.removeFirst().get()
+            }
+        }
+        func cancelResetRequest(operationId: UUID, deviceKeyId: String) async throws {
+            try locked { s in
+                s.resetRequestCancels.append((operationId, deviceKeyId))
+                if let error = s.resetRequestCancelError { throw error }
+            }
+        }
+        func executeResetRequest(operationId: UUID, deviceKeyId: String) async throws {
+            try locked { s in
+                s.resetRequestExecutes.append((operationId, deviceKeyId))
+                if !s.resetRequestExecuteErrors.isEmpty, let error = s.resetRequestExecuteErrors.removeFirst() {
+                    throw error
+                }
+                // 200: the account's sync data is gone.
+                s.account = nil
+                s.initialized = false
+                s.envelopes = [:]
             }
         }
     }

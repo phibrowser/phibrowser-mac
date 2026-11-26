@@ -325,6 +325,11 @@ import SwiftUI
         let localResetMarker = SyncPairingLocalResetMarkerStore(
             readData: { account.userDefaults.object(forKey: SyncPairingLocalResetMarkerStore.defaultsKey) as? Data },
             writeData: { account.userDefaults.set($0, forKey: SyncPairingLocalResetMarkerStore.defaultsKey) })
+        // The reset-request journal (docs/sync.md, "Starting over from a Mac that is not set up
+        // for sync"): account-scoped, beside `sync.pairingEnrollment`; sign-out keeps it.
+        let resetRequestJournal = SyncResetRequestJournalStore(
+            readData: { account.userDefaults.object(forKey: SyncResetRequestJournalStore.defaultsKey) as? Data },
+            writeData: { account.userDefaults.set($0, forKey: SyncResetRequestJournalStore.defaultsKey) })
         // The launch snapshot's `sync_enabled` mirror (docs/sync.md, "Launch snapshot caches").
         ProfilePairingGate.shared.pairingObserver = { SyncLaunchAnalytics.recordPaired($0) }
         // Bind the fail-closed prerequisite before any unlock callback can start sync.
@@ -455,6 +460,7 @@ import SwiftUI
                     && self?.pendingNativeCleanup?.removingDevice == true
             },
             localResetMarker: localResetMarker,
+            resetRequestJournal: resetRequestJournal,
             localResetAccess: Self.pairingResetLocalAccess(account: account))
 
         // The main-thread facade: read-only caches plus the no-engine fallback. Cleared in

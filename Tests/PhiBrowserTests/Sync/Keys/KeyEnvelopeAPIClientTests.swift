@@ -151,6 +151,88 @@ final class KeyEnvelopeAPIClientTests: XCTestCase {
         catch KeyAPIError.http(409, _) {}
     }
 
+    /// PHI-2002: the reset-request routes, their body and the refusal codes with `details`.
+    func testResetRequestRoutesAndRefusalMapping() async throws {
+        let operation = UUID()
+        let path = "/keys/v1/reset-requests/\(operation.uuidString.lowercased())"
+        let row = #"{"operation_id":"o","device_key_id":"d","requesting_public_key":"AQID","requesting_name":"Mac","requesting_platform":"macos","status":"pending","created_at":"2026-11-12T10:00:00.123456Z","execute_after":"2026-11-14T10:00:00.123456Z","join_request_id":"jr-9"}"#
+        StubURLProtocol.handler = { req in
+            XCTAssertEqual(req.httpMethod, "PUT")
+            XCTAssertEqual(req.url?.path, path)
+            let body = Self.jsonBody(req)
+            XCTAssertEqual(body["device_key_id"] as? String, "d")
+            XCTAssertEqual(body["requesting_public_key"] as? String, "CQk=")
+            XCTAssertEqual(body["name"] as? String, "Mac")
+            XCTAssertEqual(body["platform"] as? String, "macos")
+            return (200, Data(row.utf8))
+        }
+        let created = try await makeClient().putResetRequest(operationId: operation, deviceKeyId: "d",
+            publicKey: Data([9, 9]), name: "Mac", platform: "macos")
+        XCTAssertEqual(created.status, "pending")
+        XCTAssertEqual(created.joinRequestId, "jr-9")
+        XCTAssertEqual(created.executeAfter, KeyEnvelopeAPIClient.parseRFC3339("2026-11-14T10:00:00.123456Z"))
+
+        StubURLProtocol.handler = { req in
+            XCTAssertEqual(req.httpMethod, "GET")
+            XCTAssertEqual(req.url?.path, path)
+            return (200, Data(row.replacingOccurrences(of: "pending", with: "expired").utf8))
+        }
+        let read = try await makeClient().getResetRequest(operationId: operation)
+        XCTAssertEqual(read.status, "expired")
+
+        let posts: [(String, (KeyEnvelopeAPIClient) async throws -> Void)] = [
+            ("/cancel", { try await $0.cancelResetRequest(operationId: operation, deviceKeyId: "d") }),
+            ("/execute", { try await $0.executeResetRequest(operationId: operation, deviceKeyId: "d") })]
+        for (route, call) in posts {
+            StubURLProtocol.handler = { req in
+                XCTAssertEqual(req.httpMethod, "POST")
+                XCTAssertEqual(req.url?.path, path + route)
+                XCTAssertEqual(Self.jsonBody(req)["device_key_id"] as? String, "d")
+                return (200, Data(#"{"operation_id":"o","status":"cancelled"}"#.utf8))
+            }
+            try await call(makeClient())
+        }
+
+        func refusal(_ status: Int, _ body: String) -> Error {
+            KeyEnvelopeAPIClient.mapResetRequestError(status, Data(body.utf8))
+        }
+        let active = refusal(409, #"{"code":"devices_active","message":"x","details":{"last_active_at":"2026-11-01T08:00:00Z","device_name":"Old Mac"}}"#)
+        XCTAssertEqual(active as? ResetRequestError, .devicesActive(
+            lastActiveAt: KeyEnvelopeAPIClient.parseRFC3339("2026-11-01T08:00:00Z"), deviceName: "Old Mac"))
+        XCTAssertEqual(refusal(409, #"{"code":"devices_active","message":"x","details":{"last_active_at":"2026-11-01T08:00:00Z"}}"#) as? ResetRequestError,
+                       .devicesActive(lastActiveAt: KeyEnvelopeAPIClient.parseRFC3339("2026-11-01T08:00:00Z"), deviceName: nil))
+        XCTAssertEqual(refusal(409, #"{"code":"reset_request_exists","message":"x","details":{"execute_after":"2026-11-14T10:00:00.5Z"}}"#) as? ResetRequestError,
+                       .requestExists(executeAfter: KeyEnvelopeAPIClient.parseRFC3339("2026-11-14T10:00:00.5Z")))
+        XCTAssertEqual(refusal(409, #"{"code":"too_early","message":"x","details":{"execute_after":"2026-11-14T10:00:00Z"}}"#) as? ResetRequestError,
+                       .tooEarly(executeAfter: KeyEnvelopeAPIClient.parseRFC3339("2026-11-14T10:00:00Z")))
+        XCTAssertEqual(refusal(409, #"{"code":"not_pending","message":"x","details":{"status":"approved"}}"#) as? ResetRequestError,
+                       .notPending(status: "approved"))
+        XCTAssertEqual(refusal(409, #"{"code":"reset_request_conflict","message":"x"}"#) as? ResetRequestError, .conflict)
+        XCTAssertEqual(refusal(403, #"{"code":"stale_authentication","message":"x"}"#) as? ResetRequestError, .staleAuthentication)
+        XCTAssertEqual(refusal(403, #"{"code":"not_requester","message":"x"}"#) as? ResetRequestError, .notRequester)
+        XCTAssertEqual(refusal(404, #"{"code":"account_not_found","message":"x"}"#) as? ResetRequestError, .accountNotFound)
+        XCTAssertEqual(refusal(404, #"{"code":"reset_request_not_found","message":"x"}"#) as? ResetRequestError, .notFound)
+        XCTAssertEqual(refusal(400, #"{"code":"device_known","message":"x"}"#) as? ResetRequestError, .deviceKnown)
+        guard case KeyAPIError.http(500, _) = refusal(500, #"{"code":"internal_error","message":"x"}"#) else {
+            return XCTFail("an unknown refusal stays an HTTP error")
+        }
+    }
+
+    private static func jsonBody(_ request: URLRequest) -> [String: Any] {
+        var data = request.httpBody ?? Data()
+        if data.isEmpty, let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+                let read = stream.read(&buffer, maxLength: buffer.count)
+                guard read > 0 else { break }
+                data.append(buffer, count: read)
+            }
+        }
+        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
     func testListProfilesDecodes() async throws {
         let body = #"[{"profile_uuid":"11111111-1111-4111-8111-111111111111","has_envelope":true,"created_at":"2026-08-27T09:00:00.123456Z"}]"#
         StubURLProtocol.handler = { req in

@@ -23,6 +23,14 @@ final class SyncHelpLinksTests: XCTestCase {
         }
     }
 
+    /// PHI-2002: the start-over article follows the same locale rule; its anchor is one constant.
+    func testStartOverArticleUsesTheSameLocaleRule() {
+        XCTAssertEqual(SyncHelpLinks.startOverURL(for: .english).absoluteString,
+                       "https://phibrowser.com/help/sync/#start-over-without-the-old-data")
+        XCTAssertEqual(SyncHelpLinks.startOverURL(for: .japanese).absoluteString,
+                       "https://phibrowser.com/help/ja/sync/#\(SyncHelpLinks.startOverAnchor)")
+    }
+
     // MARK: Target
 
     func testAnotherDefaultBrowserReceivesTheArticle() {

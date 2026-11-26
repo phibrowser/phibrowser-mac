@@ -489,11 +489,13 @@ final class SpaceManager: ObservableObject {
     /// Count ordinary Spaces across windows. The synchronous bind seed can
     /// still contain sync-hidden rows before the first publisher delivery.
     var userSpaceCountForAnalytics: Int {
-        let hidden = MainActor.assumeIsolated { PhiSpaceSyncState.shared.hiddenSpaceIds }
-        return Self.userSpaceCountForAnalytics(in: spaces, hidden: hidden)
+        Self.userSpaceCountForAnalytics(in: spaces)
     }
 
-    static func userSpaceCountForAnalytics(in spaces: [Space], hidden: Set<String>) -> Int {
+    static func userSpaceCountForAnalytics(
+        in spaces: [Space],
+        hidden: Set<String> = MainActor.assumeIsolated { PhiSpaceSyncState.shared.hiddenSpaceIds }
+    ) -> Int {
         spaces.filter {
             !isIncognitoSpaceId($0.spaceId) && !$0.isAnyAgentSpace && !hidden.contains($0.spaceId)
         }.count

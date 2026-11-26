@@ -157,7 +157,7 @@ import PostHog
         
         #if !PHI_OSS_BUILD
         if applicationActivationObservation != nil {
-            captureProfileSpaceSnapshotWhenReady()
+            observeProfileSpaceCountsForAnalytics()
         }
         SentinelTelemetryConsentPublisher.shared.start()
         #endif

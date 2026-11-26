@@ -333,29 +333,47 @@ extension AppController {
     func captureApplicationOpenedIfDue() {
         guard applicationOpenedThrottle.shouldEmit() else { return }
         captureApplicationOpened(fromBackground: true)
-        captureProfileSpaceSnapshotWhenReady()
     }
 
-    /// The launch event precedes Chromium profile enumeration and the first
-    /// account's default Space. Wait for both lists, including on first run.
-    func captureProfileSpaceSnapshotWhenReady() {
+    /// The store identity scopes deduplication across account changes. Only
+    /// the two counts are sent to PostHog.
+    private struct ProfileSpaceSnapshot: Equatable {
+        let storeID: UUID
+        let profiles: Int
+        let spaces: Int
+    }
+
+    func observeProfileSpaceCountsForAnalytics() {
+        guard profileSpaceSnapshotObservation == nil else { return }
         let profiles = ProfileManager.shared
         let spaces = SpaceManager.shared
+        profiles.refreshIfChanged()
         profileSpaceSnapshotObservation = profiles.$profiles.combineLatest(spaces.$spaces)
-            // @Published delivers before assignment. Read the current account and
-            // both managers on the next main-queue turn, including after a rebind.
-            .receive(on: DispatchQueue.main)
-            .compactMap { _ -> [String: Int]? in
+            // @Published delivers before assignment. Count the incoming lists
+            // now so a quick create followed by a delete preserves both changes.
+            .compactMap { profileList, spaceList -> ProfileSpaceSnapshot? in
                 guard let store = AccountController.shared.localDataAccount?.localStorage,
                       spaces.acceptsStoreAction(from: store.identifier),
-                      spaces.hasStoredSpacesForAnalytics,
-                      let currentProfiles = ProfileManager.readProfiles() else { return nil }
-                return ["total_profiles": ProfileManager.userAssignableProfiles(in: currentProfiles).count,
-                        "total_spaces": spaces.userSpaceCountForAnalytics]
+                      spaces.hasStoredSpacesForAnalytics else { return nil }
+                let currentProfiles = profileList.isEmpty ? ProfileManager.readProfiles() : profileList
+                guard let currentProfiles else { return nil }
+                return ProfileSpaceSnapshot(
+                    storeID: store.identifier,
+                    profiles: ProfileManager.userAssignableProfiles(in: currentProfiles).count,
+                    spaces: SpaceManager.userSpaceCountForAnalytics(in: spaceList)
+                )
             }
-            .first()
-            .sink { properties in
-                PostHogSDK.shared.capture("profile_space_snapshot", properties: properties)
+            .receive(on: DispatchQueue.main)
+            .filter { snapshot in
+                AccountController.shared.localDataAccount?.localStorage.identifier == snapshot.storeID
+                    && spaces.acceptsStoreAction(from: snapshot.storeID)
+            }
+            .removeDuplicates()
+            .sink { snapshot in
+                PostHogSDK.shared.capture("profile_space_snapshot", properties: [
+                    "total_profiles": snapshot.profiles,
+                    "total_spaces": snapshot.spaces,
+                ])
             }
     }
 

@@ -108,6 +108,10 @@ final class ProfileManager: ObservableObject {
     /// `AgentSpaceManager.ensureAgentFallbackProfile`). The one list every
     /// user-facing profile picker draws from.
     var userAssignableProfiles: [PhiBrowserProfile] {
+        Self.userAssignableProfiles(in: profiles)
+    }
+
+    static func userAssignableProfiles(in profiles: [PhiBrowserProfile]) -> [PhiBrowserProfile] {
         profiles.filter {
             !PhiPreferences.AgentSpaces.isAgentFallbackProfile(
                 profileId: $0.profileId, displayName: $0.displayName)

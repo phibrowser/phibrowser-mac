@@ -5,6 +5,7 @@
 
 import Foundation
 import AppKit
+import Combine
 import PostHog
 
 /// Rate-limits the activation-driven `Application Opened` PostHog event.
@@ -332,6 +333,30 @@ extension AppController {
     func captureApplicationOpenedIfDue() {
         guard applicationOpenedThrottle.shouldEmit() else { return }
         captureApplicationOpened(fromBackground: true)
+        captureProfileSpaceSnapshotWhenReady()
+    }
+
+    /// The launch event precedes Chromium profile enumeration and the first
+    /// account's default Space. Wait for both lists, including on first run.
+    func captureProfileSpaceSnapshotWhenReady() {
+        let profiles = ProfileManager.shared
+        let spaces = SpaceManager.shared
+        profileSpaceSnapshotObservation = profiles.$profiles.combineLatest(spaces.$spaces)
+            // @Published delivers before assignment. Read the current account and
+            // both managers on the next main-queue turn, including after a rebind.
+            .receive(on: DispatchQueue.main)
+            .compactMap { _ -> [String: Int]? in
+                guard let store = AccountController.shared.localDataAccount?.localStorage,
+                      spaces.acceptsStoreAction(from: store.identifier),
+                      spaces.hasStoredSpacesForAnalytics,
+                      let currentProfiles = ProfileManager.readProfiles() else { return nil }
+                return ["total_profiles": ProfileManager.userAssignableProfiles(in: currentProfiles).count,
+                        "total_spaces": spaces.userSpaceCountForAnalytics]
+            }
+            .first()
+            .sink { properties in
+                PostHogSDK.shared.capture("profile_space_snapshot", properties: properties)
+            }
     }
 
     /// Emits the throttled activation event on every `didBecomeActive` for

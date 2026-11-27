@@ -103820,6 +103820,90 @@
         }
       }
     },
+    "settings.spaces.pinnedGrid.allSpacesMatch" : {
+      "comment" : "Spaces settings - tooltip and accessibility label of the checkmark beside a pinned tab setting when every Space uses the same value",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "All Spaces match"
+          }
+        }
+      }
+    },
+    "settings.spaces.pinnedGrid.applyToAllSpaces" : {
+      "comment" : "Spaces settings - tooltip and accessibility label of the button beside a pinned tab setting that copies this Space's value of that setting to every Space once",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Apply to All Spaces"
+          }
+        }
+      }
+    },
+    "settings.spaces.pinnedGrid.columns.automatic" : {
+      "comment" : "Spaces settings - pinned tabs per row option that follows the sidebar's width",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Automatic"
+          }
+        }
+      }
+    },
+    "settings.spaces.pinnedGrid.columns.title" : {
+      "comment" : "Spaces settings - row label for how many pinned tabs share a row in this Space's sidebar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pinned tabs per row"
+          }
+        }
+      }
+    },
+    "settings.spaces.pinnedGrid.spacing.compact" : {
+      "comment" : "Spaces settings - pinned tab spacing option with a tighter gap",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Compact"
+          }
+        }
+      }
+    },
+    "settings.spaces.pinnedGrid.spacing.standard" : {
+      "comment" : "Spaces settings - pinned tab spacing option keeping the usual gap",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Default"
+          }
+        }
+      }
+    },
+    "settings.spaces.pinnedGrid.spacing.title" : {
+      "comment" : "Spaces settings - row label for the gap between pinned tabs in this Space's sidebar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pinned tab spacing"
+          }
+        }
+      }
+    },
     "settings.spaces.pinnedTabScope.appDescription" : {
       "comment" : "Spaces settings - description of App pinned-tab scope",
       "extractionState" : "extracted_with_value",

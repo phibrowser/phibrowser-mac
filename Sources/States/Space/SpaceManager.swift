@@ -7452,6 +7452,56 @@ final class SpaceManager: ObservableObject {
         postSpaceThemeDidChange(spaceId: spaceId)
     }
 
+    // MARK: - Per-Space pinned tab grid
+
+    /// How the Space lays out its pinned tabs. A Space never set keeps the
+    /// automatic grid.
+    func pinnedTabGridStyle(forSpaceId spaceId: String) -> PinnedTabGridStyle {
+        boundAccount?.userDefaults.spacePinnedTabGridStyles()[spaceId] ?? .automatic
+    }
+
+    /// Saves the Space's pinned tab grid style and tells its sidebars
+    /// (`pinnedTabGridStyleDidChange`). Setting `automatic` drops the entry.
+    func setPinnedTabGridStyle(_ style: PinnedTabGridStyle, forSpaceId spaceId: String, expectedStoreIdentifier: UUID? = nil) {
+        guard acceptsStoreAction(from: expectedStoreIdentifier),
+              let account = boundAccount else { return }
+        var styles = account.userDefaults.spacePinnedTabGridStyles()
+        guard (styles[spaceId] ?? .automatic) != style else { return }
+        styles[spaceId] = style == .automatic ? nil : style
+        guard account.userDefaults.setSpacePinnedTabGridStyles(styles) else { return }
+        postPinnedTabGridStyleDidChange(spaceIds: [spaceId])
+    }
+
+    /// Copies `parts` of `spaceId`'s pinned tab grid style to every Space,
+    /// once, leaving each Space's other settings as they are. Each Space
+    /// keeps its own copy, so a later change to one leaves the others alone.
+    func applyPinnedTabGridStyleToAllSpaces(from spaceId: String, parts: PinnedTabGridStyle.Parts,
+                                            expectedStoreIdentifier: UUID? = nil) {
+        guard acceptsStoreAction(from: expectedStoreIdentifier),
+              let account = boundAccount else { return }
+        let source = pinnedTabGridStyle(forSpaceId: spaceId)
+        var styles = account.userDefaults.spacePinnedTabGridStyles()
+        var changed: [String] = []
+        for id in spaces.map(\.spaceId) where !Self.isIncognitoSpaceId(id) {
+            let current = styles[id] ?? .automatic
+            let next = current.copying(parts, from: source)
+            guard next != current else { continue }
+            styles[id] = next == .automatic ? nil : next
+            changed.append(id)
+        }
+        guard !changed.isEmpty,
+              account.userDefaults.setSpacePinnedTabGridStyles(styles) else { return }
+        postPinnedTabGridStyleDidChange(spaceIds: changed)
+    }
+
+    private func postPinnedTabGridStyleDidChange(spaceIds: [String]) {
+        NotificationCenter.default.post(
+            name: .pinnedTabGridStyleDidChange,
+            object: self,
+            userInfo: ["spaceIds": spaceIds]
+        )
+    }
+
     /// Returns the pinned theme id stored for `spaceId`, or nil when the
     /// Space has no entry yet (legacy "Follow Global" Spaces awaiting the
     /// one-shot migration, and runtime-only Spaces that were never themed).
@@ -7729,11 +7779,15 @@ final class SpaceManager: ObservableObject {
         return boundAccount?.userDefaults.spacePureThemeSliderValues()[spaceId] != nil
     }
 
-    /// Removes all per-Space theme maps' entries for a Space id that is
-    /// going away for good; nothing else prunes them and the id never
-    /// comes back.
+    /// Removes all per-Space theme maps' entries, and the Space's pinned tab
+    /// grid style, for a Space id that is going away for good; nothing else
+    /// prunes them and the id never comes back.
     func clearThemeRecords(forSpaceId spaceId: String) {
         guard let account = boundAccount else { return }
+        var gridStyles = account.userDefaults.spacePinnedTabGridStyles()
+        if gridStyles.removeValue(forKey: spaceId) != nil {
+            account.userDefaults.setSpacePinnedTabGridStyles(gridStyles)
+        }
         var palettes = account.userDefaults.spaceThemePalettes()
         var changed = false
         if palettes.removeValue(forKey: spaceId) != nil {

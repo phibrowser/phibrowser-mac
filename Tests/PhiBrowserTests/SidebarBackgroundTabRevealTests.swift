@@ -85,7 +85,7 @@ final class SidebarTabListHarness {
 
     /// Height of the sticky New Tab row covering the list's bottom, or 0.
     var bottomOverlayHeight: CGFloat {
-        controller.view.subviews.first { $0 is FloatingNewTabView }?.frame.height ?? 0
+        controller.view.subviews.first { ($0 as? FloatingSidebarRowView)?.cellView is NewTabButtonCellView }?.frame.height ?? 0
     }
 
     /// The part of the list no sticky row covers.

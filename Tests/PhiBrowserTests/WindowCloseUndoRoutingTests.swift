@@ -13,9 +13,10 @@ import XCTest
 /// forwarded: the window ids are fake.
 private final class WindowCloseBridgeStub: NSObject {
     enum Call: Hashable {
-        case closeRecord(windowIds: [Int], front: Int)
-        case clearCloseRecord(windowIds: [Int])
+        case closeRecord(windowIds: [Int], front: Int, ghosts: [Int] = [])
+        case clearCloseRecord(windowIds: [Int], ghosts: [Int] = [])
         case closeWindow(Int)
+        case dropGhost(Int)
     }
 
     var calls: [Call] = []
@@ -27,11 +28,24 @@ private final class WindowCloseBridgeStub: NSObject {
 
     override func forwardingTarget(for selector: Selector!) -> Any? { forwardingBridge }
 
-    @objc(setWindowCloseId:forWindowIds:frontWindowId:)
-    func setWindowCloseId(_ closeId: String, forWindowIds windowIds: [NSNumber], frontWindowId: Int64) {
+    @objc(setWindowCloseId:forWindowIds:frontWindowId:parkedGhosts:)
+    func setWindowCloseId(_ closeId: String, forWindowIds windowIds: [NSNumber], frontWindowId: Int64,
+                          parkedGhosts: [[String: Any]]?) {
         let ids = windowIds.map(\.intValue).sorted()
-        calls.append(closeId.isEmpty ? .clearCloseRecord(windowIds: ids)
-                                     : .closeRecord(windowIds: ids, front: Int(frontWindowId)))
+        let ghosts = (parkedGhosts ?? []).compactMap { $0["windowId"] as? Int }.sorted()
+        calls.append(closeId.isEmpty ? .clearCloseRecord(windowIds: ids, ghosts: ghosts)
+                                     : .closeRecord(windowIds: ids, front: Int(frontWindowId), ghosts: ghosts))
+    }
+
+    @objc(ensureProfileLoaded:completion:)
+    func ensureProfileLoaded(_ profileId: String, completion: @escaping (Bool) -> Void) {
+        completion(true)
+    }
+
+    @objc(dropGhostWindow:profileId:completion:)
+    func dropGhostWindow(_ windowId: Int32, profileId: String, completion: ((Bool) -> Void)?) {
+        calls.append(.dropGhost(Int(windowId)))
+        completion?(true)
     }
 
     /// Every window stays open: the cascade reads as vetoed.
@@ -45,6 +59,17 @@ private final class WindowCloseBridgeStub: NSObject {
         if commandId == Int32(CommandWrapper.IDC_CLOSE_WINDOW.rawValue) {
             calls.append(.closeWindow(Int(windowId)))
         }
+    }
+}
+
+/// A framework built before the close record took parked ghosts: it knows
+/// only the first selector.
+private final class LegacyCloseRecordBridgeStub: NSObject {
+    var records: [[Int]] = []
+
+    @objc(setWindowCloseId:forWindowIds:frontWindowId:)
+    func setWindowCloseId(_ closeId: String, forWindowIds windowIds: [NSNumber], frontWindowId: Int64) {
+        records.append(windowIds.map(\.intValue))
     }
 }
 
@@ -212,7 +237,84 @@ final class WindowCloseUndoRoutingTests: XCTestCase {
         XCTAssertEqual(bridge.calls.last, .clearCloseRecord(windowIds: ids))
     }
 
+    // MARK: - Parked ghosts
+
+    /// After a reopen the Window's sibling Space is still parked. Closing the
+    /// Window takes it along in the close record, and a veto takes it back.
+    func testCloseRecordCarriesTheWindowsParkedGhost() async throws {
+        let (slot, front) = try await reopenWithSiblingParked()
+        let bridge = try installBridge()
+
+        XCTAssertFalse(slot.shellRequestedClose())
+
+        XCTAssertEqual(bridge.calls.first,
+                       .closeRecord(windowIds: [front.windowId], front: front.windowId, ghosts: [Self.parkedWindowId]))
+        XCTAssertEqual(slot.windowCloseGhostWindowIds, [Self.parkedWindowId])
+        // No window closed: the veto recovery runs at its first deadline.
+        try await Task.sleep(for: .seconds(2.5))
+        XCTAssertEqual(bridge.calls.last,
+                       .clearCloseRecord(windowIds: [front.windowId], ghosts: [Self.parkedWindowId]))
+        XCTAssertTrue(slot.windowCloseGhostWindowIds.isEmpty)
+    }
+
+    /// The closed Window's slot goes away while another Window stays open, so
+    /// its parked ghosts are retired. The one its close took along leaves
+    /// this side's record only; Chromium keeps it for the Undo Close.
+    func testRemovingTheSlotKeepsChromiumsRecordOfTheGhostItsCloseTookAlong() async throws {
+        let (slot, _) = try await reopenWithSiblingParked()
+        let other = manager.createSlot(initialSpaceId: LocalStore.defaultSpaceId)
+        other.ensureShell(initialFrame: NSRect(x: 0, y: 0, width: 1000, height: 700))
+        arrive(in: other, spaceId: LocalStore.defaultSpaceId)
+        let bridge = try installBridge()
+        XCTAssertFalse(slot.shellRequestedClose())
+
+        manager.removeSlot(slot)
+
+        XCTAssertNil(manager.parkedGhostWindowId(forSpaceId: second))
+        XCTAssertFalse(bridge.calls.contains(.dropGhost(Self.parkedWindowId)))
+    }
+
+    func testAFrameworkWithoutTheGhostSelectorGetsTheRecordWithoutGhosts() throws {
+        let bridge = LegacyCloseRecordBridgeStub()
+        class_addProtocol(LegacyCloseRecordBridgeStub.self,
+                          try XCTUnwrap(objc_getProtocol("PhiChromiumBridgeProtocol")))
+        let ghosts: [[String: Any]] = [["windowId": 7, "spaceId": second, "profileId": "Default"]]
+
+        let kept = SpaceManager.sendWindowCloseRecord(
+            "close-1", windowIds: [5], frontWindowId: 5, parkedGhosts: ghosts,
+            bridge: try XCTUnwrap(bridge as? PhiChromiumBridgeProtocol))
+
+        XCTAssertTrue(kept.isEmpty)
+        XCTAssertEqual(bridge.records, [[5]])
+    }
+
     // MARK: - Helpers
+
+    private static let presentedWindowId = 101
+    private static let parkedWindowId = 102
+
+    /// A reopen that replayed the Window's presented Space and parked its
+    /// sibling: the saved entry names both, the replayed window claims it,
+    /// and the park receipt records the sibling as a ghost.
+    private func reopenWithSiblingParked() async throws -> (SpaceWindowSlot, SpaceSessionController) {
+        manager.discardSpacePrewarm()
+        XCTAssertTrue(account.userDefaults.set([[
+            "activeSpaceId": LocalStore.defaultSpaceId, "isLandingEntry": true,
+            "windowMap": ["\(Self.presentedWindowId)": LocalStore.defaultSpaceId,
+                          "\(Self.parkedWindowId)": second],
+        ]], forKey: .slotsRestoreSnapshot))
+        manager = SpaceManager(observeAccountChanges: false)
+        manager.bind(to: account)
+        await drain()
+        let claim = try XCTUnwrap(manager.claimRestoredWindow(
+            forRestoredFromWindowId: Self.presentedWindowId, profileId: "Default", arrivingWindowId: 201))
+        let slot = claim.slot
+        slot.ensureShell(initialFrame: NSRect(x: 0, y: 0, width: 1000, height: 700))
+        let front = arrive(in: slot, spaceId: LocalStore.defaultSpaceId)
+        manager.applyColdStartParkedGhostReceipt(windowIdsByProfileId: ["Default": [Self.parkedWindowId]])
+        XCTAssertEqual(manager.parkedGhostWindowId(forSpaceId: second), Self.parkedWindowId)
+        return (slot, front)
+    }
 
     /// A window Chromium re-created for `spaceId` registering with `slot`, as
     /// the coordinator registers a member of a window close: siblings of the

@@ -1377,8 +1377,13 @@ final class SpaceManager: ObservableObject {
         // and is unchanged by it — what this gate closes is the Mac-side half,
         // where a refused write used to leave the record naming windows the store
         // had already dropped.
+        //
+        // A ghost the slot's window close took along (ADR 0013) keeps its
+        // chromium record: Undo Close of that Window materializes it from
+        // there. Only this side's record goes.
         if persistSlotsSnapshot(retiringGhostWindowIds: Set(parkedGhosts.keys)) {
-            dropParkedGhosts(parkedGhosts, reason: "removeSlot")
+            dropParkedGhosts(parkedGhosts, reason: "removeSlot",
+                             keepingChromiumRecordsOf: slot.windowCloseGhostWindowIds)
         }
     }
 
@@ -4141,7 +4146,11 @@ final class SpaceManager: ObservableObject {
     /// profile never loaded this run) is logged and accepted: the Mac
     /// records are gone either way, and the residue self-heals at the next
     /// cold start's unfiltered replay.
-    fileprivate func dropParkedGhosts(_ ghosts: [Int: String], reason: String) {
+    ///
+    /// `keepingChromiumRecordsOf` names ghosts whose chromium record stays:
+    /// only their Mac record is retired.
+    fileprivate func dropParkedGhosts(_ ghosts: [Int: String], reason: String,
+                                      keepingChromiumRecordsOf kept: Set<Int> = []) {
         guard !ghosts.isEmpty else { return }
         // Absence from this map IS the "no profile resolves" case below.
         let profileIdsByWindowId: [Int: String] = ghosts.compactMapValues {
@@ -4157,6 +4166,10 @@ final class SpaceManager: ObservableObject {
             return
         }
         for (windowId, spaceId) in ghosts.sorted(by: { $0.key < $1.key }) {
+            if kept.contains(windowId) {
+                AppLogInfo("[SpaceManager] \(reason): ghost \(windowId) (Space \(spaceId)) kept in chromium for Undo Close of its Window")
+                continue
+            }
             guard let profileId = profileIdsByWindowId[windowId],
                   !profileId.isEmpty else {
                 AppLogWarn("[SpaceManager] \(reason): no profile resolves for ghost \(windowId) (Space \(spaceId)) — dropped Mac-side only")
@@ -4594,21 +4607,45 @@ final class SpaceManager: ObservableObject {
     }
 
     /// Before a window-driven close of a whole Window cascades, tells
-    /// Chromium which of its windows close together and which one it was
-    /// presenting, so Undo Close can bring all of them back (ADR 0013). An
-    /// empty `windowCloseId` takes the record back — the windows a vetoed
-    /// cascade left open, whose later closes are closes of their own.
-    /// Skipped against a framework that predates it: its entries then
-    /// restore one at a time, the old behavior.
+    /// Chromium which of its windows close together, which one it was
+    /// presenting, and which of its Space instances are still parked
+    /// (`parkedGhosts`, from `windowCloseGhosts(for:)`), so Undo Close can
+    /// bring all of them back (ADR 0013). An empty `windowCloseId` takes the
+    /// record back — the windows a vetoed cascade left open, whose later
+    /// closes are closes of their own. Skipped against a framework that
+    /// predates it: its entries then restore one at a time, the old behavior.
+    ///
+    /// Returns the parked ghosts Chromium now keeps for the Undo Close: none
+    /// against a framework that takes no ghosts with the record.
+    @discardableResult
     static func sendWindowCloseRecord(_ windowCloseId: String, windowIds: [Int],
                                       frontWindowId: Int?,
-                                      bridge: PhiChromiumBridgeProtocol?) {
-        guard let bridge, !windowIds.isEmpty,
-              bridge.responds(to: #selector(PhiChromiumBridgeProtocol.setWindowCloseId(_:forWindowIds:frontWindowId:)))
-        else { return }
-        bridge.setWindowCloseId(windowCloseId,
-                                forWindowIds: windowIds.map { NSNumber(value: $0) },
-                                frontWindowId: Int64(frontWindowId ?? 0))
+                                      parkedGhosts: [[String: Any]] = [],
+                                      bridge: PhiChromiumBridgeProtocol?) -> [[String: Any]] {
+        guard let bridge, !windowIds.isEmpty else { return [] }
+        let ids = windowIds.map { NSNumber(value: $0) }
+        if bridge.responds(to: #selector(PhiChromiumBridgeProtocol.setWindowCloseId(_:forWindowIds:frontWindowId:parkedGhosts:))) {
+            bridge.setWindowCloseId(windowCloseId, forWindowIds: ids,
+                                    frontWindowId: Int64(frontWindowId ?? 0),
+                                    parkedGhosts: parkedGhosts)
+            return parkedGhosts
+        }
+        if bridge.responds(to: #selector(PhiChromiumBridgeProtocol.setWindowCloseId(_:forWindowIds:frontWindowId:))) {
+            bridge.setWindowCloseId(windowCloseId, forWindowIds: ids,
+                                    frontWindowId: Int64(frontWindowId ?? 0))
+        }
+        return []
+    }
+
+    /// The Space instances `slot` still has parked as lazy-restore ghosts, in
+    /// the shape `sendWindowCloseRecord` hands Chromium. A ghost whose Space
+    /// no longer resolves to a Profile is left out: Chromium could not find
+    /// its record.
+    func windowCloseGhosts(for slot: SpaceWindowSlot) -> [[String: Any]] {
+        parkedGhostEntries(for: slot).sorted { $0.key < $1.key }.compactMap { windowId, spaceId in
+            guard let profileId = boundProfileId(forSpaceId: spaceId), !profileId.isEmpty else { return nil }
+            return ["windowId": windowId, "spaceId": spaceId, "profileId": profileId]
+        }
     }
 
     /// Set once app termination begins (see `markTerminating`) and cleared if
@@ -11295,6 +11332,14 @@ final class SpaceWindowSlot: ObservableObject {
         if shouldActivate { NSApp.activate(ignoringOtherApps: true) }
     }
 
+    /// The parked ghosts the window close in flight took along (ADR 0013), as
+    /// sent to Chromium; empty when none is in flight.
+    private var windowCloseGhosts: [[String: Any]] = []
+
+    var windowCloseGhostWindowIds: Set<Int> {
+        Set(windowCloseGhosts.compactMap { $0["windowId"] as? Int })
+    }
+
     /// The shell's close button. With sessions still open this starts the
     /// same window-driven cascade a session close does and refuses the
     /// AppKit close; the shell is closed by `removeSlot` once the cascade has
@@ -11305,10 +11350,11 @@ final class SpaceWindowSlot: ObservableObject {
         manager?.flushPendingSlotsSnapshotPersist()
         AppLogInfo("[SpaceWindowSlot] shell close requested; cascading \(windowsBySpaceId.count) session(s) via Chromium")
         isCascadingSlotClose = true
-        SpaceManager.sendWindowCloseRecord(
+        windowCloseGhosts = SpaceManager.sendWindowCloseRecord(
             UUID().uuidString,
             windowIds: windowsBySpaceId.values.map(\.windowId),
             frontWindowId: visibleController?.windowId,
+            parkedGhosts: manager?.windowCloseGhosts(for: self) ?? [],
             bridge: ChromiumLauncher.sharedInstance().bridge)
         cascadeCloseRemainingWindows()
         scheduleCascadeVetoRecovery()
@@ -13321,7 +13367,9 @@ final class SpaceWindowSlot: ObservableObject {
         // a later close of one of them must come back on its own.
         SpaceManager.sendWindowCloseRecord(
             "", windowIds: windowsBySpaceId.values.map(\.windowId), frontWindowId: nil,
+            parkedGhosts: windowCloseGhosts,
             bridge: ChromiumLauncher.sharedInstance().bridge)
+        windowCloseGhosts = []
         // Prefer the Space the user is looking at — the one whose beforeunload
         // prompt they answered was presented for it — then any surviving Space.
         // Every hosted session's `window` is the shared shell, so key/visible

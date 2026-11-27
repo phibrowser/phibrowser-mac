@@ -1860,6 +1860,21 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
             forWindowIds:(NSArray<NSNumber *> *)windowIds
            frontWindowId:(int64_t)frontWindowId;
 
+/// Same record, also naming the Space instances the closing Window still had
+/// parked as lazy-restore ghosts — preferred by the client when implemented.
+/// Each `parkedGhosts` item is `@{ @"windowId": NSNumber (the parked window
+/// id), @"spaceId": NSString, @"profileId": NSString }`. Chromium keeps
+/// `windowCloseId` and the Space with each named ghost's parked record (it
+/// lasts across relaunch with the record), and Undo Close of the Window
+/// materializes them into it, reporting each with its Space, the close id and
+/// `restoredClosedWindowId` set to the parked window id. The client must then
+/// keep Chromium's parked record when it retires its own. An empty
+/// `windowCloseId` takes the stamp back off the named ghosts too.
+- (void)setWindowCloseId:(NSString *)windowCloseId
+            forWindowIds:(NSArray<NSNumber *> *)windowIds
+           frontWindowId:(int64_t)frontWindowId
+            parkedGhosts:(NSArray<NSDictionary<NSString *, id> *> * _Nullable)parkedGhosts;
+
 /// Read-only probe for the window-group close cascade: reports where a
 /// window is in Browser's two-phase close (browser.h). The Mac client polls
 /// this at each veto-recovery deadline and treats a cascade as vetoed only

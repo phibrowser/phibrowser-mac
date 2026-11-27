@@ -662,6 +662,7 @@ class FloatingSidebarViewController: NSViewController, BrowserThemeContextProvid
         let aiChatEnabled = focusedAIChat || partnerAIChat
         let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
         let chatSlotReserved = !navigationAtTop && !state.isIncognito && phiAIEnabled
+            && PhiPreferences.GeneralSettings.sidebarBottomBarShowsChat.loadValue()
         let shouldHideChat = !chatSlotReserved || overviewActive || !aiChatEnabled
         bottomBarSwiftUI.setChatSlotReserved(chatSlotReserved)
         bottomBarSwiftUI.setChatHidden(shouldHideChat)

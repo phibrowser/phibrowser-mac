@@ -39160,6 +39160,18 @@
         }
       }
     },
+    "common.tabAreaContextMenu.bottomButtons.chat" : {
+      "comment" : "Tab area context menu - Bottom Buttons submenu item that shows or hides the AI chat button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Chat"
+          }
+        }
+      }
+    },
     "common.tabAreaContextMenu.bottomButtons.downloads" : {
       "comment" : "Tab area context menu - Bottom Buttons submenu item that shows or hides the downloads button",
       "extractionState" : "extracted_with_value",

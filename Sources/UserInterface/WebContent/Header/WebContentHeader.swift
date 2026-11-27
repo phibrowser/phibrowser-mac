@@ -351,7 +351,8 @@ class WebContentHeader: NSView {
             .map { _ in
                 [PhiPreferences.GeneralSettings.topBarShowsDownloads,
                  .topBarShowsMemory,
-                 .topBarShowsFeedback].map { $0.loadValue() }
+                 .topBarShowsFeedback,
+                 .topBarShowsChat].map { $0.loadValue() }
             }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -514,12 +515,15 @@ class WebContentHeader: NSView {
             || PhiPreferences.GeneralSettings.topBarShowsMemory.loadValue()
         let showsTopBarFeedback = !traditionalLayout
             || PhiPreferences.GeneralSettings.topBarShowsFeedback.loadValue()
+        let showsTopBarChat = !traditionalLayout
+            || PhiPreferences.GeneralSettings.topBarShowsChat.loadValue()
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.state.showAddressBar = navigationAtTop
             self.state.showNavigationButtons = navigationAtTop && !isInPlaceholder
             self.state.showChatButton = navigationAtTop && !overviewActive && !isIncognito && aiChatEnabled && phiAIEnabled && !isInPlaceholder
+                && showsTopBarChat
             self.state.showFeedbackButton =
                 (traditionalLayout || (navigationAtTop && isCollapsed))
                 && !isInPlaceholder

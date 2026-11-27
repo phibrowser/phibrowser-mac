@@ -823,6 +823,7 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         let aiChatEnabled = focusedAIChat || companionAIChat
         let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
         let chatSlotReserved = !navigationAtTop && !state.isIncognito && phiAIEnabled
+            && PhiPreferences.GeneralSettings.sidebarBottomBarShowsChat.loadValue()
         let shouldHideChat = !chatSlotReserved || overviewActive || !aiChatEnabled
         bottomBarSwiftUI.setChatSlotReserved(chatSlotReserved)
         bottomBarSwiftUI.setChatHidden(shouldHideChat)

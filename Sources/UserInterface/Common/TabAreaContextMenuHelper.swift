@@ -252,6 +252,12 @@ final class TabAreaContextMenuHelper: NSObject {
             entries.append((isHorizontalLayout ? Setting.topBarShowsFeedback : .sidebarBottomBarShowsFeedback,
                             NSLocalizedString("common.tabAreaContextMenu.bottomButtons.feedback", value: "Feedback", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the feedback button")))
         }
+        // Balanced shows Chat in the page's toolbar, not in the sidebar bottom bar.
+        let barHostsChat = isHorizontalLayout || browserState?.layoutMode == .performance
+        if phiAIEnabled, browserState?.isIncognito != true, barHostsChat {
+            entries.append((isHorizontalLayout ? Setting.topBarShowsChat : .sidebarBottomBarShowsChat,
+                            NSLocalizedString("common.tabAreaContextMenu.bottomButtons.chat", value: "Chat", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the AI chat button")))
+        }
 
         return buildToggleSubmenu(entries)
     }

@@ -2626,6 +2626,25 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
 
     func mainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?, restoredClosedWindowId: Int64, presentationContext: [String: Any]?) {
+        // Framework built before the window-close fields were added.
+        mainBrowserWindowCreated(
+            window,
+            type: browserType,
+            profileId: profileId,
+            windowId: windowId,
+            restoredFromWindowId: restoredFromWindowId,
+            restoredSpaceId: restoredSpaceId,
+            restoredClosedWindowId: restoredClosedWindowId,
+            presentationContext: presentationContext,
+            windowCloseId: nil,
+            isWindowCloseFront: false
+        )
+    }
+
+    func mainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?, restoredClosedWindowId: Int64, presentationContext: [String: Any]?, windowCloseId: String?, isWindowCloseFront: Bool) {
+        if let windowCloseId {
+            AppLogInfo("🌐 [Chromium] window \(windowId) is a member of window close \(windowCloseId) (front=\(isWindowCloseFront))")
+        }
         // The undo stack rebuilt the whole window saved as
         // `restoredClosedWindowId`, and Chromium dropped its parked record for
         // that id before making this call. Retire this side's half first, so
@@ -2649,6 +2668,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             windowId: windowId,
             restoredFromWindowId: restoredFromWindowId,
             restoredSpaceId: restoredSpaceId,
+            windowCloseId: windowCloseId,
             presentationContext: presentationContext
         )
     }
@@ -2661,8 +2681,15 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             windowId: windowId,
             restoredFromWindowId: restoredFromWindowId,
             restoredSpaceId: restoredSpaceId,
+            windowCloseId: nil,
             presentationContext: nil
         )
+    }
+
+    /// Undo Close has brought back every member of the window close
+    /// `windowCloseId` (ADR 0013); no later window joins its Window.
+    @objc func windowCloseSetDidSettle(_ windowCloseId: String) {
+        SpaceManager.shared.windowCloseSetDidSettle(windowCloseId)
     }
 
     /// How long after discarding a window on a profile no Space uses the app
@@ -2697,7 +2724,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
     }
 
-    private func handleMainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?, presentationContext: [String: Any]?) {
+    private func handleMainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?, windowCloseId: String?, presentationContext: [String: Any]?) {
         AppLogInfo("🌐 [Chromium] mainBrowserWindowCreated called - windowId: \(windowId), restoredFrom: \(restoredFromWindowId), restoredSpace: \(restoredSpaceId ?? "nil"), type: \(browserType.rawValue)")
         // This callback runs synchronously inside Browser::Create; hosted
         // sessions defer their activation push to Chromium while it is set.
@@ -2754,9 +2781,10 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         // and the two can disagree.
         let resolvedSlot: SpaceWindowSlot?
         let spaceId: String
-        // Tracks whether this window came back through Chromium session restore
-        // — the only path that surfaces several windows into one slot, and so
-        // the only one that needs the post-restore visibility reconcile below.
+        // Tracks whether this window came back as one of several windows of a
+        // group — through Chromium session restore, or Undo Close of a Window
+        // that closed as a whole — the paths that surface several windows into
+        // one slot, and so the ones that need the sibling concealment below.
         var isRestoredWindow = false
         var waitsForChromiumShow = true
         // Incognito Space windows take the same slot-resolution path as
@@ -2794,8 +2822,16 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 // register this window as a non-active sibling Space and hide
                 // it, so the reopen would look like nothing happened. Its own
                 // slot opens on the restored Space and is visible.
+                //
+                // Members of one Window that closed as a whole (ADR 0013)
+                // share that new slot: the first to arrive — the front one,
+                // which Chromium re-creates first — mints it on its Space, the
+                // rest join it as concealed siblings, the way session restore
+                // puts a saved group back.
                 spaceId = restoredSpace
-                resolvedSlot = SpaceManager.shared.createSlot(initialSpaceId: spaceId)
+                resolvedSlot = SpaceManager.shared.slotForTabRestoredWindow(
+                    spaceId: spaceId, windowCloseId: windowCloseId)
+                isRestoredWindow = windowCloseId != nil
             } else if let restored = SpaceManager.shared.claimRestoredWindow(
                 forRestoredFromWindowId: Int(restoredFromWindowId),
                 profileId: profileId,

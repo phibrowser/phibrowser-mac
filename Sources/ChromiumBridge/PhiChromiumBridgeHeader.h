@@ -814,6 +814,27 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                  restoredSpaceId:(NSString * _Nullable)restoredSpaceId
           restoredClosedWindowId:(int64_t)restoredClosedWindowId
              presentationContext:(NSDictionary<NSString *, id> * _Nullable)presentationContext;
+/// Window-close variant of the above — preferred by the bridge when
+/// implemented. `windowCloseId` is non-nil only when Undo Close re-created this
+/// window as a member of a Window that closed as a whole (mac ADR 0013): the id
+/// the client sent with `setWindowCloseId:forWindowIds:frontWindowId:` when
+/// that Window closed. Every member Undo Close brings back reports the same id,
+/// the one the Window was presenting first and with `isWindowCloseFront` YES;
+/// the client puts them all into one Window until `windowCloseSetDidSettle:`
+/// reports that id. It travels with `restoredSpaceId`.
+- (void)mainBrowserWindowCreated:(NSWindow *)window
+                            type:(ChromiumBrowserType)browserType
+                       profileId:(NSString *)profileId
+                        windowId:(int64_t)windowId
+            restoredFromWindowId:(int64_t)restoredFromWindowId
+                 restoredSpaceId:(NSString * _Nullable)restoredSpaceId
+          restoredClosedWindowId:(int64_t)restoredClosedWindowId
+             presentationContext:(NSDictionary<NSString *, id> * _Nullable)presentationContext
+                   windowCloseId:(NSString * _Nullable)windowCloseId
+              isWindowCloseFront:(BOOL)isWindowCloseFront;
+/// Undo Close has brought back every member of the window close
+/// `windowCloseId` it could find; no further window will report that id.
+- (void)windowCloseSetDidSettle:(NSString *)windowCloseId;
 // Relationship snapshot version increases monotonically per window.
 - (void)tabRelationshipSnapshotChanged:(NSDictionary *)snapshot
                              windowId:(int64_t)windowId
@@ -1825,6 +1846,19 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// group gets committed a window at a time and only its last Space survives a
 /// restore.
 - (void)windowGroupCloseDidSettle;
+
+/// Announces a window-driven close of a whole Window (mac ADR 0013), before
+/// the client issues the first close of its cascade: `windowIds` are the
+/// Chromium windows of every Space instance that closes under it, and
+/// `frontWindowId` the one the Window is presenting. Chromium stamps
+/// `windowCloseId` into each member's recently-closed entry, so Undo Close of
+/// any of them brings back all of them. A window's record is dropped with its
+/// Browser; an empty `windowCloseId` drops it earlier (the windows a vetoed
+/// cascade left open). Callers must guard with respondsToSelector: (version
+/// skew).
+- (void)setWindowCloseId:(NSString *)windowCloseId
+            forWindowIds:(NSArray<NSNumber *> *)windowIds
+           frontWindowId:(int64_t)frontWindowId;
 
 /// Read-only probe for the window-group close cascade: reports where a
 /// window is in Browser's two-phase close (browser.h). The Mac client polls

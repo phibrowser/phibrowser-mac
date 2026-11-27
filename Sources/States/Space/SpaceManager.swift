@@ -1335,6 +1335,7 @@ final class SpaceManager: ObservableObject {
         // mid-session would be retained here (and never deinit) until the next
         // account bind clears the map.
         restoredSlotsByIndex = restoredSlotsByIndex.filter { $0.value !== slot }
+        slotsByWindowCloseId = slotsByWindowCloseId.filter { $0.value !== slot }
         // Rewrite the restore snapshot now that the slot is gone. Nothing else
         // on the close path does — `unregisterWindow` only flushes a debounced
         // frame write, before it drains anything, and the cascade and the
@@ -4567,6 +4568,47 @@ final class SpaceManager: ObservableObject {
         guard let resolvedModel = known.first(where: { $0.spaceId == resolved }),
               isAutomaticSwitchTarget(resolvedModel) else { return nil }
         return resolved
+    }
+
+    /// The Window each window close Undo Close is bringing back puts its
+    /// members into, from the first member's arrival until Chromium reports
+    /// the set settled (`windowCloseSetDidSettle`). Dropped with the slot too.
+    private var slotsByWindowCloseId: [String: SpaceWindowSlot] = [:]
+
+    /// The slot a tab-restored window ("Reopen Closed Window") on `spaceId`
+    /// goes into: always a new one, except that every member of one Window
+    /// that closed as a whole (`windowCloseId`, ADR 0013) goes into the slot
+    /// its first arriving member minted.
+    func slotForTabRestoredWindow(spaceId: String, windowCloseId: String?) -> SpaceWindowSlot {
+        guard let windowCloseId else { return createSlot(initialSpaceId: spaceId) }
+        if let slot = slotsByWindowCloseId[windowCloseId] {
+            return slot
+        }
+        let slot = createSlot(initialSpaceId: spaceId)
+        slotsByWindowCloseId[windowCloseId] = slot
+        return slot
+    }
+
+    func windowCloseSetDidSettle(_ windowCloseId: String) {
+        slotsByWindowCloseId.removeValue(forKey: windowCloseId)
+    }
+
+    /// Before a window-driven close of a whole Window cascades, tells
+    /// Chromium which of its windows close together and which one it was
+    /// presenting, so Undo Close can bring all of them back (ADR 0013). An
+    /// empty `windowCloseId` takes the record back — the windows a vetoed
+    /// cascade left open, whose later closes are closes of their own.
+    /// Skipped against a framework that predates it: its entries then
+    /// restore one at a time, the old behavior.
+    static func sendWindowCloseRecord(_ windowCloseId: String, windowIds: [Int],
+                                      frontWindowId: Int?,
+                                      bridge: PhiChromiumBridgeProtocol?) {
+        guard let bridge, !windowIds.isEmpty,
+              bridge.responds(to: #selector(PhiChromiumBridgeProtocol.setWindowCloseId(_:forWindowIds:frontWindowId:)))
+        else { return }
+        bridge.setWindowCloseId(windowCloseId,
+                                forWindowIds: windowIds.map { NSNumber(value: $0) },
+                                frontWindowId: Int64(frontWindowId ?? 0))
     }
 
     /// Set once app termination begins (see `markTerminating`) and cleared if
@@ -11263,6 +11305,11 @@ final class SpaceWindowSlot: ObservableObject {
         manager?.flushPendingSlotsSnapshotPersist()
         AppLogInfo("[SpaceWindowSlot] shell close requested; cascading \(windowsBySpaceId.count) session(s) via Chromium")
         isCascadingSlotClose = true
+        SpaceManager.sendWindowCloseRecord(
+            UUID().uuidString,
+            windowIds: windowsBySpaceId.values.map(\.windowId),
+            frontWindowId: visibleController?.windowId,
+            bridge: ChromiumLauncher.sharedInstance().bridge)
         cascadeCloseRemainingWindows()
         scheduleCascadeVetoRecovery()
         return false
@@ -13270,6 +13317,11 @@ final class SpaceWindowSlot: ObservableObject {
 
     private func recoverFromVetoedCascade() {
         isCascadingSlotClose = false
+        // The survivors no longer close with the Window that was announced;
+        // a later close of one of them must come back on its own.
+        SpaceManager.sendWindowCloseRecord(
+            "", windowIds: windowsBySpaceId.values.map(\.windowId), frontWindowId: nil,
+            bridge: ChromiumLauncher.sharedInstance().bridge)
         // Prefer the Space the user is looking at — the one whose beforeunload
         // prompt they answered was presented for it — then any surviving Space.
         // Every hosted session's `window` is the shared shell, so key/visible

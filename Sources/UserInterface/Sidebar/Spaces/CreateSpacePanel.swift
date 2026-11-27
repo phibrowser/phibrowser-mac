@@ -442,7 +442,7 @@ struct CreateSpacePanel: View {
         )
         if newSpaceId != nil {
             PostHogSDK.shared.capture("space_created", properties: [
-                "total_spaces": manager.spaces.count,
+                "total_spaces": manager.userSpaceCountForAnalytics,
                 "non_default_profile": profileId != LocalStore.defaultProfileId,
                 "surface": style.analyticsSurface,
             ])

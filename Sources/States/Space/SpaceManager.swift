@@ -483,6 +483,24 @@ final class SpaceManager: ObservableObject {
         spaces.filter { !Self.isIncognitoSpaceId($0.spaceId) && !$0.isAgentSpace }
     }
 
+    /// The first-run store is empty until its default Space has been seeded.
+    var hasStoredSpacesForAnalytics: Bool { !lastStoreSpaces.isEmpty }
+
+    /// Count ordinary Spaces across windows. The synchronous bind seed can
+    /// still contain sync-hidden rows before the first publisher delivery.
+    var userSpaceCountForAnalytics: Int {
+        Self.userSpaceCountForAnalytics(in: spaces)
+    }
+
+    static func userSpaceCountForAnalytics(
+        in spaces: [Space],
+        hidden: Set<String> = MainActor.assumeIsolated { PhiSpaceSyncState.shared.hiddenSpaceIds }
+    ) -> Int {
+        spaces.filter {
+            !isIncognitoSpaceId($0.spaceId) && !$0.isAnyAgentSpace && !hidden.contains($0.spaceId)
+        }.count
+    }
+
     /// One-shot guard for `migrateLegacyFollowGlobalPinsIfNeeded`.
     private var hasMigratedLegacyThemePins = false
 
@@ -6277,7 +6295,7 @@ final class SpaceManager: ObservableObject {
 
     private func captureKioskOpenedInSpace() {
         PostHogSDK.shared.capture("kiosk_opened_in_space", properties: [
-            "total_spaces": spaces.count,
+            "total_spaces": userSpaceCountForAnalytics,
         ])
     }
 
@@ -10001,7 +10019,7 @@ final class SpaceWindowSlot: ObservableObject {
             timing.mark("slot_snapshot.persist.end")
             if userInitiated {
                 PostHogSDK.shared.capture("space_switched", properties: [
-                    "total_spaces": manager.spaces.count,
+                    "total_spaces": manager.userSpaceCountForAnalytics,
                 ])
             }
         }

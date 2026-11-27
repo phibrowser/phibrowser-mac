@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import Cocoa
+import Combine
 import AuthenticationServices
 import SwiftData
 import CocoaLumberjackSwift
@@ -59,6 +60,7 @@ import PostHog
     /// each flag as off.
     var featureFlagObservation: NSObjectProtocol?
     var applicationActivationObservation: NSObjectProtocol?
+    var profileSpaceSnapshotObservation: AnyCancellable?
     let applicationOpenedThrottle = ApplicationOpenedThrottle()
 
     // MARK: - Auth0 login gating
@@ -154,6 +156,9 @@ import PostHog
         #endif
         
         #if !PHI_OSS_BUILD
+        if applicationActivationObservation != nil {
+            observeProfileSpaceCountsForAnalytics()
+        }
         SentinelTelemetryConsentPublisher.shared.start()
         #endif
         

@@ -120,6 +120,7 @@ are out of scope.
 | `import_finished` | All selected Chromium sources and deferred bookmark persistence finish; includes aggregate success, stable failed sources, duration, and an optional low-cardinality `error_code` | `Sources/UserInterface/Onboarding/Importer/BrowserDataImporter.swift` |
 | `browser_migration_finished` | A Migration run (the one-click wizard) reaches its end, however much of the plan landed; includes `source_browser` (`arc` / `zen`), `profiles_created` and `spaces_created` — counts only, never Profile or Space names or source paths | `Sources/States/BrowserMigrationRunner.swift` |
 | `first_time_action` | An eligible product action first succeeds on this installation; `action` is one of `space_created`, `ai_sidebar_opened`, `import_finished`, `memory_opened`, `agent_task`, `connector_connected`, or `phi_link_paired`, with `seconds_since_install` | `Sources/Utilities/FirstTimeActionTracker.swift` |
+| `profile_space_snapshot` | Local `total_profiles` and `total_spaces` once both lists are ready after launch, then whenever either count changes for the current local store | `Sources/Application/AppControlle+LaunchInfo.swift` |
 | `space_created` | A user-created Space succeeds; includes `total_spaces`, whether it uses a non-default profile, and `surface` (`sidebar`, `standalone_window`, or `library`) | `Sources/UserInterface/Sidebar/Spaces/CreateSpacePanel.swift` |
 | `profile_created` | A non-fallback profile is successfully created; includes `total_profiles` | `Sources/States/ProfileManager.swift` |
 | `space_profile_changed` | A validated Space profile change begins; includes `total_profiles` | `Sources/States/Space/SpaceManager.swift` |
@@ -153,6 +154,17 @@ For `highlight_link_copied`, the fraction of events with `is_short_link = true`
 measures short-link success within Chromium's one-second deadline among completed
 copies. Canceled copies and clipboard-policy replacements do not produce this
 callback. The event contains no URL or selected text.
+
+For the local inventory distribution, use each person's latest
+`profile_space_snapshot`. Switching to a different local store starts a new
+baseline. Within a store, equal counts are deduplicated across activations,
+renames, and switches. Both totals include the default and ordinary local
+items, including imported or synced items available here. Profiles use the
+user-assignable list, which excludes Phi Chat and the reserved agent fallback.
+Spaces exclude sync-hidden, incognito, and both temporary and persistent agent
+Spaces. Space action events use the same count starting with the build that
+introduces this snapshot. Older action events included internal Spaces.
+`sync_account_profile_count` measures the separately cached sync account list.
 
 Import analytics never include source paths, browser profile names, Arc Space
 names, file names, or imported item counts. The Migration event holds the

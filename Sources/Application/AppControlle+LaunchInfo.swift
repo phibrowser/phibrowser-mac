@@ -5,6 +5,7 @@
 
 import Foundation
 import AppKit
+import Combine
 import PostHog
 
 /// Rate-limits the activation-driven `Application Opened` PostHog event.
@@ -332,6 +333,48 @@ extension AppController {
     func captureApplicationOpenedIfDue() {
         guard applicationOpenedThrottle.shouldEmit() else { return }
         captureApplicationOpened(fromBackground: true)
+    }
+
+    /// The store identity scopes deduplication across account changes. Only
+    /// the two counts are sent to PostHog.
+    private struct ProfileSpaceSnapshot: Equatable {
+        let storeID: UUID
+        let profiles: Int
+        let spaces: Int
+    }
+
+    func observeProfileSpaceCountsForAnalytics() {
+        guard profileSpaceSnapshotObservation == nil else { return }
+        let profiles = ProfileManager.shared
+        let spaces = SpaceManager.shared
+        profiles.refreshIfChanged()
+        profileSpaceSnapshotObservation = profiles.$profiles.combineLatest(spaces.$spaces)
+            // @Published delivers before assignment. Count the incoming lists
+            // now so a quick create followed by a delete preserves both changes.
+            .compactMap { profileList, spaceList -> ProfileSpaceSnapshot? in
+                guard let store = AccountController.shared.localDataAccount?.localStorage,
+                      spaces.acceptsStoreAction(from: store.identifier),
+                      spaces.hasStoredSpacesForAnalytics else { return nil }
+                let currentProfiles = profileList.isEmpty ? ProfileManager.readProfiles() : profileList
+                guard let currentProfiles else { return nil }
+                return ProfileSpaceSnapshot(
+                    storeID: store.identifier,
+                    profiles: ProfileManager.userAssignableProfiles(in: currentProfiles).count,
+                    spaces: SpaceManager.userSpaceCountForAnalytics(in: spaceList)
+                )
+            }
+            .receive(on: DispatchQueue.main)
+            .filter { snapshot in
+                AccountController.shared.localDataAccount?.localStorage.identifier == snapshot.storeID
+                    && spaces.acceptsStoreAction(from: snapshot.storeID)
+            }
+            .removeDuplicates()
+            .sink { snapshot in
+                PostHogSDK.shared.capture("profile_space_snapshot", properties: [
+                    "total_profiles": snapshot.profiles,
+                    "total_spaces": snapshot.spaces,
+                ])
+            }
     }
 
     /// Emits the throttled activation event on every `didBecomeActive` for

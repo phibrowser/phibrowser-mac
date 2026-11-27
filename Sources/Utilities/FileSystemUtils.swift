@@ -3,12 +3,30 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+import CryptoKit
 import Foundation
 @objc final class FileSystemUtils: NSObject {
     static let defaultBundleId = "com.phibrowser.Mac"
     static let groupId = "group.com.phibrowser.shared"
     static let teamId = "87DQ3HMK5G"
     static let bundleId = Bundle.main.infoDictionary?[kCFBundleIdentifierKey as String] as? String ?? defaultBundleId
+
+    static func sha256Hex(for fileURL: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: fileURL)
+        defer {
+            try? handle.close()
+        }
+
+        var hasher = SHA256()
+        while true {
+            let data = try handle.read(upToCount: 1024 * 1024) ?? Data()
+            if data.isEmpty {
+                break
+            }
+            hasher.update(data: data)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
 
     /// Resolve before logging, account binding, or Chromium startup. Both sides
     /// must use the same root: a temporary Chromium profile paired with the real

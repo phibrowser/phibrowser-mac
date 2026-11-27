@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import Cocoa
+import Combine
 import AuthenticationServices
 import SwiftData
 import CocoaLumberjackSwift
@@ -279,26 +280,31 @@ import PostHog
     #if ATHENA_CANARY_TRIAL
     private var handledTrialAthenaSignIn = false
     private var trialAthenaOperation: Task<Void, Never>?
+    private var trialAthenaPreparation: Task<URL, Error>?
+    private var trialAthenaSessionGeneration = 0
+    @Published private(set) var preparingTrialAthena = false
 
     @MainActor
     private func reconcileTrialAthenaSession() {
         applyTrialAthenaExtensionPolicy()
         guard ApplicationState.shared.isAuthenticated else {
+            if handledTrialAthenaSignIn && PhiPreferences.AthenaSettings.enabled.loadValue() {
+                requestTrialAthena(.quit)
+            }
             handledTrialAthenaSignIn = false
             return
         }
         guard !handledTrialAthenaSignIn else { return }
         handledTrialAthenaSignIn = true
-        if PhiPreferences.AthenaSettings.openAtStartup.loadValue(),
-           PhiPreferences.AthenaSettings.enabled.loadValue() {
-            requestTrialAthena(.startInBackground)
+        if PhiPreferences.AthenaSettings.enabled.loadValue() {
+            requestTrialAthena(PhiPreferences.AthenaSettings.openAtStartup.loadValue() ? .startInBackground : .installOnly)
         }
     }
 
     @MainActor
     func trialAthenaEnabledDidChange(_ enabled: Bool) {
         applyTrialAthenaExtensionPolicy()
-        requestTrialAthena(enabled ? .openWindow : .quit)
+        requestTrialAthena(enabled ? .startInBackground : .quit)
     }
 
     @MainActor
@@ -315,22 +321,29 @@ import PostHog
     }
 
     enum TrialAthenaRequest {
-        case startInBackground, openWindow, quit
+        case installOnly, startInBackground, openWindow, quit
     }
 
     /// Athena stops its Runner asynchronously on quit. Serialize requests so
     /// switching it back on waits for the previous instance to finish exiting.
     @MainActor
     func requestTrialAthena(_ request: TrialAthenaRequest) {
+        if request == .quit {
+            trialAthenaSessionGeneration += 1
+            trialAthenaPreparation?.cancel()
+        }
+        let generation = trialAthenaSessionGeneration
         let previous = trialAthenaOperation
         trialAthenaOperation = Task { @MainActor in
             await previous?.value
-            let url = Bundle.main.bundleURL.deletingLastPathComponent()
-                .appendingPathComponent("Athena Canary.app", isDirectory: true)
-            let id = "com.phibrowser.canary.athena"
+            let id = AthenaCanaryInstaller.identifier
             if request == .quit {
-                for app in NSRunningApplication.runningApplications(withBundleIdentifier: id)
-                    where app.bundleURL?.resolvingSymlinksInPath() == url.resolvingSymlinksInPath() {
+                let locations = Set(AthenaCanaryInstaller.candidateURLs.map { $0.resolvingSymlinksInPath() })
+                for app in NSRunningApplication.runningApplications(withBundleIdentifier: id) {
+                    guard let location = app.bundleURL?.resolvingSymlinksInPath(), locations.contains(location),
+                          await Task.detached(priority: .utility, operation: {
+                              AgentPeerIdentity.verifiesCompanion(at: location, identifier: id)
+                          }).value else { continue }
                     guard app.terminate() || app.isTerminated else {
                         reportTrialAthenaQuitFailure()
                         return
@@ -343,18 +356,18 @@ import PostHog
                 }
                 return
             }
-            guard ApplicationState.shared.isAuthenticated,
-                  PhiPreferences.AthenaSettings.enabled.loadValue() else { return }
-            let verified = await Task.detached(priority: .userInitiated) {
-                AgentPeerIdentity.verifiesCompanion(at: url, identifier: id)
-            }.value
-            guard verified else {
-                reportTrialAthenaError(NSLocalizedString("settings.athena.openFailed", value: "Phi could not verify the Athena Canary app next to the browser.", comment: "Athena settings - Error when the paired app is missing or has an invalid signature"))
-                return
+            guard generation == trialAthenaSessionGeneration, PhiPreferences.AthenaSettings.browserAIEnabled else { return }
+            let preparation = Task.detached(priority: .userInitiated) { try AthenaCanaryInstaller.prepare() }
+            trialAthenaPreparation = preparation
+            preparingTrialAthena = true
+            defer {
+                trialAthenaPreparation = nil
+                preparingTrialAthena = false
             }
-            guard ApplicationState.shared.isAuthenticated,
-                  PhiPreferences.AthenaSettings.enabled.loadValue() else { return }
             do {
+                let url = try await preparation.value
+                guard generation == trialAthenaSessionGeneration, PhiPreferences.AthenaSettings.browserAIEnabled,
+                      request != .installOnly else { return }
                 let configuration = NSWorkspace.OpenConfiguration()
                 if request == .startInBackground {
                     guard NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty else { return }
@@ -370,7 +383,9 @@ import PostHog
                 }
                 _ = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
             } catch {
-                reportTrialAthenaError(error.localizedDescription)
+                guard generation == trialAthenaSessionGeneration, PhiPreferences.AthenaSettings.browserAIEnabled else { return }
+                AppLogError("Athena preparation or launch failed: \(error)")
+                reportTrialAthenaError(NSLocalizedString("settings.athena.openFailed", value: "Phi could not prepare or open Athena Canary. Choose Open Athena to try again.", comment: "Athena settings - Error after installation or launch fails, with a retry action"))
             }
         }
     }

@@ -65937,13 +65937,13 @@
       }
     },
     "settings.athena.appSettingsHint" : {
-      "comment" : "Athena settings - Explains how to open the companion app’s settings with Command-comma",
+      "comment" : "Athena settings - Explains on-demand installation and how to open the companion settings",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "In Athena, press ⌘, to open its settings."
+            "value" : "When you enable Athena, Phi installs it for your account. In Athena, press ⌘, to open its settings."
           }
         }
       }
@@ -65985,13 +65985,25 @@
       }
     },
     "settings.athena.openFailed" : {
-      "comment" : "Athena settings - Error when the paired app is missing or has an invalid signature",
+      "comment" : "Athena settings - Error after installation or launch fails, with a retry action",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Phi could not verify the Athena Canary app next to the browser."
+            "value" : "Phi could not prepare or open Athena Canary. Choose Open Athena to try again."
+          }
+        }
+      }
+    },
+    "settings.athena.preparing" : {
+      "comment" : "Athena settings - Progress while checking or installing the companion",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Preparing Athena…"
           }
         }
       }

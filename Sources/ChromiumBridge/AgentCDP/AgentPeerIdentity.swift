@@ -980,14 +980,14 @@ enum AgentPeerIdentity {
     }
 
     #if ATHENA_CANARY_TRIAL
-    /// The trial opens a sibling app from the distribution folder. Apply the
-    /// same signing requirement here that the browser uses for this peer.
+    /// Apply the channel signing requirement before installing or opening the companion.
     static func verifiesCompanion(at url: URL, identifier: String) -> Bool {
         var code: SecStaticCode?
         guard let requirement = companionRequirements[identifier],
               SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess,
               let code else { return false }
-        return SecStaticCodeCheckValidity(code, [], requirement) == errSecSuccess
+        let flags = SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckNestedCode)
+        return SecStaticCodeCheckValidity(code, flags, requirement) == errSecSuccess
     }
     #endif
 

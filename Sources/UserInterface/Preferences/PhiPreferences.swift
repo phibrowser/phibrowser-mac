@@ -439,7 +439,7 @@ extension PhiPreferences {
         }
 
         func loadValue() -> Bool {
-            UserDefaults.standard.bool(forKey: rawValue, default: true)
+            UserDefaults.standard.bool(forKey: rawValue, default: self == .openAtStartup)
         }
     }
     #endif

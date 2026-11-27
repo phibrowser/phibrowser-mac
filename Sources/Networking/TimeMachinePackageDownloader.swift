@@ -3,7 +3,6 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
-import CryptoKit
 import Foundation
 
 enum TimeMachinePackageDownloaderError: Error, LocalizedError {
@@ -60,27 +59,10 @@ struct TimeMachinePackageDownloader {
 
     static func verifySHA256(fileURL: URL, expectedSHA256: String) throws {
         let expected = normalizeSHA256(expectedSHA256)
-        let actual = try sha256Hex(for: fileURL)
+        let actual = try FileSystemUtils.sha256Hex(for: fileURL)
         guard expected == actual else {
             throw TimeMachinePackageDownloaderError.sha256Mismatch(expected: expected, actual: actual)
         }
-    }
-
-    static func sha256Hex(for fileURL: URL) throws -> String {
-        let handle = try FileHandle(forReadingFrom: fileURL)
-        defer {
-            try? handle.close()
-        }
-
-        var hasher = SHA256()
-        while true {
-            let data = try handle.read(upToCount: 1024 * 1024) ?? Data()
-            if data.isEmpty {
-                break
-            }
-            hasher.update(data: data)
-        }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     private static func normalizeSHA256(_ value: String) -> String {

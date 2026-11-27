@@ -128,9 +128,10 @@ struct AISettingView: View {
 
 #if ATHENA_CANARY_TRIAL
 struct AthenaSettingsView: View {
-    @AppStorage(PhiPreferences.AthenaSettings.enabled.rawValue) private var enabled = true
+    @AppStorage(PhiPreferences.AthenaSettings.enabled.rawValue) private var enabled = false
     @AppStorage(PhiPreferences.AthenaSettings.openAtStartup.rawValue) private var openAtStartup = true
     @State private var signedIn = ApplicationState.shared.isAuthenticated
+    @State private var preparingAthena = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -153,7 +154,7 @@ struct AthenaSettingsView: View {
             }
             AISectionView(title: NSLocalizedString("settings.athena.appSection", value: "Athena app", comment: "Athena settings - Section with an action to open the companion app")) {
                 AIContainerView {
-                    AINavigationRow(title: NSLocalizedString("settings.athena.openApp", value: "Open Athena", comment: "Athena settings - Open the paired Athena app to use chat or manage its settings"), enabled: enabled && signedIn) {
+                    AINavigationRow(title: NSLocalizedString("settings.athena.openApp", value: "Open Athena", comment: "Athena settings - Open the paired Athena app to use chat or manage its settings"), enabled: enabled && signedIn && !preparingAthena) {
                         AppController.shared.requestTrialAthena(.openWindow)
                     }
                     if !signedIn {
@@ -161,7 +162,9 @@ struct AthenaSettingsView: View {
                         GuestAILoginPromptRow { LoginController.shared.showLoginWindowFromAccountSettings() }
                     }
                 }
-                Text(NSLocalizedString("settings.athena.appSettingsHint", value: "In Athena, press ⌘, to open its settings.", comment: "Athena settings - Explains how to open the companion app’s settings with Command-comma"))
+                Text(preparingAthena
+                     ? NSLocalizedString("settings.athena.preparing", value: "Preparing Athena…", comment: "Athena settings - Progress while checking or installing the companion")
+                     : NSLocalizedString("settings.athena.appSettingsHint", value: "When you enable Athena, Phi installs it for your account. In Athena, press ⌘, to open its settings.", comment: "Athena settings - Explains on-demand installation and how to open the companion settings"))
                     .font(.system(size: 12))
                     .themedForeground(.textSecondary)
             }
@@ -172,6 +175,7 @@ struct AthenaSettingsView: View {
         .padding(36)
         .frame(width: 680, height: 561, alignment: .topLeading)
         .themedBackground(PhiPreferences.fixedWindowBackground)
+        .onReceive(AppController.shared.$preparingTrialAthena) { preparingAthena = $0 }
         .onAppear { signedIn = ApplicationState.shared.isAuthenticated }
         .onReceive(NotificationCenter.default.publisher(for: .browserAccessStateDidChange).receive(on: DispatchQueue.main)) { _ in
             signedIn = ApplicationState.shared.isAuthenticated

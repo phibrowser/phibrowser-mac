@@ -472,6 +472,7 @@
 		18170000000000000000000C /* PhiChromiumCoordinator+OmniboxV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18170000000000000000000B /* PhiChromiumCoordinator+OmniboxV2.swift */; };
 		18170000000000000000000E /* OmniboxNativeUIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18170000000000000000000D /* OmniboxNativeUIClient.swift */; };
 		B02586F52E42FD97001B08FC /* ChromiumLauncher.m in Sources */ = {isa = PBXBuildFile; fileRef = B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */; };
+		EC3D81CCEE754390BD783B19 /* AthenaCanaryInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF76182C0AC04004819E9090 /* AthenaCanaryInstaller.swift */; };
 		B02586F62E42FD97001B08FC /* AppController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F02E42FD97001B08FC /* AppController.swift */; };
 		B02586F72E42FD97001B08FC /* SpaceSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F12E42FD97001B08FC /* SpaceSessionController.swift */; };
 		B02586F82E42FD97001B08FC /* PhiApplication.m in Sources */ = {isa = PBXBuildFile; fileRef = B02586F32E42FD97001B08FC /* PhiApplication.m */; };
@@ -1362,6 +1363,7 @@
 		B02586EC2E42FD97001B08FC /* PhiBrowser-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "PhiBrowser-Bridging-Header.h"; sourceTree = "<group>"; };
 		B02586ED2E42FD97001B08FC /* ChromiumLauncher.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ChromiumLauncher.h; sourceTree = "<group>"; };
 		B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ChromiumLauncher.m; sourceTree = "<group>"; };
+		EF76182C0AC04004819E9090 /* AthenaCanaryInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AthenaCanaryInstaller.swift; sourceTree = "<group>"; };
 		B02586F02E42FD97001B08FC /* AppController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppController.swift; sourceTree = "<group>"; };
 		B02586F12E42FD97001B08FC /* SpaceSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceSessionController.swift; sourceTree = "<group>"; };
 		B02586F22E42FD97001B08FC /* PhiApplication.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PhiApplication.h; sourceTree = "<group>"; };
@@ -2803,6 +2805,7 @@
 				B02586F22E42FD97001B08FC /* PhiApplication.h */,
 				B02586F32E42FD97001B08FC /* PhiApplication.m */,
 				A17400000000000000000001 /* PhiApplication+PictureInPicture.swift */,
+				EF76182C0AC04004819E9090 /* AthenaCanaryInstaller.swift */,
 				B02586F02E42FD97001B08FC /* AppController.swift */,
 				4B4C00000000000000000002 /* ExternalOpenSender.swift */,
 				CC288A8B2E534230004A6C1C /* AppController+Menu.swift */,
@@ -3984,6 +3987,7 @@
 				A7E1C0020000000000000002 /* PageOverlayView.swift in Sources */,
 				8EFF7BD8414B4AD1B6A6C34D /* WindowDragNotchView.swift in Sources */,
 				CCBF8FA22E698A7400B9A99E /* SpaceSessionControllersManager.swift in Sources */,
+				EC3D81CCEE754390BD783B19 /* AthenaCanaryInstaller.swift in Sources */,
 				B02586F62E42FD97001B08FC /* AppController.swift in Sources */,
 				4B4C00000000000000000001 /* ExternalOpenSender.swift in Sources */,
 				4B4B00000000000000000001 /* KioskGlobalShortcutRegistrar.swift in Sources */,

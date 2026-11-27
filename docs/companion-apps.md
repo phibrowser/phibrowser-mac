@@ -155,11 +155,12 @@ every surface behave exactly as before.
 
 Build the native client with the Release-Canary configuration and add
 `ATHENA_CANARY_TRIAL` to its existing Swift compilation conditions. Package
-the signed browser and the signed `Athena Canary.app` together in one folder.
-Omit the Sentinel login item. Both apps keep their Canary identifiers so that
-the shared sign-in and the browser companion signature check work. Testers
-quit their regular Canary apps before opening the trial and keep both trial
-apps together when moving the folder.
+only `Phi Canary.app` at the ZIP root. The signed browser carries the stapled
+Athena Canary release ZIP as `Contents/Resources/Athena Canary.zip` and its
+SHA-256 in `PhiAthenaPackageSHA256`. The builder verifies Athena's signature
+and notarization before embedding the archive. Omit the Sentinel login item.
+Both apps keep their Canary identifiers and shared sign-in. Quit regular Phi
+Canary before replacing it in Applications.
 
 Build the trial extensions in a fresh staging directory.
 
@@ -186,9 +187,17 @@ The trial CRXs omit the regular staging update feed. Ship updates in a newer
 trial bundle. Replace the staged framework's `Versions/Current/Default Apps`
 directory with the output and sign the framework before the enclosing app.
 
-In Settings → Athena, enabling Athena opens the signed sibling app for a
-signed-in user and enables Sidecar, Lexington and Kensington. Browser AI
-surfaces (chat sidebar, site memory and tab organization) and the extensions'
+In Settings → Athena, enabling Athena for a signed-in user prepares the
+companion and enables Sidecar, Lexington and Kensington. Athena defaults to
+off. An explicit choice in the shared Canary preferences is preserved. Phi
+reuses a verified Athena Canary in user or system Applications or the old
+trial folder. Otherwise it verifies the embedded ZIP
+digest, extracts it in a same-volume staging directory, checks the app's code
+signature and Canary identifier, and atomically installs it at
+`~/Applications/Athena Canary.app`. First installation works offline.
+An existing app at that destination with an invalid signature is preserved.
+
+Browser AI surfaces (chat sidebar, site memory and tab organization) and the extensions'
 native settings follow the effective Athena switch. The browser publishes the
 signed-in value under the existing AI preference in its process-local defaults
 domain, preserving the saved ordinary Canary setting. Disabling Athena closes
@@ -197,8 +206,9 @@ remains enabled as the browser's web store customizer. A separate preference
 controls background startup of Athena at browser launch or sign-in. Phi uses
 Athena's login-item launch behavior to start its services with the main window
 closed. If Athena is already running, Phi leaves its windows as they are.
-Choose Open Athena in Settings to bring up the main window. Both
-preferences default to on. Athena owns its Runner, service updates and chat UI.
+Choose Open Athena in Settings to bring up the main window. Background startup
+defaults to on once Athena is enabled. Athena owns its Runner, service updates
+and chat UI.
 Guest sessions only open the browser. For a signed-in user with Athena enabled,
 the existing authenticated Service Broker client resolves the current account's
 Athena engine data socket. The storage root is
@@ -207,8 +217,8 @@ and the short socket directory is `/tmp/phi-athena-<storage path hash>/sockets`.
 Athena owns its private Runner control connection. Sentinel supervision and
 AI-data export stay disabled. Browser data can still be exported.
 The trial browser does not start its nightly updater. It shares Canary's user
-data and credentials. Distribute `build-scripts/switch-to-regular-canary.command`
-as `Switch to Regular Canary.command` beside the trial apps. To switch back,
+data and credentials. To switch back, first copy
+`Contents/Resources/Switch to Regular Canary.command` out of the browser,
 quit the trial apps, install a signed regular Canary with newer extensions,
 then run that command. It points the four shared registrations at the regular
 CRXs and opens the browser. The regular extensions carry their regular OTA URLs.

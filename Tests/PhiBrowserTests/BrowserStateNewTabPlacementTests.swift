@@ -25,6 +25,13 @@ private final class NewTabPlacementBridgeStub: NSObject {
         onPlacement?(Int(tabId), Int(anchorTabId))
     }
 
+    var createdPages: [(url: String, marker: String?)] = []
+
+    @objc(createNewTabWithUrl:windowId:customGuid:focusAfterCreate:)
+    func createNewTab(_ url: String, windowId: Int64, customGuid: String?, focus: Bool) {
+        createdPages.append((url, customGuid))
+    }
+
     var splitPanes: [Int] = []
     var splitMoveIndices: [Int32] = []
 
@@ -150,20 +157,24 @@ final class BrowserStateNewTabPlacementTests: XCTestCase {
         try await checkBookmarkSplit(top: true, sourceOpen: true, partnerIsBookmark: false)
     }
 
-    private func checkBookmarkSplit(top: Bool, sourceOpen: Bool, partnerIsBookmark: Bool) async throws {
+    private func makeBookmarkPlacementState(top: Bool, bookmarks: [String]) async throws -> BrowserState {
         ChromiumLauncher.sharedInstance().bridge = originalBridge
         UserDefaults.standard.set(top, forKey: PhiPreferences.GeneralSettings.newTabsAtTop.rawValue)
         let state = try makeState()
-        for guid in ["source", "partner"] {
+        for guid in bookmarks {
             state.localStore.createBookmark(url: "https://\(guid).example", title: guid,
                                             profileId: state.profileId, parentId: nil,
                                             guid: guid, spaceId: state.spaceId)
         }
         let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            ["source", "partner"].allSatisfy { state.bookmarkManager.bookmark(withGuid: $0) != nil }
+            bookmarks.allSatisfy { state.bookmarkManager.bookmark(withGuid: $0) != nil }
         }, object: nil)
         await fulfillment(of: [loaded], timeout: 5)
+        return state
+    }
 
+    private func checkBookmarkSplit(top: Bool, sourceOpen: Bool, partnerIsBookmark: Bool) async throws {
+        let state = try await makeBookmarkPlacementState(top: top, bookmarks: ["source", "partner"])
         let partnerId = 2
         let sourceId = 5
         if partnerIsBookmark { state.setBinding("partner", for: state.tabs[1]) }
@@ -192,6 +203,65 @@ final class BrowserStateNewTabPlacementTests: XCTestCase {
         } else {
             XCTAssertEqual(state.normalTabs.map(\.guid), [1, 2, 5, 3, 4])
             XCTAssertTrue(bridge.splitMoveIndices.isEmpty)
+        }
+    }
+
+    func testMultiSelectedBookmarkSplitPlacement() async throws {
+        for top in [true, false] {
+            for open in [[], [0], [1], [0, 1]] {
+                try await checkMultiSelectedSplit(top: top, bookmarkCount: 2, open: open)
+            }
+        }
+        try await checkMultiSelectedSplit(top: true, bookmarkCount: 4, open: [0, 1, 2, 3])
+        try await checkMultiSelectedSplit(top: true, bookmarkCount: 1, open: [], includeNormalTab: true)
+    }
+
+    private func checkMultiSelectedSplit(top: Bool, bookmarkCount: Int, open: [Int],
+                                         includeNormalTab: Bool = false) async throws {
+        let guids = (0..<bookmarkCount).map { "bookmark-\($0)" }
+        let state = try await makeBookmarkPlacementState(top: top, bookmarks: guids)
+        if includeNormalTab { state.toggleMultiSelection(for: state.tabs[1]) }
+        for guid in guids { state.toggleBookmarkMultiSelection(bookmarkGuid: guid) }
+
+        let bookmarks = state.orderedMultiSelectedBookmarkRoots
+        XCTAssertEqual(bookmarks.count, bookmarkCount)
+        var panes = includeNormalTab ? [2] : []
+        var tabIdByURL: [String: Int] = [:]
+        for (index, bookmark) in bookmarks.enumerated() {
+            let id = 5 + index
+            let url = try XCTUnwrap(bookmark.url)
+            panes.append(id)
+            tabIdByURL[url] = id
+            if open.contains(index) {
+                state.tabs.append(Tab(guid: id, url: url, isActive: false,
+                                      index: state.tabs.count, customGuid: bookmark.guid))
+            }
+        }
+        state.syncAllBookmarksOpenedState()
+        let bridge = try installBridge()
+        state.openMultiSelectedTabsAsSplit()
+        // Opening the primary pane can request the secondary one in its callback.
+        for index in 0..<(bookmarkCount - open.count) {
+            let request = try XCTUnwrap(bridge.createdPages.dropFirst(index).first)
+            let id = try XCTUnwrap(tabIdByURL[request.url])
+            state.handleNewTabFromChromium(Tab(guid: id, url: request.url, isActive: true,
+                                               index: state.tabs.count, customGuid: request.marker))
+        }
+        XCTAssertEqual(bridge.createdPages.count, bookmarkCount - open.count)
+        XCTAssertEqual(bridge.splitPanes, panes)
+        state.handleSplitCreated(splitId: "bookmark-split", tabIds: panes,
+                                 layout: .vertical, fractions: SplitGroup.equalFractions(paneCount: panes.count))
+        let remaining = (1...4).filter { !panes.contains($0) }
+        let middle = [remaining[0]] + panes + Array(remaining.dropFirst())
+        state.reorderTabs(Dictionary(uniqueKeysWithValues: middle.enumerated().map { ($0.element, $0.offset) }))
+        await drain()
+
+        if includeNormalTab {
+            XCTAssertEqual(state.normalTabs.map(\.guid), middle)
+            XCTAssertTrue(bridge.splitMoveIndices.isEmpty)
+        } else {
+            XCTAssertEqual(state.normalTabs.map(\.guid), top ? panes + remaining : remaining + panes)
+            XCTAssertEqual(bridge.splitMoveIndices, top ? [0] : [Int32(remaining.count)])
         }
     }
 

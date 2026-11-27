@@ -2562,6 +2562,7 @@ class BrowserState {
         guard candidates.count >= 2, candidates.count <= SplitGroup.maxPaneCount else { return }
         let didOpen: Bool
         let liveTabs = candidates.compactMap(\.existingTab)
+        let insertionIndex = bookmarkSplitInsertionIndex(liveTabs: liveTabs)
         if liveTabs.count == candidates.count,
            Set(liveTabs.map(\.guid)).count == liveTabs.count {
             // Every unit is a live tab: one split of them all, in selection
@@ -2569,7 +2570,7 @@ class BrowserState {
             for tab in liveTabs {
                 makeTabNormalOpened(tabId: tab.guid)
             }
-            didOpen = createSplit(tabIds: liveTabs.map(\.guid), layout: .vertical) != nil
+            didOpen = createSplit(tabIds: liveTabs.map(\.guid), layout: .vertical, insertionIndex: insertionIndex) != nil
         } else if candidates.count != 2 {
             // A unit that still has to open a tab (a bookmark, a closed
             // pinned record) only pairs; the pending-split flows pair exactly
@@ -2581,7 +2582,8 @@ class BrowserState {
             makeTabNormalOpened(tabId: tab.guid)
             openNewTabAsSplit(partnerTabId: tab.guid,
                               newTabSlot: .right,
-                              partnerNavigateURL: URLProcessor.processUserInput(url))
+                              partnerNavigateURL: URLProcessor.processUserInput(url),
+                              insertionIndex: insertionIndex)
             didOpen = true
         } else if let url = candidates[0].pendingURLString,
                   let tab = candidates[1].existingTab,
@@ -2589,13 +2591,15 @@ class BrowserState {
             makeTabNormalOpened(tabId: tab.guid)
             openNewTabAsSplit(partnerTabId: tab.guid,
                               newTabSlot: .left,
-                              partnerNavigateURL: URLProcessor.processUserInput(url))
+                              partnerNavigateURL: URLProcessor.processUserInput(url),
+                              insertionIndex: insertionIndex)
             didOpen = true
         } else if let primaryURL = candidates[0].pendingURLString,
                   let secondaryURL = candidates[1].pendingURLString,
                   !primaryURL.isEmpty,
                   !secondaryURL.isEmpty {
-            openURLsAsSplit([primaryURL, secondaryURL].map(URLProcessor.processUserInput))
+            openURLsAsSplit([primaryURL, secondaryURL].map(URLProcessor.processUserInput),
+                            insertionIndex: insertionIndex)
             didOpen = true
         } else {
             return

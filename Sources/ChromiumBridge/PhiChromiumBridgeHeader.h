@@ -1698,6 +1698,13 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// @param windowId The window ID to execute the command on
 - (void)executeCommand:(int)commandId windowId:(int64_t)windowId;
 
+/// Whether a Chromium command is currently enabled on the specified window,
+/// as read by the menu bar (chrome::IsCommandEnabled). NO when no browser
+/// matches the window ID.
+/// @param commandId The Chromium command ID (e.g. IDC_RESTORE_TAB = 34028)
+/// @param windowId The window ID to query
+- (BOOL)isCommandEnabled:(int)commandId windowId:(int64_t)windowId;
+
 // ==========================================================================
 // Session restore concealment (Mac → Chromium)
 // ==========================================================================

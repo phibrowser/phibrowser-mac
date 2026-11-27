@@ -24,7 +24,7 @@ final class TabAreaContextMenuHelper: NSObject {
 
         menu.addItem(NSMenuItem(
             title: NSLocalizedString("common.tabAreaContextMenu.reopenClosedTabAction", value: "Reopen Closed Tab", comment: "Tab area context menu - Reopen the last closed tab"),
-            action: #selector(reopenClosedTab),
+            action: canReopenClosedTab ? #selector(reopenClosedTab) : nil,
             keyEquivalent: "t"
         ).configured { $0.keyEquivalentModifierMask = [.command, .shift]; $0.target = self })
 
@@ -142,6 +142,21 @@ final class TabAreaContextMenuHelper: NSObject {
 
     @objc private func newTab() {
         browserState?.windowController?.newBrowserTab(nil)
+    }
+
+    /// Mirrors the menu bar's File > Reopen Closed Tab: enabled only while the
+    /// window's profile has something to restore. Off-the-record profiles keep
+    /// no restore history, so Chromium reports it disabled in incognito
+    /// windows and the Incognito Space.
+    private var canReopenClosedTab: Bool {
+        guard let state = browserState else { return false }
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge,
+              bridge.responds(to: #selector(PhiChromiumBridgeProtocol.isCommandEnabled(_:windowId:))) else {
+            // An older framework without the query: keep the item enabled.
+            return true
+        }
+        return bridge.isCommandEnabled(Int32(CommandWrapper.IDC_RESTORE_TAB.rawValue),
+                                       windowId: Int64(state.windowId))
     }
 
     @objc private func reopenClosedTab() {

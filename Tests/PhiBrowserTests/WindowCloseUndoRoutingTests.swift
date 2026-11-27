@@ -61,6 +61,9 @@ final class WindowCloseUndoRoutingTests: XCTestCase {
     private var previousLayout: Any?
     private var nextWindowId = 123458000
     private let second = "second"
+    /// A Space bound to another Profile than the other two.
+    private let otherProfileSpace = "other-profile"
+    private let otherProfile = "Profile 2"
 
     override func setUp() async throws {
         originalBridge = ChromiumLauncher.sharedInstance().bridge
@@ -76,6 +79,8 @@ final class WindowCloseUndoRoutingTests: XCTestCase {
             context.insert(SpaceModel(spaceId: id, profileId: "Default", name: id,
                                       colorHex: "#123456", iconName: "circle", sortOrder: index))
         }
+        context.insert(SpaceModel(spaceId: otherProfileSpace, profileId: otherProfile, name: otherProfileSpace,
+                                  colorHex: "#123456", iconName: "circle", sortOrder: 2))
         try context.save()
         manager = SpaceManager(observeAccountChanges: false)
         manager.bind(to: account)
@@ -154,6 +159,24 @@ final class WindowCloseUndoRoutingTests: XCTestCase {
         XCTAssertTrue(slot.windowController(for: second) === sibling)
     }
 
+    func testAMemberOfAnotherProfileJoinsTheSlotTheFrontMinted() throws {
+        let slot = manager.slotForTabRestoredWindow(spaceId: LocalStore.defaultSpaceId, windowCloseId: "close-1")
+        slot.ensureShell(initialFrame: NSRect(x: 0, y: 0, width: 1000, height: 700))
+        let front = arrive(in: slot, spaceId: LocalStore.defaultSpaceId)
+
+        // The coordinator resolves a restored window's Space against its own
+        // Profile before routing it by its close id.
+        let target = try XCTUnwrap(manager.restoredSpaceTarget(otherProfileSpace, profileId: otherProfile))
+        XCTAssertEqual(target, otherProfileSpace)
+        XCTAssertTrue(manager.slotForTabRestoredWindow(spaceId: target, windowCloseId: "close-1") === slot)
+        let sibling = arrive(in: slot, spaceId: target, profileId: otherProfile)
+        slot.presentRequestedSession(sibling, activate: true)
+
+        XCTAssertEqual(manager.slots.count, 1)
+        XCTAssertTrue(slot.visibleController === front)
+        XCTAssertTrue(slot.windowController(for: otherProfileSpace) === sibling)
+    }
+
     // MARK: - Close record
 
     func testCloseRecordIsSentBeforeTheCascadesFirstClose() throws {
@@ -195,7 +218,8 @@ final class WindowCloseUndoRoutingTests: XCTestCase {
     /// the coordinator registers a member of a window close: siblings of the
     /// Space the slot opened on are marked for concealment first.
     @discardableResult
-    private func arrive(in slot: SpaceWindowSlot, spaceId: String) -> SpaceSessionController {
+    private func arrive(in slot: SpaceWindowSlot, spaceId: String,
+                        profileId: String = "Default") -> SpaceSessionController {
         if SpaceWindowSlot.concealsRestoredSibling(isRestoredWindow: true,
                                                    slotActiveSpaceId: slot.activeSpaceId,
                                                    windowSpaceId: spaceId) {
@@ -203,7 +227,7 @@ final class WindowCloseUndoRoutingTests: XCTestCase {
         }
         nextWindowId += 1
         let state = BrowserState(windowId: nextWindowId, localStore: account.localStorage,
-                                 profileId: "Default", spaceId: spaceId)
+                                 profileId: profileId, spaceId: spaceId)
         state.tabs = [Tab(guid: nextWindowId, url: "https://example.test", isActive: true,
                           index: 0, title: spaceId)]
         state.updateNormalTabs()

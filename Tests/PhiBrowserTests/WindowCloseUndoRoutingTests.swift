@@ -226,6 +226,14 @@ final class WindowCloseUndoRoutingTests: XCTestCase {
             restoredSpaceId: agentSpace, profileId: "Default", windowCloseId: "close-1"))
     }
 
+    /// The member's Space was moved to another Profile after the close: its
+    /// tabs belong to the old Profile, and any Space of that Profile is
+    /// another Space, so it is discarded like a member of a deleted Space.
+    func testAMemberWhoseSpaceMovedToAnotherProfileIsDiscarded() {
+        XCTAssertTrue(manager.discardsWindowCloseMember(
+            restoredSpaceId: otherProfileSpace, profileId: "Default", windowCloseId: "close-1"))
+    }
+
     func testAMemberOnALiveSpaceIsKept() {
         XCTAssertFalse(manager.discardsWindowCloseMember(
             restoredSpaceId: second, profileId: "Default", windowCloseId: "close-1"))

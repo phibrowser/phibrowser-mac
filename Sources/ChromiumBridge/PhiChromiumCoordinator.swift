@@ -2823,10 +2823,10 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             } else if SpaceManager.shared.discardsWindowCloseMember(
                 restoredSpaceId: restoredSpaceId, profileId: profileId, windowCloseId: windowCloseId) {
                 // A member of a Window Undo Close is bringing back whose Space
-                // was deleted since, or is an Agent Space (ADR 0013). Every
-                // branch below would put its tabs into another Space; it goes
-                // instead, recording nothing, and the rest of the Window comes
-                // back without it.
+                // was deleted or moved to another Profile since, or is an
+                // Agent Space (ADR 0013). Every branch below would put its
+                // tabs into another Space; it goes instead, recording nothing,
+                // and the rest of the Window comes back without it.
                 AppLogInfo("🌐 [Chromium] window \(windowId) of window close \(windowCloseId ?? "") has no Space to return to (\(restoredSpaceId ?? "nil")); closing it without recording")
                 discardWindow(window, windowId: windowId, recordsNothing: true)
                 return

@@ -1875,11 +1875,14 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
            frontWindowId:(int64_t)frontWindowId
             parkedGhosts:(NSArray<NSDictionary<NSString *, id> *> * _Nullable)parkedGhosts;
 
-/// Marks a window whose close the user cannot undo (mac ADR 0013): a member
-/// Undo Close brought back for a Space that is gone (deleted, or an Agent
-/// Space), or a window retired only to be replaced. When it closes, nothing
-/// goes on the recently-closed list — neither the window nor its tabs or
-/// groups. Send it before the close; the mark lasts until the window is gone.
+/// Marks a window whose close the user cannot undo (mac ADR 0013). Today
+/// only a member Undo Close brought back for a Space that is gone (deleted,
+/// moved to another Profile, or an Agent Space) is marked. Windows retired
+/// only to be replaced close by NSWindow -close, which records nothing; a
+/// path moved to IDC_CLOSE_WINDOW must send this mark first. When a marked
+/// window closes, nothing goes on the recently-closed list — neither the
+/// window nor its tabs or groups. Send it before the close; the mark lasts
+/// until the window is gone.
 /// Callers must guard with respondsToSelector: (version skew).
 - (void)markWindowRecordsNothingOnClose:(int64_t)windowId;
 

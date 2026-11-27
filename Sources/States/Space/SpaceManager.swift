@@ -4608,12 +4608,20 @@ final class SpaceManager: ObservableObject {
 
     /// Whether a member of a window close (ADR 0013) that Undo Close brought
     /// back has no Space to go back into: the Space stamped on it was deleted
-    /// since, or is an Agent Space. Such a member is closed on arrival,
-    /// recording nothing, and its Space stays empty in the restored Window;
-    /// its tabs are never moved into another Space.
+    /// since, was moved to another Profile since (its tabs belong to the
+    /// member's Profile, and `restoredSpaceTarget` would re-resolve them to
+    /// another Space of it), or is an Agent Space. Such a member is closed on
+    /// arrival, recording nothing, and its Space stays empty in the restored
+    /// Window; its tabs are never moved into another Space.
     func discardsWindowCloseMember(restoredSpaceId: String?, profileId: String,
                                    windowCloseId: String?) -> Bool {
         guard windowCloseId != nil, let restoredSpaceId, !restoredSpaceId.isEmpty else { return false }
+        // An empty profileId keeps the stamped Space, as in `spaceId(boundTo:preferring:)`.
+        if !profileId.isEmpty,
+           let space = spacesKnownForWindowAttribution().first(where: { $0.spaceId == restoredSpaceId }),
+           space.profileId != profileId {
+            return true
+        }
         return restoredSpaceTarget(restoredSpaceId, profileId: profileId) == nil
     }
 

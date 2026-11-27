@@ -52,7 +52,7 @@ Divider
   `W − 200`. The width it ends on stays when the window grows.
 - Below 96.5pt the column slides out over 0.22s with `cubic-bezier(0.1, 0.4, 0.6, 1)`,
   or closes immediately with Reduce Motion. Dragging back to 96.5pt in the
-  same gesture reopens it and resumes live resizing. Releasing while collapsed
+  same gesture slides it back in the same way and resumes live resizing. Releasing while collapsed
   preserves the previous preferred width.
 - Double-click does nothing. Accessibility exposes one `AXSplitter` whose value
   is the divider's position.
@@ -506,7 +506,7 @@ it stays light.
   beside the column. Push was picked first from recordings of both, and
   replaced because it slid the far side off the window.
 - D5: crossing the threshold during a drag slides the column out from its
-  minimum width. Crossing back immediately restores live resizing. A new
+  minimum width. Crossing back slides it in the same way and restores live resizing. A new
   drag requires an expanded column. Double-click has no action.
 - A reversal's duration is scaled to the distance left.
 

@@ -57,12 +57,15 @@ final class SidebarSpaceSwitcherView: NSView {
 
     private static let transitionDuration: TimeInterval = 0.15
     private static let hoverCardDelay: TimeInterval = 0.3
+    /// Matches the header strip's peek: half an icon plus the gap.
+    private static let edgeFadeWidth: CGFloat = 16
 
     private let slot: SpaceWindowSlot
     private let manager = SpaceManager.shared
     private let resolveOwnerController: () -> SpaceSessionController?
     private let viewport = NSView()
     private let selectionLayer = CALayer()
+    private let edgeFadeMask = CAGradientLayer()
     private let tooltipController = SpaceHoverTooltipController()
 
     private var items: [SidebarSpaceSwitcherItemView] = []
@@ -96,6 +99,9 @@ final class SidebarSpaceSwitcherView: NSView {
         selectionLayer.zPosition = -1
         selectionLayer.opacity = 0
         viewport.layer?.addSublayer(selectionLayer)
+        edgeFadeMask.startPoint = CGPoint(x: 0, y: 0.5)
+        edgeFadeMask.endPoint = CGPoint(x: 1, y: 0.5)
+        viewport.layer?.mask = edgeFadeMask
         bindModel()
     }
 
@@ -308,6 +314,7 @@ final class SidebarSpaceSwitcherView: NSView {
                                               y: viewport.bounds.midY)
         }
         selectionLayer.opacity = mode == .icons && activeIndex != nil ? 1 : 0
+        updateEdgeFades(maxScrollOffset: Layout.maxScrollOffset(widths: widths, viewportWidth: viewportWidth))
         CATransaction.commit()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = animate ? Self.transitionDuration : 0
@@ -336,6 +343,19 @@ final class SidebarSpaceSwitcherView: NSView {
                 item.apply(state, backgroundSize: backgroundSize, animated: animate, duration: Self.transitionDuration)
             }
         }
+    }
+
+    /// Fades an edge only while Spaces are scrolled out past it.
+    private func updateEdgeFades(maxScrollOffset: CGFloat) {
+        let width = viewport.bounds.width
+        edgeFadeMask.frame = viewport.bounds
+        guard width > 0 else { return }
+        let fade = min(Self.edgeFadeWidth, width / 2) / width
+        let opaque = NSColor.black.cgColor
+        let clear = NSColor.clear.cgColor
+        edgeFadeMask.colors = [scrollOffset > 0.5 ? clear : opaque, opaque, opaque,
+                               scrollOffset < maxScrollOffset - 0.5 ? clear : opaque]
+        edgeFadeMask.locations = [0, fade, 1 - fade, 1].map { NSNumber(value: Double($0)) }
     }
 
     override func updateTrackingAreas() {

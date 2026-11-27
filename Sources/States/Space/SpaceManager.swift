@@ -4606,6 +4606,34 @@ final class SpaceManager: ObservableObject {
         slotsByWindowCloseId.removeValue(forKey: windowCloseId)
     }
 
+    /// Whether a member of a window close (ADR 0013) that Undo Close brought
+    /// back has no Space to go back into: the Space stamped on it was deleted
+    /// since, or is an Agent Space. Such a member is closed on arrival,
+    /// recording nothing, and its Space stays empty in the restored Window;
+    /// its tabs are never moved into another Space.
+    func discardsWindowCloseMember(restoredSpaceId: String?, profileId: String,
+                                   windowCloseId: String?) -> Bool {
+        guard windowCloseId != nil, let restoredSpaceId, !restoredSpaceId.isEmpty else { return false }
+        return restoredSpaceTarget(restoredSpaceId, profileId: profileId) == nil
+    }
+
+    /// Closes, through Chromium, a window that gets no slot. With
+    /// `recordsNothing` the window is first marked so its close puts nothing
+    /// on the recently-closed list; a framework that predates the mark
+    /// records it as before. Returns false when there is no bridge to close
+    /// it with.
+    @discardableResult
+    static func closeDiscardedWindow(windowId: Int64, recordsNothing: Bool,
+                                     bridge: PhiChromiumBridgeProtocol?) -> Bool {
+        guard let bridge else { return false }
+        if recordsNothing,
+           bridge.responds(to: #selector(PhiChromiumBridgeProtocol.markWindowRecordsNothing(onClose:))) {
+            bridge.markWindowRecordsNothing(onClose: windowId)
+        }
+        bridge.executeCommand(Int32(CommandWrapper.IDC_CLOSE_WINDOW.rawValue), windowId: windowId)
+        return true
+    }
+
     /// Before a window-driven close of a whole Window cascades, tells
     /// Chromium which of its windows close together, which one it was
     /// presenting, and which of its Space instances are still parked

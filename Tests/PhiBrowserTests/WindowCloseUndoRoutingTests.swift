@@ -17,6 +17,7 @@ private final class WindowCloseBridgeStub: NSObject {
         case clearCloseRecord(windowIds: [Int], ghosts: [Int] = [])
         case closeWindow(Int)
         case dropGhost(Int)
+        case markRecordsNothing(Int)
     }
 
     var calls: [Call] = []
@@ -46,6 +47,11 @@ private final class WindowCloseBridgeStub: NSObject {
     func dropGhostWindow(_ windowId: Int32, profileId: String, completion: ((Bool) -> Void)?) {
         calls.append(.dropGhost(Int(windowId)))
         completion?(true)
+    }
+
+    @objc(markWindowRecordsNothingOnClose:)
+    func markWindowRecordsNothingOnClose(_ windowId: Int64) {
+        calls.append(.markRecordsNothing(Int(windowId)))
     }
 
     /// Every window stays open: the cascade reads as vetoed.
@@ -89,6 +95,9 @@ final class WindowCloseUndoRoutingTests: XCTestCase {
     /// A Space bound to another Profile than the other two.
     private let otherProfileSpace = "other-profile"
     private let otherProfile = "Profile 2"
+    private let agentSpace = "agent"
+    /// A Space a closed Window had, deleted since: no Space carries its id.
+    private let deletedSpace = "deleted"
 
     override func setUp() async throws {
         originalBridge = ChromiumLauncher.sharedInstance().bridge
@@ -106,6 +115,9 @@ final class WindowCloseUndoRoutingTests: XCTestCase {
         }
         context.insert(SpaceModel(spaceId: otherProfileSpace, profileId: otherProfile, name: otherProfileSpace,
                                   colorHex: "#123456", iconName: "circle", sortOrder: 2))
+        context.insert(SpaceModel(spaceId: agentSpace, profileId: "Default", name: "R1",
+                                  colorHex: AgentSpaceManager.spaceColorHex,
+                                  iconName: AgentSpaceManager.spaceIconName, sortOrder: 3))
         try context.save()
         manager = SpaceManager(observeAccountChanges: false)
         manager.bind(to: account)
@@ -200,6 +212,64 @@ final class WindowCloseUndoRoutingTests: XCTestCase {
         XCTAssertEqual(manager.slots.count, 1)
         XCTAssertTrue(slot.visibleController === front)
         XCTAssertTrue(slot.windowController(for: otherProfileSpace) === sibling)
+    }
+
+    // MARK: - Members that cannot come back
+
+    func testAMemberOnADeletedSpaceIsDiscarded() {
+        XCTAssertTrue(manager.discardsWindowCloseMember(
+            restoredSpaceId: deletedSpace, profileId: "Default", windowCloseId: "close-1"))
+    }
+
+    func testAMemberOnAnAgentSpaceIsDiscarded() {
+        XCTAssertTrue(manager.discardsWindowCloseMember(
+            restoredSpaceId: agentSpace, profileId: "Default", windowCloseId: "close-1"))
+    }
+
+    func testAMemberOnALiveSpaceIsKept() {
+        XCTAssertFalse(manager.discardsWindowCloseMember(
+            restoredSpaceId: second, profileId: "Default", windowCloseId: "close-1"))
+    }
+
+    /// A window that is no member of a window close keeps today's fallback.
+    func testAWindowWithoutACloseIdIsNeverDiscarded() {
+        XCTAssertFalse(manager.discardsWindowCloseMember(
+            restoredSpaceId: deletedSpace, profileId: "Default", windowCloseId: nil))
+    }
+
+    func testADiscardedMemberIsMarkedToRecordNothingBeforeItCloses() throws {
+        let bridge = try installBridge()
+
+        SpaceManager.closeDiscardedWindow(windowId: 7, recordsNothing: true,
+                                          bridge: ChromiumLauncher.sharedInstance().bridge)
+
+        XCTAssertEqual(bridge.calls, [.markRecordsNothing(7), .closeWindow(7)])
+    }
+
+    func testAWindowDiscardedForAnotherReasonStillRecords() throws {
+        let bridge = try installBridge()
+
+        SpaceManager.closeDiscardedWindow(windowId: 7, recordsNothing: false,
+                                          bridge: ChromiumLauncher.sharedInstance().bridge)
+
+        XCTAssertEqual(bridge.calls, [.closeWindow(7)])
+    }
+
+    /// The front member's Space was deleted: it is discarded, and the next
+    /// member to arrive opens the Window on its own Space, presented, with
+    /// no Space instance for the deleted one.
+    func testAnUnusableFrontLeavesTheWindowToTheNextMember() {
+        XCTAssertTrue(manager.discardsWindowCloseMember(
+            restoredSpaceId: deletedSpace, profileId: "Default", windowCloseId: "close-1"))
+
+        let slot = manager.slotForTabRestoredWindow(spaceId: second, windowCloseId: "close-1")
+        slot.ensureShell(initialFrame: NSRect(x: 0, y: 0, width: 1000, height: 700))
+        let sibling = arrive(in: slot, spaceId: second)
+
+        XCTAssertEqual(manager.slots.count, 1)
+        XCTAssertEqual(slot.activeSpaceId, second)
+        XCTAssertTrue(slot.visibleController === sibling)
+        XCTAssertEqual(Array(slot.windowsBySpaceId.keys), [second])
     }
 
     // MARK: - Close record

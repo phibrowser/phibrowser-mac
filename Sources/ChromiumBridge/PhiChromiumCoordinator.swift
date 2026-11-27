@@ -2707,20 +2707,30 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     /// would re-enter a Browser still under construction. Chromium's
     /// post-construction `Show()` runs in that gap, which is why the window
     /// is made transparent first rather than ordered out.
-    private func discardWindowOnProfileWithoutSpace(_ window: NSWindow, windowId: Int64, profileId: String) {
+    ///
+    /// A member of a window close (`recordsNothing`) is closed without going
+    /// back on the recently-closed list: its Space is gone (ADR 0013).
+    private func discardWindowOnProfileWithoutSpace(_ window: NSWindow, windowId: Int64, profileId: String,
+                                                    recordsNothing: Bool) {
         AppLogWarn("🌐 [Chromium] No Space is bound to profile \(profileId); closing window \(windowId) instead of presenting it as another profile's Space")
+        discardWindow(window, windowId: windowId, recordsNothing: recordsNothing)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.discardedWindowReplacementDelay) {
+            SpaceManager.shared.openPersistedSpaceIfDiscardLeftNoWindow()
+        }
+    }
+
+    /// Keeps a window that gets no slot off screen, registers it as
+    /// unmanaged and closes it through Chromium a turn later; see
+    /// `discardWindowOnProfileWithoutSpace` for why each step is needed.
+    private func discardWindow(_ window: NSWindow, windowId: Int64, recordsNothing: Bool) {
         window.alphaValue = 0
         window.ignoresMouseEvents = true
         SpaceSessionControllersManager.shared.registerUnmanagedWindow(window, windowId: Int(windowId))
         DispatchQueue.main.async {
-            if let bridge = ChromiumLauncher.sharedInstance().bridge {
-                bridge.executeCommand(Int32(CommandWrapper.IDC_CLOSE_WINDOW.rawValue), windowId: windowId)
-            } else {
+            if !SpaceManager.closeDiscardedWindow(windowId: windowId, recordsNothing: recordsNothing,
+                                                  bridge: ChromiumLauncher.sharedInstance().bridge) {
                 window.close()
             }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.discardedWindowReplacementDelay) {
-            SpaceManager.shared.openPersistedSpaceIfDiscardLeftNoWindow()
         }
     }
 
@@ -2807,7 +2817,18 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 // A window Chromium opened on its own, on a profile no Space
                 // is bound to. Every branch below would pair it with a Space
                 // of another profile, so it is never given a slot.
-                discardWindowOnProfileWithoutSpace(window, windowId: windowId, profileId: profileId)
+                discardWindowOnProfileWithoutSpace(window, windowId: windowId, profileId: profileId,
+                                                   recordsNothing: windowCloseId != nil)
+                return
+            } else if SpaceManager.shared.discardsWindowCloseMember(
+                restoredSpaceId: restoredSpaceId, profileId: profileId, windowCloseId: windowCloseId) {
+                // A member of a Window Undo Close is bringing back whose Space
+                // was deleted since, or is an Agent Space (ADR 0013). Every
+                // branch below would put its tabs into another Space; it goes
+                // instead, recording nothing, and the rest of the Window comes
+                // back without it.
+                AppLogInfo("🌐 [Chromium] window \(windowId) of window close \(windowCloseId ?? "") has no Space to return to (\(restoredSpaceId ?? "nil")); closing it without recording")
+                discardWindow(window, windowId: windowId, recordsNothing: true)
                 return
             } else if let restoredSpace = SpaceManager.shared.restoredSpaceTarget(
                 restoredSpaceId, profileId: profileId) {

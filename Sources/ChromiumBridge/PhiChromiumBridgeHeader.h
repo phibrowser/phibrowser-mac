@@ -1875,6 +1875,14 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
            frontWindowId:(int64_t)frontWindowId
             parkedGhosts:(NSArray<NSDictionary<NSString *, id> *> * _Nullable)parkedGhosts;
 
+/// Marks a window whose close the user cannot undo (mac ADR 0013): a member
+/// Undo Close brought back for a Space that is gone (deleted, or an Agent
+/// Space), or a window retired only to be replaced. When it closes, nothing
+/// goes on the recently-closed list — neither the window nor its tabs or
+/// groups. Send it before the close; the mark lasts until the window is gone.
+/// Callers must guard with respondsToSelector: (version skew).
+- (void)markWindowRecordsNothingOnClose:(int64_t)windowId;
+
 /// Read-only probe for the window-group close cascade: reports where a
 /// window is in Browser's two-phase close (browser.h). The Mac client polls
 /// this at each veto-recovery deadline and treats a cascade as vetoed only

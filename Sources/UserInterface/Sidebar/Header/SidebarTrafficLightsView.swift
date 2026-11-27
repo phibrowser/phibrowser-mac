@@ -27,18 +27,28 @@ final class SidebarTrafficLightsView: NSView {
     static func pitch(in window: NSWindow?) -> CGFloat {
         if let close = window?.titlebarButton(.closeButton),
            let minimize = window?.titlebarButton(.miniaturizeButton) {
-            let measured = minimize.frame.midX - close.frame.midX
+            let measured = abs(minimize.frame.midX - close.frame.midX)
             if (16...32).contains(measured) { return measured }
         }
         if #available(macOS 26, *) { return 23 }
         return 20
     }
 
-    /// Centre of the close button from this view's leading edge.
+    /// Centre of the close button from this view's leading edge, or from its
+    /// trailing edge when mirrored.
     var firstCenter: CGFloat = 20 {
         didSet {
             guard firstCenter != oldValue else { return }
             invalidateIntrinsicContentSize()
+            needsLayout = true
+        }
+    }
+
+    /// Lays the lights out right to left from the trailing edge, close
+    /// outermost, as the window's own sit in the right-sidebar layout.
+    var isMirrored = false {
+        didSet {
+            guard isMirrored != oldValue else { return }
             needsLayout = true
         }
     }
@@ -53,7 +63,8 @@ final class SidebarTrafficLightsView: NSView {
         }
     }
 
-    /// The zoom button's trailing edge, from this view's leading edge.
+    /// The zoom button's far edge, from the edge the close button is measured
+    /// from.
     var trailingEdge: CGFloat {
         firstCenter + 2 * pitch + (buttons.last?.frame.width ?? Self.fallbackButtonWidth) / 2
     }
@@ -95,7 +106,8 @@ final class SidebarTrafficLightsView: NSView {
         super.layout()
         for (index, button) in buttons.enumerated() {
             let size = button.frame.size
-            let origin = NSPoint(x: firstCenter + CGFloat(index) * pitch - size.width / 2,
+            let center = firstCenter + CGFloat(index) * pitch
+            let origin = NSPoint(x: (isMirrored ? bounds.width - center : center) - size.width / 2,
                                  y: ((bounds.height - size.height) / 2).rounded())
             if button.frame.origin != origin { button.setFrameOrigin(origin) }
         }
@@ -155,6 +167,13 @@ final class SidebarTrafficLightsView: NSView {
         for name in windowNames {
             windowObservers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                 self?.refresh()
+            })
+        }
+        // Fresh buttons take the style mask they were made for, and the zoom
+        // button enters or exits full screen by it.
+        for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
+            windowObservers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                self?.reinstall()
             })
         }
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
@@ -319,6 +338,15 @@ extension NSWindow {
         )
         titlebarButtonTemplates[kind] = template
         return template
+    }
+
+    /// Hides or shows the whole titlebar. In full screen it is the bar that
+    /// slides down with the menu bar, which otherwise draws an opaque strip
+    /// even with the buttons hidden.
+    func setTitlebarContainerHidden(_ hidden: Bool) {
+        guard let container = titlebarButton(.closeButton)?.superview?.superview,
+              container.isHidden != hidden else { return }
+        container.isHidden = hidden
     }
 
     /// Hides or shows the titlebar's own three. A set of `isHidden` re-tiles

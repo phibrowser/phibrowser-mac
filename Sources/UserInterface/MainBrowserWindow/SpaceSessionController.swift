@@ -705,7 +705,11 @@ class SpaceSessionController: NSWindowController {
                     state.$isInFullScreenMode,
                     NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
                         .map { _ in }
-                        .merge(with: state.$isTranscriptDocked.map { _ in }, sidebarExpansionFinished)
+                        .merge(with: state.$isTranscriptDocked.map { _ in }, sidebarExpansionFinished,
+                               state.$focusingTab
+                                   .map { $0?.$isInContentFullscreen.map { _ in }.eraseToAnyPublisher()
+                                       ?? Just(()).eraseToAnyPublisher() }
+                                   .switchToLatest())
                         .prepend(())
                 )
             }
@@ -1422,20 +1426,24 @@ class SpaceSessionController: NSWindowController {
     /// re-places them on the chrome row. Driven by the sidebar/fullscreen sink
     /// and, in hosted mode, re-applied when a session is presented (the sink
     /// is silent for background sessions).
-    /// In the right-sidebar layout the lights live in the top band and show
-    /// only while it is revealed (`FloatingTrafficLightsView`).
     private func applyTrafficLightVisibility(collapsed: Bool, fullScreen: Bool) {
         guard let window else { return }
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
-        let bandVisible = mainSplitViewController.webContentContainerViewController.floatingSidebarHost.isTrafficLightBandVisible
         let waitingForSidebar = mainSplitViewController.isSidebarExpanding
         let hideTrafficLights = !fullScreen && !traditionalLayout
-            && (SidebarPosition.isOnRight ? !bandVisible : collapsed || waitingForSidebar)
+            && (collapsed || waitingForSidebar)
 
         // This runs on every defaults change, and a set of `isHidden` or
         // `titlebarAppearsTransparent` retiles the titlebar, so only actual
         // changes are applied.
         window.setTitlebarButtonsHidden(hideTrafficLights)
+        // Right-sidebar full screen keeps the lights in the sidebar header
+        // (`SidebarHeaderView.updateTrafficLights`), so the bar that slides
+        // down with the menu bar would only repeat them on the wrong side.
+        // A page in full screen covers the header, so the bar keeps them.
+        window.setTitlebarContainerHidden(fullScreen && SidebarPosition.isOnRight
+            && window.styleMask.contains(.fullScreen)
+            && browserState.focusingTab?.isInContentFullscreen != true)
 
         if window.titlebarAppearsTransparent == fullScreen {
             window.titlebarAppearsTransparent = !fullScreen
@@ -1443,9 +1451,9 @@ class SpaceSessionController: NSWindowController {
         updateTrafficLightPlacement(fullScreen: fullScreen)
     }
 
-    /// Reconciles the native buttons with the current sidebar and top band.
+    /// Reconciles the native buttons with the current sidebar.
     func refreshTrafficLightVisibility() {
-        guard isPresentedOrLegacy else { return }
+        guard isPresentedOrLegacy, !browserState.isKioskWindow else { return }
         applyTrafficLightVisibility(collapsed: browserState.sidebarCollapsed,
                                     fullScreen: browserState.isInFullScreenMode)
     }
@@ -1501,16 +1509,11 @@ class SpaceSessionController: NSWindowController {
             return
         }
         let layout = WebContentLayout(browserState: browserState)
-        let layoutMode = layout.layoutMode
         guard trafficLightLayout != layout
                 || trafficLightPositioner == nil else { return }
 
         trafficLightPositioner?.stop(restoringPlacement: true)
-        let positioner = TrafficLightPositioner(
-            window: window,
-            centerFromWindowTop: layout.sidebarOnRight ? FloatingTrafficLightMetrics.bandHeight / 2 : Self.chromeRowCenter(for: layoutMode, edgeToEdgeEnabled: layout.edgeToEdgeEnabled),
-            centerFromWindowLeading: layout.sidebarOnRight ? 20 : (layoutMode == .balanced ? 22 : nil)
-        )
+        let positioner = TrafficLightPositioner(window: window, layout: layout)
         trafficLightPositioner = positioner
         trafficLightLayout = layout
         positioner.start()
@@ -1537,12 +1540,15 @@ class SpaceSessionController: NSWindowController {
     @objc private func myWindowDidEnterFullScreen(_ noti: Notification) {
         if noti.object as? NSWindow === self.window {
             slot?.reconcileFullScreenWithWindowState()
+            // The titlebar has moved into the full-screen bar, or back.
+            refreshTrafficLightVisibility()
         }
     }
 
     @objc private func myWindowDidExitFullScreen(_ noti: Notification) {
         if noti.object as? NSWindow === self.window {
             slot?.reconcileFullScreenWithWindowState()
+            refreshTrafficLightVisibility()
         }
     }
 

@@ -43,6 +43,35 @@ final class TrafficLightPositionerTests: XCTestCase {
         }
     }
 
+    func testTrailingPlacementMirrorsTheGroupIntoTheTopRightCorner() throws {
+        let window = makeWindow()
+        defer { window.close() }
+        let buttons = try windowButtons(in: window)
+        let nativeFrames = buttons.map { $0.convert($0.bounds, to: nil) }
+        let positioner = TrafficLightPositioner(window: window, centerFromWindowTop: 27.5,
+                                                centerFromWindowTrailing: 22)
+        positioner.start()
+
+        let frames = buttons.map { $0.convert($0.bounds, to: nil) }
+        XCTAssertEqual(window.frame.width - frames[0].midX, 22, accuracy: 0.01, "close outermost")
+        for index in buttons.indices {
+            XCTAssertEqual(window.frame.height - frames[index].midY, 27.5, accuracy: 0.01)
+            XCTAssertEqual(frames[0].midX - frames[index].midX,
+                nativeFrames[index].midX - nativeFrames[0].midX, accuracy: 0.01)
+        }
+
+        window.setContentSize(NSSize(width: 1200, height: 700))
+        positioner.apply()
+        let resized = buttons[0].convert(buttons[0].bounds, to: nil)
+        XCTAssertEqual(window.frame.width - resized.midX, 22, accuracy: 0.01, "follows the trailing edge")
+
+        positioner.stop(restoringPlacement: true)
+        for index in buttons.indices {
+            let restored = buttons[index].convert(buttons[index].bounds, to: nil)
+            XCTAssertEqual(restored.minX, nativeFrames[index].minX, accuracy: 0.01)
+        }
+    }
+
     func testHorizontalRetilingIsCorrectedEvenWhenVerticalPlacementAlreadyHolds() throws {
         let window = makeWindow()
         defer { window.close() }

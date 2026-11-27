@@ -22,7 +22,6 @@ final class FloatingSidebarHostViewController: NSViewController {
     let floatingSidebarTriggerView = MouseTrackingAreaView()
     private(set) var floatingSidebarContainerView: NSView?
     private(set) var floatingSidebarViewController: FloatingSidebarViewController?
-    private var trafficLightStrip: FloatingTrafficLightsView?
     private var sidebarOnRight = false
     private var panelVisualContainer: NSView?
     private var outgoingContent: FloatingSidebarViewController?
@@ -76,17 +75,6 @@ final class FloatingSidebarHostViewController: NSViewController {
     /// was hidden, without activation or layout; `installContent` runs
     /// before the panel next shows or is realized off screen.
     private var needsContentInstall = false
-
-    /// Whether the right-sidebar layout's top band is revealed. See
-    /// `FloatingTrafficLightsView`.
-    var isTrafficLightBandVisible: Bool { trafficLightStrip?.isStripVisible == true }
-
-    /// Shows or hides the native lights on the band. The band overlays the
-    /// window's content rather than pushing it down, so revealing it never
-    /// resizes the page.
-    private func trafficLightBandVisibilityChanged(_ visible: Bool) {
-        browserState?.windowController?.refreshTrafficLightVisibility()
-    }
 
     var isVisible: Bool { floatingSidebarContainerView?.isHidden == false }
 
@@ -223,28 +211,6 @@ final class FloatingSidebarHostViewController: NSViewController {
             let previous = floatingSidebarViewController
             previous?.dismissCreateSpaceOverlay()
             browserState = state
-            let bandWasVisible = isTrafficLightBandVisible
-            trafficLightStrip?.removeFromSuperview()
-            let strip = FloatingTrafficLightsView(browserState: state)
-            strip.onStripVisibilityChanged = { [weak self] visible in
-                self?.trafficLightBandVisibilityChanged(visible)
-            }
-            // Over the floating panel in both draw and hit-test order, so the
-            // lights it carries never land on the panel's own header row.
-            strip.wantsLayer = true
-            strip.layer?.zPosition = WebContentContainerViewController.LayerZIndex.floatingSidebar + 1
-            view.addSubview(strip)
-            strip.snp.makeConstraints { make in
-                make.left.right.top.equalToSuperview()
-                make.height.equalTo(FloatingTrafficLightMetrics.bandHeight)
-            }
-            trafficLightStrip = strip
-            // The new Space's band starts from the shown state the outgoing
-            // one left the window in, and re-reads the pointer itself.
-            strip.setStripVisible(bandWasVisible && SidebarPosition.isOnRight && !state.isInFullScreenMode)
-            if bandWasVisible && !strip.isStripVisible {
-                trafficLightBandVisibilityChanged(false)
-            }
             // The panel's border resolves its theme through the window, and a
             // binding resolves its provider only when set or when the view
             // changes window, which it never does here. Re-bind it to the
@@ -1035,11 +1001,7 @@ final class FloatingSidebarHostViewController: NSViewController {
         interactionContainerView.wantsLayer = true
         interactionContainerView.layer?.zPosition = WebContentContainerViewController.LayerZIndex.floatingSidebar
 
-        if let trafficLightStrip {
-            view.addSubview(interactionContainerView, positioned: .below, relativeTo: trafficLightStrip)
-        } else {
-            view.addSubview(interactionContainerView, positioned: .above, relativeTo: nil)
-        }
+        view.addSubview(interactionContainerView, positioned: .above, relativeTo: nil)
         interactionContainerView.snp.makeConstraints { make in
             if sidebarOnRight {
                 floatingSidebarLeadingConstraint = make.right.equalToSuperview().offset(floatingSidebarHiddenLeading).constraint

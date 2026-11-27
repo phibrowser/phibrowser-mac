@@ -87,6 +87,15 @@ struct SidebarBottomBarSwiftUI: View {
     private var showsMemory = PhiPreferences.GeneralSettings.sidebarBottomBarShowsMemory.defaultValue
     @AppStorage(PhiPreferences.GeneralSettings.sidebarBottomBarShowsFeedback.rawValue)
     private var showsFeedback = PhiPreferences.GeneralSettings.sidebarBottomBarShowsFeedback.defaultValue
+    @AppStorage(PhiPreferences.GeneralSettings.sidebarPositionKey)
+    private var sidebarPosition = SidebarPosition.left.rawValue
+
+    /// The right-sidebar layout mirrors the row, so the edge buttons stay at
+    /// the window's edge and Chat stays beside the page.
+    private var isMirrored: Bool {
+        sidebarPosition == SidebarPosition.right.rawValue
+            && !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -128,32 +137,61 @@ struct SidebarBottomBarSwiftUI: View {
         let spacing = min(4, max(0, (availableWidth - controlsWidth
             - 2 * WebContentConstant.edgesSpacing) / CGFloat(gapCount)))
         return HStack(spacing: spacing) {
-            if showsProfile {
-                ProfileButton(surface: .sidebar)
-                    .frame(width: 24, height: 24)
-            }
-
-            if showsDownloads {
-                downloadButton
-            }
-
-            memoryButton
-
-            cardEntryButton
-
-            Spacer(minLength: 0)
-
-            if showsFeedbackButton {
-                FeedbackButtonSwiftUI(action: onFeedbackTap)
-                    .layoutPriority(1)
-            }
-
-            if !state.isChatHidden {
-                ChatButton(action: onChatTap)
-                    .layoutPriority(2)
+            if isMirrored {
+                pageSideButtons(showsFeedbackButton: showsFeedbackButton, mirrored: true)
+                Spacer(minLength: 0)
+                edgeButtons(mirrored: true)
+            } else {
+                edgeButtons(mirrored: false)
+                Spacer(minLength: 0)
+                pageSideButtons(showsFeedbackButton: showsFeedbackButton, mirrored: false)
             }
         }
         .padding(.horizontal, WebContentConstant.edgesSpacing)
+    }
+
+    @ViewBuilder
+    private func edgeButtons(mirrored: Bool) -> some View {
+        if mirrored {
+            cardEntryButton
+            memoryButton
+            if showsDownloads { downloadButton }
+            if showsProfile { profileButton }
+        } else {
+            if showsProfile { profileButton }
+            if showsDownloads { downloadButton }
+            memoryButton
+            cardEntryButton
+        }
+    }
+
+    @ViewBuilder
+    private func pageSideButtons(showsFeedbackButton: Bool, mirrored: Bool) -> some View {
+        if mirrored {
+            chatButton
+            if showsFeedbackButton { feedbackButton }
+        } else {
+            if showsFeedbackButton { feedbackButton }
+            chatButton
+        }
+    }
+
+    private var profileButton: some View {
+        ProfileButton(surface: .sidebar)
+            .frame(width: 24, height: 24)
+    }
+
+    private var feedbackButton: some View {
+        FeedbackButtonSwiftUI(action: onFeedbackTap)
+            .layoutPriority(1)
+    }
+
+    @ViewBuilder
+    private var chatButton: some View {
+        if !state.isChatHidden {
+            ChatButton(action: onChatTap)
+                .layoutPriority(2)
+        }
     }
 
     @ViewBuilder

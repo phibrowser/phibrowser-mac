@@ -569,14 +569,9 @@ final class ShellWindowController: NSObject, NSWindowDelegate {
             return
         }
         let layout = WebContentLayout(browserState: (window.windowController as? SpaceSessionController)?.browserState)
-        let layoutMode = layout.layoutMode
         guard trafficLightLayout != layout || trafficLightPositioner == nil else { return }
         trafficLightPositioner?.stop(restoringPlacement: true)
-        let positioner = TrafficLightPositioner(
-            window: window,
-            centerFromWindowTop: layout.sidebarOnRight ? FloatingTrafficLightMetrics.bandHeight / 2 : SpaceSessionController.chromeRowCenter(for: layoutMode, edgeToEdgeEnabled: layout.edgeToEdgeEnabled),
-            centerFromWindowLeading: layout.sidebarOnRight ? 20 : (layoutMode == .balanced ? 22 : nil)
-        )
+        let positioner = TrafficLightPositioner(window: window, layout: layout)
         trafficLightPositioner = positioner
         trafficLightLayout = layout
         positioner.start()

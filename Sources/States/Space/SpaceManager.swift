@@ -13692,13 +13692,14 @@ final class SpaceWindowSlot: ObservableObject {
     /// from the top-left of its frame, for the cross-launch restore record.
     /// Read by `SpaceManager.persistSlotsSnapshot`.
     ///
-    /// Skipped while the slot is fullscreen, the same exclusion
-    /// `lastKnownWindowedFrame` makes: AppKit lays a fullscreen titlebar out
+    /// Skipped while the sidebar is on the right, and while the slot is
+    /// fullscreen, the same exclusion `lastKnownWindowedFrame` makes: AppKit lays a fullscreen titlebar out
     /// differently, and the loading window is only ever placed for a slot that
     /// was NOT fullscreen. Caching it means a slot that has been fullscreen
     /// since launch still answers with the windowed origin it had before.
     fileprivate func snapshotTrafficLightOrigin() -> NSPoint? {
-        if !isFullScreen,
+        // Right-sidebar windows hold their lights in the top-right corner.
+        if !isFullScreen, !SidebarPosition.isOnRight,
            let window = visibleController?.window,
            let origin = ReopenLoadingWindow.measuredTrafficLightOrigin(in: window) {
             lastKnownTrafficLightOrigin = origin
@@ -14322,7 +14323,8 @@ final class ReopenLoadingWindow: NSWindow {
          trafficLightOrigin: NSPoint? = nil) {
         // Resolved before `super.init` because it decides the style mask: no
         // usable origin, no buttons at all.
-        // Right-sidebar windows reveal controls on hover, so the inert loading window must not show them.
+        // Right-sidebar windows hold their lights in the top-right corner, which a remembered leading
+        // origin cannot describe, so the inert loading window shows none.
         let lightOrigin = SidebarPosition.isOnRight ? nil : Self.trafficLightOrigin(remembered: trafficLightOrigin)
         // Byte for byte the mask the fork gives a normal browser window
         // (`BrowserNativeWidgetMac::PopulateCreateWindowParams`: titled,

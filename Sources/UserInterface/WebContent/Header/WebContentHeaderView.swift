@@ -87,7 +87,7 @@ struct WebContentHeaderView: View {
 
             HStack(spacing: 0) {
                 leadingButtons
-                    .padding(.leading, state.isInPlaceholderMode ? 8 : 16)
+                    .padding(.leading, edgePadding)
 
                 if state.showAddressBar {
                     WebContentAddressBarView(
@@ -130,6 +130,12 @@ struct WebContentHeaderView: View {
                 )
                 .frame(height: HeaderTrailingLayout.rowHeight)
                 .layoutPriority(2)
+
+                if state.showSidebarButton && isSidebarOnRight {
+                    sidebarButton
+                        .padding(.leading, Self.trailingSidebarButtonGap)
+                        .padding(.trailing, edgePadding)
+                }
             }
             .frame(maxWidth: .infinity)
             .onGeometryChange(for: CGFloat.self) { proxy in
@@ -145,12 +151,36 @@ struct WebContentHeaderView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity)
+        // Moving the sidebar button between ends changes the trailing room
+        // without changing the row's width.
+        .onChange(of: isSidebarOnRight) {
+            trailingFit = currentTrailingFit
+        }
         .environment(\.phiAppearance, state.pageAppearance ?? appearance)
         .environment(\.colorScheme, state.pageAppearance.map { $0.isDark ? .dark : .light } ?? colorScheme)
     }
 
     private var trailingAvailableWidth: CGFloat {
-        max(0, measuredWidth.value - leadingButtonsWidth - addressBarReservedWidth)
+        max(0, measuredWidth.value - leadingButtonsWidth - trailingSidebarButtonWidth - addressBarReservedWidth)
+    }
+
+    /// The sidebar toggle sits on the side the sidebar slides in from.
+    private var isSidebarOnRight: Bool {
+        sidebarPosition == SidebarPosition.right.rawValue
+            && !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
+    }
+
+    private var edgePadding: CGFloat {
+        state.isInPlaceholderMode ? 8 : 16
+    }
+
+    /// Added to the trailing area's own end padding so the gap matches the
+    /// leading buttons' spacing.
+    private static let trailingSidebarButtonGap: CGFloat = 2
+
+    private var trailingSidebarButtonWidth: CGFloat {
+        guard state.showSidebarButton, isSidebarOnRight else { return 0 }
+        return Self.trailingSidebarButtonGap + 24 + edgePadding
     }
 
     private var currentTrailingFit: HeaderTrailingArea.WidthFit {
@@ -166,13 +196,12 @@ struct WebContentHeaderView: View {
 
     private var leadingButtonsWidth: CGFloat {
         var count = 0
-        if state.showSidebarButton { count += 1 }
+        if state.showSidebarButton && !isSidebarOnRight { count += 1 }
         if state.showNavigationButtons { count += 3 }
         let buttonsWidth: CGFloat = count > 0
             ? CGFloat(count) * 24 + CGFloat(count - 1) * 8
             : 0
-        let leadingPadding: CGFloat = state.isInPlaceholderMode ? 8 : 16
-        return leadingPadding + buttonsWidth
+        return edgePadding + buttonsWidth
     }
 
     /// Minimum width reserved for the address bar so trailing area doesn't over-expand
@@ -180,18 +209,22 @@ struct WebContentHeaderView: View {
         state.showAddressBar ? 200 : 0
     }
 
+    private var sidebarButton: some View {
+        NavigationButton(
+            systemName: isSidebarOnRight ? "sidebar.right" : "sidebar.left",
+            accessibilityLabel: NSLocalizedString("browser.webContentHeader.sidebarButton.accessibilityLabel", value: "Toggle Sidebar", comment: "Web content header - Accessibility description for sidebar toggle button"),
+            onAnchorResolved: onSidebarAnchorResolved,
+            action: onSidebarTap
+        )
+    }
+
     // MARK: - Leading Buttons
 
     @ViewBuilder
     private var leadingButtons: some View {
         HStack(spacing: 8) {
-            if state.showSidebarButton {
-                NavigationButton(
-                    systemName: sidebarPosition == SidebarPosition.right.rawValue && !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional ? "sidebar.right" : "sidebar.left",
-                    accessibilityLabel: NSLocalizedString("browser.webContentHeader.sidebarButton.accessibilityLabel", value: "Toggle Sidebar", comment: "Web content header - Accessibility description for sidebar toggle button"),
-                    onAnchorResolved: onSidebarAnchorResolved,
-                    action: onSidebarTap
-                )
+            if state.showSidebarButton && !isSidebarOnRight {
+                sidebarButton
             }
 
             if state.showNavigationButtons {

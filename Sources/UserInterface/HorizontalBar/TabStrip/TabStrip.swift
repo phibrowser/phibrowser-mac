@@ -462,6 +462,33 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         return btn
     }()
 
+    /// Narrower than a pinned tab while pins remain, so each pin leaving
+    /// makes room on its own; pin-sized once it stands in for all of them.
+    private static let pinnedOverflowButtonWidth: CGFloat = 16
+
+    /// Opens a menu of the pinned tabs a narrow window cut off.
+    private lazy var pinnedOverflowButton: HoverableButtonNSView = {
+        let config = HoverableButtonConfig(
+            image: NSImage(systemSymbolName: "chevron.right", accessibilityDescription: "More Pinned Tabs"),
+            imageSize: NSSize(width: 10, height: 10),
+            displayMode: .imageOnly,
+            hoverBackgroundColor: .sidebarTabHoveredBackground,
+            cornerRadius: 6
+        )
+        let button = HoverableButtonNSView(config: config, target: self, selector: #selector(showPinnedOverflowMenu))
+        button.isHidden = true
+        return button
+    }()
+    private var hiddenPinnedTabs: [Tab] = []
+    /// The active tab's frame in the normal container as last laid out.
+    private var activeTabFrame: CGRect?
+    /// Points a mouse wheel line scrolls the tab list.
+    private static let wheelLineWidth: CGFloat = 16
+    private var normalContainerLeading: Constraint?
+    private var pinnedOverflowButtonWidthConstraint: Constraint?
+    /// Transparent space between a cut-off pinned zone and the normal zone.
+    private var pinnedZoneGap: CGFloat = 0
+
     // MARK: - Containers
 
     // Pinned-tab container.
@@ -502,6 +529,15 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         wantsLayer = true
 
         addSubview(pinnedContainer)
+        pinnedContainer.addSubview(pinnedOverflowButton)
+        // Constrained to the trailing edge so it moves with the pinned
+        // zone's width constraint, not a layout pass ahead of it.
+        pinnedOverflowButton.snp.makeConstraints { make in
+            make.trailing.equalToSuperview().inset(TabStripMetrics.PinnedTab.spacing)
+            make.centerY.equalToSuperview()
+            pinnedOverflowButtonWidthConstraint = make.width.equalTo(Self.pinnedOverflowButtonWidth).constraint
+            make.height.equalTo(TabStripMetrics.PinnedTab.height)
+        }
         addSubview(normalContainer)
         addSubview(newTabButton)
         addSubview(dragOverlay)
@@ -521,7 +557,8 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         }
 
         normalContainer.snp.makeConstraints { make in
-            make.leading.equalTo(pinnedContainer.snp.trailing).offset(-1 * normalTabContainerOffset)
+            normalContainerLeading = make.leading.equalTo(pinnedContainer.snp.trailing)
+                .offset(-1 * normalTabContainerOffset).constraint
             make.height.equalTo(tabHeight + bottomSpacing)
             make.trailing.equalToSuperview()
         }
@@ -532,6 +569,10 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
     }
 
     override func layout() {
+        // Size the pinned zone before AppKit places the normal zone beside
+        // it. Sized afterwards, the normal zone trails a live resize by one
+        // pass and the new-tab button slides over its last tab.
+        if isActive { updatePinnedZoneWidth() }
         super.layout()
         // Outside the Comfortable layout the strip is hidden and inactive, but
         // still follows the window's width: laying it out would rebuild every
@@ -548,13 +589,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         // External preview only applies when no in-window drag is active.
         let externalPreview = (context == nil && groupContext == nil) ? externalDragPreview : nil
 
-        // Resolve pinned-zone drag parameters.
-        let pinnedExcluded: Set<Int> = (context?.sourceContainerType == .pinned)
-            ? sourceExclusionSet(for: context)
-            : []
-        let pinnedGap = (context?.targetContainerType == .pinned)
-            ? context?.targetIndex
-            : (externalPreview?.zone == .pinned ? externalPreview?.index : nil)
+        let (pinnedExcluded, pinnedGap) = pinnedDragParameters()
 
         // Resolve normal-zone drag parameters. Whole-group drag takes
         // priority — it's mutually exclusive with single-tab drag at
@@ -1342,7 +1377,17 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         }
 
         let maxScroll = max(0, lastContentWidth - visibleWidth)
-        let delta = event.scrollingDeltaX
+        // Trackpads move the list 1:1. A mouse wheel reports lines on its
+        // vertical axis; scroll the list sideways by a comfortable step.
+        let delta: CGFloat
+        if abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY) {
+            delta = event.scrollingDeltaX * (event.hasPreciseScrollingDeltas ? 1 : Self.wheelLineWidth)
+        } else if !event.hasPreciseScrollingDeltas {
+            delta = event.scrollingDeltaY * Self.wheelLineWidth
+        } else {
+            super.scrollWheel(with: event)
+            return
+        }
         var newOffset = currentScrollOffset - delta
         newOffset = max(0, min(newOffset, maxScroll))
         if newOffset != currentScrollOffset {
@@ -1548,6 +1593,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         pinnedContainer.snp.updateConstraints { make in
             make.width.equalTo(0)
         }
+        applyPinnedZone(width: 0, gap: 0)
         newTabButton.frame = .zero
         needsLayout = true
     }
@@ -2051,6 +2097,116 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         return TabStripLayoutEngine.layoutNormal(input: input)
     }
 
+    /// Width the normal tabs need at their minimum: the active tab at its
+    /// protected width, the others at the minimum tab width, plus the
+    /// new-tab button. Laid out with no room, the engine returns exactly that.
+    private func normalZoneMinimumWidth() -> CGFloat {
+        let collapse = normalSplitCollapseInfo()
+        return calculateLayout(
+            containerWidth: 0,
+            tabs: browserState.normalTabs,
+            activeTab: visibleActiveTabForChrome(),
+            isPinned: false,
+            excludedIndices: collapse.collapsedIndices,
+            wideTabPaneCounts: collapse.hostPaneCounts
+        ).totalContentWidth
+    }
+
+    /// Resolves pinned-zone drag parameters.
+    private func pinnedDragParameters() -> (excluded: Set<Int>, gap: Int?) {
+        let context = dragController.context
+        // External preview only applies when no in-window drag is active.
+        let externalPreview = (context == nil && groupDragController.context == nil) ? externalDragPreview : nil
+        let excluded: Set<Int> = (context?.sourceContainerType == .pinned)
+            ? sourceExclusionSet(for: context)
+            : []
+        let gap = (context?.targetContainerType == .pinned)
+            ? context?.targetIndex
+            : (externalPreview?.zone == .pinned ? externalPreview?.index : nil)
+        return (excluded, gap)
+    }
+
+    /// The pinned zone's width at the strip's current width, the gap after
+    /// it, and where it cuts off pinned tabs (nil when they all fit). In a
+    /// narrow window the pinned tabs give way so the normal tabs keep their
+    /// minimum width; the ones cut off move to a menu. Once cut, the zone
+    /// and the gap fill the budget exactly, so a pin leaving doesn't hand its
+    /// width to the normal tabs and widen them for a moment.
+    private func pinnedZoneFit(
+        for pinnedLayout: TabStripLayoutOutput
+    ) -> (width: CGFloat, gap: CGFloat, cut: CGFloat?, buttonWidth: CGFloat) {
+        // The normal zone starts `normalTabContainerOffset` inside the
+        // pinned zone's trailing edge.
+        let budget = bounds.width + normalTabContainerOffset - normalZoneMinimumWidth()
+        let spacing = TabStripMetrics.PinnedTab.spacing
+        let cut = TabStripLayoutEngine.pinnedOverflowCut(
+            pinnedLayout: pinnedLayout,
+            budget: budget,
+            overflowButtonWidth: Self.pinnedOverflowButtonWidth,
+            firstCutLead: Self.pinnedOverflowButtonWidth + spacing
+        )
+        guard let cut else {
+            return (pinnedLayout.totalContentWidth, 0, nil, Self.pinnedOverflowButtonWidth)
+        }
+        let buttonWidth = cut > spacing ? Self.pinnedOverflowButtonWidth : TabStripMetrics.PinnedTab.width
+        let width = cut + buttonWidth + spacing
+        // The zone and gap hold the full pinned width until the budget drops
+        // below it, so an early cut doesn't widen the normal tabs either.
+        let gap = max(0, min(pinnedLayout.totalContentWidth, budget) - width)
+        return (width, gap, cut, buttonWidth)
+    }
+
+    private func applyPinnedZone(width: CGFloat, gap: CGFloat, buttonWidth: CGFloat = TabStrip.pinnedOverflowButtonWidth) {
+        pinnedOverflowButtonWidthConstraint?.update(offset: buttonWidth)
+        // Avoid recursive layout caused by constraint updates.
+        if abs(pinnedContainer.frame.width - width) > 0.1 {
+            pinnedContainer.snp.updateConstraints { make in
+                make.width.equalTo(width)
+            }
+        }
+        if abs(pinnedZoneGap - gap) > 0.1 {
+            pinnedZoneGap = gap
+            normalContainerLeading?.update(offset: gap - normalTabContainerOffset)
+        }
+    }
+
+    private func updatePinnedZoneWidth() {
+        let (excluded, gap) = pinnedDragParameters()
+        let collapse = pinnedSplitCollapseInfo()
+        let pinnedLayout = TabStripLayoutEngine.layoutPinned(
+            tabCount: browserState.pinnedTabs.count,
+            excludedTabIndices: excluded.union(collapse.collapsedIndices),
+            wideTabPaneCounts: collapse.hostPaneCounts,
+            gapAtIndex: gap
+        )
+        let fit = pinnedZoneFit(for: pinnedLayout)
+        applyPinnedZone(width: fit.width, gap: fit.gap, buttonWidth: fit.buttonWidth)
+    }
+
+    /// Lists the pinned tabs a narrow window cut off.
+    @objc private func showPinnedOverflowMenu() {
+        let menu = NSMenu()
+        for tab in hiddenPinnedTabs {
+            let item = NSMenuItem(
+                title: tab.title.isEmpty ? (tab.url ?? "") : tab.title,
+                action: #selector(pinnedOverflowItemClicked(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = tab
+            if let data = tab.liveFaviconData ?? tab.cachedFaviconData, let image = NSImage(data: data) {
+                image.size = TabStripMetrics.Content.faviconSize
+                item.image = image
+            }
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -6), in: pinnedOverflowButton)
+    }
+
+    @objc private func pinnedOverflowItemClicked(_ sender: NSMenuItem) {
+        handleTabSelection(tab: sender.representedObject as? Tab)
+    }
+
     /// Updates the view pool by creating, reusing, configuring, and removing views.
     ///
     /// - Note: This handles lifecycle and data binding only, not positioning.
@@ -2276,11 +2432,10 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
     ) {
         if !isPinned {
             lastContentWidth = layoutOutput.totalContentWidth
+            activeTabFrame = nil
             let visibleWidth = container.bounds.width
             let maxScroll = max(0, lastContentWidth - visibleWidth)
-            if currentScrollOffset > maxScroll {
-                currentScrollOffset = maxScroll
-            }
+            currentScrollOffset = max(0, min(currentScrollOffset, maxScroll))
         }
         let draggingTab = dragController.context?.draggingTab
         // Expanded group members keep their drag-start frames while
@@ -2344,6 +2499,19 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                 }
                 if !isPinned {
                     frame.origin.x -= currentScrollOffset
+                    if isTabActive(tab, activeTab: activeTab), lastContentWidth > container.bounds.width {
+                        // While the tabs scroll, the active tab sticks to the
+                        // edge it would leave by and the others pass behind it.
+                        frame.origin.x = TabStripLayoutEngine.stickyActiveTabX(
+                            frame.origin.x,
+                            width: frame.width,
+                            visibleWidth: container.bounds.width
+                        )
+                        if draggingTab == nil, container.subviews.last !== view {
+                            container.addSubview(view, positioned: .above, relativeTo: nil)
+                        }
+                    }
+                    if isTabActive(tab, activeTab: activeTab) { activeTabFrame = frame }
                 }
                 if isSplitMember {
                     CATransaction.begin()
@@ -2359,13 +2527,19 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         }
 
         if isPinned {
-            let newWidth = layoutOutput.totalContentWidth
-            // Avoid recursive layout caused by constraint updates.
-            if abs(pinnedContainer.frame.width - newWidth) > 0.1 {
-                pinnedContainer.snp.updateConstraints { make in
-                    make.width.equalTo(newWidth)
-                }
+            let fit = pinnedZoneFit(for: layoutOutput)
+            let cut = fit.cut
+            var hiddenTabs: [Tab] = []
+            for (index, tab) in tabs.enumerated() where index < layoutOutput.tabFrames.count {
+                let frame = layoutOutput.tabFrames[index]
+                let isCut = cut.map { frame != .zero && frame.maxX > $0 } ?? false
+                if isCut { hiddenTabs.append(tab) }
+                guard tab !== draggingTab, let view = viewPool[tabId(for: tab)] else { continue }
+                view.isHidden = isCut
             }
+            hiddenPinnedTabs = hiddenTabs
+            pinnedOverflowButton.isHidden = cut == nil
+            applyPinnedZone(width: fit.width, gap: fit.gap, buttonWidth: fit.buttonWidth)
         } else {
             let flowX = layoutOutput.newTabButtonFrame.origin.x - currentScrollOffset
             let stickyX = container.bounds.width
@@ -3011,12 +3185,25 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
 
         containerMaskLayer.frame = normalContainer.bounds
         containerMaskLayer.fillColor = NSColor.black.cgColor
-        containerMaskLayer.path = CGPath(rect: CGRect(
+        let path = CGMutablePath()
+        path.addRect(CGRect(
             x: startX,
             y: -TabCornerBadgeMetrics.overhang,
             width: max(0, endX - startX),
             height: normalContainer.bounds.height + TabCornerBadgeMetrics.overhang * 2
-        ), transform: nil)
+        ))
+        // The active tab's bottom inverse corner reaches past its leading
+        // edge; when the tab sticks at the start, keep that corner whole.
+        let radius = TabStripMetrics.Tab.inverseCornerRadius
+        if let active = activeTabFrame, active.minX - radius < startX {
+            path.addRect(CGRect(
+                x: active.minX - radius,
+                y: -TabCornerBadgeMetrics.overhang,
+                width: radius,
+                height: active.minY + radius + TabCornerBadgeMetrics.overhang
+            ))
+        }
+        containerMaskLayer.path = path
 
         normalContainer.layer?.mask = containerMaskLayer
     }

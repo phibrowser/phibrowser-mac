@@ -93,10 +93,10 @@ struct TabStripRightButtons: View {
             availableUpdateVersion = nil
         }
         #endif
-        // The update action is text-based, unlike the other 24pt controls. Keep
-        // the existing 88pt minimum for the icon-only state, while letting the
-        // hosting view grow when an update is ready so it never overlaps tabs.
-        .frame(minWidth: 88, maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+        // The update action is text-based, unlike the other 24pt controls: the
+        // hosting view hugs the buttons and grows when an update is ready, so
+        // it never overlaps tabs.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: availableUpdateVersion != nil)
         .ignoresSafeArea()
     }

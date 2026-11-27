@@ -224,6 +224,41 @@ enum TabStripLayoutEngine {
         )
     }
 
+    /// Where the pinned zone cuts off its pinned tabs, or nil while they
+    /// all fit in `budget` with `firstCutLead` to spare. Only whole tabs
+    /// stay, at least the last one goes, and the cut leaves room for the
+    /// overflow button. The lead starts the first cut early, so it doesn't
+    /// land right before the second.
+    static func pinnedOverflowCut(
+        pinnedLayout: TabStripLayoutOutput,
+        budget: CGFloat,
+        overflowButtonWidth: CGFloat,
+        firstCutLead: CGFloat
+    ) -> CGFloat? {
+        guard pinnedLayout.totalContentWidth + firstCutLead > budget else { return nil }
+        let spacing = TabStripMetrics.PinnedTab.spacing
+        let tabsBudget = budget - overflowButtonWidth - spacing
+        return pinnedLayout.tabFrames
+            .filter { $0 != .zero }
+            .map { $0.maxX + spacing }
+            .sorted()
+            .dropLast()
+            .filter { $0 <= tabsBudget }
+            .max() ?? spacing
+    }
+
+    /// Keeps a scrolled tab's x inside the visible strip, as far from
+    /// either end as the flow puts the first tab and the new-tab button,
+    /// which stays at the trailing edge while the tabs scroll.
+    static func stickyActiveTabX(_ x: CGFloat, width: CGFloat, visibleWidth: CGFloat) -> CGFloat {
+        let leadingInset = calculateStartXOffset() + TabStripMetrics.Tab.spacing
+        let trailingInset = TabStripMetrics.NewTabButton.size.width
+            + TabStripMetrics.NewTabButton.insets.right
+            + TabStripMetrics.Tab.spacing * 2 + 1
+        let highest = visibleWidth - trailingInset - width
+        return min(max(x, leadingInset), max(leadingInset, highest))
+    }
+
     static func layoutNormal(input: TabStripLayoutInput) -> TabStripLayoutOutput {
         // Fast path: no groups in this window — execute the original
         // ungrouped logic byte-equivalent.

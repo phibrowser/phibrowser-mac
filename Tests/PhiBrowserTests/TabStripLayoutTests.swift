@@ -765,4 +765,93 @@ final class TabStripLayoutTests: XCTestCase {
         XCTAssertNil(placement.rightSeparatorNeighborIndex,
             "Neighbor index must be nil when there is no separator.")
     }
+
+    // MARK: - Narrow window: pinned overflow and the sticky active tab
+
+    /// Six pinned tabs: each ends 30 pt after the one before, the zone is 182 pt.
+    private let sixPinned = TabStripLayoutEngine.layoutPinned(tabCount: 6)
+    private let slimButton: CGFloat = 16
+
+    private func cut(budget: CGFloat) -> CGFloat? {
+        TabStripLayoutEngine.pinnedOverflowCut(
+            pinnedLayout: sixPinned,
+            budget: budget,
+            overflowButtonWidth: slimButton,
+            firstCutLead: slimButton + TabStripMetrics.PinnedTab.spacing
+        )
+    }
+
+    func testPinnedTabsAllStayWhileTheyFitWithRoomForTheOverflowButton() {
+        XCTAssertEqual(sixPinned.totalContentWidth, 182, "precondition: six 28 pt tabs, 2 pt apart")
+        XCTAssertNil(cut(budget: 200))
+        XCTAssertNil(cut(budget: 1000))
+    }
+
+    func testTheFirstPinnedTabLeavesOneOverflowButtonEarly() {
+        XCTAssertEqual(cut(budget: 199.5), 152, "five pins stay, the sixth makes way for the button")
+        XCTAssertEqual(cut(budget: 182), 152)
+        XCTAssertEqual(cut(budget: 170), 152)
+    }
+
+    func testPinnedTabsLeaveOneTabWidthApart() {
+        // The first leaves below 200 pt, then one every 30 pt.
+        var leaves: [CGFloat] = []
+        var lastCut = cut(budget: 300)
+        for budget in stride(from: CGFloat(300), through: 0, by: -0.5) {
+            let current = cut(budget: budget)
+            if current != lastCut { leaves.append(budget) }
+            lastCut = current
+        }
+        XCTAssertEqual(leaves, [199.5, 169.5, 139.5, 109.5, 79.5, 49.5])
+    }
+
+    func testOnlyTheOverflowButtonStaysWhenNoPinnedTabFits() {
+        XCTAssertEqual(cut(budget: 40), TabStripMetrics.PinnedTab.spacing)
+        XCTAssertEqual(cut(budget: 0), TabStripMetrics.PinnedTab.spacing)
+    }
+
+    func testPinnedOverflowCutKeepsOnlyWholeTabs() {
+        let ends = Set(sixPinned.tabFrames.map { $0.maxX + TabStripMetrics.PinnedTab.spacing })
+        for budget in stride(from: CGFloat(0), through: 199, by: 1) {
+            let value = cut(budget: budget)
+            XCTAssertNotNil(value)
+            if let value, value > TabStripMetrics.PinnedTab.spacing {
+                XCTAssertTrue(ends.contains(value), "budget \(budget): cut \(value) falls inside a tab")
+                XCTAssertLessThanOrEqual(value + slimButton + TabStripMetrics.PinnedTab.spacing, budget)
+            }
+        }
+    }
+
+    /// A scrolled active tab stops where the flow puts a tab at each end, so
+    /// it doesn't move the moment it starts to stick.
+    func testStickyActiveTabStopsWhereTheFlowPutsATab() {
+        let input = TabStripLayoutInput(
+            containerWidth: 0,
+            tabCount: 1,
+            activeTabIndex: 0,
+            spacing: TabStripMetrics.Tab.spacing,
+            idealTabWidth: TabStripMetrics.Tab.idealWidth,
+            minTabWidth: TabStripMetrics.Tab.minWidth,
+            activeTabWidth: 192,
+            tabHeight: 32
+        )
+        let flow = TabStripLayoutEngine.layoutNormal(input: input)
+        let tab = flow.tabFrames[0]
+        let visibleWidth = flow.totalContentWidth
+
+        XCTAssertEqual(TabStripLayoutEngine.stickyActiveTabX(-50, width: tab.width, visibleWidth: visibleWidth),
+                       tab.minX, "sticks at the first tab's spot")
+        XCTAssertEqual(TabStripLayoutEngine.stickyActiveTabX(500, width: tab.width, visibleWidth: visibleWidth),
+                       tab.minX, "and before the new-tab button, as far from it as the flow puts it")
+        XCTAssertEqual(TabStripLayoutEngine.stickyActiveTabX(tab.minX, width: tab.width, visibleWidth: visibleWidth),
+                       tab.minX)
+
+        let wider = visibleWidth + 300
+        let stuckRight = TabStripLayoutEngine.stickyActiveTabX(1000, width: tab.width, visibleWidth: wider)
+        let stickyButtonX = wider - TabStripMetrics.NewTabButton.size.width - TabStripMetrics.NewTabButton.insets.right
+        XCTAssertEqual(stickyButtonX - (stuckRight + tab.width), flow.newTabButtonFrame.minX - tab.maxX,
+                       "same gap to the pinned-right new-tab button as in the flow")
+        XCTAssertEqual(TabStripLayoutEngine.stickyActiveTabX(120, width: tab.width, visibleWidth: wider), 120,
+                       "a tab already in view stays put")
+    }
 }

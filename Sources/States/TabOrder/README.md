@@ -275,6 +275,10 @@ replay take precedence. Link children retain opener/descendant placement.
 Bottom mode appends in both native and Chromium order without an extra manual
 move. Top mode uses the initial-placement transaction described below.
 
+Splitting two sidebar bookmarks creates a normal split at the preferred end
+of the list. Dropping a bookmark onto an existing normal tab keeps that tab's
+position. Chromium moves the panes together after it creates the split.
+
 The sidebar uses the same effective policy and one stable New Tab item. Top
 mode places it before normal rows and preserves top-edge sticking. Bottom mode
 places it after normal rows, sticking at the viewport bottom only while that

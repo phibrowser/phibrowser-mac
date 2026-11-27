@@ -24,6 +24,20 @@ private final class NewTabPlacementBridgeStub: NSObject {
         requests.append((Int(tabId), Int(anchorTabId)))
         onPlacement?(Int(tabId), Int(anchorTabId))
     }
+
+    var splitPanes: [Int] = []
+    var splitMoveIndices: [Int32] = []
+
+    @objc(createSplitWithTabIds:anchorTabId:layout:windowId:)
+    func createSplit(_ tabIds: [NSNumber], anchor: Int64, layout: String, windowId: Int64) -> String {
+        splitPanes = tabIds.map(\.intValue)
+        return "bookmark-split"
+    }
+
+    @objc(moveSplit:toIndex:windowId:)
+    func moveSplit(_ id: String, toIndex: Int32, windowId: Int64) {
+        splitMoveIndices.append(toIndex)
+    }
 }
 
 @MainActor
@@ -125,6 +139,60 @@ final class BrowserStateNewTabPlacementTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: PhiPreferences.GeneralSettings.newTabsAtTop.rawValue)
         XCTAssertFalse(PhiPreferences.GeneralSettings.newTabsAtTop.defaultValue)
         XCTAssertFalse(try makeState().opensNewTabsAtTop)
+    }
+
+    func testBookmarkSplitPlacement() async throws {
+        for top in [true, false] {
+            for sourceOpen in [true, false] {
+                try await checkBookmarkSplit(top: top, sourceOpen: sourceOpen, partnerIsBookmark: true)
+            }
+        }
+        try await checkBookmarkSplit(top: true, sourceOpen: true, partnerIsBookmark: false)
+    }
+
+    private func checkBookmarkSplit(top: Bool, sourceOpen: Bool, partnerIsBookmark: Bool) async throws {
+        ChromiumLauncher.sharedInstance().bridge = originalBridge
+        UserDefaults.standard.set(top, forKey: PhiPreferences.GeneralSettings.newTabsAtTop.rawValue)
+        let state = try makeState()
+        for guid in ["source", "partner"] {
+            state.localStore.createBookmark(url: "https://\(guid).example", title: guid,
+                                            profileId: state.profileId, parentId: nil,
+                                            guid: guid, spaceId: state.spaceId)
+        }
+        let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            ["source", "partner"].allSatisfy { state.bookmarkManager.bookmark(withGuid: $0) != nil }
+        }, object: nil)
+        await fulfillment(of: [loaded], timeout: 5)
+
+        let partnerId = 2
+        let sourceId = 5
+        if partnerIsBookmark { state.setBinding("partner", for: state.tabs[1]) }
+        if sourceOpen {
+            state.tabs.append(Tab(guid: sourceId, url: "https://source.example", isActive: false,
+                                  index: 4, customGuid: "source"))
+        }
+        state.syncAllBookmarksOpenedState()
+        let bridge = try installBridge()
+        XCTAssertTrue(state.formSplitFromBookmark(bookmarkGuid: "source", partnerTabId: partnerId,
+                                                  newTabSlot: .right))
+        if !sourceOpen {
+            let marker = try XCTUnwrap(state.pendingSplitPartnerByCustomGuid.keys.first)
+            state.handleNewTabFromChromium(Tab(guid: sourceId, url: "https://source.example",
+                                               isActive: true, index: 4, customGuid: marker))
+        }
+        XCTAssertEqual(bridge.splitPanes, [partnerId, sourceId])
+        state.handleSplitCreated(splitId: "bookmark-split", tabIds: bridge.splitPanes,
+                                 layout: .vertical, fractions: [0.5, 0.5])
+        // Chromium creates the split at the partner's physical position.
+        state.reorderTabs([1: 0, 2: 1, 5: 2, 3: 3, 4: 4])
+        await drain()
+        if partnerIsBookmark {
+            XCTAssertEqual(state.normalTabs.map(\.guid), top ? [2, 5, 1, 3, 4] : [1, 3, 4, 2, 5])
+            XCTAssertEqual(bridge.splitMoveIndices, top ? [0] : [3])
+        } else {
+            XCTAssertEqual(state.normalTabs.map(\.guid), [1, 2, 5, 3, 4])
+            XCTAssertTrue(bridge.splitMoveIndices.isEmpty)
+        }
     }
 
     func testPlacementPolicyReadsCurrentDestinationLayoutAndPreference() throws {

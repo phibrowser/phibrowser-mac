@@ -266,11 +266,8 @@ class BrowserState {
     var pendingPinnedSplitMarkByCreateId: Set<String> = []
 
     /// splitId → destination index (in `normalTabs` space) the caller wants
-    /// the freshly-created split relocated to once it exists. Set by the
-    /// closed-split drop paths (`openSplitBookmarkAsTabs`,
-    /// `unpinClosedPinnedSplit`), whose two panes are materialized
-    /// asynchronously and therefore land at the end of the strip. Consumed in
-    /// `handleSplitCreated`, which then relocates the pair to the drop index.
+    /// the freshly-created split relocated to once it exists. Used for explicit
+    /// drop positions and for a new normal split formed from two bookmarks.
     var pendingSplitMoveToNormalIndexByCreateId: [String: Int] = [:]
     /// splitId → URLs of the panes still to add to a closed split of three or
     /// four panes that is reopening. Drained one pane at a time as Chromium

@@ -266,11 +266,8 @@ class BrowserState {
     var pendingPinnedSplitMarkByCreateId: Set<String> = []
 
     /// splitId → destination index (in `normalTabs` space) the caller wants
-    /// the freshly-created split relocated to once it exists. Set by the
-    /// closed-split drop paths (`openSplitBookmarkAsTabs`,
-    /// `unpinClosedPinnedSplit`), whose two panes are materialized
-    /// asynchronously and therefore land at the end of the strip. Consumed in
-    /// `handleSplitCreated`, which then relocates the pair to the drop index.
+    /// the freshly-created split relocated to once it exists. Used for explicit
+    /// drop positions and for a new normal split formed from two bookmarks.
     var pendingSplitMoveToNormalIndexByCreateId: [String: Int] = [:]
     /// splitId → URLs of the panes still to add to a closed split of three or
     /// four panes that is reopening. Drained one pane at a time as Chromium
@@ -2565,6 +2562,7 @@ class BrowserState {
         guard candidates.count >= 2, candidates.count <= SplitGroup.maxPaneCount else { return }
         let didOpen: Bool
         let liveTabs = candidates.compactMap(\.existingTab)
+        let insertionIndex = bookmarkSplitInsertionIndex(liveTabs: liveTabs)
         if liveTabs.count == candidates.count,
            Set(liveTabs.map(\.guid)).count == liveTabs.count {
             // Every unit is a live tab: one split of them all, in selection
@@ -2572,7 +2570,7 @@ class BrowserState {
             for tab in liveTabs {
                 makeTabNormalOpened(tabId: tab.guid)
             }
-            didOpen = createSplit(tabIds: liveTabs.map(\.guid), layout: .vertical) != nil
+            didOpen = createSplit(tabIds: liveTabs.map(\.guid), layout: .vertical, insertionIndex: insertionIndex) != nil
         } else if candidates.count != 2 {
             // A unit that still has to open a tab (a bookmark, a closed
             // pinned record) only pairs; the pending-split flows pair exactly
@@ -2584,7 +2582,8 @@ class BrowserState {
             makeTabNormalOpened(tabId: tab.guid)
             openNewTabAsSplit(partnerTabId: tab.guid,
                               newTabSlot: .right,
-                              partnerNavigateURL: URLProcessor.processUserInput(url))
+                              partnerNavigateURL: URLProcessor.processUserInput(url),
+                              insertionIndex: insertionIndex)
             didOpen = true
         } else if let url = candidates[0].pendingURLString,
                   let tab = candidates[1].existingTab,
@@ -2592,13 +2591,15 @@ class BrowserState {
             makeTabNormalOpened(tabId: tab.guid)
             openNewTabAsSplit(partnerTabId: tab.guid,
                               newTabSlot: .left,
-                              partnerNavigateURL: URLProcessor.processUserInput(url))
+                              partnerNavigateURL: URLProcessor.processUserInput(url),
+                              insertionIndex: insertionIndex)
             didOpen = true
         } else if let primaryURL = candidates[0].pendingURLString,
                   let secondaryURL = candidates[1].pendingURLString,
                   !primaryURL.isEmpty,
                   !secondaryURL.isEmpty {
-            openURLsAsSplit([primaryURL, secondaryURL].map(URLProcessor.processUserInput))
+            openURLsAsSplit([primaryURL, secondaryURL].map(URLProcessor.processUserInput),
+                            insertionIndex: insertionIndex)
             didOpen = true
         } else {
             return

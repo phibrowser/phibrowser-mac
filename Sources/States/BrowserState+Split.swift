@@ -551,14 +551,8 @@ extension BrowserState {
             updateNormalTabs()
         }
 
-        // Closed-split drop relocation: a split opened from a closed bookmark
-        // or unopened pinned pair was materialized at the strip's end (its
-        // panes are bridge-created tabs with no insert hint). Now that the
-        // SplitGroup exists, move the split as a unit to the drop index the
-        // user released on. Deferred: running synchronously can land
-        // mid-Chromium-mutation and trip `MoveSplitTo`'s reentrancy guard.
-        // Re-resolve the group inside the Task since it may have been torn
-        // down.
+        // Move the new split as a unit once Chromium finishes creating it.
+        // Moving synchronously can trip MoveSplitTo's reentrancy guard.
         if let targetIndex = pendingSplitMoveToNormalIndexByCreateId.removeValue(forKey: splitId) {
             Task { @MainActor [weak self] in
                 guard let self, let liveGroup = self.splitGroup(forId: splitId) else { return }
@@ -830,24 +824,29 @@ extension BrowserState {
     /// and reports the split back through `handleSplitCreated`. Returns the
     /// new split ID on success.
     ///
-    /// The split stands where `anchorTabId` (default: the first pane) stands;
-    /// the other panes move next to it.
+    /// The split forms at `anchorTabId` (the first pane by default). If an
+    /// insertion index is supplied, the completed split moves there as a unit.
     ///
     /// Chromium pivots the split on whichever of the tabs is already active,
     /// so the active tab never bounces HIDDEN → VISIBLE (which
     /// `RenderWidgetHostViewCocoa` does not always cleanly resume from — the
     /// previously-focused tab's pane then renders blank).
     @discardableResult
-    func createSplit(tabIds: [Int], layout: SplitLayout, anchorTabId: Int? = nil) -> String? {
+    func createSplit(tabIds: [Int], layout: SplitLayout, anchorTabId: Int? = nil,
+                     insertionIndex: Int? = nil) -> String? {
         guard tabIds.count >= 2, tabIds.count <= SplitGroup.maxPaneCount,
               Set(tabIds).count == tabIds.count,
               let anchor = anchorTabId ?? tabIds.first,
               tabIds.contains(anchor) else { return nil }
-        return ChromiumLauncher.sharedInstance().bridge?.createSplit(
+        let splitId = ChromiumLauncher.sharedInstance().bridge?.createSplit(
             withTabIds: tabIds.map { NSNumber(value: Int64($0)) },
             anchorTabId: Int64(anchor),
             layout: layout.rawValue,
             windowId: windowId.int64Value)
+        if let splitId, let insertionIndex {
+            pendingSplitMoveToNormalIndexByCreateId[splitId] = insertionIndex
+        }
+        return splitId
     }
 
     /// Pairs two tabs: `leftTabId` takes slot 0 (left / top), `rightTabId`
@@ -1756,6 +1755,17 @@ extension BrowserState {
         persistPinnedSplit(dbGuids: placeholderGuids, layout: group.layout)
     }
 
+    /// Resolve this before detaching any bookmarks. A split made entirely from
+    /// closed or hidden bookmarks has no existing normal row to anchor it.
+    func bookmarkSplitInsertionIndex(liveTabs: [Tab]) -> Int? {
+        for tab in liveTabs {
+            if !isBookmarkBackedTab(tab) || normalTabs.contains(where: { $0.guid == tab.guid }) {
+                return nil
+            }
+        }
+        return opensNewTabsAtTop ? 0 : .max
+    }
+
     /// Forms a split between a bookmark and `partnerTabId`. If the
     /// bookmark currently has an attached live tab that is distinct from
     /// the partner and not already in a split, detaches that tab from the
@@ -1775,6 +1785,7 @@ extension BrowserState {
         guard let bookmark = bookmarkManager.bookmark(withGuid: bookmarkGuid),
               !bookmark.isFolder,
               let url = bookmark.url, !url.isEmpty,
+              let partner = tabs.first(where: { $0.guid == partnerTabId }),
               splitGroup(forTabId: partnerTabId) == nil else { return false }
         // Resolve the bookmark's attached live tab BEFORE the partner
         // normalization below — `makeTabNormalOpened(partnerTabId)` clears
@@ -1782,6 +1793,7 @@ extension BrowserState {
         // representation IS the partner pane the post-detach lookup would
         // miss and we'd fall through to opening a duplicate URL tab.
         let attachedLiveTab = tabs.first(where: { $0.guidInLocalDB == bookmarkGuid })
+        let insertionIndex = bookmarkSplitInsertionIndex(liveTabs: [partner])
         // Normalize the partner (the split's other pane). Otherwise the
         // resulting split would inherit pinned-ness or a bookmark binding
         // unrelated to the new split — contrary to user intent.
@@ -1794,19 +1806,11 @@ extension BrowserState {
            attachedLiveTab.guid != partnerTabId,
            splitGroup(forTabId: attachedLiveTab.guid) == nil {
             makeTabNormalOpened(tabId: attachedLiveTab.guid)
-            let splitId: String?
-            switch newTabSlot {
-            case .left:
-                splitId = createSplit(leftTabId: attachedLiveTab.guid,
-                                      rightTabId: partnerTabId,
-                                      layout: layout,
-                                      anchorTabId: partnerTabId)
-            case .right:
-                splitId = createSplit(leftTabId: partnerTabId,
-                                      rightTabId: attachedLiveTab.guid,
-                                      layout: layout)
-            }
-            return splitId != nil
+            let tabIds = newTabSlot == .left
+                ? [attachedLiveTab.guid, partnerTabId]
+                : [partnerTabId, attachedLiveTab.guid]
+            return createSplit(tabIds: tabIds, layout: layout, anchorTabId: partnerTabId,
+                               insertionIndex: insertionIndex) != nil
         }
         // Attached-and-IS-partner: the partner tab was the bookmark's live
         // representation and is now detached above. Opening another tab on
@@ -1818,6 +1822,7 @@ extension BrowserState {
             let oppositeSlot: SplitSlot = (newTabSlot == .left) ? .right : .left
             return openNewTabAsSplit(partnerTabId: partnerTabId,
                                      newTabSlot: oppositeSlot,
+                                     insertionIndex: insertionIndex,
                                      layout: layout)
         }
         // Bookmark has no live representation: materialize a fresh unbound
@@ -1825,6 +1830,7 @@ extension BrowserState {
         return openNewTabAsSplit(partnerTabId: partnerTabId,
                                  newTabSlot: newTabSlot,
                                  partnerNavigateURL: URLProcessor.processUserInput(url),
+                                 insertionIndex: insertionIndex,
                                  layout: layout)
     }
 
@@ -2226,25 +2232,8 @@ extension BrowserState {
             placeTabAdjacent(tabId: tab.guid,
                              to: partnerTabId,
                              on: newTabSlot)
-            let createdSplitId: String?
-            switch newTabSlot {
-            case .right:
-                createdSplitId = createSplit(leftTabId: partnerTabId,
-                                             rightTabId: tab.guid,
-                                             layout: layout)
-            case .left:
-                createdSplitId = createSplit(leftTabId: tab.guid,
-                                             rightTabId: partnerTabId,
-                                             layout: layout)
-            }
-            // Closed-split drop: both panes were just materialized here, so they
-            // sit at the tail of the strip. Record the requested drop index
-            // against the new split id; `handleSplitCreated` relocates the pair
-            // once Chromium echoes the split back.
-            if let insertionIndex = pending.insertionIndex,
-               let splitId = createdSplitId {
-                pendingSplitMoveToNormalIndexByCreateId[splitId] = insertionIndex
-            }
+            let tabIds = newTabSlot == .left ? [tab.guid, partnerTabId] : [partnerTabId, tab.guid]
+            let createdSplitId = createSplit(tabIds: tabIds, layout: layout, insertionIndex: pending.insertionIndex)
             // A wider closed split: the remaining panes join as soon as
             // Chromium has echoed the split back (`handleSplitCreated`).
             if !pending.additionalPaneURLs.isEmpty, let splitId = createdSplitId {
@@ -2547,9 +2536,7 @@ struct PendingSplitPartner {
     /// bookmark cell stays in sync with the open split.
     var boundBookmarkGuid: String? = nil
     /// Optional destination index (in `normalTabs` space) for the finished
-    /// split. Non-nil when a closed split was dropped into the tab list at a
-    /// specific spot; `consumePendingSplitPartner` forwards it so
-    /// `handleSplitCreated` can relocate the pair off the strip's end.
+    /// split. The split moves as a unit after Chromium reports its creation.
     var insertionIndex: Int? = nil
     /// Closes the existing partner if its requested pane never arrives.
     /// Used when that partner is a transient bookmark-group seed rather than

@@ -19,8 +19,12 @@ enum SidebarPosition: String, CaseIterable {
     case left, right
 
     static var isOnRight: Bool {
-        !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
-            && PhiPreferences.GeneralSettings.loadSidebarPosition() == .right
+        isOnRight(in: .standard)
+    }
+
+    static func isOnRight(in defaults: UserDefaults) -> Bool {
+        !PhiPreferences.GeneralSettings.loadLayoutMode(from: defaults).isTraditional
+            && PhiPreferences.GeneralSettings.loadSidebarPosition(from: defaults) == .right
     }
 
     /// The side the sidebar actually sits on: traditional layout keeps it on the left.
@@ -162,8 +166,8 @@ extension PhiPreferences {
         case sidebarBottomBarShowsMemory
         case sidebarBottomBarShowsFeedback
         case sidebarBottomBarShowsChat
-        case topBarShowsProfile // Comfortable layout top bar entries the user can toggle from the tab strip context menu
-        case topBarShowsDownloads
+        case topBarShowsProfile // Comfortable tab strip's Profile button, toggled from the tab strip context menu
+        case topBarShowsDownloads // Downloads, Memory, Feedback, Chat: read once to seed the toolbar arrangement
         case topBarShowsMemory
         case topBarShowsFeedback
         case topBarShowsChat
@@ -357,17 +361,15 @@ extension PhiPreferences {
 
         static let layoutModeKey = "layoutMode"
 
-        static func loadLayoutMode() -> LayoutMode {
-            let defaults = UserDefaults.standard
-
+        static func loadLayoutMode(from defaults: UserDefaults = .standard) -> LayoutMode {
             if let rawValue = defaults.string(forKey: Self.layoutModeKey),
                let mode = LayoutMode(rawValue: rawValue) {
                 return mode
             }
 
             // Backward compatibility for old dual-bool encoding.
-            let traditionalLayout = UserDefaults.standard.value(forKey: Self.traditionalLayout.rawValue) as? Bool
-            let navigationAtTop = UserDefaults.standard.value(forKey: Self.navigationAtTop.rawValue) as? Bool
+            let traditionalLayout = defaults.value(forKey: Self.traditionalLayout.rawValue) as? Bool
+            let navigationAtTop = defaults.value(forKey: Self.navigationAtTop.rawValue) as? Bool
             if traditionalLayout == true {
                 return .comfortable
             } else if navigationAtTop == true {

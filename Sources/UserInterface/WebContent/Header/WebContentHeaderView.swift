@@ -7,9 +7,6 @@ import SwiftUI
 import AppKit
 
 struct WebContentHeaderView: View {
-    @AppStorage(PhiPreferences.GeneralSettings.sidebarPositionKey)
-    private var sidebarPosition = SidebarPosition.left.rawValue
-
     @ObservedObject var state: WebContentHeaderState
     @ObservedObject var downloadViewModel: DownloadButtonViewModel
     var currentTab: Tab?
@@ -28,6 +25,16 @@ struct WebContentHeaderView: View {
     var onAnchorResolved: ((NSView?) -> Void)?
     var onSidebarAnchorResolved: ((NSView?) -> Void)?
     var onChatAnchorResolved: ((NSView?) -> Void)?
+    /// Called whenever the Minimal address bar lays out, so the header can
+    /// re-read the window center.
+    var onMinimalAddressLayout: (() -> Void)?
+    /// Opens Customize Toolbar from the Site Menu.
+    var onCustomizeToolbar: () -> Void
+    /// Applies Customize Toolbar's drags and direct extension reorders.
+    var customization: ToolbarCustomizationController?
+
+    /// The header's own coordinates: the root fills the header's hosting view.
+    static let coordinateSpaceName = "webContentHeader"
 
     @State private var extensionsModel: WebContentHeaderExtensionsModel
     @State private var isExtensionPopoverShown = false
@@ -37,7 +44,7 @@ struct WebContentHeaderView: View {
     /// drag frame. `trailingFit` is what re-renders, when a width change
     /// moves a trailing item in or out.
     @State private var measuredWidth = MeasuredHeaderWidth()
-    @State private var trailingFit: HeaderTrailingArea.WidthFit?
+    @State private var trailingFit: ToolbarOverflow.Fit?
     @Environment(\.phiAppearance) private var appearance
     @Environment(\.colorScheme) private var colorScheme
 
@@ -58,7 +65,10 @@ struct WebContentHeaderView: View {
         onOpenLocationBar: @escaping (NSView?) -> Void,
         onAnchorResolved: ((NSView?) -> Void)? = nil,
         onSidebarAnchorResolved: ((NSView?) -> Void)? = nil,
-        onChatAnchorResolved: ((NSView?) -> Void)? = nil
+        onChatAnchorResolved: ((NSView?) -> Void)? = nil,
+        onMinimalAddressLayout: (() -> Void)? = nil,
+        onCustomizeToolbar: @escaping () -> Void = {},
+        customization: ToolbarCustomizationController? = nil
     ) {
         self.state = state
         self.downloadViewModel = downloadViewModel
@@ -77,6 +87,9 @@ struct WebContentHeaderView: View {
         self.onAnchorResolved = onAnchorResolved
         self.onSidebarAnchorResolved = onSidebarAnchorResolved
         self.onChatAnchorResolved = onChatAnchorResolved
+        self.onMinimalAddressLayout = onMinimalAddressLayout
+        self.onCustomizeToolbar = onCustomizeToolbar
+        self.customization = customization
         _extensionsModel = State(wrappedValue: WebContentHeaderExtensionsModel(browserState: browserState))
     }
 
@@ -86,10 +99,24 @@ struct WebContentHeaderView: View {
             Spacer()
 
             HStack(spacing: 0) {
-                leadingButtons
-                    .padding(.leading, edgePadding)
+                let actions = itemActions
+                // Without the item or address bar being dragged from it.
+                let layout = state.layoutArrangement
+                let left = leftItems
+                ToolbarZoneRow(
+                    segments: ToolbarZoneSegment.segments(left, overflowAnchor: nil),
+                    spacing: Self.leftZoneSpacing,
+                    zone: .left,
+                    actions: actions,
+                    state: state
+                )
+                // An empty zone reserves its drop target's width while customizing.
+                .frame(width: ToolbarCustomizationLayout.sideZoneReserve(isEmpty: left.isEmpty, isCustomizing: actions.customization != nil))
+                .toolbarCustomizationZone(.left, isEmpty: left.isEmpty, customization: actions.customization)
+                .padding(.leading, leftZoneLeadingPadding)
 
-                if state.showAddressBar {
+                // Without it, Left and Right sit at their edges with empty space between.
+                if state.drawsAddressBar {
                     WebContentAddressBarView(
                         browserState: browserState,
                         currentTab: currentTab,
@@ -98,9 +125,17 @@ struct WebContentHeaderView: View {
                         isLoading: state.isLoading,
                         isProgressVisible: state.isProgressVisible,
                         backgroundColor: state.pageBackgroundColor.map { Color(nsColor: $0) },
-                        allowsWindowDrag: state.allowsWindowDrag,
+                        allowsWindowDrag: state.allowsAddressBarWindowDrag,
+                        leading: layout.placements(in: .addressLeading),
+                        trailing: layout.placements(in: .addressTrailing),
+                        isCustomizing: state.isCustomizing,
+                        isPopoverShown: isAddressBarPopoverShown,
+                        itemActions: actions,
+                        headerState: state,
+                        style: state.arrangement.addressBarStyle,
                         onOpenLocationBar: onOpenLocationBar,
-                        onAnchorResolved: onAnchorResolved
+                        onAnchorResolved: onAnchorResolved,
+                        onMinimalLayout: onMinimalAddressLayout
                     )
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 6)
@@ -110,32 +145,16 @@ struct WebContentHeaderView: View {
                 Spacer(minLength: 0)
 
                 HeaderTrailingArea(
-                    availableWidth: trailingAvailableWidth,
-                    pinnedExtensions: extensionsModel.visiblePinnedExtensions,
-                    showDownload: state.showDownloadButton,
-                    showMemory: state.showMemoryButton,
-                    showFeedback: state.showFeedbackButton,
-                    showChat: state.showChatButton,
-                    isInPlaceholderMode: state.isInPlaceholderMode,
-                    extensionManager: browserState?.extensionManager,
-                    browserState: browserState,
-                    downloadViewModel: downloadViewModel,
-                    isDownloadPopoverShown: $state.isDownloadPopoverShown,
-                    isExtensionPopoverShown: $isExtensionPopoverShown,
-                    onFeedbackTap: onFeedbackTap,
-                    onChatTap: onChatTap,
-                    onMemoryTap: onMemoryTap,
-                    onDownloadTap: onDownloadTap,
-                    onChatAnchorResolved: onChatAnchorResolved
+                    // While customizing every item shows, so nothing folds.
+                    availableWidth: state.isCustomizing ? .greatestFiniteMagnitude : trailingAvailableWidth,
+                    items: rightItems,
+                    arranged: rightArrangedItems,
+                    actions: actions,
+                    state: state
                 )
                 .frame(height: HeaderTrailingLayout.rowHeight)
                 .layoutPriority(2)
 
-                if state.showSidebarButton && isSidebarOnRight {
-                    sidebarButton
-                        .padding(.leading, Self.trailingSidebarButtonGap)
-                        .padding(.trailing, edgePadding)
-                }
             }
             .frame(maxWidth: .infinity)
             .onGeometryChange(for: CGFloat.self) { proxy in
@@ -151,108 +170,131 @@ struct WebContentHeaderView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity)
-        // Moving the sidebar button between ends changes the trailing room
-        // without changing the row's width.
-        .onChange(of: isSidebarOnRight) {
-            trailingFit = currentTrailingFit
-        }
+        .coordinateSpace(name: Self.coordinateSpaceName)
         .environment(\.phiAppearance, state.pageAppearance ?? appearance)
         .environment(\.colorScheme, state.pageAppearance.map { $0.isDark ? .dark : .light } ?? colorScheme)
     }
 
     private var trailingAvailableWidth: CGFloat {
-        max(0, measuredWidth.value - leadingButtonsWidth - trailingSidebarButtonWidth - addressBarReservedWidth)
+        max(0, measuredWidth.value - leftZoneWidth - addressBarReservedWidth)
     }
 
-    /// The sidebar toggle sits on the side the sidebar slides in from.
-    private var isSidebarOnRight: Bool {
-        sidebarPosition == SidebarPosition.right.rawValue
-            && !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
+    private var currentTrailingFit: ToolbarOverflow.Fit {
+        HeaderTrailingArea.fit(items: rightItems, availableWidth: trailingAvailableWidth)
     }
 
-    private var edgePadding: CGFloat {
+    private static let leftZoneSpacing: CGFloat = 8
+
+    private var leftZoneLeadingPadding: CGFloat {
         state.isInPlaceholderMode ? 8 : 16
     }
 
-    /// Added to the trailing area's own end padding so the gap matches the
-    /// leading buttons' spacing.
-    private static let trailingSidebarButtonGap: CGFloat = 2
-
-    private var trailingSidebarButtonWidth: CGFloat {
-        guard state.showSidebarButton, isSidebarOnRight else { return 0 }
-        return Self.trailingSidebarButtonGap + 24 + edgePadding
-    }
-
-    private var currentTrailingFit: HeaderTrailingArea.WidthFit {
-        HeaderTrailingArea.widthFit(
-            availableWidth: trailingAvailableWidth,
-            pinnedCount: extensionsModel.visiblePinnedExtensions.count,
-            showDownload: state.showDownloadButton,
-            showMemory: state.showMemoryButton,
-            showFeedback: state.showFeedbackButton,
-            showChat: state.showChatButton
-        )
-    }
-
-    private var leadingButtonsWidth: CGFloat {
-        var count = 0
-        if state.showSidebarButton && !isSidebarOnRight { count += 1 }
-        if state.showNavigationButtons { count += 3 }
-        let buttonsWidth: CGFloat = count > 0
-            ? CGFloat(count) * 24 + CGFloat(count - 1) * 8
-            : 0
-        return edgePadding + buttonsWidth
+    private var leftZoneWidth: CGFloat {
+        let items = leftItems
+        let itemsWidth = items.reduce(0) { $0 + ToolbarItemView.naturalWidth(of: $1) }
+        let spacing = CGFloat(max(items.count - 1, 0)) * Self.leftZoneSpacing
+        return leftZoneLeadingPadding + itemsWidth + spacing
     }
 
     /// Minimum width reserved for the address bar so trailing area doesn't over-expand
     private var addressBarReservedWidth: CGFloat {
-        state.showAddressBar ? 200 : 0
+        guard state.drawsAddressBar else { return 0 }
+        // Both styles draw the address zones.
+        let layout = state.layoutArrangement
+        let drawn = (layout.placements(in: .addressLeading) + layout.placements(in: .addressTrailing)).map(\.item)
+        let visibleExtensionIDs = extensionsModel.visiblePinnedExtensions.map(\.id)
+        return Self.addressBarReservedWidth(addressItems: drawn.filter {
+            ToolbarItemView.isShown($0, state: state, visibleExtensionIDs: visibleExtensionIDs)
+        })
     }
 
-    private var sidebarButton: some View {
-        NavigationButton(
-            systemName: isSidebarOnRight ? "sidebar.right" : "sidebar.left",
-            accessibilityLabel: NSLocalizedString("browser.webContentHeader.sidebarButton.accessibilityLabel", value: "Toggle Sidebar", comment: "Web content header - Accessibility description for sidebar toggle button"),
-            onAnchorResolved: onSidebarAnchorResolved,
-            action: onSidebarTap
+    /// 200pt holds the address with the standard arrangement's buttons in it.
+    /// Buttons beyond those widen the reserve by what they add, so the Right
+    /// zone folds before the address bar clips them. On Hover buttons count
+    /// too: hidden, they keep their frame.
+    static func addressBarReservedWidth(addressItems: [ToolbarItemID]) -> CGFloat {
+        func width(_ items: [ToolbarItemID]) -> CGFloat {
+            items.reduce(0) { $0 + ToolbarItemView.naturalWidth(of: $1) } + WebContentAddressBarView.itemSpacing * CGFloat(max(items.count - 1, 0))
+        }
+        let standard = (ToolbarArrangement.standard.placements(in: .addressLeading) + ToolbarArrangement.standard.placements(in: .addressTrailing)).map(\.item)
+        return 200 + max(0, width(addressItems) - width(standard))
+    }
+
+    // MARK: - Zones
+
+    private var itemActions: ToolbarItemActions {
+        ToolbarItemActions(
+            browserState: browserState,
+            currentTab: currentTab,
+            onSidebarTap: onSidebarTap,
+            onBackTap: onBackTap,
+            onForwardTap: onForwardTap,
+            onRefreshTap: onRefreshTap,
+            onStopLoadingTap: onStopLoadingTap,
+            onChatTap: onChatTap,
+            onFeedbackTap: onFeedbackTap,
+            onMemoryTap: onMemoryTap,
+            onDownloadTap: onDownloadTap,
+            onCustomizeToolbar: onCustomizeToolbar,
+            onSidebarAnchorResolved: onSidebarAnchorResolved,
+            onChatAnchorResolved: onChatAnchorResolved,
+            downloadViewModel: downloadViewModel,
+            isExtensionPopoverShown: $isExtensionPopoverShown,
+            visibleExtensions: extensionsModel.visiblePinnedExtensions,
+            customization: state.isCustomizing ? customization : nil,
+            onExtensionsReordered: { [customization] in customization?.reorderExtensions($0) }
         )
     }
 
-    // MARK: - Leading Buttons
+    /// A popover opened from a button in the address bar keeps its On Hover
+    /// buttons shown, as the bar's own menus do.
+    private var isAddressBarPopoverShown: Bool {
+        let items = (state.arrangement.placements(in: .addressLeading) + state.arrangement.placements(in: .addressTrailing)).map(\.item)
+        return (state.isDownloadPopoverShown && items.contains(.downloads))
+            || (isExtensionPopoverShown && items.contains(.extensionsButton))
+    }
 
-    @ViewBuilder
-    private var leadingButtons: some View {
-        HStack(spacing: 8) {
-            if state.showSidebarButton && !isSidebarOnRight {
-                sidebarButton
-            }
+    /// The Left zone's items that show right now. Performance has no
+    /// navigation toolbar, so its header carries no Left zone.
+    private var leftItems: [ToolbarItemID] {
+        guard state.showAddressBar else { return [] }
+        return shownItems(state.layoutArrangement.placements(in: .left).map(\.item))
+    }
 
-            if state.showNavigationButtons {
-                NavigationButton(
-                    systemName: "chevron.left",
-                    isEnabled: state.canGoBack,
-                    accessibilityLabel: NSLocalizedString("browser.webContentHeader.backButton.accessibilityLabel", value: "Back", comment: "Web content header - Accessibility description for back navigation button"),
-                    action: onBackTap
-                )
+    /// The Right zone's items that show right now.
+    private var rightItems: [ToolbarItemID] {
+        shownItems(rightArrangedItems)
+    }
 
-                NavigationButton(
-                    systemName: "chevron.right",
-                    isEnabled: state.canGoForward,
-                    accessibilityLabel: NSLocalizedString("browser.webContentHeader.forwardButton.accessibilityLabel", value: "Forward", comment: "Web content header - Accessibility description for forward navigation button"),
-                    action: onForwardTap
-                )
-
-                RefreshStopNavigationButton(
-                    isProgressVisible: state.isProgressVisible,
-                    onRefreshTap: onRefreshTap,
-                    onStopLoadingTap: onStopLoadingTap
-                )
-            }
+    /// The Right side's items as arranged, shown or not. Performance has no
+    /// toolbar to customize, so its header ignores the arrangement.
+    private var rightArrangedItems: [ToolbarItemID] {
+        guard state.showAddressBar else {
+            return Self.performanceItems(extensionIDs: extensionsModel.visiblePinnedExtensions.map(\.id))
         }
+        return state.layoutArrangement.placements(in: .right).map(\.item)
+    }
+
+    /// Performance's header as before Customize Toolbar: the pinned
+    /// extensions in Chromium's presented order, which the sidebar reorders,
+    /// then the extensions button, always.
+    static func performanceItems(extensionIDs: [String]) -> [ToolbarItemID] {
+        extensionIDs.map(ToolbarItemID.extensionAction) + [.extensionsButton]
+    }
+
+    /// The arrangement decides the order; a drag-reorder's preview reorders
+    /// its capsule live until the arrangement takes the new order.
+    private func shownItems(_ items: [ToolbarItemID]) -> [ToolbarItemID] {
+        let extensionOrder = extensionsModel.visiblePinnedExtensions.map(\.id)
+        let shown = items.filter {
+            ToolbarItemView.isShown($0, state: state, visibleExtensionIDs: extensionOrder)
+        }
+        guard browserState?.extensionManager.pinnedExtensionOrdering.presentationOrder != nil else { return shown }
+        return ToolbarZoneSegment.orderingExtensionRuns(shown, by: extensionOrder)
     }
 }
 
-private struct RefreshStopNavigationButton: View {
+struct RefreshStopNavigationButton: View {
     let isProgressVisible: Bool
     let onRefreshTap: () -> Void
     let onStopLoadingTap: () -> Void

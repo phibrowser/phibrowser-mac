@@ -80,289 +80,171 @@ struct HeaderMoreButton: View {
     }
 }
 
+/// Which Right-zone items fold into the overflow "…" when the toolbar runs out of room.
+enum ToolbarOverflow {
+    struct Fit: Equatable {
+        var visible: [ToolbarItemID]
+        var folded: [ToolbarItemID]
+    }
+
+    /// Folds Feedback first, then extensions from the last, then Memory, then
+    /// Downloads, reserving `overflowButtonWidth` once anything folds. Items
+    /// that do not fold stay even when they do not fit.
+    static func fit(
+        _ items: [ToolbarItemID],
+        width: (ToolbarItemID) -> CGFloat,
+        available: CGFloat,
+        overflowButtonWidth: CGFloat
+    ) -> Fit {
+        var cost = items.reduce(0) { $0 + width($1) }
+        guard cost > available else { return Fit(visible: items, folded: []) }
+
+        let budget = available - overflowButtonWidth
+        let extensions = items.filter { if case .extensionAction = $0 { return true } else { return false } }
+        let foldOrder = items.filter { $0 == .feedback }
+            + extensions.reversed()
+            + items.filter { $0 == .memory }
+            + items.filter { $0 == .downloads }
+        var folded: [ToolbarItemID] = []
+        for item in foldOrder where cost > budget {
+            folded.append(item)
+            cost -= width(item)
+        }
+        return Fit(visible: items.filter { !folded.contains($0) }, folded: folded)
+    }
+
+    /// The items the "…" menu lists, in fold order.
+    static let menuItems: [ToolbarItemID] = [.feedback, .memory, .downloads]
+
+    /// Where the "…" goes among `fit.visible`, or nil when it lists nothing
+    /// (folded extensions stay in the extensions menu). It takes the arranged
+    /// slot of the first listed item in fold order that is in the zone, shown
+    /// or not, so the default arrangement keeps today's spot (Feedback's slot)
+    /// even while Feedback is hidden.
+    static func overflowIndex(arranged: [ToolbarItemID], fit: Fit) -> Int? {
+        guard fit.folded.contains(where: menuItems.contains),
+              let anchor = menuItems.lazy.compactMap({ arranged.firstIndex(of: $0) }).first else {
+            return nil
+        }
+        return fit.visible.filter { (arranged.firstIndex(of: $0) ?? 0) < anchor }.count
+    }
+}
+
+/// The Right zone: its items in arrangement order, with the overflow "…".
 struct HeaderTrailingArea: View {
     @Environment(\.colorScheme) private var colorScheme
     let availableWidth: CGFloat
-    let pinnedExtensions: [Extension]
-    let showDownload: Bool
-    let showMemory: Bool
-    let showFeedback: Bool
-    let showChat: Bool
-    let isInPlaceholderMode: Bool
+    /// The zone's items that show right now, in drawing order.
+    let items: [ToolbarItemID]
+    /// The zone's items as arranged, shown or not.
+    let arranged: [ToolbarItemID]
+    let actions: ToolbarItemActions
+    @ObservedObject var state: WebContentHeaderState
 
-    let extensionManager: ExtensionManager?
-    let browserState: BrowserState?
+    static let trailingPadding: CGFloat = 6
+    private static let slotPadding: CGFloat = 6
+    static var overflowSlotWidth: CGFloat { slotPadding + HeaderExtensionLayout.buttonSize }
 
-    @ObservedObject var downloadViewModel: DownloadButtonViewModel
-    @Binding var isDownloadPopoverShown: Bool
-    @Binding var isExtensionPopoverShown: Bool
-
-    let onFeedbackTap: () -> Void
-    let onChatTap: () -> Void
-    let onMemoryTap: () -> Void
-    let onDownloadTap: () -> Void
-    var onChatAnchorResolved: ((NSView?) -> Void)? = nil
-
-    private enum Metrics {
-        static let buttonSize = HeaderExtensionLayout.buttonSize
-        static let extensionSpacing = HeaderExtensionLayout.itemSpacing
-        static let slotPadding: CGFloat = 6
-        static let trailingPadding: CGFloat = 6
-
-        static let extensionMenuWidth = buttonSize
-        /// Each pinned extension adds buttonSize + spacing inside the capsule
-        static let pinnedExtensionSlot = buttonSize + extensionSpacing
-        static let downloadSlot = slotPadding + buttonSize
-        static let memorySlot = slotPadding + buttonSize
-        static let moreButtonSlot = slotPadding + buttonSize
-        static let feedbackSlot = slotPadding + buttonSize
-        /// ChatButton's localized content width plus its leading spacing.
-        static var chatSlot: CGFloat { slotPadding + ChatButton.preferredContentWidth }
+    /// Each item's width in this zone, including its spacing before it. The
+    /// extensions button and its pinned icons share a capsule with no outer
+    /// spacing, as today.
+    static func slotWidth(for item: ToolbarItemID) -> CGFloat {
+        switch item {
+        case .extensionsButton: return HeaderExtensionLayout.buttonSize
+        case .extensionAction: return HeaderExtensionLayout.buttonSize + HeaderExtensionLayout.itemSpacing
+        case .chat: return slotPadding + ChatButton.preferredContentWidth
+        default: return slotPadding + HeaderExtensionLayout.buttonSize
+        }
     }
 
-    private struct LayoutConfig {
-        var visiblePinnedCount: Int
-        var showDownload: Bool
-        var showMemory: Bool
-        var showFeedback: Bool
-        var moreItems: [MoreMenuItem]
+    static func fit(items: [ToolbarItemID], availableWidth: CGFloat) -> ToolbarOverflow.Fit {
+        ToolbarOverflow.fit(
+            items,
+            width: slotWidth(for:),
+            available: availableWidth - trailingPadding,
+            overflowButtonWidth: overflowSlotWidth
+        )
     }
 
     var body: some View {
-        let config = resolveLayout(for: availableWidth)
-        variant(
-            pinned: Array(pinnedExtensions.prefix(config.visiblePinnedCount)),
-            memory: config.showMemory,
-            download: config.showDownload,
-            feedback: config.showFeedback,
-            moreItems: config.moreItems
+        let fit = Self.fit(items: items, availableWidth: availableWidth)
+        // Folded items go to the More menu in the order they folded; folded
+        // extensions stay reachable from the extensions menu instead.
+        let moreItems = fit.folded.compactMap(Self.moreMenuItem(for:))
+        let overflowAnchor = ToolbarOverflow.overflowIndex(arranged: arranged, fit: fit)
+        // While customizing nothing folds (the header lifts the width limit).
+        ToolbarZoneRow(
+            segments: ToolbarZoneSegment.segments(fit.visible, overflowAnchor: overflowAnchor),
+            spacing: Self.slotPadding,
+            zone: .right,
+            actions: actions,
+            state: state
+        ) {
+            moreButton(items: moreItems)
+        }
+        // An empty zone reserves its drop target's width while customizing.
+        .frame(
+            width: ToolbarCustomizationLayout.sideZoneReserve(isEmpty: fit.visible.isEmpty, isCustomizing: actions.customization != nil),
+            height: HeaderTrailingLayout.rowHeight
         )
+        .toolbarCustomizationZone(.right, isEmpty: fit.visible.isEmpty, customization: actions.customization)
+        .padding(.trailing, Self.trailingPadding)
     }
 
-    /// Which trailing items fit at a given width: everything about the
-    /// layout that the width decides. `WebContentHeaderView` compares it to
-    /// re-render only when a width change moves an item in or out.
-    struct WidthFit: Equatable {
-        var visiblePinnedCount: Int
-        var showDownload: Bool
-        var showMemory: Bool
-        var showFeedback: Bool
-    }
-
-    /// Collapse order (first to collapse → last):  Feedback → Pinned extensions (last→first) → Memory → Download
-    static func widthFit(
-        availableWidth width: CGFloat,
-        pinnedCount: Int,
-        showDownload: Bool,
-        showMemory: Bool,
-        showFeedback: Bool,
-        showChat: Bool
-    ) -> WidthFit {
-        var budget = width - Metrics.trailingPadding - Metrics.extensionMenuWidth
-        if showChat { budget -= Metrics.chatSlot }
-
-        var fit = WidthFit(
-            visiblePinnedCount: pinnedCount,
-            showDownload: showDownload,
-            showMemory: showMemory,
-            showFeedback: showFeedback
-        )
-        func currentCost() -> CGFloat {
-            var cost: CGFloat = 0
-            if fit.showFeedback {
-                cost += Metrics.feedbackSlot
-            }
-            if fit.showDownload { cost += Metrics.downloadSlot }
-            if fit.showMemory { cost += Metrics.memorySlot }
-            cost += CGFloat(fit.visiblePinnedCount) * Metrics.pinnedExtensionSlot
-            return cost
-        }
-
-        if currentCost() <= budget { return fit }
-
-        budget -= Metrics.moreButtonSlot
-        if currentCost() > budget && fit.showFeedback {
-            fit.showFeedback = false
-        }
-        while currentCost() > budget && fit.visiblePinnedCount > 0 {
-            fit.visiblePinnedCount -= 1
-        }
-        if currentCost() > budget && fit.showMemory {
-            fit.showMemory = false
-        }
-        if currentCost() > budget && fit.showDownload {
-            fit.showDownload = false
-        }
-        return fit
-    }
-
-    private func resolveLayout(for width: CGFloat) -> LayoutConfig {
-        let fit = Self.widthFit(
-            availableWidth: width,
-            pinnedCount: pinnedExtensions.count,
-            showDownload: showDownload,
-            showMemory: showMemory,
-            showFeedback: showFeedback,
-            showChat: showChat
-        )
-        // Collapsed items go to the More menu in the order they collapsed.
-        var moreItems: [MoreMenuItem] = []
-        if showFeedback && !fit.showFeedback {
-            moreItems.append(MoreMenuItem(
+    private static func moreMenuItem(for item: ToolbarItemID) -> MoreMenuItem? {
+        switch item {
+        case .feedback:
+            return MoreMenuItem(
                 id: "feedback",
                 title: NSLocalizedString("browser.headerMoreMenu.feedbackAction", value: "Feedback", comment: "Header more menu - Feedback action"),
                 image: Image(.sidebarFeedback)
-            ))
-        }
-        if showMemory && !fit.showMemory {
-            moreItems.append(MoreMenuItem(
+            )
+        case .memory:
+            return MoreMenuItem(
                 id: "memory",
                 title: NSLocalizedString("browser.headerMoreMenu.memoryAction", value: "Browser Memory", comment: "Header more menu - AI memory"),
                 image: Image(.memoryIcon).renderingMode(.original)
-            ))
-        }
-        if showDownload && !fit.showDownload {
-            moreItems.append(MoreMenuItem(
+            )
+        case .downloads:
+            return MoreMenuItem(
                 id: "download",
                 title: NSLocalizedString("browser.headerMoreMenu.downloadsAction", value: "Downloads", comment: "Header more menu - Downloads action"),
                 systemImage: "arrow.down.circle"
-            ))
+            )
+        default:
+            return nil
         }
-        return LayoutConfig(
-            visiblePinnedCount: fit.visiblePinnedCount,
-            showDownload: fit.showDownload,
-            showMemory: fit.showMemory,
-            showFeedback: fit.showFeedback,
-            moreItems: moreItems
-        )
     }
 
-    @ViewBuilder
-    private func variant(
-        pinned: [Extension],
-        memory: Bool,
-        download: Bool,
-        feedback: Bool,
-        moreItems: [MoreMenuItem]
-    ) -> some View {
-        HStack(alignment: .center, spacing: 0) {
-            if !isInPlaceholderMode {
-                extensionArea(pinned: pinned)
-            }
-
-            if memory {
-                MemoryButton(action: onMemoryTap, useCircularHoverShape: true)
-                    .padding(.leading, 6)
-            }
-
-            if download {
-                downloadButton
-                    .padding(.leading, 6)
-            }
-
-            if !moreItems.isEmpty {
-                let downloadCollapsed = moreItems.contains { $0.id == "download" }
-                HeaderMoreButton(items: moreItems) { item in
-                    handleMoreItemTap(item)
-                }
-                .padding(.leading, 6)
-                .popover(
-                    isPresented: downloadCollapsed ? $isDownloadPopoverShown : .constant(false),
-                    arrowEdge: .bottom
-                ) {
-                    downloadPopoverContent
-                }
-            }
-
-            if feedback {
-                FeedbackButtonSwiftUI(
-                    action: onFeedbackTap,
-                    useCircularHoverShape: true
-                )
-                .padding(.leading, 6)
-            }
-
-            if showChat {
-                ChatButton(
-                    action: onChatTap,
-                    contentWidth: ChatButton.preferredContentWidth,
-                    contentHeight: HeaderTrailingLayout.rowHeight
-                )
-                .background(chatAnchorBackground)
-                .padding(.leading, 6)
-            }
+    private func moreButton(items moreItems: [MoreMenuItem]) -> some View {
+        let downloadCollapsed = moreItems.contains { $0.id == "download" }
+        return HeaderMoreButton(items: moreItems) { item in
+            handleMoreItemTap(item)
         }
-        .frame(height: HeaderTrailingLayout.rowHeight)
-        .padding(.trailing, 6)
-    }
-
-    @ViewBuilder
-    private var chatAnchorBackground: some View {
-        if let onChatAnchorResolved {
-            HeaderControlAnchorView { view in
-                onChatAnchorResolved(view)
-            }
+        .popover(
+            isPresented: downloadCollapsed ? $state.isDownloadPopoverShown : .constant(false),
+            arrowEdge: .bottom
+        ) {
+            HeaderDownloadsPopoverContent(
+                downloadViewModel: actions.downloadViewModel,
+                colorScheme: colorScheme,
+                browserState: actions.browserState,
+                isShown: $state.isDownloadPopoverShown
+            )
         }
     }
 
     private func handleMoreItemTap(_ item: MoreMenuItem) {
         switch item.id {
         case "feedback":
-            onFeedbackTap()
+            actions.onFeedbackTap()
         case "download":
-            onDownloadTap()
-            isDownloadPopoverShown.toggle()
+            actions.onDownloadTap()
+            state.isDownloadPopoverShown.toggle()
         case "memory":
-            onMemoryTap()
+            actions.onMemoryTap()
         default:
             break
-        }
-    }
-
-    @ViewBuilder
-    private func extensionArea(pinned: [Extension]) -> some View {
-        if pinned.isEmpty {
-            HeaderExtensionMenuButton(
-                extensionManager: extensionManager,
-                browserState: browserState,
-                isPopoverShown: $isExtensionPopoverShown
-            )
-        } else {
-            HeaderExtensionContainer(
-                pinnedExtensions: pinned,
-                extensionManager: extensionManager,
-                browserState: browserState,
-                isPopoverShown: $isExtensionPopoverShown
-            )
-        }
-    }
-
-    @ViewBuilder
-    private var downloadPopoverContent: some View {
-        if let manager = downloadViewModel.downloadsManager {
-            DownloadsListView(downloadsManager: manager) {
-                isDownloadPopoverShown = false
-                guard let owner = browserState?.windowController,
-                      let source = owner.window?.contentView else { return }
-                owner.showLibrary(from: source, section: .downloads)
-            }
-                .frame(width: 340, height: 317)
-                .preferredColorScheme(colorScheme)
-        }
-    }
-
-    @ViewBuilder
-    private var downloadButton: some View {
-        DownloadButtonView(
-            viewModel: downloadViewModel,
-            useCircularHoverShape: true,
-            onTap: {
-                onDownloadTap()
-                isDownloadPopoverShown.toggle()
-            }
-        )
-        .popover(isPresented: $isDownloadPopoverShown, arrowEdge: .bottom) {
-            downloadPopoverContent
         }
     }
 }

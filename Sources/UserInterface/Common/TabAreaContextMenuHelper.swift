@@ -235,31 +235,53 @@ final class TabAreaContextMenuHelper: NSObject {
         return buildToggleSubmenu(entries)
     }
 
+    /// The sidebar's Bottom Buttons, or the tab strip's Toolbar Buttons. The
+    /// toolbar's own buttons are arranged in Customize Toolbar, so the tab
+    /// strip keeps only its Profile button and links there.
     private func buildButtonsSubmenu() -> NSMenu {
         typealias Setting = PhiPreferences.GeneralSettings
-        var entries: [(Setting, String)] = [
-            (isHorizontalLayout ? Setting.topBarShowsProfile : .sidebarBottomBarShowsProfile,
-             NSLocalizedString("common.tabAreaContextMenu.bottomButtons.profile", value: "Profile", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the profile button")),
-            (isHorizontalLayout ? Setting.topBarShowsDownloads : .sidebarBottomBarShowsDownloads,
-             NSLocalizedString("common.tabAreaContextMenu.bottomButtons.downloads", value: "Downloads", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the downloads button")),
-        ]
         let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
-        if phiAIEnabled, browserState?.isIncognito != true {
-            entries.append((isHorizontalLayout ? Setting.topBarShowsMemory : .sidebarBottomBarShowsMemory,
-                            NSLocalizedString("common.tabAreaContextMenu.bottomButtons.memory", value: "Memory", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the AI memory button")))
+        let profileTitle = NSLocalizedString("common.tabAreaContextMenu.bottomButtons.profile", value: "Profile", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the profile button")
+        var entries: [(Setting, String)]
+        if isHorizontalLayout {
+            entries = [(Setting.topBarShowsProfile, profileTitle)]
+        } else {
+            entries = [
+                (Setting.sidebarBottomBarShowsProfile, profileTitle),
+                (Setting.sidebarBottomBarShowsDownloads,
+                 NSLocalizedString("common.tabAreaContextMenu.bottomButtons.downloads", value: "Downloads", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the downloads button")),
+            ]
+            if phiAIEnabled, browserState?.isIncognito != true {
+                entries.append((Setting.sidebarBottomBarShowsMemory,
+                                NSLocalizedString("common.tabAreaContextMenu.bottomButtons.memory", value: "Memory", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the AI memory button")))
+            }
+            if !ApplicationState.shared.isGuest {
+                entries.append((Setting.sidebarBottomBarShowsFeedback,
+                                NSLocalizedString("common.tabAreaContextMenu.bottomButtons.feedback", value: "Feedback", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the feedback button")))
+            }
         }
-        if !ApplicationState.shared.isGuest {
-            entries.append((isHorizontalLayout ? Setting.topBarShowsFeedback : .sidebarBottomBarShowsFeedback,
-                            NSLocalizedString("common.tabAreaContextMenu.bottomButtons.feedback", value: "Feedback", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the feedback button")))
-        }
-        // Balanced shows Chat in the page's toolbar, not in the sidebar bottom bar.
-        let barHostsChat = isHorizontalLayout || browserState?.layoutMode == .performance
-        if phiAIEnabled, browserState?.isIncognito != true, barHostsChat {
-            entries.append((isHorizontalLayout ? Setting.topBarShowsChat : .sidebarBottomBarShowsChat,
+        // Balanced shows Chat in the page's toolbar, not in the sidebar bottom
+        // bar; the toolbar's Chat is arranged in Customize Toolbar.
+        if phiAIEnabled, browserState?.isIncognito != true, !isHorizontalLayout,
+           browserState?.layoutMode == .performance {
+            entries.append((Setting.sidebarBottomBarShowsChat,
                             NSLocalizedString("common.tabAreaContextMenu.bottomButtons.chat", value: "Chat", comment: "Tab area context menu - Bottom Buttons submenu item that shows or hides the AI chat button")))
         }
 
-        return buildToggleSubmenu(entries)
+        let submenu = buildToggleSubmenu(entries)
+        if isHorizontalLayout {
+            submenu.addItem(.separator())
+            let customizeItem = ToolbarCustomizationMenu.customizeItem { [weak self] in
+                self?.browserState?.windowController?.beginToolbarCustomization()
+            }
+            // The empty-window placeholder has no toolbar to customize, as in
+            // the View menu. Nil action greys it out via automatic enabling.
+            if browserState?.isInPlaceholderMode == true {
+                customizeItem.action = nil
+            }
+            submenu.addItem(customizeItem)
+        }
+        return submenu
     }
 
     private func buildToggleSubmenu(_ entries: [(PhiPreferences.GeneralSettings, String)]) -> NSMenu {

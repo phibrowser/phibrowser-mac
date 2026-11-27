@@ -651,6 +651,111 @@ final class TabItemView: NSView {
         }
     }
 
+    /// Width below which a single tab shows only its favicon, centered, in
+    /// both directions. Above the compact threshold so the title has room
+    /// to fade before compact mode takes over.
+    private static let titleSwitchWidth: CGFloat = TabStripMetrics.Content.compactModeThreshold + 20
+
+    /// 1 shows the title with the favicon leading, 0 the favicon alone,
+    /// centered. Moves toward the side of `titleSwitchWidth` the tab is on
+    /// over 0.2 s; positions come from the current width each frame, so a
+    /// live resize can't knock the transition off course.
+    private var titleProgress: CGFloat = 1
+    private var titleProgressLink: CADisplayLink?
+    private var titleProgressTimestamp: CFTimeInterval?
+    private var hasTitleProgress = false
+    /// Test seam: the system Reduce Motion setting.
+    var prefersReducedMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    /// Test seam: the favicon's frame, the title's opacity, and whether the
+    /// transition is running.
+    var titleProgressStateForTesting: (faviconFrame: CGRect, titleAlpha: CGFloat, isAnimating: Bool) {
+        (faviconHostingView.frame, titleHostingView.alphaValue, titleProgressLink != nil)
+    }
+
+    private var titleProgressTarget: CGFloat {
+        bounds.width < Self.titleSwitchWidth ? 0 : 1
+    }
+
+    private func updateTitleProgress(mode: LayoutMode) {
+        // A tab's first layout starts settled instead of animating in.
+        let isFirstLayout = !hasTitleProgress
+        if window != nil { hasTitleProgress = true }
+        guard mode == .normal, !isMergedSplitCell, window != nil else {
+            titleProgress = titleProgressTarget
+            stopTitleProgress()
+            applyTitleProgress(applies: false)
+            return
+        }
+        if isFirstLayout || prefersReducedMotion() {
+            titleProgress = titleProgressTarget
+            stopTitleProgress()
+        } else if titleProgress != titleProgressTarget {
+            startTitleProgress()
+        }
+        applyTitleProgress(applies: !faviconHostingView.isHidden)
+    }
+
+    private var titleProgressViews: [NSView] {
+        [faviconHostingView, muteButtonHostingView, titleHostingView]
+    }
+
+    /// Places the favicon, mute button and title for `titleProgress`. While
+    /// the transition runs it moves their layers, which costs no layout; at
+    /// rest it moves their frames, so clicks land where they show.
+    private func applyTitleProgress(applies: Bool) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        let t = titleProgress * titleProgress * (3 - 2 * titleProgress)
+        guard applies, t < 1 else {
+            titleProgressViews.forEach { $0.layer?.setAffineTransform(.identity) }
+            titleHostingView.alphaValue = 1
+            return
+        }
+        let centeredX = (bounds.width - faviconHostingView.frame.width) / 2
+        let shift = (1 - t) * (centeredX - faviconHostingView.frame.minX)
+        let isRunning = titleProgressLink != nil
+        for view in titleProgressViews where !view.isHidden {
+            if isRunning {
+                view.layer?.setAffineTransform(CGAffineTransform(translationX: shift, y: 0))
+            } else {
+                view.layer?.setAffineTransform(.identity)
+                view.frame.origin.x += shift
+            }
+        }
+        titleHostingView.alphaValue = t
+    }
+
+    private func startTitleProgress() {
+        guard titleProgressLink == nil else { return }
+        let link = displayLink(target: self, selector: #selector(stepTitleProgress(_:)))
+        link.add(to: .main, forMode: .common)
+        titleProgressLink = link
+        titleProgressTimestamp = nil
+    }
+
+    private func stopTitleProgress() {
+        titleProgressLink?.invalidate()
+        titleProgressLink = nil
+        titleProgressTimestamp = nil
+    }
+
+    @objc private func stepTitleProgress(_ link: CADisplayLink) {
+        let elapsed = titleProgressTimestamp.map { link.timestamp - $0 } ?? 0
+        titleProgressTimestamp = link.timestamp
+        let step = CGFloat(elapsed / 0.2)
+        let target = titleProgressTarget
+        titleProgress = target > titleProgress
+            ? min(target, titleProgress + step)
+            : max(target, titleProgress - step)
+        if titleProgress == target {
+            stopTitleProgress()
+            layoutContent()
+        } else {
+            applyTitleProgress(applies: !faviconHostingView.isHidden)
+        }
+    }
+
     private func layoutContent() {
         guard !bounds.isEmpty else {
             hideContentForEmptyBounds()
@@ -659,6 +764,7 @@ final class TabItemView: NSView {
 
         let metrics = TabStripMetrics.Content.self
         let mode = layoutMode
+        defer { updateTitleProgress(mode: mode) }
         viewModel.isHorizontalCompactMode = (mode == .compact || mode == .pinned)
         // Mirror onto every other pane's view model: their mute buttons
         // share the same "non-interactive in compact unless focused" gate,

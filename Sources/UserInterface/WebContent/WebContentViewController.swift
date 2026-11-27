@@ -446,8 +446,7 @@ class WebContentViewController: NSViewController {
     private lazy var agentAnimationOverlay: EdgeFogOverlayView = {
         let overlay = EdgeFogOverlayView()
         overlay.alphaValue = 0
-        // The overlay owns its corner geometry: it matches the content panel's
-        // continuous curve so the lit edge lands on the same line.
+        // Its corner follows the page's (`updateAgentAnimationOverlayCorners`).
         overlay.hitTestPassthroughHandler = { [weak self, weak overlay] point in
             guard let self, let overlay else { return false }
             return self.shouldPassThroughAgentAnimationOverlayHit(at: point, in: overlay)
@@ -1040,7 +1039,7 @@ class WebContentViewController: NSViewController {
         splitViewTrailingBottomConstraint?.update(inset: contentLayout.edgeSpacing)
         splitViewContainer.layer?.cornerRadius = contentLayout.containerCornerRadius
         leftContainerView.layer?.cornerRadius = contentLayout.innerCornerRadius
-        agentAnimationOverlay.panelCornerRadius = contentLayout.innerCornerRadius
+        updateAgentAnimationOverlayCorners()
         currentSplitHost?.squaresCorners = contentLayout.squaresCorners
         splitPreviewHost?.squaresCorners = contentLayout.squaresCorners
         // Only a card that meets the sidebar casts the edge shadow, and not
@@ -3666,10 +3665,7 @@ class WebContentViewController: NSViewController {
             leftContainerInsetConstraint?.update(inset: 0)
         }
 
-        // The operating mask's lit ring rounds its corners more than the panel
-        // while the page fills the frame; a separated card shows its own
-        // corners, which the ring must follow exactly.
-        agentAnimationOverlay.hugsPanelCorners = shouldSeparatePageCard
+        updateAgentAnimationOverlayCorners()
 
         // With the panel docked, splitViewContainer's right edge is an
         // interior boundary meeting the panel's frame fill mid-frame, not
@@ -4199,6 +4195,18 @@ class WebContentViewController: NSViewController {
         } else {
             hideAgentAnimationOverlay()
         }
+    }
+
+    /// Rounds the operating mask with the page's own corner. Chromium rounds
+    /// the page at the largest radius among the clipping views whose corner
+    /// it reaches: while the page fills the frame that includes
+    /// splitViewContainer's outer corner, larger than the panel's; a
+    /// separated card is inset from it and keeps the panel's.
+    private func updateAgentAnimationOverlayCorners() {
+        let layout = contentLayout
+        agentAnimationOverlay.panelCornerRadius = isPageCardSeparated
+            ? layout.innerCornerRadius
+            : max(layout.innerCornerRadius, layout.containerCornerRadius)
     }
 
     private func showAgentAnimationOverlay() {

@@ -38,16 +38,6 @@ final class EdgeFogOverlayView: NSView {
     /// Width of the lit ring; it sits flush inside the content edge.
     private static let ringWidth: CGFloat = 2
 
-    /// Added to the panel's corner radius to round the ring more than the
-    /// panel itself. `cornerCurve = .continuous` draws a border's inner edge as
-    /// a squircle of `radius - width`, but a squircle's true offset curve is
-    /// not another squircle — so on the panel's own small radius the band
-    /// visibly loses width at the corner diagonal. A rounder corner spreads
-    /// that error over a longer arc and the ring reads at full width. Tune
-    /// here if the corner should hug the panel more tightly. Dropped entirely
-    /// while `hugsPanelCorners` — a separated page card's own corners are
-    /// visible and the ring must match them.
-    private static let ringCornerBoost: CGFloat = 6
     /// One full revolution of the conic sweep.
     private static let flowDuration: CFTimeInterval = 3.0
     /// Full breathe cycle. CA autoreverses, so each leg runs half of it.
@@ -60,18 +50,11 @@ final class EdgeFogOverlayView: NSView {
     /// app so the pre-theme fallback already reads right in a dark window.
     private var themeAppearance: Appearance = appAppearance
 
-    /// True while the page panel renders as its own separated card (AI Chat
-    /// sidebar expanded or an extension side panel docked). The card's own,
-    /// tighter corner clip and hairline border are visible then, so the ring
-    /// gives up `ringCornerBoost` and follows the panel's corners exactly —
-    /// a boosted ring visibly pulls away from the card's corners.
-    var hugsPanelCorners = false {
-        didSet {
-            guard hugsPanelCorners != oldValue else { return }
-            needsLayout = true
-        }
-    }
-
+    /// The radius the page's own pixels are rounded with, which the wash and
+    /// the ring follow so the lit edge lands on the page's edge. Chromium
+    /// rounds them circularly, at the largest radius among the clipping views
+    /// whose corner the page reaches (`ContentSurfaceHosting`), so this is
+    /// not always the panel's own radius.
     var panelCornerRadius: CGFloat = LiquidGlassCompatible.webContentInnerComponentsCornerRadius {
         didSet {
             guard panelCornerRadius != oldValue else { return }
@@ -162,16 +145,15 @@ final class EdgeFogOverlayView: NSView {
 
     // MARK: - Edge lights
 
-    /// The ring is built from layer borders rather than a stroked `CGPath`.
-    /// The content panel clips with `cornerCurve = .continuous`, and a
-    /// `CGPath` rounded rect is a plain circular corner — the two curves
-    /// diverge, so the panel's squircle clip shaved the path's corners off and
-    /// the sweep only showed along the straight edges. Layer borders take the
-    /// same `cornerCurve`, so the ring now follows the panel exactly.
+    /// The ring is built from layer borders, masked to the border band. The
+    /// corners are circular, as Chromium rounds the page's pixels: a
+    /// continuous ring cuts inside the page's corner and leaves a sliver of
+    /// page outside it. A circular border's inner edge is a true offset of
+    /// its outer one, so the band keeps its width around the corner.
     private func setupEdgeLights(in rootLayer: CALayer) {
         edgeGlowLayer.backgroundColor = NSColor.clear.cgColor
         edgeGlowLayer.borderWidth = 1
-        edgeGlowLayer.cornerCurve = .continuous
+        edgeGlowLayer.cornerCurve = .circular
         edgeGlowLayer.shadowOffset = .zero
 
         // The conic layer is square and centred so a full revolution never
@@ -186,7 +168,7 @@ final class EdgeFogOverlayView: NSView {
         edgeRingMask.backgroundColor = NSColor.clear.cgColor
         edgeRingMask.borderColor = NSColor.black.cgColor
         edgeRingMask.borderWidth = Self.ringWidth
-        edgeRingMask.cornerCurve = .continuous
+        edgeRingMask.cornerCurve = .circular
         edgeRingLayer.mask = edgeRingMask
         edgeRingLayer.addSublayer(edgeConicLayer)
 
@@ -197,20 +179,17 @@ final class EdgeFogOverlayView: NSView {
     /// Re-fits the ring and re-centres the conic sweep. Called from `layout`
     /// because all of it is bounds-derived.
     private func layoutEdgeLights() {
-        let panelRadius = panelCornerRadius
-        let ringRadius = panelRadius + (hugsPanelCorners || panelRadius == 0 ? 0 : Self.ringCornerBoost)
-
-        // The wash matches the panel's own clip so it stops on the same curve;
-        // the ring is rounder, so its corners sit just inside that clip and
-        // keep their full width.
-        layer?.cornerCurve = .continuous
-        layer?.cornerRadius = panelRadius
+        // The wash and the ring share the page's corner, so the ring's outer
+        // edge is the page's edge and no page shows outside it.
+        let radius = panelCornerRadius
+        layer?.cornerCurve = .circular
+        layer?.cornerRadius = radius
 
         edgeGlowLayer.frame = bounds
-        edgeGlowLayer.cornerRadius = ringRadius
+        edgeGlowLayer.cornerRadius = radius
         edgeRingLayer.frame = bounds
         edgeRingMask.frame = bounds
-        edgeRingMask.cornerRadius = ringRadius
+        edgeRingMask.cornerRadius = radius
 
         let side = hypot(bounds.width, bounds.height)
         edgeConicLayer.bounds = CGRect(x: 0, y: 0, width: side, height: side)

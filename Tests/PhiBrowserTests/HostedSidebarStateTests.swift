@@ -1065,6 +1065,41 @@ final class HostedSidebarStateTests: XCTestCase {
         bar.view.removeFromSuperview()
     }
 
+    /// While the floating sidebar holds its own traffic lights, the window
+    /// answers `standardWindowButton(_:)` with those; parked off screen, they
+    /// would put the picker under the titlebar's.
+    func testSpacePickerClearsTheTitlebarsLightsWhileTheSidebarHoldsItsOwn() throws {
+        PhiPreferences.GeneralSettings.saveLayoutMode(.comfortable)
+        let slot = makeSlot()
+        let session = makeSession(in: slot, spaceId: "picker-sidebar-lights")
+        let window = try XCTUnwrap(slot.shell?.window)
+        // As while the floating sidebar shows its lights: the titlebar's hide.
+        let titlebarLights = try [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
+            .map { try XCTUnwrap(window.titlebarButton($0)) }
+        titlebarLights.forEach { $0.isHidden = true }
+        defer { titlebarLights.forEach { $0.isHidden = false } }
+        let lights = SidebarTrafficLightsView(frame: NSRect(x: -300, y: window.frame.height - 40, width: 80, height: 30))
+        window.contentView?.addSubview(lights)
+        defer { lights.removeFromSuperview() }
+        lights.isActive = true
+        let sidebarZoom = try XCTUnwrap(window.standardWindowButton(.zoomButton))
+        XCTAssertTrue(sidebarZoom.superview === lights,
+            "precondition: the window answers with the sidebar's zoom button")
+
+        let bar = TabStripBarController(browserState: session.browserState)
+        bar.view.frame = NSRect(x: 0, y: window.frame.height - 42, width: 1000, height: 36)
+        let picker = try XCTUnwrap(descendants(of: bar.view)
+            .first { $0.accessibilityIdentifier() == "tabStrip.spacePicker" })
+        window.contentView?.addSubview(bar.view)
+        defer { bar.view.removeFromSuperview() }
+        bar.view.layoutSubtreeIfNeeded()
+
+        let green = try XCTUnwrap(window.titlebarButton(.zoomButton))
+        XCTAssertFalse(green.superview is SidebarTrafficLightsView)
+        XCTAssertEqual(picker.convert(picker.bounds, to: nil).minX - green.convert(green.bounds, to: nil).maxX,
+                       10, accuracy: 0.01, "the picker clears the titlebar's lights, not the sidebar's")
+    }
+
     func testSpacePickerAlignmentIgnoresOtherViewsFrameChanges() {
         let window = ZoomButtonLookupCountingWindow()
         defer { window.close() }

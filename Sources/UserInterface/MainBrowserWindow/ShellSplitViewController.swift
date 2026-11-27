@@ -424,7 +424,7 @@ final class ShellSplitViewController: NSViewController {
 
         let collapse = proposed < Self.leftItemMinWidth / 2
         if collapse != transitions.isCollapsed {
-            let animate = collapse && !floatingSidebarHost.prefersReducedMotion()
+            let animate = !floatingSidebarHost.prefersReducedMotion()
             changeCollapsed(to: collapse, duration: animate ? SidebarToggleAnimation.dragCollapseDuration : nil,
                             widensWindow: false)
         } else if !collapse {

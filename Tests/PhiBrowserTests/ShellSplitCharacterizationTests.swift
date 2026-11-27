@@ -1110,8 +1110,8 @@ final class ShellSplitCharacterizationTests: XCTestCase {
             XCTAssertEqual(abs(offset(collapse.toValue)), minWidth, accuracy: 0.5)
 
             try send(.leftMouseDragged, at: 97)
-            assertExpanded(shell, width: minWidth, on: side)
-            XCTAssertNil(slide(on: column), "reversing the drag cancels the slide")
+            waitForToggleAnimation()
+            assertExpanded(shell, width: minWidth, on: side, "reversing the drag slides the column back")
             try send(.leftMouseDragged, at: 270)
             assertExpanded(shell, width: 270, on: side)
 
@@ -1120,6 +1120,10 @@ final class ShellSplitCharacterizationTests: XCTestCase {
             assertCollapsed(shell)
             XCTAssertFalse(divider.isHidden, "the gesture still owns the divider")
             try send(.leftMouseDragged, at: 260)
+            let reopen = try XCTUnwrap(slide(on: column), "dragging back out slides the column in")
+            XCTAssertEqual(reopen.duration, SidebarToggleAnimation.dragCollapseDuration, accuracy: 0.001)
+            XCTAssertEqual(reopen.timingFunction, SidebarToggleAnimation.timingFunction)
+            waitForToggleAnimation()
             assertExpanded(shell, width: 260, on: side)
             try send(.leftMouseUp, at: 260)
             XCTAssertEqual(shell.split.lastExpandedSidebarWidth, 260, accuracy: 0.5)
@@ -1147,6 +1151,15 @@ final class ShellSplitCharacterizationTests: XCTestCase {
         assertNoSlides(in: shell)
         shell.split.setSidebarCollapsed(false, animated: false)
         assertExpanded(shell, width: 300, on: .left)
+    }
+
+    func testDividerReopenHonorsReduceMotion() {
+        let shell = makeShell(onScreen: true)
+        shell.split.floatingSidebarHost.prefersReducedMotion = { true }
+        shell.split.setSidebarGeometry(width: 300, collapsed: false)
+        XCTAssertTrue(dragDivider(of: shell, on: .left, through: [96, 250]))
+        assertNoSlides(in: shell)
+        assertExpanded(shell, width: 250, on: .left)
     }
 
     func testACollapsedColumnHasNoDividerToDrag() {

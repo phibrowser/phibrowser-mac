@@ -822,7 +822,9 @@ class SidebarViewController: NSViewController, BrowserThemeContextProviding {
         let companionAIChat = focusingTabSplitCompanions().contains { $0.aiChatEnabled }
         let aiChatEnabled = focusedAIChat || companionAIChat
         let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
-        let shouldHideChat = overviewActive || state.isIncognito || navigationAtTop || !aiChatEnabled || !phiAIEnabled
+        let chatSlotReserved = !navigationAtTop && !state.isIncognito && phiAIEnabled
+        let shouldHideChat = !chatSlotReserved || overviewActive || !aiChatEnabled
+        bottomBarSwiftUI.setChatSlotReserved(chatSlotReserved)
         bottomBarSwiftUI.setChatHidden(shouldHideChat)
     }
 

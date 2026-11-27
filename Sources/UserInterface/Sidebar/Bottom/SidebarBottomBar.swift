@@ -55,6 +55,10 @@ class SidebarBottomBarState: ObservableObject {
     /// Whether the chat button is hidden.
     @Published var isChatHidden: Bool = false
 
+    /// Whether the bar keeps room for the chat button while it is hidden for
+    /// the current tab, so switching tabs never collapses the bar.
+    @Published var isChatSlotReserved: Bool = false
+
     /// Whether the AI memory button is hidden (mirrors the global Phi AI toggle).
     @Published var isMemoryHidden: Bool = false
 
@@ -559,17 +563,17 @@ class SidebarBottomBarSwiftUIView: NSView {
             .combineLatest(Setting.sidebarBottomBarShowsDownloads.sharedValuePublisher,
                            Setting.sidebarBottomBarShowsMemory.sharedValuePublisher,
                            Setting.sidebarBottomBarShowsFeedback.sharedValuePublisher)
-        let availability = state.$isChatHidden
+        let availability = state.$isChatSlotReserved
             .combineLatest(state.$isMemoryHidden, state.$isFeedbackHidden,
                            NotificationCardManager.shared.$latestCard.map { $0 != nil })
         preferences.combineLatest(availability)
             .map { preferences, availability in
                 let (showsProfile, showsDownloads, showsMemory, showsFeedback) = preferences
-                let (isChatHidden, isMemoryHidden, isFeedbackHidden, hasCardEntry) = availability
+                let (isChatSlotReserved, isMemoryHidden, isFeedbackHidden, hasCardEntry) = availability
                 return showsProfile || showsDownloads
                     || (showsMemory && !isMemoryHidden)
                     || (showsFeedback && !isFeedbackHidden)
-                    || !isChatHidden || hasCardEntry
+                    || isChatSlotReserved || hasCardEntry
             }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -586,6 +590,11 @@ class SidebarBottomBarSwiftUIView: NSView {
     func setChatHidden(_ hidden: Bool) {
         guard state.isChatHidden != hidden else { return }
         state.isChatHidden = hidden
+    }
+
+    func setChatSlotReserved(_ reserved: Bool) {
+        guard state.isChatSlotReserved != reserved else { return }
+        state.isChatSlotReserved = reserved
     }
 
     /// Hides or shows the AI memory button. Should be hidden when Phi AI is disabled.
